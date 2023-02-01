@@ -1,5 +1,5 @@
 use leptos_reactive::create_effect;
-use taffy::style::Style;
+use taffy::style::{FlexDirection, Style};
 
 use crate::{
     app::{AppContext, UpdateMessage},
@@ -8,26 +8,44 @@ use crate::{
     view_tuple::ViewTuple,
 };
 
+enum StackDirection {
+    Horizontal,
+    Vertical,
+}
+
 pub struct Stack<VT> {
     id: Id,
     children: VT,
+    direction: StackDirection,
 }
 
-pub fn stack<VT: ViewTuple + 'static>(
+fn stack<VT: ViewTuple + 'static>(
+    cx: AppContext,
+    children: impl Fn(AppContext) -> VT + 'static + Copy,
+    direction: StackDirection,
+) -> Stack<VT> {
+    let id = cx.id.new();
+    let children_cx = cx.with_id(id);
+    let children = children(children_cx);
+    Stack {
+        id,
+        children,
+        direction,
+    }
+}
+
+pub fn hstack<VT: ViewTuple + 'static>(
     cx: AppContext,
     children: impl Fn(AppContext) -> VT + 'static + Copy,
 ) -> Stack<VT> {
-    let id = cx.id.new();
-    println!("stack id is {id:?}");
-    let children_cx = cx.with_id(id);
-    create_effect(cx.scope, move |_| {
-        let new_children = children(children_cx);
-        AppContext::add_update(UpdateMessage::new(id, new_children));
-    });
-    Stack {
-        id,
-        children: children(children_cx),
-    }
+    stack(cx, children, StackDirection::Horizontal)
+}
+
+pub fn vstack<VT: ViewTuple + 'static>(
+    cx: AppContext,
+    children: impl Fn(AppContext) -> VT + 'static + Copy,
+) -> Stack<VT> {
+    stack(cx, children, StackDirection::Vertical)
 }
 
 impl<VT: ViewTuple + 'static> View for Stack<VT> {
@@ -62,15 +80,21 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
 
     fn build_layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         let nodes = self.children.build_layout(cx);
+
+        let direction = match self.direction {
+            StackDirection::Horizontal => FlexDirection::Row,
+            StackDirection::Vertical => FlexDirection::Column,
+        };
         let node = cx
             .layout_state
             .taffy
             .new_with_children(
                 Style {
                     size: taffy::prelude::Size {
-                        width: taffy::style::Dimension::Percent(1.0),
-                        height: taffy::style::Dimension::Percent(1.0),
+                        width: taffy::style::Dimension::Auto,
+                        height: taffy::style::Dimension::Auto,
                     },
+                    flex_direction: direction,
                     ..Default::default()
                 },
                 &nodes,
@@ -82,14 +106,12 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) {
-        self.children.layout(cx);
         let layout = cx.layout_state.layouts.entry(self.id()).or_default();
         layout.layout = *cx.layout_state.taffy.layout(layout.node).unwrap();
-        println!("stack layout {:?}", layout.layout);
+        self.children.layout(cx);
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        println!("paint stack {:?}", self.id());
         cx.save();
         cx.transform(self.id());
         self.children.paint(cx);

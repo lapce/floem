@@ -138,6 +138,7 @@ impl<V: View> WinHandler for App<V> {
         self.handle = handle.clone();
         let size = handle.get_size();
         self.layout_state.set_root_size(size);
+        let _ = self.process_update();
         self.layout();
         self.paint();
     }

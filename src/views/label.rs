@@ -51,6 +51,11 @@ impl View for Label {
 
     fn event(&mut self, event: Event) {}
 
+    fn layout(&mut self, cx: &mut crate::context::LayoutCx) {
+        let layout = cx.layout_state.layouts.entry(self.id()).or_default();
+        layout.layout = *cx.layout_state.taffy.layout(layout.node).unwrap();
+    }
+
     fn build_layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         let mut lcx = parley::LayoutContext::new();
         let mut text_layout_builder = lcx.ranged_builder(cx.font_cx, &self.label, 1.0);

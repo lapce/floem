@@ -63,8 +63,8 @@ impl View for Button {
             .taffy
             .new_leaf(Style {
                 size: taffy::prelude::Size {
-                    width: taffy::style::Dimension::Points(300.0),
-                    height: taffy::style::Dimension::Points(20.0),
+                    width: taffy::style::Dimension::Percent(1.0),
+                    height: taffy::style::Dimension::Percent(1.0),
                 },
                 ..Default::default()
             })
@@ -80,5 +80,10 @@ impl View for Button {
         let border_color = Color::rgb8(0xa1, 0xa1, 0xa1);
         cx.stroke(&Rect::ZERO.with_size(size), border_color, 3.0);
         cx.restore();
+    }
+
+    fn layout(&mut self, cx: &mut crate::context::LayoutCx) {
+        let layout = cx.layout_state.layouts.entry(self.id()).or_default();
+        layout.layout = *cx.layout_state.taffy.layout(layout.node).unwrap();
     }
 }

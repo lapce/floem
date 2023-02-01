@@ -29,10 +29,7 @@ pub trait View {
 
     fn build_layout(&mut self, cx: &mut LayoutCx) -> Node;
 
-    fn layout(&mut self, cx: &mut LayoutCx) {
-        let layout = cx.layout_state.layouts.entry(self.id()).or_default();
-        layout.layout = *cx.layout_state.taffy.layout(layout.node).unwrap();
-    }
+    fn layout(&mut self, cx: &mut LayoutCx);
 
     fn event(&mut self, event: Event);
 
