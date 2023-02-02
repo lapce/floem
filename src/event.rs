@@ -9,7 +9,29 @@ pub enum Event {
     MouseUp(MouseEvent),
     MouseMove(MouseEvent),
     MouseWheel(MouseEvent),
-    MouseLeft(),
+}
+
+impl Event {
+    pub fn point(&self) -> Option<Point> {
+        match self {
+            Event::MouseDown(mouse_event)
+            | Event::MouseUp(mouse_event)
+            | Event::MouseMove(mouse_event)
+            | Event::MouseWheel(mouse_event) => Some(mouse_event.pos),
+        }
+    }
+
+    pub fn offest(mut self, offset: (f64, f64)) -> Event {
+        match &mut self {
+            Event::MouseDown(mouse_event)
+            | Event::MouseUp(mouse_event)
+            | Event::MouseMove(mouse_event)
+            | Event::MouseWheel(mouse_event) => {
+                mouse_event.pos -= offset;
+            }
+        }
+        self
+    }
 }
 
 #[derive(Debug, Clone)]

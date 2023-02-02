@@ -7,6 +7,7 @@ use vello::peniko::{Brush, Color};
 
 use crate::{
     app::{AppContext, UpdateMessage},
+    context::{EventCx, UpdateCx},
     event::Event,
     id::Id,
     text::ParleyBrush,
@@ -33,30 +34,24 @@ pub fn label(cx: AppContext, label: impl Fn() -> String + 'static + Copy) -> Lab
 }
 
 impl View for Label {
-    type State = String;
-
     fn id(&self) -> Id {
         self.id
     }
 
-    fn update(&mut self, id: &[Id], state: Box<dyn Any>) -> ChangeFlags {
+    fn update(&mut self, cx: &mut UpdateCx, id: &[Id], state: Box<dyn Any>) -> ChangeFlags {
         if let Ok(state) = state.downcast() {
             self.label = *state;
             self.text_layout = None;
+            cx.request_layout(self.id());
             ChangeFlags::LAYOUT
         } else {
             ChangeFlags::empty()
         }
     }
 
-    fn event(&mut self, event: Event) {}
+    fn event(&mut self, cx: &mut EventCx, event: Event) {}
 
-    fn layout(&mut self, cx: &mut crate::context::LayoutCx) {
-        let layout = cx.layout_state.layouts.entry(self.id()).or_default();
-        layout.layout = *cx.layout_state.taffy.layout(layout.node).unwrap();
-    }
-
-    fn build_layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
+    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         let mut lcx = parley::LayoutContext::new();
         let mut text_layout_builder = lcx.ranged_builder(cx.font_cx, &self.label, 1.0);
         text_layout_builder.push_default(&parley::style::StyleProperty::Brush(ParleyBrush(
@@ -79,8 +74,8 @@ impl View for Label {
                 ..Default::default()
             })
             .unwrap();
-        let layout = cx.layout_state.layouts.entry(self.id()).or_default();
-        layout.node = node;
+        let layout = cx.layout_state.view_states.entry(self.id()).or_default();
+        layout.node = Some(node);
         node
     }
 

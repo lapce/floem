@@ -1,4 +1,4 @@
-use std::any::Any;
+use std::{any::Any, collections::HashSet};
 
 use glazier::{
     kurbo::{Affine, Size},
@@ -6,10 +6,11 @@ use glazier::{
 };
 use leptos_reactive::Scope;
 use parley::FontContext;
+use taffy::style::Style;
 use vello::SceneBuilder;
 
 use crate::{
-    context::{LayoutCx, LayoutState, PaintCx, PaintState},
+    context::{EventCx, LayoutCx, LayoutState, PaintCx, PaintState, UpdateCx},
     event::Event,
     id::{Id, IDPATHS},
     view::{ChangeFlags, View},
@@ -17,6 +18,7 @@ use crate::{
 
 thread_local! {
     static UPDATE_MESSAGES: std::cell::RefCell<Vec<UpdateMessage>> = Default::default();
+    static STYLE_MESSAGES: std::cell::RefCell<Vec<StyleMessage>> = Default::default();
 }
 
 pub struct App<V: View> {
@@ -37,6 +39,10 @@ pub struct AppContext {
 impl AppContext {
     pub fn add_update(message: UpdateMessage) {
         UPDATE_MESSAGES.with(|messages| messages.borrow_mut().push(message));
+    }
+
+    pub fn add_style(id: Id, style: Style) {
+        STYLE_MESSAGES.with(|messages| messages.borrow_mut().push(StyleMessage::new(id, style)));
     }
 
     pub fn with_id(mut self, id: Id) -> Self {
@@ -60,6 +66,17 @@ impl UpdateMessage {
             id,
             body: Box::new(event),
         }
+    }
+}
+
+pub struct StyleMessage {
+    pub id: Id,
+    pub style: Style,
+}
+
+impl StyleMessage {
+    pub fn new(id: Id, style: Style) -> StyleMessage {
+        StyleMessage { id, style }
     }
 }
 
@@ -89,9 +106,8 @@ impl<V: View> App<V> {
             layout_state: &mut self.layout_state,
             font_cx: &mut self.font_cx,
         };
-        cx.layout_state.root = Some(self.view.build_layout(&mut cx));
+        cx.layout_state.root = Some(self.view.layout(&mut cx));
         cx.layout_state.compute_layout();
-        self.view.layout(&mut cx);
     }
 
     pub fn paint(&mut self) {
@@ -107,26 +123,45 @@ impl<V: View> App<V> {
     }
 
     pub fn process_update(&mut self) -> ChangeFlags {
-        let messages = UPDATE_MESSAGES.with(|messages| messages.take());
+        let mut cx = UpdateCx {
+            layout_state: &mut self.layout_state,
+        };
+        let style_messages = STYLE_MESSAGES.with(|messages| messages.take());
+        let mut flags = if style_messages.is_empty() {
+            ChangeFlags::empty()
+        } else {
+            ChangeFlags::LAYOUT
+        };
+        for msg in style_messages {
+            let state = cx.layout_state.view_states.entry(msg.id).or_default();
+            state.style = msg.style;
+            cx.request_layout(msg.id);
+        }
 
-        let mut flags = ChangeFlags::empty();
+        let messages = UPDATE_MESSAGES.with(|messages| messages.take());
         for message in messages {
             IDPATHS.with(|paths| {
                 if let Some(id_path) = paths.borrow().get(&message.id) {
-                    flags |= self.view.update(&id_path.0, message.body);
+                    flags |= self.view.update(&mut cx, &id_path.0, message.body);
                 }
             });
         }
+
+        cx.layout_state.process_layout_changed();
+
         flags
     }
 
     pub fn event(&mut self, event: Event) {
-        self.view.event(event);
+        let mut cx = EventCx {
+            layout_state: &mut self.layout_state,
+        };
+        self.view.event(&mut cx, event);
         let flags = self.process_update();
         if flags.contains(ChangeFlags::LAYOUT) {
             self.layout();
             self.paint();
-        } else if flags.contains(ChangeFlags::LAYOUT) {
+        } else if flags.contains(ChangeFlags::PAINT) {
             self.paint();
         }
     }
@@ -144,7 +179,6 @@ impl<V: View> WinHandler for App<V> {
     }
 
     fn size(&mut self, size: glazier::kurbo::Size) {
-        println!("size is {size:?}");
         self.layout_state.set_root_size(size);
         self.layout();
         self.paint();

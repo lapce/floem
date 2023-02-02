@@ -8,6 +8,7 @@ use taffy::style::{FlexDirection, Style};
 
 use crate::{
     app::{AppContext, UpdateMessage},
+    context::{EventCx, UpdateCx},
     id::Id,
     view::{ChangeFlags, View},
 };
@@ -26,16 +27,9 @@ enum ListDirection {
 pub struct List<V: View> {
     id: Id,
     children: IndexMap<Id, Option<V>>,
-    direction: ListDirection,
 }
 
-fn list<IF, I, T, KF, K, VF, V>(
-    cx: AppContext,
-    each_fn: IF,
-    key_fn: KF,
-    view_fn: VF,
-    direction: ListDirection,
-) -> List<V>
+pub fn list<IF, I, T, KF, K, VF, V>(cx: AppContext, each_fn: IF, key_fn: KF, view_fn: VF) -> List<V>
 where
     IF: Fn() -> I + 'static,
     I: IntoIterator<Item = T>,
@@ -80,55 +74,17 @@ where
     List {
         id,
         children: IndexMap::new(),
-        direction,
     }
 }
 
-pub fn hlist<IF, I, T, KF, K, VF, V>(
-    cx: AppContext,
-    each_fn: IF,
-    key_fn: KF,
-    view_fn: VF,
-) -> List<V>
-where
-    IF: Fn() -> I + 'static,
-    I: IntoIterator<Item = T>,
-    KF: Fn(&T) -> K + 'static,
-    K: Eq + Hash + 'static,
-    VF: Fn(AppContext, T) -> V + 'static,
-    V: View + 'static,
-    T: 'static,
-{
-    list(cx, each_fn, key_fn, view_fn, ListDirection::Horizontal)
-}
-
-pub fn vlist<IF, I, T, KF, K, VF, V>(
-    cx: AppContext,
-    each_fn: IF,
-    key_fn: KF,
-    view_fn: VF,
-) -> List<V>
-where
-    IF: Fn() -> I + 'static,
-    I: IntoIterator<Item = T>,
-    KF: Fn(&T) -> K + 'static,
-    K: Eq + Hash + 'static,
-    VF: Fn(AppContext, T) -> V + 'static,
-    V: View + 'static,
-    T: 'static,
-{
-    list(cx, each_fn, key_fn, view_fn, ListDirection::Vertical)
-}
-
 impl<V: View + 'static> View for List<V> {
-    type State = Diff<V>;
-
     fn id(&self) -> Id {
         self.id
     }
 
     fn update(
         &mut self,
+        cx: &mut UpdateCx,
         id_path: &[Id],
         state: Box<dyn std::any::Any>,
     ) -> crate::view::ChangeFlags {
@@ -136,6 +92,8 @@ impl<V: View + 'static> View for List<V> {
             if let Ok(diff) = state.downcast() {
                 println!("get new children");
                 apply_cmds(*diff, &mut self.children);
+                cx.request_layout(self.id());
+                cx.reset_children_layout(self.id);
                 ChangeFlags::LAYOUT
             } else {
                 ChangeFlags::empty()
@@ -143,57 +101,33 @@ impl<V: View + 'static> View for List<V> {
         } else {
             let id_path = &id_path[1..];
             if let Some(Some(child)) = self.children.get_mut(id_path.first().unwrap()) {
-                child.update(id_path, state)
+                child.update(cx, id_path, state)
             } else {
                 ChangeFlags::empty()
             }
         }
     }
 
-    fn layout(&mut self, cx: &mut crate::context::LayoutCx) {
-        let layout = cx.layout_state.layouts.entry(self.id()).or_default();
-        layout.layout = *cx.layout_state.taffy.layout(layout.node).unwrap();
-        for (_, child) in self.children.iter_mut() {
-            if let Some(child) = child.as_mut() {
-                child.layout(cx);
-            }
-        }
+    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
+        cx.layout_node(self.id, true, |cx| {
+            let nodes = self
+                .children
+                .iter_mut()
+                .filter_map(|(_id, child)| Some(child.as_mut()?.layout(cx)))
+                .collect::<Vec<_>>();
+            nodes
+        })
     }
 
-    fn build_layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
-        let nodes = self
-            .children
-            .iter_mut()
-            .filter_map(|(_id, child)| Some(child.as_mut()?.build_layout(cx)))
-            .collect::<Vec<_>>();
-        let direction = match self.direction {
-            ListDirection::Horizontal => FlexDirection::Row,
-            ListDirection::Vertical => FlexDirection::Column,
-        };
-        let node = cx
-            .layout_state
-            .taffy
-            .new_with_children(
-                Style {
-                    size: taffy::prelude::Size {
-                        width: taffy::style::Dimension::Auto,
-                        height: taffy::style::Dimension::Auto,
-                    },
-                    flex_direction: direction,
-                    ..Default::default()
-                },
-                &nodes,
-            )
-            .unwrap();
-        let layout = cx.layout_state.layouts.entry(self.id()).or_default();
-        layout.node = node;
-        node
-    }
-
-    fn event(&mut self, event: crate::event::Event) {
+    fn event(&mut self, cx: &mut EventCx, event: crate::event::Event) {
         for (_, child) in self.children.iter_mut() {
             if let Some(child) = child.as_mut() {
-                child.event(event.clone());
+                let id = child.id();
+                if cx.should_send(id, &event) {
+                    let event = cx.offset_event(id, event.clone());
+                    child.event(cx, cx.offset_event(id, event));
+                    break;
+                }
             }
         }
     }

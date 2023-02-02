@@ -4,7 +4,7 @@ use bitflags::bitflags;
 use taffy::prelude::Node;
 
 use crate::{
-    context::{LayoutCx, PaintCx},
+    context::{EventCx, LayoutCx, PaintCx, UpdateCx},
     event::Event,
     id::Id,
 };
@@ -21,17 +21,13 @@ bitflags! {
 }
 
 pub trait View {
-    type State;
-
     fn id(&self) -> Id;
 
-    fn update(&mut self, id_path: &[Id], state: Box<dyn Any>) -> ChangeFlags;
+    fn update(&mut self, cx: &mut UpdateCx, id_path: &[Id], state: Box<dyn Any>) -> ChangeFlags;
 
-    fn build_layout(&mut self, cx: &mut LayoutCx) -> Node;
+    fn layout(&mut self, cx: &mut LayoutCx) -> Node;
 
-    fn layout(&mut self, cx: &mut LayoutCx);
-
-    fn event(&mut self, event: Event);
+    fn event(&mut self, cx: &mut EventCx, event: Event);
 
     fn paint(&mut self, cx: &mut PaintCx);
 }

@@ -1,12 +1,13 @@
 use floem::{
     app::AppContext,
     button::button,
-    height, hlist, label,
+    geometry::Size,
+    label, list,
     reactive::create_signal,
-    stack::{hstack, vstack},
-    style::Dimension,
+    stack::stack,
+    style::{Dimension, FlexDirection, Style},
     view::View,
-    vlist, width, Decorators,
+    Decorators,
 };
 
 fn app_logic(cx: AppContext) -> impl View {
@@ -16,16 +17,32 @@ fn app_logic(cx: AppContext) -> impl View {
     let (c, set_c) = create_signal(cx.scope, "b".to_string());
     let (labels, set_labels) = create_signal(cx.scope, vec![a, b, c]);
 
-    vstack(cx, move |cx| {
+    stack(cx, move |cx| {
         (
-            vlist(
+            list(
                 cx,
                 move || labels.get(),
                 move |item| item.get(),
-                |cx, item| button(cx, move || item.get(), move || {}),
+                move |cx, item| {
+                    button(
+                        cx,
+                        move || item.get(),
+                        move || {
+                            set_counter.update(|counter| *counter += 1);
+                        },
+                    )
+                    .style(cx, |_| Style {
+                        size: Size {
+                            width: Dimension::Points(50.0),
+                            height: Dimension::Points(20.0),
+                        },
+                        ..Default::default()
+                    })
+                },
             ),
-            width(cx, Dimension::Points(300.0), |cx| {
-                height(cx, Dimension::Points(200.0), |cx| {
+            stack(cx, move |cx| {
+                (
+                    label(cx, move || couter.get().to_string()),
                     button(
                         cx,
                         move || couter.get().to_string(),
@@ -33,35 +50,81 @@ fn app_logic(cx: AppContext) -> impl View {
                             set_counter.update(|counter| *counter += 1);
                         },
                     )
-                })
+                    .style(cx, |_| Style {
+                        size: Size {
+                            width: Dimension::Points(50.0),
+                            height: Dimension::Points(20.0),
+                        },
+                        ..Default::default()
+                    }),
+                )
             }),
-            width(cx, Dimension::Points(100.0), |cx| {
-                height(cx, Dimension::Points(50.0), |cx| {
-                    button(
-                        cx,
-                        move || couter.get().to_string(),
-                        move || {
-                            set_counter.update(|counter| *counter += 1);
-                        },
-                    )
-                })
+            label(cx, move || couter.get().to_string()),
+            button(
+                cx,
+                move || couter.get().to_string(),
+                move || {
+                    set_counter.update(|counter| *counter += 1);
+                },
+            )
+            .style(cx, |_| Style {
+                size: Size {
+                    width: Dimension::Auto,
+                    height: Dimension::Auto,
+                },
+                flex_grow: 1.0,
+                ..Default::default()
+            }),
+            label(cx, move || "seprate".to_string()),
+            button(
+                cx,
+                move || couter.get().to_string(),
+                move || {
+                    set_counter.update(|counter| *counter += 1);
+                },
+            )
+            .style(cx, |_| Style {
+                size: Size {
+                    width: Dimension::Auto,
+                    height: Dimension::Auto,
+                },
+                flex_grow: 2.0,
+                ..Default::default()
             }),
             // height(cx, Dimension::Points(300.0), |cx| {
             label(cx, move || couter.get().to_string()),
             // }),
-            vstack(cx, move |cx| {
+            stack(cx, move |cx| {
                 (
+                    label(cx, move || couter.get().to_string()),
+                    label(cx, move || couter.get().to_string()),
+                    label(cx, move || couter.get().to_string()),
                     button(
                         cx,
                         move || couter.get().to_string(),
                         move || {
                             set_counter.update(|counter| *counter += 1);
                         },
-                    ),
+                    )
+                    .style(cx, |_| Style {
+                        size: Size {
+                            width: Dimension::Points(50.0),
+                            height: Dimension::Points(20.0),
+                        },
+                        ..Default::default()
+                    }),
                     label(cx, move || couter.get().to_string()),
                 )
             }),
         )
+    })
+    .style(cx, |_| Style {
+        size: Size {
+            width: Dimension::Percent(1.0),
+            height: Dimension::Percent(1.0),
+        },
+        flex_direction: FlexDirection::Column,
+        ..Default::default()
     })
 }
 

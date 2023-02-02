@@ -7,6 +7,7 @@ use vello::peniko::Color;
 
 use crate::{
     app::{AppContext, UpdateMessage},
+    context::{EventCx, UpdateCx},
     event::Event,
     id::Id,
     view::{ChangeFlags, View},
@@ -36,42 +37,28 @@ pub fn button(
 }
 
 impl View for Button {
-    type State = String;
-
     fn id(&self) -> Id {
         self.id
     }
 
-    fn update(&mut self, id: &[Id], state: Box<dyn Any>) -> ChangeFlags {
+    fn update(&mut self, cx: &mut UpdateCx, id: &[Id], state: Box<dyn Any>) -> ChangeFlags {
         if let Ok(state) = state.downcast() {
             self.label = *state;
+            cx.request_layout(self.id());
             ChangeFlags::LAYOUT
         } else {
             ChangeFlags::empty()
         }
     }
 
-    fn event(&mut self, event: Event) {
+    fn event(&mut self, cx: &mut EventCx, event: Event) {
         if let Event::MouseDown(mouse_event) = event {
             (self.onclick)();
         }
     }
 
-    fn build_layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
-        let node = cx
-            .layout_state
-            .taffy
-            .new_leaf(Style {
-                size: taffy::prelude::Size {
-                    width: taffy::style::Dimension::Percent(1.0),
-                    height: taffy::style::Dimension::Percent(1.0),
-                },
-                ..Default::default()
-            })
-            .unwrap();
-        let layout = cx.layout_state.layouts.entry(self.id()).or_default();
-        layout.node = node;
-        node
+    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
+        cx.layout_node(self.id, false, |_| Vec::new())
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
@@ -80,10 +67,5 @@ impl View for Button {
         let border_color = Color::rgb8(0xa1, 0xa1, 0xa1);
         cx.stroke(&Rect::ZERO.with_size(size), border_color, 3.0);
         cx.restore();
-    }
-
-    fn layout(&mut self, cx: &mut crate::context::LayoutCx) {
-        let layout = cx.layout_state.layouts.entry(self.id()).or_default();
-        layout.layout = *cx.layout_state.taffy.layout(layout.node).unwrap();
     }
 }

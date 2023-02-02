@@ -1,62 +1,36 @@
 use std::any::Any;
 
 use taffy::prelude::Node;
-use vello::SceneBuilder;
 
-use crate::context::{LayoutCx, PaintCx};
+use crate::context::{LayoutCx, PaintCx, UpdateCx};
 use crate::event::Event;
 use crate::id::Id;
 use crate::view::{ChangeFlags, View};
 
 pub trait ViewTuple {
-    type State;
-
-    fn update(&mut self, id_path: &[Id], state: Box<dyn Any>) -> ChangeFlags;
-
-    fn event(&mut self, event: Event);
-
-    fn build_layout(&mut self, cx: &mut LayoutCx) -> Vec<Node>;
-
-    fn layout(&mut self, cx: &mut LayoutCx);
+    fn update(&mut self, cx: &mut UpdateCx, id_path: &[Id], state: Box<dyn Any>) -> ChangeFlags;
 
     fn paint(&mut self, cx: &mut PaintCx);
+
+    fn foreach<F: FnMut(&mut dyn View) -> bool>(&mut self, f: &mut F);
 }
 
 macro_rules! impl_view_tuple {
     ( $n: tt; $( $t:ident),* ; $( $i:tt ),* ) => {
 
         impl< $( $t: View, )* > ViewTuple for ( $( $t, )* ) {
-            type State = ( $( $t::State, )* [Id; $n]);
-
-            fn update(&mut self, id_path: &[Id], state: Box<dyn Any>) -> ChangeFlags {
+            fn update(&mut self, cx: &mut UpdateCx, id_path: &[Id], state: Box<dyn Any>) -> ChangeFlags {
                 let hd = id_path[0];
                 $(
                 if hd == self.$i.id() {
-                    self.$i.update(id_path, state)
+                    self.$i.update(cx, id_path, state)
                 } else )* {
                     ChangeFlags::empty()
                 }
             }
 
-            fn event(&mut self, event: Event) {
-                $(self.$i.event(event.clone()); )*
-            }
-
-            fn build_layout(&mut self, cx: &mut LayoutCx) -> Vec<Node> {
-                let mut nodes = Vec::new();
-                $(
-                    let node = self.$i.build_layout(cx);
-                    let layout = cx.layout_state.layouts.entry(self.$i.id()).or_default();
-                    layout.node = node;
-                    nodes.push(node);
-                )*
-                nodes
-            }
-
-            fn layout(&mut self, cx: &mut LayoutCx) {
-                $(
-                    self.$i.layout(cx);
-                )*
+            fn foreach<F: FnMut(&mut dyn View) -> bool>(&mut self, f: &mut F) {
+                $( if f(&mut self.$i) { return; } )*
             }
 
             fn paint(&mut self, cx: &mut PaintCx) {

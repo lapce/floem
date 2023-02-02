@@ -10,7 +10,7 @@ pub mod view_tuple;
 mod views;
 
 pub use leptos_reactive as reactive;
-pub use taffy::style;
+pub use taffy::{geometry, style};
 pub use views::*;
 
 use app::{App, AppContext};

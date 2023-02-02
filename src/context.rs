@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use glazier::{
     kurbo::{Affine, Point, Shape, Size, Vec2},
@@ -7,7 +7,7 @@ use glazier::{
 use parley::FontContext;
 use taffy::{
     prelude::{Layout, Node},
-    style::AvailableSpace,
+    style::{AvailableSpace, Style},
 };
 use vello::{
     glyph::{
@@ -19,18 +19,24 @@ use vello::{
     Renderer, Scene, SceneBuilder, SceneFragment,
 };
 
-use crate::{id::Id, text::ParleyBrush};
+use crate::{
+    event::Event,
+    id::{Id, IDPATHS},
+    text::ParleyBrush,
+};
 
 pub struct ViewState {
-    pub(crate) layout: Layout,
-    pub(crate) node: Node,
+    pub(crate) node: Option<Node>,
+    pub(crate) style: Style,
+    pub(crate) children_nodes: Option<Vec<Node>>,
 }
 
 impl Default for ViewState {
     fn default() -> Self {
         Self {
-            layout: Layout::new(),
-            node: Node::default(),
+            node: None,
+            style: Style::DEFAULT,
+            children_nodes: None,
         }
     }
 }
@@ -39,7 +45,8 @@ pub struct LayoutState {
     pub(crate) root: Option<Node>,
     pub(crate) root_size: Size,
     pub taffy: taffy::Taffy,
-    pub(crate) layouts: HashMap<Id, ViewState>,
+    pub(crate) view_states: HashMap<Id, ViewState>,
+    pub(crate) layout_changed: HashSet<Id>,
 }
 
 impl LayoutState {
@@ -48,7 +55,8 @@ impl LayoutState {
             root: None,
             root_size: Size::ZERO,
             taffy: taffy::Taffy::new(),
-            layouts: HashMap::new(),
+            view_states: HashMap::new(),
+            layout_changed: HashSet::new(),
         }
     }
 
@@ -59,7 +67,6 @@ impl LayoutState {
 
     pub fn compute_layout(&mut self) {
         if let Some(root) = self.root {
-            println!("compute layou {:?}", self.root_size);
             self.taffy.compute_layout(
                 root,
                 taffy::prelude::Size {
@@ -69,11 +76,121 @@ impl LayoutState {
             );
         }
     }
+
+    pub(crate) fn process_layout_changed(&mut self) {
+        let changed = std::mem::take(&mut self.layout_changed);
+        IDPATHS.with(|paths| {
+            let paths = paths.borrow();
+            for id in changed {
+                if let Some(id_path) = paths.get(&id) {
+                    for parent in &id_path.0[..&id_path.0.len() - 1] {
+                        self.reset_children_layout(*parent);
+                    }
+                }
+            }
+        });
+        self.layout_changed.clear();
+    }
+
+    pub(crate) fn request_layout(&mut self, id: Id) {
+        let view = self.view_states.entry(id).or_default();
+        view.node = None;
+        self.layout_changed.insert(id);
+    }
+
+    pub(crate) fn layout_node(&mut self, id: Id) -> Option<Node> {
+        let view = self.view_states.entry(id).or_default();
+        view.node
+    }
+
+    pub(crate) fn reset_children_layout(&mut self, id: Id) {
+        let view = self.view_states.entry(id).or_default();
+        view.children_nodes = None;
+        self.request_layout(id);
+    }
+
+    fn get_layout(&self, id: Id) -> Option<Layout> {
+        self.view_states
+            .get(&id)
+            .and_then(|view| view.node.as_ref())
+            .and_then(|node| self.taffy.layout(*node).ok())
+            .copied()
+    }
+}
+
+pub struct EventCx<'a> {
+    pub(crate) layout_state: &'a mut LayoutState,
+}
+
+impl<'a> EventCx<'a> {
+    pub(crate) fn get_layout(&self, id: Id) -> Option<Layout> {
+        self.layout_state.get_layout(id)
+    }
+
+    pub(crate) fn offset_event(&self, id: Id, event: Event) -> Event {
+        if let Some(layout) = self.get_layout(id) {
+            event.offest((layout.location.x as f64, layout.location.y as f64))
+        } else {
+            event
+        }
+    }
+
+    pub(crate) fn should_send(&mut self, id: Id, event: &Event) -> bool {
+        let point = event.point();
+        if let Some(point) = point {
+            if let Some(layout) = self.get_layout(id) {
+                if layout.location.x as f64 <= point.x
+                    && point.x <= (layout.location.x + layout.size.width) as f64
+                    && layout.location.y as f64 <= point.y
+                    && point.y <= (layout.location.y + layout.size.height) as f64
+                {
+                    return true;
+                }
+            }
+        }
+        false
+    }
 }
 
 pub struct LayoutCx<'a> {
     pub(crate) layout_state: &'a mut LayoutState,
     pub(crate) font_cx: &'a mut FontContext,
+}
+
+impl<'a> LayoutCx<'a> {
+    pub(crate) fn layout_node(
+        &mut self,
+        id: Id,
+        has_children: bool,
+        mut children: impl FnMut(&mut LayoutCx) -> Vec<Node>,
+    ) -> Node {
+        if let Some(node) = self.layout_state.layout_node(id) {
+            return node;
+        }
+        let view = self.layout_state.view_states.entry(id).or_default();
+        let style = view.style.clone();
+        let node = if !has_children {
+            self.layout_state.taffy.new_leaf(style).unwrap()
+        } else if let Some(nodes) = view.children_nodes.as_ref() {
+            self.layout_state
+                .taffy
+                .new_with_children(style, nodes)
+                .unwrap()
+        } else {
+            let nodes = children(self);
+            let node = self
+                .layout_state
+                .taffy
+                .new_with_children(style, &nodes)
+                .unwrap();
+            let view = self.layout_state.view_states.entry(id).or_default();
+            view.children_nodes = Some(nodes);
+            node
+        };
+        let view = self.layout_state.view_states.entry(id).or_default();
+        view.node = Some(node);
+        node
+    }
 }
 
 pub struct PaintCx<'a> {
@@ -92,21 +209,21 @@ impl<'a> PaintCx<'a> {
         self.transform = self.saved_transforms.pop().unwrap_or_default();
     }
 
+    fn get_layout(&mut self, id: Id) -> Option<Layout> {
+        self.layout_state.get_layout(id)
+    }
+
     pub fn transform(&mut self, id: Id) -> Size {
-        let size = if let Some(layout) = self.layout_state.layouts.get(&id) {
-            let offset = layout.layout.location;
+        if let Some(layout) = self.get_layout(id) {
+            let offset = layout.location;
             let mut new = self.transform.as_coeffs();
             new[4] += offset.x as f64;
             new[5] += offset.y as f64;
             self.transform = Affine::new(new);
-            Size::new(
-                layout.layout.size.width as f64,
-                layout.layout.size.height as f64,
-            )
+            Size::new(layout.size.width as f64, layout.size.height as f64)
         } else {
             Size::ZERO
-        };
-        size
+        }
     }
 
     pub fn stroke<'b>(
@@ -228,5 +345,19 @@ impl PaintState {
             surface_texture.present();
             device.poll(wgpu::Maintain::Wait);
         }
+    }
+}
+
+pub struct UpdateCx<'a> {
+    pub(crate) layout_state: &'a mut LayoutState,
+}
+
+impl<'a> UpdateCx<'a> {
+    pub(crate) fn reset_children_layout(&mut self, id: Id) {
+        self.layout_state.reset_children_layout(id);
+    }
+
+    pub(crate) fn request_layout(&mut self, id: Id) {
+        self.layout_state.request_layout(id);
     }
 }

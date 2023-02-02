@@ -1,7 +1,7 @@
 use std::num::NonZeroU64;
 
 thread_local! {
-pub(crate)    static IDPATHS: std::cell::RefCell<std::collections::HashMap<Id,IdPath>>  = Default::default();
+    pub(crate) static IDPATHS: std::cell::RefCell<std::collections::HashMap<Id,IdPath>>  = Default::default();
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Hash)]
