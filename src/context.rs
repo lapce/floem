@@ -7,7 +7,7 @@ use glazier::{
 use parley::FontContext;
 use taffy::{
     prelude::{Layout, Node},
-    style::{AvailableSpace, Style},
+    style::AvailableSpace,
 };
 use vello::{
     glyph::{
@@ -22,6 +22,7 @@ use vello::{
 use crate::{
     event::Event,
     id::{Id, IDPATHS},
+    style::Style,
     text::ParleyBrush,
 };
 
@@ -35,7 +36,7 @@ impl Default for ViewState {
     fn default() -> Self {
         Self {
             node: None,
-            style: Style::DEFAULT,
+            style: Style::default(),
             children_nodes: None,
         }
     }
@@ -129,7 +130,7 @@ impl<'a> EventCx<'a> {
 
     pub(crate) fn offset_event(&self, id: Id, event: Event) -> Event {
         if let Some(layout) = self.get_layout(id) {
-            event.offest((layout.location.x as f64, layout.location.y as f64))
+            event.offset((layout.location.x as f64, layout.location.y as f64))
         } else {
             event
         }
@@ -168,7 +169,7 @@ impl<'a> LayoutCx<'a> {
             return node;
         }
         let view = self.layout_state.view_states.entry(id).or_default();
-        let style = view.style.clone();
+        let style = (&view.style).into();
         let node = if !has_children {
             self.layout_state.taffy.new_leaf(style).unwrap()
         } else if let Some(nodes) = view.children_nodes.as_ref() {
@@ -211,6 +212,10 @@ impl<'a> PaintCx<'a> {
 
     fn get_layout(&mut self, id: Id) -> Option<Layout> {
         self.layout_state.get_layout(id)
+    }
+
+    pub fn get_style(&self, id: Id) -> Option<&Style> {
+        self.layout_state.view_states.get(&id).map(|s| &s.style)
     }
 
     pub fn transform(&mut self, id: Id) -> Size {
@@ -280,11 +285,10 @@ pub struct PaintState {
     renderer: Option<Renderer>,
     scene: Scene,
     handle: glazier::WindowHandle,
-    async_handle: tokio::runtime::Handle,
 }
 
 impl PaintState {
-    pub fn new(async_handle: tokio::runtime::Handle) -> Self {
+    pub fn new() -> Self {
         let render_cx = RenderContext::new().unwrap();
 
         Self {
@@ -294,7 +298,6 @@ impl PaintState {
             renderer: None,
             scene: Scene::default(),
             handle: Default::default(),
-            async_handle,
         }
     }
 
@@ -313,10 +316,9 @@ impl PaintState {
         let height = size.height as u32;
         if self.surface.is_none() {
             println!("render size: {:?}", size);
-            self.surface = Some(
-                self.async_handle
-                    .block_on(self.render_cx.create_surface(handle, width, height)),
-            );
+            self.surface = Some(futures::executor::block_on(
+                self.render_cx.create_surface(handle, width, height),
+            ));
         }
         if let Some(surface) = self.surface.as_mut() {
             if surface.config.width != width || surface.config.height != height {

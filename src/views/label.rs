@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use glazier::kurbo::Point;
-use leptos_reactive::create_effect;
+use leptos_reactive::create_isomorphic_effect;
 use taffy::style::Style;
 use vello::peniko::{Brush, Color};
 
@@ -22,7 +22,7 @@ pub struct Label {
 
 pub fn label(cx: AppContext, label: impl Fn() -> String + 'static + Copy) -> Label {
     let id = cx.new_id();
-    create_effect(cx.scope, move |_| {
+    create_isomorphic_effect(cx.scope, move |_| {
         let new_label = label();
         AppContext::add_update(UpdateMessage::new(id, new_label));
     });
@@ -80,9 +80,6 @@ impl View for Label {
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        cx.save();
-        let size = cx.transform(self.id());
         cx.render_text(self.text_layout.as_ref().unwrap(), Point::ZERO);
-        cx.restore();
     }
 }

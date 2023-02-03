@@ -1,31 +1,18 @@
-use leptos_reactive::create_effect;
-use taffy::style::{FlexDirection, Style};
-
 use crate::{
-    app::{AppContext, UpdateMessage},
-    context::{EventCx, LayoutCx, UpdateCx},
+    app::AppContext,
+    context::{EventCx, UpdateCx},
     id::Id,
     view::{ChangeFlags, View},
     view_tuple::ViewTuple,
 };
-
-enum StackDirection {
-    Horizontal,
-    Vertical,
-}
 
 pub struct Stack<VT> {
     id: Id,
     children: VT,
 }
 
-pub fn stack<VT: ViewTuple + 'static>(
-    cx: AppContext,
-    children: impl Fn(AppContext) -> VT + 'static + Copy,
-) -> Stack<VT> {
+pub fn stack<VT: ViewTuple + 'static>(cx: AppContext, children: VT) -> Stack<VT> {
     let id = cx.id.new();
-    let children_cx = cx.with_id(id);
-    let children = children(children_cx);
     Stack { id, children }
 }
 
@@ -85,9 +72,9 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        cx.save();
-        cx.transform(self.id());
-        self.children.paint(cx);
-        cx.restore();
+        self.children.foreach(&mut |view| {
+            view.paint_main(cx);
+            false
+        });
     }
 }

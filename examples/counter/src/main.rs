@@ -1,7 +1,6 @@
 use floem::{
     app::AppContext,
     button::button,
-    geometry::Size,
     label, list,
     reactive::create_signal,
     stack::stack,
@@ -17,7 +16,8 @@ fn app_logic(cx: AppContext) -> impl View {
     let (c, set_c) = create_signal(cx.scope, "b".to_string());
     let (labels, set_labels) = create_signal(cx.scope, vec![a, b, c]);
 
-    stack(cx, move |cx| {
+    stack(
+        cx,
         (
             list(
                 cx,
@@ -31,16 +31,15 @@ fn app_logic(cx: AppContext) -> impl View {
                             set_counter.update(|counter| *counter += 1);
                         },
                     )
-                    .style(cx, |_| Style {
-                        size: Size {
-                            width: Dimension::Points(50.0),
-                            height: Dimension::Points(20.0),
-                        },
+                    .style(cx, || Style {
+                        width: Dimension::Points(50.0),
+                        height: Dimension::Points(20.0),
                         ..Default::default()
                     })
                 },
             ),
-            stack(cx, move |cx| {
+            stack(
+                cx,
                 (
                     label(cx, move || couter.get().to_string()),
                     button(
@@ -50,15 +49,13 @@ fn app_logic(cx: AppContext) -> impl View {
                             set_counter.update(|counter| *counter += 1);
                         },
                     )
-                    .style(cx, |_| Style {
-                        size: Size {
-                            width: Dimension::Points(50.0),
-                            height: Dimension::Points(20.0),
-                        },
+                    .style(cx, || Style {
+                        width: Dimension::Points(50.0),
+                        height: Dimension::Points(20.0),
                         ..Default::default()
                     }),
-                )
-            }),
+                ),
+            ),
             label(cx, move || couter.get().to_string()),
             button(
                 cx,
@@ -67,11 +64,9 @@ fn app_logic(cx: AppContext) -> impl View {
                     set_counter.update(|counter| *counter += 1);
                 },
             )
-            .style(cx, |_| Style {
-                size: Size {
-                    width: Dimension::Auto,
-                    height: Dimension::Auto,
-                },
+            .style(cx, || Style {
+                width: Dimension::Auto,
+                height: Dimension::Auto,
                 flex_grow: 1.0,
                 ..Default::default()
             }),
@@ -83,18 +78,15 @@ fn app_logic(cx: AppContext) -> impl View {
                     set_counter.update(|counter| *counter += 1);
                 },
             )
-            .style(cx, |_| Style {
-                size: Size {
-                    width: Dimension::Auto,
-                    height: Dimension::Auto,
-                },
+            .style(cx, || Style {
+                width: Dimension::Auto,
+                height: Dimension::Auto,
                 flex_grow: 2.0,
                 ..Default::default()
             }),
-            // height(cx, Dimension::Points(300.0), |cx| {
             label(cx, move || couter.get().to_string()),
-            // }),
-            stack(cx, move |cx| {
+            stack(
+                cx,
                 (
                     label(cx, move || couter.get().to_string()),
                     label(cx, move || couter.get().to_string()),
@@ -106,23 +98,19 @@ fn app_logic(cx: AppContext) -> impl View {
                             set_counter.update(|counter| *counter += 1);
                         },
                     )
-                    .style(cx, |_| Style {
-                        size: Size {
-                            width: Dimension::Points(50.0),
-                            height: Dimension::Points(20.0),
-                        },
+                    .style(cx, || Style {
+                        width: Dimension::Points(50.0),
+                        height: Dimension::Points(20.0),
                         ..Default::default()
                     }),
                     label(cx, move || couter.get().to_string()),
-                )
-            }),
-        )
-    })
-    .style(cx, |_| Style {
-        size: Size {
-            width: Dimension::Percent(1.0),
-            height: Dimension::Percent(1.0),
-        },
+                ),
+            ),
+        ),
+    )
+    .style(cx, || Style {
+        width: Dimension::Percent(1.0),
+        height: Dimension::Percent(1.0),
         flex_direction: FlexDirection::Column,
         ..Default::default()
     })

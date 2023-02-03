@@ -21,7 +21,7 @@ impl Event {
         }
     }
 
-    pub fn offest(mut self, offset: (f64, f64)) -> Event {
+    pub fn offset(mut self, offset: (f64, f64)) -> Event {
         match &mut self {
             Event::MouseDown(mouse_event)
             | Event::MouseUp(mouse_event)

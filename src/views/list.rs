@@ -1,7 +1,7 @@
 use std::hash::{BuildHasherDefault, Hash};
 
 use indexmap::IndexMap;
-use leptos_reactive::create_effect;
+use leptos_reactive::create_isomorphic_effect;
 use rustc_hash::FxHasher;
 use smallvec::SmallVec;
 use taffy::style::{FlexDirection, Style};
@@ -43,7 +43,7 @@ where
 
     let mut child_cx = cx;
     child_cx.id = id;
-    create_effect(cx.scope, move |prev_hash_run| {
+    create_isomorphic_effect(cx.scope, move |prev_hash_run| {
         println!("list create effect");
         let items = each_fn();
         let items = items.into_iter().collect::<SmallVec<[_; 128]>>();
@@ -133,14 +133,11 @@ impl<V: View + 'static> View for List<V> {
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        cx.save();
-        cx.transform(self.id());
         for (_, child) in self.children.iter_mut() {
             if let Some(child) = child.as_mut() {
-                child.paint(cx);
+                child.paint_main(cx);
             }
         }
-        cx.restore();
     }
 }
 

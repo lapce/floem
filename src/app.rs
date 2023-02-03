@@ -2,17 +2,19 @@ use std::{any::Any, collections::HashSet};
 
 use glazier::{
     kurbo::{Affine, Size},
-    WinHandler,
+    IdleHandle, WinHandler,
 };
 use leptos_reactive::Scope;
 use parley::FontContext;
-use taffy::style::Style;
+use taffy::style::Dimension;
 use vello::SceneBuilder;
 
 use crate::{
     context::{EventCx, LayoutCx, LayoutState, PaintCx, PaintState, UpdateCx},
     event::Event,
+    ext_event::{EXT_EVENT_HANDLER, WRITE_SIGNALS},
     id::{Id, IDPATHS},
+    style::Style,
     view::{ChangeFlags, View},
 };
 
@@ -24,7 +26,7 @@ thread_local! {
 pub struct App<V: View> {
     view: V,
     handle: glazier::WindowHandle,
-    async_rt: tokio::runtime::Runtime,
+    idle_handle: Option<IdleHandle>,
     layout_state: LayoutState,
     paint_state: PaintState,
     font_cx: FontContext,
@@ -82,21 +84,18 @@ impl StyleMessage {
 
 impl<V: View> App<V> {
     pub fn new(scope: Scope, app_logic: impl Fn(AppContext) -> V) -> Self {
-        let async_rt = tokio::runtime::Runtime::new().unwrap();
-
         let context = AppContext {
             scope,
             id: Id::next(),
         };
 
-        let async_handle = async_rt.handle().clone();
         let view = app_logic(context);
         Self {
             view,
-            async_rt,
             layout_state: LayoutState::new(),
-            paint_state: PaintState::new(async_handle),
+            paint_state: PaintState::new(),
             handle: Default::default(),
+            idle_handle: None,
             font_cx: FontContext::new(),
         }
     }
@@ -118,11 +117,11 @@ impl<V: View> App<V> {
             saved_transforms: Vec::new(),
             transform: Affine::IDENTITY,
         };
-        self.view.paint(&mut cx);
+        self.view.paint_main(&mut cx);
         self.paint_state.render();
     }
 
-    pub fn process_update(&mut self) -> ChangeFlags {
+    pub fn process_update(&mut self) {
         let mut cx = UpdateCx {
             layout_state: &mut self.layout_state,
         };
@@ -149,15 +148,6 @@ impl<V: View> App<V> {
 
         cx.layout_state.process_layout_changed();
 
-        flags
-    }
-
-    pub fn event(&mut self, event: Event) {
-        let mut cx = EventCx {
-            layout_state: &mut self.layout_state,
-        };
-        self.view.event(&mut cx, event);
-        let flags = self.process_update();
         if flags.contains(ChangeFlags::LAYOUT) {
             self.layout();
             self.paint();
@@ -165,17 +155,36 @@ impl<V: View> App<V> {
             self.paint();
         }
     }
+
+    pub fn event(&mut self, event: Event) {
+        let mut cx = EventCx {
+            layout_state: &mut self.layout_state,
+        };
+        self.view.event(&mut cx, event);
+        self.process_update();
+    }
+
+    fn idle(&mut self) {
+        while let Some(id) = EXT_EVENT_HANDLER.queue.lock().pop_front() {
+            WRITE_SIGNALS.with(|signals| {
+                let signals = signals.borrow_mut();
+                if let Some(write) = signals.get(&id) {
+                    write.set(Some(()));
+                }
+            });
+        }
+        self.process_update();
+    }
 }
 
 impl<V: View> WinHandler for App<V> {
     fn connect(&mut self, handle: &glazier::WindowHandle) {
+        self.idle_handle = handle.get_idle_handle();
         self.paint_state.connect(handle);
         self.handle = handle.clone();
         let size = handle.get_size();
         self.layout_state.set_root_size(size);
-        let _ = self.process_update();
-        self.layout();
-        self.paint();
+        self.process_update();
     }
 
     fn size(&mut self, size: glazier::kurbo::Size) {
@@ -192,6 +201,22 @@ impl<V: View> WinHandler for App<V> {
 
     fn mouse_down(&mut self, event: &glazier::MouseEvent) {
         self.event(Event::MouseDown(event.into()));
+    }
+
+    fn mouse_up(&mut self, event: &glazier::MouseEvent) {
+        self.event(Event::MouseUp(event.into()));
+    }
+
+    fn mouse_move(&mut self, event: &glazier::MouseEvent) {
+        self.event(Event::MouseMove(event.into()));
+    }
+
+    fn wheel(&mut self, event: &glazier::MouseEvent) {
+        self.event(Event::MouseWheel(event.into()));
+    }
+
+    fn idle(&mut self, token: glazier::IdleToken) {
+        self.idle();
     }
 
     fn as_any(&mut self) -> &mut dyn Any {

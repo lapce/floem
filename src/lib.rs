@@ -2,15 +2,16 @@ pub mod app;
 pub mod button;
 pub mod context;
 pub mod event;
+pub mod ext_event;
 pub mod id;
 pub mod stack;
+pub mod style;
 pub mod text;
 pub mod view;
 pub mod view_tuple;
 mod views;
 
 pub use leptos_reactive as reactive;
-pub use taffy::{geometry, style};
 pub use views::*;
 
 use app::{App, AppContext};

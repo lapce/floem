@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use glazier::kurbo::{Rect, Size};
-use leptos_reactive::create_effect;
+use leptos_reactive::create_isomorphic_effect;
 use taffy::style::Style;
 use vello::peniko::Color;
 
@@ -25,7 +25,7 @@ pub fn button(
     onclick: impl Fn() + 'static,
 ) -> Button {
     let id = cx.new_id();
-    create_effect(cx.scope, move |_| {
+    create_isomorphic_effect(cx.scope, move |_| {
         let new_label = label();
         AppContext::add_update(UpdateMessage::new(id, new_label));
     });
@@ -61,11 +61,5 @@ impl View for Button {
         cx.layout_node(self.id, false, |_| Vec::new())
     }
 
-    fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        cx.save();
-        let size = cx.transform(self.id());
-        let border_color = Color::rgb8(0xa1, 0xa1, 0xa1);
-        cx.stroke(&Rect::ZERO.with_size(size), border_color, 3.0);
-        cx.restore();
-    }
+    fn paint(&mut self, cx: &mut crate::context::PaintCx) {}
 }
