@@ -16,9 +16,9 @@ fn app_logic(cx: AppContext) -> impl View {
     let (c, set_c) = create_signal(cx.scope, "b".to_string());
     let (labels, set_labels) = create_signal(cx.scope, vec![a, b, c]);
 
-    stack(
-        cx,
+    stack(cx, move |cx| {
         (
+            label(cx, move || couter.get().to_string()),
             list(
                 cx,
                 move || labels.get(),
@@ -38,8 +38,7 @@ fn app_logic(cx: AppContext) -> impl View {
                     })
                 },
             ),
-            stack(
-                cx,
+            stack(cx, move |cx| {
                 (
                     label(cx, move || couter.get().to_string()),
                     button(
@@ -54,8 +53,8 @@ fn app_logic(cx: AppContext) -> impl View {
                         height: Dimension::Points(20.0),
                         ..Default::default()
                     }),
-                ),
-            ),
+                )
+            }),
             label(cx, move || couter.get().to_string()),
             button(
                 cx,
@@ -85,8 +84,7 @@ fn app_logic(cx: AppContext) -> impl View {
                 ..Default::default()
             }),
             label(cx, move || couter.get().to_string()),
-            stack(
-                cx,
+            stack(cx, move |cx| {
                 (
                     label(cx, move || couter.get().to_string()),
                     label(cx, move || couter.get().to_string()),
@@ -104,10 +102,10 @@ fn app_logic(cx: AppContext) -> impl View {
                         ..Default::default()
                     }),
                     label(cx, move || couter.get().to_string()),
-                ),
-            ),
-        ),
-    )
+                )
+            }),
+        )
+    })
     .style(cx, || Style {
         width: Dimension::Percent(1.0),
         height: Dimension::Percent(1.0),

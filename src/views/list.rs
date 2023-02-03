@@ -1,7 +1,7 @@
 use std::hash::{BuildHasherDefault, Hash};
 
 use indexmap::IndexMap;
-use leptos_reactive::create_isomorphic_effect;
+use leptos_reactive::create_effect;
 use rustc_hash::FxHasher;
 use smallvec::SmallVec;
 use taffy::style::{FlexDirection, Style};
@@ -43,8 +43,7 @@ where
 
     let mut child_cx = cx;
     child_cx.id = id;
-    create_isomorphic_effect(cx.scope, move |prev_hash_run| {
-        println!("list create effect");
+    create_effect(cx.scope, move |prev_hash_run| {
         let items = each_fn();
         let items = items.into_iter().collect::<SmallVec<[_; 128]>>();
         let hashed_items = items.iter().map(&key_fn).collect::<FxIndexSet<_>>();
@@ -90,7 +89,6 @@ impl<V: View + 'static> View for List<V> {
     ) -> crate::view::ChangeFlags {
         if id_path.last().unwrap() == &self.id() {
             if let Ok(diff) = state.downcast() {
-                println!("get new children");
                 apply_cmds(*diff, &mut self.children);
                 cx.request_layout(self.id());
                 cx.reset_children_layout(self.id);

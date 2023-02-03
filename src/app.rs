@@ -26,7 +26,6 @@ thread_local! {
 pub struct App<V: View> {
     view: V,
     handle: glazier::WindowHandle,
-    idle_handle: Option<IdleHandle>,
     layout_state: LayoutState,
     paint_state: PaintState,
     font_cx: FontContext,
@@ -95,7 +94,6 @@ impl<V: View> App<V> {
             layout_state: LayoutState::new(),
             paint_state: PaintState::new(),
             handle: Default::default(),
-            idle_handle: None,
             font_cx: FontContext::new(),
         }
     }
@@ -179,12 +177,14 @@ impl<V: View> App<V> {
 
 impl<V: View> WinHandler for App<V> {
     fn connect(&mut self, handle: &glazier::WindowHandle) {
-        self.idle_handle = handle.get_idle_handle();
         self.paint_state.connect(handle);
         self.handle = handle.clone();
         let size = handle.get_size();
         self.layout_state.set_root_size(size);
-        self.process_update();
+        if let Some(idle_handle) = handle.get_idle_handle() {
+            *EXT_EVENT_HANDLER.handle.lock() = Some(idle_handle);
+        }
+        self.idle();
     }
 
     fn size(&mut self, size: glazier::kurbo::Size) {

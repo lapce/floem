@@ -6,7 +6,7 @@ use std::{
 };
 
 use glazier::{IdleHandle, IdleToken};
-use leptos_reactive::{create_isomorphic_effect, create_signal, ReadSignal, WriteSignal};
+use leptos_reactive::{create_effect, create_signal, ReadSignal, WriteSignal};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 
@@ -25,7 +25,7 @@ pub struct ExtEvent(ExtId);
 #[derive(Clone)]
 pub struct ExtEventHandler {
     pub(crate) queue: Arc<Mutex<VecDeque<ExtId>>>,
-    handle: Arc<Mutex<Option<IdleHandle>>>,
+    pub(crate) handle: Arc<Mutex<Option<IdleHandle>>>,
 }
 
 impl Default for ExtEventHandler {
@@ -59,7 +59,7 @@ pub fn create_signal_from_channel<T: Send>(
 
     {
         let data = data.clone();
-        create_isomorphic_effect(cx.scope, move |_| {
+        create_effect(cx.scope, move |_| {
             if read_notify.get().is_some() {
                 if let Some(value) = data.lock().pop() {
                     write.set(value);

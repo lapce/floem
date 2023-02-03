@@ -1,9 +1,6 @@
 use std::any::Any;
 
-use glazier::kurbo::{Rect, Size};
-use leptos_reactive::create_isomorphic_effect;
-use taffy::style::Style;
-use vello::peniko::Color;
+use leptos_reactive::create_effect;
 
 use crate::{
     app::{AppContext, UpdateMessage},
@@ -25,7 +22,7 @@ pub fn button(
     onclick: impl Fn() + 'static,
 ) -> Button {
     let id = cx.new_id();
-    create_isomorphic_effect(cx.scope, move |_| {
+    create_effect(cx.scope, move |_| {
         let new_label = label();
         AppContext::add_update(UpdateMessage::new(id, new_label));
     });

@@ -315,7 +315,6 @@ impl PaintState {
         let width = size.width as u32;
         let height = size.height as u32;
         if self.surface.is_none() {
-            println!("render size: {:?}", size);
             self.surface = Some(futures::executor::block_on(
                 self.render_cx.create_surface(handle, width, height),
             ));

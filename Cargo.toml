@@ -11,7 +11,7 @@ smallvec = "1.10.0"
 educe = "0.4.20"
 parley = { git = "https://github.com/dfrg/parley" }
 taffy = { git = "https://github.com/DioxusLabs/taffy" }
-leptos_reactive = { version = "0.1.3", features = ["stable", "ssr"] }
+leptos_reactive = { version = "0.1.3", features = ["stable"] }
 glazier = { git = "https://github.com/linebender/glazier" }
 vello = { git = "https://github.com/linebender/vello" }
 wgpu = "0.15"

@@ -11,8 +11,16 @@ pub struct Stack<VT> {
     children: VT,
 }
 
-pub fn stack<VT: ViewTuple + 'static>(cx: AppContext, children: VT) -> Stack<VT> {
+pub fn stack<VT: ViewTuple + 'static>(
+    cx: AppContext,
+    children: impl Fn(AppContext) -> VT,
+) -> Stack<VT> {
     let id = cx.id.new();
+
+    let mut children_cx = cx;
+    children_cx.id = id;
+    let children = children(children_cx);
+
     Stack { id, children }
 }
 
