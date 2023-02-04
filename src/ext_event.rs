@@ -54,14 +54,14 @@ pub fn create_signal_from_channel<T: Send>(
     let ext_id = ExtId::next();
     WRITE_SIGNALS.with(|signals| signals.borrow_mut().insert(ext_id, write_notify));
 
-    let data = Arc::new(Mutex::new(Vec::new()));
+    let data = Arc::new(Mutex::new(VecDeque::new()));
     let (read, write) = create_signal(cx.scope, None);
 
     {
         let data = data.clone();
         create_effect(cx.scope, move |_| {
             if read_notify.get().is_some() {
-                if let Some(value) = data.lock().pop() {
+                while let Some(value) = data.lock().pop_front() {
                     write.set(value);
                 }
             }
@@ -71,7 +71,7 @@ pub fn create_signal_from_channel<T: Send>(
     std::thread::spawn(move || {
         while let Ok(event) = rx.recv() {
             EXT_EVENT_HANDLER.send_event(ext_id);
-            data.lock().push(Some(event));
+            data.lock().push_back(Some(event));
         }
     });
 

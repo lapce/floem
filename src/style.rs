@@ -4,6 +4,7 @@ use taffy::{
     style::{LengthPercentage, Style as TaffyStyle},
 };
 
+#[derive(Clone, Debug)]
 pub struct Style {
     pub width: Dimension,
     pub height: Dimension,
@@ -16,6 +17,10 @@ pub struct Style {
     pub border_bottom: f32,
     pub border_radius: f32,
     pub padding: f32,
+    pub padding_left: f32,
+    pub padding_top: f32,
+    pub padding_right: f32,
+    pub padding_bottom: f32,
 }
 
 impl Default for Style {
@@ -32,6 +37,10 @@ impl Default for Style {
             border_bottom: 0.0,
             border_radius: 0.0,
             padding: 0.0,
+            padding_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
         }
     }
 }
@@ -68,10 +77,26 @@ impl From<&Style> for TaffyStyle {
                 }),
             },
             padding: Rect {
-                left: LengthPercentage::Points(value.padding),
-                top: LengthPercentage::Points(value.padding),
-                right: LengthPercentage::Points(value.padding),
-                bottom: LengthPercentage::Points(value.padding),
+                left: LengthPercentage::Points(if value.padding_left > 0.0 {
+                    value.padding_left
+                } else {
+                    value.padding
+                }),
+                top: LengthPercentage::Points(if value.padding_top > 0.0 {
+                    value.padding_top
+                } else {
+                    value.padding
+                }),
+                right: LengthPercentage::Points(if value.padding_right > 0.0 {
+                    value.padding_right
+                } else {
+                    value.padding
+                }),
+                bottom: LengthPercentage::Points(if value.padding_bottom > 0.0 {
+                    value.padding_bottom
+                } else {
+                    value.padding
+                }),
             },
             ..Default::default()
         }

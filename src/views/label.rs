@@ -2,7 +2,7 @@ use std::any::Any;
 
 use glazier::kurbo::Point;
 use leptos_reactive::create_effect;
-use taffy::style::Style;
+use taffy::{prelude::Node, style::Dimension};
 use vello::peniko::{Brush, Color};
 
 use crate::{
@@ -10,6 +10,7 @@ use crate::{
     context::{EventCx, UpdateCx},
     event::Event,
     id::Id,
+    style::Style,
     text::ParleyBrush,
     view::{ChangeFlags, View},
 };
@@ -18,6 +19,7 @@ pub struct Label {
     id: Id,
     label: String,
     text_layout: Option<parley::Layout<ParleyBrush>>,
+    text_node: Option<Node>,
 }
 
 pub fn label(cx: AppContext, label: impl Fn() -> String + 'static + Copy) -> Label {
@@ -30,6 +32,7 @@ pub fn label(cx: AppContext, label: impl Fn() -> String + 'static + Copy) -> Lab
         id,
         label: label(),
         text_layout: None,
+        text_node: None,
     }
 }
 
@@ -63,16 +66,26 @@ impl View for Label {
         let height = text_layout.height();
         self.text_layout = Some(text_layout);
 
+        let text_node = cx
+            .layout_state
+            .taffy
+            .new_leaf(
+                (&Style {
+                    width: Dimension::Points(width),
+                    height: Dimension::Points(height),
+                    ..Default::default()
+                })
+                    .into(),
+            )
+            .unwrap();
+        self.text_node = Some(text_node);
+
+        let style: taffy::style::Style =
+            cx.get_style(self.id).map(|s| s.into()).unwrap_or_default();
         let node = cx
             .layout_state
             .taffy
-            .new_leaf(Style {
-                size: taffy::prelude::Size {
-                    width: taffy::style::Dimension::Points(width),
-                    height: taffy::style::Dimension::Points(height),
-                },
-                ..Default::default()
-            })
+            .new_with_children(style, &[text_node])
             .unwrap();
         let layout = cx.layout_state.view_states.entry(self.id()).or_default();
         layout.node = Some(node);
@@ -80,6 +93,13 @@ impl View for Label {
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        cx.render_text(self.text_layout.as_ref().unwrap(), Point::ZERO);
+        let location = cx
+            .layout_state
+            .taffy
+            .layout(self.text_node.unwrap())
+            .unwrap()
+            .location;
+        let point = Point::new(location.x as f64, location.y as f64);
+        cx.render_text(self.text_layout.as_ref().unwrap(), point);
     }
 }

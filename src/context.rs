@@ -159,6 +159,10 @@ pub struct LayoutCx<'a> {
 }
 
 impl<'a> LayoutCx<'a> {
+    pub fn get_style(&self, id: Id) -> Option<&Style> {
+        self.layout_state.view_states.get(&id).map(|s| &s.style)
+    }
+
     pub(crate) fn layout_node(
         &mut self,
         id: Id,

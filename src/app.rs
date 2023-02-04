@@ -1,12 +1,8 @@
-use std::{any::Any, collections::HashSet};
+use std::any::Any;
 
-use glazier::{
-    kurbo::{Affine, Size},
-    IdleHandle, WinHandler,
-};
+use glazier::{kurbo::Affine, WinHandler};
 use leptos_reactive::Scope;
 use parley::FontContext;
-use taffy::style::Dimension;
 use vello::SceneBuilder;
 
 use crate::{
