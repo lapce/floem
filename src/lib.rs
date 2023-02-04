@@ -9,10 +9,9 @@ pub mod style;
 pub mod text;
 pub mod view;
 pub mod view_tuple;
-mod views;
+pub mod views;
 
 pub use leptos_reactive as reactive;
-pub use views::*;
 
 use app::{App, AppContext};
 use glazier::{Application, WindowBuilder};

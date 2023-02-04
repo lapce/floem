@@ -14,7 +14,7 @@ use vello::{
         pinot::{types::Tag, FontRef},
         GlyphContext,
     },
-    peniko::{BrushRef, Stroke},
+    peniko::{BrushRef, Fill, Stroke},
     util::{RenderContext, RenderSurface},
     Renderer, Scene, SceneBuilder, SceneFragment,
 };
@@ -214,7 +214,7 @@ impl<'a> PaintCx<'a> {
         self.transform = self.saved_transforms.pop().unwrap_or_default();
     }
 
-    fn get_layout(&mut self, id: Id) -> Option<Layout> {
+    pub fn get_layout(&mut self, id: Id) -> Option<Layout> {
         self.layout_state.get_layout(id)
     }
 
@@ -248,6 +248,11 @@ impl<'a> PaintCx<'a> {
             None,
             path,
         )
+    }
+
+    pub fn fill<'b>(&mut self, path: &impl Shape, brush: impl Into<BrushRef<'b>>) {
+        self.builder
+            .fill(Fill::NonZero, self.transform, brush, None, path)
     }
 
     pub fn render_text(&mut self, layout: &parley::Layout<ParleyBrush>, point: Point) {

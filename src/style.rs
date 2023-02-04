@@ -1,4 +1,4 @@
-pub use taffy::style::{Dimension, FlexDirection};
+pub use taffy::style::{AlignContent, AlignItems, Dimension, FlexDirection};
 use taffy::{
     prelude::Rect,
     style::{LengthPercentage, Style as TaffyStyle},
@@ -10,6 +10,8 @@ pub struct Style {
     pub height: Dimension,
     pub flex_direction: FlexDirection,
     pub flex_grow: f32,
+    pub align_items: Option<AlignItems>,
+    pub align_content: Option<AlignContent>,
     pub border: f32,
     pub border_left: f32,
     pub border_top: f32,
@@ -30,6 +32,8 @@ impl Default for Style {
             height: Dimension::Auto,
             flex_direction: FlexDirection::default(),
             flex_grow: 0.0,
+            align_items: None,
+            align_content: None,
             border: 0.0,
             border_left: 0.0,
             border_top: 0.0,
@@ -54,6 +58,8 @@ impl From<&Style> for TaffyStyle {
             },
             flex_direction: value.flex_direction,
             flex_grow: value.flex_grow,
+            align_items: value.align_items,
+            align_content: value.align_content,
             border: Rect {
                 left: LengthPercentage::Points(if value.border_left > 0.0 {
                     value.border_left

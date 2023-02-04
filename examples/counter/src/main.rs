@@ -1,12 +1,13 @@
 use floem::{
     app::AppContext,
     button::button,
-    label, list,
     reactive::create_signal,
     stack::stack,
     style::{Dimension, FlexDirection, Style},
     view::View,
-    Decorators,
+    views::label,
+    views::list,
+    views::Decorators,
 };
 
 fn app_logic(cx: AppContext) -> impl View {
