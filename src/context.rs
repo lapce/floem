@@ -20,7 +20,7 @@ use vello::{
 };
 
 use crate::{
-    event::Event,
+    event::{Event, EventListner},
     id::{Id, IDPATHS},
     style::Style,
     text::ParleyBrush,
@@ -30,6 +30,7 @@ pub struct ViewState {
     pub(crate) node: Option<Node>,
     pub(crate) style: Style,
     pub(crate) children_nodes: Option<Vec<Node>>,
+    pub(crate) event_listeners: HashMap<EventListner, Box<dyn Fn(Event)>>,
 }
 
 impl Default for ViewState {
@@ -38,6 +39,7 @@ impl Default for ViewState {
             node: None,
             style: Style::default(),
             children_nodes: None,
+            event_listeners: HashMap::new(),
         }
     }
 }
@@ -126,6 +128,16 @@ pub struct EventCx<'a> {
 impl<'a> EventCx<'a> {
     pub(crate) fn get_layout(&self, id: Id) -> Option<Layout> {
         self.layout_state.get_layout(id)
+    }
+
+    pub(crate) fn get_event_listener(
+        &self,
+        id: Id,
+    ) -> Option<&HashMap<EventListner, Box<dyn Fn(Event)>>> {
+        self.layout_state
+            .view_states
+            .get(&id)
+            .map(|s| &s.event_listeners)
     }
 
     pub(crate) fn offset_event(&self, id: Id, event: Event) -> Event {

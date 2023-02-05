@@ -7,7 +7,7 @@ use vello::SceneBuilder;
 
 use crate::{
     context::{EventCx, LayoutCx, LayoutState, PaintCx, PaintState, UpdateCx},
-    event::Event,
+    event::{Event, EventListner},
     ext_event::{EXT_EVENT_HANDLER, WRITE_SIGNALS},
     id::{Id, IDPATHS},
     style::Style,
@@ -17,6 +17,7 @@ use crate::{
 thread_local! {
     static UPDATE_MESSAGES: std::cell::RefCell<Vec<UpdateMessage>> = Default::default();
     static STYLE_MESSAGES: std::cell::RefCell<Vec<StyleMessage>> = Default::default();
+    static EVENT_LISTNER_MESSAGES: std::cell::RefCell<Vec<EventListnerMessage>> = Default::default();
 }
 
 pub struct App<V: View> {
@@ -40,6 +41,16 @@ impl AppContext {
 
     pub fn add_style(id: Id, style: Style) {
         STYLE_MESSAGES.with(|messages| messages.borrow_mut().push(StyleMessage::new(id, style)));
+    }
+
+    pub fn add_event_listner(id: Id, listener: EventListner, action: impl Fn(Event) + 'static) {
+        EVENT_LISTNER_MESSAGES.with(|messages| {
+            messages.borrow_mut().push(EventListnerMessage {
+                id,
+                listener,
+                action: Box::new(action),
+            })
+        });
     }
 
     pub fn with_id(mut self, id: Id) -> Self {
@@ -75,6 +86,12 @@ impl StyleMessage {
     pub fn new(id: Id, style: Style) -> StyleMessage {
         StyleMessage { id, style }
     }
+}
+
+pub struct EventListnerMessage {
+    pub id: Id,
+    pub listener: EventListner,
+    pub action: Box<dyn Fn(Event)>,
 }
 
 impl<V: View> App<V> {
@@ -119,6 +136,14 @@ impl<V: View> App<V> {
         let mut cx = UpdateCx {
             layout_state: &mut self.layout_state,
         };
+        EVENT_LISTNER_MESSAGES.with(|messages| {
+            let messages = messages.take();
+            for msg in messages {
+                let state = cx.layout_state.view_states.entry(msg.id).or_default();
+                state.event_listeners.insert(msg.listener, msg.action);
+            }
+        });
+
         let style_messages = STYLE_MESSAGES.with(|messages| messages.take());
         let mut flags = if style_messages.is_empty() {
             ChangeFlags::empty()

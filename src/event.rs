@@ -1,7 +1,13 @@
 use glazier::{
+    keyboard_types::KeyboardEvent,
     kurbo::{Point, Vec2},
     Modifiers, MouseButton, MouseButtons,
 };
+
+#[derive(Hash, PartialEq, Eq)]
+pub enum EventListner {
+    KeyDown,
+}
 
 #[derive(Debug, Clone)]
 pub enum Event {
@@ -9,6 +15,7 @@ pub enum Event {
     MouseUp(MouseEvent),
     MouseMove(MouseEvent),
     MouseWheel(MouseEvent),
+    KeyDown(KeyboardEvent),
 }
 
 impl Event {
@@ -18,6 +25,7 @@ impl Event {
             | Event::MouseUp(mouse_event)
             | Event::MouseMove(mouse_event)
             | Event::MouseWheel(mouse_event) => Some(mouse_event.pos),
+            Event::KeyDown(_) => None,
         }
     }
 
@@ -29,8 +37,19 @@ impl Event {
             | Event::MouseWheel(mouse_event) => {
                 mouse_event.pos -= offset;
             }
+            Event::KeyDown(_) => {}
         }
         self
+    }
+
+    pub fn listener(&self) -> Option<EventListner> {
+        match self {
+            Event::MouseDown(_) => None,
+            Event::MouseUp(_) => None,
+            Event::MouseMove(_) => None,
+            Event::MouseWheel(_) => None,
+            Event::KeyDown(_) => Some(EventListner::KeyDown),
+        }
     }
 }
 

@@ -123,7 +123,7 @@ impl<V: View + 'static> View for List<V> {
                 let id = child.id();
                 if cx.should_send(id, &event) {
                     let event = cx.offset_event(id, event.clone());
-                    child.event(cx, cx.offset_event(id, event));
+                    child.event_main(cx, cx.offset_event(id, event));
                     break;
                 }
             }

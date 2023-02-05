@@ -30,6 +30,18 @@ pub trait View {
 
     fn layout(&mut self, cx: &mut LayoutCx) -> Node;
 
+    fn event_main(&mut self, cx: &mut EventCx, event: Event) {
+        if let Some(listener) = event.listener() {
+            if let Some(listeners) = cx.get_event_listener(self.id()) {
+                if let Some(action) = listeners.get(&listener) {
+                    (*action)(event);
+                    return;
+                }
+            }
+        }
+        self.event(cx, event);
+    }
+
     fn event(&mut self, cx: &mut EventCx, event: Event);
 
     fn paint_main(&mut self, cx: &mut PaintCx) {

@@ -33,7 +33,7 @@ impl<V: View> View for Container<V> {
     }
 
     fn event(&mut self, cx: &mut crate::context::EventCx, event: crate::event::Event) {
-        self.child.event(cx, event);
+        self.child.event_main(cx, event);
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {

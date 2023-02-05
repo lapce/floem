@@ -1,6 +1,11 @@
 use leptos_reactive::create_effect;
 
-use crate::{app::AppContext, style::Style, view::View};
+use crate::{
+    app::AppContext,
+    event::{Event, EventListner},
+    style::Style,
+    view::View,
+};
 
 pub trait Decorators: View + Sized {
     fn style(self, cx: AppContext, style: impl Fn() -> Style + 'static) -> Self {
@@ -9,6 +14,17 @@ pub trait Decorators: View + Sized {
             let style = style();
             AppContext::add_style(id, style);
         });
+        self
+    }
+
+    fn event(
+        self,
+        cx: AppContext,
+        listener: EventListner,
+        action: impl Fn(Event) + 'static,
+    ) -> Self {
+        let id = self.id();
+        AppContext::add_event_listner(id, listener, action);
         self
     }
 }
