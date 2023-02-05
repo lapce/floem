@@ -8,6 +8,10 @@ use taffy::{
 pub struct Style {
     pub width: Dimension,
     pub height: Dimension,
+    pub min_width: Dimension,
+    pub min_height: Dimension,
+    pub max_width: Dimension,
+    pub max_height: Dimension,
     pub flex_direction: FlexDirection,
     pub flex_grow: f32,
     pub flex_basis: Dimension,
@@ -32,6 +36,10 @@ impl Default for Style {
         Self {
             width: Dimension::Auto,
             height: Dimension::Auto,
+            min_width: Dimension::Auto,
+            min_height: Dimension::Auto,
+            max_width: Dimension::Auto,
+            max_height: Dimension::Auto,
             flex_direction: FlexDirection::default(),
             flex_grow: 0.0,
             flex_basis: Dimension::Auto,
@@ -59,6 +67,14 @@ impl From<&Style> for TaffyStyle {
             size: taffy::prelude::Size {
                 width: value.width,
                 height: value.height,
+            },
+            min_size: taffy::prelude::Size {
+                width: value.min_width,
+                height: value.min_height,
+            },
+            max_size: taffy::prelude::Size {
+                width: value.max_width,
+                height: value.max_height,
             },
             flex_direction: value.flex_direction,
             flex_grow: value.flex_grow,
