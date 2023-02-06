@@ -1,7 +1,6 @@
 use glazier::{
-    keyboard_types::KeyboardEvent,
     kurbo::{Point, Vec2},
-    Modifiers, MouseButton, MouseButtons,
+    KeyEvent, Modifiers, MouseButton, MouseButtons,
 };
 
 #[derive(Hash, PartialEq, Eq)]
@@ -15,10 +14,20 @@ pub enum Event {
     MouseUp(MouseEvent),
     MouseMove(MouseEvent),
     MouseWheel(MouseEvent),
-    KeyDown(KeyboardEvent),
+    KeyDown(KeyEvent),
 }
 
 impl Event {
+    pub fn needs_focus(&self) -> bool {
+        match self {
+            Event::MouseDown(_)
+            | Event::MouseUp(_)
+            | Event::MouseMove(_)
+            | Event::MouseWheel(_) => false,
+            Event::KeyDown(_) => true,
+        }
+    }
+
     pub fn point(&self) -> Option<Point> {
         match self {
             Event::MouseDown(mouse_event)

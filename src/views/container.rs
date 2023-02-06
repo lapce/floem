@@ -1,4 +1,8 @@
-use crate::{app::AppContext, id::Id, view::View};
+use crate::{
+    app::AppContext,
+    id::Id,
+    view::{ChangeFlags, View},
+};
 
 pub struct Container<V: View> {
     id: Id,
@@ -18,22 +22,33 @@ impl<V: View> View for Container<V> {
         self.id
     }
 
+    fn child(&mut self, id: Id) -> Option<&mut dyn View> {
+        if self.child.id() == id {
+            Some(&mut self.child)
+        } else {
+            None
+        }
+    }
+
     fn update(
         &mut self,
         cx: &mut crate::context::UpdateCx,
-        id_path: &[Id],
         state: Box<dyn std::any::Any>,
     ) -> crate::view::ChangeFlags {
-        let id_path = &id_path[1..];
-        self.child.update(cx, id_path, state)
+        ChangeFlags::empty()
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| vec![self.child.layout(cx)])
     }
 
-    fn event(&mut self, cx: &mut crate::context::EventCx, event: crate::event::Event) {
-        self.child.event_main(cx, event);
+    fn event(
+        &mut self,
+        cx: &mut crate::context::EventCx,
+        id_path: Option<&[Id]>,
+        event: crate::event::Event,
+    ) {
+        self.child.event_main(cx, id_path, event);
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {

@@ -36,10 +36,13 @@ impl View for Svg {
         self.id
     }
 
+    fn child(&mut self, id: Id) -> Option<&mut dyn View> {
+        None
+    }
+
     fn update(
         &mut self,
         cx: &mut crate::context::UpdateCx,
-        id_path: &[Id],
         state: Box<dyn std::any::Any>,
     ) -> crate::view::ChangeFlags {
         if let Ok(state) = state.downcast() {
@@ -55,7 +58,13 @@ impl View for Svg {
         cx.layout_node(self.id, false, |_| Vec::new())
     }
 
-    fn event(&mut self, cx: &mut crate::context::EventCx, event: crate::event::Event) {}
+    fn event(
+        &mut self,
+        cx: &mut crate::context::EventCx,
+        id_path: Option<&[Id]>,
+        event: crate::event::Event,
+    ) {
+    }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         if let Some(tree) = self.svg_tree.as_mut() {

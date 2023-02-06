@@ -26,23 +26,54 @@ bitflags! {
 pub trait View {
     fn id(&self) -> Id;
 
-    fn update(&mut self, cx: &mut UpdateCx, id_path: &[Id], state: Box<dyn Any>) -> ChangeFlags;
+    fn child(&mut self, id: Id) -> Option<&mut dyn View>;
+
+    fn update_main(
+        &mut self,
+        cx: &mut UpdateCx,
+        id_path: &[Id],
+        state: Box<dyn Any>,
+    ) -> ChangeFlags {
+        let id = id_path[0];
+        let id_path = &id_path[1..];
+        if id == self.id() {
+            if id_path.is_empty() {
+                return self.update(cx, state);
+            } else if let Some(child) = self.child(id_path[0]) {
+                return child.update_main(cx, id_path, state);
+            }
+        }
+        ChangeFlags::empty()
+    }
+
+    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags;
 
     fn layout(&mut self, cx: &mut LayoutCx) -> Node;
 
-    fn event_main(&mut self, cx: &mut EventCx, event: Event) {
-        if let Some(listener) = event.listener() {
-            if let Some(listeners) = cx.get_event_listener(self.id()) {
-                if let Some(action) = listeners.get(&listener) {
-                    (*action)(event);
+    fn event_main(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) {
+        if let Some(id_path) = id_path {
+            let id = id_path[0];
+            let id_path = &id_path[1..];
+            if id == self.id() && !id_path.is_empty() {
+                if let Some(child) = self.child(id_path[0]) {
+                    child.event_main(cx, Some(id_path), event);
                     return;
                 }
             }
         }
-        self.event(cx, event);
+        if let Some(listener) = event.listener() {
+            if let Some(listeners) = cx.get_event_listener(self.id()) {
+                if let Some(action) = listeners.get(&listener) {
+                    if (*action)(&event) {
+                        return;
+                    }
+                }
+            }
+        }
+        self.event(cx, None, event);
     }
 
-    fn event(&mut self, cx: &mut EventCx, event: Event);
+    fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event);
 
     fn paint_main(&mut self, cx: &mut PaintCx) {
         cx.save();

@@ -81,28 +81,25 @@ impl<V: View + 'static> View for List<V> {
         self.id
     }
 
+    fn child(&mut self, id: Id) -> Option<&mut dyn View> {
+        match self.children.get_mut(&id) {
+            Some(view) => view.as_mut().map(|view| view as &mut dyn View),
+            None => None,
+        }
+    }
+
     fn update(
         &mut self,
         cx: &mut UpdateCx,
-        id_path: &[Id],
         state: Box<dyn std::any::Any>,
     ) -> crate::view::ChangeFlags {
-        if id_path.last().unwrap() == &self.id() {
-            if let Ok(diff) = state.downcast() {
-                apply_cmds(*diff, &mut self.children);
-                cx.request_layout(self.id());
-                cx.reset_children_layout(self.id);
-                ChangeFlags::LAYOUT
-            } else {
-                ChangeFlags::empty()
-            }
+        if let Ok(diff) = state.downcast() {
+            apply_cmds(*diff, &mut self.children);
+            cx.request_layout(self.id());
+            cx.reset_children_layout(self.id);
+            ChangeFlags::LAYOUT
         } else {
-            let id_path = &id_path[1..];
-            if let Some(Some(child)) = self.children.get_mut(id_path.first().unwrap()) {
-                child.update(cx, id_path, state)
-            } else {
-                ChangeFlags::empty()
-            }
+            ChangeFlags::empty()
         }
     }
 
@@ -117,13 +114,13 @@ impl<V: View + 'static> View for List<V> {
         })
     }
 
-    fn event(&mut self, cx: &mut EventCx, event: crate::event::Event) {
+    fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: crate::event::Event) {
         for (_, child) in self.children.iter_mut() {
             if let Some(child) = child.as_mut() {
                 let id = child.id();
                 if cx.should_send(id, &event) {
                     let event = cx.offset_event(id, event.clone());
-                    child.event_main(cx, cx.offset_event(id, event));
+                    child.event_main(cx, id_path, cx.offset_event(id, event));
                     break;
                 }
             }

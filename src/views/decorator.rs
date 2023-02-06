@@ -17,14 +17,9 @@ pub trait Decorators: View + Sized {
         self
     }
 
-    fn event(
-        self,
-        cx: AppContext,
-        listener: EventListner,
-        action: impl Fn(Event) + 'static,
-    ) -> Self {
+    fn event(self, listener: EventListner, action: impl Fn(&Event) -> bool + 'static) -> Self {
         let id = self.id();
-        AppContext::add_event_listner(id, listener, action);
+        AppContext::add_event_listner(id, listener, Box::new(action));
         self
     }
 }

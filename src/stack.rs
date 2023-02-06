@@ -29,38 +29,27 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
         self.id
     }
 
-    fn update(
-        &mut self,
-        cx: &mut UpdateCx,
-        id_path: &[crate::id::Id],
-        state: Box<dyn std::any::Any>,
-    ) -> ChangeFlags {
-        let id = id_path[0];
-        let id_path = &id_path[1..];
-        if id == self.id {
-            if id_path.is_empty() {
-                if let Ok(state) = state.downcast() {
-                    self.children = *state;
-                    cx.reset_children_layout(self.id);
-                    cx.request_layout(self.id);
-                    ChangeFlags::LAYOUT
-                } else {
-                    ChangeFlags::empty()
-                }
-            } else {
-                self.children.update(cx, id_path, state)
-            }
+    fn child(&mut self, id: Id) -> Option<&mut dyn View> {
+        self.children.child(id)
+    }
+
+    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn std::any::Any>) -> ChangeFlags {
+        if let Ok(state) = state.downcast() {
+            self.children = *state;
+            cx.reset_children_layout(self.id);
+            cx.request_layout(self.id);
+            ChangeFlags::LAYOUT
         } else {
             ChangeFlags::empty()
         }
     }
 
-    fn event(&mut self, cx: &mut EventCx, event: crate::event::Event) {
+    fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: crate::event::Event) {
         self.children.foreach(&mut |view| {
             let id = view.id();
             if cx.should_send(id, &event) {
                 let event = cx.offset_event(id, event.clone());
-                view.event_main(cx, event);
+                view.event_main(cx, id_path, event);
                 return true;
             }
             false

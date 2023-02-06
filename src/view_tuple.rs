@@ -8,29 +8,24 @@ use crate::id::Id;
 use crate::view::{ChangeFlags, View};
 
 pub trait ViewTuple {
-    fn update(&mut self, cx: &mut UpdateCx, id_path: &[Id], state: Box<dyn Any>) -> ChangeFlags;
-
     fn paint(&mut self, cx: &mut PaintCx);
 
     fn foreach<F: FnMut(&mut dyn View) -> bool>(&mut self, f: &mut F);
+
+    fn child(&mut self, id: Id) -> Option<&mut dyn View>;
 }
 
 macro_rules! impl_view_tuple {
     ( $n: tt; $( $t:ident),* ; $( $i:tt ),* ) => {
 
         impl< $( $t: View, )* > ViewTuple for ( $( $t, )* ) {
-            fn update(&mut self, cx: &mut UpdateCx, id_path: &[Id], state: Box<dyn Any>) -> ChangeFlags {
-                let hd = id_path[0];
-                $(
-                if hd == self.$i.id() {
-                    self.$i.update(cx, id_path, state)
-                } else )* {
-                    ChangeFlags::empty()
-                }
-            }
-
             fn foreach<F: FnMut(&mut dyn View) -> bool>(&mut self, f: &mut F) {
                 $( if f(&mut self.$i) { return; } )*
+            }
+
+            fn child(&mut self, id: Id) -> Option<&mut dyn View> {
+                $( if self.$i.id() == id { return Some(&mut self.$i) } )*
+                None
             }
 
             fn paint(&mut self, cx: &mut PaintCx) {

@@ -41,7 +41,11 @@ impl View for Label {
         self.id
     }
 
-    fn update(&mut self, cx: &mut UpdateCx, id: &[Id], state: Box<dyn Any>) -> ChangeFlags {
+    fn child(&mut self, id: Id) -> Option<&mut dyn View> {
+        None
+    }
+
+    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags {
         if let Ok(state) = state.downcast() {
             self.label = *state;
             self.text_layout = None;
@@ -52,7 +56,7 @@ impl View for Label {
         }
     }
 
-    fn event(&mut self, cx: &mut EventCx, event: Event) {}
+    fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) {}
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         let mut lcx = parley::LayoutContext::new();

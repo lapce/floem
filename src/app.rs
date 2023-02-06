@@ -6,7 +6,7 @@ use parley::FontContext;
 use vello::SceneBuilder;
 
 use crate::{
-    context::{EventCx, LayoutCx, LayoutState, PaintCx, PaintState, UpdateCx},
+    context::{AppState, EventCallback, EventCx, LayoutCx, PaintCx, PaintState, UpdateCx},
     event::{Event, EventListner},
     ext_event::{EXT_EVENT_HANDLER, WRITE_SIGNALS},
     id::{Id, IDPATHS},
@@ -23,7 +23,7 @@ thread_local! {
 pub struct App<V: View> {
     view: V,
     handle: glazier::WindowHandle,
-    layout_state: LayoutState,
+    app_state: AppState,
     paint_state: PaintState,
     font_cx: FontContext,
 }
@@ -43,12 +43,12 @@ impl AppContext {
         STYLE_MESSAGES.with(|messages| messages.borrow_mut().push(StyleMessage::new(id, style)));
     }
 
-    pub fn add_event_listner(id: Id, listener: EventListner, action: impl Fn(Event) + 'static) {
+    pub fn add_event_listner(id: Id, listener: EventListner, action: Box<EventCallback>) {
         EVENT_LISTNER_MESSAGES.with(|messages| {
             messages.borrow_mut().push(EventListnerMessage {
                 id,
                 listener,
-                action: Box::new(action),
+                action,
             })
         });
     }
@@ -91,7 +91,7 @@ impl StyleMessage {
 pub struct EventListnerMessage {
     pub id: Id,
     pub listener: EventListner,
-    pub action: Box<dyn Fn(Event)>,
+    pub action: Box<EventCallback>,
 }
 
 impl<V: View> App<V> {
@@ -104,7 +104,7 @@ impl<V: View> App<V> {
         let view = app_logic(context);
         Self {
             view,
-            layout_state: LayoutState::new(),
+            app_state: AppState::new(),
             paint_state: PaintState::new(),
             handle: Default::default(),
             font_cx: FontContext::new(),
@@ -113,7 +113,7 @@ impl<V: View> App<V> {
 
     fn layout(&mut self) {
         let mut cx = LayoutCx {
-            layout_state: &mut self.layout_state,
+            layout_state: &mut self.app_state,
             font_cx: &mut self.font_cx,
         };
         cx.layout_state.root = Some(self.view.layout(&mut cx));
@@ -123,7 +123,7 @@ impl<V: View> App<V> {
     pub fn paint(&mut self) {
         let mut builder = SceneBuilder::for_fragment(&mut self.paint_state.fragment);
         let mut cx = PaintCx {
-            layout_state: &mut self.layout_state,
+            layout_state: &mut self.app_state,
             builder: &mut builder,
             saved_transforms: Vec::new(),
             transform: Affine::IDENTITY,
@@ -134,7 +134,7 @@ impl<V: View> App<V> {
 
     pub fn process_update(&mut self) {
         let mut cx = UpdateCx {
-            layout_state: &mut self.layout_state,
+            layout_state: &mut self.app_state,
         };
         EVENT_LISTNER_MESSAGES.with(|messages| {
             let messages = messages.take();
@@ -160,7 +160,7 @@ impl<V: View> App<V> {
         for message in messages {
             IDPATHS.with(|paths| {
                 if let Some(id_path) = paths.borrow().get(&message.id) {
-                    flags |= self.view.update(&mut cx, &id_path.0, message.body);
+                    flags |= self.view.update_main(&mut cx, &id_path.0, message.body);
                 }
             });
         }
@@ -177,9 +177,19 @@ impl<V: View> App<V> {
 
     pub fn event(&mut self, event: Event) {
         let mut cx = EventCx {
-            layout_state: &mut self.layout_state,
+            app_state: &mut self.app_state,
         };
-        self.view.event(&mut cx, event);
+        if event.needs_focus() {
+            if let Some(id) = cx.app_state.focus {
+                IDPATHS.with(|paths| {
+                    if let Some(id_path) = paths.borrow().get(&id) {
+                        self.view.event_main(&mut cx, Some(&id_path.0), event);
+                    }
+                });
+            }
+        } else {
+            self.view.event_main(&mut cx, None, event);
+        }
         self.process_update();
     }
 
@@ -201,7 +211,7 @@ impl<V: View> WinHandler for App<V> {
         self.paint_state.connect(handle);
         self.handle = handle.clone();
         let size = handle.get_size();
-        self.layout_state.set_root_size(size);
+        self.app_state.set_root_size(size);
         if let Some(idle_handle) = handle.get_idle_handle() {
             *EXT_EVENT_HANDLER.handle.lock() = Some(idle_handle);
         }
@@ -209,7 +219,7 @@ impl<V: View> WinHandler for App<V> {
     }
 
     fn size(&mut self, size: glazier::kurbo::Size) {
-        self.layout_state.set_root_size(size);
+        self.app_state.set_root_size(size);
         self.layout();
         self.paint();
     }
@@ -218,6 +228,11 @@ impl<V: View> WinHandler for App<V> {
 
     fn paint(&mut self, invalid: &glazier::Region) {
         self.paint();
+    }
+
+    fn key_down(&mut self, event: glazier::KeyEvent) -> bool {
+        self.event(Event::KeyDown(event));
+        true
     }
 
     fn mouse_down(&mut self, event: &glazier::MouseEvent) {

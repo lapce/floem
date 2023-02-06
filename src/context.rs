@@ -26,11 +26,13 @@ use crate::{
     text::ParleyBrush,
 };
 
+pub type EventCallback = dyn Fn(&Event) -> bool;
+
 pub struct ViewState {
     pub(crate) node: Option<Node>,
     pub(crate) style: Style,
     pub(crate) children_nodes: Option<Vec<Node>>,
-    pub(crate) event_listeners: HashMap<EventListner, Box<dyn Fn(Event)>>,
+    pub(crate) event_listeners: HashMap<EventListner, Box<EventCallback>>,
 }
 
 impl Default for ViewState {
@@ -44,7 +46,8 @@ impl Default for ViewState {
     }
 }
 
-pub struct LayoutState {
+pub struct AppState {
+    pub(crate) focus: Option<Id>,
     pub(crate) root: Option<Node>,
     pub(crate) root_size: Size,
     pub taffy: taffy::Taffy,
@@ -52,10 +55,11 @@ pub struct LayoutState {
     pub(crate) layout_changed: HashSet<Id>,
 }
 
-impl LayoutState {
+impl AppState {
     pub fn new() -> Self {
         Self {
             root: None,
+            focus: None,
             root_size: Size::ZERO,
             taffy: taffy::Taffy::new(),
             view_states: HashMap::new(),
@@ -122,19 +126,19 @@ impl LayoutState {
 }
 
 pub struct EventCx<'a> {
-    pub(crate) layout_state: &'a mut LayoutState,
+    pub(crate) app_state: &'a mut AppState,
 }
 
 impl<'a> EventCx<'a> {
     pub(crate) fn get_layout(&self, id: Id) -> Option<Layout> {
-        self.layout_state.get_layout(id)
+        self.app_state.get_layout(id)
     }
 
     pub(crate) fn get_event_listener(
         &self,
         id: Id,
-    ) -> Option<&HashMap<EventListner, Box<dyn Fn(Event)>>> {
-        self.layout_state
+    ) -> Option<&HashMap<EventListner, Box<EventCallback>>> {
+        self.app_state
             .view_states
             .get(&id)
             .map(|s| &s.event_listeners)
@@ -166,7 +170,7 @@ impl<'a> EventCx<'a> {
 }
 
 pub struct LayoutCx<'a> {
-    pub(crate) layout_state: &'a mut LayoutState,
+    pub(crate) layout_state: &'a mut AppState,
     pub(crate) font_cx: &'a mut FontContext,
 }
 
@@ -212,7 +216,7 @@ impl<'a> LayoutCx<'a> {
 
 pub struct PaintCx<'a> {
     pub(crate) builder: &'a mut SceneBuilder<'a>,
-    pub(crate) layout_state: &'a mut LayoutState,
+    pub(crate) layout_state: &'a mut AppState,
     pub(crate) saved_transforms: Vec<Affine>,
     pub(crate) transform: Affine,
 }
@@ -371,7 +375,7 @@ impl PaintState {
 }
 
 pub struct UpdateCx<'a> {
-    pub(crate) layout_state: &'a mut LayoutState,
+    pub(crate) layout_state: &'a mut AppState,
 }
 
 impl<'a> UpdateCx<'a> {

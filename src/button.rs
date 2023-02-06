@@ -38,7 +38,11 @@ impl View for Button {
         self.id
     }
 
-    fn update(&mut self, cx: &mut UpdateCx, id: &[Id], state: Box<dyn Any>) -> ChangeFlags {
+    fn child(&mut self, id: Id) -> Option<&mut dyn View> {
+        None
+    }
+
+    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags {
         if let Ok(state) = state.downcast() {
             self.label = *state;
             cx.request_layout(self.id());
@@ -48,7 +52,7 @@ impl View for Button {
         }
     }
 
-    fn event(&mut self, cx: &mut EventCx, event: Event) {
+    fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) {
         if let Event::MouseDown(mouse_event) = event {
             (self.onclick)();
         }
