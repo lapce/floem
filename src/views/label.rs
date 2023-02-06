@@ -26,7 +26,7 @@ pub fn label(cx: AppContext, label: impl Fn() -> String + 'static + Copy) -> Lab
     let id = cx.new_id();
     create_effect(cx.scope, move |_| {
         let new_label = label();
-        AppContext::add_update(UpdateMessage::new(id, new_label));
+        AppContext::update_state(id, new_label);
     });
     Label {
         id,

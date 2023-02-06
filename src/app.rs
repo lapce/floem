@@ -16,8 +16,6 @@ use crate::{
 
 thread_local! {
     static UPDATE_MESSAGES: std::cell::RefCell<Vec<UpdateMessage>> = Default::default();
-    static STYLE_MESSAGES: std::cell::RefCell<Vec<StyleMessage>> = Default::default();
-    static EVENT_LISTNER_MESSAGES: std::cell::RefCell<Vec<EventListnerMessage>> = Default::default();
 }
 
 pub struct App<V: View> {
@@ -35,17 +33,26 @@ pub struct AppContext {
 }
 
 impl AppContext {
-    pub fn add_update(message: UpdateMessage) {
-        UPDATE_MESSAGES.with(|messages| messages.borrow_mut().push(message));
+    pub fn update_focus(&self, id: Id) {
+        UPDATE_MESSAGES.with(|msgs| msgs.borrow_mut().push(UpdateMessage::Focus(id)));
     }
 
-    pub fn add_style(id: Id, style: Style) {
-        STYLE_MESSAGES.with(|messages| messages.borrow_mut().push(StyleMessage::new(id, style)));
+    pub fn update_state(id: Id, state: impl Any) {
+        UPDATE_MESSAGES.with(|msgs| {
+            msgs.borrow_mut().push(UpdateMessage::State {
+                id,
+                state: Box::new(state),
+            })
+        });
     }
 
-    pub fn add_event_listner(id: Id, listener: EventListner, action: Box<EventCallback>) {
-        EVENT_LISTNER_MESSAGES.with(|messages| {
-            messages.borrow_mut().push(EventListnerMessage {
+    pub fn update_style(id: Id, style: Style) {
+        UPDATE_MESSAGES.with(|msgs| msgs.borrow_mut().push(UpdateMessage::Style { id, style }));
+    }
+
+    pub fn update_event_listner(id: Id, listener: EventListner, action: Box<EventCallback>) {
+        UPDATE_MESSAGES.with(|msgs| {
+            msgs.borrow_mut().push(UpdateMessage::EventListener {
                 id,
                 listener,
                 action,
@@ -63,35 +70,21 @@ impl AppContext {
     }
 }
 
-pub struct UpdateMessage {
-    pub id: Id,
-    pub body: Box<dyn Any>,
-}
-
-impl UpdateMessage {
-    pub fn new(id: Id, event: impl Any) -> UpdateMessage {
-        UpdateMessage {
-            id,
-            body: Box::new(event),
-        }
-    }
-}
-
-pub struct StyleMessage {
-    pub id: Id,
-    pub style: Style,
-}
-
-impl StyleMessage {
-    pub fn new(id: Id, style: Style) -> StyleMessage {
-        StyleMessage { id, style }
-    }
-}
-
-pub struct EventListnerMessage {
-    pub id: Id,
-    pub listener: EventListner,
-    pub action: Box<EventCallback>,
+pub enum UpdateMessage {
+    Focus(Id),
+    State {
+        id: Id,
+        state: Box<dyn Any>,
+    },
+    Style {
+        id: Id,
+        style: Style,
+    },
+    EventListener {
+        id: Id,
+        listener: EventListner,
+        action: Box<EventCallback>,
+    },
 }
 
 impl<V: View> App<V> {
@@ -134,38 +127,44 @@ impl<V: View> App<V> {
 
     pub fn process_update(&mut self) {
         let mut cx = UpdateCx {
-            layout_state: &mut self.app_state,
+            app_state: &mut self.app_state,
         };
-        EVENT_LISTNER_MESSAGES.with(|messages| {
-            let messages = messages.take();
-            for msg in messages {
-                let state = cx.layout_state.view_states.entry(msg.id).or_default();
-                state.event_listeners.insert(msg.listener, msg.action);
-            }
-        });
 
-        let style_messages = STYLE_MESSAGES.with(|messages| messages.take());
-        let mut flags = if style_messages.is_empty() {
-            ChangeFlags::empty()
-        } else {
-            ChangeFlags::LAYOUT
-        };
-        for msg in style_messages {
-            let state = cx.layout_state.view_states.entry(msg.id).or_default();
-            state.style = msg.style;
-            cx.request_layout(msg.id);
-        }
+        let mut flags = ChangeFlags::empty();
 
-        let messages = UPDATE_MESSAGES.with(|messages| messages.take());
-        for message in messages {
-            IDPATHS.with(|paths| {
-                if let Some(id_path) = paths.borrow().get(&message.id) {
-                    flags |= self.view.update_main(&mut cx, &id_path.0, message.body);
+        IDPATHS.with(|paths| {
+            UPDATE_MESSAGES.with(|msgs| {
+                let msgs = msgs.take();
+                for msg in msgs {
+                    match msg {
+                        UpdateMessage::Focus(id) => {
+                            cx.app_state.focus = Some(id);
+                        }
+                        UpdateMessage::State { id, state } => {
+                            if let Some(id_path) = paths.borrow().get(&id) {
+                                flags |= self.view.update_main(&mut cx, &id_path.0, state);
+                            }
+                        }
+                        UpdateMessage::Style { id, style } => {
+                            flags |= ChangeFlags::LAYOUT;
+                            let state = cx.app_state.view_states.entry(id).or_default();
+                            state.style = style;
+                            cx.request_layout(id);
+                        }
+                        UpdateMessage::EventListener {
+                            id,
+                            listener,
+                            action,
+                        } => {
+                            let state = cx.app_state.view_states.entry(id).or_default();
+                            state.event_listeners.insert(listener, action);
+                        }
+                    }
                 }
             });
-        }
+        });
 
-        cx.layout_state.process_layout_changed();
+        cx.app_state.process_layout_changed();
 
         if flags.contains(ChangeFlags::LAYOUT) {
             self.layout();

@@ -12,14 +12,14 @@ pub trait Decorators: View + Sized {
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
-            AppContext::add_style(id, style);
+            AppContext::update_style(id, style);
         });
         self
     }
 
     fn event(self, listener: EventListner, action: impl Fn(&Event) -> bool + 'static) -> Self {
         let id = self.id();
-        AppContext::add_event_listner(id, listener, Box::new(action));
+        AppContext::update_event_listner(id, listener, Box::new(action));
         self
     }
 }

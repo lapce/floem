@@ -24,7 +24,7 @@ pub fn button(
     let id = cx.new_id();
     create_effect(cx.scope, move |_| {
         let new_label = label();
-        AppContext::add_update(UpdateMessage::new(id, new_label));
+        AppContext::update_state(id, new_label);
     });
     Button {
         id,

@@ -67,7 +67,7 @@ where
             }
             diff
         };
-        AppContext::add_update(UpdateMessage::new(id, diff));
+        AppContext::update_state(id, diff);
         HashRun(hashed_items)
     });
     List {

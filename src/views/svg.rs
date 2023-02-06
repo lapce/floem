@@ -25,7 +25,7 @@ pub fn svg(cx: AppContext, svg_str: impl Fn() -> String + 'static) -> Svg {
         if let Ok(tree) =
             vello_svg::usvg::Tree::from_str(&new_svg_str, &vello_svg::usvg::Options::default())
         {
-            AppContext::add_update(UpdateMessage::new(id, tree));
+            AppContext::update_state(id, tree);
         }
     });
     Svg { id, svg_tree: None }

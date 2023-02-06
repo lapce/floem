@@ -375,15 +375,15 @@ impl PaintState {
 }
 
 pub struct UpdateCx<'a> {
-    pub(crate) layout_state: &'a mut AppState,
+    pub(crate) app_state: &'a mut AppState,
 }
 
 impl<'a> UpdateCx<'a> {
     pub(crate) fn reset_children_layout(&mut self, id: Id) {
-        self.layout_state.reset_children_layout(id);
+        self.app_state.reset_children_layout(id);
     }
 
     pub(crate) fn request_layout(&mut self, id: Id) {
-        self.layout_state.request_layout(id);
+        self.app_state.request_layout(id);
     }
 }
