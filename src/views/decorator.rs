@@ -2,6 +2,7 @@ use leptos_reactive::create_effect;
 
 use crate::{
     app::AppContext,
+    context::EventCx,
     event::{Event, EventListner},
     style::Style,
     view::View,

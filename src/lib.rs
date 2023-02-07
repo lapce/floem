@@ -11,7 +11,9 @@ pub mod view;
 pub mod view_tuple;
 pub mod views;
 
+pub use glazier;
 pub use leptos_reactive as reactive;
+pub use vello::peniko;
 
 use app::{App, AppContext};
 use glazier::{Application, WindowBuilder};

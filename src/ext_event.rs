@@ -6,7 +6,9 @@ use std::{
 };
 
 use glazier::{IdleHandle, IdleToken};
-use leptos_reactive::{create_effect, create_signal, ReadSignal, WriteSignal};
+use leptos_reactive::{
+    create_effect, create_signal, ReadSignal, Scope, ScopeDisposer, WriteSignal,
+};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 
@@ -76,4 +78,67 @@ pub fn create_signal_from_channel<T: Send>(
     });
 
     read
+}
+
+pub fn create_ext_action<T: Send>(cx: AppContext) -> (ReadSignal<Option<T>>, impl Fn(T)) {
+    let ext_id = ExtId::next();
+    let data = Arc::new(Mutex::new(None));
+
+    let (cx, _) = cx.scope.run_child_scope(|cx| cx);
+    let (read_notify, write_notify) = create_signal(cx, None);
+    WRITE_SIGNALS.with(|signals| signals.borrow_mut().insert(ext_id, write_notify));
+
+    let (read, write) = create_signal(cx, None);
+    {
+        let data = data.clone();
+        create_effect(cx, move |_| {
+            if read_notify.get().is_some() {
+                let event = data.lock().take().unwrap();
+                write.set(Some(event));
+                cx.dispose();
+            }
+        });
+    }
+
+    let send = move |event| {
+        *data.lock() = Some(event);
+        EXT_EVENT_HANDLER.send_event(ext_id);
+    };
+    (read, send)
+}
+
+pub fn create_signal_from_channel_oneshot<T: Send>(
+    cx: AppContext,
+    rx: crossbeam_channel::Receiver<T>,
+) -> (ReadSignal<Option<T>>, Scope) {
+    let ext_id = ExtId::next();
+    let data = Arc::new(Mutex::new(VecDeque::new()));
+    let ((read, child_scope), _child_scope_disposer) = cx.scope.run_child_scope(|cx| {
+        let (read_notify, write_notify) = create_signal(cx, None);
+        WRITE_SIGNALS.with(|signals| signals.borrow_mut().insert(ext_id, write_notify));
+
+        let (read, write) = create_signal(cx, None);
+
+        {
+            let data = data.clone();
+            create_effect(cx, move |_| {
+                if read_notify.get().is_some() {
+                    while let Some(value) = data.lock().pop_front() {
+                        write.set(value);
+                    }
+                }
+            });
+        }
+
+        (read, cx)
+    });
+
+    std::thread::spawn(move || {
+        while let Ok(event) = rx.recv() {
+            EXT_EVENT_HANDLER.send_event(ext_id);
+            data.lock().push_back(Some(event));
+        }
+    });
+
+    (read, child_scope)
 }

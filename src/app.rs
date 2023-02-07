@@ -235,19 +235,19 @@ impl<V: View> WinHandler for App<V> {
     }
 
     fn mouse_down(&mut self, event: &glazier::MouseEvent) {
-        self.event(Event::MouseDown(event.into()));
+        self.event(Event::MouseDown(event.clone()));
     }
 
     fn mouse_up(&mut self, event: &glazier::MouseEvent) {
-        self.event(Event::MouseUp(event.into()));
+        self.event(Event::MouseUp(event.clone()));
     }
 
     fn mouse_move(&mut self, event: &glazier::MouseEvent) {
-        self.event(Event::MouseMove(event.into()));
+        self.event(Event::MouseMove(event.clone()));
     }
 
     fn wheel(&mut self, event: &glazier::MouseEvent) {
-        self.event(Event::MouseWheel(event.into()));
+        self.event(Event::MouseWheel(event.clone()));
     }
 
     fn idle(&mut self, token: glazier::IdleToken) {
