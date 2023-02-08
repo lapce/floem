@@ -44,16 +44,23 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
         }
     }
 
-    fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: crate::event::Event) {
+    fn event(
+        &mut self,
+        cx: &mut EventCx,
+        id_path: Option<&[Id]>,
+        event: crate::event::Event,
+    ) -> bool {
+        let mut handled = false;
         self.children.foreach(&mut |view| {
             let id = view.id();
             if cx.should_send(id, &event) {
                 let event = cx.offset_event(id, event.clone());
-                view.event_main(cx, id_path, event);
+                handled = view.event_main(cx, id_path, event);
                 return true;
             }
             false
         });
+        handled
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {

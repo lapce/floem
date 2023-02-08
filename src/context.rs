@@ -116,7 +116,7 @@ impl AppState {
         self.request_layout(id);
     }
 
-    fn get_layout(&self, id: Id) -> Option<Layout> {
+    pub(crate) fn get_layout(&self, id: Id) -> Option<Layout> {
         self.view_states
             .get(&id)
             .and_then(|view| view.node.as_ref())
@@ -130,6 +130,10 @@ pub struct EventCx<'a> {
 }
 
 impl<'a> EventCx<'a> {
+    pub(crate) fn request_layout(&mut self, id: Id) {
+        self.app_state.request_layout(id);
+    }
+
     pub(crate) fn get_layout(&self, id: Id) -> Option<Layout> {
         self.app_state.get_layout(id)
     }
@@ -236,6 +240,13 @@ impl<'a> PaintCx<'a> {
 
     pub fn get_style(&self, id: Id) -> Option<&Style> {
         self.layout_state.view_states.get(&id).map(|s| &s.style)
+    }
+
+    pub fn offset(&mut self, offset: (f64, f64)) {
+        let mut new = self.transform.as_coeffs();
+        new[4] += offset.0;
+        new[5] += offset.1;
+        self.transform = Affine::new(new);
     }
 
     pub fn transform(&mut self, id: Id) -> Size {

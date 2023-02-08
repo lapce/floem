@@ -80,7 +80,10 @@ pub fn create_signal_from_channel<T: Send>(
     read
 }
 
-pub fn create_ext_action<T: Send>(cx: AppContext) -> (ReadSignal<Option<T>>, impl Fn(T)) {
+pub fn create_ext_action<T: Send + 'static>(
+    cx: AppContext,
+    action: impl Fn(T) + 'static,
+) -> impl Fn(T) {
     let ext_id = ExtId::next();
     let data = Arc::new(Mutex::new(None));
 
@@ -88,23 +91,21 @@ pub fn create_ext_action<T: Send>(cx: AppContext) -> (ReadSignal<Option<T>>, imp
     let (read_notify, write_notify) = create_signal(cx, None);
     WRITE_SIGNALS.with(|signals| signals.borrow_mut().insert(ext_id, write_notify));
 
-    let (read, write) = create_signal(cx, None);
     {
         let data = data.clone();
         create_effect(cx, move |_| {
             if read_notify.get().is_some() {
                 let event = data.lock().take().unwrap();
-                write.set(Some(event));
+                action(event);
                 cx.dispose();
             }
         });
     }
 
-    let send = move |event| {
+    move |event| {
         *data.lock() = Some(event);
         EXT_EVENT_HANDLER.send_event(ext_id);
-    };
-    (read, send)
+    }
 }
 
 pub fn create_signal_from_channel_oneshot<T: Send>(

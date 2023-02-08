@@ -56,7 +56,9 @@ impl View for Label {
         }
     }
 
-    fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) {}
+    fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {
+        false
+    }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         let mut lcx = parley::LayoutContext::new();

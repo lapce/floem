@@ -50,14 +50,13 @@ pub trait View {
 
     fn layout(&mut self, cx: &mut LayoutCx) -> Node;
 
-    fn event_main(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) {
+    fn event_main(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {
         if let Some(id_path) = id_path {
             let id = id_path[0];
             let id_path = &id_path[1..];
             if id == self.id() && !id_path.is_empty() {
                 if let Some(child) = self.child(id_path[0]) {
-                    child.event_main(cx, Some(id_path), event);
-                    return;
+                    return child.event_main(cx, Some(id_path), event);
                 }
             }
         }
@@ -65,15 +64,15 @@ pub trait View {
             if let Some(listeners) = cx.get_event_listener(self.id()) {
                 if let Some(action) = listeners.get(&listener) {
                     if (*action)(&event) {
-                        return;
+                        return true;
                     }
                 }
             }
         }
-        self.event(cx, None, event);
+        self.event(cx, None, event)
     }
 
-    fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event);
+    fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool;
 
     fn paint_main(&mut self, cx: &mut PaintCx) {
         cx.save();

@@ -47,8 +47,8 @@ impl<V: View> View for Container<V> {
         cx: &mut crate::context::EventCx,
         id_path: Option<&[Id]>,
         event: crate::event::Event,
-    ) {
-        self.child.event_main(cx, id_path, event);
+    ) -> bool {
+        self.child.event_main(cx, id_path, event)
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {

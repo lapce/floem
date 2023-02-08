@@ -131,6 +131,9 @@ impl<V: View> App<V> {
         };
 
         let mut flags = ChangeFlags::empty();
+        if !cx.app_state.layout_changed.is_empty() {
+            flags |= ChangeFlags::LAYOUT;
+        }
 
         IDPATHS.with(|paths| {
             UPDATE_MESSAGES.with(|msgs| {

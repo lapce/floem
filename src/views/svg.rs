@@ -63,7 +63,8 @@ impl View for Svg {
         cx: &mut crate::context::EventCx,
         id_path: Option<&[Id]>,
         event: crate::event::Event,
-    ) {
+    ) -> bool {
+        false
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {

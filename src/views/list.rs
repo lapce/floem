@@ -13,11 +13,11 @@ use crate::{
     view::{ChangeFlags, View},
 };
 
-type FxIndexSet<T> = indexmap::IndexSet<T, BuildHasherDefault<FxHasher>>;
+pub(crate) type FxIndexSet<T> = indexmap::IndexSet<T, BuildHasherDefault<FxHasher>>;
 
 #[derive(educe::Educe)]
 #[educe(Debug)]
-struct HashRun<T>(#[educe(Debug(ignore))] T);
+pub(crate) struct HashRun<T>(#[educe(Debug(ignore))] pub(crate) T);
 
 enum ListDirection {
     Horizontal,
@@ -94,7 +94,7 @@ impl<V: View + 'static> View for List<V> {
         state: Box<dyn std::any::Any>,
     ) -> crate::view::ChangeFlags {
         if let Ok(diff) = state.downcast() {
-            apply_cmds(*diff, &mut self.children);
+            apply_diff(*diff, &mut self.children);
             cx.request_layout(self.id());
             cx.reset_children_layout(self.id);
             ChangeFlags::LAYOUT
@@ -114,17 +114,24 @@ impl<V: View + 'static> View for List<V> {
         })
     }
 
-    fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: crate::event::Event) {
+    fn event(
+        &mut self,
+        cx: &mut EventCx,
+        id_path: Option<&[Id]>,
+        event: crate::event::Event,
+    ) -> bool {
         for (_, child) in self.children.iter_mut() {
             if let Some(child) = child.as_mut() {
                 let id = child.id();
                 if cx.should_send(id, &event) {
                     let event = cx.offset_event(id, event.clone());
-                    child.event_main(cx, id_path, cx.offset_event(id, event));
-                    break;
+                    if child.event_main(cx, id_path, cx.offset_event(id, event)) {
+                        return true;
+                    }
                 }
             }
         }
+        false
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
@@ -138,10 +145,10 @@ impl<V: View + 'static> View for List<V> {
 
 #[derive(Debug)]
 pub struct Diff<V> {
-    removed: SmallVec<[DiffOpRemove; 8]>,
-    moved: SmallVec<[DiffOpMove; 8]>,
-    added: SmallVec<[DiffOpAdd<V>; 8]>,
-    clear: bool,
+    pub(crate) removed: SmallVec<[DiffOpRemove; 8]>,
+    pub(crate) moved: SmallVec<[DiffOpMove; 8]>,
+    pub(crate) added: SmallVec<[DiffOpAdd<V>; 8]>,
+    pub(crate) clear: bool,
 }
 
 impl<V> Default for Diff<V> {
@@ -156,24 +163,24 @@ impl<V> Default for Diff<V> {
 }
 
 #[derive(Debug)]
-struct DiffOpMove {
+pub(crate) struct DiffOpMove {
     from: usize,
     to: usize,
 }
 
 #[derive(Debug)]
-struct DiffOpAdd<V> {
-    at: usize,
-    view: Option<V>,
+pub(crate) struct DiffOpAdd<V> {
+    pub(crate) at: usize,
+    pub(crate) view: Option<V>,
 }
 
 #[derive(Debug)]
-struct DiffOpRemove {
+pub(crate) struct DiffOpRemove {
     at: usize,
 }
 
 #[derive(Debug)]
-enum DiffOpAddMode {
+pub(crate) enum DiffOpAddMode {
     Normal,
     Append,
 }
@@ -185,7 +192,7 @@ impl Default for DiffOpAddMode {
 }
 
 /// Calculates the operations need to get from `a` to `b`.
-fn diff<K: Eq + Hash, V>(from: &FxIndexSet<K>, to: &FxIndexSet<K>) -> Diff<V> {
+pub(crate) fn diff<K: Eq + Hash, V>(from: &FxIndexSet<K>, to: &FxIndexSet<K>) -> Diff<V> {
     if from.is_empty() && to.is_empty() {
         return Diff::default();
     } else if to.is_empty() {
@@ -267,14 +274,14 @@ fn diff<K: Eq + Hash, V>(from: &FxIndexSet<K>, to: &FxIndexSet<K>) -> Diff<V> {
     diffs
 }
 
-fn apply_cmds<V>(mut cmds: Diff<V>, children: &mut IndexMap<Id, Option<V>>)
+pub(super) fn apply_diff<V>(mut diff: Diff<V>, children: &mut IndexMap<Id, Option<V>>)
 where
     V: View,
 {
     // Resize children if needed
-    if cmds.added.len().checked_sub(cmds.removed.len()).is_some() {
+    if diff.added.len().checked_sub(diff.removed.len()).is_some() {
         let target_size =
-            children.len() + (cmds.added.len() as isize - cmds.removed.len() as isize) as usize;
+            children.len() + (diff.added.len() as isize - diff.removed.len() as isize) as usize;
 
         if target_size > children.len() {
             children.extend(
@@ -291,27 +298,27 @@ where
     // We need to hold a list of items which will be moved, and
     // we can only perform the move after all commands have run, otherwise,
     // we risk overwriting one of the values
-    let mut items_to_move = Vec::with_capacity(cmds.moved.len());
+    let mut items_to_move = Vec::with_capacity(diff.moved.len());
 
     // The order of cmds needs to be:
     // 1. Clear
     // 2. Removed
     // 3. Moved
     // 4. Add
-    if cmds.clear {
-        cmds.removed.clear();
+    if diff.clear {
+        diff.removed.clear();
     }
 
-    for DiffOpRemove { at } in cmds.removed {
+    for DiffOpRemove { at } in diff.removed {
         let item_to_remove = std::mem::take(&mut children[at]).unwrap();
     }
 
-    for DiffOpMove { from, to } in cmds.moved {
+    for DiffOpMove { from, to } in diff.moved {
         let item = std::mem::take(&mut children[from]).unwrap();
         items_to_move.push((to, item));
     }
 
-    for DiffOpAdd { at, view } in cmds.added {
+    for DiffOpAdd { at, view } in diff.added {
         children[at] = view;
     }
 

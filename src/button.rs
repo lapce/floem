@@ -52,10 +52,12 @@ impl View for Button {
         }
     }
 
-    fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) {
+    fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {
         if let Event::MouseDown(mouse_event) = event {
             (self.onclick)();
         }
+
+        false
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {

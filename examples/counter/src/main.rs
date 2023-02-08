@@ -5,9 +5,9 @@ use floem::{
     stack::stack,
     style::{Dimension, FlexDirection, Style},
     view::View,
-    views::label,
     views::list,
     views::Decorators,
+    views::{label, scroll},
 };
 
 fn app_logic(cx: AppContext) -> impl View {
@@ -20,6 +20,36 @@ fn app_logic(cx: AppContext) -> impl View {
     stack(cx, move |cx| {
         (
             label(cx, move || couter.get().to_string()),
+            scroll(cx, move |cx| {
+                stack(cx, move |cx| {
+                    (
+                        label(cx, move || "seprate".to_string()),
+                        label(cx, move || "seprate".to_string()),
+                        label(cx, move || "seprate".to_string()),
+                        label(cx, move || "seprate".to_string()),
+                        label(cx, move || "seprate".to_string()),
+                        label(cx, move || "seprate".to_string()),
+                        label(cx, move || "seprate".to_string()),
+                        label(cx, move || "seprate".to_string()),
+                        label(cx, move || "seprate".to_string()),
+                        label(cx, move || "seprate".to_string()),
+                        label(cx, move || "seprate".to_string()),
+                        label(cx, move || "seprate".to_string()),
+                        label(cx, move || "seprate".to_string()),
+                        label(cx, move || "seprate".to_string()),
+                    )
+                })
+                .style(cx, || Style {
+                    flex_direction: FlexDirection::Column,
+                    ..Default::default()
+                })
+            })
+            .style(cx, || Style {
+                width: Dimension::Points(100.0),
+                height: Dimension::Points(100.0),
+                border: 1.0,
+                ..Default::default()
+            }),
             list(
                 cx,
                 move || labels.get(),

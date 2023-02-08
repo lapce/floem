@@ -1,4 +1,6 @@
-pub use taffy::style::{AlignContent, AlignItems, Dimension, FlexDirection, JustifyContent};
+pub use taffy::style::{
+    AlignContent, AlignItems, Dimension, Display, FlexDirection, JustifyContent, Position,
+};
 use taffy::{
     prelude::Rect,
     style::{LengthPercentage, Style as TaffyStyle},
@@ -6,6 +8,8 @@ use taffy::{
 
 #[derive(Clone, Debug)]
 pub struct Style {
+    pub display: Display,
+    pub position: Position,
     pub width: Dimension,
     pub height: Dimension,
     pub min_width: Dimension,
@@ -34,6 +38,8 @@ pub struct Style {
 impl Default for Style {
     fn default() -> Self {
         Self {
+            display: Display::Flex,
+            position: Position::Relative,
             width: Dimension::Auto,
             height: Dimension::Auto,
             min_width: Dimension::Auto,
@@ -64,6 +70,8 @@ impl Default for Style {
 impl From<&Style> for TaffyStyle {
     fn from(value: &Style) -> Self {
         Self {
+            display: value.display,
+            position: value.position,
             size: taffy::prelude::Size {
                 width: value.width,
                 height: value.height,
