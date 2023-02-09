@@ -1,5 +1,5 @@
 use glazier::kurbo::{Point, Rect, Size};
-use taffy::style::Position;
+use taffy::{prelude::Node, style::Position};
 
 use crate::{
     app::AppContext,
@@ -14,6 +14,7 @@ pub struct Scroll<V: View> {
     child: V,
     child_viewport: Rect,
     onscroll: Option<Box<dyn Fn(Rect)>>,
+    virtual_child_node: Option<Node>,
 }
 
 pub fn scroll<V: View>(cx: AppContext, child: impl Fn(AppContext) -> V) -> Scroll<V> {
@@ -28,6 +29,7 @@ pub fn scroll<V: View>(cx: AppContext, child: impl Fn(AppContext) -> V) -> Scrol
         child,
         child_viewport: Rect::ZERO,
         onscroll: None,
+        virtual_child_node: None,
     }
 }
 
@@ -78,7 +80,7 @@ impl<V: View> Scroll<V> {
         app_state
             .view_states
             .get(&self.id)
-            .and_then(|view| view.children_nodes.as_ref())
+            .map(|view| &view.children_nodes)
             .and_then(|nodes| nodes.get(0))
             .and_then(|node| app_state.taffy.layout(*node).ok())
             .map(|layout| Size::new(layout.size.width as f64, layout.size.height as f64))
@@ -114,24 +116,30 @@ impl<V: View> View for Scroll<V> {
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
+            if self.virtual_child_node.is_none() {
+                self.virtual_child_node = Some(
+                    cx.app_state
+                        .taffy
+                        .new_leaf(taffy::prelude::Style {
+                            position: Position::Absolute,
+                            ..Default::default()
+                        })
+                        .unwrap(),
+                );
+            }
+            let virtual_child_node = self.virtual_child_node.unwrap();
             let child_node = self.child.layout(cx);
-            let vritual_node = cx
-                .layout_state
+
+            cx.app_state
                 .taffy
-                .new_with_children(
-                    taffy::prelude::Style {
-                        position: Position::Absolute,
-                        ..Default::default()
-                    },
-                    &[child_node],
-                )
-                .unwrap();
-            vec![vritual_node]
+                .set_children(virtual_child_node, &[child_node]);
+
+            vec![virtual_child_node]
         })
     }
 
     fn compute_layout(&mut self, cx: &mut LayoutCx) {
-        self.clamp_child_viewport(cx.layout_state, self.child_viewport);
+        self.clamp_child_viewport(cx.app_state, self.child_viewport);
         self.child.compute_layout(cx);
     }
 

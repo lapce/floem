@@ -2,7 +2,7 @@ use std::{hash::Hash, marker::PhantomData, ops::Range};
 
 use glazier::kurbo::Rect;
 use indexmap::IndexMap;
-use leptos_reactive::{create_effect, create_signal, WriteSignal};
+use leptos_reactive::{create_effect, create_signal, Scope, ScopeDisposer, WriteSignal};
 use smallvec::SmallVec;
 use taffy::style::Dimension;
 
@@ -45,7 +45,7 @@ where
 {
     id: Id,
     direction: VirtualListDirection,
-    children: Vec<Option<V>>,
+    children: Vec<Option<(V, ScopeDisposer)>>,
     viewport: Rect,
     set_viewport: WriteSignal<Rect>,
     view_fn: VF,
@@ -210,9 +210,9 @@ where
         let child = self
             .children
             .iter_mut()
-            .find(|v| v.as_ref().map(|v| v.id() == id).unwrap_or(false));
+            .find(|v| v.as_ref().map(|(v, _)| v.id() == id).unwrap_or(false));
         if let Some(child) = child {
-            child.as_mut().map(|view| view as &mut dyn View)
+            child.as_mut().map(|(view, _)| view as &mut dyn View)
         } else {
             None
         }
@@ -240,7 +240,7 @@ where
             let mut nodes = self
                 .children
                 .iter_mut()
-                .filter_map(|child| Some(child.as_mut()?.layout(cx)))
+                .filter_map(|child| Some(child.as_mut()?.0.layout(cx)))
                 .collect::<Vec<_>>();
             let prev_size = match self.direction {
                 VirtualListDirection::Vertical => taffy::prelude::Size {
@@ -264,7 +264,7 @@ where
             };
             nodes.insert(
                 0,
-                cx.layout_state
+                cx.app_state
                     .taffy
                     .new_leaf(taffy::style::Style {
                         size: prev_size,
@@ -273,7 +273,7 @@ where
                     .unwrap(),
             );
             nodes.push(
-                cx.layout_state
+                cx.app_state
                     .taffy
                     .new_leaf(taffy::style::Style {
                         size: after_size,
@@ -287,7 +287,7 @@ where
 
     fn compute_layout(&mut self, cx: &mut LayoutCx) {
         let viewport = cx
-            .layout_state
+            .app_state
             .view_states
             .get(&self.id)
             .and_then(|view| view.viewport)
@@ -298,7 +298,7 @@ where
         }
 
         for child in &mut self.children {
-            if let Some(child) = child.as_mut() {
+            if let Some((child, _)) = child.as_mut() {
                 child.compute_layout(cx);
             }
         }
@@ -311,7 +311,7 @@ where
         event: crate::event::Event,
     ) -> bool {
         for child in self.children.iter_mut() {
-            if let Some(child) = child.as_mut() {
+            if let Some((child, _)) = child.as_mut() {
                 let id = child.id();
                 if cx.should_send(id, &event) {
                     let event = cx.offset_event(id, event.clone());
@@ -326,7 +326,7 @@ where
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         for child in &mut self.children {
-            if let Some(child) = child.as_mut() {
+            if let Some((child, _)) = child.as_mut() {
                 child.paint_main(cx);
             }
         }

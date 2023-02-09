@@ -72,41 +72,40 @@ impl View for Label {
         let height = text_layout.height();
         self.text_layout = Some(text_layout);
 
-        let text_node = cx
-            .layout_state
-            .taffy
-            .new_leaf(
-                (&Style {
-                    width: Dimension::Points(width),
-                    height: Dimension::Points(height),
-                    ..Default::default()
-                })
-                    .into(),
-            )
-            .unwrap();
-        self.text_node = Some(text_node);
+        if self.text_node.is_none() {
+            self.text_node = Some(
+                cx.app_state
+                    .taffy
+                    .new_leaf(taffy::style::Style::DEFAULT)
+                    .unwrap(),
+            );
+        }
+        let text_node = self.text_node.unwrap();
+
+        cx.app_state.taffy.set_style(
+            text_node,
+            (&Style {
+                width: Dimension::Points(width),
+                height: Dimension::Points(height),
+                ..Default::default()
+            })
+                .into(),
+        );
 
         let style: taffy::style::Style =
             cx.get_style(self.id).map(|s| s.into()).unwrap_or_default();
-        let node = cx
-            .layout_state
-            .taffy
-            .new_with_children(style, &[text_node])
-            .unwrap();
-        let layout = cx.layout_state.view_states.entry(self.id()).or_default();
-        layout.node = Some(node);
+        let view = cx.app_state.view_state(self.id());
+        let node = view.node;
+        cx.app_state.taffy.set_style(node, style);
+        cx.app_state.taffy.set_children(node, &[text_node]);
         node
     }
 
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {}
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        let location = cx
-            .layout_state
-            .taffy
-            .layout(self.text_node.unwrap())
-            .unwrap()
-            .location;
+        let text_node = self.text_node.unwrap();
+        let location = cx.layout_state.taffy.layout(text_node).unwrap().location;
         let point = Point::new(location.x as f64, location.y as f64);
         cx.render_text(self.text_layout.as_ref().unwrap(), point);
     }

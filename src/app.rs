@@ -108,11 +108,11 @@ impl<V: View> App<V> {
         let start = std::time::Instant::now();
         self.app_state.process_layout_changed();
         let mut cx = LayoutCx {
-            layout_state: &mut self.app_state,
+            app_state: &mut self.app_state,
             font_cx: &mut self.font_cx,
         };
-        cx.layout_state.root = Some(self.view.layout(&mut cx));
-        cx.layout_state.compute_layout();
+        cx.app_state.root = Some(self.view.layout(&mut cx));
+        cx.app_state.compute_layout();
         self.view.compute_layout(&mut cx);
         // println!("layout took {}", start.elapsed().as_micros());
     }
@@ -157,7 +157,7 @@ impl<V: View> App<V> {
                     }
                     UpdateMessage::Style { id, style } => {
                         flags |= ChangeFlags::LAYOUT;
-                        let state = cx.app_state.view_states.entry(id).or_default();
+                        let state = cx.app_state.view_state(id);
                         state.style = style;
                         cx.request_layout(id);
                     }
@@ -166,7 +166,7 @@ impl<V: View> App<V> {
                         listener,
                         action,
                     } => {
-                        let state = cx.app_state.view_states.entry(id).or_default();
+                        let state = cx.app_state.view_state(id);
                         state.event_listeners.insert(listener, action);
                     }
                 }

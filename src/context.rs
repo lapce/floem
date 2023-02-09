@@ -29,20 +29,22 @@ use crate::{
 pub type EventCallback = dyn Fn(&Event) -> bool;
 
 pub struct ViewState {
-    pub(crate) node: Option<Node>,
+    pub(crate) node: Node,
+    pub(crate) children_nodes: Vec<Node>,
+    pub(crate) request_layout: bool,
     pub(crate) viewport: Option<Rect>,
     pub(crate) style: Style,
-    pub(crate) children_nodes: Option<Vec<Node>>,
     pub(crate) event_listeners: HashMap<EventListner, Box<EventCallback>>,
 }
 
-impl Default for ViewState {
-    fn default() -> Self {
+impl ViewState {
+    fn new(taffy: &mut taffy::Taffy) -> Self {
         Self {
-            node: None,
+            node: taffy.new_leaf(taffy::style::Style::DEFAULT).unwrap(),
             viewport: None,
+            request_layout: true,
             style: Style::default(),
-            children_nodes: None,
+            children_nodes: Vec::new(),
             event_listeners: HashMap::new(),
         }
     }
@@ -67,6 +69,12 @@ impl AppState {
             view_states: HashMap::new(),
             layout_changed: HashSet::new(),
         }
+    }
+
+    pub fn view_state(&mut self, id: Id) -> &mut ViewState {
+        self.view_states
+            .entry(id)
+            .or_insert_with(|| ViewState::new(&mut self.taffy))
     }
 
     pub fn set_root_size(&mut self, size: Size) {
@@ -102,32 +110,32 @@ impl AppState {
     }
 
     pub(crate) fn request_layout(&mut self, id: Id) {
-        let view = self.view_states.entry(id).or_default();
-        view.node = None;
+        let view = self.view_state(id);
+        view.request_layout = true;
         self.layout_changed.insert(id);
     }
 
     pub(crate) fn set_viewport(&mut self, id: Id, viewport: Rect) {
-        let view = self.view_states.entry(id).or_default();
+        let view = self.view_state(id);
         view.viewport = Some(viewport);
     }
 
-    pub(crate) fn layout_node(&mut self, id: Id) -> Option<Node> {
-        let view = self.view_states.entry(id).or_default();
+    pub(crate) fn layout_node(&mut self, id: Id) -> Node {
+        let view = self.view_state(id);
         view.node
     }
 
     pub(crate) fn reset_children_layout(&mut self, id: Id) {
-        let view = self.view_states.entry(id).or_default();
-        view.children_nodes = None;
+        let view = self.view_state(id);
+        view.children_nodes.clear();
         self.request_layout(id);
     }
 
     pub(crate) fn get_layout(&self, id: Id) -> Option<Layout> {
         self.view_states
             .get(&id)
-            .and_then(|view| view.node.as_ref())
-            .and_then(|node| self.taffy.layout(*node).ok())
+            .map(|view| view.node)
+            .and_then(|node| self.taffy.layout(node).ok())
             .copied()
     }
 }
@@ -181,13 +189,13 @@ impl<'a> EventCx<'a> {
 }
 
 pub struct LayoutCx<'a> {
-    pub(crate) layout_state: &'a mut AppState,
+    pub(crate) app_state: &'a mut AppState,
     pub(crate) font_cx: &'a mut FontContext,
 }
 
 impl<'a> LayoutCx<'a> {
     pub fn get_style(&self, id: Id) -> Option<&Style> {
-        self.layout_state.view_states.get(&id).map(|s| &s.style)
+        self.app_state.view_states.get(&id).map(|s| &s.style)
     }
 
     pub(crate) fn layout_node(
@@ -196,31 +204,21 @@ impl<'a> LayoutCx<'a> {
         has_children: bool,
         mut children: impl FnMut(&mut LayoutCx) -> Vec<Node>,
     ) -> Node {
-        if let Some(node) = self.layout_state.layout_node(id) {
+        let view = self.app_state.view_state(id);
+        let node = view.node;
+        if !view.request_layout {
             return node;
         }
-        let view = self.layout_state.view_states.entry(id).or_default();
         let style = (&view.style).into();
-        let node = if !has_children {
-            self.layout_state.taffy.new_leaf(style).unwrap()
-        } else if let Some(nodes) = view.children_nodes.as_ref() {
-            self.layout_state
-                .taffy
-                .new_with_children(style, nodes)
-                .unwrap()
-        } else {
+        self.app_state.taffy.set_style(node, style);
+
+        if has_children {
             let nodes = children(self);
-            let node = self
-                .layout_state
-                .taffy
-                .new_with_children(style, &nodes)
-                .unwrap();
-            let view = self.layout_state.view_states.entry(id).or_default();
-            view.children_nodes = Some(nodes);
-            node
-        };
-        let view = self.layout_state.view_states.entry(id).or_default();
-        view.node = Some(node);
+            self.app_state.taffy.set_children(node, &nodes);
+            let view = self.app_state.view_state(id);
+            view.children_nodes = nodes;
+        }
+
         node
     }
 }

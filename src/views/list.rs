@@ -4,7 +4,7 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use leptos_reactive::create_effect;
+use leptos_reactive::{create_effect, ScopeDisposer};
 use rustc_hash::FxHasher;
 use smallvec::SmallVec;
 use taffy::style::{FlexDirection, Style};
@@ -34,7 +34,7 @@ where
     T: 'static,
 {
     id: Id,
-    children: Vec<Option<V>>,
+    children: Vec<Option<(V, ScopeDisposer)>>,
     view_fn: VF,
     phatom: PhantomData<T>,
     cx: AppContext,
@@ -107,9 +107,9 @@ where
         let child = self
             .children
             .iter_mut()
-            .find(|v| v.as_ref().map(|v| v.id() == id).unwrap_or(false));
+            .find(|v| v.as_ref().map(|(v, _)| v.id() == id).unwrap_or(false));
         if let Some(child) = child {
-            child.as_mut().map(|view| view as &mut dyn View)
+            child.as_mut().map(|(view, _)| view as &mut dyn View)
         } else {
             None
         }
@@ -135,7 +135,7 @@ where
             let nodes = self
                 .children
                 .iter_mut()
-                .filter_map(|child| Some(child.as_mut()?.layout(cx)))
+                .filter_map(|child| Some(child.as_mut()?.0.layout(cx)))
                 .collect::<Vec<_>>();
             nodes
         })
@@ -143,7 +143,7 @@ where
 
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {
         for child in &mut self.children {
-            if let Some(child) = child.as_mut() {
+            if let Some((child, _)) = child.as_mut() {
                 child.compute_layout(cx);
             }
         }
@@ -156,7 +156,7 @@ where
         event: crate::event::Event,
     ) -> bool {
         for child in self.children.iter_mut() {
-            if let Some(child) = child.as_mut() {
+            if let Some((child, _)) = child.as_mut() {
                 let id = child.id();
                 if cx.should_send(id, &event) {
                     let event = cx.offset_event(id, event.clone());
@@ -171,7 +171,7 @@ where
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         for child in self.children.iter_mut() {
-            if let Some(child) = child.as_mut() {
+            if let Some((child, _)) = child.as_mut() {
                 child.paint_main(cx);
             }
         }
@@ -312,7 +312,7 @@ pub(crate) fn diff<K: Eq + Hash, V>(from: &FxIndexSet<K>, to: &FxIndexSet<K>) ->
 pub(super) fn apply_diff<T, V, VF>(
     cx: AppContext,
     mut diff: Diff<T>,
-    children: &mut Vec<Option<V>>,
+    children: &mut Vec<Option<(V, ScopeDisposer)>>,
     view_fn: &VF,
 ) where
     V: View,
@@ -341,7 +341,8 @@ pub(super) fn apply_diff<T, V, VF>(
     }
 
     for DiffOpRemove { at } in diff.removed {
-        let item_to_remove = std::mem::take(&mut children[at]).unwrap();
+        let (_, disposer) = std::mem::take(&mut children[at]).unwrap();
+        disposer.dispose();
     }
 
     for DiffOpMove { from, to } in diff.moved {
@@ -350,7 +351,13 @@ pub(super) fn apply_diff<T, V, VF>(
     }
 
     for DiffOpAdd { at, view } in diff.added {
-        children[at] = view.map(|value| view_fn(cx, value));
+        children[at] = view.map(|value| {
+            cx.scope.run_child_scope(|scope| {
+                let mut cx = cx;
+                cx.scope = scope;
+                view_fn(cx, value)
+            })
+        });
     }
 
     for (to, each_item) in items_to_move {
