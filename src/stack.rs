@@ -75,6 +75,13 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
         })
     }
 
+    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {
+        self.children.foreach(&mut |view| {
+            view.compute_layout(cx);
+            false
+        });
+    }
+
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         self.children.foreach(&mut |view| {
             view.paint_main(cx);

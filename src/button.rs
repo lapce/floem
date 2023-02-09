@@ -52,6 +52,8 @@ impl View for Button {
         }
     }
 
+    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {}
+
     fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {
         if let Event::MouseDown(mouse_event) = event {
             (self.onclick)();

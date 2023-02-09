@@ -50,6 +50,8 @@ pub trait View {
 
     fn layout(&mut self, cx: &mut LayoutCx) -> Node;
 
+    fn compute_layout(&mut self, cx: &mut LayoutCx);
+
     fn event_main(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {
         if let Some(id_path) = id_path {
             let id = id_path[0];

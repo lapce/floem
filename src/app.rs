@@ -105,12 +105,16 @@ impl<V: View> App<V> {
     }
 
     fn layout(&mut self) {
+        let start = std::time::Instant::now();
+        self.app_state.process_layout_changed();
         let mut cx = LayoutCx {
             layout_state: &mut self.app_state,
             font_cx: &mut self.font_cx,
         };
         cx.layout_state.root = Some(self.view.layout(&mut cx));
         cx.layout_state.compute_layout();
+        self.view.compute_layout(&mut cx);
+        // println!("layout took {}", start.elapsed().as_micros());
     }
 
     pub fn paint(&mut self) {
@@ -126,58 +130,58 @@ impl<V: View> App<V> {
     }
 
     pub fn process_update(&mut self) {
-        let mut cx = UpdateCx {
-            app_state: &mut self.app_state,
-        };
-
         let mut flags = ChangeFlags::empty();
-        if !cx.app_state.layout_changed.is_empty() {
+        if !self.app_state.layout_changed.is_empty() {
             flags |= ChangeFlags::LAYOUT;
         }
 
-        IDPATHS.with(|paths| {
-            UPDATE_MESSAGES.with(|msgs| {
-                let msgs = msgs.take();
-                for msg in msgs {
-                    match msg {
-                        UpdateMessage::Focus(id) => {
-                            cx.app_state.focus = Some(id);
-                        }
-                        UpdateMessage::State { id, state } => {
-                            if let Some(id_path) = paths.borrow().get(&id) {
-                                flags |= self.view.update_main(&mut cx, &id_path.0, state);
-                            }
-                        }
-                        UpdateMessage::Style { id, style } => {
-                            flags |= ChangeFlags::LAYOUT;
-                            let state = cx.app_state.view_states.entry(id).or_default();
-                            state.style = style;
-                            cx.request_layout(id);
-                        }
-                        UpdateMessage::EventListener {
-                            id,
-                            listener,
-                            action,
-                        } => {
-                            let state = cx.app_state.view_states.entry(id).or_default();
-                            state.event_listeners.insert(listener, action);
+        self.layout();
+        loop {
+            let msgs = UPDATE_MESSAGES.with(|msgs| msgs.take());
+            if msgs.is_empty() {
+                break;
+            }
+            let mut cx = UpdateCx {
+                app_state: &mut self.app_state,
+            };
+            for msg in msgs {
+                match msg {
+                    UpdateMessage::Focus(id) => {
+                        cx.app_state.focus = Some(id);
+                    }
+                    UpdateMessage::State { id, state } => {
+                        let id_path = IDPATHS.with(|paths| paths.borrow().get(&id).cloned());
+                        if let Some(id_path) = id_path {
+                            flags |= self.view.update_main(&mut cx, &id_path.0, state);
                         }
                     }
+                    UpdateMessage::Style { id, style } => {
+                        flags |= ChangeFlags::LAYOUT;
+                        let state = cx.app_state.view_states.entry(id).or_default();
+                        state.style = style;
+                        cx.request_layout(id);
+                    }
+                    UpdateMessage::EventListener {
+                        id,
+                        listener,
+                        action,
+                    } => {
+                        let state = cx.app_state.view_states.entry(id).or_default();
+                        state.event_listeners.insert(listener, action);
+                    }
                 }
-            });
-        });
-
-        cx.app_state.process_layout_changed();
-
-        if flags.contains(ChangeFlags::LAYOUT) {
+            }
             self.layout();
-            self.paint();
-        } else if flags.contains(ChangeFlags::PAINT) {
+        }
+        // self.layout();
+
+        if flags.contains(ChangeFlags::LAYOUT) || flags.contains(ChangeFlags::PAINT) {
             self.paint();
         }
     }
 
     pub fn event(&mut self, event: Event) {
+        // println!("event");
         let mut cx = EventCx {
             app_state: &mut self.app_state,
         };
@@ -222,7 +226,7 @@ impl<V: View> WinHandler for App<V> {
 
     fn size(&mut self, size: glazier::kurbo::Size) {
         self.app_state.set_root_size(size);
-        self.layout();
+        self.process_update();
         self.paint();
     }
 

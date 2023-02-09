@@ -1,13 +1,15 @@
+use std::sync::Arc;
+
 use floem::{
     app::AppContext,
     button::button,
     reactive::create_signal,
     stack::stack,
-    style::{Dimension, FlexDirection, Style},
+    style::{AlignItems, Dimension, FlexDirection, Style},
     view::View,
-    views::list,
     views::Decorators,
-    views::{label, scroll},
+    views::{label, scroll, VirtualListDirection, VirtualListItemSize},
+    views::{list, virtual_list},
 };
 
 fn app_logic(cx: AppContext) -> impl View {
@@ -17,28 +19,29 @@ fn app_logic(cx: AppContext) -> impl View {
     let (c, set_c) = create_signal(cx.scope, "b".to_string());
     let (labels, set_labels) = create_signal(cx.scope, vec![a, b, c]);
 
+    let mut virtual_list_strings = Vec::new();
+    for i in 0..10 {
+        virtual_list_strings.push(i.to_string());
+    }
+    let (value, set_value) = create_signal(cx.scope, im::Vector::from(virtual_list_strings));
+
     stack(cx, move |cx| {
         (
             label(cx, move || couter.get().to_string()),
             scroll(cx, move |cx| {
-                stack(cx, move |cx| {
-                    (
-                        label(cx, move || "seprate".to_string()),
-                        label(cx, move || "seprate".to_string()),
-                        label(cx, move || "seprate".to_string()),
-                        label(cx, move || "seprate".to_string()),
-                        label(cx, move || "seprate".to_string()),
-                        label(cx, move || "seprate".to_string()),
-                        label(cx, move || "seprate".to_string()),
-                        label(cx, move || "seprate".to_string()),
-                        label(cx, move || "seprate".to_string()),
-                        label(cx, move || "seprate".to_string()),
-                        label(cx, move || "seprate".to_string()),
-                        label(cx, move || "seprate".to_string()),
-                        label(cx, move || "seprate".to_string()),
-                        label(cx, move || "seprate".to_string()),
-                    )
-                })
+                virtual_list(
+                    cx,
+                    VirtualListDirection::Vertical,
+                    move || value.get(),
+                    move |item| item.clone(),
+                    move |cx, item| {
+                        label(cx, move || format!("{item} {}", couter.get())).style(cx, || Style {
+                            height: Dimension::Points(20.0),
+                            ..Default::default()
+                        })
+                    },
+                    VirtualListItemSize::Fixed(20.0),
+                )
                 .style(cx, || Style {
                     flex_direction: FlexDirection::Column,
                     ..Default::default()
@@ -46,7 +49,7 @@ fn app_logic(cx: AppContext) -> impl View {
             })
             .style(cx, || Style {
                 width: Dimension::Points(100.0),
-                height: Dimension::Points(100.0),
+                flex_grow: 1.0,
                 border: 1.0,
                 ..Default::default()
             }),
@@ -55,16 +58,10 @@ fn app_logic(cx: AppContext) -> impl View {
                 move || labels.get(),
                 move |item| item.get(),
                 move |cx, item| {
-                    button(
-                        cx,
-                        move || item.get(),
-                        move || {
-                            set_counter.update(|counter| *counter += 1);
-                        },
-                    )
-                    .style(cx, || Style {
+                    label(cx, move || item.get()).style(cx, || Style {
                         width: Dimension::Points(50.0),
-                        height: Dimension::Points(20.0),
+                        height: Dimension::Points(30.0),
+                        border: 1.0,
                         ..Default::default()
                     })
                 },
@@ -82,6 +79,7 @@ fn app_logic(cx: AppContext) -> impl View {
                     .style(cx, || Style {
                         width: Dimension::Points(50.0),
                         height: Dimension::Points(20.0),
+                        border: 1.0,
                         ..Default::default()
                     }),
                 )
@@ -97,6 +95,7 @@ fn app_logic(cx: AppContext) -> impl View {
             .style(cx, || Style {
                 width: Dimension::Auto,
                 height: Dimension::Auto,
+                border: 1.0,
                 flex_grow: 1.0,
                 ..Default::default()
             }),
@@ -111,6 +110,7 @@ fn app_logic(cx: AppContext) -> impl View {
             .style(cx, || Style {
                 width: Dimension::Auto,
                 height: Dimension::Auto,
+                border: 1.0,
                 flex_grow: 2.0,
                 ..Default::default()
             }),
@@ -130,6 +130,7 @@ fn app_logic(cx: AppContext) -> impl View {
                     .style(cx, || Style {
                         width: Dimension::Points(50.0),
                         height: Dimension::Points(20.0),
+                        border: 1.0,
                         ..Default::default()
                     }),
                     label(cx, move || couter.get().to_string()),
@@ -141,6 +142,7 @@ fn app_logic(cx: AppContext) -> impl View {
         width: Dimension::Percent(1.0),
         height: Dimension::Percent(1.0),
         flex_direction: FlexDirection::Column,
+        align_items: Some(AlignItems::Center),
         ..Default::default()
     })
 }

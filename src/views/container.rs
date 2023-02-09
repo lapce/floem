@@ -42,6 +42,10 @@ impl<V: View> View for Container<V> {
         cx.layout_node(self.id, true, |cx| vec![self.child.layout(cx)])
     }
 
+    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {
+        self.child.compute_layout(cx);
+    }
+
     fn event(
         &mut self,
         cx: &mut crate::context::EventCx,

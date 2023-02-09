@@ -1,4 +1,7 @@
-use std::hash::{BuildHasherDefault, Hash};
+use std::{
+    hash::{BuildHasherDefault, Hash},
+    marker::PhantomData,
+};
 
 use indexmap::IndexMap;
 use leptos_reactive::create_effect;
@@ -24,12 +27,25 @@ enum ListDirection {
     Vertical,
 }
 
-pub struct List<V: View> {
+pub struct List<V, VF, T>
+where
+    V: View,
+    VF: Fn(AppContext, T) -> V + 'static,
+    T: 'static,
+{
     id: Id,
-    children: IndexMap<Id, Option<V>>,
+    children: Vec<Option<V>>,
+    view_fn: VF,
+    phatom: PhantomData<T>,
+    cx: AppContext,
 }
 
-pub fn list<IF, I, T, KF, K, VF, V>(cx: AppContext, each_fn: IF, key_fn: KF, view_fn: VF) -> List<V>
+pub fn list<IF, I, T, KF, K, VF, V>(
+    cx: AppContext,
+    each_fn: IF,
+    key_fn: KF,
+    view_fn: VF,
+) -> List<V, VF, T>
 where
     IF: Fn() -> I + 'static,
     I: IntoIterator<Item = T>,
@@ -54,7 +70,7 @@ where
                 .map(|i| Some(i))
                 .collect::<SmallVec<[Option<_>; 128]>>();
             for added in &mut cmds.added {
-                added.view = Some(view_fn(child_cx, items[added.at].take().unwrap()));
+                added.view = Some(items[added.at].take().unwrap());
             }
             cmds
         } else {
@@ -62,7 +78,7 @@ where
             for (i, item) in each_fn().into_iter().enumerate() {
                 diff.added.push(DiffOpAdd {
                     at: i,
-                    view: Some(view_fn(child_cx, item)),
+                    view: Some(item),
                 });
             }
             diff
@@ -72,19 +88,30 @@ where
     });
     List {
         id,
-        children: IndexMap::new(),
+        children: Vec::new(),
+        view_fn,
+        phatom: PhantomData::default(),
+        cx: child_cx,
     }
 }
 
-impl<V: View + 'static> View for List<V> {
+impl<V: View + 'static, VF, T> View for List<V, VF, T>
+where
+    VF: Fn(AppContext, T) -> V + 'static,
+{
     fn id(&self) -> Id {
         self.id
     }
 
     fn child(&mut self, id: Id) -> Option<&mut dyn View> {
-        match self.children.get_mut(&id) {
-            Some(view) => view.as_mut().map(|view| view as &mut dyn View),
-            None => None,
+        let child = self
+            .children
+            .iter_mut()
+            .find(|v| v.as_ref().map(|v| v.id() == id).unwrap_or(false));
+        if let Some(child) = child {
+            child.as_mut().map(|view| view as &mut dyn View)
+        } else {
+            None
         }
     }
 
@@ -94,7 +121,7 @@ impl<V: View + 'static> View for List<V> {
         state: Box<dyn std::any::Any>,
     ) -> crate::view::ChangeFlags {
         if let Ok(diff) = state.downcast() {
-            apply_diff(*diff, &mut self.children);
+            apply_diff(self.cx, *diff, &mut self.children, &self.view_fn);
             cx.request_layout(self.id());
             cx.reset_children_layout(self.id);
             ChangeFlags::LAYOUT
@@ -108,10 +135,18 @@ impl<V: View + 'static> View for List<V> {
             let nodes = self
                 .children
                 .iter_mut()
-                .filter_map(|(_id, child)| Some(child.as_mut()?.layout(cx)))
+                .filter_map(|child| Some(child.as_mut()?.layout(cx)))
                 .collect::<Vec<_>>();
             nodes
         })
+    }
+
+    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {
+        for child in &mut self.children {
+            if let Some(child) = child.as_mut() {
+                child.compute_layout(cx);
+            }
+        }
     }
 
     fn event(
@@ -120,7 +155,7 @@ impl<V: View + 'static> View for List<V> {
         id_path: Option<&[Id]>,
         event: crate::event::Event,
     ) -> bool {
-        for (_, child) in self.children.iter_mut() {
+        for child in self.children.iter_mut() {
             if let Some(child) = child.as_mut() {
                 let id = child.id();
                 if cx.should_send(id, &event) {
@@ -135,7 +170,7 @@ impl<V: View + 'static> View for List<V> {
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        for (_, child) in self.children.iter_mut() {
+        for child in self.children.iter_mut() {
             if let Some(child) = child.as_mut() {
                 child.paint_main(cx);
             }
@@ -274,25 +309,21 @@ pub(crate) fn diff<K: Eq + Hash, V>(from: &FxIndexSet<K>, to: &FxIndexSet<K>) ->
     diffs
 }
 
-pub(super) fn apply_diff<V>(mut diff: Diff<V>, children: &mut IndexMap<Id, Option<V>>)
-where
+pub(super) fn apply_diff<T, V, VF>(
+    cx: AppContext,
+    mut diff: Diff<T>,
+    children: &mut Vec<Option<V>>,
+    view_fn: &VF,
+) where
     V: View,
+    VF: Fn(AppContext, T) -> V + 'static,
 {
     // Resize children if needed
     if diff.added.len().checked_sub(diff.removed.len()).is_some() {
         let target_size =
             children.len() + (diff.added.len() as isize - diff.removed.len() as isize) as usize;
 
-        if target_size > children.len() {
-            children.extend(
-                (0..target_size - children.len())
-                    .into_iter()
-                    .map(|_| (Id::next(), None)),
-            );
-        } else if target_size < children.len() {
-            children.truncate(target_size);
-        }
-        // children.resize_with(target_size, || None);
+        children.resize_with(target_size, || None);
     }
 
     // We need to hold a list of items which will be moved, and
@@ -319,7 +350,7 @@ where
     }
 
     for DiffOpAdd { at, view } in diff.added {
-        children[at] = view;
+        children[at] = view.map(|value| view_fn(cx, value));
     }
 
     for (to, each_item) in items_to_move {
@@ -328,5 +359,5 @@ where
 
     // Now, remove the holes that might have been left from removing
     // items
-    children.retain(|_, c| c.is_some());
+    children.retain(|c| c.is_some());
 }

@@ -22,7 +22,7 @@ pub struct Label {
     text_node: Option<Node>,
 }
 
-pub fn label(cx: AppContext, label: impl Fn() -> String + 'static + Copy) -> Label {
+pub fn label(cx: AppContext, label: impl Fn() -> String + 'static) -> Label {
     let id = cx.new_id();
     create_effect(cx.scope, move |_| {
         let new_label = label();
@@ -30,7 +30,7 @@ pub fn label(cx: AppContext, label: impl Fn() -> String + 'static + Copy) -> Lab
     });
     Label {
         id,
-        label: label(),
+        label: "".to_string(),
         text_layout: None,
         text_node: None,
     }
@@ -97,6 +97,8 @@ impl View for Label {
         layout.node = Some(node);
         node
     }
+
+    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {}
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         let location = cx

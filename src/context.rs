@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use glazier::{
-    kurbo::{Affine, Point, Shape, Size, Vec2},
+    kurbo::{Affine, Point, Rect, Shape, Size, Vec2},
     Scalable,
 };
 use parley::FontContext;
@@ -30,6 +30,7 @@ pub type EventCallback = dyn Fn(&Event) -> bool;
 
 pub struct ViewState {
     pub(crate) node: Option<Node>,
+    pub(crate) viewport: Option<Rect>,
     pub(crate) style: Style,
     pub(crate) children_nodes: Option<Vec<Node>>,
     pub(crate) event_listeners: HashMap<EventListner, Box<EventCallback>>,
@@ -39,6 +40,7 @@ impl Default for ViewState {
     fn default() -> Self {
         Self {
             node: None,
+            viewport: None,
             style: Style::default(),
             children_nodes: None,
             event_listeners: HashMap::new(),
@@ -103,6 +105,11 @@ impl AppState {
         let view = self.view_states.entry(id).or_default();
         view.node = None;
         self.layout_changed.insert(id);
+    }
+
+    pub(crate) fn set_viewport(&mut self, id: Id, viewport: Rect) {
+        let view = self.view_states.entry(id).or_default();
+        view.viewport = Some(viewport);
     }
 
     pub(crate) fn layout_node(&mut self, id: Id) -> Option<Node> {
