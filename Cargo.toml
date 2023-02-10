@@ -23,6 +23,9 @@ once_cell = "1.17.0"
 im = "15.1.0"
 parking_lot = { version = "0.12.1" }
 
+[patch."https://github.com/dfrg/fount"]
+fount = { git = "https://github.com/jneem/fount", rev = "361c76f" }
+
 [workspace]
 members = [
   "examples/*",
