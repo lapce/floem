@@ -1,7 +1,12 @@
-use std::num::NonZeroU64;
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    num::NonZeroU64,
+};
 
 thread_local! {
-    pub(crate) static IDPATHS: std::cell::RefCell<std::collections::HashMap<Id,IdPath>>  = Default::default();
+    pub(crate) static IDPATHS: RefCell<HashMap<Id,IdPath>> = Default::default();
+    pub(crate) static IDPATHS_CHILDREN: RefCell<HashMap<Id, HashSet<Id>>> = Default::default();
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Hash)]
@@ -10,27 +15,6 @@ pub struct Id(NonZeroU64);
 
 #[derive(Clone, Default)]
 pub struct IdPath(pub(crate) Vec<Id>);
-
-impl IdPath {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn new_id(&self) -> Id {
-        let id = Id::next();
-        self.with_id(id);
-        id
-    }
-
-    pub fn with_id(&self, id: Id) -> IdPath {
-        let mut ids = self.clone();
-        ids.0.push(id);
-        IDPATHS.with(|id_paths| {
-            id_paths.borrow_mut().insert(id, ids.clone());
-        });
-        ids
-    }
-}
 
 impl Id {
     /// Allocate a new, unique `Id`.
@@ -48,7 +32,48 @@ impl Id {
         IDPATHS.with(|id_paths| {
             id_paths.borrow_mut().insert(new_id, id_path);
         });
+        IDPATHS_CHILDREN.with(|children| {
+            let mut children = children.borrow_mut();
+            let children = children.entry(*self).or_default();
+            children.insert(new_id);
+        });
         new_id
+    }
+
+    pub fn all_chilren(&self) -> Vec<Id> {
+        let mut children = Vec::new();
+        let mut parents = Vec::new();
+        parents.push(*self);
+
+        IDPATHS_CHILDREN.with(|idpaths_children| {
+            let idpaths_children = idpaths_children.borrow();
+            while !parents.is_empty() {
+                let parent = parents.pop().unwrap();
+                if let Some(c) = idpaths_children.get(&parent) {
+                    for child in c {
+                        children.push(*child);
+                        parents.push(*child);
+                    }
+                }
+            }
+        });
+        children
+    }
+
+    pub fn remove_idpath(&self) {
+        let id_path = IDPATHS.with(|id_paths| id_paths.borrow_mut().remove(self));
+        if let Some(id_path) = id_path.as_ref() {
+            if let Some(parent) = id_path.0.get(id_path.0.len().saturating_sub(2)) {
+                IDPATHS_CHILDREN.with(|idpaths_children| {
+                    if let Some(children) = idpaths_children.borrow_mut().get_mut(parent) {
+                        children.remove(self);
+                    }
+                });
+            }
+        }
+        IDPATHS_CHILDREN.with(|idpaths_children| {
+            idpaths_children.borrow_mut().remove(self);
+        });
     }
 
     #[allow(unused)]

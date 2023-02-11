@@ -11,7 +11,7 @@ use taffy::style::{FlexDirection, Style};
 
 use crate::{
     app::{AppContext, UpdateMessage},
-    context::{EventCx, UpdateCx},
+    context::{AppState, EventCx, UpdateCx},
     id::Id,
     view::{ChangeFlags, View},
 };
@@ -121,7 +121,13 @@ where
         state: Box<dyn std::any::Any>,
     ) -> crate::view::ChangeFlags {
         if let Ok(diff) = state.downcast() {
-            apply_diff(self.cx, *diff, &mut self.children, &self.view_fn);
+            apply_diff(
+                self.cx,
+                cx.app_state,
+                *diff,
+                &mut self.children,
+                &self.view_fn,
+            );
             cx.request_layout(self.id());
             cx.reset_children_layout(self.id);
             ChangeFlags::LAYOUT
@@ -309,8 +315,47 @@ pub(crate) fn diff<K: Eq + Hash, V>(from: &FxIndexSet<K>, to: &FxIndexSet<K>) ->
     diffs
 }
 
+fn remove_index<V: View>(
+    app_state: &mut AppState,
+    children: &mut [Option<(V, ScopeDisposer)>],
+    index: usize,
+) -> Option<()> {
+    let (view, disposer) = std::mem::take(&mut children[index])?;
+    disposer.dispose();
+    let id = view.id();
+    if let Some(view_state) = app_state.view_states.remove(&id) {
+        let node = view_state.node;
+        let mut nodes = Vec::new();
+        let mut parents = Vec::new();
+        parents.push(node);
+        nodes.push(node);
+        while !parents.is_empty() {
+            let parent = parents.pop().unwrap();
+            if let Ok(children) = app_state.taffy.children(parent) {
+                for child in children {
+                    nodes.push(child);
+                    parents.push(child);
+                }
+            }
+        }
+        for node in nodes {
+            let _ = app_state.taffy.remove(node);
+        }
+    }
+
+    let mut all_ids = id.all_chilren();
+    all_ids.push(id);
+    for id in all_ids {
+        id.remove_idpath();
+        app_state.view_states.remove(&id);
+    }
+
+    Some(())
+}
+
 pub(super) fn apply_diff<T, V, VF>(
     cx: AppContext,
+    app_state: &mut AppState,
     mut diff: Diff<T>,
     children: &mut Vec<Option<(V, ScopeDisposer)>>,
     view_fn: &VF,
@@ -337,12 +382,14 @@ pub(super) fn apply_diff<T, V, VF>(
     // 3. Moved
     // 4. Add
     if diff.clear {
+        for i in 0..children.len() {
+            remove_index(app_state, children, i);
+        }
         diff.removed.clear();
     }
 
     for DiffOpRemove { at } in diff.removed {
-        let (_, disposer) = std::mem::take(&mut children[at]).unwrap();
-        disposer.dispose();
+        remove_index(app_state, children, at);
     }
 
     for DiffOpMove { from, to } in diff.moved {

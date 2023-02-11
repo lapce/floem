@@ -99,7 +99,7 @@ fn app_logic(cx: AppContext) -> impl View {
                 flex_grow: 1.0,
                 ..Default::default()
             }),
-            label(cx, move || "seprate".to_string()),
+            label(cx, move || "seprate\nseprate\nseprate\n".to_string()),
             button(
                 cx,
                 move || couter.get().to_string(),

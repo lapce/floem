@@ -4,7 +4,7 @@ use glazier::kurbo::Rect;
 use indexmap::IndexMap;
 use leptos_reactive::{create_effect, create_signal, Scope, ScopeDisposer, WriteSignal};
 use smallvec::SmallVec;
-use taffy::style::Dimension;
+use taffy::{prelude::Node, style::Dimension};
 
 use crate::{
     app::AppContext,
@@ -51,14 +51,16 @@ where
     view_fn: VF,
     phatom: PhantomData<T>,
     cx: AppContext,
-    prev_size: f64,
+    before_size: f64,
     after_size: f64,
+    before_node: Option<Node>,
+    after_node: Option<Node>,
 }
 
 struct VirtualListState<T> {
     diff: Diff<T>,
     view_port: Rect,
-    prev_size: f64,
+    before_size: f64,
     after_size: f64,
 }
 
@@ -100,7 +102,7 @@ where
         let mut main_axis = 0.0;
         let mut items = Vec::new();
 
-        let mut prev_size = 0.0;
+        let mut before_size = 0.0;
         let mut after_size = 0.0;
         match &item_size {
             VirtualListItemSize::Fixed(item_size) => {
@@ -116,14 +118,13 @@ where
                 } else {
                     usize::MAX
                 };
-                prev_size = item_size * start as f64;
+                before_size = item_size * start as f64;
 
                 for item in items_vector.slice(start..end) {
                     items.push(item);
                 }
 
                 after_size = item_size * (total_len.saturating_sub(end)) as f64;
-                println!("start {start} end {end} prev_size {prev_size} after_size {after_size}, items len {}" ,items.len());
             }
             VirtualListItemSize::Fn(size_fn) => {
                 let total_len = items_vector.total_len();
@@ -131,7 +132,7 @@ where
                     let item_size = size_fn(&item);
                     if main_axis < min {
                         main_axis += item_size;
-                        prev_size += item_size;
+                        before_size += item_size;
                         continue;
                     }
 
@@ -143,7 +144,6 @@ where
                 }
             }
         };
-        println!("virtual list had effect {viewport} {}", items.len());
 
         let hashed_items = items.iter().map(&key_fn).collect::<FxIndexSet<_>>();
         let diff = if let Some(HashRun(prev_hash_run)) = prev_hash_run {
@@ -166,18 +166,12 @@ where
             }
             diff
         };
-        println!(
-            "diff is {} {} {}",
-            diff.removed.len(),
-            diff.added.len(),
-            diff.moved.len()
-        );
         AppContext::update_state(
             id,
             VirtualListState {
                 diff,
                 view_port: viewport,
-                prev_size,
+                before_size,
                 after_size,
             },
         );
@@ -193,8 +187,10 @@ where
         view_fn,
         phatom: PhantomData::default(),
         cx: child_cx,
-        prev_size: 0.0,
+        before_size: 0.0,
         after_size: 0.0,
+        before_node: None,
+        after_node: None,
     }
 }
 
@@ -224,9 +220,15 @@ where
         state: Box<dyn std::any::Any>,
     ) -> crate::view::ChangeFlags {
         if let Ok(state) = state.downcast::<VirtualListState<T>>() {
-            self.prev_size = state.prev_size;
+            self.before_size = state.before_size;
             self.after_size = state.after_size;
-            apply_diff(self.cx, state.diff, &mut self.children, &self.view_fn);
+            apply_diff(
+                self.cx,
+                cx.app_state,
+                state.diff,
+                &mut self.children,
+                &self.view_fn,
+            );
             cx.request_layout(self.id());
             cx.reset_children_layout(self.id);
             ChangeFlags::LAYOUT
@@ -242,13 +244,13 @@ where
                 .iter_mut()
                 .filter_map(|child| Some(child.as_mut()?.0.layout(cx)))
                 .collect::<Vec<_>>();
-            let prev_size = match self.direction {
+            let before_size = match self.direction {
                 VirtualListDirection::Vertical => taffy::prelude::Size {
                     width: Dimension::Auto,
-                    height: Dimension::Points(self.prev_size as f32),
+                    height: Dimension::Points(self.before_size as f32),
                 },
                 VirtualListDirection::Horizontal => taffy::prelude::Size {
-                    width: Dimension::Points(self.prev_size as f32),
+                    width: Dimension::Points(self.before_size as f32),
                     height: Dimension::Auto,
                 },
             };
@@ -262,25 +264,40 @@ where
                     height: Dimension::Auto,
                 },
             };
-            nodes.insert(
-                0,
-                cx.app_state
-                    .taffy
-                    .new_leaf(taffy::style::Style {
-                        size: prev_size,
-                        ..Default::default()
-                    })
-                    .unwrap(),
+            if self.before_node.is_none() {
+                self.before_node = Some(
+                    cx.app_state
+                        .taffy
+                        .new_leaf(taffy::style::Style::DEFAULT)
+                        .unwrap(),
+                );
+            }
+            if self.after_node.is_none() {
+                self.after_node = Some(
+                    cx.app_state
+                        .taffy
+                        .new_leaf(taffy::style::Style::DEFAULT)
+                        .unwrap(),
+                );
+            }
+            let before_node = self.before_node.unwrap();
+            let after_node = self.after_node.unwrap();
+            let _ = cx.app_state.taffy.set_style(
+                before_node,
+                taffy::style::Style {
+                    size: before_size,
+                    ..Default::default()
+                },
             );
-            nodes.push(
-                cx.app_state
-                    .taffy
-                    .new_leaf(taffy::style::Style {
-                        size: after_size,
-                        ..Default::default()
-                    })
-                    .unwrap(),
+            let _ = cx.app_state.taffy.set_style(
+                after_node,
+                taffy::style::Style {
+                    size: after_size,
+                    ..Default::default()
+                },
             );
+            nodes.insert(0, before_node);
+            nodes.push(after_node);
             nodes
         })
     }
