@@ -92,12 +92,12 @@ where
         let mut items_vector = each_fn();
         let viewport = viewport.get();
         let min = match direction {
-            VirtualListDirection::Vertical => -viewport.y0,
-            VirtualListDirection::Horizontal => -viewport.x0,
+            VirtualListDirection::Vertical => viewport.y0,
+            VirtualListDirection::Horizontal => viewport.x0,
         };
         let max = match direction {
-            VirtualListDirection::Vertical => viewport.height() - viewport.y0,
-            VirtualListDirection::Horizontal => viewport.width() - viewport.x0,
+            VirtualListDirection::Vertical => viewport.height() + viewport.y0,
+            VirtualListDirection::Horizontal => viewport.width() + viewport.x0,
         };
         let mut main_axis = 0.0;
         let mut items = Vec::new();
