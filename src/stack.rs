@@ -54,8 +54,7 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
         self.children.foreach(&mut |view| {
             let id = view.id();
             if cx.should_send(id, &event) {
-                let event = cx.offset_event(id, event.clone());
-                handled = view.event_main(cx, id_path, event);
+                handled = view.event_main(cx, id_path, event.clone());
                 return true;
             }
             false

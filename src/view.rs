@@ -53,6 +53,7 @@ pub trait View {
     fn compute_layout(&mut self, cx: &mut LayoutCx);
 
     fn event_main(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {
+        let event = cx.offset_event(self.id(), event);
         if let Some(id_path) = id_path {
             let id = id_path[0];
             let id_path = &id_path[1..];
@@ -71,7 +72,7 @@ pub trait View {
                 }
             }
         }
-        self.event(cx, None, event)
+        self.event(cx, id_path, event)
     }
 
     fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool;

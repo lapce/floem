@@ -164,11 +164,8 @@ where
         for child in self.children.iter_mut() {
             if let Some((child, _)) = child.as_mut() {
                 let id = child.id();
-                if cx.should_send(id, &event) {
-                    let event = cx.offset_event(id, event.clone());
-                    if child.event_main(cx, id_path, cx.offset_event(id, event)) {
-                        return true;
-                    }
+                if cx.should_send(id, &event) && child.event_main(cx, id_path, event.clone()) {
+                    return true;
                 }
             }
         }

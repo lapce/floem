@@ -25,6 +25,16 @@ impl Event {
         }
     }
 
+    pub(crate) fn is_mouse(&self) -> bool {
+        match self {
+            Event::MouseDown(_)
+            | Event::MouseUp(_)
+            | Event::MouseMove(_)
+            | Event::MouseWheel(_) => true,
+            Event::KeyDown(_) => false,
+        }
+    }
+
     pub fn point(&self) -> Option<Point> {
         match self {
             Event::MouseDown(mouse_event)

@@ -51,7 +51,11 @@ impl ViewState {
 }
 
 pub struct AppState {
+    /// keyboard focus
     pub(crate) focus: Option<Id>,
+    /// when a view is active, it gets mouse event even when the mouse is
+    /// not on it
+    pub(crate) active: Option<Id>,
     pub(crate) root: Option<Node>,
     pub(crate) root_size: Size,
     pub taffy: taffy::Taffy,
@@ -64,6 +68,7 @@ impl AppState {
         Self {
             root: None,
             focus: None,
+            active: None,
             root_size: Size::ZERO,
             taffy: taffy::Taffy::new(),
             view_states: HashMap::new(),
@@ -138,6 +143,10 @@ impl AppState {
             .and_then(|node| self.taffy.layout(node).ok())
             .copied()
     }
+
+    pub(crate) fn update_active(&mut self, id: Id) {
+        self.active = Some(id);
+    }
 }
 
 pub struct EventCx<'a> {
@@ -149,8 +158,18 @@ impl<'a> EventCx<'a> {
         self.app_state.request_layout(id);
     }
 
+    pub(crate) fn update_active(&mut self, id: Id) {
+        self.app_state.update_active(id);
+    }
+
     pub(crate) fn get_layout(&self, id: Id) -> Option<Layout> {
         self.app_state.get_layout(id)
+    }
+
+    pub(crate) fn get_size(&self, id: Id) -> Option<Size> {
+        self.app_state
+            .get_layout(id)
+            .map(|l| Size::new(l.size.width as f64, l.size.height as f64))
     }
 
     pub(crate) fn get_event_listener(

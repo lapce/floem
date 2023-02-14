@@ -193,6 +193,18 @@ impl<V: View> App<V> {
                     }
                 });
             }
+        } else if cx.app_state.active.is_some() && event.is_mouse() {
+            let id = cx.app_state.active.unwrap();
+            IDPATHS.with(|paths| {
+                if let Some(id_path) = paths.borrow().get(&id) {
+                    self.view
+                        .event_main(&mut cx, Some(&id_path.0), event.clone());
+                }
+            });
+
+            if let Event::MouseUp(_) = &event {
+                self.app_state.active = None;
+            }
         } else {
             self.view.event_main(&mut cx, None, event);
         }

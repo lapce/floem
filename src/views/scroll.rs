@@ -12,7 +12,7 @@ use crate::{
 
 /// Minimum length for any scrollbar to be when measured on that
 /// scrollbar's primary axis.
-const SCROLLBAR_MIN_SIZE: f64 = 45.0;
+const SCROLLBAR_MIN_SIZE: f64 = 10.0;
 
 /// Denotes which scrollbar, if any, is currently being dragged.
 #[derive(Debug, Copy, Clone)]
@@ -308,12 +308,14 @@ impl<V: View> View for Scroll<V> {
                         event.pos.y,
                         scroll_offset,
                     );
+                    cx.update_active(self.id);
                 } else if self.point_hits_horizontal_bar(cx.app_state, pos) {
                     self.held = BarHeldState::Horizontal(
                         // The bounds must be non-empty, because the point hits the scrollbar.
                         event.pos.x,
                         scroll_offset,
                     );
+                    cx.update_active(self.id);
                 } else {
                     self.held = BarHeldState::None;
                 }
@@ -345,6 +347,10 @@ impl<V: View> View for Scroll<V> {
                 }
             }
             _ => {}
+        }
+
+        if id_path.is_some() {
+            return true;
         }
 
         if self.child.event_main(

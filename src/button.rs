@@ -55,11 +55,19 @@ impl View for Button {
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {}
 
     fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {
-        if let Event::MouseDown(mouse_event) = event {
-            (self.onclick)();
+        match &event {
+            Event::MouseDown(_) => {
+                cx.update_active(self.id);
+            }
+            Event::MouseUp(event) => {
+                let rect = cx.get_size(self.id).unwrap_or_default().to_rect();
+                if rect.contains(event.pos) {
+                    (self.onclick)();
+                }
+            }
+            _ => {}
         }
-
-        false
+        true
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
