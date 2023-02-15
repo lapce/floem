@@ -3,6 +3,7 @@ use std::sync::Arc;
 use floem::{
     app::AppContext,
     button::button,
+    peniko::Color,
     reactive::create_signal,
     stack::stack,
     style::{AlignItems, Dimension, FlexDirection, Style},
@@ -99,7 +100,12 @@ fn app_logic(cx: AppContext) -> impl View {
                 flex_grow: 1.0,
                 ..Default::default()
             }),
-            label(cx, move || "seprate\nseprate\nseprate\n".to_string()),
+            label(cx, move || "seprate\nseprate\nseprate\n".to_string()).style(cx, || Style {
+                background: Some(Color::rgb8(180, 0, 0)),
+                border: 2.0,
+                border_radius: 10.0,
+                ..Default::default()
+            }),
             button(
                 cx,
                 move || couter.get().to_string(),

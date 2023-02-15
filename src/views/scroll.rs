@@ -1,5 +1,8 @@
 use glazier::kurbo::{Point, Rect, Size, Vec2};
-use taffy::{prelude::Node, style::Position};
+use taffy::{
+    prelude::Node,
+    style::{Dimension, Position},
+};
 use vello::peniko::Color;
 
 use crate::{
@@ -30,6 +33,7 @@ enum BarHeldState {
 pub struct Scroll<V: View> {
     id: Id,
     child: V,
+    child_size: Size,
     child_viewport: Rect,
     onscroll: Option<Box<dyn Fn(Rect)>>,
     virtual_child_node: Option<Node>,
@@ -46,6 +50,7 @@ pub fn scroll<V: View>(cx: AppContext, child: impl Fn(AppContext) -> V) -> Scrol
     Scroll {
         id,
         child,
+        child_size: Size::ZERO,
         child_viewport: Rect::ZERO,
         onscroll: None,
         virtual_child_node: None,
@@ -66,6 +71,7 @@ impl<V: View> Scroll<V> {
     ) -> Option<()> {
         let size = self.size(app_state)?;
         let child_size = self.child_size(app_state)?;
+        self.child_size = child_size;
 
         let mut child_viewport = child_viewport;
         if size.width >= child_size.width {
@@ -261,30 +267,45 @@ impl<V: View> View for Scroll<V> {
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
-            if self.virtual_child_node.is_none() {
-                self.virtual_child_node = Some(
-                    cx.app_state
-                        .taffy
-                        .new_leaf(taffy::prelude::Style {
-                            position: Position::Absolute,
-                            ..Default::default()
-                        })
-                        .unwrap(),
-                );
-            }
-            let virtual_child_node = self.virtual_child_node.unwrap();
+            let child_id = self.child.id();
+            let child_view = cx.app_state.view_state(child_id);
+            child_view.style.position = Position::Absolute;
             let child_node = self.child.layout(cx);
+            vec![child_node]
 
-            cx.app_state
-                .taffy
-                .set_children(virtual_child_node, &[child_node]);
+            // if self.virtual_child_node.is_none() {
+            //     self.virtual_child_node = Some(
+            //         cx.app_state
+            //             .taffy
+            //             .new_leaf(taffy::prelude::Style {
+            //                 position: Position::Absolute,
+            //                 ..Default::default()
+            //             })
+            //             .unwrap(),
+            //     );
+            // }
+            // let virtual_child_node = self.virtual_child_node.unwrap();
+            // let child_node = self.child.layout(cx);
 
-            vec![virtual_child_node]
+            // cx.app_state
+            //     .taffy
+            //     .set_children(virtual_child_node, &[child_node]);
+
+            // vec![virtual_child_node]
         })
     }
 
     fn compute_layout(&mut self, cx: &mut LayoutCx) {
+        let child_size = self.child_size;
         self.clamp_child_viewport(cx.app_state, self.child_viewport);
+        let new_child_size = self.child_size;
+        if child_size != new_child_size {
+            let view = cx.app_state.view_state(self.id);
+            view.style.max_width = Dimension::Points(new_child_size.width as f32);
+            view.style.max_height = Dimension::Points(new_child_size.height as f32);
+            cx.app_state.request_layout(self.id);
+        }
+
         self.child.compute_layout(cx);
     }
 

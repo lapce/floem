@@ -81,16 +81,60 @@ pub trait View {
         cx.save();
         let id = self.id();
         let size = cx.transform(id);
-        self.paint(cx);
-
-        if let Some(style) = cx.get_style(id).cloned() {
-            paint_border(cx, &style, size);
+        let style = cx.get_style(id).cloned();
+        if let Some(style) = style.as_ref() {
+            paint_bg(cx, style, size);
         }
-
+        self.paint(cx);
+        if let Some(style) = style.as_ref() {
+            paint_border(cx, style, size);
+        }
         cx.restore();
     }
 
     fn paint(&mut self, cx: &mut PaintCx);
+}
+
+fn paint_bg(cx: &mut PaintCx, style: &Style, size: Size) {
+    let bg = match style.background {
+        Some(color) => color,
+        None => return,
+    };
+
+    let left = if style.border_left > 0.0 {
+        style.border_left
+    } else {
+        style.border
+    };
+    let top = if style.border_top > 0.0 {
+        style.border_top
+    } else {
+        style.border
+    };
+    let right = if style.border_right > 0.0 {
+        style.border_right
+    } else {
+        style.border
+    };
+    let bottom = if style.border_bottom > 0.0 {
+        style.border_bottom
+    } else {
+        style.border
+    };
+
+    if left == top && top == right && right == bottom && bottom == left && left > 0.0 {
+        let half = left as f64 / 2.0;
+        let rect = size.to_rect().inflate(-half, -half);
+        let radius = style.border_radius;
+        if radius > 0.0 {
+            let rect = rect.to_rounded_rect(radius as f64);
+            cx.fill(&rect, bg);
+        } else {
+            cx.fill(&rect, bg);
+        }
+    } else {
+        cx.fill(&size.to_rect(), bg);
+    }
 }
 
 fn paint_border(cx: &mut PaintCx, style: &Style, size: Size) {

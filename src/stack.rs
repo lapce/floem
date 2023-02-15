@@ -13,7 +13,7 @@ pub struct Stack<VT> {
 
 pub fn stack<VT: ViewTuple + 'static>(
     cx: AppContext,
-    children: impl Fn(AppContext) -> VT,
+    children: impl FnOnce(AppContext) -> VT,
 ) -> Stack<VT> {
     let id = cx.id.new();
 
@@ -51,7 +51,7 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
         event: crate::event::Event,
     ) -> bool {
         let mut handled = false;
-        self.children.foreach(&mut |view| {
+        self.children.foreach_rev(&mut |view| {
             let id = view.id();
             if cx.should_send(id, &event) {
                 handled = view.event_main(cx, id_path, event.clone());

@@ -2,6 +2,7 @@ use std::any::Any;
 
 use glazier::kurbo::Point;
 use leptos_reactive::create_effect;
+use parley::layout::Cursor;
 use taffy::{prelude::Node, style::Dimension};
 use vello::peniko::{Brush, Color};
 
@@ -20,6 +21,8 @@ pub struct Label {
     label: String,
     text_layout: Option<parley::Layout<ParleyBrush>>,
     text_node: Option<Node>,
+    available_width: Option<f32>,
+    available_text_layout: Option<parley::Layout<ParleyBrush>>,
 }
 
 pub fn label(cx: AppContext, label: impl Fn() -> String + 'static) -> Label {
@@ -33,6 +36,8 @@ pub fn label(cx: AppContext, label: impl Fn() -> String + 'static) -> Label {
         label: "".to_string(),
         text_layout: None,
         text_node: None,
+        available_width: None,
+        available_text_layout: None,
     }
 }
 
@@ -68,8 +73,8 @@ impl View for Label {
         )));
         let mut text_layout = text_layout_builder.build();
         text_layout.break_all_lines(None, parley::layout::Alignment::Start);
-        let width = text_layout.width();
-        let height = text_layout.height();
+        let width = text_layout.width().ceil();
+        let height = text_layout.height().ceil();
         self.text_layout = Some(text_layout);
 
         if self.text_node.is_none() {
@@ -101,12 +106,58 @@ impl View for Label {
         node
     }
 
-    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {}
+    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {
+        let text_node = self.text_node.unwrap();
+        let layout = cx.app_state.taffy.layout(text_node).unwrap();
+        let text_layout = self.text_layout.as_ref().unwrap();
+        let width = text_layout.width();
+        if width > layout.size.width {
+            if self.available_width != Some(layout.size.width) {
+                let mut lcx = parley::LayoutContext::new();
+                let mut text_layout_builder = lcx.ranged_builder(cx.font_cx, "...", 1.0);
+                text_layout_builder.push_default(&parley::style::StyleProperty::Brush(
+                    ParleyBrush(Brush::Solid(Color::rgb8(0xf0, 0xf0, 0xea))),
+                ));
+                let mut dots_text = text_layout_builder.build();
+                dots_text.break_all_lines(None, parley::layout::Alignment::Start);
+                let dots_width = dots_text.width();
+                let width_left = layout.size.width - dots_width;
+                let cursor = Cursor::from_point(text_layout, width_left, 0.0);
+                let range = cursor.text_range();
+                let index = if cursor.is_trailing() {
+                    range.end
+                } else {
+                    range.start
+                };
+
+                let new_text = if index > 0 {
+                    format!("{}...", &self.label[..index])
+                } else {
+                    "".to_string()
+                };
+                let mut lcx = parley::LayoutContext::new();
+                let mut text_layout_builder = lcx.ranged_builder(cx.font_cx, &new_text, 1.0);
+                text_layout_builder.push_default(&parley::style::StyleProperty::Brush(
+                    ParleyBrush(Brush::Solid(Color::rgb8(0xf0, 0xf0, 0xea))),
+                ));
+                let mut new_text = text_layout_builder.build();
+                new_text.break_all_lines(None, parley::layout::Alignment::Start);
+                self.available_text_layout = Some(new_text);
+            }
+        } else {
+            self.available_width = None;
+            self.available_text_layout = None;
+        }
+    }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         let text_node = self.text_node.unwrap();
         let location = cx.layout_state.taffy.layout(text_node).unwrap().location;
         let point = Point::new(location.x as f64, location.y as f64);
-        cx.render_text(self.text_layout.as_ref().unwrap(), point);
+        if let Some(text_layout) = self.available_text_layout.as_ref() {
+            cx.render_text(text_layout, point);
+        } else {
+            cx.render_text(self.text_layout.as_ref().unwrap(), point);
+        }
     }
 }

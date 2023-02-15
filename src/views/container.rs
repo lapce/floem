@@ -9,7 +9,7 @@ pub struct Container<V: View> {
     child: V,
 }
 
-pub fn container<V: View>(cx: AppContext, child: impl Fn(AppContext) -> V) -> Container<V> {
+pub fn container<V: View>(cx: AppContext, child: impl FnOnce(AppContext) -> V) -> Container<V> {
     let id = cx.new_id();
     let mut child_cx = cx;
     child_cx.id = id;
