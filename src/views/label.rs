@@ -66,8 +66,7 @@ impl View for Label {
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
-        let mut lcx = parley::LayoutContext::new();
-        let mut text_layout_builder = lcx.ranged_builder(cx.font_cx, &self.label, 1.0);
+        let mut text_layout_builder = parley::LayoutContext::builder(self.label.as_str(), 1.0);
         text_layout_builder.push_default(&parley::style::StyleProperty::Brush(ParleyBrush(
             Brush::Solid(Color::rgb8(0xf0, 0xf0, 0xea)),
         )));
@@ -113,8 +112,7 @@ impl View for Label {
         let width = text_layout.width();
         if width > layout.size.width {
             if self.available_width != Some(layout.size.width) {
-                let mut lcx = parley::LayoutContext::new();
-                let mut text_layout_builder = lcx.ranged_builder(cx.font_cx, "...", 1.0);
+                let mut text_layout_builder = parley::LayoutContext::builder("...", 1.0);
                 text_layout_builder.push_default(&parley::style::StyleProperty::Brush(
                     ParleyBrush(Brush::Solid(Color::rgb8(0xf0, 0xf0, 0xea))),
                 ));
@@ -135,8 +133,8 @@ impl View for Label {
                 } else {
                     "".to_string()
                 };
-                let mut lcx = parley::LayoutContext::new();
-                let mut text_layout_builder = lcx.ranged_builder(cx.font_cx, &new_text, 1.0);
+                let mut text_layout_builder =
+                    parley::LayoutContext::builder(new_text.as_str(), 1.0);
                 text_layout_builder.push_default(&parley::style::StyleProperty::Brush(
                     ParleyBrush(Brush::Solid(Color::rgb8(0xf0, 0xf0, 0xea))),
                 ));

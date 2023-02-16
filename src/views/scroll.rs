@@ -1,4 +1,5 @@
 use glazier::kurbo::{Point, Rect, Size, Vec2};
+use leptos_reactive::create_effect;
 use taffy::{
     prelude::Node,
     style::{Dimension, Position},
@@ -10,6 +11,7 @@ use crate::{
     context::{AppState, LayoutCx, PaintCx},
     event::Event,
     id::Id,
+    style::Style,
     view::{ChangeFlags, View},
 };
 
@@ -36,8 +38,8 @@ pub struct Scroll<V: View> {
     child_size: Size,
     child_viewport: Rect,
     onscroll: Option<Box<dyn Fn(Rect)>>,
-    virtual_child_node: Option<Node>,
     held: BarHeldState,
+    virtual_node: Option<Node>,
 }
 
 pub fn scroll<V: View>(cx: AppContext, child: impl Fn(AppContext) -> V) -> Scroll<V> {
@@ -53,8 +55,8 @@ pub fn scroll<V: View>(cx: AppContext, child: impl Fn(AppContext) -> V) -> Scrol
         child_size: Size::ZERO,
         child_viewport: Rect::ZERO,
         onscroll: None,
-        virtual_child_node: None,
         held: BarHeldState::None,
+        virtual_node: None,
     }
 }
 
@@ -62,6 +64,73 @@ impl<V: View> Scroll<V> {
     pub fn onscroll(mut self, onscroll: impl Fn(Rect) + 'static) -> Self {
         self.onscroll = Some(Box::new(onscroll));
         self
+    }
+
+    pub fn on_ensure_visible(self, cx: AppContext, to: impl Fn() -> Rect + 'static) -> Self {
+        let id = self.id;
+        create_effect(cx.scope, move |_| {
+            let rect = to();
+            AppContext::update_state(id, rect);
+        });
+
+        self
+    }
+
+    /// Pan the smallest distance that makes the target [`Rect`] visible.
+    ///
+    /// If the target rect is larger than viewport size, we will prioritize
+    /// the region of the target closest to its origin.
+    pub fn pan_to_visible(&mut self, app_state: &mut AppState, rect: Rect) {
+        /// Given a position and the min and max edges of an axis,
+        /// return a delta by which to adjust that axis such that the value
+        /// falls between its edges.
+        ///
+        /// if the value already falls between the two edges, return 0.0.
+        fn closest_on_axis(val: f64, min: f64, max: f64) -> f64 {
+            assert!(min <= max);
+            if val > min && val < max {
+                0.0
+            } else if val <= min {
+                val - min
+            } else {
+                val - max
+            }
+        }
+
+        // clamp the target region size to our own size.
+        // this means we will show the portion of the target region that
+        // includes the origin.
+        let target_size = Size::new(
+            rect.width().min(self.child_viewport.width()),
+            rect.height().min(self.child_viewport.height()),
+        );
+        let rect = rect.with_size(target_size);
+
+        let x0 = closest_on_axis(
+            rect.min_x(),
+            self.child_viewport.min_x(),
+            self.child_viewport.max_x(),
+        );
+        let x1 = closest_on_axis(
+            rect.max_x(),
+            self.child_viewport.min_x(),
+            self.child_viewport.max_x(),
+        );
+        let y0 = closest_on_axis(
+            rect.min_y(),
+            self.child_viewport.min_y(),
+            self.child_viewport.max_y(),
+        );
+        let y1 = closest_on_axis(
+            rect.max_y(),
+            self.child_viewport.min_y(),
+            self.child_viewport.max_y(),
+        );
+
+        let delta_x = if x0.abs() > x1.abs() { x0 } else { x1 };
+        let delta_y = if y0.abs() > y1.abs() { y0 } else { y1 };
+        let new_origin = self.child_viewport.origin() + Vec2::new(delta_x, delta_y);
+        self.clamp_child_viewport(app_state, self.child_viewport.with_origin(new_origin));
     }
 
     fn clamp_child_viewport(
@@ -107,7 +176,7 @@ impl<V: View> Scroll<V> {
             .view_states
             .get(&self.id)
             .map(|view| &view.children_nodes)
-            .and_then(|nodes| nodes.get(0))
+            .and_then(|nodes| nodes.get(1))
             .and_then(|node| app_state.taffy.layout(*node).ok())
             .map(|layout| Size::new(layout.size.width as f64, layout.size.height as f64))
     }
@@ -262,36 +331,40 @@ impl<V: View> View for Scroll<V> {
         cx: &mut crate::context::UpdateCx,
         state: Box<dyn std::any::Any>,
     ) -> crate::view::ChangeFlags {
-        ChangeFlags::empty()
+        if let Ok(rect) = state.downcast::<Rect>() {
+            self.pan_to_visible(cx.app_state, *rect);
+            cx.request_layout(self.id());
+            cx.reset_children_layout(self.id);
+            ChangeFlags::LAYOUT
+        } else {
+            ChangeFlags::empty()
+        }
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
             let child_id = self.child.id();
-            let child_view = cx.app_state.view_state(child_id);
+            let mut child_view = cx.app_state.view_state(child_id);
             child_view.style.position = Position::Absolute;
+
             let child_node = self.child.layout(cx);
-            vec![child_node]
 
-            // if self.virtual_child_node.is_none() {
-            //     self.virtual_child_node = Some(
-            //         cx.app_state
-            //             .taffy
-            //             .new_leaf(taffy::prelude::Style {
-            //                 position: Position::Absolute,
-            //                 ..Default::default()
-            //             })
-            //             .unwrap(),
-            //     );
-            // }
-            // let virtual_child_node = self.virtual_child_node.unwrap();
-            // let child_node = self.child.layout(cx);
+            let virtual_style: taffy::style::Style = (&Style {
+                width: Dimension::Points(self.child_size.width as f32),
+                height: Dimension::Points(self.child_size.height as f32),
+                min_width: Dimension::Points(0.0),
+                min_height: Dimension::Points(0.0),
+                ..Default::default()
+            })
+                .into();
+            if self.virtual_node.is_none() {
+                self.virtual_node =
+                    Some(cx.app_state.taffy.new_leaf(virtual_style.clone()).unwrap());
+            }
+            let virtual_node = self.virtual_node.unwrap();
+            let _ = cx.app_state.taffy.set_style(virtual_node, virtual_style);
 
-            // cx.app_state
-            //     .taffy
-            //     .set_children(virtual_child_node, &[child_node]);
-
-            // vec![virtual_child_node]
+            vec![virtual_node, child_node]
         })
     }
 
@@ -300,9 +373,6 @@ impl<V: View> View for Scroll<V> {
         self.clamp_child_viewport(cx.app_state, self.child_viewport);
         let new_child_size = self.child_size;
         if child_size != new_child_size {
-            let view = cx.app_state.view_state(self.id);
-            view.style.max_width = Dimension::Points(new_child_size.width as f32);
-            view.style.max_height = Dimension::Points(new_child_size.height as f32);
             cx.app_state.request_layout(self.id);
         }
 

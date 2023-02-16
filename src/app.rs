@@ -138,7 +138,7 @@ impl<V: View> App<V> {
         self.layout();
         loop {
             let msgs = UPDATE_MESSAGES.with(|msgs| msgs.take());
-            if msgs.is_empty() {
+            if msgs.is_empty() && self.app_state.layout_changed.is_empty() {
                 break;
             }
             let mut cx = UpdateCx {

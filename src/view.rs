@@ -2,7 +2,7 @@ use std::any::Any;
 
 use bitflags::bitflags;
 use glazier::kurbo::{Line, Point, RoundedRect, Shape, Size};
-use taffy::prelude::Node;
+use taffy::{prelude::Node, style::Display};
 use vello::peniko::Color;
 
 use crate::{
@@ -78,10 +78,18 @@ pub trait View {
     fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool;
 
     fn paint_main(&mut self, cx: &mut PaintCx) {
-        cx.save();
         let id = self.id();
-        let size = cx.transform(id);
         let style = cx.get_style(id).cloned();
+        if style
+            .as_ref()
+            .map(|s| s.display == Display::None)
+            .unwrap_or(false)
+        {
+            return;
+        }
+
+        cx.save();
+        let size = cx.transform(id);
         if let Some(style) = style.as_ref() {
             paint_bg(cx, style, size);
         }
