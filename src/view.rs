@@ -53,6 +53,11 @@ pub trait View {
     fn compute_layout(&mut self, cx: &mut LayoutCx);
 
     fn event_main(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {
+        let id = self.id();
+        if cx.app_state.is_hidden(id) {
+            return false;
+        }
+
         let event = cx.offset_event(self.id(), event);
         if let Some(id_path) = id_path {
             let id = id_path[0];
@@ -63,6 +68,11 @@ pub trait View {
                 }
             }
         }
+
+        if self.event(cx, id_path, event.clone()) {
+            return true;
+        }
+
         if let Some(listener) = event.listener() {
             if let Some(listeners) = cx.get_event_listener(self.id()) {
                 if let Some(action) = listeners.get(&listener) {
@@ -72,7 +82,8 @@ pub trait View {
                 }
             }
         }
-        self.event(cx, id_path, event)
+
+        false
     }
 
     fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool;

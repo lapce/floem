@@ -55,7 +55,9 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
             let id = view.id();
             if cx.should_send(id, &event) {
                 handled = view.event_main(cx, id_path, event.clone());
-                return true;
+                if handled {
+                    return true;
+                }
             }
             false
         });

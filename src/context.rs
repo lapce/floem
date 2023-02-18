@@ -7,7 +7,7 @@ use glazier::{
 use parley::FontContext;
 use taffy::{
     prelude::{Layout, Node},
-    style::AvailableSpace,
+    style::{AvailableSpace, Display},
 };
 use vello::{
     glyph::{
@@ -80,6 +80,13 @@ impl AppState {
         self.view_states
             .entry(id)
             .or_insert_with(|| ViewState::new(&mut self.taffy))
+    }
+
+    pub fn is_hidden(&self, id: Id) -> bool {
+        self.view_states
+            .get(&id)
+            .map(|s| s.style.display == Display::None)
+            .unwrap_or(false)
     }
 
     pub fn set_root_size(&mut self, size: Size) {
@@ -160,6 +167,10 @@ impl<'a> EventCx<'a> {
 
     pub(crate) fn update_active(&mut self, id: Id) {
         self.app_state.update_active(id);
+    }
+
+    pub fn get_style(&self, id: Id) -> Option<&Style> {
+        self.app_state.view_states.get(&id).map(|s| &s.style)
     }
 
     pub(crate) fn get_layout(&self, id: Id) -> Option<Layout> {

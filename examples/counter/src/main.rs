@@ -72,7 +72,7 @@ fn app_logic(cx: AppContext) -> impl View {
                     label(cx, move || couter.get().to_string()),
                     button(
                         cx,
-                        move || couter.get().to_string(),
+                        |cx| label(cx, move || "button".to_string()),
                         move || {
                             set_counter.update(|counter| *counter += 1);
                         },
@@ -88,7 +88,7 @@ fn app_logic(cx: AppContext) -> impl View {
             label(cx, move || couter.get().to_string()),
             button(
                 cx,
-                move || couter.get().to_string(),
+                |cx| label(cx, move || "button".to_string()),
                 move || {
                     set_counter.update(|counter| *counter += 1);
                 },
@@ -108,7 +108,7 @@ fn app_logic(cx: AppContext) -> impl View {
             }),
             button(
                 cx,
-                move || couter.get().to_string(),
+                |cx| label(cx, move || "button".to_string()),
                 move || {
                     set_counter.update(|counter| *counter += 1);
                 },
@@ -128,7 +128,7 @@ fn app_logic(cx: AppContext) -> impl View {
                     label(cx, move || couter.get().to_string()),
                     button(
                         cx,
-                        move || couter.get().to_string(),
+                        |cx| label(cx, move || "button".to_string()),
                         move || {
                             set_counter.update(|counter| *counter += 1);
                         },

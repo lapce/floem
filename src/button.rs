@@ -10,69 +10,75 @@ use crate::{
     view::{ChangeFlags, View},
 };
 
-pub struct Button {
+pub struct Button<V: View> {
     id: Id,
-    label: String,
+    child: V,
     onclick: Box<dyn Fn()>,
 }
 
-pub fn button(
+pub fn button<V: View>(
     cx: AppContext,
-    label: impl Fn() -> String + 'static + Copy,
+    child: impl FnOnce(AppContext) -> V,
     onclick: impl Fn() + 'static,
-) -> Button {
+) -> Button<V> {
     let id = cx.new_id();
-    create_effect(cx.scope, move |_| {
-        let new_label = label();
-        AppContext::update_state(id, new_label);
-    });
+    let mut child_cx = cx;
+    child_cx.id = id;
+    let child = child(child_cx);
     Button {
         id,
-        label: label(),
+        child,
         onclick: Box::new(onclick),
     }
 }
 
-impl View for Button {
+impl<V: View> View for Button<V> {
     fn id(&self) -> Id {
         self.id
     }
 
     fn child(&mut self, id: Id) -> Option<&mut dyn View> {
-        None
-    }
-
-    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags {
-        if let Ok(state) = state.downcast() {
-            self.label = *state;
-            cx.request_layout(self.id());
-            ChangeFlags::LAYOUT
+        if self.child.id() == id {
+            Some(&mut self.child)
         } else {
-            ChangeFlags::empty()
+            None
         }
     }
 
-    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {}
+    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags {
+        ChangeFlags::empty()
+    }
+
+    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
+        cx.layout_node(self.id, true, |cx| vec![self.child.layout(cx)])
+    }
+
+    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {
+        self.child.compute_layout(cx);
+    }
 
     fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {
+        if self.child.event_main(cx, id_path, event.clone()) {
+            return true;
+        }
+
         match &event {
             Event::MouseDown(_) => {
                 cx.update_active(self.id);
+                true
             }
             Event::MouseUp(event) => {
                 let rect = cx.get_size(self.id).unwrap_or_default().to_rect();
                 if rect.contains(event.pos) {
                     (self.onclick)();
                 }
+                true
             }
-            _ => {}
+            _ => false,
         }
-        true
     }
 
-    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
-        cx.layout_node(self.id, false, |_| Vec::new())
+    fn paint(&mut self, cx: &mut crate::context::PaintCx) {
+        self.child.paint_main(cx);
     }
-
-    fn paint(&mut self, cx: &mut crate::context::PaintCx) {}
 }
