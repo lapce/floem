@@ -50,6 +50,49 @@ pub trait View {
 
     fn layout(&mut self, cx: &mut LayoutCx) -> Node;
 
+    fn compute_layout_main(&mut self, cx: &mut LayoutCx) {
+        cx.save();
+
+        let layout = cx
+            .app_state
+            .get_layout(self.id())
+            .unwrap_or(taffy::layout::Layout::new());
+        let parent_viewport = cx.viewport.map(|rect| {
+            rect.with_origin(Point::new(
+                rect.x0 - layout.location.x as f64,
+                rect.y0 - layout.location.y as f64,
+            ))
+        });
+        let viewport = cx
+            .app_state
+            .view_states
+            .get(&self.id())
+            .and_then(|view| view.viewport);
+        let size = Size::new(layout.size.width as f64, layout.size.height as f64);
+        match (parent_viewport, viewport) {
+            (Some(parent_viewport), Some(viewport)) => {
+                cx.viewport = Some(
+                    parent_viewport
+                        .intersect(viewport)
+                        .intersect(size.to_rect()),
+                );
+            }
+            (Some(parent_viewport), None) => {
+                cx.viewport = Some(parent_viewport.intersect(size.to_rect()));
+            }
+            (None, Some(viewport)) => {
+                cx.viewport = Some(viewport.intersect(size.to_rect()));
+            }
+            (None, None) => {
+                cx.viewport = None;
+            }
+        }
+
+        self.compute_layout(cx);
+
+        cx.restore();
+    }
+
     fn compute_layout(&mut self, cx: &mut LayoutCx);
 
     fn event_main(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {

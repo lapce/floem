@@ -303,12 +303,7 @@ where
     }
 
     fn compute_layout(&mut self, cx: &mut LayoutCx) {
-        let viewport = cx
-            .app_state
-            .view_states
-            .get(&self.id)
-            .and_then(|view| view.viewport)
-            .unwrap_or_default();
+        let viewport = cx.viewport.unwrap_or_default();
         if self.viewport != viewport {
             self.viewport = viewport;
             self.set_viewport.set(viewport);
@@ -316,7 +311,7 @@ where
 
         for child in &mut self.children {
             if let Some((child, _)) = child.as_mut() {
-                child.compute_layout(cx);
+                child.compute_layout_main(cx);
             }
         }
     }

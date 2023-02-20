@@ -4,7 +4,7 @@ use glazier::{
     kurbo::{Affine, Point, Rect, Shape, Size, Vec2},
     Scalable,
 };
-use parley::FontContext;
+use parley::{swash::GlyphId, FontContext};
 use taffy::{
     prelude::{Layout, Node},
     style::{AvailableSpace, Display},
@@ -48,6 +48,16 @@ impl ViewState {
             event_listeners: HashMap::new(),
         }
     }
+}
+
+#[derive(Default)]
+struct FontCache {
+    glyphs: HashMap<GlyphId, Option<SceneFragment>>,
+}
+
+#[derive(Default)]
+pub struct TextCache {
+    fonts: HashMap<u64, FontCache>,
 }
 
 pub struct AppState {
@@ -221,9 +231,19 @@ impl<'a> EventCx<'a> {
 pub struct LayoutCx<'a> {
     pub(crate) app_state: &'a mut AppState,
     pub(crate) font_cx: &'a mut FontContext,
+    pub(crate) viewport: Option<Rect>,
+    pub(crate) saved_viewports: Vec<Option<Rect>>,
 }
 
 impl<'a> LayoutCx<'a> {
+    pub fn save(&mut self) {
+        self.saved_viewports.push(self.viewport);
+    }
+
+    pub fn restore(&mut self) {
+        self.viewport = self.saved_viewports.pop().unwrap_or_default();
+    }
+
     pub fn get_style(&self, id: Id) -> Option<&Style> {
         self.app_state.view_states.get(&id).map(|s| &s.style)
     }
@@ -255,26 +275,31 @@ impl<'a> LayoutCx<'a> {
 
 pub struct PaintCx<'a> {
     pub(crate) builder: &'a mut SceneBuilder<'a>,
-    pub(crate) layout_state: &'a mut AppState,
+    pub(crate) app_state: &'a mut AppState,
+    pub(crate) paint_state: &'a mut PaintState,
     pub(crate) saved_transforms: Vec<Affine>,
+    pub(crate) saved_viewports: Vec<Option<Rect>>,
     pub(crate) transform: Affine,
+    pub(crate) viewport: Option<Rect>,
 }
 
 impl<'a> PaintCx<'a> {
     pub fn save(&mut self) {
         self.saved_transforms.push(self.transform);
+        self.saved_viewports.push(self.viewport);
     }
 
     pub fn restore(&mut self) {
         self.transform = self.saved_transforms.pop().unwrap_or_default();
+        self.viewport = self.saved_viewports.pop().unwrap_or_default();
     }
 
     pub fn get_layout(&mut self, id: Id) -> Option<Layout> {
-        self.layout_state.get_layout(id)
+        self.app_state.get_layout(id)
     }
 
     pub fn get_style(&self, id: Id) -> Option<&Style> {
-        self.layout_state.view_states.get(&id).map(|s| &s.style)
+        self.app_state.view_states.get(&id).map(|s| &s.style)
     }
 
     pub fn offset(&mut self, offset: (f64, f64)) {
@@ -291,6 +316,38 @@ impl<'a> PaintCx<'a> {
             new[4] += offset.x as f64;
             new[5] += offset.y as f64;
             self.transform = Affine::new(new);
+
+            let parent_viewport = self.viewport.map(|rect| {
+                rect.with_origin(Point::new(
+                    rect.x0 - offset.x as f64,
+                    rect.y0 - offset.y as f64,
+                ))
+            });
+            let viewport = self
+                .app_state
+                .view_states
+                .get(&id)
+                .and_then(|view| view.viewport);
+            let size = Size::new(layout.size.width as f64, layout.size.height as f64);
+            match (parent_viewport, viewport) {
+                (Some(parent_viewport), Some(viewport)) => {
+                    self.viewport = Some(
+                        parent_viewport
+                            .intersect(viewport)
+                            .intersect(size.to_rect()),
+                    );
+                }
+                (Some(parent_viewport), None) => {
+                    self.viewport = Some(parent_viewport.intersect(size.to_rect()));
+                }
+                (None, Some(viewport)) => {
+                    self.viewport = Some(viewport.intersect(size.to_rect()));
+                }
+                (None, None) => {
+                    self.viewport = None;
+                }
+            }
+
             Size::new(layout.size.width as f64, layout.size.height as f64)
         } else {
             Size::ZERO
@@ -319,9 +376,19 @@ impl<'a> PaintCx<'a> {
 
     pub fn render_text(&mut self, layout: &parley::Layout<ParleyBrush>, point: Point) {
         let transform = self.transform * Affine::translate((point.x, point.y));
-        let mut gcx = GlyphContext::new();
+        let viewport = self.viewport;
         for line in layout.lines() {
-            for glyph_run in line.glyph_runs() {
+            if let Some(rect) = viewport {
+                let metrics = line.metrics();
+                let y = point.y + metrics.baseline as f64;
+                if y + (metrics.descent as f64) < rect.y0 {
+                    continue;
+                }
+                if y - ((metrics.ascent + metrics.leading) as f64) > rect.y1 {
+                    break;
+                }
+            }
+            'line_loop: for glyph_run in line.glyph_runs() {
                 let mut x = glyph_run.offset();
                 let y = glyph_run.baseline();
                 let run = glyph_run.run();
@@ -333,14 +400,45 @@ impl<'a> PaintCx<'a> {
                 };
                 let style = glyph_run.style();
                 let vars: [(Tag, f32); 0] = [];
-                let mut gp = gcx.new_provider(&font_ref, None, font_size, false, vars);
+
                 for glyph in glyph_run.glyphs() {
-                    if let Some(fragment) = gp.get(glyph.id, Some(&style.brush.0)) {
+                    let fragment = if let Some(fragment) =
+                        self.paint_state.get_glyph(font.key.value(), glyph.id)
+                    {
+                        fragment
+                    } else {
+                        let mut gp = self.paint_state.glyph_contex.new_provider(
+                            &font_ref,
+                            Some(font.key.value()),
+                            font_size,
+                            false,
+                            vars,
+                        );
+                        let fragment = gp.get(glyph.id, Some(&style.brush.0));
+                        self.paint_state
+                            .insert_glyph(font.key.value(), glyph.id, fragment);
+                        self.paint_state
+                            .get_glyph(font.key.value(), glyph.id)
+                            .unwrap()
+                    };
+
+                    if let Some(fragment) = fragment {
                         let gx = x + glyph.x;
                         let gy = y - glyph.y;
                         let xform = Affine::translate((gx as f64, gy as f64))
                             * Affine::scale_non_uniform(1.0, -1.0);
-                        self.builder.append(&fragment, Some(transform * xform));
+                        if let Some(rect) = viewport {
+                            let xform = Affine::translate((point.x, point.y)) * xform;
+                            let xform = xform.as_coeffs();
+                            let cx = xform[4];
+                            if cx + (glyph.advance as f64) < rect.x0 {
+                                x += glyph.advance;
+                                continue;
+                            } else if cx > rect.x1 {
+                                break 'line_loop;
+                            }
+                        }
+                        self.builder.append(fragment, Some(transform * xform));
                     }
                     x += glyph.advance;
                 }
@@ -350,8 +448,9 @@ impl<'a> PaintCx<'a> {
 }
 
 pub struct PaintState {
-    pub(crate) fragment: SceneFragment,
     pub(crate) render_cx: RenderContext,
+    pub(crate) text_cache: TextCache,
+    glyph_contex: GlyphContext,
     surface: Option<RenderSurface>,
     renderer: Option<Renderer>,
     scene: Scene,
@@ -363,12 +462,13 @@ impl PaintState {
         let render_cx = RenderContext::new().unwrap();
 
         Self {
-            fragment: SceneFragment::new(),
             render_cx,
             surface: None,
             renderer: None,
             scene: Scene::default(),
             handle: Default::default(),
+            text_cache: TextCache::default(),
+            glyph_contex: GlyphContext::new(),
         }
     }
 
@@ -376,7 +476,17 @@ impl PaintState {
         self.handle = handle.clone();
     }
 
-    pub(crate) fn render(&mut self) {
+    fn get_glyph(&mut self, font_id: u64, glyph_id: GlyphId) -> Option<&Option<SceneFragment>> {
+        let font = self.text_cache.fonts.entry(font_id).or_default();
+        font.glyphs.get(&glyph_id)
+    }
+
+    fn insert_glyph(&mut self, font_id: u64, glyph_id: GlyphId, fragment: Option<SceneFragment>) {
+        let font = self.text_cache.fonts.entry(font_id).or_default();
+        font.glyphs.insert(glyph_id, fragment);
+    }
+
+    pub(crate) fn render(&mut self, fragment: &SceneFragment) {
         let handle = &self.handle;
         let scale = handle.get_scale().unwrap_or_default();
         let insets = handle.content_insets().to_px(scale);
@@ -401,7 +511,7 @@ impl PaintState {
                 None
             };
             let mut builder = SceneBuilder::for_scene(&mut self.scene);
-            builder.append(&self.fragment, transform);
+            builder.append(fragment, transform);
             // self.counter += 1;
             let surface_texture = surface
                 .surface

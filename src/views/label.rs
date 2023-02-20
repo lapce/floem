@@ -66,15 +66,18 @@ impl View for Label {
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
-        let mut text_layout_builder = parley::LayoutContext::builder(self.label.as_str(), 1.0);
-        text_layout_builder.push_default(&parley::style::StyleProperty::Brush(ParleyBrush(
-            Brush::Solid(Color::rgb8(0xf0, 0xf0, 0xea)),
-        )));
-        let mut text_layout = text_layout_builder.build();
-        text_layout.break_all_lines(None, parley::layout::Alignment::Start);
+        if self.text_layout.is_none() {
+            let mut text_layout_builder = parley::LayoutContext::builder(self.label.as_str(), 1.0);
+            text_layout_builder.push_default(&parley::style::StyleProperty::Brush(ParleyBrush(
+                Brush::Solid(Color::rgb8(0xf0, 0xf0, 0xea)),
+            )));
+            let mut text_layout = text_layout_builder.build();
+            text_layout.break_all_lines(None, parley::layout::Alignment::Start);
+            self.text_layout = Some(text_layout);
+        }
+        let text_layout = self.text_layout.as_ref().unwrap();
         let width = text_layout.width().ceil();
         let height = text_layout.height().ceil();
-        self.text_layout = Some(text_layout);
 
         if self.text_node.is_none() {
             self.text_node = Some(
@@ -150,7 +153,7 @@ impl View for Label {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         let text_node = self.text_node.unwrap();
-        let location = cx.layout_state.taffy.layout(text_node).unwrap().location;
+        let location = cx.app_state.taffy.layout(text_node).unwrap().location;
         let point = Point::new(location.x as f64, location.y as f64);
         if let Some(text_layout) = self.available_text_layout.as_ref() {
             cx.render_text(text_layout, point);

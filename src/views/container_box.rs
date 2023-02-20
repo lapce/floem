@@ -46,7 +46,7 @@ impl View for ContainerBox {
     }
 
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {
-        self.child.compute_layout(cx);
+        self.child.compute_layout_main(cx);
     }
 
     fn event(

@@ -150,7 +150,7 @@ where
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {
         for child in &mut self.children {
             if let Some((child, _)) = child.as_mut() {
-                child.compute_layout(cx);
+                child.compute_layout_main(cx);
             }
         }
     }

@@ -54,19 +54,29 @@ fn app_logic(cx: AppContext) -> impl View {
                 border: 1.0,
                 ..Default::default()
             }),
-            list(
-                cx,
-                move || labels.get(),
-                move |item| item.get(),
-                move |cx, item| {
-                    label(cx, move || item.get()).style(cx, || Style {
-                        width: Dimension::Points(50.0),
-                        height: Dimension::Points(30.0),
-                        border: 1.0,
-                        ..Default::default()
-                    })
-                },
-            ),
+            scroll(cx, |cx| {
+                list(
+                    cx,
+                    move || labels.get(),
+                    move |item| item.get(),
+                    move |cx, item| {
+                        label(cx, move || item.get()).style(cx, || Style {
+                            width: Dimension::Points(50.0),
+                            height: Dimension::Points(30.0),
+                            border: 1.0,
+                            ..Default::default()
+                        })
+                    },
+                )
+                .style(cx, || Style {
+                    flex_direction: FlexDirection::Column,
+                    ..Default::default()
+                })
+            })
+            .style(cx, || Style {
+                height: Dimension::Points(30.0),
+                ..Default::default()
+            }),
             stack(cx, move |cx| {
                 (
                     label(cx, move || couter.get().to_string()),

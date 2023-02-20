@@ -54,7 +54,7 @@ impl<V: View> View for Button<V> {
     }
 
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {
-        self.child.compute_layout(cx);
+        self.child.compute_layout_main(cx);
     }
 
     fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {

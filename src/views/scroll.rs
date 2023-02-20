@@ -192,7 +192,7 @@ impl<V: View> Scroll<V> {
         let scroll_offset = self.child_viewport.origin().to_vec2();
 
         let color = Color::rgb8(0xa1, 0xa1, 0xa1);
-        if let Some(bounds) = self.calc_vertical_bar_bounds(cx.layout_state) {
+        if let Some(bounds) = self.calc_vertical_bar_bounds(cx.app_state) {
             let rect = (bounds - scroll_offset).inset(-edge_width / 2.0);
             cx.fill(&rect, color);
             if edge_width > 0.0 {
@@ -201,7 +201,7 @@ impl<V: View> Scroll<V> {
         }
 
         // Horizontal bar
-        if let Some(bounds) = self.calc_horizontal_bar_bounds(cx.layout_state) {
+        if let Some(bounds) = self.calc_horizontal_bar_bounds(cx.app_state) {
             let rect = (bounds - scroll_offset).inset(-edge_width / 2.0);
             cx.fill(&rect, color);
             if edge_width > 0.0 {
@@ -376,7 +376,7 @@ impl<V: View> View for Scroll<V> {
             cx.app_state.request_layout(self.id);
         }
 
-        self.child.compute_layout(cx);
+        self.child.compute_layout_main(cx);
     }
 
     fn event(

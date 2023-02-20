@@ -3,7 +3,7 @@ use std::any::Any;
 use glazier::{kurbo::Affine, WinHandler};
 use leptos_reactive::Scope;
 use parley::FontContext;
-use vello::SceneBuilder;
+use vello::{SceneBuilder, SceneFragment};
 
 use crate::{
     context::{AppState, EventCallback, EventCx, LayoutCx, PaintCx, PaintState, UpdateCx},
@@ -110,23 +110,29 @@ impl<V: View> App<V> {
         let mut cx = LayoutCx {
             app_state: &mut self.app_state,
             font_cx: &mut self.font_cx,
+            viewport: None,
+            saved_viewports: Vec::new(),
         };
         cx.app_state.root = Some(self.view.layout(&mut cx));
         cx.app_state.compute_layout();
-        self.view.compute_layout(&mut cx);
+        self.view.compute_layout_main(&mut cx);
         // println!("layout took {}", start.elapsed().as_micros());
     }
 
     pub fn paint(&mut self) {
-        let mut builder = SceneBuilder::for_fragment(&mut self.paint_state.fragment);
+        let mut fragment = SceneFragment::new();
+        let mut builder = SceneBuilder::for_fragment(&mut fragment);
         let mut cx = PaintCx {
-            layout_state: &mut self.app_state,
             builder: &mut builder,
+            app_state: &mut self.app_state,
+            paint_state: &mut self.paint_state,
             saved_transforms: Vec::new(),
+            saved_viewports: Vec::new(),
             transform: Affine::IDENTITY,
+            viewport: None,
         };
         self.view.paint_main(&mut cx);
-        self.paint_state.render();
+        self.paint_state.render(&fragment);
     }
 
     pub fn process_update(&mut self) {
