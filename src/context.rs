@@ -402,25 +402,25 @@ impl<'a> PaintCx<'a> {
                 let vars: [(Tag, f32); 0] = [];
 
                 for glyph in glyph_run.glyphs() {
-                    let fragment = if let Some(fragment) =
-                        self.paint_state.get_glyph(font.key.value(), glyph.id)
-                    {
-                        fragment
-                    } else {
-                        let mut gp = self.paint_state.glyph_contex.new_provider(
-                            &font_ref,
-                            Some(font.key.value()),
-                            font_size,
-                            false,
-                            vars,
-                        );
-                        let fragment = gp.get(glyph.id, Some(&style.brush.0));
-                        self.paint_state
-                            .insert_glyph(font.key.value(), glyph.id, fragment);
-                        self.paint_state
-                            .get_glyph(font.key.value(), glyph.id)
-                            .unwrap()
-                    };
+                    // let fragment = if let Some(fragment) =
+                    //     self.paint_state.get_glyph(font.key.value(), glyph.id)
+                    // {
+                    //     fragment
+                    // } else {
+                    let mut gp = self.paint_state.glyph_contex.new_provider(
+                        &font_ref,
+                        Some(font.key.value()),
+                        font_size,
+                        false,
+                        vars,
+                    );
+                    let fragment = gp.get(glyph.id, Some(&style.brush.0));
+                    //     self.paint_state
+                    //         .insert_glyph(font.key.value(), glyph.id, fragment);
+                    //     self.paint_state
+                    //         .get_glyph(font.key.value(), glyph.id)
+                    //         .unwrap()
+                    // };
 
                     if let Some(fragment) = fragment {
                         let gx = x + glyph.x;
@@ -438,7 +438,7 @@ impl<'a> PaintCx<'a> {
                                 break 'line_loop;
                             }
                         }
-                        self.builder.append(fragment, Some(transform * xform));
+                        self.builder.append(&fragment, Some(transform * xform));
                     }
                     x += glyph.advance;
                 }

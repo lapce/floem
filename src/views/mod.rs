@@ -1,6 +1,9 @@
 mod label;
 pub use label::*;
 
+mod text_layout;
+pub use text_layout::*;
+
 mod list;
 pub use list::*;
 

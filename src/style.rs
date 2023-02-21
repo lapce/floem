@@ -35,11 +35,11 @@ pub struct Style {
     pub padding_top: f32,
     pub padding_right: f32,
     pub padding_bottom: f32,
-    pub margin: f32,
-    pub margin_left: f32,
-    pub margin_top: f32,
-    pub margin_right: f32,
-    pub margin_bottom: f32,
+    pub margin: Option<f32>,
+    pub margin_left: Option<f32>,
+    pub margin_top: Option<f32>,
+    pub margin_right: Option<f32>,
+    pub margin_bottom: Option<f32>,
     pub background: Option<Color>,
 }
 
@@ -72,11 +72,11 @@ impl Default for Style {
             padding_top: 0.0,
             padding_right: 0.0,
             padding_bottom: 0.0,
-            margin: 0.0,
-            margin_left: 0.0,
-            margin_top: 0.0,
-            margin_right: 0.0,
-            margin_bottom: 0.0,
+            margin: None,
+            margin_left: None,
+            margin_top: None,
+            margin_right: None,
+            margin_bottom: None,
             background: None,
         }
     }
@@ -151,26 +151,34 @@ impl From<&Style> for TaffyStyle {
                 }),
             },
             margin: Rect {
-                left: LengthPercentageAuto::Points(if value.margin_left > 0.0 {
-                    value.margin_left
+                left: if let Some(margin) = value.margin_left {
+                    LengthPercentageAuto::Points(margin)
+                } else if let Some(margin) = value.margin {
+                    LengthPercentageAuto::Points(margin)
                 } else {
-                    value.margin
-                }),
-                top: LengthPercentageAuto::Points(if value.margin_top > 0.0 {
-                    value.margin_top
+                    LengthPercentageAuto::Points(0.0)
+                },
+                top: if let Some(margin) = value.margin_top {
+                    LengthPercentageAuto::Points(margin)
+                } else if let Some(margin) = value.margin {
+                    LengthPercentageAuto::Points(margin)
                 } else {
-                    value.margin
-                }),
-                right: LengthPercentageAuto::Points(if value.margin_right > 0.0 {
-                    value.margin_right
+                    LengthPercentageAuto::Points(0.0)
+                },
+                right: if let Some(margin) = value.margin_right {
+                    LengthPercentageAuto::Points(margin)
+                } else if let Some(margin) = value.margin {
+                    LengthPercentageAuto::Points(margin)
                 } else {
-                    value.margin
-                }),
-                bottom: LengthPercentageAuto::Points(if value.margin_bottom > 0.0 {
-                    value.margin_bottom
+                    LengthPercentageAuto::Points(0.0)
+                },
+                bottom: if let Some(margin) = value.margin_bottom {
+                    LengthPercentageAuto::Points(margin)
+                } else if let Some(margin) = value.margin {
+                    LengthPercentageAuto::Points(margin)
                 } else {
-                    value.margin
-                }),
+                    LengthPercentageAuto::Points(0.0)
+                },
             },
             ..Default::default()
         }
