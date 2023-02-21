@@ -14,7 +14,7 @@ use vello::{
         pinot::{types::Tag, FontRef},
         GlyphContext,
     },
-    peniko::{BrushRef, Fill, Stroke},
+    peniko::{BrushRef, Color, Fill, Stroke},
     util::{RenderContext, RenderSurface},
     Renderer, Scene, SceneBuilder, SceneFragment,
 };
@@ -279,19 +279,27 @@ pub struct PaintCx<'a> {
     pub(crate) paint_state: &'a mut PaintState,
     pub(crate) saved_transforms: Vec<Affine>,
     pub(crate) saved_viewports: Vec<Option<Rect>>,
+    pub(crate) saved_colors: Vec<Option<Color>>,
+    pub(crate) saved_font_sizes: Vec<Option<f32>>,
     pub(crate) transform: Affine,
     pub(crate) viewport: Option<Rect>,
+    pub(crate) color: Option<Color>,
+    pub(crate) font_size: Option<f32>,
 }
 
 impl<'a> PaintCx<'a> {
     pub fn save(&mut self) {
         self.saved_transforms.push(self.transform);
         self.saved_viewports.push(self.viewport);
+        self.saved_colors.push(self.color);
+        self.saved_font_sizes.push(self.font_size);
     }
 
     pub fn restore(&mut self) {
         self.transform = self.saved_transforms.pop().unwrap_or_default();
         self.viewport = self.saved_viewports.pop().unwrap_or_default();
+        self.color = self.saved_colors.pop().unwrap_or_default();
+        self.font_size = self.saved_font_sizes.pop().unwrap_or_default();
     }
 
     pub fn get_layout(&mut self, id: Id) -> Option<Layout> {

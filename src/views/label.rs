@@ -2,7 +2,7 @@ use std::any::Any;
 
 use glazier::kurbo::Point;
 use leptos_reactive::create_effect;
-use parley::layout::Cursor;
+use parley::{layout::Cursor, style::StyleProperty};
 use taffy::{prelude::Node, style::Dimension};
 use vello::peniko::{Brush, Color};
 
@@ -21,8 +21,11 @@ pub struct Label {
     label: String,
     text_layout: Option<parley::Layout<ParleyBrush>>,
     text_node: Option<Node>,
+    available_text: Option<String>,
     available_width: Option<f32>,
     available_text_layout: Option<parley::Layout<ParleyBrush>>,
+    color: Option<Color>,
+    font_size: Option<f32>,
 }
 
 pub fn label(cx: AppContext, label: impl Fn() -> String + 'static) -> Label {
@@ -36,8 +39,39 @@ pub fn label(cx: AppContext, label: impl Fn() -> String + 'static) -> Label {
         label: "".to_string(),
         text_layout: None,
         text_node: None,
+        available_text: None,
         available_width: None,
         available_text_layout: None,
+        color: None,
+        font_size: None,
+    }
+}
+
+impl Label {
+    fn set_text_layout(&mut self) {
+        let mut text_layout_builder = parley::LayoutContext::builder(self.label.as_str(), 1.0);
+        text_layout_builder.push_default(&parley::style::StyleProperty::Brush(ParleyBrush(
+            Brush::Solid(self.color.unwrap_or_else(|| Color::rgb8(0xf0, 0xf0, 0xea))),
+        )));
+        if let Some(font_size) = self.font_size {
+            text_layout_builder.push_default(&StyleProperty::FontSize(font_size));
+        }
+        let mut text_layout = text_layout_builder.build();
+        text_layout.break_all_lines(None, parley::layout::Alignment::Start);
+        self.text_layout = Some(text_layout);
+
+        if let Some(new_text) = self.available_text.as_ref() {
+            let mut text_layout_builder = parley::LayoutContext::builder(new_text.as_str(), 1.0);
+            text_layout_builder.push_default(&parley::style::StyleProperty::Brush(ParleyBrush(
+                Brush::Solid(self.color.unwrap_or_else(|| Color::rgb8(0xf0, 0xf0, 0xea))),
+            )));
+            if let Some(font_size) = self.font_size {
+                text_layout_builder.push_default(&StyleProperty::FontSize(font_size));
+            }
+            let mut new_text = text_layout_builder.build();
+            new_text.break_all_lines(None, parley::layout::Alignment::Start);
+            self.available_text_layout = Some(new_text);
+        }
     }
 }
 
@@ -136,6 +170,7 @@ impl View for Label {
                 } else {
                     "".to_string()
                 };
+                self.available_text = Some(new_text.clone());
                 let mut text_layout_builder =
                     parley::LayoutContext::builder(new_text.as_str(), 1.0);
                 text_layout_builder.push_default(&parley::style::StyleProperty::Brush(
@@ -146,12 +181,18 @@ impl View for Label {
                 self.available_text_layout = Some(new_text);
             }
         } else {
+            self.available_text = None;
             self.available_width = None;
             self.available_text_layout = None;
         }
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
+        if self.color != cx.color || self.font_size != cx.font_size {
+            self.color = cx.color;
+            self.font_size = cx.font_size;
+            self.set_text_layout();
+        }
         let text_node = self.text_node.unwrap();
         let location = cx.app_state.taffy.layout(text_node).unwrap().location;
         let point = Point::new(location.x as f64, location.y as f64);

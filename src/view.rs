@@ -146,6 +146,12 @@ pub trait View {
         let size = cx.transform(id);
         if let Some(style) = style.as_ref() {
             paint_bg(cx, style, size);
+            if style.color.is_some() {
+                cx.color = style.color;
+            }
+            if style.font_size.is_some() {
+                cx.font_size = style.font_size;
+            }
         }
         self.paint(cx);
         if let Some(style) = style.as_ref() {

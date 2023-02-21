@@ -40,7 +40,9 @@ pub struct Style {
     pub margin_top: Option<f32>,
     pub margin_right: Option<f32>,
     pub margin_bottom: Option<f32>,
+    pub color: Option<Color>,
     pub background: Option<Color>,
+    pub font_size: Option<f32>,
 }
 
 impl Default for Style {
@@ -77,7 +79,9 @@ impl Default for Style {
             margin_top: None,
             margin_right: None,
             margin_bottom: None,
+            color: None,
             background: None,
+            font_size: None,
         }
     }
 }

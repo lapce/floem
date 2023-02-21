@@ -128,8 +128,12 @@ impl<V: View> App<V> {
             paint_state: &mut self.paint_state,
             saved_transforms: Vec::new(),
             saved_viewports: Vec::new(),
+            saved_colors: Vec::new(),
+            saved_font_sizes: Vec::new(),
             transform: Affine::IDENTITY,
             viewport: None,
+            color: None,
+            font_size: None,
         };
         self.view.paint_main(&mut cx);
         self.paint_state.render(&fragment);
