@@ -14,6 +14,7 @@ pub mod views;
 pub use glazier;
 pub use leptos_reactive as reactive;
 pub use parley;
+pub use taffy;
 pub use vello::peniko;
 
 use app::{App, AppContext};

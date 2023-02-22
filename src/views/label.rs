@@ -103,8 +103,11 @@ impl View for Label {
         if self.text_layout.is_none() {
             let mut text_layout_builder = parley::LayoutContext::builder(self.label.as_str(), 1.0);
             text_layout_builder.push_default(&parley::style::StyleProperty::Brush(ParleyBrush(
-                Brush::Solid(Color::rgb8(0xf0, 0xf0, 0xea)),
+                Brush::Solid(self.color.unwrap_or_else(|| Color::rgb8(0xf0, 0xf0, 0xea))),
             )));
+            if let Some(font_size) = self.font_size {
+                text_layout_builder.push_default(&StyleProperty::FontSize(font_size));
+            }
             let mut text_layout = text_layout_builder.build();
             text_layout.break_all_lines(None, parley::layout::Alignment::Start);
             self.text_layout = Some(text_layout);
@@ -153,6 +156,9 @@ impl View for Label {
                 text_layout_builder.push_default(&parley::style::StyleProperty::Brush(
                     ParleyBrush(Brush::Solid(Color::rgb8(0xf0, 0xf0, 0xea))),
                 ));
+                if let Some(font_size) = self.font_size {
+                    text_layout_builder.push_default(&StyleProperty::FontSize(font_size));
+                }
                 let mut dots_text = text_layout_builder.build();
                 dots_text.break_all_lines(None, parley::layout::Alignment::Start);
                 let dots_width = dots_text.width();
@@ -174,8 +180,13 @@ impl View for Label {
                 let mut text_layout_builder =
                     parley::LayoutContext::builder(new_text.as_str(), 1.0);
                 text_layout_builder.push_default(&parley::style::StyleProperty::Brush(
-                    ParleyBrush(Brush::Solid(Color::rgb8(0xf0, 0xf0, 0xea))),
+                    ParleyBrush(Brush::Solid(
+                        self.color.unwrap_or_else(|| Color::rgb8(0xf0, 0xf0, 0xea)),
+                    )),
                 ));
+                if let Some(font_size) = self.font_size {
+                    text_layout_builder.push_default(&StyleProperty::FontSize(font_size));
+                }
                 let mut new_text = text_layout_builder.build();
                 new_text.break_all_lines(None, parley::layout::Alignment::Start);
                 self.available_text_layout = Some(new_text);

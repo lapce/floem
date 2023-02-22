@@ -111,10 +111,14 @@ impl<V: View> App<V> {
             app_state: &mut self.app_state,
             font_cx: &mut self.font_cx,
             viewport: None,
+            font_size: None,
             saved_viewports: Vec::new(),
+            saved_font_sizes: Vec::new(),
         };
-        cx.app_state.root = Some(self.view.layout(&mut cx));
+        cx.app_state.root = Some(self.view.layout_main(&mut cx));
         cx.app_state.compute_layout();
+
+        cx.clear();
         self.view.compute_layout_main(&mut cx);
         // println!("layout took {}", start.elapsed().as_micros());
     }

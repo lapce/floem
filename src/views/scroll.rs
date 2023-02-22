@@ -347,7 +347,7 @@ impl<V: View> View for Scroll<V> {
             let mut child_view = cx.app_state.view_state(child_id);
             child_view.style.position = Position::Absolute;
 
-            let child_node = self.child.layout(cx);
+            let child_node = self.child.layout_main(cx);
 
             let virtual_style: taffy::style::Style = (&Style {
                 width: Dimension::Points(self.child_size.width as f32),

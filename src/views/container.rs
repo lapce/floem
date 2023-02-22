@@ -39,7 +39,7 @@ impl<V: View> View for Container<V> {
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
-        cx.layout_node(self.id, true, |cx| vec![self.child.layout(cx)])
+        cx.layout_node(self.id, true, |cx| vec![self.child.layout_main(cx)])
     }
 
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {

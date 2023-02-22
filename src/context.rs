@@ -60,6 +60,17 @@ pub struct TextCache {
     fonts: HashMap<u64, FontCache>,
 }
 
+pub(crate) struct TransformContext {
+    pub(crate) transform: Affine,
+    pub(crate) viewport: Option<Rect>,
+    pub(crate) color: Option<Color>,
+    pub(crate) font_size: Option<f32>,
+    pub(crate) saved_transforms: Vec<Affine>,
+    pub(crate) saved_viewports: Vec<Option<Rect>>,
+    pub(crate) saved_colors: Vec<Option<Color>>,
+    pub(crate) saved_font_sizes: Vec<Option<f32>>,
+}
+
 pub struct AppState {
     /// keyboard focus
     pub(crate) focus: Option<Id>,
@@ -232,23 +243,57 @@ pub struct LayoutCx<'a> {
     pub(crate) app_state: &'a mut AppState,
     pub(crate) font_cx: &'a mut FontContext,
     pub(crate) viewport: Option<Rect>,
+    pub(crate) font_size: Option<f32>,
     pub(crate) saved_viewports: Vec<Option<Rect>>,
+    pub(crate) saved_font_sizes: Vec<Option<f32>>,
 }
 
 impl<'a> LayoutCx<'a> {
+    pub(crate) fn clear(&mut self) {
+        self.viewport = None;
+        self.font_size = None;
+        self.saved_viewports.clear();
+        self.saved_font_sizes.clear();
+    }
+
     pub fn save(&mut self) {
         self.saved_viewports.push(self.viewport);
+        self.saved_font_sizes.push(self.font_size);
     }
 
     pub fn restore(&mut self) {
         self.viewport = self.saved_viewports.pop().unwrap_or_default();
+        self.font_size = self.saved_font_sizes.pop().unwrap_or_default();
+    }
+
+    pub fn current_font_size(&self) -> Option<f32> {
+        self.font_size
     }
 
     pub fn get_style(&self, id: Id) -> Option<&Style> {
         self.app_state.view_states.get(&id).map(|s| &s.style)
     }
 
-    pub(crate) fn layout_node(
+    pub fn get_layout(&self, id: Id) -> Option<Layout> {
+        self.app_state.get_layout(id)
+    }
+
+    pub fn set_style(&mut self, node: Node, style: taffy::style::Style) {
+        let _ = self.app_state.taffy.set_style(node, style);
+    }
+
+    pub fn layout(&self, node: Node) -> Option<Layout> {
+        self.app_state.taffy.layout(node).ok().copied()
+    }
+
+    pub fn new_node(&mut self) -> Node {
+        self.app_state
+            .taffy
+            .new_leaf(taffy::style::Style::DEFAULT)
+            .unwrap()
+    }
+
+    pub fn layout_node(
         &mut self,
         id: Id,
         has_children: bool,
@@ -300,6 +345,18 @@ impl<'a> PaintCx<'a> {
         self.viewport = self.saved_viewports.pop().unwrap_or_default();
         self.color = self.saved_colors.pop().unwrap_or_default();
         self.font_size = self.saved_font_sizes.pop().unwrap_or_default();
+    }
+
+    pub fn current_color(&self) -> Option<Color> {
+        self.color
+    }
+
+    pub fn current_font_size(&self) -> Option<f32> {
+        self.font_size
+    }
+
+    pub fn layout(&self, node: Node) -> Option<Layout> {
+        self.app_state.taffy.layout(node).ok().copied()
     }
 
     pub fn get_layout(&mut self, id: Id) -> Option<Layout> {
@@ -547,7 +604,7 @@ impl<'a> UpdateCx<'a> {
         self.app_state.reset_children_layout(id);
     }
 
-    pub(crate) fn request_layout(&mut self, id: Id) {
+    pub fn request_layout(&mut self, id: Id) {
         self.app_state.request_layout(id);
     }
 }

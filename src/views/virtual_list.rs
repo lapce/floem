@@ -242,7 +242,7 @@ where
             let mut nodes = self
                 .children
                 .iter_mut()
-                .filter_map(|child| Some(child.as_mut()?.0.layout(cx)))
+                .filter_map(|child| Some(child.as_mut()?.0.layout_main(cx)))
                 .collect::<Vec<_>>();
             let before_size = match self.direction {
                 VirtualListDirection::Vertical => taffy::prelude::Size {

@@ -48,6 +48,22 @@ pub trait View {
 
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags;
 
+    fn layout_main(&mut self, cx: &mut LayoutCx) -> Node {
+        cx.save();
+
+        let style = cx.get_style(self.id());
+        if let Some(style) = style {
+            if style.font_size.is_some() {
+                cx.font_size = style.font_size;
+            }
+        }
+
+        let node = self.layout(cx);
+
+        cx.restore();
+        node
+    }
+
     fn layout(&mut self, cx: &mut LayoutCx) -> Node;
 
     fn compute_layout_main(&mut self, cx: &mut LayoutCx) {
