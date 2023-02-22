@@ -2,14 +2,13 @@ use std::sync::Arc;
 
 use floem::{
     app::AppContext,
-    button::button,
     peniko::Color,
     reactive::create_signal,
     stack::stack,
     style::{AlignItems, Dimension, FlexDirection, Style},
     view::View,
     views::Decorators,
-    views::{label, scroll, VirtualListDirection, VirtualListItemSize},
+    views::{click, label, scroll, VirtualListDirection, VirtualListItemSize},
     views::{list, virtual_list},
 };
 
@@ -80,7 +79,7 @@ fn app_logic(cx: AppContext) -> impl View {
             stack(cx, move |cx| {
                 (
                     label(cx, move || couter.get().to_string()),
-                    button(
+                    click(
                         cx,
                         |cx| label(cx, move || "button".to_string()),
                         move || {
@@ -96,7 +95,7 @@ fn app_logic(cx: AppContext) -> impl View {
                 )
             }),
             label(cx, move || couter.get().to_string()),
-            button(
+            click(
                 cx,
                 |cx| label(cx, move || "button".to_string()),
                 move || {
@@ -116,7 +115,7 @@ fn app_logic(cx: AppContext) -> impl View {
                 border_radius: 10.0,
                 ..Default::default()
             }),
-            button(
+            click(
                 cx,
                 |cx| label(cx, move || "button".to_string()),
                 move || {
@@ -136,7 +135,7 @@ fn app_logic(cx: AppContext) -> impl View {
                     label(cx, move || couter.get().to_string()),
                     label(cx, move || couter.get().to_string()),
                     label(cx, move || couter.get().to_string()),
-                    button(
+                    click(
                         cx,
                         |cx| label(cx, move || "button".to_string()),
                         move || {

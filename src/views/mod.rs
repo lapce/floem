@@ -1,3 +1,6 @@
+mod click;
+pub use click::*;
+
 mod label;
 pub use label::*;
 

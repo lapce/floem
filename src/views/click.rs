@@ -1,7 +1,5 @@
 use std::any::Any;
 
-use leptos_reactive::create_effect;
-
 use crate::{
     app::{AppContext, UpdateMessage},
     context::{EventCx, UpdateCx},
@@ -10,29 +8,29 @@ use crate::{
     view::{ChangeFlags, View},
 };
 
-pub struct Button<V: View> {
+pub struct Click<V: View> {
     id: Id,
     child: V,
-    onclick: Box<dyn Fn()>,
+    on_click: Box<dyn Fn()>,
 }
 
-pub fn button<V: View>(
+pub fn click<V: View>(
     cx: AppContext,
     child: impl FnOnce(AppContext) -> V,
-    onclick: impl Fn() + 'static,
-) -> Button<V> {
+    on_click: impl Fn() + 'static,
+) -> Click<V> {
     let id = cx.new_id();
     let mut child_cx = cx;
     child_cx.id = id;
     let child = child(child_cx);
-    Button {
+    Click {
         id,
         child,
-        onclick: Box::new(onclick),
+        on_click: Box::new(on_click),
     }
 }
 
-impl<V: View> View for Button<V> {
+impl<V: View> View for Click<V> {
     fn id(&self) -> Id {
         self.id
     }
@@ -70,7 +68,7 @@ impl<V: View> View for Button<V> {
             Event::MouseUp(event) => {
                 let rect = cx.get_size(self.id).unwrap_or_default().to_rect();
                 if rect.contains(event.pos) {
-                    (self.onclick)();
+                    (self.on_click)();
                 }
                 true
             }

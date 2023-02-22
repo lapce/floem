@@ -257,39 +257,44 @@ fn paint_border(cx: &mut PaintCx, style: &Style, size: Size) {
         } else {
             cx.stroke(&rect, border_color, left as f64);
         }
-    } else if left > 0.0 {
-        let half = left as f64 / 2.0;
-        cx.stroke(
-            &Line::new(Point::new(half, 0.0), Point::new(half, size.height)),
-            border_color,
-            left as f64,
-        );
-    } else if right > 0.0 {
-        let half = right as f64 / 2.0;
-        cx.stroke(
-            &Line::new(
-                Point::new(size.width - half, 0.0),
-                Point::new(size.width - half, size.height),
-            ),
-            border_color,
-            right as f64,
-        );
-    } else if top > 0.0 {
-        let half = top as f64 / 2.0;
-        cx.stroke(
-            &Line::new(Point::new(0.0, half), Point::new(size.width, half)),
-            border_color,
-            top as f64,
-        );
-    } else if bottom > 0.0 {
-        let half = bottom as f64 / 2.0;
-        cx.stroke(
-            &Line::new(
-                Point::new(0.0, size.height - half),
-                Point::new(size.width, size.height - half),
-            ),
-            border_color,
-            bottom as f64,
-        );
+    } else {
+        if left > 0.0 {
+            let half = left as f64 / 2.0;
+            cx.stroke(
+                &Line::new(Point::new(half, 0.0), Point::new(half, size.height)),
+                border_color,
+                left as f64,
+            );
+        }
+        if right > 0.0 {
+            let half = right as f64 / 2.0;
+            cx.stroke(
+                &Line::new(
+                    Point::new(size.width - half, 0.0),
+                    Point::new(size.width - half, size.height),
+                ),
+                border_color,
+                right as f64,
+            );
+        }
+        if top > 0.0 {
+            let half = top as f64 / 2.0;
+            cx.stroke(
+                &Line::new(Point::new(0.0, half), Point::new(size.width, half)),
+                border_color,
+                top as f64,
+            );
+        }
+        if bottom > 0.0 {
+            let half = bottom as f64 / 2.0;
+            cx.stroke(
+                &Line::new(
+                    Point::new(0.0, size.height - half),
+                    Point::new(size.width, size.height - half),
+                ),
+                border_color,
+                bottom as f64,
+            );
+        }
     }
 }
