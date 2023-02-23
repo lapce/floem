@@ -40,6 +40,7 @@ pub struct Scroll<V: View> {
     onscroll: Option<Box<dyn Fn(Rect)>>,
     held: BarHeldState,
     virtual_node: Option<Node>,
+    hide_bar: bool,
 }
 
 pub fn scroll<V: View>(cx: AppContext, child: impl Fn(AppContext) -> V) -> Scroll<V> {
@@ -57,6 +58,7 @@ pub fn scroll<V: View>(cx: AppContext, child: impl Fn(AppContext) -> V) -> Scrol
         onscroll: None,
         held: BarHeldState::None,
         virtual_node: None,
+        hide_bar: false,
     }
 }
 
@@ -73,6 +75,11 @@ impl<V: View> Scroll<V> {
             AppContext::update_state(id, rect);
         });
 
+        self
+    }
+
+    pub fn hide_bar(mut self) -> Self {
+        self.hide_bar = true;
         self
     }
 
@@ -219,8 +226,8 @@ impl<V: View> Scroll<V> {
             return None;
         }
 
-        let bar_width = 20.0;
-        let bar_pad = 2.0;
+        let bar_width = 10.0;
+        let bar_pad = 0.0;
 
         let percent_visible = viewport_size.height / content_size.height;
         let percent_scrolled = scroll_offset.y / (content_size.height - viewport_size.height);
@@ -252,9 +259,9 @@ impl<V: View> Scroll<V> {
         let bar_width = if viewport_size.height < 40.0 {
             5.0
         } else {
-            20.0
+            10.0
         };
-        let bar_pad = 2.0;
+        let bar_pad = 0.0;
 
         let percent_visible = viewport_size.width / content_size.width;
         let percent_scrolled = scroll_offset.x / (content_size.width - viewport_size.width);
@@ -465,6 +472,8 @@ impl<V: View> View for Scroll<V> {
         self.child.paint_main(cx);
         cx.restore();
 
-        self.draw_bars(cx);
+        if !self.hide_bar {
+            self.draw_bars(cx);
+        }
     }
 }

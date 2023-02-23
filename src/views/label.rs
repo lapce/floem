@@ -100,17 +100,12 @@ impl View for Label {
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
+        if self.font_size != cx.current_font_size() {
+            self.font_size = cx.current_font_size();
+            self.set_text_layout();
+        }
         if self.text_layout.is_none() {
-            let mut text_layout_builder = parley::LayoutContext::builder(self.label.as_str(), 1.0);
-            text_layout_builder.push_default(&parley::style::StyleProperty::Brush(ParleyBrush(
-                Brush::Solid(self.color.unwrap_or_else(|| Color::rgb8(0xf0, 0xf0, 0xea))),
-            )));
-            if let Some(font_size) = self.font_size {
-                text_layout_builder.push_default(&StyleProperty::FontSize(font_size));
-            }
-            let mut text_layout = text_layout_builder.build();
-            text_layout.break_all_lines(None, parley::layout::Alignment::Start);
-            self.text_layout = Some(text_layout);
+            self.set_text_layout();
         }
         let text_layout = self.text_layout.as_ref().unwrap();
         let width = text_layout.width().ceil();
@@ -176,20 +171,9 @@ impl View for Label {
                 } else {
                     "".to_string()
                 };
-                self.available_text = Some(new_text.clone());
-                let mut text_layout_builder =
-                    parley::LayoutContext::builder(new_text.as_str(), 1.0);
-                text_layout_builder.push_default(&parley::style::StyleProperty::Brush(
-                    ParleyBrush(Brush::Solid(
-                        self.color.unwrap_or_else(|| Color::rgb8(0xf0, 0xf0, 0xea)),
-                    )),
-                ));
-                if let Some(font_size) = self.font_size {
-                    text_layout_builder.push_default(&StyleProperty::FontSize(font_size));
-                }
-                let mut new_text = text_layout_builder.build();
-                new_text.break_all_lines(None, parley::layout::Alignment::Start);
-                self.available_text_layout = Some(new_text);
+                self.available_text = Some(new_text);
+                self.available_width = Some(layout.size.width);
+                self.set_text_layout();
             }
         } else {
             self.available_text = None;
