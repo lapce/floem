@@ -27,6 +27,13 @@ use crate::{
 };
 
 pub type EventCallback = dyn Fn(&Event) -> bool;
+pub type ResizeCallback = dyn Fn(Point, Rect);
+
+pub(crate) struct ResizeListener {
+    pub(crate) window_origin: Point,
+    pub(crate) rect: Rect,
+    pub(crate) callback: Box<ResizeCallback>,
+}
 
 pub struct ViewState {
     pub(crate) node: Node,
@@ -35,6 +42,7 @@ pub struct ViewState {
     pub(crate) viewport: Option<Rect>,
     pub(crate) style: Style,
     pub(crate) event_listeners: HashMap<EventListner, Box<EventCallback>>,
+    pub(crate) resize_listener: Option<ResizeListener>,
 }
 
 impl ViewState {
@@ -46,6 +54,7 @@ impl ViewState {
             style: Style::default(),
             children_nodes: Vec::new(),
             event_listeners: HashMap::new(),
+            resize_listener: None,
         }
     }
 }
@@ -244,26 +253,32 @@ pub struct LayoutCx<'a> {
     pub(crate) font_cx: &'a mut FontContext,
     pub(crate) viewport: Option<Rect>,
     pub(crate) font_size: Option<f32>,
+    pub(crate) window_origin: Point,
     pub(crate) saved_viewports: Vec<Option<Rect>>,
     pub(crate) saved_font_sizes: Vec<Option<f32>>,
+    pub(crate) saved_window_origins: Vec<Point>,
 }
 
 impl<'a> LayoutCx<'a> {
     pub(crate) fn clear(&mut self) {
         self.viewport = None;
         self.font_size = None;
+        self.window_origin = Point::ZERO;
         self.saved_viewports.clear();
         self.saved_font_sizes.clear();
+        self.saved_window_origins.clear();
     }
 
     pub fn save(&mut self) {
         self.saved_viewports.push(self.viewport);
         self.saved_font_sizes.push(self.font_size);
+        self.saved_window_origins.push(self.window_origin);
     }
 
     pub fn restore(&mut self) {
         self.viewport = self.saved_viewports.pop().unwrap_or_default();
         self.font_size = self.saved_font_sizes.pop().unwrap_or_default();
+        self.window_origin = self.saved_window_origins.pop().unwrap_or_default();
     }
 
     pub fn current_font_size(&self) -> Option<f32> {
@@ -315,6 +330,13 @@ impl<'a> LayoutCx<'a> {
         }
 
         node
+    }
+
+    pub(crate) fn get_resize_listener(&mut self, id: Id) -> Option<&mut ResizeListener> {
+        self.app_state
+            .view_states
+            .get_mut(&id)
+            .and_then(|s| s.resize_listener.as_mut())
     }
 }
 

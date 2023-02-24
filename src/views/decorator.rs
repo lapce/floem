@@ -1,3 +1,4 @@
+use glazier::kurbo::{Point, Rect};
 use leptos_reactive::create_effect;
 
 use crate::{
@@ -18,9 +19,15 @@ pub trait Decorators: View + Sized {
         self
     }
 
-    fn event(self, listener: EventListner, action: impl Fn(&Event) -> bool + 'static) -> Self {
+    fn on_event(self, listener: EventListner, action: impl Fn(&Event) -> bool + 'static) -> Self {
         let id = self.id();
         AppContext::update_event_listner(id, listener, Box::new(action));
+        self
+    }
+
+    fn on_resize(self, action: impl Fn(Point, Rect) + 'static) -> Self {
+        let id = self.id();
+        AppContext::update_resize_listner(id, Box::new(action));
         self
     }
 }

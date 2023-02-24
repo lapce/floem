@@ -1,12 +1,18 @@
 use std::any::Any;
 
-use glazier::{kurbo::Affine, WinHandler};
+use glazier::{
+    kurbo::{Affine, Point, Rect},
+    WinHandler,
+};
 use leptos_reactive::Scope;
 use parley::FontContext;
 use vello::{SceneBuilder, SceneFragment};
 
 use crate::{
-    context::{AppState, EventCallback, EventCx, LayoutCx, PaintCx, PaintState, UpdateCx},
+    context::{
+        AppState, EventCallback, EventCx, LayoutCx, PaintCx, PaintState, ResizeCallback,
+        ResizeListener, UpdateCx,
+    },
     event::{Event, EventListner},
     ext_event::{EXT_EVENT_HANDLER, WRITE_SIGNALS},
     id::{Id, IDPATHS},
@@ -60,6 +66,13 @@ impl AppContext {
         });
     }
 
+    pub fn update_resize_listner(id: Id, action: Box<ResizeCallback>) {
+        UPDATE_MESSAGES.with(|msgs| {
+            msgs.borrow_mut()
+                .push(UpdateMessage::ResizeListener { id, action })
+        });
+    }
+
     pub fn with_id(mut self, id: Id) -> Self {
         self.id = id;
         self
@@ -84,6 +97,10 @@ pub enum UpdateMessage {
         id: Id,
         listener: EventListner,
         action: Box<EventCallback>,
+    },
+    ResizeListener {
+        id: Id,
+        action: Box<ResizeCallback>,
     },
 }
 
@@ -112,8 +129,10 @@ impl<V: View> App<V> {
             font_cx: &mut self.font_cx,
             viewport: None,
             font_size: None,
+            window_origin: Point::ZERO,
             saved_viewports: Vec::new(),
             saved_font_sizes: Vec::new(),
+            saved_window_origins: Vec::new(),
         };
         cx.app_state.root = Some(self.view.layout_main(&mut cx));
         cx.app_state.compute_layout();
@@ -182,6 +201,14 @@ impl<V: View> App<V> {
                     } => {
                         let state = cx.app_state.view_state(id);
                         state.event_listeners.insert(listener, action);
+                    }
+                    UpdateMessage::ResizeListener { id, action } => {
+                        let state = cx.app_state.view_state(id);
+                        state.resize_listener = Some(ResizeListener {
+                            window_origin: Point::ZERO,
+                            rect: Rect::ZERO,
+                            callback: action,
+                        });
                     }
                 }
             }

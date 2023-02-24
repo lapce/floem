@@ -73,6 +73,7 @@ pub trait View {
             .app_state
             .get_layout(self.id())
             .unwrap_or(taffy::layout::Layout::new());
+        let origin = Point::new(layout.location.x as f64, layout.location.y as f64);
         let parent_viewport = cx.viewport.map(|rect| {
             rect.with_origin(Point::new(
                 rect.x0 - layout.location.x as f64,
@@ -101,6 +102,19 @@ pub trait View {
             }
             (None, None) => {
                 cx.viewport = None;
+            }
+        }
+
+        let viewport = cx.viewport.unwrap_or_default();
+        let window_origin = origin + cx.window_origin.to_vec2() + viewport.origin().to_vec2();
+        cx.window_origin = window_origin;
+
+        if let Some(resize) = cx.get_resize_listener(self.id()) {
+            let new_rect = size.to_rect().with_origin(origin);
+            if new_rect != resize.rect || window_origin != resize.window_origin {
+                resize.rect = new_rect;
+                resize.window_origin = window_origin;
+                (*resize.callback)(window_origin, new_rect);
             }
         }
 
