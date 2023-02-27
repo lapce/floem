@@ -10,7 +10,7 @@ rustc-hash = "1.1.0"
 smallvec = "1.10.0"
 educe = "0.4.20"
 parley = { git = "https://github.com/lapce/parley", rev = "421e5c1eb07d108a9c05da4f021a34f5bd6532cd" }
-taffy = { git = "https://github.com/DioxusLabs/taffy" }
+taffy = "0.3.3"
 leptos_reactive = { version = "0.1.3", features = ["stable"] }
 glazier = { git = "https://github.com/linebender/glazier" }
 vello = { git = "https://github.com/linebender/vello" }
