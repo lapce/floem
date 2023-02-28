@@ -15,6 +15,11 @@ use crate::{
     view::{ChangeFlags, View},
 };
 
+enum ScrollState {
+    EnsureVisble(Rect),
+    ScrollDelta(Vec2),
+}
+
 /// Minimum length for any scrollbar to be when measured on that
 /// scrollbar's primary axis.
 const SCROLLBAR_MIN_SIZE: f64 = 10.0;
@@ -35,6 +40,7 @@ enum BarHeldState {
 pub struct Scroll<V: View> {
     id: Id,
     child: V,
+    size: Size,
     child_size: Size,
     child_viewport: Rect,
     onscroll: Option<Box<dyn Fn(Rect)>>,
@@ -53,6 +59,7 @@ pub fn scroll<V: View>(cx: AppContext, child: impl Fn(AppContext) -> V) -> Scrol
     Scroll {
         id,
         child,
+        size: Size::ZERO,
         child_size: Size::ZERO,
         child_viewport: Rect::ZERO,
         onscroll: None,
@@ -72,7 +79,17 @@ impl<V: View> Scroll<V> {
         let id = self.id;
         create_effect(cx.scope, move |_| {
             let rect = to();
-            AppContext::update_state(id, rect);
+            AppContext::update_state(id, ScrollState::EnsureVisble(rect));
+        });
+
+        self
+    }
+
+    pub fn on_scroll_delta(self, cx: AppContext, delta: impl Fn() -> Vec2 + 'static) -> Self {
+        let id = self.id;
+        create_effect(cx.scope, move |_| {
+            let delta = delta();
+            AppContext::update_state(id, ScrollState::ScrollDelta(delta));
         });
 
         self
@@ -81,6 +98,11 @@ impl<V: View> Scroll<V> {
     pub fn hide_bar(mut self) -> Self {
         self.hide_bar = true;
         self
+    }
+
+    fn scroll_delta(&mut self, app_state: &mut AppState, delta: Vec2) {
+        let new_origin = self.child_viewport.origin() + delta;
+        self.clamp_child_viewport(app_state, self.child_viewport.with_origin(new_origin));
     }
 
     /// Pan the smallest distance that makes the target [`Rect`] visible.
@@ -145,10 +167,8 @@ impl<V: View> Scroll<V> {
         app_state: &mut AppState,
         child_viewport: Rect,
     ) -> Option<()> {
-        let size = self.size(app_state)?;
-        let child_size = self.child_size(app_state)?;
-        self.child_size = child_size;
-
+        let size = self.size;
+        let child_size = self.child_size;
         let mut child_viewport = child_viewport;
         if size.width >= child_size.width {
             child_viewport.x0 = 0.0;
@@ -219,7 +239,7 @@ impl<V: View> Scroll<V> {
 
     fn calc_vertical_bar_bounds(&self, app_state: &mut AppState) -> Option<Rect> {
         let viewport_size = self.child_viewport.size();
-        let content_size = self.child_size(app_state)?;
+        let content_size = self.child_size;
         let scroll_offset = self.child_viewport.origin().to_vec2();
 
         if viewport_size.height >= content_size.height {
@@ -249,7 +269,7 @@ impl<V: View> Scroll<V> {
 
     fn calc_horizontal_bar_bounds(&self, app_state: &mut AppState) -> Option<Rect> {
         let viewport_size = self.child_viewport.size();
-        let content_size = self.child_size(app_state)?;
+        let content_size = self.child_size;
         let scroll_offset = self.child_viewport.origin().to_vec2();
 
         if viewport_size.width >= content_size.width {
@@ -338,8 +358,15 @@ impl<V: View> View for Scroll<V> {
         cx: &mut crate::context::UpdateCx,
         state: Box<dyn std::any::Any>,
     ) -> crate::view::ChangeFlags {
-        if let Ok(rect) = state.downcast::<Rect>() {
-            self.pan_to_visible(cx.app_state, *rect);
+        if let Ok(state) = state.downcast::<ScrollState>() {
+            match *state {
+                ScrollState::EnsureVisble(rect) => {
+                    self.pan_to_visible(cx.app_state, rect);
+                }
+                ScrollState::ScrollDelta(delta) => {
+                    self.scroll_delta(cx.app_state, delta);
+                }
+            }
             cx.request_layout(self.id());
             cx.reset_children_layout(self.id);
             ChangeFlags::LAYOUT
@@ -377,8 +404,10 @@ impl<V: View> View for Scroll<V> {
 
     fn compute_layout(&mut self, cx: &mut LayoutCx) {
         let child_size = self.child_size;
+        let new_child_size = self.child_size(cx.app_state).unwrap_or_default();
+        self.child_size = new_child_size;
+        self.size = self.size(cx.app_state).unwrap_or_default();
         self.clamp_child_viewport(cx.app_state, self.child_viewport);
-        let new_child_size = self.child_size;
         if child_size != new_child_size {
             cx.app_state.request_layout(self.id);
         }
@@ -394,7 +423,7 @@ impl<V: View> View for Scroll<V> {
     ) -> bool {
         let viewport_size = self.child_viewport.size();
         let scroll_offset = self.child_viewport.origin().to_vec2();
-        let content_size = self.child_size(cx.app_state).unwrap_or_default();
+        let content_size = self.child_size;
 
         match &event {
             Event::MouseDown(event) => {

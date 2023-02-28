@@ -234,6 +234,9 @@ impl<'a> EventCx<'a> {
     pub(crate) fn should_send(&mut self, id: Id, event: &Event) -> bool {
         let point = event.point();
         if let Some(point) = point {
+            if self.app_state.is_hidden(id) {
+                return false;
+            }
             if let Some(layout) = self.get_layout(id) {
                 if layout.location.x as f64 <= point.x
                     && point.x <= (layout.location.x + layout.size.width) as f64

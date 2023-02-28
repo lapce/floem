@@ -246,22 +246,22 @@ where
                 .collect::<Vec<_>>();
             let before_size = match self.direction {
                 VirtualListDirection::Vertical => taffy::prelude::Size {
-                    width: Dimension::Auto,
+                    width: Dimension::Percent(1.0),
                     height: Dimension::Points(self.before_size as f32),
                 },
                 VirtualListDirection::Horizontal => taffy::prelude::Size {
                     width: Dimension::Points(self.before_size as f32),
-                    height: Dimension::Auto,
+                    height: Dimension::Percent(1.0),
                 },
             };
             let after_size = match self.direction {
                 VirtualListDirection::Vertical => taffy::prelude::Size {
-                    width: Dimension::Auto,
+                    width: Dimension::Percent(1.0),
                     height: Dimension::Points(self.after_size as f32),
                 },
                 VirtualListDirection::Horizontal => taffy::prelude::Size {
                     width: Dimension::Points(self.after_size as f32),
-                    height: Dimension::Auto,
+                    height: Dimension::Percent(1.0),
                 },
             };
             if self.before_node.is_none() {

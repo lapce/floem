@@ -162,16 +162,10 @@ impl<V: View> App<V> {
         self.paint_state.render(&fragment);
     }
 
-    pub fn process_update(&mut self) {
-        let mut flags = ChangeFlags::empty();
-        if !self.app_state.layout_changed.is_empty() {
-            flags |= ChangeFlags::LAYOUT;
-        }
-
-        self.layout();
+    fn process_update_messages(&mut self) {
         loop {
             let msgs = UPDATE_MESSAGES.with(|msgs| msgs.take());
-            if msgs.is_empty() && self.app_state.layout_changed.is_empty() {
+            if msgs.is_empty() {
                 break;
             }
             let mut cx = UpdateCx {
@@ -185,11 +179,10 @@ impl<V: View> App<V> {
                     UpdateMessage::State { id, state } => {
                         let id_path = IDPATHS.with(|paths| paths.borrow().get(&id).cloned());
                         if let Some(id_path) = id_path {
-                            flags |= self.view.update_main(&mut cx, &id_path.0, state);
+                            let _ = self.view.update_main(&mut cx, &id_path.0, state);
                         }
                     }
                     UpdateMessage::Style { id, style } => {
-                        flags |= ChangeFlags::LAYOUT;
                         let state = cx.app_state.view_state(id);
                         state.style = style;
                         cx.request_layout(id);
@@ -212,13 +205,19 @@ impl<V: View> App<V> {
                     }
                 }
             }
+        }
+    }
+
+    pub fn process_update(&mut self) {
+        loop {
+            self.process_update_messages();
+            if self.app_state.layout_changed.is_empty() {
+                break;
+            }
             self.layout();
         }
-        // self.layout();
 
-        if flags.contains(ChangeFlags::LAYOUT) || flags.contains(ChangeFlags::PAINT) {
-            self.paint();
-        }
+        self.paint();
     }
 
     pub fn event(&mut self, event: Event) {
@@ -254,12 +253,10 @@ impl<V: View> App<V> {
 
     fn idle(&mut self) {
         while let Some(id) = EXT_EVENT_HANDLER.queue.lock().pop_front() {
-            WRITE_SIGNALS.with(|signals| {
-                let signals = signals.borrow_mut();
-                if let Some(write) = signals.get(&id) {
-                    write.set(Some(()));
-                }
-            });
+            let write = WRITE_SIGNALS.with(|signals| signals.borrow_mut().get(&id).cloned());
+            if let Some(write) = write {
+                write.set(Some(()));
+            }
         }
         self.process_update();
     }
@@ -279,6 +276,7 @@ impl<V: View> WinHandler for App<V> {
 
     fn size(&mut self, size: glazier::kurbo::Size) {
         self.app_state.set_root_size(size);
+        self.layout();
         self.process_update();
         self.paint();
     }
