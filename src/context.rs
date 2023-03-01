@@ -577,10 +577,12 @@ impl PaintState {
     }
 
     pub(crate) fn render(&mut self, fragment: &SceneFragment) {
+        let start = std::time::Instant::now();
         let handle = &self.handle;
         let scale = handle.get_scale().unwrap_or_default();
         let insets = handle.content_insets().to_px(scale);
         let mut size = handle.get_size().to_px(scale);
+        println!("handle took {}", start.elapsed().as_micros());
         size.width -= insets.x_value();
         size.height -= insets.y_value();
         let width = size.width as u32;
@@ -603,19 +605,25 @@ impl PaintState {
             let mut builder = SceneBuilder::for_scene(&mut self.scene);
             builder.append(fragment, transform);
             // self.counter += 1;
+            let start = std::time::Instant::now();
             let surface_texture = surface
                 .surface
                 .get_current_texture()
                 .expect("failed to acquire next swapchain texture");
+            println!("surface texture took {}", start.elapsed().as_micros());
             let dev_id = surface.dev_id;
             let device = &self.render_cx.devices[dev_id].device;
             let queue = &self.render_cx.devices[dev_id].queue;
+            let start = std::time::Instant::now();
             self.renderer
                 .get_or_insert_with(|| Renderer::new(device).unwrap())
                 .render_to_surface(device, queue, &self.scene, &surface_texture, width, height)
                 .expect("failed to render to surface");
+            println!("render to suface took {}", start.elapsed().as_micros());
+            let start = std::time::Instant::now();
             surface_texture.present();
-            device.poll(wgpu::Maintain::Wait);
+            println!("present took {}", start.elapsed().as_micros());
+            // device.poll(wgpu::Maintain::Wait);
         }
     }
 }

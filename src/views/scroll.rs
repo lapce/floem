@@ -18,6 +18,7 @@ use crate::{
 enum ScrollState {
     EnsureVisble(Rect),
     ScrollDelta(Vec2),
+    ScrollTo(Point),
 }
 
 /// Minimum length for any scrollbar to be when measured on that
@@ -95,6 +96,16 @@ impl<V: View> Scroll<V> {
         self
     }
 
+    pub fn on_scroll_to(self, cx: AppContext, origin: impl Fn() -> Point + 'static) -> Self {
+        let id = self.id;
+        create_effect(cx.scope, move |_| {
+            let origin = origin();
+            AppContext::update_state(id, ScrollState::ScrollTo(origin));
+        });
+
+        self
+    }
+
     pub fn hide_bar(mut self) -> Self {
         self.hide_bar = true;
         self
@@ -103,6 +114,10 @@ impl<V: View> Scroll<V> {
     fn scroll_delta(&mut self, app_state: &mut AppState, delta: Vec2) {
         let new_origin = self.child_viewport.origin() + delta;
         self.clamp_child_viewport(app_state, self.child_viewport.with_origin(new_origin));
+    }
+
+    fn scroll_to(&mut self, app_state: &mut AppState, origin: Point) {
+        self.clamp_child_viewport(app_state, self.child_viewport.with_origin(origin));
     }
 
     /// Pan the smallest distance that makes the target [`Rect`] visible.
@@ -365,6 +380,9 @@ impl<V: View> View for Scroll<V> {
                 }
                 ScrollState::ScrollDelta(delta) => {
                     self.scroll_delta(cx.app_state, delta);
+                }
+                ScrollState::ScrollTo(origin) => {
+                    self.scroll_to(cx.app_state, origin);
                 }
             }
             cx.request_layout(self.id());

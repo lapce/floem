@@ -139,7 +139,7 @@ impl<V: View> App<V> {
 
         cx.clear();
         self.view.compute_layout_main(&mut cx);
-        // println!("layout took {}", start.elapsed().as_micros());
+        println!("layout took {}", start.elapsed().as_micros());
     }
 
     pub fn paint(&mut self) {
@@ -158,8 +158,13 @@ impl<V: View> App<V> {
             color: None,
             font_size: None,
         };
+        let start = std::time::Instant::now();
         self.view.paint_main(&mut cx);
+        println!("view paint took {}", start.elapsed().as_micros());
+
+        let start = std::time::Instant::now();
         self.paint_state.render(&fragment);
+        println!("render took {}", start.elapsed().as_micros());
     }
 
     fn process_update_messages(&mut self) {
@@ -209,6 +214,7 @@ impl<V: View> App<V> {
     }
 
     pub fn process_update(&mut self) {
+        let start = std::time::Instant::now();
         loop {
             self.process_update_messages();
             if self.app_state.layout_changed.is_empty() {
@@ -216,12 +222,16 @@ impl<V: View> App<V> {
             }
             self.layout();
         }
+        println!("process update took {}", start.elapsed().as_micros());
 
+        let start = std::time::Instant::now();
         self.paint();
+        println!("paint took {}", start.elapsed().as_micros());
     }
 
     pub fn event(&mut self, event: Event) {
-        // println!("event");
+        let start = std::time::Instant::now();
+
         let mut cx = EventCx {
             app_state: &mut self.app_state,
         };
@@ -249,6 +259,7 @@ impl<V: View> App<V> {
             self.view.event_main(&mut cx, None, event);
         }
         self.process_update();
+        println!("event took {}", start.elapsed().as_micros());
     }
 
     fn idle(&mut self) {
@@ -278,7 +289,6 @@ impl<V: View> WinHandler for App<V> {
         self.app_state.set_root_size(size);
         self.layout();
         self.process_update();
-        self.paint();
     }
 
     fn prepare_paint(&mut self) {}
@@ -309,7 +319,9 @@ impl<V: View> WinHandler for App<V> {
     }
 
     fn idle(&mut self, token: glazier::IdleToken) {
+        let start = std::time::Instant::now();
         self.idle();
+        println!("idle took {}", start.elapsed().as_micros());
     }
 
     fn as_any(&mut self) -> &mut dyn Any {
