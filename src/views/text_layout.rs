@@ -63,36 +63,31 @@ impl View for TextLayout {
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
-        let width = self.text_layout.width().ceil();
-        let height = self.text_layout.height().ceil();
+        cx.layout_node(self.id, true, |cx| {
+            let width = self.text_layout.width().ceil();
+            let height = self.text_layout.height().ceil();
 
-        if self.text_node.is_none() {
-            self.text_node = Some(
-                cx.app_state
-                    .taffy
-                    .new_leaf(taffy::style::Style::DEFAULT)
-                    .unwrap(),
+            if self.text_node.is_none() {
+                self.text_node = Some(
+                    cx.app_state
+                        .taffy
+                        .new_leaf(taffy::style::Style::DEFAULT)
+                        .unwrap(),
+                );
+            }
+            let text_node = self.text_node.unwrap();
+
+            cx.app_state.taffy.set_style(
+                text_node,
+                (&Style {
+                    width: Dimension::Points(width),
+                    height: Dimension::Points(height),
+                    ..Default::default()
+                })
+                    .into(),
             );
-        }
-        let text_node = self.text_node.unwrap();
-
-        cx.app_state.taffy.set_style(
-            text_node,
-            (&Style {
-                width: Dimension::Points(width),
-                height: Dimension::Points(height),
-                ..Default::default()
-            })
-                .into(),
-        );
-
-        let style: taffy::style::Style =
-            cx.get_style(self.id).map(|s| s.into()).unwrap_or_default();
-        let view = cx.app_state.view_state(self.id());
-        let node = view.node;
-        cx.app_state.taffy.set_style(node, style);
-        cx.app_state.taffy.set_children(node, &[text_node]);
-        node
+            vec![text_node]
+        })
     }
 
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {}

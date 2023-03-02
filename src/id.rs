@@ -40,6 +40,20 @@ impl Id {
         new_id
     }
 
+    pub fn parent(&self) -> Option<Id> {
+        IDPATHS.with(|id_paths| {
+            id_paths.borrow().get(self).and_then(|id_path| {
+                let id_path = &id_path.0;
+                let len = id_path.len();
+                if len >= 2 {
+                    Some(id_path[len - 2])
+                } else {
+                    None
+                }
+            })
+        })
+    }
+
     pub fn all_chilren(&self) -> Vec<Id> {
         let mut children = Vec::new();
         let mut parents = Vec::new();

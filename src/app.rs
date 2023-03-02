@@ -122,8 +122,6 @@ impl<V: View> App<V> {
     }
 
     fn layout(&mut self) {
-        let start = std::time::Instant::now();
-        self.app_state.process_layout_changed();
         let mut cx = LayoutCx {
             app_state: &mut self.app_state,
             font_cx: &mut self.font_cx,
@@ -139,7 +137,6 @@ impl<V: View> App<V> {
 
         cx.clear();
         self.view.compute_layout_main(&mut cx);
-        println!("layout took {}", start.elapsed().as_micros());
     }
 
     pub fn paint(&mut self) {
@@ -158,16 +155,12 @@ impl<V: View> App<V> {
             color: None,
             font_size: None,
         };
-        let start = std::time::Instant::now();
         self.view.paint_main(&mut cx);
-        println!("view paint took {}", start.elapsed().as_micros());
-
-        let start = std::time::Instant::now();
         self.paint_state.render(&fragment);
-        println!("render took {}", start.elapsed().as_micros());
     }
 
-    fn process_update_messages(&mut self) {
+    fn process_update_messages(&mut self) -> ChangeFlags {
+        let mut flags = ChangeFlags::empty();
         loop {
             let msgs = UPDATE_MESSAGES.with(|msgs| msgs.take());
             if msgs.is_empty() {
@@ -184,7 +177,7 @@ impl<V: View> App<V> {
                     UpdateMessage::State { id, state } => {
                         let id_path = IDPATHS.with(|paths| paths.borrow().get(&id).cloned());
                         if let Some(id_path) = id_path {
-                            let _ = self.view.update_main(&mut cx, &id_path.0, state);
+                            flags |= self.view.update_main(&mut cx, &id_path.0, state);
                         }
                     }
                     UpdateMessage::Style { id, style } => {
@@ -211,27 +204,31 @@ impl<V: View> App<V> {
                 }
             }
         }
+        flags
     }
 
-    pub fn process_update(&mut self) {
-        let start = std::time::Instant::now();
+    fn needs_layout(&mut self) -> bool {
+        self.app_state.view_state(self.view.id()).request_layout
+    }
+
+    pub fn process_update(&mut self) -> ChangeFlags {
+        let mut flags = ChangeFlags::empty();
         loop {
-            self.process_update_messages();
-            if self.app_state.layout_changed.is_empty() {
+            flags |= self.process_update_messages();
+            if !self.needs_layout() {
                 break;
             }
+            flags |= ChangeFlags::LAYOUT;
             self.layout();
         }
-        println!("process update took {}", start.elapsed().as_micros());
 
-        let start = std::time::Instant::now();
-        self.paint();
-        println!("paint took {}", start.elapsed().as_micros());
+        if !flags.is_empty() {
+            self.paint();
+        }
+        flags
     }
 
     pub fn event(&mut self, event: Event) {
-        let start = std::time::Instant::now();
-
         let mut cx = EventCx {
             app_state: &mut self.app_state,
         };
@@ -259,7 +256,6 @@ impl<V: View> App<V> {
             self.view.event_main(&mut cx, None, event);
         }
         self.process_update();
-        println!("event took {}", start.elapsed().as_micros());
     }
 
     fn idle(&mut self) {
@@ -288,7 +284,10 @@ impl<V: View> WinHandler for App<V> {
     fn size(&mut self, size: glazier::kurbo::Size) {
         self.app_state.set_root_size(size);
         self.layout();
-        self.process_update();
+        let flags = self.process_update();
+        if flags.is_empty() {
+            self.paint();
+        }
     }
 
     fn prepare_paint(&mut self) {}
@@ -319,9 +318,7 @@ impl<V: View> WinHandler for App<V> {
     }
 
     fn idle(&mut self, token: glazier::IdleToken) {
-        let start = std::time::Instant::now();
         self.idle();
-        println!("idle took {}", start.elapsed().as_micros());
     }
 
     fn as_any(&mut self) -> &mut dyn Any {

@@ -100,47 +100,56 @@ impl View for Label {
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
-        if self.font_size != cx.current_font_size() {
-            self.font_size = cx.current_font_size();
-            self.set_text_layout();
-        }
-        if self.text_layout.is_none() {
-            self.set_text_layout();
-        }
-        let text_layout = self.text_layout.as_ref().unwrap();
-        let width = text_layout.width().ceil();
-        let height = text_layout.height().ceil();
+        // if self.label.is_empty() {
+        //     return cx.layout_node(self.id, false, |cx| vec![]);
+        // }
 
-        if self.text_node.is_none() {
-            self.text_node = Some(
-                cx.app_state
-                    .taffy
-                    .new_leaf(taffy::style::Style::DEFAULT)
-                    .unwrap(),
+        cx.layout_node(self.id, true, |cx| {
+            let (width, height) = if self.label.is_empty() {
+                (0.0, cx.current_font_size().unwrap_or(12.0))
+            } else {
+                if self.font_size != cx.current_font_size() {
+                    self.font_size = cx.current_font_size();
+                    self.set_text_layout();
+                }
+                if self.text_layout.is_none() {
+                    self.set_text_layout();
+                }
+                let text_layout = self.text_layout.as_ref().unwrap();
+                let width = text_layout.width().ceil();
+                let height = text_layout.height().ceil();
+                (width, height)
+            };
+
+            if self.text_node.is_none() {
+                self.text_node = Some(
+                    cx.app_state
+                        .taffy
+                        .new_leaf(taffy::style::Style::DEFAULT)
+                        .unwrap(),
+                );
+            }
+            let text_node = self.text_node.unwrap();
+
+            cx.app_state.taffy.set_style(
+                text_node,
+                (&Style {
+                    width: Dimension::Points(width),
+                    height: Dimension::Points(height),
+                    ..Default::default()
+                })
+                    .into(),
             );
-        }
-        let text_node = self.text_node.unwrap();
 
-        cx.app_state.taffy.set_style(
-            text_node,
-            (&Style {
-                width: Dimension::Points(width),
-                height: Dimension::Points(height),
-                ..Default::default()
-            })
-                .into(),
-        );
-
-        let style: taffy::style::Style =
-            cx.get_style(self.id).map(|s| s.into()).unwrap_or_default();
-        let view = cx.app_state.view_state(self.id());
-        let node = view.node;
-        cx.app_state.taffy.set_style(node, style);
-        cx.app_state.taffy.set_children(node, &[text_node]);
-        node
+            vec![text_node]
+        })
     }
 
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {
+        if self.label.is_empty() {
+            return;
+        }
+
         let text_node = self.text_node.unwrap();
         let layout = cx.app_state.taffy.layout(text_node).unwrap();
         let text_layout = self.text_layout.as_ref().unwrap();
@@ -183,6 +192,10 @@ impl View for Label {
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
+        if self.label.is_empty() {
+            return;
+        }
+
         if self.color != cx.color || self.font_size != cx.font_size {
             self.color = cx.color;
             self.font_size = cx.font_size;

@@ -61,7 +61,7 @@ impl ViewState {
 
 #[derive(Default)]
 struct FontCache {
-    glyphs: HashMap<GlyphId, Option<SceneFragment>>,
+    glyphs: HashMap<(GlyphId, Color), Option<SceneFragment>>,
 }
 
 #[derive(Default)]
@@ -90,7 +90,6 @@ pub struct AppState {
     pub(crate) root_size: Size,
     pub taffy: taffy::Taffy,
     pub(crate) view_states: HashMap<Id, ViewState>,
-    pub(crate) layout_changed: HashSet<Id>,
 }
 
 impl AppState {
@@ -102,7 +101,6 @@ impl AppState {
             root_size: Size::ZERO,
             taffy: taffy::Taffy::new(),
             view_states: HashMap::new(),
-            layout_changed: HashSet::new(),
         }
     }
 
@@ -136,25 +134,15 @@ impl AppState {
         }
     }
 
-    pub(crate) fn process_layout_changed(&mut self) {
-        let changed = std::mem::take(&mut self.layout_changed);
-        IDPATHS.with(|paths| {
-            let paths = paths.borrow();
-            for id in changed {
-                if let Some(id_path) = paths.get(&id) {
-                    for parent in &id_path.0[..&id_path.0.len() - 1] {
-                        self.reset_children_layout(*parent);
-                    }
-                }
-            }
-        });
-        self.layout_changed.clear();
-    }
-
     pub(crate) fn request_layout(&mut self, id: Id) {
         let view = self.view_state(id);
+        if view.request_layout {
+            return;
+        }
         view.request_layout = true;
-        self.layout_changed.insert(id);
+        if let Some(parent) = id.parent() {
+            self.request_layout(parent);
+        }
     }
 
     pub(crate) fn set_viewport(&mut self, id: Id, viewport: Rect) {
@@ -322,6 +310,7 @@ impl<'a> LayoutCx<'a> {
         if !view.request_layout {
             return node;
         }
+        view.request_layout = false;
         let style = (&view.style).into();
         self.app_state.taffy.set_style(node, style);
 
@@ -491,26 +480,32 @@ impl<'a> PaintCx<'a> {
                 let style = glyph_run.style();
                 let vars: [(Tag, f32); 0] = [];
 
+                let color = match style.brush.0 {
+                    vello::peniko::Brush::Solid(color) => color,
+                    _ => Color::WHITE,
+                };
+
                 for glyph in glyph_run.glyphs() {
-                    // let fragment = if let Some(fragment) =
-                    //     self.paint_state.get_glyph(font.key.value(), glyph.id)
-                    // {
-                    //     fragment
-                    // } else {
-                    let mut gp = self.paint_state.glyph_contex.new_provider(
-                        &font_ref,
-                        Some(font.key.value()),
-                        font_size,
-                        false,
-                        vars,
-                    );
-                    let fragment = gp.get(glyph.id, Some(&style.brush.0));
-                    //     self.paint_state
-                    //         .insert_glyph(font.key.value(), glyph.id, fragment);
-                    //     self.paint_state
-                    //         .get_glyph(font.key.value(), glyph.id)
-                    //         .unwrap()
-                    // };
+                    let fragment = if let Some(fragment) =
+                        self.paint_state
+                            .get_glyph(font.key.value(), glyph.id, color)
+                    {
+                        fragment
+                    } else {
+                        let mut gp = self.paint_state.glyph_contex.new_provider(
+                            &font_ref,
+                            Some(font.key.value()),
+                            font_size,
+                            false,
+                            vars,
+                        );
+                        let fragment = gp.get(glyph.id, Some(&style.brush.0));
+                        self.paint_state
+                            .insert_glyph(font.key.value(), glyph.id, color, fragment);
+                        self.paint_state
+                            .get_glyph(font.key.value(), glyph.id, color)
+                            .unwrap()
+                    };
 
                     if let Some(fragment) = fragment {
                         let gx = x + glyph.x;
@@ -566,23 +561,32 @@ impl PaintState {
         self.handle = handle.clone();
     }
 
-    fn get_glyph(&mut self, font_id: u64, glyph_id: GlyphId) -> Option<&Option<SceneFragment>> {
+    fn get_glyph(
+        &mut self,
+        font_id: u64,
+        glyph_id: GlyphId,
+        color: Color,
+    ) -> Option<&Option<SceneFragment>> {
         let font = self.text_cache.fonts.entry(font_id).or_default();
-        font.glyphs.get(&glyph_id)
+        font.glyphs.get(&(glyph_id, color))
     }
 
-    fn insert_glyph(&mut self, font_id: u64, glyph_id: GlyphId, fragment: Option<SceneFragment>) {
+    fn insert_glyph(
+        &mut self,
+        font_id: u64,
+        glyph_id: GlyphId,
+        color: Color,
+        fragment: Option<SceneFragment>,
+    ) {
         let font = self.text_cache.fonts.entry(font_id).or_default();
-        font.glyphs.insert(glyph_id, fragment);
+        font.glyphs.insert((glyph_id, color), fragment);
     }
 
     pub(crate) fn render(&mut self, fragment: &SceneFragment) {
-        let start = std::time::Instant::now();
         let handle = &self.handle;
         let scale = handle.get_scale().unwrap_or_default();
         let insets = handle.content_insets().to_px(scale);
         let mut size = handle.get_size().to_px(scale);
-        println!("handle took {}", start.elapsed().as_micros());
         size.width -= insets.x_value();
         size.height -= insets.y_value();
         let width = size.width as u32;
@@ -605,25 +609,19 @@ impl PaintState {
             let mut builder = SceneBuilder::for_scene(&mut self.scene);
             builder.append(fragment, transform);
             // self.counter += 1;
-            let start = std::time::Instant::now();
             let surface_texture = surface
                 .surface
                 .get_current_texture()
                 .expect("failed to acquire next swapchain texture");
-            println!("surface texture took {}", start.elapsed().as_micros());
             let dev_id = surface.dev_id;
             let device = &self.render_cx.devices[dev_id].device;
             let queue = &self.render_cx.devices[dev_id].queue;
-            let start = std::time::Instant::now();
             self.renderer
                 .get_or_insert_with(|| Renderer::new(device).unwrap())
                 .render_to_surface(device, queue, &self.scene, &surface_texture, width, height)
                 .expect("failed to render to surface");
-            println!("render to suface took {}", start.elapsed().as_micros());
-            let start = std::time::Instant::now();
             surface_texture.present();
-            println!("present took {}", start.elapsed().as_micros());
-            // device.poll(wgpu::Maintain::Wait);
+            device.poll(wgpu::Maintain::Wait);
         }
     }
 }

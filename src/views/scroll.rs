@@ -96,11 +96,16 @@ impl<V: View> Scroll<V> {
         self
     }
 
-    pub fn on_scroll_to(self, cx: AppContext, origin: impl Fn() -> Point + 'static) -> Self {
+    pub fn on_scroll_to(
+        self,
+        cx: AppContext,
+        origin: impl Fn() -> Option<Point> + 'static,
+    ) -> Self {
         let id = self.id;
         create_effect(cx.scope, move |_| {
-            let origin = origin();
-            AppContext::update_state(id, ScrollState::ScrollTo(origin));
+            if let Some(origin) = origin() {
+                AppContext::update_state(id, ScrollState::ScrollTo(origin));
+            }
         });
 
         self
