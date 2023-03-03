@@ -1,3 +1,4 @@
+use parley::style::FontWeight;
 pub use taffy::style::{
     AlignContent, AlignItems, Dimension, Display, FlexDirection, JustifyContent, Position,
 };
@@ -43,6 +44,8 @@ pub struct Style {
     pub color: Option<Color>,
     pub background: Option<Color>,
     pub font_size: Option<f32>,
+    pub font_family: Option<String>,
+    pub font_weight: Option<FontWeight>,
 }
 
 impl Default for Style {
@@ -82,6 +85,8 @@ impl Default for Style {
             color: None,
             background: None,
             font_size: None,
+            font_family: None,
+            font_weight: None,
         }
     }
 }

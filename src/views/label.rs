@@ -2,7 +2,10 @@ use std::any::Any;
 
 use glazier::kurbo::Point;
 use leptos_reactive::create_effect;
-use parley::{layout::Cursor, style::StyleProperty};
+use parley::{
+    layout::Cursor,
+    style::{FontFamily, FontStack, FontWeight, StyleProperty},
+};
 use taffy::{prelude::Node, style::Dimension};
 use vello::peniko::{Brush, Color};
 
@@ -26,6 +29,8 @@ pub struct Label {
     available_text_layout: Option<parley::Layout<ParleyBrush>>,
     color: Option<Color>,
     font_size: Option<f32>,
+    font_family: Option<String>,
+    font_weight: Option<FontWeight>,
 }
 
 pub fn label(cx: AppContext, label: impl Fn() -> String + 'static) -> Label {
@@ -44,6 +49,8 @@ pub fn label(cx: AppContext, label: impl Fn() -> String + 'static) -> Label {
         available_text_layout: None,
         color: None,
         font_size: None,
+        font_family: None,
+        font_weight: None,
     }
 }
 
@@ -56,6 +63,13 @@ impl Label {
         if let Some(font_size) = self.font_size {
             text_layout_builder.push_default(&StyleProperty::FontSize(font_size));
         }
+        if let Some(font_family) = self.font_family.as_ref() {
+            let family = FontFamily::parse_list(font_family).collect::<Vec<_>>();
+            text_layout_builder.push_default(&StyleProperty::FontStack(FontStack::List(&family)))
+        }
+        if let Some(font_weight) = self.font_weight {
+            text_layout_builder.push_default(&StyleProperty::FontWeight(font_weight))
+        }
         let mut text_layout = text_layout_builder.build();
         text_layout.break_all_lines(None, parley::layout::Alignment::Start);
         self.text_layout = Some(text_layout);
@@ -67,6 +81,14 @@ impl Label {
             )));
             if let Some(font_size) = self.font_size {
                 text_layout_builder.push_default(&StyleProperty::FontSize(font_size));
+            }
+            if let Some(font_family) = self.font_family.as_ref() {
+                let family = FontFamily::parse_list(font_family).collect::<Vec<_>>();
+                text_layout_builder
+                    .push_default(&StyleProperty::FontStack(FontStack::List(&family)))
+            }
+            if let Some(font_weight) = self.font_weight {
+                text_layout_builder.push_default(&StyleProperty::FontWeight(font_weight))
             }
             let mut new_text = text_layout_builder.build();
             new_text.break_all_lines(None, parley::layout::Alignment::Start);
@@ -100,16 +122,17 @@ impl View for Label {
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
-        // if self.label.is_empty() {
-        //     return cx.layout_node(self.id, false, |cx| vec![]);
-        // }
-
         cx.layout_node(self.id, true, |cx| {
             let (width, height) = if self.label.is_empty() {
                 (0.0, cx.current_font_size().unwrap_or(12.0))
             } else {
-                if self.font_size != cx.current_font_size() {
+                if self.font_size != cx.current_font_size()
+                    || self.font_family.as_deref() != cx.current_font_family()
+                    || self.font_weight != cx.font_weight
+                {
                     self.font_size = cx.current_font_size();
+                    self.font_family = cx.current_font_family().map(|s| s.to_string());
+                    self.font_weight = cx.font_weight;
                     self.set_text_layout();
                 }
                 if self.text_layout.is_none() {
@@ -163,6 +186,14 @@ impl View for Label {
                 if let Some(font_size) = self.font_size {
                     text_layout_builder.push_default(&StyleProperty::FontSize(font_size));
                 }
+                if let Some(font_family) = self.font_family.as_ref() {
+                    let family = FontFamily::parse_list(font_family).collect::<Vec<_>>();
+                    text_layout_builder
+                        .push_default(&StyleProperty::FontStack(FontStack::List(&family)))
+                }
+                if let Some(font_weight) = self.font_weight {
+                    text_layout_builder.push_default(&StyleProperty::FontWeight(font_weight))
+                }
                 let mut dots_text = text_layout_builder.build();
                 dots_text.break_all_lines(None, parley::layout::Alignment::Start);
                 let dots_width = dots_text.width();
@@ -196,9 +227,15 @@ impl View for Label {
             return;
         }
 
-        if self.color != cx.color || self.font_size != cx.font_size {
+        if self.color != cx.color
+            || self.font_size != cx.font_size
+            || self.font_family.as_deref() != cx.font_family.as_deref()
+            || self.font_weight != cx.font_weight
+        {
             self.color = cx.color;
             self.font_size = cx.font_size;
+            self.font_family = cx.font_family.clone();
+            self.font_weight = cx.font_weight;
             self.set_text_layout();
         }
         let text_node = self.text_node.unwrap();

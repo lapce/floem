@@ -51,10 +51,16 @@ pub trait View {
     fn layout_main(&mut self, cx: &mut LayoutCx) -> Node {
         cx.save();
 
-        let style = cx.get_style(self.id());
+        let style = cx.get_style(self.id()).cloned();
         if let Some(style) = style {
             if style.font_size.is_some() {
                 cx.font_size = style.font_size;
+            }
+            if style.font_family.is_some() {
+                cx.font_family = style.font_family;
+            }
+            if style.font_weight.is_some() {
+                cx.font_weight = style.font_weight;
             }
         }
 
@@ -181,6 +187,12 @@ pub trait View {
             }
             if style.font_size.is_some() {
                 cx.font_size = style.font_size;
+            }
+            if style.font_family.is_some() {
+                cx.font_family = style.font_family.clone();
+            }
+            if style.font_weight.is_some() {
+                cx.font_weight = style.font_weight;
             }
         }
         self.paint(cx);

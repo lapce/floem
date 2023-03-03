@@ -127,9 +127,13 @@ impl<V: View> App<V> {
             font_cx: &mut self.font_cx,
             viewport: None,
             font_size: None,
+            font_family: None,
+            font_weight: None,
             window_origin: Point::ZERO,
             saved_viewports: Vec::new(),
             saved_font_sizes: Vec::new(),
+            saved_font_families: Vec::new(),
+            saved_font_weights: Vec::new(),
             saved_window_origins: Vec::new(),
         };
         cx.app_state.root = Some(self.view.layout_main(&mut cx));
@@ -146,14 +150,18 @@ impl<V: View> App<V> {
             builder: &mut builder,
             app_state: &mut self.app_state,
             paint_state: &mut self.paint_state,
-            saved_transforms: Vec::new(),
-            saved_viewports: Vec::new(),
-            saved_colors: Vec::new(),
-            saved_font_sizes: Vec::new(),
             transform: Affine::IDENTITY,
             viewport: None,
             color: None,
             font_size: None,
+            font_family: None,
+            font_weight: None,
+            saved_transforms: Vec::new(),
+            saved_viewports: Vec::new(),
+            saved_colors: Vec::new(),
+            saved_font_sizes: Vec::new(),
+            saved_font_families: Vec::new(),
+            saved_font_weights: Vec::new(),
         };
         self.view.paint_main(&mut cx);
         self.paint_state.render(&fragment);
