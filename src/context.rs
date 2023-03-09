@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use glazier::{
     kurbo::{Affine, Point, Rect, Shape, Size, Vec2},
@@ -14,9 +17,9 @@ use vello::{
         pinot::{types::Tag, FontRef},
         GlyphContext,
     },
-    peniko::{BrushRef, Color, Fill, Stroke},
+    peniko::{Blob, BrushRef, Color, Fill, Stroke},
     util::{RenderContext, RenderSurface},
-    Renderer, Scene, SceneBuilder, SceneFragment,
+    RenderParams, Renderer, RendererOptions, Scene, SceneBuilder, SceneFragment,
 };
 
 use crate::{
@@ -643,8 +646,26 @@ impl PaintState {
             let device = &self.render_cx.devices[dev_id].device;
             let queue = &self.render_cx.devices[dev_id].queue;
             self.renderer
-                .get_or_insert_with(|| Renderer::new(device).unwrap())
-                .render_to_surface(device, queue, &self.scene, &surface_texture, width, height)
+                .get_or_insert_with(|| {
+                    Renderer::new(
+                        device,
+                        &RendererOptions {
+                            surface_format: Some(surface.format),
+                        },
+                    )
+                    .unwrap()
+                })
+                .render_to_surface(
+                    device,
+                    queue,
+                    &self.scene,
+                    &surface_texture,
+                    &RenderParams {
+                        base_color: Color::BLACK,
+                        width,
+                        height,
+                    },
+                )
                 .expect("failed to render to surface");
             surface_texture.present();
             device.poll(wgpu::Maintain::Wait);
