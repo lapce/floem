@@ -27,7 +27,11 @@ fn app_logic(cx: AppContext) -> impl View {
 
     stack(cx, move |cx| {
         (
-            label(cx, move || couter.get().to_string()),
+            label(cx, move || format!("Hget counter is {}", couter.get())).style(cx, || Style {
+                margin_top: Some(50.0),
+                border_left: 10.0,
+                ..Default::default()
+            }),
             scroll(cx, move |cx| {
                 virtual_list(
                     cx,
@@ -106,7 +110,6 @@ fn app_logic(cx: AppContext) -> impl View {
                 width: Dimension::Auto,
                 height: Dimension::Auto,
                 border: 1.0,
-                flex_grow: 1.0,
                 ..Default::default()
             }),
             label(cx, move || "seprate\nseprate\nseprate\n".to_string()).style(cx, || Style {
@@ -137,14 +140,12 @@ fn app_logic(cx: AppContext) -> impl View {
                     label(cx, move || couter.get().to_string()),
                     click(
                         cx,
-                        |cx| label(cx, move || "button".to_string()),
+                        |cx| label(cx, move || "button a".to_string()),
                         move || {
                             set_counter.update(|counter| *counter += 1);
                         },
                     )
                     .style(cx, || Style {
-                        width: Dimension::Points(50.0),
-                        height: Dimension::Points(20.0),
                         border: 1.0,
                         ..Default::default()
                     }),

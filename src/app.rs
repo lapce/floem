@@ -1,5 +1,6 @@
 use std::any::Any;
 
+use floem_renderer::Renderer;
 use glazier::{
     kurbo::{Affine, Point, Rect},
     WinHandler,
@@ -163,8 +164,9 @@ impl<V: View> App<V> {
             saved_font_families: Vec::new(),
             saved_font_weights: Vec::new(),
         };
+        cx.paint_state.new_renderer.as_mut().unwrap().begin();
         self.view.paint_main(&mut cx);
-        self.paint_state.render(&fragment);
+        cx.paint_state.new_renderer.as_mut().unwrap().finish();
     }
 
     fn process_update_messages(&mut self) -> ChangeFlags {
@@ -290,6 +292,8 @@ impl<V: View> WinHandler for App<V> {
     }
 
     fn size(&mut self, size: glazier::kurbo::Size) {
+        let scale = self.handle.get_scale().unwrap_or_default();
+        self.paint_state.resize(scale, size);
         self.app_state.set_root_size(size);
         self.layout();
         let flags = self.process_update();

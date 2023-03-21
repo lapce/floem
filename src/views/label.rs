@@ -1,5 +1,7 @@
 use std::any::Any;
 
+use cosmic_text::{Attrs, AttrsList, Family, FamilyOwned, TextLayout};
+use floem_renderer::Renderer;
 use glazier::kurbo::Point;
 use leptos_reactive::create_effect;
 use parley::{
@@ -15,18 +17,17 @@ use crate::{
     event::Event,
     id::Id,
     style::Style,
-    text::ParleyBrush,
     view::{ChangeFlags, View},
 };
 
 pub struct Label {
     id: Id,
     label: String,
-    text_layout: Option<parley::Layout<ParleyBrush>>,
+    text_layout: Option<TextLayout>,
     text_node: Option<Node>,
     available_text: Option<String>,
     available_width: Option<f32>,
-    available_text_layout: Option<parley::Layout<ParleyBrush>>,
+    available_text_layout: Option<TextLayout>,
     color: Option<Color>,
     font_size: Option<f32>,
     font_family: Option<String>,
@@ -56,43 +57,44 @@ pub fn label(cx: AppContext, label: impl Fn() -> String + 'static) -> Label {
 
 impl Label {
     fn set_text_layout(&mut self) {
-        let mut text_layout_builder = parley::LayoutContext::builder(self.label.as_str(), 1.0);
-        text_layout_builder.push_default(&parley::style::StyleProperty::Brush(ParleyBrush(
-            Brush::Solid(self.color.unwrap_or_else(|| Color::rgb8(0xf0, 0xf0, 0xea))),
-        )));
+        let mut text_layout = TextLayout::new();
+        let mut attrs =
+            Attrs::new().color(self.color.unwrap_or_else(|| Color::rgb8(0xf0, 0xf0, 0xea)));
         if let Some(font_size) = self.font_size {
-            text_layout_builder.push_default(&StyleProperty::FontSize(font_size));
+            attrs = attrs.font_size(font_size);
         }
-        if let Some(font_family) = self.font_family.as_ref() {
-            let family = FontFamily::parse_list(font_family).collect::<Vec<_>>();
-            text_layout_builder.push_default(&StyleProperty::FontStack(FontStack::List(&family)))
+        let font_family = self.font_family.as_ref().map(|font_family| {
+            let family: Vec<FamilyOwned> = FamilyOwned::parse_list(font_family).collect();
+            family
+        });
+        if let Some(font_family) = font_family.as_ref() {
+            attrs = attrs.family(font_family);
         }
         if let Some(font_weight) = self.font_weight {
-            text_layout_builder.push_default(&StyleProperty::FontWeight(font_weight))
+            attrs = attrs.raw_weight(font_weight.0);
         }
-        let mut text_layout = text_layout_builder.build();
-        text_layout.break_all_lines(None, parley::layout::Alignment::Start);
+        text_layout.set_text(self.label.as_str(), AttrsList::new(attrs));
         self.text_layout = Some(text_layout);
 
         if let Some(new_text) = self.available_text.as_ref() {
-            let mut text_layout_builder = parley::LayoutContext::builder(new_text.as_str(), 1.0);
-            text_layout_builder.push_default(&parley::style::StyleProperty::Brush(ParleyBrush(
-                Brush::Solid(self.color.unwrap_or_else(|| Color::rgb8(0xf0, 0xf0, 0xea))),
-            )));
+            let mut text_layout = TextLayout::new();
+            let mut attrs =
+                Attrs::new().color(self.color.unwrap_or_else(|| Color::rgb8(0xf0, 0xf0, 0xea)));
             if let Some(font_size) = self.font_size {
-                text_layout_builder.push_default(&StyleProperty::FontSize(font_size));
+                attrs = attrs.font_size(font_size);
             }
-            if let Some(font_family) = self.font_family.as_ref() {
-                let family = FontFamily::parse_list(font_family).collect::<Vec<_>>();
-                text_layout_builder
-                    .push_default(&StyleProperty::FontStack(FontStack::List(&family)))
+            let font_family = self.font_family.as_ref().map(|font_family| {
+                let family: Vec<FamilyOwned> = FamilyOwned::parse_list(font_family).collect();
+                family
+            });
+            if let Some(font_family) = font_family.as_ref() {
+                attrs = attrs.family(font_family);
             }
             if let Some(font_weight) = self.font_weight {
-                text_layout_builder.push_default(&StyleProperty::FontWeight(font_weight))
+                attrs = attrs.raw_weight(font_weight.0);
             }
-            let mut new_text = text_layout_builder.build();
-            new_text.break_all_lines(None, parley::layout::Alignment::Start);
-            self.available_text_layout = Some(new_text);
+            text_layout.set_text(new_text, AttrsList::new(attrs));
+            self.available_text_layout = Some(text_layout);
         }
     }
 }
@@ -139,8 +141,9 @@ impl View for Label {
                     self.set_text_layout();
                 }
                 let text_layout = self.text_layout.as_ref().unwrap();
-                let width = text_layout.width().ceil();
-                let height = text_layout.height().ceil();
+                let size = text_layout.size();
+                let width = size.width.ceil() as f32;
+                let height = size.height.ceil() as f32;
                 (width, height)
             };
 
@@ -176,35 +179,31 @@ impl View for Label {
         let text_node = self.text_node.unwrap();
         let layout = cx.app_state.taffy.layout(text_node).unwrap();
         let text_layout = self.text_layout.as_ref().unwrap();
-        let width = text_layout.width();
+        let width = text_layout.size().width as f32;
         if width > layout.size.width {
             if self.available_width != Some(layout.size.width) {
-                let mut text_layout_builder = parley::LayoutContext::builder("...", 1.0);
-                text_layout_builder.push_default(&parley::style::StyleProperty::Brush(
-                    ParleyBrush(Brush::Solid(Color::rgb8(0xf0, 0xf0, 0xea))),
-                ));
+                let mut dots_text = TextLayout::new();
+                let mut attrs =
+                    Attrs::new().color(self.color.unwrap_or_else(|| Color::rgb8(0xf0, 0xf0, 0xea)));
                 if let Some(font_size) = self.font_size {
-                    text_layout_builder.push_default(&StyleProperty::FontSize(font_size));
+                    attrs = attrs.font_size(font_size);
                 }
-                if let Some(font_family) = self.font_family.as_ref() {
-                    let family = FontFamily::parse_list(font_family).collect::<Vec<_>>();
-                    text_layout_builder
-                        .push_default(&StyleProperty::FontStack(FontStack::List(&family)))
+                let font_family = self.font_family.as_ref().map(|font_family| {
+                    let family: Vec<FamilyOwned> = FamilyOwned::parse_list(font_family).collect();
+                    family
+                });
+                if let Some(font_family) = font_family.as_ref() {
+                    attrs = attrs.family(font_family);
                 }
                 if let Some(font_weight) = self.font_weight {
-                    text_layout_builder.push_default(&StyleProperty::FontWeight(font_weight))
+                    attrs = attrs.raw_weight(font_weight.0);
                 }
-                let mut dots_text = text_layout_builder.build();
-                dots_text.break_all_lines(None, parley::layout::Alignment::Start);
-                let dots_width = dots_text.width();
+                dots_text.set_text("...", AttrsList::new(attrs));
+
+                let dots_width = dots_text.size().width as f32;
                 let width_left = layout.size.width - dots_width;
-                let cursor = Cursor::from_point(text_layout, width_left, 0.0);
-                let range = cursor.text_range();
-                let index = if cursor.is_trailing() {
-                    range.end
-                } else {
-                    range.start
-                };
+                let hit_point = text_layout.hit_point(Point::new(width_left as f64, 0.0));
+                let index = hit_point.index;
 
                 let new_text = if index > 0 {
                     format!("{}...", &self.label[..index])
@@ -242,9 +241,9 @@ impl View for Label {
         let location = cx.app_state.taffy.layout(text_node).unwrap().location;
         let point = Point::new(location.x as f64, location.y as f64);
         if let Some(text_layout) = self.available_text_layout.as_ref() {
-            cx.render_text(text_layout, point);
+            cx.draw_text(text_layout, point);
         } else {
-            cx.render_text(self.text_layout.as_ref().unwrap(), point);
+            cx.draw_text(self.text_layout.as_ref().unwrap(), point);
         }
     }
 }

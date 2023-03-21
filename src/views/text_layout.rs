@@ -1,5 +1,6 @@
 use std::any::Any;
 
+use floem_renderer::Renderer;
 use glazier::kurbo::Point;
 use leptos_reactive::create_effect;
 use parley::{layout::Cursor, Layout};
@@ -12,19 +13,18 @@ use crate::{
     event::Event,
     id::Id,
     style::Style,
-    text::ParleyBrush,
     view::{ChangeFlags, View},
 };
 
 pub struct TextLayout {
     id: Id,
-    text_layout: parley::Layout<ParleyBrush>,
+    text_layout: cosmic_text::TextLayout,
     text_node: Option<Node>,
 }
 
 pub fn text_layout(
     cx: AppContext,
-    text_layout: impl Fn() -> Layout<ParleyBrush> + 'static,
+    text_layout: impl Fn() -> cosmic_text::TextLayout + 'static,
 ) -> TextLayout {
     let id = cx.new_id();
     let text = text_layout();
@@ -64,8 +64,9 @@ impl View for TextLayout {
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
-            let width = self.text_layout.width().ceil();
-            let height = self.text_layout.height().ceil();
+            let size = self.text_layout.size();
+            let width = size.width.ceil() as f32;
+            let height = size.height.ceil() as f32;
 
             if self.text_node.is_none() {
                 self.text_node = Some(
@@ -96,6 +97,6 @@ impl View for TextLayout {
         let text_node = self.text_node.unwrap();
         let location = cx.app_state.taffy.layout(text_node).unwrap().location;
         let point = Point::new(location.x as f64, location.y as f64);
-        cx.render_text(&self.text_layout, point);
+        cx.draw_text(&self.text_layout, point);
     }
 }

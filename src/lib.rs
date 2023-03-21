@@ -3,6 +3,7 @@ pub mod context;
 pub mod event;
 pub mod ext_event;
 pub mod id;
+pub mod renderer;
 pub mod stack;
 pub mod style;
 pub mod text;
@@ -10,6 +11,8 @@ pub mod view;
 pub mod view_tuple;
 pub mod views;
 
+pub use cosmic_text;
+pub use floem_renderer:: Renderer;
 pub use glazier;
 pub use leptos_reactive as reactive;
 pub use parley;

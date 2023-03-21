@@ -1,0 +1,357 @@
+use anyhow::Result;
+use cosmic_text::{SubpixelBin, SwashCache, SwashImage, TextLayout};
+use floem_renderer::{usvg, Renderer};
+use peniko::{
+    kurbo::{Affine, Point, Rect, Shape, Size, Vec2},
+    BrushRef, Color, GradientKind,
+};
+use swash::{
+    scale::{image::Image, ScaleContext, Source, StrikeWith},
+    zeno,
+};
+use vger::{PaintIndex, SubpixelOffset, Vger};
+use wgpu::{Device, Queue, Surface, SurfaceConfiguration, TextureFormat};
+
+const IS_MACOS: bool = cfg!(target_os = "macos");
+const SOURCES: &[Source] = &[
+    Source::ColorBitmap(StrikeWith::BestFit),
+    Source::ColorOutline(0),
+    Source::Outline,
+];
+
+pub struct VgerRenderer {
+    device: Device,
+    queue: Queue,
+    surface: Surface,
+    vger: Vger,
+    config: SurfaceConfiguration,
+    scale: f64,
+    transform: Affine,
+    clip: Option<Rect>,
+
+    scx: ScaleContext,
+    glyph_image: Image,
+}
+
+impl VgerRenderer {
+    pub fn new<
+        W: raw_window_handle::HasRawDisplayHandle + raw_window_handle::HasRawWindowHandle,
+    >(
+        window: &W,
+        width: u32,
+        height: u32,
+        scale: f64,
+    ) -> Result<Self> {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::all(),
+            dx12_shader_compiler: Default::default(),
+        });
+
+        let surface = unsafe { instance.create_surface(window) }?;
+
+        let adapter =
+            futures::executor::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::default(),
+                compatible_surface: Some(&surface),
+                force_fallback_adapter: false,
+            }))
+            .ok_or_else(|| anyhow::anyhow!("can't get adaptor"))?;
+
+        let (device, queue) = futures::executor::block_on(adapter.request_device(
+            &wgpu::DeviceDescriptor {
+                features: wgpu::Features::empty(),
+                limits: wgpu::Limits::default(),
+                label: None,
+            },
+            None,
+        ))?;
+
+        let surface_caps = surface.get_capabilities(&adapter);
+        let texture_format = surface_caps
+            .formats
+            .into_iter()
+            .find(|it| matches!(it, TextureFormat::Rgba8Unorm | TextureFormat::Bgra8Unorm))
+            .ok_or_else(|| anyhow::anyhow!("surface should support Rgba8Unorm or Bgra8Unorm"))?;
+
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format: texture_format,
+            width,
+            height,
+            present_mode: wgpu::PresentMode::Fifo,
+            alpha_mode: wgpu::CompositeAlphaMode::Auto,
+            view_formats: vec![],
+        };
+        surface.configure(&device, &config);
+
+        let vger = vger::Vger::new(&device, texture_format);
+
+        Ok(Self {
+            device,
+            queue,
+            surface,
+            vger,
+            scale,
+            config,
+            transform: Affine::IDENTITY,
+            scx: ScaleContext::new(),
+            glyph_image: Image::new(),
+            clip: None,
+        })
+    }
+
+    pub fn resize(&mut self, width: u32, height: u32, scale: f64) {
+        self.config.width = width;
+        self.config.height = height;
+        self.surface.configure(&self.device, &self.config);
+        self.scale = scale;
+    }
+}
+
+impl VgerRenderer {
+    fn brush_to_paint<'b>(&mut self, brush: impl Into<BrushRef<'b>>) -> Option<PaintIndex> {
+        let paint = match brush.into() {
+            BrushRef::Solid(color) => self.vger.color_paint(vger_color(color)),
+            BrushRef::Gradient(g) => match g.kind {
+                GradientKind::Linear { start, end } => {
+                    let mut stops = g.stops.iter();
+                    let inner_color = stops.next()?;
+                    let outer_color = stops.next()?;
+                    let inner_color = vger_color(inner_color.color);
+                    let outer_color = vger_color(outer_color.color);
+                    let start = vger::defs::LocalPoint::new(start.x as f32, start.y as f32);
+                    let end = vger::defs::LocalPoint::new(end.x as f32, end.y as f32);
+                    self.vger
+                        .linear_gradient(start, end, inner_color, outer_color, 0.0)
+                }
+                GradientKind::Radial { .. } => return None,
+                GradientKind::Sweep { .. } => return None,
+            },
+            BrushRef::Image(_) => return None,
+        };
+        Some(paint)
+    }
+
+    fn vger_point(&self, point: Point) -> vger::defs::LocalPoint {
+        let coeffs = self.transform.as_coeffs();
+        let point = point + Vec2::new(coeffs[4], coeffs[5]);
+        vger::defs::LocalPoint::new((point.x * self.scale) as f32, (point.y * self.scale) as f32)
+    }
+
+    fn vger_rect(&self, rect: Rect) -> vger::defs::LocalRect {
+        let origin = rect.origin();
+        let size = rect.size();
+        vger::defs::LocalRect::new(self.vger_point(origin), self.vger_size(size))
+    }
+
+    fn vger_size(&self, size: Size) -> vger::defs::LocalSize {
+        vger::defs::LocalSize::new(
+            (size.width * self.scale) as f32,
+            (size.height * self.scale) as f32,
+        )
+    }
+}
+
+impl Renderer for VgerRenderer {
+    fn begin(&mut self) {
+        self.transform = Affine::IDENTITY;
+        self.vger.begin(
+            self.config.width as f32,
+            self.config.height as f32,
+            self.scale as f32,
+        );
+    }
+
+    fn stroke<'b>(&mut self, shape: &impl Shape, brush: impl Into<BrushRef<'b>>, width: f64) {
+        let paint = match self.brush_to_paint(brush) {
+            Some(paint) => paint,
+            None => return,
+        };
+        if let Some(rect) = shape.as_rect() {
+            let min = rect.origin();
+            let max = min + rect.size().to_vec2();
+            self.vger.stroke_rect(
+                self.vger_point(min),
+                self.vger_point(max),
+                0.0,
+                (width * self.scale) as f32,
+                paint,
+            );
+        } else if let Some(rect) = shape.as_rounded_rect() {
+            let min = rect.origin();
+            let max = min + rect.rect().size().to_vec2();
+            let radius = rect.radii().top_left as f32;
+            self.vger.stroke_rect(
+                self.vger_point(min),
+                self.vger_point(max),
+                radius,
+                (width * self.scale) as f32,
+                paint,
+            );
+        } else if let Some(line) = shape.as_line() {
+            self.vger.stroke_segment(
+                self.vger_point(line.p0),
+                self.vger_point(line.p1),
+                (width * self.scale) as f32,
+                paint,
+            );
+        }
+    }
+
+    fn fill<'b>(&mut self, path: &impl Shape, brush: impl Into<BrushRef<'b>>) {
+        let paint = match self.brush_to_paint(brush) {
+            Some(paint) => paint,
+            None => return,
+        };
+        if let Some(rect) = path.as_rect() {
+            self.vger.fill_rect(self.vger_rect(rect), 0.0, paint);
+        } else if let Some(rect) = path.as_rounded_rect() {
+            self.vger.fill_rect(
+                self.vger_rect(rect.rect()),
+                rect.radii().top_left as f32,
+                paint,
+            );
+        }
+    }
+
+    fn draw_text(&mut self, layout: &TextLayout, pos: impl Into<Point>) {
+        let mut swash_cache = SwashCache::new();
+        let transform = self.transform.as_coeffs();
+        let offset = Vec2::new(transform[4], transform[5]);
+        let pos: Point = pos.into();
+        let clip = self.clip;
+        for line in layout.layout_runs() {
+            if let Some(rect) = clip {
+                let y = pos.y + offset.y + line.line_y as f64;
+                if y + (line.descent as f64) < rect.y0 {
+                    continue;
+                }
+                if y - (line.ascent as f64) > rect.y1 {
+                    break;
+                }
+            }
+            'line_loop: for glyph_run in line.glyphs {
+                let x = glyph_run.x + pos.x as f32 + offset.x as f32;
+                let y = line.line_y + pos.y as f32 + offset.y as f32;
+
+                if let Some(rect) = clip {
+                    if ((x + glyph_run.w) as f64) < rect.x0 {
+                        continue;
+                    } else if x as f64 > rect.x1 {
+                        break 'line_loop;
+                    }
+                }
+
+                if let Some(paint) = self.brush_to_paint(glyph_run.color) {
+                    let glyph_x = x * self.scale as f32;
+                    let (new, subpx) = SubpixelBin::new(glyph_x);
+                    let glyph_x = new as f32;
+                    let glyph_y = (y * self.scale as f32).round();
+                    let font_size = (glyph_run.font_size * self.scale as f32).round() as u32;
+                    self.vger.render_glyph(
+                        glyph_x,
+                        glyph_y,
+                        glyph_run.cache_key.font_id,
+                        glyph_run.cache_key.glyph_id,
+                        font_size,
+                        subpx,
+                        || {
+                            let mut cache_key = glyph_run.cache_key;
+                            cache_key.font_size = font_size;
+                            cache_key.x_bin = subpx;
+                            cache_key.y_bin = SubpixelBin::Zero;
+                            let image = swash_cache.get_image_uncached(cache_key);
+                            image.unwrap_or_else(SwashImage::new)
+                        },
+                        paint,
+                    );
+                }
+            }
+        }
+    }
+
+    fn draw_svg<'b>(
+        &mut self,
+        svg: floem_renderer::Svg<'b>,
+        rect: Rect,
+        brush: Option<impl Into<BrushRef<'b>>>,
+    ) {
+        let transform = self.transform.as_coeffs();
+        let width = (rect.width() * self.scale).round() as u32;
+        let height = (rect.height() * self.scale).round() as u32;
+        let origin = rect.origin();
+        let x = ((origin.x + transform[4]) * self.scale).round() as f32;
+        let y = ((origin.y + transform[5]) * self.scale).round() as f32;
+
+        let paint = brush.and_then(|brush| self.brush_to_paint(brush));
+        self.vger.render_svg(
+            x,
+            y,
+            svg.hash,
+            width,
+            height,
+            || {
+                let transform = tiny_skia::Transform::identity();
+                let mut img = tiny_skia::Pixmap::new(width, height).unwrap();
+                let _ = resvg::render(
+                    svg.tree,
+                    if width > height {
+                        usvg::FitTo::Width(width)
+                    } else {
+                        usvg::FitTo::Height(height)
+                    },
+                    transform,
+                    img.as_mut(),
+                );
+                img.take()
+            },
+            paint,
+        );
+    }
+
+    fn transform(&mut self, transform: Affine) {
+        self.transform = transform;
+    }
+
+    fn clip(&mut self, shape: &impl Shape) {
+        let transform = self.transform.as_coeffs();
+        let offset = Vec2::new(transform[4], transform[5]);
+        let rect = shape.bounding_box() + offset;
+        self.clip = Some(rect);
+    }
+
+    fn clear_clip(&mut self) {
+        self.clip = None;
+    }
+
+    fn finish(&mut self) {
+        let frame = self.surface.get_current_texture().unwrap();
+        let texture_view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let desc = wgpu::RenderPassDescriptor {
+            label: None,
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &texture_view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: true,
+                },
+            })],
+            depth_stencil_attachment: None,
+        };
+
+        self.vger.encode(&self.device, &desc, &self.queue);
+        frame.present();
+    }
+}
+
+fn vger_color(color: Color) -> vger::Color {
+    vger::Color {
+        r: color.r as f32 / 255.0,
+        g: color.g as f32 / 255.0,
+        b: color.b as f32 / 255.0,
+        a: color.a as f32 / 255.0,
+    }
+}

@@ -1,11 +1,13 @@
 use std::{
     collections::{HashMap, HashSet},
+    ops::{Deref, DerefMut},
     sync::Arc,
 };
 
+use floem_renderer::{Renderer as FloemRenderer};
 use glazier::{
     kurbo::{Affine, Point, Rect, Shape, Size, Vec2},
-    Scalable,
+    Scalable, Scale,
 };
 use parley::{style::FontWeight, swash::GlyphId, FontContext};
 use taffy::{
@@ -26,7 +28,6 @@ use crate::{
     event::{Event, EventListner},
     id::{Id, IDPATHS},
     style::Style,
-    text::ParleyBrush,
 };
 
 pub type EventCallback = dyn Fn(&Event) -> bool;
@@ -384,6 +385,11 @@ impl<'a> PaintCx<'a> {
         self.font_size = self.saved_font_sizes.pop().unwrap_or_default();
         self.font_family = self.saved_font_families.pop().unwrap_or_default();
         self.font_weight = self.saved_font_weights.pop().unwrap_or_default();
+        self.paint_state
+            .new_renderer
+            .as_mut()
+            .unwrap()
+            .transform(self.transform);
     }
 
     pub fn current_color(&self) -> Option<Color> {
@@ -415,6 +421,11 @@ impl<'a> PaintCx<'a> {
         new[4] += offset.0;
         new[5] += offset.1;
         self.transform = Affine::new(new);
+        self.paint_state
+            .new_renderer
+            .as_mut()
+            .unwrap()
+            .transform(self.transform);
     }
 
     pub fn transform(&mut self, id: Id) -> Size {
@@ -424,6 +435,11 @@ impl<'a> PaintCx<'a> {
             new[4] += offset.x as f64;
             new[5] += offset.y as f64;
             self.transform = Affine::new(new);
+            self.paint_state
+                .new_renderer
+                .as_mut()
+                .unwrap()
+                .transform(self.transform);
 
             let parent_viewport = self.viewport.map(|rect| {
                 rect.with_origin(Point::new(
@@ -455,6 +471,15 @@ impl<'a> PaintCx<'a> {
                     self.viewport = None;
                 }
             }
+            let renderer = self.paint_state.new_renderer.as_mut().unwrap();
+            match self.viewport.as_ref() {
+                Some(rect) => {
+                    renderer.clip(rect);
+                }
+                None => {
+                    renderer.clear_clip();
+                }
+            }
 
             Size::new(layout.size.width as f64, layout.size.height as f64)
         } else {
@@ -462,103 +487,103 @@ impl<'a> PaintCx<'a> {
         }
     }
 
-    pub fn stroke<'b>(
-        &mut self,
-        path: &impl Shape,
-        brush: impl Into<BrushRef<'b>>,
-        stroke_width: f64,
-    ) {
-        self.builder.stroke(
-            &Stroke::new(stroke_width as f32),
-            self.transform,
-            brush,
-            None,
-            path,
-        )
-    }
+    // pub fn stroke<'b>(
+    //     &mut self,
+    //     path: &impl Shape,
+    //     brush: impl Into<BrushRef<'b>>,
+    //     stroke_width: f64,
+    // ) {
+    //     self.builder.stroke(
+    //         &Stroke::new(stroke_width as f32),
+    //         self.transform,
+    //         brush,
+    //         None,
+    //         path,
+    //     )
+    // }
 
-    pub fn fill<'b>(&mut self, path: &impl Shape, brush: impl Into<BrushRef<'b>>) {
-        self.builder
-            .fill(Fill::NonZero, self.transform, brush, None, path)
-    }
+    // pub fn fill<'b>(&mut self, path: &impl Shape, brush: impl Into<BrushRef<'b>>) {
+    //     self.builder
+    //         .fill(Fill::NonZero, self.transform, brush, None, path)
+    // }
 
-    pub fn render_text(&mut self, layout: &parley::Layout<ParleyBrush>, point: Point) {
-        let transform = self.transform * Affine::translate((point.x, point.y));
-        let viewport = self.viewport;
-        for line in layout.lines() {
-            if let Some(rect) = viewport {
-                let metrics = line.metrics();
-                let y = point.y + metrics.baseline as f64;
-                if y + (metrics.descent as f64) < rect.y0 {
-                    continue;
-                }
-                if y - ((metrics.ascent + metrics.leading) as f64) > rect.y1 {
-                    break;
-                }
-            }
-            'line_loop: for glyph_run in line.glyph_runs() {
-                let mut x = glyph_run.offset();
-                let y = glyph_run.baseline();
-                let run = glyph_run.run();
-                let font = run.font().as_ref();
-                let font_size = run.font_size();
-                let font_ref = FontRef {
-                    data: font.data,
-                    offset: font.offset,
-                };
-                let style = glyph_run.style();
-                let vars: [(Tag, f32); 0] = [];
+    // pub fn render_text(&mut self, layout: &parley::Layout<ParleyBrush>, point: Point) {
+    //     let transform = self.transform * Affine::translate((point.x, point.y));
+    //     let viewport = self.viewport;
+    //     for line in layout.lines() {
+    //         if let Some(rect) = viewport {
+    //             let metrics = line.metrics();
+    //             let y = point.y + metrics.baseline as f64;
+    //             if y + (metrics.descent as f64) < rect.y0 {
+    //                 continue;
+    //             }
+    //             if y - ((metrics.ascent + metrics.leading) as f64) > rect.y1 {
+    //                 break;
+    //             }
+    //         }
+    //         'line_loop: for glyph_run in line.glyph_runs() {
+    //             let mut x = glyph_run.offset();
+    //             let y = glyph_run.baseline();
+    //             let run = glyph_run.run();
+    //             let font = run.font().as_ref();
+    //             let font_size = run.font_size();
+    //             let font_ref = FontRef {
+    //                 data: font.data,
+    //                 offset: font.offset,
+    //             };
+    //             let style = glyph_run.style();
+    //             let vars: [(Tag, f32); 0] = [];
 
-                let color = match style.brush.0 {
-                    vello::peniko::Brush::Solid(color) => color,
-                    _ => Color::WHITE,
-                };
+    //             let color = match style.brush.0 {
+    //                 vello::peniko::Brush::Solid(color) => color,
+    //                 _ => Color::WHITE,
+    //             };
 
-                for glyph in glyph_run.glyphs() {
-                    let fragment = if let Some(fragment) =
-                        self.paint_state
-                            .get_glyph(font.key.value(), glyph.id, color)
-                    {
-                        fragment
-                    } else {
-                        let mut gp = self.paint_state.glyph_contex.new_provider(
-                            &font_ref,
-                            Some(font.key.value()),
-                            font_size,
-                            false,
-                            vars,
-                        );
-                        let fragment = gp.get(glyph.id, Some(&style.brush.0));
-                        self.paint_state
-                            .insert_glyph(font.key.value(), glyph.id, color, fragment);
-                        self.paint_state
-                            .get_glyph(font.key.value(), glyph.id, color)
-                            .unwrap()
-                    };
+    //             for glyph in glyph_run.glyphs() {
+    //                 let fragment = if let Some(fragment) =
+    //                     self.paint_state
+    //                         .get_glyph(font.key.value(), glyph.id, color)
+    //                 {
+    //                     fragment
+    //                 } else {
+    //                     let mut gp = self.paint_state.glyph_contex.new_provider(
+    //                         &font_ref,
+    //                         Some(font.key.value()),
+    //                         font_size,
+    //                         false,
+    //                         vars,
+    //                     );
+    //                     let fragment = gp.get(glyph.id, Some(&style.brush.0));
+    //                     self.paint_state
+    //                         .insert_glyph(font.key.value(), glyph.id, color, fragment);
+    //                     self.paint_state
+    //                         .get_glyph(font.key.value(), glyph.id, color)
+    //                         .unwrap()
+    //                 };
 
-                    if let Some(fragment) = fragment {
-                        let gx = x + glyph.x;
-                        let gy = y - glyph.y;
-                        let xform = Affine::translate((gx as f64, gy as f64))
-                            * Affine::scale_non_uniform(1.0, -1.0);
-                        if let Some(rect) = viewport {
-                            let xform = Affine::translate((point.x, point.y)) * xform;
-                            let xform = xform.as_coeffs();
-                            let cx = xform[4];
-                            if cx + (glyph.advance as f64) < rect.x0 {
-                                x += glyph.advance;
-                                continue;
-                            } else if cx > rect.x1 {
-                                break 'line_loop;
-                            }
-                        }
-                        self.builder.append(&fragment, Some(transform * xform));
-                    }
-                    x += glyph.advance;
-                }
-            }
-        }
-    }
+    //                 if let Some(fragment) = fragment {
+    //                     let gx = x + glyph.x;
+    //                     let gy = y - glyph.y;
+    //                     let xform = Affine::translate((gx as f64, gy as f64))
+    //                         * Affine::scale_non_uniform(1.0, -1.0);
+    //                     if let Some(rect) = viewport {
+    //                         let xform = Affine::translate((point.x, point.y)) * xform;
+    //                         let xform = xform.as_coeffs();
+    //                         let cx = xform[4];
+    //                         if cx + (glyph.advance as f64) < rect.x0 {
+    //                             x += glyph.advance;
+    //                             continue;
+    //                         } else if cx > rect.x1 {
+    //                             break 'line_loop;
+    //                         }
+    //                     }
+    //                     self.builder.append(&fragment, Some(transform * xform));
+    //                 }
+    //                 x += glyph.advance;
+    //             }
+    //         }
+    //     }
+    // }
 }
 
 pub struct PaintState {
@@ -567,6 +592,7 @@ pub struct PaintState {
     glyph_contex: GlyphContext,
     surface: Option<RenderSurface>,
     renderer: Option<Renderer>,
+    pub(crate) new_renderer: Option<crate::renderer::Renderer>,
     scene: Scene,
     handle: glazier::WindowHandle,
 }
@@ -579,6 +605,7 @@ impl PaintState {
             render_cx,
             surface: None,
             renderer: None,
+            new_renderer: None,
             scene: Scene::default(),
             handle: Default::default(),
             text_cache: TextCache::default(),
@@ -588,6 +615,11 @@ impl PaintState {
 
     pub(crate) fn connect(&mut self, handle: &glazier::WindowHandle) {
         self.handle = handle.clone();
+        self.new_renderer = Some(crate::renderer::Renderer::new(handle));
+    }
+
+    pub(crate) fn resize(&mut self, scale: Scale, size: Size) {
+        self.new_renderer.as_mut().unwrap().resize(scale, size);
     }
 
     fn get_glyph(
@@ -684,5 +716,19 @@ impl<'a> UpdateCx<'a> {
 
     pub fn request_layout(&mut self, id: Id) {
         self.app_state.request_layout(id);
+    }
+}
+
+impl Deref for PaintCx<'_> {
+    type Target = crate::renderer::Renderer;
+
+    fn deref(&self) -> &Self::Target {
+        self.paint_state.new_renderer.as_ref().unwrap()
+    }
+}
+
+impl DerefMut for PaintCx<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.paint_state.new_renderer.as_mut().unwrap()
     }
 }
