@@ -5,7 +5,7 @@ use glazier::{
     kurbo::{Affine, Point, Rect},
     WinHandler,
 };
-use leptos_reactive::Scope;
+use leptos_reactive::{Scope, SignalSet};
 use parley::FontContext;
 use vello::{SceneBuilder, SceneFragment};
 
