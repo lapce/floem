@@ -1,12 +1,11 @@
-use std::any::Any;
+use std::{any::Any, collections::HashMap};
 
 use floem_renderer::Renderer;
 use glazier::{
     kurbo::{Affine, Point, Rect},
-    WinHandler,
+    FileDialogOptions, FileDialogToken, FileInfo, WinHandler,
 };
 use leptos_reactive::{Scope, SignalSet};
-use parley::FontContext;
 use vello::{SceneBuilder, SceneFragment};
 
 use crate::{
@@ -30,7 +29,8 @@ pub struct App<V: View> {
     handle: glazier::WindowHandle,
     app_state: AppState,
     paint_state: PaintState,
-    font_cx: FontContext,
+
+    file_dialogs: HashMap<FileDialogToken, Box<dyn Fn(Option<FileInfo>)>>,
 }
 
 #[derive(Copy, Clone)]
@@ -74,6 +74,18 @@ impl AppContext {
         });
     }
 
+    pub fn update_open_file(
+        options: FileDialogOptions,
+        file_info_action: impl Fn(Option<FileInfo>) + 'static,
+    ) {
+        UPDATE_MESSAGES.with(|msgs| {
+            msgs.borrow_mut().push(UpdateMessage::OpenFile {
+                options,
+                file_info_action: Box::new(file_info_action),
+            })
+        });
+    }
+
     pub fn with_id(mut self, id: Id) -> Self {
         self.id = id;
         self
@@ -103,6 +115,10 @@ pub enum UpdateMessage {
         id: Id,
         action: Box<ResizeCallback>,
     },
+    OpenFile {
+        options: FileDialogOptions,
+        file_info_action: Box<dyn Fn(Option<FileInfo>)>,
+    },
 }
 
 impl<V: View> App<V> {
@@ -118,14 +134,14 @@ impl<V: View> App<V> {
             app_state: AppState::new(),
             paint_state: PaintState::new(),
             handle: Default::default(),
-            font_cx: FontContext::new(),
+
+            file_dialogs: HashMap::new(),
         }
     }
 
     fn layout(&mut self) {
         let mut cx = LayoutCx {
             app_state: &mut self.app_state,
-            font_cx: &mut self.font_cx,
             viewport: None,
             font_size: None,
             font_family: None,
@@ -210,6 +226,15 @@ impl<V: View> App<V> {
                             rect: Rect::ZERO,
                             callback: action,
                         });
+                    }
+                    UpdateMessage::OpenFile {
+                        options,
+                        file_info_action,
+                    } => {
+                        let token = self.handle.open_file(options);
+                        if let Some(token) = token {
+                            self.file_dialogs.insert(token, file_info_action);
+                        }
                     }
                 }
             }
@@ -335,5 +360,11 @@ impl<V: View> WinHandler for App<V> {
 
     fn as_any(&mut self) -> &mut dyn Any {
         todo!()
+    }
+
+    fn open_file(&mut self, token: FileDialogToken, file: Option<FileInfo>) {
+        if let Some(action) = self.file_dialogs.remove(&token) {
+            action(file);
+        }
     }
 }

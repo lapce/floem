@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use cosmic_text::{Attrs, AttrsList, Family, FamilyOwned, TextLayout};
+use crate::cosmic_text::{Attrs, AttrsList, Family, FamilyOwned, TextLayout};
 use floem_renderer::Renderer;
 use glazier::kurbo::Point;
 use leptos_reactive::create_effect;

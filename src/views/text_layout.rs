@@ -18,13 +18,13 @@ use crate::{
 
 pub struct TextLayout {
     id: Id,
-    text_layout: cosmic_text::TextLayout,
+    text_layout: crate::cosmic_text::TextLayout,
     text_node: Option<Node>,
 }
 
 pub fn text_layout(
     cx: AppContext,
-    text_layout: impl Fn() -> cosmic_text::TextLayout + 'static,
+    text_layout: impl Fn() -> crate::cosmic_text::TextLayout + 'static,
 ) -> TextLayout {
     let id = cx.new_id();
     let text = text_layout();
