@@ -5,7 +5,7 @@ use glazier::{
     kurbo::{Affine, Point, Rect},
     FileDialogOptions, FileDialogToken, FileInfo, WinHandler,
 };
-use leptos_reactive::Scope;
+use leptos_reactive::{Scope, SignalSet};
 use vello::{SceneBuilder, SceneFragment};
 
 use crate::{

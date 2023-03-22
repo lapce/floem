@@ -2,7 +2,9 @@ use std::{hash::Hash, marker::PhantomData, ops::Range};
 
 use glazier::kurbo::Rect;
 use indexmap::IndexMap;
-use leptos_reactive::{create_effect, create_signal, Scope, ScopeDisposer, WriteSignal};
+use leptos_reactive::{
+    create_effect, create_signal, Scope, ScopeDisposer, SignalGet, SignalSet, WriteSignal,
+};
 use smallvec::SmallVec;
 use taffy::{prelude::Node, style::Dimension};
 

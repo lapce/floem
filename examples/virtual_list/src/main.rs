@@ -1,6 +1,6 @@
 use floem::{
     app::AppContext,
-    reactive::create_signal,
+    reactive::{create_signal, SignalGet},
     style::{AlignItems, Dimension, FlexDirection, Style},
     view::View,
     views::virtual_list,

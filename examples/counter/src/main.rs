@@ -1,9 +1,7 @@
-use std::sync::Arc;
-
 use floem::{
     app::AppContext,
     peniko::Color,
-    reactive::create_signal,
+    reactive::{create_signal, SignalGet, SignalUpdate},
     stack::stack,
     style::{AlignItems, Dimension, FlexDirection, Style},
     view::View,

@@ -7,7 +7,8 @@ use std::{
 
 use glazier::{FileDialogOptions, FileInfo, IdleHandle, IdleToken};
 use leptos_reactive::{
-    create_effect, create_signal, ReadSignal, Scope, ScopeDisposer, WriteSignal,
+    create_effect, create_signal, ReadSignal, Scope, ScopeDisposer, SignalGet, SignalSet,
+    WriteSignal,
 };
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
