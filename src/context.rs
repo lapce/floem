@@ -1,32 +1,28 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     ops::{Deref, DerefMut},
-    sync::Arc,
 };
 
-use floem_renderer::{Renderer as FloemRenderer};
+use floem_renderer::Renderer as FloemRenderer;
 use glazier::{
-    kurbo::{Affine, Point, Rect, Shape, Size, Vec2},
+    kurbo::{Affine, Point, Rect, Size},
     Scalable, Scale,
 };
-use parley::{style::FontWeight, swash::GlyphId, FontContext};
+use parley::style::FontWeight;
 use taffy::{
     prelude::{Layout, Node},
     style::{AvailableSpace, Display},
 };
 use vello::{
-    glyph::{
-        pinot::{types::Tag, FontRef},
-        GlyphContext,
-    },
-    peniko::{Blob, BrushRef, Color, Fill, Stroke},
+    glyph::GlyphContext,
+    peniko::Color,
     util::{RenderContext, RenderSurface},
     RenderParams, Renderer, RendererOptions, Scene, SceneBuilder, SceneFragment,
 };
 
 use crate::{
     event::{Event, EventListner},
-    id::{Id, IDPATHS},
+    id::Id,
     style::Style,
 };
 
@@ -61,16 +57,6 @@ impl ViewState {
             resize_listener: None,
         }
     }
-}
-
-#[derive(Default)]
-struct FontCache {
-    glyphs: HashMap<(GlyphId, Color), Option<SceneFragment>>,
-}
-
-#[derive(Default)]
-pub struct TextCache {
-    fonts: HashMap<u64, FontCache>,
 }
 
 pub(crate) struct TransformContext {
@@ -245,7 +231,6 @@ impl<'a> EventCx<'a> {
 
 pub struct LayoutCx<'a> {
     pub(crate) app_state: &'a mut AppState,
-    pub(crate) font_cx: &'a mut FontContext,
     pub(crate) viewport: Option<Rect>,
     pub(crate) font_size: Option<f32>,
     pub(crate) font_family: Option<String>,
@@ -588,7 +573,6 @@ impl<'a> PaintCx<'a> {
 
 pub struct PaintState {
     pub(crate) render_cx: RenderContext,
-    pub(crate) text_cache: TextCache,
     glyph_contex: GlyphContext,
     surface: Option<RenderSurface>,
     renderer: Option<Renderer>,
@@ -608,7 +592,6 @@ impl PaintState {
             new_renderer: None,
             scene: Scene::default(),
             handle: Default::default(),
-            text_cache: TextCache::default(),
             glyph_contex: GlyphContext::new(),
         }
     }
@@ -620,27 +603,6 @@ impl PaintState {
 
     pub(crate) fn resize(&mut self, scale: Scale, size: Size) {
         self.new_renderer.as_mut().unwrap().resize(scale, size);
-    }
-
-    fn get_glyph(
-        &mut self,
-        font_id: u64,
-        glyph_id: GlyphId,
-        color: Color,
-    ) -> Option<&Option<SceneFragment>> {
-        let font = self.text_cache.fonts.entry(font_id).or_default();
-        font.glyphs.get(&(glyph_id, color))
-    }
-
-    fn insert_glyph(
-        &mut self,
-        font_id: u64,
-        glyph_id: GlyphId,
-        color: Color,
-        fragment: Option<SceneFragment>,
-    ) {
-        let font = self.text_cache.fonts.entry(font_id).or_default();
-        font.glyphs.insert((glyph_id, color), fragment);
     }
 
     pub(crate) fn render(&mut self, fragment: &SceneFragment) {

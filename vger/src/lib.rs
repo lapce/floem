@@ -1,23 +1,12 @@
 use anyhow::Result;
-use cosmic_text::{SubpixelBin, SwashCache, SwashImage, TextLayout};
+use floem_renderer::cosmic_text::{SubpixelBin, SwashCache, SwashImage, TextLayout};
 use floem_renderer::{usvg, Renderer};
 use peniko::{
     kurbo::{Affine, Point, Rect, Shape, Size, Vec2},
     BrushRef, Color, GradientKind,
 };
-use swash::{
-    scale::{image::Image, ScaleContext, Source, StrikeWith},
-    zeno,
-};
-use vger::{PaintIndex, SubpixelOffset, Vger};
+use vger::{PaintIndex, Vger};
 use wgpu::{Device, Queue, Surface, SurfaceConfiguration, TextureFormat};
-
-const IS_MACOS: bool = cfg!(target_os = "macos");
-const SOURCES: &[Source] = &[
-    Source::ColorBitmap(StrikeWith::BestFit),
-    Source::ColorOutline(0),
-    Source::Outline,
-];
 
 pub struct VgerRenderer {
     device: Device,
@@ -28,9 +17,6 @@ pub struct VgerRenderer {
     scale: f64,
     transform: Affine,
     clip: Option<Rect>,
-
-    scx: ScaleContext,
-    glyph_image: Image,
 }
 
 impl VgerRenderer {
@@ -94,8 +80,6 @@ impl VgerRenderer {
             scale,
             config,
             transform: Affine::IDENTITY,
-            scx: ScaleContext::new(),
-            glyph_image: Image::new(),
             clip: None,
         })
     }
@@ -279,6 +263,8 @@ impl Renderer for VgerRenderer {
         let transform = self.transform.as_coeffs();
         let width = (rect.width() * self.scale).round() as u32;
         let height = (rect.height() * self.scale).round() as u32;
+        let width = width.max(1);
+        let height = height.max(1);
         let origin = rect.origin();
         let x = ((origin.x + transform[4]) * self.scale).round() as f32;
         let y = ((origin.y + transform[5]) * self.scale).round() as f32;

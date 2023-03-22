@@ -27,7 +27,10 @@ fn app_logic(cx: AppContext) -> impl View {
 
     stack(cx, move |cx| {
         (
-            label(cx, move || format!("Hget counter is {}", couter.get())).style(cx, || Style {
+            label(cx, move || {
+                format!("Hget $¢€£😀  counter is {}", couter.get())
+            })
+            .style(cx, || Style {
                 margin_top: Some(50.0),
                 border_left: 10.0,
                 ..Default::default()

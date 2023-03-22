@@ -1,4 +1,4 @@
-use cosmic_text::TextLayout;
+use crate::cosmic_text::TextLayout;
 use floem_vger::VgerRenderer;
 use glazier::{
     kurbo::{Affine, Rect, Shape, Size},

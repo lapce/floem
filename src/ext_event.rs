@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use glazier::{IdleHandle, IdleToken};
+use glazier::{FileDialogOptions, FileInfo, IdleHandle, IdleToken};
 use leptos_reactive::{
     create_effect, create_signal, ReadSignal, Scope, ScopeDisposer, WriteSignal,
 };
@@ -78,6 +78,10 @@ pub fn create_signal_from_channel<T: Send>(
     });
 
     read
+}
+
+pub fn open_file_dialog(options: FileDialogOptions, action: impl Fn(Option<FileInfo>) + 'static) {
+    AppContext::update_open_file(options, action);
 }
 
 pub fn create_ext_action<T: Send + 'static>(

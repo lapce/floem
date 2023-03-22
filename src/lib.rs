@@ -11,8 +11,8 @@ pub mod view;
 pub mod view_tuple;
 pub mod views;
 
-pub use cosmic_text;
-pub use floem_renderer:: Renderer;
+pub use floem_renderer::cosmic_text;
+pub use floem_renderer::Renderer;
 pub use glazier;
 pub use leptos_reactive as reactive;
 pub use parley;
