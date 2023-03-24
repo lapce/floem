@@ -1,11 +1,14 @@
 mod click;
 pub use click::*;
 
+mod double_click;
+pub use double_click::*;
+
 mod label;
 pub use label::*;
 
-mod text_layout;
-pub use text_layout::*;
+mod rich_text;
+pub use rich_text::*;
 
 mod list;
 pub use list::*;

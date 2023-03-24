@@ -8,29 +8,29 @@ use crate::{
     view::{ChangeFlags, View},
 };
 
-pub struct Click<V: View> {
+pub struct DoubleClick<V: View> {
     id: Id,
     child: V,
-    on_click: Box<dyn Fn()>,
+    on_double_click: Box<dyn Fn()>,
 }
 
-pub fn click<V: View>(
+pub fn double_click<V: View>(
     cx: AppContext,
     child: impl FnOnce(AppContext) -> V,
-    on_click: impl Fn() + 'static,
-) -> Click<V> {
+    on_double_click: impl Fn() + 'static,
+) -> DoubleClick<V> {
     let id = cx.new_id();
     let mut child_cx = cx;
     child_cx.id = id;
     let child = child(child_cx);
-    Click {
+    DoubleClick {
         id,
         child,
-        on_click: Box::new(on_click),
+        on_double_click: Box::new(on_double_click),
     }
 }
 
-impl<V: View> View for Click<V> {
+impl<V: View> View for DoubleClick<V> {
     fn id(&self) -> Id {
         self.id
     }
@@ -65,7 +65,7 @@ impl<V: View> View for Click<V> {
 
         match &event {
             Event::MouseDown(event) => {
-                if event.count == 1 {
+                if event.count == 2 {
                     cx.update_active(self.id);
                     true
                 } else {
@@ -75,7 +75,7 @@ impl<V: View> View for Click<V> {
             Event::MouseUp(event) => {
                 let rect = cx.get_size(self.id).unwrap_or_default().to_rect();
                 if rect.contains(event.pos) {
-                    (self.on_click)();
+                    (self.on_double_click)();
                 }
                 true
             }

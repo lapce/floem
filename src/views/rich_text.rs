@@ -1,14 +1,12 @@
 use std::any::Any;
 
-use floem_renderer::Renderer;
+use floem_renderer::{cosmic_text::TextLayout, Renderer};
 use glazier::kurbo::Point;
 use leptos_reactive::create_effect;
-use parley::{layout::Cursor, Layout};
 use taffy::{prelude::Node, style::Dimension};
-use vello::peniko::{Brush, Color};
 
 use crate::{
-    app::{AppContext, UpdateMessage},
+    app::AppContext,
     context::{EventCx, UpdateCx},
     event::Event,
     id::Id,
@@ -16,30 +14,27 @@ use crate::{
     view::{ChangeFlags, View},
 };
 
-pub struct TextLayout {
+pub struct RichText {
     id: Id,
-    text_layout: crate::cosmic_text::TextLayout,
+    text_layout: TextLayout,
     text_node: Option<Node>,
 }
 
-pub fn text_layout(
-    cx: AppContext,
-    text_layout: impl Fn() -> crate::cosmic_text::TextLayout + 'static,
-) -> TextLayout {
+pub fn text_layout(cx: AppContext, text_layout: impl Fn() -> TextLayout + 'static) -> RichText {
     let id = cx.new_id();
     let text = text_layout();
     create_effect(cx.scope, move |_| {
         let new_text_layout = text_layout();
         AppContext::update_state(id, new_text_layout);
     });
-    TextLayout {
+    RichText {
         id,
         text_layout: text,
         text_node: None,
     }
 }
 
-impl View for TextLayout {
+impl View for RichText {
     fn id(&self) -> Id {
         self.id
     }

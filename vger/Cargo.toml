@@ -11,7 +11,6 @@ raw-window-handle = "0.5.1"
 futures = "0.3.26"
 anyhow = "1.0.69"
 peniko = { git = "https://github.com/linebender/peniko", rev = "cafdac9a211a0fb2fec5656bd663d1ac770bcc81" }
-parley = { git = "https://github.com/lapce/parley", rev = "dd30cc9e4ae733d80650ad3ab0db0462ccd67e57" }
 swash = { git = "https://github.com/dfrg/swash" }
 vger = { git = "https://github.com/lapce/vger-rs", rev = "45d5111ac9701811bb569b250840f3acbb2aefdc" }
 floem_renderer = { path = "../renderer" }

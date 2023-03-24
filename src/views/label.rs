@@ -1,18 +1,17 @@
 use std::any::Any;
 
-use crate::cosmic_text::{Attrs, AttrsList, Family, FamilyOwned, TextLayout};
-use floem_renderer::Renderer;
+use crate::cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout};
+use floem_renderer::{
+    cosmic_text::{Style as FontStyle, Weight},
+    Renderer,
+};
 use glazier::kurbo::Point;
 use leptos_reactive::create_effect;
-use parley::{
-    layout::Cursor,
-    style::{FontFamily, FontStack, FontWeight, StyleProperty},
-};
 use taffy::{prelude::Node, style::Dimension};
-use vello::peniko::{Brush, Color};
+use vello::peniko::Color;
 
 use crate::{
-    app::{AppContext, UpdateMessage},
+    app::AppContext,
     context::{EventCx, UpdateCx},
     event::Event,
     id::Id,
@@ -31,7 +30,8 @@ pub struct Label {
     color: Option<Color>,
     font_size: Option<f32>,
     font_family: Option<String>,
-    font_weight: Option<FontWeight>,
+    font_weight: Option<Weight>,
+    font_style: Option<FontStyle>,
 }
 
 pub fn label(cx: AppContext, label: impl Fn() -> String + 'static) -> Label {
@@ -52,6 +52,7 @@ pub fn label(cx: AppContext, label: impl Fn() -> String + 'static) -> Label {
         font_size: None,
         font_family: None,
         font_weight: None,
+        font_style: None,
     }
 }
 
@@ -63,6 +64,9 @@ impl Label {
         if let Some(font_size) = self.font_size {
             attrs = attrs.font_size(font_size);
         }
+        if let Some(font_style) = self.font_style {
+            attrs = attrs.style(font_style);
+        }
         let font_family = self.font_family.as_ref().map(|font_family| {
             let family: Vec<FamilyOwned> = FamilyOwned::parse_list(font_family).collect();
             family
@@ -71,7 +75,7 @@ impl Label {
             attrs = attrs.family(font_family);
         }
         if let Some(font_weight) = self.font_weight {
-            attrs = attrs.raw_weight(font_weight.0);
+            attrs = attrs.weight(font_weight);
         }
         text_layout.set_text(self.label.as_str(), AttrsList::new(attrs));
         self.text_layout = Some(text_layout);
@@ -83,6 +87,9 @@ impl Label {
             if let Some(font_size) = self.font_size {
                 attrs = attrs.font_size(font_size);
             }
+            if let Some(font_style) = self.font_style {
+                attrs = attrs.style(font_style);
+            }
             let font_family = self.font_family.as_ref().map(|font_family| {
                 let family: Vec<FamilyOwned> = FamilyOwned::parse_list(font_family).collect();
                 family
@@ -91,7 +98,7 @@ impl Label {
                 attrs = attrs.family(font_family);
             }
             if let Some(font_weight) = self.font_weight {
-                attrs = attrs.raw_weight(font_weight.0);
+                attrs = attrs.weight(font_weight);
             }
             text_layout.set_text(new_text, AttrsList::new(attrs));
             self.available_text_layout = Some(text_layout);
@@ -131,10 +138,12 @@ impl View for Label {
                 if self.font_size != cx.current_font_size()
                     || self.font_family.as_deref() != cx.current_font_family()
                     || self.font_weight != cx.font_weight
+                    || self.font_style != cx.font_style
                 {
                     self.font_size = cx.current_font_size();
                     self.font_family = cx.current_font_family().map(|s| s.to_string());
                     self.font_weight = cx.font_weight;
+                    self.font_style = cx.font_style;
                     self.set_text_layout();
                 }
                 if self.text_layout.is_none() {
@@ -188,6 +197,9 @@ impl View for Label {
                 if let Some(font_size) = self.font_size {
                     attrs = attrs.font_size(font_size);
                 }
+                if let Some(font_style) = self.font_style {
+                    attrs = attrs.style(font_style);
+                }
                 let font_family = self.font_family.as_ref().map(|font_family| {
                     let family: Vec<FamilyOwned> = FamilyOwned::parse_list(font_family).collect();
                     family
@@ -196,7 +208,7 @@ impl View for Label {
                     attrs = attrs.family(font_family);
                 }
                 if let Some(font_weight) = self.font_weight {
-                    attrs = attrs.raw_weight(font_weight.0);
+                    attrs = attrs.weight(font_weight);
                 }
                 dots_text.set_text("...", AttrsList::new(attrs));
 
@@ -230,11 +242,13 @@ impl View for Label {
             || self.font_size != cx.font_size
             || self.font_family.as_deref() != cx.font_family.as_deref()
             || self.font_weight != cx.font_weight
+            || self.font_style != cx.font_style
         {
             self.color = cx.color;
             self.font_size = cx.font_size;
             self.font_family = cx.font_family.clone();
             self.font_weight = cx.font_weight;
+            self.font_style = cx.font_style;
             self.set_text_layout();
         }
         let text_node = self.text_node.unwrap();

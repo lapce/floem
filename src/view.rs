@@ -63,6 +63,9 @@ pub trait View {
             if style.font_weight.is_some() {
                 cx.font_weight = style.font_weight;
             }
+            if style.font_style.is_some() {
+                cx.font_style = style.font_style;
+            }
         }
 
         let node = self.layout(cx);
@@ -194,6 +197,9 @@ pub trait View {
             }
             if style.font_weight.is_some() {
                 cx.font_weight = style.font_weight;
+            }
+            if style.font_style.is_some() {
+                cx.font_style = style.font_style;
             }
         }
         self.paint(cx);

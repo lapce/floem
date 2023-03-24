@@ -1,4 +1,4 @@
-use parley::style::FontWeight;
+use floem_renderer::cosmic_text::{Style as FontStyle, Weight};
 pub use taffy::style::{
     AlignContent, AlignItems, Dimension, Display, FlexDirection, JustifyContent, Position,
 };
@@ -45,7 +45,8 @@ pub struct Style {
     pub background: Option<Color>,
     pub font_size: Option<f32>,
     pub font_family: Option<String>,
-    pub font_weight: Option<FontWeight>,
+    pub font_weight: Option<Weight>,
+    pub font_style: Option<FontStyle>,
 }
 
 impl Default for Style {
@@ -87,6 +88,7 @@ impl Default for Style {
             font_size: None,
             font_family: None,
             font_weight: None,
+            font_style: None,
         }
     }
 }

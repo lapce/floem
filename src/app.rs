@@ -146,11 +146,13 @@ impl<V: View> App<V> {
             font_size: None,
             font_family: None,
             font_weight: None,
+            font_style: None,
             window_origin: Point::ZERO,
             saved_viewports: Vec::new(),
             saved_font_sizes: Vec::new(),
             saved_font_families: Vec::new(),
             saved_font_weights: Vec::new(),
+            saved_font_styles: Vec::new(),
             saved_window_origins: Vec::new(),
         };
         cx.app_state.root = Some(self.view.layout_main(&mut cx));
@@ -173,12 +175,14 @@ impl<V: View> App<V> {
             font_size: None,
             font_family: None,
             font_weight: None,
+            font_style: None,
             saved_transforms: Vec::new(),
             saved_viewports: Vec::new(),
             saved_colors: Vec::new(),
             saved_font_sizes: Vec::new(),
             saved_font_families: Vec::new(),
             saved_font_weights: Vec::new(),
+            saved_font_styles: Vec::new(),
         };
         cx.paint_state.new_renderer.as_mut().unwrap().begin();
         self.view.paint_main(&mut cx);
@@ -283,7 +287,6 @@ impl<V: View> App<V> {
                         .event_main(&mut cx, Some(&id_path.0), event.clone());
                 }
             });
-
             if let Event::MouseUp(_) = &event {
                 self.app_state.active = None;
             }

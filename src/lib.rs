@@ -15,7 +15,6 @@ pub use floem_renderer::cosmic_text;
 pub use floem_renderer::Renderer;
 pub use glazier;
 pub use leptos_reactive as reactive;
-pub use parley;
 pub use taffy;
 pub use vello::peniko;
 

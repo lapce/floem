@@ -3,12 +3,14 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use floem_renderer::Renderer as FloemRenderer;
+use floem_renderer::{
+    cosmic_text::{Style as FontStyle, Weight},
+    Renderer as FloemRenderer,
+};
 use glazier::{
     kurbo::{Affine, Point, Rect, Size},
     Scalable, Scale,
 };
-use parley::style::FontWeight;
 use taffy::{
     prelude::{Layout, Node},
     style::{AvailableSpace, Display},
@@ -234,12 +236,14 @@ pub struct LayoutCx<'a> {
     pub(crate) viewport: Option<Rect>,
     pub(crate) font_size: Option<f32>,
     pub(crate) font_family: Option<String>,
-    pub(crate) font_weight: Option<FontWeight>,
+    pub(crate) font_weight: Option<Weight>,
+    pub(crate) font_style: Option<FontStyle>,
     pub(crate) window_origin: Point,
     pub(crate) saved_viewports: Vec<Option<Rect>>,
     pub(crate) saved_font_sizes: Vec<Option<f32>>,
     pub(crate) saved_font_families: Vec<Option<String>>,
-    pub(crate) saved_font_weights: Vec<Option<FontWeight>>,
+    pub(crate) saved_font_weights: Vec<Option<Weight>>,
+    pub(crate) saved_font_styles: Vec<Option<FontStyle>>,
     pub(crate) saved_window_origins: Vec<Point>,
 }
 
@@ -252,6 +256,7 @@ impl<'a> LayoutCx<'a> {
         self.saved_font_sizes.clear();
         self.saved_font_families.clear();
         self.saved_font_weights.clear();
+        self.saved_font_styles.clear();
         self.saved_window_origins.clear();
     }
 
@@ -260,6 +265,7 @@ impl<'a> LayoutCx<'a> {
         self.saved_font_sizes.push(self.font_size);
         self.saved_font_families.push(self.font_family.clone());
         self.saved_font_weights.push(self.font_weight);
+        self.saved_font_styles.push(self.font_style);
         self.saved_window_origins.push(self.window_origin);
     }
 
@@ -268,6 +274,7 @@ impl<'a> LayoutCx<'a> {
         self.font_size = self.saved_font_sizes.pop().unwrap_or_default();
         self.font_family = self.saved_font_families.pop().unwrap_or_default();
         self.font_weight = self.saved_font_weights.pop().unwrap_or_default();
+        self.font_style = self.saved_font_styles.pop().unwrap_or_default();
         self.window_origin = self.saved_window_origins.pop().unwrap_or_default();
     }
 
@@ -344,13 +351,15 @@ pub struct PaintCx<'a> {
     pub(crate) color: Option<Color>,
     pub(crate) font_size: Option<f32>,
     pub(crate) font_family: Option<String>,
-    pub(crate) font_weight: Option<FontWeight>,
+    pub(crate) font_weight: Option<Weight>,
+    pub(crate) font_style: Option<FontStyle>,
     pub(crate) saved_transforms: Vec<Affine>,
     pub(crate) saved_viewports: Vec<Option<Rect>>,
     pub(crate) saved_colors: Vec<Option<Color>>,
     pub(crate) saved_font_sizes: Vec<Option<f32>>,
     pub(crate) saved_font_families: Vec<Option<String>>,
-    pub(crate) saved_font_weights: Vec<Option<FontWeight>>,
+    pub(crate) saved_font_weights: Vec<Option<Weight>>,
+    pub(crate) saved_font_styles: Vec<Option<FontStyle>>,
 }
 
 impl<'a> PaintCx<'a> {
@@ -361,6 +370,7 @@ impl<'a> PaintCx<'a> {
         self.saved_font_sizes.push(self.font_size);
         self.saved_font_families.push(self.font_family.clone());
         self.saved_font_weights.push(self.font_weight);
+        self.saved_font_styles.push(self.font_style);
     }
 
     pub fn restore(&mut self) {
@@ -370,6 +380,7 @@ impl<'a> PaintCx<'a> {
         self.font_size = self.saved_font_sizes.pop().unwrap_or_default();
         self.font_family = self.saved_font_families.pop().unwrap_or_default();
         self.font_weight = self.saved_font_weights.pop().unwrap_or_default();
+        self.font_style = self.saved_font_styles.pop().unwrap_or_default();
         self.paint_state
             .new_renderer
             .as_mut()
