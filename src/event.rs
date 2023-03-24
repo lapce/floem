@@ -1,8 +1,13 @@
-use glazier::{kurbo::Point, KeyEvent, MouseEvent};
+use glazier::{
+    kurbo::{Point, Size},
+    KeyEvent, MouseEvent,
+};
 
 #[derive(Hash, PartialEq, Eq)]
 pub enum EventListner {
     KeyDown,
+    WindowClosed,
+    WindowResized,
 }
 
 #[derive(Debug, Clone)]
@@ -12,6 +17,8 @@ pub enum Event {
     MouseMove(MouseEvent),
     MouseWheel(MouseEvent),
     KeyDown(KeyEvent),
+    WindowClosed,
+    WindowResized(Size),
 }
 
 impl Event {
@@ -20,7 +27,9 @@ impl Event {
             Event::MouseDown(_)
             | Event::MouseUp(_)
             | Event::MouseMove(_)
-            | Event::MouseWheel(_) => false,
+            | Event::MouseWheel(_)
+            | Event::WindowClosed
+            | Event::WindowResized(_) => false,
             Event::KeyDown(_) => true,
         }
     }
@@ -31,7 +40,7 @@ impl Event {
             | Event::MouseUp(_)
             | Event::MouseMove(_)
             | Event::MouseWheel(_) => true,
-            Event::KeyDown(_) => false,
+            Event::KeyDown(_) | Event::WindowClosed | Event::WindowResized(_) => false,
         }
     }
 
@@ -41,7 +50,7 @@ impl Event {
             | Event::MouseUp(mouse_event)
             | Event::MouseMove(mouse_event)
             | Event::MouseWheel(mouse_event) => Some(mouse_event.pos),
-            Event::KeyDown(_) => None,
+            Event::KeyDown(_) | Event::WindowClosed | Event::WindowResized(_) => None,
         }
     }
 
@@ -53,7 +62,7 @@ impl Event {
             | Event::MouseWheel(mouse_event) => {
                 mouse_event.pos -= offset;
             }
-            Event::KeyDown(_) => {}
+            Event::KeyDown(_) | Event::WindowClosed | Event::WindowResized(_) => {}
         }
         self
     }
@@ -65,6 +74,8 @@ impl Event {
             Event::MouseMove(_) => None,
             Event::MouseWheel(_) => None,
             Event::KeyDown(_) => Some(EventListner::KeyDown),
+            Event::WindowClosed => Some(EventListner::WindowClosed),
+            Event::WindowResized(_) => Some(EventListner::WindowResized),
         }
     }
 }

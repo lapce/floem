@@ -320,6 +320,7 @@ impl<V: View> WinHandler for App<V> {
     }
 
     fn size(&mut self, size: glazier::kurbo::Size) {
+        self.event(Event::WindowResized(size));
         let scale = self.handle.get_scale().unwrap_or_default();
         self.paint_state.resize(scale, size);
         self.app_state.set_root_size(size);
@@ -369,5 +370,9 @@ impl<V: View> WinHandler for App<V> {
         if let Some(action) = self.file_dialogs.remove(&token) {
             action(file);
         }
+    }
+
+    fn destroy(&mut self) {
+        self.event(Event::WindowClosed);
     }
 }
