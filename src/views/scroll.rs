@@ -451,24 +451,26 @@ impl<V: View> View for Scroll<V> {
 
         match &event {
             Event::MouseDown(event) => {
-                let pos = event.pos + scroll_offset;
+                if !self.hide_bar {
+                    let pos = event.pos + scroll_offset;
 
-                if self.point_hits_vertical_bar(cx.app_state, pos) {
-                    self.held = BarHeldState::Vertical(
-                        // The bounds must be non-empty, because the point hits the scrollbar.
-                        event.pos.y,
-                        scroll_offset,
-                    );
-                    cx.update_active(self.id);
-                } else if self.point_hits_horizontal_bar(cx.app_state, pos) {
-                    self.held = BarHeldState::Horizontal(
-                        // The bounds must be non-empty, because the point hits the scrollbar.
-                        event.pos.x,
-                        scroll_offset,
-                    );
-                    cx.update_active(self.id);
-                } else {
-                    self.held = BarHeldState::None;
+                    if self.point_hits_vertical_bar(cx.app_state, pos) {
+                        self.held = BarHeldState::Vertical(
+                            // The bounds must be non-empty, because the point hits the scrollbar.
+                            event.pos.y,
+                            scroll_offset,
+                        );
+                        cx.update_active(self.id);
+                    } else if self.point_hits_horizontal_bar(cx.app_state, pos) {
+                        self.held = BarHeldState::Horizontal(
+                            // The bounds must be non-empty, because the point hits the scrollbar.
+                            event.pos.x,
+                            scroll_offset,
+                        );
+                        cx.update_active(self.id);
+                    } else {
+                        self.held = BarHeldState::None;
+                    }
                 }
             }
             Event::MouseUp(_event) => self.held = BarHeldState::None,
@@ -506,8 +508,8 @@ impl<V: View> View for Scroll<V> {
 
         if self.child.event_main(
             cx,
-            id_path,
-            event.clone().offset((-scroll_offset.x, -scroll_offset.y)),
+            id_path, // event.clone().offset((-scroll_offset.x, -scroll_offset.y)),
+            event.clone(),
         ) {
             return true;
         }

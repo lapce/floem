@@ -57,7 +57,8 @@ impl<V: View> View for DoubleClick<V> {
 
     fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {
         if id_path.is_none() {
-            // if id_path is_some, this event is destined to this view
+            // only send event to child if id_path is_none,
+            // because if id_path is_some, this event is destined to this view
             if self.child.event_main(cx, id_path, event.clone()) {
                 return true;
             }

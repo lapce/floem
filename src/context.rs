@@ -204,8 +204,17 @@ impl<'a> EventCx<'a> {
     }
 
     pub(crate) fn offset_event(&self, id: Id, event: Event) -> Event {
+        let viewport = self
+            .app_state
+            .view_states
+            .get(&id)
+            .and_then(|view| view.viewport);
+
         if let Some(layout) = self.get_layout(id) {
-            event.offset((layout.location.x as f64, layout.location.y as f64))
+            event.offset((
+                layout.location.x as f64 - viewport.map(|rect| rect.x0).unwrap_or(0.0),
+                layout.location.y as f64 - viewport.map(|rect| rect.y0).unwrap_or(0.0),
+            ))
         } else {
             event
         }
