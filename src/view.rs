@@ -218,37 +218,10 @@ fn paint_bg(cx: &mut PaintCx, style: &Style, size: Size) {
         None => return,
     };
 
-    let left = if style.border_left > 0.0 {
-        style.border_left
-    } else {
-        style.border
-    };
-    let top = if style.border_top > 0.0 {
-        style.border_top
-    } else {
-        style.border
-    };
-    let right = if style.border_right > 0.0 {
-        style.border_right
-    } else {
-        style.border
-    };
-    let bottom = if style.border_bottom > 0.0 {
-        style.border_bottom
-    } else {
-        style.border
-    };
-
-    if left == top && top == right && right == bottom && bottom == left && left > 0.0 {
-        let half = left as f64 / 2.0;
-        let rect = size.to_rect().inflate(-half, -half);
-        let radius = style.border_radius;
-        if radius > 0.0 {
-            let rect = rect.to_rounded_rect(radius as f64);
-            cx.fill(&rect, bg);
-        } else {
-            cx.fill(&rect, bg);
-        }
+    let radius = style.border_radius;
+    if radius > 0.0 {
+        let rect = size.to_rect().to_rounded_rect(radius as f64);
+        cx.fill(&rect, bg);
     } else {
         cx.fill(&size.to_rect(), bg);
     }
