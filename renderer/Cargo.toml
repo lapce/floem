@@ -6,4 +6,4 @@ edition = "2021"
 [dependencies]
 usvg = "0.29.0"
 peniko = { git = "https://github.com/linebender/peniko", rev = "cafdac9a211a0fb2fec5656bd663d1ac770bcc81" }
-cosmic-text = { git = "https://github.com/lapce/cosmic-text", rev = "52578fe7d9f4db40044b7fee04bf2185ad61fcd7" }
+cosmic-text = { git = "https://github.com/lapce/cosmic-text", rev = "f3cf3681c8870e999120afb5e04f2539ed89839e" }

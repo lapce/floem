@@ -1,12 +1,13 @@
 use floem::{
     app::AppContext,
+    cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
     peniko::Color,
     reactive::{create_signal, SignalGet, SignalUpdate},
     stack::stack,
-    style::{AlignItems, Dimension, FlexDirection, Style},
+    style::{AlignItems, Dimension, FlexDirection, Position, Style},
     view::View,
     views::Decorators,
-    views::{click, label, scroll, VirtualListDirection, VirtualListItemSize},
+    views::{click, label, rich_text, scroll, VirtualListDirection, VirtualListItemSize},
     views::{list, virtual_list},
 };
 
@@ -23,16 +24,67 @@ fn app_logic(cx: AppContext) -> impl View {
     }
     let (value, set_value) = create_signal(cx.scope, im::Vector::from(virtual_list_strings));
 
+    let family = &[FamilyOwned::Name("DejaVu Sans Mono".to_string())];
+    let attrs = Attrs::new().family(family).line_height(1.5);
+    let mut attrs_list = AttrsList::new(attrs);
+    // attrs_list.add_span(0..5, attrs.font_size(40.0));
+    let mut text_layout = TextLayout::new();
+    text_layout.set_text("SHget测试counter😀😃", attrs_list);
+
     stack(cx, move |cx| {
         (
-            label(cx, move || {
-                format!("Hget $¢€£😀  counter is {}", couter.get())
-            })
-            .style(cx, || Style {
+            // label(cx, || "".to_string()).style(cx, || Style {
+            //     position: Position::Absolute,
+            //     margin_top: Some(50.0),
+            //     height: Dimension::Points(23.242188),
+            //     width: Dimension::Points(600.0),
+            //     background: Some(Color::GREEN),
+            //     ..Default::default()
+            // }),
+            // label(cx, || "".to_string()).style(cx, || Style {
+            //     position: Position::Absolute,
+            //     margin_top: Some(50.0 + 3.75),
+            //     height: Dimension::Points(11.09375),
+            //     width: Dimension::Points(600.0),
+            //     background: Some(Color::GREEN),
+            //     ..Default::default()
+            // }),
+            rich_text(cx, move || text_layout.clone()).style(cx, || Style {
                 margin_top: Some(50.0),
-                border_left: 10.0,
+                margin_bottom: Some(50.0),
+                background: Some(Color::GRAY),
                 ..Default::default()
             }),
+            label(cx, move || "Hi Test Test".to_string()).style(cx, || Style {
+                margin_top: Some(50.0),
+                margin_bottom: Some(50.0),
+                background: Some(Color::GRAY),
+                ..Default::default()
+            }),
+            // label(cx, || "".to_string()).style(cx, || Style {
+            //     position: Position::Absolute,
+            //     margin_top: Some(50.0 + 11.71875 - 1.0),
+            //     height: Dimension::Points(1.0),
+            //     width: Dimension::Points(600.0),
+            //     background: Some(Color::WHITE),
+            //     ..Default::default()
+            // }),
+            // label(cx, || "".to_string()).style(cx, || Style {
+            //     position: Position::Absolute,
+            //     margin_top: Some(50.0 + 58.10547 - 11.71875 - 1.0),
+            //     height: Dimension::Points(1.0),
+            //     width: Dimension::Points(600.0),
+            //     background: Some(Color::WHITE),
+            //     ..Default::default()
+            // }),
+            // label(cx, || "".to_string()).style(cx, || Style {
+            //     position: Position::Absolute,
+            //     margin_top: Some(50.0 + 58.10547 - 1.0),
+            //     height: Dimension::Points(1.0),
+            //     width: Dimension::Points(600.0),
+            //     background: Some(Color::WHITE),
+            //     ..Default::default()
+            // }),
             scroll(cx, move |cx| {
                 virtual_list(
                     cx,
@@ -160,6 +212,7 @@ fn app_logic(cx: AppContext) -> impl View {
         height: Dimension::Percent(1.0),
         flex_direction: FlexDirection::Column,
         align_items: Some(AlignItems::Center),
+        font_family: Some("DejaVu Sans Mono".to_string()),
         ..Default::default()
     })
 }

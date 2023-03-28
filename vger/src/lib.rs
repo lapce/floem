@@ -207,10 +207,10 @@ impl Renderer for VgerRenderer {
         for line in layout.layout_runs() {
             if let Some(rect) = clip {
                 let y = pos.y + offset.y + line.line_y as f64;
-                if y + (line.descent as f64) < rect.y0 {
+                if y + (line.line_height as f64) < rect.y0 {
                     continue;
                 }
-                if y - (line.ascent as f64) > rect.y1 {
+                if y - (line.line_height as f64) > rect.y1 {
                     break;
                 }
             }
@@ -228,9 +228,13 @@ impl Renderer for VgerRenderer {
 
                 if let Some(paint) = self.brush_to_paint(glyph_run.color) {
                     let glyph_x = x * self.scale as f32;
-                    let (new, subpx) = SubpixelBin::new(glyph_x);
-                    let glyph_x = new as f32;
-                    let glyph_y = (y * self.scale as f32).round();
+                    let (new_x, subpx_x) = SubpixelBin::new(glyph_x);
+                    let glyph_x = new_x as f32;
+
+                    let glyph_y = y * self.scale as f32;
+                    let (new_y, subpx_y) = SubpixelBin::new(glyph_y);
+                    let glyph_y = new_y as f32;
+
                     let font_size = (glyph_run.font_size * self.scale as f32).round() as u32;
                     self.vger.render_glyph(
                         glyph_x,
@@ -238,12 +242,12 @@ impl Renderer for VgerRenderer {
                         glyph_run.cache_key.font_id,
                         glyph_run.cache_key.glyph_id,
                         font_size,
-                        subpx,
+                        (subpx_x, subpx_y),
                         || {
                             let mut cache_key = glyph_run.cache_key;
                             cache_key.font_size = font_size;
-                            cache_key.x_bin = subpx;
-                            cache_key.y_bin = SubpixelBin::Zero;
+                            cache_key.x_bin = subpx_x;
+                            cache_key.y_bin = subpx_y;
                             let image = swash_cache.get_image_uncached(cache_key);
                             image.unwrap_or_else(SwashImage::new)
                         },

@@ -20,7 +20,7 @@ pub struct RichText {
     text_node: Option<Node>,
 }
 
-pub fn text_layout(cx: AppContext, text_layout: impl Fn() -> TextLayout + 'static) -> RichText {
+pub fn rich_text(cx: AppContext, text_layout: impl Fn() -> TextLayout + 'static) -> RichText {
     let id = cx.new_id();
     let text = text_layout();
     create_effect(cx.scope, move |_| {
@@ -60,8 +60,8 @@ impl View for RichText {
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
             let size = self.text_layout.size();
-            let width = size.width.ceil() as f32;
-            let height = size.height.ceil() as f32;
+            let width = size.width as f32;
+            let height = size.height as f32;
 
             if self.text_node.is_none() {
                 self.text_node = Some(

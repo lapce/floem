@@ -152,7 +152,7 @@ impl View for Label {
                 let text_layout = self.text_layout.as_ref().unwrap();
                 let size = text_layout.size();
                 let width = size.width.ceil() as f32;
-                let height = size.height.ceil() as f32;
+                let height = size.height as f32;
                 (width, height)
             };
 
