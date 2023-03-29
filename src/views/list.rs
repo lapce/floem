@@ -83,7 +83,7 @@ where
             }
             diff
         };
-        AppContext::update_state(id, diff);
+        AppContext::update_state(id, diff, false);
         HashRun(hashed_items)
     });
     List {

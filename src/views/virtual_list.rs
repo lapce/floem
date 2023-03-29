@@ -176,6 +176,7 @@ where
                 before_size,
                 after_size,
             },
+            false,
         );
         HashRun(hashed_items)
     });

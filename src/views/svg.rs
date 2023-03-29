@@ -25,7 +25,7 @@ pub fn svg(cx: AppContext, svg_str: impl Fn() -> String + 'static) -> Svg {
     let id = cx.new_id();
     create_effect(cx.scope, move |_| {
         let new_svg_str = svg_str();
-        AppContext::update_state(id, new_svg_str);
+        AppContext::update_state(id, new_svg_str, false);
     });
     Svg {
         id,

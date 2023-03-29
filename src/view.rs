@@ -152,10 +152,6 @@ pub trait View {
             }
         }
 
-        if self.event(cx, id_path, event.clone()) {
-            return true;
-        }
-
         if let Some(listener) = event.listener() {
             if let Some(listeners) = cx.get_event_listener(self.id()) {
                 if let Some(action) = listeners.get(&listener) {
@@ -164,6 +160,10 @@ pub trait View {
                     }
                 }
             }
+        }
+
+        if self.event(cx, id_path, event.clone()) {
+            return true;
         }
 
         false

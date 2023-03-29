@@ -6,6 +6,7 @@ use glazier::{
 #[derive(Hash, PartialEq, Eq)]
 pub enum EventListner {
     KeyDown,
+    MouseWheel,
     WindowClosed,
     WindowResized,
 }
@@ -72,7 +73,7 @@ impl Event {
             Event::MouseDown(_) => None,
             Event::MouseUp(_) => None,
             Event::MouseMove(_) => None,
-            Event::MouseWheel(_) => None,
+            Event::MouseWheel(_) => Some(EventListner::MouseWheel),
             Event::KeyDown(_) => Some(EventListner::KeyDown),
             Event::WindowClosed => Some(EventListner::WindowClosed),
             Event::WindowResized(_) => Some(EventListner::WindowResized),

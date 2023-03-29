@@ -77,13 +77,13 @@ where
             }
             diff
         };
-        AppContext::update_state(id, TabState::Diff(Box::new(diff)));
+        AppContext::update_state(id, TabState::Diff(Box::new(diff)), false);
         HashRun(hashed_items)
     });
 
     create_effect(cx.scope, move |_| {
         let active = active_fn();
-        AppContext::update_state(id, TabState::Active::<T>(active));
+        AppContext::update_state(id, TabState::Active::<T>(active), false);
     });
 
     Tab {

@@ -22,6 +22,7 @@ use crate::{
 
 thread_local! {
     static UPDATE_MESSAGES: std::cell::RefCell<Vec<UpdateMessage>> = Default::default();
+    static DEFERRED_UPDATE_MESSAGES: std::cell::RefCell<Vec<(Id, Box<dyn Any>)>> = Default::default();
 }
 
 pub struct App<V: View> {
@@ -44,13 +45,17 @@ impl AppContext {
         UPDATE_MESSAGES.with(|msgs| msgs.borrow_mut().push(UpdateMessage::Focus(id)));
     }
 
-    pub fn update_state(id: Id, state: impl Any) {
-        UPDATE_MESSAGES.with(|msgs| {
-            msgs.borrow_mut().push(UpdateMessage::State {
-                id,
-                state: Box::new(state),
-            })
-        });
+    pub fn update_state(id: Id, state: impl Any, deferred: bool) {
+        if !deferred {
+            UPDATE_MESSAGES.with(|msgs| {
+                msgs.borrow_mut().push(UpdateMessage::State {
+                    id,
+                    state: Box::new(state),
+                })
+            });
+        } else {
+            DEFERRED_UPDATE_MESSAGES.with(|msgs| msgs.borrow_mut().push((id, Box::new(state))));
+        }
     }
 
     pub fn update_style(id: Id, style: Style) {
@@ -189,6 +194,27 @@ impl<V: View> App<V> {
         cx.paint_state.new_renderer.as_mut().unwrap().finish();
     }
 
+    fn process_deferred_update_messages(&mut self) -> ChangeFlags {
+        let mut flags = ChangeFlags::empty();
+
+        let msgs = DEFERRED_UPDATE_MESSAGES.with(|msgs| msgs.take());
+        if msgs.is_empty() {
+            return flags;
+        }
+
+        let mut cx = UpdateCx {
+            app_state: &mut self.app_state,
+        };
+        for (id, state) in msgs {
+            let id_path = IDPATHS.with(|paths| paths.borrow().get(&id).cloned());
+            if let Some(id_path) = id_path {
+                flags |= self.view.update_main(&mut cx, &id_path.0, state);
+            }
+        }
+
+        flags
+    }
+
     fn process_update_messages(&mut self) -> ChangeFlags {
         let mut flags = ChangeFlags::empty();
         loop {
@@ -250,15 +276,20 @@ impl<V: View> App<V> {
         self.app_state.view_state(self.view.id()).request_layout
     }
 
+    fn has_deferred_update_messages(&self) -> bool {
+        DEFERRED_UPDATE_MESSAGES.with(|m| !m.borrow().is_empty())
+    }
+
     pub fn process_update(&mut self) -> ChangeFlags {
         let mut flags = ChangeFlags::empty();
         loop {
             flags |= self.process_update_messages();
-            if !self.needs_layout() {
+            if !self.needs_layout() && !self.has_deferred_update_messages() {
                 break;
             }
             flags |= ChangeFlags::LAYOUT;
             self.layout();
+            flags |= self.process_deferred_update_messages();
         }
 
         if !flags.is_empty() {

@@ -81,7 +81,7 @@ impl<V: View> Scroll<V> {
         let id = self.id;
         create_effect(cx.scope, move |_| {
             let rect = to();
-            AppContext::update_state(id, ScrollState::EnsureVisble(rect));
+            AppContext::update_state(id, ScrollState::EnsureVisble(rect), true);
         });
 
         self
@@ -91,7 +91,7 @@ impl<V: View> Scroll<V> {
         let id = self.id;
         create_effect(cx.scope, move |_| {
             let delta = delta();
-            AppContext::update_state(id, ScrollState::ScrollDelta(delta));
+            AppContext::update_state(id, ScrollState::ScrollDelta(delta), false);
         });
 
         self
@@ -105,7 +105,7 @@ impl<V: View> Scroll<V> {
         let id = self.id;
         create_effect(cx.scope, move |_| {
             if let Some(origin) = origin() {
-                AppContext::update_state(id, ScrollState::ScrollTo(origin));
+                AppContext::update_state(id, ScrollState::ScrollTo(origin), true);
             }
         });
 
@@ -183,6 +183,16 @@ impl<V: View> Scroll<V> {
         self.clamp_child_viewport(app_state, self.child_viewport.with_origin(new_origin));
     }
 
+    fn update_size(&mut self, app_state: &mut AppState) {
+        let child_size = self.child_size;
+        let new_child_size = self.child_size(app_state).unwrap_or_default();
+        self.child_size = new_child_size;
+        self.size = self.size(app_state).unwrap_or_default();
+        if child_size != new_child_size {
+            app_state.request_layout(self.id);
+        }
+    }
+
     fn clamp_child_viewport(
         &mut self,
         app_state: &mut AppState,
@@ -190,6 +200,7 @@ impl<V: View> Scroll<V> {
     ) -> Option<()> {
         let size = self.size;
         let child_size = self.child_size;
+
         let mut child_viewport = child_viewport;
         if size.width >= child_size.width {
             child_viewport.x0 = 0.0;
@@ -427,15 +438,8 @@ impl<V: View> View for Scroll<V> {
     }
 
     fn compute_layout(&mut self, cx: &mut LayoutCx) {
-        let child_size = self.child_size;
-        let new_child_size = self.child_size(cx.app_state).unwrap_or_default();
-        self.child_size = new_child_size;
-        self.size = self.size(cx.app_state).unwrap_or_default();
+        self.update_size(cx.app_state);
         self.clamp_child_viewport(cx.app_state, self.child_viewport);
-        if child_size != new_child_size {
-            cx.app_state.request_layout(self.id);
-        }
-
         self.child.compute_layout_main(cx);
     }
 
