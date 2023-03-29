@@ -184,27 +184,30 @@ pub trait View {
 
         cx.save();
         let size = cx.transform(id);
-        if let Some(style) = style.as_ref() {
-            paint_bg(cx, style, size);
-            if style.color.is_some() {
-                cx.color = style.color;
+        let is_empty = cx.viewport.map(|v| v.is_empty()).unwrap_or(false);
+        if !is_empty {
+            if let Some(style) = style.as_ref() {
+                paint_bg(cx, style, size);
+                if style.color.is_some() {
+                    cx.color = style.color;
+                }
+                if style.font_size.is_some() {
+                    cx.font_size = style.font_size;
+                }
+                if style.font_family.is_some() {
+                    cx.font_family = style.font_family.clone();
+                }
+                if style.font_weight.is_some() {
+                    cx.font_weight = style.font_weight;
+                }
+                if style.font_style.is_some() {
+                    cx.font_style = style.font_style;
+                }
             }
-            if style.font_size.is_some() {
-                cx.font_size = style.font_size;
+            self.paint(cx);
+            if let Some(style) = style.as_ref() {
+                paint_border(cx, style, size);
             }
-            if style.font_family.is_some() {
-                cx.font_family = style.font_family.clone();
-            }
-            if style.font_weight.is_some() {
-                cx.font_weight = style.font_weight;
-            }
-            if style.font_style.is_some() {
-                cx.font_style = style.font_style;
-            }
-        }
-        self.paint(cx);
-        if let Some(style) = style.as_ref() {
-            paint_border(cx, style, size);
         }
         cx.restore();
     }

@@ -458,23 +458,12 @@ impl<'a> PaintCx<'a> {
                 .get(&id)
                 .and_then(|view| view.viewport);
             let size = Size::new(layout.size.width as f64, layout.size.height as f64);
-            match (parent_viewport, viewport) {
-                (Some(parent_viewport), Some(viewport)) => {
-                    self.viewport = Some(
-                        parent_viewport
-                            .intersect(viewport)
-                            .intersect(size.to_rect()),
-                    );
-                }
-                (Some(parent_viewport), None) => {
-                    self.viewport = Some(parent_viewport.intersect(size.to_rect()));
-                }
-                (None, Some(viewport)) => {
-                    self.viewport = Some(viewport.intersect(size.to_rect()));
-                }
-                (None, None) => {
-                    self.viewport = None;
-                }
+            if let Some(viewport) = viewport {
+                self.viewport = Some(viewport);
+            } else if let Some(parent_viewport) = parent_viewport {
+                self.viewport = Some(parent_viewport.intersect(size.to_rect()));
+            } else {
+                self.viewport = Some(size.to_rect());
             }
             let renderer = self.paint_state.new_renderer.as_mut().unwrap();
             match self.viewport.as_ref() {
