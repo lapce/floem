@@ -8,7 +8,7 @@ use floem_renderer::{
     Renderer as FloemRenderer,
 };
 use glazier::{
-    kurbo::{Affine, Point, Rect, Size},
+    kurbo::{Affine, Point, Rect, Shape, Size, Vec2},
     Scalable, Scale,
 };
 use taffy::{
@@ -86,12 +86,14 @@ pub struct AppState {
 
 impl AppState {
     pub fn new() -> Self {
+        let mut taffy = taffy::Taffy::new();
+        taffy.disable_rounding();
         Self {
             root: None,
             focus: None,
             active: None,
             root_size: Size::ZERO,
-            taffy: taffy::Taffy::new(),
+            taffy,
             view_states: HashMap::new(),
         }
     }
@@ -356,14 +358,14 @@ pub struct PaintCx<'a> {
     pub(crate) app_state: &'a mut AppState,
     pub(crate) paint_state: &'a mut PaintState,
     pub(crate) transform: Affine,
-    pub(crate) viewport: Option<Rect>,
+    pub(crate) clip: Option<Rect>,
     pub(crate) color: Option<Color>,
     pub(crate) font_size: Option<f32>,
     pub(crate) font_family: Option<String>,
     pub(crate) font_weight: Option<Weight>,
     pub(crate) font_style: Option<FontStyle>,
     pub(crate) saved_transforms: Vec<Affine>,
-    pub(crate) saved_viewports: Vec<Option<Rect>>,
+    pub(crate) saved_clips: Vec<Option<Rect>>,
     pub(crate) saved_colors: Vec<Option<Color>>,
     pub(crate) saved_font_sizes: Vec<Option<f32>>,
     pub(crate) saved_font_families: Vec<Option<String>>,
@@ -374,7 +376,7 @@ pub struct PaintCx<'a> {
 impl<'a> PaintCx<'a> {
     pub fn save(&mut self) {
         self.saved_transforms.push(self.transform);
-        self.saved_viewports.push(self.viewport);
+        self.saved_clips.push(self.clip);
         self.saved_colors.push(self.color);
         self.saved_font_sizes.push(self.font_size);
         self.saved_font_families.push(self.font_family.clone());
@@ -384,17 +386,19 @@ impl<'a> PaintCx<'a> {
 
     pub fn restore(&mut self) {
         self.transform = self.saved_transforms.pop().unwrap_or_default();
-        self.viewport = self.saved_viewports.pop().unwrap_or_default();
+        self.clip = self.saved_clips.pop().unwrap_or_default();
         self.color = self.saved_colors.pop().unwrap_or_default();
         self.font_size = self.saved_font_sizes.pop().unwrap_or_default();
         self.font_family = self.saved_font_families.pop().unwrap_or_default();
         self.font_weight = self.saved_font_weights.pop().unwrap_or_default();
         self.font_style = self.saved_font_styles.pop().unwrap_or_default();
-        self.paint_state
-            .new_renderer
-            .as_mut()
-            .unwrap()
-            .transform(self.transform);
+        let renderer = self.paint_state.new_renderer.as_mut().unwrap();
+        renderer.transform(self.transform);
+        if let Some(rect) = self.clip {
+            renderer.clip(&rect);
+        } else {
+            renderer.clear_clip();
+        }
     }
 
     pub fn current_color(&self) -> Option<Color> {
@@ -421,6 +425,12 @@ impl<'a> PaintCx<'a> {
         self.app_state.view_states.get(&id).map(|s| &s.style)
     }
 
+    pub fn clip(&mut self, shape: &impl Shape) {
+        let rect = shape.bounding_box();
+        self.clip = Some(rect);
+        self.paint_state.new_renderer.as_mut().unwrap().clip(&rect);
+    }
+
     pub fn offset(&mut self, offset: (f64, f64)) {
         let mut new = self.transform.as_coeffs();
         new[4] += offset.0;
@@ -431,6 +441,9 @@ impl<'a> PaintCx<'a> {
             .as_mut()
             .unwrap()
             .transform(self.transform);
+        if let Some(rect) = self.clip.as_mut() {
+            *rect = rect.with_origin(rect.origin() - Vec2::new(offset.0, offset.1));
+        }
     }
 
     pub fn transform(&mut self, id: Id) -> Size {
@@ -446,33 +459,9 @@ impl<'a> PaintCx<'a> {
                 .unwrap()
                 .transform(self.transform);
 
-            let parent_viewport = self.viewport.map(|rect| {
-                rect.with_origin(Point::new(
-                    rect.x0 - offset.x as f64,
-                    rect.y0 - offset.y as f64,
-                ))
-            });
-            let viewport = self
-                .app_state
-                .view_states
-                .get(&id)
-                .and_then(|view| view.viewport);
-            let size = Size::new(layout.size.width as f64, layout.size.height as f64);
-            if let Some(viewport) = viewport {
-                self.viewport = Some(viewport);
-            } else if let Some(parent_viewport) = parent_viewport {
-                self.viewport = Some(parent_viewport.intersect(size.to_rect()));
-            } else {
-                self.viewport = Some(size.to_rect());
-            }
-            let renderer = self.paint_state.new_renderer.as_mut().unwrap();
-            match self.viewport.as_ref() {
-                Some(rect) => {
-                    renderer.clip(rect);
-                }
-                None => {
-                    renderer.clear_clip();
-                }
+            if let Some(rect) = self.clip.as_mut() {
+                *rect =
+                    rect.with_origin(rect.origin() - Vec2::new(offset.x as f64, offset.y as f64));
             }
 
             Size::new(layout.size.width as f64, layout.size.height as f64)
@@ -480,104 +469,6 @@ impl<'a> PaintCx<'a> {
             Size::ZERO
         }
     }
-
-    // pub fn stroke<'b>(
-    //     &mut self,
-    //     path: &impl Shape,
-    //     brush: impl Into<BrushRef<'b>>,
-    //     stroke_width: f64,
-    // ) {
-    //     self.builder.stroke(
-    //         &Stroke::new(stroke_width as f32),
-    //         self.transform,
-    //         brush,
-    //         None,
-    //         path,
-    //     )
-    // }
-
-    // pub fn fill<'b>(&mut self, path: &impl Shape, brush: impl Into<BrushRef<'b>>) {
-    //     self.builder
-    //         .fill(Fill::NonZero, self.transform, brush, None, path)
-    // }
-
-    // pub fn render_text(&mut self, layout: &parley::Layout<ParleyBrush>, point: Point) {
-    //     let transform = self.transform * Affine::translate((point.x, point.y));
-    //     let viewport = self.viewport;
-    //     for line in layout.lines() {
-    //         if let Some(rect) = viewport {
-    //             let metrics = line.metrics();
-    //             let y = point.y + metrics.baseline as f64;
-    //             if y + (metrics.descent as f64) < rect.y0 {
-    //                 continue;
-    //             }
-    //             if y - ((metrics.ascent + metrics.leading) as f64) > rect.y1 {
-    //                 break;
-    //             }
-    //         }
-    //         'line_loop: for glyph_run in line.glyph_runs() {
-    //             let mut x = glyph_run.offset();
-    //             let y = glyph_run.baseline();
-    //             let run = glyph_run.run();
-    //             let font = run.font().as_ref();
-    //             let font_size = run.font_size();
-    //             let font_ref = FontRef {
-    //                 data: font.data,
-    //                 offset: font.offset,
-    //             };
-    //             let style = glyph_run.style();
-    //             let vars: [(Tag, f32); 0] = [];
-
-    //             let color = match style.brush.0 {
-    //                 vello::peniko::Brush::Solid(color) => color,
-    //                 _ => Color::WHITE,
-    //             };
-
-    //             for glyph in glyph_run.glyphs() {
-    //                 let fragment = if let Some(fragment) =
-    //                     self.paint_state
-    //                         .get_glyph(font.key.value(), glyph.id, color)
-    //                 {
-    //                     fragment
-    //                 } else {
-    //                     let mut gp = self.paint_state.glyph_contex.new_provider(
-    //                         &font_ref,
-    //                         Some(font.key.value()),
-    //                         font_size,
-    //                         false,
-    //                         vars,
-    //                     );
-    //                     let fragment = gp.get(glyph.id, Some(&style.brush.0));
-    //                     self.paint_state
-    //                         .insert_glyph(font.key.value(), glyph.id, color, fragment);
-    //                     self.paint_state
-    //                         .get_glyph(font.key.value(), glyph.id, color)
-    //                         .unwrap()
-    //                 };
-
-    //                 if let Some(fragment) = fragment {
-    //                     let gx = x + glyph.x;
-    //                     let gy = y - glyph.y;
-    //                     let xform = Affine::translate((gx as f64, gy as f64))
-    //                         * Affine::scale_non_uniform(1.0, -1.0);
-    //                     if let Some(rect) = viewport {
-    //                         let xform = Affine::translate((point.x, point.y)) * xform;
-    //                         let xform = xform.as_coeffs();
-    //                         let cx = xform[4];
-    //                         if cx + (glyph.advance as f64) < rect.x0 {
-    //                             x += glyph.advance;
-    //                             continue;
-    //                         } else if cx > rect.x1 {
-    //                             break 'line_loop;
-    //                         }
-    //                     }
-    //                     self.builder.append(&fragment, Some(transform * xform));
-    //                 }
-    //                 x += glyph.advance;
-    //             }
-    //         }
-    //     }
-    // }
 }
 
 pub struct PaintState {

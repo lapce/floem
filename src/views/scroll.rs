@@ -527,6 +527,11 @@ impl<V: View> View for Scroll<V> {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         cx.save();
+        let size = cx
+            .get_layout(self.id)
+            .map(|layout| Size::new(layout.size.width as f64, layout.size.height as f64))
+            .unwrap_or_default();
+        cx.clip(&size.to_rect());
         cx.offset((-self.child_viewport.x0, -self.child_viewport.y0));
         self.child.paint_main(cx);
         cx.restore();

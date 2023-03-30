@@ -51,45 +51,7 @@ pub struct Style {
 
 impl Default for Style {
     fn default() -> Self {
-        Self {
-            display: Display::Flex,
-            position: Position::Relative,
-            width: Dimension::Auto,
-            height: Dimension::Auto,
-            min_width: Dimension::Auto,
-            min_height: Dimension::Auto,
-            max_width: Dimension::Auto,
-            max_height: Dimension::Auto,
-            flex_direction: FlexDirection::default(),
-            flex_grow: 0.0,
-            flex_shrink: 1.0,
-            flex_basis: Dimension::Auto,
-            justify_content: None,
-            align_items: None,
-            align_content: None,
-            border: 0.0,
-            border_left: 0.0,
-            border_top: 0.0,
-            border_right: 0.0,
-            border_bottom: 0.0,
-            border_radius: 0.0,
-            padding: 0.0,
-            padding_left: 0.0,
-            padding_top: 0.0,
-            padding_right: 0.0,
-            padding_bottom: 0.0,
-            margin: None,
-            margin_left: None,
-            margin_top: None,
-            margin_right: None,
-            margin_bottom: None,
-            color: None,
-            background: None,
-            font_size: None,
-            font_family: None,
-            font_weight: None,
-            font_style: None,
-        }
+        Self::BASE
     }
 }
 
@@ -193,5 +155,217 @@ impl From<&Style> for TaffyStyle {
             },
             ..Default::default()
         }
+    }
+}
+
+impl Style {
+    pub const BASE: Style = Style {
+        display: Display::Flex,
+        position: Position::Relative,
+        width: Dimension::Auto,
+        height: Dimension::Auto,
+        min_width: Dimension::Auto,
+        min_height: Dimension::Auto,
+        max_width: Dimension::Auto,
+        max_height: Dimension::Auto,
+        flex_direction: FlexDirection::Row,
+        flex_grow: 0.0,
+        flex_shrink: 1.0,
+        flex_basis: Dimension::Auto,
+        justify_content: None,
+        align_items: None,
+        align_content: None,
+        border: 0.0,
+        border_left: 0.0,
+        border_top: 0.0,
+        border_right: 0.0,
+        border_bottom: 0.0,
+        border_radius: 0.0,
+        padding: 0.0,
+        padding_left: 0.0,
+        padding_top: 0.0,
+        padding_right: 0.0,
+        padding_bottom: 0.0,
+        margin: None,
+        margin_left: None,
+        margin_top: None,
+        margin_right: None,
+        margin_bottom: None,
+        color: None,
+        background: None,
+        font_size: None,
+        font_family: None,
+        font_weight: None,
+        font_style: None,
+    };
+
+    pub fn width(mut self, points: f32) -> Self {
+        self.width = Dimension::Points(points);
+        self
+    }
+
+    pub fn width_p(mut self, percent: f32) -> Self {
+        self.width = Dimension::Percent(percent);
+        self
+    }
+
+    pub fn min_width(mut self, points: f32) -> Self {
+        self.min_width = Dimension::Points(points);
+        self
+    }
+
+    pub fn min_width_p(mut self, percent: f32) -> Self {
+        self.min_width = Dimension::Percent(percent);
+        self
+    }
+
+    pub fn max_width(mut self, points: f32) -> Self {
+        self.max_width = Dimension::Points(points);
+        self
+    }
+
+    pub fn max_width_p(mut self, percent: f32) -> Self {
+        self.max_width = Dimension::Percent(percent);
+        self
+    }
+
+    pub fn height(mut self, points: f32) -> Self {
+        self.height = Dimension::Points(points);
+        self
+    }
+
+    pub fn height_p(mut self, percent: f32) -> Self {
+        self.height = Dimension::Percent(percent);
+        self
+    }
+
+    pub fn min_height(mut self, points: f32) -> Self {
+        self.min_height = Dimension::Points(points);
+        self
+    }
+
+    pub fn min_height_p(mut self, percent: f32) -> Self {
+        self.min_height = Dimension::Percent(percent);
+        self
+    }
+
+    pub fn max_height(mut self, points: f32) -> Self {
+        self.max_height = Dimension::Points(points);
+        self
+    }
+
+    pub fn max_height_p(mut self, percent: f32) -> Self {
+        self.max_height = Dimension::Percent(percent);
+        self
+    }
+
+    pub fn display(mut self, display: Display) -> Self {
+        self.display = display;
+        self
+    }
+
+    pub fn background(mut self, background: Color) -> Self {
+        self.background = Some(background);
+        self
+    }
+
+    pub fn color(mut self, color: Color) -> Self {
+        self.color = Some(color);
+        self
+    }
+
+    pub fn margin_left(mut self, points: f32) -> Self {
+        self.margin_left = Some(points);
+        self
+    }
+
+    pub fn margin_right(mut self, points: f32) -> Self {
+        self.margin_right = Some(points);
+        self
+    }
+
+    pub fn margin_top(mut self, points: f32) -> Self {
+        self.margin_top = Some(points);
+        self
+    }
+
+    pub fn margin_bottom(mut self, points: f32) -> Self {
+        self.margin_bottom = Some(points);
+        self
+    }
+
+    pub fn padding(mut self, points: f32) -> Self {
+        self.padding = points;
+        self
+    }
+
+    pub fn padding_left(mut self, points: f32) -> Self {
+        self.padding_left = points;
+        self
+    }
+
+    pub fn padding_right(mut self, points: f32) -> Self {
+        self.padding_right = points;
+        self
+    }
+
+    pub fn padding_top(mut self, points: f32) -> Self {
+        self.padding_top = points;
+        self
+    }
+
+    pub fn padding_bottom(mut self, points: f32) -> Self {
+        self.padding_bottom = points;
+        self
+    }
+
+    pub fn border(mut self, points: f32) -> Self {
+        self.border = points;
+        self
+    }
+
+    pub fn border_left(mut self, points: f32) -> Self {
+        self.border_left = points;
+        self
+    }
+
+    pub fn border_right(mut self, points: f32) -> Self {
+        self.border_right = points;
+        self
+    }
+
+    pub fn border_top(mut self, points: f32) -> Self {
+        self.border_top = points;
+        self
+    }
+
+    pub fn border_bottom(mut self, points: f32) -> Self {
+        self.border_bottom = points;
+        self
+    }
+
+    pub fn items_center(mut self) -> Self {
+        self.align_items = Some(AlignItems::Center);
+        self
+    }
+
+    pub fn justify_center(mut self) -> Self {
+        self.justify_content = Some(JustifyContent::Center);
+        self
+    }
+
+    pub fn flex_grow(mut self, points: f32) -> Self {
+        self.flex_grow = points;
+        self
+    }
+
+    pub fn flex_col(mut self) -> Self {
+        self.flex_direction = FlexDirection::Column;
+        self
+    }
+
+    pub fn absolute(mut self) -> Self {
+        self.position = Position::Absolute;
+        self
     }
 }

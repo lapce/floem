@@ -184,7 +184,10 @@ pub trait View {
 
         cx.save();
         let size = cx.transform(id);
-        let is_empty = cx.viewport.map(|v| v.is_empty()).unwrap_or(false);
+        let is_empty = cx
+            .clip
+            .map(|rect| rect.intersect(size.to_rect()).is_empty())
+            .unwrap_or(false);
         if !is_empty {
             if let Some(style) = style.as_ref() {
                 paint_bg(cx, style, size);

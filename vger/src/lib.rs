@@ -119,7 +119,10 @@ impl VgerRenderer {
     fn vger_point(&self, point: Point) -> vger::defs::LocalPoint {
         let coeffs = self.transform.as_coeffs();
         let point = point + Vec2::new(coeffs[4], coeffs[5]);
-        vger::defs::LocalPoint::new((point.x * self.scale) as f32, (point.y * self.scale) as f32)
+        vger::defs::LocalPoint::new(
+            (point.x * self.scale).round() as f32,
+            (point.y * self.scale).round() as f32,
+        )
     }
 
     fn vger_rect(&self, rect: Rect) -> vger::defs::LocalRect {
@@ -130,8 +133,8 @@ impl VgerRenderer {
 
     fn vger_size(&self, size: Size) -> vger::defs::LocalSize {
         vger::defs::LocalSize::new(
-            (size.width * self.scale) as f32,
-            (size.height * self.scale) as f32,
+            (size.width * self.scale).round() as f32,
+            (size.height * self.scale).round() as f32,
         )
     }
 }
@@ -151,6 +154,7 @@ impl Renderer for VgerRenderer {
             Some(paint) => paint,
             None => return,
         };
+        let width = (width * self.scale).round() as f32;
         if let Some(rect) = shape.as_rect() {
             let min = rect.origin();
             let max = min + rect.size().to_vec2();
@@ -158,7 +162,7 @@ impl Renderer for VgerRenderer {
                 self.vger_point(min),
                 self.vger_point(max),
                 0.0,
-                (width * self.scale) as f32,
+                width,
                 paint,
             );
         } else if let Some(rect) = shape.as_rounded_rect() {
@@ -169,14 +173,14 @@ impl Renderer for VgerRenderer {
                 self.vger_point(min),
                 self.vger_point(max),
                 radius,
-                (width * self.scale) as f32,
+                width,
                 paint,
             );
         } else if let Some(line) = shape.as_line() {
             self.vger.stroke_segment(
                 self.vger_point(line.p0),
                 self.vger_point(line.p1),
-                (width * self.scale) as f32,
+                width,
                 paint,
             );
         }
@@ -304,13 +308,16 @@ impl Renderer for VgerRenderer {
     }
 
     fn clip(&mut self, shape: &impl Shape) {
+        let rect = shape.bounding_box();
+        self.vger.scissor(self.vger_rect(rect));
+
         let transform = self.transform.as_coeffs();
         let offset = Vec2::new(transform[4], transform[5]);
-        let rect = shape.bounding_box() + offset;
-        self.clip = Some(rect);
+        self.clip = Some(rect + offset);
     }
 
     fn clear_clip(&mut self) {
+        self.vger.reset_scissor();
         self.clip = None;
     }
 

@@ -16,6 +16,9 @@ pub use list::*;
 mod svg;
 pub use svg::*;
 
+mod clip;
+pub use clip::*;
+
 mod container;
 pub use container::*;
 

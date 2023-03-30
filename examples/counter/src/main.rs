@@ -85,31 +85,31 @@ fn app_logic(cx: AppContext) -> impl View {
             //     background: Some(Color::WHITE),
             //     ..Default::default()
             // }),
-            scroll(cx, move |cx| {
-                virtual_list(
-                    cx,
-                    VirtualListDirection::Vertical,
-                    move || value.get(),
-                    move |item| item.clone(),
-                    move |cx, item| {
-                        label(cx, move || format!("{item} {}", couter.get())).style(cx, || Style {
-                            height: Dimension::Points(20.0),
-                            ..Default::default()
-                        })
-                    },
-                    VirtualListItemSize::Fixed(20.0),
-                )
-                .style(cx, || Style {
-                    flex_direction: FlexDirection::Column,
-                    ..Default::default()
-                })
-            })
-            .style(cx, || Style {
-                width: Dimension::Points(100.0),
-                flex_grow: 1.0,
-                border: 1.0,
-                ..Default::default()
-            }),
+            // scroll(cx, move |cx| {
+            //     virtual_list(
+            //         cx,
+            //         VirtualListDirection::Vertical,
+            //         move || value.get(),
+            //         move |item| item.clone(),
+            //         move |cx, item| {
+            //             label(cx, move || format!("{item} {}", couter.get())).style(cx, || Style {
+            //                 height: Dimension::Points(20.0),
+            //                 ..Default::default()
+            //             })
+            //         },
+            //         VirtualListItemSize::Fixed(20.0),
+            //     )
+            //     .style(cx, || Style {
+            //         flex_direction: FlexDirection::Column,
+            //         ..Default::default()
+            //     })
+            // })
+            // .style(cx, || Style {
+            //     width: Dimension::Points(100.0),
+            //     flex_grow: 1.0,
+            //     border: 1.0,
+            //     ..Default::default()
+            // }),
             scroll(cx, |cx| {
                 list(
                     cx,
@@ -131,6 +131,7 @@ fn app_logic(cx: AppContext) -> impl View {
             })
             .style(cx, || Style {
                 height: Dimension::Points(30.0),
+                border: 1.0,
                 ..Default::default()
             }),
             stack(cx, move |cx| {
