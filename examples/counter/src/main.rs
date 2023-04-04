@@ -4,7 +4,7 @@ use floem::{
     peniko::Color,
     reactive::{create_signal, SignalGet, SignalUpdate},
     stack::stack,
-    style::{AlignItems, Dimension, FlexDirection, Position, Style},
+    style::{AlignItems, Dimension, FlexDirection, Style},
     view::View,
     views::Decorators,
     views::{click, label, rich_text, scroll, VirtualListDirection, VirtualListItemSize},
@@ -49,17 +49,11 @@ fn app_logic(cx: AppContext) -> impl View {
             //     background: Some(Color::GREEN),
             //     ..Default::default()
             // }),
-            rich_text(cx, move || text_layout.clone()).style(cx, || Style {
-                margin_top: Some(50.0),
-                margin_bottom: Some(50.0),
-                background: Some(Color::GRAY),
-                ..Default::default()
+            rich_text(cx, move || text_layout.clone()).style(cx, || {
+                Style::default().margin_vert(50.0).background(Color::GRAY)
             }),
-            label(cx, move || "Hi Test Test".to_string()).style(cx, || Style {
-                margin_top: Some(50.0),
-                margin_bottom: Some(50.0),
-                background: Some(Color::GRAY),
-                ..Default::default()
+            label(cx, move || "Hi Test Test".to_string()).style(cx, || {
+                Style::default().margin_vert(50.0).background(Color::GRAY)
             }),
             // label(cx, || "".to_string()).style(cx, || Style {
             //     position: Position::Absolute,
@@ -92,23 +86,20 @@ fn app_logic(cx: AppContext) -> impl View {
             //         move || value.get(),
             //         move |item| item.clone(),
             //         move |cx, item| {
-            //             label(cx, move || format!("{item} {}", couter.get())).style(cx, || Style {
-            //                 height: Dimension::Points(20.0),
-            //                 ..Default::default()
-            //             })
+            //             label(cx, move || format!("{item} {}", couter.get()))
+            //                 .style(cx, || Style::default().height(Dimension::Points(20.0)))
             //         },
             //         VirtualListItemSize::Fixed(20.0),
             //     )
-            //     .style(cx, || Style {
-            //         flex_direction: FlexDirection::Column,
-            //         ..Default::default()
+            //     .style(cx, || {
+            //         Style::default().flex_direction(FlexDirection::Column)
             //     })
             // })
-            // .style(cx, || Style {
-            //     width: Dimension::Points(100.0),
-            //     flex_grow: 1.0,
-            //     border: 1.0,
-            //     ..Default::default()
+            // .style(cx, || {
+            //     Style::default()
+            //         .width(Dimension::Points(100.0))
+            //         .flex_grow(1.0)
+            //         .border(1.0)
             // }),
             scroll(cx, |cx| {
                 list(
@@ -116,23 +107,17 @@ fn app_logic(cx: AppContext) -> impl View {
                     move || labels.get(),
                     move |item| item.get(),
                     move |cx, item| {
-                        label(cx, move || item.get()).style(cx, || Style {
-                            width: Dimension::Points(50.0),
-                            height: Dimension::Points(30.0),
-                            border: 1.0,
-                            ..Default::default()
+                        label(cx, move || item.get()).style(cx, || {
+                            Style::default().width_pt(50.0).height_pt(30.0).border(1.0)
                         })
                     },
                 )
-                .style(cx, || Style {
-                    flex_direction: FlexDirection::Column,
-                    ..Default::default()
+                .style(cx, || {
+                    Style::default().flex_direction(FlexDirection::Column)
                 })
             })
-            .style(cx, || Style {
-                height: Dimension::Points(30.0),
-                border: 1.0,
-                ..Default::default()
+            .style(cx, || {
+                Style::default().height(Dimension::Points(30.0)).border(1.0)
             }),
             stack(cx, move |cx| {
                 (
@@ -144,11 +129,8 @@ fn app_logic(cx: AppContext) -> impl View {
                             set_counter.update(|counter| *counter += 1);
                         },
                     )
-                    .style(cx, || Style {
-                        width: Dimension::Points(50.0),
-                        height: Dimension::Points(20.0),
-                        border: 1.0,
-                        ..Default::default()
+                    .style(cx, || {
+                        Style::default().width_pt(50.0).height_pt(20.0).border(1.0)
                     }),
                 )
             }),
@@ -160,17 +142,17 @@ fn app_logic(cx: AppContext) -> impl View {
                     set_counter.update(|counter| *counter += 1);
                 },
             )
-            .style(cx, || Style {
-                width: Dimension::Auto,
-                height: Dimension::Auto,
-                border: 1.0,
-                ..Default::default()
+            .style(cx, || {
+                Style::default()
+                    .width(Dimension::Auto)
+                    .height(Dimension::Auto)
+                    .border(1.0)
             }),
-            label(cx, move || "seprate\nseprate\nseprate\n".to_string()).style(cx, || Style {
-                background: Some(Color::rgb8(180, 0, 0)),
-                border: 2.0,
-                border_radius: 10.0,
-                ..Default::default()
+            label(cx, move || "seprate\nseprate\nseprate\n".to_string()).style(cx, || {
+                Style::default()
+                    .background(Color::rgb8(180, 0, 0))
+                    .border(2.0)
+                    .border_radius(10.0)
             }),
             click(
                 cx,
@@ -179,12 +161,12 @@ fn app_logic(cx: AppContext) -> impl View {
                     set_counter.update(|counter| *counter += 1);
                 },
             )
-            .style(cx, || Style {
-                width: Dimension::Auto,
-                height: Dimension::Auto,
-                border: 1.0,
-                flex_grow: 2.0,
-                ..Default::default()
+            .style(cx, || {
+                Style::default()
+                    .width(Dimension::Auto)
+                    .height(Dimension::Auto)
+                    .border(1.0)
+                    .flex_grow(2.0)
             }),
             label(cx, move || couter.get().to_string()),
             stack(cx, move |cx| {
@@ -199,22 +181,19 @@ fn app_logic(cx: AppContext) -> impl View {
                             set_counter.update(|counter| *counter += 1);
                         },
                     )
-                    .style(cx, || Style {
-                        border: 1.0,
-                        ..Default::default()
-                    }),
+                    .style(cx, || Style::default().border(1.0)),
                     label(cx, move || couter.get().to_string()),
                 )
             }),
         )
     })
-    .style(cx, || Style {
-        width: Dimension::Percent(1.0),
-        height: Dimension::Percent(1.0),
-        flex_direction: FlexDirection::Column,
-        align_items: Some(AlignItems::Center),
-        font_family: Some("DejaVu Sans Mono".to_string()),
-        ..Default::default()
+    .style(cx, || {
+        Style::default()
+            .width_perc(1.0)
+            .height_perc(1.0)
+            .flex_direction(FlexDirection::Column)
+            .align_items(Some(AlignItems::Center))
+            .font_family("DejaVu Sans Mono".to_string())
     })
 }
 

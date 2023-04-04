@@ -2,7 +2,7 @@ use std::any::Any;
 
 use bitflags::bitflags;
 use floem_renderer::Renderer;
-use glazier::kurbo::{Line, Point, RoundedRect, Shape, Size};
+use glazier::kurbo::{Line, Point, Size};
 use taffy::{prelude::Node, style::Display};
 use vello::peniko::Color;
 
@@ -10,7 +10,7 @@ use crate::{
     context::{EventCx, LayoutCx, PaintCx, UpdateCx},
     event::Event,
     id::Id,
-    style::Style,
+    style::ReifiedStyle,
 };
 
 bitflags! {
@@ -26,6 +26,10 @@ bitflags! {
 
 pub trait View {
     fn id(&self) -> Id;
+
+    fn view_style(&self) -> Option<ReifiedStyle> {
+        None
+    }
 
     fn child(&mut self, id: Id) -> Option<&mut dyn View>;
 
@@ -52,7 +56,9 @@ pub trait View {
     fn layout_main(&mut self, cx: &mut LayoutCx) -> Node {
         cx.save();
 
-        let style = cx.get_style(self.id()).cloned();
+        // TODO: We only need to get the view style if the cached reified style is None.
+        let view_style = self.view_style().unwrap_or_default();
+        let style = cx.get_reified_style(&view_style, self.id()).cloned();
         if let Some(style) = style {
             if style.font_size.is_some() {
                 cx.font_size = style.font_size;
@@ -173,7 +179,8 @@ pub trait View {
 
     fn paint_main(&mut self, cx: &mut PaintCx) {
         let id = self.id();
-        let style = cx.get_style(id).cloned();
+        let view_style = self.view_style().unwrap_or_default();
+        let style = cx.get_reified_style(&view_style, id).cloned();
         if style
             .as_ref()
             .map(|s| s.display == Display::None)
@@ -191,6 +198,7 @@ pub trait View {
         if !is_empty {
             if let Some(style) = style.as_ref() {
                 paint_bg(cx, style, size);
+
                 if style.color.is_some() {
                     cx.color = style.color;
                 }
@@ -218,7 +226,7 @@ pub trait View {
     fn paint(&mut self, cx: &mut PaintCx);
 }
 
-fn paint_bg(cx: &mut PaintCx, style: &Style, size: Size) {
+fn paint_bg(cx: &mut PaintCx, style: &ReifiedStyle, size: Size) {
     let bg = match style.background {
         Some(color) => color,
         None => return,
@@ -233,27 +241,11 @@ fn paint_bg(cx: &mut PaintCx, style: &Style, size: Size) {
     }
 }
 
-fn paint_border(cx: &mut PaintCx, style: &Style, size: Size) {
-    let left = if style.border_left > 0.0 {
-        style.border_left
-    } else {
-        style.border
-    };
-    let top = if style.border_top > 0.0 {
-        style.border_top
-    } else {
-        style.border
-    };
-    let right = if style.border_right > 0.0 {
-        style.border_right
-    } else {
-        style.border
-    };
-    let bottom = if style.border_bottom > 0.0 {
-        style.border_bottom
-    } else {
-        style.border
-    };
+fn paint_border(cx: &mut PaintCx, style: &ReifiedStyle, size: Size) {
+    let left = style.border_left;
+    let top = style.border_top;
+    let right = style.border_right;
+    let bottom = style.border_bottom;
 
     let border_color = Color::rgb8(0xa1, 0xa1, 0xa1);
     if left == top && top == right && right == bottom && bottom == left && left > 0.0 {

@@ -12,7 +12,7 @@ use crate::{
     context::{AppState, LayoutCx, PaintCx},
     event::Event,
     id::Id,
-    style::Style,
+    style::{Override, ReifiedStyle, Style},
     view::{ChangeFlags, View},
 };
 
@@ -414,18 +414,21 @@ impl<V: View> View for Scroll<V> {
         cx.layout_node(self.id, true, |cx| {
             let child_id = self.child.id();
             let mut child_view = cx.app_state.view_state(child_id);
-            child_view.style.position = Position::Absolute;
+            child_view.style.position = Override::Val(Position::Absolute);
+            // Update the reified style
+            child_view.reified_style = None;
+            let child_view_style = self.child.view_style().unwrap_or_default();
+            child_view.fill_reified_style(&child_view_style);
 
             let child_node = self.child.layout_main(cx);
 
-            let virtual_style: taffy::style::Style = (&Style {
-                width: Dimension::Points(self.child_size.width as f32),
-                height: Dimension::Points(self.child_size.height as f32),
-                min_width: Dimension::Points(0.0),
-                min_height: Dimension::Points(0.0),
-                ..Default::default()
-            })
-                .into();
+            let virtual_style = Style::default()
+                .width(Dimension::Points(self.child_size.width as f32))
+                .height(Dimension::Points(self.child_size.height as f32))
+                .min_width(Dimension::Points(0.0))
+                .min_height(Dimension::Points(0.0))
+                .reify(&ReifiedStyle::default())
+                .to_taffy_style();
             if self.virtual_node.is_none() {
                 self.virtual_node =
                     Some(cx.app_state.taffy.new_leaf(virtual_style.clone()).unwrap());

@@ -82,14 +82,11 @@ impl View for Svg {
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         if let Some(tree) = self.svg_tree.as_ref() {
             let hash = self.svg_hash.as_ref().unwrap();
-            let style = cx.get_style(self.id).unwrap().clone();
+            let view_style = self.view_style().unwrap_or_default();
+            let style = cx.get_reified_style(&view_style, self.id).unwrap().clone();
             let layout = cx.get_layout(self.id).unwrap();
             let rect = Size::new(layout.size.width as f64, layout.size.height as f64).to_rect();
-            cx.draw_svg(
-                floem_renderer::Svg { tree, hash },
-                rect,
-                style.color.as_ref(),
-            );
+            cx.draw_svg(floem_renderer::Svg { tree, hash }, rect, style.color);
         }
     }
 }

@@ -10,7 +10,7 @@ use crate::{
     context::{EventCx, UpdateCx},
     event::Event,
     id::Id,
-    style::Style,
+    style::{ReifiedStyle, Style},
     view::{ChangeFlags, View},
 };
 
@@ -73,15 +73,12 @@ impl View for RichText {
             }
             let text_node = self.text_node.unwrap();
 
-            cx.app_state.taffy.set_style(
-                text_node,
-                (&Style {
-                    width: Dimension::Points(width),
-                    height: Dimension::Points(height),
-                    ..Default::default()
-                })
-                    .into(),
-            );
+            let style = Style::default()
+                .width(Dimension::Points(width))
+                .height(Dimension::Points(height))
+                .reify(&ReifiedStyle::default())
+                .to_taffy_style();
+            cx.app_state.taffy.set_style(text_node, style);
             vec![text_node]
         })
     }

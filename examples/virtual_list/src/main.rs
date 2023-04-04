@@ -20,31 +20,25 @@ fn app_logic(cx: AppContext) -> impl View {
                 move || long_list.get(),
                 move |item| item.clone(),
                 move |cx, item| {
-                    label(cx, move || item.clone()).style(cx, || Style {
-                        height: Dimension::Points(20.0),
-                        ..Default::default()
-                    })
+                    label(cx, move || item.clone())
+                        .style(cx, || Style::default().height(Dimension::Points(20.0)))
                 },
                 VirtualListItemSize::Fixed(20.0),
             )
-            .style(cx, || Style {
-                flex_direction: FlexDirection::Column,
-                ..Default::default()
+            .style(cx, || {
+                Style::default().flex_direction(FlexDirection::Column)
             })
         })
-        .style(cx, || Style {
-            width: Dimension::Points(100.0),
-            flex_grow: 1.0,
-            border: 1.0,
-            ..Default::default()
+        .style(cx, || {
+            Style::default().width_pt(100.0).flex_grow(1.0).border(1.0)
         })
     })
-    .style(cx, || Style {
-        width: Dimension::Percent(1.0),
-        height: Dimension::Percent(1.0),
-        flex_direction: FlexDirection::Column,
-        align_items: Some(AlignItems::Center),
-        ..Default::default()
+    .style(cx, || {
+        Style::default()
+            .width_perc(1.0)
+            .height_perc(1.0)
+            .flex_direction(FlexDirection::Column)
+            .align_items(Some(AlignItems::Center))
     })
 }
 
