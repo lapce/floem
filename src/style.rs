@@ -2,7 +2,7 @@
 //! Styles are divided into two parts:
 //! [`ReifiedStyle`]: A style with definite values for most fields.  
 //!
-//! [`Style`]: A style with [`Override`]s for the fields, where `Unset` falls back to the relevant
+//! [`Style`]: A style with [`StyleValue`]s for the fields, where `Unset` falls back to the relevant
 //! field in the [`ReifiedStyle`] and `Base` falls back to the underlying [`Style`] or the
 //! [`ReifiedStyle`].
 //!
@@ -35,9 +35,9 @@ use taffy::{
 };
 use vello::peniko::Color;
 
-/// An override for a [`Style`] property
+/// The value for a [`Style`] property
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Override<T> {
+pub enum StyleValue<T> {
     Val(T),
     /// Use the default value for the style, typically from the underlying `ReifiedStyle`
     Unset,
@@ -45,12 +45,13 @@ pub enum Override<T> {
     /// style. For the base style, this is equivalent to `Unset`
     Base,
 }
-impl<T> Override<T> {
-    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Override<U> {
+
+impl<T> StyleValue<T> {
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> StyleValue<U> {
         match self {
-            Self::Val(x) => Override::Val(f(x)),
-            Self::Unset => Override::Unset,
-            Self::Base => Override::Base,
+            Self::Val(x) => StyleValue::Val(f(x)),
+            Self::Unset => StyleValue::Unset,
+            Self::Base => StyleValue::Base,
         }
     }
 
@@ -70,20 +71,22 @@ impl<T> Override<T> {
         }
     }
 }
-impl<T> Default for Override<T> {
+
+impl<T> Default for StyleValue<T> {
     fn default() -> Self {
         // By default we let the `Style` decide what to do.
         Self::Base
     }
 }
-impl<T> From<T> for Override<T> {
+
+impl<T> From<T> for StyleValue<T> {
     fn from(x: T) -> Self {
         Self::Val(x)
     }
 }
 
 // Creates `ReifiedStyle` which has definite values for the fields, barring some specific cases.
-// Creates `Style` which has `Override<T>`s for the fields
+// Creates `Style` which has `StyleValue<T>`s for the fields
 macro_rules! define_styles {
     (
         $($name:ident $($opt:ident)?: $typ:ty = $val:expr),* $(,)?
@@ -116,14 +119,14 @@ macro_rules! define_styles {
         #[derive(Debug, Default, Clone)]
         pub struct Style {
             $(
-                pub $name: Override<$typ>,
+                pub $name: StyleValue<$typ>,
             )*
         }
         impl Style {
             pub fn unset() -> Self {
                 Self {
                     $(
-                        $name: Override::Unset,
+                        $name: StyleValue::Unset,
                     )*
                 }
             }
@@ -132,7 +135,7 @@ macro_rules! define_styles {
             pub fn base() -> Self {
                 Self {
                     $(
-                        $name: Override::Base,
+                        $name: StyleValue::Base,
                     )*
                 }
             }
@@ -153,22 +156,22 @@ macro_rules! define_styles {
 
             /// Apply another `Style` to this style, returning a new `Style` with the overrides
             ///
-            /// `Override::Val` will override the value with the given value
-            /// `Override::Unset` will unset the value, causing it to fall back to the underlying
+            /// `StyleValue::Val` will override the value with the given value
+            /// `StyleValue::Unset` will unset the value, causing it to fall back to the underlying
             /// `ReifiedStyle` (aka setting it to `None`)
-            /// `Override::Base` will leave the value as-is, whether falling back to the underlying
+            /// `StyleValue::Base` will leave the value as-is, whether falling back to the underlying
             /// `ReifiedStyle` or using the value in the `Style`.
             pub fn apply(self, over: Style) -> Style {
                 Style {
                     $(
                         $name: match (self.$name, over.$name) {
-                            (_, Override::Val(x)) => Override::Val(x),
-                            (Override::Val(x), Override::Base) => Override::Val(x),
-                            (Override::Val(_), Override::Unset) => Override::Unset,
-                            (Override::Base, Override::Base) => Override::Base,
-                            (Override::Unset, Override::Base) => Override::Unset,
-                            (Override::Base, Override::Unset) => Override::Unset,
-                            (Override::Unset, Override::Unset) => Override::Unset,
+                            (_, StyleValue::Val(x)) => StyleValue::Val(x),
+                            (StyleValue::Val(x), StyleValue::Base) => StyleValue::Val(x),
+                            (StyleValue::Val(_), StyleValue::Unset) => StyleValue::Unset,
+                            (StyleValue::Base, StyleValue::Base) => StyleValue::Base,
+                            (StyleValue::Unset, StyleValue::Base) => StyleValue::Unset,
+                            (StyleValue::Base, StyleValue::Unset) => StyleValue::Unset,
+                            (StyleValue::Unset, StyleValue::Unset) => StyleValue::Unset,
                         },
                     )*
                 }
@@ -186,7 +189,7 @@ macro_rules! define_styles {
     // 'nocb' doesn't add a builder function
     (decl: $name:ident nocb: $typ:ty = $val:expr) => {};
     (decl: $name:ident: $typ:ty = $val:expr) => {
-        pub fn $name(mut self, v: impl Into<Override<$typ>>) -> Self {
+        pub fn $name(mut self, v: impl Into<StyleValue<$typ>>) -> Self {
             self.$name = v.into();
             self
         }
@@ -229,6 +232,7 @@ define_styles!(
     font_weight nocb: Option<Weight> = None,
     font_style nocb: Option<FontStyle> = None,
 );
+
 impl Style {
     pub fn width_pt(self, width: f32) -> Self {
         self.width(Dimension::Points(width))
@@ -246,19 +250,19 @@ impl Style {
         self.height(Dimension::Percent(height))
     }
 
-    pub fn dim(
+    pub fn dimension(
         self,
-        width: impl Into<Override<Dimension>>,
-        height: impl Into<Override<Dimension>>,
+        width: impl Into<StyleValue<Dimension>>,
+        height: impl Into<StyleValue<Dimension>>,
     ) -> Self {
         self.width(width).height(height)
     }
 
-    pub fn dim_pt(self, width: f32, height: f32) -> Self {
+    pub fn dimension_pt(self, width: f32, height: f32) -> Self {
         self.width_pt(width).height_pt(height)
     }
 
-    pub fn dim_perc(self, width: f32, height: f32) -> Self {
+    pub fn dimension_perc(self, width: f32, height: f32) -> Self {
         self.width_perc(width).height_perc(height)
     }
 
@@ -278,19 +282,19 @@ impl Style {
         self.min_height(Dimension::Percent(min_height))
     }
 
-    pub fn min_dim(
+    pub fn min_dimension(
         self,
-        min_width: impl Into<Override<Dimension>>,
-        min_height: impl Into<Override<Dimension>>,
+        min_width: impl Into<StyleValue<Dimension>>,
+        min_height: impl Into<StyleValue<Dimension>>,
     ) -> Self {
         self.min_width(min_width).min_height(min_height)
     }
 
-    pub fn min_dim_pt(self, min_width: f32, min_height: f32) -> Self {
+    pub fn min_dimension_pt(self, min_width: f32, min_height: f32) -> Self {
         self.min_width_pt(min_width).min_height_pt(min_height)
     }
 
-    pub fn min_dim_perc(self, min_width: f32, min_height: f32) -> Self {
+    pub fn min_dimension_perc(self, min_width: f32, min_height: f32) -> Self {
         self.min_width_perc(min_width).min_height_perc(min_height)
     }
 
@@ -310,19 +314,19 @@ impl Style {
         self.max_height(Dimension::Percent(max_height))
     }
 
-    pub fn max_dim(
+    pub fn max_dimension(
         self,
-        max_width: impl Into<Override<Dimension>>,
-        max_height: impl Into<Override<Dimension>>,
+        max_width: impl Into<StyleValue<Dimension>>,
+        max_height: impl Into<StyleValue<Dimension>>,
     ) -> Self {
         self.max_width(max_width).max_height(max_height)
     }
 
-    pub fn max_dim_pt(self, max_width: f32, max_height: f32) -> Self {
+    pub fn max_dimension_pt(self, max_width: f32, max_height: f32) -> Self {
         self.max_width_pt(max_width).max_height_pt(max_height)
     }
 
-    pub fn max_dim_perc(self, max_width: f32, max_height: f32) -> Self {
+    pub fn max_dimension_perc(self, max_width: f32, max_height: f32) -> Self {
         self.max_width_perc(max_width).max_height_perc(max_height)
     }
 
@@ -377,32 +381,32 @@ impl Style {
         self.margin_top(margin).margin_bottom(margin)
     }
 
-    pub fn color(mut self, color: impl Into<Override<Color>>) -> Self {
+    pub fn color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
         self.color = color.into().map(Some);
         self
     }
 
-    pub fn background(mut self, color: impl Into<Override<Color>>) -> Self {
+    pub fn background(mut self, color: impl Into<StyleValue<Color>>) -> Self {
         self.background = color.into().map(Some);
         self
     }
 
-    pub fn font_size(mut self, size: impl Into<Override<f32>>) -> Self {
+    pub fn font_size(mut self, size: impl Into<StyleValue<f32>>) -> Self {
         self.font_size = size.into().map(Some);
         self
     }
 
-    pub fn font_family(mut self, family: impl Into<Override<String>>) -> Self {
+    pub fn font_family(mut self, family: impl Into<StyleValue<String>>) -> Self {
         self.font_family = family.into().map(Some);
         self
     }
 
-    pub fn font_weight(mut self, weight: impl Into<Override<Weight>>) -> Self {
+    pub fn font_weight(mut self, weight: impl Into<StyleValue<Weight>>) -> Self {
         self.font_weight = weight.into().map(Some);
         self
     }
 
-    pub fn font_style(mut self, style: impl Into<Override<FontStyle>>) -> Self {
+    pub fn font_style(mut self, style: impl Into<StyleValue<FontStyle>>) -> Self {
         self.font_style = style.into().map(Some);
         self
     }
@@ -411,12 +415,12 @@ impl Style {
     /// This is useful for chaining together a bunch of optional style changes.  
     /// ```rust,ignore
     /// let style = Style::default()
-    ///    .opt(Some(5.0), Style::padding) // ran
-    ///    .opt(None, Style::margin) // not ran
-    ///    .opt(Some(5.0), |s, v| s.border_right(v * 2.0))
+    ///    .apply_opt(Some(5.0), Style::padding) // ran
+    ///    .apply_opt(None, Style::margin) // not ran
+    ///    .apply_opt(Some(5.0), |s, v| s.border_right(v * 2.0))
     ///    .border_left(5.0); // ran, obviously
     /// ```
-    pub fn opt<T>(self, opt: Option<T>, f: impl FnOnce(Self, T) -> Self) -> Self {
+    pub fn apply_opt<T>(self, opt: Option<T>, f: impl FnOnce(Self, T) -> Self) -> Self {
         if let Some(t) = opt {
             f(self, t)
         } else {
@@ -428,10 +432,10 @@ impl Style {
     /// This is useful for chaining together a bunch of optional style changes.
     /// ```rust,ignore
     /// let style = Style::default()
-    ///     .do_if(true, |s| s.padding(5.0)) // ran
-    ///     .do_if(false, |s| s.margin(5.0)) // not ran
+    ///     .apply_if(true, |s| s.padding(5.0)) // ran
+    ///     .apply_if(false, |s| s.margin(5.0)) // not ran
     /// ```
-    pub fn do_if(self, cond: bool, f: impl FnOnce(Self) -> Self) -> Self {
+    pub fn apply_if(self, cond: bool, f: impl FnOnce(Self) -> Self) -> Self {
         if cond {
             f(self)
         } else {
@@ -489,7 +493,7 @@ impl ReifiedStyle {
 
 #[cfg(test)]
 mod tests {
-    use super::{Override, Style};
+    use super::{Style, StyleValue};
 
     #[test]
     fn style_override() {
@@ -498,48 +502,48 @@ mod tests {
 
         let style = style1.apply(style2);
 
-        assert_eq!(style.padding_left, Override::Val(64.0));
+        assert_eq!(style.padding_left, StyleValue::Val(64.0));
 
         let style1 = Style::default().padding_left(32.0).padding_bottom(45.0);
         let style2 = Style::default()
             .padding_left(64.0)
-            .padding_bottom(Override::Base);
+            .padding_bottom(StyleValue::Base);
 
         let style = style1.apply(style2);
 
-        assert_eq!(style.padding_left, Override::Val(64.0));
-        assert_eq!(style.padding_bottom, Override::Val(45.0));
+        assert_eq!(style.padding_left, StyleValue::Val(64.0));
+        assert_eq!(style.padding_bottom, StyleValue::Val(45.0));
 
         let style1 = Style::default().padding_left(32.0).padding_bottom(45.0);
         let style2 = Style::default()
             .padding_left(64.0)
-            .padding_bottom(Override::Unset);
+            .padding_bottom(StyleValue::Unset);
 
         let style = style1.apply(style2);
 
-        assert_eq!(style.padding_left, Override::Val(64.0));
-        assert_eq!(style.padding_bottom, Override::Unset);
+        assert_eq!(style.padding_left, StyleValue::Val(64.0));
+        assert_eq!(style.padding_bottom, StyleValue::Unset);
 
         let style1 = Style::default().padding_left(32.0).padding_bottom(45.0);
         let style2 = Style::default()
             .padding_left(64.0)
-            .padding_bottom(Override::Unset);
-        let style3 = Style::default().padding_bottom(Override::Base);
+            .padding_bottom(StyleValue::Unset);
+        let style3 = Style::default().padding_bottom(StyleValue::Base);
 
         let style = style1.apply_overriding_styles([style2, style3].into_iter());
 
-        assert_eq!(style.padding_left, Override::Val(64.0));
-        assert_eq!(style.padding_bottom, Override::Unset);
+        assert_eq!(style.padding_left, StyleValue::Val(64.0));
+        assert_eq!(style.padding_bottom, StyleValue::Unset);
 
         let style1 = Style::default().padding_left(32.0).padding_bottom(45.0);
         let style2 = Style::default()
             .padding_left(64.0)
-            .padding_bottom(Override::Unset);
-        let style3 = Style::default().padding_bottom(Override::Val(100.0));
+            .padding_bottom(StyleValue::Unset);
+        let style3 = Style::default().padding_bottom(StyleValue::Val(100.0));
 
         let style = style1.apply_overriding_styles([style2, style3].into_iter());
 
-        assert_eq!(style.padding_left, Override::Val(64.0));
-        assert_eq!(style.padding_bottom, Override::Val(100.0));
+        assert_eq!(style.padding_left, StyleValue::Val(64.0));
+        assert_eq!(style.padding_bottom, StyleValue::Val(100.0));
     }
 }

@@ -12,7 +12,7 @@ use crate::{
     context::{AppState, LayoutCx, PaintCx},
     event::Event,
     id::Id,
-    style::{Override, ReifiedStyle, Style},
+    style::{ReifiedStyle, Style, StyleValue},
     view::{ChangeFlags, View},
 };
 
@@ -414,7 +414,7 @@ impl<V: View> View for Scroll<V> {
         cx.layout_node(self.id, true, |cx| {
             let child_id = self.child.id();
             let mut child_view = cx.app_state.view_state(child_id);
-            child_view.style.position = Override::Val(Position::Absolute);
+            child_view.style.position = StyleValue::Val(Position::Absolute);
             // Update the reified style
             child_view.reified_style = None;
             let child_view_style = self.child.view_style().unwrap_or_default();
