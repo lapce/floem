@@ -25,7 +25,7 @@ use vello::{
 use crate::{
     event::{Event, EventListner},
     id::Id,
-    style::Style,
+    style::{ReifiedStyle, Style},
 };
 
 pub type EventCallback = dyn Fn(&Event) -> bool;
@@ -43,6 +43,7 @@ pub struct ViewState {
     pub(crate) request_layout: bool,
     pub(crate) viewport: Option<Rect>,
     pub(crate) style: Style,
+    pub(crate) reified_style: Option<ReifiedStyle>,
     pub(crate) event_listeners: HashMap<EventListner, Box<EventCallback>>,
     pub(crate) resize_listener: Option<ResizeListener>,
 }
@@ -54,10 +55,18 @@ impl ViewState {
             viewport: None,
             request_layout: true,
             style: Style::default(),
+            reified_style: None,
             children_nodes: Vec::new(),
             event_listeners: HashMap::new(),
             resize_listener: None,
         }
+    }
+
+    // TODO: the held reified style could be a cache, so this could be `&self`
+    pub(crate) fn fill_reified_style(&mut self, view_style: &ReifiedStyle) -> &ReifiedStyle {
+        // TODO: this should take into account whether it is being hovered and other similar things
+        self.reified_style = Some(self.style.clone().reify(view_style));
+        self.reified_style.as_ref().unwrap()
     }
 }
 
@@ -107,7 +116,8 @@ impl AppState {
     pub fn is_hidden(&self, id: Id) -> bool {
         self.view_states
             .get(&id)
-            .map(|s| s.style.display == Display::None)
+            // TODO: this unwrap_or is wrong. The style might not specify it, but the underlying view style can
+            .map(|s| s.style.display.unwrap_or(Display::Flex) == Display::None)
             .unwrap_or(false)
     }
 
@@ -297,8 +307,13 @@ impl<'a> LayoutCx<'a> {
         self.font_family.as_deref()
     }
 
-    pub fn get_style(&self, id: Id) -> Option<&Style> {
-        self.app_state.view_states.get(&id).map(|s| &s.style)
+    pub fn get_reified_style(
+        &mut self,
+        view_style: &ReifiedStyle,
+        id: Id,
+    ) -> Option<&ReifiedStyle> {
+        let state = self.app_state.view_state(id);
+        Some(state.fill_reified_style(view_style))
     }
 
     pub fn get_layout(&self, id: Id) -> Option<Layout> {
@@ -332,7 +347,8 @@ impl<'a> LayoutCx<'a> {
             return node;
         }
         view.request_layout = false;
-        let style = (&view.style).into();
+        // TODO: should we assume that the reified style is already initialized?
+        let style = view.reified_style.as_ref().unwrap().to_taffy_style();
         self.app_state.taffy.set_style(node, style);
 
         if has_children {
@@ -421,8 +437,15 @@ impl<'a> PaintCx<'a> {
         self.app_state.get_layout(id)
     }
 
-    pub fn get_style(&self, id: Id) -> Option<&Style> {
-        self.app_state.view_states.get(&id).map(|s| &s.style)
+    pub fn get_reified_style(
+        &mut self,
+        view_style: &ReifiedStyle,
+        id: Id,
+    ) -> Option<&ReifiedStyle> {
+        self.app_state
+            .view_states
+            .get_mut(&id)
+            .map(|s| s.fill_reified_style(view_style))
     }
 
     pub fn clip(&mut self, shape: &impl Shape) {
