@@ -411,6 +411,10 @@ impl Style {
         self
     }
 
+    pub fn absolute(self) -> Self {
+        self.position(Position::Absolute)
+    }
+
     pub fn items_center(self) -> Self {
         self.align_items(Some(AlignItems::Center))
     }
