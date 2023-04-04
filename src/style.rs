@@ -411,6 +411,10 @@ impl Style {
         self
     }
 
+    pub fn items_center(self) -> Self {
+        self.align_items(Some(AlignItems::Center))
+    }
+
     /// Allow the application of a function if the option exists.  
     /// This is useful for chaining together a bunch of optional style changes.  
     /// ```rust,ignore
