@@ -35,8 +35,8 @@ fn app_logic(cx: AppContext) -> impl View {
     })
     .style(cx, || {
         Style::default()
-            .width_perc(1.0)
-            .height_perc(1.0)
+            .width_pct(1.0)
+            .height_pct(1.0)
             .flex_direction(FlexDirection::Column)
             .align_items(Some(AlignItems::Center))
     })

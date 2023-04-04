@@ -238,7 +238,7 @@ impl Style {
         self.width(Dimension::Points(width))
     }
 
-    pub fn width_perc(self, width: f32) -> Self {
+    pub fn width_pct(self, width: f32) -> Self {
         self.width(Dimension::Percent(width))
     }
 
@@ -246,7 +246,7 @@ impl Style {
         self.height(Dimension::Points(height))
     }
 
-    pub fn height_perc(self, height: f32) -> Self {
+    pub fn height_pct(self, height: f32) -> Self {
         self.height(Dimension::Percent(height))
     }
 
@@ -262,15 +262,15 @@ impl Style {
         self.width_pt(width).height_pt(height)
     }
 
-    pub fn dimension_perc(self, width: f32, height: f32) -> Self {
-        self.width_perc(width).height_perc(height)
+    pub fn dimension_pct(self, width: f32, height: f32) -> Self {
+        self.width_pct(width).height_pct(height)
     }
 
     pub fn min_width_pt(self, min_width: f32) -> Self {
         self.min_width(Dimension::Points(min_width))
     }
 
-    pub fn min_width_perc(self, min_width: f32) -> Self {
+    pub fn min_width_pct(self, min_width: f32) -> Self {
         self.min_width(Dimension::Percent(min_width))
     }
 
@@ -278,7 +278,7 @@ impl Style {
         self.min_height(Dimension::Points(min_height))
     }
 
-    pub fn min_height_perc(self, min_height: f32) -> Self {
+    pub fn min_height_pct(self, min_height: f32) -> Self {
         self.min_height(Dimension::Percent(min_height))
     }
 
@@ -294,15 +294,15 @@ impl Style {
         self.min_width_pt(min_width).min_height_pt(min_height)
     }
 
-    pub fn min_dimension_perc(self, min_width: f32, min_height: f32) -> Self {
-        self.min_width_perc(min_width).min_height_perc(min_height)
+    pub fn min_dimension_pct(self, min_width: f32, min_height: f32) -> Self {
+        self.min_width_pct(min_width).min_height_pct(min_height)
     }
 
     pub fn max_width_pt(self, max_width: f32) -> Self {
         self.max_width(Dimension::Points(max_width))
     }
 
-    pub fn max_width_perc(self, max_width: f32) -> Self {
+    pub fn max_width_pct(self, max_width: f32) -> Self {
         self.max_width(Dimension::Percent(max_width))
     }
 
@@ -310,7 +310,7 @@ impl Style {
         self.max_height(Dimension::Points(max_height))
     }
 
-    pub fn max_height_perc(self, max_height: f32) -> Self {
+    pub fn max_height_pct(self, max_height: f32) -> Self {
         self.max_height(Dimension::Percent(max_height))
     }
 
@@ -326,8 +326,8 @@ impl Style {
         self.max_width_pt(max_width).max_height_pt(max_height)
     }
 
-    pub fn max_dimension_perc(self, max_width: f32, max_height: f32) -> Self {
-        self.max_width_perc(max_width).max_height_perc(max_height)
+    pub fn max_dimension_pct(self, max_width: f32, max_height: f32) -> Self {
+        self.max_width_pct(max_width).max_height_pct(max_height)
     }
 
     pub fn border(self, border: f32) -> Self {
