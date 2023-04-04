@@ -415,6 +415,14 @@ impl Style {
         self.align_items(Some(AlignItems::Center))
     }
 
+    pub fn flex_row(self) -> Self {
+        self.flex_direction(FlexDirection::Row)
+    }
+
+    pub fn flex_col(self) -> Self {
+        self.flex_direction(FlexDirection::Column)
+    }
+
     /// Allow the application of a function if the option exists.  
     /// This is useful for chaining together a bunch of optional style changes.  
     /// ```rust,ignore
