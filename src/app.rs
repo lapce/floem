@@ -45,6 +45,10 @@ impl AppContext {
         UPDATE_MESSAGES.with(|msgs| msgs.borrow_mut().push(UpdateMessage::Focus(id)));
     }
 
+    pub fn request_paint() {
+        UPDATE_MESSAGES.with(|msgs| msgs.borrow_mut().push(UpdateMessage::RequestPaint));
+    }
+
     pub fn update_state(id: Id, state: impl Any, deferred: bool) {
         if !deferred {
             UPDATE_MESSAGES.with(|msgs| {
@@ -103,6 +107,7 @@ impl AppContext {
 
 pub enum UpdateMessage {
     Focus(Id),
+    RequestPaint,
     State {
         id: Id,
         state: Box<dyn Any>,
@@ -227,6 +232,9 @@ impl<V: View> App<V> {
             };
             for msg in msgs {
                 match msg {
+                    UpdateMessage::RequestPaint => {
+                        flags |= ChangeFlags::PAINT;
+                    }
                     UpdateMessage::Focus(id) => {
                         cx.app_state.focus = Some(id);
                     }

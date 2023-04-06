@@ -217,6 +217,7 @@ define_styles!(
     border_right: f32 = 0.0,
     border_bottom: f32 = 0.0,
     border_radius: f32 = 0.0,
+    border_color: Color = Color::rgb8(0xa1, 0xa1, 0xa1),
     padding_left: f32 = 0.0,
     padding_top: f32 = 0.0,
     padding_right: f32 = 0.0,

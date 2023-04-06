@@ -247,7 +247,7 @@ fn paint_border(cx: &mut PaintCx, style: &ReifiedStyle, size: Size) {
     let right = style.border_right;
     let bottom = style.border_bottom;
 
-    let border_color = Color::rgb8(0xa1, 0xa1, 0xa1);
+    let border_color = style.border_color;
     if left == top && top == right && right == bottom && bottom == left && left > 0.0 {
         let half = left as f64 / 2.0;
         let rect = size.to_rect().inflate(-half, -half);

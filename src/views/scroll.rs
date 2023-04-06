@@ -20,6 +20,7 @@ enum ScrollState {
     EnsureVisble(Rect),
     ScrollDelta(Vec2),
     ScrollTo(Point),
+    ScrollBarColor(Color),
 }
 
 /// Minimum length for any scrollbar to be when measured on that
@@ -49,6 +50,8 @@ pub struct Scroll<V: View> {
     held: BarHeldState,
     virtual_node: Option<Node>,
     hide_bar: bool,
+    opacity: f64,
+    scroll_bar_color: Color,
 }
 
 pub fn scroll<V: View>(cx: AppContext, child: impl Fn(AppContext) -> V) -> Scroll<V> {
@@ -68,10 +71,22 @@ pub fn scroll<V: View>(cx: AppContext, child: impl Fn(AppContext) -> V) -> Scrol
         held: BarHeldState::None,
         virtual_node: None,
         hide_bar: false,
+        opacity: 0.7,
+        scroll_bar_color: Color::rgb8(0xa1, 0xa1, 0xa1),
     }
 }
 
 impl<V: View> Scroll<V> {
+    pub fn scroll_bar_color(self, cx: AppContext, color: impl Fn() -> Color + 'static) -> Self {
+        let id = self.id;
+        create_effect(cx.scope, move |_| {
+            let color = color();
+            AppContext::update_state(id, ScrollState::ScrollBarColor(color), false);
+        });
+
+        self
+    }
+
     pub fn onscroll(mut self, onscroll: impl Fn(Rect) + 'static) -> Self {
         self.onscroll = Some(Box::new(onscroll));
         self
@@ -250,7 +265,7 @@ impl<V: View> Scroll<V> {
         let edge_width = 0.0;
         let scroll_offset = self.child_viewport.origin().to_vec2();
 
-        let color = Color::rgb8(0xa1, 0xa1, 0xa1);
+        let color = self.scroll_bar_color.with_alpha_factor(0.7);
         if let Some(bounds) = self.calc_vertical_bar_bounds(cx.app_state) {
             let rect = (bounds - scroll_offset).inset(-edge_width / 2.0);
             cx.fill(&rect, color);
@@ -400,6 +415,9 @@ impl<V: View> View for Scroll<V> {
                 }
                 ScrollState::ScrollTo(origin) => {
                     self.scroll_to(cx.app_state, origin);
+                }
+                ScrollState::ScrollBarColor(color) => {
+                    self.scroll_bar_color = color;
                 }
             }
             cx.request_layout(self.id());
