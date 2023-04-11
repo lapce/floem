@@ -127,15 +127,13 @@ impl VgerRenderer {
 
     fn vger_rect(&self, rect: Rect) -> vger::defs::LocalRect {
         let origin = rect.origin();
-        let size = rect.size();
-        vger::defs::LocalRect::new(self.vger_point(origin), self.vger_size(size))
-    }
+        let origin = self.vger_point(origin);
 
-    fn vger_size(&self, size: Size) -> vger::defs::LocalSize {
-        vger::defs::LocalSize::new(
-            (size.width * self.scale).round() as f32,
-            (size.height * self.scale).round() as f32,
-        )
+        let end = Point::new(rect.x1, rect.y1);
+        let end = self.vger_point(end);
+
+        let size = (end - origin).to_size();
+        vger::defs::LocalRect::new(origin, size)
     }
 }
 

@@ -288,7 +288,7 @@ impl<V: View> App<V> {
         DEFERRED_UPDATE_MESSAGES.with(|m| !m.borrow().is_empty())
     }
 
-    pub fn process_update(&mut self) -> ChangeFlags {
+    pub fn process_update(&mut self) {
         let mut flags = ChangeFlags::empty();
         loop {
             flags |= self.process_update_messages();
@@ -301,9 +301,8 @@ impl<V: View> App<V> {
         }
 
         if !flags.is_empty() {
-            self.paint();
+            self.handle.invalidate();
         }
-        flags
     }
 
     pub fn event(&mut self, event: Event) {
@@ -364,15 +363,13 @@ impl<V: View> WinHandler for App<V> {
         self.paint_state.resize(scale, size);
         self.app_state.set_root_size(size);
         self.layout();
-        let flags = self.process_update();
-        if flags.is_empty() {
-            self.paint();
-        }
+        self.process_update();
+        self.handle.invalidate();
     }
 
     fn prepare_paint(&mut self) {}
 
-    fn paint(&mut self, invalid: &glazier::Region) {
+    fn paint(&mut self, _invalid: &glazier::Region) {
         self.paint();
     }
 
@@ -393,7 +390,7 @@ impl<V: View> WinHandler for App<V> {
         self.event(Event::MouseMove(event.clone()));
     }
 
-    fn wheel(&mut self, event: &glazier::MouseEvent) {
+    fn mouse_wheel(&mut self, event: &glazier::MouseEvent) {
         self.event(Event::MouseWheel(event.clone()));
     }
 

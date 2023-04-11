@@ -14,6 +14,7 @@ pub mod views;
 pub use floem_renderer::cosmic_text;
 pub use floem_renderer::Renderer;
 pub use glazier;
+use glazier::kurbo::Size;
 pub use leptos_reactive as reactive;
 pub use taffy;
 pub use vello::peniko;
@@ -27,8 +28,9 @@ pub fn launch<V: View + 'static>(app_logic: impl Fn(AppContext) -> V + 'static) 
     create_scope(create_runtime(), |cx| {
         let app = App::new(cx, app_logic);
         let application = Application::new().unwrap();
-        let mut builder = WindowBuilder::new(application.clone());
-        builder.set_handler(Box::new(app));
+        let mut builder = WindowBuilder::new(application.clone())
+            .size(Size::new(800.0, 600.0))
+            .handler(Box::new(app));
         let window = builder.build().unwrap();
         window.show();
         application.run(None);
