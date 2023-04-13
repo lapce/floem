@@ -1,7 +1,7 @@
 use floem::{
     app::AppContext,
     reactive::{create_signal, SignalGet},
-    style::{AlignItems, Dimension, FlexDirection, Style},
+    style::Style,
     view::View,
     views::virtual_list,
     views::Decorators,
@@ -9,7 +9,7 @@ use floem::{
 };
 
 fn app_logic(cx: AppContext) -> impl View {
-    let long_list: im::Vector<String> = (0..1000000).into_iter().map(|i| i.to_string()).collect();
+    let long_list: im::Vector<i32> = (0..1000000).into_iter().collect();
     let (long_list, _set_long_list) = create_signal(cx.scope, long_list);
 
     container(cx, move |cx| {
@@ -18,27 +18,25 @@ fn app_logic(cx: AppContext) -> impl View {
                 cx,
                 VirtualListDirection::Vertical,
                 move || long_list.get(),
-                move |item| item.clone(),
+                move |item| *item,
                 move |cx, item| {
-                    label(cx, move || item.clone())
-                        .style(cx, || Style::default().height(Dimension::Points(20.0)))
+                    label(cx, move || item.to_string())
+                        .style(cx, || Style::default().height_pt(20.0))
                 },
                 VirtualListItemSize::Fixed(20.0),
             )
-            .style(cx, || {
-                Style::default().flex_direction(FlexDirection::Column)
-            })
+            .style(cx, || Style::default().flex_col())
         })
         .style(cx, || {
-            Style::default().width_pt(100.0).flex_grow(1.0).border(1.0)
+            Style::default().width_pt(100.0).height_pct(1.0).border(1.0)
         })
     })
     .style(cx, || {
         Style::default()
-            .width_pct(1.0)
-            .height_pct(1.0)
-            .flex_direction(FlexDirection::Column)
-            .align_items(Some(AlignItems::Center))
+            .dimension_pct(1.0, 1.0)
+            .padding_vert(20.0)
+            .flex_col()
+            .items_center()
     })
 }
 

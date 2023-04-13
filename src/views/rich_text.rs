@@ -39,7 +39,7 @@ impl View for RichText {
         self.id
     }
 
-    fn child(&mut self, id: Id) -> Option<&mut dyn View> {
+    fn child(&mut self, _id: Id) -> Option<&mut dyn View> {
         None
     }
 
@@ -53,7 +53,7 @@ impl View for RichText {
         }
     }
 
-    fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {
+    fn event(&mut self, _cx: &mut EventCx, _id_path: Option<&[Id]>, _event: Event) -> bool {
         false
     }
 
@@ -78,12 +78,12 @@ impl View for RichText {
                 .height(Dimension::Points(height))
                 .reify(&ReifiedStyle::default())
                 .to_taffy_style();
-            cx.app_state.taffy.set_style(text_node, style);
+            let _ = cx.app_state.taffy.set_style(text_node, style);
             vec![text_node]
         })
     }
 
-    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {}
+    fn compute_layout(&mut self, _cx: &mut crate::context::LayoutCx) {}
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         let text_node = self.text_node.unwrap();

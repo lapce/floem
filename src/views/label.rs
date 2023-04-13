@@ -62,8 +62,7 @@ pub fn label(cx: AppContext, label: impl Fn() -> String + 'static) -> Label {
 impl Label {
     fn set_text_layout(&mut self) {
         let mut text_layout = TextLayout::new();
-        let mut attrs =
-            Attrs::new().color(self.color.unwrap_or_else(|| Color::rgb8(0xf0, 0xf0, 0xea)));
+        let mut attrs = Attrs::new().color(self.color.unwrap_or(Color::BLACK));
         if let Some(font_size) = self.font_size {
             attrs = attrs.font_size(font_size);
         }
@@ -85,8 +84,7 @@ impl Label {
 
         if let Some(new_text) = self.available_text.as_ref() {
             let mut text_layout = TextLayout::new();
-            let mut attrs =
-                Attrs::new().color(self.color.unwrap_or_else(|| Color::rgb8(0xf0, 0xf0, 0xea)));
+            let mut attrs = Attrs::new().color(self.color.unwrap_or(Color::BLACK));
             if let Some(font_size) = self.font_size {
                 attrs = attrs.font_size(font_size);
             }
@@ -114,7 +112,7 @@ impl View for Label {
         self.id
     }
 
-    fn child(&mut self, id: Id) -> Option<&mut dyn View> {
+    fn child(&mut self, _id: Id) -> Option<&mut dyn View> {
         None
     }
 
@@ -129,7 +127,7 @@ impl View for Label {
         }
     }
 
-    fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {
+    fn event(&mut self, _cx: &mut EventCx, _id_path: Option<&[Id]>, _event: Event) -> bool {
         false
     }
 
@@ -174,7 +172,7 @@ impl View for Label {
                 .height(Dimension::Points(height))
                 .reify(&ReifiedStyle::default())
                 .to_taffy_style();
-            cx.app_state.taffy.set_style(text_node, style);
+            let _ = cx.app_state.taffy.set_style(text_node, style);
 
             vec![text_node]
         })
@@ -192,8 +190,7 @@ impl View for Label {
         if width > layout.size.width {
             if self.available_width != Some(layout.size.width) {
                 let mut dots_text = TextLayout::new();
-                let mut attrs =
-                    Attrs::new().color(self.color.unwrap_or_else(|| Color::rgb8(0xf0, 0xf0, 0xea)));
+                let mut attrs = Attrs::new().color(self.color.unwrap_or(Color::BLACK));
                 if let Some(font_size) = self.font_size {
                     attrs = attrs.font_size(font_size);
                 }

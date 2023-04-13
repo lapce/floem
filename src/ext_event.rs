@@ -1,5 +1,4 @@
 use std::{
-    any::Any,
     cell::RefCell,
     collections::{HashMap, VecDeque},
     sync::Arc,
@@ -7,15 +6,14 @@ use std::{
 
 use glazier::{FileDialogOptions, FileInfo, IdleHandle, IdleToken};
 use leptos_reactive::{
-    create_effect, create_signal, ReadSignal, Scope, ScopeDisposer, SignalGet, SignalSet,
-    WriteSignal,
+    create_effect, create_signal, ReadSignal, Scope, SignalGet, SignalSet, WriteSignal,
 };
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 
 use crate::{app::AppContext, id::Id};
 
-pub static EXT_EVENT_HANDLER: Lazy<ExtEventHandler> = Lazy::new(|| ExtEventHandler::default());
+pub static EXT_EVENT_HANDLER: Lazy<ExtEventHandler> = Lazy::new(ExtEventHandler::default);
 
 thread_local! {
     pub(crate) static WRITE_SIGNALS: RefCell<HashMap<ExtId, WriteSignal<Option<()>>>> = RefCell::new(HashMap::new());

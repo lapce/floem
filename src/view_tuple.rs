@@ -1,11 +1,6 @@
-use std::any::Any;
-
-use taffy::prelude::Node;
-
-use crate::context::{LayoutCx, PaintCx, UpdateCx};
-use crate::event::Event;
+use crate::context::PaintCx;
 use crate::id::Id;
-use crate::view::{ChangeFlags, View};
+use crate::view::View;
 
 pub trait ViewTuple {
     fn paint(&mut self, cx: &mut PaintCx);

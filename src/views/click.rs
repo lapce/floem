@@ -43,7 +43,7 @@ impl<V: View> View for Click<V> {
         }
     }
 
-    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags {
+    fn update(&mut self, _cx: &mut UpdateCx, _state: Box<dyn Any>) -> ChangeFlags {
         ChangeFlags::empty()
     }
 

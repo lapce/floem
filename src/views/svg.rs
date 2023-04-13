@@ -1,17 +1,11 @@
 use floem_renderer::{usvg, usvg::Tree, Renderer};
-use glazier::kurbo::{BezPath, Point, Size};
+use glazier::kurbo::Size;
 use leptos_reactive::create_effect;
 use sha2::{Digest, Sha256};
-use vello::{
-    peniko::{Brush, Color},
-    SceneBuilder,
-};
 
 use crate::{
-    app::{AppContext, UpdateMessage},
-    context::PaintCx,
+    app::AppContext,
     id::Id,
-    renderer,
     view::{ChangeFlags, View},
 };
 
@@ -39,7 +33,7 @@ impl View for Svg {
         self.id
     }
 
-    fn child(&mut self, id: Id) -> Option<&mut dyn View> {
+    fn child(&mut self, _id: Id) -> Option<&mut dyn View> {
         None
     }
 
@@ -68,13 +62,13 @@ impl View for Svg {
         cx.layout_node(self.id, false, |_| Vec::new())
     }
 
-    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {}
+    fn compute_layout(&mut self, _cx: &mut crate::context::LayoutCx) {}
 
     fn event(
         &mut self,
-        cx: &mut crate::context::EventCx,
-        id_path: Option<&[Id]>,
-        event: crate::event::Event,
+        _cx: &mut crate::context::EventCx,
+        _id_path: Option<&[Id]>,
+        _event: crate::event::Event,
     ) -> bool {
         false
     }

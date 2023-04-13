@@ -6,7 +6,6 @@ use glazier::{
     FileDialogOptions, FileDialogToken, FileInfo, WinHandler,
 };
 use leptos_reactive::{Scope, SignalSet};
-use vello::{SceneBuilder, SceneFragment};
 
 use crate::{
     context::{
@@ -173,10 +172,7 @@ impl<V: View> App<V> {
     }
 
     pub fn paint(&mut self) {
-        let mut fragment = SceneFragment::new();
-        let mut builder = SceneBuilder::for_fragment(&mut fragment);
         let mut cx = PaintCx {
-            builder: &mut builder,
             app_state: &mut self.app_state,
             paint_state: &mut self.paint_state,
             transform: Affine::IDENTITY,
@@ -194,9 +190,9 @@ impl<V: View> App<V> {
             saved_font_weights: Vec::new(),
             saved_font_styles: Vec::new(),
         };
-        cx.paint_state.new_renderer.as_mut().unwrap().begin();
+        cx.paint_state.renderer.as_mut().unwrap().begin();
         self.view.paint_main(&mut cx);
-        cx.paint_state.new_renderer.as_mut().unwrap().finish();
+        cx.paint_state.renderer.as_mut().unwrap().finish();
     }
 
     fn process_deferred_update_messages(&mut self) -> ChangeFlags {
@@ -394,7 +390,7 @@ impl<V: View> WinHandler for App<V> {
         self.event(Event::MouseWheel(event.clone()));
     }
 
-    fn idle(&mut self, token: glazier::IdleToken) {
+    fn idle(&mut self, _token: glazier::IdleToken) {
         self.idle();
     }
 

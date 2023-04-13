@@ -217,7 +217,7 @@ define_styles!(
     border_right: f32 = 0.0,
     border_bottom: f32 = 0.0,
     border_radius: f32 = 0.0,
-    border_color: Color = Color::rgb8(0xa1, 0xa1, 0xa1),
+    border_color: Color = Color::BLACK,
     padding_left: f32 = 0.0,
     padding_top: f32 = 0.0,
     padding_right: f32 = 0.0,
@@ -418,6 +418,10 @@ impl Style {
 
     pub fn items_center(self) -> Self {
         self.align_items(Some(AlignItems::Center))
+    }
+
+    pub fn justify_center(self) -> Self {
+        self.justify_content(Some(JustifyContent::Center))
     }
 
     pub fn flex_row(self) -> Self {

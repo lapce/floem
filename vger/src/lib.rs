@@ -2,7 +2,7 @@ use anyhow::Result;
 use floem_renderer::cosmic_text::{SubpixelBin, SwashCache, SwashImage, TextLayout};
 use floem_renderer::{usvg, Renderer};
 use peniko::{
-    kurbo::{Affine, Point, Rect, Shape, Size, Vec2},
+    kurbo::{Affine, Point, Rect, Shape, Vec2},
     BrushRef, Color, GradientKind,
 };
 use vger::{PaintIndex, Vger};
@@ -330,7 +330,7 @@ impl Renderer for VgerRenderer {
                 view: &texture_view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
                     store: true,
                 },
             })],

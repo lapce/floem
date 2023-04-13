@@ -1,9 +1,8 @@
 use std::{hash::Hash, marker::PhantomData, ops::Range};
 
 use glazier::kurbo::Rect;
-use indexmap::IndexMap;
 use leptos_reactive::{
-    create_effect, create_signal, Scope, ScopeDisposer, SignalGet, SignalSet, WriteSignal,
+    create_effect, create_signal, ScopeDisposer, SignalGet, SignalSet, WriteSignal,
 };
 use smallvec::SmallVec;
 use taffy::{prelude::Node, style::Dimension};
@@ -61,7 +60,6 @@ where
 
 struct VirtualListState<T> {
     diff: Diff<T>,
-    view_port: Rect,
     before_size: f64,
     after_size: f64,
 }
@@ -172,7 +170,6 @@ where
             id,
             VirtualListState {
                 diff,
-                view_port: viewport,
                 before_size,
                 after_size,
             },

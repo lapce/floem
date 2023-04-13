@@ -72,7 +72,7 @@ pub fn scroll<V: View>(cx: AppContext, child: impl Fn(AppContext) -> V) -> Scrol
         virtual_node: None,
         hide_bar: false,
         opacity: 0.7,
-        scroll_bar_color: Color::rgb8(0xa1, 0xa1, 0xa1),
+        scroll_bar_color: Color::BLACK,
     }
 }
 
@@ -265,7 +265,7 @@ impl<V: View> Scroll<V> {
         let edge_width = 0.0;
         let scroll_offset = self.child_viewport.origin().to_vec2();
 
-        let color = self.scroll_bar_color.with_alpha_factor(0.7);
+        let color = self.scroll_bar_color.with_alpha_factor(self.opacity as f32);
         if let Some(bounds) = self.calc_vertical_bar_bounds(cx.app_state) {
             let rect = (bounds - scroll_offset).inset(-edge_width / 2.0);
             cx.fill(&rect, color);
@@ -284,7 +284,7 @@ impl<V: View> Scroll<V> {
         }
     }
 
-    fn calc_vertical_bar_bounds(&self, app_state: &mut AppState) -> Option<Rect> {
+    fn calc_vertical_bar_bounds(&self, _app_state: &mut AppState) -> Option<Rect> {
         let viewport_size = self.child_viewport.size();
         let content_size = self.child_size;
         let scroll_offset = self.child_viewport.origin().to_vec2();
@@ -314,7 +314,7 @@ impl<V: View> Scroll<V> {
         Some(Rect::new(x0, y0, x1, y1))
     }
 
-    fn calc_horizontal_bar_bounds(&self, app_state: &mut AppState) -> Option<Rect> {
+    fn calc_horizontal_bar_bounds(&self, _app_state: &mut AppState) -> Option<Rect> {
         let viewport_size = self.child_viewport.size();
         let content_size = self.child_size;
         let scroll_offset = self.child_viewport.origin().to_vec2();

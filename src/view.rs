@@ -4,7 +4,6 @@ use bitflags::bitflags;
 use floem_renderer::Renderer;
 use glazier::kurbo::{Line, Point, Size};
 use taffy::{prelude::Node, style::Display};
-use vello::peniko::Color;
 
 use crate::{
     context::{EventCx, LayoutCx, PaintCx, UpdateCx},
@@ -168,7 +167,7 @@ pub trait View {
             }
         }
 
-        if self.event(cx, id_path, event.clone()) {
+        if self.event(cx, id_path, event) {
             return true;
         }
 

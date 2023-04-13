@@ -9,18 +9,13 @@ use floem_renderer::{
 };
 use glazier::{
     kurbo::{Affine, Point, Rect, Shape, Size, Vec2},
-    Scalable, Scale,
+    Scale,
 };
 use taffy::{
     prelude::{Layout, Node},
     style::{AvailableSpace, Display},
 };
-use vello::{
-    glyph::GlyphContext,
-    peniko::Color,
-    util::{RenderContext, RenderSurface},
-    RenderParams, Renderer, RendererOptions, Scene, SceneBuilder, SceneFragment,
-};
+use vello::peniko::Color;
 
 use crate::{
     event::{Event, EventListner},
@@ -70,17 +65,6 @@ impl ViewState {
     }
 }
 
-pub(crate) struct TransformContext {
-    pub(crate) transform: Affine,
-    pub(crate) viewport: Option<Rect>,
-    pub(crate) color: Option<Color>,
-    pub(crate) font_size: Option<f32>,
-    pub(crate) saved_transforms: Vec<Affine>,
-    pub(crate) saved_viewports: Vec<Option<Rect>>,
-    pub(crate) saved_colors: Vec<Option<Color>>,
-    pub(crate) saved_font_sizes: Vec<Option<f32>>,
-}
-
 pub struct AppState {
     /// keyboard focus
     pub(crate) focus: Option<Id>,
@@ -91,6 +75,12 @@ pub struct AppState {
     pub(crate) root_size: Size,
     pub taffy: taffy::Taffy,
     pub(crate) view_states: HashMap<Id, ViewState>,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AppState {
@@ -128,7 +118,7 @@ impl AppState {
 
     pub fn compute_layout(&mut self) {
         if let Some(root) = self.root {
-            self.taffy.compute_layout(
+            let _ = self.taffy.compute_layout(
                 root,
                 taffy::prelude::Size {
                     width: AvailableSpace::Definite(self.root_size.width as f32),
@@ -152,11 +142,6 @@ impl AppState {
     pub(crate) fn set_viewport(&mut self, id: Id, viewport: Rect) {
         let view = self.view_state(id);
         view.viewport = Some(viewport);
-    }
-
-    pub(crate) fn layout_node(&mut self, id: Id) -> Node {
-        let view = self.view_state(id);
-        view.node
     }
 
     pub(crate) fn reset_children_layout(&mut self, id: Id) {
@@ -183,10 +168,6 @@ pub struct EventCx<'a> {
 }
 
 impl<'a> EventCx<'a> {
-    pub(crate) fn request_layout(&mut self, id: Id) {
-        self.app_state.request_layout(id);
-    }
-
     pub(crate) fn update_active(&mut self, id: Id) {
         self.app_state.update_active(id);
     }
@@ -349,11 +330,11 @@ impl<'a> LayoutCx<'a> {
         view.request_layout = false;
         // TODO: should we assume that the reified style is already initialized?
         let style = view.reified_style.as_ref().unwrap().to_taffy_style();
-        self.app_state.taffy.set_style(node, style);
+        let _ = self.app_state.taffy.set_style(node, style);
 
         if has_children {
             let nodes = children(self);
-            self.app_state.taffy.set_children(node, &nodes);
+            let _ = self.app_state.taffy.set_children(node, &nodes);
             let view = self.app_state.view_state(id);
             view.children_nodes = nodes;
         }
@@ -370,7 +351,6 @@ impl<'a> LayoutCx<'a> {
 }
 
 pub struct PaintCx<'a> {
-    pub(crate) builder: &'a mut SceneBuilder<'a>,
     pub(crate) app_state: &'a mut AppState,
     pub(crate) paint_state: &'a mut PaintState,
     pub(crate) transform: Affine,
@@ -408,7 +388,7 @@ impl<'a> PaintCx<'a> {
         self.font_family = self.saved_font_families.pop().unwrap_or_default();
         self.font_weight = self.saved_font_weights.pop().unwrap_or_default();
         self.font_style = self.saved_font_styles.pop().unwrap_or_default();
-        let renderer = self.paint_state.new_renderer.as_mut().unwrap();
+        let renderer = self.paint_state.renderer.as_mut().unwrap();
         renderer.transform(self.transform);
         if let Some(rect) = self.clip {
             renderer.clip(&rect);
@@ -451,7 +431,7 @@ impl<'a> PaintCx<'a> {
     pub fn clip(&mut self, shape: &impl Shape) {
         let rect = shape.bounding_box();
         self.clip = Some(rect);
-        self.paint_state.new_renderer.as_mut().unwrap().clip(&rect);
+        self.paint_state.renderer.as_mut().unwrap().clip(&rect);
     }
 
     pub fn offset(&mut self, offset: (f64, f64)) {
@@ -460,7 +440,7 @@ impl<'a> PaintCx<'a> {
         new[5] += offset.1;
         self.transform = Affine::new(new);
         self.paint_state
-            .new_renderer
+            .renderer
             .as_mut()
             .unwrap()
             .transform(self.transform);
@@ -477,7 +457,7 @@ impl<'a> PaintCx<'a> {
             new[5] += offset.y as f64;
             self.transform = Affine::new(new);
             self.paint_state
-                .new_renderer
+                .renderer
                 .as_mut()
                 .unwrap()
                 .transform(self.transform);
@@ -495,98 +475,31 @@ impl<'a> PaintCx<'a> {
 }
 
 pub struct PaintState {
-    pub(crate) render_cx: RenderContext,
-    glyph_contex: GlyphContext,
-    surface: Option<RenderSurface>,
-    renderer: Option<Renderer>,
-    pub(crate) new_renderer: Option<crate::renderer::Renderer>,
-    scene: Scene,
+    pub(crate) renderer: Option<crate::renderer::Renderer>,
     handle: glazier::WindowHandle,
+}
+
+impl Default for PaintState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PaintState {
     pub fn new() -> Self {
-        let render_cx = RenderContext::new().unwrap();
-
         Self {
-            render_cx,
-            surface: None,
             renderer: None,
-            new_renderer: None,
-            scene: Scene::default(),
             handle: Default::default(),
-            glyph_contex: GlyphContext::new(),
         }
     }
 
     pub(crate) fn connect(&mut self, handle: &glazier::WindowHandle) {
         self.handle = handle.clone();
-        self.new_renderer = Some(crate::renderer::Renderer::new(handle));
+        self.renderer = Some(crate::renderer::Renderer::new(handle));
     }
 
     pub(crate) fn resize(&mut self, scale: Scale, size: Size) {
-        self.new_renderer.as_mut().unwrap().resize(scale, size);
-    }
-
-    pub(crate) fn render(&mut self, fragment: &SceneFragment) {
-        let handle = &self.handle;
-        let scale = handle.get_scale().unwrap_or_default();
-        let insets = handle.content_insets().to_px(scale);
-        let mut size = handle.get_size().to_px(scale);
-        size.width -= insets.x_value();
-        size.height -= insets.y_value();
-        let width = size.width as u32;
-        let height = size.height as u32;
-        if self.surface.is_none() {
-            self.surface = Some(futures::executor::block_on(
-                self.render_cx.create_surface(handle, width, height),
-            ));
-        }
-        if let Some(surface) = self.surface.as_mut() {
-            if surface.config.width != width || surface.config.height != height {
-                self.render_cx.resize_surface(surface, width, height);
-            }
-            let (scale_x, scale_y) = (scale.x(), scale.y());
-            let transform = if scale_x != 1.0 || scale_y != 1.0 {
-                Some(Affine::scale_non_uniform(scale_x, scale_y))
-            } else {
-                None
-            };
-            let mut builder = SceneBuilder::for_scene(&mut self.scene);
-            builder.append(fragment, transform);
-            // self.counter += 1;
-            let surface_texture = surface
-                .surface
-                .get_current_texture()
-                .expect("failed to acquire next swapchain texture");
-            let dev_id = surface.dev_id;
-            let device = &self.render_cx.devices[dev_id].device;
-            let queue = &self.render_cx.devices[dev_id].queue;
-            self.renderer
-                .get_or_insert_with(|| {
-                    Renderer::new(
-                        device,
-                        &RendererOptions {
-                            surface_format: Some(surface.format),
-                        },
-                    )
-                    .unwrap()
-                })
-                .render_to_surface(
-                    device,
-                    queue,
-                    &self.scene,
-                    &surface_texture,
-                    &RenderParams {
-                        base_color: Color::BLACK,
-                        width,
-                        height,
-                    },
-                )
-                .expect("failed to render to surface");
-            surface_texture.present();
-            device.poll(wgpu::Maintain::Wait);
-        }
+        self.renderer.as_mut().unwrap().resize(scale, size);
     }
 }
 
@@ -608,12 +521,12 @@ impl Deref for PaintCx<'_> {
     type Target = crate::renderer::Renderer;
 
     fn deref(&self) -> &Self::Target {
-        self.paint_state.new_renderer.as_ref().unwrap()
+        self.paint_state.renderer.as_ref().unwrap()
     }
 }
 
 impl DerefMut for PaintCx<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.paint_state.new_renderer.as_mut().unwrap()
+        self.paint_state.renderer.as_mut().unwrap()
     }
 }

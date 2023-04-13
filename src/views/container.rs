@@ -32,8 +32,8 @@ impl<V: View> View for Container<V> {
 
     fn update(
         &mut self,
-        cx: &mut crate::context::UpdateCx,
-        state: Box<dyn std::any::Any>,
+        _cx: &mut crate::context::UpdateCx,
+        _state: Box<dyn std::any::Any>,
     ) -> crate::view::ChangeFlags {
         ChangeFlags::empty()
     }

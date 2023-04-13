@@ -2,7 +2,7 @@ pub use cosmic_text;
 use cosmic_text::TextLayout;
 use peniko::{
     kurbo::{Affine, Point, Rect, Shape},
-    Brush, BrushRef, Color,
+    BrushRef,
 };
 pub use usvg;
 

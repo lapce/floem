@@ -3,14 +3,12 @@ use std::{
     marker::PhantomData,
 };
 
-use indexmap::IndexMap;
 use leptos_reactive::{create_effect, ScopeDisposer};
 use rustc_hash::FxHasher;
 use smallvec::SmallVec;
-use taffy::style::{FlexDirection, Style};
 
 use crate::{
-    app::{AppContext, UpdateMessage},
+    app::AppContext,
     context::{AppState, EventCx, UpdateCx},
     id::Id,
     view::{ChangeFlags, View},
@@ -21,11 +19,6 @@ pub(crate) type FxIndexSet<T> = indexmap::IndexSet<T, BuildHasherDefault<FxHashe
 #[derive(educe::Educe)]
 #[educe(Debug)]
 pub(crate) struct HashRun<T>(#[educe(Debug(ignore))] pub(crate) T);
-
-enum ListDirection {
-    Horizontal,
-    Vertical,
-}
 
 pub struct List<V, VF, T>
 where
@@ -215,18 +208,6 @@ pub(crate) struct DiffOpAdd<V> {
 #[derive(Debug)]
 pub(crate) struct DiffOpRemove {
     at: usize,
-}
-
-#[derive(Debug)]
-pub(crate) enum DiffOpAddMode {
-    Normal,
-    Append,
-}
-
-impl Default for DiffOpAddMode {
-    fn default() -> Self {
-        Self::Normal
-    }
 }
 
 /// Calculates the operations need to get from `a` to `b`.
