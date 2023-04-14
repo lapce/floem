@@ -5,7 +5,7 @@
 A native Rust UI library with fine-grained reactivity
 </div>
 
-⚠️ It's currently work in progress and not usable for production, but you can already play with it!
+It's still early days so expect lots of things missing!
 
 ```rust
 fn app_logic(cx: AppContext) -> impl View {
