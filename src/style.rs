@@ -424,6 +424,10 @@ impl Style {
         self.justify_content(Some(JustifyContent::Center))
     }
 
+    pub fn flex_basis_pt(self, pt: f32) -> Self {
+        self.flex_basis(Dimension::Points(pt))
+    }
+
     pub fn flex_row(self) -> Self {
         self.flex_direction(FlexDirection::Row)
     }
