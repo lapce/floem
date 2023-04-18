@@ -18,6 +18,15 @@ pub trait Decorators: View + Sized {
         self
     }
 
+    fn hover_style(self, cx: AppContext, style: impl Fn() -> Style + 'static) -> Self {
+        let id = self.id();
+        create_effect(cx.scope, move |_| {
+            let style = style();
+            AppContext::update_hover_style(id, style);
+        });
+        self
+    }
+
     fn on_event(self, listener: EventListner, action: impl Fn(&Event) -> bool + 'static) -> Self {
         let id = self.id();
         AppContext::update_event_listner(id, listener, Box::new(action));

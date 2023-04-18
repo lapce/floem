@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     ops::{Deref, DerefMut},
 };
 
@@ -38,6 +38,7 @@ pub struct ViewState {
     pub(crate) request_layout: bool,
     pub(crate) viewport: Option<Rect>,
     pub(crate) style: Style,
+    pub(crate) hover_style: Option<Style>,
     pub(crate) reified_style: Option<ReifiedStyle>,
     pub(crate) event_listeners: HashMap<EventListner, Box<EventCallback>>,
     pub(crate) resize_listener: Option<ResizeListener>,
@@ -50,6 +51,7 @@ impl ViewState {
             viewport: None,
             request_layout: true,
             style: Style::default(),
+            hover_style: None,
             reified_style: None,
             children_nodes: Vec::new(),
             event_listeners: HashMap::new(),
@@ -58,9 +60,23 @@ impl ViewState {
     }
 
     // TODO: the held reified style could be a cache, so this could be `&self`
-    pub(crate) fn fill_reified_style(&mut self, view_style: &ReifiedStyle) -> &ReifiedStyle {
-        // TODO: this should take into account whether it is being hovered and other similar things
-        self.reified_style = Some(self.style.clone().reify(view_style));
+    pub(crate) fn fill_reified_style(
+        &mut self,
+        interact_state: InteractionState,
+        view_style: &ReifiedStyle,
+    ) -> &ReifiedStyle {
+        let base_style = self.style.clone().reify(view_style);
+        self.reified_style = if interact_state.is_hovered {
+            Some(
+                self.hover_style
+                    .clone()
+                    .unwrap_or_default()
+                    .reify(&base_style),
+            )
+        } else {
+            Some(base_style)
+        };
+
         self.reified_style.as_ref().unwrap()
     }
 }
@@ -75,6 +91,7 @@ pub struct AppState {
     pub(crate) root_size: Size,
     pub taffy: taffy::Taffy,
     pub(crate) view_states: HashMap<Id, ViewState>,
+    pub(crate) hovered: HashSet<Id>,
 }
 
 impl Default for AppState {
@@ -94,6 +111,7 @@ impl AppState {
             root_size: Size::ZERO,
             taffy,
             view_states: HashMap::new(),
+            hovered: HashSet::new(),
         }
     }
 
@@ -109,6 +127,14 @@ impl AppState {
             // TODO: this unwrap_or is wrong. The style might not specify it, but the underlying view style can
             .map(|s| s.style.display.unwrap_or(Display::Flex) == Display::None)
             .unwrap_or(false)
+    }
+
+    pub fn get_interact_state(&self, id: &Id) -> InteractionState {
+        if self.hovered.contains(id) {
+            return InteractionState { is_hovered: true };
+        }
+
+        InteractionState::default()
     }
 
     pub fn set_root_size(&mut self, size: Size) {
@@ -176,6 +202,14 @@ impl<'a> EventCx<'a> {
         self.app_state.view_states.get(&id).map(|s| &s.style)
     }
 
+    pub fn get_hover_style(&self, id: Id) -> Option<&Style> {
+        if let Some(vs) = self.app_state.view_states.get(&id) {
+            return vs.hover_style.as_ref();
+        }
+
+        None
+    }
+
     pub(crate) fn get_layout(&self, id: Id) -> Option<Layout> {
         self.app_state.get_layout(id)
     }
@@ -227,10 +261,20 @@ impl<'a> EventCx<'a> {
                 {
                     return true;
                 }
+                // Needed to handle mouse leave for hovered views
+                if self.app_state.hovered.contains(&id) {
+                    return true;
+                }
             }
         }
         false
     }
+}
+
+#[derive(Default)]
+pub struct InteractionState {
+    is_hovered: bool,
+    // TODO: Add focus, active, disabled and consider changing to a bitflag
 }
 
 pub struct LayoutCx<'a> {
@@ -293,8 +337,9 @@ impl<'a> LayoutCx<'a> {
         view_style: &ReifiedStyle,
         id: Id,
     ) -> Option<&ReifiedStyle> {
-        let state = self.app_state.view_state(id);
-        Some(state.fill_reified_style(view_style))
+        let intr_state = self.app_state.get_interact_state(&id);
+        let view_state = self.app_state.view_state(id);
+        Some(view_state.fill_reified_style(intr_state, view_style))
     }
 
     pub fn get_layout(&self, id: Id) -> Option<Layout> {
@@ -422,10 +467,11 @@ impl<'a> PaintCx<'a> {
         view_style: &ReifiedStyle,
         id: Id,
     ) -> Option<&ReifiedStyle> {
+        let intr_state = self.app_state.get_interact_state(&id);
         self.app_state
             .view_states
             .get_mut(&id)
-            .map(|s| s.fill_reified_style(view_style))
+            .map(|s| s.fill_reified_style(intr_state, view_style))
     }
 
     pub fn clip(&mut self, shape: &impl Shape) {

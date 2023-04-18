@@ -65,6 +65,10 @@ impl AppContext {
         UPDATE_MESSAGES.with(|msgs| msgs.borrow_mut().push(UpdateMessage::Style { id, style }));
     }
 
+    pub fn update_hover_style(id: Id, style: Style) {
+        UPDATE_MESSAGES.with(|msgs| msgs.borrow_mut().push(UpdateMessage::HoverStyle { id, style }));
+    }
+
     pub fn update_event_listner(id: Id, listener: EventListner, action: Box<EventCallback>) {
         UPDATE_MESSAGES.with(|msgs| {
             msgs.borrow_mut().push(UpdateMessage::EventListener {
@@ -112,6 +116,10 @@ pub enum UpdateMessage {
         state: Box<dyn Any>,
     },
     Style {
+        id: Id,
+        style: Style,
+    },
+    HoverStyle {
         id: Id,
         style: Style,
     },
@@ -244,6 +252,10 @@ impl<V: View> App<V> {
                         let state = cx.app_state.view_state(id);
                         state.style = style;
                         cx.request_layout(id);
+                    }
+                    UpdateMessage::HoverStyle { id, style } => {
+                        let state = cx.app_state.view_state(id);
+                        state.hover_style = Some(style);
                     }
                     UpdateMessage::EventListener {
                         id,
