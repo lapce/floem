@@ -66,14 +66,15 @@ impl ViewState {
         view_style: &ReifiedStyle,
     ) -> &ReifiedStyle {
         let base_style = self.style.clone().reify(view_style);
-        self.reified_style = match interact_state {
-            InteractionState::Hover => Some(
+        self.reified_style = if interact_state.is_hovered {
+            Some(
                 self.hover_style
                     .clone()
                     .unwrap_or_default()
                     .reify(&base_style),
-            ),
-            InteractionState::Default => Some(base_style),
+            )
+        } else {
+            Some(base_style)
         };
 
         self.reified_style.as_ref().unwrap()
@@ -130,10 +131,10 @@ impl AppState {
 
     pub fn get_interact_state(&self, id: &Id) -> InteractionState {
         if self.hovered.contains(id) {
-            return InteractionState::Hover;
+            return InteractionState { is_hovered: true };
         }
 
-        InteractionState::Default
+        InteractionState::default()
     }
 
     pub fn set_root_size(&mut self, size: Size) {
@@ -270,10 +271,10 @@ impl<'a> EventCx<'a> {
     }
 }
 
-pub enum InteractionState {
-    Default,
-    Hover,
-    // TODO: focus, active, disabled
+#[derive(Default)]
+pub struct InteractionState {
+    is_hovered: bool,
+    // TODO: Add focus, active, disabled and consider changing to a bitflag
 }
 
 pub struct LayoutCx<'a> {
