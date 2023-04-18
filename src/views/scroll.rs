@@ -431,12 +431,13 @@ impl<V: View> View for Scroll<V> {
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
             let child_id = self.child.id();
+            let child_intr_state = cx.app_state.get_interact_state(&child_id);
             let mut child_view = cx.app_state.view_state(child_id);
             child_view.style.position = StyleValue::Val(Position::Absolute);
             // Update the reified style
             child_view.reified_style = None;
             let child_view_style = self.child.view_style().unwrap_or_default();
-            child_view.fill_reified_style(&child_view_style);
+            child_view.fill_reified_style(child_intr_state, &child_view_style);
 
             let child_node = self.child.layout_main(cx);
 

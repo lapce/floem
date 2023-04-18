@@ -3,7 +3,7 @@ use floem::{
     reactive::{create_signal, SignalGet, SignalUpdate},
     style::Style,
     view::View,
-    views::{click, label, stack, Decorators},
+    views::{click, label, stack, Decorators}, peniko::Color,
 };
 
 fn app_logic(cx: AppContext) -> impl View {
@@ -24,7 +24,8 @@ fn app_logic(cx: AppContext) -> impl View {
                             .border(1.0)
                             .border_radius(10.0)
                             .padding(10.0)
-                    }),
+                    })
+                    .hover_style(cx, || Style::default().background(Color::GREEN)),
                     click(
                         cx,
                         |cx| label(cx, || "Decrement".to_string()),
@@ -36,7 +37,8 @@ fn app_logic(cx: AppContext) -> impl View {
                             .border_radius(10.0)
                             .padding(10.0)
                             .margin_left(10.0)
-                    }),
+                    })
+                    .hover_style(cx, || Style::default().background(Color::RED)),
                 )
             }),
         )

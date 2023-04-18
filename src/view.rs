@@ -167,6 +167,22 @@ pub trait View {
             }
         }
 
+        match &event {
+            Event::MouseMove(event) => {
+                let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
+                let is_in_hovered = cx.app_state.hovered.contains(&self.id());
+
+                if rect.contains(event.pos) && !is_in_hovered {
+                    cx.app_state.hovered.insert(self.id());
+                    cx.app_state.reset_children_layout(self.id());
+                } else if !rect.contains(event.pos) && is_in_hovered {
+                    cx.app_state.hovered.remove(&self.id());
+                    cx.app_state.reset_children_layout(self.id());
+                }
+            }
+            _ => {}
+        }
+
         if self.event(cx, id_path, event) {
             return true;
         }
