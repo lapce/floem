@@ -3,13 +3,13 @@ use std::any::Any;
 use bitflags::bitflags;
 use floem_renderer::Renderer;
 use glazier::kurbo::{Line, Point, Size};
-use taffy::{prelude::Node, style::Display};
+use taffy::prelude::Node;
 
 use crate::{
     context::{EventCx, LayoutCx, PaintCx, UpdateCx},
     event::Event,
     id::Id,
-    style::ReifiedStyle,
+    style::{ComputedStyle, Style},
 };
 
 bitflags! {
@@ -26,7 +26,7 @@ bitflags! {
 pub trait View {
     fn id(&self) -> Id;
 
-    fn view_style(&self) -> Option<ReifiedStyle> {
+    fn view_style(&self) -> Option<Style> {
         None
     }
 
@@ -55,22 +55,21 @@ pub trait View {
     fn layout_main(&mut self, cx: &mut LayoutCx) -> Node {
         cx.save();
 
-        // TODO: We only need to get the view style if the cached reified style is None.
-        let view_style = self.view_style().unwrap_or_default();
-        let style = cx.get_reified_style(&view_style, self.id()).cloned();
-        if let Some(style) = style {
-            if style.font_size.is_some() {
-                cx.font_size = style.font_size;
-            }
-            if style.font_family.is_some() {
-                cx.font_family = style.font_family;
-            }
-            if style.font_weight.is_some() {
-                cx.font_weight = style.font_weight;
-            }
-            if style.font_style.is_some() {
-                cx.font_style = style.font_style;
-            }
+        let view_style = self.view_style();
+        cx.app_state.compute_style(self.id(), view_style);
+        let style = cx.app_state.get_computed_style(self.id()).clone();
+
+        if style.font_size.is_some() {
+            cx.font_size = style.font_size;
+        }
+        if style.font_family.is_some() {
+            cx.font_family = style.font_family;
+        }
+        if style.font_weight.is_some() {
+            cx.font_weight = style.font_weight;
+        }
+        if style.font_style.is_some() {
+            cx.font_style = style.font_style;
         }
 
         let node = self.layout(cx);
@@ -147,6 +146,29 @@ pub trait View {
         }
 
         let event = cx.offset_event(self.id(), event);
+
+        if let Event::MouseMove(event) = &event {
+            let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
+            let was_in_hovered = cx.app_state.hovered.contains(&self.id());
+
+            let hover_changed = if rect.contains(event.pos) && !was_in_hovered {
+                cx.app_state.hovered.insert(self.id());
+                true
+            } else if !rect.contains(event.pos) && was_in_hovered {
+                cx.app_state.hovered.remove(&self.id());
+                true
+            } else {
+                false
+            };
+
+            if hover_changed {
+                let view_state = cx.app_state.view_state(self.id());
+                if view_state.hover_style.is_some() {
+                    cx.app_state.request_layout(self.id());
+                }
+            }
+        }
+
         if let Some(id_path) = id_path {
             let id = id_path[0];
             let id_path = &id_path[1..];
@@ -167,22 +189,6 @@ pub trait View {
             }
         }
 
-        match &event {
-            Event::MouseMove(event) => {
-                let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
-                let is_in_hovered = cx.app_state.hovered.contains(&self.id());
-
-                if rect.contains(event.pos) && !is_in_hovered {
-                    cx.app_state.hovered.insert(self.id());
-                    cx.app_state.reset_children_layout(self.id());
-                } else if !rect.contains(event.pos) && is_in_hovered {
-                    cx.app_state.hovered.remove(&self.id());
-                    cx.app_state.reset_children_layout(self.id());
-                }
-            }
-            _ => {}
-        }
-
         if self.event(cx, id_path, event) {
             return true;
         }
@@ -194,13 +200,7 @@ pub trait View {
 
     fn paint_main(&mut self, cx: &mut PaintCx) {
         let id = self.id();
-        let view_style = self.view_style().unwrap_or_default();
-        let style = cx.get_reified_style(&view_style, id).cloned();
-        if style
-            .as_ref()
-            .map(|s| s.display == Display::None)
-            .unwrap_or(false)
-        {
+        if cx.app_state.is_hidden(id) {
             return;
         }
 
@@ -211,29 +211,26 @@ pub trait View {
             .map(|rect| rect.intersect(size.to_rect()).is_empty())
             .unwrap_or(false);
         if !is_empty {
-            if let Some(style) = style.as_ref() {
-                paint_bg(cx, style, size);
+            let style = cx.app_state.get_computed_style(id).clone();
+            paint_bg(cx, &style, size);
 
-                if style.color.is_some() {
-                    cx.color = style.color;
-                }
-                if style.font_size.is_some() {
-                    cx.font_size = style.font_size;
-                }
-                if style.font_family.is_some() {
-                    cx.font_family = style.font_family.clone();
-                }
-                if style.font_weight.is_some() {
-                    cx.font_weight = style.font_weight;
-                }
-                if style.font_style.is_some() {
-                    cx.font_style = style.font_style;
-                }
+            if style.color.is_some() {
+                cx.color = style.color;
+            }
+            if style.font_size.is_some() {
+                cx.font_size = style.font_size;
+            }
+            if style.font_family.is_some() {
+                cx.font_family = style.font_family.clone();
+            }
+            if style.font_weight.is_some() {
+                cx.font_weight = style.font_weight;
+            }
+            if style.font_style.is_some() {
+                cx.font_style = style.font_style;
             }
             self.paint(cx);
-            if let Some(style) = style.as_ref() {
-                paint_border(cx, style, size);
-            }
+            paint_border(cx, &style, size);
         }
         cx.restore();
     }
@@ -241,7 +238,7 @@ pub trait View {
     fn paint(&mut self, cx: &mut PaintCx);
 }
 
-fn paint_bg(cx: &mut PaintCx, style: &ReifiedStyle, size: Size) {
+fn paint_bg(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
     let bg = match style.background {
         Some(color) => color,
         None => return,
@@ -256,7 +253,7 @@ fn paint_bg(cx: &mut PaintCx, style: &ReifiedStyle, size: Size) {
     }
 }
 
-fn paint_border(cx: &mut PaintCx, style: &ReifiedStyle, size: Size) {
+fn paint_border(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
     let left = style.border_left;
     let top = style.border_top;
     let right = style.border_right;

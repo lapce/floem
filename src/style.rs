@@ -1,14 +1,14 @@
 //! # Style  
 //! Styles are divided into two parts:
-//! [`ReifiedStyle`]: A style with definite values for most fields.  
+//! [`ComputedStyle`]: A style with definite values for most fields.  
 //!
 //! [`Style`]: A style with [`StyleValue`]s for the fields, where `Unset` falls back to the relevant
-//! field in the [`ReifiedStyle`] and `Base` falls back to the underlying [`Style`] or the
-//! [`ReifiedStyle`].
+//! field in the [`ComputedStyle`] and `Base` falls back to the underlying [`Style`] or the
+//! [`ComputedStyle`].
 //!
 //!
 //! A loose analogy with CSS might be:  
-//! [`ReifiedStyle`] is like the browser's default style sheet for any given element (view).  
+//! [`ComputedStyle`] is like the browser's default style sheet for any given element (view).  
 //!   
 //! [`Style`] is like the styling associated with a *specific* element (view):
 //! ```html
@@ -39,7 +39,7 @@ use vello::peniko::Color;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StyleValue<T> {
     Val(T),
-    /// Use the default value for the style, typically from the underlying `ReifiedStyle`
+    /// Use the default value for the style, typically from the underlying `ComputedStyle`
     Unset,
     /// Use whatever the base style is. For an overriding style like hover, this uses the base
     /// style. For the base style, this is equivalent to `Unset`
@@ -85,7 +85,7 @@ impl<T> From<T> for StyleValue<T> {
     }
 }
 
-// Creates `ReifiedStyle` which has definite values for the fields, barring some specific cases.
+// Creates `ComputedStyle` which has definite values for the fields, barring some specific cases.
 // Creates `Style` which has `StyleValue<T>`s for the fields
 macro_rules! define_styles {
     (
@@ -93,12 +93,12 @@ macro_rules! define_styles {
     ) => {
         /// A style with definite values for most fields.
         #[derive(Debug, Clone)]
-        pub struct ReifiedStyle {
+        pub struct ComputedStyle {
             $(
                 pub $name: $typ,
             )*
         }
-        impl ReifiedStyle {
+        impl ComputedStyle {
             $(
                 pub fn $name(mut self, v: impl Into<$typ>) -> Self {
                     self.$name = v.into();
@@ -106,7 +106,7 @@ macro_rules! define_styles {
                 }
             )*
         }
-        impl Default for ReifiedStyle {
+        impl Default for ComputedStyle {
             fn default() -> Self {
                 Self {
                     $(
@@ -144,10 +144,10 @@ macro_rules! define_styles {
                 define_styles!(decl: $name $($opt)?: $typ = $val);
             )*
 
-            /// Convert this `Style` into a reified style, using the given `ReifiedStyle` as a base
+            /// Convert this `Style` into a computed style, using the given `ComputedStyle` as a base
             /// for any missing values.
-            pub fn reify(self, underlying: &ReifiedStyle) -> ReifiedStyle {
-                ReifiedStyle {
+            pub fn compute(self, underlying: &ComputedStyle) -> ComputedStyle {
+                ComputedStyle {
                     $(
                         $name: self.$name.unwrap_or_else(|| underlying.$name.clone()),
                     )*
@@ -158,9 +158,9 @@ macro_rules! define_styles {
             ///
             /// `StyleValue::Val` will override the value with the given value
             /// `StyleValue::Unset` will unset the value, causing it to fall back to the underlying
-            /// `ReifiedStyle` (aka setting it to `None`)
+            /// `ComputedStyle` (aka setting it to `None`)
             /// `StyleValue::Base` will leave the value as-is, whether falling back to the underlying
-            /// `ReifiedStyle` or using the value in the `Style`.
+            /// `ComputedStyle` or using the value in the `Style`.
             pub fn apply(self, over: Style) -> Style {
                 Style {
                     $(
@@ -469,7 +469,7 @@ impl Style {
     }
 }
 
-impl ReifiedStyle {
+impl ComputedStyle {
     pub fn to_taffy_style(&self) -> TaffyStyle {
         TaffyStyle {
             display: self.display,

@@ -20,7 +20,7 @@ use vello::peniko::Color;
 use crate::{
     event::{Event, EventListner},
     id::Id,
-    style::{ReifiedStyle, Style},
+    style::{ComputedStyle, Style},
 };
 
 pub type EventCallback = dyn Fn(&Event) -> bool;
@@ -39,7 +39,7 @@ pub struct ViewState {
     pub(crate) viewport: Option<Rect>,
     pub(crate) style: Style,
     pub(crate) hover_style: Option<Style>,
-    pub(crate) reified_style: Option<ReifiedStyle>,
+    pub(crate) computed_style: ComputedStyle,
     pub(crate) event_listeners: HashMap<EventListner, Box<EventCallback>>,
     pub(crate) resize_listener: Option<ResizeListener>,
 }
@@ -51,33 +51,31 @@ impl ViewState {
             viewport: None,
             request_layout: true,
             style: Style::default(),
+            computed_style: ComputedStyle::default(),
             hover_style: None,
-            reified_style: None,
             children_nodes: Vec::new(),
             event_listeners: HashMap::new(),
             resize_listener: None,
         }
     }
 
-    // TODO: the held reified style could be a cache, so this could be `&self`
-    pub(crate) fn fill_reified_style(
+    pub(crate) fn compute_style(
         &mut self,
+        view_style: Option<Style>,
         interact_state: InteractionState,
-        view_style: &ReifiedStyle,
-    ) -> &ReifiedStyle {
-        let base_style = self.style.clone().reify(view_style);
-        self.reified_style = if interact_state.is_hovered {
-            Some(
-                self.hover_style
-                    .clone()
-                    .unwrap_or_default()
-                    .reify(&base_style),
-            )
+    ) {
+        let mut computed_style = if let Some(view_style) = view_style {
+            view_style.apply(self.style.clone())
         } else {
-            Some(base_style)
+            self.style.clone()
         };
 
-        self.reified_style.as_ref().unwrap()
+        if interact_state.is_hovered {
+            if let Some(hover_style) = self.hover_style.clone() {
+                computed_style = computed_style.apply(hover_style);
+            }
+        }
+        self.computed_style = computed_style.compute(&ComputedStyle::default());
     }
 }
 
@@ -129,17 +127,30 @@ impl AppState {
             .unwrap_or(false)
     }
 
-    pub fn get_interact_state(&self, id: &Id) -> InteractionState {
-        if self.hovered.contains(id) {
-            return InteractionState { is_hovered: true };
-        }
+    pub fn is_hovered(&self, id: Id) -> bool {
+        self.hovered.contains(&id)
+    }
 
-        InteractionState::default()
+    pub fn get_interact_state(&self, id: Id) -> InteractionState {
+        InteractionState {
+            is_hovered: self.is_hovered(id),
+        }
     }
 
     pub fn set_root_size(&mut self, size: Size) {
         self.root_size = size;
         self.compute_layout();
+    }
+
+    pub(crate) fn compute_style(&mut self, id: Id, view_style: Option<Style>) {
+        let interact_state = self.get_interact_state(id);
+        let view_state = self.view_state(id);
+        view_state.compute_style(view_style, interact_state);
+    }
+
+    pub(crate) fn get_computed_style(&mut self, id: Id) -> &ComputedStyle {
+        let view_state = self.view_state(id);
+        &view_state.computed_style
     }
 
     pub fn compute_layout(&mut self) {
@@ -332,16 +343,6 @@ impl<'a> LayoutCx<'a> {
         self.font_family.as_deref()
     }
 
-    pub fn get_reified_style(
-        &mut self,
-        view_style: &ReifiedStyle,
-        id: Id,
-    ) -> Option<&ReifiedStyle> {
-        let intr_state = self.app_state.get_interact_state(&id);
-        let view_state = self.app_state.view_state(id);
-        Some(view_state.fill_reified_style(intr_state, view_style))
-    }
-
     pub fn get_layout(&self, id: Id) -> Option<Layout> {
         self.app_state.get_layout(id)
     }
@@ -373,8 +374,7 @@ impl<'a> LayoutCx<'a> {
             return node;
         }
         view.request_layout = false;
-        // TODO: should we assume that the reified style is already initialized?
-        let style = view.reified_style.as_ref().unwrap().to_taffy_style();
+        let style = view.computed_style.to_taffy_style();
         let _ = self.app_state.taffy.set_style(node, style);
 
         if has_children {
@@ -460,18 +460,6 @@ impl<'a> PaintCx<'a> {
 
     pub fn get_layout(&mut self, id: Id) -> Option<Layout> {
         self.app_state.get_layout(id)
-    }
-
-    pub fn get_reified_style(
-        &mut self,
-        view_style: &ReifiedStyle,
-        id: Id,
-    ) -> Option<&ReifiedStyle> {
-        let intr_state = self.app_state.get_interact_state(&id);
-        self.app_state
-            .view_states
-            .get_mut(&id)
-            .map(|s| s.fill_reified_style(intr_state, view_style))
     }
 
     pub fn clip(&mut self, shape: &impl Shape) {

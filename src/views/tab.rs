@@ -152,12 +152,14 @@ where
                 .enumerate()
                 .filter_map(|(i, child)| {
                     let node = child.as_mut()?.0.layout_main(cx);
+                    let mut style = cx.app_state.taffy.style(node).cloned().unwrap();
                     if i != self.active {
                         // set display to none for non active child
-                        let mut style = cx.app_state.taffy.style(node).cloned().unwrap();
                         style.display = Display::None;
-                        let _ = cx.app_state.taffy.set_style(node, style);
+                    } else {
+                        style.display = Display::Flex;
                     }
+                    let _ = cx.app_state.taffy.set_style(node, style);
                     Some(node)
                 })
                 .collect::<Vec<_>>();

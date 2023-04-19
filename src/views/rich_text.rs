@@ -10,7 +10,7 @@ use crate::{
     context::{EventCx, UpdateCx},
     event::Event,
     id::Id,
-    style::{ReifiedStyle, Style},
+    style::{ComputedStyle, Style},
     view::{ChangeFlags, View},
 };
 
@@ -76,7 +76,7 @@ impl View for RichText {
             let style = Style::default()
                 .width(Dimension::Points(width))
                 .height(Dimension::Points(height))
-                .reify(&ReifiedStyle::default())
+                .compute(&ComputedStyle::default())
                 .to_taffy_style();
             let _ = cx.app_state.taffy.set_style(text_node, style);
             vec![text_node]

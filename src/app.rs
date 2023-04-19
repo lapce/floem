@@ -66,7 +66,10 @@ impl AppContext {
     }
 
     pub fn update_hover_style(id: Id, style: Style) {
-        UPDATE_MESSAGES.with(|msgs| msgs.borrow_mut().push(UpdateMessage::HoverStyle { id, style }));
+        UPDATE_MESSAGES.with(|msgs| {
+            msgs.borrow_mut()
+                .push(UpdateMessage::HoverStyle { id, style })
+        });
     }
 
     pub fn update_event_listner(id: Id, listener: EventListner, action: Box<EventCallback>) {
@@ -256,6 +259,7 @@ impl<V: View> App<V> {
                     UpdateMessage::HoverStyle { id, style } => {
                         let state = cx.app_state.view_state(id);
                         state.hover_style = Some(style);
+                        cx.request_layout(id);
                     }
                     UpdateMessage::EventListener {
                         id,
