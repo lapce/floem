@@ -35,6 +35,12 @@ use taffy::{
 };
 use vello::peniko::Color;
 
+#[derive(Debug, Clone, Copy)]
+pub enum CursorStyle {
+    Default,
+    Pointer,
+}
+
 /// The value for a [`Style`] property
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StyleValue<T> {
@@ -226,6 +232,7 @@ define_styles!(
     margin_top: f32 = 0.0,
     margin_right: f32 = 0.0,
     margin_bottom: f32 = 0.0,
+    cursor nocb: Option<CursorStyle> = None,
     color nocb: Option<Color> = None,
     background nocb: Option<Color> = None,
     font_size nocb: Option<f32> = None,
@@ -380,6 +387,11 @@ impl Style {
     /// Sets `margin_top` and `margin_bottom` to `margin`
     pub fn margin_vert(self, margin: f32) -> Self {
         self.margin_top(margin).margin_bottom(margin)
+    }
+
+    pub fn cursor(mut self, cursor: impl Into<StyleValue<CursorStyle>>) -> Self {
+        self.cursor = cursor.into().map(Some);
+        self
     }
 
     pub fn color(mut self, color: impl Into<StyleValue<Color>>) -> Self {

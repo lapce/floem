@@ -20,7 +20,7 @@ use vello::peniko::Color;
 use crate::{
     event::{Event, EventListner},
     id::Id,
-    style::{ComputedStyle, Style},
+    style::{ComputedStyle, CursorStyle, Style},
 };
 
 pub type EventCallback = dyn Fn(&Event) -> bool;
@@ -90,6 +90,7 @@ pub struct AppState {
     pub taffy: taffy::Taffy,
     pub(crate) view_states: HashMap<Id, ViewState>,
     pub(crate) hovered: HashSet<Id>,
+    pub(crate) cursor: CursorStyle,
 }
 
 impl Default for AppState {
@@ -110,6 +111,7 @@ impl AppState {
             taffy,
             view_states: HashMap::new(),
             hovered: HashSet::new(),
+            cursor: CursorStyle::Default,
         }
     }
 
