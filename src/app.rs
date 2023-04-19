@@ -66,7 +66,10 @@ impl AppContext {
     }
 
     pub fn update_hover_style(id: Id, style: Style) {
-        UPDATE_MESSAGES.with(|msgs| msgs.borrow_mut().push(UpdateMessage::HoverStyle { id, style }));
+        UPDATE_MESSAGES.with(|msgs| {
+            msgs.borrow_mut()
+                .push(UpdateMessage::HoverStyle { id, style })
+        });
     }
 
     pub fn update_event_listner(id: Id, listener: EventListner, action: Box<EventCallback>) {
@@ -416,7 +419,12 @@ impl<V: View> WinHandler for App<V> {
         }
     }
 
+    fn request_close(&mut self) {
+        self.handle.close();
+    }
+
     fn destroy(&mut self) {
         self.event(Event::WindowClosed);
+        glazier::Application::global().quit();
     }
 }
