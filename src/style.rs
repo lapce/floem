@@ -39,6 +39,7 @@ use vello::peniko::Color;
 pub enum CursorStyle {
     Default,
     Pointer,
+    Text,
 }
 
 /// The value for a [`Style`] property

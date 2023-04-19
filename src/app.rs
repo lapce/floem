@@ -328,6 +328,7 @@ impl<V: View> App<V> {
         let glazier_cursor = match self.app_state.cursor {
             CursorStyle::Default => glazier::Cursor::Arrow,
             CursorStyle::Pointer => glazier::Cursor::Pointer,
+            CursorStyle::Text => glazier::Cursor::IBeam,
         };
         self.handle.set_cursor(&glazier_cursor);
 
