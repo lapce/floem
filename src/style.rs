@@ -136,22 +136,11 @@ macro_rules! define_styles {
                 )*
             };
 
-            pub fn unset() -> Self {
-                Self {
-                    $(
-                        $name: StyleValue::Unset,
-                    )*
-                }
-            }
-
-            /// Equivalent to [`Style::default`]
-            pub fn base() -> Self {
-                Self {
-                    $(
-                        $name: StyleValue::Base,
-                    )*
-                }
-            }
+            pub const UNSET: Style = Style{
+                $(
+                    $name: StyleValue::Unset,
+                )*
+            };
 
             $(
                 define_styles!(decl: $name $($opt)?: $typ = $val);
