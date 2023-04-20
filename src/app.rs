@@ -443,7 +443,12 @@ impl<V: View> WinHandler for App<V> {
         }
     }
 
+    fn request_close(&mut self) {
+        self.handle.close();
+    }
+
     fn destroy(&mut self) {
         self.event(Event::WindowClosed);
+        glazier::Application::global().quit();
     }
 }
