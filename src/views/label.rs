@@ -2,7 +2,7 @@ use std::any::Any;
 
 use crate::{
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
-    style::ReifiedStyle,
+    style::ComputedStyle,
 };
 use floem_renderer::{
     cosmic_text::{Style as FontStyle, Weight},
@@ -170,7 +170,7 @@ impl View for Label {
             let style = Style::default()
                 .width(Dimension::Points(width))
                 .height(Dimension::Points(height))
-                .reify(&ReifiedStyle::default())
+                .compute(&ComputedStyle::default())
                 .to_taffy_style();
             let _ = cx.app_state.taffy.set_style(text_node, style);
 

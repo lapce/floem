@@ -15,7 +15,7 @@ use crate::{
     event::{Event, EventListner},
     ext_event::{EXT_EVENT_HANDLER, WRITE_SIGNALS},
     id::{Id, IDPATHS},
-    style::Style,
+    style::{CursorStyle, Style},
     view::{ChangeFlags, View},
 };
 
@@ -72,6 +72,13 @@ impl AppContext {
         });
     }
 
+    pub fn update_cursor_style(cursor: CursorStyle) {
+        UPDATE_MESSAGES.with(|msgs| {
+            msgs.borrow_mut()
+                .push(UpdateMessage::CursorStyle { cursor })
+        });
+    }
+
     pub fn update_event_listner(id: Id, listener: EventListner, action: Box<EventCallback>) {
         UPDATE_MESSAGES.with(|msgs| {
             msgs.borrow_mut().push(UpdateMessage::EventListener {
@@ -125,6 +132,9 @@ pub enum UpdateMessage {
     HoverStyle {
         id: Id,
         style: Style,
+    },
+    CursorStyle {
+        cursor: CursorStyle,
     },
     EventListener {
         id: Id,
@@ -259,6 +269,10 @@ impl<V: View> App<V> {
                     UpdateMessage::HoverStyle { id, style } => {
                         let state = cx.app_state.view_state(id);
                         state.hover_style = Some(style);
+                        cx.request_layout(id);
+                    }
+                    UpdateMessage::CursorStyle { cursor } => {
+                        cx.app_state.cursor = cursor;
                     }
                     UpdateMessage::EventListener {
                         id,
@@ -311,6 +325,13 @@ impl<V: View> App<V> {
             flags |= self.process_deferred_update_messages();
         }
 
+        let glazier_cursor = match self.app_state.cursor {
+            CursorStyle::Default => glazier::Cursor::Arrow,
+            CursorStyle::Pointer => glazier::Cursor::Pointer,
+            CursorStyle::Text => glazier::Cursor::IBeam,
+        };
+        self.handle.set_cursor(&glazier_cursor);
+
         if !flags.is_empty() {
             self.handle.invalidate();
         }
@@ -340,6 +361,9 @@ impl<V: View> App<V> {
                 self.app_state.active = None;
             }
         } else {
+            if let Event::MouseMove(_) = &event {
+                cx.app_state.cursor = CursorStyle::Default;
+            }
             self.view.event_main(&mut cx, None, event);
         }
         self.process_update();

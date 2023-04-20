@@ -12,7 +12,7 @@ use crate::{
     context::{AppState, LayoutCx, PaintCx},
     event::Event,
     id::Id,
-    style::{ReifiedStyle, Style, StyleValue},
+    style::{ComputedStyle, Style, StyleValue},
     view::{ChangeFlags, View},
 };
 
@@ -431,14 +431,8 @@ impl<V: View> View for Scroll<V> {
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
             let child_id = self.child.id();
-            let child_intr_state = cx.app_state.get_interact_state(&child_id);
             let mut child_view = cx.app_state.view_state(child_id);
             child_view.style.position = StyleValue::Val(Position::Absolute);
-            // Update the reified style
-            child_view.reified_style = None;
-            let child_view_style = self.child.view_style().unwrap_or_default();
-            child_view.fill_reified_style(child_intr_state, &child_view_style);
-
             let child_node = self.child.layout_main(cx);
 
             let virtual_style = Style::default()
@@ -446,7 +440,7 @@ impl<V: View> View for Scroll<V> {
                 .height(Dimension::Points(self.child_size.height as f32))
                 .min_width(Dimension::Points(0.0))
                 .min_height(Dimension::Points(0.0))
-                .reify(&ReifiedStyle::default())
+                .compute(&ComputedStyle::default())
                 .to_taffy_style();
             if self.virtual_node.is_none() {
                 self.virtual_node =
