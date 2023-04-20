@@ -72,7 +72,7 @@ impl AppContext {
         UPDATE_MESSAGES.with(|msgs| msgs.borrow_mut().push(UpdateMessage::Style { id, style }));
     }
 
-    pub fn update_selector_style(id: Id, style: Style, selector: StyleSelector) {
+    pub fn update_style_selector(id: Id, style: Style, selector: StyleSelector) {
         UPDATE_MESSAGES.with(|msgs| {
             msgs.borrow_mut().push(UpdateMessage::StyleSelector {
                 id,

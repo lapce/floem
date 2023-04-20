@@ -22,7 +22,7 @@ pub trait Decorators: View + Sized {
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
-            AppContext::update_selector_style(id, style, StyleSelector::Hover);
+            AppContext::update_style_selector(id, style, StyleSelector::Hover);
         });
         self
     }
@@ -31,7 +31,7 @@ pub trait Decorators: View + Sized {
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
-            AppContext::update_selector_style(id, style, StyleSelector::Focus);
+            AppContext::update_style_selector(id, style, StyleSelector::Focus);
         });
         self
     }
@@ -40,7 +40,7 @@ pub trait Decorators: View + Sized {
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
-            AppContext::update_selector_style(id, style, StyleSelector::Active);
+            AppContext::update_style_selector(id, style, StyleSelector::Active);
         });
         self
     }
@@ -49,7 +49,7 @@ pub trait Decorators: View + Sized {
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
-            AppContext::update_selector_style(id, style, StyleSelector::Disabled);
+            AppContext::update_style_selector(id, style, StyleSelector::Disabled);
         });
         self
     }
