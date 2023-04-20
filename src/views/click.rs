@@ -65,13 +65,9 @@ impl<V: View> View for Click<V> {
         }
 
         match &event {
-            Event::MouseDown(event) => {
-                if event.count == 1 {
-                    cx.update_active(self.id);
-                    true
-                } else {
-                    false
-                }
+            Event::MouseDown(_event) => {
+                cx.update_active(self.id);
+                true
             }
             Event::MouseUp(event) => {
                 let rect = cx.get_size(self.id).unwrap_or_default().to_rect();
