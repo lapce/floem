@@ -44,6 +44,13 @@ impl AppContext {
         UPDATE_MESSAGES.with(|msgs| msgs.borrow_mut().push(UpdateMessage::Focus(id)));
     }
 
+    pub fn update_disabled(id: Id, disabled: bool) {
+        UPDATE_MESSAGES.with(|msgs| {
+            msgs.borrow_mut()
+                .push(UpdateMessage::Disabled(id, disabled))
+        });
+    }
+
     pub fn request_paint() {
         UPDATE_MESSAGES.with(|msgs| msgs.borrow_mut().push(UpdateMessage::RequestPaint));
     }
@@ -65,10 +72,13 @@ impl AppContext {
         UPDATE_MESSAGES.with(|msgs| msgs.borrow_mut().push(UpdateMessage::Style { id, style }));
     }
 
-    pub fn update_hover_style(id: Id, style: Style) {
+    pub fn update_selector_style(id: Id, style: Style, selector: StyleSelector) {
         UPDATE_MESSAGES.with(|msgs| {
-            msgs.borrow_mut()
-                .push(UpdateMessage::HoverStyle { id, style })
+            msgs.borrow_mut().push(UpdateMessage::StyleSelector {
+                id,
+                style,
+                selector,
+            })
         });
     }
 
@@ -118,8 +128,16 @@ impl AppContext {
     }
 }
 
+pub enum StyleSelector {
+    Hover,
+    Focus,
+    Disabled,
+    Active,
+}
+
 pub enum UpdateMessage {
     Focus(Id),
+    Disabled(Id, bool),
     RequestPaint,
     State {
         id: Id,
@@ -129,8 +147,9 @@ pub enum UpdateMessage {
         id: Id,
         style: Style,
     },
-    HoverStyle {
+    StyleSelector {
         id: Id,
+        selector: StyleSelector,
         style: Style,
     },
     CursorStyle {
@@ -253,7 +272,26 @@ impl<V: View> App<V> {
                         flags |= ChangeFlags::PAINT;
                     }
                     UpdateMessage::Focus(id) => {
+                        let old = cx.app_state.focus;
                         cx.app_state.focus = Some(id);
+
+                        if let Some(old_id) = old {
+                            // To remove the styles applied by the Focus selector
+                            if cx.app_state.has_style_for_sel(old_id, StyleSelector::Focus) {
+                                cx.app_state.request_layout(old_id);
+                            }
+                        }
+
+                        if cx.app_state.has_style_for_sel(id, StyleSelector::Focus) {
+                            cx.app_state.request_layout(id);
+                        }
+                    }
+                    UpdateMessage::Disabled(id, is_disabled) => {
+                        if is_disabled {
+                            cx.app_state.disabled.insert(id);
+                        } else {
+                            cx.app_state.disabled.remove(&id);
+                        }
                     }
                     UpdateMessage::State { id, state } => {
                         let id_path = IDPATHS.with(|paths| paths.borrow().get(&id).cloned());
@@ -266,10 +304,19 @@ impl<V: View> App<V> {
                         state.style = style;
                         cx.request_layout(id);
                     }
-                    UpdateMessage::HoverStyle { id, style } => {
+                    UpdateMessage::StyleSelector {
+                        id,
+                        style,
+                        selector,
+                    } => {
                         let state = cx.app_state.view_state(id);
-                        state.hover_style = Some(style);
-                        cx.request_layout(id);
+                        let style = Some(style);
+                        match selector {
+                            StyleSelector::Hover => state.hover_style = style,
+                            StyleSelector::Focus => state.focus_style = style,
+                            StyleSelector::Disabled => state.disabled_style = style,
+                            StyleSelector::Active => state.active_style = style,
+                        }
                     }
                     UpdateMessage::CursorStyle { cursor } => {
                         cx.app_state.cursor = cursor;
@@ -358,6 +405,11 @@ impl<V: View> App<V> {
                 }
             });
             if let Event::MouseUp(_) = &event {
+                // To remove the styles applied by the Active selector
+                if self.app_state.has_style_for_sel(id, StyleSelector::Active) {
+                    self.app_state.request_layout(id);
+                }
+
                 self.app_state.active = None;
             }
         } else {

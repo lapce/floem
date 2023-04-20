@@ -2,7 +2,7 @@ use glazier::kurbo::{Point, Rect};
 use leptos_reactive::create_effect;
 
 use crate::{
-    app::AppContext,
+    app::{AppContext, StyleSelector},
     event::{Event, EventListner},
     style::Style,
     view::View,
@@ -22,8 +22,46 @@ pub trait Decorators: View + Sized {
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
-            AppContext::update_hover_style(id, style);
+            AppContext::update_selector_style(id, style, StyleSelector::Hover);
         });
+        self
+    }
+
+    fn focus_style(self, cx: AppContext, style: impl Fn() -> Style + 'static) -> Self {
+        let id = self.id();
+        create_effect(cx.scope, move |_| {
+            let style = style();
+            AppContext::update_selector_style(id, style, StyleSelector::Focus);
+        });
+        self
+    }
+
+    fn active_style(self, cx: AppContext, style: impl Fn() -> Style + 'static) -> Self {
+        let id = self.id();
+        create_effect(cx.scope, move |_| {
+            let style = style();
+            AppContext::update_selector_style(id, style, StyleSelector::Active);
+        });
+        self
+    }
+
+    fn disabled_style(self, cx: AppContext, style: impl Fn() -> Style + 'static) -> Self {
+        let id = self.id();
+        create_effect(cx.scope, move |_| {
+            let style = style();
+            AppContext::update_selector_style(id, style, StyleSelector::Disabled);
+        });
+        self
+    }
+
+    fn disabled(self, cx: AppContext, disabled_fn: impl Fn() -> bool + 'static) -> Self {
+        let id = self.id();
+
+        create_effect(cx.scope, move |_| {
+            let is_disabled = disabled_fn();
+            AppContext::update_disabled(id, is_disabled);
+        });
+
         self
     }
 
