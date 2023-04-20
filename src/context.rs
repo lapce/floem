@@ -464,6 +464,10 @@ impl<'a> PaintCx<'a> {
         self.app_state.get_layout(id)
     }
 
+    pub fn get_computed_style(&mut self, id: Id) -> &ComputedStyle {
+        self.app_state.get_computed_style(id)
+    }
+
     pub fn clip(&mut self, shape: &impl Shape) {
         let rect = shape.bounding_box();
         self.clip = Some(rect);

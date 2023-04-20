@@ -181,6 +181,22 @@ impl Renderer for VgerRenderer {
                 width,
                 paint,
             );
+        } else {
+            for segment in shape.path_segments(0.0) {
+                match segment {
+                    peniko::kurbo::PathSeg::Line(_) => todo!(),
+                    peniko::kurbo::PathSeg::Quad(bez) => {
+                        self.vger.stroke_bezier(
+                            self.vger_point(bez.p0),
+                            self.vger_point(bez.p1),
+                            self.vger_point(bez.p2),
+                            width,
+                            paint,
+                        );
+                    }
+                    peniko::kurbo::PathSeg::Cubic(_) => todo!(),
+                }
+            }
         }
     }
 

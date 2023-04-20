@@ -481,6 +481,7 @@ impl<V: View> View for Scroll<V> {
                             scroll_offset,
                         );
                         cx.update_active(self.id);
+                        return true;
                     } else if self.point_hits_horizontal_bar(cx.app_state, pos) {
                         self.held = BarHeldState::Horizontal(
                             // The bounds must be non-empty, because the point hits the scrollbar.
@@ -488,6 +489,7 @@ impl<V: View> View for Scroll<V> {
                             scroll_offset,
                         );
                         cx.update_active(self.id);
+                        return true;
                     } else {
                         self.held = BarHeldState::None;
                     }
@@ -516,6 +518,13 @@ impl<V: View> View for Scroll<V> {
                             );
                         }
                         BarHeldState::None => {}
+                    }
+                } else {
+                    let pos = event.pos + scroll_offset;
+                    if self.point_hits_vertical_bar(cx.app_state, pos)
+                        || self.point_hits_horizontal_bar(cx.app_state, pos)
+                    {
+                        return true;
                     }
                 }
             }

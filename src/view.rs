@@ -82,6 +82,10 @@ pub trait View {
     fn layout(&mut self, cx: &mut LayoutCx) -> Node;
 
     fn compute_layout_main(&mut self, cx: &mut LayoutCx) {
+        if cx.app_state.is_hidden(self.id()) {
+            return;
+        }
+
         cx.save();
 
         let layout = cx
