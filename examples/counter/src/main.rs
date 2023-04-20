@@ -1,16 +1,17 @@
 use floem::{
     app::AppContext,
+    peniko::Color,
     reactive::{create_signal, SignalGet, SignalUpdate},
     style::Style,
     view::View,
-    views::{click, label, stack, Decorators}, peniko::Color,
+    views::{click, label, stack, Decorators},
 };
 
 fn app_logic(cx: AppContext) -> impl View {
-    let (couter, set_counter) = create_signal(cx.scope, 0);
+    let (counter, set_counter) = create_signal(cx.scope, 0);
     stack(cx, |cx| {
         (
-            label(cx, move || format!("Value: {}", couter.get()))
+            label(cx, move || format!("Value: {}", counter.get()))
                 .style(cx, || Style::default().padding(10.0)),
             stack(cx, |cx| {
                 (
@@ -25,7 +26,12 @@ fn app_logic(cx: AppContext) -> impl View {
                             .border_radius(10.0)
                             .padding(10.0)
                     })
-                    .hover_style(cx, || Style::default().background(Color::GREEN)),
+                    .hover_style(cx, || Style::default().background(Color::LIGHT_GREEN))
+                    .active_style(cx, || {
+                        Style::default()
+                            .color(Color::WHITE)
+                            .background(Color::DARK_GREEN)
+                    }),
                     click(
                         cx,
                         |cx| label(cx, || "Decrement".to_string()),
@@ -38,7 +44,34 @@ fn app_logic(cx: AppContext) -> impl View {
                             .padding(10.0)
                             .margin_left(10.0)
                     })
-                    .hover_style(cx, || Style::default().background(Color::RED)),
+                    .hover_style(cx, || Style::default().background(Color::rgb8(244, 67, 54)))
+                    .active_style(cx, || {
+                        Style::default().color(Color::WHITE).background(Color::RED)
+                    }),
+                    click(
+                        cx,
+                        |cx| label(cx, || "Reset to 0".to_string()),
+                        move || {
+                            println!("Reset counter pressed"); // will not fire if button is disabled
+                            set_counter.update(|value| *value = 0);
+                        },
+                    )
+                    .disabled(cx, move || counter.get() == 0)
+                    .style(cx, || {
+                        Style::default()
+                            .border(1.0)
+                            .border_radius(10.0)
+                            .padding(10.0)
+                            .margin_left(10.0)
+                            .background(Color::LIGHT_BLUE)
+                    })
+                    .disabled_style(cx, || Style::default().background(Color::LIGHT_GRAY))
+                    .hover_style(cx, || Style::default().background(Color::LIGHT_YELLOW))
+                    .active_style(cx, || {
+                        Style::default()
+                            .color(Color::WHITE)
+                            .background(Color::YELLOW_GREEN)
+                    }),
                 )
             }),
         )

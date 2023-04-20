@@ -18,6 +18,7 @@ use taffy::{
 use vello::peniko::Color;
 
 use crate::{
+    app::StyleSelector,
     event::{Event, EventListner},
     id::Id,
     style::{ComputedStyle, CursorStyle, Style},
@@ -39,6 +40,9 @@ pub struct ViewState {
     pub(crate) viewport: Option<Rect>,
     pub(crate) style: Style,
     pub(crate) hover_style: Option<Style>,
+    pub(crate) disabled_style: Option<Style>,
+    pub(crate) focus_style: Option<Style>,
+    pub(crate) active_style: Option<Style>,
     pub(crate) computed_style: ComputedStyle,
     pub(crate) event_listeners: HashMap<EventListner, Box<EventCallback>>,
     pub(crate) resize_listener: Option<ResizeListener>,
@@ -53,6 +57,9 @@ impl ViewState {
             style: Style::default(),
             computed_style: ComputedStyle::default(),
             hover_style: None,
+            disabled_style: None,
+            focus_style: None,
+            active_style: None,
             children_nodes: Vec::new(),
             event_listeners: HashMap::new(),
             resize_listener: None,
@@ -75,6 +82,25 @@ impl ViewState {
                 computed_style = computed_style.apply(hover_style);
             }
         }
+
+        if interact_state.is_disabled {
+            if let Some(disabled_style) = self.disabled_style.clone() {
+                computed_style = computed_style.apply(disabled_style);
+            }
+        }
+
+        if interact_state.is_focused {
+            if let Some(focus_style) = self.focus_style.clone() {
+                computed_style = computed_style.apply(focus_style);
+            }
+        }
+
+        if interact_state.is_active {
+            if let Some(active_style) = self.active_style.clone() {
+                computed_style = computed_style.apply(active_style);
+            }
+        }
+
         self.computed_style = computed_style.compute(&ComputedStyle::default());
     }
 }
@@ -89,6 +115,7 @@ pub struct AppState {
     pub(crate) root_size: Size,
     pub taffy: taffy::Taffy,
     pub(crate) view_states: HashMap<Id, ViewState>,
+    pub(crate) disabled: HashSet<Id>,
     pub(crate) hovered: HashSet<Id>,
     pub(crate) cursor: CursorStyle,
 }
@@ -110,6 +137,7 @@ impl AppState {
             root_size: Size::ZERO,
             taffy,
             view_states: HashMap::new(),
+            disabled: HashSet::new(),
             hovered: HashSet::new(),
             cursor: CursorStyle::Default,
         }
@@ -129,13 +157,20 @@ impl AppState {
             .unwrap_or(false)
     }
 
-    pub fn is_hovered(&self, id: Id) -> bool {
+    pub fn is_hovered(&self, id: &Id) -> bool {
         self.hovered.contains(&id)
     }
 
-    pub fn get_interact_state(&self, id: Id) -> InteractionState {
+    pub fn is_disabled(&self, id: &Id) -> bool {
+        self.disabled.contains(id)
+    }
+
+    pub fn get_interact_state(&self, id: &Id) -> InteractionState {
         InteractionState {
             is_hovered: self.is_hovered(id),
+            is_disabled: self.is_disabled(id),
+            is_focused: self.focus.map(|f| &f == id).unwrap_or(false),
+            is_active: self.active.map(|a| &a == id).unwrap_or(false),
         }
     }
 
@@ -145,7 +180,7 @@ impl AppState {
     }
 
     pub(crate) fn compute_style(&mut self, id: Id, view_style: Option<Style>) {
-        let interact_state = self.get_interact_state(id);
+        let interact_state = self.get_interact_state(&id);
         let view_state = self.view_state(id);
         view_state.compute_style(view_style, interact_state);
     }
@@ -199,6 +234,22 @@ impl AppState {
 
     pub(crate) fn update_active(&mut self, id: Id) {
         self.active = Some(id);
+
+        // To apply the styles of the Active selector
+        if self.has_style_for_sel(id, StyleSelector::Active) {
+            self.request_layout(id);
+        }
+    }
+
+    pub(crate) fn has_style_for_sel(&mut self, id: Id, selector_kind: StyleSelector) -> bool {
+        let view_state = self.view_state(id);
+
+        match selector_kind {
+            StyleSelector::Hover => view_state.hover_style.is_some(),
+            StyleSelector::Focus => view_state.focus_style.is_some(),
+            StyleSelector::Disabled => view_state.disabled_style.is_some(),
+            StyleSelector::Active => view_state.active_style.is_some(),
+        }
     }
 }
 
@@ -263,7 +314,9 @@ impl<'a> EventCx<'a> {
     pub(crate) fn should_send(&mut self, id: Id, event: &Event) -> bool {
         let point = event.point();
         if let Some(point) = point {
-            if self.app_state.is_hidden(id) {
+            if self.app_state.is_hidden(id)
+                || (self.app_state.is_disabled(&id) && !event.allows_disabled())
+            {
                 return false;
             }
             if let Some(layout) = self.get_layout(id) {
@@ -275,7 +328,7 @@ impl<'a> EventCx<'a> {
                     return true;
                 }
                 // Needed to handle mouse leave for hovered views
-                if self.app_state.hovered.contains(&id) {
+                if self.app_state.is_hovered(&id) {
                     return true;
                 }
             }
@@ -286,8 +339,10 @@ impl<'a> EventCx<'a> {
 
 #[derive(Default)]
 pub struct InteractionState {
-    is_hovered: bool,
-    // TODO: Add focus, active, disabled and consider changing to a bitflag
+    pub(crate) is_hovered: bool,
+    pub(crate) is_disabled: bool,
+    pub(crate) is_focused: bool,
+    pub(crate) is_active: bool,
 }
 
 pub struct LayoutCx<'a> {

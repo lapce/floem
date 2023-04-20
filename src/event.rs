@@ -45,6 +45,15 @@ impl Event {
         }
     }
 
+    pub fn allows_disabled(&self) -> bool {
+        match self {
+            Event::MouseDown(_) | Event::MouseUp(_) | Event::MouseWheel(_) | Event::KeyDown(_) => {
+                false
+            }
+            Event::WindowClosed | Event::WindowResized(_) | Event::MouseMove(_) => true,
+        }
+    }
+
     pub fn point(&self) -> Option<Point> {
         match self {
             Event::MouseDown(mouse_event)
