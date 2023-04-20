@@ -292,6 +292,9 @@ impl<V: View> App<V> {
                         } else {
                             cx.app_state.disabled.remove(&id);
                         }
+                        if cx.app_state.has_style_for_sel(id, StyleSelector::Disabled) {
+                            cx.app_state.request_layout(id);
+                        }
                     }
                     UpdateMessage::State { id, state } => {
                         let id_path = IDPATHS.with(|paths| paths.borrow().get(&id).cloned());
@@ -317,6 +320,7 @@ impl<V: View> App<V> {
                             StyleSelector::Disabled => state.disabled_style = style,
                             StyleSelector::Active => state.active_style = style,
                         }
+                        cx.request_layout(id);
                     }
                     UpdateMessage::CursorStyle { cursor } => {
                         cx.app_state.cursor = cursor;

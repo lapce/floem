@@ -130,6 +130,12 @@ macro_rules! define_styles {
             )*
         }
         impl Style {
+            pub const BASE: Style = Style{
+                $(
+                    $name: StyleValue::Base,
+                )*
+            };
+
             pub fn unset() -> Self {
                 Self {
                     $(

@@ -83,21 +83,21 @@ impl ViewState {
             }
         }
 
-        if interact_state.is_disabled {
-            if let Some(disabled_style) = self.disabled_style.clone() {
-                computed_style = computed_style.apply(disabled_style);
-            }
-        }
-
         if interact_state.is_focused {
             if let Some(focus_style) = self.focus_style.clone() {
                 computed_style = computed_style.apply(focus_style);
             }
         }
 
-        if interact_state.is_active {
+        if interact_state.is_active && interact_state.is_hovered {
             if let Some(active_style) = self.active_style.clone() {
                 computed_style = computed_style.apply(active_style);
+            }
+        }
+
+        if interact_state.is_disabled {
+            if let Some(disabled_style) = self.disabled_style.clone() {
+                computed_style = computed_style.apply(disabled_style);
             }
         }
 
@@ -315,7 +315,7 @@ impl<'a> EventCx<'a> {
         let point = event.point();
         if let Some(point) = point {
             if self.app_state.is_hidden(id)
-                || (self.app_state.is_disabled(&id) && !event.allows_disabled())
+                || (self.app_state.is_disabled(&id) && !event.allow_disabled())
             {
                 return false;
             }

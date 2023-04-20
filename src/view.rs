@@ -149,6 +149,9 @@ pub trait View {
         if cx.app_state.is_hidden(id) {
             return false;
         }
+        if cx.app_state.is_disabled(&id) && !event.allow_disabled() {
+            return false;
+        }
 
         let event = cx.offset_event(self.id(), event);
 
