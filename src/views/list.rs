@@ -122,7 +122,6 @@ where
                 &self.view_fn,
             );
             cx.request_layout(self.id());
-            cx.reset_children_layout(self.id);
             ChangeFlags::LAYOUT
         } else {
             ChangeFlags::empty()

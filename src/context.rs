@@ -218,12 +218,6 @@ impl AppState {
         view.viewport = Some(viewport);
     }
 
-    pub(crate) fn reset_children_layout(&mut self, id: Id) {
-        let view = self.view_state(id);
-        view.children_nodes.clear();
-        self.request_layout(id);
-    }
-
     pub(crate) fn get_layout(&self, id: Id) -> Option<Layout> {
         self.view_states
             .get(&id)
@@ -603,10 +597,6 @@ pub struct UpdateCx<'a> {
 }
 
 impl<'a> UpdateCx<'a> {
-    pub(crate) fn reset_children_layout(&mut self, id: Id) {
-        self.app_state.reset_children_layout(id);
-    }
-
     pub fn request_layout(&mut self, id: Id) {
         self.app_state.request_layout(id);
     }

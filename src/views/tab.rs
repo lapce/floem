@@ -137,7 +137,9 @@ where
                 }
             }
             cx.request_layout(self.id());
-            cx.reset_children_layout(self.id);
+            for (child, _) in self.children.iter().flatten() {
+                cx.request_layout(child.id());
+            }
             ChangeFlags::LAYOUT
         } else {
             ChangeFlags::empty()
@@ -151,15 +153,15 @@ where
                 .iter_mut()
                 .enumerate()
                 .filter_map(|(i, child)| {
-                    let node = child.as_mut()?.0.layout_main(cx);
-                    let mut style = cx.app_state.taffy.style(node).cloned().unwrap();
+                    let child_id = child.as_ref()?.0.id();
+                    let mut child_view = cx.app_state.view_state(child_id);
                     if i != self.active {
                         // set display to none for non active child
-                        style.display = Display::None;
+                        child_view.style.display = Display::None.into();
                     } else {
-                        style.display = Display::Flex;
+                        child_view.style.display = Display::Flex.into();
                     }
-                    let _ = cx.app_state.taffy.set_style(node, style);
+                    let node = child.as_mut()?.0.layout_main(cx);
                     Some(node)
                 })
                 .collect::<Vec<_>>();

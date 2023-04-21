@@ -289,12 +289,11 @@ impl<V: View> App<V> {
                     UpdateMessage::Disabled(id, is_disabled) => {
                         if is_disabled {
                             cx.app_state.disabled.insert(id);
+                            cx.app_state.hovered.remove(&id);
                         } else {
                             cx.app_state.disabled.remove(&id);
                         }
-                        if cx.app_state.has_style_for_sel(id, StyleSelector::Disabled) {
-                            cx.app_state.request_layout(id);
-                        }
+                        cx.app_state.request_layout(id);
                     }
                     UpdateMessage::State { id, state } => {
                         let id_path = IDPATHS.with(|paths| paths.borrow().get(&id).cloned());

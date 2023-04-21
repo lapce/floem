@@ -36,7 +36,6 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn std::any::Any>) -> ChangeFlags {
         if let Ok(state) = state.downcast() {
             self.children = *state;
-            cx.reset_children_layout(self.id);
             cx.request_layout(self.id);
             ChangeFlags::LAYOUT
         } else {
