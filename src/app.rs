@@ -196,12 +196,14 @@ impl<V: View> App<V> {
             font_family: None,
             font_weight: None,
             font_style: None,
+            line_height: None,
             window_origin: Point::ZERO,
             saved_viewports: Vec::new(),
             saved_font_sizes: Vec::new(),
             saved_font_families: Vec::new(),
             saved_font_weights: Vec::new(),
             saved_font_styles: Vec::new(),
+            saved_line_heights: Vec::new(),
             saved_window_origins: Vec::new(),
         };
         cx.app_state.root = Some(self.view.layout_main(&mut cx));
@@ -222,6 +224,7 @@ impl<V: View> App<V> {
             font_family: None,
             font_weight: None,
             font_style: None,
+            line_height: None,
             saved_transforms: Vec::new(),
             saved_clips: Vec::new(),
             saved_colors: Vec::new(),
@@ -229,6 +232,7 @@ impl<V: View> App<V> {
             saved_font_families: Vec::new(),
             saved_font_weights: Vec::new(),
             saved_font_styles: Vec::new(),
+            saved_line_heights: Vec::new(),
         };
         cx.paint_state.renderer.as_mut().unwrap().begin();
         self.view.paint_main(&mut cx);

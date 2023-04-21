@@ -72,6 +72,9 @@ pub trait View {
         if style.font_style.is_some() {
             cx.font_style = style.font_style;
         }
+        if style.line_height.is_some() {
+            cx.line_height = style.line_height;
+        }
 
         let node = self.layout(cx);
 
@@ -244,6 +247,9 @@ pub trait View {
             }
             if style.font_style.is_some() {
                 cx.font_style = style.font_style;
+            }
+            if style.line_height.is_some() {
+                cx.line_height = style.line_height;
             }
             self.paint(cx);
             paint_border(cx, &style, size);

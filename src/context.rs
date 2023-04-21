@@ -4,7 +4,7 @@ use std::{
 };
 
 use floem_renderer::{
-    cosmic_text::{Style as FontStyle, Weight},
+    cosmic_text::{LineHeightValue, Style as FontStyle, Weight},
     Renderer as FloemRenderer,
 };
 use glazier::{
@@ -346,12 +346,14 @@ pub struct LayoutCx<'a> {
     pub(crate) font_family: Option<String>,
     pub(crate) font_weight: Option<Weight>,
     pub(crate) font_style: Option<FontStyle>,
+    pub(crate) line_height: Option<LineHeightValue>,
     pub(crate) window_origin: Point,
     pub(crate) saved_viewports: Vec<Option<Rect>>,
     pub(crate) saved_font_sizes: Vec<Option<f32>>,
     pub(crate) saved_font_families: Vec<Option<String>>,
     pub(crate) saved_font_weights: Vec<Option<Weight>>,
     pub(crate) saved_font_styles: Vec<Option<FontStyle>>,
+    pub(crate) saved_line_heights: Vec<Option<LineHeightValue>>,
     pub(crate) saved_window_origins: Vec<Point>,
 }
 
@@ -365,6 +367,7 @@ impl<'a> LayoutCx<'a> {
         self.saved_font_families.clear();
         self.saved_font_weights.clear();
         self.saved_font_styles.clear();
+        self.saved_line_heights.clear();
         self.saved_window_origins.clear();
     }
 
@@ -374,6 +377,7 @@ impl<'a> LayoutCx<'a> {
         self.saved_font_families.push(self.font_family.clone());
         self.saved_font_weights.push(self.font_weight);
         self.saved_font_styles.push(self.font_style);
+        self.saved_line_heights.push(self.line_height);
         self.saved_window_origins.push(self.window_origin);
     }
 
@@ -383,6 +387,7 @@ impl<'a> LayoutCx<'a> {
         self.font_family = self.saved_font_families.pop().unwrap_or_default();
         self.font_weight = self.saved_font_weights.pop().unwrap_or_default();
         self.font_style = self.saved_font_styles.pop().unwrap_or_default();
+        self.line_height = self.saved_line_heights.pop().unwrap_or_default();
         self.window_origin = self.saved_window_origins.pop().unwrap_or_default();
     }
 
@@ -456,6 +461,7 @@ pub struct PaintCx<'a> {
     pub(crate) font_family: Option<String>,
     pub(crate) font_weight: Option<Weight>,
     pub(crate) font_style: Option<FontStyle>,
+    pub(crate) line_height: Option<LineHeightValue>,
     pub(crate) saved_transforms: Vec<Affine>,
     pub(crate) saved_clips: Vec<Option<Rect>>,
     pub(crate) saved_colors: Vec<Option<Color>>,
@@ -463,6 +469,7 @@ pub struct PaintCx<'a> {
     pub(crate) saved_font_families: Vec<Option<String>>,
     pub(crate) saved_font_weights: Vec<Option<Weight>>,
     pub(crate) saved_font_styles: Vec<Option<FontStyle>>,
+    pub(crate) saved_line_heights: Vec<Option<LineHeightValue>>,
 }
 
 impl<'a> PaintCx<'a> {
@@ -474,6 +481,7 @@ impl<'a> PaintCx<'a> {
         self.saved_font_families.push(self.font_family.clone());
         self.saved_font_weights.push(self.font_weight);
         self.saved_font_styles.push(self.font_style);
+        self.saved_line_heights.push(self.line_height);
     }
 
     pub fn restore(&mut self) {
@@ -484,6 +492,7 @@ impl<'a> PaintCx<'a> {
         self.font_family = self.saved_font_families.pop().unwrap_or_default();
         self.font_weight = self.saved_font_weights.pop().unwrap_or_default();
         self.font_style = self.saved_font_styles.pop().unwrap_or_default();
+        self.line_height = self.saved_line_heights.pop().unwrap_or_default();
         let renderer = self.paint_state.renderer.as_mut().unwrap();
         renderer.transform(self.transform);
         if let Some(rect) = self.clip {

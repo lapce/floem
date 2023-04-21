@@ -5,7 +5,7 @@ use crate::{
     style::ComputedStyle,
 };
 use floem_renderer::{
-    cosmic_text::{Style as FontStyle, Weight},
+    cosmic_text::{LineHeightValue, Style as FontStyle, Weight},
     Renderer,
 };
 use glazier::kurbo::Point;
@@ -35,6 +35,7 @@ pub struct Label {
     font_family: Option<String>,
     font_weight: Option<Weight>,
     font_style: Option<FontStyle>,
+    line_height: Option<LineHeightValue>,
 }
 
 pub fn label(cx: AppContext, label: impl Fn() -> String + 'static) -> Label {
@@ -56,6 +57,7 @@ pub fn label(cx: AppContext, label: impl Fn() -> String + 'static) -> Label {
         font_family: None,
         font_weight: None,
         font_style: None,
+        line_height: None,
     }
 }
 
@@ -79,6 +81,9 @@ impl Label {
         if let Some(font_weight) = self.font_weight {
             attrs = attrs.weight(font_weight);
         }
+        if let Some(line_height) = self.line_height {
+            attrs = attrs.line_height(line_height);
+        }
         text_layout.set_text(self.label.as_str(), AttrsList::new(attrs));
         self.text_layout = Some(text_layout);
 
@@ -100,6 +105,9 @@ impl Label {
             }
             if let Some(font_weight) = self.font_weight {
                 attrs = attrs.weight(font_weight);
+            }
+            if let Some(line_height) = self.line_height {
+                attrs = attrs.line_height(line_height);
             }
             text_layout.set_text(new_text, AttrsList::new(attrs));
             self.available_text_layout = Some(text_layout);
@@ -140,11 +148,13 @@ impl View for Label {
                     || self.font_family.as_deref() != cx.current_font_family()
                     || self.font_weight != cx.font_weight
                     || self.font_style != cx.font_style
+                    || self.line_height != cx.line_height
                 {
                     self.font_size = cx.current_font_size();
                     self.font_family = cx.current_font_family().map(|s| s.to_string());
                     self.font_weight = cx.font_weight;
                     self.font_style = cx.font_style;
+                    self.line_height = cx.line_height;
                     self.set_text_layout();
                 }
                 if self.text_layout.is_none() {
@@ -240,12 +250,14 @@ impl View for Label {
             || self.font_family.as_deref() != cx.font_family.as_deref()
             || self.font_weight != cx.font_weight
             || self.font_style != cx.font_style
+            || self.line_height != cx.line_height
         {
             self.color = cx.color;
             self.font_size = cx.font_size;
             self.font_family = cx.font_family.clone();
             self.font_weight = cx.font_weight;
             self.font_style = cx.font_style;
+            self.line_height = cx.line_height;
             self.set_text_layout();
         }
         let text_node = self.text_node.unwrap();

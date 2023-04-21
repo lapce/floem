@@ -25,7 +25,7 @@
 //! ```
 //!
 
-use floem_renderer::cosmic_text::{Style as FontStyle, Weight};
+use floem_renderer::cosmic_text::{LineHeightValue, Style as FontStyle, Weight};
 pub use taffy::style::{
     AlignContent, AlignItems, Dimension, Display, FlexDirection, JustifyContent, Position,
 };
@@ -235,6 +235,7 @@ define_styles!(
     font_family nocb: Option<String> = None,
     font_weight nocb: Option<Weight> = None,
     font_style nocb: Option<FontStyle> = None,
+    line_height nocb: Option<LineHeightValue> = None,
 );
 
 impl Style {
@@ -417,6 +418,11 @@ impl Style {
 
     pub fn font_style(mut self, style: impl Into<StyleValue<FontStyle>>) -> Self {
         self.font_style = style.into().map(Some);
+        self
+    }
+
+    pub fn line_height(mut self, normal: f32) -> Self {
+        self.line_height = Some(LineHeightValue::Normal(normal)).into();
         self
     }
 
