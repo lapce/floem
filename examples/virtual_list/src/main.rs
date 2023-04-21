@@ -21,14 +21,14 @@ fn app_logic(cx: AppContext) -> impl View {
                 move |item| *item,
                 move |cx, item| {
                     label(cx, move || item.to_string())
-                        .style(cx, || Style::default().height_pt(20.0))
+                        .style(cx, || Style::default().height_px(20.0))
                 },
                 VirtualListItemSize::Fixed(20.0),
             )
             .style(cx, || Style::default().flex_col())
         })
         .style(cx, || {
-            Style::default().width_pt(100.0).height_pct(1.0).border(1.0)
+            Style::default().width_px(100.0).height_pct(1.0).border(1.0)
         })
     })
     .style(cx, || {
