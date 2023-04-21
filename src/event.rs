@@ -49,10 +49,9 @@ impl Event {
         match self {
             Event::MouseDown(_)
             | Event::MouseUp(_)
-            | Event::MouseMove(_)
             | Event::MouseWheel(_)
             | Event::KeyDown(_) => false,
-            Event::WindowClosed | Event::WindowResized(_) => true,
+            Event::WindowClosed | Event::WindowResized(_) | Event::MouseMove(_) => true,
         }
     }
 
