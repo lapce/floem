@@ -18,6 +18,7 @@ pub trait Decorators: View + Sized {
         self
     }
 
+    /// The visual style to apply when the mouse hovers over the element
     fn hover_style(self, cx: AppContext, style: impl Fn() -> Style + 'static) -> Self {
         let id = self.id();
         create_effect(cx.scope, move |_| {

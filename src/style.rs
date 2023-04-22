@@ -351,6 +351,7 @@ impl Style {
         self.border_top(border).border_bottom(border)
     }
 
+    /// Set padding on all directions
     pub fn padding(self, padding: f32) -> Self {
         self.padding_left(padding)
             .padding_top(padding)
@@ -424,10 +425,12 @@ impl Style {
         self.position(Position::Absolute)
     }
 
+    /// Defines the alignment along the cross axis as Centered
     pub fn items_center(self) -> Self {
         self.align_items(Some(AlignItems::Center))
     }
 
+    /// Defines the alignment along the main axis as Centered
     pub fn justify_center(self) -> Self {
         self.justify_content(Some(JustifyContent::Center))
     }
