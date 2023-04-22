@@ -131,7 +131,7 @@ impl<V: View> Scroll<V> {
     pub fn hide_bar(self, cx: AppContext, value: impl Fn() -> bool + 'static) -> Self {
         let id = self.id;
         create_effect(cx.scope, move |_| {
-            AppContext::update_state(id, ScrollState::HiddenBar(value()), true);
+            AppContext::update_state(id, ScrollState::HiddenBar(value()), false);
         });
         self
     }
