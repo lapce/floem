@@ -158,7 +158,7 @@ impl AppState {
     }
 
     pub fn is_hovered(&self, id: &Id) -> bool {
-        self.hovered.contains(&id)
+        self.hovered.contains(id)
     }
 
     pub fn is_disabled(&self, id: &Id) -> bool {
