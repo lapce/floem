@@ -21,6 +21,7 @@ enum ScrollState {
     ScrollDelta(Vec2),
     ScrollTo(Point),
     ScrollBarColor(Color),
+    HiddenBar(bool),
 }
 
 /// Minimum length for any scrollbar to be when measured on that
@@ -127,8 +128,11 @@ impl<V: View> Scroll<V> {
         self
     }
 
-    pub fn hide_bar(mut self) -> Self {
-        self.hide_bar = true;
+    pub fn hide_bar(self, cx: AppContext, value: impl Fn() -> bool + 'static) -> Self {
+        let id = self.id;
+        create_effect(cx.scope, move |_| {
+            AppContext::update_state(id, ScrollState::HiddenBar(value()), true);
+        });
         self
     }
 
@@ -418,6 +422,9 @@ impl<V: View> View for Scroll<V> {
                 }
                 ScrollState::ScrollBarColor(color) => {
                     self.scroll_bar_color = color;
+                }
+                ScrollState::HiddenBar(value) => {
+                    self.hide_bar = value;
                 }
             }
             cx.request_layout(self.id());
