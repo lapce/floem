@@ -77,7 +77,7 @@ impl ViewState {
             self.style.clone()
         };
 
-        if interact_state.is_hovered {
+        if interact_state.is_hovered && !interact_state.is_disabled {
             if let Some(hover_style) = self.hover_style.clone() {
                 computed_style = computed_style.apply(hover_style);
             }

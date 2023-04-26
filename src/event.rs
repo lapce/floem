@@ -47,12 +47,10 @@ impl Event {
 
     pub fn allow_disabled(&self) -> bool {
         match self {
-            Event::MouseDown(_)
-            | Event::MouseUp(_)
-            | Event::MouseMove(_)
-            | Event::MouseWheel(_)
-            | Event::KeyDown(_) => false,
-            Event::WindowClosed | Event::WindowResized(_) => true,
+            Event::MouseDown(_) | Event::MouseUp(_) | Event::MouseWheel(_) | Event::KeyDown(_) => {
+                false
+            }
+            Event::MouseMove(_) | Event::WindowClosed | Event::WindowResized(_) => true,
         }
     }
 
