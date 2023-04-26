@@ -177,7 +177,7 @@ impl View for Label {
             }
             let text_node = self.text_node.unwrap();
 
-            let style = Style::default()
+            let style = Style::BASE
                 .width(Dimension::Points(width))
                 .height(Dimension::Points(height))
                 .compute(&ComputedStyle::default())

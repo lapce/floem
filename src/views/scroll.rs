@@ -441,7 +441,7 @@ impl<V: View> View for Scroll<V> {
             child_view.style.position = StyleValue::Val(Position::Absolute);
             let child_node = self.child.layout_main(cx);
 
-            let virtual_style = Style::default()
+            let virtual_style = Style::BASE
                 .width(Dimension::Points(self.child_size.width as f32))
                 .height(Dimension::Points(self.child_size.height as f32))
                 .min_width(Dimension::Points(0.0))

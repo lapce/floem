@@ -20,19 +20,18 @@ fn app_logic(cx: AppContext) -> impl View {
                 move || long_list.get(),
                 move |item| *item,
                 move |cx, item| {
-                    label(cx, move || item.to_string())
-                        .style(cx, || Style::default().height_px(20.0))
+                    label(cx, move || item.to_string()).style(cx, || Style::BASE.height_px(20.0))
                 },
                 VirtualListItemSize::Fixed(20.0),
             )
-            .style(cx, || Style::default().flex_col())
+            .style(cx, || Style::BASE.flex_col())
         })
         .style(cx, || {
-            Style::default().width_px(100.0).height_pct(1.0).border(1.0)
+            Style::BASE.width_px(100.0).height_pct(1.0).border(1.0)
         })
     })
     .style(cx, || {
-        Style::default()
+        Style::BASE
             .dimension_pct(1.0, 1.0)
             .padding_vert(20.0)
             .flex_col()

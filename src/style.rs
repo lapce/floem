@@ -123,7 +123,7 @@ macro_rules! define_styles {
             }
         }
 
-        #[derive(Debug, Default, Clone)]
+        #[derive(Debug, Clone)]
         pub struct Style {
             $(
                 pub $name: StyleValue<$typ>,
@@ -539,15 +539,15 @@ mod tests {
 
     #[test]
     fn style_override() {
-        let style1 = Style::default().padding_left(32.0);
-        let style2 = Style::default().padding_left(64.0);
+        let style1 = Style::BASE.padding_left(32.0);
+        let style2 = Style::BASE.padding_left(64.0);
 
         let style = style1.apply(style2);
 
         assert_eq!(style.padding_left, StyleValue::Val(64.0));
 
-        let style1 = Style::default().padding_left(32.0).padding_bottom(45.0);
-        let style2 = Style::default()
+        let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
+        let style2 = Style::BASE
             .padding_left(64.0)
             .padding_bottom(StyleValue::Base);
 
@@ -556,8 +556,8 @@ mod tests {
         assert_eq!(style.padding_left, StyleValue::Val(64.0));
         assert_eq!(style.padding_bottom, StyleValue::Val(45.0));
 
-        let style1 = Style::default().padding_left(32.0).padding_bottom(45.0);
-        let style2 = Style::default()
+        let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
+        let style2 = Style::BASE
             .padding_left(64.0)
             .padding_bottom(StyleValue::Unset);
 
@@ -566,22 +566,22 @@ mod tests {
         assert_eq!(style.padding_left, StyleValue::Val(64.0));
         assert_eq!(style.padding_bottom, StyleValue::Unset);
 
-        let style1 = Style::default().padding_left(32.0).padding_bottom(45.0);
-        let style2 = Style::default()
+        let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
+        let style2 = Style::BASE
             .padding_left(64.0)
             .padding_bottom(StyleValue::Unset);
-        let style3 = Style::default().padding_bottom(StyleValue::Base);
+        let style3 = Style::BASE.padding_bottom(StyleValue::Base);
 
         let style = style1.apply_overriding_styles([style2, style3].into_iter());
 
         assert_eq!(style.padding_left, StyleValue::Val(64.0));
         assert_eq!(style.padding_bottom, StyleValue::Unset);
 
-        let style1 = Style::default().padding_left(32.0).padding_bottom(45.0);
-        let style2 = Style::default()
+        let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
+        let style2 = Style::BASE
             .padding_left(64.0)
             .padding_bottom(StyleValue::Unset);
-        let style3 = Style::default().padding_bottom(StyleValue::Val(100.0));
+        let style3 = Style::BASE.padding_bottom(StyleValue::Val(100.0));
 
         let style = style1.apply_overriding_styles([style2, style3].into_iter());
 

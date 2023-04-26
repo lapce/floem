@@ -54,7 +54,7 @@ impl ViewState {
             node: taffy.new_leaf(taffy::style::Style::DEFAULT).unwrap(),
             viewport: None,
             request_layout: true,
-            style: Style::default(),
+            style: Style::BASE,
             computed_style: ComputedStyle::default(),
             hover_style: None,
             disabled_style: None,
