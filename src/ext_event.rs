@@ -83,14 +83,11 @@ pub fn open_file_dialog(options: FileDialogOptions, action: impl Fn(Option<FileI
     AppContext::update_open_file(options, action);
 }
 
-pub fn create_ext_action<T: Send + 'static>(
-    cx: AppContext,
-    action: impl Fn(T) + 'static,
-) -> impl Fn(T) {
+pub fn create_ext_action<T: Send + 'static>(cx: Scope, action: impl Fn(T) + 'static) -> impl Fn(T) {
     let ext_id = ExtId::next();
     let data = Arc::new(Mutex::new(None));
 
-    let (cx, _) = cx.scope.run_child_scope(|cx| cx);
+    let (cx, _) = cx.run_child_scope(|cx| cx);
     let (read_notify, write_notify) = create_signal(cx, None);
     WRITE_SIGNALS.with(|signals| signals.borrow_mut().insert(ext_id, write_notify));
 
@@ -112,12 +109,12 @@ pub fn create_ext_action<T: Send + 'static>(
 }
 
 pub fn create_signal_from_channel_oneshot<T: Send>(
-    cx: AppContext,
+    cx: Scope,
     rx: crossbeam_channel::Receiver<T>,
 ) -> (ReadSignal<Option<T>>, Scope) {
     let ext_id = ExtId::next();
     let data = Arc::new(Mutex::new(VecDeque::new()));
-    let ((read, child_scope), _child_scope_disposer) = cx.scope.run_child_scope(|cx| {
+    let ((read, child_scope), _child_scope_disposer) = cx.run_child_scope(|cx| {
         let (read_notify, write_notify) = create_signal(cx, None);
         WRITE_SIGNALS.with(|signals| signals.borrow_mut().insert(ext_id, write_notify));
 
