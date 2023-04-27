@@ -180,7 +180,7 @@ impl<V: View> Drop for AppHandle<V> {
 }
 
 impl<V: View> AppHandle<V> {
-    pub fn new(scope: Scope, app_logic: impl Fn(AppContext) -> V) -> Self {
+    pub fn new(scope: Scope, app_logic: impl FnOnce(AppContext) -> V) -> Self {
         let context = AppContext {
             scope,
             id: Id::next(),

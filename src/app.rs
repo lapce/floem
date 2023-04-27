@@ -64,7 +64,7 @@ impl Application {
     /// just chain more window method to the builder
     pub fn window<V: View + 'static>(
         self,
-        app_view: impl Fn(AppContext) -> V + 'static,
+        app_view: impl FnOnce(AppContext) -> V + 'static,
         config: Option<WindowConfig>,
     ) -> Self {
         let application = self.application.clone();
