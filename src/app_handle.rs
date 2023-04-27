@@ -481,6 +481,10 @@ impl<V: View> WinHandler for AppHandle<V> {
         self.handle.invalidate();
     }
 
+    fn position(&mut self, point: Point) {
+        self.event(Event::WindowMoved(point));
+    }
+
     fn prepare_paint(&mut self) {}
 
     fn paint(&mut self, _invalid: &glazier::Region) {
