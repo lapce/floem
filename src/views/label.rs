@@ -92,7 +92,7 @@ impl Label {
             let mut attrs = Attrs::new().color(self.color.unwrap_or(Color::BLACK));
             if let Some(font_size) = self.font_size {
                 attrs = attrs.font_size(font_size);
-            }
+           }
             if let Some(font_style) = self.font_style {
                 attrs = attrs.style(font_style);
             }
@@ -138,7 +138,7 @@ impl View for Label {
     fn event(&mut self, _cx: &mut EventCx, _id_path: Option<&[Id]>, _event: Event) -> bool {
         false
     }
-
+ 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
             let (width, height) = if self.label.is_empty() {

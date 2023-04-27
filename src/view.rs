@@ -158,6 +158,18 @@ pub trait View {
 
         let event = cx.offset_event(self.id(), event);
 
+        if let Event::MouseDown(event) = &event {
+            let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
+            let was_focused = cx.app_state.is_focused(&self.id());
+            let now_focused = rect.contains(event.pos);
+
+            if now_focused && !was_focused {
+                cx.app_state.update_focus(self.id());
+            } else if !now_focused && was_focused {
+                cx.app_state.clear_focus();
+            }
+        }
+
         if let Event::MouseMove(event) = &event {
             let rect = cx.get_size(id).unwrap_or_default().to_rect();
             if rect.contains(event.pos) {

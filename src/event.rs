@@ -24,7 +24,7 @@ pub enum Event {
 
 impl Event {
     pub fn needs_focus(&self) -> bool {
-        match self {
+       match self {
             Event::MouseDown(_)
             | Event::MouseUp(_)
             | Event::MouseMove(_)
@@ -78,7 +78,7 @@ impl Event {
     }
 
     pub fn listener(&self) -> Option<EventListner> {
-        match self {
+       match self {
             Event::MouseDown(_) => None,
             Event::MouseUp(_) => None,
             Event::MouseMove(_) => None,
