@@ -1,5 +1,5 @@
-use glazier::{kurbo::Size, Application, WindowBuilder};
-use leptos_reactive::{create_runtime, create_scope};
+use glazier::{kurbo::Size, WindowBuilder};
+use leptos_reactive::{create_runtime, raw_scope_and_disposer, Scope};
 
 use crate::{
     app_handle::{AppContext, AppHandle},
@@ -7,28 +7,57 @@ use crate::{
     window::WindowConfig,
 };
 
+type AppEventCallback = dyn Fn(&AppEvent);
+
 pub fn launch<V: View + 'static>(app_view: impl Fn(AppContext) -> V + 'static) {
-    Builder::new().window(app_view, None).run()
+    Application::new().window(app_view, None).run()
 }
 
-/// Floem Application Builder
-pub struct Builder {
-    application: Application,
-    reactive_runtime: leptos_reactive::RuntimeId,
+pub enum AppEvent {
+    WillTerminate,
 }
 
-impl Default for Builder {
+/// Floem top level application
+pub struct Application {
+    application: glazier::Application,
+    scope: Scope,
+    event_listner: Option<Box<AppEventCallback>>,
+}
+
+impl Default for Application {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Builder {
-    pub fn new() -> Self {
-        Self {
-            application: Application::new().unwrap(),
-            reactive_runtime: create_runtime(),
+impl glazier::AppHandler for Application {
+    fn command(&mut self, _id: u32) {}
+
+    fn will_terminate(&mut self) {
+        if let Some(action) = self.event_listner.as_ref() {
+            action(&AppEvent::WillTerminate);
         }
+    }
+}
+
+impl Application {
+    pub fn new() -> Self {
+        let runtime = create_runtime();
+        let (scope, _) = raw_scope_and_disposer(runtime);
+        Self {
+            scope,
+            application: glazier::Application::new().unwrap(),
+            event_listner: None,
+        }
+    }
+
+    pub fn scope(&self) -> Scope {
+        self.scope
+    }
+
+    pub fn on_event(mut self, action: impl Fn(&AppEvent) + 'static) -> Self {
+        self.event_listner = Some(Box::new(action));
+        self
     }
 
     /// create a new window for the application, if you want multiple windows,
@@ -39,7 +68,7 @@ impl Builder {
         config: Option<WindowConfig>,
     ) -> Self {
         let application = self.application.clone();
-        let _ = create_scope(self.reactive_runtime, move |cx| {
+        let _ = self.scope.child_scope(move |cx| {
             let app = AppHandle::new(cx, app_view);
             let mut builder = WindowBuilder::new(application).size(
                 config
@@ -59,6 +88,7 @@ impl Builder {
     }
 
     pub fn run(self) {
-        self.application.run(None);
+        let application = self.application.clone();
+        application.run(Some(Box::new(self)));
     }
 }

@@ -12,7 +12,8 @@ smallvec = "1.10.0"
 educe = "0.4.20"
 taffy = "0.3.12"
 leptos_reactive = { version = "0.2.5", features = ["stable"] }
-glazier = { git = "https://github.com/linebender/glazier", features = ["serde"], rev = "58cd5a4968dc2823f075097d12f274d5466aea94" }
+glazier = { git = "https://github.com/linebender/glazier", features = ["serde"], rev = "83da04db5c14d8f328c246fbe1b89375ee63fbd7" }
+# glazier = { path = "../glazier", features = ["serde"] }
 vello = { git = "https://github.com/linebender/vello", rev = "2f268d4e0f8596c2c05f4982ddc558e1cae0ffa2" }
 vello_svg = { git = "https://github.com/linebender/vello", rev = "2f268d4e0f8596c2c05f4982ddc558e1cae0ffa2" }
 wgpu = "0.15"
