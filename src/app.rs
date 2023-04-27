@@ -82,6 +82,7 @@ impl Application {
 
             builder = builder.handler(Box::new(app));
             let window = builder.build().unwrap();
+            window.show();
             window.bring_to_front_and_focus();
         });
         self
