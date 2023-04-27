@@ -6,7 +6,7 @@ use leptos_reactive::create_effect;
 use taffy::{prelude::Node, style::Dimension};
 
 use crate::{
-    app::AppContext,
+    app_handle::AppContext,
     context::{EventCx, UpdateCx},
     event::Event,
     id::Id,

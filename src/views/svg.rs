@@ -4,7 +4,7 @@ use leptos_reactive::create_effect;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    app::AppContext,
+    app_handle::AppContext,
     id::Id,
     view::{ChangeFlags, View},
 };

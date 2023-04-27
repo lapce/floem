@@ -14,7 +14,7 @@ use taffy::{prelude::Node, style::Dimension};
 use vello::peniko::Color;
 
 use crate::{
-    app::AppContext,
+    app_handle::AppContext,
     context::{EventCx, UpdateCx},
     event::Event,
     id::Id,

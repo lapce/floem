@@ -8,7 +8,7 @@ A native Rust UI library with fine-grained reactivity
 It's still early days so expect lots of things missing!
 
 ```rust
-fn app_logic(cx: AppContext) -> impl View {
+fn app_view(cx: AppContext) -> impl View {
     // create a counter reactive signal with initial value 0
     let (couter, set_counter) = create_signal(cx.scope, 0);
 
@@ -35,7 +35,7 @@ fn app_logic(cx: AppContext) -> impl View {
 }
 
 fn main() {
-    floem::launch(app_logic);
+    floem::launch(app_view);
 }
 ```
 

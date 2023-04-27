@@ -1,13 +1,13 @@
 use floem::{
-    app::AppContext,
     peniko::Color,
     reactive::{create_signal, SignalGet, SignalUpdate},
     style::Style,
     view::View,
     views::{click, label, stack, Decorators},
+    AppContext,
 };
 
-fn app_logic(cx: AppContext) -> impl View {
+fn app_view(cx: AppContext) -> impl View {
     let (counter, set_counter) = create_signal(cx.scope, 0);
     stack(cx, |cx| {
         (
@@ -83,5 +83,5 @@ fn app_logic(cx: AppContext) -> impl View {
 }
 
 fn main() {
-    floem::launch(app_logic);
+    floem::launch(app_view);
 }

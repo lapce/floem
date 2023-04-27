@@ -18,7 +18,7 @@ use taffy::{
 use vello::peniko::Color;
 
 use crate::{
-    app::StyleSelector,
+    app_handle::StyleSelector,
     event::{Event, EventListner},
     id::Id,
     style::{ComputedStyle, CursorStyle, Style},
@@ -306,13 +306,12 @@ impl<'a> EventCx<'a> {
     }
 
     pub(crate) fn should_send(&mut self, id: Id, event: &Event) -> bool {
-        let point = event.point();
-        if let Some(point) = point {
-            if self.app_state.is_hidden(id)
-                || (self.app_state.is_disabled(&id) && !event.allow_disabled())
-            {
-                return false;
-            }
+        if self.app_state.is_hidden(id)
+            || (self.app_state.is_disabled(&id) && !event.allow_disabled())
+        {
+            return false;
+        }
+        if let Some(point) = event.point() {
             if let Some(layout) = self.get_layout(id) {
                 if layout.location.x as f64 <= point.x
                     && point.x <= (layout.location.x + layout.size.width) as f64
@@ -321,13 +320,11 @@ impl<'a> EventCx<'a> {
                 {
                     return true;
                 }
-                // Needed to handle mouse leave for hovered views
-                if self.app_state.is_hovered(&id) {
-                    return true;
-                }
             }
+            false
+        } else {
+            true
         }
-        false
     }
 }
 

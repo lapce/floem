@@ -6,7 +6,7 @@ use glazier::kurbo::{Line, Point, Size};
 use taffy::prelude::Node;
 
 use crate::{
-    app::AppContext,
+    app_handle::AppContext,
     context::{EventCx, LayoutCx, PaintCx, UpdateCx},
     event::Event,
     id::Id,
@@ -159,29 +159,10 @@ pub trait View {
         let event = cx.offset_event(self.id(), event);
 
         if let Event::MouseMove(event) = &event {
-            let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
-            let was_in_hovered = cx.app_state.hovered.contains(&self.id());
-            let now_hovered = rect.contains(event.pos);
-
-            let hover_changed = if now_hovered && !was_in_hovered {
-                cx.app_state.hovered.insert(self.id());
-                true
-            } else if !now_hovered && was_in_hovered {
-                cx.app_state.hovered.remove(&self.id());
-                true
-            } else {
-                false
-            };
-
-            if hover_changed {
-                let view_state = cx.app_state.view_state(self.id());
-                if view_state.hover_style.is_some() {
-                    cx.app_state.request_layout(self.id());
-                }
-            }
-
-            if now_hovered {
-                let style = cx.app_state.get_computed_style(self.id());
+            let rect = cx.get_size(id).unwrap_or_default().to_rect();
+            if rect.contains(event.pos) {
+                cx.app_state.hovered.insert(id);
+                let style = cx.app_state.get_computed_style(id);
                 if let Some(cursor) = style.cursor {
                     AppContext::update_cursor_style(cursor);
                 }

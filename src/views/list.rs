@@ -8,7 +8,7 @@ use rustc_hash::FxHasher;
 use smallvec::SmallVec;
 
 use crate::{
-    app::AppContext,
+    app_handle::AppContext,
     context::{AppState, EventCx, UpdateCx},
     id::Id,
     view::{ChangeFlags, View},

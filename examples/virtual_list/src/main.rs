@@ -1,14 +1,14 @@
 use floem::{
-    app::AppContext,
     reactive::{create_signal, SignalGet},
     style::Style,
     view::View,
     views::virtual_list,
     views::Decorators,
     views::{container, label, scroll, VirtualListDirection, VirtualListItemSize},
+    AppContext,
 };
 
-fn app_logic(cx: AppContext) -> impl View {
+fn app_view(cx: AppContext) -> impl View {
     let long_list: im::Vector<i32> = (0..1000000).into_iter().collect();
     let (long_list, _set_long_list) = create_signal(cx.scope, long_list);
 
@@ -40,5 +40,5 @@ fn app_logic(cx: AppContext) -> impl View {
 }
 
 fn main() {
-    floem::launch(app_logic);
+    floem::launch(app_view);
 }

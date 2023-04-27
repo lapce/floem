@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use crate::{
-    app::AppContext,
+    app_handle::AppContext,
     context::{EventCx, UpdateCx},
     event::Event,
     id::Id,

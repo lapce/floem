@@ -8,7 +8,7 @@ use smallvec::SmallVec;
 use taffy::{prelude::Node, style::Dimension};
 
 use crate::{
-    app::AppContext,
+    app_handle::AppContext,
     context::LayoutCx,
     id::Id,
     view::{ChangeFlags, View},

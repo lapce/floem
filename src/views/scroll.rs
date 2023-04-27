@@ -8,7 +8,7 @@ use taffy::{
 use vello::peniko::Color;
 
 use crate::{
-    app::AppContext,
+    app_handle::AppContext,
     context::{AppState, LayoutCx, PaintCx},
     event::Event,
     id::Id,

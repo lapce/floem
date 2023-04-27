@@ -441,6 +441,14 @@ impl Style {
         self.justify_content(Some(JustifyContent::Center))
     }
 
+    pub fn justify_end(self) -> Self {
+        self.justify_content(Some(JustifyContent::End))
+    }
+
+    pub fn hide(self) -> Self {
+        self.display(Display::None)
+    }
+
     pub fn flex_basis_px(self, pt: f32) -> Self {
         self.flex_basis(Dimension::Points(pt))
     }

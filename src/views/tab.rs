@@ -5,7 +5,7 @@ use smallvec::SmallVec;
 use taffy::style::Display;
 
 use crate::{
-    app::AppContext,
+    app_handle::AppContext,
     context::{EventCx, UpdateCx},
     id::Id,
     view::{ChangeFlags, View},

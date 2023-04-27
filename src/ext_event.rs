@@ -11,7 +11,7 @@ use leptos_reactive::{
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 
-use crate::{app::AppContext, id::Id};
+use crate::{app_handle::AppContext, id::Id};
 
 pub static EXT_EVENT_HANDLER: Lazy<ExtEventHandler> = Lazy::new(ExtEventHandler::default);
 
