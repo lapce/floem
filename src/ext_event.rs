@@ -48,19 +48,19 @@ impl ExtEventHandler {
 }
 
 pub fn create_signal_from_channel<T: Send>(
-    cx: AppContext,
+    cx: Scope,
     rx: crossbeam_channel::Receiver<T>,
 ) -> ReadSignal<Option<T>> {
-    let (read_notify, write_notify) = create_signal(cx.scope, None);
+    let (read_notify, write_notify) = create_signal(cx, None);
     let ext_id = ExtId::next();
     WRITE_SIGNALS.with(|signals| signals.borrow_mut().insert(ext_id, write_notify));
 
     let data = Arc::new(Mutex::new(VecDeque::new()));
-    let (read, write) = create_signal(cx.scope, None);
+    let (read, write) = create_signal(cx, None);
 
     {
         let data = data.clone();
-        create_effect(cx.scope, move |_| {
+        create_effect(cx, move |_| {
             if read_notify.get().is_some() {
                 while let Some(value) = data.lock().pop_front() {
                     write.set(value);

@@ -11,7 +11,7 @@ pub mod view_tuple;
 pub mod views;
 pub mod window;
 
-pub use app::{launch, Builder};
+pub use app::{launch, AppEvent, Application};
 pub use app_handle::AppContext;
 pub use floem_renderer::cosmic_text;
 pub use floem_renderer::Renderer;
