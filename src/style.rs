@@ -431,6 +431,10 @@ impl Style {
         self.position(Position::Absolute)
     }
 
+    pub fn items_start(self) -> Self {
+        self.align_items(Some(AlignItems::FlexStart))
+    }
+
     /// Defines the alignment along the cross axis as Centered
     pub fn items_center(self) -> Self {
         self.align_items(Some(AlignItems::Center))

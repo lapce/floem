@@ -79,6 +79,9 @@ impl Application {
             if let Some(position) = config.as_ref().and_then(|c| c.position) {
                 builder = builder.position(position);
             }
+            if let Some(show_titlebar) = config.as_ref().and_then(|c| c.show_titlebar) {
+                builder = builder.show_titlebar(show_titlebar);
+            }
 
             builder = builder.handler(Box::new(app));
             let window = builder.build().unwrap();
