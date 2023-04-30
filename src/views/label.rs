@@ -207,13 +207,16 @@ impl View for Label {
             return;
         }
 
-        let text_overflow = cx.app_state.get_computed_style(self.id).text_overflow;
+        let style = cx.app_state.get_computed_style(self.id);
+        let text_overflow = style.text_overflow;
+        let padding = style.padding_left + style.padding_right;
         let layout = cx.get_layout(self.id()).unwrap();
         let text_layout = self.text_layout.as_ref().unwrap();
         let width = text_layout.size().width as f32;
+        let available_width = layout.size.width - padding;
         if text_overflow == TextOverflow::Ellipsis {
-            if width > layout.size.width {
-                if self.available_width != Some(layout.size.width) {
+            if width > available_width {
+                if self.available_width != Some(available_width) {
                     let mut dots_text = TextLayout::new();
                     let mut attrs = Attrs::new().color(self.color.unwrap_or(Color::BLACK));
                     if let Some(font_size) = self.font_size {
@@ -236,7 +239,7 @@ impl View for Label {
                     dots_text.set_text("...", AttrsList::new(attrs));
 
                     let dots_width = dots_text.size().width as f32;
-                    let width_left = layout.size.width - dots_width;
+                    let width_left = available_width - dots_width;
                     let hit_point = text_layout.hit_point(Point::new(width_left as f64, 0.0));
                     let index = hit_point.index;
 
@@ -246,7 +249,7 @@ impl View for Label {
                         "".to_string()
                     };
                     self.available_text = Some(new_text);
-                    self.available_width = Some(layout.size.width);
+                    self.available_width = Some(available_width);
                     self.set_text_layout();
                 }
             } else {
@@ -255,13 +258,13 @@ impl View for Label {
                 self.available_text_layout = None;
             }
         } else if text_overflow == TextOverflow::Wrap
-            && self.available_width != Some(layout.size.width)
+            && self.available_width != Some(available_width)
         {
-            self.available_width = Some(layout.size.width);
+            self.available_width = Some(available_width);
             self.text_layout
                 .as_mut()
                 .unwrap()
-                .set_size(layout.size.width, f32::MAX);
+                .set_size(available_width, f32::MAX);
             cx.app_state.request_layout(self.id());
         }
     }
