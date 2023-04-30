@@ -35,6 +35,13 @@ use taffy::{
 };
 use vello::peniko::Color;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextOverflow {
+    Wrap,
+    Clip,
+    Ellipsis,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum CursorStyle {
     Default,
@@ -235,6 +242,7 @@ define_styles!(
     font_family nocb: Option<String> = None,
     font_weight nocb: Option<Weight> = None,
     font_style nocb: Option<FontStyle> = None,
+    text_overflow: TextOverflow = TextOverflow::Wrap,
     line_height nocb: Option<LineHeightValue> = None,
 );
 
@@ -425,6 +433,10 @@ impl Style {
     pub fn line_height(mut self, normal: f32) -> Self {
         self.line_height = Some(LineHeightValue::Normal(normal)).into();
         self
+    }
+
+    pub fn text_ellipsis(self) -> Self {
+        self.text_overflow(TextOverflow::Ellipsis)
     }
 
     pub fn absolute(self) -> Self {

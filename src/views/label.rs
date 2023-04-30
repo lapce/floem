@@ -2,7 +2,7 @@ use std::any::Any;
 
 use crate::{
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
-    style::ComputedStyle,
+    style::{ComputedStyle, TextOverflow},
 };
 use floem_renderer::{
     cosmic_text::{LineHeightValue, Style as FontStyle, Weight},
@@ -36,6 +36,7 @@ pub struct Label {
     font_weight: Option<Weight>,
     font_style: Option<FontStyle>,
     line_height: Option<LineHeightValue>,
+    text_overflow: TextOverflow,
 }
 
 pub fn label(cx: AppContext, label: impl Fn() -> String + 'static) -> Label {
@@ -58,6 +59,7 @@ pub fn label(cx: AppContext, label: impl Fn() -> String + 'static) -> Label {
         font_weight: None,
         font_style: None,
         line_height: None,
+        text_overflow: TextOverflow::Wrap,
     }
 }
 
@@ -86,6 +88,15 @@ impl Label {
         }
         text_layout.set_text(self.label.as_str(), AttrsList::new(attrs));
         self.text_layout = Some(text_layout);
+
+        if let Some(available_width) = self.available_width {
+            if self.text_overflow == TextOverflow::Wrap {
+                self.text_layout
+                    .as_mut()
+                    .unwrap()
+                    .set_size(available_width, f32::MAX)
+            }
+        }
 
         if let Some(new_text) = self.available_text.as_ref() {
             let mut text_layout = TextLayout::new();
@@ -144,17 +155,20 @@ impl View for Label {
             let (width, height) = if self.label.is_empty() {
                 (0.0, cx.current_font_size().unwrap_or(12.0))
             } else {
+                let text_overflow = cx.app_state.get_computed_style(self.id).text_overflow;
                 if self.font_size != cx.current_font_size()
                     || self.font_family.as_deref() != cx.current_font_family()
                     || self.font_weight != cx.font_weight
                     || self.font_style != cx.font_style
                     || self.line_height != cx.line_height
+                    || self.text_overflow != text_overflow
                 {
                     self.font_size = cx.current_font_size();
                     self.font_family = cx.current_font_family().map(|s| s.to_string());
                     self.font_weight = cx.font_weight;
                     self.font_style = cx.font_style;
                     self.line_height = cx.line_height;
+                    self.text_overflow = text_overflow;
                     self.set_text_layout();
                 }
                 if self.text_layout.is_none() {
@@ -193,12 +207,12 @@ impl View for Label {
             return;
         }
 
-        let text_node = self.text_node.unwrap();
-        let layout = cx.app_state.taffy.layout(text_node).unwrap();
+        let text_overflow = cx.app_state.get_computed_style(self.id).text_overflow;
+        let layout = cx.get_layout(self.id()).unwrap();
         let text_layout = self.text_layout.as_ref().unwrap();
         let width = text_layout.size().width as f32;
-        if width > layout.size.width {
-            if self.available_width != Some(layout.size.width) {
+        if text_overflow == TextOverflow::Ellipsis {
+            if width > layout.size.width && self.available_width != Some(layout.size.width) {
                 let mut dots_text = TextLayout::new();
                 let mut attrs = Attrs::new().color(self.color.unwrap_or(Color::BLACK));
                 if let Some(font_size) = self.font_size {
@@ -232,11 +246,20 @@ impl View for Label {
                 self.available_text = Some(new_text);
                 self.available_width = Some(layout.size.width);
                 self.set_text_layout();
+            } else {
+                self.available_text = None;
+                self.available_width = None;
+                self.available_text_layout = None;
             }
-        } else {
-            self.available_text = None;
-            self.available_width = None;
-            self.available_text_layout = None;
+        } else if text_overflow == TextOverflow::Wrap
+            && self.available_width != Some(layout.size.width)
+        {
+            self.available_width = Some(layout.size.width);
+            self.text_layout
+                .as_mut()
+                .unwrap()
+                .set_size(layout.size.width, f32::MAX);
+            cx.app_state.request_layout(self.id());
         }
     }
 
