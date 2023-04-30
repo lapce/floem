@@ -212,40 +212,43 @@ impl View for Label {
         let text_layout = self.text_layout.as_ref().unwrap();
         let width = text_layout.size().width as f32;
         if text_overflow == TextOverflow::Ellipsis {
-            if width > layout.size.width && self.available_width != Some(layout.size.width) {
-                let mut dots_text = TextLayout::new();
-                let mut attrs = Attrs::new().color(self.color.unwrap_or(Color::BLACK));
-                if let Some(font_size) = self.font_size {
-                    attrs = attrs.font_size(font_size);
-                }
-                if let Some(font_style) = self.font_style {
-                    attrs = attrs.style(font_style);
-                }
-                let font_family = self.font_family.as_ref().map(|font_family| {
-                    let family: Vec<FamilyOwned> = FamilyOwned::parse_list(font_family).collect();
-                    family
-                });
-                if let Some(font_family) = font_family.as_ref() {
-                    attrs = attrs.family(font_family);
-                }
-                if let Some(font_weight) = self.font_weight {
-                    attrs = attrs.weight(font_weight);
-                }
-                dots_text.set_text("...", AttrsList::new(attrs));
+            if width > layout.size.width {
+                if self.available_width != Some(layout.size.width) {
+                    let mut dots_text = TextLayout::new();
+                    let mut attrs = Attrs::new().color(self.color.unwrap_or(Color::BLACK));
+                    if let Some(font_size) = self.font_size {
+                        attrs = attrs.font_size(font_size);
+                    }
+                    if let Some(font_style) = self.font_style {
+                        attrs = attrs.style(font_style);
+                    }
+                    let font_family = self.font_family.as_ref().map(|font_family| {
+                        let family: Vec<FamilyOwned> =
+                            FamilyOwned::parse_list(font_family).collect();
+                        family
+                    });
+                    if let Some(font_family) = font_family.as_ref() {
+                        attrs = attrs.family(font_family);
+                    }
+                    if let Some(font_weight) = self.font_weight {
+                        attrs = attrs.weight(font_weight);
+                    }
+                    dots_text.set_text("...", AttrsList::new(attrs));
 
-                let dots_width = dots_text.size().width as f32;
-                let width_left = layout.size.width - dots_width;
-                let hit_point = text_layout.hit_point(Point::new(width_left as f64, 0.0));
-                let index = hit_point.index;
+                    let dots_width = dots_text.size().width as f32;
+                    let width_left = layout.size.width - dots_width;
+                    let hit_point = text_layout.hit_point(Point::new(width_left as f64, 0.0));
+                    let index = hit_point.index;
 
-                let new_text = if index > 0 {
-                    format!("{}...", &self.label[..index])
-                } else {
-                    "".to_string()
-                };
-                self.available_text = Some(new_text);
-                self.available_width = Some(layout.size.width);
-                self.set_text_layout();
+                    let new_text = if index > 0 {
+                        format!("{}...", &self.label[..index])
+                    } else {
+                        "".to_string()
+                    };
+                    self.available_text = Some(new_text);
+                    self.available_width = Some(layout.size.width);
+                    self.set_text_layout();
+                }
             } else {
                 self.available_text = None;
                 self.available_width = None;
