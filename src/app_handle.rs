@@ -405,13 +405,26 @@ impl<V: View> AppHandle<V> {
         let mut cx = EventCx {
             app_state: &mut self.app_state,
         };
+
         if event.needs_focus() {
+            let mut processed = false;
             if let Some(id) = cx.app_state.focus {
                 IDPATHS.with(|paths| {
                     if let Some(id_path) = paths.borrow().get(&id) {
-                        self.view.event_main(&mut cx, Some(&id_path.0), event);
+                        processed = self
+                            .view
+                            .event_main(&mut cx, Some(&id_path.0), event.clone());
                     }
                 });
+            }
+            if !processed {
+                if let Some(listener) = event.listener() {
+                    if let Some(listeners) = cx.get_event_listener(self.view.id()) {
+                        if let Some(action) = listeners.get(&listener) {
+                            (*action)(&event);
+                        }
+                    }
+                }
             }
         } else if cx.app_state.active.is_some() && event.is_mouse() {
             let id = cx.app_state.active.unwrap();
