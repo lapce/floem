@@ -439,6 +439,10 @@ impl Style {
         self.text_overflow(TextOverflow::Ellipsis)
     }
 
+    pub fn text_clip(self) -> Self {
+        self.text_overflow(TextOverflow::Clip)
+    }
+
     pub fn absolute(self) -> Self {
         self.position(Position::Absolute)
     }
