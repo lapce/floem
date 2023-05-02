@@ -202,7 +202,7 @@ impl<V: View> AppHandle<V> {
         let mut cx = LayoutCx {
             app_state: &mut self.app_state,
             viewport: None,
-            font_size: 0.0,
+            font_size: None,
             font_family: None,
             font_weight: None,
             font_style: None,
@@ -230,7 +230,7 @@ impl<V: View> AppHandle<V> {
             transform: Affine::IDENTITY,
             clip: None,
             color: None,
-            font_size: 0.,
+            font_size: None,
             font_family: None,
             font_weight: None,
             font_style: None,

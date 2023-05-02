@@ -110,7 +110,7 @@ pub fn text_input(cx: AppContext, buffer: RwSignal<String>) -> TextInput {
         clipped_text: None,
         clip_txt_buf: None,
         color: None,
-        font_size: 0.0,
+        font_size: DEFAULT_FONT_SIZE,
         font_family: None,
         font_weight: None,
         font_style: None,
@@ -130,6 +130,8 @@ enum ClipDirection {
     Forward,
     Backward,
 }
+
+const DEFAULT_FONT_SIZE: f32 = 14.0;
 
 impl TextInput {
     fn move_cursor(&mut self, move_kind: Movement, direction: Direction) -> bool {
@@ -170,7 +172,7 @@ impl TextInput {
     }
 
     fn text_layout_changed(&self, cx: &LayoutCx) -> bool {
-        self.font_size != cx.current_font_size()
+        self.font_size != cx.current_font_size().unwrap_or(DEFAULT_FONT_SIZE)
             || self.font_family.as_deref() != cx.current_font_family()
             || self.font_weight != cx.font_weight
             || self.font_style != cx.font_style
@@ -286,7 +288,9 @@ impl TextInput {
     pub fn get_text_attrs(&self) -> AttrsList {
         let mut text_layout = TextLayout::new();
         let mut attrs = Attrs::new().color(self.color.unwrap_or(Color::BLACK));
+
         attrs = attrs.font_size(self.font_size);
+
         if let Some(font_style) = self.font_style {
             attrs = attrs.style(font_style);
         }
@@ -325,8 +329,8 @@ impl TextInput {
                 });
                 self.move_cursor(Movement::Glyph, Direction::Left)
             }
-            Key::ArrowDown => self.move_cursor(Movement::Line, Direction::Right),
-            Key::ArrowUp => self.move_cursor(Movement::Line, Direction::Left),
+            Key::End => self.move_cursor(Movement::Line, Direction::Right),
+            Key::Home => self.move_cursor(Movement::Line, Direction::Left),
             Key::ArrowLeft => self.move_cursor(Movement::Glyph, Direction::Left),
             Key::ArrowRight => self.move_cursor(Movement::Glyph, Direction::Right),
             _ => {
@@ -382,7 +386,7 @@ impl View for TextInput {
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
             if self.text_layout_changed(cx) {
-                self.font_size = cx.current_font_size();
+                self.font_size = cx.current_font_size().unwrap_or(DEFAULT_FONT_SIZE);
                 self.font_family = cx.current_font_family().map(|s| s.to_string());
                 self.font_weight = cx.font_weight;
                 self.font_style = cx.font_style;
@@ -431,13 +435,13 @@ impl View for TextInput {
         }
 
         if self.color != cx.color
-            || self.font_size != cx.font_size
+            || self.font_size != cx.font_size.unwrap_or(DEFAULT_FONT_SIZE)
             || self.font_family.as_deref() != cx.font_family.as_deref()
             || self.font_weight != cx.font_weight
             || self.font_style != cx.font_style
         {
             self.color = cx.color;
-            self.font_size = cx.font_size;
+            self.font_size = cx.font_size.unwrap_or(DEFAULT_FONT_SIZE);
             self.font_family = cx.font_family.clone();
             self.font_weight = cx.font_weight;
             self.font_style = cx.font_style;

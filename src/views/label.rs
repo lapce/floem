@@ -31,7 +31,7 @@ pub struct Label {
     available_width: Option<f32>,
     available_text_layout: Option<TextLayout>,
     color: Option<Color>,
-    font_size: f32,
+    font_size: Option<f32>,
     font_family: Option<String>,
     font_weight: Option<Weight>,
     font_style: Option<FontStyle>,
@@ -54,7 +54,7 @@ pub fn label(cx: AppContext, label: impl Fn() -> String + 'static) -> Label {
         available_width: None,
         available_text_layout: None,
         color: None,
-        font_size: 0.0,
+        font_size: None,
         font_family: None,
         font_weight: None,
         font_style: None,
@@ -67,7 +67,9 @@ impl Label {
     fn set_text_layout(&mut self) {
         let mut text_layout = TextLayout::new();
         let mut attrs = Attrs::new().color(self.color.unwrap_or(Color::BLACK));
-        attrs = attrs.font_size(self.font_size);
+        if let Some(font_size) = self.font_size {
+            attrs = attrs.font_size(font_size);
+        }
         if let Some(font_style) = self.font_style {
             attrs = attrs.style(font_style);
         }
@@ -99,7 +101,9 @@ impl Label {
         if let Some(new_text) = self.available_text.as_ref() {
             let mut text_layout = TextLayout::new();
             let mut attrs = Attrs::new().color(self.color.unwrap_or(Color::BLACK));
-            attrs = attrs.font_size(self.font_size);
+            if let Some(font_size) = self.font_size {
+                attrs = attrs.font_size(font_size);
+            }
             if let Some(font_style) = self.font_style {
                 attrs = attrs.style(font_style);
             }
@@ -149,7 +153,7 @@ impl View for Label {
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
             let (width, height) = if self.label.is_empty() {
-                (0.0, cx.current_font_size())
+                (0.0, cx.current_font_size().unwrap_or(14.0))
             } else {
                 let text_overflow = cx.app_state.get_computed_style(self.id).text_overflow;
                 if self.font_size != cx.current_font_size()
@@ -215,7 +219,9 @@ impl View for Label {
                 if self.available_width != Some(available_width) {
                     let mut dots_text = TextLayout::new();
                     let mut attrs = Attrs::new().color(self.color.unwrap_or(Color::BLACK));
-                    attrs = attrs.font_size(self.font_size);
+                    if let Some(font_size) = self.font_size {
+                        attrs = attrs.font_size(font_size);
+                    }
                     if let Some(font_style) = self.font_style {
                         attrs = attrs.style(font_style);
                     }

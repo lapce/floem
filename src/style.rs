@@ -238,7 +238,7 @@ define_styles!(
     cursor nocb: Option<CursorStyle> = None,
     color nocb: Option<Color> = None,
     background nocb: Option<Color> = None,
-    font_size nocb: f32 = 14.0,
+    font_size nocb: Option<f32> = None,
     font_family nocb: Option<String> = None,
     font_weight nocb: Option<Weight> = None,
     font_style nocb: Option<FontStyle> = None,
@@ -411,7 +411,7 @@ impl Style {
     }
 
     pub fn font_size(mut self, size: impl Into<StyleValue<f32>>) -> Self {
-        self.font_size = size.into();
+        self.font_size = size.into().map(Some);
         self
     }
 
