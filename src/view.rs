@@ -60,7 +60,9 @@ pub trait View {
         cx.app_state.compute_style(self.id(), view_style);
         let style = cx.app_state.get_computed_style(self.id()).clone();
 
-        cx.font_size = style.font_size;
+        if style.font_size.is_some() {
+            cx.font_size = style.font_size;
+        }
         if style.font_family.is_some() {
             cx.font_family = style.font_family;
         }
@@ -227,7 +229,9 @@ pub trait View {
             if style.color.is_some() {
                 cx.color = style.color;
             }
-            cx.font_size = style.font_size;
+            if style.font_size.is_some() {
+                cx.font_size = style.font_size;
+            }
             if style.font_family.is_some() {
                 cx.font_family = style.font_family.clone();
             }
