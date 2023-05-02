@@ -14,11 +14,11 @@ use floem_renderer::{
 };
 
 use crate::{
-    AppContext,
     context::{LayoutCx, PaintCx},
     peniko::Color,
     style::Style,
     view::View,
+    AppContext,
 };
 
 use std::{any::Any, ops::Range};
@@ -31,7 +31,6 @@ use glazier::{
     keyboard_types::Key,
     kurbo::{Line, Point, Rect, Size},
 };
-
 
 use crate::{
     context::{EventCx, UpdateCx},
@@ -50,8 +49,6 @@ enum InputKind {
     },
 }
 
-type EditorBuff = TextLayout;
-
 pub struct TextInput {
     id: Id,
     buffer: RwSignal<String>,
@@ -59,7 +56,7 @@ pub struct TextInput {
     cursor_glyph_idx: usize,
     // This can be retrieved from the glyph, but we store it for efficiency
     cursor_x: f64,
-    text_buf: Option<EditorBuff>,
+    text_buf: Option<TextLayout>,
     text_node: Option<Node>,
     // Shown when the width exceeds node width for single line input
     clipped_text: Option<String>,
@@ -67,13 +64,15 @@ pub struct TextInput {
     clip_start_idx: usize,
     // This can be retrieved from the clip start glyph, but we store it for efficiency
     clip_start_x: f64,
-    clip_txt_buf: Option<EditorBuff>,
+    clip_txt_buf: Option<TextLayout>,
     // When the visible range changes, we also may need to have a small offset depending on the direction we moved.
-    // This makes sure character under the cursor is always fully visible and correctly aligned, 
+    // This makes sure character under the cursor is always fully visible and correctly aligned,
     // and may cause the last character in the opposite direction to be "cut"
     clip_offset_x: f64,
     color: Option<Color>,
-    font_size: Option<f32>,
+    font_size: f32,
+    width: f32,
+    height: f32,
     font_family: Option<String>,
     font_weight: Option<Weight>,
     font_style: Option<FontStyle>,
@@ -85,6 +84,7 @@ pub struct TextInput {
 pub enum Movement {
     Glyph,
     Word,
+    Line,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -110,7 +110,7 @@ pub fn text_input(cx: AppContext, buffer: RwSignal<String>) -> TextInput {
         clipped_text: None,
         clip_txt_buf: None,
         color: None,
-        font_size: None,
+        font_size: 0.0,
         font_family: None,
         font_weight: None,
         font_style: None,
@@ -120,6 +120,8 @@ pub fn text_input(cx: AppContext, buffer: RwSignal<String>) -> TextInput {
         clip_offset_x: 0.0,
         clip_start_x: 0.0,
         cursor_width: 1.0,
+        width: 0.0,
+        height: 0.0,
     }
 }
 
@@ -142,6 +144,20 @@ impl TextInput {
             (Movement::Glyph, Direction::Right) => {
                 if self.cursor_glyph_idx < self.buffer.get().len() {
                     self.cursor_glyph_idx = self.cursor_glyph_idx + 1;
+                    return true;
+                }
+                false
+            }
+            (Movement::Line, Direction::Right) => {
+                if self.cursor_glyph_idx < self.buffer.get().len() {
+                    self.cursor_glyph_idx = self.buffer.get().len();
+                    return true;
+                }
+                false
+            }
+            (Movement::Line, Direction::Left) => {
+                if self.cursor_glyph_idx > 0 {
+                    self.cursor_glyph_idx = 0;
                     return true;
                 }
                 false
@@ -181,7 +197,6 @@ impl TextInput {
         let mut clip_start_x = self.clip_start_x;
 
         let visible_range = clip_start_x..=clip_start_x + node_width;
-        dbg!(&visible_range, self.cursor_x, &cursor_glyph_pos.point.x);
 
         let mut clip_dir = ClipDirection::None;
         if !visible_range.contains(&cursor_glyph_pos.point.x) {
@@ -254,6 +269,9 @@ impl TextInput {
         let buff = self.buffer.get();
         text_layout.set_text(&buff, attrs.clone());
 
+        self.width = 10.0 * self.font_size;
+        self.height = self.font_size;
+
         // main buff should always get updated
         self.text_buf = Some(text_layout.clone());
 
@@ -268,9 +286,7 @@ impl TextInput {
     pub fn get_text_attrs(&self) -> AttrsList {
         let mut text_layout = TextLayout::new();
         let mut attrs = Attrs::new().color(self.color.unwrap_or(Color::BLACK));
-        if let Some(font_size) = self.font_size {
-            attrs = attrs.font_size(font_size);
-        }
+        attrs = attrs.font_size(self.font_size);
         if let Some(font_style) = self.font_style {
             attrs = attrs.style(font_style);
         }
@@ -309,14 +325,8 @@ impl TextInput {
                 });
                 self.move_cursor(Movement::Glyph, Direction::Left)
             }
-            Key::ArrowDown => {
-                self.cursor_glyph_idx = 0;
-                true
-            }
-            Key::ArrowUp => {
-                self.cursor_glyph_idx = self.buffer.get().len();
-                true
-            }
+            Key::ArrowDown => self.move_cursor(Movement::Line, Direction::Right),
+            Key::ArrowUp => self.move_cursor(Movement::Line, Direction::Left),
             Key::ArrowLeft => self.move_cursor(Movement::Glyph, Direction::Left),
             Key::ArrowRight => self.move_cursor(Movement::Glyph, Direction::Right),
             _ => {
@@ -371,26 +381,16 @@ impl View for TextInput {
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
-            let width = 120.0;
-            let (width, height) = if self.buffer.get().is_empty() {
-                (width, cx.current_font_size().unwrap_or(12.0))
-            } else {
-                if self.text_layout_changed(cx) {
-                    self.font_size = cx.current_font_size();
-                    self.font_family = cx.current_font_family().map(|s| s.to_string());
-                    self.font_weight = cx.font_weight;
-                    self.font_style = cx.font_style;
-                    self.update_text_layout();
-                }
-                if self.text_buf.is_none() {
-                    self.update_text_layout();
-                }
-                let text_layout = self.text_buf.as_ref().unwrap();
-                let size = text_layout.size();
-                let width = width as f32;
-                let height = size.height as f32;
-                (width, height)
-            };
+            if self.text_layout_changed(cx) {
+                self.font_size = cx.current_font_size();
+                self.font_family = cx.current_font_family().map(|s| s.to_string());
+                self.font_weight = cx.font_weight;
+                self.font_style = cx.font_style;
+                self.update_text_layout();
+            } else if self.text_buf.is_none() {
+                self.update_text_layout();
+            }
+            let text_layout = self.text_buf.as_ref().unwrap();
 
             if self.text_node.is_none() {
                 self.text_node = Some(
@@ -403,8 +403,8 @@ impl View for TextInput {
             let text_node = self.text_node.unwrap();
 
             let style = Style::BASE
-                .width(Dimension::Points(width))
-                .height(Dimension::Points(height))
+                .width(Dimension::Points(self.width))
+                .height(Dimension::Points(self.height))
                 .compute(&ComputedStyle::default())
                 .to_taffy_style();
             let _ = cx.app_state.taffy.set_style(text_node, style);
@@ -421,7 +421,6 @@ impl View for TextInput {
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {
         let text_node = self.text_node.unwrap();
         let node_layout = cx.app_state.taffy.layout(text_node).unwrap();
-        let text_layout = self.text_buf.as_ref().unwrap();
 
         self.update_text_layout();
     }
@@ -450,7 +449,6 @@ impl View for TextInput {
         let buf_width = text_buf.size().width as f64;
         let node_layout = cx.app_state.taffy.layout(text_node).unwrap().clone();
         let node_width = node_layout.size.width as f64;
-        dbg!(buf_width);
 
         match self.input_kind {
             InputKind::SingleLine => {

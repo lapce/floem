@@ -35,6 +35,13 @@ use taffy::{
 };
 use vello::peniko::Color;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextOverflow {
+    Wrap,
+    Clip,
+    Ellipsis,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum CursorStyle {
     Default,
@@ -231,10 +238,11 @@ define_styles!(
     cursor nocb: Option<CursorStyle> = None,
     color nocb: Option<Color> = None,
     background nocb: Option<Color> = None,
-    font_size nocb: Option<f32> = None,
+    font_size nocb: f32 = 14.0,
     font_family nocb: Option<String> = None,
     font_weight nocb: Option<Weight> = None,
     font_style nocb: Option<FontStyle> = None,
+    text_overflow: TextOverflow = TextOverflow::Wrap,
     line_height nocb: Option<LineHeightValue> = None,
 );
 
@@ -403,7 +411,7 @@ impl Style {
     }
 
     pub fn font_size(mut self, size: impl Into<StyleValue<f32>>) -> Self {
-        self.font_size = size.into().map(Some);
+        self.font_size = size.into();
         self
     }
 
@@ -427,8 +435,16 @@ impl Style {
         self
     }
 
+    pub fn text_ellipsis(self) -> Self {
+        self.text_overflow(TextOverflow::Ellipsis)
+    }
+
     pub fn absolute(self) -> Self {
         self.position(Position::Absolute)
+    }
+
+    pub fn items_start(self) -> Self {
+        self.align_items(Some(AlignItems::FlexStart))
     }
 
     /// Defines the alignment along the cross axis as Centered

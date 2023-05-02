@@ -9,6 +9,7 @@ pub enum EventListner {
     MouseWheel,
     WindowClosed,
     WindowResized,
+    WindowMoved,
 }
 
 #[derive(Debug, Clone)]
@@ -20,6 +21,7 @@ pub enum Event {
     KeyDown(KeyEvent),
     WindowClosed,
     WindowResized(Size),
+    WindowMoved(Point),
 }
 
 impl Event {
@@ -30,7 +32,8 @@ impl Event {
             | Event::MouseMove(_)
             | Event::MouseWheel(_)
             | Event::WindowClosed
-            | Event::WindowResized(_) => false,
+            | Event::WindowResized(_)
+            | Event::WindowMoved(_) => false,
             Event::KeyDown(_) => true,
         }
     }
@@ -41,7 +44,10 @@ impl Event {
             | Event::MouseUp(_)
             | Event::MouseMove(_)
             | Event::MouseWheel(_) => true,
-            Event::KeyDown(_) | Event::WindowClosed | Event::WindowResized(_) => false,
+            Event::KeyDown(_)
+            | Event::WindowClosed
+            | Event::WindowResized(_)
+            | Event::WindowMoved(_) => false,
         }
     }
 
@@ -50,7 +56,10 @@ impl Event {
             Event::MouseDown(_) | Event::MouseUp(_) | Event::MouseWheel(_) | Event::KeyDown(_) => {
                 false
             }
-            Event::MouseMove(_) | Event::WindowClosed | Event::WindowResized(_) => true,
+            Event::MouseMove(_)
+            | Event::WindowClosed
+            | Event::WindowResized(_)
+            | Event::WindowMoved(_) => true,
         }
     }
 
@@ -60,7 +69,10 @@ impl Event {
             | Event::MouseUp(mouse_event)
             | Event::MouseMove(mouse_event)
             | Event::MouseWheel(mouse_event) => Some(mouse_event.pos),
-            Event::KeyDown(_) | Event::WindowClosed | Event::WindowResized(_) => None,
+            Event::KeyDown(_)
+            | Event::WindowClosed
+            | Event::WindowResized(_)
+            | Event::WindowMoved(_) => None,
         }
     }
 
@@ -72,7 +84,10 @@ impl Event {
             | Event::MouseWheel(mouse_event) => {
                 mouse_event.pos -= offset;
             }
-            Event::KeyDown(_) | Event::WindowClosed | Event::WindowResized(_) => {}
+            Event::KeyDown(_)
+            | Event::WindowClosed
+            | Event::WindowResized(_)
+            | Event::WindowMoved(_) => {}
         }
         self
     }
@@ -86,6 +101,7 @@ impl Event {
             Event::KeyDown(_) => Some(EventListner::KeyDown),
             Event::WindowClosed => Some(EventListner::WindowClosed),
             Event::WindowResized(_) => Some(EventListner::WindowResized),
+            Event::WindowMoved(_) => Some(EventListner::WindowMoved),
         }
     }
 }

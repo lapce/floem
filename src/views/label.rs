@@ -2,7 +2,7 @@ use std::any::Any;
 
 use crate::{
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
-    style::ComputedStyle,
+    style::{ComputedStyle, TextOverflow},
 };
 use floem_renderer::{
     cosmic_text::{LineHeightValue, Style as FontStyle, Weight},
@@ -31,11 +31,12 @@ pub struct Label {
     available_width: Option<f32>,
     available_text_layout: Option<TextLayout>,
     color: Option<Color>,
-    font_size: Option<f32>,
+    font_size: f32,
     font_family: Option<String>,
     font_weight: Option<Weight>,
     font_style: Option<FontStyle>,
     line_height: Option<LineHeightValue>,
+    text_overflow: TextOverflow,
 }
 
 pub fn label(cx: AppContext, label: impl Fn() -> String + 'static) -> Label {
@@ -53,11 +54,12 @@ pub fn label(cx: AppContext, label: impl Fn() -> String + 'static) -> Label {
         available_width: None,
         available_text_layout: None,
         color: None,
-        font_size: None,
+        font_size: 0.0,
         font_family: None,
         font_weight: None,
         font_style: None,
         line_height: None,
+        text_overflow: TextOverflow::Wrap,
     }
 }
 
@@ -65,9 +67,7 @@ impl Label {
     fn set_text_layout(&mut self) {
         let mut text_layout = TextLayout::new();
         let mut attrs = Attrs::new().color(self.color.unwrap_or(Color::BLACK));
-        if let Some(font_size) = self.font_size {
-            attrs = attrs.font_size(font_size);
-        }
+        attrs = attrs.font_size(self.font_size);
         if let Some(font_style) = self.font_style {
             attrs = attrs.style(font_style);
         }
@@ -87,12 +87,19 @@ impl Label {
         text_layout.set_text(self.label.as_str(), AttrsList::new(attrs));
         self.text_layout = Some(text_layout);
 
+        if let Some(available_width) = self.available_width {
+            if self.text_overflow == TextOverflow::Wrap {
+                self.text_layout
+                    .as_mut()
+                    .unwrap()
+                    .set_size(available_width, f32::MAX)
+            }
+        }
+
         if let Some(new_text) = self.available_text.as_ref() {
             let mut text_layout = TextLayout::new();
             let mut attrs = Attrs::new().color(self.color.unwrap_or(Color::BLACK));
-            if let Some(font_size) = self.font_size {
-                attrs = attrs.font_size(font_size);
-           }
+            attrs = attrs.font_size(self.font_size);
             if let Some(font_style) = self.font_style {
                 attrs = attrs.style(font_style);
             }
@@ -138,23 +145,26 @@ impl View for Label {
     fn event(&mut self, _cx: &mut EventCx, _id_path: Option<&[Id]>, _event: Event) -> bool {
         false
     }
- 
+
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
             let (width, height) = if self.label.is_empty() {
-                (0.0, cx.current_font_size().unwrap_or(12.0))
+                (0.0, cx.current_font_size())
             } else {
+                let text_overflow = cx.app_state.get_computed_style(self.id).text_overflow;
                 if self.font_size != cx.current_font_size()
                     || self.font_family.as_deref() != cx.current_font_family()
                     || self.font_weight != cx.font_weight
                     || self.font_style != cx.font_style
                     || self.line_height != cx.line_height
+                    || self.text_overflow != text_overflow
                 {
                     self.font_size = cx.current_font_size();
                     self.font_family = cx.current_font_family().map(|s| s.to_string());
                     self.font_weight = cx.font_weight;
                     self.font_style = cx.font_style;
                     self.line_height = cx.line_height;
+                    self.text_overflow = text_overflow;
                     self.set_text_layout();
                 }
                 if self.text_layout.is_none() {
@@ -193,50 +203,63 @@ impl View for Label {
             return;
         }
 
-        let text_node = self.text_node.unwrap();
-        let layout = cx.app_state.taffy.layout(text_node).unwrap();
+        let style = cx.app_state.get_computed_style(self.id);
+        let text_overflow = style.text_overflow;
+        let padding = style.padding_left + style.padding_right;
+        let layout = cx.get_layout(self.id()).unwrap();
         let text_layout = self.text_layout.as_ref().unwrap();
         let width = text_layout.size().width as f32;
-        if width > layout.size.width {
-            if self.available_width != Some(layout.size.width) {
-                let mut dots_text = TextLayout::new();
-                let mut attrs = Attrs::new().color(self.color.unwrap_or(Color::BLACK));
-                if let Some(font_size) = self.font_size {
-                    attrs = attrs.font_size(font_size);
-                }
-                if let Some(font_style) = self.font_style {
-                    attrs = attrs.style(font_style);
-                }
-                let font_family = self.font_family.as_ref().map(|font_family| {
-                    let family: Vec<FamilyOwned> = FamilyOwned::parse_list(font_family).collect();
-                    family
-                });
-                if let Some(font_family) = font_family.as_ref() {
-                    attrs = attrs.family(font_family);
-                }
-                if let Some(font_weight) = self.font_weight {
-                    attrs = attrs.weight(font_weight);
-                }
-                dots_text.set_text("...", AttrsList::new(attrs));
+        let available_width = layout.size.width - padding;
+        if text_overflow == TextOverflow::Ellipsis {
+            if width > available_width {
+                if self.available_width != Some(available_width) {
+                    let mut dots_text = TextLayout::new();
+                    let mut attrs = Attrs::new().color(self.color.unwrap_or(Color::BLACK));
+                    attrs = attrs.font_size(self.font_size);
+                    if let Some(font_style) = self.font_style {
+                        attrs = attrs.style(font_style);
+                    }
+                    let font_family = self.font_family.as_ref().map(|font_family| {
+                        let family: Vec<FamilyOwned> =
+                            FamilyOwned::parse_list(font_family).collect();
+                        family
+                    });
+                    if let Some(font_family) = font_family.as_ref() {
+                        attrs = attrs.family(font_family);
+                    }
+                    if let Some(font_weight) = self.font_weight {
+                        attrs = attrs.weight(font_weight);
+                    }
+                    dots_text.set_text("...", AttrsList::new(attrs));
 
-                let dots_width = dots_text.size().width as f32;
-                let width_left = layout.size.width - dots_width;
-                let hit_point = text_layout.hit_point(Point::new(width_left as f64, 0.0));
-                let index = hit_point.index;
+                    let dots_width = dots_text.size().width as f32;
+                    let width_left = available_width - dots_width;
+                    let hit_point = text_layout.hit_point(Point::new(width_left as f64, 0.0));
+                    let index = hit_point.index;
 
-                let new_text = if index > 0 {
-                    format!("{}...", &self.label[..index])
-                } else {
-                    "".to_string()
-                };
-                self.available_text = Some(new_text);
-                self.available_width = Some(layout.size.width);
-                self.set_text_layout();
+                    let new_text = if index > 0 {
+                        format!("{}...", &self.label[..index])
+                    } else {
+                        "".to_string()
+                    };
+                    self.available_text = Some(new_text);
+                    self.available_width = Some(available_width);
+                    self.set_text_layout();
+                }
+            } else {
+                self.available_text = None;
+                self.available_width = None;
+                self.available_text_layout = None;
             }
-        } else {
-            self.available_text = None;
-            self.available_width = None;
-            self.available_text_layout = None;
+        } else if text_overflow == TextOverflow::Wrap
+            && self.available_width != Some(available_width)
+        {
+            self.available_width = Some(available_width);
+            self.text_layout
+                .as_mut()
+                .unwrap()
+                .set_size(available_width, f32::MAX);
+            cx.app_state.request_layout(self.id());
         }
     }
 

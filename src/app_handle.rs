@@ -180,7 +180,7 @@ impl<V: View> Drop for AppHandle<V> {
 }
 
 impl<V: View> AppHandle<V> {
-    pub fn new(scope: Scope, app_logic: impl Fn(AppContext) -> V) -> Self {
+    pub fn new(scope: Scope, app_logic: impl FnOnce(AppContext) -> V) -> Self {
         let context = AppContext {
             scope,
             id: Id::next(),
@@ -202,7 +202,7 @@ impl<V: View> AppHandle<V> {
         let mut cx = LayoutCx {
             app_state: &mut self.app_state,
             viewport: None,
-            font_size: None,
+            font_size: 0.0,
             font_family: None,
             font_weight: None,
             font_style: None,
@@ -230,7 +230,7 @@ impl<V: View> AppHandle<V> {
             transform: Affine::IDENTITY,
             clip: None,
             color: None,
-            font_size: None,
+            font_size: 0.,
             font_family: None,
             font_weight: None,
             font_style: None,
@@ -479,6 +479,10 @@ impl<V: View> WinHandler for AppHandle<V> {
         self.layout();
         self.process_update();
         self.handle.invalidate();
+    }
+
+    fn position(&mut self, point: Point) {
+        self.event(Event::WindowMoved(point));
     }
 
     fn prepare_paint(&mut self) {}

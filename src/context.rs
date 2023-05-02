@@ -292,6 +292,8 @@ impl<'a> EventCx<'a> {
         self.app_state.update_active(id);
     }
 
+    
+    #[allow(unused)]
     pub(crate) fn update_focus(&mut self, id: Id) {
         self.app_state.update_focus(id);
     }
@@ -379,14 +381,14 @@ pub struct InteractionState {
 pub struct LayoutCx<'a> {
     pub(crate) app_state: &'a mut AppState,
     pub(crate) viewport: Option<Rect>,
-    pub(crate) font_size: Option<f32>,
+    pub(crate) font_size: f32,
     pub(crate) font_family: Option<String>,
     pub(crate) font_weight: Option<Weight>,
     pub(crate) font_style: Option<FontStyle>,
     pub(crate) line_height: Option<LineHeightValue>,
     pub(crate) window_origin: Point,
     pub(crate) saved_viewports: Vec<Option<Rect>>,
-    pub(crate) saved_font_sizes: Vec<Option<f32>>,
+    pub(crate) saved_font_sizes: Vec<f32>,
     pub(crate) saved_font_families: Vec<Option<String>>,
     pub(crate) saved_font_weights: Vec<Option<Weight>>,
     pub(crate) saved_font_styles: Vec<Option<FontStyle>>,
@@ -397,7 +399,7 @@ pub struct LayoutCx<'a> {
 impl<'a> LayoutCx<'a> {
     pub(crate) fn clear(&mut self) {
         self.viewport = None;
-        self.font_size = None;
+        self.font_size = 0.0;
         self.window_origin = Point::ZERO;
         self.saved_viewports.clear();
         self.saved_font_sizes.clear();
@@ -428,7 +430,7 @@ impl<'a> LayoutCx<'a> {
         self.window_origin = self.saved_window_origins.pop().unwrap_or_default();
     }
 
-    pub fn current_font_size(&self) -> Option<f32> {
+    pub fn current_font_size(&self) -> f32 {
         self.font_size
     }
 
@@ -494,7 +496,7 @@ pub struct PaintCx<'a> {
     pub(crate) transform: Affine,
     pub(crate) clip: Option<Rect>,
     pub(crate) color: Option<Color>,
-    pub(crate) font_size: Option<f32>,
+    pub(crate) font_size: f32,
     pub(crate) font_family: Option<String>,
     pub(crate) font_weight: Option<Weight>,
     pub(crate) font_style: Option<FontStyle>,
@@ -502,7 +504,7 @@ pub struct PaintCx<'a> {
     pub(crate) saved_transforms: Vec<Affine>,
     pub(crate) saved_clips: Vec<Option<Rect>>,
     pub(crate) saved_colors: Vec<Option<Color>>,
-    pub(crate) saved_font_sizes: Vec<Option<f32>>,
+    pub(crate) saved_font_sizes: Vec<f32>,
     pub(crate) saved_font_families: Vec<Option<String>>,
     pub(crate) saved_font_weights: Vec<Option<Weight>>,
     pub(crate) saved_font_styles: Vec<Option<FontStyle>>,
@@ -543,7 +545,7 @@ impl<'a> PaintCx<'a> {
         self.color
     }
 
-    pub fn current_font_size(&self) -> Option<f32> {
+    pub fn current_font_size(&self) -> f32 {
         self.font_size
     }
 

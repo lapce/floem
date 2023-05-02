@@ -64,7 +64,7 @@ impl Application {
     /// just chain more window method to the builder
     pub fn window<V: View + 'static>(
         self,
-        app_view: impl Fn(AppContext) -> V + 'static,
+        app_view: impl FnOnce(AppContext) -> V + 'static,
         config: Option<WindowConfig>,
     ) -> Self {
         let application = self.application.clone();
@@ -79,10 +79,13 @@ impl Application {
             if let Some(position) = config.as_ref().and_then(|c| c.position) {
                 builder = builder.position(position);
             }
+            if let Some(show_titlebar) = config.as_ref().and_then(|c| c.show_titlebar) {
+                builder = builder.show_titlebar(show_titlebar);
+            }
 
             builder = builder.handler(Box::new(app));
             let window = builder.build().unwrap();
-            window.bring_to_front_and_focus();
+            window.show();
         });
         self
     }
