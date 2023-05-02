@@ -153,7 +153,7 @@ impl View for Label {
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
             let (width, height) = if self.label.is_empty() {
-                (0.0, cx.current_font_size().unwrap_or(12.0))
+                (0.0, cx.current_font_size().unwrap_or(14.0))
             } else {
                 let text_overflow = cx.app_state.get_computed_style(self.id).text_overflow;
                 if self.font_size != cx.current_font_size()

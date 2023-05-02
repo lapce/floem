@@ -39,3 +39,6 @@ pub use tab::*;
 
 mod stack;
 pub use stack::*;
+
+mod text_input;
+pub use text_input::*;

@@ -165,12 +165,20 @@ impl AppState {
         self.disabled.contains(id)
     }
 
+    pub fn is_focused(&self, id: &Id) -> bool {
+        self.focus.map(|f| &f == id).unwrap_or(false)
+    }
+
+    pub fn is_active(&self, id: &Id) -> bool {
+        self.active.map(|a| &a == id).unwrap_or(false)
+    }
+
     pub fn get_interact_state(&self, id: &Id) -> InteractionState {
         InteractionState {
             is_hovered: self.is_hovered(id),
             is_disabled: self.is_disabled(id),
-            is_focused: self.focus.map(|f| &f == id).unwrap_or(false),
-            is_active: self.active.map(|a| &a == id).unwrap_or(false),
+            is_focused: self.is_focused(id),
+            is_active: self.is_active(id),
         }
     }
 
@@ -235,6 +243,34 @@ impl AppState {
         }
     }
 
+    pub(crate) fn clear_focus(&mut self) {
+        if let Some(old_id) = self.focus {
+            // To remove the styles applied by the Focus selector
+            if self.has_style_for_sel(old_id, StyleSelector::Focus) {
+                self.request_layout(old_id);
+            }
+        }
+
+        self.focus = None;
+    }
+
+    pub(crate) fn update_focus(&mut self, id: Id) {
+        let old = self.focus;
+        self.focus = Some(id);
+
+        if let Some(old_id) = old {
+            // To remove the styles applied by the Focus selector
+            if self.has_style_for_sel(old_id, StyleSelector::Focus) {
+                self.request_layout(old_id);
+            }
+        }
+
+        // To apply the styles of the Focus selector
+        if self.has_style_for_sel(id, StyleSelector::Focus) {
+            self.request_layout(id);
+        }
+    }
+
     pub(crate) fn has_style_for_sel(&mut self, id: Id, selector_kind: StyleSelector) -> bool {
         let view_state = self.view_state(id);
 
@@ -254,6 +290,12 @@ pub struct EventCx<'a> {
 impl<'a> EventCx<'a> {
     pub(crate) fn update_active(&mut self, id: Id) {
         self.app_state.update_active(id);
+    }
+
+    
+    #[allow(unused)]
+    pub(crate) fn update_focus(&mut self, id: Id) {
+        self.app_state.update_focus(id);
     }
 
     pub fn get_style(&self, id: Id) -> Option<&Style> {
