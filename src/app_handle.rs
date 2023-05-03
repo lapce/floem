@@ -2,8 +2,8 @@ use std::{any::Any, collections::HashMap};
 
 use floem_renderer::Renderer;
 use glazier::{
-    kurbo::{Affine, Point, Rect},
-    FileDialogOptions, FileDialogToken, FileInfo, WinHandler,
+    kurbo::{Affine, Point, Rect, Vec2},
+    FileDialogOptions, FileDialogToken, FileInfo, MouseButton, MouseButtons, WinHandler,
 };
 use leptos_reactive::{Scope, SignalSet};
 
@@ -513,16 +513,64 @@ impl<V: View> WinHandler for AppHandle<V> {
         self.event(Event::MouseDown(event.clone()));
     }
 
+    fn pointer_down(&mut self, event: &glazier::PointerEvent) {
+        self.event(Event::MouseDown(glazier::MouseEvent {
+            pos: event.pos,
+            buttons: MouseButtons::new(),
+            mods: event.modifiers,
+            count: event.count,
+            focus: event.focus,
+            button: MouseButton::None,
+            wheel_delta: Vec2::ZERO,
+        }));
+    }
+
     fn mouse_up(&mut self, event: &glazier::MouseEvent) {
         self.event(Event::MouseUp(event.clone()));
+    }
+
+    fn pointer_up(&mut self, event: &glazier::PointerEvent) {
+        self.event(Event::MouseUp(glazier::MouseEvent {
+            pos: event.pos,
+            buttons: MouseButtons::new(),
+            mods: event.modifiers,
+            count: event.count,
+            focus: event.focus,
+            button: MouseButton::None,
+            wheel_delta: Vec2::ZERO,
+        }));
     }
 
     fn mouse_move(&mut self, event: &glazier::MouseEvent) {
         self.event(Event::MouseMove(event.clone()));
     }
 
+    fn pointer_move(&mut self, event: &glazier::PointerEvent) {
+        self.event(Event::MouseMove(glazier::MouseEvent {
+            pos: event.pos,
+            buttons: MouseButtons::new(),
+            mods: event.modifiers,
+            count: event.count,
+            focus: event.focus,
+            button: MouseButton::None,
+            wheel_delta: Vec2::ZERO,
+        }));
+    }
+
     fn mouse_wheel(&mut self, event: &glazier::MouseEvent) {
         self.event(Event::MouseWheel(event.clone()));
+    }
+
+    fn wheel(&mut self, event: &glazier::PointerEvent) {
+        self.event(Event::MouseWheel(glazier::MouseEvent {
+            pos: event.pos,
+            buttons: MouseButtons::new(),
+            mods: event.modifiers,
+            count: event.count,
+            focus: event.focus,
+            button: MouseButton::None,
+            wheel_delta: event.pos.to_vec2(),
+        }));
     }
 
     fn idle(&mut self, _token: glazier::IdleToken) {
