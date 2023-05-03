@@ -1,7 +1,6 @@
-#![allow(unused)]
+use crate::context::LayoutCx;
 use leptos_reactive::{
-    create_effect, create_memo, create_rw_signal, create_signal, ReadSignal, RwSignal, SignalGet,
-    SignalGetUntracked, SignalUpdate, SignalWith, SignalWithUntracked,
+    create_effect, RwSignal, SignalGet, SignalGetUntracked, SignalUpdate, SignalWith,
 };
 use taffy::{
     prelude::{Layout, Node},
@@ -9,27 +8,21 @@ use taffy::{
 };
 
 use floem_renderer::{
-    cosmic_text::{Cursor, Edit, Editor, Style as FontStyle, Weight},
+    cosmic_text::{Cursor, Style as FontStyle, Weight},
     Renderer,
 };
 
-use crate::{
-    context::{LayoutCx, PaintCx},
-    peniko::Color,
-    style::Style,
-    view::View,
-    AppContext,
-};
+use crate::{peniko::Color, style::Style, view::View, AppContext};
 
-use std::{any::Any, ops::Range};
+use std::any::Any;
 
 use crate::{
-    cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout, Wrap},
+    cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
     style::ComputedStyle,
 };
 use glazier::{
     keyboard_types::Key,
-    kurbo::{Line, Point, Rect, Size},
+    kurbo::{Point, Rect},
 };
 
 use crate::{
@@ -39,10 +32,9 @@ use crate::{
     view::ChangeFlags,
 };
 
-use super::{label, stack, Decorators};
-
 enum InputKind {
     SingleLine,
+    #[allow(unused)]
     MultiLine {
         //TODO:
         line_index: usize,
@@ -96,7 +88,7 @@ pub enum Direction {
 pub fn text_input(cx: AppContext, buffer: RwSignal<String>) -> TextInput {
     let id = cx.new_id();
 
-    let text = create_effect(cx.scope, move |_| {
+    create_effect(cx.scope, move |_| {
         let text: String = buffer.with(|buff| buff.to_string());
         AppContext::update_state(id, text, false);
     });
@@ -181,7 +173,7 @@ impl TextInput {
     fn get_line_idx(&self) -> usize {
         match self.input_kind {
             InputKind::SingleLine => 0,
-            InputKind::MultiLine { line_index } => todo!(),
+            InputKind::MultiLine { line_index: _ } => todo!(),
         }
     }
 
@@ -192,9 +184,6 @@ impl TextInput {
         let layout_cursor = virt_text.layout_cursor(&cursor_text_loc);
         let cursor_glyph_pos = virt_text.hit_position(layout_cursor.glyph);
         let cursor_x = cursor_glyph_pos.point.x;
-
-        let location = node_layout.location;
-        let text_start_point = Point::new(location.x as f64, location.y as f64);
 
         let mut clip_start_x = self.clip_start_x;
 
@@ -216,10 +205,6 @@ impl TextInput {
         let clip_end = virt_text
             .hit_point(Point::new(clip_start_x + node_width, 0.0))
             .index;
-
-        let vis_hit_point = virt_text.hit_point(Point::new(self.cursor_x, 0.0));
-
-        let glyph_idx = vis_hit_point.index;
 
         let new_text = self
             .buffer
@@ -286,7 +271,6 @@ impl TextInput {
     }
 
     pub fn get_text_attrs(&self) -> AttrsList {
-        let mut text_layout = TextLayout::new();
         let mut attrs = Attrs::new().color(self.color.unwrap_or(Color::BLACK));
 
         attrs = attrs.font_size(self.font_size);
@@ -311,7 +295,7 @@ impl TextInput {
         self.cursor_glyph_idx = new_cursor_x;
     }
 
-    fn handle_key_down(&mut self, cx: &EventCx, event: &glazier::KeyEvent) -> bool {
+    fn handle_key_down(&mut self, _cx: &EventCx, event: &glazier::KeyEvent) -> bool {
         match event.key {
             Key::Character(ref ch) => {
                 self.buffer
@@ -351,7 +335,7 @@ impl View for TextInput {
     }
 
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags {
-        if let Ok(state) = state.downcast::<String>() {
+        if let Ok(_) = state.downcast::<String>() {
             cx.request_layout(self.id());
             ChangeFlags::LAYOUT
         } else {
@@ -360,16 +344,16 @@ impl View for TextInput {
         }
     }
 
-    fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {
+    fn event(&mut self, cx: &mut EventCx, _id_path: Option<&[Id]>, event: Event) -> bool {
         let is_focused = cx.app_state.is_focused(&self.id);
 
         let is_handled = match &event {
-            Event::MouseDown(event) if is_focused => {
+            Event::MouseDown(_) if is_focused => {
                 self.set_cursor_glyph_idx(self.buffer.get().len());
                 true
             }
             Event::KeyDown(event) if is_focused => self.handle_key_down(cx, event),
-            Event::MouseDown(event) if is_focused => {
+            Event::MouseDown(_) if is_focused => {
                 //TODO: move cursor to click pos
                 false
             }
@@ -394,7 +378,6 @@ impl View for TextInput {
             } else if self.text_buf.is_none() {
                 self.update_text_layout();
             }
-            let text_layout = self.text_buf.as_ref().unwrap();
 
             if self.text_node.is_none() {
                 self.text_node = Some(
@@ -413,19 +396,11 @@ impl View for TextInput {
                 .to_taffy_style();
             let _ = cx.app_state.taffy.set_style(text_node, style);
 
-            let view = cx.app_state.view_state(self.id);
-            let node = view.node;
-
-            let mut main_layout = cx.app_state.taffy.layout(node).cloned().unwrap();
-
             vec![text_node]
         })
     }
 
-    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {
-        let text_node = self.text_node.unwrap();
-        let node_layout = cx.app_state.taffy.layout(text_node).unwrap();
-
+    fn compute_layout(&mut self, _cx: &mut crate::context::LayoutCx) {
         self.update_text_layout();
     }
 
