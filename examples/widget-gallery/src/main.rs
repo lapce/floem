@@ -18,7 +18,7 @@ fn widg_cont_style() -> Style {
 }
 
 
-fn label_widget(cx: AppContext) -> impl View {
+fn label_view(cx: AppContext) -> impl View {
     stack(cx, |cx| {
         (
             label(cx, move || "Label:".to_owned()).style(cx, || Style::BASE.margin_right(50.0)),
@@ -28,7 +28,7 @@ fn label_widget(cx: AppContext) -> impl View {
     .style(cx, || widg_cont_style())
 }
 
-fn button_widget(cx: AppContext) -> impl View {
+fn button_view(cx: AppContext) -> impl View {
     stack(cx, |cx| {
         (
             label(cx, move || "Button:".to_owned()).style(cx, || Style::BASE.margin_right(50.0)),
@@ -45,7 +45,7 @@ fn button_widget(cx: AppContext) -> impl View {
     .style(cx, || widg_cont_style())
 }
 
-fn text_input_widget(cx: AppContext) -> impl View {
+fn text_input_view(cx: AppContext) -> impl View {
     let text = create_rw_signal(cx.scope, "".to_string());
 
     stack(cx, |cx| {
@@ -68,7 +68,7 @@ fn text_input_widget(cx: AppContext) -> impl View {
     .style(cx, || widg_cont_style())
 }
 
-fn virt_list_widget(cx: AppContext) -> impl View {
+fn virt_list_view(cx: AppContext) -> impl View {
     let long_list: im::Vector<i32> = (0..1000000).into_iter().collect();
     let (long_list, _set_long_list) = create_signal(cx.scope, long_list);
 
@@ -101,10 +101,10 @@ fn app_view(cx: AppContext) -> impl View {
     stack(cx, |cx| {
         (stack(cx, |cx| {
             (
-                label_widget(cx),
-                button_widget(cx),
-                text_input_widget(cx),
-                virt_list_widget(cx),
+                label_view(cx),
+                button_view(cx),
+                text_input_view(cx),
+                virt_list_view(cx),
             )
         })
         .style(cx, || {
