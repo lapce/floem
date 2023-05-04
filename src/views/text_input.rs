@@ -356,12 +356,12 @@ impl View for TextInput {
         let is_focused = cx.app_state.is_focused(&self.id);
 
         let is_handled = match &event {
-            Event::MouseDown(_) if is_focused => {
+            Event::PointerDown(_) if is_focused => {
                 self.set_cursor_glyph_idx(self.buffer.get().len());
                 true
             }
             Event::KeyDown(event) if is_focused => self.handle_key_down(cx, event),
-            Event::MouseDown(_) if is_focused => {
+            Event::PointerDown(_) if is_focused => {
                 //TODO: move cursor to click pos
                 false
             }

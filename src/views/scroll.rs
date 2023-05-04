@@ -1,5 +1,8 @@
 use floem_renderer::Renderer;
-use glazier::kurbo::{Point, Rect, Size, Vec2};
+use glazier::{
+    kurbo::{Point, Rect, Size, Vec2},
+    PointerType,
+};
 use leptos_reactive::create_effect;
 use taffy::{
     prelude::Node,
@@ -484,7 +487,7 @@ impl<V: View> View for Scroll<V> {
         let content_size = self.child_size;
 
         match &event {
-            Event::MouseDown(event) => {
+            Event::PointerDown(event) => {
                 if !self.hide_bar {
                     let pos = event.pos + scroll_offset;
 
@@ -509,8 +512,8 @@ impl<V: View> View for Scroll<V> {
                     }
                 }
             }
-            Event::MouseUp(_event) => self.held = BarHeldState::None,
-            Event::MouseMove(event) => {
+            Event::PointerUp(_event) => self.held = BarHeldState::None,
+            Event::PointerMove(event) => {
                 if self.are_bars_held() {
                     match self.held {
                         BarHeldState::Vertical(offset, initial_scroll_offset) => {
@@ -557,8 +560,13 @@ impl<V: View> View for Scroll<V> {
             return true;
         }
 
-        if let Event::MouseWheel(mouse_event) = event {
-            self.clamp_child_viewport(cx.app_state, self.child_viewport + mouse_event.wheel_delta);
+        if let Event::PointerWheel(pointer_event) = event {
+            let delta = if let PointerType::Mouse(info) = pointer_event.pointer_type {
+                info.wheel_delta
+            } else {
+                Vec2::ZERO
+            };
+            self.clamp_child_viewport(cx.app_state, self.child_viewport + delta);
         }
 
         true

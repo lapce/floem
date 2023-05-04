@@ -1,12 +1,14 @@
 use glazier::{
     kurbo::{Point, Size},
-    KeyEvent, MouseEvent,
+    KeyEvent, PointerEvent,
 };
 
 #[derive(Hash, PartialEq, Eq)]
 pub enum EventListner {
     KeyDown,
-    MouseWheel,
+    Click,
+    DoubleClick,
+    PointerWheel,
     WindowClosed,
     WindowResized,
     WindowMoved,
@@ -14,10 +16,10 @@ pub enum EventListner {
 
 #[derive(Debug, Clone)]
 pub enum Event {
-    MouseDown(MouseEvent),
-    MouseUp(MouseEvent),
-    MouseMove(MouseEvent),
-    MouseWheel(MouseEvent),
+    PointerDown(PointerEvent),
+    PointerUp(PointerEvent),
+    PointerMove(PointerEvent),
+    PointerWheel(PointerEvent),
     KeyDown(KeyEvent),
     WindowClosed,
     WindowResized(Size),
@@ -27,10 +29,10 @@ pub enum Event {
 impl Event {
     pub fn needs_focus(&self) -> bool {
         match self {
-            Event::MouseDown(_)
-            | Event::MouseUp(_)
-            | Event::MouseMove(_)
-            | Event::MouseWheel(_)
+            Event::PointerDown(_)
+            | Event::PointerUp(_)
+            | Event::PointerMove(_)
+            | Event::PointerWheel(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
             | Event::WindowMoved(_) => false,
@@ -38,12 +40,12 @@ impl Event {
         }
     }
 
-    pub(crate) fn is_mouse(&self) -> bool {
+    pub(crate) fn is_pointer(&self) -> bool {
         match self {
-            Event::MouseDown(_)
-            | Event::MouseUp(_)
-            | Event::MouseMove(_)
-            | Event::MouseWheel(_) => true,
+            Event::PointerDown(_)
+            | Event::PointerUp(_)
+            | Event::PointerMove(_)
+            | Event::PointerWheel(_) => true,
             Event::KeyDown(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
@@ -53,10 +55,11 @@ impl Event {
 
     pub fn allow_disabled(&self) -> bool {
         match self {
-            Event::MouseDown(_) | Event::MouseUp(_) | Event::MouseWheel(_) | Event::KeyDown(_) => {
-                false
-            }
-            Event::MouseMove(_)
+            Event::PointerDown(_)
+            | Event::PointerUp(_)
+            | Event::PointerWheel(_)
+            | Event::KeyDown(_) => false,
+            Event::PointerMove(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
             | Event::WindowMoved(_) => true,
@@ -65,10 +68,10 @@ impl Event {
 
     pub fn point(&self) -> Option<Point> {
         match self {
-            Event::MouseDown(mouse_event)
-            | Event::MouseUp(mouse_event)
-            | Event::MouseMove(mouse_event)
-            | Event::MouseWheel(mouse_event) => Some(mouse_event.pos),
+            Event::PointerDown(pointer_event)
+            | Event::PointerUp(pointer_event)
+            | Event::PointerMove(pointer_event)
+            | Event::PointerWheel(pointer_event) => Some(pointer_event.pos),
             Event::KeyDown(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
@@ -78,11 +81,11 @@ impl Event {
 
     pub fn offset(mut self, offset: (f64, f64)) -> Event {
         match &mut self {
-            Event::MouseDown(mouse_event)
-            | Event::MouseUp(mouse_event)
-            | Event::MouseMove(mouse_event)
-            | Event::MouseWheel(mouse_event) => {
-                mouse_event.pos -= offset;
+            Event::PointerDown(pointer_event)
+            | Event::PointerUp(pointer_event)
+            | Event::PointerMove(pointer_event)
+            | Event::PointerWheel(pointer_event) => {
+                pointer_event.pos -= offset;
             }
             Event::KeyDown(_)
             | Event::WindowClosed
@@ -94,10 +97,10 @@ impl Event {
 
     pub fn listener(&self) -> Option<EventListner> {
         match self {
-            Event::MouseDown(_) => None,
-            Event::MouseUp(_) => None,
-            Event::MouseMove(_) => None,
-            Event::MouseWheel(_) => Some(EventListner::MouseWheel),
+            Event::PointerDown(_) => None,
+            Event::PointerUp(_) => None,
+            Event::PointerMove(_) => None,
+            Event::PointerWheel(_) => Some(EventListner::PointerWheel),
             Event::KeyDown(_) => Some(EventListner::KeyDown),
             Event::WindowClosed => Some(EventListner::WindowClosed),
             Event::WindowResized(_) => Some(EventListner::WindowResized),

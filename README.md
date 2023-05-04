@@ -18,16 +18,16 @@ fn app_view(cx: AppContext) -> impl View {
             label(cx, move || format!("Value: {}", couter.get())),
             stack(cx, |cx| {
                 (
-                    click(
-                        cx,
-                        |cx| label(cx, || "Increment".to_string()),
-                        move || set_counter.update(|value| *value += 1),
-                    ),
-                    click(
-                        cx,
-                        |cx| label(cx, || "Decrement".to_string()),
-                        move || set_counter.update(|value| *value -= 1),
-                    ),
+                    label(cx, || "Increment".to_string())
+                        .on_click(move |_| {
+                            set_counter.update(|value| *value += 1);
+                            true
+                        }),
+                    label(cx, || "Decrement".to_string())
+                        .on_click(move |_| {
+                            set_counter.update(|value| *value -= 1);
+                            true
+                        }),
                 )
             }),
         )

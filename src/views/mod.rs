@@ -1,9 +1,3 @@
-mod click;
-pub use click::*;
-
-mod double_click;
-pub use double_click::*;
-
 mod label;
 pub use label::*;
 

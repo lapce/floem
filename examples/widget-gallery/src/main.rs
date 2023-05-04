@@ -4,7 +4,7 @@ use floem::{
     style::{JustifyContent, Style},
     view::View,
     views::{
-        click, label, scroll, stack, text_input, virtual_list, Decorators, VirtualListDirection,
+        label, scroll, stack, text_input, virtual_list, Decorators, VirtualListDirection,
         VirtualListItemSize,
     },
     AppContext,
@@ -31,14 +31,14 @@ fn button_view(cx: AppContext) -> impl View {
     stack(cx, |cx| {
         (
             label(cx, move || "Button:".to_owned()).style(cx, || Style::BASE.margin_right(50.0)),
-            click(
-                cx,
-                |cx| label(cx, || "Click me".to_string()),
-                move || println!("Button clicked"),
-            )
-            .style(cx, || {
-                Style::BASE.border(1.0).border_radius(10.0).padding(10.0)
-            }),
+            label(cx, || "Click me".to_string())
+                .on_click(|_| {
+                    println!("Button clicked");
+                    true
+                })
+                .style(cx, || {
+                    Style::BASE.border(1.0).border_radius(10.0).padding(10.0)
+                }),
         )
     })
     .style(cx, || widg_cont_style())
