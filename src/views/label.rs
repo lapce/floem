@@ -135,6 +135,10 @@ impl View for Label {
         None
     }
 
+    fn children(&self) -> Vec<Id> {
+        Vec::new()
+    }
+
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags {
         if let Ok(state) = state.downcast() {
             self.label = *state;

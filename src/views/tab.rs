@@ -116,6 +116,14 @@ where
         }
     }
 
+    fn children(&self) -> Vec<Id> {
+        self.children
+            .iter()
+            .filter_map(|child| child.as_ref())
+            .map(|child| child.0.id())
+            .collect()
+    }
+
     fn update(
         &mut self,
         cx: &mut UpdateCx,

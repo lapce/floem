@@ -37,6 +37,10 @@ impl View for Svg {
         None
     }
 
+    fn children(&self) -> Vec<Id> {
+        Vec::new()
+    }
+
     fn update(
         &mut self,
         cx: &mut crate::context::UpdateCx,

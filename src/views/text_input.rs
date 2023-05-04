@@ -334,6 +334,10 @@ impl View for TextInput {
         None
     }
 
+    fn children(&self) -> Vec<Id> {
+        Vec::new()
+    }
+
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags {
         if let Ok(_) = state.downcast::<String>() {
             cx.request_layout(self.id());

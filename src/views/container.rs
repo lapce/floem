@@ -30,6 +30,10 @@ impl<V: View> View for Container<V> {
         }
     }
 
+    fn children(&self) -> Vec<Id> {
+        vec![self.child.id()]
+    }
+
     fn update(
         &mut self,
         _cx: &mut crate::context::UpdateCx,

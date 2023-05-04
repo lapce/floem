@@ -33,6 +33,8 @@ pub trait View {
 
     fn child(&mut self, id: Id) -> Option<&mut dyn View>;
 
+    fn children(&self) -> Vec<Id>;
+
     fn update_main(
         &mut self,
         cx: &mut UpdateCx,

@@ -33,6 +33,10 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
         self.children.child(id)
     }
 
+    fn children(&self) -> Vec<Id> {
+        self.children.children()
+    }
+
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn std::any::Any>) -> ChangeFlags {
         if let Ok(state) = state.downcast() {
             self.children = *state;

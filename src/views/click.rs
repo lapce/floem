@@ -43,6 +43,10 @@ impl<V: View> View for Click<V> {
         }
     }
 
+    fn children(&self) -> Vec<Id> {
+        vec![self.child.id()]
+    }
+
     fn update(&mut self, _cx: &mut UpdateCx, _state: Box<dyn Any>) -> ChangeFlags {
         ChangeFlags::empty()
     }

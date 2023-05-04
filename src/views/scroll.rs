@@ -404,6 +404,10 @@ impl<V: View> View for Scroll<V> {
         }
     }
 
+    fn children(&self) -> Vec<Id> {
+        vec![self.child.id()]
+    }
+
     fn update(
         &mut self,
         cx: &mut crate::context::UpdateCx,

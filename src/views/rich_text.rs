@@ -43,6 +43,10 @@ impl View for RichText {
         None
     }
 
+    fn children(&self) -> Vec<Id> {
+        Vec::new()
+    }
+
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags {
         if let Ok(state) = state.downcast() {
             self.text_layout = *state;
