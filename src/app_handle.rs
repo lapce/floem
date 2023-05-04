@@ -1,4 +1,5 @@
-use std::{any::Any, collections::HashMap};
+use std::any::Any;
+use std::collections::{HashMap, VecDeque};
 
 use floem_renderer::Renderer;
 use glazier::{
@@ -406,6 +407,8 @@ impl<V: View> AppHandle<V> {
             app_state: &mut self.app_state,
         };
 
+        println!("Event {event:?}");
+
         if event.needs_focus() {
             let mut processed = false;
             if let Some(id) = cx.app_state.focus {
@@ -423,6 +426,21 @@ impl<V: View> AppHandle<V> {
                         if let Some(action) = listeners.get(&listener) {
                             (*action)(&event);
                         }
+                    }
+                }
+                if let Event::KeyDown(glazier::KeyEvent { key, .. }) = event {
+                    if key == glazier::KbKey::Tab {
+                        if let Some(id) = cx.app_state.focus {
+                            IDPATHS.with(|paths| {
+                                if let Some(id_path) = paths.borrow().get(&id) {
+                                    println!("Id path {:?}", id_path.0);
+                                }
+                            });
+                        }
+
+                        //println!("View states {:#?}",);
+                        println!("Tab with focused {:?}", cx.app_state.focus);
+                        //cx.app_state.update_focus(id)
                     }
                 }
             }
