@@ -17,7 +17,6 @@ fn widg_cont_style() -> Style {
         .justify_content(Some(JustifyContent::SpaceBetween))
 }
 
-
 fn label_view(cx: AppContext) -> impl View {
     stack(cx, |cx| {
         (

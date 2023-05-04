@@ -292,7 +292,6 @@ impl<'a> EventCx<'a> {
         self.app_state.update_active(id);
     }
 
-    
     #[allow(unused)]
     pub(crate) fn update_focus(&mut self, id: Id) {
         self.app_state.update_focus(id);
