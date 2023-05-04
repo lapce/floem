@@ -2,8 +2,8 @@ use std::{any::Any, collections::HashMap};
 
 use floem_renderer::Renderer;
 use glazier::{
-    kurbo::{Affine, Point, Rect, Vec2},
-    FileDialogOptions, FileDialogToken, FileInfo, MouseButton, MouseButtons, WinHandler,
+    kurbo::{Affine, Point, Rect},
+    FileDialogOptions, FileDialogToken, FileInfo, WinHandler,
 };
 use leptos_reactive::{Scope, SignalSet};
 
@@ -406,6 +406,16 @@ impl<V: View> AppHandle<V> {
             app_state: &mut self.app_state,
         };
 
+        let is_pointer_move = matches!(&event, Event::PointerMove(_));
+        let was_hovered = if is_pointer_move {
+            cx.app_state.cursor = CursorStyle::Default;
+            let was_hovered = cx.app_state.hovered.clone();
+            cx.app_state.hovered.clear();
+            Some(was_hovered)
+        } else {
+            None
+        };
+
         if event.needs_focus() {
             let mut processed = false;
             if let Some(id) = cx.app_state.focus {
@@ -419,14 +429,12 @@ impl<V: View> AppHandle<V> {
             }
             if !processed {
                 if let Some(listener) = event.listener() {
-                    if let Some(listeners) = cx.get_event_listener(self.view.id()) {
-                        if let Some(action) = listeners.get(&listener) {
-                            (*action)(&event);
-                        }
+                    if let Some(action) = cx.get_event_listener(self.view.id(), &listener) {
+                        (*action)(&event);
                     }
                 }
             }
-        } else if cx.app_state.active.is_some() && event.is_mouse() {
+        } else if cx.app_state.active.is_some() && event.is_pointer() {
             let id = cx.app_state.active.unwrap();
             IDPATHS.with(|paths| {
                 if let Some(id_path) = paths.borrow().get(&id) {
@@ -434,30 +442,30 @@ impl<V: View> AppHandle<V> {
                         .event_main(&mut cx, Some(&id_path.0), event.clone());
                 }
             });
-            if let Event::MouseUp(_) = &event {
+            if let Event::PointerUp(_) = &event {
                 // To remove the styles applied by the Active selector
-                if self.app_state.has_style_for_sel(id, StyleSelector::Active) {
-                    self.app_state.request_layout(id);
+                if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
+                    cx.app_state.request_layout(id);
                 }
 
-                self.app_state.active = None;
-            }
-        } else if let Event::MouseMove(_) = &event {
-            cx.app_state.cursor = CursorStyle::Default;
-            let was_hovered = cx.app_state.hovered.clone();
-            cx.app_state.hovered.clear();
-
-            self.view.event_main(&mut cx, None, event);
-
-            for id in was_hovered.symmetric_difference(&cx.app_state.hovered.clone()) {
-                let view_state = cx.app_state.view_state(*id);
-                if view_state.hover_style.is_some() {
-                    cx.app_state.request_layout(*id);
-                }
+                cx.app_state.active = None;
             }
         } else {
             self.view.event_main(&mut cx, None, event);
         }
+
+        if is_pointer_move {
+            for id in was_hovered
+                .unwrap()
+                .symmetric_difference(&cx.app_state.hovered.clone())
+            {
+                let view_state = cx.app_state.view_state(*id);
+                if view_state.hover_style.is_some() || view_state.active_style.is_some() {
+                    cx.app_state.request_layout(*id);
+                }
+            }
+        }
+
         self.process_update();
     }
 
@@ -509,68 +517,20 @@ impl<V: View> WinHandler for AppHandle<V> {
         true
     }
 
-    fn mouse_down(&mut self, event: &glazier::MouseEvent) {
-        self.event(Event::MouseDown(event.clone()));
-    }
-
     fn pointer_down(&mut self, event: &glazier::PointerEvent) {
-        self.event(Event::MouseDown(glazier::MouseEvent {
-            pos: event.pos,
-            buttons: MouseButtons::new(),
-            mods: event.modifiers,
-            count: event.count,
-            focus: event.focus,
-            button: MouseButton::None,
-            wheel_delta: Vec2::ZERO,
-        }));
-    }
-
-    fn mouse_up(&mut self, event: &glazier::MouseEvent) {
-        self.event(Event::MouseUp(event.clone()));
+        self.event(Event::PointerDown(event.clone()));
     }
 
     fn pointer_up(&mut self, event: &glazier::PointerEvent) {
-        self.event(Event::MouseUp(glazier::MouseEvent {
-            pos: event.pos,
-            buttons: MouseButtons::new(),
-            mods: event.modifiers,
-            count: event.count,
-            focus: event.focus,
-            button: MouseButton::None,
-            wheel_delta: Vec2::ZERO,
-        }));
-    }
-
-    fn mouse_move(&mut self, event: &glazier::MouseEvent) {
-        self.event(Event::MouseMove(event.clone()));
+        self.event(Event::PointerUp(event.clone()));
     }
 
     fn pointer_move(&mut self, event: &glazier::PointerEvent) {
-        self.event(Event::MouseMove(glazier::MouseEvent {
-            pos: event.pos,
-            buttons: MouseButtons::new(),
-            mods: event.modifiers,
-            count: event.count,
-            focus: event.focus,
-            button: MouseButton::None,
-            wheel_delta: Vec2::ZERO,
-        }));
-    }
-
-    fn mouse_wheel(&mut self, event: &glazier::MouseEvent) {
-        self.event(Event::MouseWheel(event.clone()));
+        self.event(Event::PointerMove(event.clone()));
     }
 
     fn wheel(&mut self, event: &glazier::PointerEvent) {
-        self.event(Event::MouseWheel(glazier::MouseEvent {
-            pos: event.pos,
-            buttons: MouseButtons::new(),
-            mods: event.modifiers,
-            count: event.count,
-            focus: event.focus,
-            button: MouseButton::None,
-            wheel_delta: event.pos.to_vec2(),
-        }));
+        self.event(Event::PointerWheel(event.clone()));
     }
 
     fn idle(&mut self, _token: glazier::IdleToken) {

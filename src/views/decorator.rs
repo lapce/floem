@@ -72,6 +72,18 @@ pub trait Decorators: View + Sized {
         self
     }
 
+    fn on_click(self, action: impl Fn(&Event) -> bool + 'static) -> Self {
+        let id = self.id();
+        AppContext::update_event_listner(id, EventListner::Click, Box::new(action));
+        self
+    }
+
+    fn on_double_click(self, action: impl Fn(&Event) -> bool + 'static) -> Self {
+        let id = self.id();
+        AppContext::update_event_listner(id, EventListner::DoubleClick, Box::new(action));
+        self
+    }
+
     fn on_resize(self, action: impl Fn(Point, Rect) + 'static) -> Self {
         let id = self.id();
         AppContext::update_resize_listner(id, Box::new(action));

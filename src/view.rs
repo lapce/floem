@@ -8,7 +8,7 @@ use taffy::prelude::Node;
 use crate::{
     app_handle::AppContext,
     context::{EventCx, LayoutCx, PaintCx, UpdateCx},
-    event::Event,
+    event::{Event, EventListner},
     id::Id,
     style::{ComputedStyle, Style},
 };
@@ -158,29 +158,6 @@ pub trait View {
 
         let event = cx.offset_event(self.id(), event);
 
-        if let Event::MouseDown(event) = &event {
-            let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
-            let was_focused = cx.app_state.is_focused(&self.id());
-            let now_focused = rect.contains(event.pos);
-
-            if now_focused && !was_focused {
-                cx.app_state.update_focus(self.id());
-            } else if !now_focused && was_focused {
-                cx.app_state.clear_focus();
-            }
-        }
-
-        if let Event::MouseMove(event) = &event {
-            let rect = cx.get_size(id).unwrap_or_default().to_rect();
-            if rect.contains(event.pos) {
-                cx.app_state.hovered.insert(id);
-                let style = cx.app_state.get_computed_style(id);
-                if let Some(cursor) = style.cursor {
-                    AppContext::update_cursor_style(cursor);
-                }
-            }
-        }
-
         if let Some(id_path) = id_path {
             let id = id_path[0];
             let id_path = &id_path[1..];
@@ -191,12 +168,69 @@ pub trait View {
             }
         }
 
-        if let Some(listener) = event.listener() {
-            if let Some(listeners) = cx.get_event_listener(self.id()) {
-                if let Some(action) = listeners.get(&listener) {
-                    if (*action)(&event) {
+        match &event {
+            Event::PointerDown(event) => {
+                let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
+                let was_focused = cx.app_state.is_focused(&self.id());
+                let now_focused = rect.contains(event.pos);
+
+                if now_focused && !was_focused {
+                    cx.app_state.update_focus(self.id());
+                } else if !now_focused && was_focused {
+                    cx.app_state.clear_focus();
+                }
+
+                if now_focused {
+                    if event.count == 2 && cx.has_event_listener(id, EventListner::DoubleClick) {
+                        let view_state = cx.app_state.view_state(id);
+                        view_state.last_pointer_down = Some(event.clone());
+                        cx.update_active(id);
                         return true;
                     }
+                    if cx.has_event_listener(id, EventListner::Click) {
+                        cx.update_active(id);
+                        return true;
+                    }
+                }
+            }
+            Event::PointerUp(pointer_event) => {
+                let last_pointer_down = cx.app_state.view_state(id).last_pointer_down.take();
+                let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
+                if let Some(action) = cx.get_event_listener(id, &EventListner::DoubleClick) {
+                    if rect.contains(pointer_event.pos)
+                        && last_pointer_down
+                            .as_ref()
+                            .map(|e| e.count == 2)
+                            .unwrap_or(false)
+                    {
+                        (*action)(&event);
+                        return true;
+                    }
+                }
+                if let Some(action) = cx.get_event_listener(id, &EventListner::Click) {
+                    if rect.contains(pointer_event.pos) {
+                        (*action)(&event);
+                        return true;
+                    }
+                }
+            }
+            Event::PointerMove(event) => {
+                let rect = cx.get_size(id).unwrap_or_default().to_rect();
+                if rect.contains(event.pos) {
+                    cx.app_state.hovered.insert(id);
+                    let style = cx.app_state.get_computed_style(id);
+                    if let Some(cursor) = style.cursor {
+                        AppContext::update_cursor_style(cursor);
+                    }
+                }
+            }
+            _ => (),
+        }
+
+        if let Some(listener) = event.listener() {
+            if let Some(action) = cx.get_event_listener(self.id(), &listener) {
+                if (*action)(&event) {
+                    return true;
                 }
             }
         }

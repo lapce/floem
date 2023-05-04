@@ -89,15 +89,6 @@ impl Label {
         text_layout.set_text(self.label.as_str(), AttrsList::new(attrs));
         self.text_layout = Some(text_layout);
 
-        if let Some(available_width) = self.available_width {
-            if self.text_overflow == TextOverflow::Wrap {
-                self.text_layout
-                    .as_mut()
-                    .unwrap()
-                    .set_size(available_width, f32::MAX)
-            }
-        }
-
         if let Some(new_text) = self.available_text.as_ref() {
             let mut text_layout = TextLayout::new();
             let mut attrs = Attrs::new().color(self.color.unwrap_or(Color::BLACK));
@@ -177,7 +168,14 @@ impl View for Label {
                 let text_layout = self.text_layout.as_ref().unwrap();
                 let size = text_layout.size();
                 let width = size.width.ceil() as f32;
-                let height = size.height as f32;
+                let mut height = size.height as f32;
+
+                if text_overflow == TextOverflow::Wrap {
+                    if let Some(t) = self.available_text_layout.as_ref() {
+                        height = height.max(t.size().height as f32);
+                    }
+                }
+
                 (width, height)
             };
 
@@ -257,15 +255,23 @@ impl View for Label {
                 self.available_width = None;
                 self.available_text_layout = None;
             }
-        } else if text_overflow == TextOverflow::Wrap
-            && self.available_width != Some(available_width)
-        {
-            self.available_width = Some(available_width);
-            self.text_layout
-                .as_mut()
-                .unwrap()
-                .set_size(available_width, f32::MAX);
-            cx.app_state.request_layout(self.id());
+        } else if text_overflow == TextOverflow::Wrap {
+            if width > available_width {
+                if self.available_width != Some(available_width) {
+                    let mut text_layout = text_layout.clone();
+                    text_layout.set_size(available_width, f32::MAX);
+                    self.available_text_layout = Some(text_layout);
+                    self.available_width = Some(available_width);
+                    cx.app_state.request_layout(self.id());
+                }
+            } else {
+                if self.available_text_layout.is_some() {
+                    cx.app_state.request_layout(self.id());
+                }
+                self.available_text = None;
+                self.available_width = None;
+                self.available_text_layout = None;
+            }
         }
     }
 

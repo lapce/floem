@@ -9,7 +9,7 @@ use floem_renderer::{
 };
 use glazier::{
     kurbo::{Affine, Point, Rect, Shape, Size, Vec2},
-    Scale,
+    PointerEvent, Scale,
 };
 use taffy::{
     prelude::{Layout, Node},
@@ -46,6 +46,7 @@ pub struct ViewState {
     pub(crate) computed_style: ComputedStyle,
     pub(crate) event_listeners: HashMap<EventListner, Box<EventCallback>>,
     pub(crate) resize_listener: Option<ResizeListener>,
+    pub(crate) last_pointer_down: Option<PointerEvent>,
 }
 
 impl ViewState {
@@ -63,6 +64,7 @@ impl ViewState {
             children_nodes: Vec::new(),
             event_listeners: HashMap::new(),
             resize_listener: None,
+            last_pointer_down: None,
         }
     }
 
@@ -292,7 +294,6 @@ impl<'a> EventCx<'a> {
         self.app_state.update_active(id);
     }
 
-    
     #[allow(unused)]
     pub(crate) fn update_focus(&mut self, id: Id) {
         self.app_state.update_focus(id);
@@ -320,14 +321,23 @@ impl<'a> EventCx<'a> {
             .map(|l| Size::new(l.size.width as f64, l.size.height as f64))
     }
 
-    pub(crate) fn get_event_listener(
-        &self,
-        id: Id,
-    ) -> Option<&HashMap<EventListner, Box<EventCallback>>> {
+    pub(crate) fn has_event_listener(&self, id: Id, listner: EventListner) -> bool {
         self.app_state
             .view_states
             .get(&id)
-            .map(|s| &s.event_listeners)
+            .map(|s| s.event_listeners.contains_key(&listner))
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn get_event_listener(
+        &self,
+        id: Id,
+        listner: &EventListner,
+    ) -> Option<&Box<EventCallback>> {
+        self.app_state
+            .view_states
+            .get(&id)
+            .and_then(|s| s.event_listeners.get(listner))
     }
 
     pub(crate) fn offset_event(&self, id: Id, event: Event) -> Event {

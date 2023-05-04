@@ -65,7 +65,7 @@ impl<V: View> View for DoubleClick<V> {
         }
 
         match &event {
-            Event::MouseDown(event) => {
+            Event::PointerDown(event) => {
                 if event.count == 2 {
                     cx.update_active(self.id);
                     true
@@ -73,7 +73,7 @@ impl<V: View> View for DoubleClick<V> {
                     false
                 }
             }
-            Event::MouseUp(event) => {
+            Event::PointerUp(event) => {
                 let rect = cx.get_size(self.id).unwrap_or_default().to_rect();
                 if rect.contains(event.pos) {
                     (self.on_double_click)();
