@@ -181,7 +181,7 @@ pub trait View {
                 let now_focused = rect.contains(event.pos);
 
                 if now_focused && !was_focused {
-                    cx.app_state.update_focus(self.id());
+                    cx.app_state.update_focus(self.id(), false);
                 } else if !now_focused && was_focused {
                     cx.app_state.clear_focus();
                 }
@@ -291,6 +291,64 @@ pub trait View {
     }
 
     fn paint(&mut self, cx: &mut PaintCx);
+
+    /// Produces an ascii art debug display of all of the views.
+    fn debug_tree(&mut self)
+    where
+        Self: Sized,
+    {
+        let mut views = vec![(self as &mut dyn View, Vec::new())];
+        while let Some((current_view, active_lines)) = views.pop() {
+            // Ascii art for the tree view
+            if let Some((leaf, root)) = active_lines.split_last() {
+                for line in root {
+                    print!("{}", if *line { "│   " } else { "    " });
+                }
+                print!("{}", if *leaf { "├── " } else { "└── " });
+            }
+            println!("{:?} {}", current_view.id(), &current_view.debug_name());
+
+            let mut children = current_view.children();
+            if let Some(last_child) = children.pop() {
+                views.push((last_child, [active_lines.as_slice(), &[false]].concat()));
+            }
+
+            views.extend(
+                children
+                    .into_iter()
+                    .rev()
+                    .map(|child| (child, [active_lines.as_slice(), &[true]].concat())),
+            );
+        }
+    }
+
+    /// Tab navigation finds the next or previous view with the `keyboard_navigatable` status in the tree.
+    fn tab_navigation(&mut self, app_state: &mut crate::context::AppState, backwards: bool)
+    where
+        Self: Sized,
+    {
+        let start = app_state.focus.unwrap_or(self.id());
+        let tree_iter = |id: Id| {
+            if backwards {
+                id.tree_previous().unwrap_or(self.id().nested_last_child())
+            } else {
+                id.tree_next().unwrap_or(self.id())
+            }
+        };
+
+        let mut new_focus = tree_iter(start);
+        while new_focus != start
+            && (!app_state.keyboard_navigatable.contains(&new_focus)
+                || app_state.is_disabled(&new_focus))
+        {
+            new_focus = tree_iter(new_focus);
+        }
+
+        app_state.update_focus(new_focus, true);
+
+        println!("Tab to {:?}", app_state.focus);
+        self.debug_tree();
+    }
 }
 
 fn paint_bg(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {

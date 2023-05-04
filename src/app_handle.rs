@@ -139,6 +139,7 @@ impl AppContext {
 pub enum StyleSelector {
     Hover,
     Focus,
+    FocusVisible,
     Disabled,
     Active,
 }
@@ -338,6 +339,7 @@ impl<V: View> AppHandle<V> {
                         match selector {
                             StyleSelector::Hover => state.hover_style = style,
                             StyleSelector::Focus => state.focus_style = style,
+                            StyleSelector::FocusVisible => state.focus_visible_style = style,
                             StyleSelector::Disabled => state.disabled_style = style,
                             StyleSelector::Active => state.active_style = style,
                         }
@@ -446,13 +448,13 @@ impl<V: View> AppHandle<V> {
                 }
                 if let Event::KeyDown(glazier::KeyEvent { key, mods, .. }) = event {
                     if key == glazier::KbKey::Tab {
-                        self.tab_navigation(mods.contains(glazier:: Modifiers::SHIFT));
+                        self.view
+                            .tab_navigation(cx.app_state, mods.contains(glazier::Modifiers::SHIFT));
                     } else if let glazier::KbKey::Character(character) = key {
                         if character.eq_ignore_ascii_case("i") {
-                            self.debug_tree();
+                            self.view.debug_tree();
                         }
                     }
-                    return;
                 }
             }
         } else if cx.app_state.active.is_some() && event.is_pointer() {
@@ -488,56 +490,6 @@ impl<V: View> AppHandle<V> {
         }
 
         self.process_update();
-    }
-
-    /// Produces an ascii art debug display of all of the views.
-    fn debug_tree(&mut self) {
-        let mut views = vec![(&mut self.view as &mut dyn View, Vec::new())];
-        while let Some((current_view, active_lines)) = views.pop() {
-            // Ascii art for the tree view
-            if let Some((leaf, root)) = active_lines.split_last() {
-                for line in root {
-                    print!("{}", if *line { "│   " } else { "    " });
-                }
-                print!("{}", if *leaf { "├── " } else { "└── " });
-            }
-            println!("{:?} {}", current_view.id(), &current_view.debug_name());
-
-            let mut children = current_view.children();
-            if let Some(last_child) = children.pop() {
-                views.push((last_child, [active_lines.as_slice(), &[false]].concat()));
-            }
-
-            views.extend(
-                children
-                    .into_iter()
-                    .rev()
-                    .map(|child| (child, [active_lines.as_slice(), &[true]].concat())),
-            );
-        }
-    }
-
-    /// Tab navigation finds the next or previous view with the `keyboard_navigatable` status in the tree.
-    fn tab_navigation(&mut self, backwards: bool) {
-        let start = self.app_state.focus.unwrap_or(self.view.id());
-        let tree_iter = |id: Id| {
-            if backwards {
-                id.tree_previous()
-                    .unwrap_or(self.view.id().nested_last_child())
-            } else {
-                id.tree_next().unwrap_or(self.view.id())
-            }
-        };
-
-        let mut new_focus = tree_iter(start);
-        while new_focus != start && !self.app_state.keyboard_navigatable.contains(&new_focus) {
-            new_focus = tree_iter(new_focus);
-        }
-
-        self.app_state.update_focus(new_focus);
-
-        println!("Tab to {:?}", self.app_state.focus);
-        self.debug_tree();
     }
 
     fn idle(&mut self) {

@@ -42,6 +42,7 @@ pub struct ViewState {
     pub(crate) hover_style: Option<Style>,
     pub(crate) disabled_style: Option<Style>,
     pub(crate) focus_style: Option<Style>,
+    pub(crate) focus_visible_style: Option<Style>,
     pub(crate) active_style: Option<Style>,
     pub(crate) computed_style: ComputedStyle,
     pub(crate) event_listeners: HashMap<EventListner, Box<EventCallback>>,
@@ -60,6 +61,7 @@ impl ViewState {
             hover_style: None,
             disabled_style: None,
             focus_style: None,
+            focus_visible_style: None,
             active_style: None,
             children_nodes: Vec::new(),
             event_listeners: HashMap::new(),
@@ -88,6 +90,12 @@ impl ViewState {
         if interact_state.is_focused {
             if let Some(focus_style) = self.focus_style.clone() {
                 computed_style = computed_style.apply(focus_style);
+            }
+        }
+
+        if interact_state.is_focused && interact_state.is_keyboard_navigation {
+            if let Some(focus_visible_style) = self.focus_visible_style.clone() {
+                computed_style = computed_style.apply(focus_visible_style);
             }
         }
 
@@ -121,6 +129,7 @@ pub struct AppState {
     pub(crate) keyboard_navigatable: HashSet<Id>,
     pub(crate) hovered: HashSet<Id>,
     pub(crate) cursor: CursorStyle,
+    pub(crate) is_keyboard_navigation: bool,
 }
 
 impl Default for AppState {
@@ -144,6 +153,7 @@ impl AppState {
             keyboard_navigatable: HashSet::new(),
             hovered: HashSet::new(),
             cursor: CursorStyle::Default,
+            is_keyboard_navigation: false,
         }
     }
 
@@ -183,6 +193,7 @@ impl AppState {
             is_disabled: self.is_disabled(id),
             is_focused: self.is_focused(id),
             is_active: self.is_active(id),
+            is_keyboard_navigation: self.is_keyboard_navigation,
         }
     }
 
@@ -258,19 +269,24 @@ impl AppState {
         self.focus = None;
     }
 
-    pub(crate) fn update_focus(&mut self, id: Id) {
+    pub(crate) fn update_focus(&mut self, id: Id, keyboard_navigation: bool) {
         let old = self.focus;
         self.focus = Some(id);
+        self.is_keyboard_navigation = keyboard_navigation;
 
         if let Some(old_id) = old {
             // To remove the styles applied by the Focus selector
-            if self.has_style_for_sel(old_id, StyleSelector::Focus) {
+            if self.has_style_for_sel(old_id, StyleSelector::Focus)
+                || self.has_style_for_sel(old_id, StyleSelector::FocusVisible)
+            {
                 self.request_layout(old_id);
             }
         }
 
         // To apply the styles of the Focus selector
-        if self.has_style_for_sel(id, StyleSelector::Focus) {
+        if self.has_style_for_sel(id, StyleSelector::Focus)
+            || self.has_style_for_sel(id, StyleSelector::FocusVisible)
+        {
             self.request_layout(id);
         }
     }
@@ -281,6 +297,7 @@ impl AppState {
         match selector_kind {
             StyleSelector::Hover => view_state.hover_style.is_some(),
             StyleSelector::Focus => view_state.focus_style.is_some(),
+            StyleSelector::FocusVisible => view_state.focus_visible_style.is_some(),
             StyleSelector::Disabled => view_state.disabled_style.is_some(),
             StyleSelector::Active => view_state.active_style.is_some(),
         }
@@ -297,8 +314,8 @@ impl<'a> EventCx<'a> {
     }
 
     #[allow(unused)]
-    pub(crate) fn update_focus(&mut self, id: Id) {
-        self.app_state.update_focus(id);
+    pub(crate) fn update_focus(&mut self, id: Id, keyboard_navigation: bool) {
+        self.app_state.update_focus(id, keyboard_navigation);
     }
 
     pub fn get_style(&self, id: Id) -> Option<&Style> {
@@ -388,6 +405,7 @@ pub struct InteractionState {
     pub(crate) is_disabled: bool,
     pub(crate) is_focused: bool,
     pub(crate) is_active: bool,
+    pub(crate) is_keyboard_navigation: bool,
 }
 
 pub struct LayoutCx<'a> {
