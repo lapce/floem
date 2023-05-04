@@ -33,8 +33,12 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
         self.children.child(id)
     }
 
-    fn children(&self) -> Vec<Id> {
+    fn children(&mut self) -> Vec<&mut dyn View> {
         self.children.children()
+    }
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "Stack".into()
     }
 
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn std::any::Any>) -> ChangeFlags {

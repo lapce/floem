@@ -37,8 +37,12 @@ impl View for Svg {
         None
     }
 
-    fn children(&self) -> Vec<Id> {
+    fn children(&mut self) -> Vec<&mut dyn View> {
         Vec::new()
+    }
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "Svg".into()
     }
 
     fn update(

@@ -8,6 +8,8 @@ use crate::{
     view::{ChangeFlags, View},
 };
 
+use super::Decorators;
+
 pub struct Click<V: View> {
     id: Id,
     child: V,
@@ -28,6 +30,10 @@ pub fn click<V: View>(
         child,
         on_click: Box::new(on_click),
     }
+    .keyboard_navigatable(cx)
+    .focus_style(cx, || {
+        crate::style::Style::BASE.border_color(vello::peniko::Color::LIGHT_SKY_BLUE)
+    })
 }
 
 impl<V: View> View for Click<V> {
@@ -43,8 +49,12 @@ impl<V: View> View for Click<V> {
         }
     }
 
-    fn children(&self) -> Vec<Id> {
-        vec![self.child.id()]
+    fn children(&mut self) -> Vec<&mut dyn View> {
+        vec![&mut self.child]
+    }
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "Click".into()
     }
 
     fn update(&mut self, _cx: &mut UpdateCx, _state: Box<dyn Any>) -> ChangeFlags {

@@ -1,10 +1,9 @@
-use std::any::Any;
-use std::collections::{HashMap, VecDeque};
+use std::{any::Any, collections::HashMap};
 
 use floem_renderer::Renderer;
+use glazier::kurbo::{Affine, Point, Rect, Vec2};
 use glazier::{
-    kurbo::{Affine, Point, Rect, Vec2},
-    FileDialogOptions, FileDialogToken, FileInfo, MouseButton, MouseButtons, WinHandler,
+    FileDialogOptions, FileDialogToken, FileInfo, Modifiers, MouseButton, MouseButtons, WinHandler,
 };
 use leptos_reactive::{Scope, SignalSet};
 
@@ -86,6 +85,13 @@ impl AppContext {
         });
     }
 
+    pub fn keyboard_navigatable(id: Id) {
+        UPDATE_MESSAGES.with(|msgs| {
+            msgs.borrow_mut()
+                .push(UpdateMessage::KeyboardNavigatable { id })
+        });
+    }
+
     pub fn update_cursor_style(cursor: CursorStyle) {
         UPDATE_MESSAGES.with(|msgs| {
             msgs.borrow_mut()
@@ -155,6 +161,9 @@ pub enum UpdateMessage {
         id: Id,
         selector: StyleSelector,
         style: Style,
+    },
+    KeyboardNavigatable {
+        id: Id,
     },
     CursorStyle {
         cursor: CursorStyle,
@@ -336,6 +345,9 @@ impl<V: View> AppHandle<V> {
                         }
                         cx.request_layout(id);
                     }
+                    UpdateMessage::KeyboardNavigatable { id } => {
+                        cx.app_state.keyboard_navigatable.insert(id);
+                    }
                     UpdateMessage::CursorStyle { cursor } => {
                         cx.app_state.cursor = cursor;
                     }
@@ -407,8 +419,6 @@ impl<V: View> AppHandle<V> {
             app_state: &mut self.app_state,
         };
 
-        println!("Event {event:?}");
-
         if event.needs_focus() {
             let mut processed = false;
             if let Some(id) = cx.app_state.focus {
@@ -428,19 +438,13 @@ impl<V: View> AppHandle<V> {
                         }
                     }
                 }
-                if let Event::KeyDown(glazier::KeyEvent { key, .. }) = event {
+                if let Event::KeyDown(glazier::KeyEvent { key, mods, .. }) = event {
                     if key == glazier::KbKey::Tab {
-                        if let Some(id) = cx.app_state.focus {
-                            IDPATHS.with(|paths| {
-                                if let Some(id_path) = paths.borrow().get(&id) {
-                                    println!("Id path {:?}", id_path.0);
-                                }
-                            });
+                        self.tab_navigation(mods.contains(Modifiers::SHIFT));
+                    } else if let glazier::KbKey::Character(character) = key {
+                        if character.eq_ignore_ascii_case("i") {
+                            self.debug_tree();
                         }
-
-                        //println!("View states {:#?}",);
-                        println!("Tab with focused {:?}", cx.app_state.focus);
-                        //cx.app_state.update_focus(id)
                     }
                 }
             }
@@ -477,6 +481,56 @@ impl<V: View> AppHandle<V> {
             self.view.event_main(&mut cx, None, event);
         }
         self.process_update();
+    }
+
+    /// Produces an ascii art debug display of all of the views.
+    fn debug_tree(&mut self) {
+        let mut views = vec![(&mut self.view as &mut dyn View, Vec::new())];
+        while let Some((current_view, active_lines)) = views.pop() {
+            // Ascii art for the tree view
+            if let Some((leaf, root)) = active_lines.split_last() {
+                for line in root {
+                    print!("{}", if *line { "│   " } else { "    " });
+                }
+                print!("{}", if *leaf { "├── " } else { "└── " });
+            }
+            println!("{:?} {}", current_view.id(), &current_view.debug_name());
+
+            let mut children = current_view.children();
+            if let Some(last_child) = children.pop() {
+                views.push((last_child, [active_lines.as_slice(), &[false]].concat()));
+            }
+
+            views.extend(
+                children
+                    .into_iter()
+                    .rev()
+                    .map(|child| (child, [active_lines.as_slice(), &[true]].concat())),
+            );
+        }
+    }
+
+    /// Tab navigation finds the next or previous view with the `keyboard_navigatable` status in the tree.
+    fn tab_navigation(&mut self, backwards: bool) {
+        let start = self.app_state.focus.unwrap_or(self.view.id());
+        let tree_iter = |id: Id| {
+            if backwards {
+                id.tree_previous()
+                    .unwrap_or(self.view.id().nested_last_child())
+            } else {
+                id.tree_next().unwrap_or(self.view.id())
+            }
+        };
+
+        let mut new_focus = tree_iter(start);
+        while new_focus != start && !self.app_state.keyboard_navigatable.contains(&new_focus) {
+            new_focus = tree_iter(new_focus);
+        }
+
+        self.app_state.update_focus(new_focus);
+
+        println!("Tab to {:?}", self.app_state.focus);
+        self.debug_tree();
     }
 
     fn idle(&mut self) {

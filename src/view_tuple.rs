@@ -11,7 +11,7 @@ pub trait ViewTuple {
 
     fn child(&mut self, id: Id) -> Option<&mut dyn View>;
 
-    fn children(&self) -> Vec<Id>;
+    fn children(&mut self) -> Vec<&mut dyn View>;
 }
 
 macro_rules! impl_view_tuple {
@@ -31,8 +31,8 @@ macro_rules! impl_view_tuple {
                 None
             }
 
-            fn children(&self) -> Vec<Id>{
-                vec![ $( self.$i.id() ),* ]
+            fn children(&mut self) -> Vec<&mut dyn View> {
+                vec![ $( &mut self.$i ),* ]
             }
 
             fn paint(&mut self, cx: &mut PaintCx) {

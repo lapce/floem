@@ -33,7 +33,11 @@ pub trait View {
 
     fn child(&mut self, id: Id) -> Option<&mut dyn View>;
 
-    fn children(&self) -> Vec<Id>;
+    fn children(&mut self) -> Vec<&mut dyn View>;
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        core::any::type_name::<Self>().into()
+    }
 
     fn update_main(
         &mut self,

@@ -37,6 +37,14 @@ pub trait Decorators: View + Sized {
         self
     }
 
+    fn keyboard_navigatable(self, cx: AppContext) -> Self {
+        let id = self.id();
+        create_effect(cx.scope, move |_| {
+            AppContext::keyboard_navigatable(id);
+        });
+        self
+    }
+
     fn active_style(self, cx: AppContext, style: impl Fn() -> Style + 'static) -> Self {
         let id = self.id();
         create_effect(cx.scope, move |_| {

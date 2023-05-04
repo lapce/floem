@@ -116,6 +116,7 @@ pub struct AppState {
     pub taffy: taffy::Taffy,
     pub(crate) view_states: HashMap<Id, ViewState>,
     pub(crate) disabled: HashSet<Id>,
+    pub(crate) keyboard_navigatable: HashSet<Id>,
     pub(crate) hovered: HashSet<Id>,
     pub(crate) cursor: CursorStyle,
 }
@@ -138,6 +139,7 @@ impl AppState {
             taffy,
             view_states: HashMap::new(),
             disabled: HashSet::new(),
+            keyboard_navigatable: HashSet::new(),
             hovered: HashSet::new(),
             cursor: CursorStyle::Default,
         }
