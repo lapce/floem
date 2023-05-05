@@ -446,14 +446,28 @@ impl<V: View> AppHandle<V> {
                         (*action)(&event);
                     }
                 }
-                if let Event::KeyDown(glazier::KeyEvent { key, mods, .. }) = event {
-                    if key == glazier::KbKey::Tab {
+                if let Event::KeyDown(glazier::KeyEvent { key, mods, .. }) = &event {
+                    if key == &glazier::KbKey::Tab {
                         self.view
                             .tab_navigation(cx.app_state, mods.contains(glazier::Modifiers::SHIFT));
                     } else if let glazier::KbKey::Character(character) = key {
                         if character.eq_ignore_ascii_case("i") {
                             self.view.debug_tree();
                         }
+                    }
+                }
+
+                if cx.app_state.is_keyboard_navigation
+                    && event.is_keyboard_trigger()
+                    && matches!(event, Event::KeyUp(_))
+                {
+                    if let Some(id) = cx.app_state.active {
+                        // To remove the styles applied by the Active selector
+                        if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
+                            cx.app_state.request_layout(id);
+                        }
+
+                        cx.app_state.active = None;
                     }
                 }
             }
@@ -536,8 +550,14 @@ impl<V: View> WinHandler for AppHandle<V> {
     }
 
     fn key_down(&mut self, event: glazier::KeyEvent) -> bool {
+        assert_eq!(event.state, glazier::KeyState::Down);
         self.event(Event::KeyDown(event));
         true
+    }
+
+    fn key_up(&mut self, event: glazier::KeyEvent) {
+        assert_eq!(event.state, glazier::KeyState::Up);
+        self.event(Event::KeyUp(event));
     }
 
     fn pointer_down(&mut self, event: &glazier::PointerEvent) {

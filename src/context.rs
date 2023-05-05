@@ -99,7 +99,9 @@ impl ViewState {
             }
         }
 
-        if interact_state.is_active && interact_state.is_hovered {
+        let active_mouse = interact_state.is_hovered && !interact_state.is_keyboard_navigation;
+        let active_keyboard = interact_state.is_keyboard_navigation && interact_state.is_focused;
+        if interact_state.is_active && (active_mouse || active_keyboard) {
             if let Some(active_style) = self.active_style.clone() {
                 computed_style = computed_style.apply(active_style);
             }
