@@ -32,6 +32,7 @@ pub use taffy::style::{
 use taffy::{
     prelude::Rect,
     style::{LengthPercentage, LengthPercentageAuto, Style as TaffyStyle},
+    style_helpers::TaffyZero,
 };
 use vello::peniko::Color;
 
@@ -227,14 +228,14 @@ define_styles!(
     border_bottom: f32 = 0.0,
     border_radius: f32 = 0.0,
     border_color: Color = Color::BLACK,
-    padding_left: f32 = 0.0,
-    padding_top: f32 = 0.0,
-    padding_right: f32 = 0.0,
-    padding_bottom: f32 = 0.0,
-    margin_left: f32 = 0.0,
-    margin_top: f32 = 0.0,
-    margin_right: f32 = 0.0,
-    margin_bottom: f32 = 0.0,
+    padding_left: LengthPercentage = LengthPercentage::ZERO,
+    padding_top: LengthPercentage = LengthPercentage::ZERO,
+    padding_right: LengthPercentage = LengthPercentage::ZERO,
+    padding_bottom: LengthPercentage = LengthPercentage::ZERO,
+    margin_left: LengthPercentageAuto = LengthPercentageAuto::ZERO,
+    margin_top: LengthPercentageAuto = LengthPercentageAuto::ZERO,
+    margin_right: LengthPercentageAuto = LengthPercentageAuto::ZERO,
+    margin_bottom: LengthPercentageAuto = LengthPercentageAuto::ZERO,
     cursor nocb: Option<CursorStyle> = None,
     color nocb: Option<Color> = None,
     background nocb: Option<Color> = None,
@@ -252,7 +253,7 @@ impl Style {
     }
 
     pub fn width_pct(self, width: f32) -> Self {
-        self.width(Dimension::Percent(width))
+        self.width(Dimension::Percent(width / 100.0))
     }
 
     pub fn height_px(self, height: f32) -> Self {
@@ -260,10 +261,10 @@ impl Style {
     }
 
     pub fn height_pct(self, height: f32) -> Self {
-        self.height(Dimension::Percent(height))
+        self.height(Dimension::Percent(height / 100.0))
     }
 
-    pub fn dimension(
+    pub fn size(
         self,
         width: impl Into<StyleValue<Dimension>>,
         height: impl Into<StyleValue<Dimension>>,
@@ -271,11 +272,11 @@ impl Style {
         self.width(width).height(height)
     }
 
-    pub fn dimension_px(self, width: f32, height: f32) -> Self {
+    pub fn size_px(self, width: f32, height: f32) -> Self {
         self.width_px(width).height_px(height)
     }
 
-    pub fn dimension_pct(self, width: f32, height: f32) -> Self {
+    pub fn size_pct(self, width: f32, height: f32) -> Self {
         self.width_pct(width).height_pct(height)
     }
 
@@ -284,7 +285,7 @@ impl Style {
     }
 
     pub fn min_width_pct(self, min_width: f32) -> Self {
-        self.min_width(Dimension::Percent(min_width))
+        self.min_width(Dimension::Percent(min_width / 100.0))
     }
 
     pub fn min_height_px(self, min_height: f32) -> Self {
@@ -292,10 +293,10 @@ impl Style {
     }
 
     pub fn min_height_pct(self, min_height: f32) -> Self {
-        self.min_height(Dimension::Percent(min_height))
+        self.min_height(Dimension::Percent(min_height / 100.0))
     }
 
-    pub fn min_dimension(
+    pub fn min_size(
         self,
         min_width: impl Into<StyleValue<Dimension>>,
         min_height: impl Into<StyleValue<Dimension>>,
@@ -303,11 +304,11 @@ impl Style {
         self.min_width(min_width).min_height(min_height)
     }
 
-    pub fn min_dimension_px(self, min_width: f32, min_height: f32) -> Self {
+    pub fn min_size_px(self, min_width: f32, min_height: f32) -> Self {
         self.min_width_px(min_width).min_height_px(min_height)
     }
 
-    pub fn min_dimension_pct(self, min_width: f32, min_height: f32) -> Self {
+    pub fn min_size_pct(self, min_width: f32, min_height: f32) -> Self {
         self.min_width_pct(min_width).min_height_pct(min_height)
     }
 
@@ -316,7 +317,7 @@ impl Style {
     }
 
     pub fn max_width_pct(self, max_width: f32) -> Self {
-        self.max_width(Dimension::Percent(max_width))
+        self.max_width(Dimension::Percent(max_width / 100.0))
     }
 
     pub fn max_height_px(self, max_height: f32) -> Self {
@@ -324,10 +325,10 @@ impl Style {
     }
 
     pub fn max_height_pct(self, max_height: f32) -> Self {
-        self.max_height(Dimension::Percent(max_height))
+        self.max_height(Dimension::Percent(max_height / 100.0))
     }
 
-    pub fn max_dimension(
+    pub fn max_size(
         self,
         max_width: impl Into<StyleValue<Dimension>>,
         max_height: impl Into<StyleValue<Dimension>>,
@@ -335,11 +336,11 @@ impl Style {
         self.max_width(max_width).max_height(max_height)
     }
 
-    pub fn max_dimension_px(self, max_width: f32, max_height: f32) -> Self {
+    pub fn max_size_px(self, max_width: f32, max_height: f32) -> Self {
         self.max_width_px(max_width).max_height_px(max_height)
     }
 
-    pub fn max_dimension_pct(self, max_width: f32, max_height: f32) -> Self {
+    pub fn max_size_pct(self, max_width: f32, max_height: f32) -> Self {
         self.max_width_pct(max_width).max_height_pct(max_height)
     }
 
@@ -360,39 +361,133 @@ impl Style {
         self.border_top(border).border_bottom(border)
     }
 
+    pub fn padding_left_px(self, padding: f32) -> Self {
+        self.padding_left(LengthPercentage::Points(padding))
+    }
+
+    pub fn padding_right_px(self, padding: f32) -> Self {
+        self.padding_right(LengthPercentage::Points(padding))
+    }
+
+    pub fn padding_top_px(self, padding: f32) -> Self {
+        self.padding_top(LengthPercentage::Points(padding))
+    }
+
+    pub fn padding_bottom_px(self, padding: f32) -> Self {
+        self.padding_bottom(LengthPercentage::Points(padding))
+    }
+
+    pub fn padding_left_pct(self, padding: f32) -> Self {
+        self.padding_left(LengthPercentage::Percent(padding / 100.0))
+    }
+
+    pub fn padding_right_pct(self, padding: f32) -> Self {
+        self.padding_right(LengthPercentage::Percent(padding / 100.0))
+    }
+
+    pub fn padding_top_pct(self, padding: f32) -> Self {
+        self.padding_top(LengthPercentage::Percent(padding / 100.0))
+    }
+
+    pub fn padding_bottom_pct(self, padding: f32) -> Self {
+        self.padding_bottom(LengthPercentage::Percent(padding / 100.0))
+    }
+
     /// Set padding on all directions
-    pub fn padding(self, padding: f32) -> Self {
-        self.padding_left(padding)
-            .padding_top(padding)
-            .padding_right(padding)
-            .padding_bottom(padding)
+    pub fn padding_px(self, padding: f32) -> Self {
+        self.padding_left_px(padding)
+            .padding_top_px(padding)
+            .padding_right_px(padding)
+            .padding_bottom_px(padding)
+    }
+
+    pub fn padding_pct(self, padding: f32) -> Self {
+        self.padding_left_pct(padding)
+            .padding_top_pct(padding)
+            .padding_right_pct(padding)
+            .padding_bottom_pct(padding)
     }
 
     /// Sets `padding_left` and `padding_right` to `padding`
-    pub fn padding_horiz(self, padding: f32) -> Self {
-        self.padding_left(padding).padding_right(padding)
+    pub fn padding_horiz_px(self, padding: f32) -> Self {
+        self.padding_left_px(padding).padding_right_px(padding)
+    }
+
+    pub fn padding_horiz_pct(self, padding: f32) -> Self {
+        self.padding_left_pct(padding).padding_right_pct(padding)
     }
 
     /// Sets `padding_top` and `padding_bottom` to `padding`
-    pub fn padding_vert(self, padding: f32) -> Self {
-        self.padding_top(padding).padding_bottom(padding)
+    pub fn padding_vert_px(self, padding: f32) -> Self {
+        self.padding_top_px(padding).padding_bottom_px(padding)
     }
 
-    pub fn margin(self, margin: f32) -> Self {
-        self.margin_left(margin)
-            .margin_top(margin)
-            .margin_right(margin)
-            .margin_bottom(margin)
+    pub fn padding_vert_pct(self, padding: f32) -> Self {
+        self.padding_top_pct(padding).padding_bottom_pct(padding)
+    }
+
+    pub fn margin_left_px(self, margin: f32) -> Self {
+        self.margin_left(LengthPercentageAuto::Points(margin))
+    }
+
+    pub fn margin_right_px(self, margin: f32) -> Self {
+        self.margin_right(LengthPercentageAuto::Points(margin))
+    }
+
+    pub fn margin_top_px(self, margin: f32) -> Self {
+        self.margin_top(LengthPercentageAuto::Points(margin))
+    }
+
+    pub fn margin_bottom_px(self, margin: f32) -> Self {
+        self.margin_bottom(LengthPercentageAuto::Points(margin))
+    }
+
+    pub fn margin_left_pct(self, margin: f32) -> Self {
+        self.margin_left(LengthPercentageAuto::Percent(margin / 100.0))
+    }
+
+    pub fn margin_right_pct(self, margin: f32) -> Self {
+        self.margin_right(LengthPercentageAuto::Percent(margin / 100.0))
+    }
+
+    pub fn margin_top_pct(self, margin: f32) -> Self {
+        self.margin_top(LengthPercentageAuto::Percent(margin / 100.0))
+    }
+
+    pub fn margin_bottom_pct(self, margin: f32) -> Self {
+        self.margin_bottom(LengthPercentageAuto::Percent(margin / 100.0))
+    }
+
+    pub fn margin_px(self, margin: f32) -> Self {
+        self.margin_left_px(margin)
+            .margin_top_px(margin)
+            .margin_right_px(margin)
+            .margin_bottom_px(margin)
+    }
+
+    pub fn margin_pct(self, margin: f32) -> Self {
+        self.margin_left_pct(margin)
+            .margin_top_pct(margin)
+            .margin_right_pct(margin)
+            .margin_bottom_pct(margin)
     }
 
     /// Sets `margin_left` and `margin_right` to `margin`
-    pub fn margin_horiz(self, margin: f32) -> Self {
-        self.margin_left(margin).margin_right(margin)
+    pub fn margin_horiz_px(self, margin: f32) -> Self {
+        self.margin_left_px(margin).margin_right_px(margin)
+    }
+
+    pub fn margin_horiz_pct(self, margin: f32) -> Self {
+        self.margin_left_pct(margin).margin_right_pct(margin)
     }
 
     /// Sets `margin_top` and `margin_bottom` to `margin`
-    pub fn margin_vert(self, margin: f32) -> Self {
-        self.margin_top(margin).margin_bottom(margin)
+    pub fn margin_vert_px(self, margin: f32) -> Self {
+        self.margin_top_px(margin).margin_bottom_px(margin)
+    }
+
+    pub fn margin_vert_pct(self, margin: f32) -> Self {
+        self.margin_top_pct(margin).margin_bottom_pct(margin)
     }
 
     pub fn cursor(mut self, cursor: impl Into<StyleValue<CursorStyle>>) -> Self {
@@ -545,16 +640,16 @@ impl ComputedStyle {
                 bottom: LengthPercentage::Points(self.border_bottom),
             },
             padding: Rect {
-                left: LengthPercentage::Points(self.padding_left),
-                top: LengthPercentage::Points(self.padding_top),
-                right: LengthPercentage::Points(self.padding_right),
-                bottom: LengthPercentage::Points(self.padding_bottom),
+                left: self.padding_left,
+                top: self.padding_top,
+                right: self.padding_right,
+                bottom: self.padding_bottom,
             },
             margin: Rect {
-                left: LengthPercentageAuto::Points(self.margin_left),
-                top: LengthPercentageAuto::Points(self.margin_top),
-                right: LengthPercentageAuto::Points(self.margin_right),
-                bottom: LengthPercentageAuto::Points(self.margin_bottom),
+                left: self.margin_left,
+                top: self.margin_top,
+                right: self.margin_right,
+                bottom: self.margin_bottom,
             },
             ..Default::default()
         }
@@ -563,57 +658,80 @@ impl ComputedStyle {
 
 #[cfg(test)]
 mod tests {
+    use taffy::style::LengthPercentage;
+
     use super::{Style, StyleValue};
 
     #[test]
     fn style_override() {
-        let style1 = Style::BASE.padding_left(32.0);
-        let style2 = Style::BASE.padding_left(64.0);
+        let style1 = Style::BASE.padding_left_px(32.0);
+        let style2 = Style::BASE.padding_left_px(64.0);
 
         let style = style1.apply(style2);
 
-        assert_eq!(style.padding_left, StyleValue::Val(64.0));
+        assert_eq!(
+            style.padding_left,
+            StyleValue::Val(LengthPercentage::Points(64.0))
+        );
 
-        let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
+        let style1 = Style::BASE.padding_left_px(32.0).padding_bottom_px(45.0);
         let style2 = Style::BASE
-            .padding_left(64.0)
+            .padding_left_px(64.0)
             .padding_bottom(StyleValue::Base);
 
         let style = style1.apply(style2);
 
-        assert_eq!(style.padding_left, StyleValue::Val(64.0));
-        assert_eq!(style.padding_bottom, StyleValue::Val(45.0));
+        assert_eq!(
+            style.padding_left,
+            StyleValue::Val(LengthPercentage::Points(64.0))
+        );
+        assert_eq!(
+            style.padding_bottom,
+            StyleValue::Val(LengthPercentage::Points(45.0))
+        );
 
-        let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
+        let style1 = Style::BASE.padding_left_px(32.0).padding_bottom_px(45.0);
         let style2 = Style::BASE
-            .padding_left(64.0)
+            .padding_left(LengthPercentage::Points(64.0))
             .padding_bottom(StyleValue::Unset);
 
         let style = style1.apply(style2);
 
-        assert_eq!(style.padding_left, StyleValue::Val(64.0));
+        assert_eq!(
+            style.padding_left,
+            StyleValue::Val(LengthPercentage::Points(64.0))
+        );
         assert_eq!(style.padding_bottom, StyleValue::Unset);
 
-        let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
+        let style1 = Style::BASE.padding_left_px(32.0).padding_bottom_px(45.0);
         let style2 = Style::BASE
-            .padding_left(64.0)
+            .padding_left_px(64.0)
             .padding_bottom(StyleValue::Unset);
         let style3 = Style::BASE.padding_bottom(StyleValue::Base);
 
         let style = style1.apply_overriding_styles([style2, style3].into_iter());
 
-        assert_eq!(style.padding_left, StyleValue::Val(64.0));
+        assert_eq!(
+            style.padding_left,
+            StyleValue::Val(LengthPercentage::Points(64.0))
+        );
         assert_eq!(style.padding_bottom, StyleValue::Unset);
 
-        let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
+        let style1 = Style::BASE.padding_left_px(32.0).padding_bottom_px(45.0);
         let style2 = Style::BASE
-            .padding_left(64.0)
+            .padding_left(LengthPercentage::Points(64.0))
             .padding_bottom(StyleValue::Unset);
-        let style3 = Style::BASE.padding_bottom(StyleValue::Val(100.0));
+        let style3 = Style::BASE.padding_bottom(StyleValue::Val(LengthPercentage::Points(100.0)));
 
         let style = style1.apply_overriding_styles([style2, style3].into_iter());
 
-        assert_eq!(style.padding_left, StyleValue::Val(64.0));
-        assert_eq!(style.padding_bottom, StyleValue::Val(100.0));
+        assert_eq!(
+            style.padding_left,
+            StyleValue::Val(LengthPercentage::Points(64.0))
+        );
+        assert_eq!(
+            style.padding_bottom,
+            StyleValue::Val(LengthPercentage::Points(100.0))
+        );
     }
 }

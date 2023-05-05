@@ -12,12 +12,12 @@ fn app_view(cx: AppContext) -> impl View {
     stack(cx, |cx| {
         (
             label(cx, move || format!("Value: {}", counter.get()))
-                .style(cx, || Style::BASE.padding(10.0)),
+                .style(cx, || Style::BASE.padding_px(10.0)),
             stack(cx, |cx| {
                 (
                     label(cx, || "Increment".to_string())
                         .style(cx, || {
-                            Style::BASE.border(1.0).border_radius(10.0).padding(10.0)
+                            Style::BASE.border(1.0).border_radius(10.0).padding_px(10.0)
                         })
                         .on_click(move |_| {
                             set_counter.update(|value| *value += 1);
@@ -38,8 +38,8 @@ fn app_view(cx: AppContext) -> impl View {
                             Style::BASE
                                 .border(1.0)
                                 .border_radius(10.0)
-                                .padding(10.0)
-                                .margin_left(10.0)
+                                .padding_px(10.0)
+                                .margin_left_px(10.0)
                         })
                         .hover_style(cx, || Style::BASE.background(Color::rgb8(244, 67, 54)))
                         .active_style(cx, || {
@@ -56,8 +56,8 @@ fn app_view(cx: AppContext) -> impl View {
                             Style::BASE
                                 .border(1.0)
                                 .border_radius(10.0)
-                                .padding(10.0)
-                                .margin_left(10.0)
+                                .padding_px(10.0)
+                                .margin_left_px(10.0)
                                 .background(Color::LIGHT_BLUE)
                         })
                         .disabled_style(cx, || Style::BASE.background(Color::LIGHT_GRAY))
@@ -73,7 +73,7 @@ fn app_view(cx: AppContext) -> impl View {
     })
     .style(cx, || {
         Style::BASE
-            .dimension_pct(1.0, 1.0)
+            .size_pct(100.0, 100.0)
             .flex_col()
             .items_center()
             .justify_center()

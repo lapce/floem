@@ -205,10 +205,19 @@ impl View for Label {
             return;
         }
 
+        let layout = cx.get_layout(self.id()).unwrap();
         let style = cx.app_state.get_computed_style(self.id);
         let text_overflow = style.text_overflow;
-        let padding = style.padding_left + style.padding_right;
-        let layout = cx.get_layout(self.id()).unwrap();
+        let padding_left = match style.padding_left {
+            taffy::style::LengthPercentage::Points(padding) => padding,
+            taffy::style::LengthPercentage::Percent(pct) => pct * layout.size.width,
+        };
+        let padding_right = match style.padding_right {
+            taffy::style::LengthPercentage::Points(padding) => padding,
+            taffy::style::LengthPercentage::Percent(pct) => pct * layout.size.width,
+        };
+        let padding = padding_left + padding_right;
+
         let text_layout = self.text_layout.as_ref().unwrap();
         let width = text_layout.size().width as f32;
         let available_width = layout.size.width - padding;
