@@ -13,14 +13,14 @@ use floem::{
 fn widg_cont_style() -> Style {
     Style::BASE
         .items_center()
-        .margin_bottom(25.0)
+        .margin_bottom_px(25.0)
         .justify_content(Some(JustifyContent::SpaceBetween))
 }
 
 fn label_view(cx: AppContext) -> impl View {
     stack(cx, |cx| {
         (
-            label(cx, move || "Label:".to_owned()).style(cx, || Style::BASE.margin_right(50.0)),
+            label(cx, move || "Label:".to_owned()).style(cx, || Style::BASE.margin_right_px(50.0)),
             label(cx, move || "This is a label".to_owned()),
         )
     })
@@ -30,14 +30,14 @@ fn label_view(cx: AppContext) -> impl View {
 fn button_view(cx: AppContext) -> impl View {
     stack(cx, |cx| {
         (
-            label(cx, move || "Button:".to_owned()).style(cx, || Style::BASE.margin_right(50.0)),
+            label(cx, move || "Button:".to_owned()).style(cx, || Style::BASE.margin_right_px(50.0)),
             label(cx, || "Click me".to_string())
                 .on_click(|_| {
                     println!("Button clicked");
                     true
                 })
                 .style(cx, || {
-                    Style::BASE.border(1.0).border_radius(10.0).padding(10.0)
+                    Style::BASE.border(1.0).border_radius(10.0).padding_px(10.0)
                 })
                 .keyboard_navigatable(cx)
                 .focus_visible_style(cx, || Style::BASE.border_color(Color::BLUE).border(2.)),
@@ -52,7 +52,7 @@ fn text_input_view(cx: AppContext) -> impl View {
     stack(cx, |cx| {
         (
             label(cx, move || "Text input:".to_owned())
-                .style(cx, || Style::BASE.margin_right(50.0)),
+                .style(cx, || Style::BASE.margin_right_px(50.0)),
             text_input(cx, text)
                 .style(cx, || {
                     Style::BASE
@@ -60,7 +60,7 @@ fn text_input_view(cx: AppContext) -> impl View {
                         .background(Color::rgb8(224, 224, 224))
                         .border_radius(15.0)
                         .border_color(Color::rgb8(189, 189, 189))
-                        .padding(10.0)
+                        .padding_px(10.0)
                 })
                 .hover_style(cx, || Style::BASE.border_color(Color::rgb8(66, 66, 66)))
                 .focus_style(cx, || Style::BASE.border_color(Color::LIGHT_SKY_BLUE))
@@ -76,18 +76,18 @@ fn virt_list_view(cx: AppContext) -> impl View {
 
     stack(cx, move |cx| {
         (
-            label(cx, move || "List:".to_owned()).style(cx, || Style::BASE.margin_right(50.0)),
+            label(cx, move || "List:".to_owned()).style(cx, || Style::BASE.margin_right_px(50.0)),
             scroll(cx, move |cx| {
                 virtual_list(
                     cx,
                     VirtualListDirection::Vertical,
+                    VirtualListItemSize::Fixed(20.0),
                     move || long_list.get(),
                     move |item| *item,
                     move |cx, item| {
                         label(cx, move || item.to_string())
                             .style(cx, || Style::BASE.height_px(20.0))
                     },
-                    VirtualListItemSize::Fixed(20.0),
                 )
                 .style(cx, || Style::BASE.flex_col())
             })
@@ -112,8 +112,8 @@ fn app_view(cx: AppContext) -> impl View {
         .style(cx, || {
             Style::BASE
                 .background(Color::WHITE_SMOKE)
-                .padding_horiz(50.0)
-                .padding_vert(20.0)
+                .padding_horiz_px(50.0)
+                .padding_vert_px(20.0)
                 .width_px(450.0)
                 .flex_col()
                 .justify_content(Some(JustifyContent::SpaceBetween))
@@ -121,7 +121,7 @@ fn app_view(cx: AppContext) -> impl View {
     })
     .style(cx, || {
         Style::BASE
-            .dimension_pct(1.0, 1.0)
+            .size_pct(100.0, 100.0)
             .justify_center()
             .items_center()
     })

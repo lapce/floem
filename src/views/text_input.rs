@@ -136,15 +136,15 @@ impl TextInput {
                 false
             }
             (Movement::Glyph, Direction::Right) => {
-                if self.cursor_glyph_idx < self.buffer.get().len() {
+                if self.cursor_glyph_idx < self.buffer.with(|buff| buff.len()) {
                     self.cursor_glyph_idx = self.cursor_glyph_idx + 1;
                     return true;
                 }
                 false
             }
             (Movement::Line, Direction::Right) => {
-                if self.cursor_glyph_idx < self.buffer.get().len() {
-                    self.cursor_glyph_idx = self.buffer.get().len();
+                if self.cursor_glyph_idx < self.buffer.with(|buff| buff.len()) {
+                    self.cursor_glyph_idx = self.buffer.with(|buff| buff.len());
                     return true;
                 }
                 false
@@ -253,8 +253,8 @@ impl TextInput {
         let mut text_layout = TextLayout::new();
         let attrs = self.get_text_attrs();
 
-        let buff = self.buffer.get();
-        text_layout.set_text(&buff, attrs.clone());
+        self.buffer
+            .with(|buff| text_layout.set_text(buff, attrs.clone()));
 
         self.width = 10.0 * self.font_size;
         self.height = self.font_size;
@@ -357,7 +357,7 @@ impl View for TextInput {
 
         let is_handled = match &event {
             Event::PointerDown(_) if is_focused => {
-                self.set_cursor_glyph_idx(self.buffer.get().len());
+                self.set_cursor_glyph_idx(self.buffer.with(|buff| buff.len()));
                 true
             }
             Event::KeyDown(event) if is_focused => self.handle_key_down(cx, event),
@@ -413,7 +413,7 @@ impl View for TextInput {
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        if !cx.app_state.is_focused(&self.id) && self.buffer.get().is_empty() {
+        if !cx.app_state.is_focused(&self.id) && self.buffer.with(|buff| buff.is_empty()) {
             return;
         }
 
