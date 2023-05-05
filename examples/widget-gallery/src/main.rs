@@ -38,7 +38,9 @@ fn button_view(cx: AppContext) -> impl View {
                 })
                 .style(cx, || {
                     Style::BASE.border(1.0).border_radius(10.0).padding(10.0)
-                }),
+                })
+                .keyboard_navigatable(cx)
+                .focus_visible_style(cx, || Style::BASE.border_color(Color::BLUE).border(2.)),
         )
     })
     .style(cx, || widg_cont_style())
@@ -61,7 +63,8 @@ fn text_input_view(cx: AppContext) -> impl View {
                         .padding(10.0)
                 })
                 .hover_style(cx, || Style::BASE.border_color(Color::rgb8(66, 66, 66)))
-                .focus_style(cx, || Style::BASE.border_color(Color::LIGHT_SKY_BLUE)),
+                .focus_style(cx, || Style::BASE.border_color(Color::LIGHT_SKY_BLUE))
+                .keyboard_navigatable(cx),
         )
     })
     .style(cx, || widg_cont_style())
