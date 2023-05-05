@@ -224,6 +224,13 @@ pub trait View {
                     }
                 }
             }
+            Event::WindowResized(_) => {
+                if let Some(view_state) = cx.app_state.view_states.get(&self.id()) {
+                    if !view_state.responsive_styles.is_empty() {
+                        cx.app_state.request_layout(self.id());
+                    }
+                }
+            }
             _ => (),
         }
 

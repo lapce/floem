@@ -1,6 +1,7 @@
 use floem::{
     peniko::Color,
     reactive::{create_signal, SignalGet, SignalUpdate},
+    responsive::ScreenSize,
     style::Style,
     view::View,
     views::{label, stack, Decorators},

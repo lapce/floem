@@ -10,6 +10,7 @@ pub mod view;
 pub mod view_tuple;
 pub mod views;
 pub mod window;
+pub mod responsive;
 
 pub use app::{launch, AppEvent, Application};
 pub use app_handle::AppContext;

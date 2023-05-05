@@ -4,6 +4,7 @@ use leptos_reactive::create_effect;
 use crate::{
     app_handle::{AppContext, StyleSelector},
     event::{Event, EventListner},
+    responsive::ScreenSize,
     style::Style,
     view::View,
 };
@@ -51,6 +52,20 @@ pub trait Decorators: View + Sized {
         create_effect(cx.scope, move |_| {
             let style = style();
             AppContext::update_style_selector(id, style, StyleSelector::Disabled);
+        });
+        self
+    }
+
+    fn responsive_style(
+        self,
+        cx: AppContext,
+        size: ScreenSize,
+        style: impl Fn() -> Style + 'static,
+    ) -> Self {
+        let id = self.id();
+        create_effect(cx.scope, move |_| {
+            let style = style();
+            AppContext::update_responsive_style(id, style, size);
         });
         self
     }

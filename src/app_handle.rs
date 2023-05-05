@@ -15,6 +15,7 @@ use crate::{
     event::{Event, EventListner},
     ext_event::{EXT_EVENT_HANDLER, WRITE_SIGNALS},
     id::{Id, IDPATHS},
+    responsive::ScreenSize,
     style::{CursorStyle, Style},
     view::{ChangeFlags, View},
 };
@@ -85,6 +86,13 @@ impl AppContext {
         });
     }
 
+    pub fn update_responsive_style(id: Id, style: Style, size: ScreenSize) {
+        UPDATE_MESSAGES.with(|msgs| {
+            msgs.borrow_mut()
+                .push(UpdateMessage::ResponsiveStyle { id, style, size })
+        });
+    }
+
     pub fn update_cursor_style(cursor: CursorStyle) {
         UPDATE_MESSAGES.with(|msgs| {
             msgs.borrow_mut()
@@ -149,6 +157,11 @@ pub enum UpdateMessage {
     Style {
         id: Id,
         style: Style,
+    },
+    ResponsiveStyle {
+        id: Id,
+        style: Style,
+        size: ScreenSize,
     },
     StyleSelector {
         id: Id,
@@ -319,6 +332,11 @@ impl<V: View> AppHandle<V> {
                         let state = cx.app_state.view_state(id);
                         state.style = style;
                         cx.request_layout(id);
+                    }
+                    UpdateMessage::ResponsiveStyle { id, style, size } => {
+                        let state = cx.app_state.view_state(id);
+
+                        state.add_responsive_style(size, style);
                     }
                     UpdateMessage::StyleSelector {
                         id,
