@@ -55,6 +55,7 @@ impl Event {
         }
     }
 
+    /// Enter, numpad enter and space cause a view to be activated with the keyboard
     pub(crate) fn is_keyboard_trigger(&self) -> bool {
         match self {
             Event::KeyDown(key) | Event::KeyUp(key) => matches!(

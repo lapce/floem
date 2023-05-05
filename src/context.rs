@@ -93,15 +93,16 @@ impl ViewState {
             }
         }
 
-        if interact_state.is_focused && interact_state.is_keyboard_navigation {
+        let focused_keyboard =
+            interact_state.using_keyboard_navigation && interact_state.is_focused;
+        if focused_keyboard {
             if let Some(focus_visible_style) = self.focus_visible_style.clone() {
                 computed_style = computed_style.apply(focus_visible_style);
             }
         }
 
-        let active_mouse = interact_state.is_hovered && !interact_state.is_keyboard_navigation;
-        let active_keyboard = interact_state.is_keyboard_navigation && interact_state.is_focused;
-        if interact_state.is_active && (active_mouse || active_keyboard) {
+        let active_mouse = interact_state.is_hovered && !interact_state.using_keyboard_navigation;
+        if interact_state.is_active && (active_mouse || focused_keyboard) {
             if let Some(active_style) = self.active_style.clone() {
                 computed_style = computed_style.apply(active_style);
             }
@@ -131,7 +132,7 @@ pub struct AppState {
     pub(crate) keyboard_navigatable: HashSet<Id>,
     pub(crate) hovered: HashSet<Id>,
     pub(crate) cursor: CursorStyle,
-    pub(crate) is_keyboard_navigation: bool,
+    pub(crate) using_keyboard_navigation: bool,
 }
 
 impl Default for AppState {
@@ -155,7 +156,7 @@ impl AppState {
             keyboard_navigatable: HashSet::new(),
             hovered: HashSet::new(),
             cursor: CursorStyle::Default,
-            is_keyboard_navigation: false,
+            using_keyboard_navigation: false,
         }
     }
 
@@ -195,7 +196,7 @@ impl AppState {
             is_disabled: self.is_disabled(id),
             is_focused: self.is_focused(id),
             is_active: self.is_active(id),
-            is_keyboard_navigation: self.is_keyboard_navigation,
+            using_keyboard_navigation: self.using_keyboard_navigation,
         }
     }
 
@@ -274,7 +275,7 @@ impl AppState {
     pub(crate) fn update_focus(&mut self, id: Id, keyboard_navigation: bool) {
         let old = self.focus;
         self.focus = Some(id);
-        self.is_keyboard_navigation = keyboard_navigation;
+        self.using_keyboard_navigation = keyboard_navigation;
 
         if let Some(old_id) = old {
             // To remove the styles applied by the Focus selector
@@ -407,7 +408,7 @@ pub struct InteractionState {
     pub(crate) is_disabled: bool,
     pub(crate) is_focused: bool,
     pub(crate) is_active: bool,
-    pub(crate) is_keyboard_navigation: bool,
+    pub(crate) using_keyboard_navigation: bool,
 }
 
 pub struct LayoutCx<'a> {

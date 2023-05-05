@@ -187,7 +187,7 @@ pub trait View {
                 }
 
                 if now_focused {
-                    cx.app_state.is_keyboard_navigation = false;
+                    cx.app_state.using_keyboard_navigation = false;
                     if event.count == 2 && cx.has_event_listener(id, EventListner::DoubleClick) {
                         let view_state = cx.app_state.view_state(id);
                         view_state.last_pointer_down = Some(event.clone());
@@ -225,7 +225,7 @@ pub trait View {
                 if event.is_keyboard_trigger() {
                     if let Some(action) = cx.get_event_listener(id, &EventListner::Click) {
                         (*action)(&event);
-                        cx.app_state.is_keyboard_navigation = true;
+                        cx.app_state.using_keyboard_navigation = true;
                         cx.update_active(id);
                         return true;
                     }

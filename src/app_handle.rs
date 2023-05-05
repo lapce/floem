@@ -448,19 +448,20 @@ impl<V: View> AppHandle<V> {
                 }
                 if let Event::KeyDown(glazier::KeyEvent { key, mods, .. }) = &event {
                     if key == &glazier::KbKey::Tab {
-                        self.view
-                            .tab_navigation(cx.app_state, mods.contains(glazier::Modifiers::SHIFT));
+                        let backwards = mods.contains(glazier::Modifiers::SHIFT);
+                        self.view.tab_navigation(cx.app_state, backwards);
                     } else if let glazier::KbKey::Character(character) = key {
+                        // 'I' displays some debug information
                         if character.eq_ignore_ascii_case("i") {
                             self.view.debug_tree();
                         }
                     }
                 }
 
-                if cx.app_state.is_keyboard_navigation
+                let keyboard_trigger_end = cx.app_state.using_keyboard_navigation
                     && event.is_keyboard_trigger()
-                    && matches!(event, Event::KeyUp(_))
-                {
+                    && matches!(event, Event::KeyUp(_));
+                if keyboard_trigger_end {
                     if let Some(id) = cx.app_state.active {
                         // To remove the styles applied by the Active selector
                         if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
