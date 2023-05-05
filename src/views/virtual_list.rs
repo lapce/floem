@@ -32,6 +32,10 @@ pub trait VirtualListVector<T> {
 
     fn total_len(&self) -> usize;
 
+    fn total_size(&self) -> Option<f64> {
+        None
+    }
+
     fn is_empty(&self) -> bool {
         self.total_len() == 0
     }
@@ -67,10 +71,10 @@ struct VirtualListState<T> {
 pub fn virtual_list<T, IF, I, KF, K, VF, V>(
     cx: AppContext,
     direction: VirtualListDirection,
+    item_size: VirtualListItemSize<T>,
     each_fn: IF,
     key_fn: KF,
     view_fn: VF,
-    item_size: VirtualListItemSize<T>,
 ) -> VirtualList<V, VF, T>
 where
     T: 'static,
@@ -128,6 +132,7 @@ where
             }
             VirtualListItemSize::Fn(size_fn) => {
                 let total_len = items_vector.total_len();
+                let total_size = items_vector.total_size();
                 for item in items_vector.slice(0..total_len) {
                     let item_size = size_fn(&item);
                     if main_axis < min {
@@ -137,8 +142,13 @@ where
                     }
 
                     if main_axis <= max {
+                        main_axis += item_size;
                         items.push(item);
                     } else {
+                        if let Some(total_size) = total_size {
+                            after_size = (total_size - main_axis).max(0.0);
+                            break;
+                        }
                         after_size += item_size;
                     }
                 }

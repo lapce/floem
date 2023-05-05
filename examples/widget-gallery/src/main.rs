@@ -78,13 +78,13 @@ fn virt_list_view(cx: AppContext) -> impl View {
                 virtual_list(
                     cx,
                     VirtualListDirection::Vertical,
+                    VirtualListItemSize::Fixed(20.0),
                     move || long_list.get(),
                     move |item| *item,
                     move |cx, item| {
                         label(cx, move || item.to_string())
                             .style(cx, || Style::BASE.height_px(20.0))
                     },
-                    VirtualListItemSize::Fixed(20.0),
                 )
                 .style(cx, || Style::BASE.flex_col())
             })
