@@ -103,7 +103,6 @@ where
             VirtualListDirection::Vertical => viewport.height() + viewport.y0,
             VirtualListDirection::Horizontal => viewport.width() + viewport.x0,
         };
-        let mut main_axis = 0.0;
         let mut items = Vec::new();
 
         let mut before_size = 0.0;
@@ -131,11 +130,12 @@ where
                 after_size = item_size * (total_len.saturating_sub(end)) as f64;
             }
             VirtualListItemSize::Fn(size_fn) => {
+                let mut main_axis = 0.0;
                 let total_len = items_vector.total_len();
                 let total_size = items_vector.total_size();
                 for item in items_vector.slice(0..total_len) {
                     let item_size = size_fn(&item);
-                    if main_axis < min {
+                    if main_axis + item_size < min {
                         main_axis += item_size;
                         before_size += item_size;
                         continue;
