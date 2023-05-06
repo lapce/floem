@@ -1,6 +1,6 @@
 use crate::context::LayoutCx;
 use leptos_reactive::{
-    create_effect, RwSignal, SignalGet, SignalGetUntracked, SignalUpdate, SignalWith,
+    create_effect, RwSignal, SignalGet, SignalUpdate, SignalWith,
 };
 use taffy::{
     prelude::{Layout, Node},
@@ -15,7 +15,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{peniko::Color, style::Style, view::View, AppContext};
 
-use std::any::Any;
+use std::{any::Any, ops::Range};
 
 use crate::{
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
@@ -71,6 +71,7 @@ pub struct TextInput {
     font_style: Option<FontStyle>,
     input_kind: InputKind,
     cursor_width: f64, // TODO: make this configurable
+    is_focused: bool
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -115,6 +116,7 @@ pub fn text_input(cx: AppContext, buffer: RwSignal<String>) -> TextInput {
         cursor_width: 1.0,
         width: 0.0,
         height: 0.0,
+        is_focused: false
     }
 }
 
@@ -323,6 +325,17 @@ impl TextInput {
         self.cursor_glyph_idx = new_cursor_x;
     }
 
+    fn delete_range(buff: &String, del_range: Range<usize>) -> String{
+        assert!(del_range.start < del_range.end);
+        let mut res = String::with_capacity(buff.len() + del_range.end - del_range.start);
+        for (idx, ch) in buff.char_indices() {
+            if !del_range.contains(&idx) {
+                res.push(ch);
+            }
+        }
+        res
+    }
+
     fn handle_key_down(&mut self, _cx: &EventCx, event: &glazier::KeyEvent) -> bool {
         match event.key {
             Key::Character(ref ch) => {
@@ -331,15 +344,43 @@ impl TextInput {
                 self.move_cursor(Movement::Glyph, Direction::Right)
             }
             Key::Backspace => {
-                if self.buffer.get_untracked().is_empty() {
+                let prev_cursor_idx = self.cursor_glyph_idx;
+
+                if event.mods.ctrl() {
+                    self.move_cursor(Movement::Word, Direction::Left);
+                } else {
+                    self.move_cursor(Movement::Glyph, Direction::Left);
+                }
+
+                if self.cursor_glyph_idx == prev_cursor_idx {
                     return false;
                 }
+
                 self.buffer.update(|buf| {
-                    if self.cursor_glyph_idx > 0 {
-                        buf.remove(self.cursor_glyph_idx - 1);
-                    }
+                    *buf = Self::delete_range(buf, self.cursor_glyph_idx..prev_cursor_idx);
                 });
-                self.move_cursor(Movement::Glyph, Direction::Left)
+                true
+            }
+            Key::Delete => {
+                let prev_cursor_idx = self.cursor_glyph_idx;
+
+                if event.mods.ctrl() {
+                    self.move_cursor(Movement::Word, Direction::Right);
+                } else {
+                    self.move_cursor(Movement::Glyph, Direction::Right);
+                }
+
+                if self.cursor_glyph_idx == prev_cursor_idx {
+                    return false;
+                }
+
+                self.buffer.update(|buf| {
+                    *buf = Self::delete_range(buf, prev_cursor_idx..self.cursor_glyph_idx);
+                });
+
+                // TODO: handle this better
+                self.cursor_glyph_idx = prev_cursor_idx;
+                true
             }
             Key::End => self.move_cursor(Movement::Line, Direction::Right),
             Key::Home => self.move_cursor(Movement::Line, Direction::Left),
