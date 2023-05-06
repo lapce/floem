@@ -30,6 +30,7 @@ fn app_view(cx: AppContext) -> impl View {
                     virtual_list(
                         cx,
                         VirtualListDirection::Vertical,
+                        VirtualListItemSize::Fixed(20.0),
                         move || tabs.get(),
                         move |item| *item,
                         move |cx, item| {
@@ -46,9 +47,9 @@ fn app_view(cx: AppContext) -> impl View {
                             })
                             .style(cx, move || {
                                 Style::BASE
-                                    .width_pct(1.0)
+                                    .width_pct(100.0)
                                     .height_px(32.0)
-                                    .padding(2.0)
+                                    .padding_px(2.0)
                                     .flex_row()
                                     .justify_center()
                                     .apply_if(index == active_tab.get(), |s| {
@@ -61,23 +62,23 @@ fn app_view(cx: AppContext) -> impl View {
                                     .cursor(CursorStyle::Pointer)
                             })
                         },
-                        VirtualListItemSize::Fixed(20.0),
+
                     )
                     .style(cx, || Style::BASE.flex_col())
                 })
                 .style(cx, || {
                     Style::BASE
-                        .dimension_pct(1.0, 1.0)
+                        .size_pct(100.0, 100.0)
                         .border(1.0)
                         .border_color(Color::GRAY)
                 })
             })
             .style(cx, || {
                 Style::BASE
-                    .height_pct(1.0)
+                    .height_pct(100.0)
                     .width_px(150.0)
-                    .padding_vert(5.0)
-                    .padding_horiz(5.0)
+                    .padding_vert_px(5.0)
+                    .padding_horiz_px(5.0)
                     .flex_col()
                     .items_center()
             }),
@@ -101,19 +102,19 @@ fn app_view(cx: AppContext) -> impl View {
                         }
                     },
                 )
-                .style(cx, || Style::BASE.dimension_pct(1.0, 1.0))
+                .style(cx, || Style::BASE.size_pct(100.0, 100.0))
             })
             .style(cx, || {
                 Style::BASE
-                    .dimension_pct(1.0, 1.0)
-                    .padding_vert(5.0)
-                    .padding_horiz(5.0)
+                    .size_pct(100.0, 100.0)
+                    .padding_vert_px(5.0)
+                    .padding_horiz_px(5.0)
                     .flex_col()
                     .items_center()
             }),
         )
     })
-    .style(cx, || Style::BASE.dimension_pct(1.0, 1.0))
+    .style(cx, || Style::BASE.size_pct(100.0, 100.0))
 }
 
 fn main() {

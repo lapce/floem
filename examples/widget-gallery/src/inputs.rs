@@ -25,7 +25,7 @@ pub fn text_input_view(cx: AppContext) -> impl View {
                             .background(Color::rgb8(224, 224, 224))
                             .border_radius(15.0)
                             .border_color(Color::rgb8(189, 189, 189))
-                            .padding(10.0)
+                            .padding_px(10.0)
                             .cursor(CursorStyle::Text)
                     })
                     .hover_style(cx, || Style::BASE.border_color(Color::rgb8(66, 66, 66)))

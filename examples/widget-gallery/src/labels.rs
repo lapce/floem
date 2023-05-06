@@ -19,7 +19,7 @@ pub fn label_view(cx: AppContext) -> impl View {
                 label(cx, move || "This is a styled label".to_owned()).style(cx, || {
                     Style::BASE
                         .background(Color::YELLOW)
-                        .padding(10.0)
+                        .padding_px(10.0)
                         .color(Color::GREEN)
                         .font_weight(Weight::BOLD)
                         .font_style(FontStyle::Italic)

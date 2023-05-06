@@ -18,7 +18,7 @@ pub fn button_view(cx: AppContext) -> impl View {
                         true
                     })
                     .style(cx, || {
-                        Style::BASE.border(1.0).border_radius(10.0).padding(10.0)
+                        Style::BASE.border(1.0).border_radius(10.0).padding_px(10.0)
                     })
             }),
             form_item(cx, "Styled Button:".to_string(), 120.0, |cx| {
@@ -31,8 +31,8 @@ pub fn button_view(cx: AppContext) -> impl View {
                         Style::BASE
                             .border(1.0)
                             .border_radius(10.0)
-                            .padding(10.0)
-                            .margin_left(10.0)
+                            .padding_px(10.0)
+                            .margin_left_px(10.0)
                             .background(Color::YELLOW_GREEN)
                             .color(Color::DARK_GREEN)
                             .cursor(CursorStyle::Pointer)
@@ -53,7 +53,7 @@ pub fn button_view(cx: AppContext) -> impl View {
                         Style::BASE
                             .border(1.0)
                             .border_radius(10.0)
-                            .padding(10.0)
+                            .padding_px(10.0)
                             .color(Color::GRAY)
                     })
                     .hover_style(cx, || Style::BASE.background(Color::rgb8(224, 224, 224)))

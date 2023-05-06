@@ -15,9 +15,9 @@ pub fn form<VT: ViewTuple + 'static>(
         Style::BASE
             .flex_col()
             .items_start()
-            .dimension_pct(1.0, 1.0)
-            .margin(10.0)
-            .padding(10.0)
+            .size_pct(100.0, 100.0)
+            .margin_px(10.0)
+            .padding_px(10.0)
     })
 }
 
@@ -38,22 +38,22 @@ pub fn form_item<V: View + 'static>(
                     Style::BASE
                         .width_px(label_width)
                         .justify_end()
-                        .margin_right(10.0)
+                        .margin_right_px(10.0)
                 }),
                 view_fn(cx),
             )
         })
         .style(cx, || {
-            Style::BASE.flex_row().items_start().dimension_pct(1.0, 1.0)
+            Style::BASE.flex_row().items_start().size_pct(100.0, 100.0)
         })
     })
     .style(cx, || {
         Style::BASE
             .flex_row()
             .items_center()
-            .margin_bottom(10.0)
-            .padding(10.0)
-            .width_pct(1.0)
+            .margin_bottom_px(10.0)
+            .padding_px(10.0)
+            .width_pct(100.0)
             .min_height_px(32.0)
     })
 }
