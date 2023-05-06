@@ -176,49 +176,53 @@ pub trait View {
 
         match &event {
             Event::PointerDown(event) => {
-                let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
-                let was_focused = cx.app_state.is_focused(&self.id());
-                let now_focused = rect.contains(event.pos);
+                if event.button.is_left() {
+                    let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
+                    let was_focused = cx.app_state.is_focused(&self.id());
+                    let now_focused = rect.contains(event.pos);
 
-                if now_focused && !was_focused {
-                    cx.app_state.update_focus(self.id(), false);
-                } else if !now_focused && was_focused {
-                    cx.app_state.clear_focus();
-                }
-
-                if now_focused {
-                    cx.app_state.keyboard_navigation = false;
-                    if event.count == 2 && cx.has_event_listener(id, EventListner::DoubleClick) {
-                        let view_state = cx.app_state.view_state(id);
-                        view_state.last_pointer_down = Some(event.clone());
-                        cx.update_active(id);
-                        return true;
+                    if now_focused && !was_focused {
+                        cx.app_state.update_focus(self.id(), false);
+                    } else if !now_focused && was_focused {
+                        cx.app_state.clear_focus();
                     }
-                    if cx.has_event_listener(id, EventListner::Click) {
-                        cx.update_active(id);
-                        return true;
+
+                    if now_focused {
+                        cx.app_state.keyboard_navigation = false;
+                        if event.count == 2 && cx.has_event_listener(id, EventListner::DoubleClick)
+                        {
+                            let view_state = cx.app_state.view_state(id);
+                            view_state.last_pointer_down = Some(event.clone());
+                            cx.update_active(id);
+                            return true;
+                        }
+                        if cx.has_event_listener(id, EventListner::Click) {
+                            cx.update_active(id);
+                            return true;
+                        }
                     }
                 }
             }
             Event::PointerUp(pointer_event) => {
-                let last_pointer_down = cx.app_state.view_state(id).last_pointer_down.take();
-                let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
-                if let Some(action) = cx.get_event_listener(id, &EventListner::DoubleClick) {
-                    if rect.contains(pointer_event.pos)
-                        && pointer_event.button.is_left()
-                        && last_pointer_down
-                            .as_ref()
-                            .map(|e| e.count == 2)
-                            .unwrap_or(false)
-                    {
-                        (*action)(&event);
-                        return true;
+                if pointer_event.button.is_left() {
+                    let last_pointer_down = cx.app_state.view_state(id).last_pointer_down.take();
+                    let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
+                    if let Some(action) = cx.get_event_listener(id, &EventListner::DoubleClick) {
+                        if rect.contains(pointer_event.pos)
+                            && last_pointer_down
+                                .as_ref()
+                                .map(|e| e.count == 2)
+                                .unwrap_or(false)
+                        {
+                            (*action)(&event);
+                            return true;
+                        }
                     }
-                }
-                if let Some(action) = cx.get_event_listener(id, &EventListner::Click) {
-                    if rect.contains(pointer_event.pos) && pointer_event.button.is_left() {
-                        (*action)(&event);
-                        return true;
+                    if let Some(action) = cx.get_event_listener(id, &EventListner::Click) {
+                        if rect.contains(pointer_event.pos) {
+                            (*action)(&event);
+                            return true;
+                        }
                     }
                 }
             }
