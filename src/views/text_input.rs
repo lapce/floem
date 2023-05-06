@@ -11,6 +11,7 @@ use floem_renderer::{
     cosmic_text::{Cursor, Style as FontStyle, Weight},
     Renderer,
 };
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{peniko::Color, style::Style, view::View, AppContext};
 
@@ -127,6 +128,9 @@ const DEFAULT_FONT_SIZE: f32 = 14.0;
 
 impl TextInput {
     fn move_cursor(&mut self, move_kind: Movement, direction: Direction) -> bool {
+        if matches!(self.input_kind, InputKind::MultiLine { line_index: _ }) {
+            todo!();
+        }
         match (move_kind, direction) {
             (Movement::Glyph, Direction::Left) => {
                 if self.cursor_glyph_idx >= 1 {
@@ -155,6 +159,30 @@ impl TextInput {
                     return true;
                 }
                 false
+            }
+            (Movement::Word, Direction::Right) => self.buffer.with(|buff| {
+                for (idx, word) in buff.unicode_word_indices() {
+                    let word_end_idx = idx + word.len();
+                    if word_end_idx > self.cursor_glyph_idx {
+                        self.cursor_glyph_idx = word_end_idx;
+                        return true;
+                    }
+                }
+                false
+            }),
+            (Movement::Word, Direction::Left) if self.cursor_glyph_idx > 0 => {
+                self.buffer.with(|buff| {
+                    let mut prev_word_idx = 0;
+                    for (idx, _) in buff.unicode_word_indices() {
+                        if idx < self.cursor_glyph_idx {
+                            prev_word_idx = idx;
+                        } else {
+                            break;
+                        }
+                    }
+                    self.cursor_glyph_idx = prev_word_idx;
+                    true
+                })
             }
             (movement, dir) => {
                 dbg!(movement, dir);
@@ -315,8 +343,20 @@ impl TextInput {
             }
             Key::End => self.move_cursor(Movement::Line, Direction::Right),
             Key::Home => self.move_cursor(Movement::Line, Direction::Left),
-            Key::ArrowLeft => self.move_cursor(Movement::Glyph, Direction::Left),
-            Key::ArrowRight => self.move_cursor(Movement::Glyph, Direction::Right),
+            Key::ArrowLeft => {
+                if event.mods.ctrl() {
+                    self.move_cursor(Movement::Word, Direction::Left)
+                } else {
+                    self.move_cursor(Movement::Glyph, Direction::Left)
+                }
+            }
+            Key::ArrowRight => {
+                if event.mods.ctrl() {
+                    self.move_cursor(Movement::Word, Direction::Right)
+                } else {
+                    self.move_cursor(Movement::Glyph, Direction::Right)
+                }
+            }
             _ => {
                 dbg!("Unhandled key");
                 false
