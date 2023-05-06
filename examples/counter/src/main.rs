@@ -46,9 +46,6 @@ fn app_view(cx: AppContext) -> impl View {
                         .keyboard_navigatable()
                         .focus_visible_style(|| Style::BASE.border_color(Color::BLUE).border(2.)),
                     label(|| "Reset to 0".to_string())
-                        .hover_style(|| Style::BASE.background(Color::rgb8(244, 67, 54)))
-                        .active_style(|| Style::BASE.color(Color::WHITE).background(Color::RED)),
-                    label(|| "Reset to 0".to_string())
                         .on_click(move |_| {
                             println!("Reset counter pressed"); // will not fire if button is disabled
                             set_counter.update(|value| *value = 0);
