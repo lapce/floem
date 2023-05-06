@@ -15,7 +15,9 @@ pub fn text_input_view(cx: AppContext) -> impl View {
     form(cx, move |cx| {
         (
             form_item(cx, "Simple Input:".to_string(), 120.0, move |cx| {
-                text_input(cx, text).style(cx, || Style::BASE.border(1.0).height_px(32.0)).keyboard_navigatable(cx)
+                text_input(cx, text)
+                    .style(cx, || Style::BASE.border(1.0).height_px(32.0))
+                    .keyboard_navigatable(cx)
             }),
             form_item(cx, "Styled Input:".to_string(), 120.0, move |cx| {
                 text_input(cx, text)

@@ -357,15 +357,19 @@ pub trait View {
         let mut new_focus = tree_iter(start);
         while new_focus != start
             && (!app_state.keyboard_navigatable.contains(&new_focus)
-                || app_state.is_disabled(&new_focus) || app_state.is_hidden(new_focus))
+                || app_state.is_disabled(&new_focus)
+                || app_state.is_hidden(new_focus))
         {
             new_focus = tree_iter(new_focus);
         }
 
         app_state.update_focus(new_focus, true);
         self.debug_tree();
-        println!("Tab to {:?} hidden {:?}", new_focus, app_state.is_hidden(new_focus));
-        
+        println!(
+            "Tab to {:?} hidden {:?}",
+            new_focus,
+            app_state.is_hidden(new_focus)
+        );
     }
 }
 

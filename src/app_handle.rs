@@ -88,8 +88,9 @@ impl AppContext {
         UPDATE_MESSAGES.with(|msgs| {
             msgs.borrow_mut()
                 .push(UpdateMessage::KeyboardNavigatable { id })
-        })}
-    
+        })
+    }
+
     pub fn update_responsive_style(id: Id, style: Style, size: ScreenSize) {
         UPDATE_MESSAGES.with(|msgs| {
             msgs.borrow_mut()
