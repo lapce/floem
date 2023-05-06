@@ -17,23 +17,23 @@ fn app_view(cx: AppContext) -> impl View {
             virtual_list(
                 cx,
                 VirtualListDirection::Vertical,
+                VirtualListItemSize::Fixed(20.0),
                 move || long_list.get(),
                 move |item| *item,
                 move |cx, item| {
                     label(cx, move || item.to_string()).style(cx, || Style::BASE.height_px(20.0))
                 },
-                VirtualListItemSize::Fixed(20.0),
             )
             .style(cx, || Style::BASE.flex_col())
         })
         .style(cx, || {
-            Style::BASE.width_px(100.0).height_pct(1.0).border(1.0)
+            Style::BASE.width_px(100.0).height_pct(100.0).border(1.0)
         })
     })
     .style(cx, || {
         Style::BASE
-            .dimension_pct(1.0, 1.0)
-            .padding_vert(20.0)
+            .size_pct(100.0, 100.0)
+            .padding_vert_px(20.0)
             .flex_col()
             .items_center()
     })
