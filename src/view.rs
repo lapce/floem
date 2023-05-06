@@ -205,6 +205,7 @@ pub trait View {
                 let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
                 if let Some(action) = cx.get_event_listener(id, &EventListner::DoubleClick) {
                     if rect.contains(pointer_event.pos)
+                        && pointer_event.button.is_left()
                         && last_pointer_down
                             .as_ref()
                             .map(|e| e.count == 2)
@@ -215,7 +216,7 @@ pub trait View {
                     }
                 }
                 if let Some(action) = cx.get_event_listener(id, &EventListner::Click) {
-                    if rect.contains(pointer_event.pos) {
+                    if rect.contains(pointer_event.pos) && pointer_event.button.is_left() {
                         (*action)(&event);
                         return true;
                     }
