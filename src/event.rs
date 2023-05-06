@@ -21,6 +21,7 @@ pub enum Event {
     PointerMove(PointerEvent),
     PointerWheel(PointerEvent),
     KeyDown(KeyEvent),
+    KeyUp(KeyEvent),
     WindowClosed,
     WindowResized(Size),
     WindowMoved(Point),
@@ -36,7 +37,7 @@ impl Event {
             | Event::WindowClosed
             | Event::WindowResized(_)
             | Event::WindowMoved(_) => false,
-            Event::KeyDown(_) => true,
+            Event::KeyDown(_) | Event::KeyUp(_) => true,
         }
     }
 
@@ -47,9 +48,21 @@ impl Event {
             | Event::PointerMove(_)
             | Event::PointerWheel(_) => true,
             Event::KeyDown(_)
+            | Event::KeyUp(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
             | Event::WindowMoved(_) => false,
+        }
+    }
+
+    /// Enter, numpad enter and space cause a view to be activated with the keyboard
+    pub(crate) fn is_keyboard_trigger(&self) -> bool {
+        match self {
+            Event::KeyDown(key) | Event::KeyUp(key) => matches!(
+                key.code,
+                glazier::Code::NumpadEnter | glazier::Code::Enter | glazier::Code::Space,
+            ),
+            _ => false,
         }
     }
 
@@ -58,7 +71,8 @@ impl Event {
             Event::PointerDown(_)
             | Event::PointerUp(_)
             | Event::PointerWheel(_)
-            | Event::KeyDown(_) => false,
+            | Event::KeyDown(_)
+            | Event::KeyUp(_) => false,
             Event::PointerMove(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
@@ -73,6 +87,7 @@ impl Event {
             | Event::PointerMove(pointer_event)
             | Event::PointerWheel(pointer_event) => Some(pointer_event.pos),
             Event::KeyDown(_)
+            | Event::KeyUp(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
             | Event::WindowMoved(_) => None,
@@ -88,6 +103,7 @@ impl Event {
                 pointer_event.pos -= offset;
             }
             Event::KeyDown(_)
+            | Event::KeyUp(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
             | Event::WindowMoved(_) => {}
@@ -101,7 +117,7 @@ impl Event {
             Event::PointerUp(_) => None,
             Event::PointerMove(_) => None,
             Event::PointerWheel(_) => Some(EventListner::PointerWheel),
-            Event::KeyDown(_) => Some(EventListner::KeyDown),
+            Event::KeyDown(_) | Event::KeyUp(_) => Some(EventListner::KeyDown),
             Event::WindowClosed => Some(EventListner::WindowClosed),
             Event::WindowResized(_) => Some(EventListner::WindowResized),
             Event::WindowMoved(_) => Some(EventListner::WindowMoved),

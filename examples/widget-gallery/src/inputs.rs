@@ -15,7 +15,9 @@ pub fn text_input_view(cx: AppContext) -> impl View {
     form(move || {
         (
             form_item("Simple Input:".to_string(), 120.0, move || {
-                text_input(text).style(|| Style::BASE.border(1.0).height_px(32.0))
+                text_input(text)
+                    .style(|| Style::BASE.border(1.0).height_px(32.0))
+                    .keyboard_navigatable(cx)
             }),
             form_item("Styled Input:".to_string(), 120.0, move || {
                 text_input(text)
@@ -30,6 +32,7 @@ pub fn text_input_view(cx: AppContext) -> impl View {
                     })
                     .hover_style(|| Style::BASE.border_color(Color::rgb8(66, 66, 66)))
                     .focus_style(|| Style::BASE.border_color(Color::LIGHT_SKY_BLUE))
+                    .keyboard_navigatable(cx)
             }),
         )
     })

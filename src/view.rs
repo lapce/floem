@@ -33,6 +33,12 @@ pub trait View {
 
     fn child(&mut self, id: Id) -> Option<&mut dyn View>;
 
+    fn children(&mut self) -> Vec<&mut dyn View>;
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        core::any::type_name::<Self>().into()
+    }
+
     fn update_main(
         &mut self,
         cx: &mut UpdateCx,
@@ -175,12 +181,13 @@ pub trait View {
                 let now_focused = rect.contains(event.pos);
 
                 if now_focused && !was_focused {
-                    cx.app_state.update_focus(self.id());
+                    cx.app_state.update_focus(self.id(), false);
                 } else if !now_focused && was_focused {
                     cx.app_state.clear_focus();
                 }
 
                 if now_focused {
+                    cx.app_state.keyboard_navigation = false;
                     if event.count == 2 && cx.has_event_listener(id, EventListner::DoubleClick) {
                         let view_state = cx.app_state.view_state(id);
                         view_state.last_pointer_down = Some(event.clone());
@@ -210,6 +217,16 @@ pub trait View {
                 if let Some(action) = cx.get_event_listener(id, &EventListner::Click) {
                     if rect.contains(pointer_event.pos) {
                         (*action)(&event);
+                        return true;
+                    }
+                }
+            }
+            Event::KeyDown(_) => {
+                if event.is_keyboard_trigger() {
+                    if let Some(action) = cx.get_event_listener(id, &EventListner::Click) {
+                        (*action)(&event);
+                        cx.app_state.keyboard_navigation = true;
+                        cx.update_active(id);
                         return true;
                     }
                 }
@@ -292,6 +309,68 @@ pub trait View {
     }
 
     fn paint(&mut self, cx: &mut PaintCx);
+
+    /// Produces an ascii art debug display of all of the views.
+    fn debug_tree(&mut self)
+    where
+        Self: Sized,
+    {
+        let mut views = vec![(self as &mut dyn View, Vec::new())];
+        while let Some((current_view, active_lines)) = views.pop() {
+            // Ascii art for the tree view
+            if let Some((leaf, root)) = active_lines.split_last() {
+                for line in root {
+                    print!("{}", if *line { "│   " } else { "    " });
+                }
+                print!("{}", if *leaf { "├── " } else { "└── " });
+            }
+            println!("{:?} {}", current_view.id(), &current_view.debug_name());
+
+            let mut children = current_view.children();
+            if let Some(last_child) = children.pop() {
+                views.push((last_child, [active_lines.as_slice(), &[false]].concat()));
+            }
+
+            views.extend(
+                children
+                    .into_iter()
+                    .rev()
+                    .map(|child| (child, [active_lines.as_slice(), &[true]].concat())),
+            );
+        }
+    }
+
+    /// Tab navigation finds the next or previous view with the `keyboard_navigatable` status in the tree.
+    fn tab_navigation(&mut self, app_state: &mut crate::context::AppState, backwards: bool)
+    where
+        Self: Sized,
+    {
+        let start = app_state.focus.unwrap_or(self.id());
+        let tree_iter = |id: Id| {
+            if backwards {
+                id.tree_previous().unwrap_or(self.id().nested_last_child())
+            } else {
+                id.tree_next().unwrap_or(self.id())
+            }
+        };
+
+        let mut new_focus = tree_iter(start);
+        while new_focus != start
+            && (!app_state.keyboard_navigatable.contains(&new_focus)
+                || app_state.is_disabled(&new_focus)
+                || app_state.is_hidden(new_focus))
+        {
+            new_focus = tree_iter(new_focus);
+        }
+
+        app_state.update_focus(new_focus, true);
+        self.debug_tree();
+        println!(
+            "Tab to {:?} hidden {:?}",
+            new_focus,
+            app_state.is_hidden(new_focus)
+        );
+    }
 }
 
 fn paint_bg(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {

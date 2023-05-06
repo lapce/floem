@@ -41,6 +41,44 @@ pub trait Decorators: View + Sized {
         self
     }
 
+    /// Similar to the `:focus-visible` css selector, this style only activates when tab navigation is used.
+    fn focus_visible_style(self, cx: AppContext, style: impl Fn() -> Style + 'static) -> Self {
+        let id = self.id();
+        create_effect(cx.scope, move |_| {
+            let style = style();
+            AppContext::update_style_selector(id, style, StyleSelector::FocusVisible);
+        });
+        self
+    }
+
+    /// Allows the element to be navigated to with the keyboard. Similar to setting tabindex="0" in html.
+    fn keyboard_navigatable(self, cx: AppContext) -> Self {
+        let id = self.id();
+        create_effect(cx.scope, move |_| {
+            AppContext::keyboard_navigatable(id);
+        });
+        self
+    }
+
+    /// Similar to the `:focus-visible` css selector, this style only activates when tab navigation is used.
+    fn focus_visible_style(self, cx: AppContext, style: impl Fn() -> Style + 'static) -> Self {
+        let id = self.id();
+        create_effect(cx.scope, move |_| {
+            let style = style();
+            AppContext::update_style_selector(id, style, StyleSelector::FocusVisible);
+        });
+        self
+    }
+
+    /// Allows the element to be navigated to with the keyboard. Similar to setting tabindex="0" in html.
+    fn keyboard_navigatable(self, cx: AppContext) -> Self {
+        let id = self.id();
+        create_effect(cx.scope, move |_| {
+            AppContext::keyboard_navigatable(id);
+        });
+        self
+    }
+
     fn active_style(self, style: impl Fn() -> Style + 'static) -> Self {
         let cx = AppContext::get_current();
         let id = self.id();

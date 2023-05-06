@@ -127,6 +127,14 @@ impl View for Label {
         None
     }
 
+    fn children(&mut self) -> Vec<&mut dyn View> {
+        Vec::new()
+    }
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        format!("Label: {:?}", self.label).into()
+    }
+
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags {
         if let Ok(state) = state.downcast() {
             self.label = *state;

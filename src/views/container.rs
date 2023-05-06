@@ -35,6 +35,14 @@ impl<V: View> View for Container<V> {
         }
     }
 
+    fn children(&mut self) -> Vec<&mut dyn View> {
+        vec![&mut self.child]
+    }
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "Container".into()
+    }
+
     fn update(
         &mut self,
         _cx: &mut crate::context::UpdateCx,
