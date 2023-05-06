@@ -39,7 +39,8 @@ pub struct Label {
     text_overflow: TextOverflow,
 }
 
-pub fn label(cx: AppContext, label: impl Fn() -> String + 'static) -> Label {
+pub fn label(label: impl Fn() -> String + 'static) -> Label {
+    let cx = AppContext::get_current();
     let id = cx.new_id();
     create_effect(cx.scope, move |_| {
         let new_label = label();

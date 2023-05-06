@@ -13,17 +13,17 @@ fn app_view(cx: AppContext) -> impl View {
     let (couter, set_counter) = create_signal(cx.scope, 0);
 
     // create user interface with Floem view functions
-    stack(cx, |cx| {
+    stack(|| {
         (
-            label(cx, move || format!("Value: {}", couter.get())),
-            stack(cx, |cx| {
+            label(move || format!("Value: {}", couter.get())),
+            stack(|| {
                 (
-                    label(cx, || "Increment".to_string())
+                    label(|| "Increment".to_string())
                         .on_click(move |_| {
                             set_counter.update(|value| *value += 1);
                             true
                         }),
-                    label(cx, || "Decrement".to_string())
+                    label(|| "Decrement".to_string())
                         .on_click(move |_| {
                             set_counter.update(|value| *value -= 1);
                             true

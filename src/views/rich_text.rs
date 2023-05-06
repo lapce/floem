@@ -20,7 +20,8 @@ pub struct RichText {
     text_node: Option<Node>,
 }
 
-pub fn rich_text(cx: AppContext, text_layout: impl Fn() -> TextLayout + 'static) -> RichText {
+pub fn rich_text(text_layout: impl Fn() -> TextLayout + 'static) -> RichText {
+    let cx = AppContext::get_current();
     let id = cx.new_id();
     let text = text_layout();
     create_effect(cx.scope, move |_| {

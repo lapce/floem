@@ -7,8 +7,8 @@ use leptos_reactive::{Scope, SignalSet};
 
 use crate::{
     context::{
-        AppState, EventCallback, EventCx, LayoutCx, PaintCx, PaintState, ResizeCallback,
-        ResizeListener, UpdateCx,
+        AppContextStore, AppState, EventCallback, EventCx, LayoutCx, PaintCx, PaintState,
+        ResizeCallback, ResizeListener, UpdateCx, APP_CONTEXT_STORE,
     },
     event::{Event, EventListner},
     ext_event::{EXT_EVENT_HANDLER, WRITE_SIGNALS},
@@ -42,6 +42,45 @@ pub struct AppContext {
 }
 
 impl AppContext {
+    pub fn save() {
+        APP_CONTEXT_STORE.with(|store| {
+            let mut store = store.borrow_mut();
+            if let Some(store) = store.as_mut() {
+                store.save();
+            }
+        })
+    }
+
+    pub fn set_current(cx: AppContext) {
+        APP_CONTEXT_STORE.with(|store| {
+            let mut store = store.borrow_mut();
+            if let Some(store) = store.as_mut() {
+                store.set_current(cx);
+            } else {
+                *store = Some(AppContextStore {
+                    cx,
+                    saved_cx: Vec::new(),
+                });
+            }
+        })
+    }
+
+    pub fn get_current() -> AppContext {
+        APP_CONTEXT_STORE.with(|store| {
+            let store = store.borrow();
+            store.as_ref().unwrap().cx
+        })
+    }
+
+    pub fn restore() {
+        APP_CONTEXT_STORE.with(|store| {
+            let mut store = store.borrow_mut();
+            if let Some(store) = store.as_mut() {
+                store.restore();
+            }
+        })
+    }
+
     pub fn update_focus(&self, id: Id) {
         UPDATE_MESSAGES.with(|msgs| msgs.borrow_mut().push(UpdateMessage::Focus(id)));
     }
@@ -203,12 +242,14 @@ impl<V: View> Drop for AppHandle<V> {
 
 impl<V: View> AppHandle<V> {
     pub fn new(scope: Scope, app_logic: impl FnOnce(AppContext) -> V) -> Self {
-        let context = AppContext {
+        let cx = AppContext {
             scope,
             id: Id::next(),
         };
 
-        let view = app_logic(context);
+        AppContext::set_current(cx);
+
+        let view = app_logic(cx);
         Self {
             scope,
             view,

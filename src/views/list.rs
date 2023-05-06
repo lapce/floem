@@ -23,7 +23,7 @@ pub(crate) struct HashRun<T>(#[educe(Debug(ignore))] pub(crate) T);
 pub struct List<V, VF, T>
 where
     V: View,
-    VF: Fn(AppContext, T) -> V + 'static,
+    VF: Fn(T) -> V + 'static,
     T: 'static,
 {
     id: Id,
@@ -33,21 +33,17 @@ where
     cx: AppContext,
 }
 
-pub fn list<IF, I, T, KF, K, VF, V>(
-    cx: AppContext,
-    each_fn: IF,
-    key_fn: KF,
-    view_fn: VF,
-) -> List<V, VF, T>
+pub fn list<IF, I, T, KF, K, VF, V>(each_fn: IF, key_fn: KF, view_fn: VF) -> List<V, VF, T>
 where
     IF: Fn() -> I + 'static,
     I: IntoIterator<Item = T>,
     KF: Fn(&T) -> K + 'static,
     K: Eq + Hash + 'static,
-    VF: Fn(AppContext, T) -> V + 'static,
+    VF: Fn(T) -> V + 'static,
     V: View + 'static,
     T: 'static,
 {
+    let cx = AppContext::get_current();
     let id = cx.new_id();
 
     let mut child_cx = cx;
@@ -90,7 +86,7 @@ where
 
 impl<V: View + 'static, VF, T> View for List<V, VF, T>
 where
-    VF: Fn(AppContext, T) -> V + 'static,
+    VF: Fn(T) -> V + 'static,
 {
     fn id(&self) -> Id {
         self.id
@@ -126,13 +122,10 @@ where
         state: Box<dyn std::any::Any>,
     ) -> crate::view::ChangeFlags {
         if let Ok(diff) = state.downcast() {
-            apply_diff(
-                self.cx,
-                cx.app_state,
-                *diff,
-                &mut self.children,
-                &self.view_fn,
-            );
+            AppContext::save();
+            AppContext::set_current(self.cx);
+            apply_diff(cx.app_state, *diff, &mut self.children, &self.view_fn);
+            AppContext::restore();
             cx.request_layout(self.id());
             ChangeFlags::LAYOUT
         } else {
@@ -201,6 +194,12 @@ impl<V> Default for Diff<V> {
             added: Default::default(),
             clear: false,
         }
+    }
+}
+
+impl<V> Diff<V> {
+    pub fn is_empty(&self) -> bool {
+        self.removed.is_empty() && self.moved.is_empty() && self.added.is_empty() && !self.clear
     }
 }
 
@@ -343,14 +342,13 @@ fn remove_index<V: View>(
 }
 
 pub(super) fn apply_diff<T, V, VF>(
-    cx: AppContext,
     app_state: &mut AppState,
     mut diff: Diff<T>,
     children: &mut Vec<Option<(V, ScopeDisposer)>>,
     view_fn: &VF,
 ) where
     V: View,
-    VF: Fn(AppContext, T) -> V + 'static,
+    VF: Fn(T) -> V + 'static,
 {
     // Resize children if needed
     if diff.added.len().checked_sub(diff.removed.len()).is_some() {
@@ -388,10 +386,15 @@ pub(super) fn apply_diff<T, V, VF>(
 
     for DiffOpAdd { at, view } in diff.added {
         children[at] = view.map(|value| {
+            let cx = AppContext::get_current();
             cx.scope.run_child_scope(|scope| {
                 let mut cx = cx;
                 cx.scope = scope;
-                view_fn(cx, value)
+                AppContext::save();
+                AppContext::set_current(cx);
+                let view = view_fn(value);
+                AppContext::restore();
+                view
             })
         });
     }
