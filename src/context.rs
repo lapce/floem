@@ -212,8 +212,6 @@ impl AppState {
 
     pub fn set_root_size(&mut self, size: Size) {
         self.root_size = size;
-        let breakpt = self.grid_breakpts.get_width_breakpt(size.width);
-        self.screen_size_bp = breakpt;
         self.compute_layout();
     }
 
@@ -272,6 +270,11 @@ impl AppState {
         if self.has_style_for_sel(id, StyleSelector::Active) {
             self.request_layout(id);
         }
+    }
+
+    pub(crate) fn update_scr_size_breakpt(&mut self, size: Size) {
+        let breakpt = self.grid_breakpts.get_width_breakpt(size.width);
+        self.screen_size_bp = breakpt;
     }
 
     pub(crate) fn clear_focus(&mut self) {

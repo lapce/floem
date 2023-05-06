@@ -511,6 +511,7 @@ impl<V: View> WinHandler for AppHandle<V> {
     }
 
     fn size(&mut self, size: glazier::kurbo::Size) {
+        self.app_state.update_scr_size_breakpt(size);
         self.event(Event::WindowResized(size));
         let scale = self.handle.get_scale().unwrap_or_default();
         self.paint_state.resize(scale, size);

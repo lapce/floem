@@ -92,16 +92,20 @@ pub fn range<R: RangeBounds<ScreenSize>>(range: R) -> ScreenSize {
         std::ops::Bound::Excluded(e) => next(*e),
         std::ops::Bound::Unbounded => ScreenSize::XS,
     };
-
     let end = match range.end_bound() {
         std::ops::Bound::Included(s) => *s,
         std::ops::Bound::Excluded(e) => prev(*e),
         std::ops::Bound::Unbounded => ScreenSize::XXL,
     };
-
+    // We get the first enabled flag from start and the last from the end.
+    // This ensures that if a SizeFlag with multiple flags set(e.g. XS|SM|MD) is passed to the range, 
+    // it will still work correctly.
     let lowest_start: SizeFlags = start.flags.iter().next().unwrap();
     let highest_end: SizeFlags = end.flags.iter().last().unwrap();
+
     let mask = highest_end.bits() - lowest_start.bits();
+    // Subtract to get all the flags between the two, and then OR to ensure everything in the range
+    // is set.
     let result = SizeFlags::from_bits(highest_end.bits() | mask | lowest_start.bits()).unwrap();
 
     ScreenSize { flags: result }
@@ -271,5 +275,4 @@ mod tests {
         assert!(range.flags.contains(SizeFlags::XL));
         assert!(range.flags.contains(SizeFlags::XXL));
     }
-
 }
