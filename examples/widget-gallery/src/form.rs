@@ -4,7 +4,6 @@ use floem::{
     view::View,
     view_tuple::ViewTuple,
     views::{container, label, stack, Decorators},
-    AppContext,
 };
 
 pub fn form<VT: ViewTuple + 'static>(children: impl FnOnce() -> VT) -> impl View {

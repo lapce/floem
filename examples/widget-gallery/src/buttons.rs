@@ -3,12 +3,11 @@ use floem::{
     style::{CursorStyle, Style},
     view::View,
     views::{label, Decorators},
-    AppContext,
 };
 
 use crate::form::{form, form_item};
 
-pub fn button_view(cx: AppContext) -> impl View {
+pub fn button_view() -> impl View {
     form(|| {
         (
             form_item("Basic Button:".to_string(), 120.0, || {

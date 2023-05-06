@@ -156,10 +156,10 @@ impl ViewState {
     pub(crate) fn add_responsive_style(&mut self, size: ScreenSize, style: Style) {
         let breakpoints = size.breakpoints();
 
-        for breakpoint in breakpoints.clone() {
+        for breakpoint in breakpoints {
             self.responsive_styles
                 .entry(breakpoint)
-                .or_insert_with(|| vec![])
+                .or_insert_with(Vec::new)
                 .push(style.clone())
         }
     }

@@ -8,7 +8,8 @@ use floem::{
 
 use crate::form::{form, form_item};
 
-pub fn virt_list_view(cx: AppContext) -> impl View {
+pub fn virt_list_view() -> impl View {
+    let cx = AppContext::get_current();
     let long_list: im::Vector<i32> = (0..100).collect();
     let (long_list, _set_long_list) = create_signal(cx.scope, long_list);
 

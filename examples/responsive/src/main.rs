@@ -7,7 +7,7 @@ use floem::{
     AppContext,
 };
 
-fn app_view(cx: AppContext) -> impl View {
+fn app_view(_cx: AppContext) -> impl View {
     stack(|| {
         (label(|| "Resize the window to see the magic".to_string())
             .style(|| {

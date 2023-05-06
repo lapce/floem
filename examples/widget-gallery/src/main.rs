@@ -90,15 +90,13 @@ fn app_view(cx: AppContext) -> impl View {
                     move || active_tab.get(),
                     move || tabs.get(),
                     |it| *it,
-                    |cx, it| match it {
-                        "Label" => container_box(cx, |cx| Box::new(labels::label_view(cx))),
-                        "Button" => container_box(cx, |cx| Box::new(buttons::button_view(cx))),
-                        "Checkbox" => container_box(cx, |cx| Box::new(checkbox::checkbox_view(cx))),
-                        "Input" => container_box(cx, |cx| Box::new(inputs::text_input_view(cx))),
-                        "List" => container_box(cx, |cx| Box::new(lists::virt_list_view(cx))),
-                        _ => container_box(cx, |cx| {
-                            Box::new(label(cx, || "Not implemented".to_owned()))
-                        }),
+                    |it| match it {
+                        "Label" => container_box(|| Box::new(labels::label_view())),
+                        "Button" => container_box(|| Box::new(buttons::button_view())),
+                        "Checkbox" => container_box(|| Box::new(checkbox::checkbox_view())),
+                        "Input" => container_box(|| Box::new(inputs::text_input_view())),
+                        "List" => container_box(|| Box::new(lists::virt_list_view())),
+                        _ => container_box(|| Box::new(label(|| "Not implemented".to_owned()))),
                     },
                 )
                 .style(|| Style::BASE.size_pct(100.0, 100.0))

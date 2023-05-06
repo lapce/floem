@@ -9,7 +9,8 @@ use floem::{
 
 use crate::form::{form, form_item};
 
-pub fn text_input_view(cx: AppContext) -> impl View {
+pub fn text_input_view() -> impl View {
+    let cx = AppContext::get_current();
     let text = create_rw_signal(cx.scope, "".to_string());
 
     form(move || {

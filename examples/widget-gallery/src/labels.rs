@@ -4,12 +4,11 @@ use floem::{
     style::Style,
     view::View,
     views::{label, Decorators},
-    AppContext,
 };
 
 use crate::form::{form, form_item};
 
-pub fn label_view(cx: AppContext) -> impl View {
+pub fn label_view() -> impl View {
     form(|| {
         (
             form_item("Simple Label:".to_string(), 120.0, || {
