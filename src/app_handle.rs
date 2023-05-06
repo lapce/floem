@@ -13,6 +13,7 @@ use crate::{
     event::{Event, EventListner},
     ext_event::{EXT_EVENT_HANDLER, WRITE_SIGNALS},
     id::{Id, IDPATHS},
+    responsive::ScreenSize,
     style::{CursorStyle, Style},
     view::{ChangeFlags, View},
 };
@@ -87,6 +88,12 @@ impl AppContext {
         UPDATE_MESSAGES.with(|msgs| {
             msgs.borrow_mut()
                 .push(UpdateMessage::KeyboardNavigatable { id })
+        })}
+    
+    pub fn update_responsive_style(id: Id, style: Style, size: ScreenSize) {
+        UPDATE_MESSAGES.with(|msgs| {
+            msgs.borrow_mut()
+                .push(UpdateMessage::ResponsiveStyle { id, style, size })
         });
     }
 
@@ -155,6 +162,11 @@ pub enum UpdateMessage {
     Style {
         id: Id,
         style: Style,
+    },
+    ResponsiveStyle {
+        id: Id,
+        style: Style,
+        size: ScreenSize,
     },
     StyleSelector {
         id: Id,
@@ -329,6 +341,11 @@ impl<V: View> AppHandle<V> {
                         state.style = style;
                         cx.request_layout(id);
                     }
+                    UpdateMessage::ResponsiveStyle { id, style, size } => {
+                        let state = cx.app_state.view_state(id);
+
+                        state.add_responsive_style(size, style);
+                    }
                     UpdateMessage::StyleSelector {
                         id,
                         style,
@@ -458,7 +475,7 @@ impl<V: View> AppHandle<V> {
                     }
                 }
 
-                let keyboard_trigger_end = cx.app_state.using_keyboard_navigation
+                let keyboard_trigger_end = cx.app_state.keyboard_navigation
                     && event.is_keyboard_trigger()
                     && matches!(event, Event::KeyUp(_));
                 if keyboard_trigger_end {
@@ -531,6 +548,7 @@ impl<V: View> WinHandler for AppHandle<V> {
     }
 
     fn size(&mut self, size: glazier::kurbo::Size) {
+        self.app_state.update_scr_size_breakpt(size);
         self.event(Event::WindowResized(size));
         let scale = self.handle.get_scale().unwrap_or_default();
         self.paint_state.resize(scale, size);

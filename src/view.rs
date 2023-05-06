@@ -187,7 +187,7 @@ pub trait View {
                 }
 
                 if now_focused {
-                    cx.app_state.using_keyboard_navigation = false;
+                    cx.app_state.keyboard_navigation = false;
                     if event.count == 2 && cx.has_event_listener(id, EventListner::DoubleClick) {
                         let view_state = cx.app_state.view_state(id);
                         view_state.last_pointer_down = Some(event.clone());
@@ -225,7 +225,7 @@ pub trait View {
                 if event.is_keyboard_trigger() {
                     if let Some(action) = cx.get_event_listener(id, &EventListner::Click) {
                         (*action)(&event);
-                        cx.app_state.using_keyboard_navigation = true;
+                        cx.app_state.keyboard_navigation = true;
                         cx.update_active(id);
                         return true;
                     }
@@ -238,6 +238,13 @@ pub trait View {
                     let style = cx.app_state.get_computed_style(id);
                     if let Some(cursor) = style.cursor {
                         AppContext::update_cursor_style(cursor);
+                    }
+                }
+            }
+            Event::WindowResized(_) => {
+                if let Some(view_state) = cx.app_state.view_states.get(&self.id()) {
+                    if !view_state.responsive_styles.is_empty() {
+                        cx.app_state.request_layout(self.id());
                     }
                 }
             }
@@ -350,15 +357,15 @@ pub trait View {
         let mut new_focus = tree_iter(start);
         while new_focus != start
             && (!app_state.keyboard_navigatable.contains(&new_focus)
-                || app_state.is_disabled(&new_focus))
+                || app_state.is_disabled(&new_focus) || app_state.is_hidden(new_focus))
         {
             new_focus = tree_iter(new_focus);
         }
 
         app_state.update_focus(new_focus, true);
-
-        println!("Tab to {:?}", app_state.focus);
         self.debug_tree();
+        println!("Tab to {:?} hidden {:?}", new_focus, app_state.is_hidden(new_focus));
+        
     }
 }
 
