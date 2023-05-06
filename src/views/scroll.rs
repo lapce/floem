@@ -85,7 +85,8 @@ pub fn scroll<V: View>(child: impl Fn() -> V) -> Scroll<V> {
 }
 
 impl<V: View> Scroll<V> {
-    pub fn scroll_bar_color(self, cx: AppContext, color: impl Fn() -> Color + 'static) -> Self {
+    pub fn scroll_bar_color(self, color: impl Fn() -> Color + 'static) -> Self {
+        let cx = AppContext::get_current();
         let id = self.id;
         create_effect(cx.scope, move |_| {
             let color = color();
@@ -100,7 +101,8 @@ impl<V: View> Scroll<V> {
         self
     }
 
-    pub fn on_ensure_visible(self, cx: AppContext, to: impl Fn() -> Rect + 'static) -> Self {
+    pub fn on_ensure_visible(self, to: impl Fn() -> Rect + 'static) -> Self {
+        let cx = AppContext::get_current();
         let id = self.id;
         create_effect(cx.scope, move |_| {
             let rect = to();
@@ -110,7 +112,8 @@ impl<V: View> Scroll<V> {
         self
     }
 
-    pub fn on_scroll_delta(self, cx: AppContext, delta: impl Fn() -> Vec2 + 'static) -> Self {
+    pub fn on_scroll_delta(self, delta: impl Fn() -> Vec2 + 'static) -> Self {
+        let cx = AppContext::get_current();
         let id = self.id;
         create_effect(cx.scope, move |_| {
             let delta = delta();
@@ -120,11 +123,8 @@ impl<V: View> Scroll<V> {
         self
     }
 
-    pub fn on_scroll_to(
-        self,
-        cx: AppContext,
-        origin: impl Fn() -> Option<Point> + 'static,
-    ) -> Self {
+    pub fn on_scroll_to(self, origin: impl Fn() -> Option<Point> + 'static) -> Self {
+        let cx = AppContext::get_current();
         let id = self.id;
         create_effect(cx.scope, move |_| {
             if let Some(origin) = origin() {
@@ -135,7 +135,8 @@ impl<V: View> Scroll<V> {
         self
     }
 
-    pub fn hide_bar(self, cx: AppContext, value: impl Fn() -> bool + 'static) -> Self {
+    pub fn hide_bar(self, value: impl Fn() -> bool + 'static) -> Self {
+        let cx = AppContext::get_current();
         let id = self.id;
         create_effect(cx.scope, move |_| {
             AppContext::update_state(id, ScrollState::HiddenBar(value()), false);
