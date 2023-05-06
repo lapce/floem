@@ -17,8 +17,8 @@ pub fn button_view(cx: AppContext) -> impl View {
                         println!("Button clicked");
                         true
                     })
-                    .keyboard_navigatable(cx)
-                    .focus_visible_style(cx, || Style::BASE.border(2.).border_color(Color::BLUE))
+                    .keyboard_navigatable()
+                    .focus_visible_style(|| Style::BASE.border(2.).border_color(Color::BLUE))
                     .style(|| Style::BASE.border(1.0).border_radius(10.0).padding_px(10.0))
             }),
             form_item("Styled Button:".to_string(), 120.0, || {
@@ -27,8 +27,8 @@ pub fn button_view(cx: AppContext) -> impl View {
                         println!("Button clicked");
                         true
                     })
-                    .keyboard_navigatable(cx)
-                    .focus_visible_style(cx, || Style::BASE.border(2.).border_color(Color::BLUE))
+                    .keyboard_navigatable()
+                    .focus_visible_style(|| Style::BASE.border(2.).border_color(Color::BLUE))
                     .style(|| {
                         Style::BASE
                             .border(1.0)
@@ -49,8 +49,8 @@ pub fn button_view(cx: AppContext) -> impl View {
                         println!("Button clicked");
                         true
                     })
-                    .keyboard_navigatable(cx)
-                    .focus_visible_style(cx, || Style::BASE.border(2.).border_color(Color::BLUE))
+                    .keyboard_navigatable()
+                    .focus_visible_style(|| Style::BASE.border(2.).border_color(Color::BLUE))
                     .style(|| {
                         Style::BASE
                             .border(1.0)

@@ -27,10 +27,8 @@ fn app_view(cx: AppContext) -> impl View {
                                 .color(Color::WHITE)
                                 .background(Color::DARK_GREEN)
                         })
-                        .keyboard_navigatable(cx)
-                        .focus_visible_style(cx, || {
-                            Style::BASE.border_color(Color::BLUE).border(2.)
-                        }),
+                        .keyboard_navigatable()
+                        .focus_visible_style(|| Style::BASE.border_color(Color::BLUE).border(2.)),
                     label(|| "Decrement".to_string())
                         .on_click(move |_| {
                             set_counter.update(|value| *value -= 1);
@@ -43,15 +41,11 @@ fn app_view(cx: AppContext) -> impl View {
                                 .padding_px(10.0)
                                 .margin_left_px(10.0)
                         })
-                        .hover_style(cx, || Style::BASE.background(Color::rgb8(244, 67, 54)))
-                        .active_style(cx, || {
-                            Style::BASE.color(Color::WHITE).background(Color::RED)
-                        })
-                        .keyboard_navigatable(cx)
-                        .focus_visible_style(cx, || {
-                            Style::BASE.border_color(Color::BLUE).border(2.)
-                        }),
-                    label(cx, || "Reset to 0".to_string())
+                        .hover_style(|| Style::BASE.background(Color::rgb8(244, 67, 54)))
+                        .active_style(|| Style::BASE.color(Color::WHITE).background(Color::RED))
+                        .keyboard_navigatable()
+                        .focus_visible_style(|| Style::BASE.border_color(Color::BLUE).border(2.)),
+                    label(|| "Reset to 0".to_string())
                         .hover_style(|| Style::BASE.background(Color::rgb8(244, 67, 54)))
                         .active_style(|| Style::BASE.color(Color::WHITE).background(Color::RED)),
                     label(|| "Reset to 0".to_string())
@@ -76,10 +70,8 @@ fn app_view(cx: AppContext) -> impl View {
                                 .color(Color::WHITE)
                                 .background(Color::YELLOW_GREEN)
                         })
-                        .keyboard_navigatable(cx)
-                        .focus_visible_style(cx, || {
-                            Style::BASE.border_color(Color::BLUE).border(2.)
-                        }),
+                        .keyboard_navigatable()
+                        .focus_visible_style(|| Style::BASE.border_color(Color::BLUE).border(2.)),
                 )
             }),
         )

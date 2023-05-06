@@ -44,8 +44,8 @@ fn app_view(cx: AppContext) -> impl View {
                                 });
                                 true
                             })
-                            .keyboard_navigatable(cx)
-                            .focus_visible_style(cx, || {
+                            .keyboard_navigatable()
+                            .focus_visible_style(|| {
                                 Style::BASE.border(2.).border_color(Color::BLUE)
                             })
                             .style(move || {
