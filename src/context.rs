@@ -224,6 +224,19 @@ impl AppState {
             .unwrap_or(false)
     }
 
+    /// Is this view, or any parent view, marked as hidden
+    pub fn is_hidden_recursive(&self, id: Id) -> bool {
+        let mut ancestor = Some(id);
+        while let Some(current_ancestor) = ancestor {
+            if self.is_hidden(current_ancestor) {
+                return true;
+            }
+            ancestor = current_ancestor.parent();
+        }
+
+        false
+    }
+
     pub fn is_hovered(&self, id: &Id) -> bool {
         self.hovered.contains(id)
     }
