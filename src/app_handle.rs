@@ -1,10 +1,8 @@
 use std::{any::Any, collections::HashMap};
 
 use floem_renderer::Renderer;
-use glazier::{
-    kurbo::{Affine, Point, Rect},
-    FileDialogOptions, FileDialogToken, FileInfo, WinHandler,
-};
+use glazier::kurbo::{Affine, Point, Rect};
+use glazier::{FileDialogOptions, FileDialogToken, FileInfo, WinHandler};
 use leptos_reactive::{Scope, SignalSet};
 
 use crate::{
@@ -86,6 +84,13 @@ impl AppContext {
         });
     }
 
+    pub fn keyboard_navigatable(id: Id) {
+        UPDATE_MESSAGES.with(|msgs| {
+            msgs.borrow_mut()
+                .push(UpdateMessage::KeyboardNavigatable { id })
+        })
+    }
+
     pub fn update_responsive_style(id: Id, style: Style, size: ScreenSize) {
         UPDATE_MESSAGES.with(|msgs| {
             msgs.borrow_mut()
@@ -142,6 +147,7 @@ impl AppContext {
 pub enum StyleSelector {
     Hover,
     Focus,
+    FocusVisible,
     Disabled,
     Active,
 }
@@ -167,6 +173,9 @@ pub enum UpdateMessage {
         id: Id,
         selector: StyleSelector,
         style: Style,
+    },
+    KeyboardNavigatable {
+        id: Id,
     },
     CursorStyle {
         cursor: CursorStyle,
@@ -348,10 +357,14 @@ impl<V: View> AppHandle<V> {
                         match selector {
                             StyleSelector::Hover => state.hover_style = style,
                             StyleSelector::Focus => state.focus_style = style,
+                            StyleSelector::FocusVisible => state.focus_visible_style = style,
                             StyleSelector::Disabled => state.disabled_style = style,
                             StyleSelector::Active => state.active_style = style,
                         }
                         cx.request_layout(id);
+                    }
+                    UpdateMessage::KeyboardNavigatable { id } => {
+                        cx.app_state.keyboard_navigatable.insert(id);
                     }
                     UpdateMessage::CursorStyle { cursor } => {
                         cx.app_state.cursor = cursor;
@@ -451,6 +464,31 @@ impl<V: View> AppHandle<V> {
                         (*action)(&event);
                     }
                 }
+                if let Event::KeyDown(glazier::KeyEvent { key, mods, .. }) = &event {
+                    if key == &glazier::KbKey::Tab {
+                        let backwards = mods.contains(glazier::Modifiers::SHIFT);
+                        self.view.tab_navigation(cx.app_state, backwards);
+                    } else if let glazier::KbKey::Character(character) = key {
+                        // 'I' displays some debug information
+                        if character.eq_ignore_ascii_case("i") {
+                            self.view.debug_tree();
+                        }
+                    }
+                }
+
+                let keyboard_trigger_end = cx.app_state.keyboard_navigation
+                    && event.is_keyboard_trigger()
+                    && matches!(event, Event::KeyUp(_));
+                if keyboard_trigger_end {
+                    if let Some(id) = cx.app_state.active {
+                        // To remove the styles applied by the Active selector
+                        if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
+                            cx.app_state.request_layout(id);
+                        }
+
+                        cx.app_state.active = None;
+                    }
+                }
             }
         } else if cx.app_state.active.is_some() && event.is_pointer() {
             let id = cx.app_state.active.unwrap();
@@ -532,8 +570,14 @@ impl<V: View> WinHandler for AppHandle<V> {
     }
 
     fn key_down(&mut self, event: glazier::KeyEvent) -> bool {
+        assert_eq!(event.state, glazier::KeyState::Down);
         self.event(Event::KeyDown(event));
         true
+    }
+
+    fn key_up(&mut self, event: glazier::KeyEvent) {
+        assert_eq!(event.state, glazier::KeyState::Up);
+        self.event(Event::KeyUp(event));
     }
 
     fn pointer_down(&mut self, event: &glazier::PointerEvent) {

@@ -108,6 +108,18 @@ where
         }
     }
 
+    fn children(&mut self) -> Vec<&mut dyn View> {
+        self.children
+            .iter_mut()
+            .filter_map(|child| child.as_mut())
+            .map(|child| &mut child.0 as &mut dyn View)
+            .collect()
+    }
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "List".into()
+    }
+
     fn update(
         &mut self,
         cx: &mut UpdateCx,

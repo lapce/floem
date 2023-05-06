@@ -407,6 +407,14 @@ impl<V: View> View for Scroll<V> {
         }
     }
 
+    fn children(&mut self) -> Vec<&mut dyn View> {
+        vec![&mut self.child]
+    }
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "Scroll".into()
+    }
+
     fn update(
         &mut self,
         cx: &mut crate::context::UpdateCx,

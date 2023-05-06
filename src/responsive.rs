@@ -98,7 +98,7 @@ pub fn range<R: RangeBounds<ScreenSize>>(range: R) -> ScreenSize {
         std::ops::Bound::Unbounded => ScreenSize::XXL,
     };
     // We get the first enabled flag from start and the last from the end.
-    // This ensures that if a SizeFlag with multiple flags set(e.g. XS|SM|MD) is passed to the range, 
+    // This ensures that if a SizeFlag with multiple flags set(e.g. XS|SM|MD) is passed to the range,
     // it will still work correctly.
     let lowest_start: SizeFlags = start.flags.iter().next().unwrap();
     let highest_end: SizeFlags = end.flags.iter().last().unwrap();

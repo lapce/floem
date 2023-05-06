@@ -2,9 +2,7 @@ use floem::{
     reactive::{create_signal, SignalGet},
     style::Style,
     view::View,
-    views::{
-        label, scroll, virtual_list, Decorators, VirtualListDirection, VirtualListItemSize,
-    },
+    views::{label, scroll, virtual_list, Decorators, VirtualListDirection, VirtualListItemSize},
     AppContext,
 };
 

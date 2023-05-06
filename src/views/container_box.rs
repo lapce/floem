@@ -33,6 +33,14 @@ impl View for ContainerBox {
         }
     }
 
+    fn children(&mut self) -> Vec<&mut dyn View> {
+        vec![&mut *self.child]
+    }
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "ContainerBox".into()
+    }
+
     fn update(
         &mut self,
         _cx: &mut crate::context::UpdateCx,

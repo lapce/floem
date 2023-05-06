@@ -43,6 +43,22 @@ impl View for RichText {
         None
     }
 
+    fn children(&mut self) -> Vec<&mut dyn View> {
+        Vec::new()
+    }
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "RichText: {:?}",
+            self.text_layout
+                .lines
+                .iter()
+                .map(|text| text.text())
+                .collect::<String>()
+        )
+        .into()
+    }
+
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags {
         if let Ok(state) = state.downcast() {
             self.text_layout = *state;
