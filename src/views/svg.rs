@@ -15,7 +15,8 @@ pub struct Svg {
     svg_hash: Option<Vec<u8>>,
 }
 
-pub fn svg(cx: AppContext, svg_str: impl Fn() -> String + 'static) -> Svg {
+pub fn svg(svg_str: impl Fn() -> String + 'static) -> Svg {
+    let cx = AppContext::get_current();
     let id = cx.new_id();
     create_effect(cx.scope, move |_| {
         let new_svg_str = svg_str();

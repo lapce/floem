@@ -23,10 +23,36 @@ use crate::{
     id::Id,
     responsive::{GridBreakpoints, ScreenSize, ScreenSizeBp},
     style::{ComputedStyle, CursorStyle, Style},
+    AppContext,
 };
+
+thread_local! {
+    pub(crate) static APP_CONTEXT_STORE: std::cell::RefCell<Option<AppContextStore>> = Default::default();
+}
 
 pub type EventCallback = dyn Fn(&Event) -> bool;
 pub type ResizeCallback = dyn Fn(Point, Rect);
+
+pub struct AppContextStore {
+    pub cx: AppContext,
+    pub saved_cx: Vec<AppContext>,
+}
+
+impl AppContextStore {
+    pub fn save(&mut self) {
+        self.saved_cx.push(self.cx);
+    }
+
+    pub fn set_current(&mut self, cx: AppContext) {
+        self.cx = cx;
+    }
+
+    pub fn restore(&mut self) {
+        if let Some(cx) = self.saved_cx.pop() {
+            self.cx = cx;
+        }
+    }
+}
 
 pub(crate) struct ResizeListener {
     pub(crate) window_origin: Point,

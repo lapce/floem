@@ -10,13 +10,13 @@ use floem::{
 use crate::form::{form, form_item};
 
 pub fn label_view(cx: AppContext) -> impl View {
-    form(cx, |cx| {
+    form(|| {
         (
-            form_item(cx, "Simple Label:".to_string(), 120.0, |cx| {
-                label(cx, move || "This is a simple label".to_owned())
+            form_item("Simple Label:".to_string(), 120.0, || {
+                label(move || "This is a simple label".to_owned())
             }),
-            form_item(cx, "Styled Label:".to_string(), 120.0, |cx| {
-                label(cx, move || "This is a styled label".to_owned()).style(cx, || {
+            form_item("Styled Label:".to_string(), 120.0, || {
+                label(move || "This is a styled label".to_owned()).style(|| {
                     Style::BASE
                         .background(Color::YELLOW)
                         .padding_px(10.0)

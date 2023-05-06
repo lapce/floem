@@ -10,7 +10,8 @@ use crate::{
 };
 
 pub trait Decorators: View + Sized {
-    fn style(self, cx: AppContext, style: impl Fn() -> Style + 'static) -> Self {
+    fn style(self, style: impl Fn() -> Style + 'static) -> Self {
+        let cx = AppContext::get_current();
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
@@ -20,7 +21,8 @@ pub trait Decorators: View + Sized {
     }
 
     /// The visual style to apply when the mouse hovers over the element
-    fn hover_style(self, cx: AppContext, style: impl Fn() -> Style + 'static) -> Self {
+    fn hover_style(self, style: impl Fn() -> Style + 'static) -> Self {
+        let cx = AppContext::get_current();
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
@@ -29,7 +31,8 @@ pub trait Decorators: View + Sized {
         self
     }
 
-    fn focus_style(self, cx: AppContext, style: impl Fn() -> Style + 'static) -> Self {
+    fn focus_style(self, style: impl Fn() -> Style + 'static) -> Self {
+        let cx = AppContext::get_current();
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
@@ -38,7 +41,8 @@ pub trait Decorators: View + Sized {
         self
     }
 
-    fn active_style(self, cx: AppContext, style: impl Fn() -> Style + 'static) -> Self {
+    fn active_style(self, style: impl Fn() -> Style + 'static) -> Self {
+        let cx = AppContext::get_current();
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
@@ -47,7 +51,8 @@ pub trait Decorators: View + Sized {
         self
     }
 
-    fn disabled_style(self, cx: AppContext, style: impl Fn() -> Style + 'static) -> Self {
+    fn disabled_style(self, style: impl Fn() -> Style + 'static) -> Self {
+        let cx = AppContext::get_current();
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
@@ -56,12 +61,8 @@ pub trait Decorators: View + Sized {
         self
     }
 
-    fn responsive_style(
-        self,
-        cx: AppContext,
-        size: ScreenSize,
-        style: impl Fn() -> Style + 'static,
-    ) -> Self {
+    fn responsive_style(self, size: ScreenSize, style: impl Fn() -> Style + 'static) -> Self {
+        let cx = AppContext::get_current();
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
@@ -70,7 +71,8 @@ pub trait Decorators: View + Sized {
         self
     }
 
-    fn disabled(self, cx: AppContext, disabled_fn: impl Fn() -> bool + 'static) -> Self {
+    fn disabled(self, disabled_fn: impl Fn() -> bool + 'static) -> Self {
+        let cx = AppContext::get_current();
         let id = self.id();
 
         create_effect(cx.scope, move |_| {

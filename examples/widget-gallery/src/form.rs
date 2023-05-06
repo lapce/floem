@@ -7,11 +7,8 @@ use floem::{
     AppContext,
 };
 
-pub fn form<VT: ViewTuple + 'static>(
-    cx: AppContext,
-    children: impl FnOnce(AppContext) -> VT,
-) -> impl View {
-    stack(cx, children).style(cx, || {
+pub fn form<VT: ViewTuple + 'static>(children: impl FnOnce() -> VT) -> impl View {
+    stack(children).style(|| {
         Style::BASE
             .flex_col()
             .items_start()
@@ -22,32 +19,29 @@ pub fn form<VT: ViewTuple + 'static>(
 }
 
 pub fn form_item<V: View + 'static>(
-    cx: AppContext,
     item_label: String,
     label_width: f32,
-    view_fn: impl Fn(AppContext) -> V,
+    view_fn: impl Fn() -> V,
 ) -> impl View {
-    container(cx, |cx| {
-        stack(cx, |cx| {
+    container(|| {
+        stack(|| {
             (
-                container(cx, |cx| {
-                    label(cx, move || item_label.to_string())
-                        .style(cx, || Style::BASE.font_weight(Weight::BOLD))
+                container(|| {
+                    label(move || item_label.to_string())
+                        .style(|| Style::BASE.font_weight(Weight::BOLD))
                 })
-                .style(cx, move || {
+                .style(move || {
                     Style::BASE
                         .width_px(label_width)
                         .justify_end()
                         .margin_right_px(10.0)
                 }),
-                view_fn(cx),
+                view_fn(),
             )
         })
-        .style(cx, || {
-            Style::BASE.flex_row().items_start().size_pct(100.0, 100.0)
-        })
+        .style(|| Style::BASE.flex_row().items_start().size_pct(100.0, 100.0))
     })
-    .style(cx, || {
+    .style(|| {
         Style::BASE
             .flex_row()
             .items_center()

@@ -12,14 +12,14 @@ use crate::form::{form, form_item};
 pub fn text_input_view(cx: AppContext) -> impl View {
     let text = create_rw_signal(cx.scope, "".to_string());
 
-    form(cx, move |cx| {
+    form(move || {
         (
-            form_item(cx, "Simple Input:".to_string(), 120.0, move |cx| {
-                text_input(cx, text).style(cx, || Style::BASE.border(1.0).height_px(32.0))
+            form_item("Simple Input:".to_string(), 120.0, move || {
+                text_input(text).style(|| Style::BASE.border(1.0).height_px(32.0))
             }),
-            form_item(cx, "Styled Input:".to_string(), 120.0, move |cx| {
-                text_input(cx, text)
-                    .style(cx, || {
+            form_item("Styled Input:".to_string(), 120.0, move || {
+                text_input(text)
+                    .style(|| {
                         Style::BASE
                             .border(1.5)
                             .background(Color::rgb8(224, 224, 224))
@@ -28,8 +28,8 @@ pub fn text_input_view(cx: AppContext) -> impl View {
                             .padding_px(10.0)
                             .cursor(CursorStyle::Text)
                     })
-                    .hover_style(cx, || Style::BASE.border_color(Color::rgb8(66, 66, 66)))
-                    .focus_style(cx, || Style::BASE.border_color(Color::LIGHT_SKY_BLUE))
+                    .hover_style(|| Style::BASE.border_color(Color::rgb8(66, 66, 66)))
+                    .focus_style(|| Style::BASE.border_color(Color::LIGHT_SKY_BLUE))
             }),
         )
     })

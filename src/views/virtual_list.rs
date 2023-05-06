@@ -45,7 +45,7 @@ pub trait VirtualListVector<T> {
 
 pub struct VirtualList<V: View, VF, T>
 where
-    VF: Fn(AppContext, T) -> V + 'static,
+    VF: Fn(T) -> V + 'static,
     T: 'static,
 {
     id: Id,
@@ -69,7 +69,6 @@ struct VirtualListState<T> {
 }
 
 pub fn virtual_list<T, IF, I, KF, K, VF, V>(
-    cx: AppContext,
     direction: VirtualListDirection,
     item_size: VirtualListItemSize<T>,
     each_fn: IF,
@@ -82,9 +81,10 @@ where
     I: VirtualListVector<T>,
     KF: Fn(&T) -> K + 'static,
     K: Eq + Hash + 'static,
-    VF: Fn(AppContext, T) -> V + 'static,
+    VF: Fn(T) -> V + 'static,
     V: View + 'static,
 {
+    let cx = AppContext::get_current();
     let id = cx.new_id();
 
     let mut child_cx = cx;
@@ -206,7 +206,7 @@ where
 
 impl<V: View + 'static, VF, T> View for VirtualList<V, VF, T>
 where
-    VF: Fn(AppContext, T) -> V + 'static,
+    VF: Fn(T) -> V + 'static,
 {
     fn id(&self) -> Id {
         self.id
@@ -230,15 +230,18 @@ where
         state: Box<dyn std::any::Any>,
     ) -> crate::view::ChangeFlags {
         if let Ok(state) = state.downcast::<VirtualListState<T>>() {
+            if self.before_size == state.before_size
+                && self.after_size == state.after_size
+                && state.diff.is_empty()
+            {
+                return ChangeFlags::empty();
+            }
             self.before_size = state.before_size;
             self.after_size = state.after_size;
-            apply_diff(
-                self.cx,
-                cx.app_state,
-                state.diff,
-                &mut self.children,
-                &self.view_fn,
-            );
+            AppContext::save();
+            AppContext::set_current(self.cx);
+            apply_diff(cx.app_state, state.diff, &mut self.children, &self.view_fn);
+            AppContext::restore();
             cx.request_layout(self.id());
             ChangeFlags::LAYOUT
         } else {

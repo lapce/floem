@@ -58,12 +58,16 @@ pub struct Scroll<V: View> {
     scroll_bar_color: Color,
 }
 
-pub fn scroll<V: View>(cx: AppContext, child: impl Fn(AppContext) -> V) -> Scroll<V> {
+pub fn scroll<V: View>(child: impl Fn() -> V) -> Scroll<V> {
+    let cx = AppContext::get_current();
     let id = cx.new_id();
 
     let mut child_cx = cx;
     child_cx.id = id;
-    let child = child(child_cx);
+    AppContext::save();
+    AppContext::set_current(child_cx);
+    let child = child();
+    AppContext::restore();
 
     Scroll {
         id,

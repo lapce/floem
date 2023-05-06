@@ -9,25 +9,23 @@ use floem::{
 use crate::form::{form, form_item};
 
 pub fn button_view(cx: AppContext) -> impl View {
-    form(cx, |cx| {
+    form(|| {
         (
-            form_item(cx, "Basic Button:".to_string(), 120.0, |cx| {
-                label(cx, || "Click me".to_string())
+            form_item("Basic Button:".to_string(), 120.0, || {
+                label(|| "Click me".to_string())
                     .on_click(|_| {
                         println!("Button clicked");
                         true
                     })
-                    .style(cx, || {
-                        Style::BASE.border(1.0).border_radius(10.0).padding_px(10.0)
-                    })
+                    .style(|| Style::BASE.border(1.0).border_radius(10.0).padding_px(10.0))
             }),
-            form_item(cx, "Styled Button:".to_string(), 120.0, |cx| {
-                label(cx, || "Click me".to_string())
+            form_item("Styled Button:".to_string(), 120.0, || {
+                label(|| "Click me".to_string())
                     .on_click(|_| {
                         println!("Button clicked");
                         true
                     })
-                    .style(cx, || {
+                    .style(|| {
                         Style::BASE
                             .border(1.0)
                             .border_radius(10.0)
@@ -37,26 +35,24 @@ pub fn button_view(cx: AppContext) -> impl View {
                             .color(Color::DARK_GREEN)
                             .cursor(CursorStyle::Pointer)
                     })
-                    .hover_style(cx, || Style::BASE.background(Color::rgb8(244, 67, 54)))
-                    .active_style(cx, || {
-                        Style::BASE.color(Color::WHITE).background(Color::RED)
-                    })
+                    .hover_style(|| Style::BASE.background(Color::rgb8(244, 67, 54)))
+                    .active_style(|| Style::BASE.color(Color::WHITE).background(Color::RED))
             }),
-            form_item(cx, "Distabled Button:".to_string(), 120.0, |cx| {
-                label(cx, || "Click me".to_string())
-                    .disabled(cx, || true)
+            form_item("Distabled Button:".to_string(), 120.0, || {
+                label(|| "Click me".to_string())
+                    .disabled(|| true)
                     .on_click(|_| {
                         println!("Button clicked");
                         true
                     })
-                    .style(cx, || {
+                    .style(|| {
                         Style::BASE
                             .border(1.0)
                             .border_radius(10.0)
                             .padding_px(10.0)
                             .color(Color::GRAY)
                     })
-                    .hover_style(cx, || Style::BASE.background(Color::rgb8(224, 224, 224)))
+                    .hover_style(|| Style::BASE.background(Color::rgb8(224, 224, 224)))
             }),
         )
     })

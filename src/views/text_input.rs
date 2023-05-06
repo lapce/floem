@@ -85,7 +85,8 @@ pub enum Direction {
     Right,
 }
 
-pub fn text_input(cx: AppContext, buffer: RwSignal<String>) -> TextInput {
+pub fn text_input(buffer: RwSignal<String>) -> TextInput {
+    let cx = AppContext::get_current();
     let id = cx.new_id();
 
     create_effect(cx.scope, move |_| {

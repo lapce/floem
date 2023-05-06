@@ -21,7 +21,7 @@ enum TabState<V> {
 pub struct Tab<V, VF, T>
 where
     V: View,
-    VF: Fn(AppContext, T) -> V + 'static,
+    VF: Fn(T) -> V + 'static,
     T: 'static,
 {
     id: Id,
@@ -33,7 +33,6 @@ where
 }
 
 pub fn tab<IF, I, T, KF, K, VF, V>(
-    cx: AppContext,
     active_fn: impl Fn() -> usize + 'static,
     each_fn: IF,
     key_fn: KF,
@@ -44,10 +43,11 @@ where
     I: IntoIterator<Item = T>,
     KF: Fn(&T) -> K + 'static,
     K: Eq + Hash + 'static,
-    VF: Fn(AppContext, T) -> V + 'static,
+    VF: Fn(T) -> V + 'static,
     V: View + 'static,
     T: 'static,
 {
+    let cx = AppContext::get_current();
     let id = cx.new_id();
 
     let mut child_cx = cx;
@@ -98,7 +98,7 @@ where
 
 impl<V: View + 'static, VF, T> View for Tab<V, VF, T>
 where
-    VF: Fn(AppContext, T) -> V + 'static,
+    VF: Fn(T) -> V + 'static,
 {
     fn id(&self) -> Id {
         self.id
@@ -124,13 +124,10 @@ where
         if let Ok(state) = state.downcast::<TabState<T>>() {
             match *state {
                 TabState::Diff(diff) => {
-                    apply_diff(
-                        self.cx,
-                        cx.app_state,
-                        *diff,
-                        &mut self.children,
-                        &self.view_fn,
-                    );
+                    AppContext::save();
+                    AppContext::set_current(self.cx);
+                    apply_diff(cx.app_state, *diff, &mut self.children, &self.view_fn);
+                    AppContext::restore();
                 }
                 TabState::Active(active) => {
                     self.active = active;

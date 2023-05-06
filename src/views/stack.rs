@@ -11,16 +11,18 @@ pub struct Stack<VT> {
     children: VT,
 }
 
-pub fn stack<VT: ViewTuple + 'static>(
-    cx: AppContext,
-    children: impl FnOnce(AppContext) -> VT,
-) -> Stack<VT> {
+pub fn stack<VT: ViewTuple + 'static>(children: impl FnOnce() -> VT) -> Stack<VT> {
+    let cx = AppContext::get_current();
+
     let id = cx.id.new();
 
     let mut children_cx = cx;
     children_cx.id = id;
-    let children = children(children_cx);
+    AppContext::save();
+    AppContext::set_current(children_cx);
+    let children = children();
 
+    AppContext::restore();
     Stack { id, children }
 }
 
