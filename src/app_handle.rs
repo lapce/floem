@@ -502,32 +502,35 @@ impl<V: View> AppHandle<V> {
             if !processed {
                 if let Some(listener) = event.listener() {
                     if let Some(action) = cx.get_event_listener(self.view.id(), &listener) {
-                        (*action)(&event);
-                    }
-                }
-                if let Event::KeyDown(glazier::KeyEvent { key, mods, .. }) = &event {
-                    if key == &glazier::KbKey::Tab {
-                        let backwards = mods.contains(glazier::Modifiers::SHIFT);
-                        self.view.tab_navigation(cx.app_state, backwards);
-                    } else if let glazier::KbKey::Character(character) = key {
-                        // 'I' displays some debug information
-                        if character.eq_ignore_ascii_case("i") {
-                            self.view.debug_tree();
-                        }
+                        processed = (*action)(&event);
                     }
                 }
 
-                let keyboard_trigger_end = cx.app_state.keyboard_navigation
-                    && event.is_keyboard_trigger()
-                    && matches!(event, Event::KeyUp(_));
-                if keyboard_trigger_end {
-                    if let Some(id) = cx.app_state.active {
-                        // To remove the styles applied by the Active selector
-                        if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
-                            cx.app_state.request_layout(id);
+                if !processed {
+                    if let Event::KeyDown(glazier::KeyEvent { key, mods, .. }) = &event {
+                        if key == &glazier::KbKey::Tab {
+                            let backwards = mods.contains(glazier::Modifiers::SHIFT);
+                            self.view.tab_navigation(cx.app_state, backwards);
+                        } else if let glazier::KbKey::Character(character) = key {
+                            // 'I' displays some debug information
+                            if character.eq_ignore_ascii_case("i") {
+                                self.view.debug_tree();
+                            }
                         }
+                    }
 
-                        cx.app_state.active = None;
+                    let keyboard_trigger_end = cx.app_state.keyboard_navigation
+                        && event.is_keyboard_trigger()
+                        && matches!(event, Event::KeyUp(_));
+                    if keyboard_trigger_end {
+                        if let Some(id) = cx.app_state.active {
+                            // To remove the styles applied by the Active selector
+                            if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
+                                cx.app_state.request_layout(id);
+                            }
+
+                            cx.app_state.active = None;
+                        }
                     }
                 }
             }
