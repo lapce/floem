@@ -223,9 +223,15 @@ pub trait View {
             }
             Event::KeyDown(_) => {
                 if event.is_keyboard_trigger() {
-                    if let Some(action) = cx.get_event_listener(id, &EventListner::Click) {
+                    let mut ancestor = Some(id);
+                    let mut action = None;
+                    // Bubble the trigger to parent views
+                    while let Some(current_ancestor) = ancestor.filter(|_| action.is_none()) {
+                        action = cx.get_event_listener(current_ancestor, &EventListner::Click);
+                        ancestor = current_ancestor.parent();
+                    }
+                    if let Some(action) = action {
                         (*action)(&event);
-                        cx.app_state.keyboard_navigation = true;
                         cx.update_active(id);
                         return true;
                     }

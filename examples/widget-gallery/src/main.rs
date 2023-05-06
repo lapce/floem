@@ -1,4 +1,5 @@
 pub mod buttons;
+pub mod checkbox;
 pub mod form;
 pub mod inputs;
 pub mod labels;
@@ -17,7 +18,7 @@ use floem::{
 };
 
 fn app_view(cx: AppContext) -> impl View {
-    let tabs: im::Vector<&str> = vec!["Label", "Button", "Input", "List"]
+    let tabs: im::Vector<&str> = vec!["Label", "Button", "Checkbox", "Input", "List"]
         .into_iter()
         .collect();
     let (tabs, _set_tabs) = create_signal(cx.scope, tabs);
@@ -89,12 +90,15 @@ fn app_view(cx: AppContext) -> impl View {
                     move || active_tab.get(),
                     move || tabs.get(),
                     |it| *it,
-                    move |it| match it {
-                        "Label" => container_box(|| Box::new(labels::label_view(cx))),
-                        "Button" => container_box(|| Box::new(buttons::button_view(cx))),
-                        "Input" => container_box(|| Box::new(inputs::text_input_view(cx))),
-                        "List" => container_box(|| Box::new(lists::virt_list_view(cx))),
-                        _ => container_box(|| Box::new(label(|| "Not implemented".to_owned()))),
+                    |cx, it| match it {
+                        "Label" => container_box(cx, |cx| Box::new(labels::label_view(cx))),
+                        "Button" => container_box(cx, |cx| Box::new(buttons::button_view(cx))),
+                        "Checkbox" => container_box(cx, |cx| Box::new(checkbox::checkbox_view(cx))),
+                        "Input" => container_box(cx, |cx| Box::new(inputs::text_input_view(cx))),
+                        "List" => container_box(cx, |cx| Box::new(lists::virt_list_view(cx))),
+                        _ => container_box(cx, |cx| {
+                            Box::new(label(cx, || "Not implemented".to_owned()))
+                        }),
                     },
                 )
                 .style(|| Style::BASE.size_pct(100.0, 100.0))
