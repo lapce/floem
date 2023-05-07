@@ -1,4 +1,4 @@
-use crate::context::LayoutCx;
+use crate::{context::LayoutCx, style::CursorStyle};
 use leptos_reactive::{
     create_effect, RwSignal, SignalGet, SignalGetUntracked, SignalUpdate, SignalWith,
 };
@@ -11,10 +11,11 @@ use floem_renderer::{
     cosmic_text::{Cursor, Style as FontStyle, Weight},
     Renderer,
 };
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{peniko::Color, style::Style, view::View, AppContext};
 
-use std::any::Any;
+use std::{any::Any, ops::Range};
 
 use crate::{
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
@@ -70,6 +71,7 @@ pub struct TextInput {
     font_style: Option<FontStyle>,
     input_kind: InputKind,
     cursor_width: f64, // TODO: make this configurable
+    is_focused: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -115,6 +117,7 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         cursor_width: 1.0,
         width: 0.0,
         height: 0.0,
+        is_focused: false,
     }
 }
 
@@ -128,6 +131,9 @@ const DEFAULT_FONT_SIZE: f32 = 14.0;
 
 impl TextInput {
     fn move_cursor(&mut self, move_kind: Movement, direction: Direction) -> bool {
+        if matches!(self.input_kind, InputKind::MultiLine { line_index: _ }) {
+            todo!();
+        }
         match (move_kind, direction) {
             (Movement::Glyph, Direction::Left) => {
                 if self.cursor_glyph_idx >= 1 {
@@ -156,6 +162,30 @@ impl TextInput {
                     return true;
                 }
                 false
+            }
+            (Movement::Word, Direction::Right) => self.buffer.with(|buff| {
+                for (idx, word) in buff.unicode_word_indices() {
+                    let word_end_idx = idx + word.len();
+                    if word_end_idx > self.cursor_glyph_idx {
+                        self.cursor_glyph_idx = word_end_idx;
+                        return true;
+                    }
+                }
+                false
+            }),
+            (Movement::Word, Direction::Left) if self.cursor_glyph_idx > 0 => {
+                self.buffer.with(|buff| {
+                    let mut prev_word_idx = 0;
+                    for (idx, _) in buff.unicode_word_indices() {
+                        if idx < self.cursor_glyph_idx {
+                            prev_word_idx = idx;
+                        } else {
+                            break;
+                        }
+                    }
+                    self.cursor_glyph_idx = prev_word_idx;
+                    true
+                })
             }
             (movement, dir) => {
                 dbg!(movement, dir);
@@ -296,7 +326,7 @@ impl TextInput {
         self.cursor_glyph_idx = new_cursor_x;
     }
 
-    fn handle_key_down(&mut self, _cx: &EventCx, event: &glazier::KeyEvent) -> bool {
+    fn handle_key_down(&mut self, cx: &mut EventCx<'_>, event: &glazier::KeyEvent) -> bool {
         match event.key {
             Key::Character(ref ch) => {
                 self.buffer
@@ -304,26 +334,86 @@ impl TextInput {
                 self.move_cursor(Movement::Glyph, Direction::Right)
             }
             Key::Backspace => {
-                if self.buffer.get_untracked().is_empty() {
+                let prev_cursor_idx = self.cursor_glyph_idx;
+
+                if event.mods.ctrl() {
+                    self.move_cursor(Movement::Word, Direction::Left);
+                } else {
+                    self.move_cursor(Movement::Glyph, Direction::Left);
+                }
+
+                if self.cursor_glyph_idx == prev_cursor_idx {
                     return false;
                 }
+
                 self.buffer.update(|buf| {
-                    if self.cursor_glyph_idx > 0 {
-                        buf.remove(self.cursor_glyph_idx - 1);
-                    }
+                    replace_range(buf, self.cursor_glyph_idx..prev_cursor_idx, None);
                 });
-                self.move_cursor(Movement::Glyph, Direction::Left)
+                true
+            }
+            Key::Delete => {
+                let prev_cursor_idx = self.cursor_glyph_idx;
+
+                if event.mods.ctrl() {
+                    self.move_cursor(Movement::Word, Direction::Right);
+                } else {
+                    self.move_cursor(Movement::Glyph, Direction::Right);
+                }
+
+                if self.cursor_glyph_idx == prev_cursor_idx {
+                    return false;
+                }
+
+                self.buffer.update(|buf| {
+                    replace_range(buf, prev_cursor_idx..self.cursor_glyph_idx, None);
+                });
+
+                // Move cursor to the range to delete, delete it and move cursor back
+                // TODO: extract moving to next word logic as a method and use it here instead
+                self.cursor_glyph_idx = prev_cursor_idx;
+                true
+            }
+            Key::Escape => {
+                cx.app_state.clear_focus();
+                true
             }
             Key::End => self.move_cursor(Movement::Line, Direction::Right),
             Key::Home => self.move_cursor(Movement::Line, Direction::Left),
-            Key::ArrowLeft => self.move_cursor(Movement::Glyph, Direction::Left),
-            Key::ArrowRight => self.move_cursor(Movement::Glyph, Direction::Right),
+            Key::ArrowLeft => {
+                if event.mods.ctrl() {
+                    self.move_cursor(Movement::Word, Direction::Left)
+                } else {
+                    self.move_cursor(Movement::Glyph, Direction::Left)
+                }
+            }
+            Key::ArrowRight => {
+                if event.mods.ctrl() {
+                    self.move_cursor(Movement::Word, Direction::Right)
+                } else {
+                    self.move_cursor(Movement::Glyph, Direction::Right)
+                }
+            }
             _ => {
                 dbg!("Unhandled key");
                 false
             }
         }
     }
+}
+
+fn replace_range(buff: &mut String, del_range: Range<usize>, replacement: Option<&str>) {
+    assert!(del_range.start < del_range.end);
+    // Get text after range to delete
+    let after_del_range = buff.split_off(del_range.end);
+
+    // Truncate up to range's start to delete it
+    buff.truncate(del_range.start);
+
+    if let Some(repl) = replacement {
+        buff.push_str(repl);
+    }
+
+    buff.push_str(&after_del_range);
 }
 
 impl View for TextInput {
@@ -354,16 +444,44 @@ impl View for TextInput {
     }
 
     fn event(&mut self, cx: &mut EventCx, _id_path: Option<&[Id]>, event: Event) -> bool {
-        let is_focused = cx.app_state.is_focused(&self.id);
-
         let is_handled = match &event {
-            Event::PointerDown(_) if is_focused => {
-                self.set_cursor_glyph_idx(self.buffer.with(|buff| buff.len()));
+            Event::PointerDown(event) => {
+                if !self.is_focused {
+                    // Just gained focus - move cursor to buff end
+                    self.set_cursor_glyph_idx(self.buffer.with(|buff| buff.len()));
+                } else {
+                    // Already focused - move cursor to click pos
+                    let layout = cx.get_layout(self.id()).unwrap();
+                    let style = cx.app_state.get_computed_style(self.id);
+
+                    let padding_left = match style.padding_left {
+                        taffy::style::LengthPercentage::Points(padding) => padding,
+                        taffy::style::LengthPercentage::Percent(pct) => pct * layout.size.width,
+                    };
+                    let padding_top = match style.padding_top {
+                        taffy::style::LengthPercentage::Points(padding) => padding,
+                        taffy::style::LengthPercentage::Percent(pct) => pct * layout.size.height,
+                    };
+                    self.cursor_glyph_idx = self
+                        .text_buf
+                        .as_ref()
+                        .unwrap()
+                        .hit_point(Point::new(
+                            event.pos.x + self.clip_start_x - padding_left as f64,
+                            // TODO: prevent cursor incorrectly going to end of buffer when clicking 
+                            // slightly below the text 
+                            event.pos.y - padding_top as f64,
+                        ))
+                        .index;
+                }
                 true
             }
-            Event::KeyDown(event) if is_focused => self.handle_key_down(cx, event),
-            Event::PointerDown(_) if is_focused => {
-                //TODO: move cursor to click pos
+            Event::KeyDown(event) => self.handle_key_down(cx, event),
+            Event::PointerMove(_) => {
+                if !matches!(cx.app_state.cursor, CursorStyle::Text) {
+                    cx.app_state.cursor = CursorStyle::Text;
+                    return true;
+                }
                 false
             }
             _ => false,
@@ -378,6 +496,7 @@ impl View for TextInput {
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
+            self.is_focused = cx.app_state.is_focused(&self.id);
             if self.text_layout_changed(cx) {
                 self.font_size = cx.current_font_size().unwrap_or(DEFAULT_FONT_SIZE);
                 self.font_family = cx.current_font_family().map(|s| s.to_string());
@@ -475,5 +594,56 @@ impl View for TextInput {
             let cursor_rect = self.get_cursor_rect(&node_layout);
             cx.fill(&cursor_rect, Color::BLACK);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::replace_range;
+
+    #[test]
+    fn replace_range_start() {
+        let mut s = "Sample text".to_owned();
+        replace_range(&mut s, 0..7, Some("Replaced___"));
+        assert_eq!("Replaced___text", s);
+    }
+
+    #[test]
+    fn delete_range_start() {
+        let mut s = "Sample text".to_owned();
+        replace_range(&mut s, 0..7, None);
+        assert_eq!("text", s);
+    }
+
+    #[test]
+    fn replace_range_end() {
+        let mut s = "Sample text".to_owned();
+        let len = s.len();
+        replace_range(&mut s, 6..len, Some("++Replaced"));
+        assert_eq!("Sample++Replaced", s);
+    }
+
+    #[test]
+    fn delete_range_full() {
+        let mut s = "Sample text".to_owned();
+        let len = s.len();
+        replace_range(&mut s, 0..len, None);
+        assert_eq!("", s);
+    }
+
+    #[test]
+    fn replace_range_full() {
+        let mut s = "Sample text".to_owned();
+        let len = s.len();
+        replace_range(&mut s, 0..len, Some("Hello world"));
+        assert_eq!("Hello world", s);
+    }
+
+    #[test]
+    fn delete_range_end() {
+        let mut s = "Sample text".to_owned();
+        let len = s.len();
+        replace_range(&mut s, 6..len, None);
+        assert_eq!("Sample", s);
     }
 }
