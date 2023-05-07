@@ -1,4 +1,4 @@
-use crate::context::LayoutCx;
+use crate::{context::LayoutCx, style::CursorStyle};
 use leptos_reactive::{create_effect, RwSignal, SignalGet, SignalUpdate, SignalWith};
 use taffy::{
     prelude::{Layout, Node},
@@ -325,6 +325,7 @@ impl TextInput {
 
     fn delete_range(buff: &String, del_range: Range<usize>) -> String {
         assert!(del_range.start < del_range.end);
+
         let mut res = String::with_capacity(buff.len() + del_range.end - del_range.start);
         for (idx, ch) in buff.char_indices() {
             if !del_range.contains(&idx) {
@@ -432,16 +433,21 @@ impl View for TextInput {
         let is_handled = match &event {
             Event::PointerDown(event) => {
                 let was_focused = self.is_focused;
-                // Just gained focus, move cursor to the end
                 if !was_focused {
+                    // Just gained focus - move cursor to buff end
                     self.set_cursor_glyph_idx(self.buffer.with(|buff| buff.len()));
-                // Already focused - move cursor to click pos
                 } else {
+                    // Already focused - move cursor to click pos
                     let layout = cx.get_layout(self.id()).unwrap();
                     let style = cx.app_state.get_computed_style(self.id);
+
                     let padding_left = match style.padding_left {
                         taffy::style::LengthPercentage::Points(padding) => padding,
                         taffy::style::LengthPercentage::Percent(pct) => pct * layout.size.width,
+                    };
+                    let padding_top = match style.padding_top {
+                        taffy::style::LengthPercentage::Points(padding) => padding,
+                        taffy::style::LengthPercentage::Percent(pct) => pct * layout.size.height,
                     };
                     self.cursor_glyph_idx = self
                         .text_buf
@@ -449,13 +455,20 @@ impl View for TextInput {
                         .unwrap()
                         .hit_point(Point::new(
                             event.pos.x + self.clip_start_x - padding_left as f64,
-                            event.pos.y,
+                            event.pos.y - padding_top as f64,
                         ))
                         .index;
                 }
                 true
             }
             Event::KeyDown(event) => self.handle_key_down(cx, event),
+            Event::PointerMove(_) => {
+                if !matches!(cx.app_state.cursor, CursorStyle::Text) {
+                    cx.app_state.cursor = CursorStyle::Text;
+                    return true
+                }
+                false
+            }
             _ => false,
         };
 
