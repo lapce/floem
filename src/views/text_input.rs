@@ -1,7 +1,5 @@
 use crate::context::LayoutCx;
-use leptos_reactive::{
-    create_effect, RwSignal, SignalGet, SignalUpdate, SignalWith,
-};
+use leptos_reactive::{create_effect, RwSignal, SignalGet, SignalUpdate, SignalWith};
 use taffy::{
     prelude::{Layout, Node},
     style::Dimension,
@@ -71,7 +69,7 @@ pub struct TextInput {
     font_style: Option<FontStyle>,
     input_kind: InputKind,
     cursor_width: f64, // TODO: make this configurable
-    is_focused: bool
+    is_focused: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -116,7 +114,7 @@ pub fn text_input(cx: AppContext, buffer: RwSignal<String>) -> TextInput {
         cursor_width: 1.0,
         width: 0.0,
         height: 0.0,
-        is_focused: false
+        is_focused: false,
     }
 }
 
@@ -325,7 +323,7 @@ impl TextInput {
         self.cursor_glyph_idx = new_cursor_x;
     }
 
-    fn delete_range(buff: &String, del_range: Range<usize>) -> String{
+    fn delete_range(buff: &String, del_range: Range<usize>) -> String {
         assert!(del_range.start < del_range.end);
         let mut res = String::with_capacity(buff.len() + del_range.end - del_range.start);
         for (idx, ch) in buff.char_indices() {
@@ -336,7 +334,7 @@ impl TextInput {
         res
     }
 
-    fn handle_key_down(&mut self, _cx: &EventCx, event: &glazier::KeyEvent) -> bool {
+    fn handle_key_down(&mut self, cx: &mut EventCx<'_>, event: &glazier::KeyEvent) -> bool {
         match event.key {
             Key::Character(ref ch) => {
                 self.buffer
@@ -378,8 +376,13 @@ impl TextInput {
                     *buf = Self::delete_range(buf, prev_cursor_idx..self.cursor_glyph_idx);
                 });
 
+                // Move cursor to the range to delete, delete it and move cursor back
                 // TODO: handle this better
                 self.cursor_glyph_idx = prev_cursor_idx;
+                true
+            }
+            Key::Escape => {
+                cx.app_state.clear_focus();
                 true
             }
             Key::End => self.move_cursor(Movement::Line, Direction::Right),
@@ -426,18 +429,33 @@ impl View for TextInput {
     }
 
     fn event(&mut self, cx: &mut EventCx, _id_path: Option<&[Id]>, event: Event) -> bool {
-        let is_focused = cx.app_state.is_focused(&self.id);
-
         let is_handled = match &event {
-            Event::PointerDown(_) if is_focused => {
-                self.set_cursor_glyph_idx(self.buffer.with(|buff| buff.len()));
+            Event::PointerDown(event) => {
+                let was_focused = self.is_focused;
+                // Just gained focus, move cursor to the end
+                if !was_focused {
+                    self.set_cursor_glyph_idx(self.buffer.with(|buff| buff.len()));
+                // Already focused - move cursor to click pos
+                } else {
+                    let layout = cx.get_layout(self.id()).unwrap();
+                    let style = cx.app_state.get_computed_style(self.id);
+                    let padding_left = match style.padding_left {
+                        taffy::style::LengthPercentage::Points(padding) => padding,
+                        taffy::style::LengthPercentage::Percent(pct) => pct * layout.size.width,
+                    };
+                    self.cursor_glyph_idx = self
+                        .text_buf
+                        .as_ref()
+                        .unwrap()
+                        .hit_point(Point::new(
+                            event.pos.x + self.clip_start_x - padding_left as f64,
+                            event.pos.y,
+                        ))
+                        .index;
+                }
                 true
             }
-            Event::KeyDown(event) if is_focused => self.handle_key_down(cx, event),
-            Event::PointerDown(_) if is_focused => {
-                //TODO: move cursor to click pos
-                false
-            }
+            Event::KeyDown(event) => self.handle_key_down(cx, event),
             _ => false,
         };
 
@@ -450,6 +468,7 @@ impl View for TextInput {
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
+            self.is_focused = cx.app_state.is_focused(&self.id);
             if self.text_layout_changed(cx) {
                 self.font_size = cx.current_font_size().unwrap_or(DEFAULT_FONT_SIZE);
                 self.font_family = cx.current_font_family().map(|s| s.to_string());
