@@ -85,7 +85,8 @@ pub enum Direction {
     Right,
 }
 
-pub fn text_input(cx: AppContext, buffer: RwSignal<String>) -> TextInput {
+pub fn text_input(buffer: RwSignal<String>) -> TextInput {
+    let cx = AppContext::get_current();
     let id = cx.new_id();
 
     create_effect(cx.scope, move |_| {
@@ -134,14 +135,14 @@ impl TextInput {
         match (move_kind, direction) {
             (Movement::Glyph, Direction::Left) => {
                 if self.cursor_glyph_idx >= 1 {
-                    self.cursor_glyph_idx = self.cursor_glyph_idx - 1;
+                    self.cursor_glyph_idx -= 1;
                     return true;
                 }
                 false
             }
             (Movement::Glyph, Direction::Right) => {
                 if self.cursor_glyph_idx < self.buffer.with(|buff| buff.len()) {
-                    self.cursor_glyph_idx = self.cursor_glyph_idx + 1;
+                    self.cursor_glyph_idx += 1;
                     return true;
                 }
                 false
@@ -242,7 +243,7 @@ impl TextInput {
             .take(clip_end - clip_start)
             .collect();
 
-        self.cursor_x = self.cursor_x - clip_start_x;
+        self.cursor_x -= clip_start_x;
         self.clip_start_idx = clip_start;
         self.clip_start_x = clip_start_x;
         self.clipped_text = Some(new_text);
@@ -291,8 +292,8 @@ impl TextInput {
         self.text_buf = Some(text_layout.clone());
 
         if let Some(cr_text) = self.clipped_text.clone().as_ref() {
-            let mut clp_txt_lay = text_layout.clone();
-            clp_txt_lay.set_text(&cr_text, attrs);
+            let mut clp_txt_lay = text_layout;
+            clp_txt_lay.set_text(cr_text, attrs);
 
             self.clip_txt_buf = Some(clp_txt_lay);
         }
@@ -419,8 +420,16 @@ impl View for TextInput {
         None
     }
 
+    fn children(&mut self) -> Vec<&mut dyn View> {
+        Vec::new()
+    }
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        format!("TextInput: {:?}", self.buffer.get_untracked()).into()
+    }
+
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags {
-        if let Ok(_) = state.downcast::<String>() {
+        if state.downcast::<String>().is_ok() {
             cx.request_layout(self.id());
             ChangeFlags::LAYOUT
         } else {
@@ -538,8 +547,8 @@ impl View for TextInput {
 
         let text_node = self.text_node.unwrap();
         let text_buf = self.text_buf.as_ref().unwrap();
-        let buf_width = text_buf.size().width as f64;
-        let node_layout = cx.app_state.taffy.layout(text_node).unwrap().clone();
+        let buf_width = text_buf.size().width;
+        let node_layout = *cx.app_state.taffy.layout(text_node).unwrap();
         let node_width = node_layout.size.width as f64;
 
         match self.input_kind {

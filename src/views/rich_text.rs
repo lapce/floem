@@ -20,7 +20,8 @@ pub struct RichText {
     text_node: Option<Node>,
 }
 
-pub fn rich_text(cx: AppContext, text_layout: impl Fn() -> TextLayout + 'static) -> RichText {
+pub fn rich_text(text_layout: impl Fn() -> TextLayout + 'static) -> RichText {
+    let cx = AppContext::get_current();
     let id = cx.new_id();
     let text = text_layout();
     create_effect(cx.scope, move |_| {
@@ -41,6 +42,22 @@ impl View for RichText {
 
     fn child(&mut self, _id: Id) -> Option<&mut dyn View> {
         None
+    }
+
+    fn children(&mut self) -> Vec<&mut dyn View> {
+        Vec::new()
+    }
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        format!(
+            "RichText: {:?}",
+            self.text_layout
+                .lines
+                .iter()
+                .map(|text| text.text())
+                .collect::<String>()
+        )
+        .into()
     }
 
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags {

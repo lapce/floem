@@ -11,16 +11,18 @@ pub struct Stack<VT> {
     children: VT,
 }
 
-pub fn stack<VT: ViewTuple + 'static>(
-    cx: AppContext,
-    children: impl FnOnce(AppContext) -> VT,
-) -> Stack<VT> {
+pub fn stack<VT: ViewTuple + 'static>(children: impl FnOnce() -> VT) -> Stack<VT> {
+    let cx = AppContext::get_current();
+
     let id = cx.id.new();
 
     let mut children_cx = cx;
     children_cx.id = id;
-    let children = children(children_cx);
+    AppContext::save();
+    AppContext::set_current(children_cx);
+    let children = children();
 
+    AppContext::restore();
     Stack { id, children }
 }
 
@@ -31,6 +33,14 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
 
     fn child(&mut self, id: Id) -> Option<&mut dyn View> {
         self.children.child(id)
+    }
+
+    fn children(&mut self) -> Vec<&mut dyn View> {
+        self.children.children()
+    }
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "Stack".into()
     }
 
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn std::any::Any>) -> ChangeFlags {

@@ -1,20 +1,19 @@
 use std::{any::Any, collections::HashMap};
 
 use floem_renderer::Renderer;
-use glazier::{
-    kurbo::{Affine, Point, Rect},
-    FileDialogOptions, FileDialogToken, FileInfo, WinHandler,
-};
+use glazier::kurbo::{Affine, Point, Rect};
+use glazier::{FileDialogOptions, FileDialogToken, FileInfo, WinHandler};
 use leptos_reactive::{Scope, SignalSet};
 
 use crate::{
     context::{
-        AppState, EventCallback, EventCx, LayoutCx, PaintCx, PaintState, ResizeCallback,
-        ResizeListener, UpdateCx,
+        AppContextStore, AppState, EventCallback, EventCx, LayoutCx, PaintCx, PaintState,
+        ResizeCallback, ResizeListener, UpdateCx, APP_CONTEXT_STORE,
     },
     event::{Event, EventListner},
     ext_event::{EXT_EVENT_HANDLER, WRITE_SIGNALS},
     id::{Id, IDPATHS},
+    responsive::ScreenSize,
     style::{CursorStyle, Style},
     view::{ChangeFlags, View},
 };
@@ -43,6 +42,45 @@ pub struct AppContext {
 }
 
 impl AppContext {
+    pub fn save() {
+        APP_CONTEXT_STORE.with(|store| {
+            let mut store = store.borrow_mut();
+            if let Some(store) = store.as_mut() {
+                store.save();
+            }
+        })
+    }
+
+    pub fn set_current(cx: AppContext) {
+        APP_CONTEXT_STORE.with(|store| {
+            let mut store = store.borrow_mut();
+            if let Some(store) = store.as_mut() {
+                store.set_current(cx);
+            } else {
+                *store = Some(AppContextStore {
+                    cx,
+                    saved_cx: Vec::new(),
+                });
+            }
+        })
+    }
+
+    pub fn get_current() -> AppContext {
+        APP_CONTEXT_STORE.with(|store| {
+            let store = store.borrow();
+            store.as_ref().unwrap().cx
+        })
+    }
+
+    pub fn restore() {
+        APP_CONTEXT_STORE.with(|store| {
+            let mut store = store.borrow_mut();
+            if let Some(store) = store.as_mut() {
+                store.restore();
+            }
+        })
+    }
+
     pub fn update_focus(&self, id: Id) {
         UPDATE_MESSAGES.with(|msgs| msgs.borrow_mut().push(UpdateMessage::Focus(id)));
     }
@@ -82,6 +120,20 @@ impl AppContext {
                 style,
                 selector,
             })
+        });
+    }
+
+    pub fn keyboard_navigatable(id: Id) {
+        UPDATE_MESSAGES.with(|msgs| {
+            msgs.borrow_mut()
+                .push(UpdateMessage::KeyboardNavigatable { id })
+        })
+    }
+
+    pub fn update_responsive_style(id: Id, style: Style, size: ScreenSize) {
+        UPDATE_MESSAGES.with(|msgs| {
+            msgs.borrow_mut()
+                .push(UpdateMessage::ResponsiveStyle { id, style, size })
         });
     }
 
@@ -134,6 +186,7 @@ impl AppContext {
 pub enum StyleSelector {
     Hover,
     Focus,
+    FocusVisible,
     Disabled,
     Active,
 }
@@ -150,10 +203,18 @@ pub enum UpdateMessage {
         id: Id,
         style: Style,
     },
+    ResponsiveStyle {
+        id: Id,
+        style: Style,
+        size: ScreenSize,
+    },
     StyleSelector {
         id: Id,
         selector: StyleSelector,
         style: Style,
+    },
+    KeyboardNavigatable {
+        id: Id,
     },
     CursorStyle {
         cursor: CursorStyle,
@@ -181,12 +242,14 @@ impl<V: View> Drop for AppHandle<V> {
 
 impl<V: View> AppHandle<V> {
     pub fn new(scope: Scope, app_logic: impl FnOnce(AppContext) -> V) -> Self {
-        let context = AppContext {
+        let cx = AppContext {
             scope,
             id: Id::next(),
         };
 
-        let view = app_logic(context);
+        AppContext::set_current(cx);
+
+        let view = app_logic(cx);
         Self {
             scope,
             view,
@@ -320,6 +383,11 @@ impl<V: View> AppHandle<V> {
                         state.style = style;
                         cx.request_layout(id);
                     }
+                    UpdateMessage::ResponsiveStyle { id, style, size } => {
+                        let state = cx.app_state.view_state(id);
+
+                        state.add_responsive_style(size, style);
+                    }
                     UpdateMessage::StyleSelector {
                         id,
                         style,
@@ -330,10 +398,14 @@ impl<V: View> AppHandle<V> {
                         match selector {
                             StyleSelector::Hover => state.hover_style = style,
                             StyleSelector::Focus => state.focus_style = style,
+                            StyleSelector::FocusVisible => state.focus_visible_style = style,
                             StyleSelector::Disabled => state.disabled_style = style,
                             StyleSelector::Active => state.active_style = style,
                         }
                         cx.request_layout(id);
+                    }
+                    UpdateMessage::KeyboardNavigatable { id } => {
+                        cx.app_state.keyboard_navigatable.insert(id);
                     }
                     UpdateMessage::CursorStyle { cursor } => {
                         cx.app_state.cursor = cursor;
@@ -418,19 +490,48 @@ impl<V: View> AppHandle<V> {
 
         if event.needs_focus() {
             let mut processed = false;
-            if let Some(id) = cx.app_state.focus {
-                IDPATHS.with(|paths| {
-                    if let Some(id_path) = paths.borrow().get(&id) {
-                        processed = self
-                            .view
-                            .event_main(&mut cx, Some(&id_path.0), event.clone());
-                    }
-                });
+            if let Some(listener) = event.listener() {
+                if let Some(action) = cx.get_event_listener(self.view.id(), &listener) {
+                    processed |= (*action)(&event);
+                }
             }
+
             if !processed {
-                if let Some(listener) = event.listener() {
-                    if let Some(action) = cx.get_event_listener(self.view.id(), &listener) {
-                        (*action)(&event);
+                if let Some(id) = cx.app_state.focus {
+                    IDPATHS.with(|paths| {
+                        if let Some(id_path) = paths.borrow().get(&id) {
+                            processed |=
+                                self.view
+                                    .event_main(&mut cx, Some(&id_path.0), event.clone());
+                        }
+                    });
+                }
+
+                if !processed {
+                    if let Event::KeyDown(glazier::KeyEvent { key, mods, .. }) = &event {
+                        if key == &glazier::KbKey::Tab {
+                            let backwards = mods.contains(glazier::Modifiers::SHIFT);
+                            self.view.tab_navigation(cx.app_state, backwards);
+                        } else if let glazier::KbKey::Character(character) = key {
+                            // 'I' displays some debug information
+                            if character.eq_ignore_ascii_case("i") {
+                                self.view.debug_tree();
+                            }
+                        }
+                    }
+
+                    let keyboard_trigger_end = cx.app_state.keyboard_navigation
+                        && event.is_keyboard_trigger()
+                        && matches!(event, Event::KeyUp(_));
+                    if keyboard_trigger_end {
+                        if let Some(id) = cx.app_state.active {
+                            // To remove the styles applied by the Active selector
+                            if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
+                                cx.app_state.request_layout(id);
+                            }
+
+                            cx.app_state.active = None;
+                        }
                     }
                 }
             }
@@ -493,6 +594,7 @@ impl<V: View> WinHandler for AppHandle<V> {
     }
 
     fn size(&mut self, size: glazier::kurbo::Size) {
+        self.app_state.update_scr_size_breakpt(size);
         self.event(Event::WindowResized(size));
         let scale = self.handle.get_scale().unwrap_or_default();
         self.paint_state.resize(scale, size);
@@ -513,8 +615,14 @@ impl<V: View> WinHandler for AppHandle<V> {
     }
 
     fn key_down(&mut self, event: glazier::KeyEvent) -> bool {
+        assert_eq!(event.state, glazier::KeyState::Down);
         self.event(Event::KeyDown(event));
         true
+    }
+
+    fn key_up(&mut self, event: glazier::KeyEvent) {
+        assert_eq!(event.state, glazier::KeyState::Up);
+        self.event(Event::KeyUp(event));
     }
 
     fn pointer_down(&mut self, event: &glazier::PointerEvent) {

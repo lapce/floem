@@ -1,12 +1,15 @@
 use floem_renderer::{usvg, usvg::Tree, Renderer};
 use glazier::kurbo::Size;
-use leptos_reactive::create_effect;
+use leptos_reactive::{create_effect, SignalGet};
 use sha2::{Digest, Sha256};
+use vello::peniko::Color;
 
 use crate::{
     app_handle::AppContext,
     id::Id,
+    style::Style,
     view::{ChangeFlags, View},
+    views::Decorators,
 };
 
 pub struct Svg {
@@ -15,7 +18,8 @@ pub struct Svg {
     svg_hash: Option<Vec<u8>>,
 }
 
-pub fn svg(cx: AppContext, svg_str: impl Fn() -> String + 'static) -> Svg {
+pub fn svg(svg_str: impl Fn() -> String + 'static) -> Svg {
+    let cx = AppContext::get_current();
     let id = cx.new_id();
     create_effect(cx.scope, move |_| {
         let new_svg_str = svg_str();
@@ -28,6 +32,25 @@ pub fn svg(cx: AppContext, svg_str: impl Fn() -> String + 'static) -> Svg {
     }
 }
 
+/// Renders a checkbox using an svg and the provided checked signal.
+/// Can be combined with a label and a stack with a click event (as in `examples/widget-gallery`).
+pub fn checkbox(checked: leptos_reactive::ReadSignal<bool>) -> Svg {
+    const CHECKBOX_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 -2 16 16"><polygon points="5.19,11.83 0.18,7.44 1.82,5.56 4.81,8.17 10,1.25 12,2.75" /></svg>"#;
+    let svg_str = move || if checked.get() { CHECKBOX_SVG } else { "" }.to_string();
+
+    svg(svg_str)
+        .style(|| {
+            Style::BASE
+                .width_px(20.)
+                .height_px(20.)
+                .border_color(Color::BLACK)
+                .border(1.)
+                .border_radius(5.)
+                .margin_right_px(5.)
+        })
+        .keyboard_navigatable()
+}
+
 impl View for Svg {
     fn id(&self) -> Id {
         self.id
@@ -35,6 +58,14 @@ impl View for Svg {
 
     fn child(&mut self, _id: Id) -> Option<&mut dyn View> {
         None
+    }
+
+    fn children(&mut self) -> Vec<&mut dyn View> {
+        Vec::new()
+    }
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "Svg".into()
     }
 
     fn update(

@@ -33,6 +33,12 @@ pub trait View {
 
     fn child(&mut self, id: Id) -> Option<&mut dyn View>;
 
+    fn children(&mut self) -> Vec<&mut dyn View>;
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        core::any::type_name::<Self>().into()
+    }
+
     fn update_main(
         &mut self,
         cx: &mut UpdateCx,
@@ -170,46 +176,68 @@ pub trait View {
 
         match &event {
             Event::PointerDown(event) => {
-                let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
-                let was_focused = cx.app_state.is_focused(&self.id());
-                let now_focused = rect.contains(event.pos);
+                if event.button.is_left() {
+                    let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
+                    let was_focused = cx.app_state.is_focused(&self.id());
+                    let now_focused = rect.contains(event.pos);
 
-                if now_focused && !was_focused {
-                    cx.app_state.update_focus(self.id());
-                } else if !now_focused && was_focused {
-                    cx.app_state.clear_focus();
-                }
-
-                if now_focused {
-                    if event.count == 2 && cx.has_event_listener(id, EventListner::DoubleClick) {
-                        let view_state = cx.app_state.view_state(id);
-                        view_state.last_pointer_down = Some(event.clone());
-                        cx.update_active(id);
-                        return true;
+                    if now_focused && !was_focused {
+                        cx.app_state.update_focus(self.id(), false);
+                    } else if !now_focused && was_focused {
+                        cx.app_state.clear_focus();
                     }
-                    if cx.has_event_listener(id, EventListner::Click) {
-                        cx.update_active(id);
-                        return true;
+
+                    if now_focused {
+                        cx.app_state.keyboard_navigation = false;
+                        if event.count == 2 && cx.has_event_listener(id, EventListner::DoubleClick)
+                        {
+                            let view_state = cx.app_state.view_state(id);
+                            view_state.last_pointer_down = Some(event.clone());
+                            cx.update_active(id);
+                            return true;
+                        }
+                        if cx.has_event_listener(id, EventListner::Click) {
+                            cx.update_active(id);
+                            return true;
+                        }
                     }
                 }
             }
             Event::PointerUp(pointer_event) => {
-                let last_pointer_down = cx.app_state.view_state(id).last_pointer_down.take();
-                let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
-                if let Some(action) = cx.get_event_listener(id, &EventListner::DoubleClick) {
-                    if rect.contains(pointer_event.pos)
-                        && last_pointer_down
-                            .as_ref()
-                            .map(|e| e.count == 2)
-                            .unwrap_or(false)
-                    {
-                        (*action)(&event);
-                        return true;
+                if pointer_event.button.is_left() {
+                    let last_pointer_down = cx.app_state.view_state(id).last_pointer_down.take();
+                    let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
+                    if let Some(action) = cx.get_event_listener(id, &EventListner::DoubleClick) {
+                        if rect.contains(pointer_event.pos)
+                            && last_pointer_down
+                                .as_ref()
+                                .map(|e| e.count == 2)
+                                .unwrap_or(false)
+                        {
+                            (*action)(&event);
+                            return true;
+                        }
+                    }
+                    if let Some(action) = cx.get_event_listener(id, &EventListner::Click) {
+                        if rect.contains(pointer_event.pos) {
+                            (*action)(&event);
+                            return true;
+                        }
                     }
                 }
-                if let Some(action) = cx.get_event_listener(id, &EventListner::Click) {
-                    if rect.contains(pointer_event.pos) {
+            }
+            Event::KeyDown(_) => {
+                if event.is_keyboard_trigger() {
+                    let mut ancestor = Some(id);
+                    let mut action = None;
+                    // Bubble the trigger to parent views
+                    while let Some(current_ancestor) = ancestor.filter(|_| action.is_none()) {
+                        action = cx.get_event_listener(current_ancestor, &EventListner::Click);
+                        ancestor = current_ancestor.parent();
+                    }
+                    if let Some(action) = action {
                         (*action)(&event);
+                        cx.update_active(id);
                         return true;
                     }
                 }
@@ -221,6 +249,13 @@ pub trait View {
                     let style = cx.app_state.get_computed_style(id);
                     if let Some(cursor) = style.cursor {
                         AppContext::update_cursor_style(cursor);
+                    }
+                }
+            }
+            Event::WindowResized(_) => {
+                if let Some(view_state) = cx.app_state.view_states.get(&self.id()) {
+                    if !view_state.responsive_styles.is_empty() {
+                        cx.app_state.request_layout(self.id());
                     }
                 }
             }
@@ -285,6 +320,64 @@ pub trait View {
     }
 
     fn paint(&mut self, cx: &mut PaintCx);
+
+    /// Produces an ascii art debug display of all of the views.
+    fn debug_tree(&mut self)
+    where
+        Self: Sized,
+    {
+        let mut views = vec![(self as &mut dyn View, Vec::new())];
+        while let Some((current_view, active_lines)) = views.pop() {
+            // Ascii art for the tree view
+            if let Some((leaf, root)) = active_lines.split_last() {
+                for line in root {
+                    print!("{}", if *line { "│   " } else { "    " });
+                }
+                print!("{}", if *leaf { "├── " } else { "└── " });
+            }
+            println!("{:?} {}", current_view.id(), &current_view.debug_name());
+
+            let mut children = current_view.children();
+            if let Some(last_child) = children.pop() {
+                views.push((last_child, [active_lines.as_slice(), &[false]].concat()));
+            }
+
+            views.extend(
+                children
+                    .into_iter()
+                    .rev()
+                    .map(|child| (child, [active_lines.as_slice(), &[true]].concat())),
+            );
+        }
+    }
+
+    /// Tab navigation finds the next or previous view with the `keyboard_navigatable` status in the tree.
+    fn tab_navigation(&mut self, app_state: &mut crate::context::AppState, backwards: bool)
+    where
+        Self: Sized,
+    {
+        let start = app_state.focus.unwrap_or(self.id());
+        let tree_iter = |id: Id| {
+            if backwards {
+                id.tree_previous().unwrap_or(self.id().nested_last_child())
+            } else {
+                id.tree_next().unwrap_or(self.id())
+            }
+        };
+
+        let mut new_focus = tree_iter(start);
+        while new_focus != start
+            && (!app_state.keyboard_navigatable.contains(&new_focus)
+                || app_state.is_disabled(&new_focus)
+                || app_state.is_hidden_recursive(new_focus))
+        {
+            new_focus = tree_iter(new_focus);
+        }
+
+        app_state.update_focus(new_focus, true);
+        self.debug_tree();
+        println!("Tab to {new_focus:?}");
+    }
 }
 
 fn paint_bg(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {

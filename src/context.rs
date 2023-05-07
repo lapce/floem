@@ -21,11 +21,38 @@ use crate::{
     app_handle::StyleSelector,
     event::{Event, EventListner},
     id::Id,
+    responsive::{GridBreakpoints, ScreenSize, ScreenSizeBp},
     style::{ComputedStyle, CursorStyle, Style},
+    AppContext,
 };
+
+thread_local! {
+    pub(crate) static APP_CONTEXT_STORE: std::cell::RefCell<Option<AppContextStore>> = Default::default();
+}
 
 pub type EventCallback = dyn Fn(&Event) -> bool;
 pub type ResizeCallback = dyn Fn(Point, Rect);
+
+pub struct AppContextStore {
+    pub cx: AppContext,
+    pub saved_cx: Vec<AppContext>,
+}
+
+impl AppContextStore {
+    pub fn save(&mut self) {
+        self.saved_cx.push(self.cx);
+    }
+
+    pub fn set_current(&mut self, cx: AppContext) {
+        self.cx = cx;
+    }
+
+    pub fn restore(&mut self) {
+        if let Some(cx) = self.saved_cx.pop() {
+            self.cx = cx;
+        }
+    }
+}
 
 pub(crate) struct ResizeListener {
     pub(crate) window_origin: Point,
@@ -42,6 +69,8 @@ pub struct ViewState {
     pub(crate) hover_style: Option<Style>,
     pub(crate) disabled_style: Option<Style>,
     pub(crate) focus_style: Option<Style>,
+    pub(crate) focus_visible_style: Option<Style>,
+    pub(crate) responsive_styles: HashMap<ScreenSizeBp, Vec<Style>>,
     pub(crate) active_style: Option<Style>,
     pub(crate) computed_style: ComputedStyle,
     pub(crate) event_listeners: HashMap<EventListner, Box<EventCallback>>,
@@ -60,7 +89,9 @@ impl ViewState {
             hover_style: None,
             disabled_style: None,
             focus_style: None,
+            focus_visible_style: None,
             active_style: None,
+            responsive_styles: HashMap::new(),
             children_nodes: Vec::new(),
             event_listeners: HashMap::new(),
             resize_listener: None,
@@ -72,12 +103,19 @@ impl ViewState {
         &mut self,
         view_style: Option<Style>,
         interact_state: InteractionState,
+        screen_size_bp: ScreenSizeBp,
     ) {
         let mut computed_style = if let Some(view_style) = view_style {
             view_style.apply(self.style.clone())
         } else {
             self.style.clone()
         };
+
+        if let Some(resp_styles) = self.responsive_styles.get(&screen_size_bp) {
+            for style in resp_styles {
+                computed_style = computed_style.apply(style.clone());
+            }
+        }
 
         if interact_state.is_hovered && !interact_state.is_disabled {
             if let Some(hover_style) = self.hover_style.clone() {
@@ -91,7 +129,16 @@ impl ViewState {
             }
         }
 
-        if interact_state.is_active && interact_state.is_hovered {
+        let focused_keyboard =
+            interact_state.using_keyboard_navigation && interact_state.is_focused;
+        if focused_keyboard {
+            if let Some(focus_visible_style) = self.focus_visible_style.clone() {
+                computed_style = computed_style.apply(focus_visible_style);
+            }
+        }
+
+        let active_mouse = interact_state.is_hovered && !interact_state.using_keyboard_navigation;
+        if interact_state.is_active && (active_mouse || focused_keyboard) {
             if let Some(active_style) = self.active_style.clone() {
                 computed_style = computed_style.apply(active_style);
             }
@@ -104,6 +151,17 @@ impl ViewState {
         }
 
         self.computed_style = computed_style.compute(&ComputedStyle::default());
+    }
+
+    pub(crate) fn add_responsive_style(&mut self, size: ScreenSize, style: Style) {
+        let breakpoints = size.breakpoints();
+
+        for breakpoint in breakpoints {
+            self.responsive_styles
+                .entry(breakpoint)
+                .or_insert_with(Vec::new)
+                .push(style.clone())
+        }
     }
 }
 
@@ -118,8 +176,12 @@ pub struct AppState {
     pub taffy: taffy::Taffy,
     pub(crate) view_states: HashMap<Id, ViewState>,
     pub(crate) disabled: HashSet<Id>,
+    pub(crate) keyboard_navigatable: HashSet<Id>,
+    pub(crate) screen_size_bp: ScreenSizeBp,
+    pub(crate) grid_breakpts: GridBreakpoints,
     pub(crate) hovered: HashSet<Id>,
     pub(crate) cursor: CursorStyle,
+    pub(crate) keyboard_navigation: bool,
 }
 
 impl Default for AppState {
@@ -137,14 +199,17 @@ impl AppState {
             focus: None,
             active: None,
             root_size: Size::ZERO,
+            screen_size_bp: ScreenSizeBp::Xs,
             taffy,
             view_states: HashMap::new(),
             disabled: HashSet::new(),
+            keyboard_navigatable: HashSet::new(),
             hovered: HashSet::new(),
             cursor: CursorStyle::Default,
+            keyboard_navigation: false,
+            grid_breakpts: GridBreakpoints::default(),
         }
     }
-
     pub fn view_state(&mut self, id: Id) -> &mut ViewState {
         self.view_states
             .entry(id)
@@ -157,6 +222,19 @@ impl AppState {
             // TODO: this unwrap_or is wrong. The style might not specify it, but the underlying view style can
             .map(|s| s.style.display.unwrap_or(Display::Flex) == Display::None)
             .unwrap_or(false)
+    }
+
+    /// Is this view, or any parent view, marked as hidden
+    pub fn is_hidden_recursive(&self, id: Id) -> bool {
+        let mut ancestor = Some(id);
+        while let Some(current_ancestor) = ancestor {
+            if self.is_hidden(current_ancestor) {
+                return true;
+            }
+            ancestor = current_ancestor.parent();
+        }
+
+        false
     }
 
     pub fn is_hovered(&self, id: &Id) -> bool {
@@ -181,6 +259,7 @@ impl AppState {
             is_disabled: self.is_disabled(id),
             is_focused: self.is_focused(id),
             is_active: self.is_active(id),
+            using_keyboard_navigation: self.keyboard_navigation,
         }
     }
 
@@ -191,8 +270,9 @@ impl AppState {
 
     pub(crate) fn compute_style(&mut self, id: Id, view_style: Option<Style>) {
         let interact_state = self.get_interact_state(&id);
+        let screen_size_bp = self.screen_size_bp;
         let view_state = self.view_state(id);
-        view_state.compute_style(view_style, interact_state);
+        view_state.compute_style(view_style, interact_state, screen_size_bp);
     }
 
     pub(crate) fn get_computed_style(&mut self, id: Id) -> &ComputedStyle {
@@ -245,6 +325,11 @@ impl AppState {
         }
     }
 
+    pub(crate) fn update_scr_size_breakpt(&mut self, size: Size) {
+        let breakpt = self.grid_breakpts.get_width_breakpt(size.width);
+        self.screen_size_bp = breakpt;
+    }
+
     pub(crate) fn clear_focus(&mut self) {
         if let Some(old_id) = self.focus {
             // To remove the styles applied by the Focus selector
@@ -256,19 +341,24 @@ impl AppState {
         self.focus = None;
     }
 
-    pub(crate) fn update_focus(&mut self, id: Id) {
+    pub(crate) fn update_focus(&mut self, id: Id, keyboard_navigation: bool) {
         let old = self.focus;
         self.focus = Some(id);
+        self.keyboard_navigation = keyboard_navigation;
 
         if let Some(old_id) = old {
             // To remove the styles applied by the Focus selector
-            if self.has_style_for_sel(old_id, StyleSelector::Focus) {
+            if self.has_style_for_sel(old_id, StyleSelector::Focus)
+                || self.has_style_for_sel(old_id, StyleSelector::FocusVisible)
+            {
                 self.request_layout(old_id);
             }
         }
 
         // To apply the styles of the Focus selector
-        if self.has_style_for_sel(id, StyleSelector::Focus) {
+        if self.has_style_for_sel(id, StyleSelector::Focus)
+            || self.has_style_for_sel(id, StyleSelector::FocusVisible)
+        {
             self.request_layout(id);
         }
     }
@@ -279,6 +369,7 @@ impl AppState {
         match selector_kind {
             StyleSelector::Hover => view_state.hover_style.is_some(),
             StyleSelector::Focus => view_state.focus_style.is_some(),
+            StyleSelector::FocusVisible => view_state.focus_visible_style.is_some(),
             StyleSelector::Disabled => view_state.disabled_style.is_some(),
             StyleSelector::Active => view_state.active_style.is_some(),
         }
@@ -295,8 +386,8 @@ impl<'a> EventCx<'a> {
     }
 
     #[allow(unused)]
-    pub(crate) fn update_focus(&mut self, id: Id) {
-        self.app_state.update_focus(id);
+    pub(crate) fn update_focus(&mut self, id: Id, keyboard_navigation: bool) {
+        self.app_state.update_focus(id, keyboard_navigation);
     }
 
     pub fn get_style(&self, id: Id) -> Option<&Style> {
@@ -386,6 +477,7 @@ pub struct InteractionState {
     pub(crate) is_disabled: bool,
     pub(crate) is_focused: bool,
     pub(crate) is_active: bool,
+    pub(crate) using_keyboard_navigation: bool,
 }
 
 pub struct LayoutCx<'a> {

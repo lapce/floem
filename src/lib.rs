@@ -5,6 +5,7 @@ pub mod event;
 pub mod ext_event;
 pub mod id;
 pub mod renderer;
+pub mod responsive;
 pub mod style;
 pub mod view;
 pub mod view_tuple;

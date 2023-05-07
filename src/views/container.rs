@@ -9,11 +9,16 @@ pub struct Container<V: View> {
     child: V,
 }
 
-pub fn container<V: View>(cx: AppContext, child: impl FnOnce(AppContext) -> V) -> Container<V> {
+pub fn container<V: View>(child: impl FnOnce() -> V) -> Container<V> {
+    let cx = AppContext::get_current();
     let id = cx.new_id();
     let mut child_cx = cx;
     child_cx.id = id;
-    let child = child(child_cx);
+    AppContext::save();
+    AppContext::set_current(child_cx);
+    let child = child();
+    AppContext::restore();
+
     Container { id, child }
 }
 
@@ -28,6 +33,14 @@ impl<V: View> View for Container<V> {
         } else {
             None
         }
+    }
+
+    fn children(&mut self) -> Vec<&mut dyn View> {
+        vec![&mut self.child]
+    }
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "Container".into()
     }
 
     fn update(

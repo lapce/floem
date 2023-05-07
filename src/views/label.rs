@@ -39,7 +39,8 @@ pub struct Label {
     text_overflow: TextOverflow,
 }
 
-pub fn label(cx: AppContext, label: impl Fn() -> String + 'static) -> Label {
+pub fn label(label: impl Fn() -> String + 'static) -> Label {
+    let cx = AppContext::get_current();
     let id = cx.new_id();
     create_effect(cx.scope, move |_| {
         let new_label = label();
@@ -124,6 +125,14 @@ impl View for Label {
 
     fn child(&mut self, _id: Id) -> Option<&mut dyn View> {
         None
+    }
+
+    fn children(&mut self) -> Vec<&mut dyn View> {
+        Vec::new()
+    }
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        format!("Label: {:?}", self.label).into()
     }
 
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags {

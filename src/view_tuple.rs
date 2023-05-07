@@ -10,6 +10,8 @@ pub trait ViewTuple {
     fn foreach_rev<F: FnMut(&mut dyn View) -> bool>(&mut self, f: &mut F);
 
     fn child(&mut self, id: Id) -> Option<&mut dyn View>;
+
+    fn children(&mut self) -> Vec<&mut dyn View>;
 }
 
 macro_rules! impl_view_tuple {
@@ -27,6 +29,10 @@ macro_rules! impl_view_tuple {
             fn child(&mut self, id: Id) -> Option<&mut dyn View> {
                 $( if self.$i.id() == id { return Some(&mut self.$i) } )*
                 None
+            }
+
+            fn children(&mut self) -> Vec<&mut dyn View> {
+                vec![ $( &mut self.$i ),* ]
             }
 
             fn paint(&mut self, cx: &mut PaintCx) {
