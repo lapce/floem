@@ -1,5 +1,7 @@
 use crate::{context::LayoutCx, style::CursorStyle};
-use leptos_reactive::{create_effect, RwSignal, SignalGet, SignalUpdate, SignalWith};
+use leptos_reactive::{
+    create_effect, RwSignal, SignalGet, SignalGetUntracked, SignalUpdate, SignalWith,
+};
 use taffy::{
     prelude::{Layout, Node},
     style::Dimension,
@@ -324,18 +326,6 @@ impl TextInput {
         self.cursor_glyph_idx = new_cursor_x;
     }
 
-    fn delete_range(buff: &String, del_range: Range<usize>) -> String {
-        assert!(del_range.start < del_range.end);
-
-        let mut res = String::with_capacity(buff.len() + del_range.end - del_range.start);
-        for (idx, ch) in buff.char_indices() {
-            if !del_range.contains(&idx) {
-                res.push(ch);
-            }
-        }
-        res
-    }
-
     fn handle_key_down(&mut self, cx: &mut EventCx<'_>, event: &glazier::KeyEvent) -> bool {
         match event.key {
             Key::Character(ref ch) => {
@@ -357,7 +347,7 @@ impl TextInput {
                 }
 
                 self.buffer.update(|buf| {
-                    *buf = Self::delete_range(buf, self.cursor_glyph_idx..prev_cursor_idx);
+                    replace_range(buf, self.cursor_glyph_idx..prev_cursor_idx, None);
                 });
                 true
             }
@@ -375,11 +365,11 @@ impl TextInput {
                 }
 
                 self.buffer.update(|buf| {
-                    *buf = Self::delete_range(buf, prev_cursor_idx..self.cursor_glyph_idx);
+                    replace_range(buf, prev_cursor_idx..self.cursor_glyph_idx, None);
                 });
 
                 // Move cursor to the range to delete, delete it and move cursor back
-                // TODO: handle this better
+                // TODO: extract moving to next word logic as a method and use it here instead
                 self.cursor_glyph_idx = prev_cursor_idx;
                 true
             }
@@ -409,6 +399,21 @@ impl TextInput {
             }
         }
     }
+}
+
+fn replace_range(buff: &mut String, del_range: Range<usize>, replacement: Option<&str>) {
+    assert!(del_range.start < del_range.end);
+    // Get text after range to delete
+    let after_del_range = buff.split_off(del_range.end);
+
+    // Truncate up to range's start to delete it
+    buff.truncate(del_range.start);
+
+    if let Some(repl) = replacement {
+        buff.push_str(repl);
+    }
+
+    buff.push_str(&after_del_range);
 }
 
 impl View for TextInput {
@@ -441,8 +446,7 @@ impl View for TextInput {
     fn event(&mut self, cx: &mut EventCx, _id_path: Option<&[Id]>, event: Event) -> bool {
         let is_handled = match &event {
             Event::PointerDown(event) => {
-                let was_focused = self.is_focused;
-                if !was_focused {
+                if !self.is_focused {
                     // Just gained focus - move cursor to buff end
                     self.set_cursor_glyph_idx(self.buffer.with(|buff| buff.len()));
                 } else {
@@ -464,6 +468,8 @@ impl View for TextInput {
                         .unwrap()
                         .hit_point(Point::new(
                             event.pos.x + self.clip_start_x - padding_left as f64,
+                            // TODO: prevent cursor incorrectly going to end of buffer when clicking 
+                            // slightly below the text 
                             event.pos.y - padding_top as f64,
                         ))
                         .index;
@@ -474,7 +480,7 @@ impl View for TextInput {
             Event::PointerMove(_) => {
                 if !matches!(cx.app_state.cursor, CursorStyle::Text) {
                     cx.app_state.cursor = CursorStyle::Text;
-                    return true
+                    return true;
                 }
                 false
             }
@@ -588,5 +594,56 @@ impl View for TextInput {
             let cursor_rect = self.get_cursor_rect(&node_layout);
             cx.fill(&cursor_rect, Color::BLACK);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::replace_range;
+
+    #[test]
+    fn replace_range_start() {
+        let mut s = "Sample text".to_owned();
+        replace_range(&mut s, 0..7, Some("Replaced___"));
+        assert_eq!("Replaced___text", s);
+    }
+
+    #[test]
+    fn delete_range_start() {
+        let mut s = "Sample text".to_owned();
+        replace_range(&mut s, 0..7, None);
+        assert_eq!("text", s);
+    }
+
+    #[test]
+    fn replace_range_end() {
+        let mut s = "Sample text".to_owned();
+        let len = s.len();
+        replace_range(&mut s, 6..len, Some("++Replaced"));
+        assert_eq!("Sample++Replaced", s);
+    }
+
+    #[test]
+    fn delete_range_full() {
+        let mut s = "Sample text".to_owned();
+        let len = s.len();
+        replace_range(&mut s, 0..len, None);
+        assert_eq!("", s);
+    }
+
+    #[test]
+    fn replace_range_full() {
+        let mut s = "Sample text".to_owned();
+        let len = s.len();
+        replace_range(&mut s, 0..len, Some("Hello world"));
+        assert_eq!("Hello world", s);
+    }
+
+    #[test]
+    fn delete_range_end() {
+        let mut s = "Sample text".to_owned();
+        let len = s.len();
+        replace_range(&mut s, 6..len, None);
+        assert_eq!("Sample", s);
     }
 }
