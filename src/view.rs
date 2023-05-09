@@ -6,7 +6,6 @@ use glazier::kurbo::{Line, Point, Size};
 use taffy::prelude::Node;
 
 use crate::{
-    app_handle::AppContext,
     context::{EventCx, LayoutCx, PaintCx, UpdateCx},
     event::{Event, EventListner},
     id::Id,
@@ -248,7 +247,7 @@ pub trait View {
                     cx.app_state.hovered.insert(id);
                     let style = cx.app_state.get_computed_style(id);
                     if let Some(cursor) = style.cursor {
-                        AppContext::update_cursor_style(cursor);
+                        id.update_cursor_style(cursor);
                     }
                 }
             }

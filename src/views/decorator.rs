@@ -15,7 +15,7 @@ pub trait Decorators: View + Sized {
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
-            AppContext::update_style(id, style);
+            id.update_style(style);
         });
         self
     }
@@ -26,7 +26,7 @@ pub trait Decorators: View + Sized {
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
-            AppContext::update_style_selector(id, style, StyleSelector::Hover);
+            id.update_style_selector(style, StyleSelector::Hover);
         });
         self
     }
@@ -36,7 +36,7 @@ pub trait Decorators: View + Sized {
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
-            AppContext::update_style_selector(id, style, StyleSelector::Focus);
+            id.update_style_selector(style, StyleSelector::Focus);
         });
         self
     }
@@ -47,7 +47,7 @@ pub trait Decorators: View + Sized {
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
-            AppContext::update_style_selector(id, style, StyleSelector::FocusVisible);
+            id.update_style_selector(style, StyleSelector::FocusVisible);
         });
         self
     }
@@ -57,7 +57,7 @@ pub trait Decorators: View + Sized {
         let cx = AppContext::get_current();
         let id = self.id();
         create_effect(cx.scope, move |_| {
-            AppContext::keyboard_navigatable(id);
+            id.keyboard_navigatable();
         });
         self
     }
@@ -67,7 +67,7 @@ pub trait Decorators: View + Sized {
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
-            AppContext::update_style_selector(id, style, StyleSelector::Active);
+            id.update_style_selector(style, StyleSelector::Active);
         });
         self
     }
@@ -77,7 +77,7 @@ pub trait Decorators: View + Sized {
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
-            AppContext::update_style_selector(id, style, StyleSelector::Disabled);
+            id.update_style_selector(style, StyleSelector::Disabled);
         });
         self
     }
@@ -87,7 +87,7 @@ pub trait Decorators: View + Sized {
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
-            AppContext::update_responsive_style(id, style, size);
+            id.update_responsive_style(style, size);
         });
         self
     }
@@ -98,7 +98,7 @@ pub trait Decorators: View + Sized {
 
         create_effect(cx.scope, move |_| {
             let is_disabled = disabled_fn();
-            AppContext::update_disabled(id, is_disabled);
+            id.update_disabled(is_disabled);
         });
 
         self
@@ -106,25 +106,25 @@ pub trait Decorators: View + Sized {
 
     fn on_event(self, listener: EventListner, action: impl Fn(&Event) -> bool + 'static) -> Self {
         let id = self.id();
-        AppContext::update_event_listner(id, listener, Box::new(action));
+        id.update_event_listner(listener, Box::new(action));
         self
     }
 
     fn on_click(self, action: impl Fn(&Event) -> bool + 'static) -> Self {
         let id = self.id();
-        AppContext::update_event_listner(id, EventListner::Click, Box::new(action));
+        id.update_event_listner(EventListner::Click, Box::new(action));
         self
     }
 
     fn on_double_click(self, action: impl Fn(&Event) -> bool + 'static) -> Self {
         let id = self.id();
-        AppContext::update_event_listner(id, EventListner::DoubleClick, Box::new(action));
+        id.update_event_listner(EventListner::DoubleClick, Box::new(action));
         self
     }
 
     fn on_resize(self, action: impl Fn(Point, Rect) + 'static) -> Self {
         let id = self.id();
-        AppContext::update_resize_listner(id, Box::new(action));
+        id.update_resize_listner(Box::new(action));
         self
     }
 }

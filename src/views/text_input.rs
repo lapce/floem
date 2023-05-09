@@ -93,7 +93,7 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
 
     create_effect(cx.scope, move |_| {
         let text: String = buffer.with(|buff| buff.to_string());
-        AppContext::update_state(id, text, false);
+        id.update_state(text, false);
     });
 
     TextInput {
@@ -468,8 +468,8 @@ impl View for TextInput {
                         .unwrap()
                         .hit_point(Point::new(
                             event.pos.x + self.clip_start_x - padding_left as f64,
-                            // TODO: prevent cursor incorrectly going to end of buffer when clicking 
-                            // slightly below the text 
+                            // TODO: prevent cursor incorrectly going to end of buffer when clicking
+                            // slightly below the text
                             event.pos.y - padding_top as f64,
                         ))
                         .index;
