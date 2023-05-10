@@ -14,7 +14,8 @@ use floem::{
         container, container_box, label, scroll, stack, tab, virtual_list, Decorators,
         VirtualListDirection, VirtualListItemSize,
     },
-    AppContext,
+    event:: {Event, EventListner},
+    AppContext, glazier::keyboard_types::Key,
 };
 
 fn app_view(cx: AppContext) -> impl View {
@@ -30,19 +31,40 @@ fn app_view(cx: AppContext) -> impl View {
                 scroll(move || {
                     virtual_list(
                         VirtualListDirection::Vertical,
-                        VirtualListItemSize::Fixed(20.0),
+                        VirtualListItemSize::Fixed(32.0),
                         move || tabs.get(),
                         move |item| *item,
                         move |item| {
                             let index = tabs.get().iter().position(|it| *it == item).unwrap();
-                            container(move || {
-                                label(move || item.to_string())
-                                    .style(|| Style::BASE.font_size(24.0))
+                            stack(|| {
+                                (
+                                    label(move || item.to_string())
+                                    .style(|| Style::BASE.font_size(24.0)),
+                                )
                             })
                             .on_click(move |_| {
-                                set_active_tab.update(|v| {
+                                set_active_tab.update(|v: &mut usize| {
                                     *v = tabs.get().iter().position(|it| *it == item).unwrap();
                                 });
+                                true
+                            })
+                            .on_event(EventListner::KeyDown, move |e| {
+                                if let Event::KeyDown(key_event) = e {
+                                    let active = active_tab.get();
+                                    match key_event.key {
+                                        Key::ArrowUp => {
+                                            if active > 0 {
+                                                set_active_tab.update(|v| *v -= 1)
+                                            }
+                                        }
+                                        Key::ArrowDown => {
+                                            if active < tabs.get().len() - 1 {
+                                                set_active_tab.update(|v| *v += 1)
+                                            }
+                                        }
+                                        _ => {}
+                                    }                                    
+                                }
                                 true
                             })
                             .keyboard_navigatable()
@@ -51,11 +73,9 @@ fn app_view(cx: AppContext) -> impl View {
                             })
                             .style(move || {
                                 Style::BASE
+                                    .flex_row()
                                     .width_pct(100.0)
                                     .height_px(32.0)
-                                    .padding_px(2.0)
-                                    .flex_row()
-                                    .justify_center()
                                     .apply_if(index == active_tab.get(), |s| {
                                         s.background(Color::GRAY)
                                     })
@@ -67,11 +87,13 @@ fn app_view(cx: AppContext) -> impl View {
                             })
                         },
                     )
-                    .style(|| Style::BASE.flex_col())
+                    .style(|| Style::BASE.flex_col().width_px(140.0))
                 })
                 .style(|| {
                     Style::BASE
-                        .size_pct(100.0, 100.0)
+                        .flex_col()
+                        .width_px(140.0)
+                        .height_pct(100.0)
                         .border(1.0)
                         .border_color(Color::GRAY)
                 })

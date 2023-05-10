@@ -11,9 +11,9 @@ pub fn form<VT: ViewTuple + 'static>(children: impl FnOnce() -> VT) -> impl View
         Style::BASE
             .flex_col()
             .items_start()
-            .size_pct(100.0, 100.0)
             .margin_px(10.0)
             .padding_px(10.0)
+            .width_pct(100.0)
     })
 }
 
@@ -38,7 +38,7 @@ pub fn form_item<V: View + 'static>(
                 view_fn(),
             )
         })
-        .style(|| Style::BASE.flex_row().items_start().size_pct(100.0, 100.0))
+        .style(|| Style::BASE.flex_row().items_start())
     })
     .style(|| {
         Style::BASE
