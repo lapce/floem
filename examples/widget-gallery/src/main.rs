@@ -76,6 +76,7 @@ fn app_view(cx: AppContext) -> impl View {
                                     .flex_row()
                                     .width_pct(100.0)
                                     .height_px(32.0)
+                                    .border_bottom(1.0).border_color(Color::LIGHT_GRAY)
                                     .apply_if(index == active_tab.get(), |s| {
                                         s.background(Color::GRAY)
                                     })
