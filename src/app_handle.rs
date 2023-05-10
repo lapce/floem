@@ -382,7 +382,12 @@ impl<V: View> AppHandle<V> {
     }
 
     fn has_deferred_update_messages(&self) -> bool {
-        DEFERRED_UPDATE_MESSAGES.with(|m| !m.borrow().is_empty())
+        DEFERRED_UPDATE_MESSAGES.with(|m| {
+            m.borrow()
+                .get(&self.view.id())
+                .map(|m| !m.is_empty())
+                .unwrap_or(false)
+        })
     }
 
     pub fn process_update(&mut self) {
