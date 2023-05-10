@@ -15,7 +15,11 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{peniko::Color, style::Style, view::View, AppContext};
 
-use std::{any::Any, ops::Range};
+use std::{
+    any::Any,
+    ops::Range,
+    time::{Duration, Instant},
+};
 
 use crate::{
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
@@ -72,6 +76,7 @@ pub struct TextInput {
     input_kind: InputKind,
     cursor_width: f64, // TODO: make this configurable
     is_focused: bool,
+    last_cursor_action_on: Instant,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -118,6 +123,7 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         width: 0.0,
         height: 0.0,
         is_focused: false,
+        last_cursor_action_on: Instant::now(),
     }
 }
 
@@ -128,6 +134,7 @@ enum ClipDirection {
 }
 
 const DEFAULT_FONT_SIZE: f32 = 14.0;
+const CURSOR_BLINK_INTERVAL_MS: u64 = 500;
 
 impl TextInput {
     fn move_cursor(&mut self, move_kind: Movement, direction: Direction) -> bool {
@@ -489,6 +496,7 @@ impl View for TextInput {
 
         if is_handled {
             cx.app_state.request_layout(self.id);
+            self.last_cursor_action_on = Instant::now();
         }
 
         is_handled
@@ -590,10 +598,24 @@ impl View for TextInput {
             cx.draw_text(self.text_buf.as_ref().unwrap(), text_start_point);
         }
 
-        if cx.app_state.is_focused(&self.id) {
+        let is_cursor_visible = cx.app_state.is_focused(&self.id)
+            && (self.last_cursor_action_on.elapsed().as_millis()
+                / CURSOR_BLINK_INTERVAL_MS as u128)
+                % 2
+                == 0;
+
+        if is_cursor_visible {
             let cursor_rect = self.get_cursor_rect(&node_layout);
             cx.fill(&cursor_rect, Color::BLACK);
         }
+
+        let id = self.id();
+        id.exec_after(
+            Duration::from_millis(CURSOR_BLINK_INTERVAL_MS),
+            Box::new(move || {
+                id.request_paint();
+            }),
+        );
     }
 }
 

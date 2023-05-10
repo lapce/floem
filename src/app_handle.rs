@@ -595,6 +595,7 @@ impl<V: View> WinHandler for AppHandle<V> {
         if let Some(action) = self.timers.remove(&token) {
             action();
         }
+        self.process_update();
     }
 
     fn request_close(&mut self) {
