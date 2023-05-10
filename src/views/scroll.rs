@@ -90,7 +90,7 @@ impl<V: View> Scroll<V> {
         let id = self.id;
         create_effect(cx.scope, move |_| {
             let color = color();
-            AppContext::update_state(id, ScrollState::ScrollBarColor(color), false);
+            id.update_state(ScrollState::ScrollBarColor(color), false);
         });
 
         self
@@ -106,7 +106,7 @@ impl<V: View> Scroll<V> {
         let id = self.id;
         create_effect(cx.scope, move |_| {
             let rect = to();
-            AppContext::update_state(id, ScrollState::EnsureVisble(rect), true);
+            id.update_state(ScrollState::EnsureVisble(rect), true);
         });
 
         self
@@ -117,7 +117,7 @@ impl<V: View> Scroll<V> {
         let id = self.id;
         create_effect(cx.scope, move |_| {
             let delta = delta();
-            AppContext::update_state(id, ScrollState::ScrollDelta(delta), false);
+            id.update_state(ScrollState::ScrollDelta(delta), false);
         });
 
         self
@@ -128,7 +128,7 @@ impl<V: View> Scroll<V> {
         let id = self.id;
         create_effect(cx.scope, move |_| {
             if let Some(origin) = origin() {
-                AppContext::update_state(id, ScrollState::ScrollTo(origin), true);
+                id.update_state(ScrollState::ScrollTo(origin), true);
             }
         });
 
@@ -139,7 +139,7 @@ impl<V: View> Scroll<V> {
         let cx = AppContext::get_current();
         let id = self.id;
         create_effect(cx.scope, move |_| {
-            AppContext::update_state(id, ScrollState::HiddenBar(value()), false);
+            id.update_state(ScrollState::HiddenBar(value()), false);
         });
         self
     }

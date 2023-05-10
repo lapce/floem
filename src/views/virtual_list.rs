@@ -176,8 +176,7 @@ where
             }
             diff
         };
-        AppContext::update_state(
-            id,
+        id.update_state(
             VirtualListState {
                 diff,
                 before_size,

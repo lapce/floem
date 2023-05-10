@@ -44,7 +44,7 @@ pub fn label(label: impl Fn() -> String + 'static) -> Label {
     let id = cx.new_id();
     create_effect(cx.scope, move |_| {
         let new_label = label();
-        AppContext::update_state(id, new_label, false);
+        id.update_state(new_label, false);
     });
     Label {
         id,

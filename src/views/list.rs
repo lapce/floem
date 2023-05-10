@@ -72,7 +72,7 @@ where
             }
             diff
         };
-        AppContext::update_state(id, diff, false);
+        id.update_state(diff, false);
         HashRun(hashed_items)
     });
     List {

@@ -4,14 +4,14 @@ use std::{
     sync::Arc,
 };
 
-use glazier::{FileDialogOptions, FileInfo, IdleHandle, IdleToken};
+use glazier::{IdleHandle, IdleToken};
 use leptos_reactive::{
     create_effect, create_signal, ReadSignal, Scope, SignalGet, SignalSet, WriteSignal,
 };
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 
-use crate::{app_handle::AppContext, id::Id};
+use crate::id::Id;
 
 pub static EXT_EVENT_HANDLER: Lazy<ExtEventHandler> = Lazy::new(ExtEventHandler::default);
 
@@ -77,10 +77,6 @@ pub fn create_signal_from_channel<T: Send>(
     });
 
     read
-}
-
-pub fn open_file_dialog(options: FileDialogOptions, action: impl Fn(Option<FileInfo>) + 'static) {
-    AppContext::update_open_file(options, action);
 }
 
 pub fn create_ext_action<T: Send + 'static>(cx: Scope, action: impl Fn(T) + 'static) -> impl Fn(T) {

@@ -1,4 +1,14 @@
-use std::{cell::RefCell, collections::HashMap, num::NonZeroU64};
+use std::{any::Any, cell::RefCell, collections::HashMap, num::NonZeroU64, time::Duration};
+
+use glazier::{FileDialogOptions, FileInfo};
+
+use crate::{
+    app_handle::{StyleSelector, UpdateMessage, DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES},
+    context::{EventCallback, ResizeCallback},
+    event::EventListner,
+    responsive::ScreenSize,
+    style::{CursorStyle, Style},
+};
 
 thread_local! {
     pub(crate) static IDPATHS: RefCell<HashMap<Id,IdPath>> = Default::default();
@@ -20,6 +30,15 @@ impl Id {
         use glazier::Counter;
         static WIDGET_ID_COUNTER: Counter = Counter::new();
         Id(WIDGET_ID_COUNTER.next_nonzero())
+    }
+
+    #[allow(unused)]
+    pub fn to_raw(self) -> u64 {
+        self.0.into()
+    }
+
+    pub fn to_nonzero_raw(self) -> NonZeroU64 {
+        self.0
     }
 
     pub fn new(&self) -> Id {
@@ -188,12 +207,188 @@ impl Id {
         });
     }
 
-    #[allow(unused)]
-    pub fn to_raw(self) -> u64 {
-        self.0.into()
+    pub fn root_id(&self) -> Option<Id> {
+        IDPATHS.with(|idpaths| {
+            idpaths
+                .borrow()
+                .get(self)
+                .and_then(|path| path.0.first().copied())
+        })
     }
 
-    pub fn to_nonzero_raw(self) -> NonZeroU64 {
-        self.0
+    pub fn request_focus(&self) {
+        if let Some(root) = self.root_id() {
+            UPDATE_MESSAGES.with(|msgs| {
+                let mut msgs = msgs.borrow_mut();
+                let msgs = msgs.entry(root).or_default();
+                msgs.push(UpdateMessage::Focus(*self));
+            });
+        }
+    }
+
+    pub fn update_disabled(&self, is_disabled: bool) {
+        if let Some(root) = self.root_id() {
+            UPDATE_MESSAGES.with(|msgs| {
+                let mut msgs = msgs.borrow_mut();
+                let msgs = msgs.entry(root).or_default();
+                msgs.push(UpdateMessage::Disabled {
+                    id: *self,
+                    is_disabled,
+                })
+            });
+        }
+    }
+
+    pub fn request_paint(&self) {
+        if let Some(root) = self.root_id() {
+            UPDATE_MESSAGES.with(|msgs| {
+                let mut msgs = msgs.borrow_mut();
+                let msgs = msgs.entry(root).or_default();
+                msgs.push(UpdateMessage::RequestPaint);
+            });
+        }
+    }
+
+    pub fn request_layout(&self) {
+        if let Some(root) = self.root_id() {
+            UPDATE_MESSAGES.with(|msgs| {
+                let mut msgs = msgs.borrow_mut();
+                let msgs = msgs.entry(root).or_default();
+                msgs.push(UpdateMessage::RequestLayout { id: *self });
+            });
+        }
+    }
+
+    pub fn update_state(&self, state: impl Any, deferred: bool) {
+        if let Some(root) = self.root_id() {
+            if !deferred {
+                UPDATE_MESSAGES.with(|msgs| {
+                    let mut msgs = msgs.borrow_mut();
+                    let msgs = msgs.entry(root).or_default();
+                    msgs.push(UpdateMessage::State {
+                        id: *self,
+                        state: Box::new(state),
+                    })
+                });
+            } else {
+                DEFERRED_UPDATE_MESSAGES.with(|msgs| {
+                    let mut msgs = msgs.borrow_mut();
+                    let msgs = msgs.entry(root).or_default();
+                    msgs.push((*self, Box::new(state)));
+                });
+            }
+        }
+    }
+
+    pub fn update_style(&self, style: Style) {
+        if let Some(root) = self.root_id() {
+            UPDATE_MESSAGES.with(|msgs| {
+                let mut msgs = msgs.borrow_mut();
+                let msgs = msgs.entry(root).or_default();
+                msgs.push(UpdateMessage::Style { id: *self, style });
+            });
+        }
+    }
+
+    pub fn update_style_selector(&self, style: Style, selector: StyleSelector) {
+        if let Some(root) = self.root_id() {
+            UPDATE_MESSAGES.with(|msgs| {
+                let mut msgs = msgs.borrow_mut();
+                let msgs = msgs.entry(root).or_default();
+                msgs.push(UpdateMessage::StyleSelector {
+                    id: *self,
+                    style,
+                    selector,
+                })
+            });
+        }
+    }
+
+    pub fn keyboard_navigatable(&self) {
+        if let Some(root) = self.root_id() {
+            UPDATE_MESSAGES.with(|msgs| {
+                let mut msgs = msgs.borrow_mut();
+                let msgs = msgs.entry(root).or_default();
+                msgs.push(UpdateMessage::KeyboardNavigatable { id: *self })
+            })
+        }
+    }
+
+    pub fn update_responsive_style(&self, style: Style, size: ScreenSize) {
+        if let Some(root) = self.root_id() {
+            UPDATE_MESSAGES.with(|msgs| {
+                let mut msgs = msgs.borrow_mut();
+                let msgs = msgs.entry(root).or_default();
+                msgs.push(UpdateMessage::ResponsiveStyle {
+                    id: *self,
+                    style,
+                    size,
+                })
+            });
+        }
+    }
+
+    pub fn update_cursor_style(&self, cursor: CursorStyle) {
+        if let Some(root) = self.root_id() {
+            UPDATE_MESSAGES.with(|msgs| {
+                let mut msgs = msgs.borrow_mut();
+                let msgs = msgs.entry(root).or_default();
+                msgs.push(UpdateMessage::CursorStyle { cursor })
+            });
+        }
+    }
+
+    pub fn update_event_listner(&self, listener: EventListner, action: Box<EventCallback>) {
+        if let Some(root) = self.root_id() {
+            UPDATE_MESSAGES.with(|msgs| {
+                let mut msgs = msgs.borrow_mut();
+                let msgs = msgs.entry(root).or_default();
+                msgs.push(UpdateMessage::EventListener {
+                    id: *self,
+                    listener,
+                    action,
+                })
+            });
+        }
+    }
+
+    pub fn update_resize_listner(&self, action: Box<ResizeCallback>) {
+        if let Some(root) = self.root_id() {
+            UPDATE_MESSAGES.with(|msgs| {
+                let mut msgs = msgs.borrow_mut();
+                let msgs = msgs.entry(root).or_default();
+                msgs.push(UpdateMessage::ResizeListener { id: *self, action })
+            });
+        }
+    }
+
+    pub fn exec_after(&self, deadline: Duration, action: impl FnOnce() + 'static) {
+        if let Some(root) = self.root_id() {
+            UPDATE_MESSAGES.with(|msgs| {
+                let mut msgs = msgs.borrow_mut();
+                let msgs = msgs.entry(root).or_default();
+                msgs.push(UpdateMessage::RequestTimer {
+                    deadline,
+                    action: Box::new(action),
+                })
+            });
+        }
+    }
+
+    pub fn open_file(
+        &self,
+        options: FileDialogOptions,
+        file_info_action: impl Fn(Option<FileInfo>) + 'static,
+    ) {
+        if let Some(root) = self.root_id() {
+            UPDATE_MESSAGES.with(|msgs| {
+                let mut msgs = msgs.borrow_mut();
+                let msgs = msgs.entry(root).or_default();
+                msgs.push(UpdateMessage::OpenFile {
+                    options,
+                    file_info_action: Box::new(file_info_action),
+                })
+            });
+        }
     }
 }

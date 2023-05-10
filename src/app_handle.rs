@@ -2,7 +2,7 @@ use std::{any::Any, collections::HashMap};
 
 use floem_renderer::Renderer;
 use glazier::kurbo::{Affine, Point, Rect};
-use glazier::{FileDialogOptions, FileDialogToken, FileInfo, WinHandler};
+use glazier::{FileDialogOptions, FileDialogToken, FileInfo, TimerToken, WinHandler};
 use leptos_reactive::{Scope, SignalSet};
 
 use crate::{
@@ -19,11 +19,12 @@ use crate::{
 };
 
 thread_local! {
-    static UPDATE_MESSAGES: std::cell::RefCell<Vec<UpdateMessage>> = Default::default();
-    static DEFERRED_UPDATE_MESSAGES: std::cell::RefCell<Vec<(Id, Box<dyn Any>)>> = Default::default();
+    pub(crate) static UPDATE_MESSAGES: std::cell::RefCell<HashMap<Id, Vec<UpdateMessage>>> = Default::default();
+    pub(crate) static DEFERRED_UPDATE_MESSAGES: std::cell::RefCell<DeferredUpdateMessages> = Default::default();
 }
 
 pub type FileDialogs = HashMap<FileDialogToken, Box<dyn Fn(Option<FileInfo>)>>;
+type DeferredUpdateMessages = HashMap<Id, Vec<(Id, Box<dyn Any>)>>;
 
 pub struct AppHandle<V: View> {
     scope: Scope,
@@ -33,6 +34,7 @@ pub struct AppHandle<V: View> {
     paint_state: PaintState,
 
     file_dialogs: FileDialogs,
+    timers: HashMap<TimerToken, Box<dyn FnOnce()>>,
 }
 
 #[derive(Copy, Clone)]
@@ -81,98 +83,6 @@ impl AppContext {
         })
     }
 
-    pub fn update_focus(&self, id: Id) {
-        UPDATE_MESSAGES.with(|msgs| msgs.borrow_mut().push(UpdateMessage::Focus(id)));
-    }
-
-    pub fn update_disabled(id: Id, disabled: bool) {
-        UPDATE_MESSAGES.with(|msgs| {
-            msgs.borrow_mut()
-                .push(UpdateMessage::Disabled(id, disabled))
-        });
-    }
-
-    pub fn request_paint() {
-        UPDATE_MESSAGES.with(|msgs| msgs.borrow_mut().push(UpdateMessage::RequestPaint));
-    }
-
-    pub fn update_state(id: Id, state: impl Any, deferred: bool) {
-        if !deferred {
-            UPDATE_MESSAGES.with(|msgs| {
-                msgs.borrow_mut().push(UpdateMessage::State {
-                    id,
-                    state: Box::new(state),
-                })
-            });
-        } else {
-            DEFERRED_UPDATE_MESSAGES.with(|msgs| msgs.borrow_mut().push((id, Box::new(state))));
-        }
-    }
-
-    pub fn update_style(id: Id, style: Style) {
-        UPDATE_MESSAGES.with(|msgs| msgs.borrow_mut().push(UpdateMessage::Style { id, style }));
-    }
-
-    pub fn update_style_selector(id: Id, style: Style, selector: StyleSelector) {
-        UPDATE_MESSAGES.with(|msgs| {
-            msgs.borrow_mut().push(UpdateMessage::StyleSelector {
-                id,
-                style,
-                selector,
-            })
-        });
-    }
-
-    pub fn keyboard_navigatable(id: Id) {
-        UPDATE_MESSAGES.with(|msgs| {
-            msgs.borrow_mut()
-                .push(UpdateMessage::KeyboardNavigatable { id })
-        })
-    }
-
-    pub fn update_responsive_style(id: Id, style: Style, size: ScreenSize) {
-        UPDATE_MESSAGES.with(|msgs| {
-            msgs.borrow_mut()
-                .push(UpdateMessage::ResponsiveStyle { id, style, size })
-        });
-    }
-
-    pub fn update_cursor_style(cursor: CursorStyle) {
-        UPDATE_MESSAGES.with(|msgs| {
-            msgs.borrow_mut()
-                .push(UpdateMessage::CursorStyle { cursor })
-        });
-    }
-
-    pub fn update_event_listner(id: Id, listener: EventListner, action: Box<EventCallback>) {
-        UPDATE_MESSAGES.with(|msgs| {
-            msgs.borrow_mut().push(UpdateMessage::EventListener {
-                id,
-                listener,
-                action,
-            })
-        });
-    }
-
-    pub fn update_resize_listner(id: Id, action: Box<ResizeCallback>) {
-        UPDATE_MESSAGES.with(|msgs| {
-            msgs.borrow_mut()
-                .push(UpdateMessage::ResizeListener { id, action })
-        });
-    }
-
-    pub fn update_open_file(
-        options: FileDialogOptions,
-        file_info_action: impl Fn(Option<FileInfo>) + 'static,
-    ) {
-        UPDATE_MESSAGES.with(|msgs| {
-            msgs.borrow_mut().push(UpdateMessage::OpenFile {
-                options,
-                file_info_action: Box::new(file_info_action),
-            })
-        });
-    }
-
     pub fn with_id(mut self, id: Id) -> Self {
         self.id = id;
         self
@@ -193,8 +103,14 @@ pub enum StyleSelector {
 
 pub enum UpdateMessage {
     Focus(Id),
-    Disabled(Id, bool),
+    Disabled {
+        id: Id,
+        is_disabled: bool,
+    },
     RequestPaint,
+    RequestLayout {
+        id: Id,
+    },
     State {
         id: Id,
         state: Box<dyn Any>,
@@ -232,6 +148,10 @@ pub enum UpdateMessage {
         options: FileDialogOptions,
         file_info_action: Box<dyn Fn(Option<FileInfo>)>,
     },
+    RequestTimer {
+        deadline: std::time::Duration,
+        action: Box<dyn FnOnce()>,
+    },
 }
 
 impl<V: View> Drop for AppHandle<V> {
@@ -258,6 +178,7 @@ impl<V: View> AppHandle<V> {
             handle: Default::default(),
 
             file_dialogs: HashMap::new(),
+            timers: HashMap::new(),
         }
     }
 
@@ -315,7 +236,11 @@ impl<V: View> AppHandle<V> {
     fn process_deferred_update_messages(&mut self) -> ChangeFlags {
         let mut flags = ChangeFlags::empty();
 
-        let msgs = DEFERRED_UPDATE_MESSAGES.with(|msgs| msgs.take());
+        let msgs = DEFERRED_UPDATE_MESSAGES.with(|msgs| {
+            msgs.borrow_mut()
+                .remove(&self.view.id())
+                .unwrap_or_default()
+        });
         if msgs.is_empty() {
             return flags;
         }
@@ -336,7 +261,11 @@ impl<V: View> AppHandle<V> {
     fn process_update_messages(&mut self) -> ChangeFlags {
         let mut flags = ChangeFlags::empty();
         loop {
-            let msgs = UPDATE_MESSAGES.with(|msgs| msgs.take());
+            let msgs = UPDATE_MESSAGES.with(|msgs| {
+                msgs.borrow_mut()
+                    .remove(&self.view.id())
+                    .unwrap_or_default()
+            });
             if msgs.is_empty() {
                 break;
             }
@@ -347,6 +276,9 @@ impl<V: View> AppHandle<V> {
                 match msg {
                     UpdateMessage::RequestPaint => {
                         flags |= ChangeFlags::PAINT;
+                    }
+                    UpdateMessage::RequestLayout { id } => {
+                        cx.app_state.request_layout(id);
                     }
                     UpdateMessage::Focus(id) => {
                         let old = cx.app_state.focus;
@@ -363,7 +295,7 @@ impl<V: View> AppHandle<V> {
                             cx.app_state.request_layout(id);
                         }
                     }
-                    UpdateMessage::Disabled(id, is_disabled) => {
+                    UpdateMessage::Disabled { id, is_disabled } => {
                         if is_disabled {
                             cx.app_state.disabled.insert(id);
                             cx.app_state.hovered.remove(&id);
@@ -434,6 +366,10 @@ impl<V: View> AppHandle<V> {
                         if let Some(token) = token {
                             self.file_dialogs.insert(token, file_info_action);
                         }
+                    }
+                    UpdateMessage::RequestTimer { deadline, action } => {
+                        let token = self.handle.request_timer(deadline);
+                        self.timers.insert(token, action);
                     }
                 }
             }
@@ -652,6 +588,12 @@ impl<V: View> WinHandler for AppHandle<V> {
     fn open_file(&mut self, token: FileDialogToken, file: Option<FileInfo>) {
         if let Some(action) = self.file_dialogs.remove(&token) {
             action(file);
+        }
+    }
+
+    fn timer(&mut self, token: TimerToken) {
+        if let Some(action) = self.timers.remove(&token) {
+            action();
         }
     }
 
