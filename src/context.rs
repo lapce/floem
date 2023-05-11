@@ -540,6 +540,18 @@ impl<'a> LayoutCx<'a> {
         self.font_family.as_deref()
     }
 
+    pub fn current_font_weight(&self) -> Option<Weight> {
+        self.font_weight
+    }
+
+    pub fn current_font_style(&self) -> Option<FontStyle> {
+        self.font_style
+    }
+
+    pub fn current_line_height(&self) -> Option<LineHeightValue> {
+        self.line_height
+    }
+
     pub fn get_layout(&self, id: Id) -> Option<Layout> {
         self.app_state.get_layout(id)
     }
