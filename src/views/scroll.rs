@@ -58,7 +58,7 @@ pub struct Scroll<V: View> {
     scroll_bar_color: Color,
 }
 
-pub fn scroll<V: View>(child: impl Fn() -> V) -> Scroll<V> {
+pub fn scroll<V: View>(child: impl FnOnce() -> V) -> Scroll<V> {
     let cx = AppContext::get_current();
     let id = cx.new_id();
 
