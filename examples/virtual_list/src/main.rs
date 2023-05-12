@@ -16,7 +16,7 @@ fn app_view(cx: AppContext) -> impl View {
         scroll(move || {
             virtual_list(
                 VirtualListDirection::Vertical,
-                VirtualListItemSize::Fixed(20.0),
+                VirtualListItemSize::Fixed(Box::new(|| 20.0)),
                 move || long_list.get(),
                 move |item| *item,
                 move |item| label(move || item.to_string()).style(|| Style::BASE.height_px(20.0)),

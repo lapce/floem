@@ -24,7 +24,7 @@ pub enum VirtualListDirection {
 
 pub enum VirtualListItemSize<T> {
     Fn(Box<dyn Fn(&T) -> f64>),
-    Fixed(f64),
+    Fixed(Box<dyn Fn() -> f64>),
 }
 
 pub trait VirtualListVector<T> {
@@ -109,7 +109,7 @@ where
         let mut after_size = 0.0;
         match &item_size {
             VirtualListItemSize::Fixed(item_size) => {
-                let item_size = *item_size;
+                let item_size = item_size();
                 let total_len = items_vector.total_len();
                 let start = if item_size > 0.0 {
                     (min / item_size).floor() as usize

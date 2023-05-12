@@ -6,6 +6,8 @@ pub mod labels;
 pub mod lists;
 
 use floem::{
+    event::{Event, EventListner},
+    glazier::keyboard_types::Key,
     peniko::Color,
     reactive::{create_signal, SignalGet, SignalUpdate},
     style::{CursorStyle, Style},
@@ -14,8 +16,7 @@ use floem::{
         container, container_box, label, scroll, stack, tab, virtual_list, Decorators,
         VirtualListDirection, VirtualListItemSize,
     },
-    event:: {Event, EventListner},
-    AppContext, glazier::keyboard_types::Key,
+    AppContext,
 };
 
 fn app_view(cx: AppContext) -> impl View {
@@ -31,16 +32,14 @@ fn app_view(cx: AppContext) -> impl View {
                 scroll(move || {
                     virtual_list(
                         VirtualListDirection::Vertical,
-                        VirtualListItemSize::Fixed(32.0),
+                        VirtualListItemSize::Fixed(Box::new(|| 32.0)),
                         move || tabs.get(),
                         move |item| *item,
                         move |item| {
                             let index = tabs.get().iter().position(|it| *it == item).unwrap();
                             stack(|| {
-                                (
-                                    label(move || item.to_string())
-                                    .style(|| Style::BASE.font_size(24.0)),
-                                )
+                                (label(move || item.to_string())
+                                    .style(|| Style::BASE.font_size(24.0)),)
                             })
                             .on_click(move |_| {
                                 set_active_tab.update(|v: &mut usize| {
@@ -63,7 +62,7 @@ fn app_view(cx: AppContext) -> impl View {
                                             }
                                         }
                                         _ => {}
-                                    }                                    
+                                    }
                                 }
                                 true
                             })
@@ -76,7 +75,8 @@ fn app_view(cx: AppContext) -> impl View {
                                     .flex_row()
                                     .width_pct(100.0)
                                     .height_px(32.0)
-                                    .border_bottom(1.0).border_color(Color::LIGHT_GRAY)
+                                    .border_bottom(1.0)
+                                    .border_color(Color::LIGHT_GRAY)
                                     .apply_if(index == active_tab.get(), |s| {
                                         s.background(Color::GRAY)
                                     })
