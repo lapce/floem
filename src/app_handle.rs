@@ -493,17 +493,23 @@ impl<V: View> AppHandle<V> {
                 cx.app_state.active = None;
             }
         } else {
-            self.view.event_main(&mut cx, None, event);
+            self.view.event_main(&mut cx, None, event.clone());
         }
 
         if is_pointer_move {
-            for id in was_hovered
-                .unwrap()
-                .symmetric_difference(&cx.app_state.hovered.clone())
-            {
+            let hovered = &cx.app_state.hovered.clone();
+            for id in was_hovered.unwrap().symmetric_difference(hovered) {
                 let view_state = cx.app_state.view_state(*id);
                 if view_state.hover_style.is_some() || view_state.active_style.is_some() {
                     cx.app_state.request_layout(*id);
+                }
+                if hovered.contains(id) {
+                    if let Some(action) = cx.get_event_listener(*id, &EventListner::PointerEnter) {
+                        (*action)(&event);
+                    }
+                } else if let Some(action) = cx.get_event_listener(*id, &EventListner::PointerLeave)
+                {
+                    (*action)(&event);
                 }
             }
         }
