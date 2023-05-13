@@ -7,6 +7,8 @@ use glazier::{
 pub enum EventListner {
     KeyDown,
     Click,
+    PointerEnter,
+    PointerLeave,
     DoubleClick,
     PointerWheel,
     WindowClosed,
