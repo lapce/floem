@@ -205,7 +205,10 @@ impl Renderer for VgerRenderer {
             Some(paint) => paint,
             None => return,
         };
-        if let Some(rect) = path.as_rect() {
+        if let Some(circle) = path.as_circle() {
+            self.vger
+                .fill_circle(self.vger_point(circle.center), circle.radius as f32, paint);
+        } else if let Some(rect) = path.as_rect() {
             self.vger.fill_rect(self.vger_rect(rect), 0.0, paint);
         } else if let Some(rect) = path.as_rounded_rect() {
             self.vger.fill_rect(

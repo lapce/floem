@@ -2,7 +2,7 @@ use std::any::Any;
 
 use bitflags::bitflags;
 use floem_renderer::Renderer;
-use glazier::kurbo::{Line, Point, Size};
+use glazier::kurbo::{Circle, Line, Point, Size};
 use taffy::prelude::Node;
 
 use crate::{
@@ -386,7 +386,11 @@ fn paint_bg(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
     };
 
     let radius = style.border_radius;
-    if radius > 0.0 {
+    let circle = style.circle;
+    if circle {
+        let circle = Circle::new((size.width / 2.0, size.height / 2.0), size.width);
+        cx.fill(&circle, bg);
+    } else if radius > 0.0 {
         let rect = size.to_rect().to_rounded_rect(radius as f64);
         cx.fill(&rect, bg);
     } else {
