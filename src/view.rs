@@ -455,34 +455,3 @@ fn paint_border(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
         }
     }
 }
-
-impl View for () {
-    fn id(&self) -> Id {
-        let cx = crate::AppContext::get_current();
-        cx.new_id()
-    }
-
-    fn child(&mut self, _id: Id) -> Option<&mut dyn View> {
-        None
-    }
-
-    fn children(&mut self) -> Vec<&mut dyn View> {
-        Vec::new()
-    }
-
-    fn update(&mut self, _cx: &mut UpdateCx, _state: Box<dyn Any>) -> ChangeFlags {
-        ChangeFlags::empty()
-    }
-
-    fn layout(&mut self, cx: &mut LayoutCx) -> Node {
-        cx.new_node()
-    }
-
-    fn compute_layout(&mut self, _cx: &mut LayoutCx) {}
-
-    fn event(&mut self, _cx: &mut EventCx, _id_path: Option<&[Id]>, _event: Event) -> bool {
-        false
-    }
-
-    fn paint(&mut self, _cx: &mut PaintCx) {}
-}
