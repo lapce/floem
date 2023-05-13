@@ -564,6 +564,7 @@ impl View for TextInput {
         let buf_width = text_buf.size().width;
         let node_layout = *cx.app_state.taffy.layout(text_node).unwrap();
         let node_width = node_layout.size.width as f64;
+        let cursor_color = cx.app_state.get_computed_style(self.id).cursor_color;
 
         match self.input_kind {
             InputKind::SingleLine => {
@@ -606,7 +607,7 @@ impl View for TextInput {
 
         if is_cursor_visible {
             let cursor_rect = self.get_cursor_rect(&node_layout);
-            cx.fill(&cursor_rect, Color::BLACK);
+            cx.fill(&cursor_rect, cursor_color.unwrap_or(Color::BLACK));
         }
 
         let id = self.id();
