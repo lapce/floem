@@ -243,6 +243,7 @@ define_styles!(
     font_family nocb: Option<String> = None,
     font_weight nocb: Option<Weight> = None,
     font_style nocb: Option<FontStyle> = None,
+    cursor_color nocb: Option<Color> = None,
     text_overflow: TextOverflow = TextOverflow::Wrap,
     line_height nocb: Option<LineHeightValue> = None,
 );
@@ -522,6 +523,11 @@ impl Style {
 
     pub fn font_style(mut self, style: impl Into<StyleValue<FontStyle>>) -> Self {
         self.font_style = style.into().map(Some);
+        self
+    }
+
+    pub fn cursor_color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
+        self.cursor_color = color.into().map(Some);
         self
     }
 
