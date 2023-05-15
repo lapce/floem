@@ -39,3 +39,6 @@ pub use text_input::*;
 
 mod empty;
 pub use empty::*;
+
+mod title_bar;
+pub use title_bar::*;

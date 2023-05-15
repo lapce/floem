@@ -1,6 +1,9 @@
 use std::{any::Any, cell::RefCell, collections::HashMap, num::NonZeroU64, time::Duration};
 
-use glazier::{kurbo::Point, FileDialogOptions, FileInfo};
+use glazier::{
+    kurbo::{Point, Vec2},
+    FileDialogOptions, FileInfo,
+};
 
 use crate::{
     app_handle::{StyleSelector, UpdateMessage, DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES},
@@ -345,6 +348,16 @@ impl Id {
                     style,
                     size,
                 })
+            });
+        }
+    }
+
+    pub fn update_window_position(&self, delta: Vec2) {
+        if let Some(root) = self.root_id() {
+            UPDATE_MESSAGES.with(|msgs| {
+                let mut msgs = msgs.borrow_mut();
+                let msgs = msgs.entry(root).or_default();
+                msgs.push(UpdateMessage::MoveWindow(delta))
             });
         }
     }

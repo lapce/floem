@@ -1,7 +1,7 @@
 use std::{any::Any, collections::HashMap};
 
 use floem_renderer::Renderer;
-use glazier::kurbo::{Affine, Point, Rect};
+use glazier::kurbo::{Affine, Point, Rect, Vec2};
 use glazier::{FileDialogOptions, FileDialogToken, FileInfo, Scale, TimerToken, WinHandler};
 use leptos_reactive::{Scope, SignalSet};
 
@@ -144,6 +144,7 @@ pub enum UpdateMessage {
         id: Id,
         action: Box<ResizeCallback>,
     },
+    MoveWindow(Vec2),
     OpenFile {
         options: FileDialogOptions,
         file_info_action: Box<dyn Fn(Option<FileInfo>)>,
@@ -360,6 +361,9 @@ impl<V: View> AppHandle<V> {
                     }
                     UpdateMessage::KeyboardNavigatable { id } => {
                         cx.app_state.keyboard_navigatable.insert(id);
+                    }
+                    UpdateMessage::MoveWindow(delta) => {
+                        self.handle.set_position(self.handle.get_position() - delta)
                     }
                     UpdateMessage::EventListener {
                         id,
