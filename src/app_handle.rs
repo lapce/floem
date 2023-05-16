@@ -686,10 +686,9 @@ impl<V: View> WinHandler for AppHandle<V> {
             MousePosState::None => {}
             MousePosState::Ready => self.prev_mouse_pos = MousePosState::Some(event.pos),
             MousePosState::Some(prev_pos) => {
-                self.handle
-                    .set_position(Point::from(std::convert::Into::<(f64, f64)>::into(
-                        self.handle.get_position() + (event.pos - prev_pos),
-                    )));
+                let position_diff = event.pos - prev_pos;
+                let new_position = self.handle.get_position() + position_diff;
+                self.handle.set_position(new_position);
             }
         }
         self.event(Event::PointerMove(event.clone()));
