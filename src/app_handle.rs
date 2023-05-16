@@ -33,7 +33,6 @@ enum MousePosState {
     Some(Point),
 }
 
-// TODO! Find out where the root taffy node is updated when the window is resizded
 pub struct AppHandle<V: View> {
     scope: Scope,
     view: V,
