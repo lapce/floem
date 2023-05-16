@@ -1,5 +1,3 @@
-use glazier::kurbo::Point;
-
 use crate::{
     app_handle::AppContext,
     event::Event,
@@ -9,7 +7,6 @@ use crate::{
 
 pub struct TitleBar<V: View> {
     id: Id,
-    prev_mouse_pos: Option<Point>,
     child: V,
 }
 
@@ -23,11 +20,7 @@ pub fn title_bar<V: View>(child: impl FnOnce() -> V) -> TitleBar<V> {
     let child = child();
     AppContext::restore();
 
-    TitleBar {
-        id,
-        prev_mouse_pos: None,
-        child,
-    }
+    TitleBar { id, child }
 }
 
 impl<V: View> View for TitleBar<V> {
@@ -73,25 +66,25 @@ impl<V: View> View for TitleBar<V> {
         id_path: Option<&[Id]>,
         event: Event,
     ) -> bool {
-        match &event {
-            Event::PointerDown(mouse_event) => {
-                if mouse_event.button.is_left() {
-                    self.prev_mouse_pos = Some(mouse_event.pos);
+        if !self.child.event_main(cx, id_path, event.clone()) {
+            match &event {
+                Event::PointerDown(mouse_event) => {
+                    if mouse_event.button.is_left() {
+                        self.id.set_handle_titlebar(true);
+                    }
+                    true
                 }
-            }
-            Event::PointerUp(mouse_event) => {
-                if mouse_event.button.is_left() {
-                    self.prev_mouse_pos = None
+                Event::PointerUp(mouse_event) => {
+                    if mouse_event.button.is_left() {
+                        self.id.set_handle_titlebar(false);
+                    }
+                    true
                 }
+                _ => false,
             }
-            Event::PointerMove(mouse_event) => {
-                if let Some(prev_pos) = self.prev_mouse_pos {
-                    self.id.update_window_position(prev_pos - mouse_event.pos)
-                }
-            }
-            _ => {}
+        } else {
+            false
         }
-        self.child.event_main(cx, id_path, event)
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
