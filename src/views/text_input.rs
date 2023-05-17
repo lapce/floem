@@ -485,8 +485,8 @@ impl View for TextInput {
             }
             Event::KeyDown(event) => self.handle_key_down(cx, event),
             Event::PointerMove(_) => {
-                if !matches!(cx.app_state.cursor, CursorStyle::Text) {
-                    cx.app_state.cursor = CursorStyle::Text;
+                if !matches!(cx.app_state.cursor, Some(CursorStyle::Text)) {
+                    cx.app_state.cursor = Some(CursorStyle::Text);
                     return true;
                 }
                 false

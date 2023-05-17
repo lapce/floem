@@ -7,9 +7,10 @@ use glazier::{
 pub enum EventListner {
     KeyDown,
     Click,
+    DoubleClick,
+    PointerDown,
     PointerEnter,
     PointerLeave,
-    DoubleClick,
     PointerWheel,
     WindowClosed,
     WindowResized,
@@ -115,7 +116,7 @@ impl Event {
 
     pub fn listener(&self) -> Option<EventListner> {
         match self {
-            Event::PointerDown(_) => None,
+            Event::PointerDown(_) => Some(EventListner::PointerDown),
             Event::PointerUp(_) => None,
             Event::PointerMove(_) => None,
             Event::PointerWheel(_) => Some(EventListner::PointerWheel),

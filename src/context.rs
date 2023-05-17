@@ -180,7 +180,7 @@ pub struct AppState {
     pub(crate) screen_size_bp: ScreenSizeBp,
     pub(crate) grid_breakpts: GridBreakpoints,
     pub(crate) hovered: HashSet<Id>,
-    pub(crate) cursor: CursorStyle,
+    pub(crate) cursor: Option<CursorStyle>,
     pub(crate) keyboard_navigation: bool,
 }
 
@@ -205,7 +205,7 @@ impl AppState {
             disabled: HashSet::new(),
             keyboard_navigatable: HashSet::new(),
             hovered: HashSet::new(),
-            cursor: CursorStyle::Default,
+            cursor: None,
             keyboard_navigation: false,
             grid_breakpts: GridBreakpoints::default(),
         }
@@ -381,8 +381,12 @@ pub struct EventCx<'a> {
 }
 
 impl<'a> EventCx<'a> {
-    pub(crate) fn update_active(&mut self, id: Id) {
+    pub fn update_active(&mut self, id: Id) {
         self.app_state.update_active(id);
+    }
+
+    pub fn is_active(&self, id: Id) -> bool {
+        self.app_state.is_active(&id)
     }
 
     #[allow(unused)]
@@ -424,7 +428,7 @@ impl<'a> EventCx<'a> {
         &self,
         id: Id,
         listner: &EventListner,
-    ) -> Option<&Box<EventCallback>> {
+    ) -> Option<&impl Fn(&Event) -> bool> {
         self.app_state
             .view_states
             .get(&id)

@@ -519,42 +519,40 @@ impl<V: View> View for Scroll<V> {
             }
             Event::PointerUp(_event) => self.held = BarHeldState::None,
             Event::PointerMove(event) => {
-                if self.are_bars_held() {
-                    match self.held {
-                        BarHeldState::Vertical(offset, initial_scroll_offset) => {
-                            let scale_y = viewport_size.height / content_size.height;
-                            let y = initial_scroll_offset.y + (event.pos.y - offset) / scale_y;
-                            self.clamp_child_viewport(
-                                cx.app_state,
-                                self.child_viewport
-                                    .with_origin(Point::new(initial_scroll_offset.x, y)),
-                            );
+                if !self.hide_bar {
+                    if self.are_bars_held() {
+                        match self.held {
+                            BarHeldState::Vertical(offset, initial_scroll_offset) => {
+                                let scale_y = viewport_size.height / content_size.height;
+                                let y = initial_scroll_offset.y + (event.pos.y - offset) / scale_y;
+                                self.clamp_child_viewport(
+                                    cx.app_state,
+                                    self.child_viewport
+                                        .with_origin(Point::new(initial_scroll_offset.x, y)),
+                                );
+                            }
+                            BarHeldState::Horizontal(offset, initial_scroll_offset) => {
+                                let scale_x = viewport_size.width / content_size.width;
+                                let x = initial_scroll_offset.x + (event.pos.x - offset) / scale_x;
+                                self.clamp_child_viewport(
+                                    cx.app_state,
+                                    self.child_viewport
+                                        .with_origin(Point::new(x, initial_scroll_offset.y)),
+                                );
+                            }
+                            BarHeldState::None => {}
                         }
-                        BarHeldState::Horizontal(offset, initial_scroll_offset) => {
-                            let scale_x = viewport_size.width / content_size.width;
-                            let x = initial_scroll_offset.x + (event.pos.x - offset) / scale_x;
-                            self.clamp_child_viewport(
-                                cx.app_state,
-                                self.child_viewport
-                                    .with_origin(Point::new(x, initial_scroll_offset.y)),
-                            );
+                    } else {
+                        let pos = event.pos + scroll_offset;
+                        if self.point_hits_vertical_bar(cx.app_state, pos)
+                            || self.point_hits_horizontal_bar(cx.app_state, pos)
+                        {
+                            return true;
                         }
-                        BarHeldState::None => {}
-                    }
-                } else {
-                    let pos = event.pos + scroll_offset;
-                    if self.point_hits_vertical_bar(cx.app_state, pos)
-                        || self.point_hits_horizontal_bar(cx.app_state, pos)
-                    {
-                        return true;
                     }
                 }
             }
             _ => {}
-        }
-
-        if id_path.is_some() {
-            return true;
         }
 
         if self.child.event_main(
@@ -574,7 +572,7 @@ impl<V: View> View for Scroll<V> {
             self.clamp_child_viewport(cx.app_state, self.child_viewport + delta);
         }
 
-        true
+        false
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {

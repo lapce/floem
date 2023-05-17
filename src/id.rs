@@ -7,7 +7,7 @@ use crate::{
     context::{EventCallback, ResizeCallback},
     event::EventListner,
     responsive::ScreenSize,
-    style::{CursorStyle, Style},
+    style::Style,
 };
 
 thread_local! {
@@ -324,16 +324,6 @@ impl Id {
                     style,
                     size,
                 })
-            });
-        }
-    }
-
-    pub fn update_cursor_style(&self, cursor: CursorStyle) {
-        if let Some(root) = self.root_id() {
-            UPDATE_MESSAGES.with(|msgs| {
-                let mut msgs = msgs.borrow_mut();
-                let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::CursorStyle { cursor })
             });
         }
     }

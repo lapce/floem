@@ -166,11 +166,21 @@ pub trait View {
         if let Some(id_path) = id_path {
             let id = id_path[0];
             let id_path = &id_path[1..];
-            if id == self.id() && !id_path.is_empty() {
+
+            if id != self.id() {
+                return false;
+            }
+
+            if !id_path.is_empty() {
                 if let Some(child) = self.child(id_path[0]) {
                     return child.event_main(cx, Some(id_path), event);
                 }
+                return false;
             }
+        }
+
+        if self.event(cx, id_path, event.clone()) {
+            return true;
         }
 
         match &event {
@@ -247,7 +257,9 @@ pub trait View {
                     cx.app_state.hovered.insert(id);
                     let style = cx.app_state.get_computed_style(id);
                     if let Some(cursor) = style.cursor {
-                        id.update_cursor_style(cursor);
+                        if cx.app_state.cursor.is_none() {
+                            cx.app_state.cursor = Some(cursor);
+                        }
                     }
                 }
             }
@@ -267,10 +279,6 @@ pub trait View {
                     return true;
                 }
             }
-        }
-
-        if self.event(cx, id_path, event) {
-            return true;
         }
 
         false

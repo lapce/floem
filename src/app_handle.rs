@@ -132,9 +132,6 @@ pub enum UpdateMessage {
     KeyboardNavigatable {
         id: Id,
     },
-    CursorStyle {
-        cursor: CursorStyle,
-    },
     EventListener {
         id: Id,
         listener: EventListner,
@@ -339,9 +336,6 @@ impl<V: View> AppHandle<V> {
                     UpdateMessage::KeyboardNavigatable { id } => {
                         cx.app_state.keyboard_navigatable.insert(id);
                     }
-                    UpdateMessage::CursorStyle { cursor } => {
-                        cx.app_state.cursor = cursor;
-                    }
                     UpdateMessage::EventListener {
                         id,
                         listener,
@@ -403,9 +397,10 @@ impl<V: View> AppHandle<V> {
         }
 
         let glazier_cursor = match self.app_state.cursor {
-            CursorStyle::Default => glazier::Cursor::Arrow,
-            CursorStyle::Pointer => glazier::Cursor::Pointer,
-            CursorStyle::Text => glazier::Cursor::IBeam,
+            Some(CursorStyle::Default) => glazier::Cursor::Arrow,
+            Some(CursorStyle::Pointer) => glazier::Cursor::Pointer,
+            Some(CursorStyle::Text) => glazier::Cursor::IBeam,
+            None => glazier::Cursor::Arrow,
         };
         self.handle.set_cursor(&glazier_cursor);
 
@@ -421,7 +416,7 @@ impl<V: View> AppHandle<V> {
 
         let is_pointer_move = matches!(&event, Event::PointerMove(_));
         let was_hovered = if is_pointer_move {
-            cx.app_state.cursor = CursorStyle::Default;
+            cx.app_state.cursor = None;
             let was_hovered = cx.app_state.hovered.clone();
             cx.app_state.hovered.clear();
             Some(was_hovered)
