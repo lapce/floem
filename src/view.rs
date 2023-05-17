@@ -203,11 +203,9 @@ pub trait View {
                             let view_state = cx.app_state.view_state(id);
                             view_state.last_pointer_down = Some(event.clone());
                             cx.update_active(id);
-                            return true;
                         }
                         if cx.has_event_listener(id, EventListner::Click) {
                             cx.update_active(id);
-                            return true;
                         }
                     }
                 }
@@ -222,14 +220,13 @@ pub trait View {
                                 .as_ref()
                                 .map(|e| e.count == 2)
                                 .unwrap_or(false)
+                            && (*action)(&event)
                         {
-                            (*action)(&event);
                             return true;
                         }
                     }
                     if let Some(action) = cx.get_event_listener(id, &EventListner::Click) {
-                        if rect.contains(pointer_event.pos) {
-                            (*action)(&event);
+                        if rect.contains(pointer_event.pos) && (*action)(&event) {
                             return true;
                         }
                     }
