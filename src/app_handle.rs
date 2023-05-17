@@ -103,6 +103,7 @@ pub enum StyleSelector {
 
 pub enum UpdateMessage {
     Focus(Id),
+    Active(Id),
     Disabled {
         id: Id,
         is_disabled: bool,
@@ -289,6 +290,24 @@ impl<V: View> AppHandle<V> {
                         }
 
                         if cx.app_state.has_style_for_sel(id, StyleSelector::Focus) {
+                            cx.app_state.request_layout(id);
+                        }
+                    }
+                    UpdateMessage::Active(id) => {
+                        let old = cx.app_state.active;
+                        cx.app_state.active = Some(id);
+
+                        if let Some(old_id) = old {
+                            // To remove the styles applied by the Active selector
+                            if cx
+                                .app_state
+                                .has_style_for_sel(old_id, StyleSelector::Active)
+                            {
+                                cx.app_state.request_layout(old_id);
+                            }
+                        }
+
+                        if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
                             cx.app_state.request_layout(id);
                         }
                     }

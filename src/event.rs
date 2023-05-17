@@ -9,6 +9,8 @@ pub enum EventListner {
     Click,
     DoubleClick,
     PointerDown,
+    PointerMove,
+    PointerUp,
     PointerEnter,
     PointerLeave,
     PointerWheel,
@@ -117,8 +119,8 @@ impl Event {
     pub fn listener(&self) -> Option<EventListner> {
         match self {
             Event::PointerDown(_) => Some(EventListner::PointerDown),
-            Event::PointerUp(_) => None,
-            Event::PointerMove(_) => None,
+            Event::PointerUp(_) => Some(EventListner::PointerUp),
+            Event::PointerMove(_) => Some(EventListner::PointerMove),
             Event::PointerWheel(_) => Some(EventListner::PointerWheel),
             Event::KeyDown(_) | Event::KeyUp(_) => Some(EventListner::KeyDown),
             Event::WindowClosed => Some(EventListner::WindowClosed),
