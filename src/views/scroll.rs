@@ -555,11 +555,9 @@ impl<V: View> View for Scroll<V> {
             _ => {}
         }
 
-        if self.child.event_main(
-            cx,
-            id_path, // event.clone().offset((-scroll_offset.x, -scroll_offset.y)),
-            event.clone(),
-        ) {
+        if cx.should_send(self.child.id(), &event)
+            && self.child.event_main(cx, id_path, event.clone())
+        {
             return true;
         }
 
@@ -570,6 +568,7 @@ impl<V: View> View for Scroll<V> {
                 Vec2::ZERO
             };
             self.clamp_child_viewport(cx.app_state, self.child_viewport + delta);
+            return true;
         }
 
         false

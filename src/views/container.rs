@@ -65,7 +65,11 @@ impl<V: View> View for Container<V> {
         id_path: Option<&[Id]>,
         event: crate::event::Event,
     ) -> bool {
-        self.child.event_main(cx, id_path, event)
+        if cx.should_send(self.child.id(), &event) {
+            self.child.event_main(cx, id_path, event)
+        } else {
+            false
+        }
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {

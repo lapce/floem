@@ -193,7 +193,11 @@ where
         event: crate::event::Event,
     ) -> bool {
         if let Some(Some((child, _))) = self.children.get_mut(self.active) {
-            child.event_main(cx, id_path, event)
+            if cx.should_send(child.id(), &event) {
+                child.event_main(cx, id_path, event)
+            } else {
+                false
+            }
         } else {
             false
         }
