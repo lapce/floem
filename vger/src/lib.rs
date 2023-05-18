@@ -85,9 +85,15 @@ impl VgerRenderer {
     }
 
     pub fn resize(&mut self, width: u32, height: u32, scale: f64) {
-        self.config.width = width;
-        self.config.height = height;
-        self.surface.configure(&self.device, &self.config);
+        if width != self.config.width || height != self.config.height {
+            self.config.width = width;
+            self.config.height = height;
+            self.surface.configure(&self.device, &self.config);
+        }
+        self.scale = scale;
+    }
+
+    pub fn set_scale(&mut self, scale: f64) {
         self.scale = scale;
     }
 }

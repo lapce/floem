@@ -99,6 +99,24 @@ impl Event {
         }
     }
 
+    pub fn scale(mut self, scale: f64) -> Event {
+        match &mut self {
+            Event::PointerDown(pointer_event)
+            | Event::PointerUp(pointer_event)
+            | Event::PointerMove(pointer_event)
+            | Event::PointerWheel(pointer_event) => {
+                pointer_event.pos.x /= scale;
+                pointer_event.pos.y /= scale;
+            }
+            Event::KeyDown(_)
+            | Event::KeyUp(_)
+            | Event::WindowClosed
+            | Event::WindowResized(_)
+            | Event::WindowMoved(_) => {}
+        }
+        self
+    }
+
     pub fn offset(mut self, offset: (f64, f64)) -> Event {
         match &mut self {
             Event::PointerDown(pointer_event)

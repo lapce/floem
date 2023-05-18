@@ -173,6 +173,7 @@ pub struct AppState {
     pub(crate) active: Option<Id>,
     pub(crate) root: Option<Node>,
     pub(crate) root_size: Size,
+    pub(crate) scale: f64,
     pub taffy: taffy::Taffy,
     pub(crate) view_states: HashMap<Id, ViewState>,
     pub(crate) disabled: HashSet<Id>,
@@ -198,6 +199,7 @@ impl AppState {
             root: None,
             focus: None,
             active: None,
+            scale: 1.0,
             root_size: Size::ZERO,
             screen_size_bp: ScreenSizeBp::Xs,
             taffy,
@@ -210,6 +212,7 @@ impl AppState {
             grid_breakpts: GridBreakpoints::default(),
         }
     }
+
     pub fn view_state(&mut self, id: Id) -> &mut ViewState {
         self.view_states
             .entry(id)
@@ -285,8 +288,8 @@ impl AppState {
             let _ = self.taffy.compute_layout(
                 root,
                 taffy::prelude::Size {
-                    width: AvailableSpace::Definite(self.root_size.width as f32),
-                    height: AvailableSpace::Definite(self.root_size.height as f32),
+                    width: AvailableSpace::Definite((self.root_size.width / self.scale) as f32),
+                    height: AvailableSpace::Definite((self.root_size.height / self.scale) as f32),
                 },
             );
         }
@@ -317,6 +320,11 @@ impl AppState {
     }
 
     pub(crate) fn update_active(&mut self, id: Id) {
+        if self.active.is_some() {
+            // the first update_active wins, so if there's active set,
+            // don't do anything.
+            return;
+        }
         self.active = Some(id);
 
         // To apply the styles of the Active selector
@@ -755,6 +763,10 @@ impl PaintState {
 
     pub(crate) fn resize(&mut self, scale: Scale, size: Size) {
         self.renderer.as_mut().unwrap().resize(scale, size);
+    }
+
+    pub(crate) fn set_scale(&mut self, scale: Scale) {
+        self.renderer.as_mut().unwrap().set_scale(scale);
     }
 }
 

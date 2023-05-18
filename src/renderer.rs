@@ -25,6 +25,12 @@ impl Renderer {
             Renderer::Vger(r) => r.resize(size.width as u32, size.height as u32, scale.x()),
         }
     }
+
+    pub fn set_scale(&mut self, scale: Scale) {
+        match self {
+            Renderer::Vger(r) => r.set_scale(scale.x()),
+        }
+    }
 }
 
 impl floem_renderer::Renderer for Renderer {

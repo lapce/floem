@@ -2,7 +2,7 @@ use std::{any::Any, collections::HashMap};
 
 use floem_renderer::Renderer;
 use glazier::kurbo::{Affine, Point, Rect};
-use glazier::{FileDialogOptions, FileDialogToken, FileInfo, TimerToken, WinHandler};
+use glazier::{FileDialogOptions, FileDialogToken, FileInfo, Scale, TimerToken, WinHandler};
 use leptos_reactive::{Scope, SignalSet};
 
 use crate::{
@@ -104,6 +104,7 @@ pub enum StyleSelector {
 pub enum UpdateMessage {
     Focus(Id),
     Active(Id),
+    WindowScale(f64),
     Disabled {
         id: Id,
         is_disabled: bool,
@@ -384,6 +385,16 @@ impl<V: View> AppHandle<V> {
                         let token = self.handle.request_timer(deadline);
                         self.timers.insert(token, action);
                     }
+                    UpdateMessage::WindowScale(scale) => {
+                        cx.app_state.scale = scale;
+                        cx.request_layout(self.view.id());
+                        let scale = self.handle.get_scale().unwrap_or_default();
+                        let scale = Scale::new(
+                            scale.x() * cx.app_state.scale,
+                            scale.y() * cx.app_state.scale,
+                        );
+                        self.paint_state.set_scale(scale);
+                    }
                 }
             }
         }
@@ -429,6 +440,8 @@ impl<V: View> AppHandle<V> {
     }
 
     pub fn event(&mut self, event: Event) {
+        let event = event.scale(self.app_state.scale);
+
         let mut cx = EventCx {
             app_state: &mut self.app_state,
         };
@@ -558,7 +571,11 @@ impl<V: View> WinHandler for AppHandle<V> {
         self.app_state.update_scr_size_breakpt(size);
         self.event(Event::WindowResized(size));
         let scale = self.handle.get_scale().unwrap_or_default();
-        self.paint_state.resize(scale, size);
+        let scale = Scale::new(
+            scale.x() * self.app_state.scale,
+            scale.y() * self.app_state.scale,
+        );
+        self.paint_state.resize(scale, size / self.app_state.scale);
         self.app_state.set_root_size(size);
         self.layout();
         self.process_update();

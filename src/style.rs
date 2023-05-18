@@ -557,13 +557,21 @@ impl Style {
         self.align_items(Some(AlignItems::Center))
     }
 
+    pub fn items_end(self) -> Self {
+        self.align_items(Some(AlignItems::FlexEnd))
+    }
+
     /// Defines the alignment along the main axis as Centered
     pub fn justify_center(self) -> Self {
         self.justify_content(Some(JustifyContent::Center))
     }
 
     pub fn justify_end(self) -> Self {
-        self.justify_content(Some(JustifyContent::End))
+        self.justify_content(Some(JustifyContent::FlexEnd))
+    }
+
+    pub fn justify_start(self) -> Self {
+        self.justify_content(Some(JustifyContent::FlexStart))
     }
 
     pub fn hide(self) -> Self {

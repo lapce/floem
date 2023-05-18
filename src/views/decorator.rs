@@ -127,6 +127,18 @@ pub trait Decorators: View + Sized {
         id.update_resize_listner(Box::new(action));
         self
     }
+
+    fn window_scale(self, scale_fn: impl Fn() -> f64 + 'static) -> Self {
+        let cx = AppContext::get_current();
+        let id = self.id();
+
+        create_effect(cx.scope, move |_| {
+            let window_scale = scale_fn();
+            id.update_window_scale(window_scale);
+        });
+
+        self
+    }
 }
 
 impl<V: View> Decorators for V {}

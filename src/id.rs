@@ -249,6 +249,16 @@ impl Id {
         }
     }
 
+    pub fn update_window_scale(&self, window_scale: f64) {
+        if let Some(root) = self.root_id() {
+            UPDATE_MESSAGES.with(|msgs| {
+                let mut msgs = msgs.borrow_mut();
+                let msgs = msgs.entry(root).or_default();
+                msgs.push(UpdateMessage::WindowScale(window_scale))
+            });
+        }
+    }
+
     pub fn request_paint(&self) {
         if let Some(root) = self.root_id() {
             UPDATE_MESSAGES.with(|msgs| {
