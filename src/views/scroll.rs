@@ -96,7 +96,7 @@ impl<V: View> Scroll<V> {
         self
     }
 
-    pub fn onscroll(mut self, onscroll: impl Fn(Rect) + 'static) -> Self {
+    pub fn on_scroll(mut self, onscroll: impl Fn(Rect) + 'static) -> Self {
         self.onscroll = Some(Box::new(onscroll));
         self
     }

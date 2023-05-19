@@ -1,11 +1,12 @@
 use std::{any::Any, cell::RefCell, collections::HashMap, num::NonZeroU64, time::Duration};
 
-use glazier::{FileDialogOptions, FileInfo};
+use glazier::{kurbo::Point, FileDialogOptions, FileInfo};
 
 use crate::{
     app_handle::{StyleSelector, UpdateMessage, DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES},
     context::{EventCallback, ResizeCallback},
     event::EventListner,
+    menu::Menu,
     responsive::ScreenSize,
     style::Style,
 };
@@ -398,6 +399,16 @@ impl Id {
                     options,
                     file_info_action: Box::new(file_info_action),
                 })
+            });
+        }
+    }
+
+    pub fn show_context_menu(&self, menu: Menu, pos: Point) {
+        if let Some(root) = self.root_id() {
+            UPDATE_MESSAGES.with(|msgs| {
+                let mut msgs = msgs.borrow_mut();
+                let msgs = msgs.entry(root).or_default();
+                msgs.push(UpdateMessage::ShowContextMenu { menu, pos })
             });
         }
     }

@@ -4,6 +4,7 @@ pub mod context;
 pub mod event;
 pub mod ext_event;
 pub mod id;
+pub mod menu;
 pub mod renderer;
 pub mod responsive;
 pub mod style;

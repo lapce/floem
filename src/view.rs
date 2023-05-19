@@ -187,17 +187,10 @@ pub trait View {
             Event::PointerDown(event) => {
                 if event.button.is_left() {
                     let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
-                    let was_focused = cx.app_state.is_focused(&self.id());
                     let now_focused = rect.contains(event.pos);
 
-                    if now_focused && !was_focused {
-                        cx.app_state.update_focus(self.id(), false);
-                    } else if !now_focused && was_focused {
-                        cx.app_state.clear_focus();
-                    }
-
                     if now_focused {
-                        cx.app_state.keyboard_navigation = false;
+                        cx.app_state.update_focus(self.id(), false);
                         if event.count == 2 && cx.has_event_listener(id, EventListner::DoubleClick)
                         {
                             let view_state = cx.app_state.view_state(id);
@@ -378,6 +371,7 @@ pub trait View {
             new_focus = tree_iter(new_focus);
         }
 
+        app_state.clear_focus();
         app_state.update_focus(new_focus, true);
         self.debug_tree();
         println!("Tab to {new_focus:?}");

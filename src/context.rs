@@ -21,6 +21,7 @@ use crate::{
     app_handle::StyleSelector,
     event::{Event, EventListner},
     id::Id,
+    menu::Menu,
     responsive::{GridBreakpoints, ScreenSize, ScreenSizeBp},
     style::{ComputedStyle, CursorStyle, Style},
     AppContext,
@@ -183,6 +184,7 @@ pub struct AppState {
     pub(crate) hovered: HashSet<Id>,
     pub(crate) cursor: Option<CursorStyle>,
     pub(crate) keyboard_navigation: bool,
+    pub(crate) contex_menu: HashMap<u32, Box<dyn Fn()>>,
 }
 
 impl Default for AppState {
@@ -210,6 +212,7 @@ impl AppState {
             cursor: None,
             keyboard_navigation: false,
             grid_breakpts: GridBreakpoints::default(),
+            contex_menu: HashMap::new(),
         }
     }
 
@@ -350,25 +353,12 @@ impl AppState {
     }
 
     pub(crate) fn update_focus(&mut self, id: Id, keyboard_navigation: bool) {
-        let old = self.focus;
+        if self.focus.is_some() {
+            return;
+        }
+
         self.focus = Some(id);
         self.keyboard_navigation = keyboard_navigation;
-
-        if let Some(old_id) = old {
-            // To remove the styles applied by the Focus selector
-            if self.has_style_for_sel(old_id, StyleSelector::Focus)
-                || self.has_style_for_sel(old_id, StyleSelector::FocusVisible)
-            {
-                self.request_layout(old_id);
-            }
-        }
-
-        // To apply the styles of the Focus selector
-        if self.has_style_for_sel(id, StyleSelector::Focus)
-            || self.has_style_for_sel(id, StyleSelector::FocusVisible)
-        {
-            self.request_layout(id);
-        }
     }
 
     pub(crate) fn has_style_for_sel(&mut self, id: Id, selector_kind: StyleSelector) -> bool {
@@ -380,6 +370,25 @@ impl AppState {
             StyleSelector::FocusVisible => view_state.focus_visible_style.is_some(),
             StyleSelector::Disabled => view_state.disabled_style.is_some(),
             StyleSelector::Active => view_state.active_style.is_some(),
+        }
+    }
+
+    pub(crate) fn update_context_menu(&mut self, mut menu: Menu) {
+        if let Some(action) = menu.item.action.take() {
+            self.contex_menu.insert(menu.item.id as u32, action);
+        }
+        for child in menu.children {
+            match child {
+                crate::menu::MenuEntry::Seperator => {}
+                crate::menu::MenuEntry::Item(mut item) => {
+                    if let Some(action) = item.action.take() {
+                        self.contex_menu.insert(item.id as u32, action);
+                    }
+                }
+                crate::menu::MenuEntry::SubMenu(m) => {
+                    self.update_context_menu(m);
+                }
+            }
         }
     }
 }
@@ -406,6 +415,13 @@ impl<'a> EventCx<'a> {
         self.app_state.view_states.get(&id).map(|s| &s.style)
     }
 
+    pub fn get_computed_style(&self, id: Id) -> Option<&ComputedStyle> {
+        self.app_state
+            .view_states
+            .get(&id)
+            .map(|s| &s.computed_style)
+    }
+
     pub fn get_hover_style(&self, id: Id) -> Option<&Style> {
         if let Some(vs) = self.app_state.view_states.get(&id) {
             return vs.hover_style.as_ref();
@@ -414,7 +430,7 @@ impl<'a> EventCx<'a> {
         None
     }
 
-    pub(crate) fn get_layout(&self, id: Id) -> Option<Layout> {
+    pub fn get_layout(&self, id: Id) -> Option<Layout> {
         self.app_state.get_layout(id)
     }
 

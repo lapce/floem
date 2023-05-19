@@ -499,7 +499,7 @@ impl View for TextInput {
             self.last_cursor_action_on = Instant::now();
         }
 
-        is_handled
+        false
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {

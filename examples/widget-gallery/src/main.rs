@@ -55,16 +55,19 @@ fn app_view(cx: AppContext) -> impl View {
                                             if active > 0 {
                                                 set_active_tab.update(|v| *v -= 1)
                                             }
+                                            true
                                         }
                                         Key::ArrowDown => {
                                             if active < tabs.get().len() - 1 {
                                                 set_active_tab.update(|v| *v += 1)
                                             }
+                                            true
                                         }
-                                        _ => {}
+                                        _ => false,
                                     }
+                                } else {
+                                    false
                                 }
-                                true
                             })
                             .keyboard_navigatable()
                             .focus_visible_style(|| {

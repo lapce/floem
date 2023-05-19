@@ -5,6 +5,7 @@ use glazier::kurbo::{Affine, Point, Rect};
 use glazier::{FileDialogOptions, FileDialogToken, FileInfo, Scale, TimerToken, WinHandler};
 use leptos_reactive::{Scope, SignalSet};
 
+use crate::menu::Menu;
 use crate::{
     context::{
         AppContextStore, AppState, EventCallback, EventCx, LayoutCx, PaintCx, PaintState,
@@ -150,6 +151,10 @@ pub enum UpdateMessage {
     RequestTimer {
         deadline: std::time::Duration,
         action: Box<dyn FnOnce()>,
+    },
+    ShowContextMenu {
+        menu: Menu,
+        pos: Point,
     },
 }
 
@@ -395,6 +400,13 @@ impl<V: View> AppHandle<V> {
                         );
                         self.paint_state.set_scale(scale);
                     }
+                    UpdateMessage::ShowContextMenu { menu, pos } => {
+                        let menu = menu.popup();
+                        let platform_menu = menu.platform_menu();
+                        cx.app_state.contex_menu.clear();
+                        cx.app_state.update_context_menu(menu);
+                        self.handle.show_context_menu(platform_menu, pos);
+                    }
                 }
             }
         }
@@ -454,6 +466,13 @@ impl<V: View> AppHandle<V> {
             Some(was_hovered)
         } else {
             None
+        };
+
+        let is_pointer_down = matches!(&event, Event::PointerDown(_));
+        let was_focused = if is_pointer_down {
+            cx.app_state.focus.take()
+        } else {
+            cx.app_state.focus
         };
 
         if event.needs_focus() {
@@ -540,6 +559,29 @@ impl<V: View> AppHandle<V> {
                 }
             }
         }
+        if was_focused != cx.app_state.focus {
+            if let Some(old_id) = was_focused {
+                // To remove the styles applied by the Focus selector
+                if cx.app_state.has_style_for_sel(old_id, StyleSelector::Focus)
+                    || cx
+                        .app_state
+                        .has_style_for_sel(old_id, StyleSelector::FocusVisible)
+                {
+                    cx.app_state.request_layout(old_id);
+                }
+            }
+
+            if let Some(id) = cx.app_state.focus {
+                // To apply the styles of the Focus selector
+                if cx.app_state.has_style_for_sel(id, StyleSelector::Focus)
+                    || cx
+                        .app_state
+                        .has_style_for_sel(id, StyleSelector::FocusVisible)
+                {
+                    cx.app_state.request_layout(id);
+                }
+            }
+        }
 
         self.process_update();
     }
@@ -565,6 +607,15 @@ impl<V: View> WinHandler for AppHandle<V> {
             *EXT_EVENT_HANDLER.handle.lock() = Some(idle_handle);
         }
         self.idle();
+    }
+
+    fn scale(&mut self, scale: Scale) {
+        let scale = Scale::new(
+            scale.x() * self.app_state.scale,
+            scale.y() * self.app_state.scale,
+        );
+        self.paint_state.set_scale(scale);
+        self.handle.invalidate();
     }
 
     fn size(&mut self, size: glazier::kurbo::Size) {
@@ -623,8 +674,15 @@ impl<V: View> WinHandler for AppHandle<V> {
         self.idle();
     }
 
+    fn command(&mut self, id: u32) {
+        if let Some(action) = self.app_state.contex_menu.get(&id) {
+            (*action)();
+            self.process_update();
+        }
+    }
+
     fn as_any(&mut self) -> &mut dyn Any {
-        todo!()
+        &mut self.app_state
     }
 
     fn open_file(&mut self, token: FileDialogToken, file: Option<FileInfo>) {

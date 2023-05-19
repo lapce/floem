@@ -521,6 +521,10 @@ impl Style {
         self
     }
 
+    pub fn font_bold(self) -> Self {
+        self.font_weight(Weight::BOLD)
+    }
+
     pub fn font_style(mut self, style: impl Into<StyleValue<FontStyle>>) -> Self {
         self.font_style = style.into().map(Some);
         self
@@ -572,6 +576,10 @@ impl Style {
 
     pub fn justify_start(self) -> Self {
         self.justify_content(Some(JustifyContent::FlexStart))
+    }
+
+    pub fn justify_between(self) -> Self {
+        self.justify_content(Some(JustifyContent::SpaceBetween))
     }
 
     pub fn hide(self) -> Self {

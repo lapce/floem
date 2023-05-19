@@ -117,18 +117,21 @@ fn enhanced_list() -> impl View {
                         match key_event.key {
                             Key::ArrowUp => {
                                 if sel > 0 {
-                                    set_selected.update(|v| *v -= 1)
+                                    set_selected.update(|v| *v -= 1);
                                 }
+                                true
                             }
                             Key::ArrowDown => {
                                 if sel < long_list.get().len() - 1 {
-                                    set_selected.update(|v| *v += 1)
+                                    set_selected.update(|v| *v += 1);
                                 }
+                                true
                             }
-                            _ => {}
+                            _ => false,
                         }
+                    } else {
+                        false
                     }
-                    true
                 })
                 .keyboard_navigatable()
                 .focus_visible_style(|| Style::BASE.border(2.).border_color(Color::BLUE))
