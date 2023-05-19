@@ -455,14 +455,22 @@ impl TextInput {
             Key::End => self.move_cursor(Movement::Line, Direction::Right),
             Key::Home => self.move_cursor(Movement::Line, Direction::Left),
             Key::ArrowLeft => {
-                if event.mods.ctrl() {
+                if !self.selection.is_empty() {
+                    self.cursor_glyph_idx = self.selection.start;
+                    self.selection = 0..0;
+                    true
+                } else if event.mods.ctrl() {
                     self.move_cursor(Movement::Word, Direction::Left)
                 } else {
                     self.move_cursor(Movement::Glyph, Direction::Left)
                 }
             }
             Key::ArrowRight => {
-                if event.mods.ctrl() {
+                if !self.selection.is_empty() {
+                    self.cursor_glyph_idx = self.selection.end;
+                    self.selection = 0..0;
+                    true
+                } else if event.mods.ctrl() {
                     self.move_cursor(Movement::Word, Direction::Right)
                 } else {
                     self.move_cursor(Movement::Glyph, Direction::Right)
