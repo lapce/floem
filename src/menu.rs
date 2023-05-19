@@ -111,4 +111,9 @@ impl MenuItem {
         self.action = Some(Box::new(action));
         self
     }
+
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
+    }
 }
