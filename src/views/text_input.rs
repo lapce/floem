@@ -28,6 +28,7 @@ use crate::{
 use glazier::{
     keyboard_types::Key,
     kurbo::{Point, Rect},
+    Modifiers,
 };
 
 use crate::{
@@ -67,6 +68,7 @@ pub struct TextInput {
     // and may cause the last character in the opposite direction to be "cut"
     clip_offset_x: f64,
     color: Option<Color>,
+    selection: Range<usize>,
     font_size: f32,
     width: f32,
     height: f32,
@@ -115,6 +117,7 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         font_weight: None,
         font_style: None,
         cursor_x: 0.0,
+        selection: Range { start: 0, end: 0 },
         input_kind: InputKind::SingleLine,
         clip_start_idx: 0,
         clip_offset_x: 0.0,
@@ -287,6 +290,31 @@ impl TextInput {
         )
     }
 
+    fn get_selection_rect(&self, node_layout: &Layout) -> Rect {
+        if self.selection == (0..0) {
+            return Rect::ZERO;
+        }
+        let virtual_text = self.text_buf.as_ref().unwrap();
+        let text_height = virtual_text.size().height;
+        let selection_start_x = virtual_text.hit_position(self.selection.start).point.x;
+        let selection_end_x = virtual_text.hit_position(self.selection.end + 1).point.x;
+
+        let node_location = node_layout.location;
+
+        let selection_start = Point::new(
+            selection_start_x + node_location.x as f64,
+            node_location.y as f64,
+        );
+
+        Rect::from_points(
+            selection_start,
+            Point::new(
+                selection_start.x + selection_end_x - self.clip_start_x,
+                selection_start.y + text_height,
+            ),
+        )
+    }
+
     fn update_text_layout(&mut self) {
         let mut text_layout = TextLayout::new();
         let attrs = self.get_text_attrs();
@@ -333,30 +361,70 @@ impl TextInput {
         self.cursor_glyph_idx = new_cursor_x;
     }
 
+    fn select_all(&mut self) {
+        self.selection = 0..self.buffer.with(|val| val.len());
+    }
+
     fn handle_key_down(&mut self, cx: &mut EventCx<'_>, event: &glazier::KeyEvent) -> bool {
         match event.key {
             Key::Character(ref ch) => {
+                let handled_modifier_command = !event.mods.is_empty()
+                    && match (event.mods, ch.as_str(), cfg!(target_os = "macos")) {
+                        (Modifiers::CONTROL, "a", false) => {
+                            self.select_all();
+                            true
+                        }
+                        (Modifiers::META, "a", true) => {
+                            self.select_all();
+                            true
+                        }
+                        _ => {
+                            self.selection = 0..0;
+                            dbg!(event);
+                            false
+                        }
+                    };
+
+                if handled_modifier_command {
+                    return true;
+                }
+                let selection = self.selection.clone();
+                if selection != (0..0) {
+                    self.buffer
+                        .update(|buf| replace_range(buf, selection.clone(), None));
+                    self.cursor_glyph_idx = selection.start;
+                    self.selection = 0..0;
+                }
+
                 self.buffer
                     .update(|buf| buf.insert_str(self.cursor_glyph_idx, &ch.clone()));
                 self.move_cursor(Movement::Glyph, Direction::Right)
             }
             Key::Backspace => {
-                let prev_cursor_idx = self.cursor_glyph_idx;
-
-                if event.mods.ctrl() {
-                    self.move_cursor(Movement::Word, Direction::Left);
+                let selection = self.selection.clone();
+                if selection != (0..0) {
+                    self.buffer
+                        .update(|buf| replace_range(buf, selection, None));
+                    self.cursor_glyph_idx = 0;
+                    true
                 } else {
-                    self.move_cursor(Movement::Glyph, Direction::Left);
-                }
+                    let prev_cursor_idx = self.cursor_glyph_idx;
 
-                if self.cursor_glyph_idx == prev_cursor_idx {
-                    return false;
-                }
+                    if event.mods.ctrl() {
+                        self.move_cursor(Movement::Word, Direction::Left);
+                    } else {
+                        self.move_cursor(Movement::Glyph, Direction::Left);
+                    }
 
-                self.buffer.update(|buf| {
-                    replace_range(buf, self.cursor_glyph_idx..prev_cursor_idx, None);
-                });
-                true
+                    if self.cursor_glyph_idx == prev_cursor_idx {
+                        return false;
+                    }
+
+                    self.buffer.update(|buf| {
+                        replace_range(buf, self.cursor_glyph_idx..prev_cursor_idx, None);
+                    });
+                    true
+                }
             }
             Key::Delete => {
                 let prev_cursor_idx = self.cursor_glyph_idx;
@@ -608,6 +676,15 @@ impl View for TextInput {
         if is_cursor_visible {
             let cursor_rect = self.get_cursor_rect(&node_layout);
             cx.fill(&cursor_rect, cursor_color.unwrap_or(Color::BLACK));
+        }
+        if cx.app_state.is_focused(&self.id) {
+            let selection_rect = self.get_selection_rect(&node_layout);
+            cx.fill(
+                &selection_rect,
+                cursor_color.unwrap_or(Color::rgba8(0, 0, 0, 150)),
+            );
+        } else {
+            self.selection = 0..0;
         }
 
         let id = self.id();
