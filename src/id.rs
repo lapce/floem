@@ -349,6 +349,16 @@ impl Id {
         }
     }
 
+    pub fn set_handle_titlebar(&self, val: bool) {
+        if let Some(root) = self.root_id() {
+            UPDATE_MESSAGES.with(|msgs| {
+                let mut msgs = msgs.borrow_mut();
+                let msgs = msgs.entry(root).or_default();
+                msgs.push(UpdateMessage::HandleTitleBar(val))
+            });
+        }
+    }
+
     pub fn update_event_listner(&self, listener: EventListner, action: Box<EventCallback>) {
         if let Some(root) = self.root_id() {
             UPDATE_MESSAGES.with(|msgs| {
