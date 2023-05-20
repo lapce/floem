@@ -380,7 +380,6 @@ impl TextInput {
                         }
                         _ => {
                             self.selection = 0..0;
-                            dbg!(event);
                             false
                         }
                     };
