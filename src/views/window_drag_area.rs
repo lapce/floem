@@ -5,12 +5,12 @@ use crate::{
     view::{ChangeFlags, View},
 };
 
-pub struct TitleBar<V: View> {
+pub struct WindowDragArea<V: View> {
     id: Id,
     child: V,
 }
 
-pub fn title_bar<V: View>(child: impl FnOnce() -> V) -> TitleBar<V> {
+pub fn window_drag_area<V: View>(child: impl FnOnce() -> V) -> WindowDragArea<V> {
     let cx = AppContext::get_current();
     let id = cx.new_id();
     let mut child_cx = cx;
@@ -20,10 +20,10 @@ pub fn title_bar<V: View>(child: impl FnOnce() -> V) -> TitleBar<V> {
     let child = child();
     AppContext::restore();
 
-    TitleBar { id, child }
+    WindowDragArea { id, child }
 }
 
-impl<V: View> View for TitleBar<V> {
+impl<V: View> View for WindowDragArea<V> {
     fn id(&self) -> Id {
         self.id
     }
@@ -38,10 +38,6 @@ impl<V: View> View for TitleBar<V> {
 
     fn children(&mut self) -> Vec<&mut dyn View> {
         vec![&mut self.child]
-    }
-
-    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        "TitleBar".into()
     }
 
     fn update(
