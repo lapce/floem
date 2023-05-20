@@ -580,6 +580,10 @@ impl<'a> LayoutCx<'a> {
         self.line_height
     }
 
+    pub fn current_viewport(&self) -> Option<Rect> {
+        self.viewport
+    }
+
     pub fn get_layout(&self, id: Id) -> Option<Layout> {
         self.app_state.get_layout(id)
     }
