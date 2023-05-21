@@ -3,6 +3,7 @@ use std::{any::Any, cell::RefCell, collections::HashMap, num::NonZeroU64, time::
 use glazier::{kurbo::Point, FileDialogOptions, FileInfo};
 
 use crate::{
+    animate::Animation,
     app_handle::{StyleSelector, UpdateMessage, DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES},
     context::{EventCallback, ResizeCallback},
     event::EventListner,
@@ -32,6 +33,7 @@ impl Id {
         static WIDGET_ID_COUNTER: Counter = Counter::new();
         Id(WIDGET_ID_COUNTER.next_nonzero())
     }
+
 
     #[allow(unused)]
     pub fn to_raw(self) -> u64 {
@@ -379,6 +381,16 @@ impl Id {
                 let mut msgs = msgs.borrow_mut();
                 let msgs = msgs.entry(root).or_default();
                 msgs.push(UpdateMessage::ResizeListener { id: *self, action })
+            });
+        }
+    }
+
+    pub fn update_animation(&self, animation: Animation) {
+        if let Some(root) = self.root_id() {
+            UPDATE_MESSAGES.with(|msgs| {
+                let mut msgs = msgs.borrow_mut();
+                let msgs = msgs.entry(root).or_default();
+                msgs.push(UpdateMessage::Animation { id: *self, animation })
             });
         }
     }

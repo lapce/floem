@@ -1,5 +1,7 @@
+use std::time::Duration;
 use std::{any::Any, collections::HashMap};
 
+use crate::animate::AnimValue;
 use floem_renderer::Renderer;
 use glazier::kurbo::{Affine, Point, Rect};
 use glazier::{FileDialogOptions, FileDialogToken, FileInfo, Scale, TimerToken, WinHandler};
@@ -7,6 +9,7 @@ use leptos_reactive::{Scope, SignalSet};
 
 use crate::menu::Menu;
 use crate::{
+    animate::{AnimPropKind, AnimUpdateMsg, AnimatedProp, Animation, SizeUnit},
     context::{
         AppContextStore, AppState, EventCallback, EventCx, LayoutCx, PaintCx, PaintState,
         ResizeCallback, ResizeListener, UpdateCx, APP_CONTEXT_STORE,
@@ -21,6 +24,7 @@ use crate::{
 
 thread_local! {
     pub(crate) static UPDATE_MESSAGES: std::cell::RefCell<HashMap<Id, Vec<UpdateMessage>>> = Default::default();
+    pub(crate) static ANIM_UPDATE_MESSAGES: std::cell::RefCell<Vec<AnimUpdateMsg>> = Default::default();
     pub(crate) static DEFERRED_UPDATE_MESSAGES: std::cell::RefCell<DeferredUpdateMessages> = Default::default();
 }
 
@@ -160,6 +164,10 @@ pub enum UpdateMessage {
         deadline: std::time::Duration,
         action: Box<dyn FnOnce()>,
     },
+    Animation {
+        id: Id,
+        animation: Animation,
+    },
     ShowContextMenu {
         menu: Menu,
         pos: Point,
@@ -218,6 +226,17 @@ impl<V: View> AppHandle<V> {
 
         cx.clear();
         self.view.compute_layout_main(&mut cx);
+
+        // Currently we only need one ID with animation in progress to request layout, which will
+        // advance the all the animations in progress.
+        // This will be reworked once we change from request_layout to request_paint
+        let id = self.app_state.ids_with_anim_in_progress().get(0).cloned();
+
+        if let Some(id) = id {
+            id.exec_after(Duration::from_millis(1), move || {
+                id.request_layout();
+            });
+        }
     }
 
     pub fn paint(&mut self) {
@@ -244,6 +263,104 @@ impl<V: View> AppHandle<V> {
         cx.paint_state.renderer.as_mut().unwrap().begin();
         self.view.paint_main(&mut cx);
         cx.paint_state.renderer.as_mut().unwrap().finish();
+    }
+
+    fn process_anim_update_messages(&mut self) -> ChangeFlags {
+        let mut flags = ChangeFlags::empty();
+        let msgs: Vec<AnimUpdateMsg> = ANIM_UPDATE_MESSAGES.with(|msgs| {
+            let mut msgs = msgs.borrow_mut();
+            let len = msgs.len();
+            msgs.drain(0..len).collect()
+        });
+
+        for msg in msgs {
+            match msg {
+                AnimUpdateMsg::Prop {
+                    id: anim_id,
+                    kind,
+                    val,
+                } => {
+                    let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
+                    flags |= self.process_update_anim_prop(view_id, kind, val);
+                }
+            }
+        }
+
+        flags
+    }
+
+    fn process_update_anim_prop(
+        &mut self,
+        view_id: Id,
+        kind: AnimPropKind,
+        val: AnimValue,
+    ) -> ChangeFlags {
+        let layout = self.app_state.get_layout(view_id).unwrap();
+        let view_state = self.app_state.view_state(view_id);
+        let anim = view_state.animation.as_mut().unwrap();
+        let prop = match kind {
+            AnimPropKind::Scale => todo!(),
+            AnimPropKind::Width => {
+                let width = layout.size.width;
+                AnimatedProp::Width {
+                    from: width as f64,
+                    to: val.get_f64(),
+                    unit: SizeUnit::Px,
+                }
+            }
+            AnimPropKind::Height => {
+                let height = layout.size.height;
+                AnimatedProp::Width {
+                    from: height as f64,
+                    to: val.get_f64(),
+                    unit: SizeUnit::Px,
+                }
+            }
+            AnimPropKind::BorderRadius => {
+                let border_radius = view_state.computed_style.border_radius;
+                AnimatedProp::BorderRadius {
+                    from: border_radius as f64,
+                    to: val.get_f64(),
+                }
+            }
+            AnimPropKind::BorderColor => {
+                let border_color = view_state.computed_style.border_color;
+                AnimatedProp::BorderColor {
+                    from: border_color,
+                    to: val.get_color(),
+                }
+            }
+            AnimPropKind::Background => {
+                //TODO:  get from cx
+                let bg = view_state
+                    .computed_style
+                    .background
+                    .expect("Bg must be set in the styles");
+                AnimatedProp::Background {
+                    from: bg,
+                    to: val.get_color(),
+                }
+            }
+            AnimPropKind::Color => {
+                //TODO:  get from cx
+                let color = view_state
+                    .computed_style
+                    .color
+                    .expect("Color must be set in the animated view's style");
+                AnimatedProp::Color {
+                    from: color,
+                    to: val.get_color(),
+                }
+            }
+        };
+
+        // Overrides the old value
+        // TODO: logic based on the old val to make the animation smoother when overriding an old
+        // animation that was in progress
+        anim.props_mut().insert(kind, prop);
+        anim.begin();
+
+        ChangeFlags::LAYOUT
     }
 
     fn process_deferred_update_messages(&mut self) -> ChangeFlags {
@@ -407,6 +524,11 @@ impl<V: View> AppHandle<V> {
                         let token = self.handle.request_timer(deadline);
                         self.timers.insert(token, action);
                     }
+                    UpdateMessage::Animation { id, animation } => {
+                        cx.app_state.animated.insert(id);
+                        let view_state = cx.app_state.view_state(id);
+                        view_state.animation = Some(animation);
+                    }
                     UpdateMessage::WindowScale(scale) => {
                         cx.app_state.scale = scale;
                         cx.request_layout(self.view.id());
@@ -443,16 +565,24 @@ impl<V: View> AppHandle<V> {
         })
     }
 
+    fn has_anim_update_messages(&mut self) -> bool {
+        ANIM_UPDATE_MESSAGES.with(|m| !m.borrow().is_empty())
+    }
+
     pub fn process_update(&mut self) {
         let mut flags = ChangeFlags::empty();
         loop {
             flags |= self.process_update_messages();
-            if !self.needs_layout() && !self.has_deferred_update_messages() {
+            if !self.needs_layout()
+                && !self.has_deferred_update_messages()
+                && !self.has_anim_update_messages()
+            {
                 break;
             }
             flags |= ChangeFlags::LAYOUT;
             self.layout();
             flags |= self.process_deferred_update_messages();
+            flags |= self.process_anim_update_messages();
         }
 
         let glazier_cursor = match self.app_state.cursor {
@@ -563,7 +693,10 @@ impl<V: View> AppHandle<V> {
             let hovered = &cx.app_state.hovered.clone();
             for id in was_hovered.unwrap().symmetric_difference(hovered) {
                 let view_state = cx.app_state.view_state(*id);
-                if view_state.hover_style.is_some() || view_state.active_style.is_some() {
+                if view_state.hover_style.is_some()
+                    || view_state.active_style.is_some()
+                    || view_state.animation.is_some()
+                {
                     cx.app_state.request_layout(*id);
                 }
                 if hovered.contains(id) {
