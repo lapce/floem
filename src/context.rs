@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     ops::{Deref, DerefMut},
+    time::Duration,
 };
 
 use floem_renderer::{
@@ -18,6 +19,7 @@ use taffy::{
 use vello::peniko::Color;
 
 use crate::{
+    animate::{AnimId, AnimPropKind, Animation},
     app_handle::StyleSelector,
     event::{Event, EventListner},
     id::Id,
@@ -66,6 +68,7 @@ pub struct ViewState {
     pub(crate) children_nodes: Vec<Node>,
     pub(crate) request_layout: bool,
     pub(crate) viewport: Option<Rect>,
+    pub(crate) animation: Option<Animation>,
     pub(crate) style: Style,
     pub(crate) hover_style: Option<Style>,
     pub(crate) disabled_style: Option<Style>,
@@ -84,6 +87,7 @@ impl ViewState {
         Self {
             node: taffy.new_leaf(taffy::style::Style::DEFAULT).unwrap(),
             viewport: None,
+            animation: None,
             request_layout: true,
             style: Style::BASE,
             computed_style: ComputedStyle::default(),
@@ -151,6 +155,45 @@ impl ViewState {
             }
         }
 
+        'anim: {
+            if let Some(animation) = self.animation.as_mut() {
+                if animation.is_completed() && animation.is_auto_reverse() {
+                    break 'anim;
+                }
+
+                let props = animation.props();
+
+                for (kind, _) in props {
+                    let val = animation
+                        .animate_prop(animation.elapsed().unwrap_or(Duration::ZERO), &kind);
+                    match kind {
+                        AnimPropKind::Width => {
+                            computed_style = computed_style.width_px(val.get_f32());
+                        }
+                        AnimPropKind::Height => {
+                            computed_style = computed_style.height_px(val.get_f32());
+                        }
+                        AnimPropKind::Background => {
+                            computed_style = computed_style.background(val.get_color());
+                        }
+                        AnimPropKind::Color => {
+                            computed_style = computed_style.color(val.get_color());
+                        }
+                        AnimPropKind::BorderRadius => {
+                            computed_style = computed_style.border_radius(val.get_f32());
+                        }
+                        AnimPropKind::BorderColor => {
+                            computed_style = computed_style.border_color(val.get_color());
+                        }
+                        AnimPropKind::Scale => todo!(),
+                    }
+                }
+
+                animation.advance();
+                debug_assert!(!animation.is_idle());
+            }
+        }
+
         self.computed_style = computed_style.compute(&ComputedStyle::default());
     }
 
@@ -182,6 +225,9 @@ pub struct AppState {
     pub(crate) screen_size_bp: ScreenSizeBp,
     pub(crate) grid_breakpts: GridBreakpoints,
     pub(crate) hovered: HashSet<Id>,
+    /// This keeps track of all views that have an animation,
+    /// regardless of the status of the animation
+    pub(crate) animated: HashSet<Id>,
     pub(crate) cursor: Option<CursorStyle>,
     pub(crate) keyboard_navigation: bool,
     pub(crate) contex_menu: HashMap<u32, Box<dyn Fn()>>,
@@ -206,6 +252,7 @@ impl AppState {
             screen_size_bp: ScreenSizeBp::Xs,
             taffy,
             view_states: HashMap::new(),
+            animated: HashSet::new(),
             disabled: HashSet::new(),
             keyboard_navigatable: HashSet::new(),
             hovered: HashSet::new(),
@@ -220,6 +267,16 @@ impl AppState {
         self.view_states
             .entry(id)
             .or_insert_with(|| ViewState::new(&mut self.taffy))
+    }
+
+    pub fn ids_with_anim_in_progress(&mut self) -> Vec<Id> {
+        self.animated.clone().into_iter().filter(|id| {
+            let anim = &self.view_state(*id).animation;
+            if let Some(anim) = anim {
+                return !anim.is_completed();
+            }
+            false
+        }).collect()
     }
 
     pub fn is_hidden(&self, id: Id) -> bool {
@@ -371,6 +428,23 @@ impl AppState {
             StyleSelector::Disabled => view_state.disabled_style.is_some(),
             StyleSelector::Active => view_state.active_style.is_some(),
         }
+    }
+
+    // TODO: animated should be a HashMap<Id, AnimId> 
+    // so we don't have to loop through all view states
+    pub(crate) fn get_view_id_by_anim_id(&self, anim_id: AnimId) -> Id {
+        self.view_states
+            .iter()
+            .filter(|(_, vs)| {
+                vs.animation
+                    .as_ref()
+                    .map(|a| a.id() == anim_id)
+                    .unwrap_or(false)
+            })
+            .nth(0)
+            .unwrap()
+            .0
+            .clone()
     }
 
     pub(crate) fn update_context_menu(&mut self, mut menu: Menu) {

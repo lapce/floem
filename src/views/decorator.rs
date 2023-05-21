@@ -2,6 +2,7 @@ use glazier::kurbo::{Point, Rect};
 use leptos_reactive::create_effect;
 
 use crate::{
+    animate::Animation,
     app_handle::{AppContext, StyleSelector},
     event::{Event, EventListner},
     responsive::ScreenSize,
@@ -128,6 +129,15 @@ pub trait Decorators: View + Sized {
         self
     }
 
+    fn animation(self, anim: Animation) -> Self {
+        let cx = AppContext::get_current();
+        let id = self.id();
+        create_effect(cx.scope, move |_| {
+            id.update_animation(anim.clone());
+        });
+        self
+    }
+
     fn window_scale(self, scale_fn: impl Fn() -> f64 + 'static) -> Self {
         let cx = AppContext::get_current();
         let id = self.id();
@@ -136,7 +146,6 @@ pub trait Decorators: View + Sized {
             let window_scale = scale_fn();
             id.update_window_scale(window_scale);
         });
-
         self
     }
 }
