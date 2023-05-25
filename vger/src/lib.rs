@@ -1,6 +1,6 @@
 use anyhow::Result;
 use floem_renderer::cosmic_text::{SubpixelBin, SwashCache, SwashImage, TextLayout};
-use floem_renderer::{usvg, Renderer};
+use floem_renderer::{tiny_skia, Renderer};
 use peniko::{
     kurbo::{Affine, Point, Rect, Shape, Vec2},
     BrushRef, Color, GradientKind,
@@ -28,10 +28,7 @@ impl VgerRenderer {
         height: u32,
         scale: f64,
     ) -> Result<Self> {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
-            dx12_shader_compiler: Default::default(),
-        });
+        let instance = wgpu::Instance::default();
 
         let surface = unsafe { instance.create_surface(window) }?;
 
@@ -255,7 +252,7 @@ impl Renderer for VgerRenderer {
                     let (new_x, subpx_x) = SubpixelBin::new(glyph_x);
                     let glyph_x = new_x as f32;
 
-                    let glyph_y = y * self.scale as f32;
+                    let glyph_y = (y * self.scale as f32).round();
                     let (new_y, subpx_y) = SubpixelBin::new(glyph_y);
                     let glyph_y = new_y as f32;
 
@@ -305,18 +302,12 @@ impl Renderer for VgerRenderer {
             width,
             height,
             || {
-                let transform = tiny_skia::Transform::identity();
                 let mut img = tiny_skia::Pixmap::new(width, height).unwrap();
-                let _ = resvg::render(
-                    svg.tree,
-                    if width > height {
-                        usvg::FitTo::Width(width)
-                    } else {
-                        usvg::FitTo::Height(height)
-                    },
-                    transform,
-                    img.as_mut(),
-                );
+                let rtree = resvg::Tree::from_usvg(svg.tree);
+                let scale = (width as f64 / rtree.size.width())
+                    .min(height as f64 / rtree.size.height()) as f32;
+                let transform = tiny_skia::Transform::from_scale(scale, scale);
+                rtree.render(transform, &mut img.as_mut());
                 img.take()
             },
             paint,

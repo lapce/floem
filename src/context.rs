@@ -270,13 +270,17 @@ impl AppState {
     }
 
     pub fn ids_with_anim_in_progress(&mut self) -> Vec<Id> {
-        self.animated.clone().into_iter().filter(|id| {
-            let anim = &self.view_state(*id).animation;
-            if let Some(anim) = anim {
-                return !anim.is_completed();
-            }
-            false
-        }).collect()
+        self.animated
+            .clone()
+            .into_iter()
+            .filter(|id| {
+                let anim = &self.view_state(*id).animation;
+                if let Some(anim) = anim {
+                    return !anim.is_completed();
+                }
+                false
+            })
+            .collect()
     }
 
     pub fn is_hidden(&self, id: Id) -> bool {
@@ -430,7 +434,7 @@ impl AppState {
         }
     }
 
-    // TODO: animated should be a HashMap<Id, AnimId> 
+    // TODO: animated should be a HashMap<Id, AnimId>
     // so we don't have to loop through all view states
     pub(crate) fn get_view_id_by_anim_id(&self, anim_id: AnimId) -> Id {
         self.view_states
@@ -856,11 +860,15 @@ impl PaintState {
     }
 
     pub(crate) fn resize(&mut self, scale: Scale, size: Size) {
-        self.renderer.as_mut().unwrap().resize(scale, size);
+        if let Some(renderer) = self.renderer.as_mut() {
+            renderer.resize(scale, size);
+        }
     }
 
     pub(crate) fn set_scale(&mut self, scale: Scale) {
-        self.renderer.as_mut().unwrap().set_scale(scale);
+        if let Some(renderer) = self.renderer.as_mut() {
+            renderer.set_scale(scale);
+        }
     }
 }
 

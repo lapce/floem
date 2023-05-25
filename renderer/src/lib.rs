@@ -4,7 +4,8 @@ use peniko::{
     kurbo::{Affine, Point, Rect, Shape},
     BrushRef,
 };
-pub use usvg;
+pub use resvg::tiny_skia;
+pub use resvg::usvg;
 
 pub struct Svg<'a> {
     pub tree: &'a usvg::Tree,

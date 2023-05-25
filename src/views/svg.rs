@@ -1,4 +1,8 @@
-use floem_renderer::{usvg, usvg::Tree, Renderer};
+use floem_renderer::{
+    usvg::Tree,
+    usvg::{self, TreeParsing},
+    Renderer,
+};
 use glazier::kurbo::Size;
 use leptos_reactive::{create_effect, SignalGet};
 use sha2::{Digest, Sha256};
