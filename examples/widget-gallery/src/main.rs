@@ -4,6 +4,7 @@ pub mod form;
 pub mod inputs;
 pub mod labels;
 pub mod lists;
+pub mod rich_text;
 
 use floem::{
     event::{Event, EventListner},
@@ -20,7 +21,7 @@ use floem::{
 };
 
 fn app_view(cx: AppContext) -> impl View {
-    let tabs: im::Vector<&str> = vec!["Label", "Button", "Checkbox", "Input", "List"]
+    let tabs: im::Vector<&str> = vec!["Label", "Button", "Checkbox", "Input", "List", "RichText"]
         .into_iter()
         .collect();
     let (tabs, _set_tabs) = create_signal(cx.scope, tabs);
@@ -122,6 +123,7 @@ fn app_view(cx: AppContext) -> impl View {
                         "Checkbox" => container_box(|| Box::new(checkbox::checkbox_view())),
                         "Input" => container_box(|| Box::new(inputs::text_input_view())),
                         "List" => container_box(|| Box::new(lists::virt_list_view())),
+                        "RichText" => container_box(|| Box::new(rich_text::rich_text_view())),
                         _ => container_box(|| Box::new(label(|| "Not implemented".to_owned()))),
                     },
                 )
@@ -142,4 +144,5 @@ fn app_view(cx: AppContext) -> impl View {
 
 fn main() {
     floem::launch(app_view);
+    println!("Hello, world!")
 }
