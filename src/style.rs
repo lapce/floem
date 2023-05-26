@@ -236,6 +236,10 @@ define_styles!(
     margin_top: LengthPercentageAuto = LengthPercentageAuto::ZERO,
     margin_right: LengthPercentageAuto = LengthPercentageAuto::ZERO,
     margin_bottom: LengthPercentageAuto = LengthPercentageAuto::ZERO,
+    inset_left: LengthPercentageAuto = LengthPercentageAuto::Auto,
+    inset_top: LengthPercentageAuto = LengthPercentageAuto::Auto,
+    inset_right: LengthPercentageAuto = LengthPercentageAuto::Auto,
+    inset_bottom: LengthPercentageAuto = LengthPercentageAuto::Auto,
     cursor nocb: Option<CursorStyle> = None,
     color nocb: Option<Color> = None,
     background nocb: Option<Color> = None,
@@ -491,6 +495,52 @@ impl Style {
         self.margin_top_pct(margin).margin_bottom_pct(margin)
     }
 
+    pub fn inset_left_px(self, inset: f32) -> Self {
+        self.inset_left(LengthPercentageAuto::Points(inset))
+    }
+
+    pub fn inset_right_px(self, inset: f32) -> Self {
+        self.inset_right(LengthPercentageAuto::Points(inset))
+    }
+
+    pub fn inset_top_px(self, inset: f32) -> Self {
+        self.inset_top(LengthPercentageAuto::Points(inset))
+    }
+
+    pub fn inset_bottom_px(self, inset: f32) -> Self {
+        self.inset_bottom(LengthPercentageAuto::Points(inset))
+    }
+
+    pub fn inset_left_pct(self, inset: f32) -> Self {
+        self.inset_left(LengthPercentageAuto::Percent(inset / 100.0))
+    }
+
+    pub fn inset_right_pct(self, inset: f32) -> Self {
+        self.inset_right(LengthPercentageAuto::Percent(inset / 100.0))
+    }
+
+    pub fn inset_top_pct(self, inset: f32) -> Self {
+        self.inset_top(LengthPercentageAuto::Percent(inset / 100.0))
+    }
+
+    pub fn inset_bottom_pct(self, inset: f32) -> Self {
+        self.inset_bottom(LengthPercentageAuto::Percent(inset / 100.0))
+    }
+
+    pub fn inset_px(self, inset: f32) -> Self {
+        self.inset_left_px(inset)
+            .inset_top_px(inset)
+            .inset_right_px(inset)
+            .inset_bottom_px(inset)
+    }
+
+    pub fn inset_pct(self, inset: f32) -> Self {
+        self.inset_left_pct(inset)
+            .inset_top_pct(inset)
+            .inset_right_pct(inset)
+            .inset_bottom_pct(inset)
+    }
+
     pub fn cursor(mut self, cursor: impl Into<StyleValue<CursorStyle>>) -> Self {
         self.cursor = cursor.into().map(Some);
         self
@@ -672,6 +722,12 @@ impl ComputedStyle {
                 top: self.margin_top,
                 right: self.margin_right,
                 bottom: self.margin_bottom,
+            },
+            inset: Rect {
+                left: self.inset_left,
+                top: self.inset_top,
+                right: self.inset_right,
+                bottom: self.inset_bottom,
             },
             ..Default::default()
         }
