@@ -597,6 +597,7 @@ pub struct InteractionState {
 pub struct LayoutCx<'a> {
     pub(crate) app_state: &'a mut AppState,
     pub(crate) viewport: Option<Rect>,
+    pub(crate) color: Option<Color>,
     pub(crate) font_size: Option<f32>,
     pub(crate) font_family: Option<String>,
     pub(crate) font_weight: Option<Weight>,
@@ -604,6 +605,7 @@ pub struct LayoutCx<'a> {
     pub(crate) line_height: Option<LineHeightValue>,
     pub(crate) window_origin: Point,
     pub(crate) saved_viewports: Vec<Option<Rect>>,
+    pub(crate) saved_colors: Vec<Option<Color>>,
     pub(crate) saved_font_sizes: Vec<Option<f32>>,
     pub(crate) saved_font_families: Vec<Option<String>>,
     pub(crate) saved_font_weights: Vec<Option<Weight>>,
@@ -617,6 +619,7 @@ impl<'a> LayoutCx<'a> {
         self.viewport = None;
         self.font_size = None;
         self.window_origin = Point::ZERO;
+        self.saved_colors.clear();
         self.saved_viewports.clear();
         self.saved_font_sizes.clear();
         self.saved_font_families.clear();
@@ -628,6 +631,7 @@ impl<'a> LayoutCx<'a> {
 
     pub fn save(&mut self) {
         self.saved_viewports.push(self.viewport);
+        self.saved_colors.push(self.color);
         self.saved_font_sizes.push(self.font_size);
         self.saved_font_families.push(self.font_family.clone());
         self.saved_font_weights.push(self.font_weight);
@@ -638,6 +642,7 @@ impl<'a> LayoutCx<'a> {
 
     pub fn restore(&mut self) {
         self.viewport = self.saved_viewports.pop().unwrap_or_default();
+        self.color = self.saved_colors.pop().unwrap_or_default();
         self.font_size = self.saved_font_sizes.pop().unwrap_or_default();
         self.font_family = self.saved_font_families.pop().unwrap_or_default();
         self.font_weight = self.saved_font_weights.pop().unwrap_or_default();
@@ -803,6 +808,11 @@ impl<'a> PaintCx<'a> {
 
     pub fn clip(&mut self, shape: &impl Shape) {
         let rect = shape.bounding_box();
+        let rect = if let Some(existing) = self.clip {
+            existing.intersect(rect)
+        } else {
+            rect
+        };
         self.clip = Some(rect);
         self.paint_state.renderer.as_mut().unwrap().clip(&rect);
     }

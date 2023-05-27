@@ -211,6 +211,7 @@ impl<V: View> AppHandle<V> {
         let mut cx = LayoutCx {
             app_state: &mut self.app_state,
             viewport: None,
+            color: None,
             font_size: None,
             font_family: None,
             font_weight: None,
@@ -218,6 +219,7 @@ impl<V: View> AppHandle<V> {
             line_height: None,
             window_origin: Point::ZERO,
             saved_viewports: Vec::new(),
+            saved_colors: Vec::new(),
             saved_font_sizes: Vec::new(),
             saved_font_families: Vec::new(),
             saved_font_weights: Vec::new(),

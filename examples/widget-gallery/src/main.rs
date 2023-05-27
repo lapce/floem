@@ -20,7 +20,8 @@ use floem::{
     AppContext,
 };
 
-fn app_view(cx: AppContext) -> impl View {
+fn app_view() -> impl View {
+    let cx = AppContext::get_current();
     let tabs: im::Vector<&str> = vec!["Label", "Button", "Checkbox", "Input", "List", "RichText"]
         .into_iter()
         .collect();

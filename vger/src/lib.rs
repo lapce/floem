@@ -320,19 +320,11 @@ impl Renderer for VgerRenderer {
 
     fn clip(&mut self, shape: &impl Shape) {
         let rect = shape.bounding_box();
+        self.vger.scissor(self.vger_rect(rect));
 
         let transform = self.transform.as_coeffs();
         let offset = Vec2::new(transform[4], transform[5]);
-        let clip = rect + offset;
-
-        if let Some(old_clip) = self.clip {
-            self.clip = Some(old_clip.intersect(clip));
-        } else {
-            self.clip = Some(clip);
-        }
-
-        self.vger
-            .scissor(self.vger_rect(self.clip.unwrap() - offset));
+        self.clip = Some(rect + offset);
     }
 
     fn clear_clip(&mut self) {
