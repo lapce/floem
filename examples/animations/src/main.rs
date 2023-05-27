@@ -11,7 +11,8 @@ use floem::{
     AppContext,
 };
 
-fn app_view(cx: AppContext) -> impl View {
+fn app_view() -> impl View {
+    let cx = AppContext::get_current();
     let (counter, set_counter) = create_signal(cx.scope, 0.0);
     let (is_hovered, set_is_hovered) = create_signal(cx.scope, false);
 
@@ -66,8 +67,20 @@ fn app_view(cx: AppContext) -> impl View {
     })
     .animation(
         animation()
-            .width(move || if counter.get() % 2.0 == 0.0 { 400.0 } else { 600.0 })
-            .height(move || if counter.get() % 2.0 == 0.0 { 200.0 } else { 500.0 })
+            .width(move || {
+                if counter.get() % 2.0 == 0.0 {
+                    400.0
+                } else {
+                    600.0
+                }
+            })
+            .height(move || {
+                if counter.get() % 2.0 == 0.0 {
+                    200.0
+                } else {
+                    500.0
+                }
+            })
             .border_color(|| Color::CYAN)
             .color(|| Color::CYAN)
             .background(|| Color::LAVENDER)

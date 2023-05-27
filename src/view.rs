@@ -164,6 +164,10 @@ pub trait View {
         let event = cx.offset_event(self.id(), event);
 
         if let Some(id_path) = id_path {
+            if id_path.is_empty() {
+                return false;
+            }
+
             let id = id_path[0];
             let id_path = &id_path[1..];
 
@@ -173,13 +177,23 @@ pub trait View {
 
             if !id_path.is_empty() {
                 if let Some(child) = self.child(id_path[0]) {
-                    return child.event_main(cx, Some(id_path), event);
+                    if child.event_main(cx, Some(id_path), event.clone()) {
+                        return true;
+                    }
+                } else {
+                    return false;
                 }
-                return false;
             }
         }
 
-        if self.event(cx, id_path, event.clone()) {
+        // if the event was dispatched to an id_path, the event is supposed to be only
+        // handled by this view only, so we pass an empty id_path
+        // and the event propagation would be stopped at this view
+        if self.event(
+            cx,
+            if id_path.is_some() { Some(&[]) } else { None },
+            event.clone(),
+        ) {
             return true;
         }
 
@@ -190,7 +204,9 @@ pub trait View {
                     let now_focused = rect.contains(event.pos);
 
                     if now_focused {
-                        cx.app_state.update_focus(self.id(), false);
+                        if cx.app_state.keyboard_navigatable.contains(&id) {
+                            cx.app_state.update_focus(id, false);
+                        }
                         if event.count == 2 && cx.has_event_listener(id, EventListner::DoubleClick)
                         {
                             let view_state = cx.app_state.view_state(id);
@@ -226,18 +242,9 @@ pub trait View {
                 }
             }
             Event::KeyDown(_) => {
-                if event.is_keyboard_trigger() {
-                    let mut ancestor = Some(id);
-                    let mut action = None;
-                    // Bubble the trigger to parent views
-                    while let Some(current_ancestor) = ancestor.filter(|_| action.is_none()) {
-                        action = cx.get_event_listener(current_ancestor, &EventListner::Click);
-                        ancestor = current_ancestor.parent();
-                    }
-                    if let Some(action) = action {
+                if cx.app_state.is_focused(&id) && event.is_keyboard_trigger() {
+                    if let Some(action) = cx.get_event_listener(id, &EventListner::Click) {
                         (*action)(&event);
-                        cx.update_active(id);
-                        return true;
                     }
                 }
             }

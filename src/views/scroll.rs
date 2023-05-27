@@ -47,7 +47,10 @@ enum BarHeldState {
 pub struct Scroll<V: View> {
     id: Id,
     child: V,
+    // the total of the scroll view, including padding
     size: Size,
+    // the actual rect of the scroll view excluding padding
+    actual_rect: Rect,
     child_size: Size,
     child_viewport: Rect,
     onscroll: Option<Box<dyn Fn(Rect)>>,
@@ -73,6 +76,7 @@ pub fn scroll<V: View>(child: impl FnOnce() -> V) -> Scroll<V> {
         id,
         child,
         size: Size::ZERO,
+        actual_rect: Rect::ZERO,
         child_size: Size::ZERO,
         child_viewport: Rect::ZERO,
         onscroll: None,
@@ -214,7 +218,34 @@ impl<V: View> Scroll<V> {
         let child_size = self.child_size;
         let new_child_size = self.child_size(app_state).unwrap_or_default();
         self.child_size = new_child_size;
-        self.size = self.size(app_state).unwrap_or_default();
+
+        let layout = app_state.get_layout(self.id).unwrap();
+        self.size = Size::new(layout.size.width as f64, layout.size.height as f64);
+
+        let style = app_state.get_computed_style(self.id);
+        let padding_left = match style.padding_left {
+            taffy::style::LengthPercentage::Points(padding) => padding,
+            taffy::style::LengthPercentage::Percent(pct) => pct * layout.size.width,
+        };
+        let padding_right = match style.padding_right {
+            taffy::style::LengthPercentage::Points(padding) => padding,
+            taffy::style::LengthPercentage::Percent(pct) => pct * layout.size.width,
+        };
+        let padding_top = match style.padding_top {
+            taffy::style::LengthPercentage::Points(padding) => padding,
+            taffy::style::LengthPercentage::Percent(pct) => pct * layout.size.width,
+        };
+        let padding_bottom = match style.padding_bottom {
+            taffy::style::LengthPercentage::Points(padding) => padding,
+            taffy::style::LengthPercentage::Percent(pct) => pct * layout.size.width,
+        };
+        let mut actual_rect = self.size.to_rect();
+        actual_rect.x0 += padding_left as f64;
+        actual_rect.x1 -= padding_right as f64;
+        actual_rect.y0 += padding_top as f64;
+        actual_rect.y1 -= padding_bottom as f64;
+        self.actual_rect = actual_rect;
+
         if child_size != new_child_size {
             app_state.request_layout(self.id);
         }
@@ -225,26 +256,29 @@ impl<V: View> Scroll<V> {
         app_state: &mut AppState,
         child_viewport: Rect,
     ) -> Option<()> {
-        let size = self.size;
+        let actual_rect = self.actual_rect;
+        let actual_size = actual_rect.size();
+        let width = actual_rect.width();
+        let height = actual_rect.height();
         let child_size = self.child_size;
 
         let mut child_viewport = child_viewport;
-        if size.width >= child_size.width {
+        if width >= child_size.width {
             child_viewport.x0 = 0.0;
-        } else if child_viewport.x0 > child_size.width - size.width {
-            child_viewport.x0 = child_size.width - size.width;
+        } else if child_viewport.x0 > child_size.width - width {
+            child_viewport.x0 = child_size.width - width;
         } else if child_viewport.x0 < 0.0 {
             child_viewport.x0 = 0.0;
         }
 
-        if size.height >= child_size.height {
+        if height >= child_size.height {
             child_viewport.y0 = 0.0;
-        } else if child_viewport.y0 > child_size.height - size.height {
-            child_viewport.y0 = child_size.height - size.height;
+        } else if child_viewport.y0 > child_size.height - height {
+            child_viewport.y0 = child_size.height - height;
         } else if child_viewport.y0 < 0.0 {
             child_viewport.y0 = 0.0;
         }
-        child_viewport = child_viewport.with_size(size);
+        child_viewport = child_viewport.with_size(actual_size);
 
         if child_viewport != self.child_viewport {
             app_state.set_viewport(self.child.id(), child_viewport);
@@ -264,12 +298,6 @@ impl<V: View> Scroll<V> {
             .map(|view| &view.children_nodes)
             .and_then(|nodes| nodes.get(1))
             .and_then(|node| app_state.taffy.layout(*node).ok())
-            .map(|layout| Size::new(layout.size.width as f64, layout.size.height as f64))
-    }
-
-    fn size(&self, app_state: &mut AppState) -> Option<Size> {
-        app_state
-            .get_layout(self.id)
             .map(|layout| Size::new(layout.size.width as f64, layout.size.height as f64))
     }
 
@@ -576,11 +604,7 @@ impl<V: View> View for Scroll<V> {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         cx.save();
-        let size = cx
-            .get_layout(self.id)
-            .map(|layout| Size::new(layout.size.width as f64, layout.size.height as f64))
-            .unwrap_or_default();
-        cx.clip(&size.to_rect());
+        cx.clip(&self.actual_rect);
         cx.offset((-self.child_viewport.x0, -self.child_viewport.y0));
         self.child.paint_main(cx);
         cx.restore();

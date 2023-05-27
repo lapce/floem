@@ -1,6 +1,6 @@
 use std::{hash::Hash, marker::PhantomData, ops::Range};
 
-use glazier::kurbo::Rect;
+use glazier::kurbo::{Rect, Size};
 use leptos_reactive::{
     create_effect, create_signal, ScopeDisposer, SignalGet, SignalSet, WriteSignal,
 };
@@ -328,6 +328,9 @@ where
     fn compute_layout(&mut self, cx: &mut LayoutCx) {
         let viewport = cx.viewport.unwrap_or_default();
         if self.viewport != viewport {
+            let layout = cx.app_state.get_layout(self.id).unwrap();
+            let size = Size::new(layout.size.width as f64, layout.size.height as f64);
+
             self.viewport = viewport;
             self.set_viewport.set(viewport);
         }

@@ -69,6 +69,7 @@ pub struct ViewState {
     pub(crate) request_layout: bool,
     pub(crate) viewport: Option<Rect>,
     pub(crate) animation: Option<Animation>,
+    pub(crate) base_style: Option<Style>,
     pub(crate) style: Style,
     pub(crate) hover_style: Option<Style>,
     pub(crate) disabled_style: Option<Style>,
@@ -89,6 +90,7 @@ impl ViewState {
             viewport: None,
             animation: None,
             request_layout: true,
+            base_style: None,
             style: Style::BASE,
             computed_style: ComputedStyle::default(),
             hover_style: None,
@@ -111,7 +113,13 @@ impl ViewState {
         screen_size_bp: ScreenSizeBp,
     ) {
         let mut computed_style = if let Some(view_style) = view_style {
-            view_style.apply(self.style.clone())
+            if let Some(base_style) = self.base_style.clone() {
+                view_style.apply(base_style).apply(self.style.clone())
+            } else {
+                view_style.apply(self.style.clone())
+            }
+        } else if let Some(base_style) = self.base_style.clone() {
+            base_style.apply(self.style.clone())
         } else {
             self.style.clone()
         };
@@ -666,6 +674,10 @@ impl<'a> LayoutCx<'a> {
         self.app_state.get_layout(id)
     }
 
+    pub fn get_computed_style(&mut self, id: Id) -> &ComputedStyle {
+        self.app_state.get_computed_style(id)
+    }
+
     pub fn set_style(&mut self, node: Node, style: taffy::style::Style) {
         let _ = self.app_state.taffy.set_style(node, style);
     }
@@ -832,6 +844,10 @@ impl<'a> PaintCx<'a> {
         } else {
             Size::ZERO
         }
+    }
+
+    pub fn is_focused(&self, id: Id) -> bool {
+        self.app_state.is_focused(&id)
     }
 }
 

@@ -1,15 +1,11 @@
 use glazier::{kurbo::Size, WindowBuilder};
 use leptos_reactive::{create_runtime, raw_scope_and_disposer, Scope};
 
-use crate::{
-    app_handle::{AppContext, AppHandle},
-    view::View,
-    window::WindowConfig,
-};
+use crate::{app_handle::AppHandle, view::View, window::WindowConfig};
 
 type AppEventCallback = dyn Fn(&AppEvent);
 
-pub fn launch<V: View + 'static>(app_view: impl Fn(AppContext) -> V + 'static) {
+pub fn launch<V: View + 'static>(app_view: impl Fn() -> V + 'static) {
     Application::new().window(app_view, None).run()
 }
 
@@ -64,7 +60,7 @@ impl Application {
     /// just chain more window method to the builder
     pub fn window<V: View + 'static>(
         self,
-        app_view: impl FnOnce(AppContext) -> V + 'static,
+        app_view: impl FnOnce() -> V + 'static,
         config: Option<WindowConfig>,
     ) -> Self {
         let application = self.application.clone();

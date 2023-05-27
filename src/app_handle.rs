@@ -129,6 +129,10 @@ pub enum UpdateMessage {
         id: Id,
         state: Box<dyn Any>,
     },
+    BaseStyle {
+        id: Id,
+        style: Style,
+    },
     Style {
         id: Id,
         style: Style,
@@ -181,7 +185,7 @@ impl<V: View> Drop for AppHandle<V> {
 }
 
 impl<V: View> AppHandle<V> {
-    pub fn new(scope: Scope, app_logic: impl FnOnce(AppContext) -> V) -> Self {
+    pub fn new(scope: Scope, app_logic: impl FnOnce() -> V) -> Self {
         let cx = AppContext {
             scope,
             id: Id::next(),
@@ -189,7 +193,7 @@ impl<V: View> AppHandle<V> {
 
         AppContext::set_current(cx);
 
-        let view = app_logic(cx);
+        let view = app_logic();
         Self {
             scope,
             view,
@@ -458,6 +462,11 @@ impl<V: View> AppHandle<V> {
                             flags |= self.view.update_main(&mut cx, &id_path.0, state);
                         }
                     }
+                    UpdateMessage::BaseStyle { id, style } => {
+                        let state = cx.app_state.view_state(id);
+                        state.base_style = Some(style);
+                        cx.request_layout(id);
+                    }
                     UpdateMessage::Style { id, style } => {
                         let state = cx.app_state.view_state(id);
                         state.style = style;
@@ -624,11 +633,6 @@ impl<V: View> AppHandle<V> {
 
         if event.needs_focus() {
             let mut processed = false;
-            if let Some(listener) = event.listener() {
-                if let Some(action) = cx.get_event_listener(self.view.id(), &listener) {
-                    processed |= (*action)(&event);
-                }
-            }
 
             if !processed {
                 if let Some(id) = cx.app_state.focus {
@@ -639,6 +643,10 @@ impl<V: View> AppHandle<V> {
                                     .event_main(&mut cx, Some(&id_path.0), event.clone());
                         }
                     });
+                } else if let Some(listener) = event.listener() {
+                    if let Some(action) = cx.get_event_listener(self.view.id(), &listener) {
+                        processed |= (*action)(&event);
+                    }
                 }
 
                 if !processed {

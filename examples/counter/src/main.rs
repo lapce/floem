@@ -7,7 +7,9 @@ use floem::{
     AppContext,
 };
 
-fn app_view(cx: AppContext) -> impl View {
+fn app_view() -> impl View {
+    let cx = AppContext::get_current();
+
     let (counter, set_counter) = create_signal(cx.scope, 0);
     stack(|| {
         (

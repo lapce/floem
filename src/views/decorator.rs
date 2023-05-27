@@ -21,6 +21,16 @@ pub trait Decorators: View + Sized {
         self
     }
 
+    fn base_style(self, style: impl Fn() -> Style + 'static) -> Self {
+        let cx = AppContext::get_current();
+        let id = self.id();
+        create_effect(cx.scope, move |_| {
+            let style = style();
+            id.update_base_style(style);
+        });
+        self
+    }
+
     /// The visual style to apply when the mouse hovers over the element
     fn hover_style(self, style: impl Fn() -> Style + 'static) -> Self {
         let cx = AppContext::get_current();
@@ -55,11 +65,8 @@ pub trait Decorators: View + Sized {
 
     /// Allows the element to be navigated to with the keyboard. Similar to setting tabindex="0" in html.
     fn keyboard_navigatable(self) -> Self {
-        let cx = AppContext::get_current();
         let id = self.id();
-        create_effect(cx.scope, move |_| {
-            id.keyboard_navigatable();
-        });
+        id.keyboard_navigatable();
         self
     }
 
