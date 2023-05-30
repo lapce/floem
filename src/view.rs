@@ -300,6 +300,11 @@ pub trait View {
             .unwrap_or(false);
         if !is_empty {
             let style = cx.app_state.get_computed_style(id).clone();
+
+            if let Some(z_index) = style.z_index {
+                cx.set_z_index(z_index);
+            }
+
             paint_bg(cx, &style, size);
 
             if style.color.is_some() {

@@ -742,6 +742,7 @@ pub struct PaintCx<'a> {
     pub(crate) font_weight: Option<Weight>,
     pub(crate) font_style: Option<FontStyle>,
     pub(crate) line_height: Option<LineHeightValue>,
+    pub(crate) z_index: Option<i32>,
     pub(crate) saved_transforms: Vec<Affine>,
     pub(crate) saved_clips: Vec<Option<Rect>>,
     pub(crate) saved_colors: Vec<Option<Color>>,
@@ -750,6 +751,7 @@ pub struct PaintCx<'a> {
     pub(crate) saved_font_weights: Vec<Option<Weight>>,
     pub(crate) saved_font_styles: Vec<Option<FontStyle>>,
     pub(crate) saved_line_heights: Vec<Option<LineHeightValue>>,
+    pub(crate) saved_z_indexes: Vec<Option<i32>>,
 }
 
 impl<'a> PaintCx<'a> {
@@ -762,6 +764,7 @@ impl<'a> PaintCx<'a> {
         self.saved_font_weights.push(self.font_weight);
         self.saved_font_styles.push(self.font_style);
         self.saved_line_heights.push(self.line_height);
+        self.saved_z_indexes.push(self.z_index);
     }
 
     pub fn restore(&mut self) {
@@ -773,8 +776,14 @@ impl<'a> PaintCx<'a> {
         self.font_weight = self.saved_font_weights.pop().unwrap_or_default();
         self.font_style = self.saved_font_styles.pop().unwrap_or_default();
         self.line_height = self.saved_line_heights.pop().unwrap_or_default();
+        self.z_index = self.saved_z_indexes.pop().unwrap_or_default();
         let renderer = self.paint_state.renderer.as_mut().unwrap();
         renderer.transform(self.transform);
+        if let Some(z_index) = self.z_index {
+            renderer.set_z_index(z_index);
+        } else {
+            renderer.set_z_index(0);
+        }
         if let Some(rect) = self.clip {
             renderer.clip(&rect);
         } else {
@@ -854,6 +863,15 @@ impl<'a> PaintCx<'a> {
         } else {
             Size::ZERO
         }
+    }
+
+    pub(crate) fn set_z_index(&mut self, z_index: i32) {
+        self.z_index = Some(z_index);
+        self.paint_state
+            .renderer
+            .as_mut()
+            .unwrap()
+            .set_z_index(z_index);
     }
 
     pub fn is_focused(&self, id: Id) -> bool {

@@ -318,6 +318,10 @@ impl Renderer for VgerRenderer {
         self.transform = transform;
     }
 
+    fn set_z_index(&mut self, z_index: i32) {
+        self.vger.set_z_index(z_index);
+    }
+
     fn clip(&mut self, shape: &impl Shape) {
         let rect = shape.bounding_box();
         self.vger.scissor(self.vger_rect(rect));

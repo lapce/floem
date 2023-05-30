@@ -17,6 +17,8 @@ pub trait Renderer {
 
     fn transform(&mut self, transform: Affine);
 
+    fn set_z_index(&mut self, z_index: i32);
+
     /// Clip to a [`Shape`].
     fn clip(&mut self, shape: &impl Shape);
 

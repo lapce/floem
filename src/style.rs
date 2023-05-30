@@ -240,6 +240,7 @@ define_styles!(
     inset_top: LengthPercentageAuto = LengthPercentageAuto::Auto,
     inset_right: LengthPercentageAuto = LengthPercentageAuto::Auto,
     inset_bottom: LengthPercentageAuto = LengthPercentageAuto::Auto,
+    z_index nocb: Option<i32> = None,
     cursor nocb: Option<CursorStyle> = None,
     color nocb: Option<Color> = None,
     background nocb: Option<Color> = None,
@@ -634,6 +635,11 @@ impl Style {
 
     pub fn hide(self) -> Self {
         self.display(Display::None)
+    }
+
+    pub fn z_index(mut self, z_index: i32) -> Self {
+        self.z_index = Some(z_index).into();
+        self
     }
 
     pub fn flex_basis_px(self, pt: f32) -> Self {

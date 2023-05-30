@@ -107,6 +107,14 @@ impl floem_renderer::Renderer for Renderer {
         }
     }
 
+    fn set_z_index(&mut self, z_index: i32) {
+        match self {
+            Renderer::Vger(v) => {
+                v.set_z_index(z_index);
+            }
+        }
+    }
+
     fn finish(&mut self) {
         match self {
             Renderer::Vger(r) => {
