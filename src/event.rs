@@ -14,6 +14,8 @@ pub enum EventListner {
     PointerEnter,
     PointerLeave,
     PointerWheel,
+    FocusGained,
+    FocusLost,
     WindowClosed,
     WindowResized,
     WindowMoved,

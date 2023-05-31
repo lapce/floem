@@ -731,6 +731,9 @@ impl<V: View> AppHandle<V> {
                 {
                     cx.app_state.request_layout(old_id);
                 }
+                if let Some(action) = cx.get_event_listener(old_id, &EventListner::FocusLost) {
+                    (*action)(&event);
+                }
             }
 
             if let Some(id) = cx.app_state.focus {
@@ -741,6 +744,9 @@ impl<V: View> AppHandle<V> {
                         .has_style_for_sel(id, StyleSelector::FocusVisible)
                 {
                     cx.app_state.request_layout(id);
+                }
+                if let Some(action) = cx.get_event_listener(id, &EventListner::FocusGained) {
+                    (*action)(&event);
                 }
             }
         }
