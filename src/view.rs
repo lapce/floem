@@ -2,7 +2,7 @@ use std::any::Any;
 
 use bitflags::bitflags;
 use floem_renderer::Renderer;
-use glazier::kurbo::{Line, Point, Size};
+use glazier::kurbo::{Line, Point, Rect, Size};
 use taffy::prelude::Node;
 
 use crate::{
@@ -92,9 +92,9 @@ pub trait View {
 
     fn layout(&mut self, cx: &mut LayoutCx) -> Node;
 
-    fn compute_layout_main(&mut self, cx: &mut LayoutCx) {
+    fn compute_layout_main(&mut self, cx: &mut LayoutCx) -> Rect {
         if cx.app_state.is_hidden(self.id()) {
-            return;
+            return Rect::ZERO;
         }
 
         cx.save();
@@ -148,12 +148,24 @@ pub trait View {
             }
         }
 
-        self.compute_layout(cx);
+        let child_layout_rect = self.compute_layout(cx);
+
+        let layout_rect = size.to_rect().with_origin(cx.window_origin);
+        let layout_rect = if let Some(child_layout_rect) = child_layout_rect {
+            layout_rect.union(child_layout_rect)
+        } else {
+            layout_rect
+        };
+        cx.app_state.view_state(self.id()).layout_rect = layout_rect;
 
         cx.restore();
+
+        layout_rect
     }
 
-    fn compute_layout(&mut self, cx: &mut LayoutCx);
+    fn compute_layout(&mut self, _cx: &mut LayoutCx) -> Option<Rect> {
+        None
+    }
 
     fn event_main(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {
         let id = self.id();

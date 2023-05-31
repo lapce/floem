@@ -1,3 +1,5 @@
+use glazier::kurbo::Rect;
+
 use crate::{
     app_handle::AppContext,
     event::Event,
@@ -52,8 +54,8 @@ impl<V: View> View for WindowDragArea<V> {
         cx.layout_node(self.id, true, |cx| vec![self.child.layout_main(cx)])
     }
 
-    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {
-        self.child.compute_layout_main(cx);
+    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<Rect> {
+        Some(self.child.compute_layout_main(cx))
     }
 
     fn event(

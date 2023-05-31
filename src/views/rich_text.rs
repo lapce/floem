@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use floem_renderer::{cosmic_text::TextLayout, Renderer};
-use glazier::kurbo::Point;
+use glazier::kurbo::{Point, Rect};
 use leptos_reactive::create_effect;
 use taffy::{prelude::Node, style::Dimension};
 
@@ -100,7 +100,9 @@ impl View for RichText {
         })
     }
 
-    fn compute_layout(&mut self, _cx: &mut crate::context::LayoutCx) {}
+    fn compute_layout(&mut self, _cx: &mut crate::context::LayoutCx) -> Option<Rect> {
+        None
+    }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         let text_node = self.text_node.unwrap();

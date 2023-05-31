@@ -1,3 +1,5 @@
+use glazier::kurbo::Rect;
+
 use crate::{
     app_handle::AppContext,
     context::{EventCx, UpdateCx},
@@ -85,11 +87,13 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
         })
     }
 
-    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {
+    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<Rect> {
+        let mut layout_rect = Rect::ZERO;
         self.children.foreach(&mut |view| {
-            view.compute_layout_main(cx);
+            layout_rect = layout_rect.union(view.compute_layout_main(cx));
             false
         });
+        Some(layout_rect)
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {

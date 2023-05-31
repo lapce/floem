@@ -1,4 +1,4 @@
-use glazier::kurbo::Size;
+use glazier::kurbo::{Rect, Size};
 
 use crate::{
     app_handle::AppContext,
@@ -57,8 +57,8 @@ impl<V: View> View for Clip<V> {
         cx.layout_node(self.id, true, |cx| vec![self.child.layout_main(cx)])
     }
 
-    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {
-        self.child.compute_layout_main(cx);
+    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<Rect> {
+        Some(self.child.compute_layout_main(cx))
     }
 
     fn event(

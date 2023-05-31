@@ -8,7 +8,7 @@ use floem_renderer::{
     cosmic_text::{LineHeightValue, Style as FontStyle, Weight},
     Renderer,
 };
-use glazier::kurbo::Point;
+use glazier::kurbo::{Point, Rect};
 use leptos_reactive::create_effect;
 use taffy::{prelude::Node, style::Dimension};
 use vello::peniko::Color;
@@ -211,9 +211,9 @@ impl View for Label {
         })
     }
 
-    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {
+    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<Rect> {
         if self.label.is_empty() {
-            return;
+            return None;
         }
 
         let layout = cx.get_layout(self.id()).unwrap();
@@ -293,6 +293,7 @@ impl View for Label {
                 self.available_text_layout = None;
             }
         }
+        None
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {

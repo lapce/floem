@@ -325,7 +325,7 @@ where
         })
     }
 
-    fn compute_layout(&mut self, cx: &mut LayoutCx) {
+    fn compute_layout(&mut self, cx: &mut LayoutCx) -> Option<Rect> {
         let viewport = cx.viewport.unwrap_or_default();
         if self.viewport != viewport {
             let layout = cx.app_state.get_layout(self.id).unwrap();
@@ -335,11 +335,13 @@ where
             self.set_viewport.set(viewport);
         }
 
+        let mut layout_rect = Rect::ZERO;
         for child in &mut self.children {
             if let Some((child, _)) = child.as_mut() {
-                child.compute_layout_main(cx);
+                layout_rect = layout_rect.union(child.compute_layout_main(cx));
             }
         }
+        Some(layout_rect)
     }
 
     fn event(

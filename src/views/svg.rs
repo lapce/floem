@@ -97,8 +97,6 @@ impl View for Svg {
         cx.layout_node(self.id, false, |_| Vec::new())
     }
 
-    fn compute_layout(&mut self, _cx: &mut crate::context::LayoutCx) {}
-
     fn event(
         &mut self,
         _cx: &mut crate::context::EventCx,

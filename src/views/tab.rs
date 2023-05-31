@@ -1,5 +1,6 @@
 use std::{hash::Hash, marker::PhantomData};
 
+use glazier::kurbo::Rect;
 use leptos_reactive::{create_effect, ScopeDisposer};
 use smallvec::SmallVec;
 use taffy::style::Display;
@@ -178,12 +179,14 @@ where
         })
     }
 
-    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) {
+    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<Rect> {
+        let mut layout_rect = Rect::ZERO;
         for child in &mut self.children {
             if let Some((child, _)) = child.as_mut() {
-                child.compute_layout_main(cx);
+                layout_rect = layout_rect.union(child.compute_layout_main(cx));
             }
         }
+        Some(layout_rect)
     }
 
     fn event(

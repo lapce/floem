@@ -68,6 +68,7 @@ pub struct ViewState {
     pub(crate) children_nodes: Vec<Node>,
     pub(crate) request_layout: bool,
     pub(crate) viewport: Option<Rect>,
+    pub(crate) layout_rect: Rect,
     pub(crate) animation: Option<Animation>,
     pub(crate) base_style: Option<Style>,
     pub(crate) style: Style,
@@ -88,8 +89,9 @@ impl ViewState {
         Self {
             node: taffy.new_leaf(taffy::style::Style::DEFAULT).unwrap(),
             viewport: None,
-            animation: None,
+            layout_rect: Rect::ZERO,
             request_layout: true,
+            animation: None,
             base_style: None,
             style: Style::BASE,
             computed_style: ComputedStyle::default(),
@@ -391,6 +393,10 @@ impl AppState {
             .copied()
     }
 
+    pub(crate) fn get_layout_rect(&mut self, id: Id) -> Rect {
+        self.view_state(id).layout_rect
+    }
+
     pub(crate) fn update_active(&mut self, id: Id) {
         if self.active.is_some() {
             // the first update_active wins, so if there's active set,
@@ -569,11 +575,14 @@ impl<'a> EventCx<'a> {
             return false;
         }
         if let Some(point) = event.point() {
+            let layout_rect = self.app_state.get_layout_rect(id);
             if let Some(layout) = self.get_layout(id) {
-                if layout.location.x as f64 <= point.x
-                    && point.x <= (layout.location.x + layout.size.width) as f64
-                    && layout.location.y as f64 <= point.y
-                    && point.y <= (layout.location.y + layout.size.height) as f64
+                if layout_rect
+                    .with_origin(Point::new(
+                        layout.location.x as f64,
+                        layout.location.y as f64,
+                    ))
+                    .contains(point)
                 {
                     return true;
                 }
