@@ -10,6 +10,8 @@ pub enum EventListener {
     DoubleClick,
     DragStart,
     DragOver,
+    DragEnter,
+    DragLeave,
     Drop,
     PointerDown,
     PointerMove,

@@ -624,13 +624,14 @@ impl<V: View> AppHandle<V> {
         };
 
         let is_pointer_move = matches!(&event, Event::PointerMove(_));
-        let was_hovered = if is_pointer_move {
+        let (was_hovered, was_dragging_over) = if is_pointer_move {
             cx.app_state.cursor = None;
-            let was_hovered = cx.app_state.hovered.clone();
-            cx.app_state.hovered.clear();
-            Some(was_hovered)
+            let was_hovered = std::mem::take(&mut cx.app_state.hovered);
+            let was_dragging_over = std::mem::take(&mut cx.app_state.dragging_over);
+
+            (Some(was_hovered), Some(was_dragging_over))
         } else {
-            None
+            (None, None)
         };
 
         let is_pointer_down = matches!(&event, Event::PointerDown(_));
@@ -727,6 +728,19 @@ impl<V: View> AppHandle<V> {
                 } else if let Some(action) =
                     cx.get_event_listener(*id, &EventListener::PointerLeave)
                 {
+                    (*action)(&event);
+                }
+            }
+            let dragging_over = &cx.app_state.dragging_over.clone();
+            for id in was_dragging_over
+                .unwrap()
+                .symmetric_difference(dragging_over)
+            {
+                if dragging_over.contains(id) {
+                    if let Some(action) = cx.get_event_listener(*id, &EventListener::DragEnter) {
+                        (*action)(&event);
+                    }
+                } else if let Some(action) = cx.get_event_listener(*id, &EventListener::DragLeave) {
                     (*action)(&event);
                 }
             }

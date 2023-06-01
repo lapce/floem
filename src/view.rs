@@ -297,6 +297,7 @@ pub trait View {
                 let rect = cx.get_size(id).unwrap_or_default().to_rect();
                 if rect.contains(pointer_event.pos) {
                     if cx.app_state.is_dragging() {
+                        cx.app_state.dragging_over.insert(id);
                         if let Some(action) = cx.get_event_listener(id, &EventListener::DragOver) {
                             (*action)(&event);
                         }
