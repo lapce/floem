@@ -13,7 +13,7 @@ educe = "0.4.20"
 taffy = "0.3.12"
 unicode-segmentation = "1.10.0"
 leptos_reactive = { version = "0.2.5", features = ["stable"] }
-glazier = { git = "https://github.com/linebender/glazier", features = ["serde"], rev = "ab692f5eb10e7511f2e0a6b0a86151df5ae67921" }
+glazier = { git = "https://github.com/lapce/glazier", features = ["serde"], rev = "ab692f5eb10e7511f2e0a6b0a86151df5ae67921" }
 # glazier = { path = "../glazier", features = ["serde"] }
 vello = { git = "https://github.com/linebender/vello", rev = "2f268d4e0f8596c2c05f4982ddc558e1cae0ffa2" }
 vello_svg = { git = "https://github.com/linebender/vello", rev = "2f268d4e0f8596c2c05f4982ddc558e1cae0ffa2" }
