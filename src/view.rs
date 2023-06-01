@@ -2,12 +2,12 @@ use std::any::Any;
 
 use bitflags::bitflags;
 use floem_renderer::Renderer;
-use glazier::kurbo::{Line, Point, Rect, Size};
+use glazier::kurbo::{Affine, Circle, Line, Point, Rect, Size};
 use taffy::prelude::Node;
 
 use crate::{
-    context::{EventCx, LayoutCx, PaintCx, UpdateCx},
-    event::{Event, EventListner},
+    context::{DragState, EventCx, LayoutCx, PaintCx, UpdateCx},
+    event::{Event, EventListener},
     id::Id,
     style::{ComputedStyle, Style},
 };
@@ -222,13 +222,20 @@ pub trait View {
                         if cx.app_state.keyboard_navigatable.contains(&id) {
                             cx.app_state.update_focus(id, false);
                         }
-                        if event.count == 2 && cx.has_event_listener(id, EventListner::DoubleClick)
+                        if event.count == 2 && cx.has_event_listener(id, EventListener::DoubleClick)
                         {
                             let view_state = cx.app_state.view_state(id);
                             view_state.last_pointer_down = Some(event.clone());
                             cx.update_active(id);
                         }
-                        if cx.has_event_listener(id, EventListner::Click) {
+                        if cx.has_event_listener(id, EventListener::Click) {
+                            let view_state = cx.app_state.view_state(id);
+                            view_state.last_pointer_down = Some(event.clone());
+                            cx.update_active(id);
+                        }
+                        if cx.app_state.draggable.contains(&id) {
+                            let view_state = cx.app_state.view_state(id);
+                            view_state.drag_start = Some(event.pos);
                             cx.update_active(id);
                         }
                     }
@@ -236,41 +243,96 @@ pub trait View {
             }
             Event::PointerUp(pointer_event) => {
                 if pointer_event.button.is_left() {
-                    let last_pointer_down = cx.app_state.view_state(id).last_pointer_down.take();
                     let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
-                    if let Some(action) = cx.get_event_listener(id, &EventListner::DoubleClick) {
-                        if rect.contains(pointer_event.pos)
-                            && last_pointer_down
-                                .as_ref()
-                                .map(|e| e.count == 2)
-                                .unwrap_or(false)
-                            && (*action)(&event)
-                        {
-                            return true;
+                    let on_view = rect.contains(pointer_event.pos);
+
+                    if id_path.is_none() {
+                        if cx.app_state.is_dragging() && on_view {
+                            if let Some(action) = cx.get_event_listener(id, &EventListener::Drop) {
+                                if (*action)(&event) {
+                                    cx.app_state.dragging = None;
+                                    id.request_paint();
+                                }
+                            }
                         }
-                    }
-                    if let Some(action) = cx.get_event_listener(id, &EventListner::Click) {
-                        if rect.contains(pointer_event.pos) && (*action)(&event) {
-                            return true;
+                    } else {
+                        let view_state = cx.app_state.view_state(id);
+                        if view_state.drag_start.is_some() {
+                            view_state.drag_start = None;
+                        }
+                        if let Some(dragging) = cx.app_state.dragging.as_mut() {
+                            dragging.released_at = Some(std::time::Instant::now());
+                            id.request_paint();
+                        }
+                        let last_pointer_down =
+                            cx.app_state.view_state(id).last_pointer_down.take();
+                        if let Some(action) = cx.get_event_listener(id, &EventListener::DoubleClick)
+                        {
+                            if on_view
+                                && last_pointer_down
+                                    .as_ref()
+                                    .map(|e| e.count == 2)
+                                    .unwrap_or(false)
+                                && (*action)(&event)
+                            {
+                                return true;
+                            }
+                        }
+                        if let Some(action) = cx.get_event_listener(id, &EventListener::Click) {
+                            if on_view && last_pointer_down.is_some() && (*action)(&event) {
+                                return true;
+                            }
                         }
                     }
                 }
             }
             Event::KeyDown(_) => {
                 if cx.app_state.is_focused(&id) && event.is_keyboard_trigger() {
-                    if let Some(action) = cx.get_event_listener(id, &EventListner::Click) {
+                    if let Some(action) = cx.get_event_listener(id, &EventListener::Click) {
                         (*action)(&event);
                     }
                 }
             }
-            Event::PointerMove(event) => {
+            Event::PointerMove(pointer_event) => {
                 let rect = cx.get_size(id).unwrap_or_default().to_rect();
-                if rect.contains(event.pos) {
-                    cx.app_state.hovered.insert(id);
-                    let style = cx.app_state.get_computed_style(id);
-                    if let Some(cursor) = style.cursor {
-                        if cx.app_state.cursor.is_none() {
-                            cx.app_state.cursor = Some(cursor);
+                if rect.contains(pointer_event.pos) {
+                    if cx.app_state.is_dragging() {
+                        if let Some(action) = cx.get_event_listener(id, &EventListener::DragOver) {
+                            (*action)(&event);
+                        }
+                    } else {
+                        cx.app_state.hovered.insert(id);
+                        let style = cx.app_state.get_computed_style(id);
+                        if let Some(cursor) = style.cursor {
+                            if cx.app_state.cursor.is_none() {
+                                cx.app_state.cursor = Some(cursor);
+                            }
+                        }
+                    }
+                }
+                if cx.app_state.draggable.contains(&id) {
+                    let view_state = cx.app_state.view_state(id);
+                    if let Some(drag_start) = view_state.drag_start {
+                        let vec2 = pointer_event.pos - drag_start;
+                        if let Some(dragging) =
+                            cx.app_state.dragging.as_mut().filter(|d| d.id == id)
+                        {
+                            dragging.offset = vec2;
+                            id.request_paint();
+                        } else if vec2.x.abs() + vec2.y.abs() > 1.0 {
+                            cx.app_state.active = None;
+                            cx.update_active(id);
+                            cx.app_state.dragging = Some(DragState {
+                                id,
+                                offset: vec2,
+                                released_at: None,
+                            });
+                            id.request_paint();
+                            if let Some(action) =
+                                cx.get_event_listener(id, &EventListener::DragStart)
+                            {
+                                (*action)(&event);
+                            }
                         }
                     }
                 }
@@ -340,6 +402,69 @@ pub trait View {
             self.paint(cx);
             paint_border(cx, &style, size);
         }
+
+        let mut drag_set_to_none = false;
+        if let Some(dragging) = cx.app_state.dragging.as_ref() {
+            if dragging.id == id {
+                let dragging_offset = dragging.offset;
+                let mut offset_scale = None;
+                if let Some(released_at) = dragging.released_at {
+                    const LIMIT: f64 = 300.0;
+                    let elapsed = released_at.elapsed().as_millis() as f64;
+                    if elapsed < LIMIT {
+                        offset_scale = Some(1.0 - elapsed / LIMIT);
+                        cx.app_state.request_timer(
+                            std::time::Duration::from_millis(8),
+                            Box::new(move || {
+                                id.request_paint();
+                            }),
+                        );
+                    } else {
+                        drag_set_to_none = true;
+                    }
+                } else {
+                    offset_scale = Some(1.0);
+                }
+
+                if let Some(offset_scale) = offset_scale {
+                    let offset = dragging_offset * offset_scale;
+                    cx.save();
+
+                    let mut new = cx.transform.as_coeffs();
+                    new[4] += offset.x;
+                    new[5] += offset.y;
+                    cx.transform = Affine::new(new);
+                    cx.paint_state
+                        .renderer
+                        .as_mut()
+                        .unwrap()
+                        .transform(cx.transform);
+                    cx.set_z_index(1000);
+                    cx.clear_clip();
+
+                    let style = cx.app_state.get_computed_style(id).clone();
+                    let view_state = cx.app_state.view_state(id);
+                    let style = if let Some(dragging_style) = view_state.dragging_style.clone() {
+                        view_state
+                            .combined_style
+                            .clone()
+                            .apply(dragging_style)
+                            .compute(&ComputedStyle::default())
+                    } else {
+                        style
+                    };
+                    paint_bg(cx, &style, size);
+                    self.paint(cx);
+                    paint_border(cx, &style, size);
+
+                    cx.restore();
+                }
+            }
+        }
+        if drag_set_to_none {
+            cx.app_state.dragging = None;
+        }
+
         cx.restore();
     }
 
@@ -413,8 +538,17 @@ fn paint_bg(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
 
     let radius = style.border_radius;
     if radius > 0.0 {
-        let rect = size.to_rect().to_rounded_rect(radius as f64);
-        cx.fill(&rect, bg);
+        let rect = size.to_rect();
+        let width = rect.width();
+        let height = rect.height();
+        if width > 0.0 && height > 0.0 && radius as f64 > width.max(height) / 2.0 {
+            let radius = width.max(height) / 2.0;
+            let circle = Circle::new(rect.center(), radius);
+            cx.fill(&circle, bg);
+        } else {
+            let rect = rect.to_rounded_rect(radius as f64);
+            cx.fill(&rect, bg);
+        }
     } else {
         cx.fill(&size.to_rect(), bg);
     }

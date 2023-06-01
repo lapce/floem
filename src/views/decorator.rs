@@ -4,7 +4,7 @@ use leptos_reactive::create_effect;
 use crate::{
     animate::Animation,
     app_handle::{AppContext, StyleSelector},
-    event::{Event, EventListner},
+    event::{Event, EventListener},
     responsive::ScreenSize,
     style::Style,
     view::View,
@@ -42,6 +42,17 @@ pub trait Decorators: View + Sized {
         self
     }
 
+    /// The visual style to apply when the mouse hovers over the element
+    fn dragging_style(self, style: impl Fn() -> Style + 'static) -> Self {
+        let cx = AppContext::get_current();
+        let id = self.id();
+        create_effect(cx.scope, move |_| {
+            let style = style();
+            id.update_style_selector(style, StyleSelector::Dragging);
+        });
+        self
+    }
+
     fn focus_style(self, style: impl Fn() -> Style + 'static) -> Self {
         let cx = AppContext::get_current();
         let id = self.id();
@@ -67,6 +78,12 @@ pub trait Decorators: View + Sized {
     fn keyboard_navigatable(self) -> Self {
         let id = self.id();
         id.keyboard_navigatable();
+        self
+    }
+
+    fn draggable(self) -> Self {
+        let id = self.id();
+        id.draggable();
         self
     }
 
@@ -112,7 +129,7 @@ pub trait Decorators: View + Sized {
         self
     }
 
-    fn on_event(self, listener: EventListner, action: impl Fn(&Event) -> bool + 'static) -> Self {
+    fn on_event(self, listener: EventListener, action: impl Fn(&Event) -> bool + 'static) -> Self {
         let id = self.id();
         id.update_event_listner(listener, Box::new(action));
         self
@@ -120,13 +137,13 @@ pub trait Decorators: View + Sized {
 
     fn on_click(self, action: impl Fn(&Event) -> bool + 'static) -> Self {
         let id = self.id();
-        id.update_event_listner(EventListner::Click, Box::new(action));
+        id.update_event_listner(EventListener::Click, Box::new(action));
         self
     }
 
     fn on_double_click(self, action: impl Fn(&Event) -> bool + 'static) -> Self {
         let id = self.id();
-        id.update_event_listner(EventListner::DoubleClick, Box::new(action));
+        id.update_event_listner(EventListener::DoubleClick, Box::new(action));
         self
     }
 

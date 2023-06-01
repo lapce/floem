@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use floem::{
     animate::{animation, EasingFn},
-    event::EventListner,
+    event::EventListener,
     peniko::Color,
     reactive::{create_signal, SignalGet, SignalUpdate},
     style::Style,
@@ -22,11 +22,11 @@ fn app_view() -> impl View {
                 set_counter.update(|value| *value += 1.0);
                 true
             })
-            .on_event(EventListner::PointerEnter, move |_| {
+            .on_event(EventListener::PointerEnter, move |_| {
                 set_is_hovered.update(|val| *val = true);
                 true
             })
-            .on_event(EventListner::PointerLeave, move |_| {
+            .on_event(EventListener::PointerLeave, move |_| {
                 set_is_hovered.update(|val| *val = false);
                 true
             })

@@ -6,7 +6,7 @@ use crate::{
     animate::Animation,
     app_handle::{StyleSelector, UpdateMessage, DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES},
     context::{EventCallback, ResizeCallback},
-    event::EventListner,
+    event::EventListener,
     menu::Menu,
     responsive::ScreenSize,
     style::Style,
@@ -346,6 +346,16 @@ impl Id {
         }
     }
 
+    pub fn draggable(&self) {
+        if let Some(root) = self.root_id() {
+            UPDATE_MESSAGES.with(|msgs| {
+                let mut msgs = msgs.borrow_mut();
+                let msgs = msgs.entry(root).or_default();
+                msgs.push(UpdateMessage::Draggable { id: *self })
+            })
+        }
+    }
+
     pub fn update_responsive_style(&self, style: Style, size: ScreenSize) {
         if let Some(root) = self.root_id() {
             UPDATE_MESSAGES.with(|msgs| {
@@ -370,7 +380,7 @@ impl Id {
         }
     }
 
-    pub fn update_event_listner(&self, listener: EventListner, action: Box<EventCallback>) {
+    pub fn update_event_listner(&self, listener: EventListener, action: Box<EventCallback>) {
         if let Some(root) = self.root_id() {
             UPDATE_MESSAGES.with(|msgs| {
                 let mut msgs = msgs.borrow_mut();

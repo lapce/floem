@@ -10,7 +10,7 @@ use floem_renderer::{
 };
 use glazier::{
     kurbo::{Affine, Point, Rect, Shape, Size, Vec2},
-    PointerEvent, Scale,
+    PointerEvent, Scale, TimerToken,
 };
 use taffy::{
     prelude::{Layout, Node},
@@ -21,7 +21,7 @@ use vello::peniko::Color;
 use crate::{
     animate::{AnimId, AnimPropKind, Animation},
     app_handle::StyleSelector,
-    event::{Event, EventListner},
+    event::{Event, EventListener},
     id::Id,
     menu::Menu,
     responsive::{GridBreakpoints, ScreenSize, ScreenSizeBp},
@@ -72,16 +72,19 @@ pub struct ViewState {
     pub(crate) animation: Option<Animation>,
     pub(crate) base_style: Option<Style>,
     pub(crate) style: Style,
+    pub(crate) dragging_style: Option<Style>,
     pub(crate) hover_style: Option<Style>,
     pub(crate) disabled_style: Option<Style>,
     pub(crate) focus_style: Option<Style>,
     pub(crate) focus_visible_style: Option<Style>,
     pub(crate) responsive_styles: HashMap<ScreenSizeBp, Vec<Style>>,
     pub(crate) active_style: Option<Style>,
+    pub(crate) combined_style: Style,
     pub(crate) computed_style: ComputedStyle,
-    pub(crate) event_listeners: HashMap<EventListner, Box<EventCallback>>,
+    pub(crate) event_listeners: HashMap<EventListener, Box<EventCallback>>,
     pub(crate) resize_listener: Option<ResizeListener>,
     pub(crate) last_pointer_down: Option<PointerEvent>,
+    pub(crate) drag_start: Option<Point>,
 }
 
 impl ViewState {
@@ -94,8 +97,10 @@ impl ViewState {
             animation: None,
             base_style: None,
             style: Style::BASE,
+            combined_style: Style::BASE,
             computed_style: ComputedStyle::default(),
             hover_style: None,
+            dragging_style: None,
             disabled_style: None,
             focus_style: None,
             focus_visible_style: None,
@@ -105,6 +110,7 @@ impl ViewState {
             event_listeners: HashMap::new(),
             resize_listener: None,
             last_pointer_down: None,
+            drag_start: None,
         }
     }
 
@@ -204,6 +210,7 @@ impl ViewState {
             }
         }
 
+        self.combined_style = computed_style.clone();
         self.computed_style = computed_style.compute(&ComputedStyle::default());
     }
 
@@ -219,7 +226,14 @@ impl ViewState {
     }
 }
 
+pub struct DragState {
+    pub(crate) id: Id,
+    pub(crate) offset: Vec2,
+    pub(crate) released_at: Option<std::time::Instant>,
+}
+
 pub struct AppState {
+    pub(crate) handle: glazier::WindowHandle,
     /// keyboard focus
     pub(crate) focus: Option<Id>,
     /// when a view is active, it gets mouse event even when the mouse is
@@ -232,6 +246,8 @@ pub struct AppState {
     pub(crate) view_states: HashMap<Id, ViewState>,
     pub(crate) disabled: HashSet<Id>,
     pub(crate) keyboard_navigatable: HashSet<Id>,
+    pub(crate) draggable: HashSet<Id>,
+    pub(crate) dragging: Option<DragState>,
     pub(crate) screen_size_bp: ScreenSizeBp,
     pub(crate) grid_breakpts: GridBreakpoints,
     pub(crate) hovered: HashSet<Id>,
@@ -241,6 +257,7 @@ pub struct AppState {
     pub(crate) cursor: Option<CursorStyle>,
     pub(crate) keyboard_navigation: bool,
     pub(crate) contex_menu: HashMap<u32, Box<dyn Fn()>>,
+    pub(crate) timers: HashMap<TimerToken, Box<dyn FnOnce()>>,
 }
 
 impl Default for AppState {
@@ -254,6 +271,7 @@ impl AppState {
         let mut taffy = taffy::Taffy::new();
         taffy.disable_rounding();
         Self {
+            handle: Default::default(),
             root: None,
             focus: None,
             active: None,
@@ -265,11 +283,14 @@ impl AppState {
             animated: HashSet::new(),
             disabled: HashSet::new(),
             keyboard_navigatable: HashSet::new(),
+            draggable: HashSet::new(),
+            dragging: None,
             hovered: HashSet::new(),
             cursor: None,
             keyboard_navigation: false,
             grid_breakpts: GridBreakpoints::default(),
             contex_menu: HashMap::new(),
+            timers: HashMap::new(),
         }
     }
 
@@ -330,6 +351,13 @@ impl AppState {
         self.active.map(|a| &a == id).unwrap_or(false)
     }
 
+    pub fn is_dragging(&self) -> bool {
+        self.dragging
+            .as_ref()
+            .map(|d| d.released_at.is_none())
+            .unwrap_or(false)
+    }
+
     pub fn get_interact_state(&self, id: &Id) -> InteractionState {
         InteractionState {
             is_hovered: self.is_hovered(id),
@@ -378,6 +406,11 @@ impl AppState {
         if let Some(parent) = id.parent() {
             self.request_layout(parent);
         }
+    }
+
+    pub(crate) fn request_timer(&mut self, deadline: Duration, action: Box<dyn FnOnce()>) {
+        let token = self.handle.request_timer(deadline);
+        self.timers.insert(token, action);
     }
 
     pub(crate) fn set_viewport(&mut self, id: Id, viewport: Rect) {
@@ -445,6 +478,7 @@ impl AppState {
             StyleSelector::FocusVisible => view_state.focus_visible_style.is_some(),
             StyleSelector::Disabled => view_state.disabled_style.is_some(),
             StyleSelector::Active => view_state.active_style.is_some(),
+            StyleSelector::Dragging => view_state.dragging_style.is_some(),
         }
     }
 
@@ -532,7 +566,7 @@ impl<'a> EventCx<'a> {
             .map(|l| Size::new(l.size.width as f64, l.size.height as f64))
     }
 
-    pub(crate) fn has_event_listener(&self, id: Id, listner: EventListner) -> bool {
+    pub(crate) fn has_event_listener(&self, id: Id, listner: EventListener) -> bool {
         self.app_state
             .view_states
             .get(&id)
@@ -543,7 +577,7 @@ impl<'a> EventCx<'a> {
     pub(crate) fn get_event_listener(
         &self,
         id: Id,
-        listner: &EventListner,
+        listner: &EventListener,
     ) -> Option<&impl Fn(&Event) -> bool> {
         self.app_state
             .view_states

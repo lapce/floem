@@ -4,10 +4,13 @@ use glazier::{
 };
 
 #[derive(Hash, PartialEq, Eq)]
-pub enum EventListner {
+pub enum EventListener {
     KeyDown,
     Click,
     DoubleClick,
+    DragStart,
+    DragOver,
+    Drop,
     PointerDown,
     PointerMove,
     PointerUp,
@@ -136,16 +139,16 @@ impl Event {
         self
     }
 
-    pub fn listener(&self) -> Option<EventListner> {
+    pub fn listener(&self) -> Option<EventListener> {
         match self {
-            Event::PointerDown(_) => Some(EventListner::PointerDown),
-            Event::PointerUp(_) => Some(EventListner::PointerUp),
-            Event::PointerMove(_) => Some(EventListner::PointerMove),
-            Event::PointerWheel(_) => Some(EventListner::PointerWheel),
-            Event::KeyDown(_) | Event::KeyUp(_) => Some(EventListner::KeyDown),
-            Event::WindowClosed => Some(EventListner::WindowClosed),
-            Event::WindowResized(_) => Some(EventListner::WindowResized),
-            Event::WindowMoved(_) => Some(EventListner::WindowMoved),
+            Event::PointerDown(_) => Some(EventListener::PointerDown),
+            Event::PointerUp(_) => Some(EventListener::PointerUp),
+            Event::PointerMove(_) => Some(EventListener::PointerMove),
+            Event::PointerWheel(_) => Some(EventListener::PointerWheel),
+            Event::KeyDown(_) | Event::KeyUp(_) => Some(EventListener::KeyDown),
+            Event::WindowClosed => Some(EventListener::WindowClosed),
+            Event::WindowResized(_) => Some(EventListener::WindowResized),
+            Event::WindowMoved(_) => Some(EventListener::WindowMoved),
         }
     }
 }

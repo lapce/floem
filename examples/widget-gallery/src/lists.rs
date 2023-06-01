@@ -1,6 +1,6 @@
 use floem::{
     cosmic_text::Weight,
-    event::{Event, EventListner},
+    event::{Event, EventListener},
     glazier::keyboard_types::Key,
     peniko::Color,
     reactive::{create_signal, SignalGet, SignalUpdate},
@@ -111,7 +111,7 @@ fn enhanced_list() -> impl View {
                     });
                     true
                 })
-                .on_event(EventListner::KeyDown, move |e| {
+                .on_event(EventListener::KeyDown, move |e| {
                     if let Event::KeyDown(key_event) = e {
                         let sel = selected.get();
                         match key_event.key {

@@ -14,7 +14,7 @@ use crate::{
         AppContextStore, AppState, EventCallback, EventCx, LayoutCx, PaintCx, PaintState,
         ResizeCallback, ResizeListener, UpdateCx, APP_CONTEXT_STORE,
     },
-    event::{Event, EventListner},
+    event::{Event, EventListener},
     ext_event::{EXT_EVENT_HANDLER, WRITE_SIGNALS},
     id::{Id, IDPATHS},
     responsive::ScreenSize,
@@ -46,7 +46,6 @@ pub struct AppHandle<V: View> {
     prev_mouse_pos: MousePosState,
 
     file_dialogs: FileDialogs,
-    timers: HashMap<TimerToken, Box<dyn FnOnce()>>,
 }
 
 #[derive(Copy, Clone)]
@@ -111,6 +110,7 @@ pub enum StyleSelector {
     FocusVisible,
     Disabled,
     Active,
+    Dragging,
 }
 
 pub enum UpdateMessage {
@@ -150,9 +150,12 @@ pub enum UpdateMessage {
     KeyboardNavigatable {
         id: Id,
     },
+    Draggable {
+        id: Id,
+    },
     EventListener {
         id: Id,
-        listener: EventListner,
+        listener: EventListener,
         action: Box<EventCallback>,
     },
     ResizeListener {
@@ -203,7 +206,6 @@ impl<V: View> AppHandle<V> {
             prev_mouse_pos: MousePosState::None,
 
             file_dialogs: HashMap::new(),
-            timers: HashMap::new(),
         }
     }
 
@@ -494,11 +496,15 @@ impl<V: View> AppHandle<V> {
                             StyleSelector::FocusVisible => state.focus_visible_style = style,
                             StyleSelector::Disabled => state.disabled_style = style,
                             StyleSelector::Active => state.active_style = style,
+                            StyleSelector::Dragging => state.dragging_style = style,
                         }
                         cx.request_layout(id);
                     }
                     UpdateMessage::KeyboardNavigatable { id } => {
                         cx.app_state.keyboard_navigatable.insert(id);
+                    }
+                    UpdateMessage::Draggable { id } => {
+                        cx.app_state.draggable.insert(id);
                     }
                     UpdateMessage::HandleTitleBar(val) => {
                         self.handle.handle_titlebar(val);
@@ -534,8 +540,7 @@ impl<V: View> AppHandle<V> {
                         }
                     }
                     UpdateMessage::RequestTimer { deadline, action } => {
-                        let token = self.handle.request_timer(deadline);
-                        self.timers.insert(token, action);
+                        cx.app_state.request_timer(deadline, action);
                     }
                     UpdateMessage::Animation { id, animation } => {
                         cx.app_state.animated.insert(id);
@@ -682,6 +687,10 @@ impl<V: View> AppHandle<V> {
                 }
             }
         } else if cx.app_state.active.is_some() && event.is_pointer() {
+            if cx.app_state.is_dragging() {
+                self.view.event_main(&mut cx, None, event.clone());
+            }
+
             let id = cx.app_state.active.unwrap();
             IDPATHS.with(|paths| {
                 if let Some(id_path) = paths.borrow().get(&id) {
@@ -712,10 +721,11 @@ impl<V: View> AppHandle<V> {
                     cx.app_state.request_layout(*id);
                 }
                 if hovered.contains(id) {
-                    if let Some(action) = cx.get_event_listener(*id, &EventListner::PointerEnter) {
+                    if let Some(action) = cx.get_event_listener(*id, &EventListener::PointerEnter) {
                         (*action)(&event);
                     }
-                } else if let Some(action) = cx.get_event_listener(*id, &EventListner::PointerLeave)
+                } else if let Some(action) =
+                    cx.get_event_listener(*id, &EventListener::PointerLeave)
                 {
                     (*action)(&event);
                 }
@@ -731,7 +741,7 @@ impl<V: View> AppHandle<V> {
                 {
                     cx.app_state.request_layout(old_id);
                 }
-                if let Some(action) = cx.get_event_listener(old_id, &EventListner::FocusLost) {
+                if let Some(action) = cx.get_event_listener(old_id, &EventListener::FocusLost) {
                     (*action)(&event);
                 }
             }
@@ -745,7 +755,7 @@ impl<V: View> AppHandle<V> {
                 {
                     cx.app_state.request_layout(id);
                 }
-                if let Some(action) = cx.get_event_listener(id, &EventListner::FocusGained) {
+                if let Some(action) = cx.get_event_listener(id, &EventListener::FocusGained) {
                     (*action)(&event);
                 }
             }
@@ -767,6 +777,7 @@ impl<V: View> AppHandle<V> {
 
 impl<V: View> WinHandler for AppHandle<V> {
     fn connect(&mut self, handle: &glazier::WindowHandle) {
+        self.app_state.handle = handle.clone();
         self.paint_state.connect(handle);
         self.handle = handle.clone();
         let size = handle.get_size();
@@ -870,7 +881,7 @@ impl<V: View> WinHandler for AppHandle<V> {
     }
 
     fn timer(&mut self, token: TimerToken) {
-        if let Some(action) = self.timers.remove(&token) {
+        if let Some(action) = self.app_state.timers.remove(&token) {
             action();
         }
         self.process_update();

@@ -7,7 +7,7 @@ pub mod lists;
 pub mod rich_text;
 
 use floem::{
-    event::{Event, EventListner},
+    event::{Event, EventListener},
     glazier::keyboard_types::Key,
     peniko::Color,
     reactive::{create_signal, SignalGet, SignalUpdate},
@@ -49,7 +49,7 @@ fn app_view() -> impl View {
                                 });
                                 true
                             })
-                            .on_event(EventListner::KeyDown, move |e| {
+                            .on_event(EventListener::KeyDown, move |e| {
                                 if let Event::KeyDown(key_event) = e {
                                     let active = active_tab.get();
                                     match key_event.key {
@@ -72,6 +72,7 @@ fn app_view() -> impl View {
                                 }
                             })
                             .keyboard_navigatable()
+                            .draggable()
                             .focus_visible_style(|| {
                                 Style::BASE.border(2.).border_color(Color::BLUE)
                             })

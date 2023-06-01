@@ -216,6 +216,12 @@ impl Renderer for VgerRenderer {
                 rect.radii().top_left as f32,
                 paint,
             );
+        } else if let Some(circle) = path.as_circle() {
+            self.vger.fill_circle(
+                self.vger_point(circle.center),
+                (circle.radius * self.scale) as f32,
+                paint,
+            )
         }
     }
 
