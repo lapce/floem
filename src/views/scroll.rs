@@ -590,8 +590,15 @@ impl<V: View> View for Scroll<V> {
             return true;
         }
 
-        if let Event::PointerWheel(pointer_event) = event {
-            let delta = if let PointerType::Mouse(info) = pointer_event.pointer_type {
+        if let Event::PointerWheel(pointer_event) = &event {
+            if let Some(listener) = event.listener() {
+                if let Some(action) = cx.get_event_listener(self.id, &listener) {
+                    if (*action)(&event) {
+                        return true;
+                    }
+                }
+            }
+            let delta = if let PointerType::Mouse(info) = &pointer_event.pointer_type {
                 info.wheel_delta
             } else {
                 Vec2::ZERO
