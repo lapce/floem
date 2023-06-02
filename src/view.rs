@@ -233,10 +233,61 @@ pub trait View {
                             view_state.last_pointer_down = Some(event.clone());
                             cx.update_active(id);
                         }
-                        if cx.app_state.draggable.contains(&id) {
-                            let view_state = cx.app_state.view_state(id);
-                            view_state.drag_start = Some(event.pos);
+                        if cx.app_state.draggable.contains(&id) && cx.app_state.drag_start.is_none()
+                        {
+                            cx.app_state.drag_start = Some((id, event.pos));
+                        }
+                    }
+                }
+            }
+            Event::PointerMove(pointer_event) => {
+                let rect = cx.get_size(id).unwrap_or_default().to_rect();
+                if rect.contains(pointer_event.pos) {
+                    if cx.app_state.is_dragging() {
+                        cx.app_state.dragging_over.insert(id);
+                        if let Some(action) = cx.get_event_listener(id, &EventListener::DragOver) {
+                            (*action)(&event);
+                        }
+                    } else {
+                        cx.app_state.hovered.insert(id);
+                        let style = cx.app_state.get_computed_style(id);
+                        if let Some(cursor) = style.cursor {
+                            if cx.app_state.cursor.is_none() {
+                                cx.app_state.cursor = Some(cursor);
+                            }
+                        }
+                    }
+                }
+                if cx.app_state.draggable.contains(&id) {
+                    if let Some((_, drag_start)) = cx
+                        .app_state
+                        .drag_start
+                        .as_ref()
+                        .filter(|(drag_id, _)| drag_id == &id)
+                    {
+                        let vec2 = pointer_event.pos - *drag_start;
+                        if let Some(dragging) = cx
+                            .app_state
+                            .dragging
+                            .as_mut()
+                            .filter(|d| d.id == id && d.released_at.is_none())
+                        {
+                            dragging.offset = vec2;
+                            id.request_paint();
+                        } else if vec2.x.abs() + vec2.y.abs() > 1.0 {
+                            cx.app_state.active = None;
                             cx.update_active(id);
+                            cx.app_state.dragging = Some(DragState {
+                                id,
+                                offset: vec2,
+                                released_at: None,
+                            });
+                            id.request_paint();
+                            if let Some(action) =
+                                cx.get_event_listener(id, &EventListener::DragStart)
+                            {
+                                (*action)(&event);
+                            }
                         }
                     }
                 }
@@ -247,22 +298,37 @@ pub trait View {
                     let on_view = rect.contains(pointer_event.pos);
 
                     if id_path.is_none() {
-                        if cx.app_state.is_dragging() && on_view {
-                            if let Some(action) = cx.get_event_listener(id, &EventListener::Drop) {
-                                if (*action)(&event) {
-                                    cx.app_state.dragging = None;
-                                    id.request_paint();
+                        if on_view {
+                            if let Some(dragging) = cx.app_state.dragging.as_mut() {
+                                let dragging_id = dragging.id;
+                                if let Some(action) =
+                                    cx.get_event_listener(id, &EventListener::Drop)
+                                {
+                                    if (*action)(&event) {
+                                        cx.app_state.dragging = None;
+                                        id.request_paint();
+                                        if let Some(action) = cx.get_event_listener(
+                                            dragging_id,
+                                            &EventListener::DragEnd,
+                                        ) {
+                                            (*action)(&event);
+                                        }
+                                    }
                                 }
                             }
                         }
                     } else {
-                        let view_state = cx.app_state.view_state(id);
-                        if view_state.drag_start.is_some() {
-                            view_state.drag_start = None;
-                        }
-                        if let Some(dragging) = cx.app_state.dragging.as_mut() {
+                        if let Some(dragging) =
+                            cx.app_state.dragging.as_mut().filter(|d| d.id == id)
+                        {
+                            let dragging_id = dragging.id;
                             dragging.released_at = Some(std::time::Instant::now());
                             id.request_paint();
+                            if let Some(action) =
+                                cx.get_event_listener(dragging_id, &EventListener::DragEnd)
+                            {
+                                (*action)(&event);
+                            }
                         }
                         let last_pointer_down =
                             cx.app_state.view_state(id).last_pointer_down.take();
@@ -293,51 +359,6 @@ pub trait View {
                     }
                 }
             }
-            Event::PointerMove(pointer_event) => {
-                let rect = cx.get_size(id).unwrap_or_default().to_rect();
-                if rect.contains(pointer_event.pos) {
-                    if cx.app_state.is_dragging() {
-                        cx.app_state.dragging_over.insert(id);
-                        if let Some(action) = cx.get_event_listener(id, &EventListener::DragOver) {
-                            (*action)(&event);
-                        }
-                    } else {
-                        cx.app_state.hovered.insert(id);
-                        let style = cx.app_state.get_computed_style(id);
-                        if let Some(cursor) = style.cursor {
-                            if cx.app_state.cursor.is_none() {
-                                cx.app_state.cursor = Some(cursor);
-                            }
-                        }
-                    }
-                }
-                if cx.app_state.draggable.contains(&id) {
-                    let view_state = cx.app_state.view_state(id);
-                    if let Some(drag_start) = view_state.drag_start {
-                        let vec2 = pointer_event.pos - drag_start;
-                        if let Some(dragging) =
-                            cx.app_state.dragging.as_mut().filter(|d| d.id == id)
-                        {
-                            dragging.offset = vec2;
-                            id.request_paint();
-                        } else if vec2.x.abs() + vec2.y.abs() > 1.0 {
-                            cx.app_state.active = None;
-                            cx.update_active(id);
-                            cx.app_state.dragging = Some(DragState {
-                                id,
-                                offset: vec2,
-                                released_at: None,
-                            });
-                            id.request_paint();
-                            if let Some(action) =
-                                cx.get_event_listener(id, &EventListener::DragStart)
-                            {
-                                (*action)(&event);
-                            }
-                        }
-                    }
-                }
-            }
             Event::WindowResized(_) => {
                 if let Some(view_state) = cx.app_state.view_states.get(&self.id()) {
                     if !view_state.responsive_styles.is_empty() {
@@ -350,7 +371,13 @@ pub trait View {
 
         if let Some(listener) = event.listener() {
             if let Some(action) = cx.get_event_listener(self.id(), &listener) {
-                if (*action)(&event) {
+                let should_run = if let Some(pos) = event.point() {
+                    let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
+                    rect.contains(pos)
+                } else {
+                    true
+                };
+                if should_run && (*action)(&event) {
                     return true;
                 }
             }

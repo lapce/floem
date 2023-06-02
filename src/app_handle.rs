@@ -711,6 +711,9 @@ impl<V: View> AppHandle<V> {
             self.view.event_main(&mut cx, None, event.clone());
         }
 
+        if let Event::PointerUp(_) = &event {
+            cx.app_state.drag_start = None;
+        }
         if is_pointer_move {
             let hovered = &cx.app_state.hovered.clone();
             for id in was_hovered.unwrap().symmetric_difference(hovered) {

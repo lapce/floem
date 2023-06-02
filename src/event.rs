@@ -6,9 +6,11 @@ use glazier::{
 #[derive(Hash, PartialEq, Eq)]
 pub enum EventListener {
     KeyDown,
+    KeyUp,
     Click,
     DoubleClick,
     DragStart,
+    DragEnd,
     DragOver,
     DragEnter,
     DragLeave,
@@ -147,7 +149,8 @@ impl Event {
             Event::PointerUp(_) => Some(EventListener::PointerUp),
             Event::PointerMove(_) => Some(EventListener::PointerMove),
             Event::PointerWheel(_) => Some(EventListener::PointerWheel),
-            Event::KeyDown(_) | Event::KeyUp(_) => Some(EventListener::KeyDown),
+            Event::KeyDown(_) => Some(EventListener::KeyDown),
+            Event::KeyUp(_) => Some(EventListener::KeyDown),
             Event::WindowClosed => Some(EventListener::WindowClosed),
             Event::WindowResized(_) => Some(EventListener::WindowResized),
             Event::WindowMoved(_) => Some(EventListener::WindowMoved),

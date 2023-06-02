@@ -84,7 +84,6 @@ pub struct ViewState {
     pub(crate) event_listeners: HashMap<EventListener, Box<EventCallback>>,
     pub(crate) resize_listener: Option<ResizeListener>,
     pub(crate) last_pointer_down: Option<PointerEvent>,
-    pub(crate) drag_start: Option<Point>,
 }
 
 impl ViewState {
@@ -110,7 +109,6 @@ impl ViewState {
             event_listeners: HashMap::new(),
             resize_listener: None,
             last_pointer_down: None,
-            drag_start: None,
         }
     }
 
@@ -248,6 +246,7 @@ pub struct AppState {
     pub(crate) keyboard_navigatable: HashSet<Id>,
     pub(crate) draggable: HashSet<Id>,
     pub(crate) dragging: Option<DragState>,
+    pub(crate) drag_start: Option<(Id, Point)>,
     pub(crate) dragging_over: HashSet<Id>,
     pub(crate) screen_size_bp: ScreenSizeBp,
     pub(crate) grid_breakpts: GridBreakpoints,
@@ -286,6 +285,7 @@ impl AppState {
             keyboard_navigatable: HashSet::new(),
             draggable: HashSet::new(),
             dragging: None,
+            drag_start: None,
             dragging_over: HashSet::new(),
             hovered: HashSet::new(),
             cursor: None,
