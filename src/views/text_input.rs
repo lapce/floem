@@ -565,6 +565,7 @@ impl View for TextInput {
             Event::PointerMove(_) => {
                 if !matches!(cx.app_state.cursor, Some(CursorStyle::Text)) {
                     cx.app_state.cursor = Some(CursorStyle::Text);
+                    // return false so that EventListeners on the TextInput will still be handled
                     return false;
                 }
                 false
