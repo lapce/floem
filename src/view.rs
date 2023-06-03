@@ -170,16 +170,28 @@ pub trait View {
     fn event_main(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {
         let id = self.id();
         if cx.app_state.is_hidden(id) {
+            // we don't process events for hidden view
             return false;
         }
         if cx.app_state.is_disabled(&id) && !event.allow_disabled() {
+            // if the view is disabled and the event is not processed
+            // for disabled views
             return false;
         }
 
+        // offset the event positions if the event has positions
+        // e.g. pointer events, so that the position is relative
+        // to the view, taking into account of the layout location
+        // of the view and the viewport of the view if it's in a scroll.
         let event = cx.offset_event(self.id(), event);
 
+        // if there's id_path, it's an event only for a view.
         if let Some(id_path) = id_path {
             if id_path.is_empty() {
+                // this happens when the parent is the destination,
+                // but the parent just passed the event on,
+                // so it's not really for this view and we stop
+                // the event propagation.
                 return false;
             }
 
@@ -187,15 +199,18 @@ pub trait View {
             let id_path = &id_path[1..];
 
             if id != self.id() {
+                // This shouldn't happen
                 return false;
             }
 
+            // we're the parent of the event destination, so pass it on to the child
             if !id_path.is_empty() {
                 if let Some(child) = self.child(id_path[0]) {
                     if child.event_main(cx, Some(id_path), event.clone()) {
                         return true;
                     }
                 } else {
+                    // we don't have the child, stop the event propagation
                     return false;
                 }
             }
@@ -220,6 +235,7 @@ pub trait View {
 
                     if now_focused {
                         if cx.app_state.keyboard_navigatable.contains(&id) {
+                            // if the view can be focused, we update the focus
                             cx.app_state.update_focus(id, false);
                         }
                         if event.count == 2 && cx.has_event_listener(id, EventListener::DoubleClick)
@@ -266,15 +282,18 @@ pub trait View {
                         .filter(|(drag_id, _)| drag_id == &id)
                     {
                         let vec2 = pointer_event.pos - *drag_start;
+
                         if let Some(dragging) = cx
                             .app_state
                             .dragging
                             .as_mut()
                             .filter(|d| d.id == id && d.released_at.is_none())
                         {
+                            // update the dragging offset if the view is dragging and not released
                             dragging.offset = vec2;
                             id.request_paint();
                         } else if vec2.x.abs() + vec2.y.abs() > 1.0 {
+                            // start dragging when moved 1 px
                             cx.app_state.active = None;
                             cx.update_active(id);
                             cx.app_state.dragging = Some(DragState {
@@ -305,6 +324,8 @@ pub trait View {
                                     cx.get_event_listener(id, &EventListener::Drop)
                                 {
                                     if (*action)(&event) {
+                                        // if the drop is processed, we set dragging to none so that the animation
+                                        // for the dragged view back to its original position isn't played.
                                         cx.app_state.dragging = None;
                                         id.request_paint();
                                         if let Some(action) = cx.get_event_listener(
