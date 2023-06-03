@@ -322,7 +322,10 @@ impl TextInput {
         self.buffer
             .with(|buff| text_layout.set_text(buff, attrs.clone()));
 
-        self.width = 10.0 * self.font_size;
+        self.width = text_layout
+            .hit_position(self.buffer.with(|buff| buff.len()))
+            .point
+            .x as f32;
         self.height = self.font_size;
 
         // main buff should always get updated
@@ -562,7 +565,7 @@ impl View for TextInput {
             Event::PointerMove(_) => {
                 if !matches!(cx.app_state.cursor, Some(CursorStyle::Text)) {
                     cx.app_state.cursor = Some(CursorStyle::Text);
-                    return true;
+                    return false;
                 }
                 false
             }
