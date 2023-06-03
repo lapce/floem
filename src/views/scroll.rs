@@ -57,7 +57,6 @@ pub struct Scroll<V: View> {
     held: BarHeldState,
     virtual_node: Option<Node>,
     hide_bar: bool,
-    opacity: f64,
     scroll_bar_color: Color,
 }
 
@@ -83,8 +82,8 @@ pub fn scroll<V: View>(child: impl FnOnce() -> V) -> Scroll<V> {
         held: BarHeldState::None,
         virtual_node: None,
         hide_bar: false,
-        opacity: 0.7,
-        scroll_bar_color: Color::BLACK,
+        // 179 is 70% of 255 so a 70% alpha factor is the default
+        scroll_bar_color: Color::rgba8(0, 0, 0, 179),
     }
 }
 
@@ -305,7 +304,7 @@ impl<V: View> Scroll<V> {
         let edge_width = 0.0;
         let scroll_offset = self.child_viewport.origin().to_vec2();
 
-        let color = self.scroll_bar_color.with_alpha_factor(self.opacity as f32);
+        let color = self.scroll_bar_color;
         if let Some(bounds) = self.calc_vertical_bar_bounds(cx.app_state) {
             let rect = (bounds - scroll_offset).inset(-edge_width / 2.0);
             cx.fill(&rect, color);
