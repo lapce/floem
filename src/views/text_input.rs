@@ -322,6 +322,7 @@ impl TextInput {
         self.buffer
             .with(|buff| text_layout.set_text(buff, attrs.clone()));
 
+        let old_width = self.width;
         self.width = text_layout
             .hit_position(self.buffer.with(|buff| buff.len()))
             .point
@@ -330,6 +331,9 @@ impl TextInput {
 
         // main buff should always get updated
         self.text_buf = Some(text_layout.clone());
+        if old_width != self.width {
+            self.id.request_layout();
+        }
 
         if let Some(cr_text) = self.clipped_text.clone().as_ref() {
             let mut clp_txt_lay = text_layout;
