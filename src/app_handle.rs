@@ -31,6 +31,8 @@ thread_local! {
 pub type FileDialogs = HashMap<FileDialogToken, Box<dyn Fn(Option<FileInfo>)>>;
 type DeferredUpdateMessages = HashMap<Id, Vec<(Id, Box<dyn Any>)>>;
 
+/// The top-level handle that is passed into the backend interface (e.g. `glazier`) to interact to window events.
+/// Meant only for use with the root view of the application.
 pub struct AppHandle<V: View> {
     scope: Scope,
     view: V,
@@ -192,6 +194,20 @@ pub enum UpdateMessage {
         menu: Menu,
         pos: Point,
     },
+}
+
+/// This is the top-level handle that is passed into the backend interface (e.g. `glazier`) to consume and react to window events.
+/// Meant only for use with the root view of the application.
+pub struct AppHandle<V: View> {
+    scope: Scope,
+    // the root view of the application
+    view: V,
+    handle: glazier::WindowHandle,
+    app_state: AppState,
+    paint_state: PaintState,
+    prev_mouse_pos: MousePosState,
+
+    file_dialogs: FileDialogs,
 }
 
 impl<V: View> Drop for AppHandle<V> {
@@ -569,7 +585,7 @@ impl<V: View> AppHandle<V> {
                     UpdateMessage::ShowContextMenu { menu, pos } => {
                         let menu = menu.popup();
                         let platform_menu = menu.platform_menu();
-                        cx.app_state.contex_menu.clear();
+                        cx.app_state.context_menu.clear();
                         cx.app_state.update_context_menu(menu);
                         self.handle.show_context_menu(platform_menu, pos);
                     }
@@ -877,7 +893,7 @@ impl<V: View> WinHandler for AppHandle<V> {
     }
 
     fn command(&mut self, id: u32) {
-        if let Some(action) = self.app_state.contex_menu.get(&id) {
+        if let Some(action) = self.app_state.context_menu.get(&id) {
             (*action)();
             self.process_update();
         }

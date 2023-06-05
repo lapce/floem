@@ -393,7 +393,7 @@ impl Id {
         }
     }
 
-    pub fn update_event_listner(&self, listener: EventListener, action: Box<EventCallback>) {
+    pub fn update_event_listener(&self, listener: EventListener, action: Box<EventCallback>) {
         if let Some(root) = self.root_id() {
             UPDATE_MESSAGES.with(|msgs| {
                 let mut msgs = msgs.borrow_mut();
@@ -407,7 +407,7 @@ impl Id {
         }
     }
 
-    pub fn update_resize_listner(&self, action: Box<ResizeCallback>) {
+    pub fn update_resize_listener(&self, action: Box<ResizeCallback>) {
         if let Some(root) = self.root_id() {
             UPDATE_MESSAGES.with(|msgs| {
                 let mut msgs = msgs.borrow_mut();

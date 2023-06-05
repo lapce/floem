@@ -230,6 +230,8 @@ pub struct DragState {
     pub(crate) released_at: Option<std::time::Instant>,
 }
 
+/// Encapsulates and owns the global state of the application
+
 pub struct AppState {
     pub(crate) handle: glazier::WindowHandle,
     /// keyboard focus
@@ -256,7 +258,7 @@ pub struct AppState {
     pub(crate) animated: HashSet<Id>,
     pub(crate) cursor: Option<CursorStyle>,
     pub(crate) keyboard_navigation: bool,
-    pub(crate) contex_menu: HashMap<u32, Box<dyn Fn()>>,
+    pub(crate) context_menu: HashMap<u32, Box<dyn Fn()>>,
     pub(crate) timers: HashMap<TimerToken, Box<dyn FnOnce()>>,
 }
 
@@ -291,7 +293,7 @@ impl AppState {
             cursor: None,
             keyboard_navigation: false,
             grid_breakpts: GridBreakpoints::default(),
-            contex_menu: HashMap::new(),
+            context_menu: HashMap::new(),
             timers: HashMap::new(),
         }
     }
@@ -503,14 +505,14 @@ impl AppState {
 
     pub(crate) fn update_context_menu(&mut self, mut menu: Menu) {
         if let Some(action) = menu.item.action.take() {
-            self.contex_menu.insert(menu.item.id as u32, action);
+            self.context_menu.insert(menu.item.id as u32, action);
         }
         for child in menu.children {
             match child {
                 crate::menu::MenuEntry::Seperator => {}
                 crate::menu::MenuEntry::Item(mut item) => {
                     if let Some(action) = item.action.take() {
-                        self.contex_menu.insert(item.id as u32, action);
+                        self.context_menu.insert(item.id as u32, action);
                     }
                 }
                 crate::menu::MenuEntry::SubMenu(m) => {
@@ -579,12 +581,12 @@ impl<'a> EventCx<'a> {
     pub(crate) fn get_event_listener(
         &self,
         id: Id,
-        listner: &EventListener,
+        listener: &EventListener,
     ) -> Option<&impl Fn(&Event) -> bool> {
         self.app_state
             .view_states
             .get(&id)
-            .and_then(|s| s.event_listeners.get(listner))
+            .and_then(|s| s.event_listeners.get(listener))
     }
 
     pub(crate) fn offset_event(&self, id: Id, event: Event) -> Event {
