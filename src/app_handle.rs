@@ -2,10 +2,11 @@ use std::time::Duration;
 use std::{any::Any, collections::HashMap};
 
 use crate::animate::AnimValue;
+use crate::ext_event::FnOrFnOnce;
 use floem_renderer::Renderer;
 use glazier::kurbo::{Affine, Point, Rect};
 use glazier::{FileDialogOptions, FileDialogToken, FileInfo, Scale, TimerToken, WinHandler};
-use leptos_reactive::{Scope, SignalSet};
+use leptos_reactive::Scope;
 
 use crate::menu::Menu;
 use crate::{
@@ -15,7 +16,7 @@ use crate::{
         ResizeCallback, ResizeListener, UpdateCx, APP_CONTEXT_STORE,
     },
     event::{Event, EventListener},
-    ext_event::{EXT_EVENT_HANDLER, WRITE_SIGNALS},
+    ext_event::{EXT_EVENT_HANDLER, IDLE_ACTIONS},
     id::{Id, IDPATHS},
     responsive::ScreenSize,
     style::{CursorStyle, Style},
@@ -783,9 +784,19 @@ impl<V: View> AppHandle<V> {
 
     fn idle(&mut self) {
         while let Some(id) = EXT_EVENT_HANDLER.queue.lock().pop_front() {
-            let write = WRITE_SIGNALS.with(|signals| signals.borrow_mut().get(&id).cloned());
-            if let Some(write) = write {
-                write.set(Some(()));
+            let action = IDLE_ACTIONS.with(|actions| actions.borrow_mut().remove(&id));
+            if let Some(action) = action {
+                match action {
+                    FnOrFnOnce::Fn(action) => {
+                        action();
+                        IDLE_ACTIONS.with(|actions| {
+                            actions.borrow_mut().insert(id, FnOrFnOnce::Fn(action));
+                        });
+                    }
+                    FnOrFnOnce::FnOnce(action) => {
+                        action();
+                    }
+                }
             }
         }
         self.process_update();

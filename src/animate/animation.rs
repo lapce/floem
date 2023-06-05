@@ -234,7 +234,7 @@ impl Animation {
                 started_on,
                 elapsed,
             } => {
-                let duration = Instant::now() - started_on.clone();
+                let duration = Instant::now() - *started_on;
                 let elapsed = *elapsed + duration;
                 self.state = AnimState::Completed {
                     elapsed: Some(elapsed),

@@ -312,7 +312,6 @@ fn remove_index<V: View>(
     index: usize,
 ) -> Option<()> {
     let (view, disposer) = std::mem::take(&mut children[index])?;
-    disposer.dispose();
     let id = view.id();
     if let Some(view_state) = app_state.view_states.remove(&id) {
         let node = view_state.node;
@@ -341,6 +340,7 @@ fn remove_index<V: View>(
         app_state.view_states.remove(&id);
     }
 
+    disposer.dispose();
     Some(())
 }
 

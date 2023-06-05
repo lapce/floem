@@ -4,7 +4,6 @@ use floem::{
     style::Style,
     view::View,
     views::{label, stack, Decorators},
-    AppContext,
 };
 
 fn app_view() -> impl View {

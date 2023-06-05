@@ -5,9 +5,7 @@ use std::{
 };
 
 use glazier::{IdleHandle, IdleToken};
-use leptos_reactive::{
-    create_effect, create_signal, ReadSignal, Scope, SignalGet, SignalSet, WriteSignal,
-};
+use leptos_reactive::{create_signal, ReadSignal, Scope, SignalSet};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 
@@ -16,12 +14,17 @@ use crate::id::Id;
 pub static EXT_EVENT_HANDLER: Lazy<ExtEventHandler> = Lazy::new(ExtEventHandler::default);
 
 thread_local! {
-    pub(crate) static WRITE_SIGNALS: RefCell<HashMap<ExtId, WriteSignal<Option<()>>>> = RefCell::new(HashMap::new());
+    pub(crate) static IDLE_ACTIONS: RefCell<HashMap<ExtId, FnOrFnOnce>> = RefCell::new(HashMap::new());
 }
 
 pub type ExtId = Id;
 
 pub struct ExtEvent(ExtId);
+
+pub(crate) enum FnOrFnOnce {
+    Fn(Box<dyn Fn()>),
+    FnOnce(Box<dyn FnOnce()>),
+}
 
 #[derive(Clone)]
 pub struct ExtEventHandler {
@@ -51,91 +54,54 @@ pub fn create_signal_from_channel<T: Send>(
     cx: Scope,
     rx: crossbeam_channel::Receiver<T>,
 ) -> ReadSignal<Option<T>> {
-    let (read_notify, write_notify) = create_signal(cx, None);
     let ext_id = ExtId::next();
-    WRITE_SIGNALS.with(|signals| signals.borrow_mut().insert(ext_id, write_notify));
 
-    let data = Arc::new(Mutex::new(VecDeque::new()));
     let (read, write) = create_signal(cx, None);
+    let data = Arc::new(Mutex::new(VecDeque::new()));
 
-    {
+    let action = {
         let data = data.clone();
-        create_effect(cx, move |_| {
-            if read_notify.get().is_some() {
-                while let Some(value) = data.lock().pop_front() {
-                    write.set(value);
-                }
+        move || {
+            while let Some(value) = data.lock().pop_front() {
+                write.set(value);
             }
-        });
-    }
+        }
+    };
+    IDLE_ACTIONS.with(|actions| {
+        actions
+            .borrow_mut()
+            .insert(ext_id, FnOrFnOnce::Fn(Box::new(action)))
+    });
 
     std::thread::spawn(move || {
         while let Ok(event) = rx.recv() {
-            EXT_EVENT_HANDLER.send_event(ext_id);
             data.lock().push_back(Some(event));
+            EXT_EVENT_HANDLER.send_event(ext_id);
         }
     });
 
     read
 }
 
-pub fn create_ext_action<T: Send + 'static>(cx: Scope, action: impl Fn(T) + 'static) -> impl Fn(T) {
+pub fn create_ext_action<T: Send + 'static>(action: impl Fn(T) + 'static) -> impl Fn(T) {
     let ext_id = ExtId::next();
     let data = Arc::new(Mutex::new(None));
 
-    let (cx, _) = cx.run_child_scope(|cx| cx);
-    let (read_notify, write_notify) = create_signal(cx, None);
-    WRITE_SIGNALS.with(|signals| signals.borrow_mut().insert(ext_id, write_notify));
-
-    {
+    let action = {
         let data = data.clone();
-        create_effect(cx, move |_| {
-            if read_notify.get().is_some() {
-                let event = data.lock().take().unwrap();
-                action(event);
-                cx.dispose();
-            }
-        });
-    }
+        move || {
+            let event = data.lock().take().unwrap();
+            action(event);
+        }
+    };
+    IDLE_ACTIONS.with(|actions| {
+        actions
+            .borrow_mut()
+            .insert(ext_id, FnOrFnOnce::FnOnce(Box::new(action)))
+    });
 
     move |event| {
         *data.lock() = Some(event);
         EXT_EVENT_HANDLER.send_event(ext_id);
     }
-}
-
-pub fn create_signal_from_channel_oneshot<T: Send>(
-    cx: Scope,
-    rx: crossbeam_channel::Receiver<T>,
-) -> (ReadSignal<Option<T>>, Scope) {
-    let ext_id = ExtId::next();
-    let data = Arc::new(Mutex::new(VecDeque::new()));
-    let ((read, child_scope), _child_scope_disposer) = cx.run_child_scope(|cx| {
-        let (read_notify, write_notify) = create_signal(cx, None);
-        WRITE_SIGNALS.with(|signals| signals.borrow_mut().insert(ext_id, write_notify));
-
-        let (read, write) = create_signal(cx, None);
-
-        {
-            let data = data.clone();
-            create_effect(cx, move |_| {
-                if read_notify.get().is_some() {
-                    while let Some(value) = data.lock().pop_front() {
-                        write.set(value);
-                    }
-                }
-            });
-        }
-
-        (read, cx)
-    });
-
-    std::thread::spawn(move || {
-        while let Ok(event) = rx.recv() {
-            EXT_EVENT_HANDLER.send_event(ext_id);
-            data.lock().push_back(Some(event));
-        }
-    });
-
-    (read, child_scope)
 }

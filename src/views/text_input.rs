@@ -38,6 +38,8 @@ use crate::{
     view::ChangeFlags,
 };
 
+use super::Decorators;
+
 enum InputKind {
     SingleLine,
     #[allow(unused)]
@@ -128,6 +130,7 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         is_focused: false,
         last_cursor_action_on: Instant::now(),
     }
+    .keyboard_navigatable()
 }
 
 enum ClipDirection {
