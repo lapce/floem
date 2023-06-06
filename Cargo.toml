@@ -26,6 +26,7 @@ im = "15.1.0"
 parking_lot = { version = "0.12.1" }
 floem_renderer = { path = "renderer" }
 floem_vger = { path = "vger" }
+open = "4.1.0"
 
 [workspace]
 members = ["renderer", "vger", "examples/*"]
