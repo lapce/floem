@@ -1,6 +1,9 @@
 use std::{any::Any, cell::RefCell, collections::HashMap, num::NonZeroU64, time::Duration};
 
-use glazier::{kurbo::Point, FileDialogOptions, FileInfo};
+use glazier::{
+    kurbo::{Point, Vec2},
+    FileDialogOptions, FileInfo,
+};
 
 use crate::{
     animate::Animation,
