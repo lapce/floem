@@ -97,6 +97,7 @@ pub enum Direction {
 pub fn text_input(buffer: RwSignal<String>) -> TextInput {
     let cx = AppContext::get_current();
     let id = cx.new_id();
+    id.keyboard_navigatable();
 
     create_effect(cx.scope, move |_| {
         let text: String = buffer.with(|buff| buff.to_string());
