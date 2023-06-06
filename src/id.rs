@@ -380,6 +380,16 @@ impl Id {
         }
     }
 
+    pub fn set_window_delta(&self, delta: Vec2) {
+        if let Some(root) = self.root_id() {
+            UPDATE_MESSAGES.with(|msgs| {
+                let mut msgs = msgs.borrow_mut();
+                let msgs = msgs.entry(root).or_default();
+                msgs.push(UpdateMessage::SetWindowDelta(delta))
+            });
+        }
+    }
+
     pub fn update_event_listner(&self, listener: EventListener, action: Box<EventCallback>) {
         if let Some(root) = self.root_id() {
             UPDATE_MESSAGES.with(|msgs| {
