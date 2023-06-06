@@ -1,34 +1,17 @@
-use std::{
-    cell::RefCell,
-    collections::{HashMap, VecDeque},
-    sync::Arc,
-};
+use std::{collections::VecDeque, sync::Arc};
 
 use glazier::{IdleHandle, IdleToken};
-use leptos_reactive::{create_signal, ReadSignal, Scope, SignalSet};
+use leptos_reactive::{
+    create_effect, create_signal, create_trigger, ReadSignal, Scope, SignalSet, Trigger,
+};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 
-use crate::id::Id;
-
 pub static EXT_EVENT_HANDLER: Lazy<ExtEventHandler> = Lazy::new(ExtEventHandler::default);
-
-thread_local! {
-    pub(crate) static IDLE_ACTIONS: RefCell<HashMap<ExtId, FnOrFnOnce>> = RefCell::new(HashMap::new());
-}
-
-pub type ExtId = Id;
-
-pub struct ExtEvent(ExtId);
-
-pub(crate) enum FnOrFnOnce {
-    Fn(Box<dyn Fn()>),
-    FnOnce(Box<dyn FnOnce()>),
-}
 
 #[derive(Clone)]
 pub struct ExtEventHandler {
-    pub(crate) queue: Arc<Mutex<VecDeque<ExtId>>>,
+    pub(crate) queue: Arc<Mutex<VecDeque<Trigger>>>,
     pub(crate) handle: Arc<Mutex<Option<IdleHandle>>>,
 }
 
@@ -42,11 +25,38 @@ impl Default for ExtEventHandler {
 }
 
 impl ExtEventHandler {
-    pub fn send_event(&self, ext_id: ExtId) {
-        EXT_EVENT_HANDLER.queue.lock().push_back(ext_id);
+    pub fn add_trigger(&self, trigger: Trigger) {
+        EXT_EVENT_HANDLER.queue.lock().push_back(trigger);
         if let Some(handle) = EXT_EVENT_HANDLER.handle.lock().as_mut() {
             handle.schedule_idle(IdleToken::new(0));
         }
+    }
+}
+
+pub fn create_ext_action<T: Send + 'static>(
+    cx: Scope,
+    action: impl Fn(T) + 'static,
+) -> impl FnOnce(T) {
+    let (cx, _) = cx.run_child_scope(|cx| cx);
+    let trigger = create_trigger(cx);
+    let data = Arc::new(Mutex::new(None));
+
+    {
+        let data = data.clone();
+        create_effect(cx, move |_| {
+            trigger.track();
+            if let Some(event) = data.lock().take() {
+                cx.untrack(|| {
+                    action(event);
+                });
+                cx.dispose();
+            }
+        });
+    }
+
+    move |event| {
+        *data.lock() = Some(event);
+        EXT_EVENT_HANDLER.add_trigger(trigger);
     }
 }
 
@@ -54,54 +64,28 @@ pub fn create_signal_from_channel<T: Send>(
     cx: Scope,
     rx: crossbeam_channel::Receiver<T>,
 ) -> ReadSignal<Option<T>> {
-    let ext_id = ExtId::next();
+    let (cx, _) = cx.run_child_scope(|cx| cx);
+    let trigger = create_trigger(cx);
 
     let (read, write) = create_signal(cx, None);
     let data = Arc::new(Mutex::new(VecDeque::new()));
 
-    let action = {
+    {
         let data = data.clone();
-        move || {
+        create_effect(cx, move |_| {
+            trigger.track();
             while let Some(value) = data.lock().pop_front() {
                 write.set(value);
             }
-        }
-    };
-    IDLE_ACTIONS.with(|actions| {
-        actions
-            .borrow_mut()
-            .insert(ext_id, FnOrFnOnce::Fn(Box::new(action)))
-    });
+        });
+    }
 
     std::thread::spawn(move || {
         while let Ok(event) = rx.recv() {
             data.lock().push_back(Some(event));
-            EXT_EVENT_HANDLER.send_event(ext_id);
+            EXT_EVENT_HANDLER.add_trigger(trigger);
         }
     });
 
     read
-}
-
-pub fn create_ext_action<T: Send + 'static>(action: impl Fn(T) + 'static) -> impl Fn(T) {
-    let ext_id = ExtId::next();
-    let data = Arc::new(Mutex::new(None));
-
-    let action = {
-        let data = data.clone();
-        move || {
-            let event = data.lock().take().unwrap();
-            action(event);
-        }
-    };
-    IDLE_ACTIONS.with(|actions| {
-        actions
-            .borrow_mut()
-            .insert(ext_id, FnOrFnOnce::FnOnce(Box::new(action)))
-    });
-
-    move |event| {
-        *data.lock() = Some(event);
-        EXT_EVENT_HANDLER.send_event(ext_id);
-    }
 }
