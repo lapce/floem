@@ -3,7 +3,7 @@ use std::{any::Any, collections::HashMap};
 
 use crate::animate::AnimValue;
 use floem_renderer::Renderer;
-use glazier::kurbo::{Affine, Point, Rect};
+use glazier::kurbo::{Affine, Point, Rect, Vec2};
 use glazier::{FileDialogOptions, FileDialogToken, FileInfo, Scale, TimerToken, WinHandler};
 use leptos_reactive::Scope;
 
@@ -31,19 +31,12 @@ thread_local! {
 pub type FileDialogs = HashMap<FileDialogToken, Box<dyn Fn(Option<FileInfo>)>>;
 type DeferredUpdateMessages = HashMap<Id, Vec<(Id, Box<dyn Any>)>>;
 
-enum MousePosState {
-    None,
-    Ready,
-    Some(Point),
-}
-
 pub struct AppHandle<V: View> {
     scope: Scope,
     view: V,
     handle: glazier::WindowHandle,
     app_state: AppState,
     paint_state: PaintState,
-    prev_mouse_pos: MousePosState,
 
     file_dialogs: FileDialogs,
 }
@@ -163,6 +156,7 @@ pub enum UpdateMessage {
         action: Box<ResizeCallback>,
     },
     HandleTitleBar(bool),
+    SetWindowDelta(Vec2),
     OpenFile {
         options: FileDialogOptions,
         file_info_action: Box<dyn Fn(Option<FileInfo>)>,
@@ -203,8 +197,6 @@ impl<V: View> AppHandle<V> {
             app_state: AppState::new(),
             paint_state: PaintState::new(),
             handle: Default::default(),
-            prev_mouse_pos: MousePosState::None,
-
             file_dialogs: HashMap::new(),
         }
     }
@@ -508,11 +500,9 @@ impl<V: View> AppHandle<V> {
                     }
                     UpdateMessage::HandleTitleBar(val) => {
                         self.handle.handle_titlebar(val);
-                        if val {
-                            self.prev_mouse_pos = MousePosState::Ready;
-                        } else {
-                            self.prev_mouse_pos = MousePosState::None;
-                        }
+                    }
+                    UpdateMessage::SetWindowDelta(delta) => {
+                        self.handle.set_position(self.handle.get_position() + delta);
                     }
                     UpdateMessage::EventListener {
                         id,
@@ -852,20 +842,10 @@ impl<V: View> WinHandler for AppHandle<V> {
     }
 
     fn pointer_up(&mut self, event: &glazier::PointerEvent) {
-        self.prev_mouse_pos = MousePosState::None;
         self.event(Event::PointerUp(event.clone()));
     }
 
     fn pointer_move(&mut self, event: &glazier::PointerEvent) {
-        match self.prev_mouse_pos {
-            MousePosState::None => {}
-            MousePosState::Ready => self.prev_mouse_pos = MousePosState::Some(event.pos),
-            MousePosState::Some(prev_pos) => {
-                let position_diff = event.pos - prev_pos;
-                let new_position = self.handle.get_position() + position_diff;
-                self.handle.set_position(new_position);
-            }
-        }
         self.event(Event::PointerMove(event.clone()));
     }
 

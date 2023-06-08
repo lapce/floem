@@ -1,4 +1,4 @@
-use glazier::kurbo::Rect;
+use glazier::kurbo::{Point, Rect};
 
 use crate::{
     app_handle::AppContext,
@@ -9,6 +9,7 @@ use crate::{
 
 pub struct WindowDragArea<V: View> {
     id: Id,
+    prev_pos: Option<Point>,
     child: V,
 }
 
@@ -22,7 +23,11 @@ pub fn window_drag_area<V: View>(child: impl FnOnce() -> V) -> WindowDragArea<V>
     let child = child();
     AppContext::restore();
 
-    WindowDragArea { id, child }
+    WindowDragArea {
+        id,
+        child,
+        prev_pos: None,
+    }
 }
 
 impl<V: View> View for WindowDragArea<V> {
@@ -68,6 +73,8 @@ impl<V: View> View for WindowDragArea<V> {
             match &event {
                 Event::PointerDown(mouse_event) => {
                     if mouse_event.button.is_left() {
+                        self.prev_pos = Some(mouse_event.pos);
+                        cx.update_active(self.id);
                         self.id.set_handle_titlebar(true);
                     }
                     true
@@ -75,8 +82,17 @@ impl<V: View> View for WindowDragArea<V> {
                 Event::PointerUp(mouse_event) => {
                     if mouse_event.button.is_left() {
                         self.id.set_handle_titlebar(false);
+                        self.prev_pos = None;
                     }
                     true
+                }
+                Event::PointerMove(mouse_event) => {
+                    if let Some(prev_pos) = self.prev_pos {
+                        let position_diff = mouse_event.pos - prev_pos;
+                        self.id.set_window_delta(position_diff);
+                        return true;
+                    }
+                    false
                 }
                 _ => false,
             }

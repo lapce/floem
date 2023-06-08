@@ -1,6 +1,9 @@
 use std::{any::Any, cell::RefCell, collections::HashMap, num::NonZeroU64, time::Duration};
 
-use glazier::{kurbo::Point, FileDialogOptions, FileInfo};
+use glazier::{
+    kurbo::{Point, Vec2},
+    FileDialogOptions, FileInfo,
+};
 
 use crate::{
     animate::Animation,
@@ -376,6 +379,16 @@ impl Id {
                 let mut msgs = msgs.borrow_mut();
                 let msgs = msgs.entry(root).or_default();
                 msgs.push(UpdateMessage::HandleTitleBar(val))
+            });
+        }
+    }
+
+    pub fn set_window_delta(&self, delta: Vec2) {
+        if let Some(root) = self.root_id() {
+            UPDATE_MESSAGES.with(|msgs| {
+                let mut msgs = msgs.borrow_mut();
+                let msgs = msgs.entry(root).or_default();
+                msgs.push(UpdateMessage::SetWindowDelta(delta))
             });
         }
     }
