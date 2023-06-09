@@ -31,7 +31,7 @@ pub use taffy::style::{
 };
 use taffy::{
     prelude::Rect,
-    style::{LengthPercentage, LengthPercentageAuto, Style as TaffyStyle},
+    style::{FlexWrap, LengthPercentage, LengthPercentageAuto, Style as TaffyStyle},
     style_helpers::TaffyZero,
 };
 use vello::peniko::Color;
@@ -216,12 +216,15 @@ define_styles!(
     max_width: Dimension = Dimension::Auto,
     max_height: Dimension = Dimension::Auto,
     flex_direction: FlexDirection = FlexDirection::Row,
+    flex_wrap: FlexWrap = FlexWrap::NoWrap,
     flex_grow: f32 = 0.0,
     flex_shrink: f32 = 1.0,
     flex_basis: Dimension = Dimension::Auto,
     justify_content: Option<JustifyContent> = None,
+    justify_self: Option<AlignItems> = None,
     align_items: Option<AlignItems> = None,
     align_content: Option<AlignContent> = None,
+    align_self: Option<AlignItems> = None,
     border_left: f32 = 0.0,
     border_top: f32 = 0.0,
     border_right: f32 = 0.0,
@@ -251,6 +254,7 @@ define_styles!(
     cursor_color nocb: Option<Color> = None,
     text_overflow: TextOverflow = TextOverflow::Wrap,
     line_height nocb: Option<LineHeightValue> = None,
+    aspect_ratio: Option<f32> = None,
 );
 
 impl Style {
@@ -708,9 +712,13 @@ impl ComputedStyle {
             flex_grow: self.flex_grow,
             flex_shrink: self.flex_shrink,
             flex_basis: self.flex_basis,
+            flex_wrap: self.flex_wrap,
             justify_content: self.justify_content,
+            justify_self: self.justify_self,
             align_items: self.align_items,
             align_content: self.align_content,
+            align_self: self.align_self,
+            aspect_ratio: self.aspect_ratio,
             border: Rect {
                 left: LengthPercentage::Points(self.border_left),
                 top: LengthPercentage::Points(self.border_top),
