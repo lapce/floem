@@ -745,19 +745,22 @@ impl<'a> LayoutCx<'a> {
             .unwrap()
     }
 
+    /// Responsible for invoking the recalculation of style and thus the layout and
+    /// creating or updating the layout of child nodes within the closure.
+    /// Children are [TBU]
     pub fn layout_node(
         &mut self,
         id: Id,
         has_children: bool,
         mut children: impl FnMut(&mut LayoutCx) -> Vec<Node>,
     ) -> Node {
-        let view = self.app_state.view_state(id);
-        let node = view.node;
-        if !view.request_layout {
+        let view_state = self.app_state.view_state(id);
+        let node = view_state.node;
+        if !view_state.request_layout {
             return node;
         }
-        view.request_layout = false;
-        let style = view.computed_style.to_taffy_style();
+        view_state.request_layout = false;
+        let style = view_state.computed_style.to_taffy_style();
         let _ = self.app_state.taffy.set_style(node, style);
 
         if has_children {

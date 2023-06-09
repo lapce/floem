@@ -196,7 +196,7 @@ pub enum UpdateMessage {
     },
 }
 
-/// This is the top-level handle that is passed into the backend interface (e.g. `glazier`) to consume and react to window events.
+/// The top-level handle that is passed into the backend interface (e.g. `glazier`) to interact to window events.
 /// Meant only for use with the root view of the application.
 pub struct AppHandle<V: View> {
     scope: Scope,

@@ -409,6 +409,12 @@ pub trait View {
 
     fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool;
 
+    /// The entry point for painting a view. You shouldn't need to implement this yourself. Instead, implement [`View::paint`].
+    /// It handles the internal work before and after painting [`View::paint`] implementations.
+    /// It is responsible for
+    /// - managing hidden status
+    /// - clipping
+    /// - painting computed styles like background color, border, font-styles, and z-index and handling painting requirements of drag and drop
     fn paint_main(&mut self, cx: &mut PaintCx) {
         let id = self.id();
         if cx.app_state.is_hidden(id) {
@@ -517,6 +523,7 @@ pub trait View {
         cx.restore();
     }
 
+    /// [`View`]-specific implementation. Will be called in the [`View::paint_main`] entry point method.
     fn paint(&mut self, cx: &mut PaintCx);
 
     /// Produces an ascii art debug display of all of the views.
