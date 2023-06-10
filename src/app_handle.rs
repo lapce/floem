@@ -87,6 +87,13 @@ impl AppContext {
         })
     }
 
+    /// Use this method if you are creating a `View` that has a child.
+    ///
+    /// Ensures that the child is initialized with the "correct" `AppContext`
+    /// and that the context is restored after the child (and its children) are initialized.
+    /// For the child's `AppContext` to be "correct", the child's AppContext's `Id`  must bet set to the parent `View`'s `Id`.
+    ///
+    /// This method returns the `Id` that should be attached to the parent `View` along with the initialized child.
     pub fn new_id_with_child<V>(child: impl FnOnce() -> V) -> (Id, V) {
         let cx = AppContext::get_current();
         let id = cx.new_id();
