@@ -394,6 +394,48 @@ impl<V: View> Scroll<V> {
         Some(Rect::new(x0, y0, x1, y1))
     }
 
+    fn click_vertical_bar_area(&mut self, app_state: &mut AppState, pos: Point) {
+        let new_y = (pos.y / self.actual_rect.height()) * self.child_size.height
+            - self.actual_rect.height() / 2.0;
+        let mut new_origin = self.child_viewport.origin();
+        new_origin.y = new_y;
+        self.scroll_to(app_state, new_origin);
+    }
+
+    fn click_horizontal_bar_area(&mut self, app_state: &mut AppState, pos: Point) {
+        let new_x = (pos.x / self.actual_rect.width()) * self.child_size.width
+            - self.actual_rect.width() / 2.0;
+        let mut new_origin = self.child_viewport.origin();
+        new_origin.x = new_x;
+        self.scroll_to(app_state, new_origin);
+    }
+
+    fn point_within_vertical_bar(&self, app_state: &mut AppState, pos: Point) -> bool {
+        let viewport_size = self.child_viewport.size();
+        let scroll_offset = self.child_viewport.origin().to_vec2();
+
+        if let Some(mut bounds) = self.calc_vertical_bar_bounds(app_state) {
+            // Stretch hitbox to edge of widget
+            bounds.x1 = scroll_offset.x + viewport_size.width;
+            pos.x >= bounds.x0 && pos.x <= bounds.x1
+        } else {
+            false
+        }
+    }
+
+    fn point_within_horizontal_bar(&self, app_state: &mut AppState, pos: Point) -> bool {
+        let viewport_size = self.child_viewport.size();
+        let scroll_offset = self.child_viewport.origin().to_vec2();
+
+        if let Some(mut bounds) = self.calc_horizontal_bar_bounds(app_state) {
+            // Stretch hitbox to edge of widget
+            bounds.y1 = scroll_offset.y + viewport_size.height;
+            pos.y >= bounds.y0 && pos.y <= bounds.y1
+        } else {
+            false
+        }
+    }
+
     fn point_hits_vertical_bar(&self, app_state: &mut AppState, pos: Point) -> bool {
         let viewport_size = self.child_viewport.size();
         let scroll_offset = self.child_viewport.origin().to_vec2();
@@ -521,10 +563,23 @@ impl<V: View> View for Scroll<V> {
 
         match &event {
             Event::PointerDown(event) => {
-                if !self.hide_bar {
+                if !self.hide_bar && event.button.is_left() {
+                    self.held = BarHeldState::None;
+
                     let pos = event.pos + scroll_offset;
 
-                    if self.point_hits_vertical_bar(cx.app_state, pos) {
+                    if self.point_within_vertical_bar(cx.app_state, pos) {
+                        if self.point_hits_vertical_bar(cx.app_state, pos) {
+                            self.held = BarHeldState::Vertical(
+                                // The bounds must be non-empty, because the point hits the scrollbar.
+                                event.pos.y,
+                                scroll_offset,
+                            );
+                            cx.update_active(self.id);
+                            return true;
+                        }
+                        self.click_vertical_bar_area(cx.app_state, event.pos);
+                        let scroll_offset = self.child_viewport.origin().to_vec2();
                         self.held = BarHeldState::Vertical(
                             // The bounds must be non-empty, because the point hits the scrollbar.
                             event.pos.y,
@@ -532,7 +587,18 @@ impl<V: View> View for Scroll<V> {
                         );
                         cx.update_active(self.id);
                         return true;
-                    } else if self.point_hits_horizontal_bar(cx.app_state, pos) {
+                    } else if self.point_within_horizontal_bar(cx.app_state, pos) {
+                        if self.point_hits_horizontal_bar(cx.app_state, pos) {
+                            self.held = BarHeldState::Horizontal(
+                                // The bounds must be non-empty, because the point hits the scrollbar.
+                                event.pos.x,
+                                scroll_offset,
+                            );
+                            cx.update_active(self.id);
+                            return true;
+                        }
+                        self.click_horizontal_bar_area(cx.app_state, event.pos);
+                        let scroll_offset = self.child_viewport.origin().to_vec2();
                         self.held = BarHeldState::Horizontal(
                             // The bounds must be non-empty, because the point hits the scrollbar.
                             event.pos.x,
@@ -540,8 +606,6 @@ impl<V: View> View for Scroll<V> {
                         );
                         cx.update_active(self.id);
                         return true;
-                    } else {
-                        self.held = BarHeldState::None;
                     }
                 }
             }
@@ -572,8 +636,8 @@ impl<V: View> View for Scroll<V> {
                         }
                     } else {
                         let pos = event.pos + scroll_offset;
-                        if self.point_hits_vertical_bar(cx.app_state, pos)
-                            || self.point_hits_horizontal_bar(cx.app_state, pos)
+                        if self.point_within_vertical_bar(cx.app_state, pos)
+                            || self.point_within_horizontal_bar(cx.app_state, pos)
                         {
                             return true;
                         }
