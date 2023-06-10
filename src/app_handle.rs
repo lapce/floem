@@ -87,6 +87,18 @@ impl AppContext {
         })
     }
 
+    pub fn new_id_with_child<V>(child: impl FnOnce() -> V) -> (Id, V) {
+        let cx = AppContext::get_current();
+        let id = cx.new_id();
+        let mut child_cx = cx;
+        child_cx.id = id;
+        AppContext::save();
+        AppContext::set_current(child_cx);
+        let child = child();
+        AppContext::restore();
+        (id, child)
+    }
+
     pub fn with_id(mut self, id: Id) -> Self {
         self.id = id;
         self
