@@ -1,6 +1,7 @@
 use crate::{context::LayoutCx, style::CursorStyle};
 use leptos_reactive::{
     create_effect, RwSignal, SignalGet, SignalGetUntracked, SignalUpdate, SignalWith,
+    SignalWithUntracked,
 };
 use taffy::{
     prelude::{Layout, Node},
@@ -156,15 +157,15 @@ impl TextInput {
                 false
             }
             (Movement::Glyph, Direction::Right) => {
-                if self.cursor_glyph_idx < self.buffer.with(|buff| buff.len()) {
+                if self.cursor_glyph_idx < self.buffer.with_untracked(|buff| buff.len()) {
                     self.cursor_glyph_idx += 1;
                     return true;
                 }
                 false
             }
             (Movement::Line, Direction::Right) => {
-                if self.cursor_glyph_idx < self.buffer.with(|buff| buff.len()) {
-                    self.cursor_glyph_idx = self.buffer.with(|buff| buff.len());
+                if self.cursor_glyph_idx < self.buffer.with_untracked(|buff| buff.len()) {
+                    self.cursor_glyph_idx = self.buffer.with_untracked(|buff| buff.len());
                     return true;
                 }
                 false
@@ -176,7 +177,7 @@ impl TextInput {
                 }
                 false
             }
-            (Movement::Word, Direction::Right) => self.buffer.with(|buff| {
+            (Movement::Word, Direction::Right) => self.buffer.with_untracked(|buff| {
                 for (idx, word) in buff.unicode_word_indices() {
                     let word_end_idx = idx + word.len();
                     if word_end_idx > self.cursor_glyph_idx {
@@ -323,7 +324,7 @@ impl TextInput {
         let attrs = self.get_text_attrs();
 
         self.buffer
-            .with(|buff| text_layout.set_text(buff, attrs.clone()));
+            .with_untracked(|buff| text_layout.set_text(buff, attrs.clone()));
 
         self.width = 10.0 * self.font_size;
         self.height = self.font_size;
@@ -533,7 +534,7 @@ impl View for TextInput {
             Event::PointerDown(event) => {
                 if !self.is_focused {
                     // Just gained focus - move cursor to buff end
-                    self.set_cursor_glyph_idx(self.buffer.with(|buff| buff.len()));
+                    self.set_cursor_glyph_idx(self.buffer.with_untracked(|buff| buff.len()));
                 } else {
                     // Already focused - move cursor to click pos
                     let layout = cx.get_layout(self.id()).unwrap();
@@ -620,7 +621,8 @@ impl View for TextInput {
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        if !cx.app_state.is_focused(&self.id) && self.buffer.with(|buff| buff.is_empty()) {
+        if !cx.app_state.is_focused(&self.id) && self.buffer.with_untracked(|buff| buff.is_empty())
+        {
             return;
         }
 
