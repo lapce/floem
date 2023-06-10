@@ -12,15 +12,7 @@ pub struct Clip<V: View> {
 }
 
 pub fn clip<V: View>(child: impl FnOnce() -> V) -> Clip<V> {
-    let cx = AppContext::get_current();
-    let id = cx.new_id();
-    let mut child_cx = cx;
-    child_cx.id = id;
-    AppContext::save();
-    AppContext::set_current(child_cx);
-    let child = child();
-    AppContext::restore();
-
+    let (id, child) = AppContext::new_id_with_child(child);
     Clip { id, child }
 }
 

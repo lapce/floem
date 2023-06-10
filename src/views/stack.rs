@@ -14,17 +14,7 @@ pub struct Stack<VT> {
 }
 
 pub fn stack<VT: ViewTuple + 'static>(children: impl FnOnce() -> VT) -> Stack<VT> {
-    let cx = AppContext::get_current();
-
-    let id = cx.id.new();
-
-    let mut children_cx = cx;
-    children_cx.id = id;
-    AppContext::save();
-    AppContext::set_current(children_cx);
-    let children = children();
-
-    AppContext::restore();
+    let (id, children) = AppContext::new_id_with_child(children);
     Stack { id, children }
 }
 
