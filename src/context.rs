@@ -610,8 +610,7 @@ impl<'a> EventCx<'a> {
 
     /// Used to determine if you should send an event to another view. This is basically a check for pointer events to see if the pointer is inside a child view and to make sure the current view isn't hidden or disabled.
     /// Usually this is used if you want to propagate an event to a child view
-    // TODO: should we make this public so that it can be used in custom components? It's not a public function atm but I see it used in all of the container-like `View`s.
-    pub(crate) fn should_send(&mut self, id: Id, event: &Event) -> bool {
+    pub fn should_send(&mut self, id: Id, event: &Event) -> bool {
         if self.app_state.is_hidden(id)
             || (self.app_state.is_disabled(&id) && !event.allow_disabled())
         {
