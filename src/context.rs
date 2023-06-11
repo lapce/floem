@@ -230,8 +230,8 @@ pub struct DragState {
     pub(crate) released_at: Option<std::time::Instant>,
 }
 
-/// Encapsulates and owns the global state of the application, including the
-/// `ViewState` of each view.
+/// Encapsulates and owns the global state of the application,
+/// including the `ViewState` of each view.
 pub struct AppState {
     pub(crate) handle: glazier::WindowHandle,
     /// keyboard focus
@@ -251,7 +251,7 @@ pub struct AppState {
     pub(crate) drag_start: Option<(Id, Point)>,
     pub(crate) dragging_over: HashSet<Id>,
     pub(crate) screen_size_bp: ScreenSizeBp,
-    pub(crate) grid_breakpts: GridBreakpoints,
+    pub(crate) grid_bps: GridBreakpoints,
     pub(crate) hovered: HashSet<Id>,
     /// This keeps track of all views that have an animation,
     /// regardless of the status of the animation
@@ -292,7 +292,7 @@ impl AppState {
             hovered: HashSet::new(),
             cursor: None,
             keyboard_navigation: false,
-            grid_breakpts: GridBreakpoints::default(),
+            grid_bps: GridBreakpoints::default(),
             context_menu: HashMap::new(),
             timers: HashMap::new(),
         }
@@ -448,9 +448,9 @@ impl AppState {
         }
     }
 
-    pub(crate) fn update_scr_size_breakpt(&mut self, size: Size) {
-        let breakpt = self.grid_breakpts.get_width_breakpt(size.width);
-        self.screen_size_bp = breakpt;
+    pub(crate) fn update_screen_size_bp(&mut self, size: Size) {
+        let bp = self.grid_bps.get_width_bp(size.width);
+        self.screen_size_bp = bp;
     }
 
     pub(crate) fn clear_focus(&mut self) {
@@ -984,7 +984,7 @@ pub struct UpdateCx<'a> {
 
 impl<'a> UpdateCx<'a> {
     /// request that this node be laid out again
-    /// This will recursively request layout for all parents and set the ChangeFlag::LAYOUT at root
+    /// This will recursively request layout for all parents and set the `ChangeFlag::LAYOUT` at root
     pub fn request_layout(&mut self, id: Id) {
         self.app_state.request_layout(id);
     }

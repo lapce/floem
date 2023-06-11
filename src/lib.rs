@@ -5,8 +5,6 @@
 //! Floem models the UI using a tree of [Views](view::View) that are built once. `Views` react to state changes and events.
 //! Views ar self-contained components that can be composed together to create complex UIs.
 //!
-//! ## Ids and Id paths
-//! [Id](id::Id)s are unique identifiers for views. They're used to identify views in the view tree. These ids are assigned via the [AppContext](context::AppContext) and are unique across the entire application.
 //!
 //! ## Events
 //! Events are passed down from the window to the view tree. Each view can handle events and propagate them to its children.
@@ -17,64 +15,22 @@
 //!
 //! ## State management  
 //!
-//! You will probably want your view components to have some state. You should place any state that affects
-//! you view inside a signal so that you can react to updates and update the `View`. Signals are reactive values that can be read from and written to.
+//! You may want some of your view components to share state.
+//! You should place any state that changes over time and affects
+//! your view inside a signal so that you can react to updates and update the `View`. Signals are reactive values that can be read from and written to.
+//! See [leptos_reactive](https://docs.rs/leptos_reactive/latest/leptos_reactive/) for more info.
 //!
-//! ### Use state to update your view
+//! ### Local state
 //!
-//! To affect the layout and rendering of your component, you will need to send a state update to your component with [Id::update_state](id::Id::update_state)
-//! and then call [UpdateCx::request_layout](context::UpdateCx::request_layout) to request a layout which will cause a repaint.
+//! You can can create state within a constructor and then bind state to a view by passing it into the view's constructor.
 //!
-//! ## Local state
-//!
-//! To share state between components child and sibling components, you can simply pass down a signal to your children. Here's a contrived example:
-//!
-//!```rust,no_run
-//!
-//! struct Parent<V> {
-//!     id: Id,
-//!     text: ReadSignal<String>,
-//!     child: V,
+//! ```rust,no_run
+//! pub fn label_and_input() -> impl View {
+//!     let cx = AppContext::get_current();
+//!     let text = create_rw_signal(cx.scope, "Hello world".to_string());
+//!     stack(|| (text_input(text), label(|| text.get())))
+//!         .style(|| Style::BASE.padding_px(10.0))
 //! }
-//!
-//! // Creates a new parent view with the given child.
-//! fn parent<V>(new_child: impl FnOnce(ReadSignal<String>) -> V) -> Parent<impl View>
-//! where
-//!     V: View + 'static,
-//! {
-//!     let text = create_rw_signal(cx.scope, "World!".to_string());
-//!     // share the signal between the two children
-//!     let (id, child) = AppContext::new_id_with_child(stack(|| (text_input(text)), new_child(text.read_only()));
-//!     Parent { id, text, child }
-//! }
-//!
-//! impl<V> View for Parent<V>
-//! where
-//!     V: View,
-//! {
-//! // implementation omitted for brevity
-//! }
-//!
-//! struct Child {
-//!     id: Id,
-//!     label: Label,
-//! }
-//!
-//! /// Creates a new child view with the given state (a read only signal)
-//! fn child(text: ReadSignal<String>) -> Child {
-//!     let (id, label) = AppContext::new_id_with_child(|| label(move || format!("Hello, {}", text.get()));
-//!     Child { id, label }
-//! }
-//!
-//! impl View for Child {
-//!   // implementation omitted for brevity
-//! }
-//!
-//! // Usage
-//! fn main() {
-//!     floem::launch(parent(child));
-//! }
-//!
 //! ```
 //!
 //! ### Global state
@@ -82,31 +38,70 @@
 //! Global state can be implemented using Leptos' [provide_context](leptos_reactive::provide_context) and [use_context](leptos_reactive::use_context).
 //!
 //! # Styling
+//! You can style your views using the [Style](style::Style) struct. Styles are inherited from parent views and can be overridden.
 //! Floem sizing and positioning layout system is based on the flexbox model using Taffy as the layout engine.
-//! Styles are divided into two parts:
-//! [`ComputedStyle`]: A style with definite values for most fields.  
 //!
-//! [`Style`]: A style with [`StyleValue`]s for the fields, where `Unset` falls back to the relevant
-//! field in the [`ComputedStyle`] and `Base` falls back to the underlying [`Style`] or the
-//! [`ComputedStyle`].
+//! Styles are applied with the [Style](style::Style) struct. Styles can react to changes in referenced state.
+//!
+//! ```rust,no_run
+//!     some_view()
+//!     // reactive styles provided through the `Decorators` trait
+//!     .style(move || {
+//!         Style::BASE
+//!             .flex_row()
+//!             .width_pct(100.0)
+//!             .height_px(32.0)
+//!             .border_bottom(1.0)
+//!             .border_color(Color::LIGHT_GRAY)
+//!             .apply_if(index == active_tab.get(), |s| {
+//!                 s.background(Color::GRAY)
+//!             })
+//!     })
+//! ```
 //!
 //!
 //! ## Render loop and update lifecycle
-//! TBD: event -> update -> layout -> paint.
 //!
-//! potentially discuss update messages, deferred update messages, animations
+//! #### event -> update -> layout -> paint.
+//!
+//! ##### Event
+//! After an event comes in (e.g. the user clicked the mouse, pressed a key etc), the event will be propagated from the root view to the children.
+//! The parent will decide whether sending the event to the child(ren) based on the logic in the event method in the parent View.
+//! There's also event listeners that users can use to respond to events the users choose.
+//! The event propagation is stopped whenever a child or an event listener returns true on the event handling.
+//!
+//!
+//! #### Event handling
+//! During the event handling, there could be state changes through the reactive system. E.g., on the counter example, when you click increment,
+//! it updates the counter and because the label listens to the change (see [leptos_reactive::create_effect]), the label will update the text it presents.
+//!
+//! #### Update
+//! The update of states on the Views could cause some of them to need a new layout recalculation, because the size might have changed etc.
+//! The reactive system can't directly manipulate the view state of the label because the AppState owns all the views. And instead, it will send the update to a message queue via [Id::update_state](id::Id::update_state)
+//! After the event propagation is done, Floem will process all the update messages in the queue, and it can manipulate the state of a particular view through the update method.
+//!
+//!
+//! #### Layout
+//! The layout method is called from the root view to re-layout the views that have requested a layout call.
+//! The layout call is to change the layout properties at Taffy, and after the layout call is done, compute_layout is called to calculate the sizes and positions of each view.
+//!
+//! #### Paint
+//! And in the end, paint is called to render all the views to the screen.
+//!
+//!
+//! # Terminology
+//! #### Active view
+//!
+//! Affects pointer events. Pointer events will only be sent to the active View. The View will continue to receive pointer events even if the mouse is outside its bounds.
+//! It is useful when you drag things, e.g. the scroll bar, you set the scroll bar active after pointer down, then when you drag, the `PointerMove` will always be sent to the View, even if your mouse is outside of the view.
+//!
+//! #### Focused view
+//! Affects keyboard events. Keyboard events will only be sent to the focused View. The View will continue to receive keyboard events even if it's not the active View.
 //!
 //! ## Notable invariants and tolerances
 //! - There can be only one root `View`
 //! - Only one view can be active at a time.
 //! - Only one view can be focused at a time.
-//! - Any other important invariants?
-//!
-//! # Terminology
-//! - **Active view**: The view that can receive mouse events even if the mouse is outside its bounds.
-//!
-//! - **Focused view**: The view that is currently focused. It's the view that has focus and is receiving keyboard events.
-//!
 //!
 pub mod animate;
 mod app;

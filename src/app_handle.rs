@@ -36,7 +36,6 @@ type DeferredUpdateMessages = HashMap<Id, Vec<(Id, Box<dyn Any>)>>;
 
 // Primarily used to mint and assign a unique ID to each view.
 // It also contains a constant scope which is used to create signals.
-// QUESTION: would it be better to call this `TreeContext`? Since it is really only about minting Ids given the current position in the tree.
 #[derive(Copy, Clone)]
 pub struct AppContext {
     /// used to create new signals
@@ -193,6 +192,10 @@ pub enum UpdateMessage {
 
 /// The top-level handle that is passed into the backend interface (e.g. `glazier`) to interact to window events.
 /// Meant only for use with the root view of the application.
+/// Owns the `AppState` and is responsible for
+/// - processing all requests to update the AppState from the reactive system
+/// - processing all requests to update the animation state from the reactive system
+/// - requesting a new animation frame from the backend
 pub struct AppHandle<V: View> {
     scope: Scope,
     view: V,
@@ -831,7 +834,7 @@ impl<V: View> WinHandler for AppHandle<V> {
     }
 
     fn size(&mut self, size: glazier::kurbo::Size) {
-        self.app_state.update_scr_size_breakpt(size);
+        self.app_state.update_screen_size_bp(size);
         self.event(Event::WindowResized(size));
         let scale = self.handle.get_scale().unwrap_or_default();
         let scale = Scale::new(

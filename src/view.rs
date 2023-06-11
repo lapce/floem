@@ -1,3 +1,94 @@
+//! # Views
+//! Views are self-contained components that can be composed together to create complex UIs.
+//! Views are the main building blocks of Floem.
+//!
+//! ## State management
+//!
+//! You might want some of your view components to have some state. You should place any state that affects
+//! the view inside a signal so that it can react to updates and update the `View`. Signals are reactive values that can be read from and written to.
+//! See [leptos_reactive](https://docs.rs/leptos_reactive/latest/leptos_reactive/) for more info.
+//!
+//! ### Use state to update your view
+//!
+//! To affect the layout and rendering of your component, you will need to send a state update to your component with [Id::update_state](id::Id::update_state)
+//! and then call [UpdateCx::request_layout](context::UpdateCx::request_layout) to request a layout which will cause a repaint.
+//!
+//! ### Local and locally-shared state
+//!
+//! Some pre-built `Views` can be passed state in their constructor. You can choose to share this state among components.
+//!
+//! To share state between components child and sibling components, you can simply pass down a signal to your children. Here's are two contrived examples:
+//!
+//! #### No custom component, simply creating state and sharing among the composed views.
+//!
+//! ```rust,no_run
+//! pub fn label_and_input() -> impl View {
+//!     let cx = AppContext::get_current();
+//!     let text = create_rw_signal(cx.scope, "Hello world".to_string());
+//!     stack(|| (text_input(text), label(|| text.get())))
+//!         .style(|| Style::BASE.padding_px(10.0))
+//! }
+//! ```
+//!
+//! #### Encapsulating state in a custom component and sharing it with its children.
+//!
+//! Custom [Views](crate::view::View)s may have encapsulated local state that is stored on the implementing struct.
+//!
+//!```rust,no_run
+//!
+//! struct Parent<V> {
+//!     id: Id,
+//!     text: ReadSignal<String>,
+//!     child: V,
+//! }
+//!
+//! // Creates a new parent view with the given child.
+//! fn parent<V>(new_child: impl FnOnce(ReadSignal<String>) -> V) -> Parent<impl View>
+//! where
+//!     V: View + 'static,
+//! {
+//!     let text = create_rw_signal(cx.scope, "World!".to_string());
+//!     // share the signal between the two children
+//!     let (id, child) = AppContext::new_id_with_child(stack(|| (text_input(text)), new_child(text.read_only()));
+//!     Parent { id, text, child }
+//! }
+//!
+//! impl<V> View for Parent<V>
+//! where
+//!     V: View,
+//! {
+//! // implementation omitted for brevity
+//! }
+//!
+//! struct Child {
+//!     id: Id,
+//!     label: Label,
+//! }
+//!
+//! // Creates a new child view with the given state (a read only signal)
+//! fn child(text: ReadSignal<String>) -> Child {
+//!     let (id, label) = AppContext::new_id_with_child(|| label(move || format!("Hello, {}", text.get()));
+//!     Child { id, label }
+//! }
+//!
+//! impl View for Child {
+//!   // implementation omitted for brevity
+//! }
+//!
+//! // Usage
+//! fn main() {
+//!     floem::launch(parent(child));
+//! }
+//!
+//!
+//! ### Global state
+//!
+//! Global state can be implemented using Leptos' [provide_context](leptos_reactive::provide_context) and [use_context](leptos_reactive::use_context).
+//!
+//!
+//!
+//! ```
+
 use std::any::Any;
 
 use bitflags::bitflags;
@@ -112,6 +203,16 @@ pub trait View {
     /// Usually you'll do this by calling `LayoutCx::layout_node`
     fn layout(&mut self, cx: &mut LayoutCx) -> Node;
 
+    /// Internal method used by Floem. This method derives its calculations based on the [Taffy Node](taffy::prelude::Node) returned by the `View::layout` method.
+    ///
+    /// It's responsible for:
+    /// - calculating and setting the view's origin (local coordinates and window coordinates)
+    /// - calculating and setting the view's viewport
+    /// - invoking any attached [ResizeListeners](crate::context::ResizeListener)
+    ///
+    /// Returns the bounding rect that encompasses this view and its children
+    ///
+    /// You shouldn't need to implement this.
     fn compute_layout_main(&mut self, cx: &mut LayoutCx) -> Rect {
         if cx.app_state.is_hidden(self.id()) {
             return Rect::ZERO;
@@ -183,11 +284,16 @@ pub trait View {
         layout_rect
     }
 
-    // QUESTION: what's the difference between this and `layout`?
+    /// You must implement this if your view has children.
+    ///
+    /// Responsible for computing the layout of the view's children.
     fn compute_layout(&mut self, _cx: &mut LayoutCx) -> Option<Rect> {
         None
     }
 
+    /// Internal method used by Floem. This can be called from parent `View`s to propagate an event to the child `View`.
+    ///
+    /// You shouldn't need to implement this.
     fn event_main(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {
         let id = self.id();
         if cx.app_state.is_hidden(id) {
