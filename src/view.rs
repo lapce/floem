@@ -535,6 +535,8 @@ pub trait View {
     }
 
     /// Implement this to handle events and to pass them down to children
+    ///
+    /// Return true to stop the event from propagating to other views
     fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool;
 
     /// The entry point for painting a view. You shouldn't need to implement this yourself. Instead, implement [`View::paint`].

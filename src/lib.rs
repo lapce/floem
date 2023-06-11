@@ -68,7 +68,7 @@
 //! After an event comes in (e.g. the user clicked the mouse, pressed a key etc), the event will be propagated from the root view to the children.
 //! The parent will decide whether sending the event to the child(ren) based on the logic in the event method in the parent View.
 //! There's also event listeners that users can use to respond to events the users choose.
-//! The event propagation is stopped whenever a child or an event listener returns true on the event handling.
+//! The event propagation is stopped whenever a child or an event listener returns `true` on the event handling.
 //!
 //!
 //! #### Event handling -> reactive system updates
