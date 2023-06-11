@@ -1,11 +1,9 @@
 use floem::{
     cosmic_text::{Style as FontStyle, Weight},
     peniko::Color,
-    reactive::create_rw_signal,
     style::Style,
     view::View,
-    views::{label, stack, text_input, Decorators},
-    AppContext,
+    views::{label, Decorators},
 };
 
 use crate::form::{form, form_item};
@@ -30,12 +28,3 @@ pub fn label_view() -> impl View {
         )
     })
 }
-
-pub fn label_and_input() -> impl View {
-    let cx = AppContext::get_current();
-    let text = create_rw_signal(cx.scope, "Hello world".to_string());
-    stack(|| (text_input(text), label(|| "Hello world".to_string())))
-        .style(|| Style::BASE.padding_px(10.0))
-}
-
-// fn main() {}
