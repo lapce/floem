@@ -37,7 +37,7 @@
 //!
 //! Global state can be implemented using Leptos' [provide_context](leptos_reactive::provide_context) and [use_context](leptos_reactive::use_context).
 //!
-//! # Styling
+//! ## Styling
 //! You can style your views using the [Style](style::Style) struct. Styles are inherited from parent views and can be overridden.
 //! Floem sizing and positioning layout system is based on the flexbox model using Taffy as the layout engine.
 //!
