@@ -586,6 +586,7 @@ pub trait View {
             }
             self.paint(cx);
             paint_border(cx, &style, size);
+            paint_outline(cx, &style, size)
         }
 
         let mut drag_set_to_none = false;
@@ -641,6 +642,7 @@ pub trait View {
                     paint_bg(cx, &style, size);
                     self.paint(cx);
                     paint_border(cx, &style, size);
+                    paint_outline(cx, &style, size);
 
                     cx.restore();
                 }
@@ -739,6 +741,16 @@ fn paint_bg(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
     } else {
         cx.fill(&size.to_rect(), bg);
     }
+}
+
+fn paint_outline(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
+    if style.outline == 0. {
+        // TODO: we should warn! when outline is < 0
+        return;
+    }
+    let half = style.outline as f64 / 2.0;
+    let rect = size.to_rect().inflate(half, half);
+    cx.stroke(&rect, style.outline_color, style.outline as f64);
 }
 
 fn paint_border(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
