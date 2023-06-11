@@ -32,12 +32,17 @@ pub trait View {
 
     fn child(&mut self, id: Id) -> Option<&mut dyn View>;
 
+    /// At the moment, this is used only to build the debug tree.
     fn children(&mut self) -> Vec<&mut dyn View>;
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         core::any::type_name::<Self>().into()
     }
 
+    /// Used internally by Floem to send an update to the correct view based on the `Id` path.
+    /// It will invoke only once `update` when the correct view is located.
+    ///
+    /// You shouldn't need to implement this.
     fn update_main(
         &mut self,
         cx: &mut UpdateCx,
@@ -67,6 +72,10 @@ pub trait View {
     /// indicating if you'd like a layout or paint pass to be scheduled.
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags;
 
+    /// Internal method used by Floem to compute the styles for the view and to invoke the
+    /// user-defined `View::layout` method.
+    ///
+    /// You shouldn't need to implement this.
     fn layout_main(&mut self, cx: &mut LayoutCx) -> Node {
         cx.save();
 
@@ -99,6 +108,8 @@ pub trait View {
         node
     }
 
+    /// Use this method to layout the view's children.
+    /// Usually you'll do this by calling `LayoutCx::layout_node`
     fn layout(&mut self, cx: &mut LayoutCx) -> Node;
 
     fn compute_layout_main(&mut self, cx: &mut LayoutCx) -> Rect {
@@ -172,6 +183,7 @@ pub trait View {
         layout_rect
     }
 
+    // QUESTION: what's the difference between this and `layout`?
     fn compute_layout(&mut self, _cx: &mut LayoutCx) -> Option<Rect> {
         None
     }
@@ -416,7 +428,7 @@ pub trait View {
         false
     }
 
-    /// Implement this to handle
+    /// Implement this to handle events and to pass them down to children
     fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool;
 
     /// The entry point for painting a view. You shouldn't need to implement this yourself. Instead, implement [`View::paint`].
@@ -533,7 +545,8 @@ pub trait View {
         cx.restore();
     }
 
-    /// [`View`]-specific implementation. Will be called in the [`View::paint_main`] entry point method.
+    /// `View`-specific implementation. Will be called in the [`View::paint_main`] entry point method.
+    /// Usually you'll call the child `View::paint_main` method. But you might also draw text, adjust the offset, clip or draw text.
     fn paint(&mut self, cx: &mut PaintCx);
 
     /// Produces an ascii art debug display of all of the views.

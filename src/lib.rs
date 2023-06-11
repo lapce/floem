@@ -2,8 +2,8 @@
 //! Floem is cross-platform GUI framework for Rust 🦀. It aims to be extremely performant while providing world-class developer ergonomics.
 //!
 //! ## Views
-//! Floem models the UI using a tree of [Views](view::View)s that are built once. `Views` react to state changes and events.
-//! Views are type-erased, self-contained components that can be composed together to create complex UIs.
+//! Floem models the UI using a tree of [Views](view::View) that are built once. `Views` react to state changes and events.
+//! Views ar self-contained components that can be composed together to create complex UIs.
 //!
 //! ## Ids and Id paths
 //! [Id](id::Id)s are unique identifiers for views. They're used to identify views in the view tree. These ids are assigned via the [AppContext](context::AppContext) and are unique across the entire application.
@@ -20,13 +20,16 @@
 //! You will probably want your view components to have some state. You should place any state that affects
 //! you view inside a signal so that you can react to updates and update the `View`. Signals are reactive values that can be read from and written to.
 //!
+//! ### Use state to update your view
+//!
 //! To affect the layout and rendering of your component, you will need to send a state update to your component with [Id::update_state](id::Id::update_state)
 //! and then call [UpdateCx::request_layout](context::UpdateCx::request_layout) to request a layout which will cause a repaint.
 //!
-//! To share state between components, you can simply pass down a signal to your children. Here's a contrived example:
+//! ## Local state
+//!
+//! To share state between components child and sibling components, you can simply pass down a signal to your children. Here's a contrived example:
 //!
 //!```rust,no_run
-//! // super contrived example showing how to pass down state to children.
 //!
 //! struct Parent<V> {
 //!     id: Id,
@@ -74,21 +77,18 @@
 //!
 //! ```
 //!
-//! Global state TBD
+//! ### Global state
+//!
+//! Global state can be implemented using Leptos' [provide_context](leptos_reactive::provide_context) and [use_context](leptos_reactive::use_context).
 //!
 //! # Styling
 //! Floem sizing and positioning layout system is based on the flexbox model using Taffy as the layout engine.
-//! TBD on how visual styles work
-//!
-//! # Style  
 //! Styles are divided into two parts:
 //! [`ComputedStyle`]: A style with definite values for most fields.  
 //!
 //! [`Style`]: A style with [`StyleValue`]s for the fields, where `Unset` falls back to the relevant
 //! field in the [`ComputedStyle`] and `Base` falls back to the underlying [`Style`] or the
 //! [`ComputedStyle`].
-//!
-//!
 //!
 //!
 //! ## Render loop and update lifecycle
@@ -102,15 +102,10 @@
 //! - Only one view can be focused at a time.
 //! - Any other important invariants?
 //!
-//!
-//!
-//!
-//!
 //! # Terminology
 //! - **Active view**: The view that can receive mouse events even if the mouse is outside its bounds.
 //!
 //! - **Focused view**: The view that is currently focused. It's the view that has focus and is receiving keyboard events.
-//!
 //!
 //!
 pub mod animate;

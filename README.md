@@ -48,11 +48,5 @@ Inspired by [Xilem](https://github.com/linebender/xilem), [Leptos](https://githu
 - **Flexbox layout**: Using [taffy](https://crates.io/crates/taffy), the library provides the Flexbox layout system, which can be applied to any View node.
 
 
-
-# Main design decisions 
-
-
-
-
 ## Contributions
 [Contributions welcome!](CONTRIBUTING.md) If you'd like to improve how Floem works and fix things, feel free to open an issue or submit a PR. If you'd like a conversation with Floem devs, you can join in the #floem channel on this [Discord](https://discord.gg/RB6cRYerXX).

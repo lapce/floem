@@ -36,7 +36,7 @@ type DeferredUpdateMessages = HashMap<Id, Vec<(Id, Box<dyn Any>)>>;
 
 // Primarily used to mint and assign a unique ID to each view.
 // It also contains a constant scope which is used to create signals.
-// TODO: would it be better to call this `TreeContext`? Since it is really only about minting Ids given the current position in the tree.
+// QUESTION: would it be better to call this `TreeContext`? Since it is really only about minting Ids given the current position in the tree.
 #[derive(Copy, Clone)]
 pub struct AppContext {
     /// used to create new signals
@@ -615,7 +615,7 @@ impl<V: View> AppHandle<V> {
             {
                 break;
             }
-            // TODO: why do we always request a layout?
+            // QUESTION: why do we always request a layout?
             flags |= ChangeFlags::LAYOUT;
             self.layout();
             flags |= self.process_deferred_update_messages();

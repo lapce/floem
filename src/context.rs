@@ -39,20 +39,14 @@ pub struct AppContextStore {
 }
 
 impl AppContextStore {
-    /// save the current context for restoration later
     pub fn save(&mut self) {
         self.saved_cx.push(self.cx);
     }
 
-    /// set the current context which will be used for all subsequent calls
-    /// to AppContext::get_current()
     pub fn set_current(&mut self, cx: AppContext) {
         self.cx = cx;
     }
 
-    /// restore the previous context
-    /// which will be used for all subsequent calls
-    /// to AppContext::get_current()
     pub fn restore(&mut self) {
         if let Some(cx) = self.saved_cx.pop() {
             self.cx = cx;
@@ -690,7 +684,6 @@ impl<'a> LayoutCx<'a> {
         self.saved_window_origins.clear();
     }
 
-    // TODO: should this be public?
     pub fn save(&mut self) {
         self.saved_viewports.push(self.viewport);
         self.saved_colors.push(self.color);
@@ -702,7 +695,6 @@ impl<'a> LayoutCx<'a> {
         self.saved_window_origins.push(self.window_origin);
     }
 
-    // TODO: should this be public?
     pub fn restore(&mut self) {
         self.viewport = self.saved_viewports.pop().unwrap_or_default();
         self.color = self.saved_colors.pop().unwrap_or_default();
