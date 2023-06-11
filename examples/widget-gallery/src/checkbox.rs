@@ -4,13 +4,13 @@ use floem::{
     style::Style,
     view::View,
     views::{checkbox, label, stack, Decorators},
-    AppContext,
+    ViewContext,
 };
 
 use crate::form::{form, form_item};
 
 pub fn checkbox_view() -> impl View {
-    let cx = AppContext::get_current();
+    let cx = ViewContext::get_current();
     let (is_checked, set_is_checked) = create_signal(cx.scope, true);
     form(move || {
         (

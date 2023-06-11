@@ -3,7 +3,7 @@ use leptos_reactive::create_effect;
 
 use crate::{
     animate::Animation,
-    app_handle::{AppContext, StyleSelector},
+    app_handle::{StyleSelector, ViewContext},
     event::{Event, EventListener},
     responsive::ScreenSize,
     style::Style,
@@ -12,7 +12,7 @@ use crate::{
 
 pub trait Decorators: View + Sized {
     fn style(self, style: impl Fn() -> Style + 'static) -> Self {
-        let cx = AppContext::get_current();
+        let cx = ViewContext::get_current();
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
@@ -22,7 +22,7 @@ pub trait Decorators: View + Sized {
     }
 
     fn base_style(self, style: impl Fn() -> Style + 'static) -> Self {
-        let cx = AppContext::get_current();
+        let cx = ViewContext::get_current();
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
@@ -33,7 +33,7 @@ pub trait Decorators: View + Sized {
 
     /// The visual style to apply when the mouse hovers over the element
     fn hover_style(self, style: impl Fn() -> Style + 'static) -> Self {
-        let cx = AppContext::get_current();
+        let cx = ViewContext::get_current();
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
@@ -44,7 +44,7 @@ pub trait Decorators: View + Sized {
 
     /// The visual style to apply when the mouse hovers over the element
     fn dragging_style(self, style: impl Fn() -> Style + 'static) -> Self {
-        let cx = AppContext::get_current();
+        let cx = ViewContext::get_current();
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
@@ -54,7 +54,7 @@ pub trait Decorators: View + Sized {
     }
 
     fn focus_style(self, style: impl Fn() -> Style + 'static) -> Self {
-        let cx = AppContext::get_current();
+        let cx = ViewContext::get_current();
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
@@ -65,7 +65,7 @@ pub trait Decorators: View + Sized {
 
     /// Similar to the `:focus-visible` css selector, this style only activates when tab navigation is used.
     fn focus_visible_style(self, style: impl Fn() -> Style + 'static) -> Self {
-        let cx = AppContext::get_current();
+        let cx = ViewContext::get_current();
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
@@ -88,7 +88,7 @@ pub trait Decorators: View + Sized {
     }
 
     fn active_style(self, style: impl Fn() -> Style + 'static) -> Self {
-        let cx = AppContext::get_current();
+        let cx = ViewContext::get_current();
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
@@ -98,7 +98,7 @@ pub trait Decorators: View + Sized {
     }
 
     fn disabled_style(self, style: impl Fn() -> Style + 'static) -> Self {
-        let cx = AppContext::get_current();
+        let cx = ViewContext::get_current();
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
@@ -108,7 +108,7 @@ pub trait Decorators: View + Sized {
     }
 
     fn responsive_style(self, size: ScreenSize, style: impl Fn() -> Style + 'static) -> Self {
-        let cx = AppContext::get_current();
+        let cx = ViewContext::get_current();
         let id = self.id();
         create_effect(cx.scope, move |_| {
             let style = style();
@@ -118,7 +118,7 @@ pub trait Decorators: View + Sized {
     }
 
     fn disabled(self, disabled_fn: impl Fn() -> bool + 'static) -> Self {
-        let cx = AppContext::get_current();
+        let cx = ViewContext::get_current();
         let id = self.id();
 
         create_effect(cx.scope, move |_| {
@@ -154,7 +154,7 @@ pub trait Decorators: View + Sized {
     }
 
     fn animation(self, anim: Animation) -> Self {
-        let cx = AppContext::get_current();
+        let cx = ViewContext::get_current();
         let id = self.id();
         create_effect(cx.scope, move |_| {
             id.update_animation(anim.clone());
@@ -163,7 +163,7 @@ pub trait Decorators: View + Sized {
     }
 
     fn window_scale(self, scale_fn: impl Fn() -> f64 + 'static) -> Self {
-        let cx = AppContext::get_current();
+        let cx = ViewContext::get_current();
         let id = self.id();
 
         create_effect(cx.scope, move |_| {

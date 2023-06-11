@@ -1,5 +1,5 @@
 use crate::{
-    app_handle::AppContext,
+    app_handle::ViewContext,
     id::Id,
     view::{ChangeFlags, View},
 };
@@ -9,7 +9,7 @@ pub struct Empty {
 }
 
 pub fn empty() -> Empty {
-    let cx = AppContext::get_current();
+    let cx = ViewContext::get_current();
     let id = cx.new_id();
     Empty { id }
 }

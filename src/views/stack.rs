@@ -1,7 +1,7 @@
 use glazier::kurbo::Rect;
 
 use crate::{
-    app_handle::AppContext,
+    app_handle::ViewContext,
     context::{EventCx, UpdateCx},
     id::Id,
     view::{ChangeFlags, View},
@@ -14,7 +14,7 @@ pub struct Stack<VT> {
 }
 
 pub fn stack<VT: ViewTuple + 'static>(children: impl FnOnce() -> VT) -> Stack<VT> {
-    let (id, children) = AppContext::new_id_with_child(children);
+    let (id, children) = ViewContext::new_id_with_child(children);
     Stack { id, children }
 }
 

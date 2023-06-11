@@ -133,7 +133,7 @@ pub mod views;
 pub mod window;
 
 pub use app::{launch, AppEvent, Application};
-pub use app_handle::AppContext;
+pub use app_handle::ViewContext;
 pub use floem_renderer::cosmic_text;
 pub use floem_renderer::Renderer;
 pub use glazier;

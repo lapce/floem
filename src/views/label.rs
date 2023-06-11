@@ -14,7 +14,7 @@ use taffy::{prelude::Node, style::Dimension};
 use vello::peniko::Color;
 
 use crate::{
-    app_handle::AppContext,
+    app_handle::ViewContext,
     context::{EventCx, UpdateCx},
     event::Event,
     id::Id,
@@ -40,7 +40,7 @@ pub struct Label {
 }
 
 pub fn label(label: impl Fn() -> String + 'static) -> Label {
-    let cx = AppContext::get_current();
+    let cx = ViewContext::get_current();
     let id = cx.new_id();
     create_effect(cx.scope, move |_| {
         let new_label = label();

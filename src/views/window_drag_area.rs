@@ -1,7 +1,7 @@
 use glazier::kurbo::{Point, Rect};
 
 use crate::{
-    app_handle::AppContext,
+    app_handle::ViewContext,
     event::Event,
     id::Id,
     view::{ChangeFlags, View},
@@ -14,7 +14,7 @@ pub struct WindowDragArea<V: View> {
 }
 
 pub fn window_drag_area<V: View>(child: impl FnOnce() -> V) -> WindowDragArea<V> {
-    let (id, child) = AppContext::new_id_with_child(child);
+    let (id, child) = ViewContext::new_id_with_child(child);
     WindowDragArea {
         id,
         child,

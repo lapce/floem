@@ -26,7 +26,7 @@ use crate::{
     menu::Menu,
     responsive::{GridBreakpoints, ScreenSize, ScreenSizeBp},
     style::{ComputedStyle, CursorStyle, Style},
-    AppContext,
+    ViewContext,
 };
 
 thread_local! {
@@ -34,8 +34,8 @@ thread_local! {
 }
 
 pub struct AppContextStore {
-    pub cx: AppContext,
-    pub saved_cx: Vec<AppContext>,
+    pub cx: ViewContext,
+    pub saved_cx: Vec<ViewContext>,
 }
 
 impl AppContextStore {
@@ -43,7 +43,7 @@ impl AppContextStore {
         self.saved_cx.push(self.cx);
     }
 
-    pub fn set_current(&mut self, cx: AppContext) {
+    pub fn set_current(&mut self, cx: ViewContext) {
         self.cx = cx;
     }
 

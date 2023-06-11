@@ -8,7 +8,7 @@ use smallvec::SmallVec;
 use taffy::{prelude::Node, style::Dimension};
 
 use crate::{
-    app_handle::AppContext,
+    app_handle::ViewContext,
     context::LayoutCx,
     id::Id,
     view::{ChangeFlags, View},
@@ -55,7 +55,7 @@ where
     set_viewport: WriteSignal<Rect>,
     view_fn: VF,
     phatom: PhantomData<T>,
-    cx: AppContext,
+    cx: ViewContext,
     before_size: f64,
     after_size: f64,
     before_node: Option<Node>,
@@ -84,7 +84,7 @@ where
     VF: Fn(T) -> V + 'static,
     V: View + 'static,
 {
-    let cx = AppContext::get_current();
+    let cx = ViewContext::get_current();
     let id = cx.new_id();
 
     let mut child_cx = cx;
@@ -249,10 +249,10 @@ where
             }
             self.before_size = state.before_size;
             self.after_size = state.after_size;
-            AppContext::save();
-            AppContext::set_current(self.cx);
+            ViewContext::save();
+            ViewContext::set_current(self.cx);
             apply_diff(cx.app_state, state.diff, &mut self.children, &self.view_fn);
-            AppContext::restore();
+            ViewContext::restore();
             cx.request_layout(self.id());
             ChangeFlags::LAYOUT
         } else {

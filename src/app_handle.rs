@@ -37,13 +37,13 @@ type DeferredUpdateMessages = HashMap<Id, Vec<(Id, Box<dyn Any>)>>;
 // Primarily used to mint and assign a unique ID to each view.
 // It also contains a constant scope which is used to create signals.
 #[derive(Copy, Clone)]
-pub struct AppContext {
+pub struct ViewContext {
     /// used to create new signals
     pub scope: Scope,
     pub id: Id,
 }
 
-impl AppContext {
+impl ViewContext {
     pub fn save() {
         APP_CONTEXT_STORE.with(|store| {
             let mut store = store.borrow_mut();
@@ -53,7 +53,7 @@ impl AppContext {
         })
     }
 
-    pub fn set_current(cx: AppContext) {
+    pub fn set_current(cx: ViewContext) {
         APP_CONTEXT_STORE.with(|store| {
             let mut store = store.borrow_mut();
             if let Some(store) = store.as_mut() {
@@ -67,7 +67,7 @@ impl AppContext {
         })
     }
 
-    pub fn get_current() -> AppContext {
+    pub fn get_current() -> ViewContext {
         APP_CONTEXT_STORE.with(|store| {
             let store = store.borrow();
             store.as_ref().unwrap().cx
@@ -91,14 +91,14 @@ impl AppContext {
     ///
     /// This method returns the `Id` that should be attached to the parent `View` along with the initialized child.
     pub fn new_id_with_child<V>(child: impl FnOnce() -> V) -> (Id, V) {
-        let cx = AppContext::get_current();
+        let cx = ViewContext::get_current();
         let id = cx.new_id();
         let mut child_cx = cx;
         child_cx.id = id;
-        AppContext::save();
-        AppContext::set_current(child_cx);
+        ViewContext::save();
+        ViewContext::set_current(child_cx);
         let child = child();
-        AppContext::restore();
+        ViewContext::restore();
         (id, child)
     }
 
@@ -214,12 +214,12 @@ impl<V: View> Drop for AppHandle<V> {
 
 impl<V: View> AppHandle<V> {
     pub fn new(scope: Scope, app_logic: impl FnOnce() -> V) -> Self {
-        let cx = AppContext {
+        let cx = ViewContext {
             scope,
             id: Id::next(),
         };
 
-        AppContext::set_current(cx);
+        ViewContext::set_current(cx);
 
         let view = app_logic();
         Self {

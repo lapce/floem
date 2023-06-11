@@ -9,7 +9,7 @@ use rustc_hash::FxHasher;
 use smallvec::SmallVec;
 
 use crate::{
-    app_handle::AppContext,
+    app_handle::ViewContext,
     context::{AppState, EventCx, UpdateCx},
     id::Id,
     view::{ChangeFlags, View},
@@ -31,7 +31,7 @@ where
     children: Vec<Option<(V, ScopeDisposer)>>,
     view_fn: VF,
     phantom: PhantomData<T>,
-    cx: AppContext,
+    cx: ViewContext,
 }
 
 pub fn list<IF, I, T, KF, K, VF, V>(each_fn: IF, key_fn: KF, view_fn: VF) -> List<V, VF, T>
@@ -44,7 +44,7 @@ where
     V: View + 'static,
     T: 'static,
 {
-    let cx = AppContext::get_current();
+    let cx = ViewContext::get_current();
     let id = cx.new_id();
 
     let mut child_cx = cx;
@@ -123,10 +123,10 @@ where
         state: Box<dyn std::any::Any>,
     ) -> crate::view::ChangeFlags {
         if let Ok(diff) = state.downcast() {
-            AppContext::save();
-            AppContext::set_current(self.cx);
+            ViewContext::save();
+            ViewContext::set_current(self.cx);
             apply_diff(cx.app_state, *diff, &mut self.children, &self.view_fn);
-            AppContext::restore();
+            ViewContext::restore();
             cx.request_layout(self.id());
             ChangeFlags::LAYOUT
         } else {
@@ -389,14 +389,14 @@ pub(super) fn apply_diff<T, V, VF>(
 
     for DiffOpAdd { at, view } in diff.added {
         children[at] = view.map(|value| {
-            let cx = AppContext::get_current();
+            let cx = ViewContext::get_current();
             cx.scope.run_child_scope(|scope| {
                 let mut cx = cx;
                 cx.scope = scope;
-                AppContext::save();
-                AppContext::set_current(cx);
+                ViewContext::save();
+                ViewContext::set_current(cx);
                 let view = view_fn(value);
-                AppContext::restore();
+                ViewContext::restore();
                 view
             })
         });

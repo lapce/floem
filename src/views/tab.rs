@@ -6,7 +6,7 @@ use smallvec::SmallVec;
 use taffy::style::Display;
 
 use crate::{
-    app_handle::AppContext,
+    app_handle::ViewContext,
     context::{EventCx, UpdateCx},
     id::Id,
     view::{ChangeFlags, View},
@@ -30,7 +30,7 @@ where
     children: Vec<Option<(V, ScopeDisposer)>>,
     view_fn: VF,
     phatom: PhantomData<T>,
-    cx: AppContext,
+    cx: ViewContext,
 }
 
 pub fn tab<IF, I, T, KF, K, VF, V>(
@@ -48,7 +48,7 @@ where
     V: View + 'static,
     T: 'static,
 {
-    let cx = AppContext::get_current();
+    let cx = ViewContext::get_current();
     let id = cx.new_id();
 
     let mut child_cx = cx;
@@ -137,10 +137,10 @@ where
         if let Ok(state) = state.downcast::<TabState<T>>() {
             match *state {
                 TabState::Diff(diff) => {
-                    AppContext::save();
-                    AppContext::set_current(self.cx);
+                    ViewContext::save();
+                    ViewContext::set_current(self.cx);
                     apply_diff(cx.app_state, *diff, &mut self.children, &self.view_fn);
-                    AppContext::restore();
+                    ViewContext::restore();
                 }
                 TabState::Active(active) => {
                     self.active = active;
