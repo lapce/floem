@@ -5,7 +5,7 @@
 //!
 //! ## Ids and Id paths
 //!
-//! These ids are assigned via the [AppContext](context::AppContext) and are unique across the entire application.
+//! These ids are assigned via the [ViewContext](context::ViewContext) and are unique across the entire application.
 //!
 
 use std::{any::Any, cell::RefCell, collections::HashMap, num::NonZeroU64, time::Duration};
