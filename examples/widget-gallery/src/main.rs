@@ -10,7 +10,7 @@ use floem::{
     event::{Event, EventListener},
     glazier::keyboard_types::Key,
     peniko::Color,
-    reactive::{create_signal, SignalGet, SignalUpdate},
+    reactive::{create_signal, SignalGet, SignalGetUntracked, SignalUpdate},
     style::{CursorStyle, Style},
     view::View,
     views::{
@@ -38,14 +38,22 @@ fn app_view() -> impl View {
                         move || tabs.get(),
                         move |item| *item,
                         move |item| {
-                            let index = tabs.get().iter().position(|it| *it == item).unwrap();
+                            let index = tabs
+                                .get_untracked()
+                                .iter()
+                                .position(|it| *it == item)
+                                .unwrap();
                             stack(|| {
                                 (label(move || item.to_string())
                                     .style(|| Style::BASE.font_size(24.0)),)
                             })
                             .on_click(move |_| {
                                 set_active_tab.update(|v: &mut usize| {
-                                    *v = tabs.get().iter().position(|it| *it == item).unwrap();
+                                    *v = tabs
+                                        .get_untracked()
+                                        .iter()
+                                        .position(|it| *it == item)
+                                        .unwrap();
                                 });
                                 true
                             })

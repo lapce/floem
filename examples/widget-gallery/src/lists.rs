@@ -3,7 +3,7 @@ use floem::{
     event::{Event, EventListener},
     glazier::keyboard_types::Key,
     peniko::Color,
-    reactive::{create_signal, SignalGet, SignalUpdate},
+    reactive::{create_signal, SignalGet, SignalGetUntracked, SignalUpdate},
     style::{CursorStyle, Dimension, JustifyContent, Style},
     view::View,
     views::{
@@ -56,7 +56,11 @@ fn enhanced_list() -> impl View {
             move || long_list.get(),
             move |item| *item,
             move |item| {
-                let index = long_list.get().iter().position(|it| *it == item).unwrap();
+                let index = long_list
+                    .get_untracked()
+                    .iter()
+                    .position(|it| *it == item)
+                    .unwrap();
                 let (is_checked, set_is_checked) = create_signal(cx.scope, true);
                 container(move || {
                     stack(move || {
