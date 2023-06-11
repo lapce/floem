@@ -11,8 +11,8 @@ use crate::menu::Menu;
 use crate::{
     animate::{AnimPropKind, AnimUpdateMsg, AnimatedProp, Animation, SizeUnit},
     context::{
-        AppContextStore, AppState, EventCallback, EventCx, LayoutCx, PaintCx, PaintState,
-        ResizeCallback, ResizeListener, UpdateCx, APP_CONTEXT_STORE,
+        AppState, EventCallback, EventCx, LayoutCx, PaintCx, PaintState, ResizeCallback,
+        ResizeListener, UpdateCx, ViewContextStore, VIEW_CONTEXT_STORE,
     },
     event::{Event, EventListener},
     ext_event::EXT_EVENT_HANDLER,
@@ -45,7 +45,7 @@ pub struct ViewContext {
 
 impl ViewContext {
     pub fn save() {
-        APP_CONTEXT_STORE.with(|store| {
+        VIEW_CONTEXT_STORE.with(|store| {
             let mut store = store.borrow_mut();
             if let Some(store) = store.as_mut() {
                 store.save();
@@ -54,12 +54,12 @@ impl ViewContext {
     }
 
     pub fn set_current(cx: ViewContext) {
-        APP_CONTEXT_STORE.with(|store| {
+        VIEW_CONTEXT_STORE.with(|store| {
             let mut store = store.borrow_mut();
             if let Some(store) = store.as_mut() {
                 store.set_current(cx);
             } else {
-                *store = Some(AppContextStore {
+                *store = Some(ViewContextStore {
                     cx,
                     saved_cx: Vec::new(),
                 });
@@ -68,14 +68,14 @@ impl ViewContext {
     }
 
     pub fn get_current() -> ViewContext {
-        APP_CONTEXT_STORE.with(|store| {
+        VIEW_CONTEXT_STORE.with(|store| {
             let store = store.borrow();
             store.as_ref().unwrap().cx
         })
     }
 
     pub fn restore() {
-        APP_CONTEXT_STORE.with(|store| {
+        VIEW_CONTEXT_STORE.with(|store| {
             let mut store = store.borrow_mut();
             if let Some(store) = store.as_mut() {
                 store.restore();

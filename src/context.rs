@@ -30,15 +30,15 @@ use crate::{
 };
 
 thread_local! {
-    pub(crate) static APP_CONTEXT_STORE: std::cell::RefCell<Option<AppContextStore>> = Default::default();
+    pub(crate) static VIEW_CONTEXT_STORE: std::cell::RefCell<Option<ViewContextStore>> = Default::default();
 }
 
-pub struct AppContextStore {
+pub struct ViewContextStore {
     pub cx: ViewContext,
     pub saved_cx: Vec<ViewContext>,
 }
 
-impl AppContextStore {
+impl ViewContextStore {
     pub fn save(&mut self) {
         self.saved_cx.push(self.cx);
     }
