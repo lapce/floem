@@ -71,7 +71,7 @@
 //! The event propagation is stopped whenever a child or an event listener returns true on the event handling.
 //!
 //!
-//! #### Event handling
+//! #### Event handling -> reactive system updates
 //! During the event handling, there could be state changes through the reactive system. E.g., on the counter example, when you click increment,
 //! it updates the counter and because the label listens to the change (see [leptos_reactive::create_effect]), the label will update the text it presents.
 //!
@@ -102,6 +102,19 @@
 //! - There can be only one root `View`
 //! - Only one view can be active at a time.
 //! - Only one view can be focused at a time.
+//!
+//!
+//! # Advanced
+//!
+//! #### Authoring your own [Views](view::View)
+//! See the [View module](view) for more info.
+//!
+//! #### Understanding Ids
+//! See the [Id module](id) for more info.
+//!
+//! #### Understanding Styles
+//! See the [Style module](style) for more info.
+//!
 //!
 pub mod animate;
 mod app;
