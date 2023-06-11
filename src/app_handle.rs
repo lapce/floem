@@ -16,33 +16,29 @@ use crate::{
     },
     event::{Event, EventListener},
     ext_event::EXT_EVENT_HANDLER,
-    id::{Id, IDPATHS},
+    id::{Id, ID_PATHS},
     responsive::ScreenSize,
     style::{CursorStyle, Style},
     view::{ChangeFlags, View},
 };
 
 thread_local! {
+    /// Stores a queue of update messages for each view. This is a list of build in messages, including a built-in State message
+    /// that you can use to send a state update to a view.
     pub(crate) static UPDATE_MESSAGES: std::cell::RefCell<HashMap<Id, Vec<UpdateMessage>>> = Default::default();
     pub(crate) static ANIM_UPDATE_MESSAGES: std::cell::RefCell<Vec<AnimUpdateMsg>> = Default::default();
+    ///
     pub(crate) static DEFERRED_UPDATE_MESSAGES: std::cell::RefCell<DeferredUpdateMessages> = Default::default();
 }
 
 pub type FileDialogs = HashMap<FileDialogToken, Box<dyn Fn(Option<FileInfo>)>>;
 type DeferredUpdateMessages = HashMap<Id, Vec<(Id, Box<dyn Any>)>>;
 
-pub struct AppHandle<V: View> {
-    scope: Scope,
-    view: V,
-    handle: glazier::WindowHandle,
-    app_state: AppState,
-    paint_state: PaintState,
-
-    file_dialogs: FileDialogs,
-}
-
+// Primarily used to mint and assign a unique ID to each view.
+// It also contains a constant scope which is used to create signals.
 #[derive(Copy, Clone)]
 pub struct AppContext {
+    /// used to create new signals
     pub scope: Scope,
     pub id: Id,
 }
@@ -159,7 +155,7 @@ pub enum UpdateMessage {
         selector: StyleSelector,
         style: Style,
     },
-    KeyboardNavigatable {
+    KeyboardNavigable {
         id: Id,
     },
     Draggable {
@@ -192,6 +188,22 @@ pub enum UpdateMessage {
         menu: Menu,
         pos: Point,
     },
+}
+
+/// The top-level handle that is passed into the backend interface (e.g. `glazier`) to interact to window events.
+/// Meant only for use with the root view of the application.
+/// Owns the `AppState` and is responsible for
+/// - processing all requests to update the AppState from the reactive system
+/// - processing all requests to update the animation state from the reactive system
+/// - requesting a new animation frame from the backend
+pub struct AppHandle<V: View> {
+    scope: Scope,
+    view: V,
+    handle: glazier::WindowHandle,
+    app_state: AppState,
+    paint_state: PaintState,
+
+    file_dialogs: FileDialogs,
 }
 
 impl<V: View> Drop for AppHandle<V> {
@@ -400,7 +412,7 @@ impl<V: View> AppHandle<V> {
             app_state: &mut self.app_state,
         };
         for (id, state) in msgs {
-            let id_path = IDPATHS.with(|paths| paths.borrow().get(&id).cloned());
+            let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
             if let Some(id_path) = id_path {
                 flags |= self.view.update_main(&mut cx, &id_path.0, state);
             }
@@ -474,7 +486,7 @@ impl<V: View> AppHandle<V> {
                         cx.app_state.request_layout(id);
                     }
                     UpdateMessage::State { id, state } => {
-                        let id_path = IDPATHS.with(|paths| paths.borrow().get(&id).cloned());
+                        let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
                         if let Some(id_path) = id_path {
                             flags |= self.view.update_main(&mut cx, &id_path.0, state);
                         }
@@ -511,8 +523,8 @@ impl<V: View> AppHandle<V> {
                         }
                         cx.request_layout(id);
                     }
-                    UpdateMessage::KeyboardNavigatable { id } => {
-                        cx.app_state.keyboard_navigatable.insert(id);
+                    UpdateMessage::KeyboardNavigable { id } => {
+                        cx.app_state.keyboard_navigable.insert(id);
                     }
                     UpdateMessage::Draggable { id } => {
                         cx.app_state.draggable.insert(id);
@@ -569,7 +581,7 @@ impl<V: View> AppHandle<V> {
                     UpdateMessage::ShowContextMenu { menu, pos } => {
                         let menu = menu.popup();
                         let platform_menu = menu.platform_menu();
-                        cx.app_state.contex_menu.clear();
+                        cx.app_state.context_menu.clear();
                         cx.app_state.update_context_menu(menu);
                         self.handle.show_context_menu(platform_menu, pos);
                     }
@@ -606,6 +618,7 @@ impl<V: View> AppHandle<V> {
             {
                 break;
             }
+            // QUESTION: why do we always request a layout?
             flags |= ChangeFlags::LAYOUT;
             self.layout();
             flags |= self.process_deferred_update_messages();
@@ -655,7 +668,7 @@ impl<V: View> AppHandle<V> {
 
             if !processed {
                 if let Some(id) = cx.app_state.focus {
-                    IDPATHS.with(|paths| {
+                    ID_PATHS.with(|paths| {
                         if let Some(id_path) = paths.borrow().get(&id) {
                             processed |=
                                 self.view
@@ -702,7 +715,7 @@ impl<V: View> AppHandle<V> {
             }
 
             let id = cx.app_state.active.unwrap();
-            IDPATHS.with(|paths| {
+            ID_PATHS.with(|paths| {
                 if let Some(id_path) = paths.borrow().get(&id) {
                     self.view
                         .event_main(&mut cx, Some(&id_path.0), event.clone());
@@ -821,7 +834,7 @@ impl<V: View> WinHandler for AppHandle<V> {
     }
 
     fn size(&mut self, size: glazier::kurbo::Size) {
-        self.app_state.update_scr_size_breakpt(size);
+        self.app_state.update_screen_size_bp(size);
         self.event(Event::WindowResized(size));
         let scale = self.handle.get_scale().unwrap_or_default();
         let scale = Scale::new(
@@ -877,7 +890,7 @@ impl<V: View> WinHandler for AppHandle<V> {
     }
 
     fn command(&mut self, id: u32) {
-        if let Some(action) = self.app_state.contex_menu.get(&id) {
+        if let Some(action) = self.app_state.context_menu.get(&id) {
             (*action)();
             self.process_update();
         }

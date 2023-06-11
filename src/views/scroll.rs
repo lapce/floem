@@ -20,7 +20,7 @@ use crate::{
 };
 
 enum ScrollState {
-    EnsureVisble(Rect),
+    EnsureVisible(Rect),
     ScrollDelta(Vec2),
     ScrollTo(Point),
     ScrollBarColor(Color),
@@ -100,7 +100,7 @@ impl<V: View> Scroll<V> {
         let id = self.id;
         create_effect(cx.scope, move |_| {
             let rect = to();
-            id.update_state(ScrollState::EnsureVisble(rect), true);
+            id.update_state(ScrollState::EnsureVisible(rect), true);
         });
 
         self
@@ -487,7 +487,7 @@ impl<V: View> View for Scroll<V> {
     ) -> crate::view::ChangeFlags {
         if let Ok(state) = state.downcast::<ScrollState>() {
             match *state {
-                ScrollState::EnsureVisble(rect) => {
+                ScrollState::EnsureVisible(rect) => {
                     self.pan_to_visible(cx.app_state, rect);
                 }
                 ScrollState::ScrollDelta(delta) => {

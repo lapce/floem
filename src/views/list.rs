@@ -30,7 +30,7 @@ where
     id: Id,
     children: Vec<Option<(V, ScopeDisposer)>>,
     view_fn: VF,
-    phatom: PhantomData<T>,
+    phantom: PhantomData<T>,
     cx: AppContext,
 }
 
@@ -80,7 +80,7 @@ where
         id,
         children: Vec::new(),
         view_fn,
-        phatom: PhantomData::default(),
+        phantom: PhantomData::default(),
         cx: child_cx,
     }
 }
@@ -333,10 +333,10 @@ fn remove_index<V: View>(
         }
     }
 
-    let mut all_ids = id.all_chilren();
+    let mut all_ids = id.all_children();
     all_ids.push(id);
     for id in all_ids {
-        id.remove_idpath();
+        id.remove_id_path();
         app_state.view_states.remove(&id);
     }
 

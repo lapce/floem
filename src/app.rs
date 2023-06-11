@@ -14,10 +14,11 @@ pub enum AppEvent {
 }
 
 /// Floem top level application
+/// This is the entry point of the application.
 pub struct Application {
     application: glazier::Application,
     scope: Scope,
-    event_listner: Option<Box<AppEventCallback>>,
+    event_listener: Option<Box<AppEventCallback>>,
 }
 
 impl Default for Application {
@@ -30,7 +31,7 @@ impl glazier::AppHandler for Application {
     fn command(&mut self, _id: u32) {}
 
     fn will_terminate(&mut self) {
-        if let Some(action) = self.event_listner.as_ref() {
+        if let Some(action) = self.event_listener.as_ref() {
             action(&AppEvent::WillTerminate);
         }
     }
@@ -43,7 +44,7 @@ impl Application {
         Self {
             scope,
             application: glazier::Application::new().unwrap(),
-            event_listner: None,
+            event_listener: None,
         }
     }
 
@@ -52,7 +53,7 @@ impl Application {
     }
 
     pub fn on_event(mut self, action: impl Fn(&AppEvent) + 'static) -> Self {
-        self.event_listner = Some(Box::new(action));
+        self.event_listener = Some(Box::new(action));
         self
     }
 

@@ -7,7 +7,7 @@ static COUNTER: Counter = Counter::new();
 /// An entry is either a [`MenuItem`], a submenu (i.e. [`Menu`]), or one of a few other
 /// possibilities (such as one of the two options above, wrapped in a [`MenuLensWrap`]).
 pub enum MenuEntry {
-    Seperator,
+    Separator,
     Item(MenuItem),
     SubMenu(Menu),
 }
@@ -46,7 +46,7 @@ impl Menu {
 
     /// Append a separator to this menu, returning the modified menu.
     pub fn separator(self) -> Self {
-        self.entry(MenuEntry::Seperator)
+        self.entry(MenuEntry::Separator)
     }
 
     pub(crate) fn platform_menu(&self) -> glazier::Menu {
@@ -57,7 +57,7 @@ impl Menu {
         };
         for entry in &self.children {
             match entry {
-                MenuEntry::Seperator => {
+                MenuEntry::Separator => {
                     menu.add_separator();
                 }
                 MenuEntry::Item(item) => {

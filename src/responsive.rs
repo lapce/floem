@@ -49,7 +49,7 @@ impl Default for GridBreakpoints {
 }
 
 impl GridBreakpoints {
-    pub(crate) fn get_width_breakpt(&self, width: f64) -> ScreenSizeBp {
+    pub(crate) fn get_width_bp(&self, width: f64) -> ScreenSizeBp {
         if self.xs.contains(&width) {
             return ScreenSizeBp::Xs;
         }

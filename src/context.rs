@@ -33,9 +33,6 @@ thread_local! {
     pub(crate) static APP_CONTEXT_STORE: std::cell::RefCell<Option<AppContextStore>> = Default::default();
 }
 
-pub type EventCallback = dyn Fn(&Event) -> bool;
-pub type ResizeCallback = dyn Fn(Point, Rect);
-
 pub struct AppContextStore {
     pub cx: AppContext,
     pub saved_cx: Vec<AppContext>,
@@ -56,6 +53,9 @@ impl AppContextStore {
         }
     }
 }
+
+pub type EventCallback = dyn Fn(&Event) -> bool;
+pub type ResizeCallback = dyn Fn(Point, Rect);
 
 pub(crate) struct ResizeListener {
     pub(crate) window_origin: Point,
@@ -230,6 +230,8 @@ pub struct DragState {
     pub(crate) released_at: Option<std::time::Instant>,
 }
 
+/// Encapsulates and owns the global state of the application,
+/// including the `ViewState` of each view.
 pub struct AppState {
     pub(crate) handle: glazier::WindowHandle,
     /// keyboard focus
@@ -243,20 +245,20 @@ pub struct AppState {
     pub taffy: taffy::Taffy,
     pub(crate) view_states: HashMap<Id, ViewState>,
     pub(crate) disabled: HashSet<Id>,
-    pub(crate) keyboard_navigatable: HashSet<Id>,
+    pub(crate) keyboard_navigable: HashSet<Id>,
     pub(crate) draggable: HashSet<Id>,
     pub(crate) dragging: Option<DragState>,
     pub(crate) drag_start: Option<(Id, Point)>,
     pub(crate) dragging_over: HashSet<Id>,
     pub(crate) screen_size_bp: ScreenSizeBp,
-    pub(crate) grid_breakpts: GridBreakpoints,
+    pub(crate) grid_bps: GridBreakpoints,
     pub(crate) hovered: HashSet<Id>,
     /// This keeps track of all views that have an animation,
     /// regardless of the status of the animation
     pub(crate) animated: HashSet<Id>,
     pub(crate) cursor: Option<CursorStyle>,
     pub(crate) keyboard_navigation: bool,
-    pub(crate) contex_menu: HashMap<u32, Box<dyn Fn()>>,
+    pub(crate) context_menu: HashMap<u32, Box<dyn Fn()>>,
     pub(crate) timers: HashMap<TimerToken, Box<dyn FnOnce()>>,
 }
 
@@ -282,7 +284,7 @@ impl AppState {
             view_states: HashMap::new(),
             animated: HashSet::new(),
             disabled: HashSet::new(),
-            keyboard_navigatable: HashSet::new(),
+            keyboard_navigable: HashSet::new(),
             draggable: HashSet::new(),
             dragging: None,
             drag_start: None,
@@ -290,8 +292,8 @@ impl AppState {
             hovered: HashSet::new(),
             cursor: None,
             keyboard_navigation: false,
-            grid_breakpts: GridBreakpoints::default(),
-            contex_menu: HashMap::new(),
+            grid_bps: GridBreakpoints::default(),
+            context_menu: HashMap::new(),
             timers: HashMap::new(),
         }
     }
@@ -446,9 +448,9 @@ impl AppState {
         }
     }
 
-    pub(crate) fn update_scr_size_breakpt(&mut self, size: Size) {
-        let breakpt = self.grid_breakpts.get_width_breakpt(size.width);
-        self.screen_size_bp = breakpt;
+    pub(crate) fn update_screen_size_bp(&mut self, size: Size) {
+        let bp = self.grid_bps.get_width_bp(size.width);
+        self.screen_size_bp = bp;
     }
 
     pub(crate) fn clear_focus(&mut self) {
@@ -503,14 +505,14 @@ impl AppState {
 
     pub(crate) fn update_context_menu(&mut self, mut menu: Menu) {
         if let Some(action) = menu.item.action.take() {
-            self.contex_menu.insert(menu.item.id as u32, action);
+            self.context_menu.insert(menu.item.id as u32, action);
         }
         for child in menu.children {
             match child {
-                crate::menu::MenuEntry::Seperator => {}
+                crate::menu::MenuEntry::Separator => {}
                 crate::menu::MenuEntry::Item(mut item) => {
                     if let Some(action) = item.action.take() {
-                        self.contex_menu.insert(item.id as u32, action);
+                        self.context_menu.insert(item.id as u32, action);
                     }
                 }
                 crate::menu::MenuEntry::SubMenu(m) => {
@@ -521,6 +523,7 @@ impl AppState {
     }
 }
 
+/// A bundle of helper methods to be used by `View::event` handlers
 pub struct EventCx<'a> {
     pub(crate) app_state: &'a mut AppState,
 }
@@ -568,25 +571,26 @@ impl<'a> EventCx<'a> {
             .map(|l| Size::new(l.size.width as f64, l.size.height as f64))
     }
 
-    pub(crate) fn has_event_listener(&self, id: Id, listner: EventListener) -> bool {
+    pub(crate) fn has_event_listener(&self, id: Id, listener: EventListener) -> bool {
         self.app_state
             .view_states
             .get(&id)
-            .map(|s| s.event_listeners.contains_key(&listner))
+            .map(|s| s.event_listeners.contains_key(&listener))
             .unwrap_or(false)
     }
 
     pub(crate) fn get_event_listener(
         &self,
         id: Id,
-        listner: &EventListener,
+        listener: &EventListener,
     ) -> Option<&impl Fn(&Event) -> bool> {
         self.app_state
             .view_states
             .get(&id)
-            .and_then(|s| s.event_listeners.get(listner))
+            .and_then(|s| s.event_listeners.get(listener))
     }
 
+    /// translate a window-positioned event to the local coordinate system of a view
     pub(crate) fn offset_event(&self, id: Id, event: Event) -> Event {
         let viewport = self
             .app_state
@@ -604,7 +608,9 @@ impl<'a> EventCx<'a> {
         }
     }
 
-    pub(crate) fn should_send(&mut self, id: Id, event: &Event) -> bool {
+    /// Used to determine if you should send an event to another view. This is basically a check for pointer events to see if the pointer is inside a child view and to make sure the current view isn't hidden or disabled.
+    /// Usually this is used if you want to propagate an event to a child view
+    pub fn should_send(&mut self, id: Id, event: &Event) -> bool {
         if self.app_state.is_hidden(id)
             || (self.app_state.is_disabled(&id) && !event.allow_disabled())
         {
@@ -639,7 +645,10 @@ pub struct InteractionState {
     pub(crate) using_keyboard_navigation: bool,
 }
 
+/// Holds current layout state for given position in the tree.
+/// You'll use this in the `View::layout` implementation to call `layout_node` on children and to access any font
 pub struct LayoutCx<'a> {
+    // TODO: seems like custom widgets like scroll, tab, text_input and more need access to this. Should we make this a public method on LayoutCx?
     pub(crate) app_state: &'a mut AppState,
     pub(crate) viewport: Option<Rect>,
     pub(crate) color: Option<Color>,
@@ -743,19 +752,24 @@ impl<'a> LayoutCx<'a> {
             .unwrap()
     }
 
+    /// Responsible for invoking the recalculation of style and thus the layout and
+    /// creating or updating the layout of child nodes within the closure.
+    ///
+    /// You should ensure that all children are laid out within the closure and/or whatever
+    /// other work you need to do to ensure that the layout for the returned nodes is correct.
     pub fn layout_node(
         &mut self,
         id: Id,
         has_children: bool,
         mut children: impl FnMut(&mut LayoutCx) -> Vec<Node>,
     ) -> Node {
-        let view = self.app_state.view_state(id);
-        let node = view.node;
-        if !view.request_layout {
+        let view_state = self.app_state.view_state(id);
+        let node = view_state.node;
+        if !view_state.request_layout {
             return node;
         }
-        view.request_layout = false;
-        let style = view.computed_style.to_taffy_style();
+        view_state.request_layout = false;
+        let style = view_state.computed_style.to_taffy_style();
         let _ = self.app_state.taffy.set_style(node, style);
 
         if has_children {
@@ -860,6 +874,7 @@ impl<'a> PaintCx<'a> {
         self.app_state.get_computed_style(id)
     }
 
+    /// Clip the drawing area to the given shape.
     pub fn clip(&mut self, shape: &impl Shape) {
         let rect = shape.bounding_box();
         let rect = if let Some(existing) = self.clip {
@@ -924,6 +939,7 @@ impl<'a> PaintCx<'a> {
     }
 }
 
+// TODO: should this be private?
 pub struct PaintState {
     pub(crate) renderer: Option<crate::renderer::Renderer>,
     handle: glazier::WindowHandle,
@@ -966,6 +982,8 @@ pub struct UpdateCx<'a> {
 }
 
 impl<'a> UpdateCx<'a> {
+    /// request that this node be laid out again
+    /// This will recursively request layout for all parents and set the `ChangeFlag::LAYOUT` at root
     pub fn request_layout(&mut self, id: Id) {
         self.app_state.request_layout(id);
     }
