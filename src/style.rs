@@ -30,6 +30,7 @@ pub use taffy::style::{
     AlignContent, AlignItems, Dimension, Display, FlexDirection, JustifyContent, Position,
 };
 use taffy::{
+    geometry::Size,
     prelude::Rect,
     style::{FlexWrap, LengthPercentage, LengthPercentageAuto, Style as TaffyStyle},
     style_helpers::TaffyZero,
@@ -255,6 +256,7 @@ define_styles!(
     text_overflow: TextOverflow = TextOverflow::Wrap,
     line_height nocb: Option<LineHeightValue> = None,
     aspect_ratio: Option<f32> = None,
+    gap: Size<LengthPercentage> = Size::zero(),
 );
 
 impl Style {
@@ -743,6 +745,7 @@ impl ComputedStyle {
                 right: self.inset_right,
                 bottom: self.inset_bottom,
             },
+            gap: self.gap,
             ..Default::default()
         }
     }
