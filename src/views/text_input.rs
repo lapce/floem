@@ -14,7 +14,7 @@ use floem_renderer::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::{peniko::Color, style::Style, view::View, AppContext};
+use crate::{peniko::Color, style::Style, view::View, ViewContext};
 
 use std::{
     any::Any,
@@ -98,7 +98,7 @@ pub enum Direction {
 }
 
 pub fn text_input(buffer: RwSignal<String>) -> TextInput {
-    let cx = AppContext::get_current();
+    let cx = ViewContext::get_current();
     let id = cx.new_id();
 
     create_effect(cx.scope, move |_| {

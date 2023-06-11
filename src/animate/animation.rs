@@ -7,7 +7,7 @@ use std::{borrow::BorrowMut, collections::HashMap, time::Duration, time::Instant
 use leptos_reactive::create_effect;
 use vello::peniko::Color;
 
-use crate::AppContext;
+use crate::ViewContext;
 
 #[derive(Clone, Debug)]
 pub struct Animation {
@@ -105,7 +105,7 @@ impl Animation {
     // }
 
     pub fn border_radius(self, border_radius_fn: impl Fn() -> f64 + 'static) -> Self {
-        let cx = AppContext::get_current();
+        let cx = ViewContext::get_current();
         create_effect(cx.scope, move |_| {
             let border_radius = border_radius_fn();
 
@@ -117,7 +117,7 @@ impl Animation {
     }
 
     pub fn color(self, color_fn: impl Fn() -> Color + 'static) -> Self {
-        let cx = AppContext::get_current();
+        let cx = ViewContext::get_current();
         create_effect(cx.scope, move |_| {
             let color = color_fn();
 
@@ -129,7 +129,7 @@ impl Animation {
     }
 
     pub fn border_color(self, bord_color_fn: impl Fn() -> Color + 'static) -> Self {
-        let cx = AppContext::get_current();
+        let cx = ViewContext::get_current();
         create_effect(cx.scope, move |_| {
             let border_color = bord_color_fn();
 
@@ -141,7 +141,7 @@ impl Animation {
     }
 
     pub fn background(self, bg_fn: impl Fn() -> Color + 'static) -> Self {
-        let cx = AppContext::get_current();
+        let cx = ViewContext::get_current();
         create_effect(cx.scope, move |_| {
             let background = bg_fn();
 
@@ -153,7 +153,7 @@ impl Animation {
     }
 
     pub fn width(self, width_fn: impl Fn() -> f64 + 'static) -> Self {
-        let cx = AppContext::get_current();
+        let cx = ViewContext::get_current();
         create_effect(cx.scope, move |_| {
             let to_width = width_fn();
 
@@ -165,7 +165,7 @@ impl Animation {
     }
 
     pub fn height(self, height_fn: impl Fn() -> f64 + 'static) -> Self {
-        let cx = AppContext::get_current();
+        let cx = ViewContext::get_current();
         create_effect(cx.scope, move |_| {
             let height = height_fn();
 

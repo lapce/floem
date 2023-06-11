@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 use vello::peniko::Color;
 
 use crate::{
-    app_handle::AppContext,
+    app_handle::ViewContext,
     id::Id,
     style::Style,
     view::{ChangeFlags, View},
@@ -23,7 +23,7 @@ pub struct Svg {
 }
 
 pub fn svg(svg_str: impl Fn() -> String + 'static) -> Svg {
-    let cx = AppContext::get_current();
+    let cx = ViewContext::get_current();
     let id = cx.new_id();
     create_effect(cx.scope, move |_| {
         let new_svg_str = svg_str();

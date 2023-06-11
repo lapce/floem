@@ -1,7 +1,7 @@
 use glazier::kurbo::{Rect, Size};
 
 use crate::{
-    app_handle::AppContext,
+    app_handle::ViewContext,
     id::Id,
     view::{ChangeFlags, View},
 };
@@ -12,7 +12,7 @@ pub struct Clip<V: View> {
 }
 
 pub fn clip<V: View>(child: impl FnOnce() -> V) -> Clip<V> {
-    let (id, child) = AppContext::new_id_with_child(child);
+    let (id, child) = ViewContext::new_id_with_child(child);
     Clip { id, child }
 }
 

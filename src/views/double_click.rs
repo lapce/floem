@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use crate::{
-    app_handle::AppContext,
+    app_handle::ViewContext,
     context::{EventCx, UpdateCx},
     event::Event,
     id::Id,
@@ -15,8 +15,8 @@ pub struct DoubleClick<V: View> {
 }
 
 pub fn double_click<V: View>(
-    cx: AppContext,
-    child: impl FnOnce(AppContext) -> V,
+    cx: ViewContext,
+    child: impl FnOnce(ViewContext) -> V,
     on_double_click: impl Fn() + 'static,
 ) -> DoubleClick<V> {
     let id = cx.new_id();

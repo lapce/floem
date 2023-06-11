@@ -11,8 +11,8 @@ use crate::menu::Menu;
 use crate::{
     animate::{AnimPropKind, AnimUpdateMsg, AnimatedProp, Animation, SizeUnit},
     context::{
-        AppContextStore, AppState, EventCallback, EventCx, LayoutCx, PaintCx, PaintState,
-        ResizeCallback, ResizeListener, UpdateCx, APP_CONTEXT_STORE,
+        AppState, EventCallback, EventCx, LayoutCx, PaintCx, PaintState, ResizeCallback,
+        ResizeListener, UpdateCx, ViewContextStore, VIEW_CONTEXT_STORE,
     },
     event::{Event, EventListener},
     ext_event::EXT_EVENT_HANDLER,
@@ -37,15 +37,15 @@ type DeferredUpdateMessages = HashMap<Id, Vec<(Id, Box<dyn Any>)>>;
 // Primarily used to mint and assign a unique ID to each view.
 // It also contains a constant scope which is used to create signals.
 #[derive(Copy, Clone)]
-pub struct AppContext {
+pub struct ViewContext {
     /// used to create new signals
     pub scope: Scope,
     pub id: Id,
 }
 
-impl AppContext {
+impl ViewContext {
     pub fn save() {
-        APP_CONTEXT_STORE.with(|store| {
+        VIEW_CONTEXT_STORE.with(|store| {
             let mut store = store.borrow_mut();
             if let Some(store) = store.as_mut() {
                 store.save();
@@ -53,13 +53,13 @@ impl AppContext {
         })
     }
 
-    pub fn set_current(cx: AppContext) {
-        APP_CONTEXT_STORE.with(|store| {
+    pub fn set_current(cx: ViewContext) {
+        VIEW_CONTEXT_STORE.with(|store| {
             let mut store = store.borrow_mut();
             if let Some(store) = store.as_mut() {
                 store.set_current(cx);
             } else {
-                *store = Some(AppContextStore {
+                *store = Some(ViewContextStore {
                     cx,
                     saved_cx: Vec::new(),
                 });
@@ -67,15 +67,15 @@ impl AppContext {
         })
     }
 
-    pub fn get_current() -> AppContext {
-        APP_CONTEXT_STORE.with(|store| {
+    pub fn get_current() -> ViewContext {
+        VIEW_CONTEXT_STORE.with(|store| {
             let store = store.borrow();
             store.as_ref().unwrap().cx
         })
     }
 
     pub fn restore() {
-        APP_CONTEXT_STORE.with(|store| {
+        VIEW_CONTEXT_STORE.with(|store| {
             let mut store = store.borrow_mut();
             if let Some(store) = store.as_mut() {
                 store.restore();
@@ -85,20 +85,20 @@ impl AppContext {
 
     /// Use this method if you are creating a `View` that has a child.
     ///
-    /// Ensures that the child is initialized with the "correct" `AppContext`
+    /// Ensures that the child is initialized with the "correct" `ViewContext`
     /// and that the context is restored after the child (and its children) are initialized.
-    /// For the child's `AppContext` to be "correct", the child's AppContext's `Id`  must bet set to the parent `View`'s `Id`.
+    /// For the child's `ViewContext` to be "correct", the child's ViewContext's `Id`  must bet set to the parent `View`'s `Id`.
     ///
     /// This method returns the `Id` that should be attached to the parent `View` along with the initialized child.
     pub fn new_id_with_child<V>(child: impl FnOnce() -> V) -> (Id, V) {
-        let cx = AppContext::get_current();
+        let cx = ViewContext::get_current();
         let id = cx.new_id();
         let mut child_cx = cx;
         child_cx.id = id;
-        AppContext::save();
-        AppContext::set_current(child_cx);
+        ViewContext::save();
+        ViewContext::set_current(child_cx);
         let child = child();
-        AppContext::restore();
+        ViewContext::restore();
         (id, child)
     }
 
@@ -214,12 +214,12 @@ impl<V: View> Drop for AppHandle<V> {
 
 impl<V: View> AppHandle<V> {
     pub fn new(scope: Scope, app_logic: impl FnOnce() -> V) -> Self {
-        let cx = AppContext {
+        let cx = ViewContext {
             scope,
             id: Id::next(),
         };
 
-        AppContext::set_current(cx);
+        ViewContext::set_current(cx);
 
         let view = app_logic();
         Self {

@@ -17,11 +17,11 @@ use floem::{
         container, container_box, label, scroll, stack, tab, virtual_list, Decorators,
         VirtualListDirection, VirtualListItemSize,
     },
-    AppContext,
+    ViewContext,
 };
 
 fn app_view() -> impl View {
-    let cx = AppContext::get_current();
+    let cx = ViewContext::get_current();
     let tabs: im::Vector<&str> = vec!["Label", "Button", "Checkbox", "Input", "List", "RichText"]
         .into_iter()
         .collect();

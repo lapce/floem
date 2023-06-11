@@ -10,7 +10,7 @@ use floem::{
         checkbox, container, label, scroll, stack, virtual_list, Decorators, VirtualListDirection,
         VirtualListItemSize,
     },
-    AppContext,
+    ViewContext,
 };
 
 use crate::form::{form, form_item};
@@ -25,7 +25,7 @@ pub fn virt_list_view() -> impl View {
 }
 
 fn simple_list() -> impl View {
-    let cx = AppContext::get_current();
+    let cx = ViewContext::get_current();
     let long_list: im::Vector<i32> = (0..100).collect();
     let (long_list, _set_long_list) = create_signal(cx.scope, long_list);
     scroll(move || {
@@ -42,7 +42,7 @@ fn simple_list() -> impl View {
 }
 
 fn enhanced_list() -> impl View {
-    let cx = AppContext::get_current();
+    let cx = ViewContext::get_current();
     let long_list: im::Vector<i32> = (0..100).collect();
     let (long_list, set_long_list) = create_signal(cx.scope, long_list);
 

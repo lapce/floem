@@ -1,7 +1,7 @@
 use glazier::kurbo::Rect;
 
 use crate::{
-    app_handle::AppContext,
+    app_handle::ViewContext,
     id::Id,
     view::{ChangeFlags, View},
 };
@@ -12,7 +12,7 @@ pub struct Container<V: View> {
 }
 
 pub fn container<V: View>(child: impl FnOnce() -> V) -> Container<V> {
-    let (id, child) = AppContext::new_id_with_child(child);
+    let (id, child) = ViewContext::new_id_with_child(child);
     Container { id, child }
 }
 

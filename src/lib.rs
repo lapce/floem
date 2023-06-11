@@ -26,7 +26,7 @@
 //!
 //! ```rust,no_run
 //! pub fn label_and_input() -> impl View {
-//!     let cx = AppContext::get_current();
+//!     let cx = ViewContext::get_current();
 //!     let text = create_rw_signal(cx.scope, "Hello world".to_string());
 //!     stack(|| (text_input(text), label(|| text.get())))
 //!         .style(|| Style::BASE.padding_px(10.0))
@@ -133,7 +133,7 @@ pub mod views;
 pub mod window;
 
 pub use app::{launch, AppEvent, Application};
-pub use app_handle::AppContext;
+pub use app_handle::ViewContext;
 pub use floem_renderer::cosmic_text;
 pub use floem_renderer::Renderer;
 pub use glazier;

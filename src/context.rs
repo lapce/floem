@@ -26,24 +26,24 @@ use crate::{
     menu::Menu,
     responsive::{GridBreakpoints, ScreenSize, ScreenSizeBp},
     style::{ComputedStyle, CursorStyle, Style},
-    AppContext,
+    ViewContext,
 };
 
 thread_local! {
-    pub(crate) static APP_CONTEXT_STORE: std::cell::RefCell<Option<AppContextStore>> = Default::default();
+    pub(crate) static VIEW_CONTEXT_STORE: std::cell::RefCell<Option<ViewContextStore>> = Default::default();
 }
 
-pub struct AppContextStore {
-    pub cx: AppContext,
-    pub saved_cx: Vec<AppContext>,
+pub struct ViewContextStore {
+    pub cx: ViewContext,
+    pub saved_cx: Vec<ViewContext>,
 }
 
-impl AppContextStore {
+impl ViewContextStore {
     pub fn save(&mut self) {
         self.saved_cx.push(self.cx);
     }
 
-    pub fn set_current(&mut self, cx: AppContext) {
+    pub fn set_current(&mut self, cx: ViewContext) {
         self.cx = cx;
     }
 

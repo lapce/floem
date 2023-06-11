@@ -11,7 +11,7 @@ use taffy::{
 use vello::peniko::Color;
 
 use crate::{
-    app_handle::AppContext,
+    app_handle::ViewContext,
     context::{AppState, LayoutCx, PaintCx},
     event::Event,
     id::Id,
@@ -61,7 +61,7 @@ pub struct Scroll<V: View> {
 }
 
 pub fn scroll<V: View>(child: impl FnOnce() -> V) -> Scroll<V> {
-    let (id, child) = AppContext::new_id_with_child(child);
+    let (id, child) = ViewContext::new_id_with_child(child);
     Scroll {
         id,
         child,
@@ -80,7 +80,7 @@ pub fn scroll<V: View>(child: impl FnOnce() -> V) -> Scroll<V> {
 
 impl<V: View> Scroll<V> {
     pub fn scroll_bar_color(self, color: impl Fn() -> Color + 'static) -> Self {
-        let cx = AppContext::get_current();
+        let cx = ViewContext::get_current();
         let id = self.id;
         create_effect(cx.scope, move |_| {
             let color = color();
@@ -96,7 +96,7 @@ impl<V: View> Scroll<V> {
     }
 
     pub fn on_ensure_visible(self, to: impl Fn() -> Rect + 'static) -> Self {
-        let cx = AppContext::get_current();
+        let cx = ViewContext::get_current();
         let id = self.id;
         create_effect(cx.scope, move |_| {
             let rect = to();
@@ -107,7 +107,7 @@ impl<V: View> Scroll<V> {
     }
 
     pub fn on_scroll_delta(self, delta: impl Fn() -> Vec2 + 'static) -> Self {
-        let cx = AppContext::get_current();
+        let cx = ViewContext::get_current();
         let id = self.id;
         create_effect(cx.scope, move |_| {
             let delta = delta();
@@ -118,7 +118,7 @@ impl<V: View> Scroll<V> {
     }
 
     pub fn on_scroll_to(self, origin: impl Fn() -> Option<Point> + 'static) -> Self {
-        let cx = AppContext::get_current();
+        let cx = ViewContext::get_current();
         let id = self.id;
         create_effect(cx.scope, move |_| {
             if let Some(origin) = origin() {
@@ -130,7 +130,7 @@ impl<V: View> Scroll<V> {
     }
 
     pub fn hide_bar(self, value: impl Fn() -> bool + 'static) -> Self {
-        let cx = AppContext::get_current();
+        let cx = ViewContext::get_current();
         let id = self.id;
         create_effect(cx.scope, move |_| {
             id.update_state(ScrollState::HiddenBar(value()), false);

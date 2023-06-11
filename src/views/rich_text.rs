@@ -6,7 +6,7 @@ use leptos_reactive::create_effect;
 use taffy::{prelude::Node, style::Dimension};
 
 use crate::{
-    app_handle::AppContext,
+    app_handle::ViewContext,
     context::{EventCx, UpdateCx},
     event::Event,
     id::Id,
@@ -21,7 +21,7 @@ pub struct RichText {
 }
 
 pub fn rich_text(text_layout: impl Fn() -> TextLayout + 'static) -> RichText {
-    let cx = AppContext::get_current();
+    let cx = ViewContext::get_current();
     let id = cx.new_id();
     let text = text_layout();
     create_effect(cx.scope, move |_| {

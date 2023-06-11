@@ -23,7 +23,7 @@
 //!
 //! ```rust,no_run
 //! pub fn label_and_input() -> impl View {
-//!     let cx = AppContext::get_current();
+//!     let cx = ViewContext::get_current();
 //!     let text = create_rw_signal(cx.scope, "Hello world".to_string());
 //!     stack(|| (text_input(text), label(|| text.get())))
 //!         .style(|| Style::BASE.padding_px(10.0))
@@ -49,7 +49,7 @@
 //! {
 //!     let text = create_rw_signal(cx.scope, "World!".to_string());
 //!     // share the signal between the two children
-//!     let (id, child) = AppContext::new_id_with_child(stack(|| (text_input(text)), new_child(text.read_only()));
+//!     let (id, child) = ViewContext::new_id_with_child(stack(|| (text_input(text)), new_child(text.read_only()));
 //!     Parent { id, text, child }
 //! }
 //!
@@ -67,7 +67,7 @@
 //!
 //! // Creates a new child view with the given state (a read only signal)
 //! fn child(text: ReadSignal<String>) -> Child {
-//!     let (id, label) = AppContext::new_id_with_child(|| label(move || format!("Hello, {}", text.get()));
+//!     let (id, label) = ViewContext::new_id_with_child(|| label(move || format!("Hello, {}", text.get()));
 //!     Child { id, label }
 //! }
 //!
