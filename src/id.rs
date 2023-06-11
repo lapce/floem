@@ -16,9 +16,12 @@ use crate::{
 };
 
 thread_local! {
-    pub(crate) static IDPATHS: RefCell<HashMap<Id,IdPath>> = Default::default();
-    pub(crate) static IDPATHS_CHILDREN: RefCell<HashMap<Id, Vec<Id>>> = Default::default();
+    pub(crate) static ID_PATHS: RefCell<HashMap<Id,IdPath>> = Default::default();
+    /// primarily for debug_tree and tab navigation
+    pub(crate) static ID_PATHS_CHILDREN: RefCell<HashMap<Id, Vec<Id>>> = Default::default();
+    /// primarily for debug_tree and tab navigation
     pub(crate) static NEXT_SIBLING: RefCell<HashMap<Id, Option<Id>>> = Default::default();
+    /// primarily for debug_tree and tab navigation
     pub(crate) static PREVIOUS_SIBLING: RefCell<HashMap<Id, Option<Id>>> = Default::default();
 }
 
@@ -48,13 +51,13 @@ impl Id {
 
     pub fn new(&self) -> Id {
         let mut id_path =
-            IDPATHS.with(|id_paths| id_paths.borrow().get(self).cloned().unwrap_or_default());
+            ID_PATHS.with(|id_paths| id_paths.borrow().get(self).cloned().unwrap_or_default());
         let new_id = Self::next();
         id_path.0.push(new_id);
-        IDPATHS.with(|id_paths| {
+        ID_PATHS.with(|id_paths| {
             id_paths.borrow_mut().insert(new_id, id_path);
         });
-        IDPATHS_CHILDREN.with(|children| {
+        ID_PATHS_CHILDREN.with(|children| {
             let mut children = children.borrow_mut();
             let children = children.entry(*self).or_default();
             if let Some(previous_child) = children.last() {
@@ -75,7 +78,7 @@ impl Id {
     }
 
     pub fn parent(&self) -> Option<Id> {
-        IDPATHS.with(|id_paths| {
+        ID_PATHS.with(|id_paths| {
             id_paths.borrow().get(self).and_then(|id_path| {
                 let id_path = &id_path.0;
                 let len = id_path.len();
@@ -101,7 +104,7 @@ impl Id {
 
     /// A list of all the direct children of this view (no deep nesting)
     pub fn direct_children(&self) -> Vec<Id> {
-        IDPATHS_CHILDREN.with(|idpaths_children| {
+        ID_PATHS_CHILDREN.with(|idpaths_children| {
             idpaths_children
                 .borrow()
                 .get(self)
@@ -112,8 +115,8 @@ impl Id {
 
     /// The first child with this view as a parent. The depth increases only by 1.
     pub fn first_child(&self) -> Option<Id> {
-        IDPATHS_CHILDREN.with(|idpaths_children| {
-            idpaths_children
+        ID_PATHS_CHILDREN.with(|id_paths_children| {
+            id_paths_children
                 .borrow()
                 .get(self)
                 .and_then(|children| children.first())
@@ -123,8 +126,8 @@ impl Id {
 
     /// The last child with this view as a parent. The depth increases only by 1.
     pub fn last_child(&self) -> Option<Id> {
-        IDPATHS_CHILDREN.with(|idpaths_children| {
-            idpaths_children
+        ID_PATHS_CHILDREN.with(|id_paths_children| {
+            id_paths_children
                 .borrow()
                 .get(self)
                 .and_then(|children| children.last())
@@ -161,16 +164,16 @@ impl Id {
         last_child
     }
 
-    pub fn all_chilren(&self) -> Vec<Id> {
+    pub fn all_children(&self) -> Vec<Id> {
         let mut children = Vec::new();
         let mut parents = Vec::new();
         parents.push(*self);
 
-        IDPATHS_CHILDREN.with(|idpaths_children| {
-            let idpaths_children = idpaths_children.borrow();
+        ID_PATHS_CHILDREN.with(|id_paths_children| {
+            let id_paths_children = id_paths_children.borrow();
             while !parents.is_empty() {
                 let parent = parents.pop().unwrap();
-                if let Some(c) = idpaths_children.get(&parent) {
+                if let Some(c) = id_paths_children.get(&parent) {
                     for child in c {
                         children.push(*child);
                         parents.push(*child);
@@ -181,12 +184,12 @@ impl Id {
         children
     }
 
-    pub fn remove_idpath(&self) {
-        let id_path = IDPATHS.with(|id_paths| id_paths.borrow_mut().remove(self));
+    pub fn remove_id_path(&self) {
+        let id_path = ID_PATHS.with(|id_paths| id_paths.borrow_mut().remove(self));
         if let Some(id_path) = id_path.as_ref() {
             if let Some(parent) = id_path.0.get(id_path.0.len().saturating_sub(2)) {
-                IDPATHS_CHILDREN.with(|idpaths_children| {
-                    if let Some(children) = idpaths_children.borrow_mut().get_mut(parent) {
+                ID_PATHS_CHILDREN.with(|id_paths_children| {
+                    if let Some(children) = id_paths_children.borrow_mut().get_mut(parent) {
                         let index = children.iter().position(|&id| id == *self).unwrap();
                         children.remove(index);
                         let previous_child = index.checked_sub(1).map(|index| children[index]);
@@ -207,14 +210,14 @@ impl Id {
                 });
             }
         }
-        IDPATHS_CHILDREN.with(|idpaths_children| {
-            idpaths_children.borrow_mut().remove(self);
+        ID_PATHS_CHILDREN.with(|id_paths_children| {
+            id_paths_children.borrow_mut().remove(self);
         });
     }
 
     pub fn root_id(&self) -> Option<Id> {
-        IDPATHS.with(|idpaths| {
-            idpaths
+        ID_PATHS.with(|id_paths| {
+            id_paths
                 .borrow()
                 .get(self)
                 .and_then(|path| path.0.first().copied())
@@ -344,7 +347,7 @@ impl Id {
             UPDATE_MESSAGES.with(|msgs| {
                 let mut msgs = msgs.borrow_mut();
                 let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::KeyboardNavigatable { id: *self })
+                msgs.push(UpdateMessage::KeyboardNavigable { id: *self })
             })
         }
     }

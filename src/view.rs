@@ -56,6 +56,15 @@ pub trait View {
         ChangeFlags::empty()
     }
 
+    /// Use this method to react to changes in view-related state.
+    /// You will usually send state to this hook manually using the `View`'s `Id` handle
+    ///
+    /// ```rust
+    /// self.id.update_state(SomeState)
+    /// ```
+    ///
+    /// You are in charge of downcasting the state to the expected type and you're required to return
+    /// indicating if you'd like a layout or paint pass to be scheduled.
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags;
 
     fn layout_main(&mut self, cx: &mut LayoutCx) -> Node {
@@ -234,7 +243,7 @@ pub trait View {
                     let now_focused = rect.contains(event.pos);
 
                     if now_focused {
-                        if cx.app_state.keyboard_navigatable.contains(&id) {
+                        if cx.app_state.keyboard_navigable.contains(&id) {
                             // if the view can be focused, we update the focus
                             cx.app_state.update_focus(id, false);
                         }
@@ -407,6 +416,7 @@ pub trait View {
         false
     }
 
+    /// Implement this to handle
     fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool;
 
     /// The entry point for painting a view. You shouldn't need to implement this yourself. Instead, implement [`View::paint`].
@@ -572,7 +582,7 @@ pub trait View {
 
         let mut new_focus = tree_iter(start);
         while new_focus != start
-            && (!app_state.keyboard_navigatable.contains(&new_focus)
+            && (!app_state.keyboard_navigable.contains(&new_focus)
                 || app_state.is_disabled(&new_focus)
                 || app_state.is_hidden_recursive(new_focus))
         {
