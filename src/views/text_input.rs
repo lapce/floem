@@ -583,7 +583,7 @@ impl View for TextInput {
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
-            self.is_focused = cx.app_state.is_focused(&self.id);
+            self.is_focused = cx.app_state().is_focused(&self.id);
             if self.text_layout_changed(cx) {
                 self.font_size = cx.current_font_size().unwrap_or(DEFAULT_FONT_SIZE);
                 self.font_family = cx.current_font_family().map(|s| s.to_string());
@@ -596,7 +596,7 @@ impl View for TextInput {
 
             if self.text_node.is_none() {
                 self.text_node = Some(
-                    cx.app_state
+                    cx.app_state_mut()
                         .taffy
                         .new_leaf(taffy::style::Style::DEFAULT)
                         .unwrap(),
@@ -609,7 +609,7 @@ impl View for TextInput {
                 .height(Dimension::Points(self.height))
                 .compute(&ComputedStyle::default())
                 .to_taffy_style();
-            let _ = cx.app_state.taffy.set_style(text_node, style);
+            let _ = cx.app_state_mut().taffy.set_style(text_node, style);
 
             vec![text_node]
         })

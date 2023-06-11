@@ -171,8 +171,8 @@ pub trait View {
         cx.save();
 
         let view_style = self.view_style();
-        cx.app_state.compute_style(self.id(), view_style);
-        let style = cx.app_state.get_computed_style(self.id()).clone();
+        cx.app_state_mut().compute_style(self.id(), view_style);
+        let style = cx.app_state_mut().get_computed_style(self.id()).clone();
 
         if style.color.is_some() {
             cx.color = style.color;
@@ -214,14 +214,14 @@ pub trait View {
     ///
     /// You shouldn't need to implement this.
     fn compute_layout_main(&mut self, cx: &mut LayoutCx) -> Rect {
-        if cx.app_state.is_hidden(self.id()) {
+        if cx.app_state().is_hidden(self.id()) {
             return Rect::ZERO;
         }
 
         cx.save();
 
         let layout = cx
-            .app_state
+            .app_state()
             .get_layout(self.id())
             .unwrap_or(taffy::layout::Layout::new());
         let origin = Point::new(layout.location.x as f64, layout.location.y as f64);
@@ -232,7 +232,7 @@ pub trait View {
             ))
         });
         let viewport = cx
-            .app_state
+            .app_state()
             .view_states
             .get(&self.id())
             .and_then(|view| view.viewport);
@@ -277,7 +277,7 @@ pub trait View {
         } else {
             layout_rect
         };
-        cx.app_state.view_state(self.id()).layout_rect = layout_rect;
+        cx.app_state_mut().view_state(self.id()).layout_rect = layout_rect;
 
         cx.restore();
 

@@ -82,7 +82,7 @@ impl View for RichText {
 
             if self.text_node.is_none() {
                 self.text_node = Some(
-                    cx.app_state
+                    cx.app_state_mut()
                         .taffy
                         .new_leaf(taffy::style::Style::DEFAULT)
                         .unwrap(),
@@ -95,7 +95,7 @@ impl View for RichText {
                 .height(Dimension::Points(height))
                 .compute(&ComputedStyle::default())
                 .to_taffy_style();
-            let _ = cx.app_state.taffy.set_style(text_node, style);
+            let _ = cx.app_state_mut().taffy.set_style(text_node, style);
             vec![text_node]
         })
     }
