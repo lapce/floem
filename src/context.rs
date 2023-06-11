@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    default,
     ops::{Deref, DerefMut},
     time::Duration,
 };
@@ -648,8 +649,7 @@ pub struct InteractionState {
 /// Holds current layout state for given position in the tree.
 /// You'll use this in the `View::layout` implementation to call `layout_node` on children and to access any font
 pub struct LayoutCx<'a> {
-    // TODO: seems like custom widgets like scroll, tab, text_input and more need access to this. Should we make this a public method on LayoutCx?
-    pub(crate) app_state: &'a mut AppState,
+    app_state: &'a mut AppState,
     pub(crate) viewport: Option<Rect>,
     pub(crate) color: Option<Color>,
     pub(crate) font_size: Option<f32>,
@@ -669,6 +669,28 @@ pub struct LayoutCx<'a> {
 }
 
 impl<'a> LayoutCx<'a> {
+    pub(crate) fn new(app_state: &'a mut AppState) -> Self {
+        Self {
+            app_state,
+            viewport: None,
+            color: None,
+            font_size: None,
+            font_family: None,
+            font_weight: None,
+            font_style: None,
+            line_height: None,
+            window_origin: Point::ZERO,
+            saved_viewports: Vec::new(),
+            saved_colors: Vec::new(),
+            saved_font_sizes: Vec::new(),
+            saved_font_families: Vec::new(),
+            saved_font_weights: Vec::new(),
+            saved_font_styles: Vec::new(),
+            saved_line_heights: Vec::new(),
+            saved_window_origins: Vec::new(),
+        }
+    }
+
     pub(crate) fn clear(&mut self) {
         self.viewport = None;
         self.font_size = None;
@@ -703,6 +725,14 @@ impl<'a> LayoutCx<'a> {
         self.font_style = self.saved_font_styles.pop().unwrap_or_default();
         self.line_height = self.saved_line_heights.pop().unwrap_or_default();
         self.window_origin = self.saved_window_origins.pop().unwrap_or_default();
+    }
+
+    pub fn app_state_mut(&mut self) -> &mut AppState {
+        self.app_state
+    }
+
+    pub fn app_state(&self) -> &AppState {
+        self.app_state
     }
 
     pub fn current_font_size(&self) -> Option<f32> {

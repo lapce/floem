@@ -513,7 +513,7 @@ impl<V: View> View for Scroll<V> {
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
             let child_id = self.child.id();
-            let mut child_view = cx.app_state.view_state(child_id);
+            let mut child_view = cx.app_state_mut().view_state(child_id);
             child_view.style.position = StyleValue::Val(Position::Absolute);
             let child_node = self.child.layout_main(cx);
 
@@ -525,19 +525,26 @@ impl<V: View> View for Scroll<V> {
                 .compute(&ComputedStyle::default())
                 .to_taffy_style();
             if self.virtual_node.is_none() {
-                self.virtual_node =
-                    Some(cx.app_state.taffy.new_leaf(virtual_style.clone()).unwrap());
+                self.virtual_node = Some(
+                    cx.app_state_mut()
+                        .taffy
+                        .new_leaf(virtual_style.clone())
+                        .unwrap(),
+                );
             }
             let virtual_node = self.virtual_node.unwrap();
-            let _ = cx.app_state.taffy.set_style(virtual_node, virtual_style);
+            let _ = cx
+                .app_state_mut()
+                .taffy
+                .set_style(virtual_node, virtual_style);
 
             vec![virtual_node, child_node]
         })
     }
 
     fn compute_layout(&mut self, cx: &mut LayoutCx) -> Option<Rect> {
-        self.update_size(cx.app_state);
-        self.clamp_child_viewport(cx.app_state, self.child_viewport);
+        self.update_size(cx.app_state_mut());
+        self.clamp_child_viewport(cx.app_state_mut(), self.child_viewport);
         self.child.compute_layout_main(cx);
         None
     }

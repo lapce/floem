@@ -233,27 +233,10 @@ impl<V: View> AppHandle<V> {
     }
 
     fn layout(&mut self) {
-        let mut cx = LayoutCx {
-            app_state: &mut self.app_state,
-            viewport: None,
-            color: None,
-            font_size: None,
-            font_family: None,
-            font_weight: None,
-            font_style: None,
-            line_height: None,
-            window_origin: Point::ZERO,
-            saved_viewports: Vec::new(),
-            saved_colors: Vec::new(),
-            saved_font_sizes: Vec::new(),
-            saved_font_families: Vec::new(),
-            saved_font_weights: Vec::new(),
-            saved_font_styles: Vec::new(),
-            saved_line_heights: Vec::new(),
-            saved_window_origins: Vec::new(),
-        };
-        cx.app_state.root = Some(self.view.layout_main(&mut cx));
-        cx.app_state.compute_layout();
+        let mut cx = LayoutCx::new(&mut self.app_state);
+
+        cx.app_state_mut().root = Some(self.view.layout_main(&mut cx));
+        cx.app_state_mut().compute_layout();
 
         cx.clear();
         self.view.compute_layout_main(&mut cx);

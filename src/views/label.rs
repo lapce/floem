@@ -155,7 +155,7 @@ impl View for Label {
             let (width, height) = if self.label.is_empty() {
                 (0.0, cx.current_font_size().unwrap_or(14.0))
             } else {
-                let text_overflow = cx.app_state.get_computed_style(self.id).text_overflow;
+                let text_overflow = cx.app_state_mut().get_computed_style(self.id).text_overflow;
                 if self.color != cx.color
                     || self.font_size != cx.current_font_size()
                     || self.font_family.as_deref() != cx.current_font_family()
@@ -192,7 +192,7 @@ impl View for Label {
 
             if self.text_node.is_none() {
                 self.text_node = Some(
-                    cx.app_state
+                    cx.app_state_mut()
                         .taffy
                         .new_leaf(taffy::style::Style::DEFAULT)
                         .unwrap(),
@@ -205,7 +205,7 @@ impl View for Label {
                 .height(Dimension::Points(height))
                 .compute(&ComputedStyle::default())
                 .to_taffy_style();
-            let _ = cx.app_state.taffy.set_style(text_node, style);
+            let _ = cx.app_state_mut().taffy.set_style(text_node, style);
 
             vec![text_node]
         })
@@ -217,7 +217,7 @@ impl View for Label {
         }
 
         let layout = cx.get_layout(self.id()).unwrap();
-        let style = cx.app_state.get_computed_style(self.id);
+        let style = cx.app_state_mut().get_computed_style(self.id);
         let text_overflow = style.text_overflow;
         let padding_left = match style.padding_left {
             taffy::style::LengthPercentage::Points(padding) => padding,
@@ -282,11 +282,11 @@ impl View for Label {
                     text_layout.set_size(available_width, f32::MAX);
                     self.available_text_layout = Some(text_layout);
                     self.available_width = Some(available_width);
-                    cx.app_state.request_layout(self.id());
+                    cx.app_state_mut().request_layout(self.id());
                 }
             } else {
                 if self.available_text_layout.is_some() {
-                    cx.app_state.request_layout(self.id());
+                    cx.app_state_mut().request_layout(self.id());
                 }
                 self.available_text = None;
                 self.available_width = None;

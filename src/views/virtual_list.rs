@@ -289,7 +289,7 @@ where
             };
             if self.before_node.is_none() {
                 self.before_node = Some(
-                    cx.app_state
+                    cx.app_state_mut()
                         .taffy
                         .new_leaf(taffy::style::Style::DEFAULT)
                         .unwrap(),
@@ -297,7 +297,7 @@ where
             }
             if self.after_node.is_none() {
                 self.after_node = Some(
-                    cx.app_state
+                    cx.app_state_mut()
                         .taffy
                         .new_leaf(taffy::style::Style::DEFAULT)
                         .unwrap(),
@@ -305,14 +305,14 @@ where
             }
             let before_node = self.before_node.unwrap();
             let after_node = self.after_node.unwrap();
-            let _ = cx.app_state.taffy.set_style(
+            let _ = cx.app_state_mut().taffy.set_style(
                 before_node,
                 taffy::style::Style {
                     size: before_size,
                     ..Default::default()
                 },
             );
-            let _ = cx.app_state.taffy.set_style(
+            let _ = cx.app_state_mut().taffy.set_style(
                 after_node,
                 taffy::style::Style {
                     size: after_size,
@@ -328,7 +328,7 @@ where
     fn compute_layout(&mut self, cx: &mut LayoutCx) -> Option<Rect> {
         let viewport = cx.viewport.unwrap_or_default();
         if self.viewport != viewport {
-            let layout = cx.app_state.get_layout(self.id).unwrap();
+            let layout = cx.app_state().get_layout(self.id).unwrap();
             let size = Size::new(layout.size.width as f64, layout.size.height as f64);
 
             self.viewport = viewport;
