@@ -231,6 +231,8 @@ define_styles!(
     border_right: f32 = 0.0,
     border_bottom: f32 = 0.0,
     border_radius: f32 = 0.0,
+    outline_color: Color = Color::TRANSPARENT,
+    outline: f32 = 0.0,
     border_color: Color = Color::BLACK,
     padding_left: LengthPercentage = LengthPercentage::ZERO,
     padding_top: LengthPercentage = LengthPercentage::ZERO,
