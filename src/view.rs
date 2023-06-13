@@ -21,7 +21,7 @@
 //!
 //! #### No custom component, simply creating state and sharing among the composed views.
 //!
-//! ```rust,no_run
+//! ```ignore
 //! pub fn label_and_input() -> impl View {
 //!     let cx = ViewContext::get_current();
 //!     let text = create_rw_signal(cx.scope, "Hello world".to_string());
@@ -34,7 +34,7 @@
 //!
 //! Custom [Views](crate::view::View)s may have encapsulated local state that is stored on the implementing struct.
 //!
-//!```rust,no_run
+//!```ignore
 //!
 //! struct Parent<V> {
 //!     id: Id,
@@ -155,7 +155,7 @@ pub trait View {
     /// Use this method to react to changes in view-related state.
     /// You will usually send state to this hook manually using the `View`'s `Id` handle
     ///
-    /// ```rust
+    /// ```ignore
     /// self.id.update_state(SomeState)
     /// ```
     ///

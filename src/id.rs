@@ -483,3 +483,33 @@ impl Id {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Id;
+
+    #[test]
+    fn id_all_children() {
+        let root_id = Id::next();
+        let id_1 = root_id.new();
+        let id_2 = root_id.new();
+        let id_3 = root_id.new();
+        let id_4 = root_id.new();
+        let id_1_1 = id_1.new();
+        let id_1_2 = id_1.new();
+        let id_1_3 = id_1.new();
+        let id_2_1 = id_2.new();
+        let id_2_2 = id_2.new();
+        let id_2_3 = id_2.new();
+        let id_1_1_1 = id_1_1.new();
+        let id_1_1_2 = id_1_1.new();
+        let id_1_1_3 = id_1_1.new();
+        assert_eq!(
+            root_id.all_children(),
+            vec![
+                id_1, id_2, id_3, id_4, id_2_1, id_2_2, id_2_3, id_1_1, id_1_2, id_1_3, id_1_1_1,
+                id_1_1_2, id_1_1_3,
+            ]
+        )
+    }
+}

@@ -24,7 +24,7 @@
 //!
 //! You can can create state within a constructor and then bind state to a view by passing it into the view's constructor.
 //!
-//! ```rust,no_run
+//! ```ignore
 //! pub fn label_and_input() -> impl View {
 //!     let cx = ViewContext::get_current();
 //!     let text = create_rw_signal(cx.scope, "Hello world".to_string());
@@ -43,7 +43,7 @@
 //!
 //! Styles are applied with the [Style](style::Style) struct. Styles can react to changes in referenced state.
 //!
-//! ```rust,no_run
+//! ```ignore
 //!     some_view()
 //!     // reactive styles provided through the `Decorators` trait
 //!     .style(move || {

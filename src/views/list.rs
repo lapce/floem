@@ -339,6 +339,7 @@ fn remove_index<V: View>(
         id.remove_id_path();
         app_state.view_states.remove(&id);
     }
+    app_state.view_states.shrink_to_fit();
 
     disposer.dispose();
     Some(())

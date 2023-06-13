@@ -65,8 +65,7 @@ pub fn label(label: impl Fn() -> String + 'static) -> Label {
 }
 
 impl Label {
-    fn set_text_layout(&mut self) {
-        let mut text_layout = TextLayout::new();
+    fn get_attrs_list(&self) -> AttrsList {
         let mut attrs = Attrs::new().color(self.color.unwrap_or(Color::BLACK));
         if let Some(font_size) = self.font_size {
             attrs = attrs.font_size(font_size);
@@ -87,32 +86,18 @@ impl Label {
         if let Some(line_height) = self.line_height {
             attrs = attrs.line_height(line_height);
         }
-        text_layout.set_text(self.label.as_str(), AttrsList::new(attrs));
+        AttrsList::new(attrs)
+    }
+
+    fn set_text_layout(&mut self) {
+        let mut text_layout = TextLayout::new();
+        let attrs_list = self.get_attrs_list();
+        text_layout.set_text(self.label.as_str(), attrs_list.clone());
         self.text_layout = Some(text_layout);
 
         if let Some(new_text) = self.available_text.as_ref() {
             let mut text_layout = TextLayout::new();
-            let mut attrs = Attrs::new().color(self.color.unwrap_or(Color::BLACK));
-            if let Some(font_size) = self.font_size {
-                attrs = attrs.font_size(font_size);
-            }
-            if let Some(font_style) = self.font_style {
-                attrs = attrs.style(font_style);
-            }
-            let font_family = self.font_family.as_ref().map(|font_family| {
-                let family: Vec<FamilyOwned> = FamilyOwned::parse_list(font_family).collect();
-                family
-            });
-            if let Some(font_family) = font_family.as_ref() {
-                attrs = attrs.family(font_family);
-            }
-            if let Some(font_weight) = self.font_weight {
-                attrs = attrs.weight(font_weight);
-            }
-            if let Some(line_height) = self.line_height {
-                attrs = attrs.line_height(line_height);
-            }
-            text_layout.set_text(new_text, AttrsList::new(attrs));
+            text_layout.set_text(new_text, attrs_list);
             self.available_text_layout = Some(text_layout);
         }
     }
@@ -236,25 +221,7 @@ impl View for Label {
             if width > available_width {
                 if self.available_width != Some(available_width) {
                     let mut dots_text = TextLayout::new();
-                    let mut attrs = Attrs::new().color(self.color.unwrap_or(Color::BLACK));
-                    if let Some(font_size) = self.font_size {
-                        attrs = attrs.font_size(font_size);
-                    }
-                    if let Some(font_style) = self.font_style {
-                        attrs = attrs.style(font_style);
-                    }
-                    let font_family = self.font_family.as_ref().map(|font_family| {
-                        let family: Vec<FamilyOwned> =
-                            FamilyOwned::parse_list(font_family).collect();
-                        family
-                    });
-                    if let Some(font_family) = font_family.as_ref() {
-                        attrs = attrs.family(font_family);
-                    }
-                    if let Some(font_weight) = self.font_weight {
-                        attrs = attrs.weight(font_weight);
-                    }
-                    dots_text.set_text("...", AttrsList::new(attrs));
+                    dots_text.set_text("...", self.get_attrs_list());
 
                     let dots_width = dots_text.size().width as f32;
                     let width_left = available_width - dots_width;
