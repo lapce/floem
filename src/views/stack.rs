@@ -23,12 +23,20 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
         self.id
     }
 
-    fn child(&mut self, id: Id) -> Option<&mut dyn View> {
+    fn child(&self, id: Id) -> Option<&dyn View> {
         self.children.child(id)
     }
 
-    fn children(&mut self) -> Vec<&mut dyn View> {
+    fn child_mut(&mut self, id: Id) -> Option<&mut dyn View> {
+        self.children.child_mut(id)
+    }
+
+    fn children(&self) -> Vec<&dyn View> {
         self.children.children()
+    }
+
+    fn children_mut(&mut self) -> Vec<&mut dyn View> {
+        self.children.children_mut()
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {

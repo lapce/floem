@@ -211,7 +211,19 @@ where
         self.id
     }
 
-    fn child(&mut self, id: Id) -> Option<&mut dyn View> {
+    fn child(&self, id: Id) -> Option<&dyn View> {
+        let child = self
+            .children
+            .iter()
+            .find(|v| v.as_ref().map(|(v, _)| v.id() == id).unwrap_or(false));
+        if let Some(child) = child {
+            child.as_ref().map(|(view, _)| view as &dyn View)
+        } else {
+            None
+        }
+    }
+
+    fn child_mut(&mut self, id: Id) -> Option<&mut dyn View> {
         let child = self
             .children
             .iter_mut()
@@ -223,7 +235,15 @@ where
         }
     }
 
-    fn children(&mut self) -> Vec<&mut dyn View> {
+    fn children(&self) -> Vec<&dyn View> {
+        self.children
+            .iter()
+            .filter_map(|child| child.as_ref())
+            .map(|child| &child.0 as &dyn View)
+            .collect()
+    }
+
+    fn children_mut(&mut self) -> Vec<&mut dyn View> {
         self.children
             .iter_mut()
             .filter_map(|child| child.as_mut())

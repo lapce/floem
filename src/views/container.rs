@@ -21,7 +21,15 @@ impl<V: View> View for Container<V> {
         self.id
     }
 
-    fn child(&mut self, id: Id) -> Option<&mut dyn View> {
+    fn child(&self, id: Id) -> Option<&dyn View> {
+        if self.child.id() == id {
+            Some(&self.child)
+        } else {
+            None
+        }
+    }
+
+    fn child_mut(&mut self, id: Id) -> Option<&mut dyn View> {
         if self.child.id() == id {
             Some(&mut self.child)
         } else {
@@ -29,7 +37,11 @@ impl<V: View> View for Container<V> {
         }
     }
 
-    fn children(&mut self) -> Vec<&mut dyn View> {
+    fn children(&self) -> Vec<&dyn View> {
+        vec![&self.child]
+    }
+
+    fn children_mut(&mut self) -> Vec<&mut dyn View> {
         vec![&mut self.child]
     }
 

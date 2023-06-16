@@ -2,6 +2,7 @@ use std::time::Duration;
 use std::{any::Any, collections::HashMap};
 
 use crate::animate::AnimValue;
+use crate::view::{view_debug_tree, view_tab_navigation};
 use floem_renderer::Renderer;
 use glazier::kurbo::{Affine, Point, Rect, Vec2};
 use glazier::{FileDialogOptions, FileDialogToken, FileInfo, Scale, TimerToken, WinHandler};
@@ -668,11 +669,12 @@ impl<V: View> AppHandle<V> {
                     if let Event::KeyDown(glazier::KeyEvent { key, mods, .. }) = &event {
                         if key == &glazier::KbKey::Tab {
                             let backwards = mods.contains(glazier::Modifiers::SHIFT);
-                            self.view.tab_navigation(cx.app_state, backwards);
+                            view_tab_navigation(&self.view, cx.app_state, backwards);
+                            view_debug_tree(&self.view);
                         } else if let glazier::KbKey::Character(character) = key {
                             // 'I' displays some debug information
                             if character.eq_ignore_ascii_case("i") {
-                                self.view.debug_tree();
+                                view_debug_tree(&self.view);
                             }
                         }
                     }

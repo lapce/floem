@@ -1,6 +1,5 @@
 use std::{
     collections::{HashMap, HashSet},
-    default,
     ops::{Deref, DerefMut},
     time::Duration,
 };
@@ -245,6 +244,7 @@ pub struct AppState {
     pub(crate) scale: f64,
     pub taffy: taffy::Taffy,
     pub(crate) view_states: HashMap<Id, ViewState>,
+    stale_view_state: ViewState,
     pub(crate) disabled: HashSet<Id>,
     pub(crate) keyboard_navigable: HashSet<Id>,
     pub(crate) draggable: HashSet<Id>,
@@ -281,6 +281,7 @@ impl AppState {
             scale: 1.0,
             root_size: Size::ZERO,
             screen_size_bp: ScreenSizeBp::Xs,
+            stale_view_state: ViewState::new(&mut taffy),
             taffy,
             view_states: HashMap::new(),
             animated: HashSet::new(),
@@ -300,6 +301,11 @@ impl AppState {
     }
 
     pub fn view_state(&mut self, id: Id) -> &mut ViewState {
+        if !id.has_id_path() {
+            // if the id doesn't have a id path, that means it's been cleaned up,
+            // so we shouldn't create a new ViewState for this Id.
+            return &mut self.stale_view_state;
+        }
         self.view_states
             .entry(id)
             .or_insert_with(|| ViewState::new(&mut self.taffy))
