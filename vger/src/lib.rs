@@ -222,6 +222,30 @@ impl Renderer for VgerRenderer {
                 (circle.radius * self.scale) as f32,
                 paint,
             )
+        } else {
+            let mut first = true;
+            for segment in path.path_segments(0.1) {
+                match segment {
+                    peniko::kurbo::PathSeg::Line(line) => {
+                        if first {
+                            first = false;
+                            self.vger.move_to(self.vger_point(line.p0));
+                        }
+                        self.vger
+                            .quad_to(self.vger_point(line.p1), self.vger_point(line.p1));
+                    }
+                    peniko::kurbo::PathSeg::Quad(quad) => {
+                        if first {
+                            first = false;
+                            self.vger.move_to(self.vger_point(quad.p0));
+                        }
+                        self.vger
+                            .quad_to(self.vger_point(quad.p1), self.vger_point(quad.p2));
+                    }
+                    peniko::kurbo::PathSeg::Cubic(_) => {}
+                }
+            }
+            self.vger.fill(paint);
         }
     }
 
