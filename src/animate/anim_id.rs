@@ -2,7 +2,7 @@ use std::sync::atomic::AtomicUsize;
 
 use crate::app_handle::ANIM_UPDATE_MESSAGES;
 
-use super::{AnimPropKind, AnimUpdateMsg, anim_val::AnimValue};
+use super::{anim_val::AnimValue, AnimPropKind, AnimUpdateMsg};
 
 static ANIM_ID_GEN: AtomicUsize = AtomicUsize::new(1);
 
