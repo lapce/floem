@@ -26,6 +26,7 @@
 //!
 
 use floem_renderer::cosmic_text::{LineHeightValue, Style as FontStyle, Weight};
+use peniko::Color;
 pub use taffy::style::{
     AlignContent, AlignItems, Dimension, Display, FlexDirection, JustifyContent, Position,
 };
@@ -35,7 +36,6 @@ use taffy::{
     style::{FlexWrap, LengthPercentage, LengthPercentageAuto, Style as TaffyStyle},
     style_helpers::TaffyZero,
 };
-use vello::peniko::Color;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextOverflow {

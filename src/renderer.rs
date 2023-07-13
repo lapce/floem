@@ -4,7 +4,7 @@ use glazier::{
     kurbo::{Affine, Rect, Shape, Size},
     Scalable, Scale, WindowHandle,
 };
-use vello::peniko::BrushRef;
+use peniko::BrushRef;
 
 pub enum Renderer {
     Vger(VgerRenderer),
@@ -69,7 +69,7 @@ impl floem_renderer::Renderer for Renderer {
     fn fill<'b>(
         &mut self,
         path: &impl glazier::kurbo::Shape,
-        brush: impl Into<vello::peniko::BrushRef<'b>>,
+        brush: impl Into<peniko::BrushRef<'b>>,
     ) {
         match self {
             Renderer::Vger(v) => {

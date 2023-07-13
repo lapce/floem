@@ -1,8 +1,11 @@
 use std::ops::Range;
 
-use floem::{views::{scroll, rich_text}, view::{View}, cosmic_text::{TextLayout, AttrsList, Attrs, Style}, peniko::Color};
-
-
+use floem::{
+    cosmic_text::{Attrs, AttrsList, Style, TextLayout},
+    peniko::Color,
+    view::View,
+    views::{rich_text, scroll},
+};
 
 pub fn rich_text_view() -> impl View {
     let text = "

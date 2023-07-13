@@ -1,4 +1,4 @@
-use vello::peniko::Color;
+use peniko::Color;
 
 #[derive(Debug, Clone)]
 pub enum AnimValue {

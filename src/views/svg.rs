@@ -5,8 +5,8 @@ use floem_renderer::{
 };
 use glazier::kurbo::Size;
 use leptos_reactive::{create_effect, SignalGet};
+use peniko::Color;
 use sha2::{Digest, Sha256};
-use vello::peniko::Color;
 
 use crate::{
     app_handle::ViewContext,

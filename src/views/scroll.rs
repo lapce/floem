@@ -4,11 +4,11 @@ use glazier::{
     PointerType,
 };
 use leptos_reactive::create_effect;
+use peniko::Color;
 use taffy::{
     prelude::Node,
     style::{Dimension, Position},
 };
-use vello::peniko::Color;
 
 use crate::{
     app_handle::ViewContext,
