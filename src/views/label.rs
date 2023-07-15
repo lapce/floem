@@ -10,8 +10,8 @@ use floem_renderer::{
 };
 use glazier::kurbo::{Point, Rect};
 use leptos_reactive::create_effect;
+use peniko::Color;
 use taffy::{prelude::Node, style::Dimension};
-use vello::peniko::Color;
 
 use crate::{
     app_handle::ViewContext,

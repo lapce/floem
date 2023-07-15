@@ -5,7 +5,7 @@ use super::{
 use std::{borrow::BorrowMut, collections::HashMap, time::Duration, time::Instant};
 
 use leptos_reactive::create_effect;
-use vello::peniko::Color;
+use peniko::Color;
 
 use crate::ViewContext;
 

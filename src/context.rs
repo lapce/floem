@@ -12,11 +12,11 @@ use glazier::{
     kurbo::{Affine, Point, Rect, Shape, Size, Vec2},
     PointerEvent, Scale, TimerToken,
 };
+use peniko::Color;
 use taffy::{
     prelude::{Layout, Node},
     style::{AvailableSpace, Display},
 };
-use vello::peniko::Color;
 
 use crate::{
     animate::{AnimId, AnimPropKind, Animation},
