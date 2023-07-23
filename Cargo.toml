@@ -2,6 +2,7 @@
 name = "floem"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 
 [dependencies]
 sha2 = "0.10.6"
@@ -30,3 +31,6 @@ floem_vger = { path = "vger" }
 
 [workspace]
 members = ["renderer", "vger", "examples/*"]
+
+[workspace.package]
+license = "MIT"

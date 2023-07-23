@@ -2,6 +2,7 @@
 name = "floem_renderer"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 
 [dependencies]
 resvg = "0.33.0"
