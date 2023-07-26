@@ -3,7 +3,7 @@ use leptos_reactive::create_effect;
 
 use crate::{
     animate::Animation,
-    app_handle::{StyleSelector, ViewContext},
+    app_handle::StyleSelector,
     event::{Event, EventListener},
     responsive::ScreenSize,
     style::Style,
@@ -12,9 +12,8 @@ use crate::{
 
 pub trait Decorators: View + Sized {
     fn style(self, style: impl Fn() -> Style + 'static) -> Self {
-        let cx = ViewContext::get_current();
         let id = self.id();
-        create_effect(cx.scope, move |_| {
+        create_effect(move |_| {
             let style = style();
             id.update_style(style);
         });
@@ -22,9 +21,8 @@ pub trait Decorators: View + Sized {
     }
 
     fn base_style(self, style: impl Fn() -> Style + 'static) -> Self {
-        let cx = ViewContext::get_current();
         let id = self.id();
-        create_effect(cx.scope, move |_| {
+        create_effect(move |_| {
             let style = style();
             id.update_base_style(style);
         });
@@ -33,9 +31,8 @@ pub trait Decorators: View + Sized {
 
     /// The visual style to apply when the mouse hovers over the element
     fn hover_style(self, style: impl Fn() -> Style + 'static) -> Self {
-        let cx = ViewContext::get_current();
         let id = self.id();
-        create_effect(cx.scope, move |_| {
+        create_effect(move |_| {
             let style = style();
             id.update_style_selector(style, StyleSelector::Hover);
         });
@@ -44,9 +41,8 @@ pub trait Decorators: View + Sized {
 
     /// The visual style to apply when the mouse hovers over the element
     fn dragging_style(self, style: impl Fn() -> Style + 'static) -> Self {
-        let cx = ViewContext::get_current();
         let id = self.id();
-        create_effect(cx.scope, move |_| {
+        create_effect(move |_| {
             let style = style();
             id.update_style_selector(style, StyleSelector::Dragging);
         });
@@ -54,9 +50,8 @@ pub trait Decorators: View + Sized {
     }
 
     fn focus_style(self, style: impl Fn() -> Style + 'static) -> Self {
-        let cx = ViewContext::get_current();
         let id = self.id();
-        create_effect(cx.scope, move |_| {
+        create_effect(move |_| {
             let style = style();
             id.update_style_selector(style, StyleSelector::Focus);
         });
@@ -65,9 +60,8 @@ pub trait Decorators: View + Sized {
 
     /// Similar to the `:focus-visible` css selector, this style only activates when tab navigation is used.
     fn focus_visible_style(self, style: impl Fn() -> Style + 'static) -> Self {
-        let cx = ViewContext::get_current();
         let id = self.id();
-        create_effect(cx.scope, move |_| {
+        create_effect(move |_| {
             let style = style();
             id.update_style_selector(style, StyleSelector::FocusVisible);
         });
@@ -88,9 +82,8 @@ pub trait Decorators: View + Sized {
     }
 
     fn active_style(self, style: impl Fn() -> Style + 'static) -> Self {
-        let cx = ViewContext::get_current();
         let id = self.id();
-        create_effect(cx.scope, move |_| {
+        create_effect(move |_| {
             let style = style();
             id.update_style_selector(style, StyleSelector::Active);
         });
@@ -98,9 +91,8 @@ pub trait Decorators: View + Sized {
     }
 
     fn disabled_style(self, style: impl Fn() -> Style + 'static) -> Self {
-        let cx = ViewContext::get_current();
         let id = self.id();
-        create_effect(cx.scope, move |_| {
+        create_effect(move |_| {
             let style = style();
             id.update_style_selector(style, StyleSelector::Disabled);
         });
@@ -108,9 +100,8 @@ pub trait Decorators: View + Sized {
     }
 
     fn responsive_style(self, size: ScreenSize, style: impl Fn() -> Style + 'static) -> Self {
-        let cx = ViewContext::get_current();
         let id = self.id();
-        create_effect(cx.scope, move |_| {
+        create_effect(move |_| {
             let style = style();
             id.update_responsive_style(style, size);
         });
@@ -118,10 +109,9 @@ pub trait Decorators: View + Sized {
     }
 
     fn disabled(self, disabled_fn: impl Fn() -> bool + 'static) -> Self {
-        let cx = ViewContext::get_current();
         let id = self.id();
 
-        create_effect(cx.scope, move |_| {
+        create_effect(move |_| {
             let is_disabled = disabled_fn();
             id.update_disabled(is_disabled);
         });
@@ -154,19 +144,17 @@ pub trait Decorators: View + Sized {
     }
 
     fn animation(self, anim: Animation) -> Self {
-        let cx = ViewContext::get_current();
         let id = self.id();
-        create_effect(cx.scope, move |_| {
+        create_effect(move |_| {
             id.update_animation(anim.clone());
         });
         self
     }
 
     fn window_scale(self, scale_fn: impl Fn() -> f64 + 'static) -> Self {
-        let cx = ViewContext::get_current();
         let id = self.id();
 
-        create_effect(cx.scope, move |_| {
+        create_effect(move |_| {
             let window_scale = scale_fn();
             id.update_window_scale(window_scale);
         });

@@ -23,8 +23,7 @@
 //!
 //! ```ignore
 //! pub fn label_and_input() -> impl View {
-//!     let cx = ViewContext::get_current();
-//!     let text = create_rw_signal(cx.scope, "Hello world".to_string());
+//!     let text = create_rw_signal("Hello world".to_string());
 //!     stack(|| (text_input(text), label(|| text.get())))
 //!         .style(|| Style::BASE.padding_px(10.0))
 //! }
@@ -47,7 +46,7 @@
 //! where
 //!     V: View + 'static,
 //! {
-//!     let text = create_rw_signal(cx.scope, "World!".to_string());
+//!     let text = create_rw_signal("World!".to_string());
 //!     // share the signal between the two children
 //!     let (id, child) = ViewContext::new_id_with_child(stack(|| (text_input(text)), new_child(text.read_only()));
 //!     Parent { id, text, child }

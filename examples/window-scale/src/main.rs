@@ -4,14 +4,11 @@ use floem::{
     style::Style,
     view::View,
     views::{label, stack, Decorators},
-    ViewContext,
 };
 
 fn app_view() -> impl View {
-    let cx = ViewContext::get_current();
-
-    let (counter, set_counter) = create_signal(cx.scope, 0);
-    let window_scale = create_rw_signal(cx.scope, 1.0);
+    let (counter, set_counter) = create_signal(0);
+    let window_scale = create_rw_signal(1.0);
     stack(|| {
         (
             label(move || format!("Value: {}", counter.get()))

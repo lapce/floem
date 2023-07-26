@@ -25,7 +25,7 @@ pub struct Svg {
 pub fn svg(svg_str: impl Fn() -> String + 'static) -> Svg {
     let cx = ViewContext::get_current();
     let id = cx.new_id();
-    create_effect(cx.scope, move |_| {
+    create_effect(move |_| {
         let new_svg_str = svg_str();
         id.update_state(new_svg_str, false);
     });

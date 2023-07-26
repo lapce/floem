@@ -4,7 +4,7 @@ use std::{
 };
 
 use glazier::kurbo::Rect;
-use leptos_reactive::{create_effect, ScopeDisposer};
+use leptos_reactive::{as_child_of_current_owner, create_effect, Disposer};
 use rustc_hash::FxHasher;
 use smallvec::SmallVec;
 
@@ -21,20 +21,19 @@ pub(crate) type FxIndexSet<T> = indexmap::IndexSet<T, BuildHasherDefault<FxHashe
 #[educe(Debug)]
 pub(crate) struct HashRun<T>(#[educe(Debug(ignore))] pub(crate) T);
 
-pub struct List<V, VF, T>
+pub struct List<V, T>
 where
     V: View,
-    VF: Fn(T) -> V + 'static,
     T: 'static,
 {
     id: Id,
-    children: Vec<Option<(V, ScopeDisposer)>>,
-    view_fn: VF,
+    children: Vec<Option<(V, Disposer)>>,
+    view_fn: Box<dyn Fn(T) -> (V, Disposer)>,
     phantom: PhantomData<T>,
     cx: ViewContext,
 }
 
-pub fn list<IF, I, T, KF, K, VF, V>(each_fn: IF, key_fn: KF, view_fn: VF) -> List<V, VF, T>
+pub fn list<IF, I, T, KF, K, VF, V>(each_fn: IF, key_fn: KF, view_fn: VF) -> List<V, T>
 where
     IF: Fn() -> I + 'static,
     I: IntoIterator<Item = T>,
@@ -49,7 +48,7 @@ where
 
     let mut child_cx = cx;
     child_cx.id = id;
-    create_effect(cx.scope, move |prev_hash_run| {
+    create_effect(move |prev_hash_run| {
         let items = each_fn();
         let items = items.into_iter().collect::<SmallVec<[_; 128]>>();
         let hashed_items = items.iter().map(&key_fn).collect::<FxIndexSet<_>>();
@@ -76,6 +75,7 @@ where
         id.update_state(diff, false);
         HashRun(hashed_items)
     });
+    let view_fn = Box::new(as_child_of_current_owner(view_fn));
     List {
         id,
         children: Vec::new(),
@@ -85,10 +85,7 @@ where
     }
 }
 
-impl<V: View + 'static, VF, T> View for List<V, VF, T>
-where
-    VF: Fn(T) -> V + 'static,
-{
+impl<V: View + 'static, T> View for List<V, T> {
     fn id(&self) -> Id {
         self.id
     }
@@ -328,23 +325,22 @@ pub(crate) fn diff<K: Eq + Hash, V>(from: &FxIndexSet<K>, to: &FxIndexSet<K>) ->
 
 fn remove_index<V: View>(
     app_state: &mut AppState,
-    children: &mut [Option<(V, ScopeDisposer)>],
+    children: &mut [Option<(V, Disposer)>],
     index: usize,
 ) -> Option<()> {
-    let (mut view, disposer) = std::mem::take(&mut children[index])?;
+    let (mut view, _) = std::mem::take(&mut children[index])?;
     view.cleanup(app_state);
-    disposer.dispose();
     Some(())
 }
 
 pub(super) fn apply_diff<T, V, VF>(
     app_state: &mut AppState,
     mut diff: Diff<T>,
-    children: &mut Vec<Option<(V, ScopeDisposer)>>,
+    children: &mut Vec<Option<(V, Disposer)>>,
     view_fn: &VF,
 ) where
     V: View,
-    VF: Fn(T) -> V + 'static,
+    VF: Fn(T) -> (V, Disposer),
 {
     // Resize children if needed
     if diff.added.len().checked_sub(diff.removed.len()).is_some() {
@@ -381,18 +377,7 @@ pub(super) fn apply_diff<T, V, VF>(
     }
 
     for DiffOpAdd { at, view } in diff.added {
-        children[at] = view.map(|value| {
-            let cx = ViewContext::get_current();
-            cx.scope.run_child_scope(|scope| {
-                let mut cx = cx;
-                cx.scope = scope;
-                ViewContext::save();
-                ViewContext::set_current(cx);
-                let view = view_fn(value);
-                ViewContext::restore();
-                view
-            })
-        });
+        children[at] = view.map(view_fn);
     }
 
     for (to, each_item) in items_to_move {

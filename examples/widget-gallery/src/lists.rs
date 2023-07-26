@@ -10,7 +10,6 @@ use floem::{
         checkbox, container, label, scroll, stack, virtual_list, Decorators, VirtualListDirection,
         VirtualListItemSize,
     },
-    ViewContext,
 };
 
 use crate::form::{form, form_item};
@@ -25,9 +24,8 @@ pub fn virt_list_view() -> impl View {
 }
 
 fn simple_list() -> impl View {
-    let cx = ViewContext::get_current();
     let long_list: im::Vector<i32> = (0..100).collect();
-    let (long_list, _set_long_list) = create_signal(cx.scope, long_list);
+    let (long_list, _set_long_list) = create_signal(long_list);
     scroll(move || {
         virtual_list(
             VirtualListDirection::Vertical,
@@ -42,11 +40,10 @@ fn simple_list() -> impl View {
 }
 
 fn enhanced_list() -> impl View {
-    let cx = ViewContext::get_current();
     let long_list: im::Vector<i32> = (0..100).collect();
-    let (long_list, set_long_list) = create_signal(cx.scope, long_list);
+    let (long_list, set_long_list) = create_signal(long_list);
 
-    let (selected, set_selected) = create_signal(cx.scope, 0);
+    let (selected, set_selected) = create_signal(0);
     let list_width = 180.0;
     let item_height = 32.0;
     scroll(move || {
@@ -61,7 +58,7 @@ fn enhanced_list() -> impl View {
                     .iter()
                     .position(|it| *it == item)
                     .unwrap();
-                let (is_checked, set_is_checked) = create_signal(cx.scope, true);
+                let (is_checked, set_is_checked) = create_signal(true);
                 container(move || {
                     stack(move || {
                         (

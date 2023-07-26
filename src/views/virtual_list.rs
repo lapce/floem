@@ -2,7 +2,8 @@ use std::{hash::Hash, marker::PhantomData, ops::Range};
 
 use glazier::kurbo::{Rect, Size};
 use leptos_reactive::{
-    create_effect, create_signal, ScopeDisposer, SignalGet, SignalSet, WriteSignal,
+    as_child_of_current_owner, create_effect, create_signal, Disposer, SignalGet, SignalSet,
+    WriteSignal,
 };
 use smallvec::SmallVec;
 use taffy::{prelude::Node, style::Dimension};
@@ -43,17 +44,16 @@ pub trait VirtualListVector<T> {
     fn slice(&mut self, range: Range<usize>) -> Self::ItemIterator;
 }
 
-pub struct VirtualList<V: View, VF, T>
+pub struct VirtualList<V: View, T>
 where
-    VF: Fn(T) -> V + 'static,
     T: 'static,
 {
     id: Id,
     direction: VirtualListDirection,
-    children: Vec<Option<(V, ScopeDisposer)>>,
+    children: Vec<Option<(V, Disposer)>>,
     viewport: Rect,
     set_viewport: WriteSignal<Rect>,
-    view_fn: VF,
+    view_fn: Box<dyn Fn(T) -> (V, Disposer)>,
     phatom: PhantomData<T>,
     cx: ViewContext,
     before_size: f64,
@@ -74,7 +74,7 @@ pub fn virtual_list<T, IF, I, KF, K, VF, V>(
     each_fn: IF,
     key_fn: KF,
     view_fn: VF,
-) -> VirtualList<V, VF, T>
+) -> VirtualList<V, T>
 where
     T: 'static,
     IF: Fn() -> I + 'static,
@@ -90,9 +90,9 @@ where
     let mut child_cx = cx;
     child_cx.id = id;
 
-    let (viewport, set_viewport) = create_signal(cx.scope, Rect::ZERO);
+    let (viewport, set_viewport) = create_signal(Rect::ZERO);
 
-    create_effect(cx.scope, move |prev_hash_run| {
+    create_effect(move |prev_hash_run| {
         let mut items_vector = each_fn();
         let viewport = viewport.get();
         let min = match direction {
@@ -187,6 +187,8 @@ where
         HashRun(hashed_items)
     });
 
+    let view_fn = Box::new(as_child_of_current_owner(view_fn));
+
     VirtualList {
         id,
         direction,
@@ -203,10 +205,7 @@ where
     }
 }
 
-impl<V: View + 'static, VF, T> View for VirtualList<V, VF, T>
-where
-    VF: Fn(T) -> V + 'static,
-{
+impl<V: View + 'static, T> View for VirtualList<V, T> {
     fn id(&self) -> Id {
         self.id
     }

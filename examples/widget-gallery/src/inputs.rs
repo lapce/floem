@@ -4,14 +4,12 @@ use floem::{
     style::{CursorStyle, Style},
     view::View,
     views::{text_input, Decorators},
-    ViewContext,
 };
 
 use crate::form::{form, form_item};
 
 pub fn text_input_view() -> impl View {
-    let cx = ViewContext::get_current();
-    let text = create_rw_signal(cx.scope, "".to_string());
+    let text = create_rw_signal("".to_string());
 
     form(move || {
         (

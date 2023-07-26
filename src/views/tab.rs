@@ -1,7 +1,7 @@
 use std::{hash::Hash, marker::PhantomData};
 
 use glazier::kurbo::Rect;
-use leptos_reactive::{create_effect, ScopeDisposer};
+use leptos_reactive::{as_child_of_current_owner, create_effect, Disposer};
 use smallvec::SmallVec;
 use taffy::style::Display;
 
@@ -19,16 +19,15 @@ enum TabState<V> {
     Active(usize),
 }
 
-pub struct Tab<V, VF, T>
+pub struct Tab<V, T>
 where
     V: View,
-    VF: Fn(T) -> V + 'static,
     T: 'static,
 {
     id: Id,
     active: usize,
-    children: Vec<Option<(V, ScopeDisposer)>>,
-    view_fn: VF,
+    children: Vec<Option<(V, Disposer)>>,
+    view_fn: Box<dyn Fn(T) -> (V, Disposer)>,
     phatom: PhantomData<T>,
     cx: ViewContext,
 }
@@ -38,7 +37,7 @@ pub fn tab<IF, I, T, KF, K, VF, V>(
     each_fn: IF,
     key_fn: KF,
     view_fn: VF,
-) -> Tab<V, VF, T>
+) -> Tab<V, T>
 where
     IF: Fn() -> I + 'static,
     I: IntoIterator<Item = T>,
@@ -54,7 +53,7 @@ where
     let mut child_cx = cx;
     child_cx.id = id;
 
-    create_effect(cx.scope, move |prev_hash_run| {
+    create_effect(move |prev_hash_run| {
         let items = each_fn();
         let items = items.into_iter().collect::<SmallVec<[_; 128]>>();
         let hashed_items = items.iter().map(&key_fn).collect::<FxIndexSet<_>>();
@@ -82,10 +81,12 @@ where
         HashRun(hashed_items)
     });
 
-    create_effect(cx.scope, move |_| {
+    create_effect(move |_| {
         let active = active_fn();
         id.update_state(TabState::Active::<T>(active), false);
     });
+
+    let view_fn = Box::new(as_child_of_current_owner(view_fn));
 
     Tab {
         id,
@@ -97,10 +98,7 @@ where
     }
 }
 
-impl<V: View + 'static, VF, T> View for Tab<V, VF, T>
-where
-    VF: Fn(T) -> V + 'static,
-{
+impl<V: View + 'static, T> View for Tab<V, T> {
     fn id(&self) -> Id {
         self.id
     }

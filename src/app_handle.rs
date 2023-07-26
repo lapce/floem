@@ -6,7 +6,6 @@ use crate::view::{view_debug_tree, view_tab_navigation};
 use floem_renderer::Renderer;
 use glazier::kurbo::{Affine, Point, Rect, Vec2};
 use glazier::{FileDialogOptions, FileDialogToken, FileInfo, Scale, TimerToken, WinHandler};
-use leptos_reactive::Scope;
 
 use crate::menu::Menu;
 use crate::{
@@ -36,11 +35,8 @@ pub type FileDialogs = HashMap<FileDialogToken, Box<dyn Fn(Option<FileInfo>)>>;
 type DeferredUpdateMessages = HashMap<Id, Vec<(Id, Box<dyn Any>)>>;
 
 // Primarily used to mint and assign a unique ID to each view.
-// It also contains a constant scope which is used to create signals.
 #[derive(Copy, Clone)]
 pub struct ViewContext {
-    /// used to create new signals
-    pub scope: Scope,
     pub id: Id,
 }
 
@@ -198,7 +194,6 @@ pub enum UpdateMessage {
 /// - processing all requests to update the animation state from the reactive system
 /// - requesting a new animation frame from the backend
 pub struct AppHandle<V: View> {
-    scope: Scope,
     view: V,
     handle: glazier::WindowHandle,
     app_state: AppState,
@@ -207,24 +202,14 @@ pub struct AppHandle<V: View> {
     file_dialogs: FileDialogs,
 }
 
-impl<V: View> Drop for AppHandle<V> {
-    fn drop(&mut self) {
-        self.scope.dispose();
-    }
-}
-
 impl<V: View> AppHandle<V> {
-    pub fn new(scope: Scope, app_logic: impl FnOnce() -> V) -> Self {
-        let cx = ViewContext {
-            scope,
-            id: Id::next(),
-        };
+    pub fn new(app_logic: impl FnOnce() -> V) -> Self {
+        let cx = ViewContext { id: Id::next() };
 
         ViewContext::set_current(cx);
 
         let view = app_logic();
         Self {
-            scope,
             view,
             app_state: AppState::new(),
             paint_state: PaintState::new(),

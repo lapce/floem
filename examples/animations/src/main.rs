@@ -8,13 +8,11 @@ use floem::{
     style::Style,
     view::View,
     views::{label, stack, Decorators},
-    ViewContext,
 };
 
 fn app_view() -> impl View {
-    let cx = ViewContext::get_current();
-    let (counter, set_counter) = create_signal(cx.scope, 0.0);
-    let (is_hovered, set_is_hovered) = create_signal(cx.scope, false);
+    let (counter, set_counter) = create_signal(0.0);
+    let (is_hovered, set_is_hovered) = create_signal(false);
 
     stack(|| {
         (label(|| "Hover or click me!".to_string())

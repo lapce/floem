@@ -80,9 +80,8 @@ pub fn scroll<V: View>(child: impl FnOnce() -> V) -> Scroll<V> {
 
 impl<V: View> Scroll<V> {
     pub fn scroll_bar_color(self, color: impl Fn() -> Color + 'static) -> Self {
-        let cx = ViewContext::get_current();
         let id = self.id;
-        create_effect(cx.scope, move |_| {
+        create_effect(move |_| {
             let color = color();
             id.update_state(ScrollState::ScrollBarColor(color), false);
         });
@@ -96,9 +95,8 @@ impl<V: View> Scroll<V> {
     }
 
     pub fn on_ensure_visible(self, to: impl Fn() -> Rect + 'static) -> Self {
-        let cx = ViewContext::get_current();
         let id = self.id;
-        create_effect(cx.scope, move |_| {
+        create_effect(move |_| {
             let rect = to();
             id.update_state(ScrollState::EnsureVisible(rect), true);
         });
@@ -107,9 +105,8 @@ impl<V: View> Scroll<V> {
     }
 
     pub fn on_scroll_delta(self, delta: impl Fn() -> Vec2 + 'static) -> Self {
-        let cx = ViewContext::get_current();
         let id = self.id;
-        create_effect(cx.scope, move |_| {
+        create_effect(move |_| {
             let delta = delta();
             id.update_state(ScrollState::ScrollDelta(delta), false);
         });
@@ -118,9 +115,8 @@ impl<V: View> Scroll<V> {
     }
 
     pub fn on_scroll_to(self, origin: impl Fn() -> Option<Point> + 'static) -> Self {
-        let cx = ViewContext::get_current();
         let id = self.id;
-        create_effect(cx.scope, move |_| {
+        create_effect(move |_| {
             if let Some(origin) = origin() {
                 id.update_state(ScrollState::ScrollTo(origin), true);
             }
@@ -130,9 +126,8 @@ impl<V: View> Scroll<V> {
     }
 
     pub fn hide_bar(self, value: impl Fn() -> bool + 'static) -> Self {
-        let cx = ViewContext::get_current();
         let id = self.id;
-        create_effect(cx.scope, move |_| {
+        create_effect(move |_| {
             id.update_state(ScrollState::HiddenBar(value()), false);
         });
         self

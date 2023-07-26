@@ -2,7 +2,7 @@ use std::{collections::VecDeque, sync::Arc};
 
 use glazier::{IdleHandle, IdleToken};
 use leptos_reactive::{
-    create_effect, create_signal, create_trigger, ReadSignal, Scope, SignalSet, Trigger,
+    create_effect, create_signal, create_trigger, untrack, ReadSignal, SignalSet, Trigger,
 };
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
@@ -33,23 +33,18 @@ impl ExtEventHandler {
     }
 }
 
-pub fn create_ext_action<T: Send + 'static>(
-    cx: Scope,
-    action: impl Fn(T) + 'static,
-) -> impl FnOnce(T) {
-    let (cx, _) = cx.run_child_scope(|cx| cx);
-    let trigger = create_trigger(cx);
+pub fn create_ext_action<T: Send + 'static>(action: impl Fn(T) + 'static) -> impl FnOnce(T) {
+    let trigger = create_trigger();
     let data = Arc::new(Mutex::new(None));
 
     {
         let data = data.clone();
-        create_effect(cx, move |_| {
+        create_effect(move |_| {
             trigger.track();
             if let Some(event) = data.lock().take() {
-                cx.untrack(|| {
+                untrack(|| {
                     action(event);
                 });
-                cx.dispose();
             }
         });
     }
@@ -61,18 +56,16 @@ pub fn create_ext_action<T: Send + 'static>(
 }
 
 pub fn create_signal_from_channel<T: Send>(
-    cx: Scope,
     rx: crossbeam_channel::Receiver<T>,
 ) -> ReadSignal<Option<T>> {
-    let (cx, _) = cx.run_child_scope(|cx| cx);
-    let trigger = create_trigger(cx);
+    let trigger = create_trigger();
 
-    let (read, write) = create_signal(cx, None);
+    let (read, write) = create_signal(None);
     let data = Arc::new(Mutex::new(VecDeque::new()));
 
     {
         let data = data.clone();
-        create_effect(cx, move |_| {
+        create_effect(move |_| {
             trigger.track();
             while let Some(value) = data.lock().pop_front() {
                 write.set(value);

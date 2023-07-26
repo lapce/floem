@@ -17,17 +17,15 @@ use floem::{
         container, container_box, label, scroll, stack, tab, virtual_list, Decorators,
         VirtualListDirection, VirtualListItemSize,
     },
-    ViewContext,
 };
 
 fn app_view() -> impl View {
-    let cx = ViewContext::get_current();
     let tabs: im::Vector<&str> = vec!["Label", "Button", "Checkbox", "Input", "List", "RichText"]
         .into_iter()
         .collect();
-    let (tabs, _set_tabs) = create_signal(cx.scope, tabs);
+    let (tabs, _set_tabs) = create_signal(tabs);
 
-    let (active_tab, set_active_tab) = create_signal(cx.scope, 0);
+    let (active_tab, set_active_tab) = create_signal(0);
     stack(|| {
         (
             container(move || {

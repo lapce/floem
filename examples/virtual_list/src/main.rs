@@ -5,14 +5,11 @@ use floem::{
     views::virtual_list,
     views::Decorators,
     views::{container, label, scroll, VirtualListDirection, VirtualListItemSize},
-    ViewContext,
 };
 
 fn app_view() -> impl View {
-    let cx = ViewContext::get_current();
-
     let long_list: im::Vector<i32> = (0..1000000).collect();
-    let (long_list, _set_long_list) = create_signal(cx.scope, long_list);
+    let (long_list, _set_long_list) = create_signal(long_list);
 
     container(move || {
         scroll(move || {

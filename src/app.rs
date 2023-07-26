@@ -1,5 +1,5 @@
 use glazier::{kurbo::Size, WindowBuilder};
-use leptos_reactive::{create_runtime, raw_scope_and_disposer, Scope};
+use leptos_reactive::create_runtime;
 
 use crate::{app_handle::AppHandle, view::View, window::WindowConfig};
 
@@ -16,8 +16,9 @@ pub enum AppEvent {
 /// Floem top level application
 /// This is the entry point of the application.
 pub struct Application {
+    #[allow(dead_code)]
+    runtime: leptos_reactive::RuntimeId,
     application: glazier::Application,
-    scope: Scope,
     event_listener: Option<Box<AppEventCallback>>,
 }
 
@@ -40,16 +41,11 @@ impl glazier::AppHandler for Application {
 impl Application {
     pub fn new() -> Self {
         let runtime = create_runtime();
-        let (scope, _) = raw_scope_and_disposer(runtime);
         Self {
-            scope,
+            runtime,
             application: glazier::Application::new().unwrap(),
             event_listener: None,
         }
-    }
-
-    pub fn scope(&self) -> Scope {
-        self.scope
     }
 
     pub fn on_event(mut self, action: impl Fn(&AppEvent) + 'static) -> Self {
@@ -65,8 +61,8 @@ impl Application {
         config: Option<WindowConfig>,
     ) -> Self {
         let application = self.application.clone();
-        let _ = self.scope.child_scope(move |cx| {
-            let app = AppHandle::new(cx, app_view);
+        {
+            let app = AppHandle::new(app_view);
             let mut builder = WindowBuilder::new(application).size(
                 config
                     .as_ref()
@@ -83,7 +79,7 @@ impl Application {
             builder = builder.handler(Box::new(app));
             let window = builder.build().unwrap();
             window.show();
-        });
+        }
         self
     }
 

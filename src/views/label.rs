@@ -42,7 +42,7 @@ pub struct Label {
 pub fn label(label: impl Fn() -> String + 'static) -> Label {
     let cx = ViewContext::get_current();
     let id = cx.new_id();
-    create_effect(cx.scope, move |_| {
+    create_effect(move |_| {
         let new_label = label();
         id.update_state(new_label, false);
     });

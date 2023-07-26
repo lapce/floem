@@ -24,7 +24,7 @@ pub fn rich_text(text_layout: impl Fn() -> TextLayout + 'static) -> RichText {
     let cx = ViewContext::get_current();
     let id = cx.new_id();
     let text = text_layout();
-    create_effect(cx.scope, move |_| {
+    create_effect(move |_| {
         let new_text_layout = text_layout();
         id.update_state(new_text_layout, false);
     });
