@@ -38,7 +38,7 @@ pub fn svg(svg_str: impl Fn() -> String + 'static) -> Svg {
 
 /// Renders a checkbox using an svg and the provided checked signal.
 /// Can be combined with a label and a stack with a click event (as in `examples/widget-gallery`).
-pub fn checkbox(checked: leptos_reactive::ReadSignal<bool>) -> Svg {
+pub fn checkbox(checked: crate::reactive::ReadSignal<bool>) -> Svg {
     const CHECKBOX_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 -2 16 16"><polygon points="5.19,11.83 0.18,7.44 1.82,5.56 4.81,8.17 10,1.25 12,2.75" /></svg>"#;
     let svg_str = move || if checked.get() { CHECKBOX_SVG } else { "" }.to_string();
 

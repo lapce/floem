@@ -1,6 +1,6 @@
 use floem::{
     peniko::Color,
-    reactive::{create_signal, SignalGet, SignalUpdate},
+    reactive::create_signal,
     style::Style,
     view::View,
     views::{label, stack, Decorators},
@@ -10,15 +10,21 @@ fn app_view() -> impl View {
     let (counter, set_counter) = create_signal(0);
     stack(|| {
         (
-            label(move || format!("Value: {}", counter.get()))
-                .style(|| Style::BASE.padding_px(10.0)),
+            label({
+                let counter = counter.clone();
+                move || format!("Value: {}", counter.get())
+            })
+            .style(|| Style::BASE.padding_px(10.0)),
             stack(|| {
                 (
                     label(|| "Increment".to_string())
                         .style(|| Style::BASE.border(1.0).border_radius(10.0).padding_px(10.0))
-                        .on_click(move |_| {
-                            set_counter.update(|value| *value += 1);
-                            true
+                        .on_click({
+                            let set_counter = set_counter.clone();
+                            move |_| {
+                                set_counter.update(|value| *value += 1);
+                                true
+                            }
                         })
                         .hover_style(|| Style::BASE.background(Color::LIGHT_GREEN))
                         .active_style(|| {
@@ -29,9 +35,12 @@ fn app_view() -> impl View {
                         .keyboard_navigatable()
                         .focus_visible_style(|| Style::BASE.border_color(Color::BLUE).border(2.)),
                     label(|| "Decrement".to_string())
-                        .on_click(move |_| {
-                            set_counter.update(|value| *value -= 1);
-                            true
+                        .on_click({
+                            let set_counter = set_counter.clone();
+                            move |_| {
+                                set_counter.update(|value| *value -= 1);
+                                true
+                            }
                         })
                         .style(|| {
                             Style::BASE

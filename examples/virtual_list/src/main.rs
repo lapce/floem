@@ -1,5 +1,5 @@
 use floem::{
-    reactive::{create_signal, SignalGet},
+    reactive::create_signal,
     style::Style,
     view::View,
     views::virtual_list,
