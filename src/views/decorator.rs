@@ -1,5 +1,5 @@
+use floem_reactive::create_effect;
 use glazier::kurbo::{Point, Rect};
-use leptos_reactive::create_effect;
 
 use crate::{
     animate::Animation,

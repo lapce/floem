@@ -10,17 +10,13 @@ fn app_view() -> impl View {
     let (counter, set_counter) = create_signal(0);
     stack(|| {
         (
-            label({
-                let counter = counter.clone();
-                move || format!("Value: {}", counter.get())
-            })
-            .style(|| Style::BASE.padding_px(10.0)),
+            label(move || format!("Value: {}", counter.get()))
+                .style(|| Style::BASE.padding_px(10.0)),
             stack(|| {
                 (
                     label(|| "Increment".to_string())
                         .style(|| Style::BASE.border(1.0).border_radius(10.0).padding_px(10.0))
                         .on_click({
-                            let set_counter = set_counter.clone();
                             move |_| {
                                 set_counter.update(|value| *value += 1);
                                 true
@@ -36,7 +32,6 @@ fn app_view() -> impl View {
                         .focus_visible_style(|| Style::BASE.border_color(Color::BLUE).border(2.)),
                     label(|| "Decrement".to_string())
                         .on_click({
-                            let set_counter = set_counter.clone();
                             move |_| {
                                 set_counter.update(|value| *value -= 1);
                                 true

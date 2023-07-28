@@ -1,9 +1,8 @@
 use std::{collections::VecDeque, sync::Arc};
 
+use floem_reactive::create_effect;
 use glazier::{IdleHandle, IdleToken};
-use leptos_reactive::{
-    create_effect, create_signal, create_trigger, untrack, ReadSignal, SignalSet, Trigger,
-};
+use leptos_reactive::{create_signal, create_trigger, untrack, ReadSignal, SignalSet, Trigger};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 

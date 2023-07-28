@@ -1,7 +1,8 @@
 use std::{hash::Hash, marker::PhantomData};
 
+use floem_reactive::create_effect;
 use glazier::kurbo::Rect;
-use leptos_reactive::{as_child_of_current_owner, create_effect, Disposer};
+use leptos_reactive::{as_child_of_current_owner, Disposer};
 use smallvec::SmallVec;
 use taffy::style::Display;
 
