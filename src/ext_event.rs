@@ -1,8 +1,10 @@
 use std::{collections::VecDeque, sync::Arc};
 
-use floem_reactive::create_effect;
+use floem_reactive::{
+    create_effect, create_signal, create_trigger, untrack, ReadSignal, Scope, Trigger,
+};
 use glazier::{IdleHandle, IdleToken};
-use leptos_reactive::{create_signal, create_trigger, untrack, ReadSignal, SignalSet, Trigger};
+// use leptos_reactive::{create_signal, create_trigger, untrack, ReadSignal, SignalSet, Trigger};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 
@@ -33,7 +35,8 @@ impl ExtEventHandler {
 }
 
 pub fn create_ext_action<T: Send + 'static>(action: impl Fn(T) + 'static) -> impl FnOnce(T) {
-    let trigger = create_trigger();
+    let cx = Scope::current().create_child();
+    let trigger = cx.create_trigger();
     let data = Arc::new(Mutex::new(None));
 
     {
@@ -45,6 +48,7 @@ pub fn create_ext_action<T: Send + 'static>(action: impl Fn(T) + 'static) -> imp
                     action(event);
                 });
             }
+            cx.dispose();
         });
     }
 
@@ -54,7 +58,7 @@ pub fn create_ext_action<T: Send + 'static>(action: impl Fn(T) + 'static) -> imp
     }
 }
 
-pub fn create_signal_from_channel<T: Send>(
+pub fn create_signal_from_channel<T: Send + 'static>(
     rx: crossbeam_channel::Receiver<T>,
 ) -> ReadSignal<Option<T>> {
     let trigger = create_trigger();

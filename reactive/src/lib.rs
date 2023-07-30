@@ -1,7 +1,8 @@
 use std::{
-    any::Any,
+    any::{Any, TypeId},
     cell::RefCell,
     collections::{HashMap, HashSet},
+    fmt,
     marker::PhantomData,
     rc::Rc,
     sync::atomic::AtomicU64,
@@ -40,8 +41,11 @@ impl Id {
 
     fn dispose(&self) {
         RUNTIME.with(|runtime| {
-            let mut children = runtime.children.borrow_mut();
-            if let Some(children) = children.remove(self) {
+            let children = {
+                let mut children = runtime.children.borrow_mut();
+                children.remove(self)
+            };
+            if let Some(children) = children {
                 for child in children {
                     child.dispose();
                 }
@@ -103,6 +107,15 @@ impl Default for Scope {
     }
 }
 
+impl fmt::Debug for Scope {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut s = f.debug_struct("Scope");
+        s.field("id", &self.0);
+        #[cfg(any(debug_assertions))]
+        s.finish()
+    }
+}
+
 impl Scope {
     pub fn new() -> Self {
         Self(Id::next())
@@ -122,18 +135,29 @@ impl Scope {
         Scope(child)
     }
 
-    pub fn create_signal<T>(&self, value: T) -> (ReadSignal<T>, WriteSignal<T>)
+    pub fn create_signal<T>(self, value: T) -> (ReadSignal<T>, WriteSignal<T>)
     where
         T: Any + 'static,
     {
-        with_scope(*self, || create_signal(value))
+        with_scope(self, || create_signal(value))
     }
 
-    pub fn create_rw_signal<T>(&self, value: T) -> RwSignal<T>
+    pub fn create_rw_signal<T>(self, value: T) -> RwSignal<T>
     where
         T: Any + 'static,
     {
-        with_scope(*self, || create_rw_signal(value))
+        with_scope(self, || create_rw_signal(value))
+    }
+
+    pub fn create_memo<T>(self, f: impl Fn(Option<&T>) -> T + 'static) -> Memo<T>
+    where
+        T: PartialEq + 'static,
+    {
+        with_scope(self, || create_memo(f))
+    }
+
+    pub fn create_trigger(self) -> Trigger {
+        with_scope(self, create_trigger)
     }
 
     pub fn dispose(&self) {
@@ -146,6 +170,7 @@ struct Runtime {
     current_scope: RefCell<Id>,
     children: RefCell<HashMap<Id, HashSet<Id>>>,
     signals: RefCell<HashMap<Id, Signal>>,
+    contexts: RefCell<HashMap<TypeId, Box<dyn Any>>>,
 }
 
 impl Default for Runtime {
@@ -161,6 +186,7 @@ impl Runtime {
             current_scope: RefCell::new(Id::next()),
             children: RefCell::new(HashMap::new()),
             signals: Default::default(),
+            contexts: Default::default(),
         }
     }
 }
@@ -246,13 +272,16 @@ pub fn create_effect<T>(f: impl Fn(Option<T>) -> T + 'static)
 where
     T: Any + 'static,
 {
+    let id = Id::next();
     let effect = Rc::new(Effect {
-        id: Id::next(),
+        id,
         f,
         value: Rc::new(RefCell::new(None::<T>)),
         ty: PhantomData,
         observers: Rc::new(RefCell::new(HashMap::new())),
     });
+    id.set_scope();
+
     run_effect(effect);
 }
 
@@ -345,6 +374,11 @@ impl<T> Memo<T> {
         self.getter
             .with_untracked(|value| f(value.as_ref().unwrap()))
     }
+
+    pub fn track(&self) {
+        let signal = self.getter.id.signal().unwrap();
+        signal.subscribe();
+    }
 }
 
 pub fn create_memo<T>(f: impl Fn(Option<&T>) -> T + 'static) -> Memo<T>
@@ -413,6 +447,24 @@ impl<T> Clone for RwSignal<T> {
     }
 }
 
+impl<T> Eq for RwSignal<T> {}
+
+impl<T> PartialEq for RwSignal<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl<T> fmt::Debug for RwSignal<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut s = f.debug_struct("RwSignal");
+        s.field("id", &self.id);
+        s.field("ty", &self.ty);
+        #[cfg(any(debug_assertions))]
+        s.finish()
+    }
+}
+
 impl<T> RwSignal<T> {
     pub fn set(&self, new_value: T)
     where
@@ -446,12 +498,31 @@ impl<T> RwSignal<T> {
         signal_with(&signal, f)
     }
 
+    pub fn track(&self) {
+        let signal = self.id.signal().unwrap();
+        signal.subscribe();
+    }
+
     pub fn with_untracked<O>(&self, f: impl FnOnce(&T) -> O) -> O
     where
         T: 'static,
     {
         let signal = self.id.signal().unwrap();
         signal_with_untracked(&signal, f)
+    }
+
+    pub fn read_only(&self) -> ReadSignal<T> {
+        ReadSignal {
+            id: self.id,
+            ty: PhantomData,
+        }
+    }
+
+    pub fn write_only(&self) -> WriteSignal<T> {
+        WriteSignal {
+            id: self.id,
+            ty: PhantomData,
+        }
     }
 }
 
@@ -550,6 +621,14 @@ impl<T> Clone for ReadSignal<T> {
     }
 }
 
+impl<T> Eq for ReadSignal<T> {}
+
+impl<T> PartialEq for ReadSignal<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
 impl<T: Clone> ReadSignal<T> {
     pub fn get(&self) -> T
     where
@@ -602,6 +681,14 @@ impl<T> Clone for WriteSignal<T> {
     }
 }
 
+impl<T> Eq for WriteSignal<T> {}
+
+impl<T> PartialEq for WriteSignal<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
 impl<T> WriteSignal<T> {
     pub fn set(&self, new_value: T)
     where
@@ -626,4 +713,70 @@ impl<T> WriteSignal<T> {
         let signal = self.id.signal().unwrap();
         signal_update_value(&signal, f)
     }
+}
+
+pub struct Trigger {
+    signal: RwSignal<()>,
+}
+
+impl Copy for Trigger {}
+
+impl Clone for Trigger {
+    fn clone(&self) -> Self {
+        Self {
+            signal: self.signal,
+        }
+    }
+}
+
+impl Trigger {
+    pub fn notify(&self) {
+        self.signal.set(());
+    }
+
+    pub fn track(&self) {
+        self.signal.with(|_| {});
+    }
+}
+
+pub fn create_trigger() -> Trigger {
+    Trigger {
+        signal: create_rw_signal(()),
+    }
+}
+
+pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
+    let prev_effect = RUNTIME.with(|runtime| runtime.current_effect.borrow_mut().take());
+    let result = f();
+    RUNTIME.with(|runtime| {
+        *runtime.current_effect.borrow_mut() = prev_effect;
+    });
+    result
+}
+
+pub fn use_context<T>() -> Option<T>
+where
+    T: Clone + 'static,
+{
+    let ty = TypeId::of::<T>();
+    RUNTIME.with(|runtime| {
+        let contexts = runtime.contexts.borrow();
+        let context = contexts
+            .get(&ty)
+            .and_then(|val| val.downcast_ref::<T>())
+            .cloned();
+        context
+    })
+}
+
+pub fn provide_context<T>(value: T)
+where
+    T: Clone + 'static,
+{
+    let id = value.type_id();
+
+    RUNTIME.with(|runtime| {
+        let mut contexts = runtime.contexts.borrow_mut();
+        contexts.insert(id, Box::new(value) as Box<dyn Any>);
+    });
 }
