@@ -1,10 +1,7 @@
 use std::{hash::Hash, marker::PhantomData, ops::Range};
 
-use floem_reactive::create_effect;
+use floem_reactive::{as_child_of_current_scope, create_effect, create_signal, Scope, WriteSignal};
 use glazier::kurbo::{Rect, Size};
-use leptos_reactive::{
-    as_child_of_current_owner, create_signal, Disposer, SignalGet, SignalSet, WriteSignal,
-};
 use smallvec::SmallVec;
 use taffy::{prelude::Node, style::Dimension};
 
@@ -50,10 +47,10 @@ where
 {
     id: Id,
     direction: VirtualListDirection,
-    children: Vec<Option<(V, Disposer)>>,
+    children: Vec<Option<(V, Scope)>>,
     viewport: Rect,
     set_viewport: WriteSignal<Rect>,
-    view_fn: Box<dyn Fn(T) -> (V, Disposer)>,
+    view_fn: Box<dyn Fn(T) -> (V, Scope)>,
     phatom: PhantomData<T>,
     cx: ViewContext,
     before_size: f64,
@@ -187,7 +184,7 @@ where
         HashRun(hashed_items)
     });
 
-    let view_fn = Box::new(as_child_of_current_owner(view_fn));
+    let view_fn = Box::new(as_child_of_current_scope(view_fn));
 
     VirtualList {
         id,

@@ -9,7 +9,6 @@ use std::{
 
 thread_local! {
     static RUNTIME: Runtime = Runtime::new();
-    static SIGNALS: RefCell<HashMap<Id, Signal>> = Default::default();
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Hash)]
@@ -23,20 +22,19 @@ impl Id {
     }
 
     fn signal(&self) -> Option<Signal> {
-        SIGNALS.with(|signals| signals.borrow().get(self).cloned())
+        RUNTIME.with(|runtime| runtime.signals.borrow().get(self).cloned())
     }
 
     fn add_signal(&self, signal: Signal) {
-        SIGNALS.with(|signals| signals.borrow_mut().insert(*self, signal));
+        RUNTIME.with(|runtime| runtime.signals.borrow_mut().insert(*self, signal));
     }
 
     fn set_scope(&self) {
         RUNTIME.with(|runtime| {
-            if let Some(scope) = runtime.current_scope.borrow().as_ref() {
-                let mut children = runtime.children.borrow_mut();
-                let children = children.entry(*scope).or_default();
-                children.insert(*self);
-            }
+            let scope = runtime.current_scope.borrow();
+            let mut children = runtime.children.borrow_mut();
+            let children = children.entry(*scope).or_default();
+            children.insert(*self);
         });
     }
 
@@ -48,21 +46,42 @@ impl Id {
                     child.dispose();
                 }
             }
-            SIGNALS.with(|signals| {
-                signals.borrow_mut().remove(self);
-            });
+            runtime.signals.borrow_mut().remove(self);
         });
     }
 }
 
-fn with_scope<T>(scope: Id, f: impl FnOnce() -> T + 'static) -> T
+pub fn as_child_of_current_scope<T, U>(f: impl Fn(T) -> U + 'static) -> impl Fn(T) -> (U, Scope)
+where
+    T: 'static,
+{
+    let scope = Scope::current().create_child();
+    move |t| {
+        let prev_scope = RUNTIME.with(|runtime| {
+            let mut current_scope = runtime.current_scope.borrow_mut();
+            let prev_scope = *current_scope;
+            *current_scope = scope.0;
+            prev_scope
+        });
+
+        let result = f(t);
+
+        RUNTIME.with(|runtime| {
+            *runtime.current_scope.borrow_mut() = prev_scope;
+        });
+
+        (result, scope)
+    }
+}
+
+pub fn with_scope<T>(scope: Scope, f: impl FnOnce() -> T + 'static) -> T
 where
     T: 'static,
 {
     let prev_scope = RUNTIME.with(|runtime| {
         let mut current_scope = runtime.current_scope.borrow_mut();
-        let prev_scope = current_scope.take();
-        *current_scope = Some(scope);
+        let prev_scope = *current_scope;
+        *current_scope = scope.0;
         prev_scope
     });
 
@@ -89,6 +108,10 @@ impl Scope {
         Self(Id::next())
     }
 
+    pub fn current() -> Scope {
+        RUNTIME.with(|runtime| Scope(*runtime.current_scope.borrow()))
+    }
+
     pub fn create_child(&self) -> Scope {
         let child = Id::next();
         RUNTIME.with(|runtime| {
@@ -103,21 +126,26 @@ impl Scope {
     where
         T: Any + 'static,
     {
-        with_scope(self.0, || create_signal(value))
+        with_scope(*self, || create_signal(value))
     }
 
     pub fn create_rw_signal<T>(&self, value: T) -> RwSignal<T>
     where
         T: Any + 'static,
     {
-        with_scope(self.0, || create_rw_signal(value))
+        with_scope(*self, || create_rw_signal(value))
+    }
+
+    pub fn dispose(&self) {
+        self.0.dispose();
     }
 }
 
 struct Runtime {
     current_effect: RefCell<Option<Rc<dyn EffectTrait>>>,
-    current_scope: RefCell<Option<Id>>,
+    current_scope: RefCell<Id>,
     children: RefCell<HashMap<Id, HashSet<Id>>>,
+    signals: RefCell<HashMap<Id, Signal>>,
 }
 
 impl Default for Runtime {
@@ -127,11 +155,12 @@ impl Default for Runtime {
 }
 
 impl Runtime {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             current_effect: RefCell::new(None),
-            current_scope: RefCell::new(None),
+            current_scope: RefCell::new(Id::next()),
             children: RefCell::new(HashMap::new()),
+            signals: Default::default(),
         }
     }
 }
@@ -224,7 +253,6 @@ where
         ty: PhantomData,
         observers: Rc::new(RefCell::new(HashMap::new())),
     });
-    println!("run effect when creation ");
     run_effect(effect);
 }
 
@@ -270,6 +298,80 @@ where
     }
 }
 
+pub struct Memo<T> {
+    getter: ReadSignal<Option<T>>,
+    ty: PhantomData<T>,
+}
+
+impl<T> Copy for Memo<T> {}
+
+impl<T> Clone for Memo<T> {
+    fn clone(&self) -> Self {
+        Self {
+            getter: self.getter,
+            ty: Default::default(),
+        }
+    }
+}
+
+impl<T: Clone> Memo<T> {
+    pub fn get(&self) -> T
+    where
+        T: 'static,
+    {
+        self.getter.get().unwrap()
+    }
+
+    pub fn get_untracked(&self) -> T
+    where
+        T: 'static,
+    {
+        self.getter.get_untracked().unwrap()
+    }
+}
+
+impl<T> Memo<T> {
+    pub fn with<O>(&self, f: impl FnOnce(&T) -> O) -> O
+    where
+        T: 'static,
+    {
+        self.getter.with(|value| f(value.as_ref().unwrap()))
+    }
+
+    pub fn with_untracked<O>(&self, f: impl FnOnce(&T) -> O) -> O
+    where
+        T: 'static,
+    {
+        self.getter
+            .with_untracked(|value| f(value.as_ref().unwrap()))
+    }
+}
+
+pub fn create_memo<T>(f: impl Fn(Option<&T>) -> T + 'static) -> Memo<T>
+where
+    T: PartialEq + 'static,
+{
+    let (getter, setter) = create_signal(None::<T>);
+    let id = getter.id;
+
+    with_scope(Scope(id), move || {
+        create_effect(move |_| {
+            let (is_different, new_value) = getter.with_untracked(|value| {
+                let new_value = f(value.as_ref());
+                (Some(&new_value) != value.as_ref(), new_value)
+            });
+            if is_different {
+                setter.set(Some(new_value));
+            }
+        });
+    });
+
+    Memo {
+        getter,
+        ty: PhantomData,
+    }
+}
+
 fn run_effect(effect: Rc<dyn EffectTrait>) {
     effect.id().dispose();
 
@@ -279,8 +381,7 @@ fn run_effect(effect: Rc<dyn EffectTrait>) {
         *runtime.current_effect.borrow_mut() = Some(effect.clone());
     });
 
-    with_scope(effect.id(), move || {
-        println!("effect run");
+    with_scope(Scope(effect.id()), move || {
         effect.run();
     });
 
@@ -391,10 +492,8 @@ impl Signal {
     }
 
     fn subscribe(&self) {
-        println!("subscribe");
         RUNTIME.with(|runtime| {
             if let Some(effect) = runtime.current_effect.borrow().as_ref() {
-                println!("subscribe current effect");
                 self.subscribers
                     .borrow_mut()
                     .insert(effect.id(), effect.clone());
@@ -431,7 +530,6 @@ fn signal_update_value<U, T: 'static>(signal: &Signal, f: impl FnOnce(&mut T) ->
         let mut value = signal.value.borrow_mut();
         value.downcast_mut::<T>().map(f)
     };
-    println!("run effects");
     signal.run_effects();
     result
 }
