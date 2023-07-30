@@ -20,19 +20,13 @@ fn app_view() -> impl View {
                 set_counter.update(|value| *value += 1.0);
                 true
             })
-            .on_event(EventListener::PointerEnter, {
-                let set_is_hovered = set_is_hovered.clone();
-                move |_| {
-                    set_is_hovered.update(|val| *val = true);
-                    true
-                }
+            .on_event(EventListener::PointerEnter, move |_| {
+                set_is_hovered.update(|val| *val = true);
+                true
             })
-            .on_event(EventListener::PointerLeave, {
-                let set_is_hovered = set_is_hovered.clone();
-                move |_| {
-                    set_is_hovered.update(|val| *val = false);
-                    true
-                }
+            .on_event(EventListener::PointerLeave, move |_| {
+                set_is_hovered.update(|val| *val = false);
+                true
             })
             .style(|| {
                 Style::BASE

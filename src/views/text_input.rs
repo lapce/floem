@@ -99,7 +99,6 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
     let id = cx.new_id();
 
     {
-        let buffer = buffer.clone();
         create_effect(move |_| {
             let text: String = buffer.with(|buff| buff.to_string());
             id.update_state(text, false);

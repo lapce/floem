@@ -1,6 +1,6 @@
 use std::{
     any::Any,
-    cell::{Cell, RefCell},
+    cell::RefCell,
     collections::{HashMap, HashSet},
     marker::PhantomData,
     rc::Rc,
@@ -30,11 +30,11 @@ impl Id {
         SIGNALS.with(|signals| signals.borrow_mut().insert(*self, signal));
     }
 
-    fn set_owner(&self) {
+    fn set_scope(&self) {
         RUNTIME.with(|runtime| {
-            if let Some(owner) = runtime.current_owner.borrow().as_ref() {
+            if let Some(scope) = runtime.current_scope.borrow().as_ref() {
                 let mut children = runtime.children.borrow_mut();
-                let children = children.entry(*owner).or_default();
+                let children = children.entry(*scope).or_default();
                 children.insert(*self);
             }
         });
@@ -55,68 +55,68 @@ impl Id {
     }
 }
 
-fn with_owner<T>(owner: Id, f: impl FnOnce() -> T + 'static) -> T
+fn with_scope<T>(scope: Id, f: impl FnOnce() -> T + 'static) -> T
 where
     T: 'static,
 {
-    let prev_owner = RUNTIME.with(|runtime| {
-        let mut current_owner = runtime.current_owner.borrow_mut();
-        let prev_owner = current_owner.take();
-        *current_owner = Some(owner);
-        prev_owner
+    let prev_scope = RUNTIME.with(|runtime| {
+        let mut current_scope = runtime.current_scope.borrow_mut();
+        let prev_scope = current_scope.take();
+        *current_scope = Some(scope);
+        prev_scope
     });
 
     let result = f();
 
     RUNTIME.with(|runtime| {
-        *runtime.current_owner.borrow_mut() = prev_owner;
+        *runtime.current_scope.borrow_mut() = prev_scope;
     });
 
     result
 }
 
 #[derive(Clone, Copy)]
-pub struct Owner(Id);
+pub struct Scope(Id);
 
-impl Default for Owner {
+impl Default for Scope {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Owner {
+impl Scope {
     pub fn new() -> Self {
         Self(Id::next())
     }
 
-    pub fn create_child(&self) -> Owner {
+    pub fn create_child(&self) -> Scope {
         let child = Id::next();
         RUNTIME.with(|runtime| {
             let mut children = runtime.children.borrow_mut();
             let children = children.entry(self.0).or_default();
             children.insert(child);
         });
-        Owner(child)
+        Scope(child)
     }
 
     pub fn create_signal<T>(&self, value: T) -> (ReadSignal<T>, WriteSignal<T>)
     where
         T: Any + 'static,
     {
-        with_owner(self.0, || create_signal(value))
+        with_scope(self.0, || create_signal(value))
     }
 
     pub fn create_rw_signal<T>(&self, value: T) -> RwSignal<T>
     where
         T: Any + 'static,
     {
-        with_owner(self.0, || create_rw_signal(value))
+        with_scope(self.0, || create_rw_signal(value))
     }
 }
 
 struct Runtime {
     current_effect: RefCell<Option<Rc<dyn EffectTrait>>>,
-    current_owner: RefCell<Option<Id>>,
+    current_scope: RefCell<Option<Id>>,
     children: RefCell<HashMap<Id, HashSet<Id>>>,
 }
 
@@ -130,7 +130,7 @@ impl Runtime {
     pub fn new() -> Self {
         Self {
             current_effect: RefCell::new(None),
-            current_owner: RefCell::new(None),
+            current_scope: RefCell::new(None),
             children: RefCell::new(HashMap::new()),
         }
     }
@@ -239,7 +239,7 @@ where
         value: Rc::new(RefCell::new(value)),
     };
     id.add_signal(signal);
-    id.set_owner();
+    id.set_scope();
     (
         ReadSignal {
             id,
@@ -263,7 +263,7 @@ where
         value: Rc::new(RefCell::new(value)),
     };
     id.add_signal(signal);
-    id.set_owner();
+    id.set_scope();
     RwSignal {
         id,
         ty: PhantomData,
@@ -279,7 +279,7 @@ fn run_effect(effect: Rc<dyn EffectTrait>) {
         *runtime.current_effect.borrow_mut() = Some(effect.clone());
     });
 
-    with_owner(effect.id(), move || {
+    with_scope(effect.id(), move || {
         println!("effect run");
         effect.run();
     });

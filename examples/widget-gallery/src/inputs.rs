@@ -13,13 +13,10 @@ pub fn text_input_view() -> impl View {
 
     form(move || {
         (
-            form_item("Simple Input:".to_string(), 120.0, {
-                let text = text.clone();
-                move || {
-                    text_input(text.clone())
-                        .style(|| Style::BASE.border(1.0).height_px(32.0))
-                        .keyboard_navigatable()
-                }
+            form_item("Simple Input:".to_string(), 120.0, move || {
+                text_input(text)
+                    .style(|| Style::BASE.border(1.0).height_px(32.0))
+                    .keyboard_navigatable()
             }),
             form_item("Styled Input:".to_string(), 120.0, move || {
                 text_input(text)
