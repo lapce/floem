@@ -167,6 +167,10 @@ pub enum UpdateMessage {
         id: Id,
         action: Box<ResizeCallback>,
     },
+    CleanupListener {
+        id: Id,
+        action: Box<dyn Fn()>,
+    },
     HandleTitleBar(bool),
     SetWindowDelta(Vec2),
     OpenFile {
@@ -519,6 +523,10 @@ impl<V: View> AppHandle<V> {
                             rect: Rect::ZERO,
                             callback: action,
                         });
+                    }
+                    UpdateMessage::CleanupListener { id, action } => {
+                        let state = cx.app_state.view_state(id);
+                        state.cleanup_listener = Some(action);
                     }
                     UpdateMessage::OpenFile {
                         options,

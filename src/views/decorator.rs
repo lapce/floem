@@ -143,6 +143,12 @@ pub trait Decorators: View + Sized {
         self
     }
 
+    fn on_cleanup(self, action: impl Fn() + 'static) -> Self {
+        let id = self.id();
+        id.update_cleanup_listener(Box::new(action));
+        self
+    }
+
     fn animation(self, anim: Animation) -> Self {
         let id = self.id();
         create_effect(move |_| {
