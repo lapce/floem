@@ -295,6 +295,16 @@ impl Id {
         }
     }
 
+    pub fn update_cleanup_listener(&self, action: Box<dyn Fn()>) {
+        if let Some(root) = self.root_id() {
+            UPDATE_MESSAGES.with(|msgs| {
+                let mut msgs = msgs.borrow_mut();
+                let msgs = msgs.entry(root).or_default();
+                msgs.push(UpdateMessage::CleanupListener { id: *self, action })
+            });
+        }
+    }
+
     pub fn update_animation(&self, animation: Animation) {
         if let Some(root) = self.root_id() {
             UPDATE_MESSAGES.with(|msgs| {

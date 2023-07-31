@@ -4,7 +4,7 @@ use floem::{
     animate::{animation, EasingFn},
     event::EventListener,
     peniko::Color,
-    reactive::{create_signal, SignalGet, SignalUpdate},
+    reactive::create_signal,
     style::Style,
     view::View,
     views::{label, stack, Decorators},

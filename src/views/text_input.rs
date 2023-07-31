@@ -1,8 +1,5 @@
+use crate::reactive::{create_effect, RwSignal};
 use crate::{context::LayoutCx, style::CursorStyle};
-use leptos_reactive::{
-    create_effect, RwSignal, SignalGet, SignalGetUntracked, SignalUpdate, SignalWith,
-    SignalWithUntracked,
-};
 use taffy::{
     prelude::{Layout, Node},
     style::Dimension,
@@ -101,10 +98,12 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
     let cx = ViewContext::get_current();
     let id = cx.new_id();
 
-    create_effect(move |_| {
-        let text: String = buffer.with(|buff| buff.to_string());
-        id.update_state(text, false);
-    });
+    {
+        create_effect(move |_| {
+            let text: String = buffer.with(|buff| buff.to_string());
+            id.update_state(text, false);
+        });
+    }
 
     TextInput {
         id,

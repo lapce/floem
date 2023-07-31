@@ -3,8 +3,8 @@ use std::{
     marker::PhantomData,
 };
 
+use floem_reactive::{as_child_of_current_scope, create_effect, Scope};
 use glazier::kurbo::Rect;
-use leptos_reactive::{as_child_of_current_owner, create_effect, Disposer};
 use rustc_hash::FxHasher;
 use smallvec::SmallVec;
 
@@ -27,8 +27,8 @@ where
     T: 'static,
 {
     id: Id,
-    children: Vec<Option<(V, Disposer)>>,
-    view_fn: Box<dyn Fn(T) -> (V, Disposer)>,
+    children: Vec<Option<(V, Scope)>>,
+    view_fn: Box<dyn Fn(T) -> (V, Scope)>,
     phantom: PhantomData<T>,
     cx: ViewContext,
 }
@@ -75,7 +75,7 @@ where
         id.update_state(diff, false);
         HashRun(hashed_items)
     });
-    let view_fn = Box::new(as_child_of_current_owner(view_fn));
+    let view_fn = Box::new(as_child_of_current_scope(view_fn));
     List {
         id,
         children: Vec::new(),
@@ -325,7 +325,7 @@ pub(crate) fn diff<K: Eq + Hash, V>(from: &FxIndexSet<K>, to: &FxIndexSet<K>) ->
 
 fn remove_index<V: View>(
     app_state: &mut AppState,
-    children: &mut [Option<(V, Disposer)>],
+    children: &mut [Option<(V, Scope)>],
     index: usize,
 ) -> Option<()> {
     let (mut view, _) = std::mem::take(&mut children[index])?;
@@ -336,11 +336,11 @@ fn remove_index<V: View>(
 pub(super) fn apply_diff<T, V, VF>(
     app_state: &mut AppState,
     mut diff: Diff<T>,
-    children: &mut Vec<Option<(V, Disposer)>>,
+    children: &mut Vec<Option<(V, Scope)>>,
     view_fn: &VF,
 ) where
     V: View,
-    VF: Fn(T) -> (V, Disposer),
+    VF: Fn(T) -> (V, Scope),
 {
     // Resize children if needed
     if diff.added.len().checked_sub(diff.removed.len()).is_some() {

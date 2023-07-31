@@ -10,7 +10,7 @@ use floem::{
     event::{Event, EventListener},
     glazier::keyboard_types::Key,
     peniko::Color,
-    reactive::{create_signal, SignalGet, SignalGetUntracked, SignalUpdate},
+    reactive::create_signal,
     style::{CursorStyle, Style},
     view::View,
     views::{

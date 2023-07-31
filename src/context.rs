@@ -83,6 +83,7 @@ pub struct ViewState {
     pub(crate) computed_style: ComputedStyle,
     pub(crate) event_listeners: HashMap<EventListener, Box<EventCallback>>,
     pub(crate) resize_listener: Option<ResizeListener>,
+    pub(crate) cleanup_listener: Option<Box<dyn Fn()>>,
     pub(crate) last_pointer_down: Option<PointerEvent>,
 }
 
@@ -108,6 +109,7 @@ impl ViewState {
             children_nodes: Vec::new(),
             event_listeners: HashMap::new(),
             resize_listener: None,
+            cleanup_listener: None,
             last_pointer_down: None,
         }
     }

@@ -4,12 +4,12 @@ use crate::{
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
     style::{ComputedStyle, TextOverflow},
 };
+use floem_reactive::create_effect;
 use floem_renderer::{
     cosmic_text::{LineHeightValue, Style as FontStyle, Weight},
     Renderer,
 };
 use glazier::kurbo::{Point, Rect};
-use leptos_reactive::create_effect;
 use peniko::Color;
 use taffy::{prelude::Node, style::Dimension};
 

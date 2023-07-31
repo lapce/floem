@@ -1,5 +1,5 @@
+use floem_reactive::create_effect;
 use glazier::kurbo::{Point, Rect};
-use leptos_reactive::create_effect;
 
 use crate::{
     animate::Animation,
@@ -140,6 +140,12 @@ pub trait Decorators: View + Sized {
     fn on_resize(self, action: impl Fn(Point, Rect) + 'static) -> Self {
         let id = self.id();
         id.update_resize_listener(Box::new(action));
+        self
+    }
+
+    fn on_cleanup(self, action: impl Fn() + 'static) -> Self {
+        let id = self.id();
+        id.update_cleanup_listener(Box::new(action));
         self
     }
 

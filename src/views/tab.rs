@@ -1,7 +1,7 @@
 use std::{hash::Hash, marker::PhantomData};
 
+use floem_reactive::{as_child_of_current_scope, create_effect, Scope};
 use glazier::kurbo::Rect;
-use leptos_reactive::{as_child_of_current_owner, create_effect, Disposer};
 use smallvec::SmallVec;
 use taffy::style::Display;
 
@@ -26,8 +26,8 @@ where
 {
     id: Id,
     active: usize,
-    children: Vec<Option<(V, Disposer)>>,
-    view_fn: Box<dyn Fn(T) -> (V, Disposer)>,
+    children: Vec<Option<(V, Scope)>>,
+    view_fn: Box<dyn Fn(T) -> (V, Scope)>,
     phatom: PhantomData<T>,
     cx: ViewContext,
 }
@@ -86,7 +86,7 @@ where
         id.update_state(TabState::Active::<T>(active), false);
     });
 
-    let view_fn = Box::new(as_child_of_current_owner(view_fn));
+    let view_fn = Box::new(as_child_of_current_scope(view_fn));
 
     Tab {
         id,

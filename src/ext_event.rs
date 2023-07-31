@@ -1,9 +1,8 @@
 use std::{collections::VecDeque, sync::Arc};
 
+use floem_reactive::{create_effect, untrack, with_scope, ReadSignal, Scope, Trigger};
 use glazier::{IdleHandle, IdleToken};
-use leptos_reactive::{
-    create_effect, create_signal, create_trigger, untrack, ReadSignal, SignalSet, Trigger,
-};
+// use leptos_reactive::{create_signal, create_trigger, untrack, ReadSignal, SignalSet, Trigger};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 
@@ -33,19 +32,26 @@ impl ExtEventHandler {
     }
 }
 
-pub fn create_ext_action<T: Send + 'static>(action: impl Fn(T) + 'static) -> impl FnOnce(T) {
-    let trigger = create_trigger();
+pub fn create_ext_action<T: Send + 'static>(
+    cx: Scope,
+    action: impl Fn(T) + 'static,
+) -> impl FnOnce(T) {
+    let cx = cx.create_child();
+    let trigger = cx.create_trigger();
     let data = Arc::new(Mutex::new(None));
 
     {
         let data = data.clone();
-        create_effect(move |_| {
-            trigger.track();
-            if let Some(event) = data.lock().take() {
-                untrack(|| {
-                    action(event);
-                });
-            }
+        with_scope(cx, move || {
+            create_effect(move |_| {
+                trigger.track();
+                if let Some(event) = data.lock().take() {
+                    untrack(|| {
+                        action(event);
+                    });
+                    cx.dispose();
+                }
+            });
         });
     }
 
@@ -55,12 +61,14 @@ pub fn create_ext_action<T: Send + 'static>(action: impl Fn(T) + 'static) -> imp
     }
 }
 
-pub fn create_signal_from_channel<T: Send>(
+pub fn create_signal_from_channel<T: Send + 'static>(
     rx: crossbeam_channel::Receiver<T>,
 ) -> ReadSignal<Option<T>> {
-    let trigger = create_trigger();
+    let cx = Scope::new();
+    let trigger = cx.create_trigger();
 
-    let (read, write) = create_signal(None);
+    let channel_closed = cx.create_rw_signal(false);
+    let (read, write) = cx.create_signal(None);
     let data = Arc::new(Mutex::new(VecDeque::new()));
 
     {
@@ -70,14 +78,23 @@ pub fn create_signal_from_channel<T: Send>(
             while let Some(value) = data.lock().pop_front() {
                 write.set(value);
             }
+
+            if channel_closed.get() {
+                cx.dispose();
+            }
         });
     }
+
+    let send = create_ext_action(cx, move |_| {
+        channel_closed.set(true);
+    });
 
     std::thread::spawn(move || {
         while let Ok(event) = rx.recv() {
             data.lock().push_back(Some(event));
             EXT_EVENT_HANDLER.add_trigger(trigger);
         }
+        send(());
     });
 
     read

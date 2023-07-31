@@ -135,6 +135,9 @@ pub trait View {
         }
         let id = self.id();
         let view_state = app_state.view_state(id);
+        if let Some(action) = view_state.cleanup_listener.as_ref() {
+            action();
+        }
         let node = view_state.node;
         if let Ok(children) = app_state.taffy.children(node) {
             for child in children {
