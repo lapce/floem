@@ -11,6 +11,8 @@ thread_local! {
     pub(crate) static RUNTIME: Runtime = Runtime::new();
 }
 
+/// The internal reactive Runtime which stores all the reactive system states in a
+/// thread local
 pub(crate) struct Runtime {
     pub(crate) current_effect: RefCell<Option<Rc<dyn EffectTrait>>>,
     pub(crate) current_scope: RefCell<Id>,

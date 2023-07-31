@@ -6,6 +6,7 @@ use crate::{
     runtime::RUNTIME,
 };
 
+/// A read write Signal which can acts as both a Getter and a Setter
 pub struct RwSignal<T> {
     id: Id,
     ty: PhantomData<T>,
@@ -41,6 +42,7 @@ impl<T> fmt::Debug for RwSignal<T> {
 }
 
 impl<T> RwSignal<T> {
+    /// Sets the new_value to the Signal and triggers effect run
     pub fn set(&self, new_value: T)
     where
         T: 'static,
@@ -50,6 +52,7 @@ impl<T> RwSignal<T> {
         }
     }
 
+    /// Update the stored value with the given function and triggers effect run
     pub fn update(&self, f: impl FnOnce(&mut T))
     where
         T: 'static,
@@ -59,6 +62,8 @@ impl<T> RwSignal<T> {
         }
     }
 
+    /// Update the stored value with the given function, triggers effect run,
+    /// and returns the value returned by the function
     pub fn try_update<O>(&self, f: impl FnOnce(&mut T) -> O) -> Option<O>
     where
         T: 'static,
@@ -67,6 +72,8 @@ impl<T> RwSignal<T> {
         signal_update_value(&signal, f)
     }
 
+    /// Applies a clsoure to the current value stored in the Signal, and subcribes
+    /// to the current runnig effect to this Memo.
     pub fn with<O>(&self, f: impl FnOnce(&T) -> O) -> O
     where
         T: 'static,
@@ -75,11 +82,8 @@ impl<T> RwSignal<T> {
         signal_with(&signal, f)
     }
 
-    pub fn track(&self) {
-        let signal = self.id.signal().unwrap();
-        signal.subscribe();
-    }
-
+    /// Applies a clsoure to the current value stored in the Signal, but it doesn't subcribe
+    /// to the current runnig effect.
     pub fn with_untracked<O>(&self, f: impl FnOnce(&T) -> O) -> O
     where
         T: 'static,
@@ -88,6 +92,13 @@ impl<T> RwSignal<T> {
         signal_with_untracked(&signal, f)
     }
 
+    /// Only subcribes to the current runnig effect to this Signal.
+    pub fn track(&self) {
+        let signal = self.id.signal().unwrap();
+        signal.subscribe();
+    }
+
+    /// Create a Getter of this Signal
     pub fn read_only(&self) -> ReadSignal<T> {
         ReadSignal {
             id: self.id,
@@ -95,6 +106,7 @@ impl<T> RwSignal<T> {
         }
     }
 
+    /// Create a Setter of this Signal
     pub fn write_only(&self) -> WriteSignal<T> {
         WriteSignal {
             id: self.id,
@@ -104,6 +116,8 @@ impl<T> RwSignal<T> {
 }
 
 impl<T: Clone> RwSignal<T> {
+    /// Clones and returns the current value stored in the Signal, and subcribes
+    /// to the current runnig effect to this Signal.
     pub fn get(&self) -> T
     where
         T: 'static,
@@ -112,6 +126,8 @@ impl<T: Clone> RwSignal<T> {
         signal_get(&signal)
     }
 
+    /// Clones and returns the current value stored in the Signal, but it doesn't subcribe
+    /// to the current runnig effect.
     pub fn get_untracked(&self) -> T
     where
         T: 'static,
@@ -121,6 +137,10 @@ impl<T: Clone> RwSignal<T> {
     }
 }
 
+/// Creates a new RwSignal which can act both as a setter and a getter.
+/// Accessing the signal value in an Effect will make the Effect subscribes
+/// to the value change of the Signal. And whenever the signal value changes,
+/// it will trigger an effect run.
 pub fn create_rw_signal<T>(value: T) -> RwSignal<T>
 where
     T: Any + 'static,
@@ -139,6 +159,7 @@ where
     }
 }
 
+/// A getter only Signal
 pub struct ReadSignal<T> {
     pub(crate) id: Id,
     ty: PhantomData<T>,
@@ -164,6 +185,8 @@ impl<T> PartialEq for ReadSignal<T> {
 }
 
 impl<T: Clone> ReadSignal<T> {
+    /// Clones and returns the current value stored in the Signal, and subcribes
+    /// to the current runnig effect to this Signal.
     pub fn get(&self) -> T
     where
         T: 'static,
@@ -172,6 +195,8 @@ impl<T: Clone> ReadSignal<T> {
         signal_get(&signal)
     }
 
+    /// Clones and returns the current value stored in the Signal, but it doesn't subcribe
+    /// to the current runnig effect.
     pub fn get_untracked(&self) -> T
     where
         T: 'static,
@@ -182,6 +207,8 @@ impl<T: Clone> ReadSignal<T> {
 }
 
 impl<T> ReadSignal<T> {
+    /// Applies a clsoure to the current value stored in the Signal, and subcribes
+    /// to the current runnig effect to this Memo.
     pub fn with<O>(&self, f: impl FnOnce(&T) -> O) -> O
     where
         T: 'static,
@@ -190,6 +217,8 @@ impl<T> ReadSignal<T> {
         signal_with(&signal, f)
     }
 
+    /// Applies a clsoure to the current value stored in the Signal, but it doesn't subcribe
+    /// to the current runnig effect.
     pub fn with_untracked<O>(&self, f: impl FnOnce(&T) -> O) -> O
     where
         T: 'static,
@@ -199,6 +228,7 @@ impl<T> ReadSignal<T> {
     }
 }
 
+/// A setter only Signal
 pub struct WriteSignal<T> {
     id: Id,
     ty: PhantomData<T>,
@@ -224,6 +254,7 @@ impl<T> PartialEq for WriteSignal<T> {
 }
 
 impl<T> WriteSignal<T> {
+    /// Sets the new_value to the Signal and triggers effect run
     pub fn set(&self, new_value: T)
     where
         T: 'static,
@@ -232,6 +263,7 @@ impl<T> WriteSignal<T> {
         signal_update_value(&signal, |v| *v = new_value);
     }
 
+    /// Update the stored value with the given function and triggers effect run
     pub fn update(&self, f: impl FnOnce(&mut T))
     where
         T: 'static,
@@ -240,6 +272,8 @@ impl<T> WriteSignal<T> {
         signal_update_value(&signal, f);
     }
 
+    /// Update the stored value with the given function, triggers effect run,
+    /// and returns the value returned by the function
     pub fn try_update<O>(&self, f: impl FnOnce(&mut T) -> O) -> Option<O>
     where
         T: 'static,
@@ -249,6 +283,10 @@ impl<T> WriteSignal<T> {
     }
 }
 
+/// Creates a new setter and getter Signal.
+/// Accessing the signal value in an Effect will make the Effect subscribes
+/// to the value change of the Signal. And whenever the signal value changes,
+/// it will trigger an effect run.
 pub fn create_signal<T>(value: T) -> (ReadSignal<T>, WriteSignal<T>)
 where
     T: Any + 'static,
@@ -273,6 +311,7 @@ where
     )
 }
 
+/// The interal Signal where the value is stored, and effects are stored.
 #[derive(Clone)]
 pub(crate) struct Signal {
     pub(crate) id: Id,
