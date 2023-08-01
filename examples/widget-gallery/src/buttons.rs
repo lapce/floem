@@ -59,6 +59,16 @@ pub fn button_view() -> impl View {
                     })
                     .hover_style(|| Style::BASE.background(Color::rgb8(224, 224, 224)))
             }),
+            form_item("Secondary click button:".to_string(), 120.0, || {
+                label(|| "Right click me".to_string())
+                    .on_secondary_click(|_| {
+                        println!("Secondary mouse button click.");
+                        true
+                    })
+                    .keyboard_navigatable()
+                    .focus_visible_style(|| Style::BASE.border(2.).border_color(Color::BLUE))
+                    .style(|| Style::BASE.border(1.0).border_radius(10.0).padding_px(10.0))
+            }),
         )
     })
 }

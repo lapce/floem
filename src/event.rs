@@ -9,6 +9,7 @@ pub enum EventListener {
     KeyUp,
     Click,
     DoubleClick,
+    SecondaryClick,
     DragStart,
     DragEnd,
     DragOver,

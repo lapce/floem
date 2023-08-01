@@ -404,6 +404,21 @@ pub trait View {
                             cx.app_state.drag_start = Some((id, event.pos));
                         }
                     }
+                } else if event.button.is_right() {
+                    let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
+                    let now_focused = rect.contains(event.pos);
+
+                    if now_focused {
+                        if cx.app_state.keyboard_navigable.contains(&id) {
+                            // if the view can be focused, we update the focus
+                            cx.app_state.update_focus(id, false);
+                        }
+                        if cx.has_event_listener(id, EventListener::SecondaryClick) {
+                            let view_state = cx.app_state.view_state(id);
+                            view_state.last_pointer_down = Some(event.clone());
+                            cx.update_active(id);
+                        }
+                    }
                 }
             }
             Event::PointerMove(pointer_event) => {
@@ -519,6 +534,17 @@ pub trait View {
                             if on_view && last_pointer_down.is_some() && (*action)(&event) {
                                 return true;
                             }
+                        }
+                    }
+                } else if pointer_event.button.is_right() {
+                    let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
+                    let on_view = rect.contains(pointer_event.pos);
+
+                    let last_pointer_down = cx.app_state.view_state(id).last_pointer_down.take();
+                    if let Some(action) = cx.get_event_listener(id, &EventListener::SecondaryClick)
+                    {
+                        if on_view && last_pointer_down.is_some() && (*action)(&event) {
+                            return true;
                         }
                     }
                 }
