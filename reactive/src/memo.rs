@@ -79,19 +79,18 @@ pub fn create_memo<T>(f: impl Fn(Option<&T>) -> T + 'static) -> Memo<T>
 where
     T: PartialEq + 'static,
 {
+    let cx = Scope::current();
     let (getter, setter) = create_signal(None::<T>);
-    let id = getter.id;
 
-    with_scope(Scope(id).create_child(), move || {
-        create_effect(move |_| {
-            let (is_different, new_value) = getter.with_untracked(|value| {
-                let new_value = f(value.as_ref());
-                (Some(&new_value) != value.as_ref(), new_value)
-            });
-            if is_different {
-                setter.set(Some(new_value));
-            }
+    create_effect(move |_| {
+        cx.track();
+        let (is_different, new_value) = getter.with_untracked(|value| {
+            let new_value = f(value.as_ref());
+            (Some(&new_value) != value.as_ref(), new_value)
         });
+        if is_different {
+            setter.set(Some(new_value));
+        }
     });
 
     Memo {
