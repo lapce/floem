@@ -25,7 +25,6 @@ impl fmt::Debug for Scope {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut s = f.debug_struct("Scope");
         s.field("id", &self.0);
-        #[cfg(any(debug_assertions))]
         s.finish()
     }
 }

@@ -1,18 +1,16 @@
-use std::{any::Any, cell::RefCell, collections::HashMap, marker::PhantomData, rc::Rc};
+use std::{any::Any, cell::RefCell, collections::HashSet, marker::PhantomData, rc::Rc};
 
 use crate::{
     id::Id,
     runtime::RUNTIME,
     scope::{with_scope, Scope},
-    signal::Signal,
 };
 
 pub(crate) trait EffectTrait {
     fn id(&self) -> Id;
     fn run(&self) -> bool;
-    fn add_observer(&self, signal: Signal);
-    fn current_observers(&self) -> HashMap<Id, Signal>;
-    fn clear_observers(&self);
+    fn add_observer(&self, id: Id);
+    fn clear_observers(&self) -> Option<HashSet<Id>>;
 }
 
 struct Effect<T, F>
@@ -24,7 +22,7 @@ where
     f: F,
     value: Rc<RefCell<dyn Any>>,
     ty: PhantomData<T>,
-    observers: Rc<RefCell<HashMap<Id, Signal>>>,
+    observers: Rc<RefCell<Option<HashSet<Id>>>>,
 }
 
 impl<T, F> Drop for Effect<T, F>
@@ -54,7 +52,7 @@ where
         f,
         value: Rc::new(RefCell::new(None::<T>)),
         ty: PhantomData,
-        observers: Rc::new(RefCell::new(HashMap::new())),
+        observers: Rc::new(RefCell::new(None)),
     });
     id.set_scope();
 
@@ -93,10 +91,15 @@ pub(crate) fn run_effect(effect: Rc<dyn EffectTrait>) {
 /// from all the Signals that this effect subscribes to, and clears all the signals
 /// that's stored in this effect, so that the next effect run can re-track signals.
 pub(crate) fn observer_clean_up(effect: &Rc<dyn EffectTrait>) {
-    for (_, observer) in effect.current_observers().iter() {
-        observer.subscribers.borrow_mut().remove(&effect.id());
+    let effect_id = effect.id();
+    let observers = effect.clear_observers();
+    if let Some(observers) = observers {
+        for observer in observers {
+            if let Some(signal) = observer.signal() {
+                signal.subscribers.borrow_mut().remove(&effect_id);
+            }
+        }
     }
-    effect.clear_observers();
 }
 
 impl<T, F> EffectTrait for Effect<T, F>
@@ -133,15 +136,16 @@ where
         true
     }
 
-    fn add_observer(&self, signal: Signal) {
-        self.observers.borrow_mut().insert(signal.id, signal);
+    fn add_observer(&self, id: Id) {
+        let mut observers = self.observers.borrow_mut();
+        if let Some(observers) = observers.as_mut() {
+            observers.insert(id);
+        } else {
+            *observers = Some(HashSet::from_iter([id]));
+        }
     }
 
-    fn current_observers(&self) -> HashMap<Id, Signal> {
-        self.observers.borrow().clone()
-    }
-
-    fn clear_observers(&self) {
-        self.observers.borrow_mut().clear();
+    fn clear_observers(&self) -> Option<HashSet<Id>> {
+        self.observers.borrow_mut().take()
     }
 }

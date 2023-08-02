@@ -36,7 +36,6 @@ impl<T> fmt::Debug for RwSignal<T> {
         let mut s = f.debug_struct("RwSignal");
         s.field("id", &self.id);
         s.field("ty", &self.ty);
-        #[cfg(any(debug_assertions))]
         s.finish()
     }
 }
@@ -336,7 +335,7 @@ impl Signal {
                 self.subscribers
                     .borrow_mut()
                     .insert(effect.id(), effect.clone());
-                effect.add_observer(self.clone());
+                effect.add_observer(self.id);
             }
         });
     }
