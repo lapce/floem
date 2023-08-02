@@ -137,6 +137,12 @@ pub trait Decorators: View + Sized {
         self
     }
 
+    fn on_secondary_click(self, action: impl Fn(&Event) -> bool + 'static) -> Self {
+        let id = self.id();
+        id.update_event_listener(EventListener::SecondaryClick, Box::new(action));
+        self
+    }
+
     fn on_resize(self, action: impl Fn(Point, Rect) + 'static) -> Self {
         let id = self.id();
         id.update_resize_listener(Box::new(action));
