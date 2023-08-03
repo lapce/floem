@@ -20,9 +20,9 @@ where
 {
     id: Id,
     f: F,
-    value: Rc<RefCell<dyn Any>>,
+    value: RefCell<Box<dyn Any>>,
     ty: PhantomData<T>,
-    observers: Rc<RefCell<Option<HashSet<Id>>>>,
+    observers: RefCell<Option<HashSet<Id>>>,
 }
 
 impl<T, F> Drop for Effect<T, F>
@@ -50,9 +50,9 @@ where
     let effect = Rc::new(Effect {
         id,
         f,
-        value: Rc::new(RefCell::new(None::<T>)),
+        value: RefCell::new(Box::new(None::<T>)),
         ty: PhantomData,
-        observers: Rc::new(RefCell::new(None)),
+        observers: RefCell::new(None),
     });
     id.set_scope();
 
@@ -70,7 +70,8 @@ pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
 }
 
 pub(crate) fn run_effect(effect: Rc<dyn EffectTrait>) {
-    effect.id().dispose();
+    let effect_id = effect.id();
+    effect_id.dispose();
 
     observer_clean_up(&effect);
 
@@ -78,7 +79,9 @@ pub(crate) fn run_effect(effect: Rc<dyn EffectTrait>) {
         *runtime.current_effect.borrow_mut() = Some(effect.clone());
     });
 
-    with_scope(Scope(effect.id()), move || {
+    let effect_scope = Scope(effect_id);
+    with_scope(effect_scope, move || {
+        effect_scope.track();
         effect.run();
     });
 
@@ -112,11 +115,9 @@ where
     }
 
     fn run(&self) -> bool {
-        let value = self.value.clone();
-
         let curr_value = {
             // downcast value
-            let mut value = value.borrow_mut();
+            let mut value = self.value.borrow_mut();
             let value = value
                 .downcast_mut::<Option<T>>()
                 .expect("to downcast effect value");
@@ -127,7 +128,7 @@ where
         let new_value = (self.f)(curr_value);
 
         // set new value
-        let mut value = value.borrow_mut();
+        let mut value = self.value.borrow_mut();
         let value = value
             .downcast_mut::<Option<T>>()
             .expect("to downcast effect value");

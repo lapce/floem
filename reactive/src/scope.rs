@@ -1,6 +1,7 @@
 use std::{any::Any, cell::RefCell, collections::HashMap, fmt, rc::Rc};
 
 use crate::{
+    create_effect,
     id::Id,
     memo::{create_memo, Memo},
     runtime::RUNTIME,
@@ -81,6 +82,14 @@ impl Scope {
         with_scope(self, create_trigger)
     }
 
+    /// Create effect udner this Scope
+    pub fn create_effect<T>(self, f: impl Fn(Option<T>) -> T + 'static)
+    where
+        T: Any + 'static,
+    {
+        with_scope(self, || create_effect(f))
+    }
+
     /// This is normally used in create_effect, and it will bind the effect's lifetime
     /// to this scope
     pub fn track(&self) {
@@ -132,8 +141,9 @@ pub fn as_child_of_current_scope<T, U>(f: impl Fn(T) -> U + 'static) -> impl Fn(
 where
     T: 'static,
 {
-    let scope = Scope::current().create_child();
+    let current_scope = Scope::current();
     move |t| {
+        let scope = current_scope.create_child();
         let prev_scope = RUNTIME.with(|runtime| {
             let mut current_scope = runtime.current_scope.borrow_mut();
             let prev_scope = *current_scope;

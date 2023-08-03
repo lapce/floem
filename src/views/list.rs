@@ -328,8 +328,9 @@ fn remove_index<V: View>(
     children: &mut [Option<(V, Scope)>],
     index: usize,
 ) -> Option<()> {
-    let (mut view, _) = std::mem::take(&mut children[index])?;
+    let (mut view, scope) = std::mem::take(&mut children[index])?;
     view.cleanup(app_state);
+    scope.dispose();
     Some(())
 }
 

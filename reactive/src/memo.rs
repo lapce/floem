@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use crate::{
     effect::create_effect,
-    scope::{with_scope, Scope},
+    scope::Scope,
     signal::{create_signal, ReadSignal},
 };
 
