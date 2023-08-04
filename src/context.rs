@@ -498,7 +498,8 @@ impl AppState {
     // TODO: animated should be a HashMap<Id, AnimId>
     // so we don't have to loop through all view states
     pub(crate) fn get_view_id_by_anim_id(&self, anim_id: AnimId) -> Id {
-        self.view_states
+        *self
+            .view_states
             .iter()
             .filter(|(_, vs)| {
                 vs.animation
@@ -509,7 +510,6 @@ impl AppState {
             .nth(0)
             .unwrap()
             .0
-            .clone()
     }
 
     pub(crate) fn update_context_menu(&mut self, mut menu: Menu) {
