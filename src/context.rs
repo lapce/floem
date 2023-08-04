@@ -179,7 +179,7 @@ impl ViewState {
 
                 let props = animation.props();
 
-                for (kind, _) in props {
+                for kind in props.keys() {
                     let val =
                         animation.animate_prop(animation.elapsed().unwrap_or(Duration::ZERO), kind);
                     match kind {
