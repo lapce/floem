@@ -520,7 +520,7 @@ impl<V: View> View for Scroll<V> {
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
             let child_id = self.child.id();
-            let mut child_view = cx.app_state_mut().view_state(child_id);
+            let child_view = cx.app_state_mut().view_state(child_id);
             child_view.style.position = StyleValue::Val(Position::Absolute);
             let child_node = self.child.layout_main(cx);
 
