@@ -180,8 +180,8 @@ impl ViewState {
                 let props = animation.props();
 
                 for (kind, _) in props {
-                    let val = animation
-                        .animate_prop(animation.elapsed().unwrap_or(Duration::ZERO), &kind);
+                    let val =
+                        animation.animate_prop(animation.elapsed().unwrap_or(Duration::ZERO), kind);
                     match kind {
                         AnimPropKind::Width => {
                             computed_style = computed_style.width_px(val.get_f32());

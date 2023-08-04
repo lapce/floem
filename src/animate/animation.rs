@@ -311,7 +311,7 @@ impl Animation {
 
     pub(crate) fn animate_prop(&self, elapsed: Duration, prop_kind: &AnimPropKind) -> AnimValue {
         let mut elapsed = elapsed;
-        let prop = self.animated_props.get(&prop_kind).unwrap();
+        let prop = self.animated_props.get(prop_kind).unwrap();
 
         if let Some(skip) = self.skip {
             elapsed += skip;
