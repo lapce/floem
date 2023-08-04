@@ -193,7 +193,7 @@ where
         viewport: Rect::ZERO,
         set_viewport,
         view_fn,
-        phatom: PhantomData::default(),
+        phatom: PhantomData,
         cx: child_cx,
         before_size: 0.0,
         after_size: 0.0,
