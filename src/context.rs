@@ -501,13 +501,12 @@ impl AppState {
         *self
             .view_states
             .iter()
-            .filter(|(_, vs)| {
+            .find(|(_, vs)| {
                 vs.animation
                     .as_ref()
                     .map(|a| a.id() == anim_id)
                     .unwrap_or(false)
             })
-            .nth(0)
             .unwrap()
             .0
     }
