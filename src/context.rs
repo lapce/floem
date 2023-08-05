@@ -506,7 +506,7 @@ impl AppState {
                     .map(|a| a.id() == anim_id)
                     .unwrap_or(false)
             })
-            .nth(0)
+            .next()
             .unwrap()
             .0
     }
