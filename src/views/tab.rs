@@ -182,7 +182,7 @@ impl<V: View + 'static, T> View for Tab<V, T> {
                 .enumerate()
                 .filter_map(|(i, child)| {
                     let child_id = child.as_ref()?.0.id();
-                    let mut child_view = cx.app_state_mut().view_state(child_id);
+                    let child_view = cx.app_state_mut().view_state(child_id);
                     if i != self.active {
                         // set display to none for non active child
                         child_view.style.display = Display::None.into();
