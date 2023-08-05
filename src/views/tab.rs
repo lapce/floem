@@ -93,7 +93,7 @@ where
         active: 0,
         children: Vec::new(),
         view_fn,
-        phatom: PhantomData::default(),
+        phatom: PhantomData,
         cx: child_cx,
     }
 }

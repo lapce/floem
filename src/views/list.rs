@@ -80,7 +80,7 @@ where
         id,
         children: Vec::new(),
         view_fn,
-        phantom: PhantomData::default(),
+        phantom: PhantomData,
         cx: child_cx,
     }
 }
