@@ -180,8 +180,8 @@ impl ViewState {
                 let props = animation.props();
 
                 for kind in props.keys() {
-                    let val = animation
-                        .animate_prop(animation.elapsed().unwrap_or(Duration::ZERO), kind);
+                    let val =
+                        animation.animate_prop(animation.elapsed().unwrap_or(Duration::ZERO), kind);
                     match kind {
                         AnimPropKind::Width => {
                             computed_style = computed_style.width_px(val.get_f32());
@@ -498,7 +498,8 @@ impl AppState {
     // TODO: animated should be a HashMap<Id, AnimId>
     // so we don't have to loop through all view states
     pub(crate) fn get_view_id_by_anim_id(&self, anim_id: AnimId) -> Id {
-        *self.view_states
+        *self
+            .view_states
             .iter()
             .find(|(_, vs)| {
                 vs.animation
