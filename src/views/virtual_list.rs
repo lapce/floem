@@ -345,7 +345,7 @@ impl<V: View + 'static, T> View for VirtualList<V, T> {
         let viewport = cx.viewport.unwrap_or_default();
         if self.viewport != viewport {
             let layout = cx.app_state().get_layout(self.id).unwrap();
-            let size = Size::new(layout.size.width as f64, layout.size.height as f64);
+            let _size = Size::new(layout.size.width as f64, layout.size.height as f64);
 
             self.viewport = viewport;
             self.set_viewport.set(viewport);
