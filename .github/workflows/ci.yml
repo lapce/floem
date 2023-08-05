@@ -1,0 +1,113 @@
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+name: CI
+
+concurrency:
+  group: ${{ github.ref }}-${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Rust on ${{ matrix.os }}
+    if: github.event.pull_request.draft == false
+    needs: [fmt, clippy]
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - ubuntu-latest
+          - windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Install dependencies on Ubuntu
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get -y update
+          sudo apt-get -y install clang libxkbcommon-x11-dev pkg-config libvulkan-dev
+
+      - name: Update toolchain & add llvm-tools
+        run: |
+          rustup update
+          rustup component add llvm-tools-preview
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        
+      - name: Fetch dependencies
+        run: cargo fetch
+
+      - name: Build
+        run: cargo build
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Run tests and coverage
+        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+
+      - name: Run doc tests
+        run: cargo test --doc --workspace
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          files: lcov.info
+
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Update toolchain & add rustfmt
+        run: |
+          rustup update
+          rustup component add rustfmt
+
+      - name: Run rustfmt
+        run: cargo fmt --all --check
+
+  clippy:
+    name: Clippy on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - ubuntu-latest
+          - windows-latest
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Update toolchain & add clippy
+        run: |
+          rustup update
+          rustup component add clippy
+
+      - name: Install dependencies on Ubuntu
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get -y update
+          sudo apt-get -y install clang libxkbcommon-x11-dev pkg-config libvulkan-dev
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        
+      - name: Fetch dependencies
+        run: cargo fetch
+
+      - name: Run clippy
+        run: cargo clippy -- -D warnings

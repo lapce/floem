@@ -251,11 +251,11 @@ impl Animation {
                 started_on,
                 elapsed,
             } => {
-                let duration = Instant::now() - started_on.clone();
+                let duration = Instant::now() - *started_on;
                 Some(*elapsed + duration)
             }
-            AnimState::PassFinished { elapsed } => Some(elapsed.clone()),
-            AnimState::Completed { elapsed, .. } => elapsed.clone(),
+            AnimState::PassFinished { elapsed } => Some(*elapsed),
+            AnimState::Completed { elapsed, .. } => *elapsed,
         }
     }
 
@@ -269,7 +269,7 @@ impl Animation {
                 mut elapsed,
             } => {
                 let now = Instant::now();
-                let duration = now - started_on.clone();
+                let duration = now - *started_on;
                 elapsed += duration;
 
                 if elapsed >= self.duration {
@@ -311,7 +311,7 @@ impl Animation {
 
     pub(crate) fn animate_prop(&self, elapsed: Duration, prop_kind: &AnimPropKind) -> AnimValue {
         let mut elapsed = elapsed;
-        let prop = self.animated_props.get(&prop_kind).unwrap();
+        let prop = self.animated_props.get(prop_kind).unwrap();
 
         if let Some(skip) = self.skip {
             elapsed += skip;

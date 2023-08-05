@@ -108,7 +108,7 @@ impl AnimatedProp {
 
     pub(crate) fn animate(&self, time: f64, direction: AnimDirection) -> AnimValue {
         match self {
-            AnimatedProp::Width { from, to, unit } | AnimatedProp::Height { from, to, unit } => {
+            AnimatedProp::Width { from, to, unit: _ } | AnimatedProp::Height { from, to, unit: _ } => {
                 AnimValue::Float(self.animate_float(*from, *to, time, direction))
             }
             AnimatedProp::Background { from, to }
