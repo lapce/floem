@@ -3,8 +3,9 @@ use std::f64::consts::PI;
 use super::assert_valid_time;
 
 /// Alters how the easing function behaves, i.e. how the animation interpolates.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub enum EasingMode {
+    #[default]
     /// Interpolation follows the mathematical formula associated with the easing function.
     In,
     /// Interpolation follows 100% interpolation minus the output of the formula associated with the easing function.
@@ -13,8 +14,9 @@ pub enum EasingMode {
     InOut,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub enum EasingFn {
+    #[default]
     Linear,
     /// Retracts the motion of an animation slightly before it begins to animate in the path indicated.
     Back,
@@ -41,15 +43,9 @@ pub enum EasingFn {
     Sine,
 }
 
-impl Default for EasingMode {
-    fn default() -> Self {
-        EasingMode::In
-    }
-}
-
 // See https://easings.net/ and
 // https://learn.microsoft.com/en-us/dotnet/desktop/wpf/graphics-multimedia/easing-functions
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Easing {
     pub(crate) mode: EasingMode,
     pub(crate) func: EasingFn,
@@ -103,13 +99,6 @@ impl Easing {
                     1.0 - self.apply_easing_fn(2.0 - time * 2.0) / 2.0
                 }
             }
-        }
-    }
-
-    pub fn default() -> Easing {
-        Easing {
-            mode: EasingMode::In,
-            func: EasingFn::Linear,
         }
     }
 }
