@@ -500,13 +500,12 @@ impl AppState {
     pub(crate) fn get_view_id_by_anim_id(&self, anim_id: AnimId) -> Id {
         *self.view_states
             .iter()
-            .filter(|(_, vs)| {
+            .find(|(_, vs)| {
                 vs.animation
                     .as_ref()
                     .map(|a| a.id() == anim_id)
                     .unwrap_or(false)
             })
-            .next()
             .unwrap()
             .0
     }
