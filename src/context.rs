@@ -56,6 +56,7 @@ impl ViewContextStore {
 
 pub type EventCallback = dyn Fn(&Event) -> bool;
 pub type ResizeCallback = dyn Fn(Point, Rect);
+pub type MenuCallback = dyn Fn() -> Menu;
 
 pub(crate) struct ResizeListener {
     pub(crate) window_origin: Point,
@@ -82,6 +83,8 @@ pub struct ViewState {
     pub(crate) combined_style: Style,
     pub(crate) computed_style: ComputedStyle,
     pub(crate) event_listeners: HashMap<EventListener, Box<EventCallback>>,
+    pub(crate) context_menu: Option<Box<MenuCallback>>,
+    pub(crate) popout_menu: Option<Box<MenuCallback>>,
     pub(crate) resize_listener: Option<ResizeListener>,
     pub(crate) cleanup_listener: Option<Box<dyn Fn()>>,
     pub(crate) last_pointer_down: Option<PointerEvent>,
@@ -108,6 +111,8 @@ impl ViewState {
             responsive_styles: HashMap::new(),
             children_nodes: Vec::new(),
             event_listeners: HashMap::new(),
+            context_menu: None,
+            popout_menu: None,
             resize_listener: None,
             cleanup_listener: None,
             last_pointer_down: None,

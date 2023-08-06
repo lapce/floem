@@ -5,6 +5,7 @@ use crate::{
     animate::Animation,
     app_handle::StyleSelector,
     event::{Event, EventListener},
+    menu::Menu,
     responsive::ScreenSize,
     style::Style,
     view::View,
@@ -170,6 +171,20 @@ pub trait Decorators: View + Sized {
             let window_scale = scale_fn();
             id.update_window_scale(window_scale);
         });
+        self
+    }
+
+    /// Adds a secondary-click context menu to the view, which opens at the mouse position.
+    fn context_menu(self, menu: impl Fn() -> Menu + 'static) -> Self {
+        let id = self.id();
+        id.update_context_menu(Box::new(menu));
+        self
+    }
+
+    /// Adds a primary-click context menu, which opens below the view.
+    fn popout_menu(self, menu: impl Fn() -> Menu + 'static) -> Self {
+        let id = self.id();
+        id.update_popout_menu(Box::new(menu));
         self
     }
 }
