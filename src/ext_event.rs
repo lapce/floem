@@ -73,7 +73,7 @@ pub fn create_signal_from_channel<T: Send + 'static>(
 
     {
         let data = data.clone();
-        create_effect(move |_| {
+        cx.create_effect(move |_| {
             trigger.track();
             while let Some(value) = data.lock().pop_front() {
                 write.set(value);

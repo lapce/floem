@@ -1,5 +1,6 @@
 use crate::signal::{create_rw_signal, RwSignal};
 
+#[derive(Debug)]
 pub struct Trigger {
     signal: RwSignal<()>,
 }
