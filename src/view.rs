@@ -399,6 +399,14 @@ pub trait View {
                             view_state.last_pointer_down = Some(event.clone());
                             cx.update_active(id);
                         }
+
+                        let bottom_left = {
+                            let layout = cx.app_state.view_state(id).layout_rect;
+                            Point::new(layout.x0, layout.y1)
+                        };
+                        if let Some(menu) = &cx.app_state.view_state(id).popout_menu {
+                            id.show_context_menu(menu(), bottom_left)
+                        }
                         if cx.app_state.draggable.contains(&id) && cx.app_state.drag_start.is_none()
                         {
                             cx.app_state.drag_start = Some((id, event.pos));
@@ -546,6 +554,17 @@ pub trait View {
                         if on_view && last_pointer_down.is_some() && (*action)(&event) {
                             return true;
                         }
+                    }
+
+                    let viewport_event_position = {
+                        let layout = cx.app_state.view_state(id).layout_rect;
+                        Point::new(
+                            layout.x0 + pointer_event.pos.x,
+                            layout.y0 + pointer_event.pos.y,
+                        )
+                    };
+                    if let Some(menu) = &cx.app_state.view_state(id).context_menu {
+                        id.show_context_menu(menu(), viewport_event_position)
                     }
                 }
             }

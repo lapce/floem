@@ -18,7 +18,7 @@ use glazier::{
 use crate::{
     animate::Animation,
     app_handle::{StyleSelector, UpdateMessage, DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES},
-    context::{EventCallback, ResizeCallback},
+    context::{EventCallback, MenuCallback, ResizeCallback},
     event::EventListener,
     menu::Menu,
     responsive::ScreenSize,
@@ -284,7 +284,6 @@ impl Id {
             });
         }
     }
-
     pub fn update_resize_listener(&self, action: Box<ResizeCallback>) {
         if let Some(root) = self.root_id() {
             UPDATE_MESSAGES.with(|msgs| {
@@ -344,6 +343,26 @@ impl Id {
                     options,
                     file_info_action: Box::new(file_info_action),
                 })
+            });
+        }
+    }
+
+    pub fn update_context_menu(&self, menu: Box<MenuCallback>) {
+        if let Some(root) = self.root_id() {
+            UPDATE_MESSAGES.with(|msgs| {
+                let mut msgs = msgs.borrow_mut();
+                let msgs = msgs.entry(root).or_default();
+                msgs.push(UpdateMessage::ContextMenu { id: *self, menu })
+            });
+        }
+    }
+
+    pub fn update_popout_menu(&self, menu: Box<MenuCallback>) {
+        if let Some(root) = self.root_id() {
+            UPDATE_MESSAGES.with(|msgs| {
+                let mut msgs = msgs.borrow_mut();
+                let msgs = msgs.entry(root).or_default();
+                msgs.push(UpdateMessage::PopoutMenu { id: *self, menu })
             });
         }
     }

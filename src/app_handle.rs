@@ -185,6 +185,14 @@ pub enum UpdateMessage {
         id: Id,
         animation: Animation,
     },
+    ContextMenu {
+        id: Id,
+        menu: Box<dyn Fn() -> Menu>,
+    },
+    PopoutMenu {
+        id: Id,
+        menu: Box<dyn Fn() -> Menu>,
+    },
     ShowContextMenu {
         menu: Menu,
         pos: Point,
@@ -554,6 +562,14 @@ impl<V: View> AppHandle<V> {
                             scale.y() * cx.app_state.scale,
                         );
                         self.paint_state.set_scale(scale);
+                    }
+                    UpdateMessage::ContextMenu { id, menu } => {
+                        let state = cx.app_state.view_state(id);
+                        state.context_menu = Some(menu);
+                    }
+                    UpdateMessage::PopoutMenu { id, menu } => {
+                        let state = cx.app_state.view_state(id);
+                        state.popout_menu = Some(menu);
                     }
                     UpdateMessage::ShowContextMenu { menu, pos } => {
                         let menu = menu.popup();

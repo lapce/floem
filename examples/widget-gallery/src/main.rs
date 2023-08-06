@@ -1,5 +1,6 @@
 pub mod buttons;
 pub mod checkbox;
+pub mod context_menu;
 pub mod form;
 pub mod inputs;
 pub mod labels;
@@ -20,9 +21,11 @@ use floem::{
 };
 
 fn app_view() -> impl View {
-    let tabs: im::Vector<&str> = vec!["Label", "Button", "Checkbox", "Input", "List", "RichText"]
-        .into_iter()
-        .collect();
+    let tabs: im::Vector<&str> = vec![
+        "Label", "Button", "Checkbox", "Input", "List", "Menu", "RichText",
+    ]
+    .into_iter()
+    .collect();
     let (tabs, _set_tabs) = create_signal(tabs);
 
     let (active_tab, set_active_tab) = create_signal(0);
@@ -131,6 +134,7 @@ fn app_view() -> impl View {
                         "Checkbox" => container_box(|| Box::new(checkbox::checkbox_view())),
                         "Input" => container_box(|| Box::new(inputs::text_input_view())),
                         "List" => container_box(|| Box::new(lists::virt_list_view())),
+                        "Menu" => container_box(|| Box::new(context_menu::menu_view())),
                         "RichText" => container_box(|| Box::new(rich_text::rich_text_view())),
                         _ => container_box(|| Box::new(label(|| "Not implemented".to_owned()))),
                     },
