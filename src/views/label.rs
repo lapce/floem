@@ -132,6 +132,9 @@ impl View for Label {
         if let Ok(state) = state.downcast() {
             self.label = *state;
             self.text_layout = None;
+            self.available_text = None;
+            self.available_width = None;
+            self.available_text_layout = None;
             cx.request_layout(self.id());
             ChangeFlags::LAYOUT
         } else {
