@@ -177,6 +177,10 @@ pub enum UpdateMessage {
         options: FileDialogOptions,
         file_info_action: Box<dyn Fn(Option<FileInfo>)>,
     },
+    SaveAs {
+        options: FileDialogOptions,
+        file_info_action: Box<dyn Fn(Option<FileInfo>)>,
+    },
     RequestTimer {
         deadline: std::time::Duration,
         action: Box<dyn FnOnce()>,
@@ -545,6 +549,15 @@ impl<V: View> AppHandle<V> {
                             self.file_dialogs.insert(token, file_info_action);
                         }
                     }
+                    UpdateMessage::SaveAs {
+                        options,
+                        file_info_action,
+                    } => {
+                        let token = self.handle.save_as(options);
+                        if let Some(token) = token {
+                            self.file_dialogs.insert(token, file_info_action);
+                        }
+                    }
                     UpdateMessage::RequestTimer { deadline, action } => {
                         cx.app_state.request_timer(deadline, action);
                     }
@@ -895,6 +908,12 @@ impl<V: View> WinHandler for AppHandle<V> {
     }
 
     fn open_file(&mut self, token: FileDialogToken, file: Option<FileInfo>) {
+        if let Some(action) = self.file_dialogs.remove(&token) {
+            action(file);
+        }
+    }
+
+    fn save_as(&mut self, token: FileDialogToken, file: Option<FileInfo>) {
         if let Some(action) = self.file_dialogs.remove(&token) {
             action(file);
         }

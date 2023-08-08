@@ -1,5 +1,4 @@
 use floem::{
-    menu::{Menu, MenuItem},
     peniko::Color,
     reactive::create_signal,
     style::Style,
