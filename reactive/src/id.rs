@@ -36,22 +36,22 @@ impl Id {
     /// Dispose the relevant resources that's linking to this Id, and the all the children
     /// and grandchildren.
     pub(crate) fn dispose(&self) {
-        let (children, signal) = RUNTIME.with(|runtime| {
+        if let Ok((children, signal)) = RUNTIME.try_with(|runtime| {
             (
                 runtime.children.borrow_mut().remove(self),
                 runtime.signals.borrow_mut().remove(self),
             )
-        });
-
-        if let Some(children) = children {
-            for child in children {
-                child.dispose();
+        }) {
+            if let Some(children) = children {
+                for child in children {
+                    child.dispose();
+                }
             }
-        }
 
-        if let Some(signal) = signal {
-            for (_, effect) in signal.subscribers() {
-                observer_clean_up(&effect);
+            if let Some(signal) = signal {
+                for (_, effect) in signal.subscribers() {
+                    observer_clean_up(&effect);
+                }
             }
         }
     }

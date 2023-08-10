@@ -2,9 +2,12 @@ use std::time::Duration;
 use std::{any::Any, collections::HashMap};
 
 use crate::animate::AnimValue;
+use crate::id::WindowId;
 use crate::view::{view_debug_tree, view_tab_navigation};
+use crate::window::WINDOWS;
+use floem_reactive::{with_scope, Scope};
 use floem_renderer::Renderer;
-use glazier::kurbo::{Affine, Point, Rect, Vec2};
+use glazier::kurbo::{Affine, Point, Rect, Size, Vec2};
 use glazier::{FileDialogOptions, FileDialogToken, FileInfo, Scale, TimerToken, WinHandler};
 
 use crate::menu::Menu;
@@ -12,7 +15,7 @@ use crate::{
     animate::{AnimPropKind, AnimUpdateMsg, AnimatedProp, Animation, SizeUnit},
     context::{
         AppState, EventCallback, EventCx, LayoutCx, PaintCx, PaintState, ResizeCallback,
-        ResizeListener, UpdateCx, ViewContextStore, VIEW_CONTEXT_STORE,
+        ResizeListener, UpdateCx, VIEW_CONTEXT_STORE,
     },
     event::{Event, EventListener},
     ext_event::EXT_EVENT_HANDLER,
@@ -26,9 +29,8 @@ thread_local! {
     /// Stores a queue of update messages for each view. This is a list of build in messages, including a built-in State message
     /// that you can use to send a state update to a view.
     pub(crate) static UPDATE_MESSAGES: std::cell::RefCell<HashMap<Id, Vec<UpdateMessage>>> = Default::default();
-    pub(crate) static ANIM_UPDATE_MESSAGES: std::cell::RefCell<Vec<AnimUpdateMsg>> = Default::default();
-    ///
     pub(crate) static DEFERRED_UPDATE_MESSAGES: std::cell::RefCell<DeferredUpdateMessages> = Default::default();
+    pub(crate) static ANIM_UPDATE_MESSAGES: std::cell::RefCell<Vec<AnimUpdateMsg>> = Default::default();
 }
 
 pub type FileDialogs = HashMap<FileDialogToken, Box<dyn Fn(Option<FileInfo>)>>;
@@ -43,40 +45,23 @@ pub struct ViewContext {
 impl ViewContext {
     pub fn save() {
         VIEW_CONTEXT_STORE.with(|store| {
-            let mut store = store.borrow_mut();
-            if let Some(store) = store.as_mut() {
-                store.save();
-            }
+            store.borrow_mut().save();
         })
     }
 
     pub fn set_current(cx: ViewContext) {
         VIEW_CONTEXT_STORE.with(|store| {
-            let mut store = store.borrow_mut();
-            if let Some(store) = store.as_mut() {
-                store.set_current(cx);
-            } else {
-                *store = Some(ViewContextStore {
-                    cx,
-                    saved_cx: Vec::new(),
-                });
-            }
+            store.borrow_mut().set_current(cx);
         })
     }
 
     pub fn get_current() -> ViewContext {
-        VIEW_CONTEXT_STORE.with(|store| {
-            let store = store.borrow();
-            store.as_ref().unwrap().cx
-        })
+        VIEW_CONTEXT_STORE.with(|store| store.borrow().cx)
     }
 
     pub fn restore() {
         VIEW_CONTEXT_STORE.with(|store| {
-            let mut store = store.borrow_mut();
-            if let Some(store) = store.as_mut() {
-                store.restore();
-            }
+            store.borrow_mut().restore();
         })
     }
 
@@ -201,6 +186,12 @@ pub enum UpdateMessage {
         menu: Menu,
         pos: Point,
     },
+    WindowMenu {
+        menu: Menu,
+    },
+    SetWindowTitle {
+        title: String,
+    },
 }
 
 /// The top-level handle that is passed into the backend interface (e.g. `glazier`) to interact to window events.
@@ -209,28 +200,39 @@ pub enum UpdateMessage {
 /// - processing all requests to update the AppState from the reactive system
 /// - processing all requests to update the animation state from the reactive system
 /// - requesting a new animation frame from the backend
-pub struct AppHandle<V: View> {
+pub struct AppHandle<V: View + 'static> {
+    /// Reactive Scope for this AppHandle
+    scope: Scope,
+    pub(crate) window_id: WindowId,
     view: V,
     handle: glazier::WindowHandle,
     app_state: AppState,
     paint_state: PaintState,
-
     file_dialogs: FileDialogs,
+    window_size: Size,
+    pub(crate) window_menu: HashMap<u32, Box<dyn Fn()>>,
+    closed: bool,
 }
 
 impl<V: View> AppHandle<V> {
-    pub fn new(app_logic: impl FnOnce() -> V) -> Self {
+    pub fn new(window_id: WindowId, app_logic: impl FnOnce() -> V + 'static) -> Self {
+        let scope = Scope::new();
+        ViewContext::save();
         let cx = ViewContext { id: Id::next() };
-
         ViewContext::set_current(cx);
-
-        let view = app_logic();
+        let view = with_scope(scope, app_logic);
+        ViewContext::restore();
         Self {
+            scope,
             view,
+            window_id,
             app_state: AppState::new(),
             paint_state: PaintState::new(),
             handle: Default::default(),
             file_dialogs: HashMap::new(),
+            window_size: Size::ZERO,
+            window_menu: HashMap::new(),
+            closed: false,
         }
     }
 
@@ -417,10 +419,10 @@ impl<V: View> AppHandle<V> {
             if msgs.is_empty() {
                 break;
             }
-            let mut cx = UpdateCx {
-                app_state: &mut self.app_state,
-            };
             for msg in msgs {
+                let mut cx = UpdateCx {
+                    app_state: &mut self.app_state,
+                };
                 match msg {
                     UpdateMessage::RequestPaint => {
                         flags |= ChangeFlags::PAINT;
@@ -591,6 +593,14 @@ impl<V: View> AppHandle<V> {
                         cx.app_state.update_context_menu(menu);
                         self.handle.show_context_menu(platform_menu, pos);
                     }
+                    UpdateMessage::WindowMenu { menu } => {
+                        let platform_menu = menu.platform_menu();
+                        self.update_window_menu(menu);
+                        self.handle.set_menu(platform_menu);
+                    }
+                    UpdateMessage::SetWindowTitle { title } => {
+                        self.handle.set_title(&title);
+                    }
                 }
             }
         }
@@ -631,16 +641,24 @@ impl<V: View> AppHandle<V> {
             flags |= self.process_anim_update_messages();
         }
 
+        self.set_cursor();
+
+        if !flags.is_empty() {
+            self.request_paint();
+        }
+    }
+
+    fn set_cursor(&mut self) {
         let glazier_cursor = match self.app_state.cursor {
             Some(CursorStyle::Default) => glazier::Cursor::Arrow,
             Some(CursorStyle::Pointer) => glazier::Cursor::Pointer,
             Some(CursorStyle::Text) => glazier::Cursor::IBeam,
             None => glazier::Cursor::Arrow,
         };
-        self.handle.set_cursor(&glazier_cursor);
-
-        if !flags.is_empty() {
-            self.handle.invalidate();
+        if glazier_cursor != self.app_state.last_cursor {
+            self.handle.set_cursor(&glazier_cursor);
+            self.app_state.last_cursor = glazier_cursor;
+            self.request_paint();
         }
     }
 
@@ -674,13 +692,12 @@ impl<V: View> AppHandle<V> {
 
             if !processed {
                 if let Some(id) = cx.app_state.focus {
-                    ID_PATHS.with(|paths| {
-                        if let Some(id_path) = paths.borrow().get(&id) {
-                            processed |=
-                                self.view
-                                    .event_main(&mut cx, Some(&id_path.0), event.clone());
-                        }
-                    });
+                    let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
+                    if let Some(id_path) = id_path {
+                        processed |= self
+                            .view
+                            .event_main(&mut cx, Some(&id_path.0), event.clone());
+                    }
                 } else if let Some(listener) = event.listener() {
                     if let Some(action) = cx.get_event_listener(self.view.id(), &listener) {
                         processed |= (*action)(&event);
@@ -722,12 +739,11 @@ impl<V: View> AppHandle<V> {
             }
 
             let id = cx.app_state.active.unwrap();
-            ID_PATHS.with(|paths| {
-                if let Some(id_path) = paths.borrow().get(&id) {
-                    self.view
-                        .event_main(&mut cx, Some(&id_path.0), event.clone());
-                }
-            });
+            let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
+            if let Some(id_path) = id_path {
+                self.view
+                    .event_main(&mut cx, Some(&id_path.0), event.clone());
+            }
             if let Event::PointerUp(_) = &event {
                 // To remove the styles applied by the Active selector
                 if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
@@ -816,17 +832,46 @@ impl<V: View> AppHandle<V> {
         }
         self.process_update();
     }
+
+    fn request_paint(&self) {
+        self.handle.invalidate();
+    }
+
+    fn update_window_menu(&mut self, mut menu: Menu) {
+        if let Some(action) = menu.item.action.take() {
+            self.window_menu.insert(menu.item.id as u32, action);
+        }
+        for child in menu.children {
+            match child {
+                crate::menu::MenuEntry::Separator => {}
+                crate::menu::MenuEntry::Item(mut item) => {
+                    if let Some(action) = item.action.take() {
+                        self.window_menu.insert(item.id as u32, action);
+                    }
+                }
+                crate::menu::MenuEntry::SubMenu(m) => {
+                    self.update_window_menu(m);
+                }
+            }
+        }
+    }
 }
 
 impl<V: View> WinHandler for AppHandle<V> {
     fn connect(&mut self, handle: &glazier::WindowHandle) {
+        WINDOWS.with(|windows| {
+            windows.borrow_mut().insert(self.window_id, handle.clone());
+        });
         self.app_state.handle = handle.clone();
         self.paint_state.connect(handle);
         self.handle = handle.clone();
         let size = handle.get_size();
         self.app_state.set_root_size(size);
         if let Some(idle_handle) = handle.get_idle_handle() {
-            *EXT_EVENT_HANDLER.handle.lock() = Some(idle_handle);
+            EXT_EVENT_HANDLER
+                .handle
+                .lock()
+                .insert(self.window_id, idle_handle);
         }
         self.idle();
     }
@@ -837,10 +882,11 @@ impl<V: View> WinHandler for AppHandle<V> {
             scale.y() * self.app_state.scale,
         );
         self.paint_state.set_scale(scale);
-        self.handle.invalidate();
+        self.request_paint();
     }
 
     fn size(&mut self, size: glazier::kurbo::Size) {
+        self.window_size = size;
         self.app_state.update_screen_size_bp(size);
         self.event(Event::WindowResized(size));
         let scale = self.handle.get_scale().unwrap_or_default();
@@ -852,7 +898,7 @@ impl<V: View> WinHandler for AppHandle<V> {
         self.app_state.set_root_size(size);
         self.layout();
         self.process_update();
-        self.handle.invalidate();
+        self.request_paint();
     }
 
     fn position(&mut self, point: Point) {
@@ -862,6 +908,9 @@ impl<V: View> WinHandler for AppHandle<V> {
     fn prepare_paint(&mut self) {}
 
     fn paint(&mut self, _invalid: &glazier::Region) {
+        if self.closed {
+            return;
+        }
         self.paint();
     }
 
@@ -876,19 +925,19 @@ impl<V: View> WinHandler for AppHandle<V> {
         self.event(Event::KeyUp(event));
     }
 
-    fn pointer_down(&mut self, event: &glazier::PointerEvent) {
+    fn pointer_down(&mut self, event: glazier::PointerEvent) {
         self.event(Event::PointerDown(event.clone()));
     }
 
-    fn pointer_up(&mut self, event: &glazier::PointerEvent) {
+    fn pointer_up(&mut self, event: glazier::PointerEvent) {
         self.event(Event::PointerUp(event.clone()));
     }
 
-    fn pointer_move(&mut self, event: &glazier::PointerEvent) {
+    fn pointer_move(&mut self, event: glazier::PointerEvent) {
         self.event(Event::PointerMove(event.clone()));
     }
 
-    fn wheel(&mut self, event: &glazier::PointerEvent) {
+    fn wheel(&mut self, event: glazier::PointerEvent) {
         self.event(Event::PointerWheel(event.clone()));
     }
 
@@ -897,7 +946,10 @@ impl<V: View> WinHandler for AppHandle<V> {
     }
 
     fn command(&mut self, id: u32) {
-        if let Some(action) = self.app_state.context_menu.get(&id) {
+        if let Some(action) = self.window_menu.get(&id) {
+            (*action)();
+            self.process_update();
+        } else if let Some(action) = self.app_state.context_menu.get(&id) {
             (*action)();
             self.process_update();
         }
@@ -930,8 +982,27 @@ impl<V: View> WinHandler for AppHandle<V> {
         self.handle.close();
     }
 
+    fn got_focus(&mut self) {
+        self.event(Event::WindowGotFocus);
+    }
+
+    fn lost_focus(&mut self) {
+        self.event(Event::WindowLostFocus);
+    }
+
     fn destroy(&mut self) {
+        self.closed = true;
         self.event(Event::WindowClosed);
-        glazier::Application::global().quit();
+        let windows_len = WINDOWS.with(|windows| {
+            let mut windows = windows.borrow_mut();
+            windows.remove(&self.window_id);
+            windows.len()
+        });
+        self.scope.dispose();
+        EXT_EVENT_HANDLER.handle.lock().remove(&self.window_id);
+        if windows_len == 0 {
+            #[cfg(not(target_os = "macos"))]
+            glazier::Application::global().quit();
+        }
     }
 }

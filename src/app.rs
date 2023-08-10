@@ -1,15 +1,16 @@
-use glazier::{kurbo::Size, WindowBuilder};
-
-use crate::{app_handle::AppHandle, view::View, window::WindowConfig};
+use crate::{id::WindowId, new_window, view::View, window::WindowConfig};
 
 type AppEventCallback = dyn Fn(&AppEvent);
 
 pub fn launch<V: View + 'static>(app_view: impl Fn() -> V + 'static) {
-    Application::new().window(app_view, None).run()
+    Application::new()
+        .window(WindowId::next(), app_view, None)
+        .run()
 }
 
 pub enum AppEvent {
     WillTerminate,
+    Reopen { has_visible_windows: bool },
 }
 
 /// Floem top level application
@@ -33,6 +34,14 @@ impl glazier::AppHandler for Application {
             action(&AppEvent::WillTerminate);
         }
     }
+
+    fn should_handle_reopen(&mut self, has_visible_windows: bool) {
+        if let Some(action) = self.event_listener.as_ref() {
+            action(&AppEvent::Reopen {
+                has_visible_windows,
+            });
+        }
+    }
 }
 
 impl Application {
@@ -52,29 +61,11 @@ impl Application {
     /// just chain more window method to the builder
     pub fn window<V: View + 'static>(
         self,
+        window_id: WindowId,
         app_view: impl FnOnce() -> V + 'static,
         config: Option<WindowConfig>,
     ) -> Self {
-        let application = self.application.clone();
-        {
-            let app = AppHandle::new(app_view);
-            let mut builder = WindowBuilder::new(application).size(
-                config
-                    .as_ref()
-                    .and_then(|c| c.size)
-                    .unwrap_or_else(|| Size::new(800.0, 600.0)),
-            );
-            if let Some(position) = config.as_ref().and_then(|c| c.position) {
-                builder = builder.position(position);
-            }
-            if let Some(show_titlebar) = config.as_ref().and_then(|c| c.show_titlebar) {
-                builder = builder.show_titlebar(show_titlebar);
-            }
-
-            builder = builder.handler(Box::new(app));
-            let window = builder.build().unwrap();
-            window.show();
-        }
+        new_window(window_id, app_view, config);
         self
     }
 

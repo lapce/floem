@@ -174,6 +174,25 @@ pub trait Decorators: View + Sized {
         self
     }
 
+    fn window_title(self, title_fn: impl Fn() -> String + 'static) -> Self {
+        let id = self.id();
+
+        create_effect(move |_| {
+            let window_title = title_fn();
+            id.set_window_title(window_title);
+        });
+        self
+    }
+
+    fn window_menu(self, menu_fn: impl Fn() -> Menu + 'static) -> Self {
+        let id = self.id();
+        create_effect(move |_| {
+            let menu = menu_fn();
+            id.window_menu(menu);
+        });
+        self
+    }
+
     /// Adds a secondary-click context menu to the view, which opens at the mouse position.
     fn context_menu(self, menu: impl Fn() -> Menu + 'static) -> Self {
         let id = self.id();

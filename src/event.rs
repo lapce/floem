@@ -27,6 +27,8 @@ pub enum EventListener {
     WindowClosed,
     WindowResized,
     WindowMoved,
+    WindowGotFocus,
+    WindowLostFocus,
 }
 
 #[derive(Debug, Clone)]
@@ -37,6 +39,8 @@ pub enum Event {
     PointerWheel(PointerEvent),
     KeyDown(KeyEvent),
     KeyUp(KeyEvent),
+    WindowGotFocus,
+    WindowLostFocus,
     WindowClosed,
     WindowResized(Size),
     WindowMoved(Point),
@@ -51,7 +55,9 @@ impl Event {
             | Event::PointerWheel(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
-            | Event::WindowMoved(_) => false,
+            | Event::WindowMoved(_)
+            | Event::WindowGotFocus
+            | Event::WindowLostFocus => false,
             Event::KeyDown(_) | Event::KeyUp(_) => true,
         }
     }
@@ -66,7 +72,9 @@ impl Event {
             | Event::KeyUp(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
-            | Event::WindowMoved(_) => false,
+            | Event::WindowMoved(_)
+            | Event::WindowGotFocus
+            | Event::WindowLostFocus => false,
         }
     }
 
@@ -91,7 +99,9 @@ impl Event {
             Event::PointerMove(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
-            | Event::WindowMoved(_) => true,
+            | Event::WindowMoved(_)
+            | Event::WindowGotFocus
+            | Event::WindowLostFocus => true,
         }
     }
 
@@ -105,7 +115,9 @@ impl Event {
             | Event::KeyUp(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
-            | Event::WindowMoved(_) => None,
+            | Event::WindowMoved(_)
+            | Event::WindowGotFocus
+            | Event::WindowLostFocus => None,
         }
     }
 
@@ -122,7 +134,9 @@ impl Event {
             | Event::KeyUp(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
-            | Event::WindowMoved(_) => {}
+            | Event::WindowMoved(_)
+            | Event::WindowGotFocus
+            | Event::WindowLostFocus => {}
         }
         self
     }
@@ -139,7 +153,9 @@ impl Event {
             | Event::KeyUp(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
-            | Event::WindowMoved(_) => {}
+            | Event::WindowMoved(_)
+            | Event::WindowGotFocus
+            | Event::WindowLostFocus => {}
         }
         self
     }
@@ -155,6 +171,8 @@ impl Event {
             Event::WindowClosed => Some(EventListener::WindowClosed),
             Event::WindowResized(_) => Some(EventListener::WindowResized),
             Event::WindowMoved(_) => Some(EventListener::WindowMoved),
+            Event::WindowGotFocus => Some(EventListener::WindowGotFocus),
+            Event::WindowLostFocus => Some(EventListener::WindowLostFocus),
         }
     }
 }

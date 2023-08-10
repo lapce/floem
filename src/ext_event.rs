@@ -1,4 +1,7 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+};
 
 use floem_reactive::{create_effect, untrack, with_scope, ReadSignal, Scope, Trigger};
 use glazier::{IdleHandle, IdleToken};
@@ -6,19 +9,21 @@ use glazier::{IdleHandle, IdleToken};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 
+use crate::id::WindowId;
+
 pub static EXT_EVENT_HANDLER: Lazy<ExtEventHandler> = Lazy::new(ExtEventHandler::default);
 
 #[derive(Clone)]
 pub struct ExtEventHandler {
     pub(crate) queue: Arc<Mutex<VecDeque<Trigger>>>,
-    pub(crate) handle: Arc<Mutex<Option<IdleHandle>>>,
+    pub(crate) handle: Arc<Mutex<HashMap<WindowId, IdleHandle>>>,
 }
 
 impl Default for ExtEventHandler {
     fn default() -> Self {
         Self {
             queue: Arc::new(Mutex::new(VecDeque::new())),
-            handle: Arc::new(Mutex::new(None)),
+            handle: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -26,7 +31,7 @@ impl Default for ExtEventHandler {
 impl ExtEventHandler {
     pub fn add_trigger(&self, trigger: Trigger) {
         EXT_EVENT_HANDLER.queue.lock().push_back(trigger);
-        if let Some(handle) = EXT_EVENT_HANDLER.handle.lock().as_mut() {
+        for (_, handle) in EXT_EVENT_HANDLER.handle.lock().iter_mut() {
             handle.schedule_idle(IdleToken::new(0));
         }
     }

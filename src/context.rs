@@ -30,12 +30,21 @@ use crate::{
 };
 
 thread_local! {
-    pub(crate) static VIEW_CONTEXT_STORE: std::cell::RefCell<Option<ViewContextStore>> = Default::default();
+    pub(crate) static VIEW_CONTEXT_STORE: std::cell::RefCell<ViewContextStore> = Default::default();
 }
 
 pub struct ViewContextStore {
     pub cx: ViewContext,
     pub saved_cx: Vec<ViewContext>,
+}
+
+impl Default for ViewContextStore {
+    fn default() -> Self {
+        Self {
+            cx: ViewContext { id: Id::next() },
+            saved_cx: Vec::new(),
+        }
+    }
 }
 
 impl ViewContextStore {
@@ -265,6 +274,7 @@ pub struct AppState {
     /// regardless of the status of the animation
     pub(crate) animated: HashSet<Id>,
     pub(crate) cursor: Option<CursorStyle>,
+    pub(crate) last_cursor: glazier::Cursor,
     pub(crate) keyboard_navigation: bool,
     pub(crate) context_menu: HashMap<u32, Box<dyn Fn()>>,
     pub(crate) timers: HashMap<TimerToken, Box<dyn FnOnce()>>,
@@ -300,6 +310,7 @@ impl AppState {
             dragging_over: HashSet::new(),
             hovered: HashSet::new(),
             cursor: None,
+            last_cursor: glazier::Cursor::Arrow,
             keyboard_navigation: false,
             grid_bps: GridBreakpoints::default(),
             context_menu: HashMap::new(),

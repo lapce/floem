@@ -412,7 +412,7 @@ impl TextInput {
                 } else {
                     let prev_cursor_idx = self.cursor_glyph_idx;
 
-                    if event.mods.ctrl() {
+                    if event.mods.contains(Modifiers::CONTROL) {
                         self.move_cursor(Movement::Word, Direction::Left);
                     } else {
                         self.move_cursor(Movement::Glyph, Direction::Left);
@@ -431,7 +431,7 @@ impl TextInput {
             Key::Delete => {
                 let prev_cursor_idx = self.cursor_glyph_idx;
 
-                if event.mods.ctrl() {
+                if event.mods.contains(Modifiers::CONTROL) {
                     self.move_cursor(Movement::Word, Direction::Right);
                 } else {
                     self.move_cursor(Movement::Glyph, Direction::Right);
@@ -461,7 +461,7 @@ impl TextInput {
                     self.cursor_glyph_idx = self.selection.start;
                     self.selection = 0..0;
                     true
-                } else if event.mods.ctrl() {
+                } else if event.mods.contains(Modifiers::CONTROL) {
                     self.move_cursor(Movement::Word, Direction::Left)
                 } else {
                     self.move_cursor(Movement::Glyph, Direction::Left)
@@ -472,7 +472,7 @@ impl TextInput {
                     self.cursor_glyph_idx = self.selection.end;
                     self.selection = 0..0;
                     true
-                } else if event.mods.ctrl() {
+                } else if event.mods.contains(Modifiers::CONTROL) {
                     self.move_cursor(Movement::Word, Direction::Right)
                 } else {
                     self.move_cursor(Movement::Glyph, Direction::Right)

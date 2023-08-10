@@ -25,6 +25,7 @@ enum ScrollState {
     ScrollTo(Point),
     ScrollBarColor(Color),
     HiddenBar(bool),
+    PropagatePointerWheel(bool),
 }
 
 /// Minimum length for any scrollbar to be when measured on that
@@ -57,6 +58,7 @@ pub struct Scroll<V: View> {
     held: BarHeldState,
     virtual_node: Option<Node>,
     hide_bar: bool,
+    propagate_pointer_wheel: bool,
     scroll_bar_color: Color,
 }
 
@@ -73,6 +75,7 @@ pub fn scroll<V: View>(child: impl FnOnce() -> V) -> Scroll<V> {
         held: BarHeldState::None,
         virtual_node: None,
         hide_bar: false,
+        propagate_pointer_wheel: false,
         // 179 is 70% of 255 so a 70% alpha factor is the default
         scroll_bar_color: Color::rgba8(0, 0, 0, 179),
     }
@@ -129,6 +132,14 @@ impl<V: View> Scroll<V> {
         let id = self.id;
         create_effect(move |_| {
             id.update_state(ScrollState::HiddenBar(value()), false);
+        });
+        self
+    }
+
+    pub fn propagate_pointer_wheel(self, value: impl Fn() -> bool + 'static) -> Self {
+        let id = self.id;
+        create_effect(move |_| {
+            id.update_state(ScrollState::PropagatePointerWheel(value()), false);
         });
         self
     }
@@ -509,6 +520,9 @@ impl<V: View> View for Scroll<V> {
                 ScrollState::HiddenBar(value) => {
                     self.hide_bar = value;
                 }
+                ScrollState::PropagatePointerWheel(value) => {
+                    self.propagate_pointer_wheel = value;
+                }
             }
             cx.request_layout(self.id());
             ChangeFlags::LAYOUT
@@ -568,7 +582,7 @@ impl<V: View> View for Scroll<V> {
 
         match &event {
             Event::PointerDown(event) => {
-                if !self.hide_bar && event.button.is_left() {
+                if !self.hide_bar && event.button.is_secondary() {
                     self.held = BarHeldState::None;
 
                     let pos = event.pos + scroll_offset;
@@ -672,7 +686,7 @@ impl<V: View> View for Scroll<V> {
                 Vec2::ZERO
             };
             self.clamp_child_viewport(cx.app_state, self.child_viewport + delta);
-            return true;
+            return !self.propagate_pointer_wheel;
         }
 
         false

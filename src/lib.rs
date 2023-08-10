@@ -139,3 +139,4 @@ pub use floem_renderer::Renderer;
 pub use glazier;
 pub use peniko;
 pub use taffy;
+pub use window::{close_window, new_window};

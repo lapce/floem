@@ -76,7 +76,7 @@ impl<V: View> View for WindowDragArea<V> {
         if !self.child.event_main(cx, id_path, event.clone()) {
             match &event {
                 Event::PointerDown(mouse_event) => {
-                    if mouse_event.button.is_left() {
+                    if mouse_event.button.is_primary() {
                         self.prev_pos = Some(mouse_event.pos);
                         cx.update_active(self.id);
                         self.id.set_handle_titlebar(true);
@@ -84,7 +84,7 @@ impl<V: View> View for WindowDragArea<V> {
                     true
                 }
                 Event::PointerUp(mouse_event) => {
-                    if mouse_event.button.is_left() {
+                    if mouse_event.button.is_primary() {
                         self.id.set_handle_titlebar(false);
                         self.prev_pos = None;
                     }

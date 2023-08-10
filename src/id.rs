@@ -30,6 +30,18 @@ thread_local! {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Hash)]
+pub struct WindowId(NonZeroU64);
+
+impl WindowId {
+    /// Allocate a new, unique `Id`.
+    pub fn next() -> WindowId {
+        use glazier::Counter;
+        static WIDGET_ID_COUNTER: Counter = Counter::new();
+        WindowId(WIDGET_ID_COUNTER.next_nonzero())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Hash)]
 /// A stable identifier for an element.
 pub struct Id(NonZeroU64);
 
@@ -100,66 +112,30 @@ impl Id {
     }
 
     pub fn request_focus(&self) {
-        if let Some(root) = self.root_id() {
-            UPDATE_MESSAGES.with(|msgs| {
-                let mut msgs = msgs.borrow_mut();
-                let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::Focus(*self));
-            });
-        }
+        self.add_update_message(UpdateMessage::Focus(*self));
     }
 
     pub fn request_active(&self) {
-        if let Some(root) = self.root_id() {
-            UPDATE_MESSAGES.with(|msgs| {
-                let mut msgs = msgs.borrow_mut();
-                let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::Active(*self));
-            });
-        }
+        self.add_update_message(UpdateMessage::Active(*self));
     }
 
     pub fn update_disabled(&self, is_disabled: bool) {
-        if let Some(root) = self.root_id() {
-            UPDATE_MESSAGES.with(|msgs| {
-                let mut msgs = msgs.borrow_mut();
-                let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::Disabled {
-                    id: *self,
-                    is_disabled,
-                })
-            });
-        }
+        self.add_update_message(UpdateMessage::Disabled {
+            id: *self,
+            is_disabled,
+        });
     }
 
     pub fn update_window_scale(&self, window_scale: f64) {
-        if let Some(root) = self.root_id() {
-            UPDATE_MESSAGES.with(|msgs| {
-                let mut msgs = msgs.borrow_mut();
-                let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::WindowScale(window_scale))
-            });
-        }
+        self.add_update_message(UpdateMessage::WindowScale(window_scale));
     }
 
     pub fn request_paint(&self) {
-        if let Some(root) = self.root_id() {
-            UPDATE_MESSAGES.with(|msgs| {
-                let mut msgs = msgs.borrow_mut();
-                let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::RequestPaint);
-            });
-        }
+        self.add_update_message(UpdateMessage::RequestPaint);
     }
 
     pub fn request_layout(&self) {
-        if let Some(root) = self.root_id() {
-            UPDATE_MESSAGES.with(|msgs| {
-                let mut msgs = msgs.borrow_mut();
-                let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::RequestLayout { id: *self });
-            });
-        }
+        self.add_update_message(UpdateMessage::RequestLayout { id: *self });
     }
 
     pub fn update_state(&self, state: impl Any, deferred: bool) {
@@ -184,150 +160,72 @@ impl Id {
     }
 
     pub fn update_base_style(&self, style: Style) {
-        if let Some(root) = self.root_id() {
-            UPDATE_MESSAGES.with(|msgs| {
-                let mut msgs = msgs.borrow_mut();
-                let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::BaseStyle { id: *self, style });
-            });
-        }
+        self.add_update_message(UpdateMessage::BaseStyle { id: *self, style });
     }
 
     pub fn update_style(&self, style: Style) {
-        if let Some(root) = self.root_id() {
-            UPDATE_MESSAGES.with(|msgs| {
-                let mut msgs = msgs.borrow_mut();
-                let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::Style { id: *self, style });
-            });
-        }
+        self.add_update_message(UpdateMessage::Style { id: *self, style });
     }
 
     pub fn update_style_selector(&self, style: Style, selector: StyleSelector) {
-        if let Some(root) = self.root_id() {
-            UPDATE_MESSAGES.with(|msgs| {
-                let mut msgs = msgs.borrow_mut();
-                let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::StyleSelector {
-                    id: *self,
-                    style,
-                    selector,
-                })
-            });
-        }
+        self.add_update_message(UpdateMessage::StyleSelector {
+            id: *self,
+            style,
+            selector,
+        });
     }
 
     pub fn keyboard_navigatable(&self) {
-        if let Some(root) = self.root_id() {
-            UPDATE_MESSAGES.with(|msgs| {
-                let mut msgs = msgs.borrow_mut();
-                let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::KeyboardNavigable { id: *self })
-            })
-        }
+        self.add_update_message(UpdateMessage::KeyboardNavigable { id: *self });
     }
 
     pub fn draggable(&self) {
-        if let Some(root) = self.root_id() {
-            UPDATE_MESSAGES.with(|msgs| {
-                let mut msgs = msgs.borrow_mut();
-                let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::Draggable { id: *self })
-            })
-        }
+        self.add_update_message(UpdateMessage::Draggable { id: *self });
     }
 
     pub fn update_responsive_style(&self, style: Style, size: ScreenSize) {
-        if let Some(root) = self.root_id() {
-            UPDATE_MESSAGES.with(|msgs| {
-                let mut msgs = msgs.borrow_mut();
-                let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::ResponsiveStyle {
-                    id: *self,
-                    style,
-                    size,
-                })
-            });
-        }
+        self.add_update_message(UpdateMessage::ResponsiveStyle {
+            id: *self,
+            style,
+            size,
+        });
     }
 
     pub fn set_handle_titlebar(&self, val: bool) {
-        if let Some(root) = self.root_id() {
-            UPDATE_MESSAGES.with(|msgs| {
-                let mut msgs = msgs.borrow_mut();
-                let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::HandleTitleBar(val))
-            });
-        }
+        self.add_update_message(UpdateMessage::HandleTitleBar(val));
     }
 
     pub fn set_window_delta(&self, delta: Vec2) {
-        if let Some(root) = self.root_id() {
-            UPDATE_MESSAGES.with(|msgs| {
-                let mut msgs = msgs.borrow_mut();
-                let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::SetWindowDelta(delta))
-            });
-        }
+        self.add_update_message(UpdateMessage::SetWindowDelta(delta));
     }
 
     pub fn update_event_listener(&self, listener: EventListener, action: Box<EventCallback>) {
-        if let Some(root) = self.root_id() {
-            UPDATE_MESSAGES.with(|msgs| {
-                let mut msgs = msgs.borrow_mut();
-                let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::EventListener {
-                    id: *self,
-                    listener,
-                    action,
-                })
-            });
-        }
+        self.add_update_message(UpdateMessage::EventListener {
+            id: *self,
+            listener,
+            action,
+        });
     }
     pub fn update_resize_listener(&self, action: Box<ResizeCallback>) {
-        if let Some(root) = self.root_id() {
-            UPDATE_MESSAGES.with(|msgs| {
-                let mut msgs = msgs.borrow_mut();
-                let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::ResizeListener { id: *self, action })
-            });
-        }
+        self.add_update_message(UpdateMessage::ResizeListener { id: *self, action });
     }
 
     pub fn update_cleanup_listener(&self, action: Box<dyn Fn()>) {
-        if let Some(root) = self.root_id() {
-            UPDATE_MESSAGES.with(|msgs| {
-                let mut msgs = msgs.borrow_mut();
-                let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::CleanupListener { id: *self, action })
-            });
-        }
+        self.add_update_message(UpdateMessage::CleanupListener { id: *self, action });
     }
 
     pub fn update_animation(&self, animation: Animation) {
-        if let Some(root) = self.root_id() {
-            UPDATE_MESSAGES.with(|msgs| {
-                let mut msgs = msgs.borrow_mut();
-                let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::Animation {
-                    id: *self,
-                    animation,
-                })
-            });
-        }
+        self.add_update_message(UpdateMessage::Animation {
+            id: *self,
+            animation,
+        });
     }
 
     pub fn exec_after(&self, deadline: Duration, action: impl FnOnce() + 'static) {
-        if let Some(root) = self.root_id() {
-            UPDATE_MESSAGES.with(|msgs| {
-                let mut msgs = msgs.borrow_mut();
-                let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::RequestTimer {
-                    deadline,
-                    action: Box::new(action),
-                })
-            });
-        }
+        self.add_update_message(UpdateMessage::RequestTimer {
+            deadline,
+            action: Box::new(action),
+        });
     }
 
     pub fn open_file(
@@ -335,16 +233,10 @@ impl Id {
         options: FileDialogOptions,
         file_info_action: impl Fn(Option<FileInfo>) + 'static,
     ) {
-        if let Some(root) = self.root_id() {
-            UPDATE_MESSAGES.with(|msgs| {
-                let mut msgs = msgs.borrow_mut();
-                let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::OpenFile {
-                    options,
-                    file_info_action: Box::new(file_info_action),
-                })
-            });
-        }
+        self.add_update_message(UpdateMessage::OpenFile {
+            options,
+            file_info_action: Box::new(file_info_action),
+        });
     }
 
     pub fn save_as(
@@ -352,44 +244,38 @@ impl Id {
         options: FileDialogOptions,
         file_info_action: impl Fn(Option<FileInfo>) + 'static,
     ) {
-        if let Some(root) = self.root_id() {
-            UPDATE_MESSAGES.with(|msgs| {
-                let mut msgs = msgs.borrow_mut();
-                let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::SaveAs {
-                    options,
-                    file_info_action: Box::new(file_info_action),
-                })
-            });
-        }
+        self.add_update_message(UpdateMessage::SaveAs {
+            options,
+            file_info_action: Box::new(file_info_action),
+        });
     }
 
     pub fn update_context_menu(&self, menu: Box<MenuCallback>) {
-        if let Some(root) = self.root_id() {
-            UPDATE_MESSAGES.with(|msgs| {
-                let mut msgs = msgs.borrow_mut();
-                let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::ContextMenu { id: *self, menu })
-            });
-        }
+        self.add_update_message(UpdateMessage::ContextMenu { id: *self, menu });
     }
 
     pub fn update_popout_menu(&self, menu: Box<MenuCallback>) {
-        if let Some(root) = self.root_id() {
-            UPDATE_MESSAGES.with(|msgs| {
-                let mut msgs = msgs.borrow_mut();
-                let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::PopoutMenu { id: *self, menu })
-            });
-        }
+        self.add_update_message(UpdateMessage::PopoutMenu { id: *self, menu });
     }
 
     pub fn show_context_menu(&self, menu: Menu, pos: Point) {
+        self.add_update_message(UpdateMessage::ShowContextMenu { menu, pos });
+    }
+
+    pub fn window_menu(&self, menu: Menu) {
+        self.add_update_message(UpdateMessage::WindowMenu { menu });
+    }
+
+    pub fn set_window_title(&self, title: String) {
+        self.add_update_message(UpdateMessage::SetWindowTitle { title });
+    }
+
+    fn add_update_message(&self, msg: UpdateMessage) {
         if let Some(root) = self.root_id() {
             UPDATE_MESSAGES.with(|msgs| {
                 let mut msgs = msgs.borrow_mut();
                 let msgs = msgs.entry(root).or_default();
-                msgs.push(UpdateMessage::ShowContextMenu { menu, pos })
+                msgs.push(msg);
             });
         }
     }

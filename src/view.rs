@@ -379,7 +379,7 @@ pub trait View {
 
         match &event {
             Event::PointerDown(event) => {
-                if event.button.is_left() {
+                if event.button.is_primary() {
                     let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
                     let now_focused = rect.contains(event.pos);
 
@@ -412,7 +412,7 @@ pub trait View {
                             cx.app_state.drag_start = Some((id, event.pos));
                         }
                     }
-                } else if event.button.is_right() {
+                } else if event.button.is_secondary() {
                     let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
                     let now_focused = rect.contains(event.pos);
 
@@ -485,7 +485,7 @@ pub trait View {
                 }
             }
             Event::PointerUp(pointer_event) => {
-                if pointer_event.button.is_left() {
+                if pointer_event.button.is_primary() {
                     let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
                     let on_view = rect.contains(pointer_event.pos);
 
@@ -544,7 +544,7 @@ pub trait View {
                             }
                         }
                     }
-                } else if pointer_event.button.is_right() {
+                } else if pointer_event.button.is_primary() {
                     let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
                     let on_view = rect.contains(pointer_event.pos);
 
