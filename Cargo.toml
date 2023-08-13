@@ -16,7 +16,7 @@ unicode-segmentation = "1.10.0"
 leptos_reactive = { version = "0.5.0-alpha" }
 glazier = { git = "https://github.com/lapce/glazier", features = [
     "serde",
-], rev = "b2c780675740c643e0d2e84361c52f077b099429" }
+], rev = "db03ea4295daef69cb8d0877f2b2e5734cc116be" }
 # glazier = { path = "../glazier", features = ["serde"] }
 peniko = { git = "https://github.com/linebender/peniko", rev = "cafdac9a211a0fb2fec5656bd663d1ac770bcc81" }
 wgpu = "0.15"

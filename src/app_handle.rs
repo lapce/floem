@@ -1012,6 +1012,9 @@ impl<V: View> WinHandler for AppHandle<V> {
     }
 
     fn got_focus(&mut self) {
+        {
+            *EXT_EVENT_HANDLER.active.lock() = self.view.id();
+        }
         self.event(Event::WindowGotFocus);
     }
 

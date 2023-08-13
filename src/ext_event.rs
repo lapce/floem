@@ -11,12 +11,13 @@ use parking_lot::Mutex;
 
 use crate::{app_handle::get_current_view, id::Id};
 
-pub static EXT_EVENT_HANDLER: Lazy<ExtEventHandler> = Lazy::new(ExtEventHandler::default);
+pub(crate) static EXT_EVENT_HANDLER: Lazy<ExtEventHandler> = Lazy::new(ExtEventHandler::default);
 
 #[derive(Clone)]
 pub struct ExtEventHandler {
     pub(crate) queue: Arc<Mutex<HashMap<Id, Vec<Trigger>>>>,
     pub(crate) handle: Arc<Mutex<HashMap<Id, IdleHandle>>>,
+    pub(crate) active: Arc<Mutex<Id>>,
 }
 
 impl Default for ExtEventHandler {
@@ -24,12 +25,24 @@ impl Default for ExtEventHandler {
         Self {
             queue: Arc::new(Mutex::new(HashMap::new())),
             handle: Arc::new(Mutex::new(HashMap::new())),
+            active: Arc::new(Mutex::new(Id::next())),
         }
     }
 }
 
 impl ExtEventHandler {
     pub fn add_trigger(&self, current_view_id: Id, trigger: Trigger) {
+        let current_view_id = {
+            if !EXT_EVENT_HANDLER
+                .handle
+                .lock()
+                .contains_key(&current_view_id)
+            {
+                *EXT_EVENT_HANDLER.active.lock()
+            } else {
+                current_view_id
+            }
+        };
         {
             let mut queue = EXT_EVENT_HANDLER.queue.lock();
             let queue = queue.entry(current_view_id).or_default();
