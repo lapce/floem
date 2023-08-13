@@ -408,6 +408,7 @@ impl TextInput {
                     self.buffer
                         .update(|buf| replace_range(buf, selection, None));
                     self.cursor_glyph_idx = 0;
+                    self.selection = 0..0;
                     true
                 } else {
                     let prev_cursor_idx = self.cursor_glyph_idx;
@@ -488,6 +489,22 @@ impl TextInput {
 
 fn replace_range(buff: &mut String, del_range: Range<usize>, replacement: Option<&str>) {
     assert!(del_range.start < del_range.end);
+    if !buff.is_char_boundary(del_range.end) {
+        eprintln!(
+            "[Floem] Tried to delete range with invalid end: {:?}",
+            del_range
+        );
+        return;
+    }
+
+    if !buff.is_char_boundary(del_range.start) {
+        eprintln!(
+            "[Floem] Tried to delete range with invalid start: {:?}",
+            del_range
+        );
+        return;
+    }
+
     // Get text after range to delete
     let after_del_range = buff.split_off(del_range.end);
 
