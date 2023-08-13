@@ -101,7 +101,7 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
         run: |
           sudo apt-get -y update
-          sudo apt-get -y install clang libxkbcommon-x11-dev pkg-config libvulkan-dev
+          sudo apt-get -y install clang libwayland-dev libxkbcommon-x11-dev pkg-config libvulkan-dev
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
