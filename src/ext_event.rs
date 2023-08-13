@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use floem_reactive::{create_effect, untrack, with_scope, ReadSignal, Scope, Trigger};
+use floem_reactive::{create_effect, untrack, with_scope, ReadSignal, Scope, Trigger, WriteSignal};
 use glazier::{IdleHandle, IdleToken};
 // use leptos_reactive::{create_signal, create_trigger, untrack, ReadSignal, SignalSet, Trigger};
 use once_cell::sync::Lazy;
@@ -69,6 +69,44 @@ pub fn create_ext_action<T: Send + 'static>(
         *data.lock() = Some(event);
         EXT_EVENT_HANDLER.add_trigger(current_view_id, trigger);
     }
+}
+
+pub fn update_signal_from_channel<T: Send + 'static>(
+    writer: WriteSignal<Option<T>>,
+    rx: crossbeam_channel::Receiver<T>,
+) {
+    let cx = Scope::new();
+    let trigger = cx.create_trigger();
+    let current_view_id = get_current_view();
+
+    let channel_closed = cx.create_rw_signal(false);
+    let data = Arc::new(Mutex::new(VecDeque::new()));
+
+    {
+        let data = data.clone();
+        cx.create_effect(move |_| {
+            trigger.track();
+            while let Some(value) = data.lock().pop_front() {
+                writer.set(value);
+            }
+
+            if channel_closed.get() {
+                cx.dispose();
+            }
+        });
+    }
+
+    let send = create_ext_action(cx, move |_| {
+        channel_closed.set(true);
+    });
+
+    std::thread::spawn(move || {
+        while let Ok(event) = rx.recv() {
+            data.lock().push_back(Some(event));
+            EXT_EVENT_HANDLER.add_trigger(current_view_id, trigger);
+        }
+        send(());
+    });
 }
 
 pub fn create_signal_from_channel<T: Send + 'static>(
