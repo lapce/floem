@@ -1,3 +1,4 @@
+use crate::action::exec_after;
 use crate::reactive::{create_effect, RwSignal};
 use crate::{context::LayoutCx, style::CursorStyle};
 use taffy::{
@@ -725,7 +726,7 @@ impl View for TextInput {
         }
 
         let id = self.id();
-        id.exec_after(
+        exec_after(
             Duration::from_millis(CURSOR_BLINK_INTERVAL_MS),
             Box::new(move || {
                 id.request_paint();

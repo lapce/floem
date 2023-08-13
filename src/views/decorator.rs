@@ -2,6 +2,7 @@ use floem_reactive::create_effect;
 use glazier::kurbo::{Point, Rect};
 
 use crate::{
+    action::{set_window_menu, set_window_title, update_window_scale},
     animate::Animation,
     app_handle::StyleSelector,
     event::{Event, EventListener},
@@ -165,30 +166,25 @@ pub trait Decorators: View + Sized {
     }
 
     fn window_scale(self, scale_fn: impl Fn() -> f64 + 'static) -> Self {
-        let id = self.id();
-
         create_effect(move |_| {
             let window_scale = scale_fn();
-            id.update_window_scale(window_scale);
+            update_window_scale(window_scale);
         });
         self
     }
 
     fn window_title(self, title_fn: impl Fn() -> String + 'static) -> Self {
-        let id = self.id();
-
         create_effect(move |_| {
             let window_title = title_fn();
-            id.set_window_title(window_title);
+            set_window_title(window_title);
         });
         self
     }
 
     fn window_menu(self, menu_fn: impl Fn() -> Menu + 'static) -> Self {
-        let id = self.id();
         create_effect(move |_| {
             let menu = menu_fn();
-            id.window_menu(menu);
+            set_window_menu(menu);
         });
         self
     }

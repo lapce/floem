@@ -96,6 +96,7 @@ use glazier::kurbo::{Affine, Circle, Line, Point, Rect, Size};
 use taffy::prelude::Node;
 
 use crate::{
+    action::show_context_menu,
     context::{AppState, DragState, EventCx, LayoutCx, PaintCx, UpdateCx},
     event::{Event, EventListener},
     id::Id,
@@ -405,7 +406,7 @@ pub trait View {
                             Point::new(layout.x0, layout.y1)
                         };
                         if let Some(menu) = &cx.app_state.view_state(id).popout_menu {
-                            id.show_context_menu(menu(), bottom_left)
+                            show_context_menu(menu(), bottom_left)
                         }
                         if cx.app_state.draggable.contains(&id) && cx.app_state.drag_start.is_none()
                         {
@@ -564,7 +565,7 @@ pub trait View {
                         )
                     };
                     if let Some(menu) = &cx.app_state.view_state(id).context_menu {
-                        id.show_context_menu(menu(), viewport_event_position)
+                        show_context_menu(menu(), viewport_event_position)
                     }
                 }
             }

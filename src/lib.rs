@@ -115,6 +115,7 @@
 //! See the [Style module](style) for more info.
 //!
 //!
+pub mod action;
 pub mod animate;
 mod app;
 mod app_handle;

@@ -1,6 +1,8 @@
+use std::cell::RefCell;
 use std::time::Duration;
 use std::{any::Any, collections::HashMap};
 
+use crate::action::exec_after;
 use crate::animate::AnimValue;
 use crate::id::WindowId;
 use crate::view::{view_debug_tree, view_tab_navigation};
@@ -28,9 +30,12 @@ use crate::{
 thread_local! {
     /// Stores a queue of update messages for each view. This is a list of build in messages, including a built-in State message
     /// that you can use to send a state update to a view.
-    pub(crate) static UPDATE_MESSAGES: std::cell::RefCell<HashMap<Id, Vec<UpdateMessage>>> = Default::default();
-    pub(crate) static DEFERRED_UPDATE_MESSAGES: std::cell::RefCell<DeferredUpdateMessages> = Default::default();
-    pub(crate) static ANIM_UPDATE_MESSAGES: std::cell::RefCell<Vec<AnimUpdateMsg>> = Default::default();
+    pub(crate) static UPDATE_MESSAGES: RefCell<HashMap<Id, Vec<UpdateMessage>>> = Default::default();
+    pub(crate) static DEFERRED_UPDATE_MESSAGES: RefCell<DeferredUpdateMessages> = Default::default();
+    pub(crate) static ANIM_UPDATE_MESSAGES: RefCell<Vec<AnimUpdateMsg>> = Default::default();
+    /// It stores the active view handle, so that when you dispatch an action, it knows
+    /// which view handle it submitted to
+    pub(crate) static CURRENT_RUNNING_VIEW_HANDLE: RefCell<Id> = RefCell::new(Id::next());
 }
 
 pub type FileDialogs = HashMap<FileDialogToken, Box<dyn Fn(Option<FileInfo>)>>;
@@ -216,9 +221,12 @@ pub struct AppHandle<V: View + 'static> {
 
 impl<V: View> AppHandle<V> {
     pub fn new(window_id: WindowId, app_logic: impl FnOnce() -> V + 'static) -> Self {
+        let id = Id::next();
+        set_current_view(id);
+
         let scope = Scope::new();
         ViewContext::save();
-        let cx = ViewContext { id: Id::next() };
+        let cx = ViewContext { id };
         ViewContext::set_current(cx);
         let view = with_scope(scope, app_logic);
         ViewContext::restore();
@@ -251,7 +259,7 @@ impl<V: View> AppHandle<V> {
         let id = self.app_state.ids_with_anim_in_progress().get(0).cloned();
 
         if let Some(id) = id {
-            id.exec_after(Duration::from_millis(1), move || {
+            exec_after(Duration::from_millis(1), move || {
                 id.request_layout();
             });
         }
@@ -663,6 +671,8 @@ impl<V: View> AppHandle<V> {
     }
 
     pub fn event(&mut self, event: Event) {
+        set_current_view(self.view.id());
+
         let event = event.scale(self.app_state.scale);
 
         let mut cx = EventCx {
@@ -827,8 +837,11 @@ impl<V: View> AppHandle<V> {
     }
 
     fn idle(&mut self) {
-        while let Some(trigger) = EXT_EVENT_HANDLER.queue.lock().pop_front() {
-            trigger.notify();
+        set_current_view(self.view.id());
+        if let Some(triggers) = { EXT_EVENT_HANDLER.queue.lock().remove(&self.view.id()) } {
+            for trigger in triggers {
+                trigger.notify();
+            }
         }
         self.process_update();
     }
@@ -857,6 +870,17 @@ impl<V: View> AppHandle<V> {
     }
 }
 
+pub(crate) fn get_current_view() -> Id {
+    CURRENT_RUNNING_VIEW_HANDLE.with(|running| *running.borrow())
+}
+
+/// Set this view handle to the current running view handle
+pub(crate) fn set_current_view(id: Id) {
+    CURRENT_RUNNING_VIEW_HANDLE.with(|running| {
+        *running.borrow_mut() = id;
+    });
+}
+
 impl<V: View> WinHandler for AppHandle<V> {
     fn connect(&mut self, handle: &glazier::WindowHandle) {
         WINDOWS.with(|windows| {
@@ -871,7 +895,7 @@ impl<V: View> WinHandler for AppHandle<V> {
             EXT_EVENT_HANDLER
                 .handle
                 .lock()
-                .insert(self.window_id, idle_handle);
+                .insert(self.view.id(), idle_handle);
         }
         self.idle();
     }
@@ -911,6 +935,7 @@ impl<V: View> WinHandler for AppHandle<V> {
         if self.closed {
             return;
         }
+        set_current_view(self.view.id());
         self.paint();
     }
 
@@ -946,6 +971,7 @@ impl<V: View> WinHandler for AppHandle<V> {
     }
 
     fn command(&mut self, id: u32) {
+        set_current_view(self.view.id());
         if let Some(action) = self.window_menu.get(&id) {
             (*action)();
             self.process_update();
@@ -960,18 +986,21 @@ impl<V: View> WinHandler for AppHandle<V> {
     }
 
     fn open_file(&mut self, token: FileDialogToken, file: Option<FileInfo>) {
+        set_current_view(self.view.id());
         if let Some(action) = self.file_dialogs.remove(&token) {
             action(file);
         }
     }
 
     fn save_as(&mut self, token: FileDialogToken, file: Option<FileInfo>) {
+        set_current_view(self.view.id());
         if let Some(action) = self.file_dialogs.remove(&token) {
             action(file);
         }
     }
 
     fn timer(&mut self, token: TimerToken) {
+        set_current_view(self.view.id());
         if let Some(action) = self.app_state.timers.remove(&token) {
             action();
         }
@@ -999,7 +1028,8 @@ impl<V: View> WinHandler for AppHandle<V> {
             windows.len()
         });
         self.scope.dispose();
-        EXT_EVENT_HANDLER.handle.lock().remove(&self.window_id);
+        EXT_EVENT_HANDLER.handle.lock().remove(&self.view.id());
+        EXT_EVENT_HANDLER.queue.lock().remove(&self.view.id());
         if windows_len == 0 {
             #[cfg(not(target_os = "macos"))]
             glazier::Application::global().quit();

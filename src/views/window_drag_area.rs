@@ -1,6 +1,7 @@
 use glazier::kurbo::{Point, Rect};
 
 use crate::{
+    action::{set_handle_titlebar, set_window_delta},
     app_handle::ViewContext,
     event::Event,
     id::Id,
@@ -79,13 +80,13 @@ impl<V: View> View for WindowDragArea<V> {
                     if mouse_event.button.is_primary() {
                         self.prev_pos = Some(mouse_event.pos);
                         cx.update_active(self.id);
-                        self.id.set_handle_titlebar(true);
+                        set_handle_titlebar(true);
                     }
                     true
                 }
                 Event::PointerUp(mouse_event) => {
                     if mouse_event.button.is_primary() {
-                        self.id.set_handle_titlebar(false);
+                        set_handle_titlebar(false);
                         self.prev_pos = None;
                     }
                     true
@@ -93,7 +94,7 @@ impl<V: View> View for WindowDragArea<V> {
                 Event::PointerMove(mouse_event) => {
                     if let Some(prev_pos) = self.prev_pos {
                         let position_diff = mouse_event.pos - prev_pos;
-                        self.id.set_window_delta(position_diff);
+                        set_window_delta(position_diff);
                         return true;
                     }
                     false
