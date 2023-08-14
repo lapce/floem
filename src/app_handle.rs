@@ -223,6 +223,9 @@ impl<V: View> AppHandle<V> {
     pub fn new(window_id: WindowId, app_logic: impl FnOnce() -> V + 'static) -> Self {
         let id = Id::next();
         set_current_view(id);
+        {
+            *EXT_EVENT_HANDLER.active.lock() = id;
+        }
 
         let scope = Scope::new();
         ViewContext::save();

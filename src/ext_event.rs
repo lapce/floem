@@ -100,7 +100,7 @@ pub fn update_signal_from_channel<T: Send + 'static>(
         cx.create_effect(move |_| {
             trigger.track();
             while let Some(value) = data.lock().pop_front() {
-                writer.set(value);
+                writer.try_set(value);
             }
 
             if channel_closed.get() {

@@ -262,6 +262,16 @@ impl<T> WriteSignal<T> {
         signal_update_value(&signal, |v| *v = new_value);
     }
 
+    /// When the signal exists, sets the new_value to the Signal and triggers effect run
+    pub fn try_set(&self, new_value: T)
+    where
+        T: 'static,
+    {
+        if let Some(signal) = self.id.signal() {
+            signal_update_value(&signal, |v| *v = new_value);
+        }
+    }
+
     /// Update the stored value with the given function and triggers effect run
     pub fn update(&self, f: impl FnOnce(&mut T))
     where
