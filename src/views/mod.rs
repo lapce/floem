@@ -19,6 +19,9 @@ pub use container::*;
 mod container_box;
 pub use container_box::*;
 
+mod dyn_container;
+pub use dyn_container::*;
+
 mod decorator;
 pub use decorator::*;
 
