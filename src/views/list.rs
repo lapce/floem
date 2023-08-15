@@ -373,7 +373,7 @@ pub(super) fn apply_diff<T, V, VF>(
     }
 
     for DiffOpMove { from, to } in diff.moved {
-        let item = std::mem::take(&mut children[from]).unwrap();
+        let item = children[from].take().unwrap();
         items_to_move.push((to, item));
     }
 

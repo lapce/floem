@@ -709,6 +709,10 @@ pub trait View {
                         style
                     };
                     paint_bg(cx, &style, size);
+
+                    if style.color.is_some() {
+                        cx.color = style.color;
+                    }
                     self.paint(cx);
                     paint_border(cx, &style, size);
                     paint_outline(cx, &style, size);
