@@ -265,10 +265,9 @@ impl<V: View + 'static, T> View for VirtualList<V, T> {
             }
             self.before_size = state.before_size;
             self.after_size = state.after_size;
-            ViewContext::save();
-            ViewContext::set_current(self.cx);
-            apply_diff(cx.app_state, state.diff, &mut self.children, &self.view_fn);
-            ViewContext::restore();
+            ViewContext::with_context(self.cx, || {
+                apply_diff(cx.app_state, state.diff, &mut self.children, &self.view_fn);
+            });
             cx.request_layout(self.id());
             ChangeFlags::LAYOUT
         } else {

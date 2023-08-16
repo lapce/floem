@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use floem_reactive::create_effect;
+use floem_reactive::{as_child_of_current_scope, create_effect, Scope};
 use glazier::kurbo::Rect;
 
 use crate::{
@@ -9,18 +9,21 @@ use crate::{
     view::{ChangeFlags, View},
 };
 
-pub struct DynamicContainer<CF: Fn(T) -> Box<dyn View> + 'static, T: 'static> {
+type ChildFn<T> = dyn Fn(T) -> (Box<dyn View>, Scope);
+
+pub struct DynamicContainer<T: 'static> {
     id: Id,
     child: Box<dyn View>,
-    child_fn: CF,
+    child_scope: Scope,
+    child_fn: Box<ChildFn<T>>,
     phantom: PhantomData<T>,
     cx: ViewContext,
 }
 
 pub fn dyn_container<CF: Fn(T) -> Box<dyn View> + 'static, T: 'static>(
     update_view: impl Fn() -> T + 'static,
-    child: CF,
-) -> DynamicContainer<CF, T> {
+    child_fn: CF,
+) -> DynamicContainer<T> {
     let cx = ViewContext::get_current();
     let id = cx.new_id();
 
@@ -31,16 +34,18 @@ pub fn dyn_container<CF: Fn(T) -> Box<dyn View> + 'static, T: 'static>(
         id.update_state(update_view(), false);
     });
 
+    let child_fn = Box::new(as_child_of_current_scope(child_fn));
     DynamicContainer {
         id,
         child: Box::new(crate::views::empty()),
-        child_fn: child,
+        child_scope: Scope::new(),
+        child_fn,
         phantom: PhantomData,
         cx: child_cx,
     }
 }
 
-impl<CF: Fn(T) -> Box<dyn View> + 'static + Copy, T: 'static> View for DynamicContainer<CF, T> {
+impl<T: 'static> View for DynamicContainer<T> {
     fn id(&self) -> Id {
         self.id
     }
@@ -79,13 +84,11 @@ impl<CF: Fn(T) -> Box<dyn View> + 'static + Copy, T: 'static> View for DynamicCo
         state: Box<dyn std::any::Any>,
     ) -> crate::view::ChangeFlags {
         if let Ok(val) = state.downcast::<T>() {
-            ViewContext::save();
-            ViewContext::set_current(self.cx);
-
-            let child_fn = self.child_fn;
-            self.child = child_fn(*val);
-
-            ViewContext::restore();
+            ViewContext::with_context(self.cx, || {
+                let old_child_scope = self.child_scope;
+                (self.child, self.child_scope) = (self.child_fn)(*val);
+                old_child_scope.dispose();
+            });
             cx.request_layout(self.id());
             ChangeFlags::LAYOUT
         } else {

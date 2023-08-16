@@ -140,10 +140,9 @@ impl<V: View + 'static, T> View for List<V, T> {
         state: Box<dyn std::any::Any>,
     ) -> crate::view::ChangeFlags {
         if let Ok(diff) = state.downcast() {
-            ViewContext::save();
-            ViewContext::set_current(self.cx);
-            apply_diff(cx.app_state, *diff, &mut self.children, &self.view_fn);
-            ViewContext::restore();
+            ViewContext::with_context(self.cx, || {
+                apply_diff(cx.app_state, *diff, &mut self.children, &self.view_fn);
+            });
             cx.request_layout(self.id());
             ChangeFlags::LAYOUT
         } else {

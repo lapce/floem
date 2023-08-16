@@ -155,10 +155,9 @@ impl<V: View + 'static, T> View for Tab<V, T> {
         if let Ok(state) = state.downcast::<TabState<T>>() {
             match *state {
                 TabState::Diff(diff) => {
-                    ViewContext::save();
-                    ViewContext::set_current(self.cx);
-                    apply_diff(cx.app_state, *diff, &mut self.children, &self.view_fn);
-                    ViewContext::restore();
+                    ViewContext::with_context(self.cx, || {
+                        apply_diff(cx.app_state, *diff, &mut self.children, &self.view_fn);
+                    });
                 }
                 TabState::Active(active) => {
                     self.active = active;

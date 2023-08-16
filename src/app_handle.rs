@@ -70,6 +70,14 @@ impl ViewContext {
         })
     }
 
+    pub fn with_context<T>(cx: ViewContext, f: impl FnOnce() -> T) -> T {
+        ViewContext::save();
+        ViewContext::set_current(cx);
+        let value = f();
+        ViewContext::restore();
+        value
+    }
+
     /// Use this method if you are creating a `View` that has a child.
     ///
     /// Ensures that the child is initialized with the "correct" `ViewContext`
@@ -82,10 +90,7 @@ impl ViewContext {
         let id = cx.new_id();
         let mut child_cx = cx;
         child_cx.id = id;
-        ViewContext::save();
-        ViewContext::set_current(child_cx);
-        let child = child();
-        ViewContext::restore();
+        let child = ViewContext::with_context(child_cx, child);
         (id, child)
     }
 
@@ -228,11 +233,8 @@ impl<V: View> AppHandle<V> {
         }
 
         let scope = Scope::new();
-        ViewContext::save();
         let cx = ViewContext { id };
-        ViewContext::set_current(cx);
-        let view = with_scope(scope, app_logic);
-        ViewContext::restore();
+        let view = ViewContext::with_context(cx, || with_scope(scope, app_logic));
         Self {
             scope,
             view,

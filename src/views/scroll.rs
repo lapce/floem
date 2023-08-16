@@ -582,7 +582,7 @@ impl<V: View> View for Scroll<V> {
 
         match &event {
             Event::PointerDown(event) => {
-                if !self.hide_bar && event.button.is_secondary() {
+                if !self.hide_bar && event.button.is_primary() {
                     self.held = BarHeldState::None;
 
                     let pos = event.pos + scroll_offset;
