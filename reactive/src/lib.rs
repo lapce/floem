@@ -12,4 +12,4 @@ pub use effect::{create_effect, untrack};
 pub use memo::{create_memo, Memo};
 pub use scope::{as_child_of_current_scope, with_scope, Scope};
 pub use signal::{create_rw_signal, create_signal, ReadSignal, RwSignal, WriteSignal};
-pub use trigger::Trigger;
+pub use trigger::{create_trigger, Trigger};
