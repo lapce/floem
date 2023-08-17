@@ -12,6 +12,7 @@ use wgpu::{Device, Queue, Surface, SurfaceConfiguration, TextureFormat};
 
 pub struct VgerRenderer {
     device: Arc<Device>,
+    #[allow(unused)]
     queue: Arc<Queue>,
     surface: Surface,
     vger: Vger,
