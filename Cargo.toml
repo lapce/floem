@@ -13,15 +13,11 @@ smallvec = "1.10.0"
 educe = "0.4.20"
 taffy = "0.3.12"
 unicode-segmentation = "1.10.0"
-leptos_reactive = { version = "0.5.0-alpha" }
 glazier = { git = "https://github.com/lapce/glazier", features = [
     "serde",
 ], rev = "db03ea4295daef69cb8d0877f2b2e5734cc116be" }
 # glazier = { path = "../glazier", features = ["serde"] }
 peniko = { git = "https://github.com/linebender/peniko", rev = "cafdac9a211a0fb2fec5656bd663d1ac770bcc81" }
-wgpu = "0.15"
-futures = "0.3.26"
-tokio = { version = "1.21", features = ["full"] }
 crossbeam-channel = "0.5.6"
 once_cell = "1.17.1"
 im = "15.1.0"

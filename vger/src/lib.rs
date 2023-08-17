@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use floem_renderer::cosmic_text::{SubpixelBin, SwashCache, SwashImage, TextLayout};
 use floem_renderer::{tiny_skia, Renderer};
@@ -9,8 +11,8 @@ use vger::{PaintIndex, Vger};
 use wgpu::{Device, Queue, Surface, SurfaceConfiguration, TextureFormat};
 
 pub struct VgerRenderer {
-    device: Device,
-    queue: Queue,
+    device: Arc<Device>,
+    queue: Arc<Queue>,
     surface: Surface,
     vger: Vger,
     config: SurfaceConfiguration,
@@ -48,6 +50,8 @@ impl VgerRenderer {
             },
             None,
         ))?;
+        let device = Arc::new(device);
+        let queue = Arc::new(queue);
 
         let surface_caps = surface.get_capabilities(&adapter);
         let texture_format = surface_caps
@@ -67,7 +71,7 @@ impl VgerRenderer {
         };
         surface.configure(&device, &config);
 
-        let vger = vger::Vger::new(&device, texture_format);
+        let vger = vger::Vger::new(device.clone(), queue.clone(), texture_format);
 
         Ok(Self {
             device,
@@ -384,7 +388,7 @@ impl Renderer for VgerRenderer {
             depth_stencil_attachment: None,
         };
 
-        self.vger.encode(&self.device, &desc, &self.queue);
+        self.vger.encode(&desc);
         frame.present();
     }
 }
