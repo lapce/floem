@@ -51,6 +51,12 @@ pub enum CursorStyle {
     Text,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct BoxShadow {
+    pub blur_radius: f64,
+    pub color: Color,
+}
+
 /// The value for a [`Style`] property
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StyleValue<T> {
@@ -84,6 +90,14 @@ impl<T> StyleValue<T> {
             Self::Val(x) => x,
             Self::Unset => f(),
             Self::Base => f(),
+        }
+    }
+
+    pub fn as_mut(&mut self) -> Option<&mut T> {
+        match self {
+            Self::Val(x) => Some(x),
+            Self::Unset => None,
+            Self::Base => None,
         }
     }
 }
@@ -250,6 +264,7 @@ define_styles!(
     cursor nocb: Option<CursorStyle> = None,
     color nocb: Option<Color> = None,
     background nocb: Option<Color> = None,
+    box_shadow nocb: Option<BoxShadow> = None,
     font_size nocb: Option<f32> = None,
     font_family nocb: Option<String> = None,
     font_weight nocb: Option<Weight> = None,
@@ -562,6 +577,38 @@ impl Style {
 
     pub fn background(mut self, color: impl Into<StyleValue<Color>>) -> Self {
         self.background = color.into().map(Some);
+        self
+    }
+
+    pub fn box_shadow_blur(mut self, blur_radius: f64) -> Self {
+        if let Some(box_shadow) = self.box_shadow.as_mut() {
+            if let Some(box_shadow) = box_shadow.as_mut() {
+                box_shadow.blur_radius = blur_radius;
+                return self;
+            }
+        }
+
+        self.box_shadow = Some(BoxShadow {
+            blur_radius,
+            color: Color::BLACK,
+        })
+        .into();
+        self
+    }
+
+    pub fn box_shadow_color(mut self, color: Color) -> Self {
+        if let Some(box_shadow) = self.box_shadow.as_mut() {
+            if let Some(box_shadow) = box_shadow.as_mut() {
+                box_shadow.color = color;
+                return self;
+            }
+        }
+
+        self.box_shadow = Some(BoxShadow {
+            blur_radius: 0.0,
+            color,
+        })
+        .into();
         self
     }
 

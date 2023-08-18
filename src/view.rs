@@ -286,10 +286,16 @@ pub trait View {
 
         if let Some(resize) = cx.get_resize_listener(self.id()) {
             let new_rect = size.to_rect().with_origin(origin);
-            if new_rect != resize.rect || window_origin != resize.window_origin {
+            if new_rect != resize.rect {
                 resize.rect = new_rect;
-                resize.window_origin = window_origin;
-                (*resize.callback)(window_origin, new_rect);
+                (*resize.callback)(new_rect);
+            }
+        }
+
+        if let Some(listener) = cx.get_move_listener(self.id()) {
+            if window_origin != listener.window_origin {
+                listener.window_origin = window_origin;
+                (*listener.callback)(window_origin);
             }
         }
 
@@ -734,11 +740,6 @@ pub trait View {
 }
 
 fn paint_bg(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
-    let bg = match style.background {
-        Some(color) => color,
-        None => return,
-    };
-
     let radius = style.border_radius;
     if radius > 0.0 {
         let rect = size.to_rect();
@@ -747,13 +748,35 @@ fn paint_bg(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
         if width > 0.0 && height > 0.0 && radius as f64 > width.max(height) / 2.0 {
             let radius = width.max(height) / 2.0;
             let circle = Circle::new(rect.center(), radius);
-            cx.fill(&circle, bg);
+            let bg = match style.background {
+                Some(color) => color,
+                None => return,
+            };
+            cx.fill(&circle, bg, 0.0);
         } else {
             let rect = rect.to_rounded_rect(radius as f64);
-            cx.fill(&rect, bg);
+            if let Some(shadow) = style.box_shadow.as_ref() {
+                if shadow.blur_radius > 0.0 {
+                    cx.fill(&rect, shadow.color, shadow.blur_radius);
+                }
+            }
+            let bg = match style.background {
+                Some(color) => color,
+                None => return,
+            };
+            cx.fill(&rect, bg, 0.0);
         }
     } else {
-        cx.fill(&size.to_rect(), bg);
+        if let Some(shadow) = style.box_shadow.as_ref() {
+            if shadow.blur_radius > 0.0 {
+                cx.fill(&size.to_rect(), shadow.color, shadow.blur_radius);
+            }
+        }
+        let bg = match style.background {
+            Some(color) => color,
+            None => return,
+        };
+        cx.fill(&size.to_rect(), bg, 0.0);
     }
 }
 

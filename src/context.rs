@@ -64,13 +64,18 @@ impl ViewContextStore {
 }
 
 pub type EventCallback = dyn Fn(&Event) -> bool;
-pub type ResizeCallback = dyn Fn(Point, Rect);
+pub type ResizeCallback = dyn Fn(Rect);
 pub type MenuCallback = dyn Fn() -> Menu;
 
 pub(crate) struct ResizeListener {
-    pub(crate) window_origin: Point,
     pub(crate) rect: Rect,
     pub(crate) callback: Box<ResizeCallback>,
+}
+
+/// The listener when the view is got moved to a different position in the window
+pub(crate) struct MoveListener {
+    pub(crate) window_origin: Point,
+    pub(crate) callback: Box<dyn Fn(Point)>,
 }
 
 pub struct ViewState {
@@ -95,6 +100,7 @@ pub struct ViewState {
     pub(crate) context_menu: Option<Box<MenuCallback>>,
     pub(crate) popout_menu: Option<Box<MenuCallback>>,
     pub(crate) resize_listener: Option<ResizeListener>,
+    pub(crate) move_listener: Option<MoveListener>,
     pub(crate) cleanup_listener: Option<Box<dyn Fn()>>,
     pub(crate) last_pointer_down: Option<PointerEvent>,
 }
@@ -123,6 +129,7 @@ impl ViewState {
             context_menu: None,
             popout_menu: None,
             resize_listener: None,
+            move_listener: None,
             cleanup_listener: None,
             last_pointer_down: None,
         }
@@ -840,6 +847,13 @@ impl<'a> LayoutCx<'a> {
             .view_states
             .get_mut(&id)
             .and_then(|s| s.resize_listener.as_mut())
+    }
+
+    pub(crate) fn get_move_listener(&mut self, id: Id) -> Option<&mut MoveListener> {
+        self.app_state
+            .view_states
+            .get_mut(&id)
+            .and_then(|s| s.move_listener.as_mut())
     }
 }
 

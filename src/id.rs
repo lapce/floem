@@ -10,6 +10,8 @@
 
 use std::{any::Any, cell::RefCell, collections::HashMap, num::NonZeroU64};
 
+use glazier::kurbo::Point;
+
 use crate::{
     animate::Animation,
     app_handle::{StyleSelector, UpdateMessage, DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES},
@@ -197,6 +199,10 @@ impl Id {
 
     pub fn update_resize_listener(&self, action: Box<ResizeCallback>) {
         self.add_update_message(UpdateMessage::ResizeListener { id: *self, action });
+    }
+
+    pub fn update_move_listener(&self, action: Box<dyn Fn(Point)>) {
+        self.add_update_message(UpdateMessage::MoveListener { id: *self, action });
     }
 
     pub fn update_cleanup_listener(&self, action: Box<dyn Fn()>) {

@@ -208,18 +208,20 @@ impl Renderer for VgerRenderer {
         }
     }
 
-    fn fill<'b>(&mut self, path: &impl Shape, brush: impl Into<BrushRef<'b>>) {
+    fn fill<'b>(&mut self, path: &impl Shape, brush: impl Into<BrushRef<'b>>, blur_radius: f64) {
         let paint = match self.brush_to_paint(brush) {
             Some(paint) => paint,
             None => return,
         };
         if let Some(rect) = path.as_rect() {
-            self.vger.fill_rect(self.vger_rect(rect), 0.0, paint);
+            self.vger
+                .fill_rect(self.vger_rect(rect), 0.0, paint, blur_radius as f32);
         } else if let Some(rect) = path.as_rounded_rect() {
             self.vger.fill_rect(
                 self.vger_rect(rect.rect()),
                 rect.radii().top_left as f32,
                 paint,
+                blur_radius as f32,
             );
         } else if let Some(circle) = path.as_circle() {
             self.vger.fill_circle(

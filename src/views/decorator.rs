@@ -145,9 +145,15 @@ pub trait Decorators: View + Sized {
         self
     }
 
-    fn on_resize(self, action: impl Fn(Point, Rect) + 'static) -> Self {
+    fn on_resize(self, action: impl Fn(Rect) + 'static) -> Self {
         let id = self.id();
         id.update_resize_listener(Box::new(action));
+        self
+    }
+
+    fn on_move(self, action: impl Fn(Point) + 'static) -> Self {
+        let id = self.id();
+        id.update_move_listener(Box::new(action));
         self
     }
 

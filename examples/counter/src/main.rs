@@ -15,7 +15,13 @@ fn app_view() -> impl View {
             stack(|| {
                 (
                     label(|| "Increment".to_string())
-                        .style(|| Style::BASE.border(1.0).border_radius(10.0).padding_px(10.0))
+                        .style(|| {
+                            Style::BASE
+                                .border_radius(10.0)
+                                .padding_px(10.0)
+                                .background(Color::WHITE)
+                                .box_shadow_blur(5.0)
+                        })
                         .on_click({
                             move |_| {
                                 set_counter.update(|value| *value += 1);
@@ -39,7 +45,8 @@ fn app_view() -> impl View {
                         })
                         .style(|| {
                             Style::BASE
-                                .border(1.0)
+                                .box_shadow_blur(5.0)
+                                .background(Color::WHITE)
                                 .border_radius(10.0)
                                 .padding_px(10.0)
                                 .margin_left_px(10.0)
@@ -57,7 +64,7 @@ fn app_view() -> impl View {
                         .disabled(move || counter.get() == 0)
                         .style(|| {
                             Style::BASE
-                                .border(1.0)
+                                .box_shadow_blur(5.0)
                                 .border_radius(10.0)
                                 .padding_px(10.0)
                                 .margin_left_px(10.0)

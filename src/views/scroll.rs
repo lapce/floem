@@ -26,6 +26,7 @@ enum ScrollState {
     ScrollBarColor(Color),
     HiddenBar(bool),
     PropagatePointerWheel(bool),
+    VerticalScrollAsHorizontal(bool),
 }
 
 /// Minimum length for any scrollbar to be when measured on that
@@ -59,6 +60,7 @@ pub struct Scroll<V: View> {
     virtual_node: Option<Node>,
     hide_bar: bool,
     propagate_pointer_wheel: bool,
+    vertical_scroll_as_horizontal: bool,
     scroll_bar_color: Color,
 }
 
@@ -76,6 +78,7 @@ pub fn scroll<V: View>(child: impl FnOnce() -> V) -> Scroll<V> {
         virtual_node: None,
         hide_bar: false,
         propagate_pointer_wheel: false,
+        vertical_scroll_as_horizontal: false,
         // 179 is 70% of 255 so a 70% alpha factor is the default
         scroll_bar_color: Color::rgba8(0, 0, 0, 179),
     }
@@ -140,6 +143,14 @@ impl<V: View> Scroll<V> {
         let id = self.id;
         create_effect(move |_| {
             id.update_state(ScrollState::PropagatePointerWheel(value()), false);
+        });
+        self
+    }
+
+    pub fn vertical_scroll_as_horizontal(self, value: impl Fn() -> bool + 'static) -> Self {
+        let id = self.id;
+        create_effect(move |_| {
+            id.update_state(ScrollState::VerticalScrollAsHorizontal(value()), false);
         });
         self
     }
@@ -304,7 +315,7 @@ impl<V: View> Scroll<V> {
         let color = self.scroll_bar_color;
         if let Some(bounds) = self.calc_vertical_bar_bounds(cx.app_state) {
             let rect = (bounds - scroll_offset).inset(-edge_width / 2.0);
-            cx.fill(&rect, color);
+            cx.fill(&rect, color, 0.0);
             if edge_width > 0.0 {
                 cx.stroke(&rect, color, edge_width);
             }
@@ -313,7 +324,7 @@ impl<V: View> Scroll<V> {
         // Horizontal bar
         if let Some(bounds) = self.calc_horizontal_bar_bounds(cx.app_state) {
             let rect = (bounds - scroll_offset).inset(-edge_width / 2.0);
-            cx.fill(&rect, color);
+            cx.fill(&rect, color, 0.0);
             if edge_width > 0.0 {
                 cx.stroke(&rect, color, edge_width);
             }
@@ -523,6 +534,9 @@ impl<V: View> View for Scroll<V> {
                 ScrollState::PropagatePointerWheel(value) => {
                     self.propagate_pointer_wheel = value;
                 }
+                ScrollState::VerticalScrollAsHorizontal(value) => {
+                    self.vertical_scroll_as_horizontal = value;
+                }
             }
             cx.request_layout(self.id());
             ChangeFlags::LAYOUT
@@ -684,6 +698,11 @@ impl<V: View> View for Scroll<V> {
                 info.wheel_delta
             } else {
                 Vec2::ZERO
+            };
+            let delta = if self.vertical_scroll_as_horizontal && delta.x == 0.0 && delta.y != 0.0 {
+                Vec2::new(delta.y, delta.x)
+            } else {
+                delta
             };
             self.clamp_child_viewport(cx.app_state, self.child_viewport + delta);
             return !self.propagate_pointer_wheel;

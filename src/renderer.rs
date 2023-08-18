@@ -70,10 +70,11 @@ impl floem_renderer::Renderer for Renderer {
         &mut self,
         path: &impl glazier::kurbo::Shape,
         brush: impl Into<peniko::BrushRef<'b>>,
+        blur_radius: f64,
     ) {
         match self {
             Renderer::Vger(v) => {
-                v.fill(path, brush);
+                v.fill(path, brush, blur_radius);
             }
         }
     }

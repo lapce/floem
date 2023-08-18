@@ -4,6 +4,7 @@ use std::{any::Any, collections::HashMap};
 
 use crate::action::exec_after;
 use crate::animate::AnimValue;
+use crate::context::MoveListener;
 use crate::id::WindowId;
 use crate::view::{view_debug_tree, view_tab_navigation};
 use crate::window::WINDOWS;
@@ -161,6 +162,10 @@ pub enum UpdateMessage {
     ResizeListener {
         id: Id,
         action: Box<ResizeCallback>,
+    },
+    MoveListener {
+        id: Id,
+        action: Box<dyn Fn(Point)>,
     },
     CleanupListener {
         id: Id,
@@ -546,8 +551,14 @@ impl<V: View> AppHandle<V> {
                     UpdateMessage::ResizeListener { id, action } => {
                         let state = cx.app_state.view_state(id);
                         state.resize_listener = Some(ResizeListener {
-                            window_origin: Point::ZERO,
                             rect: Rect::ZERO,
+                            callback: action,
+                        });
+                    }
+                    UpdateMessage::MoveListener { id, action } => {
+                        let state = cx.app_state.view_state(id);
+                        state.move_listener = Some(MoveListener {
+                            window_origin: Point::ZERO,
                             callback: action,
                         });
                     }

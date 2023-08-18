@@ -30,7 +30,7 @@ pub trait Renderer {
     /// Fill a [`Shape`], using the [non-zero fill rule].
     ///
     /// [non-zero fill rule]: https://en.wikipedia.org/wiki/Nonzero-rule
-    fn fill<'b>(&mut self, path: &impl Shape, brush: impl Into<BrushRef<'b>>);
+    fn fill<'b>(&mut self, path: &impl Shape, brush: impl Into<BrushRef<'b>>, blur_radius: f64);
 
     /// Draw a [`TextLayout`].
     ///

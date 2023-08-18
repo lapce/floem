@@ -713,13 +713,14 @@ impl View for TextInput {
 
         if is_cursor_visible {
             let cursor_rect = self.get_cursor_rect(&node_layout);
-            cx.fill(&cursor_rect, cursor_color.unwrap_or(Color::BLACK));
+            cx.fill(&cursor_rect, cursor_color.unwrap_or(Color::BLACK), 0.0);
         }
         if cx.app_state.is_focused(&self.id) {
             let selection_rect = self.get_selection_rect(&node_layout);
             cx.fill(
                 &selection_rect,
                 cursor_color.unwrap_or(Color::rgba8(0, 0, 0, 150)),
+                0.0,
             );
         } else {
             self.selection = 0..0;
