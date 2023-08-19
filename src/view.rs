@@ -2,16 +2,17 @@
 //! Views are self-contained components that can be composed together to create complex UIs.
 //! Views are the main building blocks of Floem.
 //!
+//! Views are structs that implement the View trait. Many of these structs will also contain a child field that is a generic type V where V also implements View. In this way views can be composed together easily to create complex views without the need for creating new structs and manually implementing View. This is the most common way to build UIs in Floem. Creating a struct and manually implementing View is typically only needed for special cases. The rest of this module documentation is for help when manually implementing View on your own types.
+//!
 //! ## State management
 //!
-//! You might want some of your view components to have some state. You should place any state that affects
-//! the view inside a signal so that it can react to updates and update the `View`. Signals are reactive values that can be read from and written to.
-//! See [leptos_reactive](https://docs.rs/leptos_reactive/latest/leptos_reactive/) for more info.
+//! For all reactive state that your type contains either in the form of signals or derived signals you need to process the changes within an effect.
+//! Often times the pattern is to [get](floem_reactive::ReadSignal::get) the data in an effect and pass it in to `id.update_state()` and then handle that data in the `update` method of the View trait.
 //!
 //! ### Use state to update your view
 //!
-//! To affect the layout and rendering of your component, you will need to send a state update to your component with [Id::update_state](id::Id::update_state)
-//! and then call [UpdateCx::request_layout](context::UpdateCx::request_layout) to request a layout which will cause a repaint.
+//! To affect the layout and rendering of your component, you will need to send a state update to your component with [Id::update_state](crate::id::Id::update_state)
+//! and then call [UpdateCx::request_layout](crate::context::UpdateCx::request_layout) to request a layout which will cause a repaint.
 //!
 //! ### Local and locally-shared state
 //!
@@ -48,7 +49,7 @@
 //! {
 //!     let text = create_rw_signal("World!".to_string());
 //!     // share the signal between the two children
-//!     let (id, child) = ViewContext::new_id_with_child(stack(|| (text_input(text)), new_child(text.read_only()));
+//!     let (id, child) = ViewContext::new_id_with_child(stack(|| (text_input(text)), new_child(text.read_only())));
 //!     Parent { id, text, child }
 //! }
 //!
@@ -66,7 +67,7 @@
 //!
 //! // Creates a new child view with the given state (a read only signal)
 //! fn child(text: ReadSignal<String>) -> Child {
-//!     let (id, label) = ViewContext::new_id_with_child(|| label(move || format!("Hello, {}", text.get()));
+//!     let (id, label) = ViewContext::new_id_with_child(|| label(move || format!("Hello, {}", text.get())));
 //!     Child { id, label }
 //! }
 //!
@@ -78,15 +79,9 @@
 //! fn main() {
 //!     floem::launch(parent(child));
 //! }
-//!
-//!
-//! ### Global state
-//!
-//! Global state can be implemented using Leptos' [provide_context](leptos_reactive::provide_context) and [use_context](leptos_reactive::use_context).
-//!
-//!
-//!
 //! ```
+//!
+//!
 
 use std::any::Any;
 
@@ -232,7 +227,7 @@ pub trait View {
     /// It's responsible for:
     /// - calculating and setting the view's origin (local coordinates and window coordinates)
     /// - calculating and setting the view's viewport
-    /// - invoking any attached [ResizeListeners](crate::context::ResizeListener)
+    /// - invoking any attached context::ResizeListeners
     ///
     /// Returns the bounding rect that encompasses this view and its children
     ///

@@ -48,6 +48,7 @@ enum InputKind {
     },
 }
 
+/// Text Input View
 pub struct TextInput {
     id: Id,
     buffer: RwSignal<String>,
@@ -95,13 +96,14 @@ pub enum Direction {
     Right,
 }
 
+/// Text Input View
 pub fn text_input(buffer: RwSignal<String>) -> TextInput {
     let cx = ViewContext::get_current();
     let id = cx.new_id();
 
     {
         create_effect(move |_| {
-            let text: String = buffer.with(|buff| buff.to_string());
+            let text = buffer.get();
             id.update_state(text, false);
         });
     }

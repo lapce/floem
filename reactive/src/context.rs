@@ -20,7 +20,7 @@ where
 }
 
 /// Sets a context value to be stored in the reative system.
-/// The stored context value can be retrieved from anywhere by using `use_context`
+/// The stored context value can be retrieved from anywhere by using [use_context](use_context)
 pub fn provide_context<T>(value: T)
 where
     T: Clone + 'static,

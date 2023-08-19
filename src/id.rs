@@ -1,11 +1,11 @@
 //! # Ids
 //!
-//! [Id](id::Id)s are unique identifiers for views.
+//! [`Id`]s are unique identifiers for views.
 //! They're used to identify views in the view tree.
 //!
 //! ## Ids and Id paths
 //!
-//! These ids are assigned via the [ViewContext](context::ViewContext) and are unique across the entire application.
+//! These ids are assigned via the [ViewContext](crate::ViewContext) and are unique across the entire application.
 //!
 
 use std::{any::Any, cell::RefCell, collections::HashMap, num::NonZeroU64};
