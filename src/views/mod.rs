@@ -1,3 +1,8 @@
+//! # Floem builtin Views
+//!
+//! This module contains all of the builting Views or Components of Floem.
+//!
+
 mod label;
 pub use label::*;
 

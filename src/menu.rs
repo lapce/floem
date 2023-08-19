@@ -4,8 +4,7 @@ static COUNTER: Counter = Counter::new();
 
 /// An entry in a menu.
 ///
-/// An entry is either a [`MenuItem`], a submenu (i.e. [`Menu`]), or one of a few other
-/// possibilities (such as one of the two options above, wrapped in a [`MenuLensWrap`]).
+/// An entry is either a [`MenuItem`], a submenu (i.e. [`Menu`]).
 pub enum MenuEntry {
     Separator,
     Item(MenuItem),

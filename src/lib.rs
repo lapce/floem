@@ -2,49 +2,60 @@
 //! Floem is cross-platform GUI framework for Rust 🦀. It aims to be extremely performant while providing world-class developer ergonomics.
 //!
 //! ## Views
-//! Floem models the UI using a tree of [Views](view::View) that are built once. `Views` react to state changes and events.
-//! Views ar self-contained components that can be composed together to create complex UIs.
+//! Floem models the UI using a tree of [Views](view::View) that are built once.
+//! Views ar self-contained components that can be composed together to create complex UIs that react to state changes and events.
 //!
-//!
-//! ## Events
-//! Events are passed down from the window to the view tree. Each view can handle events and propagate them to its children.
-//! Events can be passed to a specific view using its [Id](id::Id) path. [Id](id::Id) paths are unique ways to quickly identify a view, its children and its parent in the tree.
-//!
-//! Floem is responsible for making a view active. for handling drag and drop mechanics
-//! It's a View's responsibility to handle events and decide whether they're handled.
+//! Views themselves do not update in response to changes in the reactive system. This is to prevent unnecessary rebuilds of View components which can be expensive. For Views that do update reactively see [dyn_container](views::dyn_container)
 //!
 //! ## State management  
-//!
-//! You may want some of your view components to share state.
-//! You should place any state that changes over time and affects
-//! your view inside a signal so that you can react to updates and update the `View`. Signals are reactive values that can be read from and written to.
-//! See [leptos_reactive](https://docs.rs/leptos_reactive/latest/leptos_reactive/) for more info.
+//! Floem uses reactivity built on signals and effects for its state management. This pattern
+//! of reactivity has been popularized by Solidjs in the javascript ecosystem and that directly
+//! inspired Leptos in the Rust ecosystem. Floem uses it's own reactive system but it's API is
+//! nearly identical to the API in the leptos_reactive crate. The leptos reactive create has
+//! [documentation](https://docs.rs/leptos_reactive/latest/leptos_reactive/), as well as the
+//! [Leptos book](https://leptos-rs.github.io/leptos/), that are very helpful
+//! for learning about signals and effects.
 //!
 //! ### Local state
 //!
-//! You can can create state within a constructor and then bind state to a view by passing it into the view's constructor.
+//! You can can create a signal anywhere in the program. When you use the signal within a view by using one of the available accessor methods, such as [get](floem_reactive::ReadSignal::get) or [with](floem_reactive::ReadSignal::with), the runtime will automatically subscribe the correct side effects to changes in that signal, creating reactivity. To the programmer this is invisible and the reactivity 'just works' by accessing the value where you want to use it.
 //!
 //! ```ignore
-//! pub fn label_and_input() -> impl View {
+//! pub fn input_and_label() -> impl View {
+//!
 //!     let text = create_rw_signal("Hello world".to_string());
-//!     stack(|| (text_input(text), label(|| text.get())))
-//!         .style(|| Style::BASE.padding_px(10.0))
+//!
+//!     stack(||
+//!        (
+//!            text_input(text),
+//!            label(|| text.get())
+//!        )
+//!     ).style(|| Style::BASE.padding_px(10.0))
 //! }
 //! ```
+//! In this example `text` is a signal, containing a `String`,
+//! that can be both read from and written to. It is then used in two different places in the
+//! [Stack View](views::stack). The [text_input](views::text_input) has direct access to the RwSignal and
+//! will mutate the underlying `String` when the user types in the input box. This will
+//! reactivly update the [label](views::label), which displays the same text, in real time.
 //!
 //! ### Global state
 //!
-//! Global state can be implemented using Leptos' [provide_context](leptos_reactive::provide_context) and [use_context](leptos_reactive::use_context).
+//! Global state can be implemented using [provide_context](floem_reactive::provide_context) and [use_context](floem_reactive::use_context).
 //!
 //! ## Styling
-//! You can style your views using the [Style](style::Style) struct. Styles are inherited from parent views and can be overridden.
-//! Floem sizing and positioning layout system is based on the flexbox model using Taffy as the layout engine.
+//! You can style your views by applying [Styles](style::Style) through the
+//! [style](views::Decorators::style) method that is implemented for all types that impl View.
 //!
-//! Styles are applied with the [Style](style::Style) struct. Styles can react to changes in referenced state.
+//! The sizing and positioning layout system is based on
+//! the flexbox (or grid) model using Taffy as the layout engine.
+//!
+//! Some Style properties, such as font size, are inherited from parent views and can be overridden.
+//!
+//! Styles can be updated reactively using any signal
 //!
 //! ```ignore
 //!     some_view()
-//!     // reactive styles provided through the `Decorators` trait
 //!     .style(move || {
 //!         Style::BASE
 //!             .flex_row()
@@ -59,53 +70,10 @@
 //! ```
 //!
 //!
-//! ## Render loop and update lifecycle
 //!
-//! #### event -> update -> layout -> paint.
+//! ## More
 //!
-//! ##### Event
-//! After an event comes in (e.g. the user clicked the mouse, pressed a key etc), the event will be propagated from the root view to the children.
-//! The parent will decide whether sending the event to the child(ren) based on the logic in the event method in the parent View.
-//! There's also event listeners that users can use to respond to events the users choose.
-//! The event propagation is stopped whenever a child or an event listener returns `true` on the event handling.
-//!
-//!
-//! #### Event handling -> reactive system updates
-//! During the event handling, there could be state changes through the reactive system. E.g., on the counter example, when you click increment,
-//! it updates the counter and because the label listens to the change (see [leptos_reactive::create_effect]), the label will update the text it presents.
-//!
-//! #### Update
-//! The update of states on the Views could cause some of them to need a new layout recalculation, because the size might have changed etc.
-//! The reactive system can't directly manipulate the view state of the label because the AppState owns all the views. And instead, it will send the update to a message queue via [Id::update_state](id::Id::update_state)
-//! After the event propagation is done, Floem will process all the update messages in the queue, and it can manipulate the state of a particular view through the update method.
-//!
-//!
-//! #### Layout
-//! The layout method is called from the root view to re-layout the views that have requested a layout call.
-//! The layout call is to change the layout properties at Taffy, and after the layout call is done, compute_layout is called to calculate the sizes and positions of each view.
-//!
-//! #### Paint
-//! And in the end, paint is called to render all the views to the screen.
-//!
-//!
-//! # Terminology
-//! #### Active view
-//!
-//! Affects pointer events. Pointer events will only be sent to the active View. The View will continue to receive pointer events even if the mouse is outside its bounds.
-//! It is useful when you drag things, e.g. the scroll bar, you set the scroll bar active after pointer down, then when you drag, the `PointerMove` will always be sent to the View, even if your mouse is outside of the view.
-//!
-//! #### Focused view
-//! Affects keyboard events. Keyboard events will only be sent to the focused View. The View will continue to receive keyboard events even if it's not the active View.
-//!
-//! ## Notable invariants and tolerances
-//! - There can be only one root `View`
-//! - Only one view can be active at a time.
-//! - Only one view can be focused at a time.
-//!
-//!
-//! # Advanced
-//!
-//! #### Authoring your own [Views](view::View)
+//! #### Authoring your own custom [Views](view::View)
 //! See the [View module](view) for more info.
 //!
 //! #### Understanding Ids
@@ -113,6 +81,9 @@
 //!
 //! #### Understanding Styles
 //! See the [Style module](style) for more info.
+//!
+//! #### Understanding the update lifecycle
+//! See the [Renderer module](renderer) for more info.
 //!
 //!
 pub mod action;

@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use floem_reactive::{as_child_of_current_scope, create_effect, Scope};
 use glazier::kurbo::Rect;
 
@@ -11,15 +9,67 @@ use crate::{
 
 type ChildFn<T> = dyn Fn(T) -> (Box<dyn View>, Scope);
 
+/// A container for a dynamically updating View. See [`dyn_container`]
 pub struct DynamicContainer<T: 'static> {
     id: Id,
     child: Box<dyn View>,
     child_scope: Scope,
     child_fn: Box<ChildFn<T>>,
-    phantom: PhantomData<T>,
     cx: ViewContext,
 }
 
+/// A container for a dynamically updating View
+///
+///
+/// ## Example
+/// ```ignore
+/// #[derive(Debug, Clone)]
+/// enum ViewSwitcher {
+///     One,
+///     Two,
+/// }
+///
+/// fn app() -> impl View {
+///
+///     let view = create_rw_signal(ViewSwitcher::One);
+///
+///     let button = || {
+///         // imaginary toggle button and state
+///         toggle_button(
+///             // on toggle function
+///             move |state| match state {
+///                 State::On => view.update(|val| *val = Views::One),
+///                 State::Off => view.update(|val| *val = Views::Two),
+///             },
+///         )
+///     };
+///
+///     stack(|| (
+///         button(),
+///         dyn_container(
+///             move || view.get(),
+///             move |val: ViewSwitcher| match val {
+///                 ViewSwitcher::One => Box::new(label(|| "one".into())),
+///                 ViewSwitcher::Two => {
+///                     Box::new(
+///                       stack(|| (
+///                           label(|| "stacked".into()),
+///                           label(|| "two".into())
+///                       ))
+///                     ),
+///                 }
+///             },
+///         )
+///     ))
+///     .style(|| {
+///         Style::BASE
+///             .size_pct(100., 100.)
+///             .items_center()
+///             .justify_center()
+///             .gap(points(10.))
+///     })
+/// }
+/// ```
 pub fn dyn_container<CF: Fn(T) -> Box<dyn View> + 'static, T: 'static>(
     update_view: impl Fn() -> T + 'static,
     child_fn: CF,
@@ -40,7 +90,6 @@ pub fn dyn_container<CF: Fn(T) -> Box<dyn View> + 'static, T: 'static>(
         child: Box::new(crate::views::empty()),
         child_scope: Scope::new(),
         child_fn,
-        phantom: PhantomData,
         cx: child_cx,
     }
 }

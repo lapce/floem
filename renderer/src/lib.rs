@@ -24,7 +24,7 @@ pub trait Renderer {
 
     fn clear_clip(&mut self);
 
-    /// Stroke a [`Shape`], using the default [`StrokeStyle`].
+    /// Stroke a [`Shape`].
     fn stroke<'b>(&mut self, shape: &impl Shape, brush: impl Into<BrushRef<'b>>, width: f64);
 
     /// Fill a [`Shape`], using the [non-zero fill rule].
@@ -35,8 +35,7 @@ pub trait Renderer {
     /// Draw a [`TextLayout`].
     ///
     /// The `pos` parameter specifies the upper-left corner of the layout object
-    /// (even for right-to-left text). To draw on a baseline, you can use
-    /// [`TextLayout::line_metric`] to get the baseline position of a specific line.
+    /// (even for right-to-left text).
     fn draw_text(&mut self, layout: &TextLayout, pos: impl Into<Point>);
 
     fn draw_svg<'b>(&mut self, svg: Svg<'b>, rect: Rect, brush: Option<impl Into<BrushRef<'b>>>);

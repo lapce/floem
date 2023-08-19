@@ -24,16 +24,17 @@ pub(crate) fn assert_valid_time(time: f64) {
     assert!(time >= 0.0 || time <= 1.0);
 }
 
-/// See [`Self::advance`].
+/// The mode to specify how the animation should repeat. See also [`Animation::advance`]
 #[derive(Clone, Debug)]
 pub enum RepeatMode {
-    /// Once started, the animation will juggle between [`AnimState::PassInProgress`] and [`AnimState::PassFinished`],
-    /// but will never reach [`AnimState::Completed`]
+    // Once started, the animation will juggle between [`AnimState::PassInProgress`] and [`AnimState::PassFinished`],
+    // but will never reach [`AnimState::Completed`]
+    /// Repeat the animation forever
     LoopForever,
-    /// How many passes do we want, i.e. how many times do we repeat the animation?
-    /// On every pass, we animate until `elapsed >= duration`, then we reset elapsed time to 0 and increment `repeat_count` is
-    /// increased by 1. This process is repeated until `repeat_count >= times`, and then the animation is set
-    /// to [`AnimState::Completed`].
+    // On every pass, we animate until `elapsed >= duration`, then we reset elapsed time to 0 and increment `repeat_count` is
+    // increased by 1. This process is repeated until `repeat_count >= times`, and then the animation is set
+    // to [`AnimState::Completed`].
+    /// Repeat the animation the specified number of times before the animation enters a Complete state
     Times(usize),
 }
 
