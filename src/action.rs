@@ -2,11 +2,11 @@ use std::time::Duration;
 
 use glazier::{
     kurbo::{Point, Vec2},
-    FileDialogOptions, FileInfo,
+    FileDialogOptions, FileInfo, TimerToken,
 };
 
 use crate::{
-    app_handle::{get_current_view, UpdateMessage, UPDATE_MESSAGES},
+    app_handle::{get_current_view, get_current_window_handle, UpdateMessage, UPDATE_MESSAGES},
     menu::Menu,
 };
 
@@ -35,11 +35,18 @@ pub fn update_window_scale(window_scale: f64) {
     add_update_message(UpdateMessage::WindowScale(window_scale));
 }
 
-pub fn exec_after(deadline: Duration, action: impl FnOnce() + 'static) {
-    add_update_message(UpdateMessage::RequestTimer {
-        deadline,
-        action: Box::new(action),
-    });
+pub fn exec_after(deadline: Duration, action: impl FnOnce(TimerToken) + 'static) -> TimerToken {
+    let handle = get_current_window_handle();
+    if let Some(handle) = handle {
+        let token = handle.request_timer(deadline);
+        add_update_message(UpdateMessage::RequestTimer {
+            token,
+            action: Box::new(action),
+        });
+        token
+    } else {
+        TimerToken::INVALID
+    }
 }
 
 pub fn open_file(

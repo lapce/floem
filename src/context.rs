@@ -284,7 +284,7 @@ pub struct AppState {
     pub(crate) last_cursor: glazier::Cursor,
     pub(crate) keyboard_navigation: bool,
     pub(crate) context_menu: HashMap<u32, Box<dyn Fn()>>,
-    pub(crate) timers: HashMap<TimerToken, Box<dyn FnOnce()>>,
+    pub(crate) timers: HashMap<TimerToken, Box<dyn FnOnce(TimerToken)>>,
 }
 
 impl Default for AppState {
@@ -444,8 +444,7 @@ impl AppState {
         }
     }
 
-    pub(crate) fn request_timer(&mut self, deadline: Duration, action: Box<dyn FnOnce()>) {
-        let token = self.handle.request_timer(deadline);
+    pub(crate) fn request_timer(&mut self, token: TimerToken, action: Box<dyn FnOnce(TimerToken)>) {
         self.timers.insert(token, action);
     }
 

@@ -91,7 +91,7 @@ use glazier::kurbo::{Affine, Circle, Line, Point, Rect, Size};
 use taffy::prelude::Node;
 
 use crate::{
-    action::show_context_menu,
+    action::{exec_after, show_context_menu},
     context::{AppState, DragState, EventCx, LayoutCx, PaintCx, UpdateCx},
     event::{Event, EventListener},
     id::Id,
@@ -669,12 +669,9 @@ pub trait View {
                     let elapsed = released_at.elapsed().as_millis() as f64;
                     if elapsed < LIMIT {
                         offset_scale = Some(1.0 - elapsed / LIMIT);
-                        cx.app_state.request_timer(
-                            std::time::Duration::from_millis(8),
-                            Box::new(move || {
-                                id.request_paint();
-                            }),
-                        );
+                        exec_after(std::time::Duration::from_millis(8), move |_| {
+                            id.request_paint();
+                        });
                     } else {
                         drag_set_to_none = true;
                     }

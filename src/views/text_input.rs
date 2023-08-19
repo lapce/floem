@@ -731,7 +731,7 @@ impl View for TextInput {
         let id = self.id();
         exec_after(
             Duration::from_millis(CURSOR_BLINK_INTERVAL_MS),
-            Box::new(move || {
+            Box::new(move |_| {
                 id.request_paint();
             }),
         );

@@ -12,7 +12,8 @@ use floem_reactive::{with_scope, Scope};
 use floem_renderer::Renderer;
 use glazier::kurbo::{Affine, Point, Rect, Size, Vec2};
 use glazier::{
-    FileDialogOptions, FileDialogToken, FileInfo, Scale, TimerToken, WinHandler, WindowState,
+    FileDialogOptions, FileDialogToken, FileInfo, Scale, TimerToken, WinHandler, WindowHandle,
+    WindowState,
 };
 
 use crate::menu::Menu;
@@ -39,6 +40,7 @@ thread_local! {
     /// It stores the active view handle, so that when you dispatch an action, it knows
     /// which view handle it submitted to
     pub(crate) static CURRENT_RUNNING_VIEW_HANDLE: RefCell<Id> = RefCell::new(Id::next());
+    pub(crate) static WINDOW_HANDLES: RefCell<HashMap<Id, WindowHandle>> = Default::default();
 }
 
 pub type FileDialogs = HashMap<FileDialogToken, Box<dyn Fn(Option<FileInfo>)>>;
@@ -185,8 +187,8 @@ pub enum UpdateMessage {
         file_info_action: Box<dyn Fn(Option<FileInfo>)>,
     },
     RequestTimer {
-        deadline: std::time::Duration,
-        action: Box<dyn FnOnce()>,
+        token: TimerToken,
+        action: Box<dyn FnOnce(TimerToken)>,
     },
     Animation {
         id: Id,
@@ -272,7 +274,7 @@ impl<V: View> AppHandle<V> {
         let id = self.app_state.ids_with_anim_in_progress().get(0).cloned();
 
         if let Some(id) = id {
-            exec_after(Duration::from_millis(1), move || {
+            exec_after(Duration::from_millis(1), move |_| {
                 id.request_layout();
             });
         }
@@ -601,8 +603,8 @@ impl<V: View> AppHandle<V> {
                             self.file_dialogs.insert(token, file_info_action);
                         }
                     }
-                    UpdateMessage::RequestTimer { deadline, action } => {
-                        cx.app_state.request_timer(deadline, action);
+                    UpdateMessage::RequestTimer { token, action } => {
+                        cx.app_state.request_timer(token, action);
                     }
                     UpdateMessage::Animation { id, animation } => {
                         cx.app_state.animated.insert(id);
@@ -914,10 +916,20 @@ pub(crate) fn set_current_view(id: Id) {
     });
 }
 
+pub(crate) fn get_current_window_handle() -> Option<WindowHandle> {
+    let view_id = get_current_view();
+    WINDOW_HANDLES.with(|window_handles| window_handles.borrow().get(&view_id).cloned())
+}
+
 impl<V: View> WinHandler for AppHandle<V> {
     fn connect(&mut self, handle: &glazier::WindowHandle) {
         WINDOWS.with(|windows| {
             windows.borrow_mut().insert(self.window_id, handle.clone());
+        });
+        WINDOW_HANDLES.with(|window_handles| {
+            window_handles
+                .borrow_mut()
+                .insert(self.view.id(), handle.clone());
         });
         self.app_state.handle = handle.clone();
         self.paint_state.connect(handle);
@@ -1035,7 +1047,7 @@ impl<V: View> WinHandler for AppHandle<V> {
     fn timer(&mut self, token: TimerToken) {
         set_current_view(self.view.id());
         if let Some(action) = self.app_state.timers.remove(&token) {
-            action();
+            action(token);
         }
         self.process_update();
     }
@@ -1062,6 +1074,9 @@ impl<V: View> WinHandler for AppHandle<V> {
             let mut windows = windows.borrow_mut();
             windows.remove(&self.window_id);
             windows.len()
+        });
+        WINDOW_HANDLES.with(|window_handles| {
+            window_handles.borrow_mut().remove(&self.view.id());
         });
         self.scope.dispose();
         EXT_EVENT_HANDLER.handle.lock().remove(&self.view.id());
