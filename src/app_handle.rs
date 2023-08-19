@@ -11,7 +11,9 @@ use crate::window::WINDOWS;
 use floem_reactive::{with_scope, Scope};
 use floem_renderer::Renderer;
 use glazier::kurbo::{Affine, Point, Rect, Size, Vec2};
-use glazier::{FileDialogOptions, FileDialogToken, FileInfo, Scale, TimerToken, WinHandler};
+use glazier::{
+    FileDialogOptions, FileDialogToken, FileInfo, Scale, TimerToken, WinHandler, WindowState,
+};
 
 use crate::menu::Menu;
 use crate::{
@@ -171,6 +173,7 @@ pub enum UpdateMessage {
         id: Id,
         action: Box<dyn Fn()>,
     },
+    ToggleWindowMaximized,
     HandleTitleBar(bool),
     SetWindowDelta(Vec2),
     OpenFile {
@@ -536,6 +539,20 @@ impl<V: View> AppHandle<V> {
                     }
                     UpdateMessage::HandleTitleBar(val) => {
                         self.handle.handle_titlebar(val);
+                    }
+                    UpdateMessage::ToggleWindowMaximized => {
+                        let window_state = self.handle.get_window_state();
+                        match window_state {
+                            glazier::WindowState::Maximized => {
+                                self.handle.set_window_state(WindowState::Restored);
+                            }
+                            glazier::WindowState::Minimized => {
+                                self.handle.set_window_state(WindowState::Maximized);
+                            }
+                            glazier::WindowState::Restored => {
+                                self.handle.set_window_state(WindowState::Maximized);
+                            }
+                        }
                     }
                     UpdateMessage::SetWindowDelta(delta) => {
                         self.handle.set_position(self.handle.get_position() + delta);

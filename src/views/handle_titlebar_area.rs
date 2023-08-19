@@ -1,29 +1,29 @@
-use glazier::kurbo::{Point, Rect};
+use glazier::kurbo::Rect;
 
 use crate::{
-    action::{set_handle_titlebar, set_window_delta},
-    app_handle::ViewContext,
+    action::{set_handle_titlebar, toggle_window_maximized},
     event::Event,
     id::Id,
-    view::{ChangeFlags, View},
+    view::View,
+    ViewContext,
 };
 
-pub struct WindowDragArea<V: View> {
+use super::Decorators;
+
+pub struct HandleTitlebarArea<V: View> {
     id: Id,
-    prev_pos: Option<Point>,
     child: V,
 }
 
-pub fn window_drag_area<V: View>(child: impl FnOnce() -> V) -> WindowDragArea<V> {
+pub fn handle_titlebar_area<V: View>(child: impl FnOnce() -> V) -> HandleTitlebarArea<V> {
     let (id, child) = ViewContext::new_id_with_child(child);
-    WindowDragArea {
-        id,
-        child,
-        prev_pos: None,
-    }
+    HandleTitlebarArea { id, child }.on_double_click(|_| {
+        toggle_window_maximized();
+        true
+    })
 }
 
-impl<V: View> View for WindowDragArea<V> {
+impl<V: View> View for HandleTitlebarArea<V> {
     fn id(&self) -> Id {
         self.id
     }
@@ -57,7 +57,7 @@ impl<V: View> View for WindowDragArea<V> {
         _cx: &mut crate::context::UpdateCx,
         _state: Box<dyn std::any::Any>,
     ) -> crate::view::ChangeFlags {
-        ChangeFlags::empty()
+        crate::view::ChangeFlags::empty()
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
@@ -76,33 +76,21 @@ impl<V: View> View for WindowDragArea<V> {
     ) -> bool {
         if !self.child.event_main(cx, id_path, event.clone()) {
             match &event {
-                Event::PointerDown(mouse_event) => {
-                    if mouse_event.button.is_primary() {
-                        self.prev_pos = Some(mouse_event.pos);
-                        cx.update_active(self.id);
+                Event::PointerDown(pointer_event) => {
+                    if pointer_event.button.is_primary() {
                         set_handle_titlebar(true);
                     }
-                    true
                 }
-                Event::PointerUp(mouse_event) => {
-                    if mouse_event.button.is_primary() {
+                Event::PointerUp(pointer_event) => {
+                    if pointer_event.button.is_primary() {
                         set_handle_titlebar(false);
-                        self.prev_pos = None;
                     }
-                    true
                 }
-                Event::PointerMove(mouse_event) => {
-                    if let Some(prev_pos) = self.prev_pos {
-                        let position_diff = mouse_event.pos - prev_pos;
-                        set_window_delta(position_diff);
-                        return true;
-                    }
-                    false
-                }
-                _ => false,
+                _ => (),
             }
-        } else {
             false
+        } else {
+            true
         }
     }
 

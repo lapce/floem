@@ -19,6 +19,10 @@ fn add_update_message(msg: UpdateMessage) {
     });
 }
 
+pub fn toggle_window_maximized() {
+    add_update_message(UpdateMessage::ToggleWindowMaximized);
+}
+
 pub fn set_handle_titlebar(val: bool) {
     add_update_message(UpdateMessage::HandleTitleBar(val));
 }

@@ -15,7 +15,7 @@ taffy = "0.3.12"
 unicode-segmentation = "1.10.0"
 glazier = { git = "https://github.com/lapce/glazier", features = [
     "serde",
-], rev = "b41763b25b028963cdf8f95c4f36409f827805c3" }
+], rev = "2e7f65fc6e7f41dfcd3802b96d44a0b62051cace" }
 # glazier = { path = "../glazier", features = ["serde"] }
 peniko = { git = "https://github.com/linebender/peniko", rev = "cafdac9a211a0fb2fec5656bd663d1ac770bcc81" }
 crossbeam-channel = "0.5.6"
