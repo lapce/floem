@@ -2,7 +2,7 @@ use glazier::kurbo::Rect;
 
 use crate::{
     action::{set_handle_titlebar, toggle_window_maximized},
-    event::Event,
+    event::{Event, EventListener},
     id::Id,
     view::View,
     ViewContext,
@@ -17,10 +17,19 @@ pub struct HandleTitlebarArea<V: View> {
 
 pub fn handle_titlebar_area<V: View>(child: impl FnOnce() -> V) -> HandleTitlebarArea<V> {
     let (id, child) = ViewContext::new_id_with_child(child);
-    HandleTitlebarArea { id, child }.on_double_click(|_| {
-        toggle_window_maximized();
-        true
-    })
+    HandleTitlebarArea { id, child }
+        .on_event(EventListener::PointerDown, |_| {
+            set_handle_titlebar(true);
+            true
+        })
+        .on_event(EventListener::PointerUp, |_| {
+            set_handle_titlebar(false);
+            true
+        })
+        .on_double_click(|_| {
+            toggle_window_maximized();
+            true
+        })
 }
 
 impl<V: View> View for HandleTitlebarArea<V> {
@@ -74,23 +83,10 @@ impl<V: View> View for HandleTitlebarArea<V> {
         id_path: Option<&[Id]>,
         event: Event,
     ) -> bool {
-        if !self.child.event_main(cx, id_path, event.clone()) {
-            match &event {
-                Event::PointerDown(pointer_event) => {
-                    if pointer_event.button.is_primary() {
-                        set_handle_titlebar(true);
-                    }
-                }
-                Event::PointerUp(pointer_event) => {
-                    if pointer_event.button.is_primary() {
-                        set_handle_titlebar(false);
-                    }
-                }
-                _ => (),
-            }
-            false
+        if cx.should_send(self.child.id(), &event) {
+            self.child.event_main(cx, id_path, event)
         } else {
-            true
+            false
         }
     }
 
