@@ -1,6 +1,6 @@
 //! # Floem builtin Views
 //!
-//! This module contains all of the builting Views or Components of Floem.
+//! This module contains all of the built-in Views of Floem.
 //!
 
 mod label;

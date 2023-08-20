@@ -6,11 +6,48 @@ use crate::{
     view::{ChangeFlags, View},
 };
 
+/// A wrapper around any type that implements View. See [`container_box`]
 pub struct ContainerBox {
     id: Id,
     child: Box<dyn View>,
 }
 
+/// A wrapper around any type that implements View.
+///
+/// Views in Floem are strongly typed. A [`ContainerBox`] allows you to escape the strongly typed View and contain a `Box<dyn View>`.
+///
+/// ## Bad Example
+///```compile_fail
+/// use floem::views::*;
+/// use floem_reactive::*;
+/// let check = true;
+///
+/// container(|| {
+///     if check == true {
+///         checkbox(create_rw_signal(true).read_only())
+///     } else {
+///         label(|| "no check".to_string())
+///     }
+/// });
+/// ```
+/// The above example will fail to compile because the container is strongly typed so the if and
+/// the else must return the same type. The problem is that checkbox is an [Svg](crate::views::Svg)
+/// and the else returns a [Label](crate::views::Label). The solution to this is to use a
+/// [`ContainerBox`] to escape the strongly typed requirement.
+///
+/// ```
+/// use floem::views::*;
+/// use floem_reactive::*;
+/// let check = true;
+///
+/// container_box(|| {
+///     if check == true {
+///         Box::new(checkbox(create_rw_signal(true).read_only()))
+///     } else {
+///         Box::new(label(|| "no check".to_string()))
+///     }
+/// });
+/// ```
 pub fn container_box(child: impl FnOnce() -> Box<dyn View>) -> ContainerBox {
     let (id, child) = ViewContext::new_id_with_child(child);
     ContainerBox { id, child }

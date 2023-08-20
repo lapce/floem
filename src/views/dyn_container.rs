@@ -20,7 +20,6 @@ pub struct DynamicContainer<T: 'static> {
 
 /// A container for a dynamically updating View
 ///
-///
 /// ## Example
 /// ```ignore
 /// #[derive(Debug, Clone)]
@@ -70,6 +69,8 @@ pub struct DynamicContainer<T: 'static> {
 ///     })
 /// }
 /// ```
+///
+/// See [container_box](crate::views::container_box()) for more documentation on a general container
 pub fn dyn_container<CF: Fn(T) -> Box<dyn View> + 'static, T: 'static>(
     update_view: impl Fn() -> T + 'static,
     child_fn: CF,
