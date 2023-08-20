@@ -6,11 +6,16 @@ use crate::{
     view::{ChangeFlags, View},
 };
 
+/// A simple wrapper around another View. See [`container`]
 pub struct Container<V: View> {
     id: Id,
     child: V,
 }
 
+/// A simple wrapper around another View
+///
+/// A [`Container`] is useful for wrapping another [View](crate::view::View). This is often useful for allowing another
+/// set of styles completely separate from the View that is being wrapped.
 pub fn container<V: View>(child: impl FnOnce() -> V) -> Container<V> {
     let (id, child) = ViewContext::new_id_with_child(child);
     Container { id, child }

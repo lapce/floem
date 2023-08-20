@@ -73,7 +73,10 @@
 //!
 //! ## More
 //!
-//! #### Authoring your own custom [Views](view::View)
+//! #### Check out all of the built-in [View](view::View)s
+//! See the [Views module](views) for more info.
+//!
+//! #### Authoring your own custom [View](view::View)s
 //! See the [View module](view) for more info.
 //!
 //! #### Understanding Ids
