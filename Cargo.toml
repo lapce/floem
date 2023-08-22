@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2021"
 license.workspace = true
 
+[features]
+# Glazier's Native wayland support is in development. See
+# https://github.com/linebender/glazier/issues/118
+experimental-wayland = ["glazier/wayland"]
+
 [dependencies]
 sha2 = "0.10.6"
 bitflags = "2.2.1"
@@ -13,8 +18,8 @@ smallvec = "1.10.0"
 educe = "0.4.20"
 taffy = "0.3.12"
 unicode-segmentation = "1.10.0"
-glazier = { git = "https://github.com/lapce/glazier", features = [
-    "serde",
+glazier = { git = "https://github.com/lapce/glazier", default-features = false, features = [
+    "x11",
 ], rev = "2e7f65fc6e7f41dfcd3802b96d44a0b62051cace" }
 # glazier = { path = "../glazier", features = ["serde"] }
 peniko = { git = "https://github.com/linebender/peniko", rev = "cafdac9a211a0fb2fec5656bd663d1ac770bcc81" }
