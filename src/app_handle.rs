@@ -306,6 +306,7 @@ impl<V: View> AppHandle<V> {
         cx.paint_state.renderer.as_mut().unwrap().begin();
         self.view.paint_main(&mut cx);
         cx.paint_state.renderer.as_mut().unwrap().finish();
+        self.process_update();
     }
 
     fn process_anim_update_messages(&mut self) -> ChangeFlags {

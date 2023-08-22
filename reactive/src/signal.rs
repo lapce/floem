@@ -91,6 +91,19 @@ impl<T> RwSignal<T> {
         signal_with_untracked(&signal, f)
     }
 
+    /// If the signal isn't disposed, applies a clsoure to the current value stored in the Signal,
+    /// but it doesn't subcribe to the current runnig effect.
+    pub fn try_with_untracked<O>(&self, f: impl FnOnce(Option<&T>) -> O) -> O
+    where
+        T: 'static,
+    {
+        if let Some(signal) = self.id.signal() {
+            signal_with_untracked(&signal, |v| f(Some(v)))
+        } else {
+            f(None)
+        }
+    }
+
     /// Only subcribes to the current runnig effect to this Signal.
     pub fn track(&self) {
         let signal = self.id.signal().unwrap();
@@ -133,6 +146,15 @@ impl<T: Clone> RwSignal<T> {
     {
         let signal = self.id.signal().unwrap();
         signal_get_untracked(&signal)
+    }
+
+    /// Try to clone and return the current value stored in the Signal, and returns None
+    /// if it's already disposed. It doesn't subcribe to the current runnig effect.
+    pub fn try_get_untracked(&self) -> Option<T>
+    where
+        T: 'static,
+    {
+        self.id.signal().map(|signal| signal_get_untracked(&signal))
     }
 }
 
