@@ -39,11 +39,11 @@ pub struct Label {
     text_overflow: TextOverflow,
 }
 
-pub fn label(label: impl Fn() -> String + 'static) -> Label {
+pub fn label<S: Into<String> + 'static>(label: impl Fn() -> S + 'static) -> Label {
     let cx = ViewContext::get_current();
     let id = cx.new_id();
     create_effect(move |_| {
-        let new_label = label();
+        let new_label = Into::<String>::into(label());
         id.update_state(new_label, false);
     });
     Label {
