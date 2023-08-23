@@ -12,6 +12,6 @@ futures = "0.3.26"
 anyhow = "1.0.69"
 peniko = { git = "https://github.com/linebender/peniko", rev = "cafdac9a211a0fb2fec5656bd663d1ac770bcc81" }
 swash = "0.1.8"
-vger = { git = "https://github.com/lapce/vger-rs", rev = "952143f37d8822ef3754189734c62549025e7df5" }
+vger = { git = "https://github.com/lapce/vger-rs", rev = "4765fb2c0cc4507a4cc6133a326b4a05bf6d9a94" }
 # vger = { path = "../../vger-rs" }
 floem_renderer = { path = "../renderer" }

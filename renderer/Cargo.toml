@@ -7,5 +7,5 @@ license.workspace = true
 [dependencies]
 resvg = "0.33.0"
 peniko = { git = "https://github.com/linebender/peniko", rev = "cafdac9a211a0fb2fec5656bd663d1ac770bcc81" }
-cosmic-text = { git = "https://github.com/lapce/cosmic-text", rev = "061ca70e105f920b21f1dd24c5d5c89592f3cf64" }
+cosmic-text = { git = "https://github.com/lapce/cosmic-text", rev = "96858440532d1e5ae2e50df734e44322b426d0de" }
 # cosmic-text = { path = "../../cosmic-text" }
