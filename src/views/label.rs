@@ -1,6 +1,7 @@
 use std::any::Any;
 
 use crate::{
+    context::ViewContext,
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
     style::{ComputedStyle, TextOverflow},
 };
@@ -9,12 +10,11 @@ use floem_renderer::{
     cosmic_text::{LineHeightValue, Style as FontStyle, Weight},
     Renderer,
 };
-use glazier::kurbo::{Point, Rect};
+use kurbo::{Point, Rect};
 use peniko::Color;
 use taffy::{prelude::Node, style::Dimension};
 
 use crate::{
-    app_handle::ViewContext,
     context::{EventCx, UpdateCx},
     event::Event,
     id::Id,

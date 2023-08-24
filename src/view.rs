@@ -87,7 +87,7 @@ use std::any::Any;
 
 use bitflags::bitflags;
 use floem_renderer::Renderer;
-use glazier::kurbo::{Affine, Circle, Line, Point, Rect, Size};
+use kurbo::{Affine, Circle, Line, Point, Rect, Size};
 use taffy::prelude::Node;
 
 use crate::{
@@ -687,11 +687,7 @@ pub trait View {
                     new[4] += offset.x;
                     new[5] += offset.y;
                     cx.transform = Affine::new(new);
-                    cx.paint_state
-                        .renderer
-                        .as_mut()
-                        .unwrap()
-                        .transform(cx.transform);
+                    cx.paint_state.renderer.transform(cx.transform);
                     cx.set_z_index(1000);
                     cx.clear_clip();
 

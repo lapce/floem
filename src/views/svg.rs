@@ -4,12 +4,12 @@ use floem_renderer::{
     usvg::{self, TreeParsing},
     Renderer,
 };
-use glazier::kurbo::Size;
+use kurbo::Size;
 use peniko::Color;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    app_handle::ViewContext,
+    context::ViewContext,
     id::Id,
     style::Style,
     view::{ChangeFlags, View},

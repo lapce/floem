@@ -1,6 +1,9 @@
-use glazier::{
-    kurbo::{Point, Size},
-    KeyEvent, PointerEvent,
+use kurbo::{Point, Size};
+use winit::keyboard::KeyCode;
+
+use crate::{
+    keyboard::KeyEvent,
+    pointer::{PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
 };
 
 #[derive(Hash, PartialEq, Eq)]
@@ -33,10 +36,10 @@ pub enum EventListener {
 
 #[derive(Debug, Clone)]
 pub enum Event {
-    PointerDown(PointerEvent),
-    PointerUp(PointerEvent),
-    PointerMove(PointerEvent),
-    PointerWheel(PointerEvent),
+    PointerDown(PointerInputEvent),
+    PointerUp(PointerInputEvent),
+    PointerMove(PointerMoveEvent),
+    PointerWheel(PointerWheelEvent),
     KeyDown(KeyEvent),
     KeyUp(KeyEvent),
     WindowGotFocus,
@@ -81,10 +84,12 @@ impl Event {
     /// Enter, numpad enter and space cause a view to be activated with the keyboard
     pub(crate) fn is_keyboard_trigger(&self) -> bool {
         match self {
-            Event::KeyDown(key) | Event::KeyUp(key) => matches!(
-                key.code,
-                glazier::Code::NumpadEnter | glazier::Code::Enter | glazier::Code::Space,
-            ),
+            Event::KeyDown(key) | Event::KeyUp(key) => {
+                matches!(
+                    key.key.physical_key,
+                    KeyCode::NumpadEnter | KeyCode::Enter | KeyCode::Space,
+                )
+            }
             _ => false,
         }
     }
@@ -107,10 +112,11 @@ impl Event {
 
     pub fn point(&self) -> Option<Point> {
         match self {
-            Event::PointerDown(pointer_event)
-            | Event::PointerUp(pointer_event)
-            | Event::PointerMove(pointer_event)
-            | Event::PointerWheel(pointer_event) => Some(pointer_event.pos),
+            Event::PointerDown(pointer_event) | Event::PointerUp(pointer_event) => {
+                Some(pointer_event.pos)
+            }
+            Event::PointerMove(pointer_event) => Some(pointer_event.pos),
+            Event::PointerWheel(pointer_event) => Some(pointer_event.pos),
             Event::KeyDown(_)
             | Event::KeyUp(_)
             | Event::WindowClosed
@@ -123,10 +129,15 @@ impl Event {
 
     pub fn scale(mut self, scale: f64) -> Event {
         match &mut self {
-            Event::PointerDown(pointer_event)
-            | Event::PointerUp(pointer_event)
-            | Event::PointerMove(pointer_event)
-            | Event::PointerWheel(pointer_event) => {
+            Event::PointerDown(pointer_event) | Event::PointerUp(pointer_event) => {
+                pointer_event.pos.x /= scale;
+                pointer_event.pos.y /= scale;
+            }
+            Event::PointerMove(pointer_event) => {
+                pointer_event.pos.x /= scale;
+                pointer_event.pos.y /= scale;
+            }
+            Event::PointerWheel(pointer_event) => {
                 pointer_event.pos.x /= scale;
                 pointer_event.pos.y /= scale;
             }
@@ -143,10 +154,13 @@ impl Event {
 
     pub fn offset(mut self, offset: (f64, f64)) -> Event {
         match &mut self {
-            Event::PointerDown(pointer_event)
-            | Event::PointerUp(pointer_event)
-            | Event::PointerMove(pointer_event)
-            | Event::PointerWheel(pointer_event) => {
+            Event::PointerDown(pointer_event) | Event::PointerUp(pointer_event) => {
+                pointer_event.pos -= offset;
+            }
+            Event::PointerMove(pointer_event) => {
+                pointer_event.pos -= offset;
+            }
+            Event::PointerWheel(pointer_event) => {
                 pointer_event.pos -= offset;
             }
             Event::KeyDown(_)

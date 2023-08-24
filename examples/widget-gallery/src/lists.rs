@@ -1,7 +1,7 @@
 use floem::{
     cosmic_text::Weight,
     event::{Event, EventListener},
-    glazier::keyboard_types::Key,
+    keyboard::Key,
     peniko::Color,
     reactive::create_signal,
     style::{CursorStyle, Dimension, JustifyContent, Style},
@@ -115,7 +115,7 @@ fn enhanced_list() -> impl View {
                 .on_event(EventListener::KeyDown, move |e| {
                     if let Event::KeyDown(key_event) = e {
                         let sel = selected.get();
-                        match key_event.key {
+                        match key_event.key.logical_key {
                             Key::ArrowUp => {
                                 if sel > 0 {
                                     set_selected.update(|v| *v -= 1);

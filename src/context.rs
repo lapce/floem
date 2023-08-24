@@ -8,34 +8,95 @@ use floem_renderer::{
     cosmic_text::{LineHeightValue, Style as FontStyle, Weight},
     Renderer as FloemRenderer,
 };
-use glazier::{
-    kurbo::{Affine, Point, Rect, Shape, Size, Vec2},
-    PointerEvent, Scale, TimerToken,
-};
+use kurbo::{Affine, Point, Rect, Shape, Size, Vec2};
 use peniko::Color;
 use taffy::{
     prelude::{Layout, Node},
     style::{AvailableSpace, Display},
 };
+use winit::window::CursorIcon;
 
 use crate::{
+    action::TimerToken,
     animate::{AnimId, AnimPropKind, Animation},
-    app_handle::StyleSelector,
     event::{Event, EventListener},
     id::Id,
     menu::Menu,
+    pointer::PointerInputEvent,
     responsive::{GridBreakpoints, ScreenSize, ScreenSizeBp},
-    style::{ComputedStyle, CursorStyle, Style},
-    ViewContext,
+    style::{ComputedStyle, CursorStyle, Style, StyleSelector},
 };
 
 thread_local! {
     pub(crate) static VIEW_CONTEXT_STORE: std::cell::RefCell<ViewContextStore> = Default::default();
 }
 
-pub struct ViewContextStore {
-    pub cx: ViewContext,
-    pub saved_cx: Vec<ViewContext>,
+// Primarily used to mint and assign a unique ID to each view.
+#[derive(Copy, Clone)]
+pub struct ViewContext {
+    pub id: Id,
+}
+
+impl ViewContext {
+    pub fn save() {
+        VIEW_CONTEXT_STORE.with(|store| {
+            store.borrow_mut().save();
+        })
+    }
+
+    pub fn set_current(cx: ViewContext) {
+        VIEW_CONTEXT_STORE.with(|store| {
+            store.borrow_mut().set_current(cx);
+        })
+    }
+
+    pub fn get_current() -> ViewContext {
+        VIEW_CONTEXT_STORE.with(|store| store.borrow().cx)
+    }
+
+    pub fn restore() {
+        VIEW_CONTEXT_STORE.with(|store| {
+            store.borrow_mut().restore();
+        })
+    }
+
+    pub fn with_context<T>(cx: ViewContext, f: impl FnOnce() -> T) -> T {
+        ViewContext::save();
+        ViewContext::set_current(cx);
+        let value = f();
+        ViewContext::restore();
+        value
+    }
+
+    /// Use this method if you are creating a `View` that has a child.
+    ///
+    /// Ensures that the child is initialized with the "correct" `ViewContext`
+    /// and that the context is restored after the child (and its children) are initialized.
+    /// For the child's `ViewContext` to be "correct", the child's ViewContext's `Id`  must bet set to the parent `View`'s `Id`.
+    ///
+    /// This method returns the `Id` that should be attached to the parent `View` along with the initialized child.
+    pub fn new_id_with_child<V>(child: impl FnOnce() -> V) -> (Id, V) {
+        let cx = ViewContext::get_current();
+        let id = cx.new_id();
+        let mut child_cx = cx;
+        child_cx.id = id;
+        let child = ViewContext::with_context(child_cx, child);
+        (id, child)
+    }
+
+    pub fn with_id(mut self, id: Id) -> Self {
+        self.id = id;
+        self
+    }
+
+    pub fn new_id(&self) -> Id {
+        self.id.new()
+    }
+}
+
+pub(crate) struct ViewContextStore {
+    pub(crate) cx: ViewContext,
+    pub(crate) saved_cx: Vec<ViewContext>,
 }
 
 impl Default for ViewContextStore {
@@ -48,15 +109,15 @@ impl Default for ViewContextStore {
 }
 
 impl ViewContextStore {
-    pub fn save(&mut self) {
+    pub(crate) fn save(&mut self) {
         self.saved_cx.push(self.cx);
     }
 
-    pub fn set_current(&mut self, cx: ViewContext) {
+    pub(crate) fn set_current(&mut self, cx: ViewContext) {
         self.cx = cx;
     }
 
-    pub fn restore(&mut self) {
+    pub(crate) fn restore(&mut self) {
         if let Some(cx) = self.saved_cx.pop() {
             self.cx = cx;
         }
@@ -102,7 +163,7 @@ pub struct ViewState {
     pub(crate) resize_listener: Option<ResizeListener>,
     pub(crate) move_listener: Option<MoveListener>,
     pub(crate) cleanup_listener: Option<Box<dyn Fn()>>,
-    pub(crate) last_pointer_down: Option<PointerEvent>,
+    pub(crate) last_pointer_down: Option<PointerInputEvent>,
 }
 
 impl ViewState {
@@ -256,7 +317,6 @@ pub struct DragState {
 /// Encapsulates and owns the global state of the application,
 /// including the `ViewState` of each view.
 pub struct AppState {
-    pub(crate) handle: glazier::WindowHandle,
     /// keyboard focus
     pub(crate) focus: Option<Id>,
     /// when a view is active, it gets mouse event even when the mouse is
@@ -281,7 +341,7 @@ pub struct AppState {
     /// regardless of the status of the animation
     pub(crate) animated: HashSet<Id>,
     pub(crate) cursor: Option<CursorStyle>,
-    pub(crate) last_cursor: glazier::Cursor,
+    pub(crate) last_cursor: CursorIcon,
     pub(crate) keyboard_navigation: bool,
     pub(crate) context_menu: HashMap<u32, Box<dyn Fn()>>,
     pub(crate) timers: HashMap<TimerToken, Box<dyn FnOnce(TimerToken)>>,
@@ -298,7 +358,6 @@ impl AppState {
         let mut taffy = taffy::Taffy::new();
         taffy.disable_rounding();
         Self {
-            handle: Default::default(),
             root: None,
             focus: None,
             active: None,
@@ -317,7 +376,7 @@ impl AppState {
             dragging_over: HashSet::new(),
             hovered: HashSet::new(),
             cursor: None,
-            last_cursor: glazier::Cursor::Arrow,
+            last_cursor: CursorIcon::Default,
             keyboard_navigation: false,
             grid_bps: GridBreakpoints::default(),
             context_menu: HashMap::new(),
@@ -535,14 +594,14 @@ impl AppState {
 
     pub(crate) fn update_context_menu(&mut self, mut menu: Menu) {
         if let Some(action) = menu.item.action.take() {
-            self.context_menu.insert(menu.item.id as u32, action);
+            // self.context_menu.insert(menu.item.id as u32, action);
         }
         for child in menu.children {
             match child {
                 crate::menu::MenuEntry::Separator => {}
                 crate::menu::MenuEntry::Item(mut item) => {
                     if let Some(action) = item.action.take() {
-                        self.context_menu.insert(item.id as u32, action);
+                        // self.context_menu.insert(item.id as u32, action);
                     }
                 }
                 crate::menu::MenuEntry::SubMenu(m) => {
@@ -902,17 +961,16 @@ impl<'a> PaintCx<'a> {
         self.font_style = self.saved_font_styles.pop().unwrap_or_default();
         self.line_height = self.saved_line_heights.pop().unwrap_or_default();
         self.z_index = self.saved_z_indexes.pop().unwrap_or_default();
-        let renderer = self.paint_state.renderer.as_mut().unwrap();
-        renderer.transform(self.transform);
+        self.paint_state.renderer.transform(self.transform);
         if let Some(z_index) = self.z_index {
-            renderer.set_z_index(z_index);
+            self.paint_state.renderer.set_z_index(z_index);
         } else {
-            renderer.set_z_index(0);
+            self.paint_state.renderer.set_z_index(0);
         }
         if let Some(rect) = self.clip {
-            renderer.clip(&rect);
+            self.paint_state.renderer.clip(&rect);
         } else {
-            renderer.clear_clip();
+            self.paint_state.renderer.clear_clip();
         }
     }
 
@@ -949,7 +1007,7 @@ impl<'a> PaintCx<'a> {
             rect
         };
         self.clip = Some(rect);
-        self.paint_state.renderer.as_mut().unwrap().clip(&rect);
+        self.paint_state.renderer.clip(&rect);
     }
 
     pub fn offset(&mut self, offset: (f64, f64)) {
@@ -957,11 +1015,7 @@ impl<'a> PaintCx<'a> {
         new[4] += offset.0;
         new[5] += offset.1;
         self.transform = Affine::new(new);
-        self.paint_state
-            .renderer
-            .as_mut()
-            .unwrap()
-            .transform(self.transform);
+        self.paint_state.renderer.transform(self.transform);
         if let Some(rect) = self.clip.as_mut() {
             *rect = rect.with_origin(rect.origin() - Vec2::new(offset.0, offset.1));
         }
@@ -974,11 +1028,7 @@ impl<'a> PaintCx<'a> {
             new[4] += offset.x as f64;
             new[5] += offset.y as f64;
             self.transform = Affine::new(new);
-            self.paint_state
-                .renderer
-                .as_mut()
-                .unwrap()
-                .transform(self.transform);
+            self.paint_state.renderer.transform(self.transform);
 
             if let Some(rect) = self.clip.as_mut() {
                 *rect =
@@ -993,11 +1043,7 @@ impl<'a> PaintCx<'a> {
 
     pub(crate) fn set_z_index(&mut self, z_index: i32) {
         self.z_index = Some(z_index);
-        self.paint_state
-            .renderer
-            .as_mut()
-            .unwrap()
-            .set_z_index(z_index);
+        self.paint_state.renderer.set_z_index(z_index);
     }
 
     pub fn is_focused(&self, id: Id) -> bool {
@@ -1007,39 +1053,25 @@ impl<'a> PaintCx<'a> {
 
 // TODO: should this be private?
 pub struct PaintState {
-    pub(crate) renderer: Option<crate::renderer::Renderer>,
-    handle: glazier::WindowHandle,
-}
-
-impl Default for PaintState {
-    fn default() -> Self {
-        Self::new()
-    }
+    pub(crate) renderer: crate::renderer::Renderer,
 }
 
 impl PaintState {
-    pub fn new() -> Self {
+    pub fn new<W>(window: &W, scale: f64, size: Size) -> Self
+    where
+        W: raw_window_handle::HasRawDisplayHandle + raw_window_handle::HasRawWindowHandle,
+    {
         Self {
-            renderer: None,
-            handle: Default::default(),
+            renderer: crate::renderer::Renderer::new(window, scale, size),
         }
     }
 
-    pub(crate) fn connect(&mut self, handle: &glazier::WindowHandle) {
-        self.handle = handle.clone();
-        self.renderer = Some(crate::renderer::Renderer::new(handle));
+    pub(crate) fn resize(&mut self, scale: f64, size: Size) {
+        self.renderer.resize(scale, size);
     }
 
-    pub(crate) fn resize(&mut self, scale: Scale, size: Size) {
-        if let Some(renderer) = self.renderer.as_mut() {
-            renderer.resize(scale, size);
-        }
-    }
-
-    pub(crate) fn set_scale(&mut self, scale: Scale) {
-        if let Some(renderer) = self.renderer.as_mut() {
-            renderer.set_scale(scale);
-        }
+    pub(crate) fn set_scale(&mut self, scale: f64) {
+        self.renderer.set_scale(scale);
     }
 }
 
@@ -1059,12 +1091,12 @@ impl Deref for PaintCx<'_> {
     type Target = crate::renderer::Renderer;
 
     fn deref(&self) -> &Self::Target {
-        self.paint_state.renderer.as_ref().unwrap()
+        &self.paint_state.renderer
     }
 }
 
 impl DerefMut for PaintCx<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.paint_state.renderer.as_mut().unwrap()
+        &mut self.paint_state.renderer
     }
 }

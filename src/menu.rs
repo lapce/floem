@@ -1,7 +1,3 @@
-use glazier::{Counter, HotKey};
-
-static COUNTER: Counter = Counter::new();
-
 /// An entry in a menu.
 ///
 /// An entry is either a [`MenuItem`], a submenu (i.e. [`Menu`]).
@@ -48,41 +44,59 @@ impl Menu {
         self.entry(MenuEntry::Separator)
     }
 
-    pub(crate) fn platform_menu(&self) -> glazier::Menu {
-        let mut menu = if self.popup {
-            glazier::Menu::new_for_popup()
-        } else {
-            glazier::Menu::new()
-        };
-        for entry in &self.children {
-            match entry {
-                MenuEntry::Separator => {
-                    menu.add_separator();
-                }
-                MenuEntry::Item(item) => {
-                    menu.add_item(
-                        item.id as u32,
-                        &item.title,
-                        item.key.as_ref(),
-                        item.selected,
-                        item.enabled,
-                    );
-                }
-                MenuEntry::SubMenu(m) => {
-                    let enabled = m.item.enabled;
-                    let title = m.item.title.clone();
-                    menu.add_dropdown(m.platform_menu(), &title, enabled);
-                }
-            }
-        }
-        menu
-    }
+    // pub(crate) fn muda(&self) -> muda::Submenu {
+    //     let submenu = muda::Submenu::new(&self.item.title, true);
+    //     for entry in &self.children {
+    //         match entry {
+    //             MenuEntry::Separator => {
+    //                 let _ = submenu.append(&muda::PredefinedMenuItem::separator());
+    //             }
+    //             MenuEntry::Item(item) => {
+    //                 let _ = submenu.append(&muda::MenuItem::new(&item.title, true, None));
+    //             }
+    //             MenuEntry::SubMenu(m) => {
+    //                 let _ = submenu.append(&m.muda());
+    //             }
+    //         }
+    //     }
+    //     submenu
+    // }
+
+    // pub(crate) fn platform_menu(&self) -> glazier::Menu {
+    //     let mut menu = if self.popup {
+    //         glazier::Menu::new_for_popup()
+    //     } else {
+    //         glazier::Menu::new()
+    //     };
+    //     for entry in &self.children {
+    //         match entry {
+    //             MenuEntry::Separator => {
+    //                 menu.add_separator();
+    //             }
+    //             MenuEntry::Item(item) => {
+    //                 menu.add_item(
+    //                     item.id as u32,
+    //                     &item.title,
+    //                     item.key.as_ref(),
+    //                     item.selected,
+    //                     item.enabled,
+    //                 );
+    //             }
+    //             MenuEntry::SubMenu(m) => {
+    //                 let enabled = m.item.enabled;
+    //                 let title = m.item.title.clone();
+    //                 menu.add_dropdown(m.platform_menu(), &title, enabled);
+    //             }
+    //         }
+    //     }
+    //     menu
+    // }
 }
 
 pub struct MenuItem {
-    pub(crate) id: u64,
+    // pub(crate) id: u64,
     title: String,
-    key: Option<HotKey>,
+    // key: Option<HotKey>,
     selected: Option<bool>,
     enabled: bool,
     pub(crate) action: Option<Box<dyn Fn()>>,
@@ -97,9 +111,9 @@ impl From<MenuItem> for MenuEntry {
 impl MenuItem {
     pub fn new(title: impl Into<String>) -> Self {
         Self {
-            id: COUNTER.next(),
+            // id: COUNTER.next(),
             title: title.into(),
-            key: None,
+            // key: None,
             selected: None,
             enabled: true,
             action: None,

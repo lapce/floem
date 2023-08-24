@@ -1,6 +1,6 @@
 use std::sync::atomic::AtomicUsize;
 
-use crate::app_handle::ANIM_UPDATE_MESSAGES;
+use crate::update::ANIM_UPDATE_MESSAGES;
 
 use super::{anim_val::AnimValue, AnimPropKind, AnimUpdateMsg};
 

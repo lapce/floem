@@ -1,4 +1,6 @@
 use crate::action::exec_after;
+use crate::context::ViewContext;
+use crate::keyboard::KeyEvent;
 use crate::reactive::{create_effect, RwSignal};
 use crate::{context::LayoutCx, style::CursorStyle};
 use taffy::{
@@ -11,8 +13,9 @@ use floem_renderer::{
     Renderer,
 };
 use unicode_segmentation::UnicodeSegmentation;
+use winit::keyboard::{Key, ModifiersState};
 
-use crate::{peniko::Color, style::Style, view::View, ViewContext};
+use crate::{peniko::Color, style::Style, view::View};
 
 use std::{
     any::Any,
@@ -24,11 +27,7 @@ use crate::{
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
     style::ComputedStyle,
 };
-use glazier::{
-    keyboard_types::Key,
-    kurbo::{Point, Rect},
-    Modifiers,
-};
+use kurbo::{Point, Rect};
 
 use crate::{
     context::{EventCx, UpdateCx},
@@ -371,16 +370,16 @@ impl TextInput {
         self.selection = 0..self.buffer.with(|val| val.len());
     }
 
-    fn handle_key_down(&mut self, cx: &mut EventCx<'_>, event: &glazier::KeyEvent) -> bool {
-        match event.key {
+    fn handle_key_down(&mut self, cx: &mut EventCx<'_>, event: &KeyEvent) -> bool {
+        match event.key.logical_key {
             Key::Character(ref ch) => {
-                let handled_modifier_command = !event.mods.is_empty()
-                    && match (event.mods, ch.as_str(), cfg!(target_os = "macos")) {
-                        (Modifiers::CONTROL, "a", false) => {
+                let handled_modifier_command = !event.modifiers.is_empty()
+                    && match (event.modifiers, ch.as_str(), cfg!(target_os = "macos")) {
+                        (ModifiersState::CONTROL, "a", false) => {
                             self.select_all();
                             true
                         }
-                        (Modifiers::META, "a", true) => {
+                        (ModifiersState::SUPER, "a", true) => {
                             self.select_all();
                             true
                         }
@@ -416,7 +415,7 @@ impl TextInput {
                 } else {
                     let prev_cursor_idx = self.cursor_glyph_idx;
 
-                    if event.mods.contains(Modifiers::CONTROL) {
+                    if event.modifiers.contains(ModifiersState::CONTROL) {
                         self.move_cursor(Movement::Word, Direction::Left);
                     } else {
                         self.move_cursor(Movement::Glyph, Direction::Left);
@@ -435,7 +434,7 @@ impl TextInput {
             Key::Delete => {
                 let prev_cursor_idx = self.cursor_glyph_idx;
 
-                if event.mods.contains(Modifiers::CONTROL) {
+                if event.modifiers.contains(ModifiersState::CONTROL) {
                     self.move_cursor(Movement::Word, Direction::Right);
                 } else {
                     self.move_cursor(Movement::Glyph, Direction::Right);
@@ -465,7 +464,7 @@ impl TextInput {
                     self.cursor_glyph_idx = self.selection.start;
                     self.selection = 0..0;
                     true
-                } else if event.mods.contains(Modifiers::CONTROL) {
+                } else if event.modifiers.contains(ModifiersState::CONTROL) {
                     self.move_cursor(Movement::Word, Direction::Left)
                 } else {
                     self.move_cursor(Movement::Glyph, Direction::Left)
@@ -476,7 +475,7 @@ impl TextInput {
                     self.cursor_glyph_idx = self.selection.end;
                     self.selection = 0..0;
                     true
-                } else if event.mods.contains(Modifiers::CONTROL) {
+                } else if event.modifiers.contains(ModifiersState::CONTROL) {
                     self.move_cursor(Movement::Word, Direction::Right)
                 } else {
                     self.move_cursor(Movement::Glyph, Direction::Right)

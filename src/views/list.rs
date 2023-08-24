@@ -4,13 +4,12 @@ use std::{
 };
 
 use floem_reactive::{as_child_of_current_scope, create_effect, Scope};
-use glazier::kurbo::Rect;
+use kurbo::Rect;
 use rustc_hash::FxHasher;
 use smallvec::SmallVec;
 
 use crate::{
-    app_handle::ViewContext,
-    context::{AppState, EventCx, UpdateCx},
+    context::{AppState, EventCx, UpdateCx, ViewContext},
     id::Id,
     view::{ChangeFlags, View},
 };
