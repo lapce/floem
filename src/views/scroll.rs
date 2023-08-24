@@ -24,6 +24,7 @@ enum ScrollState {
     ScrollDelta(Vec2),
     ScrollTo(Point),
     ScrollBarColor(Color),
+    RoundedBar(bool),
     HiddenBar(bool),
     PropagatePointerWheel(bool),
     VerticalScrollAsHorizontal(bool),
@@ -62,10 +63,12 @@ pub struct Scroll<V: View> {
     propagate_pointer_wheel: bool,
     vertical_scroll_as_horizontal: bool,
     scroll_bar_color: Color,
+    rounded_bar: bool,
 }
 
 pub fn scroll<V: View>(child: impl FnOnce() -> V) -> Scroll<V> {
     let (id, child) = ViewContext::new_id_with_child(child);
+    let rounded_bar = cfg!(target_os = "macos");
     Scroll {
         id,
         child,
@@ -81,6 +84,7 @@ pub fn scroll<V: View>(child: impl FnOnce() -> V) -> Scroll<V> {
         vertical_scroll_as_horizontal: false,
         // 179 is 70% of 255 so a 70% alpha factor is the default
         scroll_bar_color: Color::rgba8(0, 0, 0, 179),
+        rounded_bar,
     }
 }
 
@@ -90,6 +94,16 @@ impl<V: View> Scroll<V> {
         create_effect(move |_| {
             let color = color();
             id.update_state(ScrollState::ScrollBarColor(color), false);
+        });
+
+        self
+    }
+
+    pub fn scroll_bar_round(self, round: impl Fn() -> bool + 'static) -> Self {
+        let id = self.id;
+        create_effect(move |_| {
+            let round = round();
+            id.update_state(ScrollState::RoundedBar(round), false);
         });
 
         self
@@ -311,11 +325,22 @@ impl<V: View> Scroll<V> {
     fn draw_bars(&self, cx: &mut PaintCx) {
         let edge_width = 0.0;
         let scroll_offset = self.child_viewport.origin().to_vec2();
+        let radius = |rect: Rect, vertical| {
+            if self.rounded_bar {
+                if vertical {
+                    (rect.x1 - rect.x0) / 2.
+                } else {
+                    (rect.y1 - rect.y0) / 2.
+                }
+            } else {
+                0.
+            }
+        };
 
         let color = self.scroll_bar_color;
         if let Some(bounds) = self.calc_vertical_bar_bounds(cx.app_state) {
             let rect = (bounds - scroll_offset).inset(-edge_width / 2.0);
-            cx.fill(&rect, color, 0.0);
+            cx.fill(&rect.to_rounded_rect(radius(rect, true)), color, 0.0);
             if edge_width > 0.0 {
                 cx.stroke(&rect, color, edge_width);
             }
@@ -326,7 +351,11 @@ impl<V: View> Scroll<V> {
             let rect = (bounds - scroll_offset).inset(-edge_width / 2.0);
             cx.fill(&rect, color, 0.0);
             if edge_width > 0.0 {
-                cx.stroke(&rect, color, edge_width);
+                cx.stroke(
+                    &rect.to_rounded_rect(radius(rect, false)),
+                    color,
+                    edge_width,
+                );
             }
         }
     }
@@ -527,6 +556,9 @@ impl<V: View> View for Scroll<V> {
                 }
                 ScrollState::ScrollBarColor(color) => {
                     self.scroll_bar_color = color;
+                }
+                ScrollState::RoundedBar(round) => {
+                    self.rounded_bar = round;
                 }
                 ScrollState::HiddenBar(value) => {
                     self.hide_bar = value;
