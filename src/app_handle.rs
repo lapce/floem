@@ -142,6 +142,9 @@ impl ApplicationHandle {
             }
             WindowEvent::ThemeChanged(_) => {}
             WindowEvent::Occluded(_) => {}
+            WindowEvent::MenuAction(id) => {
+                window_handle.menu_action(id);
+            }
         }
     }
 

@@ -1,4 +1,7 @@
-use std::time::{Duration, Instant};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use floem_reactive::{with_scope, Scope};
 use floem_renderer::Renderer;
@@ -37,7 +40,7 @@ use crate::{
 /// - processing all requests to update the animation state from the reactive system
 /// - requesting a new animation frame from the backend
 pub(crate) struct WindowHandle {
-    pub(crate) window: Option<winit::window::Window>,
+    pub(crate) window: Option<Arc<winit::window::Window>>,
     /// Reactive Scope for this WindowHandle
     scope: Scope,
     view: Box<dyn View>,
@@ -68,7 +71,7 @@ impl WindowHandle {
         let size = Size::new(size.width, size.height);
         let paint_state = PaintState::new(&window, scale, size);
         let mut window_handle = Self {
-            window: Some(window),
+            window: Some(Arc::new(window)),
             scope: Scope::new(),
             view,
             app_state: AppState::new(),
@@ -601,12 +604,11 @@ impl WindowHandle {
                         state.popout_menu = Some(menu);
                     }
                     UpdateMessage::ShowContextMenu { menu, pos } => {
-                        self.show_context_menu(menu, pos);
-                        // let menu = menu.popup();
-                        // let platform_menu = menu.platform_menu();
-                        // cx.app_state.context_menu.clear();
-                        // cx.app_state.update_context_menu(menu);
-                        // self.handle.show_context_menu(platform_menu, pos);
+                        let menu = menu.popup();
+                        let platform_menu = menu.platform_menu();
+                        cx.app_state.context_menu.clear();
+                        cx.app_state.update_context_menu(menu);
+                        self.show_context_menu(platform_menu, pos);
                     }
                     UpdateMessage::WindowMenu { menu } => {
                         // let platform_menu = menu.platform_menu();
@@ -809,17 +811,32 @@ impl WindowHandle {
         self.scope.dispose();
     }
 
-    fn show_context_menu(&self, _menu: Menu, _pos: Point) {
-        // let submenu = menu.muda();
-        // let menu = muda::Menu::new();
-        // let _ = menu.append(&submenu);
-        // if let Some(window) = self.window.as_ref() {
-        //     #[cfg(target_os = "macos")]
-        //     {
-        //         use winit::platform::macos::WindowExtMacOS;
-        //         menu.show_context_menu_for_nsview(window.ns_view(), None);
-        //     }
-        // }
+    fn show_context_menu(&self, menu: winit::menu::Menu, pos: Option<Point>) {
+        if let Some(window) = self.window.as_ref() {
+            #[cfg(target_os = "macos")]
+            {
+                use winit::platform::macos::WindowExtMacOS;
+                window.show_context_menu(
+                    menu,
+                    pos.map(|pos| {
+                        winit::dpi::Position::Logical(winit::dpi::LogicalPosition::new(
+                            pos.x, pos.y,
+                        ))
+                    }),
+                );
+            }
+        }
+    }
+
+    pub(crate) fn menu_action(&mut self, id: usize) {
+        set_current_view(self.view.id());
+        if let Some(action) = self.app_state.window_menu.get(&id) {
+            (*action)();
+            self.process_update();
+        } else if let Some(action) = self.app_state.context_menu.get(&id) {
+            (*action)();
+            self.process_update();
+        }
     }
 }
 

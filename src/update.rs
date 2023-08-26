@@ -100,7 +100,7 @@ pub(crate) enum UpdateMessage {
     },
     ShowContextMenu {
         menu: Menu,
-        pos: Point,
+        pos: Option<Point>,
     },
     WindowMenu {
         menu: Menu,

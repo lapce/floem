@@ -407,7 +407,7 @@ pub trait View {
                             Point::new(layout.x0, layout.y1)
                         };
                         if let Some(menu) = &cx.app_state.view_state(id).popout_menu {
-                            show_context_menu(menu(), bottom_left)
+                            show_context_menu(menu(), Some(bottom_left))
                         }
                         if cx.app_state.draggable.contains(&id) && cx.app_state.drag_start.is_none()
                         {
@@ -546,7 +546,7 @@ pub trait View {
                             }
                         }
                     }
-                } else if pointer_event.button.is_primary() {
+                } else if pointer_event.button.is_secondary() {
                     let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
                     let on_view = rect.contains(pointer_event.pos);
 
@@ -566,7 +566,7 @@ pub trait View {
                         )
                     };
                     if let Some(menu) = &cx.app_state.view_state(id).context_menu {
-                        show_context_menu(menu(), viewport_event_position)
+                        show_context_menu(menu(), Some(viewport_event_position))
                     }
                 }
             }
@@ -841,6 +841,7 @@ fn paint_border(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
 }
 
 /// Tab navigation finds the next or previous view with the `keyboard_navigatable` status in the tree.
+#[allow(dead_code)]
 pub(crate) fn view_tab_navigation(root_view: &dyn View, app_state: &mut AppState, backwards: bool) {
     let start = app_state.focus.unwrap_or(root_view.id());
     println!("start id is {start:?}");
@@ -1008,6 +1009,7 @@ fn view_nested_last_child(view: &dyn View) -> &dyn View {
 }
 
 /// Produces an ascii art debug display of all of the views.
+#[allow(dead_code)]
 pub(crate) fn view_debug_tree(root_view: &dyn View) {
     let mut views = vec![(root_view, Vec::new())];
     while let Some((current_view, active_lines)) = views.pop() {

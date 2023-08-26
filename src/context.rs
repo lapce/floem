@@ -17,7 +17,6 @@ use taffy::{
 use winit::window::CursorIcon;
 
 use crate::{
-    action::TimerToken,
     animate::{AnimId, AnimPropKind, Animation},
     event::{Event, EventListener},
     id::Id,
@@ -343,8 +342,8 @@ pub struct AppState {
     pub(crate) cursor: Option<CursorStyle>,
     pub(crate) last_cursor: CursorIcon,
     pub(crate) keyboard_navigation: bool,
-    pub(crate) context_menu: HashMap<u32, Box<dyn Fn()>>,
-    pub(crate) timers: HashMap<TimerToken, Box<dyn FnOnce(TimerToken)>>,
+    pub(crate) window_menu: HashMap<usize, Box<dyn Fn()>>,
+    pub(crate) context_menu: HashMap<usize, Box<dyn Fn()>>,
 }
 
 impl Default for AppState {
@@ -379,8 +378,8 @@ impl AppState {
             last_cursor: CursorIcon::Default,
             keyboard_navigation: false,
             grid_bps: GridBreakpoints::default(),
+            window_menu: HashMap::new(),
             context_menu: HashMap::new(),
-            timers: HashMap::new(),
         }
     }
 
@@ -503,10 +502,6 @@ impl AppState {
         }
     }
 
-    pub(crate) fn request_timer(&mut self, token: TimerToken, action: Box<dyn FnOnce(TimerToken)>) {
-        self.timers.insert(token, action);
-    }
-
     pub(crate) fn set_viewport(&mut self, id: Id, viewport: Rect) {
         let view = self.view_state(id);
         view.viewport = Some(viewport);
@@ -594,14 +589,14 @@ impl AppState {
 
     pub(crate) fn update_context_menu(&mut self, mut menu: Menu) {
         if let Some(action) = menu.item.action.take() {
-            // self.context_menu.insert(menu.item.id as u32, action);
+            self.context_menu.insert(menu.item.id as usize, action);
         }
         for child in menu.children {
             match child {
                 crate::menu::MenuEntry::Separator => {}
                 crate::menu::MenuEntry::Item(mut item) => {
                     if let Some(action) = item.action.take() {
-                        // self.context_menu.insert(item.id as u32, action);
+                        self.context_menu.insert(item.id as usize, action);
                     }
                 }
                 crate::menu::MenuEntry::SubMenu(m) => {

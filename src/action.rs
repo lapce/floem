@@ -119,7 +119,7 @@ pub fn save_as(options: FileDialogOptions, file_info_action: impl Fn(Option<File
     });
 }
 
-pub fn show_context_menu(menu: Menu, pos: Point) {
+pub fn show_context_menu(menu: Menu, pos: Option<Point>) {
     add_update_message(UpdateMessage::ShowContextMenu { menu, pos });
 }
 
