@@ -4,7 +4,7 @@ use floem::{
     glazier::keyboard_types::Key,
     peniko::Color,
     reactive::create_signal,
-    style::{CursorStyle, Dimension, JustifyContent, Style},
+    style::{CursorStyle, Dimension, JustifyContent},
     view::View,
     views::{
         checkbox, container, label, scroll, stack, virtual_list, Decorators, VirtualListDirection,
@@ -32,11 +32,11 @@ fn simple_list() -> impl View {
             VirtualListItemSize::Fixed(Box::new(|| 20.0)),
             move || long_list.get(),
             move |item| *item,
-            move |item| label(move || item.to_string()).style(|| Style::BASE.height_px(24.0)),
+            move |item| label(move || item.to_string()).style(|s| s.height_px(24.0)),
         )
-        .style(|| Style::BASE.flex_col())
+        .style(|s| s.flex_col())
     })
-    .style(|| Style::BASE.width_px(100.0).height_px(300.0).border(1.0))
+    .style(|s| s.width_px(100.0).height_px(300.0).border(1.0))
 }
 
 fn enhanced_list() -> impl View {
@@ -67,7 +67,7 @@ fn enhanced_list() -> impl View {
                                 true
                             }),
                             label(move || item.to_string())
-                                .style(|| Style::BASE.height_px(32.0).font_size(32.0)),
+                                .style(|s| s.height_px(32.0).font_size(32.0)),
                             container(move || {
                                 label(move || " X ".to_string())
                                     .on_click(move |_| {
@@ -77,9 +77,8 @@ fn enhanced_list() -> impl View {
                                         });
                                         true
                                     })
-                                    .style(|| {
-                                        Style::BASE
-                                            .height_px(18.0)
+                                    .style(|s| {
+                                        s.height_px(18.0)
                                             .font_weight(Weight::BOLD)
                                             .color(Color::RED)
                                             .border(1.0)
@@ -87,24 +86,16 @@ fn enhanced_list() -> impl View {
                                             .border_radius(16.0)
                                             .margin_right_px(5.0)
                                     })
-                                    .hover_style(|| {
-                                        Style::BASE.color(Color::WHITE).background(Color::RED)
-                                    })
+                                    .hover_style(|s| s.color(Color::WHITE).background(Color::RED))
                             })
-                            .style(|| {
-                                Style::BASE
-                                    .flex_basis(Dimension::Points(0.0))
+                            .style(|s| {
+                                s.flex_basis(Dimension::Points(0.0))
                                     .flex_grow(1.0)
                                     .justify_content(Some(JustifyContent::FlexEnd))
                             }),
                         )
                     })
-                    .style(move || {
-                        Style::BASE
-                            .height_px(item_height)
-                            .width_px(list_width)
-                            .items_center()
-                    })
+                    .style(move |s| s.height_px(item_height).width_px(list_width).items_center())
                 })
                 .on_click(move |_| {
                     set_selected.update(|v: &mut usize| {
@@ -135,10 +126,9 @@ fn enhanced_list() -> impl View {
                     }
                 })
                 .keyboard_navigatable()
-                .focus_visible_style(|| Style::BASE.border(2.).border_color(Color::BLUE))
-                .style(move || {
-                    Style::BASE
-                        .flex_row()
+                .focus_visible_style(|s| s.border(2.).border_color(Color::BLUE))
+                .style(move |s| {
+                    s.flex_row()
                         .width_pct(list_width)
                         .height_px(item_height)
                         .apply_if(index == selected.get(), |s| s.background(Color::GRAY))
@@ -146,19 +136,10 @@ fn enhanced_list() -> impl View {
                             s.border_top(1.0).border_color(Color::LIGHT_GRAY)
                         })
                 })
-                .hover_style(|| {
-                    Style::BASE
-                        .background(Color::LIGHT_GRAY)
-                        .cursor(CursorStyle::Pointer)
-                })
+                .hover_style(|s| s.background(Color::LIGHT_GRAY).cursor(CursorStyle::Pointer))
             },
         )
-        .style(move || Style::BASE.flex_col().width_px(list_width))
+        .style(move |s| s.flex_col().width_px(list_width))
     })
-    .style(move || {
-        Style::BASE
-            .width_px(list_width)
-            .height_px(300.0)
-            .border(1.0)
-    })
+    .style(move |s| s.width_px(list_width).height_px(300.0).border(1.0))
 }

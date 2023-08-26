@@ -1,7 +1,7 @@
 use floem::{
     peniko::Color,
     reactive::create_rw_signal,
-    style::{CursorStyle, Style},
+    style::CursorStyle,
     view::View,
     views::{text_input, Decorators},
 };
@@ -15,37 +15,35 @@ pub fn text_input_view() -> impl View {
         (
             form_item("Simple Input:".to_string(), 120.0, move || {
                 text_input(text)
-                    .style(|| Style::BASE.border(1.0).height_px(32.0))
+                    .style(|s| s.border(1.0).height_px(32.0))
                     .keyboard_navigatable()
             }),
             form_item("Styled Input:".to_string(), 120.0, move || {
                 text_input(text)
-                    .style(|| {
-                        Style::BASE
-                            .border(1.5)
+                    .style(|s| {
+                        s.border(1.5)
                             .background(Color::rgb8(224, 224, 224))
                             .border_radius(15.0)
                             .border_color(Color::rgb8(189, 189, 189))
                             .padding_px(10.0)
                             .cursor(CursorStyle::Text)
                     })
-                    .hover_style(|| Style::BASE.border_color(Color::rgb8(66, 66, 66)))
-                    .focus_style(|| Style::BASE.border_color(Color::LIGHT_SKY_BLUE))
+                    .hover_style(|s| s.border_color(Color::rgb8(66, 66, 66)))
+                    .focus_style(|s| s.border_color(Color::LIGHT_SKY_BLUE))
                     .keyboard_navigatable()
             }),
             form_item("Disabled Input:".to_string(), 120.0, move || {
                 text_input(text)
-                    .style(|| {
-                        Style::BASE
-                            .border(1.5)
+                    .style(|s| {
+                        s.border(1.5)
                             .background(Color::rgb8(224, 224, 224))
                             .border_radius(15.0)
                             .border_color(Color::rgb8(189, 189, 189))
                             .padding_px(10.0)
                             .cursor(CursorStyle::Text)
                     })
-                    .hover_style(|| Style::BASE.border_color(Color::rgb8(66, 66, 66)))
-                    .focus_style(|| Style::BASE.border_color(Color::LIGHT_SKY_BLUE))
+                    .hover_style(|s| s.border_color(Color::rgb8(66, 66, 66)))
+                    .focus_style(|s| s.border_color(Color::LIGHT_SKY_BLUE))
                     .keyboard_navigatable()
                     .disabled(|| true)
             }),
