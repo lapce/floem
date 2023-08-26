@@ -1,7 +1,7 @@
-use glazier::kurbo::{Rect, Size};
+use kurbo::{Rect, Size};
 
 use crate::{
-    app_handle::ViewContext,
+    context::ViewContext,
     id::Id,
     view::{ChangeFlags, View},
 };

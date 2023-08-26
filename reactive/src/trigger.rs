@@ -9,9 +9,7 @@ impl Copy for Trigger {}
 
 impl Clone for Trigger {
     fn clone(&self) -> Self {
-        Self {
-            signal: self.signal,
-        }
+        *self
     }
 }
 

@@ -1,11 +1,11 @@
-use glazier::kurbo::Rect;
+use kurbo::Rect;
 
 use crate::{
     action::{set_handle_titlebar, toggle_window_maximized},
+    context::ViewContext,
     event::{Event, EventListener},
     id::Id,
     view::View,
-    ViewContext,
 };
 
 use super::Decorators;

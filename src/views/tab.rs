@@ -1,13 +1,12 @@
 use std::{hash::Hash, marker::PhantomData};
 
 use floem_reactive::{as_child_of_current_scope, create_effect, Scope};
-use glazier::kurbo::Rect;
+use kurbo::Rect;
 use smallvec::SmallVec;
 use taffy::style::Display;
 
 use crate::{
-    app_handle::ViewContext,
-    context::{EventCx, UpdateCx},
+    context::{EventCx, UpdateCx, ViewContext},
     id::Id,
     view::{ChangeFlags, View},
 };

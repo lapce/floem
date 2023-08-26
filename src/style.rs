@@ -37,6 +37,15 @@ use taffy::{
     style_helpers::TaffyZero,
 };
 
+pub enum StyleSelector {
+    Hover,
+    Focus,
+    FocusVisible,
+    Disabled,
+    Active,
+    Dragging,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextOverflow {
     Wrap,

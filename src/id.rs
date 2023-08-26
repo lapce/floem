@@ -8,17 +8,17 @@
 //! These ids are assigned via the [ViewContext](crate::ViewContext) and are unique across the entire application.
 //!
 
-use std::{any::Any, cell::RefCell, collections::HashMap, num::NonZeroU64};
+use std::{any::Any, cell::RefCell, collections::HashMap, sync::atomic::AtomicU64};
 
-use glazier::kurbo::Point;
+use kurbo::Point;
 
 use crate::{
     animate::Animation,
-    app_handle::{StyleSelector, UpdateMessage, DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES},
     context::{EventCallback, MenuCallback, ResizeCallback},
     event::EventListener,
     responsive::ScreenSize,
-    style::Style,
+    style::{Style, StyleSelector},
+    update::{UpdateMessage, DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES},
 };
 
 thread_local! {
@@ -26,20 +26,8 @@ thread_local! {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Hash)]
-pub struct WindowId(NonZeroU64);
-
-impl WindowId {
-    /// Allocate a new, unique `Id`.
-    pub fn next() -> WindowId {
-        use glazier::Counter;
-        static WIDGET_ID_COUNTER: Counter = Counter::new();
-        WindowId(WIDGET_ID_COUNTER.next_nonzero())
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Hash)]
 /// A stable identifier for an element.
-pub struct Id(NonZeroU64);
+pub struct Id(u64);
 
 #[derive(Clone, Default)]
 pub struct IdPath(pub(crate) Vec<Id>);
@@ -47,17 +35,11 @@ pub struct IdPath(pub(crate) Vec<Id>);
 impl Id {
     /// Allocate a new, unique `Id`.
     pub fn next() -> Id {
-        use glazier::Counter;
-        static WIDGET_ID_COUNTER: Counter = Counter::new();
-        Id(WIDGET_ID_COUNTER.next_nonzero())
+        static WIDGET_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
+        Id(WIDGET_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
     }
 
-    #[allow(unused)]
     pub fn to_raw(self) -> u64 {
-        self.0.into()
-    }
-
-    pub fn to_nonzero_raw(self) -> NonZeroU64 {
         self.0
     }
 

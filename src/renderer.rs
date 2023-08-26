@@ -49,10 +49,7 @@
 //!
 use crate::cosmic_text::TextLayout;
 use floem_vger::VgerRenderer;
-use glazier::{
-    kurbo::{Affine, Rect, Shape, Size},
-    Scalable, Scale, WindowHandle,
-};
+use kurbo::{Affine, Rect, Shape, Size};
 use peniko::BrushRef;
 
 pub enum Renderer {
@@ -60,24 +57,27 @@ pub enum Renderer {
 }
 
 impl Renderer {
-    pub fn new(handle: &WindowHandle) -> Self {
-        let scale = handle.get_scale().unwrap_or_default();
-        let size = handle.get_size().to_px(scale);
-        Self::Vger(
-            VgerRenderer::new(handle, size.width as u32, size.height as u32, scale.x()).unwrap(),
-        )
+    pub fn new<W>(window: &W, scale: f64, size: Size) -> Self
+    where
+        W: raw_window_handle::HasRawDisplayHandle + raw_window_handle::HasRawWindowHandle,
+    {
+        let size = Size::new(
+            (size.width * scale).max(1.0),
+            (size.height * scale).max(1.0),
+        );
+        Self::Vger(VgerRenderer::new(window, size.width as u32, size.height as u32, scale).unwrap())
     }
 
-    pub fn resize(&mut self, scale: Scale, size: Size) {
-        let size = size.to_px(scale);
+    pub fn resize(&mut self, scale: f64, size: Size) {
+        let size = Size::new(size.width * scale, size.height * scale);
         match self {
-            Renderer::Vger(r) => r.resize(size.width as u32, size.height as u32, scale.x()),
+            Renderer::Vger(r) => r.resize(size.width as u32, size.height as u32, scale),
         }
     }
 
-    pub fn set_scale(&mut self, scale: Scale) {
+    pub fn set_scale(&mut self, scale: f64) {
         match self {
-            Renderer::Vger(r) => r.set_scale(scale.x()),
+            Renderer::Vger(r) => r.set_scale(scale),
         }
     }
 }
@@ -117,7 +117,7 @@ impl floem_renderer::Renderer for Renderer {
 
     fn fill<'b>(
         &mut self,
-        path: &impl glazier::kurbo::Shape,
+        path: &impl kurbo::Shape,
         brush: impl Into<peniko::BrushRef<'b>>,
         blur_radius: f64,
     ) {
@@ -128,7 +128,7 @@ impl floem_renderer::Renderer for Renderer {
         }
     }
 
-    fn draw_text(&mut self, layout: &TextLayout, pos: impl Into<glazier::kurbo::Point>) {
+    fn draw_text(&mut self, layout: &TextLayout, pos: impl Into<kurbo::Point>) {
         match self {
             Renderer::Vger(v) => {
                 v.draw_text(layout, pos);

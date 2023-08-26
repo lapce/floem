@@ -1,9 +1,6 @@
 use floem_reactive::create_effect;
 use floem_renderer::Renderer;
-use glazier::{
-    kurbo::{Point, Rect, Size, Vec2},
-    PointerType,
-};
+use kurbo::{Point, Rect, Size, Vec2};
 use peniko::Color;
 use taffy::{
     prelude::Node,
@@ -11,8 +8,7 @@ use taffy::{
 };
 
 use crate::{
-    app_handle::ViewContext,
-    context::{AppState, LayoutCx, PaintCx},
+    context::{AppState, LayoutCx, PaintCx, ViewContext},
     event::Event,
     id::Id,
     style::{ComputedStyle, Style, StyleValue},
@@ -735,11 +731,7 @@ impl<V: View> View for Scroll<V> {
                     }
                 }
             }
-            let delta = if let PointerType::Mouse(info) = &pointer_event.pointer_type {
-                info.wheel_delta
-            } else {
-                Vec2::ZERO
-            };
+            let delta = pointer_event.delta;
             let delta = if self.vertical_scroll_as_horizontal && delta.x == 0.0 && delta.y != 0.0 {
                 Vec2::new(delta.y, delta.x)
             } else {

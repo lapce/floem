@@ -1,14 +1,13 @@
 use floem_reactive::create_effect;
-use glazier::kurbo::{Point, Rect};
+use kurbo::{Point, Rect};
 
 use crate::{
     action::{set_window_menu, set_window_title, update_window_scale},
     animate::Animation,
-    app_handle::StyleSelector,
     event::{Event, EventListener},
     menu::Menu,
     responsive::ScreenSize,
-    style::Style,
+    style::{Style, StyleSelector},
     view::View,
 };
 

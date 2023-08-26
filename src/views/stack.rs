@@ -1,8 +1,7 @@
-use glazier::kurbo::Rect;
+use kurbo::Rect;
 
 use crate::{
-    app_handle::ViewContext,
-    context::{EventCx, UpdateCx},
+    context::{EventCx, UpdateCx, ViewContext},
     id::Id,
     view::{ChangeFlags, View},
     view_tuple::ViewTuple,

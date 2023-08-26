@@ -2,12 +2,11 @@ use std::any::Any;
 
 use floem_reactive::create_effect;
 use floem_renderer::{cosmic_text::TextLayout, Renderer};
-use glazier::kurbo::{Point, Rect};
+use kurbo::{Point, Rect};
 use taffy::{prelude::Node, style::Dimension};
 
 use crate::{
-    app_handle::ViewContext,
-    context::{EventCx, UpdateCx},
+    context::{EventCx, UpdateCx, ViewContext},
     event::Event,
     id::Id,
     style::{ComputedStyle, Style, TextOverflow},
