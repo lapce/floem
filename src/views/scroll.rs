@@ -23,6 +23,7 @@ enum ScrollState {
     EnsureVisible(Rect),
     ScrollDelta(Vec2),
     ScrollTo(Point),
+    HiddenBar(bool),
     PropagatePointerWheel(bool),
     VerticalScrollAsHorizontal(bool),
 }
@@ -148,6 +149,14 @@ impl<V: View> Scroll<V> {
             }
         });
 
+        self
+    }
+
+    pub fn hide_bar(self, hide: impl Fn() -> bool + 'static) -> Self {
+        let id = self.id;
+        create_effect(move |_| {
+            id.update_state(ScrollState::HiddenBar(hide()), false);
+        });
         self
     }
 
@@ -546,6 +555,9 @@ impl<V: View> View for Scroll<V> {
                 }
                 ScrollState::ScrollTo(origin) => {
                     self.scroll_to(cx.app_state, origin);
+                }
+                ScrollState::HiddenBar(hide) => {
+                    self.scroll_bar_style.hide = hide;
                 }
                 ScrollState::PropagatePointerWheel(value) => {
                     self.propagate_pointer_wheel = value;
