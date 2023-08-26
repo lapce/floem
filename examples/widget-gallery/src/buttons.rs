@@ -1,6 +1,6 @@
 use floem::{
     peniko::Color,
-    style::{CursorStyle, Style},
+    style::CursorStyle,
     view::View,
     views::{label, Decorators},
 };
@@ -17,8 +17,8 @@ pub fn button_view() -> impl View {
                         true
                     })
                     .keyboard_navigatable()
-                    .focus_visible_style(|| Style::BASE.border(2.).border_color(Color::BLUE))
-                    .style(|| Style::BASE.border(1.0).border_radius(10.0).padding_px(10.0))
+                    .focus_visible_style(|s| s.border(2.).border_color(Color::BLUE))
+                    .style(|s| s.border(1.0).border_radius(10.0).padding_px(10.0))
             }),
             form_item("Styled Button:".to_string(), 120.0, || {
                 label(|| "Click me".to_string())
@@ -27,10 +27,9 @@ pub fn button_view() -> impl View {
                         true
                     })
                     .keyboard_navigatable()
-                    .focus_visible_style(|| Style::BASE.border(2.).border_color(Color::BLUE))
-                    .style(|| {
-                        Style::BASE
-                            .border(1.0)
+                    .focus_visible_style(|s| s.border(2.).border_color(Color::BLUE))
+                    .style(|s| {
+                        s.border(1.0)
                             .border_radius(10.0)
                             .padding_px(10.0)
                             .margin_left_px(10.0)
@@ -38,8 +37,8 @@ pub fn button_view() -> impl View {
                             .color(Color::DARK_GREEN)
                             .cursor(CursorStyle::Pointer)
                     })
-                    .hover_style(|| Style::BASE.background(Color::rgb8(244, 67, 54)))
-                    .active_style(|| Style::BASE.color(Color::WHITE).background(Color::RED))
+                    .hover_style(|s| s.background(Color::rgb8(244, 67, 54)))
+                    .active_style(|s| s.color(Color::WHITE).background(Color::RED))
             }),
             form_item("Distabled Button:".to_string(), 120.0, || {
                 label(|| "Click me".to_string())
@@ -49,15 +48,14 @@ pub fn button_view() -> impl View {
                         true
                     })
                     .keyboard_navigatable()
-                    .focus_visible_style(|| Style::BASE.border(2.).border_color(Color::BLUE))
-                    .style(|| {
-                        Style::BASE
-                            .border(1.0)
+                    .focus_visible_style(|s| s.border(2.).border_color(Color::BLUE))
+                    .style(|s| {
+                        s.border(1.0)
                             .border_radius(10.0)
                             .padding_px(10.0)
                             .color(Color::GRAY)
                     })
-                    .hover_style(|| Style::BASE.background(Color::rgb8(224, 224, 224)))
+                    .hover_style(|s| s.background(Color::rgb8(224, 224, 224)))
             }),
             form_item("Secondary click button:".to_string(), 120.0, || {
                 label(|| "Right click me".to_string())
@@ -66,8 +64,8 @@ pub fn button_view() -> impl View {
                         true
                     })
                     .keyboard_navigatable()
-                    .focus_visible_style(|| Style::BASE.border(2.).border_color(Color::BLUE))
-                    .style(|| Style::BASE.border(1.0).border_radius(10.0).padding_px(10.0))
+                    .focus_visible_style(|s| s.border(2.).border_color(Color::BLUE))
+                    .style(|s| s.border(1.0).border_radius(10.0).padding_px(10.0))
             }),
         )
     })

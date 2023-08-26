@@ -5,7 +5,6 @@ use floem::{
     event::EventListener,
     peniko::Color,
     reactive::create_signal,
-    style::Style,
     view::View,
     views::{label, stack, Decorators},
 };
@@ -28,16 +27,15 @@ fn app_view() -> impl View {
                 set_is_hovered.update(|val| *val = false);
                 true
             })
-            .style(|| {
-                Style::BASE
-                    .border(1.0)
+            .style(|s| {
+                s.border(1.0)
                     .background(Color::RED)
                     .color(Color::BLACK)
                     .padding_px(10.0)
                     .margin_px(20.0)
                     .size_px(120.0, 120.0)
             })
-            .active_style(|| Style::BASE.color(Color::BLACK))
+            .active_style(|s| s.color(Color::BLACK))
             .animation(
                 animation()
                     .border_radius(move || if is_hovered.get() { 1.0 } else { 40.0 })
@@ -55,9 +53,8 @@ fn app_view() -> impl View {
                     .duration(Duration::from_secs(1)),
             ),)
     })
-    .style(|| {
-        Style::BASE
-            .border(5.0)
+    .style(|s| {
+        s.border(5.0)
             .background(Color::BLUE)
             .padding_px(10.0)
             .size_px(400.0, 400.0)

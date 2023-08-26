@@ -1,7 +1,6 @@
 use floem::{
     cosmic_text::{Style as FontStyle, Weight},
     peniko::Color,
-    style::Style,
     view::View,
     views::{label, Decorators},
 };
@@ -15,9 +14,8 @@ pub fn label_view() -> impl View {
                 label(move || "This is a simple label".to_owned())
             }),
             form_item("Styled Label:".to_string(), 120.0, || {
-                label(move || "This is a styled label".to_owned()).style(|| {
-                    Style::BASE
-                        .background(Color::YELLOW)
+                label(move || "This is a styled label".to_owned()).style(|s| {
+                    s.background(Color::YELLOW)
                         .padding_px(10.0)
                         .color(Color::GREEN)
                         .font_weight(Weight::BOLD)

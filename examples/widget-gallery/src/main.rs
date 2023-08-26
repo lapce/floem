@@ -12,7 +12,7 @@ use floem::{
     keyboard::Key,
     peniko::Color,
     reactive::create_signal,
-    style::{CursorStyle, Style},
+    style::CursorStyle,
     view::View,
     views::{
         container, container_box, label, scroll, stack, tab, virtual_list, Decorators,
@@ -44,10 +44,9 @@ fn app_view() -> impl View {
                                 .iter()
                                 .position(|it| *it == item)
                                 .unwrap();
-                            stack(|| {
-                                (label(move || item.to_string())
-                                    .style(|| Style::BASE.font_size(24.0)),)
-                            })
+                            stack(
+                                || (label(move || item.to_string()).style(|s| s.font_size(24.0)),),
+                            )
                             .on_click(move |_| {
                                 set_active_tab.update(|v: &mut usize| {
                                     *v = tabs
@@ -82,12 +81,9 @@ fn app_view() -> impl View {
                             })
                             .keyboard_navigatable()
                             .draggable()
-                            .focus_visible_style(|| {
-                                Style::BASE.border(2.).border_color(Color::BLUE)
-                            })
-                            .style(move || {
-                                Style::BASE
-                                    .flex_row()
+                            .focus_visible_style(|s| s.border(2.).border_color(Color::BLUE))
+                            .style(move |s| {
+                                s.flex_row()
                                     .width_pct(100.0)
                                     .height_px(32.0)
                                     .border_bottom(1.0)
@@ -96,27 +92,23 @@ fn app_view() -> impl View {
                                         s.background(Color::GRAY)
                                     })
                             })
-                            .hover_style(|| {
-                                Style::BASE
-                                    .background(Color::LIGHT_GRAY)
-                                    .cursor(CursorStyle::Pointer)
+                            .hover_style(|s| {
+                                s.background(Color::LIGHT_GRAY).cursor(CursorStyle::Pointer)
                             })
                         },
                     )
-                    .style(|| Style::BASE.flex_col().width_px(140.0))
+                    .style(|s| s.flex_col().width_px(140.0))
                 })
-                .style(|| {
-                    Style::BASE
-                        .flex_col()
+                .style(|s| {
+                    s.flex_col()
                         .width_px(140.0)
                         .height_pct(100.0)
                         .border(1.0)
                         .border_color(Color::GRAY)
                 })
             })
-            .style(|| {
-                Style::BASE
-                    .height_pct(100.0)
+            .style(|s| {
+                s.height_pct(100.0)
                     .width_px(150.0)
                     .padding_vert_px(5.0)
                     .padding_horiz_px(5.0)
@@ -139,11 +131,10 @@ fn app_view() -> impl View {
                         _ => container_box(|| Box::new(label(|| "Not implemented".to_owned()))),
                     },
                 )
-                .style(|| Style::BASE.size_pct(100.0, 100.0))
+                .style(|s| s.size_pct(100.0, 100.0))
             })
-            .style(|| {
-                Style::BASE
-                    .size_pct(100.0, 100.0)
+            .style(|s| {
+                s.size_pct(100.0, 100.0)
                     .padding_vert_px(5.0)
                     .padding_horiz_px(5.0)
                     .flex_col()
@@ -151,7 +142,7 @@ fn app_view() -> impl View {
             }),
         )
     })
-    .style(|| Style::BASE.size_pct(100.0, 100.0))
+    .style(|s| s.size_pct(100.0, 100.0))
 }
 
 fn main() {

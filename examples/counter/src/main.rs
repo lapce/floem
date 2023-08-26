@@ -1,7 +1,6 @@
 use floem::{
     peniko::Color,
     reactive::create_signal,
-    style::Style,
     view::View,
     views::{label, stack, Decorators},
 };
@@ -10,14 +9,12 @@ fn app_view() -> impl View {
     let (counter, set_counter) = create_signal(0);
     stack(|| {
         (
-            label(move || format!("Value: {}", counter.get()))
-                .style(|| Style::BASE.padding_px(10.0)),
+            label(move || format!("Value: {}", counter.get())).style(|s| s.padding_px(10.0)),
             stack(|| {
                 (
                     label(|| "Increment".to_string())
-                        .style(|| {
-                            Style::BASE
-                                .border_radius(10.0)
+                        .style(|s| {
+                            s.border_radius(10.0)
                                 .padding_px(10.0)
                                 .background(Color::WHITE)
                                 .box_shadow_blur(5.0)
@@ -28,14 +25,10 @@ fn app_view() -> impl View {
                                 true
                             }
                         })
-                        .hover_style(|| Style::BASE.background(Color::LIGHT_GREEN))
-                        .active_style(|| {
-                            Style::BASE
-                                .color(Color::WHITE)
-                                .background(Color::DARK_GREEN)
-                        })
+                        .hover_style(|s| s.background(Color::LIGHT_GREEN))
+                        .active_style(|s| s.color(Color::WHITE).background(Color::DARK_GREEN))
                         .keyboard_navigatable()
-                        .focus_visible_style(|| Style::BASE.border_color(Color::BLUE).border(2.)),
+                        .focus_visible_style(|s| s.border_color(Color::BLUE).border(2.)),
                     label(|| "Decrement".to_string())
                         .on_click({
                             move |_| {
@@ -43,18 +36,17 @@ fn app_view() -> impl View {
                                 true
                             }
                         })
-                        .style(|| {
-                            Style::BASE
-                                .box_shadow_blur(5.0)
+                        .style(|s| {
+                            s.box_shadow_blur(5.0)
                                 .background(Color::WHITE)
                                 .border_radius(10.0)
                                 .padding_px(10.0)
                                 .margin_left_px(10.0)
                         })
-                        .hover_style(|| Style::BASE.background(Color::rgb8(244, 67, 54)))
-                        .active_style(|| Style::BASE.color(Color::WHITE).background(Color::RED))
+                        .hover_style(|s| s.background(Color::rgb8(244, 67, 54)))
+                        .active_style(|s| s.color(Color::WHITE).background(Color::RED))
                         .keyboard_navigatable()
-                        .focus_visible_style(|| Style::BASE.border_color(Color::BLUE).border(2.)),
+                        .focus_visible_style(|s| s.border_color(Color::BLUE).border(2.)),
                     label(|| "Reset to 0".to_string())
                         .on_click(move |_| {
                             println!("Reset counter pressed"); // will not fire if button is disabled
@@ -62,30 +54,24 @@ fn app_view() -> impl View {
                             true
                         })
                         .disabled(move || counter.get() == 0)
-                        .style(|| {
-                            Style::BASE
-                                .box_shadow_blur(5.0)
+                        .style(|s| {
+                            s.box_shadow_blur(5.0)
                                 .border_radius(10.0)
                                 .padding_px(10.0)
                                 .margin_left_px(10.0)
                                 .background(Color::LIGHT_BLUE)
                         })
-                        .disabled_style(|| Style::BASE.background(Color::LIGHT_GRAY))
-                        .hover_style(|| Style::BASE.background(Color::LIGHT_YELLOW))
-                        .active_style(|| {
-                            Style::BASE
-                                .color(Color::WHITE)
-                                .background(Color::YELLOW_GREEN)
-                        })
+                        .disabled_style(|s| s.background(Color::LIGHT_GRAY))
+                        .hover_style(|s| s.background(Color::LIGHT_YELLOW))
+                        .active_style(|s| s.color(Color::WHITE).background(Color::YELLOW_GREEN))
                         .keyboard_navigatable()
-                        .focus_visible_style(|| Style::BASE.border_color(Color::BLUE).border(2.)),
+                        .focus_visible_style(|s| s.border_color(Color::BLUE).border(2.)),
                 )
             }),
         )
     })
-    .style(|| {
-        Style::BASE
-            .size_pct(100.0, 100.0)
+    .style(|s| {
+        s.size_pct(100.0, 100.0)
             .flex_col()
             .items_center()
             .justify_center()
