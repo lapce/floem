@@ -321,14 +321,14 @@ impl<V: View> Scroll<V> {
     }
 
     fn draw_bars(&self, cx: &mut PaintCx) {
-        let edge_width = cx.scroll_bar_edge_width.unwrap_or(0.) as f64;
+        let edge_width = self.scroll_bar_style.edge_width as f64;
         let scroll_offset = self.child_viewport.origin().to_vec2();
         let radius = |rect: Rect, vertical| {
             if self.scroll_bar_style.rounded {
                 if vertical {
-                    (rect.x1 - rect.x0) / 1.
+                    (rect.x1 - rect.x0) / 2.
                 } else {
-                    (rect.y1 - rect.y0) / 1.
+                    (rect.y1 - rect.y0) / 2.
                 }
             } else {
                 0.
