@@ -19,10 +19,7 @@ impl<T> Copy for Memo<T> {}
 
 impl<T> Clone for Memo<T> {
     fn clone(&self) -> Self {
-        Self {
-            getter: self.getter,
-            ty: Default::default(),
-        }
+        *self
     }
 }
 

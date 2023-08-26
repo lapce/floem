@@ -16,10 +16,7 @@ impl<T> Copy for RwSignal<T> {}
 
 impl<T> Clone for RwSignal<T> {
     fn clone(&self) -> Self {
-        Self {
-            id: self.id,
-            ty: Default::default(),
-        }
+        *self
     }
 }
 
@@ -190,10 +187,7 @@ impl<T> Copy for ReadSignal<T> {}
 
 impl<T> Clone for ReadSignal<T> {
     fn clone(&self) -> Self {
-        Self {
-            id: self.id,
-            ty: Default::default(),
-        }
+        *self
     }
 }
 
@@ -259,10 +253,7 @@ impl<T> Copy for WriteSignal<T> {}
 
 impl<T> Clone for WriteSignal<T> {
     fn clone(&self) -> Self {
-        Self {
-            id: self.id,
-            ty: Default::default(),
-        }
+        *self
     }
 }
 
