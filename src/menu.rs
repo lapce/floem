@@ -46,6 +46,7 @@ impl Menu {
         self.entry(MenuEntry::Separator)
     }
 
+    #[cfg(target_os = "macos")]
     pub(crate) fn platform_menu(&self) -> winit::menu::Menu {
         let mut menu = if self.popup {
             winit::menu::Menu::new_for_popup()

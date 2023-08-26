@@ -613,9 +613,11 @@ impl WindowHandle {
                     }
                     UpdateMessage::ShowContextMenu { menu, pos } => {
                         let menu = menu.popup();
+                        #[cfg(target_os = "macos")]
                         let platform_menu = menu.platform_menu();
                         cx.app_state.context_menu.clear();
                         cx.app_state.update_context_menu(menu);
+                        #[cfg(target_os = "macos")]
                         self.show_context_menu(platform_menu, pos);
                     }
                     UpdateMessage::WindowMenu { menu } => {
@@ -819,6 +821,7 @@ impl WindowHandle {
         self.scope.dispose();
     }
 
+    #[cfg(target_os = "macos")]
     fn show_context_menu(&self, menu: winit::menu::Menu, pos: Option<Point>) {
         if let Some(window) = self.window.as_ref() {
             #[cfg(target_os = "macos")]
