@@ -265,6 +265,10 @@ define_styles!(
     color nocb: Option<Color> = None,
     background nocb: Option<Color> = None,
     box_shadow nocb: Option<BoxShadow> = None,
+    scroll_bar_color nocb: Option<Color> = None,
+    scroll_bar_rounded nocb: Option<bool> = None,
+    scroll_bar_thickness nocb: Option<f32> = None,
+    scroll_bar_edge_width nocb: Option<f32> = None,
     font_size nocb: Option<f32> = None,
     font_family nocb: Option<String> = None,
     font_weight nocb: Option<Weight> = None,
@@ -609,6 +613,26 @@ impl Style {
             color,
         })
         .into();
+        self
+    }
+
+    pub fn scroll_bar_color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
+        self.scroll_bar_color = color.into().map(Some);
+        self
+    }
+
+    pub fn scroll_bar_rounded(mut self, rounded: impl Into<StyleValue<bool>>) -> Self {
+        self.scroll_bar_rounded = rounded.into().map(Some);
+        self
+    }
+
+    pub fn scroll_bar_thickness(mut self, thickness: impl Into<StyleValue<f32>>) -> Self {
+        self.scroll_bar_thickness = thickness.into().map(Some);
+        self
+    }
+
+    pub fn scroll_bar_edge_width(mut self, edge_width: impl Into<StyleValue<f32>>) -> Self {
+        self.scroll_bar_edge_width = edge_width.into().map(Some);
         self
     }
 

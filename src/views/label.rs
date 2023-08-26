@@ -153,7 +153,7 @@ impl View for Label {
             } else {
                 let text_overflow = cx.app_state_mut().get_computed_style(self.id).text_overflow;
                 if self.color != cx.color
-                    || self.font_size != cx.current_font_size()
+                    || self.font_size != cx.font_size
                     || self.font_family.as_deref() != cx.current_font_family()
                     || self.font_weight != cx.font_weight
                     || self.font_style != cx.font_style
@@ -161,7 +161,7 @@ impl View for Label {
                     || self.text_overflow != text_overflow
                 {
                     self.color = cx.color;
-                    self.font_size = cx.current_font_size();
+                    self.font_size = cx.font_size;
                     self.font_family = cx.current_font_family().map(|s| s.to_string());
                     self.font_weight = cx.font_weight;
                     self.font_style = cx.font_style;
