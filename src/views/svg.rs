@@ -11,7 +11,6 @@ use sha2::{Digest, Sha256};
 use crate::{
     app_handle::ViewContext,
     id::Id,
-    style::Style,
     view::{ChangeFlags, View},
     views::Decorators,
 };
@@ -43,9 +42,8 @@ pub fn checkbox(checked: crate::reactive::ReadSignal<bool>) -> Svg {
     let svg_str = move || if checked.get() { CHECKBOX_SVG } else { "" }.to_string();
 
     svg(svg_str)
-        .style(|| {
-            Style::BASE
-                .width_px(20.)
+        .style(|base| {
+            base.width_px(20.)
                 .height_px(20.)
                 .border_color(Color::BLACK)
                 .border(1.)

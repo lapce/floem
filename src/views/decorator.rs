@@ -35,10 +35,10 @@ pub trait Decorators: View + Sized {
     /// ```
     /// If you are returning from a function that produces a view, you may want
     /// to use `base_style` for the returned [`View`] instead.  
-    fn style(self, style: impl Fn() -> Style + 'static) -> Self {
+    fn style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
-            let style = style();
+            let style = style(Style::BASE);
             id.update_style(style);
         });
         self
@@ -61,49 +61,49 @@ pub trait Decorators: View + Sized {
     ///     ))
     /// }
     /// ```
-    fn base_style(self, style: impl Fn() -> Style + 'static) -> Self {
+    fn base_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
-            let style = style();
+            let style = style(Style::BASE);
             id.update_base_style(style);
         });
         self
     }
 
     /// The visual style to apply when the mouse hovers over the element
-    fn hover_style(self, style: impl Fn() -> Style + 'static) -> Self {
+    fn hover_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
-            let style = style();
+            let style = style(Style::BASE);
             id.update_style_selector(style, StyleSelector::Hover);
         });
         self
     }
 
     /// The visual style to apply when the mouse hovers over the element
-    fn dragging_style(self, style: impl Fn() -> Style + 'static) -> Self {
+    fn dragging_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
-            let style = style();
+            let style = style(Style::BASE);
             id.update_style_selector(style, StyleSelector::Dragging);
         });
         self
     }
 
-    fn focus_style(self, style: impl Fn() -> Style + 'static) -> Self {
+    fn focus_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
-            let style = style();
+            let style = style(Style::BASE);
             id.update_style_selector(style, StyleSelector::Focus);
         });
         self
     }
 
     /// Similar to the `:focus-visible` css selector, this style only activates when tab navigation is used.
-    fn focus_visible_style(self, style: impl Fn() -> Style + 'static) -> Self {
+    fn focus_visible_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
-            let style = style();
+            let style = style(Style::BASE);
             id.update_style_selector(style, StyleSelector::FocusVisible);
         });
         self
@@ -122,28 +122,28 @@ pub trait Decorators: View + Sized {
         self
     }
 
-    fn active_style(self, style: impl Fn() -> Style + 'static) -> Self {
+    fn active_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
-            let style = style();
+            let style = style(Style::BASE);
             id.update_style_selector(style, StyleSelector::Active);
         });
         self
     }
 
-    fn disabled_style(self, style: impl Fn() -> Style + 'static) -> Self {
+    fn disabled_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
-            let style = style();
+            let style = style(Style::BASE);
             id.update_style_selector(style, StyleSelector::Disabled);
         });
         self
     }
 
-    fn responsive_style(self, size: ScreenSize, style: impl Fn() -> Style + 'static) -> Self {
+    fn responsive_style(self, size: ScreenSize, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
-            let style = style();
+            let style = style(Style::BASE);
             id.update_responsive_style(style, size);
         });
         self

@@ -27,10 +27,6 @@ enum ScrollState {
     VerticalScrollAsHorizontal(bool),
 }
 
-enum UpdateState {
-    Scroll(ScrollState),
-    Style(ScrollBarStyle),
-}
 /// Minimum length for any scrollbar to be when measured on that
 /// scrollbar's primary axis.
 const SCROLLBAR_MIN_SIZE: f64 = 10.0;
@@ -60,9 +56,9 @@ impl ScrollBarStyle {
         // 179 is 70% of 255 so a 70% alpha factor is the default
         color: Color::rgba8(0, 0, 0, 179),
         rounded: cfg!(target_os = "macos"),
-        hide: false,
         thickness: 10.,
         edge_width: 0.,
+        hide: false,
     };
 
     pub fn color(mut self, color: Color) -> Self {
@@ -71,10 +67,6 @@ impl ScrollBarStyle {
     }
     pub fn rounded(mut self, rounded: bool) -> Self {
         self.rounded = rounded;
-        self
-    }
-    pub fn hide(mut self, hide: bool) -> Self {
-        self.hide = hide;
         self
     }
     pub fn thickness(mut self, thickness: f32) -> Self {
@@ -123,16 +115,6 @@ pub fn scroll<V: View>(child: impl FnOnce() -> V) -> Scroll<V> {
 }
 
 impl<V: View> Scroll<V> {
-    pub fn scroll_bar_style(self, style: impl Fn() -> ScrollBarStyle + 'static) -> Self {
-        let id = self.id;
-        create_effect(move |_| {
-            let style = style();
-            id.update_state(UpdateState::Style(style), false);
-        });
-
-        self
-    }
-
     pub fn on_scroll(mut self, onscroll: impl Fn(Rect) + 'static) -> Self {
         self.onscroll = Some(Box::new(onscroll));
         self
@@ -152,7 +134,7 @@ impl<V: View> Scroll<V> {
         let id = self.id;
         create_effect(move |_| {
             let delta = delta();
-            id.update_state(UpdateState::Scroll(ScrollState::ScrollDelta(delta)), false);
+            id.update_state(ScrollState::ScrollDelta(delta), false);
         });
 
         self
@@ -162,7 +144,7 @@ impl<V: View> Scroll<V> {
         let id = self.id;
         create_effect(move |_| {
             if let Some(origin) = origin() {
-                id.update_state(UpdateState::Scroll(ScrollState::ScrollTo(origin)), true);
+                id.update_state(ScrollState::ScrollTo(origin), true);
             }
         });
 
@@ -172,10 +154,7 @@ impl<V: View> Scroll<V> {
     pub fn propagate_pointer_wheel(self, value: impl Fn() -> bool + 'static) -> Self {
         let id = self.id;
         create_effect(move |_| {
-            id.update_state(
-                UpdateState::Scroll(ScrollState::PropagatePointerWheel(value())),
-                false,
-            );
+            id.update_state(ScrollState::PropagatePointerWheel(value()), false);
         });
         self
     }
@@ -183,10 +162,7 @@ impl<V: View> Scroll<V> {
     pub fn vertical_scroll_as_horizontal(self, value: impl Fn() -> bool + 'static) -> Self {
         let id = self.id;
         create_effect(move |_| {
-            id.update_state(
-                UpdateState::Scroll(ScrollState::VerticalScrollAsHorizontal(value())),
-                false,
-            );
+            id.update_state(ScrollState::VerticalScrollAsHorizontal(value()), false);
         });
         self
     }
@@ -345,14 +321,14 @@ impl<V: View> Scroll<V> {
     }
 
     fn draw_bars(&self, cx: &mut PaintCx) {
-        let edge_width = self.scroll_bar_style.edge_width as f64;
+        let edge_width = cx.scroll_bar_edge_width.unwrap_or(0.) as f64;
         let scroll_offset = self.child_viewport.origin().to_vec2();
         let radius = |rect: Rect, vertical| {
             if self.scroll_bar_style.rounded {
                 if vertical {
-                    (rect.x1 - rect.x0) / 2.
+                    (rect.x1 - rect.x0) / 1.
                 } else {
-                    (rect.y1 - rect.y0) / 2.
+                    (rect.y1 - rect.y0) / 1.
                 }
             } else {
                 0.
@@ -560,26 +536,23 @@ impl<V: View> View for Scroll<V> {
         cx: &mut crate::context::UpdateCx,
         state: Box<dyn std::any::Any>,
     ) -> crate::view::ChangeFlags {
-        if let Ok(state) = state.downcast::<UpdateState>() {
+        if let Ok(state) = state.downcast::<ScrollState>() {
             match *state {
-                UpdateState::Scroll(scroll_state) => match scroll_state {
-                    ScrollState::EnsureVisible(rect) => {
-                        self.pan_to_visible(cx.app_state, rect);
-                    }
-                    ScrollState::ScrollDelta(delta) => {
-                        self.scroll_delta(cx.app_state, delta);
-                    }
-                    ScrollState::ScrollTo(origin) => {
-                        self.scroll_to(cx.app_state, origin);
-                    }
-                    ScrollState::PropagatePointerWheel(value) => {
-                        self.propagate_pointer_wheel = value;
-                    }
-                    ScrollState::VerticalScrollAsHorizontal(value) => {
-                        self.vertical_scroll_as_horizontal = value;
-                    }
-                },
-                UpdateState::Style(style) => self.scroll_bar_style = style,
+                ScrollState::EnsureVisible(rect) => {
+                    self.pan_to_visible(cx.app_state, rect);
+                }
+                ScrollState::ScrollDelta(delta) => {
+                    self.scroll_delta(cx.app_state, delta);
+                }
+                ScrollState::ScrollTo(origin) => {
+                    self.scroll_to(cx.app_state, origin);
+                }
+                ScrollState::PropagatePointerWheel(value) => {
+                    self.propagate_pointer_wheel = value;
+                }
+                ScrollState::VerticalScrollAsHorizontal(value) => {
+                    self.vertical_scroll_as_horizontal = value;
+                }
             }
             cx.request_layout(self.id());
             ChangeFlags::LAYOUT
@@ -590,6 +563,19 @@ impl<V: View> View for Scroll<V> {
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
+            if let Some(color) = cx.scroll_bar_color {
+                self.scroll_bar_style.color = color;
+            }
+            if let Some(rounded) = cx.scroll_bar_rounded {
+                self.scroll_bar_style.rounded = rounded;
+            }
+            if let Some(thickness) = cx.scroll_bar_thickness {
+                self.scroll_bar_style.thickness = thickness;
+            }
+            if let Some(edge_width) = cx.scroll_bar_edge_width {
+                self.scroll_bar_style.edge_width = edge_width;
+            }
+
             let child_id = self.child.id();
             let child_view = cx.app_state_mut().view_state(child_id);
             child_view.style.position = StyleValue::Val(Position::Absolute);
@@ -756,6 +742,18 @@ impl<V: View> View for Scroll<V> {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         cx.save();
+        if let Some(color) = cx.scroll_bar_color {
+            self.scroll_bar_style.color = color;
+        }
+        if let Some(rounded) = cx.scroll_bar_rounded {
+            self.scroll_bar_style.rounded = rounded;
+        }
+        if let Some(thickness) = cx.scroll_bar_thickness {
+            self.scroll_bar_style.thickness = thickness;
+        }
+        if let Some(edge_width) = cx.scroll_bar_edge_width {
+            self.scroll_bar_style.edge_width = edge_width;
+        }
         cx.clip(&self.actual_rect);
         cx.offset((-self.child_viewport.x0, -self.child_viewport.y0));
         self.child.paint_main(cx);

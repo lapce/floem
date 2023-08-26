@@ -302,6 +302,15 @@ impl<V: View> AppHandle<V> {
             saved_font_styles: Vec::new(),
             saved_line_heights: Vec::new(),
             saved_z_indexes: Vec::new(),
+            scroll_bar_color: None,
+            scroll_bar_rounded: None,
+            scroll_bar_thickness: None,
+            scroll_bar_edge_width: None,
+
+            saved_scroll_bar_colors: Vec::new(),
+            saved_scroll_bar_roundeds: Vec::new(),
+            saved_scroll_bar_thicknesses: Vec::new(),
+            saved_scroll_bar_edge_widths: Vec::new(),
         };
         cx.paint_state.renderer.as_mut().unwrap().begin();
         self.view.paint_main(&mut cx);

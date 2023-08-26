@@ -196,6 +196,18 @@ pub trait View {
         if style.color.is_some() {
             cx.color = style.color;
         }
+        if style.scroll_bar_color.is_some() {
+            cx.scroll_bar_color = style.scroll_bar_color;
+        }
+        if style.scroll_bar_rounded.is_some() {
+            cx.scroll_bar_rounded = style.scroll_bar_rounded;
+        }
+        if style.scroll_bar_thickness.is_some() {
+            cx.scroll_bar_thickness = style.scroll_bar_thickness;
+        }
+        if style.scroll_bar_edge_width.is_some() {
+            cx.scroll_bar_edge_width = style.scroll_bar_edge_width;
+        }
         if style.font_size.is_some() {
             cx.font_size = style.font_size;
         }
@@ -638,6 +650,18 @@ pub trait View {
 
             if style.color.is_some() {
                 cx.color = style.color;
+            }
+            if style.scroll_bar_color.is_some() {
+                cx.scroll_bar_color = style.scroll_bar_color;
+            }
+            if style.scroll_bar_rounded.is_some() {
+                cx.scroll_bar_rounded = style.scroll_bar_rounded;
+            }
+            if style.scroll_bar_thickness.is_some() {
+                cx.scroll_bar_thickness = style.scroll_bar_thickness;
+            }
+            if style.scroll_bar_edge_width.is_some() {
+                cx.scroll_bar_edge_width = style.scroll_bar_edge_width;
             }
             if style.font_size.is_some() {
                 cx.font_size = style.font_size;

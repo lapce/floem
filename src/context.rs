@@ -681,6 +681,10 @@ pub struct LayoutCx<'a> {
     app_state: &'a mut AppState,
     pub(crate) viewport: Option<Rect>,
     pub(crate) color: Option<Color>,
+    pub(crate) scroll_bar_color: Option<Color>,
+    pub(crate) scroll_bar_rounded: Option<bool>,
+    pub(crate) scroll_bar_thickness: Option<f32>,
+    pub(crate) scroll_bar_edge_width: Option<f32>,
     pub(crate) font_size: Option<f32>,
     pub(crate) font_family: Option<String>,
     pub(crate) font_weight: Option<Weight>,
@@ -689,6 +693,10 @@ pub struct LayoutCx<'a> {
     pub(crate) window_origin: Point,
     pub(crate) saved_viewports: Vec<Option<Rect>>,
     pub(crate) saved_colors: Vec<Option<Color>>,
+    pub(crate) saved_scroll_bar_colors: Vec<Option<Color>>,
+    pub(crate) saved_scroll_bar_roundeds: Vec<Option<bool>>,
+    pub(crate) saved_scroll_bar_thicknesses: Vec<Option<f32>>,
+    pub(crate) saved_scroll_bar_edge_widths: Vec<Option<f32>>,
     pub(crate) saved_font_sizes: Vec<Option<f32>>,
     pub(crate) saved_font_families: Vec<Option<String>>,
     pub(crate) saved_font_weights: Vec<Option<Weight>>,
@@ -717,15 +725,31 @@ impl<'a> LayoutCx<'a> {
             saved_font_styles: Vec::new(),
             saved_line_heights: Vec::new(),
             saved_window_origins: Vec::new(),
+            scroll_bar_color: None,
+            scroll_bar_rounded: None,
+            scroll_bar_thickness: None,
+            scroll_bar_edge_width: None,
+            saved_scroll_bar_colors: Vec::new(),
+            saved_scroll_bar_roundeds: Vec::new(),
+            saved_scroll_bar_thicknesses: Vec::new(),
+            saved_scroll_bar_edge_widths: Vec::new(),
         }
     }
 
     pub(crate) fn clear(&mut self) {
         self.viewport = None;
+        self.scroll_bar_color = None;
+        self.scroll_bar_rounded = None;
+        self.scroll_bar_thickness = None;
+        self.scroll_bar_edge_width = None;
         self.font_size = None;
         self.window_origin = Point::ZERO;
         self.saved_colors.clear();
         self.saved_viewports.clear();
+        self.saved_scroll_bar_colors.clear();
+        self.saved_scroll_bar_roundeds.clear();
+        self.saved_scroll_bar_thicknesses.clear();
+        self.saved_scroll_bar_edge_widths.clear();
         self.saved_font_sizes.clear();
         self.saved_font_families.clear();
         self.saved_font_weights.clear();
@@ -737,6 +761,12 @@ impl<'a> LayoutCx<'a> {
     pub fn save(&mut self) {
         self.saved_viewports.push(self.viewport);
         self.saved_colors.push(self.color);
+        self.saved_scroll_bar_colors.push(self.scroll_bar_color);
+        self.saved_scroll_bar_roundeds.push(self.scroll_bar_rounded);
+        self.saved_scroll_bar_thicknesses
+            .push(self.scroll_bar_thickness);
+        self.saved_scroll_bar_edge_widths
+            .push(self.scroll_bar_edge_width);
         self.saved_font_sizes.push(self.font_size);
         self.saved_font_families.push(self.font_family.clone());
         self.saved_font_weights.push(self.font_weight);
@@ -748,6 +778,10 @@ impl<'a> LayoutCx<'a> {
     pub fn restore(&mut self) {
         self.viewport = self.saved_viewports.pop().unwrap_or_default();
         self.color = self.saved_colors.pop().unwrap_or_default();
+        self.scroll_bar_color = self.saved_scroll_bar_colors.pop().unwrap_or_default();
+        self.scroll_bar_rounded = self.saved_scroll_bar_roundeds.pop().unwrap_or_default();
+        self.scroll_bar_thickness = self.saved_scroll_bar_thicknesses.pop().unwrap_or_default();
+        self.scroll_bar_edge_width = self.saved_scroll_bar_edge_widths.pop().unwrap_or_default();
         self.font_size = self.saved_font_sizes.pop().unwrap_or_default();
         self.font_family = self.saved_font_families.pop().unwrap_or_default();
         self.font_weight = self.saved_font_weights.pop().unwrap_or_default();
@@ -762,6 +796,22 @@ impl<'a> LayoutCx<'a> {
 
     pub fn app_state(&self) -> &AppState {
         self.app_state
+    }
+
+    pub fn current_scroll_bar_color(&self) -> Option<Color> {
+        self.scroll_bar_color
+    }
+
+    pub fn current_scroll_bar_rounded(&self) -> Option<bool> {
+        self.scroll_bar_rounded
+    }
+
+    pub fn current_scroll_bar_thickness(&self) -> Option<f32> {
+        self.scroll_bar_thickness
+    }
+
+    pub fn current_scroll_bar_edge_width(&self) -> Option<f32> {
+        self.scroll_bar_edge_width
     }
 
     pub fn current_font_size(&self) -> Option<f32> {
@@ -862,6 +912,10 @@ pub struct PaintCx<'a> {
     pub(crate) transform: Affine,
     pub(crate) clip: Option<Rect>,
     pub(crate) color: Option<Color>,
+    pub(crate) scroll_bar_color: Option<Color>,
+    pub(crate) scroll_bar_rounded: Option<bool>,
+    pub(crate) scroll_bar_thickness: Option<f32>,
+    pub(crate) scroll_bar_edge_width: Option<f32>,
     pub(crate) font_size: Option<f32>,
     pub(crate) font_family: Option<String>,
     pub(crate) font_weight: Option<Weight>,
@@ -871,6 +925,10 @@ pub struct PaintCx<'a> {
     pub(crate) saved_transforms: Vec<Affine>,
     pub(crate) saved_clips: Vec<Option<Rect>>,
     pub(crate) saved_colors: Vec<Option<Color>>,
+    pub(crate) saved_scroll_bar_colors: Vec<Option<Color>>,
+    pub(crate) saved_scroll_bar_roundeds: Vec<Option<bool>>,
+    pub(crate) saved_scroll_bar_thicknesses: Vec<Option<f32>>,
+    pub(crate) saved_scroll_bar_edge_widths: Vec<Option<f32>>,
     pub(crate) saved_font_sizes: Vec<Option<f32>>,
     pub(crate) saved_font_families: Vec<Option<String>>,
     pub(crate) saved_font_weights: Vec<Option<Weight>>,
@@ -884,6 +942,12 @@ impl<'a> PaintCx<'a> {
         self.saved_transforms.push(self.transform);
         self.saved_clips.push(self.clip);
         self.saved_colors.push(self.color);
+        self.saved_scroll_bar_colors.push(self.scroll_bar_color);
+        self.saved_scroll_bar_roundeds.push(self.scroll_bar_rounded);
+        self.saved_scroll_bar_thicknesses
+            .push(self.scroll_bar_thickness);
+        self.saved_scroll_bar_edge_widths
+            .push(self.scroll_bar_edge_width);
         self.saved_font_sizes.push(self.font_size);
         self.saved_font_families.push(self.font_family.clone());
         self.saved_font_weights.push(self.font_weight);
@@ -896,6 +960,10 @@ impl<'a> PaintCx<'a> {
         self.transform = self.saved_transforms.pop().unwrap_or_default();
         self.clip = self.saved_clips.pop().unwrap_or_default();
         self.color = self.saved_colors.pop().unwrap_or_default();
+        self.scroll_bar_color = self.saved_scroll_bar_colors.pop().unwrap_or_default();
+        self.scroll_bar_rounded = self.saved_scroll_bar_roundeds.pop().unwrap_or_default();
+        self.scroll_bar_thickness = self.saved_scroll_bar_thicknesses.pop().unwrap_or_default();
+        self.scroll_bar_edge_width = self.saved_scroll_bar_edge_widths.pop().unwrap_or_default();
         self.font_size = self.saved_font_sizes.pop().unwrap_or_default();
         self.font_family = self.saved_font_families.pop().unwrap_or_default();
         self.font_weight = self.saved_font_weights.pop().unwrap_or_default();
@@ -918,6 +986,22 @@ impl<'a> PaintCx<'a> {
 
     pub fn current_color(&self) -> Option<Color> {
         self.color
+    }
+
+    pub fn current_scroll_bar_color(&self) -> Option<Color> {
+        self.scroll_bar_color
+    }
+
+    pub fn current_scroll_bar_rounded(&self) -> Option<bool> {
+        self.scroll_bar_rounded
+    }
+
+    pub fn current_scroll_bar_thickness(&self) -> Option<f32> {
+        self.scroll_bar_thickness
+    }
+
+    pub fn current_scroll_bar_edge_width(&self) -> Option<f32> {
+        self.scroll_bar_edge_width
     }
 
     pub fn current_font_size(&self) -> Option<f32> {
