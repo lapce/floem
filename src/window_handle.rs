@@ -819,9 +819,9 @@ impl WindowHandle {
         self.scope.dispose();
     }
 
+    #[cfg(target_os = "macos")]
     fn show_context_menu(&self, menu: winit::menu::Menu, pos: Option<Point>) {
         if let Some(window) = self.window.as_ref() {
-            #[cfg(target_os = "macos")]
             {
                 use winit::platform::macos::WindowExtMacOS;
                 window.show_context_menu(
@@ -835,6 +835,9 @@ impl WindowHandle {
             }
         }
     }
+
+    #[cfg(not(target_os = "macos"))]
+    fn show_context_menu(&self, _menu: winit::menu::Menu, _pos: Option<Point>) {}
 
     pub(crate) fn menu_action(&mut self, id: usize) {
         set_current_view(self.view.id());
