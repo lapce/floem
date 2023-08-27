@@ -404,6 +404,11 @@ impl TextInput {
                     .update(|buf| buf.insert_str(self.cursor_glyph_idx, &ch.clone()));
                 self.move_cursor(Movement::Glyph, Direction::Right)
             }
+            Key::Space => {
+                self.buffer
+                    .update(|buf| buf.insert(self.cursor_glyph_idx, ' '));
+                self.move_cursor(Movement::Glyph, Direction::Right)
+            }
             Key::Backspace => {
                 let selection = self.selection.clone();
                 if selection != (0..0) {
