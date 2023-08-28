@@ -836,7 +836,25 @@ impl WindowHandle {
         }
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    fn show_context_menu(&self, menu: winit::menu::Menu, pos: Option<Point>) {
+        use winit::platform::windows::WindowExtWindows;
+
+        if let Some(window) = self.window.as_ref() {
+            {
+                window.show_context_menu(
+                    menu,
+                    pos.map(|pos| {
+                        winit::dpi::Position::Logical(winit::dpi::LogicalPosition::new(
+                            pos.x, pos.y,
+                        ))
+                    }),
+                );
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
     fn show_context_menu(&self, _menu: winit::menu::Menu, _pos: Option<Point>) {}
 
     pub(crate) fn menu_action(&mut self, id: usize) {
