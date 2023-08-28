@@ -101,7 +101,7 @@ impl ApplicationHandle {
                 window_handle.destroy();
                 self.window_handles.remove(&window_id);
                 #[cfg(not(target_os = "macos"))]
-                if self.window_handles.len() == 0 {
+                if self.window_handles.is_empty() {
                     control_flow.set_exit();
                 }
             }
@@ -174,8 +174,8 @@ impl ApplicationHandle {
             if let Some(pos) = config.position {
                 window_builder = window_builder.with_position(LogicalPosition::new(pos.x, pos.y));
             }
+            #[cfg(target_os = "macos")]
             if let Some(show_titlebar) = config.show_titlebar {
-                #[cfg(target_os = "macos")]
                 if !show_titlebar {
                     use winit::platform::macos::WindowBuilderExtMacOS;
                     window_builder = window_builder
