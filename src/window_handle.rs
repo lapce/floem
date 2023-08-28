@@ -298,7 +298,7 @@ impl WindowHandle {
 
     pub(crate) fn mouse_wheel(&mut self, delta: MouseScrollDelta) {
         let delta = match delta {
-            MouseScrollDelta::LineDelta(x, y) => Vec2::new(-x as f64, -y as f64),
+            MouseScrollDelta::LineDelta(x, y) => Vec2::new(-x as f64 * 60.0, -y as f64 * 60.0),
             MouseScrollDelta::PixelDelta(delta) => {
                 let position: LogicalPosition<f64> = delta.to_logical(self.scale);
                 Vec2::new(-position.x, -position.y)

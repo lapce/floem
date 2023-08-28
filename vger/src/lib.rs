@@ -174,7 +174,7 @@ impl Renderer for VgerRenderer {
         } else if let Some(rect) = shape.as_rounded_rect() {
             let min = rect.origin();
             let max = min + rect.rect().size().to_vec2();
-            let radius = rect.radii().top_left as f32;
+            let radius = (rect.radii().top_left * self.scale) as f32;
             self.vger.stroke_rect(
                 self.vger_point(min),
                 self.vger_point(max),
@@ -219,7 +219,7 @@ impl Renderer for VgerRenderer {
         } else if let Some(rect) = path.as_rounded_rect() {
             self.vger.fill_rect(
                 self.vger_rect(rect.rect()),
-                rect.radii().top_left as f32,
+                (rect.radii().top_left * self.scale) as f32,
                 paint,
                 blur_radius as f32,
             );
