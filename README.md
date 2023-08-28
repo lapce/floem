@@ -10,12 +10,12 @@ It's still early days so expect lots of things missing!
 ```rust
 fn app_view() -> impl View {
     // create a counter reactive signal with initial value 0
-    let (couter, set_counter) = create_signal(0);
+    let (counter, set_counter) = create_signal(0);
 
     // create user interface with Floem view functions
     stack(|| {
         (
-            label(move || format!("Value: {}", couter.get())),
+            label(move || format!("Value: {}", counter.get())),
             stack(|| {
                 (
                     label(|| "Increment".to_string())
