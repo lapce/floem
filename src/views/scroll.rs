@@ -758,7 +758,14 @@ impl<V: View> View for Scroll<V> {
         if let Some(edge_width) = cx.scroll_bar_edge_width {
             self.scroll_bar_style.edge_width = edge_width;
         }
-        cx.clip(&self.actual_rect);
+        let style = cx.get_computed_style(self.id);
+        let radius = style.border_radius;
+        if radius > 0.0 {
+            let rect = self.actual_rect.to_rounded_rect(radius as f64);
+            cx.clip(&rect);
+        } else {
+            cx.clip(&self.actual_rect);
+        }
         cx.offset((-self.child_viewport.x0, -self.child_viewport.y0));
         self.child.paint_main(cx);
         cx.restore();

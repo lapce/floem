@@ -8,7 +8,7 @@ use floem_renderer::{
     cosmic_text::{LineHeightValue, Style as FontStyle, Weight},
     Renderer as FloemRenderer,
 };
-use kurbo::{Affine, Point, Rect, Shape, Size, Vec2};
+use kurbo::{Affine, Point, Rect, RoundedRect, Shape, Size, Vec2};
 use peniko::Color;
 use taffy::{
     prelude::{Layout, Node},
@@ -964,7 +964,7 @@ pub struct PaintCx<'a> {
     pub(crate) app_state: &'a mut AppState,
     pub(crate) paint_state: &'a mut PaintState,
     pub(crate) transform: Affine,
-    pub(crate) clip: Option<Rect>,
+    pub(crate) clip: Option<RoundedRect>,
     pub(crate) color: Option<Color>,
     pub(crate) scroll_bar_color: Option<Color>,
     pub(crate) scroll_bar_rounded: Option<bool>,
@@ -977,7 +977,7 @@ pub struct PaintCx<'a> {
     pub(crate) line_height: Option<LineHeightValue>,
     pub(crate) z_index: Option<i32>,
     pub(crate) saved_transforms: Vec<Affine>,
-    pub(crate) saved_clips: Vec<Option<Rect>>,
+    pub(crate) saved_clips: Vec<Option<RoundedRect>>,
     pub(crate) saved_colors: Vec<Option<Color>>,
     pub(crate) saved_scroll_bar_colors: Vec<Option<Color>>,
     pub(crate) saved_scroll_bar_roundeds: Vec<Option<bool>>,
@@ -1079,14 +1079,24 @@ impl<'a> PaintCx<'a> {
 
     /// Clip the drawing area to the given shape.
     pub fn clip(&mut self, shape: &impl Shape) {
-        let rect = shape.bounding_box();
-        let rect = if let Some(existing) = self.clip {
-            existing.intersect(rect)
+        let rect = if let Some(rect) = shape.as_rect() {
+            rect.to_rounded_rect(0.0)
+        } else if let Some(rect) = shape.as_rounded_rect() {
+            rect
         } else {
+            let rect = shape.bounding_box();
+            rect.to_rounded_rect(0.0)
+        };
+
+        let rect = if let Some(existing) = self.clip {
+            let rect = existing.rect().intersect(rect.rect());
+            self.paint_state.renderer.clip(&rect);
+            rect.to_rounded_rect(0.0)
+        } else {
+            self.paint_state.renderer.clip(&shape);
             rect
         };
         self.clip = Some(rect);
-        self.paint_state.renderer.clip(&rect);
     }
 
     pub fn offset(&mut self, offset: (f64, f64)) {
@@ -1096,7 +1106,11 @@ impl<'a> PaintCx<'a> {
         self.transform = Affine::new(new);
         self.paint_state.renderer.transform(self.transform);
         if let Some(rect) = self.clip.as_mut() {
-            *rect = rect.with_origin(rect.origin() - Vec2::new(offset.0, offset.1));
+            let raidus = rect.radii();
+            *rect = rect
+                .rect()
+                .with_origin(rect.origin() - Vec2::new(offset.0, offset.1))
+                .to_rounded_rect(raidus);
         }
     }
 
@@ -1110,8 +1124,11 @@ impl<'a> PaintCx<'a> {
             self.paint_state.renderer.transform(self.transform);
 
             if let Some(rect) = self.clip.as_mut() {
-                *rect =
-                    rect.with_origin(rect.origin() - Vec2::new(offset.x as f64, offset.y as f64));
+                let raidus = rect.radii();
+                *rect = rect
+                    .rect()
+                    .with_origin(rect.origin() - Vec2::new(offset.x as f64, offset.y as f64))
+                    .to_rounded_rect(raidus);
             }
 
             Size::new(layout.size.width as f64, layout.size.height as f64)

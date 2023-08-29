@@ -360,8 +360,16 @@ impl Renderer for VgerRenderer {
     }
 
     fn clip(&mut self, shape: &impl Shape) {
-        let rect = shape.bounding_box();
-        self.vger.scissor(self.vger_rect(rect));
+        let (rect, radius) = if let Some(rect) = shape.as_rect() {
+            (rect, 0.0)
+        } else if let Some(rect) = shape.as_rounded_rect() {
+            (rect.rect(), rect.radii().top_left)
+        } else {
+            (shape.bounding_box(), 0.0)
+        };
+
+        self.vger
+            .scissor(self.vger_rect(rect), (radius * self.scale) as f32);
 
         let transform = self.transform.as_coeffs();
         let offset = Vec2::new(transform[4], transform[5]);

@@ -80,11 +80,18 @@ impl<V: View> View for Clip<V> {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         cx.save();
+        let style = cx.get_computed_style(self.id);
+        let radius = style.border_radius;
         let size = cx
             .get_layout(self.id)
             .map(|layout| Size::new(layout.size.width as f64, layout.size.height as f64))
             .unwrap_or_default();
-        cx.clip(&size.to_rect());
+        if radius > 0.0 {
+            let rect = size.to_rect().to_rounded_rect(radius as f64);
+            cx.clip(&rect);
+        } else {
+            cx.clip(&size.to_rect());
+        }
         self.child.paint_main(cx);
         cx.restore();
     }

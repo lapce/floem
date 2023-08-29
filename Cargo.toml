@@ -11,7 +11,7 @@ indexmap = "2"
 rustc-hash = "1.1.0"
 smallvec = "1.10.0"
 educe = "0.4.20"
-taffy = "0.3.12"
+taffy = "0.3.13"
 rfd = { version = "0.11.4", default-features = false, features = ["xdg-portal"] }
 raw-window-handle = "0.5.1"
 kurbo = { version = "0.9.5", features = ["serde"] }

@@ -637,7 +637,7 @@ pub trait View {
         let size = cx.transform(id);
         let is_empty = cx
             .clip
-            .map(|rect| rect.intersect(size.to_rect()).is_empty())
+            .map(|rect| rect.rect().intersect(size.to_rect()).is_empty())
             .unwrap_or(false);
         if !is_empty {
             let style = cx.app_state.get_computed_style(id).clone();
