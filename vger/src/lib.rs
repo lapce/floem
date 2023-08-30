@@ -214,14 +214,18 @@ impl Renderer for VgerRenderer {
             None => return,
         };
         if let Some(rect) = path.as_rect() {
-            self.vger
-                .fill_rect(self.vger_rect(rect), 0.0, paint, blur_radius as f32);
+            self.vger.fill_rect(
+                self.vger_rect(rect),
+                0.0,
+                paint,
+                (blur_radius * self.scale) as f32,
+            );
         } else if let Some(rect) = path.as_rounded_rect() {
             self.vger.fill_rect(
                 self.vger_rect(rect.rect()),
                 (rect.radii().top_left * self.scale) as f32,
                 paint,
-                blur_radius as f32,
+                (blur_radius * self.scale) as f32,
             );
         } else if let Some(circle) = path.as_circle() {
             self.vger.fill_circle(

@@ -117,7 +117,9 @@ impl ApplicationHandle {
             WindowEvent::ModifiersChanged(modifiers) => {
                 window_handle.modifiers = modifiers.state();
             }
-            WindowEvent::Ime(_) => {}
+            WindowEvent::Ime(ime) => {
+                window_handle.ime(ime);
+            }
             WindowEvent::CursorMoved { position, .. } => {
                 let position: LogicalPosition<f64> = position.to_logical(window_handle.scale);
                 let point = Point::new(position.x, position.y);

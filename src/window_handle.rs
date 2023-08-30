@@ -8,7 +8,7 @@ use floem_renderer::Renderer;
 use kurbo::{Affine, Point, Rect, Size, Vec2};
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
-    event::{ElementState, MouseButton, MouseScrollDelta},
+    event::{ElementState, Ime, MouseButton, MouseScrollDelta},
     keyboard::{Key, ModifiersState},
     window::CursorIcon,
 };
@@ -43,7 +43,7 @@ pub(crate) struct WindowHandle {
     pub(crate) window: Option<Arc<winit::window::Window>>,
     /// Reactive Scope for this WindowHandle
     scope: Scope,
-    view: Box<dyn View>,
+    pub(crate) view: Box<dyn View>,
     app_state: AppState,
     paint_state: PaintState,
     size: Size,
@@ -58,6 +58,7 @@ impl WindowHandle {
         window: winit::window::Window,
         view_fn: impl FnOnce(winit::window::WindowId) -> Box<dyn View> + 'static,
     ) -> Self {
+        let window = Arc::new(window);
         let window_id = window.id();
         let id = Id::next();
         set_current_view(id);
@@ -71,7 +72,7 @@ impl WindowHandle {
         let size = Size::new(size.width, size.height);
         let paint_state = PaintState::new(&window, scale, size);
         let mut window_handle = Self {
-            window: Some(Arc::new(window)),
+            window: Some(window),
             scope: Scope::new(),
             view,
             app_state: AppState::new(),
@@ -628,6 +629,25 @@ impl WindowHandle {
                             window.set_title(&title);
                         }
                     }
+                    UpdateMessage::SetImeAllowed { allowed } => {
+                        if let Some(window) = self.window.as_ref() {
+                            window.set_ime_allowed(allowed);
+                        }
+                    }
+                    UpdateMessage::SetImeCursorArea { position, size } => {
+                        if let Some(window) = self.window.as_ref() {
+                            window.set_ime_cursor_area(
+                                winit::dpi::Position::Logical(winit::dpi::LogicalPosition::new(
+                                    position.x * self.app_state.scale,
+                                    position.y * self.app_state.scale,
+                                )),
+                                winit::dpi::Size::Logical(winit::dpi::LogicalSize::new(
+                                    size.width * self.app_state.scale,
+                                    size.height * self.app_state.scale,
+                                )),
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -828,7 +848,8 @@ impl WindowHandle {
                     menu,
                     pos.map(|pos| {
                         winit::dpi::Position::Logical(winit::dpi::LogicalPosition::new(
-                            pos.x, pos.y,
+                            pos.x * self.app_state.scale,
+                            pos.y * self.app_state.scale,
                         ))
                     }),
                 );
@@ -846,7 +867,8 @@ impl WindowHandle {
                     menu,
                     pos.map(|pos| {
                         winit::dpi::Position::Logical(winit::dpi::LogicalPosition::new(
-                            pos.x, pos.y,
+                            pos.x * self.app_state.scale,
+                            pos.y * self.app_state.scale,
                         ))
                     }),
                 );
@@ -865,6 +887,23 @@ impl WindowHandle {
         } else if let Some(action) = self.app_state.context_menu.get(&id) {
             (*action)();
             self.process_update();
+        }
+    }
+
+    pub(crate) fn ime(&mut self, ime: Ime) {
+        match ime {
+            Ime::Enabled => {
+                self.event(Event::ImeEnabled);
+            }
+            Ime::Preedit(text, cursor) => {
+                self.event(Event::ImePreedit { text, cursor });
+            }
+            Ime::Commit(text) => {
+                self.event(Event::ImeCommit(text));
+            }
+            Ime::Disabled => {
+                self.event(Event::ImeDisabled);
+            }
         }
     }
 }

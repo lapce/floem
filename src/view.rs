@@ -288,7 +288,7 @@ pub trait View {
         }
 
         let viewport = cx.viewport.unwrap_or_default();
-        let window_origin = origin + cx.window_origin.to_vec2() + viewport.origin().to_vec2();
+        let window_origin = origin + cx.window_origin.to_vec2() - viewport.origin().to_vec2();
         cx.window_origin = window_origin;
 
         if let Some(resize) = cx.get_resize_listener(self.id()) {

@@ -1,6 +1,6 @@
 use std::{any::Any, cell::RefCell, collections::HashMap};
 
-use kurbo::{Point, Vec2};
+use kurbo::{Point, Size, Vec2};
 
 use crate::{
     animate::{AnimUpdateMsg, Animation},
@@ -107,5 +107,12 @@ pub(crate) enum UpdateMessage {
     },
     SetWindowTitle {
         title: String,
+    },
+    SetImeAllowed {
+        allowed: bool,
+    },
+    SetImeCursorArea {
+        position: Point,
+        size: Size,
     },
 }

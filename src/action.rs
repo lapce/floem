@@ -5,7 +5,7 @@ use std::{
 };
 
 use floem_reactive::Scope;
-use kurbo::{Point, Vec2};
+use kurbo::{Point, Size, Vec2};
 
 use crate::{
     app::{add_app_update_event, AppUpdateEvent},
@@ -129,4 +129,12 @@ pub fn set_window_menu(menu: Menu) {
 
 pub fn set_window_title(title: String) {
     add_update_message(UpdateMessage::SetWindowTitle { title });
+}
+
+pub fn set_ime_allowed(allowed: bool) {
+    add_update_message(UpdateMessage::SetImeAllowed { allowed });
+}
+
+pub fn set_ime_cursor_area(position: Point, size: Size) {
+    add_update_message(UpdateMessage::SetImeCursorArea { position, size });
 }

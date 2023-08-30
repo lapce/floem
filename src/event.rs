@@ -24,6 +24,10 @@ pub enum EventListener {
     PointerUp,
     PointerEnter,
     PointerLeave,
+    ImeEnabled,
+    ImeDisabled,
+    ImePreedit,
+    ImeCommit,
     PointerWheel,
     FocusGained,
     FocusLost,
@@ -42,6 +46,13 @@ pub enum Event {
     PointerWheel(PointerWheelEvent),
     KeyDown(KeyEvent),
     KeyUp(KeyEvent),
+    ImeEnabled,
+    ImeDisabled,
+    ImePreedit {
+        text: String,
+        cursor: Option<(usize, usize)>,
+    },
+    ImeCommit(String),
     WindowGotFocus,
     WindowLostFocus,
     WindowClosed,
@@ -56,6 +67,10 @@ impl Event {
             | Event::PointerUp(_)
             | Event::PointerMove(_)
             | Event::PointerWheel(_)
+            | Event::ImeEnabled
+            | Event::ImeDisabled
+            | Event::ImePreedit { .. }
+            | Event::ImeCommit(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
             | Event::WindowMoved(_)
@@ -73,6 +88,10 @@ impl Event {
             | Event::PointerWheel(_) => true,
             Event::KeyDown(_)
             | Event::KeyUp(_)
+            | Event::ImeEnabled
+            | Event::ImeDisabled
+            | Event::ImePreedit { .. }
+            | Event::ImeCommit(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
             | Event::WindowMoved(_)
@@ -99,6 +118,10 @@ impl Event {
             Event::PointerDown(_)
             | Event::PointerUp(_)
             | Event::PointerWheel(_)
+            | Event::ImeEnabled
+            | Event::ImeDisabled
+            | Event::ImePreedit { .. }
+            | Event::ImeCommit(_)
             | Event::KeyDown(_)
             | Event::KeyUp(_) => false,
             Event::PointerMove(_)
@@ -119,6 +142,10 @@ impl Event {
             Event::PointerWheel(pointer_event) => Some(pointer_event.pos),
             Event::KeyDown(_)
             | Event::KeyUp(_)
+            | Event::ImeEnabled
+            | Event::ImeDisabled
+            | Event::ImePreedit { .. }
+            | Event::ImeCommit(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
             | Event::WindowMoved(_)
@@ -143,6 +170,10 @@ impl Event {
             }
             Event::KeyDown(_)
             | Event::KeyUp(_)
+            | Event::ImeEnabled
+            | Event::ImeDisabled
+            | Event::ImePreedit { .. }
+            | Event::ImeCommit(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
             | Event::WindowMoved(_)
@@ -165,6 +196,10 @@ impl Event {
             }
             Event::KeyDown(_)
             | Event::KeyUp(_)
+            | Event::ImeEnabled
+            | Event::ImeDisabled
+            | Event::ImePreedit { .. }
+            | Event::ImeCommit(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
             | Event::WindowMoved(_)
@@ -182,6 +217,10 @@ impl Event {
             Event::PointerWheel(_) => Some(EventListener::PointerWheel),
             Event::KeyDown(_) => Some(EventListener::KeyDown),
             Event::KeyUp(_) => Some(EventListener::KeyDown),
+            Event::ImeEnabled => Some(EventListener::ImeEnabled),
+            Event::ImeDisabled => Some(EventListener::ImeDisabled),
+            Event::ImePreedit { .. } => Some(EventListener::ImePreedit),
+            Event::ImeCommit(_) => Some(EventListener::ImeCommit),
             Event::WindowClosed => Some(EventListener::WindowClosed),
             Event::WindowResized(_) => Some(EventListener::WindowResized),
             Event::WindowMoved(_) => Some(EventListener::WindowMoved),
