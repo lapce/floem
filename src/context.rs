@@ -586,14 +586,14 @@ impl AppState {
             .0
     }
 
-    pub(crate) fn update_context_menu(&mut self, mut menu: Menu) {
+    pub(crate) fn update_context_menu(&mut self, menu: &mut Menu) {
         if let Some(action) = menu.item.action.take() {
             self.context_menu.insert(menu.item.id as usize, action);
         }
-        for child in menu.children {
+        for child in menu.children.iter_mut() {
             match child {
                 crate::menu::MenuEntry::Separator => {}
-                crate::menu::MenuEntry::Item(mut item) => {
+                crate::menu::MenuEntry::Item(item) => {
                     if let Some(action) = item.action.take() {
                         self.context_menu.insert(item.id as usize, action);
                     }

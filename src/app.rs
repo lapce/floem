@@ -1,5 +1,6 @@
 use std::{cell::RefCell, sync::Arc};
 
+use kurbo::{Point, Size};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use winit::{
@@ -42,6 +43,12 @@ pub(crate) enum AppUpdateEvent {
     },
     RequestTimer {
         timer: Timer,
+    },
+    PopupWindow {
+        view_fn: Box<dyn FnOnce(WindowId) -> Box<dyn View>>,
+        parent_window: Arc<winit::window::Window>,
+        size: Size,
+        position: Point,
     },
 }
 

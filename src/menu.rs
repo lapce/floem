@@ -79,7 +79,7 @@ impl Menu {
 
 pub struct MenuItem {
     pub(crate) id: u64,
-    title: String,
+    pub(crate) title: String,
     // key: Option<HotKey>,
     selected: Option<bool>,
     enabled: bool,

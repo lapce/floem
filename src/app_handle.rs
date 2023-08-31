@@ -1,6 +1,7 @@
 use std::{collections::HashMap, time::Instant};
 
 use kurbo::{Point, Size};
+use raw_window_handle::HasRawWindowHandle;
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::WindowEvent,
@@ -65,6 +66,34 @@ impl ApplicationHandle {
                 }
                 AppUpdateEvent::RequestTimer { timer } => {
                     self.request_timer(timer, control_flow);
+                }
+                AppUpdateEvent::PopupWindow {
+                    parent_window,
+                    view_fn,
+                    size,
+                    position,
+                } => {
+                    println!("new popup window");
+                    let mut window_builder = winit::window::WindowBuilder::new()
+                        .with_decorations(false)
+                        .with_inner_size(winit::dpi::Size::Logical(winit::dpi::LogicalSize::new(
+                            size.width,
+                            size.height,
+                        )))
+                        .with_position(winit::dpi::Position::Logical(
+                            winit::dpi::LogicalPosition::new(position.x, position.y),
+                        ));
+                    unsafe {
+                        window_builder = window_builder
+                            .with_parent_window(Some(parent_window.raw_window_handle()));
+                    }
+                    let window = match window_builder.build(event_loop) {
+                        Ok(window) => window,
+                        Err(_) => return,
+                    };
+                    let window_id = window.id();
+                    let window_handle = WindowHandle::new(window, view_fn);
+                    self.window_handles.insert(window_id, window_handle);
                 }
             }
         }

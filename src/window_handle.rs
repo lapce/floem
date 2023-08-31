@@ -3,9 +3,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use floem_reactive::{with_scope, Scope};
+use floem_reactive::{create_effect, with_scope, RwSignal, Scope};
 use floem_renderer::Renderer;
 use kurbo::{Affine, Point, Rect, Size, Vec2};
+use peniko::Color;
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::{ElementState, Ime, MouseButton, MouseScrollDelta},
@@ -31,6 +32,7 @@ use crate::{
         UPDATE_MESSAGES,
     },
     view::{ChangeFlags, View},
+    views::{container, container_box, label, list, stack, Decorators},
 };
 
 /// The top-level window handle that owns the winit Window.
@@ -50,6 +52,8 @@ pub(crate) struct WindowHandle {
     pub(crate) scale: f64,
     pub(crate) modifiers: ModifiersState,
     pub(crate) cursor_position: Point,
+    pub(crate) window_position: Point,
+    pub(crate) context_menu: RwSignal<Option<(Menu, Point)>>,
     pub(crate) last_pointer_down: Option<(u8, Instant)>,
 }
 
@@ -64,8 +68,94 @@ impl WindowHandle {
         set_current_view(id);
 
         let scope = Scope::new();
+        let context_menu = scope.create_rw_signal(None);
+        let context_menu_items = scope.create_memo(move |_| {
+            context_menu.with(|menu| {
+                menu.as_ref().map(|menu: &(Menu, Point)| {
+                    menu.0
+                        .children
+                        .iter()
+                        .map(|e| match e {
+                            crate::menu::MenuEntry::Separator => "seperator".to_string(),
+                            crate::menu::MenuEntry::Item(i) => i.title.clone(),
+                            crate::menu::MenuEntry::SubMenu(m) => m.item.title.clone(),
+                        })
+                        .collect::<Vec<String>>()
+                })
+            })
+        });
+        let context_menu_size = scope.create_rw_signal(Size::ZERO);
         let cx = ViewContext { id };
-        let view = ViewContext::with_context(cx, || with_scope(scope, move || view_fn(window_id)));
+        let view = ViewContext::with_context(cx, || {
+            with_scope(scope, move || {
+                Box::new(
+                    stack(|| {
+                        (container_box(move || view_fn(window_id)), {
+                            let view = list(
+                                move || context_menu_items.get().unwrap_or_default(),
+                                move |s| s.clone(),
+                                move |s| {
+                                    label(move || s.clone())
+                                        .on_click(move |_| true)
+                                        .style(|s| s.padding_horiz_px(20.0))
+                                        .hover_style(|s| {
+                                            s.border_radius(10.0)
+                                                .background(Color::rgb8(65, 65, 65))
+                                        })
+                                        .active_style(|s| {
+                                            s.border_radius(10.0)
+                                                .background(Color::rgb8(92, 92, 92))
+                                        })
+                                },
+                            )
+                            .on_resize(move |rect| {
+                                context_menu_size.set(rect.size());
+                            })
+                            .keyboard_navigatable()
+                            .on_event(EventListener::KeyDown, move |event| {
+                                if let Event::KeyDown(event) = event {
+                                    if event.key.logical_key == Key::Escape {
+                                        context_menu.set(None);
+                                    }
+                                }
+                                true
+                            })
+                            .on_event(EventListener::FocusLost, move |_| {
+                                context_menu.set(None);
+                                true
+                            })
+                            .style(move |s| {
+                                let is_acitve = context_menu.with(|m| m.is_some());
+                                let pos = context_menu
+                                    .with(|m| m.as_ref().map(|(_, pos)| *pos).unwrap_or_default());
+                                s.absolute()
+                                    .flex_col()
+                                    .border_radius(10.0)
+                                    .background(Color::rgb8(44, 44, 44))
+                                    .color(Color::rgb8(201, 201, 201))
+                                    .z_index(999)
+                                    .line_height(2.0)
+                                    .padding_px(5.0)
+                                    .margin_left_px(pos.x as f32)
+                                    .margin_top_px(pos.y as f32)
+                                    .apply_if(!is_acitve, |s| s.hide())
+                            });
+
+                            let id = view.id();
+
+                            create_effect(move |_| {
+                                if context_menu.with(|m| m.is_some()) {
+                                    id.request_focus();
+                                }
+                            });
+
+                            view
+                        })
+                    })
+                    .style(|s| s.size_pct(100.0, 100.0)),
+                )
+            })
+        });
 
         let scale = window.scale_factor();
         let size: LogicalSize<f64> = window.inner_size().to_logical(scale);
@@ -73,7 +163,7 @@ impl WindowHandle {
         let paint_state = PaintState::new(&window, scale, size * scale);
         let mut window_handle = Self {
             window: Some(window),
-            scope: Scope::new(),
+            scope,
             view,
             app_state: AppState::new(),
             paint_state,
@@ -81,6 +171,8 @@ impl WindowHandle {
             scale,
             modifiers: ModifiersState::default(),
             cursor_position: Point::ZERO,
+            window_position: Point::ZERO,
+            context_menu,
             last_pointer_down: None,
         };
         window_handle.app_state.set_root_size(size);
@@ -252,6 +344,7 @@ impl WindowHandle {
     }
 
     pub(crate) fn position(&mut self, point: Point) {
+        self.window_position = point;
         self.event(Event::WindowMoved(point));
     }
 
@@ -587,11 +680,16 @@ impl WindowHandle {
                         state.popout_menu = Some(menu);
                     }
                     UpdateMessage::ShowContextMenu { menu, pos } => {
-                        let menu = menu.popup();
+                        let mut menu = menu.popup();
                         let platform_menu = menu.platform_menu();
                         cx.app_state.context_menu.clear();
-                        cx.app_state.update_context_menu(menu);
+                        cx.app_state.update_context_menu(&mut menu);
+                        #[cfg(target_os = "macos")]
                         self.show_context_menu(platform_menu, pos);
+                        #[cfg(target_os = "windows")]
+                        self.show_context_menu(platform_menu, pos);
+                        #[cfg(target_os = "linux")]
+                        self.show_context_menu(menu, platform_menu, pos);
                     }
                     UpdateMessage::WindowMenu { menu } => {
                         // let platform_menu = menu.platform_menu();
@@ -851,7 +949,10 @@ impl WindowHandle {
     }
 
     #[cfg(target_os = "linux")]
-    fn show_context_menu(&self, _menu: winit::menu::Menu, _pos: Option<Point>) {}
+    fn show_context_menu(&self, menu: Menu, _platform_menu: winit::menu::Menu, pos: Option<Point>) {
+        self.context_menu
+            .set(Some((menu, pos.unwrap_or(self.cursor_position))));
+    }
 
     pub(crate) fn menu_action(&mut self, id: usize) {
         set_current_view(self.view.id());
