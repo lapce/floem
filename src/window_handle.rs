@@ -32,7 +32,7 @@ use crate::{
         UPDATE_MESSAGES,
     },
     view::{ChangeFlags, View},
-    views::{container, container_box, label, list, stack, Decorators},
+    views::{container, container_box, empty, label, list, stack, Decorators},
 };
 
 /// The top-level window handle that owns the winit Window.
@@ -48,7 +48,7 @@ pub(crate) struct WindowHandle {
     pub(crate) view: Box<dyn View>,
     app_state: AppState,
     paint_state: PaintState,
-    size: Size,
+    size: RwSignal<Size>,
     pub(crate) scale: f64,
     pub(crate) modifiers: ModifiersState,
     pub(crate) cursor_position: Point,
@@ -68,6 +68,12 @@ impl WindowHandle {
         set_current_view(id);
 
         let scope = Scope::new();
+
+        let scale = window.scale_factor();
+        let size: LogicalSize<f64> = window.inner_size().to_logical(scale);
+        let size = Size::new(size.width, size.height);
+        let size = scope.create_rw_signal(Size::new(size.width, size.height));
+
         let context_menu = scope.create_rw_signal(None);
         let context_menu_items = scope.create_memo(move |_| {
             context_menu.with(|menu| {
@@ -76,11 +82,11 @@ impl WindowHandle {
                         .children
                         .iter()
                         .map(|e| match e {
-                            crate::menu::MenuEntry::Separator => "seperator".to_string(),
-                            crate::menu::MenuEntry::Item(i) => i.title.clone(),
-                            crate::menu::MenuEntry::SubMenu(m) => m.item.title.clone(),
+                            crate::menu::MenuEntry::Separator => None,
+                            crate::menu::MenuEntry::Item(i) => Some(i.title.clone()),
+                            crate::menu::MenuEntry::SubMenu(m) => Some(m.item.title.clone()),
                         })
-                        .collect::<Vec<String>>()
+                        .collect::<Vec<Option<String>>>()
                 })
             })
         });
@@ -90,77 +96,107 @@ impl WindowHandle {
             with_scope(scope, move || {
                 Box::new(
                     stack(|| {
-                        (container_box(move || view_fn(window_id)), {
-                            let view = list(
-                                move || context_menu_items.get().unwrap_or_default(),
-                                move |s| s.clone(),
-                                move |s| {
-                                    label(move || s.clone())
-                                        .on_click(move |_| true)
-                                        .style(|s| s.padding_horiz_px(20.0))
-                                        .hover_style(|s| {
-                                            s.border_radius(10.0)
-                                                .background(Color::rgb8(65, 65, 65))
-                                        })
-                                        .active_style(|s| {
-                                            s.border_radius(10.0)
-                                                .background(Color::rgb8(92, 92, 92))
-                                        })
-                                },
-                            )
-                            .on_resize(move |rect| {
-                                context_menu_size.set(rect.size());
-                            })
-                            .keyboard_navigatable()
-                            .on_event(EventListener::KeyDown, move |event| {
-                                if let Event::KeyDown(event) = event {
-                                    if event.key.logical_key == Key::Escape {
-                                        context_menu.set(None);
+                        (
+                            container_box(move || view_fn(window_id))
+                                .style(|s| s.size_pct(100.0, 100.0)),
+                            {
+                                let view = list(
+                                    move || context_menu_items.get().unwrap_or_default(),
+                                    move |s| s.clone(),
+                                    move |s| {
+                                        if let Some(s) = s {
+                                            container_box(|| Box::new(label(move || s.clone())))
+                                                .on_click(move |_| true)
+                                                .style(|s| {
+                                                    s.min_width_pct(100.0).padding_horiz_px(20.0)
+                                                })
+                                                .hover_style(|s| {
+                                                    s.border_radius(10.0)
+                                                        .background(Color::rgb8(65, 65, 65))
+                                                })
+                                                .active_style(|s| {
+                                                    s.border_radius(10.0)
+                                                        .background(Color::rgb8(92, 92, 92))
+                                                })
+                                        } else {
+                                            container_box(|| {
+                                                Box::new(empty().style(|s| {
+                                                    s.width_pct(100.0)
+                                                        .height_px(1.0)
+                                                        .margin_vert_px(5.0)
+                                                        .background(Color::rgb8(92, 92, 92))
+                                                }))
+                                            })
+                                            .style(
+                                                |s| s.min_width_pct(100.0).padding_horiz_px(20.0),
+                                            )
+                                        }
+                                    },
+                                )
+                                .on_resize(move |rect| {
+                                    context_menu_size.set(rect.size());
+                                })
+                                .on_event(EventListener::PointerDown, move |_| true)
+                                .keyboard_navigatable()
+                                .on_event(EventListener::KeyDown, move |event| {
+                                    if let Event::KeyDown(event) = event {
+                                        if event.key.logical_key == Key::Escape {
+                                            context_menu.set(None);
+                                        }
                                     }
-                                }
-                                true
-                            })
-                            .on_event(EventListener::FocusLost, move |_| {
-                                context_menu.set(None);
-                                true
-                            })
-                            .style(move |s| {
-                                let is_acitve = context_menu.with(|m| m.is_some());
-                                let pos = context_menu
-                                    .with(|m| m.as_ref().map(|(_, pos)| *pos).unwrap_or_default());
-                                s.absolute()
-                                    .flex_col()
-                                    .border_radius(10.0)
-                                    .background(Color::rgb8(44, 44, 44))
-                                    .color(Color::rgb8(201, 201, 201))
-                                    .z_index(999)
-                                    .line_height(2.0)
-                                    .padding_px(5.0)
-                                    .margin_left_px(pos.x as f32)
-                                    .margin_top_px(pos.y as f32)
-                                    .apply_if(!is_acitve, |s| s.hide())
-                            });
+                                    true
+                                })
+                                .on_event(EventListener::FocusLost, move |_| {
+                                    context_menu.set(None);
+                                    true
+                                })
+                                .style(move |s| {
+                                    let window_size = size.get();
+                                    let menu_size = context_menu_size.get();
+                                    let is_acitve = context_menu.with(|m| m.is_some());
+                                    let mut pos = context_menu.with(|m| {
+                                        m.as_ref().map(|(_, pos)| *pos).unwrap_or_default()
+                                    });
+                                    if pos.x + menu_size.width > window_size.width {
+                                        pos.x = window_size.width - menu_size.width;
+                                    }
+                                    if pos.y + menu_size.height > window_size.height {
+                                        pos.y = window_size.height - menu_size.height;
+                                    }
+                                    s.absolute()
+                                        .flex_col()
+                                        .border_radius(10.0)
+                                        .background(Color::rgb8(44, 44, 44))
+                                        .color(Color::rgb8(201, 201, 201))
+                                        .z_index(999)
+                                        .line_height(2.0)
+                                        .padding_px(5.0)
+                                        .margin_left_px(pos.x as f32)
+                                        .margin_top_px(pos.y as f32)
+                                        .cursor(CursorStyle::Default)
+                                        .apply_if(!is_acitve, |s| s.hide())
+                                        .box_shadow_blur(5.0)
+                                        .box_shadow_color(Color::BLACK)
+                                });
 
-                            let id = view.id();
+                                let id = view.id();
 
-                            create_effect(move |_| {
-                                if context_menu.with(|m| m.is_some()) {
-                                    id.request_focus();
-                                }
-                            });
+                                create_effect(move |_| {
+                                    if context_menu.with(|m| m.is_some()) {
+                                        id.request_focus();
+                                    }
+                                });
 
-                            view
-                        })
+                                view
+                            },
+                        )
                     })
                     .style(|s| s.size_pct(100.0, 100.0)),
                 )
             })
         });
 
-        let scale = window.scale_factor();
-        let size: LogicalSize<f64> = window.inner_size().to_logical(scale);
-        let size = Size::new(size.width, size.height);
-        let paint_state = PaintState::new(&window, scale, size * scale);
+        let paint_state = PaintState::new(&window, scale, size.get_untracked() * scale);
         let mut window_handle = Self {
             window: Some(window),
             scope,
@@ -175,7 +211,7 @@ impl WindowHandle {
             context_menu,
             last_pointer_down: None,
         };
-        window_handle.app_state.set_root_size(size);
+        window_handle.app_state.set_root_size(size.get_untracked());
         window_handle
     }
 
@@ -332,7 +368,7 @@ impl WindowHandle {
     }
 
     pub(crate) fn size(&mut self, size: Size) {
-        self.size = size;
+        self.size.set(size);
         self.app_state.update_screen_size_bp(size);
         self.event(Event::WindowResized(size));
         let scale = self.scale * self.app_state.scale;
@@ -684,12 +720,14 @@ impl WindowHandle {
                         let platform_menu = menu.platform_menu();
                         cx.app_state.context_menu.clear();
                         cx.app_state.update_context_menu(&mut menu);
-                        #[cfg(target_os = "macos")]
-                        self.show_context_menu(platform_menu, pos);
+                        // #[cfg(target_os = "macos")]
+                        // self.show_context_menu(platform_menu, pos);
                         #[cfg(target_os = "windows")]
                         self.show_context_menu(platform_menu, pos);
                         #[cfg(target_os = "linux")]
                         self.show_context_menu(menu, platform_menu, pos);
+                        self.context_menu
+                            .set(Some((menu, pos.unwrap_or(self.cursor_position))));
                     }
                     UpdateMessage::WindowMenu { menu } => {
                         // let platform_menu = menu.platform_menu();
