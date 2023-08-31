@@ -288,13 +288,15 @@ impl WindowHandle {
     }
 
     pub(crate) fn pointer_move(&mut self, pos: Point) {
-        self.cursor_position = pos;
-        self.last_pointer_down = None;
-        let event = PointerMoveEvent {
-            pos,
-            modifiers: self.modifiers,
-        };
-        self.event(Event::PointerMove(event));
+        if self.cursor_position != pos {
+            self.last_pointer_down = None;
+            self.cursor_position = pos;
+            let event = PointerMoveEvent {
+                pos,
+                modifiers: self.modifiers,
+            };
+            self.event(Event::PointerMove(event));
+        }
     }
 
     pub(crate) fn mouse_wheel(&mut self, delta: MouseScrollDelta) {
