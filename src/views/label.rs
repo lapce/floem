@@ -167,6 +167,10 @@ impl View for Label {
                     self.font_style = cx.font_style;
                     self.line_height = cx.line_height;
                     self.text_overflow = text_overflow;
+                    self.text_layout = None;
+                    self.available_text = None;
+                    self.available_width = None;
+                    self.available_text_layout = None;
                     self.set_text_layout();
                 }
                 if self.text_layout.is_none() {
@@ -210,6 +214,15 @@ impl View for Label {
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<Rect> {
         if self.label.is_empty() {
             return None;
+        }
+
+        if self.font_size != cx.font_size
+            || self.font_family.as_deref() != cx.current_font_family()
+            || self.font_weight != cx.font_weight
+            || self.font_style != cx.font_style
+            || self.line_height != cx.line_height
+        {
+            cx.app_state_mut().request_layout(self.id());
         }
 
         let layout = cx.get_layout(self.id()).unwrap();

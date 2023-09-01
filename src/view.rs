@@ -250,6 +250,22 @@ pub trait View {
         }
 
         cx.save();
+        let style = cx.app_state_mut().get_computed_style(self.id()).clone();
+        if style.font_size.is_some() {
+            cx.font_size = style.font_size;
+        }
+        if style.font_family.is_some() {
+            cx.font_family = style.font_family;
+        }
+        if style.font_weight.is_some() {
+            cx.font_weight = style.font_weight;
+        }
+        if style.font_style.is_some() {
+            cx.font_style = style.font_style;
+        }
+        if style.line_height.is_some() {
+            cx.line_height = style.line_height;
+        }
 
         let layout = cx
             .app_state()
