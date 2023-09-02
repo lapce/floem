@@ -604,6 +604,42 @@ impl AppState {
             }
         }
     }
+
+    pub(crate) fn get_event_listener(
+        &self,
+        id: Id,
+        listener: &EventListener,
+    ) -> Option<&impl Fn(&Event) -> bool> {
+        self.view_states
+            .get(&id)
+            .and_then(|s| s.event_listeners.get(listener))
+    }
+
+    pub(crate) fn focus_changed(&mut self, old: Option<Id>, new: Option<Id>) {
+        if let Some(old_id) = old {
+            // To remove the styles applied by the Focus selector
+            if self.has_style_for_sel(old_id, StyleSelector::Focus)
+                || self.has_style_for_sel(old_id, StyleSelector::FocusVisible)
+            {
+                self.request_layout(old_id);
+            }
+            if let Some(action) = self.get_event_listener(old_id, &EventListener::FocusLost) {
+                (*action)(&Event::FocusLost);
+            }
+        }
+
+        if let Some(id) = new {
+            // To apply the styles of the Focus selector
+            if self.has_style_for_sel(id, StyleSelector::Focus)
+                || self.has_style_for_sel(id, StyleSelector::FocusVisible)
+            {
+                self.request_layout(id);
+            }
+            if let Some(action) = self.get_event_listener(id, &EventListener::FocusGained) {
+                (*action)(&Event::FocusGained);
+            }
+        }
+    }
 }
 
 /// A bundle of helper methods to be used by `View::event` handlers
@@ -663,10 +699,7 @@ impl<'a> EventCx<'a> {
         id: Id,
         listener: &EventListener,
     ) -> Option<&impl Fn(&Event) -> bool> {
-        self.app_state
-            .view_states
-            .get(&id)
-            .and_then(|s| s.event_listeners.get(listener))
+        self.app_state.get_event_listener(id, listener)
     }
 
     /// translate a window-positioned event to the local coordinate system of a view

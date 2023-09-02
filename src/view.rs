@@ -143,6 +143,9 @@ pub trait View {
         let _ = app_state.taffy.remove(node);
         id.remove_id_path();
         app_state.view_states.remove(&id);
+        if app_state.focus == Some(id) {
+            app_state.focus = None;
+        }
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {

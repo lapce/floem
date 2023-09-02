@@ -123,10 +123,16 @@ impl WindowHandle {
                         processed |= self
                             .view
                             .event_main(&mut cx, Some(&id_path.0), event.clone());
+                    } else {
+                        cx.app_state.focus = None;
                     }
-                } else if let Some(listener) = event.listener() {
-                    if let Some(action) = cx.get_event_listener(self.view.id(), &listener) {
-                        processed |= (*action)(&event);
+                }
+
+                if !processed {
+                    if let Some(listener) = event.listener() {
+                        if let Some(action) = cx.get_event_listener(self.view.id(), &listener) {
+                            processed |= (*action)(&event);
+                        }
                     }
                 }
 
@@ -220,33 +226,7 @@ impl WindowHandle {
             }
         }
         if was_focused != cx.app_state.focus {
-            if let Some(old_id) = was_focused {
-                // To remove the styles applied by the Focus selector
-                if cx.app_state.has_style_for_sel(old_id, StyleSelector::Focus)
-                    || cx
-                        .app_state
-                        .has_style_for_sel(old_id, StyleSelector::FocusVisible)
-                {
-                    cx.app_state.request_layout(old_id);
-                }
-                if let Some(action) = cx.get_event_listener(old_id, &EventListener::FocusLost) {
-                    (*action)(&event);
-                }
-            }
-
-            if let Some(id) = cx.app_state.focus {
-                // To apply the styles of the Focus selector
-                if cx.app_state.has_style_for_sel(id, StyleSelector::Focus)
-                    || cx
-                        .app_state
-                        .has_style_for_sel(id, StyleSelector::FocusVisible)
-                {
-                    cx.app_state.request_layout(id);
-                }
-                if let Some(action) = cx.get_event_listener(id, &EventListener::FocusGained) {
-                    (*action)(&event);
-                }
-            }
+            cx.app_state.focus_changed(was_focused, cx.app_state.focus);
         }
 
         self.process_update();
@@ -464,18 +444,10 @@ impl WindowHandle {
                         cx.app_state.request_layout(id);
                     }
                     UpdateMessage::Focus(id) => {
-                        let old = cx.app_state.focus;
-                        cx.app_state.focus = Some(id);
-
-                        if let Some(old_id) = old {
-                            // To remove the styles applied by the Focus selector
-                            if cx.app_state.has_style_for_sel(old_id, StyleSelector::Focus) {
-                                cx.app_state.request_layout(old_id);
-                            }
-                        }
-
-                        if cx.app_state.has_style_for_sel(id, StyleSelector::Focus) {
-                            cx.app_state.request_layout(id);
+                        if cx.app_state.focus != Some(id) {
+                            let old = cx.app_state.focus;
+                            cx.app_state.focus = Some(id);
+                            cx.app_state.focus_changed(old, cx.app_state.focus);
                         }
                     }
                     UpdateMessage::Active(id) => {

@@ -58,6 +58,8 @@ pub enum Event {
     WindowClosed,
     WindowResized(Size),
     WindowMoved(Point),
+    FocusGained,
+    FocusLost,
 }
 
 impl Event {
@@ -67,6 +69,8 @@ impl Event {
             | Event::PointerUp(_)
             | Event::PointerMove(_)
             | Event::PointerWheel(_)
+            | Event::FocusGained
+            | Event::FocusLost
             | Event::ImeEnabled
             | Event::ImeDisabled
             | Event::ImePreedit { .. }
@@ -88,6 +92,8 @@ impl Event {
             | Event::PointerWheel(_) => true,
             Event::KeyDown(_)
             | Event::KeyUp(_)
+            | Event::FocusGained
+            | Event::FocusLost
             | Event::ImeEnabled
             | Event::ImeDisabled
             | Event::ImePreedit { .. }
@@ -118,6 +124,8 @@ impl Event {
             Event::PointerDown(_)
             | Event::PointerUp(_)
             | Event::PointerWheel(_)
+            | Event::FocusGained
+            | Event::FocusLost
             | Event::ImeEnabled
             | Event::ImeDisabled
             | Event::ImePreedit { .. }
@@ -142,6 +150,8 @@ impl Event {
             Event::PointerWheel(pointer_event) => Some(pointer_event.pos),
             Event::KeyDown(_)
             | Event::KeyUp(_)
+            | Event::FocusGained
+            | Event::FocusLost
             | Event::ImeEnabled
             | Event::ImeDisabled
             | Event::ImePreedit { .. }
@@ -170,6 +180,8 @@ impl Event {
             }
             Event::KeyDown(_)
             | Event::KeyUp(_)
+            | Event::FocusGained
+            | Event::FocusLost
             | Event::ImeEnabled
             | Event::ImeDisabled
             | Event::ImePreedit { .. }
@@ -196,6 +208,8 @@ impl Event {
             }
             Event::KeyDown(_)
             | Event::KeyUp(_)
+            | Event::FocusGained
+            | Event::FocusLost
             | Event::ImeEnabled
             | Event::ImeDisabled
             | Event::ImePreedit { .. }
@@ -226,6 +240,8 @@ impl Event {
             Event::WindowMoved(_) => Some(EventListener::WindowMoved),
             Event::WindowGotFocus => Some(EventListener::WindowGotFocus),
             Event::WindowLostFocus => Some(EventListener::WindowLostFocus),
+            Event::FocusLost => Some(EventListener::FocusLost),
+            Event::FocusGained => Some(EventListener::FocusGained),
         }
     }
 }
