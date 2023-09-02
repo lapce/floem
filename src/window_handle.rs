@@ -631,9 +631,7 @@ impl WindowHandle {
                         #[cfg(target_os = "windows")]
                         self.show_context_menu(platform_menu, pos);
                         #[cfg(target_os = "linux")]
-                        {
-                            self.show_context_menu(menu, platform_menu, pos);
-                        }
+                        self.show_context_menu(menu, platform_menu, pos);
                     }
                     UpdateMessage::WindowMenu { menu } => {
                         // let platform_menu = menu.platform_menu();
