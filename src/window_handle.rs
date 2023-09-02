@@ -56,8 +56,9 @@ pub(crate) struct WindowHandle {
     pub(crate) modifiers: ModifiersState,
     pub(crate) cursor_position: Point,
     pub(crate) window_position: Point,
-    pub(crate) context_menu: RwSignal<Option<(Menu, Point)>>,
     pub(crate) last_pointer_down: Option<(u8, Instant)>,
+    #[cfg(target_os = "linux")]
+    pub(crate) context_menu: RwSignal<Option<(Menu, Point)>>,
 }
 
 impl WindowHandle {
@@ -77,6 +78,7 @@ impl WindowHandle {
         let size = Size::new(size.width, size.height);
         let size = scope.create_rw_signal(Size::new(size.width, size.height));
 
+        #[cfg(target_os = "linux")]
         let context_menu = scope.create_rw_signal(None);
         let cx = ViewContext { id };
 
@@ -111,6 +113,7 @@ impl WindowHandle {
             modifiers: ModifiersState::default(),
             cursor_position: Point::ZERO,
             window_position: Point::ZERO,
+            #[cfg(target_os = "linux")]
             context_menu,
             last_pointer_down: None,
         };
