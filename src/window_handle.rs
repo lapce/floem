@@ -7,6 +7,8 @@ use floem_reactive::{with_scope, RwSignal, Scope};
 use floem_renderer::Renderer;
 use kurbo::{Affine, Point, Rect, Size, Vec2};
 
+#[cfg(target_os = "linux")]
+use winit::window::WindowId;
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::{ElementState, Ime, MouseButton, MouseScrollDelta},
@@ -14,6 +16,8 @@ use winit::{
     window::CursorIcon,
 };
 
+#[cfg(target_os = "linux")]
+use crate::views::{container_box, stack, Decorators};
 use crate::{
     action::exec_after,
     animate::{AnimPropKind, AnimUpdateMsg, AnimValue, AnimatedProp, SizeUnit},
@@ -624,9 +628,9 @@ impl WindowHandle {
                         #[cfg(target_os = "windows")]
                         self.show_context_menu(platform_menu, pos);
                         #[cfg(target_os = "linux")]
-                        self.show_context_menu(menu, platform_menu, pos);
-                        self.context_menu
-                            .set(Some((menu, pos.unwrap_or(self.cursor_position))));
+                        {
+                            self.show_context_menu(menu, platform_menu, pos);
+                        }
                     }
                     UpdateMessage::WindowMenu { menu } => {
                         // let platform_menu = menu.platform_menu();
@@ -937,6 +941,14 @@ fn context_menu_view(
     context_menu: RwSignal<Option<(Menu, Point)>>,
     window_size: RwSignal<Size>,
 ) -> impl View {
+    use floem_reactive::create_effect;
+    use peniko::Color;
+
+    use crate::{
+        app::{add_app_update_event, AppUpdateEvent},
+        views::{empty, label, list},
+    };
+
     let context_menu_items = cx.create_memo(move |_| {
         context_menu.with(|menu| {
             menu.as_ref().map(|menu: &(Menu, Point)| {
