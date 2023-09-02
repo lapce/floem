@@ -3,10 +3,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use floem_reactive::{create_effect, with_scope, RwSignal, Scope};
+use floem_reactive::{with_scope, RwSignal, Scope};
 use floem_renderer::Renderer;
 use kurbo::{Affine, Point, Rect, Size, Vec2};
-use peniko::Color;
+
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::{ElementState, Ime, MouseButton, MouseScrollDelta},
@@ -32,7 +32,6 @@ use crate::{
         UPDATE_MESSAGES,
     },
     view::{ChangeFlags, View},
-    views::{container, container_box, empty, label, list, stack, Decorators},
 };
 
 /// The top-level window handle that owns the winit Window.
@@ -75,23 +74,12 @@ impl WindowHandle {
         let size = scope.create_rw_signal(Size::new(size.width, size.height));
 
         let context_menu = scope.create_rw_signal(None);
-        let context_menu_items = scope.create_memo(move |_| {
-            context_menu.with(|menu| {
-                menu.as_ref().map(|menu: &(Menu, Point)| {
-                    menu.0
-                        .children
-                        .iter()
-                        .map(|e| match e {
-                            crate::menu::MenuEntry::Separator => None,
-                            crate::menu::MenuEntry::Item(i) => Some(i.title.clone()),
-                            crate::menu::MenuEntry::SubMenu(m) => Some(m.item.title.clone()),
-                        })
-                        .collect::<Vec<Option<String>>>()
-                })
-            })
-        });
-        let context_menu_size = scope.create_rw_signal(Size::ZERO);
         let cx = ViewContext { id };
+
+        #[cfg(not(target_os = "linux"))]
+        let view = ViewContext::with_context(cx, || with_scope(scope, move || view_fn(window_id)));
+
+        #[cfg(target_os = "linux")]
         let view = ViewContext::with_context(cx, || {
             with_scope(scope, move || {
                 Box::new(
@@ -99,96 +87,7 @@ impl WindowHandle {
                         (
                             container_box(move || view_fn(window_id))
                                 .style(|s| s.size_pct(100.0, 100.0)),
-                            {
-                                let view = list(
-                                    move || context_menu_items.get().unwrap_or_default(),
-                                    move |s| s.clone(),
-                                    move |s| {
-                                        if let Some(s) = s {
-                                            container_box(|| Box::new(label(move || s.clone())))
-                                                .on_click(move |_| true)
-                                                .style(|s| {
-                                                    s.min_width_pct(100.0).padding_horiz_px(20.0)
-                                                })
-                                                .hover_style(|s| {
-                                                    s.border_radius(10.0)
-                                                        .background(Color::rgb8(65, 65, 65))
-                                                })
-                                                .active_style(|s| {
-                                                    s.border_radius(10.0)
-                                                        .background(Color::rgb8(92, 92, 92))
-                                                })
-                                        } else {
-                                            container_box(|| {
-                                                Box::new(empty().style(|s| {
-                                                    s.width_pct(100.0)
-                                                        .height_px(1.0)
-                                                        .margin_vert_px(5.0)
-                                                        .background(Color::rgb8(92, 92, 92))
-                                                }))
-                                            })
-                                            .style(
-                                                |s| s.min_width_pct(100.0).padding_horiz_px(20.0),
-                                            )
-                                        }
-                                    },
-                                )
-                                .on_resize(move |rect| {
-                                    context_menu_size.set(rect.size());
-                                })
-                                .on_event(EventListener::PointerDown, move |_| true)
-                                .keyboard_navigatable()
-                                .on_event(EventListener::KeyDown, move |event| {
-                                    if let Event::KeyDown(event) = event {
-                                        if event.key.logical_key == Key::Escape {
-                                            context_menu.set(None);
-                                        }
-                                    }
-                                    true
-                                })
-                                .on_event(EventListener::FocusLost, move |_| {
-                                    context_menu.set(None);
-                                    true
-                                })
-                                .style(move |s| {
-                                    let window_size = size.get();
-                                    let menu_size = context_menu_size.get();
-                                    let is_acitve = context_menu.with(|m| m.is_some());
-                                    let mut pos = context_menu.with(|m| {
-                                        m.as_ref().map(|(_, pos)| *pos).unwrap_or_default()
-                                    });
-                                    if pos.x + menu_size.width > window_size.width {
-                                        pos.x = window_size.width - menu_size.width;
-                                    }
-                                    if pos.y + menu_size.height > window_size.height {
-                                        pos.y = window_size.height - menu_size.height;
-                                    }
-                                    s.absolute()
-                                        .flex_col()
-                                        .border_radius(10.0)
-                                        .background(Color::rgb8(44, 44, 44))
-                                        .color(Color::rgb8(201, 201, 201))
-                                        .z_index(999)
-                                        .line_height(2.0)
-                                        .padding_px(5.0)
-                                        .margin_left_px(pos.x as f32)
-                                        .margin_top_px(pos.y as f32)
-                                        .cursor(CursorStyle::Default)
-                                        .apply_if(!is_acitve, |s| s.hide())
-                                        .box_shadow_blur(5.0)
-                                        .box_shadow_color(Color::BLACK)
-                                });
-
-                                let id = view.id();
-
-                                create_effect(move |_| {
-                                    if context_menu.with(|m| m.is_some()) {
-                                        id.request_focus();
-                                    }
-                                });
-
-                                view
-                            },
+                            context_menu_view(scope, window_id, context_menu, size),
                         )
                     })
                     .style(|s| s.size_pct(100.0, 100.0)),
@@ -720,8 +619,8 @@ impl WindowHandle {
                         let platform_menu = menu.platform_menu();
                         cx.app_state.context_menu.clear();
                         cx.app_state.update_context_menu(&mut menu);
-                        // #[cfg(target_os = "macos")]
-                        // self.show_context_menu(platform_menu, pos);
+                        #[cfg(target_os = "macos")]
+                        self.show_context_menu(platform_menu, pos);
                         #[cfg(target_os = "windows")]
                         self.show_context_menu(platform_menu, pos);
                         #[cfg(target_os = "linux")]
@@ -1029,4 +928,130 @@ pub(crate) fn set_current_view(id: Id) {
     CURRENT_RUNNING_VIEW_HANDLE.with(|running| {
         *running.borrow_mut() = id;
     });
+}
+
+#[cfg(target_os = "linux")]
+fn context_menu_view(
+    cx: Scope,
+    window_id: WindowId,
+    context_menu: RwSignal<Option<(Menu, Point)>>,
+    window_size: RwSignal<Size>,
+) -> impl View {
+    let context_menu_items = cx.create_memo(move |_| {
+        context_menu.with(|menu| {
+            menu.as_ref().map(|menu: &(Menu, Point)| {
+                menu.0
+                    .children
+                    .iter()
+                    .map(|e| match e {
+                        crate::menu::MenuEntry::Separator => None,
+                        crate::menu::MenuEntry::Item(i) => {
+                            Some((Some(i.id), i.enabled, i.title.clone()))
+                        }
+                        crate::menu::MenuEntry::SubMenu(m) => {
+                            Some((None, m.item.enabled, m.item.title.clone()))
+                        }
+                    })
+                    .collect::<Vec<Option<(Option<u64>, bool, String)>>>()
+            })
+        })
+    });
+    let context_menu_size = cx.create_rw_signal(Size::ZERO);
+    let view = list(
+        move || context_menu_items.get().unwrap_or_default(),
+        move |s| s.clone(),
+        move |s| {
+            if let Some((id, enabled, s)) = s {
+                container_box(|| Box::new(label(move || s.clone())))
+                    .on_click(move |_| {
+                        context_menu.set(None);
+                        if let Some(id) = id {
+                            add_app_update_event(AppUpdateEvent::MenuAction {
+                                window_id,
+                                action_id: id as usize,
+                            });
+                        }
+                        true
+                    })
+                    .on_secondary_click(move |_| {
+                        context_menu.set(None);
+                        if let Some(id) = id {
+                            add_app_update_event(AppUpdateEvent::MenuAction {
+                                window_id,
+                                action_id: id as usize,
+                            });
+                        }
+                        true
+                    })
+                    .disabled(move || !enabled)
+                    .style(|s| s.min_width_pct(100.0).padding_horiz_px(20.0))
+                    .hover_style(|s| s.border_radius(10.0).background(Color::rgb8(65, 65, 65)))
+                    .active_style(|s| s.border_radius(10.0).background(Color::rgb8(92, 92, 92)))
+                    .disabled_style(|s| s.color(Color::rgb8(92, 92, 92)))
+            } else {
+                container_box(|| {
+                    Box::new(empty().style(|s| {
+                        s.width_pct(100.0)
+                            .height_px(1.0)
+                            .margin_vert_px(5.0)
+                            .background(Color::rgb8(92, 92, 92))
+                    }))
+                })
+                .style(|s| s.min_width_pct(100.0).padding_horiz_px(20.0))
+            }
+        },
+    )
+    .on_resize(move |rect| {
+        context_menu_size.set(rect.size());
+    })
+    .on_event(EventListener::PointerDown, move |_| true)
+    .keyboard_navigatable()
+    .on_event(EventListener::KeyDown, move |event| {
+        if let Event::KeyDown(event) = event {
+            if event.key.logical_key == Key::Escape {
+                context_menu.set(None);
+            }
+        }
+        true
+    })
+    .on_event(EventListener::FocusLost, move |_| {
+        context_menu.set(None);
+        true
+    })
+    .style(move |s| {
+        let window_size = window_size.get();
+        let menu_size = context_menu_size.get();
+        let is_acitve = context_menu.with(|m| m.is_some());
+        let mut pos = context_menu.with(|m| m.as_ref().map(|(_, pos)| *pos).unwrap_or_default());
+        if pos.x + menu_size.width > window_size.width {
+            pos.x = window_size.width - menu_size.width;
+        }
+        if pos.y + menu_size.height > window_size.height {
+            pos.y = window_size.height - menu_size.height;
+        }
+        s.absolute()
+            .flex_col()
+            .border_radius(10.0)
+            .background(Color::rgb8(44, 44, 44))
+            .color(Color::rgb8(201, 201, 201))
+            .z_index(999)
+            .line_height(2.0)
+            .padding_px(5.0)
+            .margin_left_px(pos.x as f32)
+            .margin_top_px(pos.y as f32)
+            .cursor(CursorStyle::Default)
+            .apply_if(!is_acitve, |s| s.hide())
+            .box_shadow_blur(5.0)
+            .box_shadow_color(Color::BLACK)
+    });
+
+    let id = view.id();
+
+    create_effect(move |_| {
+        if context_menu.with(|m| m.is_some()) {
+            id.request_focus();
+        }
+    });
+
+    view
 }

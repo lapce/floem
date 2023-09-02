@@ -82,7 +82,7 @@ pub struct MenuItem {
     pub(crate) title: String,
     // key: Option<HotKey>,
     selected: Option<bool>,
-    enabled: bool,
+    pub(crate) enabled: bool,
     pub(crate) action: Option<Box<dyn Fn()>>,
 }
 
