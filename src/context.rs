@@ -411,8 +411,7 @@ impl AppState {
     pub fn is_hidden(&self, id: Id) -> bool {
         self.view_states
             .get(&id)
-            // TODO: this unwrap_or is wrong. The style might not specify it, but the underlying view style can
-            .map(|s| s.style.display.unwrap_or(Display::Flex) == Display::None)
+            .map(|s| s.computed_style.display == Display::None)
             .unwrap_or(false)
     }
 
@@ -624,10 +623,6 @@ impl<'a> EventCx<'a> {
     #[allow(unused)]
     pub(crate) fn update_focus(&mut self, id: Id, keyboard_navigation: bool) {
         self.app_state.update_focus(id, keyboard_navigation);
-    }
-
-    pub fn get_style(&self, id: Id) -> Option<&Style> {
-        self.app_state.view_states.get(&id).map(|s| &s.style)
     }
 
     pub fn get_computed_style(&self, id: Id) -> Option<&ComputedStyle> {
