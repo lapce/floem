@@ -61,15 +61,12 @@ impl Renderer {
     where
         W: raw_window_handle::HasRawDisplayHandle + raw_window_handle::HasRawWindowHandle,
     {
-        let size = Size::new(
-            (size.width * scale).max(1.0),
-            (size.height * scale).max(1.0),
-        );
+        let size = Size::new(size.width.max(1.0), size.height.max(1.0));
         Self::Vger(VgerRenderer::new(window, size.width as u32, size.height as u32, scale).unwrap())
     }
 
     pub fn resize(&mut self, scale: f64, size: Size) {
-        let size = Size::new(size.width * scale, size.height * scale);
+        let size = Size::new(size.width.max(1.0), size.height.max(1.0));
         match self {
             Renderer::Vger(r) => r.resize(size.width as u32, size.height as u32, scale),
         }

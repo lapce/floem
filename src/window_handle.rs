@@ -70,7 +70,7 @@ impl WindowHandle {
         let scale = window.scale_factor();
         let size: LogicalSize<f64> = window.inner_size().to_logical(scale);
         let size = Size::new(size.width, size.height);
-        let paint_state = PaintState::new(&window, scale, size);
+        let paint_state = PaintState::new(&window, scale, size * scale);
         let mut window_handle = Self {
             window: Some(window),
             scope: Scope::new(),
@@ -264,7 +264,7 @@ impl WindowHandle {
         self.app_state.update_screen_size_bp(size);
         self.event(Event::WindowResized(size));
         let scale = self.scale * self.app_state.scale;
-        self.paint_state.resize(scale, size);
+        self.paint_state.resize(scale, size * self.scale);
         self.app_state.set_root_size(size);
         self.layout();
         self.process_update();
