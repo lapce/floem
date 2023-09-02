@@ -43,6 +43,11 @@ pub(crate) enum AppUpdateEvent {
     RequestTimer {
         timer: Timer,
     },
+    #[cfg(target_os = "linux")]
+    MenuAction {
+        window_id: WindowId,
+        action_id: usize,
+    },
 }
 
 pub(crate) fn add_app_update_event(event: AppUpdateEvent) {

@@ -66,6 +66,17 @@ impl ApplicationHandle {
                 AppUpdateEvent::RequestTimer { timer } => {
                     self.request_timer(timer, control_flow);
                 }
+                #[cfg(target_os = "linux")]
+                AppUpdateEvent::MenuAction {
+                    window_id,
+                    action_id,
+                } => {
+                    let window_handle = match self.window_handles.get_mut(&window_id) {
+                        Some(window_handle) => window_handle,
+                        None => return,
+                    };
+                    window_handle.menu_action(action_id);
+                }
             }
         }
     }
