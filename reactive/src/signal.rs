@@ -11,6 +11,26 @@ pub struct RwSignal<T> {
     id: Id,
     ty: PhantomData<T>,
 }
+impl<T: std::ops::AddAssign<T> + 'static> RwSignal<T> {
+    pub fn add(self, rhs: T) {
+        self.update(move |val| *val += rhs)
+    }
+}
+impl<T: std::ops::SubAssign<T> + 'static> RwSignal<T> {
+    pub fn sub(self, rhs: T) {
+        self.update(move |val| *val -= rhs)
+    }
+}
+impl<T: std::ops::MulAssign<T> + 'static> RwSignal<T> {
+    pub fn mul(self, rhs: T) {
+        self.update(move |val| *val *= rhs)
+    }
+}
+impl<T: std::ops::DivAssign<T> + 'static> RwSignal<T> {
+    pub fn div(self, rhs: T) {
+        self.update(move |val| *val /= rhs)
+    }
+}
 
 impl<T> Copy for RwSignal<T> {}
 
@@ -247,6 +267,26 @@ impl<T> ReadSignal<T> {
 pub struct WriteSignal<T> {
     id: Id,
     ty: PhantomData<T>,
+}
+impl<T: std::ops::AddAssign<T> + 'static> WriteSignal<T> {
+    pub fn add(self, rhs: T) {
+        self.update(move |val| *val += rhs)
+    }
+}
+impl<T: std::ops::SubAssign<T> + 'static> WriteSignal<T> {
+    pub fn sub(self, rhs: T) {
+        self.update(move |val| *val -= rhs)
+    }
+}
+impl<T: std::ops::MulAssign<T> + 'static> WriteSignal<T> {
+    pub fn mul(self, rhs: T) {
+        self.update(move |val| *val *= rhs)
+    }
+}
+impl<T: std::ops::DivAssign<T> + 'static> WriteSignal<T> {
+    pub fn div(self, rhs: T) {
+        self.update(move |val| *val /= rhs)
+    }
 }
 
 impl<T> Copy for WriteSignal<T> {}

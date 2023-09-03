@@ -20,12 +20,12 @@ fn app_view() -> impl View {
                 (
                     label(|| "Increment")
                         .on_click(move |_| {
-                            set_counter.update(|value| *value += 1);
+                            set_counter.add(1);
                             true
                         }),
                     label(|| "Decrement")
                         .on_click(move |_| {
-                            set_counter.update(|value| *value -= 1);
+                            set_counter.sub(1);
                             true
                         }),
                 )
