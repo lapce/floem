@@ -30,6 +30,7 @@ pub enum AppEvent {
 pub(crate) enum UserEvent {
     AppUpdate,
     Idle,
+    QuitApp,
 }
 
 pub(crate) enum AppUpdateEvent {
@@ -144,4 +145,10 @@ impl Application {
             f(proxy);
         }
     }
+}
+
+pub fn quit_app() {
+    Application::with_event_loop_proxy(|proxy| {
+        let _ = proxy.send_event(UserEvent::QuitApp);
+    });
 }

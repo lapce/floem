@@ -1,7 +1,4 @@
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use floem_reactive::{with_scope, RwSignal, Scope};
 use floem_renderer::Renderer;
@@ -45,7 +42,7 @@ use crate::{
 /// - processing all requests to update the animation state from the reactive system
 /// - requesting a new animation frame from the backend
 pub(crate) struct WindowHandle {
-    pub(crate) window: Option<Arc<winit::window::Window>>,
+    pub(crate) window: Option<winit::window::Window>,
     /// Reactive Scope for this WindowHandle
     scope: Scope,
     pub(crate) view: Box<dyn View>,
@@ -66,7 +63,6 @@ impl WindowHandle {
         window: winit::window::Window,
         view_fn: impl FnOnce(winit::window::WindowId) -> Box<dyn View> + 'static,
     ) -> Self {
-        let window = Arc::new(window);
         let window_id = window.id();
         let id = Id::next();
         set_current_view(id);
@@ -892,8 +888,9 @@ impl WindowHandle {
 
     #[cfg(target_os = "linux")]
     fn show_context_menu(&self, menu: Menu, _platform_menu: winit::menu::Menu, pos: Option<Point>) {
-        self.context_menu
-            .set(Some((menu, pos.unwrap_or(self.cursor_position))));
+        let pos = pos.unwrap_or(self.cursor_position);
+        let pos = Point::new(pos.x / self.app_state.scale, pos.y / self.app_state.scale);
+        self.context_menu.set(Some((menu, pos)));
     }
 
     pub(crate) fn menu_action(&mut self, id: usize) {

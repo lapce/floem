@@ -43,6 +43,9 @@ impl ApplicationHandle {
             UserEvent::Idle => {
                 self.idle();
             }
+            UserEvent::QuitApp => {
+                control_flow.set_exit();
+            }
         }
     }
 
@@ -61,7 +64,7 @@ impl ApplicationHandle {
                     self.new_window(event_loop, view_fn, config)
                 }
                 AppUpdateEvent::CloseWindow { window_id } => {
-                    self.close_window(window_id);
+                    self.close_window(window_id, control_flow);
                 }
                 AppUpdateEvent::RequestTimer { timer } => {
                     self.request_timer(timer, control_flow);
@@ -85,8 +88,7 @@ impl ApplicationHandle {
         &mut self,
         window_id: winit::window::WindowId,
         event: WindowEvent,
-        #[cfg(target_os = "macos")] _control_flow: &mut ControlFlow,
-        #[cfg(not(target_os = "macos"))] control_flow: &mut ControlFlow,
+        control_flow: &mut ControlFlow,
     ) {
         let window_handle = match self.window_handles.get_mut(&window_id) {
             Some(window_handle) => window_handle,
@@ -106,15 +108,10 @@ impl ApplicationHandle {
                 window_handle.position(point);
             }
             WindowEvent::CloseRequested => {
-                window_handle.window = None;
+                self.close_window(window_id, control_flow);
             }
             WindowEvent::Destroyed => {
-                window_handle.destroy();
-                self.window_handles.remove(&window_id);
-                #[cfg(not(target_os = "macos"))]
-                if self.window_handles.is_empty() {
-                    control_flow.set_exit();
-                }
+                self.close_window(window_id, control_flow);
             }
             WindowEvent::DroppedFile(_) => {}
             WindowEvent::HoveredFile(_) => {}
@@ -208,9 +205,20 @@ impl ApplicationHandle {
         self.window_handles.insert(window_id, window_handle);
     }
 
-    fn close_window(&mut self, window_id: WindowId) {
+    fn close_window(
+        &mut self,
+        window_id: WindowId,
+        #[cfg(target_os = "macos")] _control_flow: &mut ControlFlow,
+        #[cfg(not(target_os = "macos"))] control_flow: &mut ControlFlow,
+    ) {
         if let Some(handle) = self.window_handles.get_mut(&window_id) {
             handle.window = None;
+            handle.destroy();
+        }
+        self.window_handles.remove(&window_id);
+        #[cfg(not(target_os = "macos"))]
+        if self.window_handles.is_empty() {
+            control_flow.set_exit();
         }
     }
 
