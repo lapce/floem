@@ -24,7 +24,7 @@ pub fn checkbox_view() -> impl View {
                     (
                         checkbox(is_checked)
                             .focus_visible_style(|s| s.border_color(Color::BLUE).border(2.)),
-                        label(|| "Check me!".to_string()),
+                        label(|| "Check me!"),
                     )
                 })
                 .on_click(move |_| {
@@ -37,7 +37,7 @@ pub fn checkbox_view() -> impl View {
                     (
                         checkbox(is_checked)
                             .focus_visible_style(|s| s.border_color(Color::BLUE).border(2.)),
-                        label(|| "Check me!".to_string()),
+                        label(|| "Check me!"),
                     )
                 })
                 .style(|s| s.color(Color::GRAY))

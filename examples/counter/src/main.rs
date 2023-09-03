@@ -12,7 +12,7 @@ fn app_view() -> impl View {
             label(move || format!("Value: {}", counter.get())).style(|s| s.padding_px(10.0)),
             stack(|| {
                 (
-                    label(|| "Increment".to_string())
+                    label(|| "Increment")
                         .style(|s| {
                             s.border_radius(10.0)
                                 .padding_px(10.0)
@@ -29,7 +29,7 @@ fn app_view() -> impl View {
                         .active_style(|s| s.color(Color::WHITE).background(Color::DARK_GREEN))
                         .keyboard_navigatable()
                         .focus_visible_style(|s| s.border_color(Color::BLUE).border(2.)),
-                    label(|| "Decrement".to_string())
+                    label(|| "Decrement")
                         .on_click({
                             move |_| {
                                 set_counter.update(|value| *value -= 1);
@@ -47,7 +47,7 @@ fn app_view() -> impl View {
                         .active_style(|s| s.color(Color::WHITE).background(Color::RED))
                         .keyboard_navigatable()
                         .focus_visible_style(|s| s.border_color(Color::BLUE).border(2.)),
-                    label(|| "Reset to 0".to_string())
+                    label(|| "Reset to 0")
                         .on_click(move |_| {
                             println!("Reset counter pressed"); // will not fire if button is disabled
                             set_counter.update(|value| *value = 0);

@@ -5,7 +5,7 @@ use floem::{
 };
 
 fn app_view() -> impl View {
-    label(|| "Drag me!".to_string())
+    label(|| "Drag me!")
         .style(|s| {
             s.border(1.0)
                 .border_radius(2.0)

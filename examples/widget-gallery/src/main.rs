@@ -44,57 +44,55 @@ fn app_view() -> impl View {
                                 .iter()
                                 .position(|it| *it == item)
                                 .unwrap();
-                            stack(
-                                || (label(move || item.to_string()).style(|s| s.font_size(24.0)),),
-                            )
-                            .on_click(move |_| {
-                                set_active_tab.update(|v: &mut usize| {
-                                    *v = tabs
-                                        .get_untracked()
-                                        .iter()
-                                        .position(|it| *it == item)
-                                        .unwrap();
-                                });
-                                true
-                            })
-                            .on_event(EventListener::KeyDown, move |e| {
-                                if let Event::KeyDown(key_event) = e {
-                                    let active = active_tab.get();
-                                    match key_event.key.logical_key {
-                                        Key::ArrowUp => {
-                                            if active > 0 {
-                                                set_active_tab.update(|v| *v -= 1)
+                            stack(|| (label(move || item).style(|s| s.font_size(24.0)),))
+                                .on_click(move |_| {
+                                    set_active_tab.update(|v: &mut usize| {
+                                        *v = tabs
+                                            .get_untracked()
+                                            .iter()
+                                            .position(|it| *it == item)
+                                            .unwrap();
+                                    });
+                                    true
+                                })
+                                .on_event(EventListener::KeyDown, move |e| {
+                                    if let Event::KeyDown(key_event) = e {
+                                        let active = active_tab.get();
+                                        match key_event.key.logical_key {
+                                            Key::ArrowUp => {
+                                                if active > 0 {
+                                                    set_active_tab.update(|v| *v -= 1)
+                                                }
+                                                true
                                             }
-                                            true
-                                        }
-                                        Key::ArrowDown => {
-                                            if active < tabs.get().len() - 1 {
-                                                set_active_tab.update(|v| *v += 1)
+                                            Key::ArrowDown => {
+                                                if active < tabs.get().len() - 1 {
+                                                    set_active_tab.update(|v| *v += 1)
+                                                }
+                                                true
                                             }
-                                            true
+                                            _ => false,
                                         }
-                                        _ => false,
+                                    } else {
+                                        false
                                     }
-                                } else {
-                                    false
-                                }
-                            })
-                            .keyboard_navigatable()
-                            .draggable()
-                            .focus_visible_style(|s| s.border(2.).border_color(Color::BLUE))
-                            .style(move |s| {
-                                s.flex_row()
-                                    .width_pct(100.0)
-                                    .height_px(32.0)
-                                    .border_bottom(1.0)
-                                    .border_color(Color::LIGHT_GRAY)
-                                    .apply_if(index == active_tab.get(), |s| {
-                                        s.background(Color::GRAY)
-                                    })
-                            })
-                            .hover_style(|s| {
-                                s.background(Color::LIGHT_GRAY).cursor(CursorStyle::Pointer)
-                            })
+                                })
+                                .keyboard_navigatable()
+                                .draggable()
+                                .focus_visible_style(|s| s.border(2.).border_color(Color::BLUE))
+                                .style(move |s| {
+                                    s.flex_row()
+                                        .width_pct(100.0)
+                                        .height_px(32.0)
+                                        .border_bottom(1.0)
+                                        .border_color(Color::LIGHT_GRAY)
+                                        .apply_if(index == active_tab.get(), |s| {
+                                            s.background(Color::GRAY)
+                                        })
+                                })
+                                .hover_style(|s| {
+                                    s.background(Color::LIGHT_GRAY).cursor(CursorStyle::Pointer)
+                                })
                         },
                     )
                     .style(|s| s.flex_col().width_px(140.0))
