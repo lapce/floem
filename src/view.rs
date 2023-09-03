@@ -516,6 +516,11 @@ pub trait View {
                         }
                     }
                 }
+                if let Some(action) = cx.get_event_listener(id, &EventListener::PointerMove) {
+                    if (*action)(&event) {
+                        return true;
+                    }
+                }
             }
             Event::PointerUp(pointer_event) => {
                 if pointer_event.button.is_primary() {
@@ -575,6 +580,11 @@ pub trait View {
                             if on_view && last_pointer_down.is_some() && (*action)(&event) {
                                 return true;
                             }
+                        }
+                    }
+                    if let Some(action) = cx.get_event_listener(id, &EventListener::PointerUp) {
+                        if (*action)(&event) {
+                            return true;
                         }
                     }
                 } else if pointer_event.button.is_secondary() {

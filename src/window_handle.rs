@@ -828,6 +828,8 @@ impl WindowHandle {
             Some(CursorStyle::Default) => CursorIcon::Default,
             Some(CursorStyle::Pointer) => CursorIcon::Pointer,
             Some(CursorStyle::Text) => CursorIcon::Text,
+            Some(CursorStyle::ColResize) => CursorIcon::ColResize,
+            Some(CursorStyle::RowResize) => CursorIcon::RowResize,
             None => CursorIcon::Default,
         };
         if cursor != self.app_state.last_cursor {

@@ -58,6 +58,8 @@ pub enum CursorStyle {
     Default,
     Pointer,
     Text,
+    ColResize,
+    RowResize,
 }
 
 #[derive(Debug, Clone, Copy)]
