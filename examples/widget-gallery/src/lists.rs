@@ -69,7 +69,7 @@ fn enhanced_list() -> impl View {
                             label(move || item.to_string())
                                 .style(|s| s.height_px(32.0).font_size(32.0)),
                             container(move || {
-                                label(move || " X ".to_string())
+                                label(move || " X ")
                                     .on_click(move |_| {
                                         print!("Item Removed");
                                         set_long_list.update(|x| {

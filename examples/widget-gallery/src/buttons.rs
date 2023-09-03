@@ -11,7 +11,7 @@ pub fn button_view() -> impl View {
     form(|| {
         (
             form_item("Basic Button:".to_string(), 120.0, || {
-                label(|| "Click me".to_string())
+                label(|| "Click me")
                     .on_click(|_| {
                         println!("Button clicked");
                         true
@@ -21,7 +21,7 @@ pub fn button_view() -> impl View {
                     .style(|s| s.border(1.0).border_radius(10.0).padding_px(10.0))
             }),
             form_item("Styled Button:".to_string(), 120.0, || {
-                label(|| "Click me".to_string())
+                label(|| "Click me")
                     .on_click(|_| {
                         println!("Button clicked");
                         true
@@ -41,7 +41,7 @@ pub fn button_view() -> impl View {
                     .active_style(|s| s.color(Color::WHITE).background(Color::RED))
             }),
             form_item("Distabled Button:".to_string(), 120.0, || {
-                label(|| "Click me".to_string())
+                label(|| "Click me")
                     .disabled(|| true)
                     .on_click(|_| {
                         println!("Button clicked");
@@ -58,7 +58,7 @@ pub fn button_view() -> impl View {
                     .hover_style(|s| s.background(Color::rgb8(224, 224, 224)))
             }),
             form_item("Secondary click button:".to_string(), 120.0, || {
-                label(|| "Right click me".to_string())
+                label(|| "Right click me")
                     .on_secondary_click(|_| {
                         println!("Secondary mouse button click.");
                         true

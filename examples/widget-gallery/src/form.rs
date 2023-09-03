@@ -24,7 +24,7 @@ pub fn form_item<V: View + 'static>(
         stack(|| {
             (
                 container(|| {
-                    label(move || item_label.to_string()).style(|s| s.font_weight(Weight::BOLD))
+                    label(move || item_label.clone()).style(|s| s.font_weight(Weight::BOLD))
                 })
                 .style(move |s| s.width_px(label_width).justify_end().margin_right_px(10.0)),
                 view_fn(),

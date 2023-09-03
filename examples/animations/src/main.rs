@@ -14,7 +14,7 @@ fn app_view() -> impl View {
     let (is_hovered, set_is_hovered) = create_signal(false);
 
     stack(|| {
-        (label(|| "Hover or click me!".to_string())
+        (label(|| "Hover or click me!")
             .on_click(move |_| {
                 set_counter.update(|value| *value += 1.0);
                 true

@@ -21,14 +21,14 @@ pub trait Decorators: View + Sized {
     /// # use floem::{peniko::Color, view::View, views::{Decorators, label, stack}};
     /// fn view() -> impl View {
     ///     label(|| "Hello".to_string())
-    ///         .style(|| Style::default().font_size(20.0).color(Color::RED))
+    ///         .style(|s| s.font_size(20.0).color(Color::RED))
     /// }
     ///
     /// fn other() -> impl View {
     ///     stack(|| (
     ///         view(), // will be red and size 20
     ///         // will be green and default size due to the previous style being overwritten
-    ///         view().style(|| Style::BASE.color(Color::GREEN)),
+    ///         view().style(|s| s.color(Color::GREEN)),
     ///     ))
     /// }
     /// ```
@@ -49,14 +49,14 @@ pub trait Decorators: View + Sized {
     /// # use floem::{peniko::Color, view::View, views::{Decorators, label, stack}};
     /// fn view() -> impl View {
     ///    label(|| "Hello".to_string())
-    ///       .base_style(|| Style::default().font_size(20.0).color(Color::RED))
+    ///       .base_style(|s| s.font_size(20.0).color(Color::RED))
     /// }
     ///
     /// fn other() -> impl View {
     ///     stack(|| (
     ///         view(), // will be red and size 20
     ///         // will be green and size 20
-    ///         view().style(|| Style::BASE.color(Color::GREEN)),
+    ///         view().style(|s| s.color(Color::GREEN)),
     ///     ))
     /// }
     /// ```

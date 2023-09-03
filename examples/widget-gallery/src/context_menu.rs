@@ -7,7 +7,7 @@ use floem::{
 pub fn menu_view() -> impl View {
     stack(move || {
         (
-            label(|| "Click me (Popout menu)".to_string())
+            label(|| "Click me (Popout menu)")
                 .base_style(|s| s.padding_px(10.0).margin_bottom_px(10.0).border(1.0))
                 .popout_menu(|| {
                     Menu::new("")
@@ -15,7 +15,7 @@ pub fn menu_view() -> impl View {
                         .separator()
                         .entry(MenuItem::new("I am another menu item"))
                 }),
-            label(|| "Right click me (Context menu)".to_string())
+            label(|| "Right click me (Context menu)")
                 .base_style(|s| s.padding_px(10.0).border(1.0))
                 .context_menu(|| {
                     Menu::new("")
