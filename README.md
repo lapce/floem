@@ -18,12 +18,12 @@ fn app_view() -> impl View {
             label(move || format!("Value: {}", counter.get())),
             stack(|| {
                 (
-                    label(|| "Increment".to_string())
+                    label(|| "Increment")
                         .on_click(move |_| {
                             set_counter.update(|value| *value += 1);
                             true
                         }),
-                    label(|| "Decrement".to_string())
+                    label(|| "Decrement")
                         .on_click(move |_| {
                             set_counter.update(|value| *value -= 1);
                             true
