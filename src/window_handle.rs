@@ -553,7 +553,9 @@ impl WindowHandle {
                         cx.app_state.draggable.insert(id);
                     }
                     UpdateMessage::HandleTitleBar(_val) => {
-                        // self.handle.handle_titlebar(val);
+                        if let Some(window) = self.window.as_ref() {
+                            let _ = window.drag_window();
+                        }
                     }
                     UpdateMessage::ToggleWindowMaximized => {
                         // let window_state = self.handle.get_window_state();
