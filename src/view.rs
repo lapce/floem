@@ -1096,3 +1096,45 @@ pub(crate) fn view_debug_tree(root_view: &dyn View) {
         );
     }
 }
+
+impl View for Box<dyn View> {
+    fn id(&self) -> Id {
+        (**self).id()
+    }
+
+    fn child(&self, id: Id) -> Option<&dyn View> {
+        (**self).child(id)
+    }
+
+    fn child_mut(&mut self, id: Id) -> Option<&mut dyn View> {
+        (**self).child_mut(id)
+    }
+
+    fn children(&self) -> Vec<&dyn View> {
+        (**self).children()
+    }
+
+    fn children_mut(&mut self) -> Vec<&mut dyn View> {
+        (**self).children_mut()
+    }
+
+    fn compute_layout(&mut self, cx: &mut LayoutCx) -> Option<Rect> {
+        (**self).compute_layout(cx)
+    }
+
+    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags {
+        (**self).update(cx, state)
+    }
+
+    fn layout(&mut self, cx: &mut LayoutCx) -> Node {
+        (**self).layout(cx)
+    }
+
+    fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {
+        (**self).event(cx, id_path, event)
+    }
+
+    fn paint(&mut self, cx: &mut PaintCx) {
+        (**self).paint(cx)
+    }
+}
