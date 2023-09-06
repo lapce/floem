@@ -39,13 +39,11 @@ pub struct ContainerBox {
 /// use floem_reactive::*;
 /// let check = true;
 ///
-/// container_box(|| {
-///     if check == true {
-///         Box::new(checkbox(create_rw_signal(true).read_only()))
-///     } else {
-///         Box::new(label(|| "no check".to_string()))
-///     }
-/// });
+/// if check == true {
+///     container_box(checkbox(create_rw_signal(true).read_only()))
+/// } else {
+///     container_box(label(|| "no check".to_string()))
+/// };
 /// ```
 pub fn container_box(child: impl View + 'static) -> ContainerBox {
     ContainerBox {

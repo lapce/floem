@@ -25,7 +25,7 @@ pub trait Decorators: View + Sized {
     /// }
     ///
     /// fn other() -> impl View {
-    ///     stack(|| (
+    ///     stack((
     ///         view(), // will be red and size 20
     ///         // will be green and default size due to the previous style being overwritten
     ///         view().style(|s| s.color(Color::GREEN)),
@@ -53,7 +53,7 @@ pub trait Decorators: View + Sized {
     /// }
     ///
     /// fn other() -> impl View {
-    ///     stack(|| (
+    ///     stack((
     ///         view(), // will be red and size 20
     ///         // will be green and size 20
     ///         view().style(|s| s.color(Color::GREEN)),
