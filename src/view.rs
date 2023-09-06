@@ -1102,6 +1102,10 @@ impl View for Box<dyn View> {
         (**self).id()
     }
 
+    fn view_style(&self) -> Option<Style> {
+        (**self).view_style()
+    }
+
     fn child(&self, id: Id) -> Option<&dyn View> {
         (**self).child(id)
     }
