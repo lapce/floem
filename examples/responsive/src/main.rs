@@ -6,7 +6,7 @@ use floem::{
 };
 
 fn app_view() -> impl View {
-    stack(|| {
+    stack({
         (label(|| "Resize the window to see the magic")
             .style(|s| {
                 s.border(1.0)

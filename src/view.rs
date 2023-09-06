@@ -1053,6 +1053,14 @@ fn view_previous_sibling<'a>(
     None
 }
 
+pub(crate) fn view_children_set_parent_id(view: &dyn View) {
+    let parent_id = view.id();
+    for child in view.children() {
+        child.id().set_parent(parent_id);
+        view_children_set_parent_id(child);
+    }
+}
+
 fn view_nested_last_child(view: &dyn View) -> &dyn View {
     let mut last_child = view;
     while let Some(new_last_child) = last_child.children().pop() {

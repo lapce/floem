@@ -4,7 +4,11 @@ use floem_reactive::{create_effect, untrack, with_scope, ReadSignal, Scope, Trig
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 
-use crate::{app::UserEvent, Application};
+use crate::{
+    app::UserEvent,
+    window_handle::{get_current_view, set_current_view},
+    Application,
+};
 
 pub(crate) static EXT_EVENT_HANDLER: Lazy<ExtEventHandler> = Lazy::new(ExtEventHandler::default);
 
@@ -34,6 +38,7 @@ pub fn create_ext_action<T: Send + 'static>(
     cx: Scope,
     action: impl Fn(T) + 'static,
 ) -> impl FnOnce(T) {
+    let view = get_current_view();
     let cx = cx.create_child();
     let trigger = cx.create_trigger();
     let data = Arc::new(Mutex::new(None));
@@ -45,7 +50,10 @@ pub fn create_ext_action<T: Send + 'static>(
                 trigger.track();
                 if let Some(event) = data.lock().take() {
                     untrack(|| {
+                        let current_view = get_current_view();
+                        set_current_view(view);
                         action(event);
+                        set_current_view(current_view);
                     });
                     cx.dispose();
                 }

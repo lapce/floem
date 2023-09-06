@@ -48,5 +48,5 @@ pub use text_input::*;
 mod empty;
 pub use empty::*;
 
-mod handle_titlebar_area;
-pub use handle_titlebar_area::*;
+mod drag_window_area;
+pub use drag_window_area::*;

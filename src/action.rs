@@ -12,16 +12,14 @@ use crate::{
     ext_event::create_ext_action,
     file::{FileDialogOptions, FileInfo},
     menu::Menu,
-    update::{UpdateMessage, UPDATE_MESSAGES},
-    window_handle::get_current_view,
+    update::{UpdateMessage, CENTRAL_UPDATE_MESSAGES},
+    window_handle::{get_current_view, set_current_view},
 };
 
 fn add_update_message(msg: UpdateMessage) {
     let current_view = get_current_view();
-    UPDATE_MESSAGES.with(|msgs| {
-        let mut msgs = msgs.borrow_mut();
-        let msgs = msgs.entry(current_view).or_default();
-        msgs.push(msg);
+    CENTRAL_UPDATE_MESSAGES.with(|msgs| {
+        msgs.borrow_mut().push((current_view, msg));
     });
 }
 
@@ -29,8 +27,8 @@ pub fn toggle_window_maximized() {
     add_update_message(UpdateMessage::ToggleWindowMaximized);
 }
 
-pub fn set_handle_titlebar(val: bool) {
-    add_update_message(UpdateMessage::HandleTitleBar(val));
+pub fn drag_window() {
+    add_update_message(UpdateMessage::DragWindow);
 }
 
 pub fn set_window_delta(delta: Vec2) {
@@ -72,6 +70,14 @@ impl TimerToken {
 }
 
 pub fn exec_after(duration: Duration, action: impl FnOnce(TimerToken) + 'static) -> TimerToken {
+    let view = get_current_view();
+    let action = move |token| {
+        let current_view = get_current_view();
+        set_current_view(view);
+        action(token);
+        set_current_view(current_view);
+    };
+
     let token = TimerToken::next();
     let deadline = Instant::now() + duration;
     add_app_update_event(AppUpdateEvent::RequestTimer {

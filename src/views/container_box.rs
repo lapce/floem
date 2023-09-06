@@ -1,7 +1,6 @@
 use kurbo::Rect;
 
 use crate::{
-    context::ViewContext,
     id::Id,
     view::{ChangeFlags, View},
 };
@@ -48,9 +47,11 @@ pub struct ContainerBox {
 ///     }
 /// });
 /// ```
-pub fn container_box(child: impl FnOnce() -> Box<dyn View>) -> ContainerBox {
-    let (id, child) = ViewContext::new_id_with_child(child);
-    ContainerBox { id, child }
+pub fn container_box(child: impl View + 'static) -> ContainerBox {
+    ContainerBox {
+        id: Id::next(),
+        child: Box::new(child),
+    }
 }
 
 impl View for ContainerBox {

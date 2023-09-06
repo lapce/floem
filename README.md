@@ -13,25 +13,21 @@ fn app_view() -> impl View {
     let (counter, set_counter) = create_signal(0);
 
     // create user interface with Floem view functions
-    stack(|| {
-        (
-            label(move || format!("Value: {}", counter.get())),
-            stack(|| {
-                (
-                    label(|| "Increment")
-                        .on_click(move |_| {
-                            set_counter.update(|value| *value += 1);
-                            true
-                        }),
-                    label(|| "Decrement")
-                        .on_click(move |_| {
-                            set_counter.update(|value| *value -= 1);
-                            true
-                        }),
-                )
-            }),
-        )
-    })
+    stack((
+        label(move || format!("Value: {}", counter.get())),
+        stack((
+            text("Increment")
+                .on_click(move |_| {
+                    set_counter.update(|value| *value += 1);
+                    true
+                }),
+            text("Decrement")
+                .on_click(move |_| {
+                    set_counter.update(|value| *value -= 1);
+                    true
+                }),
+        )),
+    ))
 }
 
 fn main() {

@@ -1,8 +1,7 @@
 use kurbo::Rect;
 
 use crate::{
-    action::{set_handle_titlebar, toggle_window_maximized},
-    context::ViewContext,
+    action::{drag_window, toggle_window_maximized},
     event::{Event, EventListener},
     id::Id,
     view::View,
@@ -10,20 +9,16 @@ use crate::{
 
 use super::Decorators;
 
-pub struct HandleTitlebarArea<V: View> {
+pub struct DargWindowArea<V: View> {
     id: Id,
     child: V,
 }
 
-pub fn handle_titlebar_area<V: View>(child: impl FnOnce() -> V) -> HandleTitlebarArea<V> {
-    let (id, child) = ViewContext::new_id_with_child(child);
-    HandleTitlebarArea { id, child }
+pub fn drag_window_area<V: View>(child: V) -> DargWindowArea<V> {
+    let id = Id::next();
+    DargWindowArea { id, child }
         .on_event(EventListener::PointerDown, |_| {
-            set_handle_titlebar(true);
-            true
-        })
-        .on_event(EventListener::PointerUp, |_| {
-            set_handle_titlebar(false);
+            drag_window();
             true
         })
         .on_double_click(|_| {
@@ -32,7 +27,7 @@ pub fn handle_titlebar_area<V: View>(child: impl FnOnce() -> V) -> HandleTitleba
         })
 }
 
-impl<V: View> View for HandleTitlebarArea<V> {
+impl<V: View> View for DargWindowArea<V> {
     fn id(&self) -> Id {
         self.id
     }

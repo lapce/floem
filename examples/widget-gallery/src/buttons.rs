@@ -8,7 +8,7 @@ use floem::{
 use crate::form::{form, form_item};
 
 pub fn button_view() -> impl View {
-    form(|| {
+    form({
         (
             form_item("Basic Button:".to_string(), 120.0, || {
                 label(|| "Click me")

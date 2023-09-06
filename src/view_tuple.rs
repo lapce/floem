@@ -5,7 +5,9 @@ use crate::view::View;
 pub trait ViewTuple {
     fn paint(&mut self, cx: &mut PaintCx);
 
-    fn foreach<F: FnMut(&mut dyn View) -> bool>(&mut self, f: &mut F);
+    fn foreach<F: Fn(&dyn View)>(&self, f: F);
+
+    fn foreach_mut<F: FnMut(&mut dyn View) -> bool>(&mut self, f: &mut F);
 
     fn foreach_rev<F: FnMut(&mut dyn View) -> bool>(&mut self, f: &mut F);
 
@@ -22,7 +24,11 @@ macro_rules! impl_view_tuple {
     ( $n: tt; $( $t:ident),* ; $( $i:tt ),* ; $( $j:tt ),*) => {
 
         impl< $( $t: View, )* > ViewTuple for ( $( $t, )* ) {
-            fn foreach<F: FnMut(&mut dyn View) -> bool>(&mut self, f: &mut F) {
+            fn foreach<F: Fn(&dyn View)>(&self, f: F) {
+                $( f(&self.$i); )*
+            }
+
+            fn foreach_mut<F: FnMut(&mut dyn View) -> bool>(&mut self, f: &mut F) {
                 $( if f(&mut self.$i) { return; } )*
             }
 

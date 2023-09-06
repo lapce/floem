@@ -9,7 +9,7 @@ use crate::form::{form, form_item};
 
 pub fn checkbox_view() -> impl View {
     let (is_checked, set_is_checked) = create_signal(true);
-    form(move || {
+    form({
         (
             form_item("Basic Checkbox:".to_string(), 120.0, move || {
                 checkbox(is_checked)
@@ -20,7 +20,7 @@ pub fn checkbox_view() -> impl View {
                     })
             }),
             form_item("Labelled Checkbox:".to_string(), 120.0, move || {
-                stack(|| {
+                stack({
                     (
                         checkbox(is_checked)
                             .focus_visible_style(|s| s.border_color(Color::BLUE).border(2.)),
@@ -33,7 +33,7 @@ pub fn checkbox_view() -> impl View {
                 })
             }),
             form_item("Disabled Checkbox:".to_string(), 120.0, move || {
-                stack(|| {
+                stack({
                     (
                         checkbox(is_checked)
                             .focus_visible_style(|s| s.border_color(Color::BLUE).border(2.)),

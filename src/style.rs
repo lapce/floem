@@ -727,9 +727,8 @@ impl Style {
         self.display(Display::None)
     }
 
-    pub fn z_index(mut self, z_index: i32) -> Self {
-        self.z_index = Some(z_index).into();
-        self
+    pub fn flex(self) -> Self {
+        self.display(Display::Flex)
     }
 
     pub fn flex_basis_px(self, pt: f32) -> Self {
@@ -742,6 +741,11 @@ impl Style {
 
     pub fn flex_col(self) -> Self {
         self.flex_direction(FlexDirection::Column)
+    }
+
+    pub fn z_index(mut self, z_index: i32) -> Self {
+        self.z_index = Some(z_index).into();
+        self
     }
 
     /// Allow the application of a function if the option exists.  

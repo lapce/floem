@@ -1,7 +1,6 @@
 use kurbo::{Rect, Size};
 
 use crate::{
-    context::ViewContext,
     id::Id,
     view::{ChangeFlags, View},
 };
@@ -11,9 +10,11 @@ pub struct Clip<V: View> {
     child: V,
 }
 
-pub fn clip<V: View>(child: impl FnOnce() -> V) -> Clip<V> {
-    let (id, child) = ViewContext::new_id_with_child(child);
-    Clip { id, child }
+pub fn clip<V: View>(child: V) -> Clip<V> {
+    Clip {
+        id: Id::next(),
+        child,
+    }
 }
 
 impl<V: View> View for Clip<V> {

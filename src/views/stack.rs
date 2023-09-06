@@ -1,7 +1,7 @@
 use kurbo::Rect;
 
 use crate::{
-    context::{EventCx, UpdateCx, ViewContext},
+    context::{EventCx, UpdateCx},
     id::Id,
     view::{ChangeFlags, View},
     view_tuple::ViewTuple,
@@ -12,8 +12,8 @@ pub struct Stack<VT> {
     children: VT,
 }
 
-pub fn stack<VT: ViewTuple + 'static>(children: impl FnOnce() -> VT) -> Stack<VT> {
-    let (id, children) = ViewContext::new_id_with_child(children);
+pub fn stack<VT: ViewTuple + 'static>(children: VT) -> Stack<VT> {
+    let id = Id::next();
     Stack { id, children }
 }
 
@@ -75,7 +75,7 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
             let mut nodes = Vec::new();
-            self.children.foreach(&mut |view| {
+            self.children.foreach_mut(&mut |view| {
                 let node = view.layout_main(cx);
                 nodes.push(node);
                 false
@@ -86,7 +86,7 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
 
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<Rect> {
         let mut layout_rect = Rect::ZERO;
-        self.children.foreach(&mut |view| {
+        self.children.foreach_mut(&mut |view| {
             layout_rect = layout_rect.union(view.compute_layout_main(cx));
             false
         });
@@ -94,7 +94,7 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        self.children.foreach(&mut |view| {
+        self.children.foreach_mut(&mut |view| {
             view.paint_main(cx);
             false
         });

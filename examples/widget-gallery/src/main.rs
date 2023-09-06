@@ -29,10 +29,10 @@ fn app_view() -> impl View {
     let (tabs, _set_tabs) = create_signal(tabs);
 
     let (active_tab, set_active_tab) = create_signal(0);
-    stack(|| {
+    stack({
         (
-            container(move || {
-                scroll(move || {
+            container({
+                scroll({
                     virtual_list(
                         VirtualListDirection::Vertical,
                         VirtualListItemSize::Fixed(Box::new(|| 32.0)),
@@ -44,7 +44,7 @@ fn app_view() -> impl View {
                                 .iter()
                                 .position(|it| *it == item)
                                 .unwrap();
-                            stack(|| (label(move || item).style(|s| s.font_size(24.0)),))
+                            stack((label(move || item).style(|s| s.font_size(24.0)),))
                                 .on_click(move |_| {
                                     set_active_tab.update(|v: &mut usize| {
                                         *v = tabs
@@ -113,20 +113,20 @@ fn app_view() -> impl View {
                     .flex_col()
                     .items_center()
             }),
-            container(move || {
+            container({
                 tab(
                     move || active_tab.get(),
                     move || tabs.get(),
                     |it| *it,
                     |it| match it {
-                        "Label" => container_box(|| Box::new(labels::label_view())),
-                        "Button" => container_box(|| Box::new(buttons::button_view())),
-                        "Checkbox" => container_box(|| Box::new(checkbox::checkbox_view())),
-                        "Input" => container_box(|| Box::new(inputs::text_input_view())),
-                        "List" => container_box(|| Box::new(lists::virt_list_view())),
-                        "Menu" => container_box(|| Box::new(context_menu::menu_view())),
-                        "RichText" => container_box(|| Box::new(rich_text::rich_text_view())),
-                        _ => container_box(|| Box::new(label(|| "Not implemented".to_owned()))),
+                        "Label" => container_box(labels::label_view()),
+                        "Button" => container_box(buttons::button_view()),
+                        "Checkbox" => container_box(checkbox::checkbox_view()),
+                        "Input" => container_box(inputs::text_input_view()),
+                        "List" => container_box(lists::virt_list_view()),
+                        "Menu" => container_box(context_menu::menu_view()),
+                        "RichText" => container_box(rich_text::rich_text_view()),
+                        _ => container_box(label(|| "Not implemented".to_owned())),
                     },
                 )
                 .style(|s| s.size_pct(100.0, 100.0))

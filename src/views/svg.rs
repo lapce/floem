@@ -9,7 +9,6 @@ use peniko::Color;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    context::ViewContext,
     id::Id,
     view::{ChangeFlags, View},
     views::Decorators,
@@ -22,8 +21,7 @@ pub struct Svg {
 }
 
 pub fn svg(svg_str: impl Fn() -> String + 'static) -> Svg {
-    let cx = ViewContext::get_current();
-    let id = cx.new_id();
+    let id = Id::next();
     create_effect(move |_| {
         let new_svg_str = svg_str();
         id.update_state(new_svg_str, false);

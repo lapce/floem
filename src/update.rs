@@ -13,9 +13,11 @@ use crate::{
 };
 
 thread_local! {
+    pub(crate) static CENTRAL_UPDATE_MESSAGES: RefCell<Vec<(Id, UpdateMessage)>> = Default::default();
     /// Stores a queue of update messages for each view. This is a list of build in messages, including a built-in State message
     /// that you can use to send a state update to a view.
     pub(crate) static UPDATE_MESSAGES: RefCell<HashMap<Id, Vec<UpdateMessage>>> = Default::default();
+    pub(crate) static CENTRAL_DEFERRED_UPDATE_MESSAGES: RefCell<Vec<(Id, Box<dyn Any>)>> = Default::default();
     pub(crate) static DEFERRED_UPDATE_MESSAGES: RefCell<DeferredUpdateMessages> = Default::default();
     pub(crate) static ANIM_UPDATE_MESSAGES: RefCell<Vec<AnimUpdateMsg>> = Default::default();
     /// It stores the active view handle, so that when you dispatch an action, it knows
@@ -84,7 +86,7 @@ pub(crate) enum UpdateMessage {
         action: Box<dyn Fn()>,
     },
     ToggleWindowMaximized,
-    HandleTitleBar(bool),
+    DragWindow,
     SetWindowDelta(Vec2),
     Animation {
         id: Id,

@@ -8,7 +8,7 @@ use floem::{
 use crate::form::{form, form_item};
 
 pub fn label_view() -> impl View {
-    form(|| {
+    form({
         (
             form_item("Simple Label:".to_string(), 120.0, || {
                 label(move || "This is a simple label".to_owned())

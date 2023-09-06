@@ -1,5 +1,4 @@
 use crate::action::exec_after;
-use crate::context::ViewContext;
 use crate::keyboard::KeyEvent;
 use crate::reactive::{create_effect, RwSignal};
 use crate::{context::LayoutCx, style::CursorStyle};
@@ -97,8 +96,7 @@ pub enum Direction {
 
 /// Text Input View
 pub fn text_input(buffer: RwSignal<String>) -> TextInput {
-    let cx = ViewContext::get_current();
-    let id = cx.new_id();
+    let id = Id::next();
 
     {
         create_effect(move |_| {

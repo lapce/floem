@@ -5,7 +5,7 @@ use floem::{
 };
 
 pub fn menu_view() -> impl View {
-    stack(move || {
+    stack({
         (
             label(|| "Click me (Popout menu)")
                 .base_style(|s| s.padding_px(10.0).margin_bottom_px(10.0).border(1.0))

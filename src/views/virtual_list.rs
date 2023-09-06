@@ -6,7 +6,7 @@ use smallvec::SmallVec;
 use taffy::{prelude::Node, style::Dimension};
 
 use crate::{
-    context::{LayoutCx, ViewContext},
+    context::LayoutCx,
     id::Id,
     view::{ChangeFlags, View},
 };
@@ -51,7 +51,6 @@ where
     set_viewport: WriteSignal<Rect>,
     view_fn: Box<dyn Fn(T) -> (V, Scope)>,
     phatom: PhantomData<T>,
-    cx: ViewContext,
     before_size: f64,
     after_size: f64,
     before_node: Option<Node>,
@@ -80,11 +79,7 @@ where
     VF: Fn(T) -> V + 'static,
     V: View + 'static,
 {
-    let cx = ViewContext::get_current();
-    let id = cx.new_id();
-
-    let mut child_cx = cx;
-    child_cx.id = id;
+    let id = Id::next();
 
     let (viewport, set_viewport) = create_signal(Rect::ZERO);
 
@@ -193,7 +188,6 @@ where
         set_viewport,
         view_fn,
         phatom: PhantomData,
-        cx: child_cx,
         before_size: 0.0,
         after_size: 0.0,
         before_node: None,
@@ -264,9 +258,13 @@ impl<V: View + 'static, T> View for VirtualList<V, T> {
             }
             self.before_size = state.before_size;
             self.after_size = state.after_size;
-            ViewContext::with_context(self.cx, || {
-                apply_diff(cx.app_state, state.diff, &mut self.children, &self.view_fn);
-            });
+            apply_diff(
+                self.id,
+                cx.app_state,
+                state.diff,
+                &mut self.children,
+                &self.view_fn,
+            );
             cx.request_layout(self.id());
             ChangeFlags::LAYOUT
         } else {

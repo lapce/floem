@@ -1,7 +1,6 @@
 use kurbo::Rect;
 
 use crate::{
-    context::ViewContext,
     id::Id,
     view::{ChangeFlags, View},
 };
@@ -16,9 +15,11 @@ pub struct Container<V: View> {
 ///
 /// A [`Container`] is useful for wrapping another [View](crate::view::View). This is often useful for allowing another
 /// set of styles completely separate from the View that is being wrapped.
-pub fn container<V: View>(child: impl FnOnce() -> V) -> Container<V> {
-    let (id, child) = ViewContext::new_id_with_child(child);
-    Container { id, child }
+pub fn container<V: View>(child: V) -> Container<V> {
+    Container {
+        id: Id::next(),
+        child,
+    }
 }
 
 impl<V: View> View for Container<V> {

@@ -1,7 +1,6 @@
 use std::any::Any;
 
 use crate::{
-    context::ViewContext,
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
     style::{ComputedStyle, TextOverflow},
 };
@@ -39,9 +38,13 @@ pub struct Label {
     text_overflow: TextOverflow,
 }
 
+pub fn text<S: Into<String>>(text: S) -> Label {
+    let text = Into::<String>::into(text);
+    label(move || text.clone())
+}
+
 pub fn label<S: Into<String> + 'static>(label: impl Fn() -> S + 'static) -> Label {
-    let cx = ViewContext::get_current();
-    let id = cx.new_id();
+    let id = Id::next();
     create_effect(move |_| {
         let new_label = Into::<String>::into(label());
         id.update_state(new_label, false);

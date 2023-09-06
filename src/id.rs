@@ -18,7 +18,7 @@ use crate::{
     event::EventListener,
     responsive::ScreenSize,
     style::{Style, StyleSelector},
-    update::{UpdateMessage, DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES},
+    update::{UpdateMessage, CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES},
 };
 
 thread_local! {
@@ -58,6 +58,15 @@ impl Id {
             id_paths.borrow_mut().insert(new_id, id_path);
         });
         new_id
+    }
+
+    pub(crate) fn set_parent(&self, parent: Id) {
+        ID_PATHS.with(|id_paths| {
+            let mut id_paths = id_paths.borrow_mut();
+            let mut id_path = id_paths.get(&parent).cloned().unwrap();
+            id_path.0.push(*self);
+            id_paths.insert(*self, id_path);
+        });
     }
 
     pub fn parent(&self) -> Option<Id> {
@@ -119,23 +128,15 @@ impl Id {
     }
 
     pub fn update_state(&self, state: impl Any, deferred: bool) {
-        if let Some(root) = self.root_id() {
-            if !deferred {
-                UPDATE_MESSAGES.with(|msgs| {
-                    let mut msgs = msgs.borrow_mut();
-                    let msgs = msgs.entry(root).or_default();
-                    msgs.push(UpdateMessage::State {
-                        id: *self,
-                        state: Box::new(state),
-                    })
-                });
-            } else {
-                DEFERRED_UPDATE_MESSAGES.with(|msgs| {
-                    let mut msgs = msgs.borrow_mut();
-                    let msgs = msgs.entry(root).or_default();
-                    msgs.push((*self, Box::new(state)));
-                });
-            }
+        if !deferred {
+            self.add_update_message(UpdateMessage::State {
+                id: *self,
+                state: Box::new(state),
+            });
+        } else {
+            CENTRAL_DEFERRED_UPDATE_MESSAGES.with(|msgs| {
+                msgs.borrow_mut().push((*self, Box::new(state)));
+            });
         }
     }
 
@@ -207,12 +208,8 @@ impl Id {
     }
 
     fn add_update_message(&self, msg: UpdateMessage) {
-        if let Some(root) = self.root_id() {
-            UPDATE_MESSAGES.with(|msgs| {
-                let mut msgs = msgs.borrow_mut();
-                let msgs = msgs.entry(root).or_default();
-                msgs.push(msg);
-            });
-        }
+        CENTRAL_UPDATE_MESSAGES.with(|msgs| {
+            msgs.borrow_mut().push((*self, msg));
+        });
     }
 }

@@ -8,7 +8,7 @@ use taffy::{
 };
 
 use crate::{
-    context::{AppState, LayoutCx, PaintCx, ViewContext},
+    context::{AppState, LayoutCx, PaintCx},
     event::Event,
     id::Id,
     style::{ComputedStyle, Style, StyleValue},
@@ -93,10 +93,9 @@ pub struct Scroll<V: View> {
     scroll_bar_style: ScrollBarStyle,
 }
 
-pub fn scroll<V: View>(child: impl FnOnce() -> V) -> Scroll<V> {
-    let (id, child) = ViewContext::new_id_with_child(child);
+pub fn scroll<V: View>(child: V) -> Scroll<V> {
     Scroll {
-        id,
+        id: Id::next(),
         child,
         size: Size::ZERO,
         actual_rect: Rect::ZERO,

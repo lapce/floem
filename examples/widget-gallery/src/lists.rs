@@ -15,10 +15,10 @@ use floem::{
 use crate::form::{form, form_item};
 
 pub fn virt_list_view() -> impl View {
-    stack(|| {
+    stack({
         (
-            form(|| (form_item("Simple List".to_string(), 120.0, simple_list),)),
-            form(|| (form_item("Enhanced List".to_string(), 120.0, enhanced_list),)),
+            form((form_item("Simple List".to_string(), 120.0, simple_list),)),
+            form((form_item("Enhanced List".to_string(), 120.0, enhanced_list),)),
         )
     })
 }
@@ -26,7 +26,7 @@ pub fn virt_list_view() -> impl View {
 fn simple_list() -> impl View {
     let long_list: im::Vector<i32> = (0..100).collect();
     let (long_list, _set_long_list) = create_signal(long_list);
-    scroll(move || {
+    scroll(
         virtual_list(
             VirtualListDirection::Vertical,
             VirtualListItemSize::Fixed(Box::new(|| 20.0)),
@@ -34,8 +34,8 @@ fn simple_list() -> impl View {
             move |item| *item,
             move |item| label(move || item.to_string()).style(|s| s.height_px(24.0)),
         )
-        .style(|s| s.flex_col())
-    })
+        .style(|s| s.flex_col()),
+    )
     .style(|s| s.width_px(100.0).height_px(300.0).border(1.0))
 }
 
@@ -46,7 +46,7 @@ fn enhanced_list() -> impl View {
     let (selected, set_selected) = create_signal(0);
     let list_width = 180.0;
     let item_height = 32.0;
-    scroll(move || {
+    scroll(
         virtual_list(
             VirtualListDirection::Vertical,
             VirtualListItemSize::Fixed(Box::new(|| 32.0)),
@@ -59,8 +59,8 @@ fn enhanced_list() -> impl View {
                     .position(|it| *it == item)
                     .unwrap();
                 let (is_checked, set_is_checked) = create_signal(true);
-                container(move || {
-                    stack(move || {
+                container({
+                    stack({
                         (
                             checkbox(is_checked).on_click(move |_| {
                                 set_is_checked.update(|checked: &mut bool| *checked = !*checked);
@@ -68,7 +68,7 @@ fn enhanced_list() -> impl View {
                             }),
                             label(move || item.to_string())
                                 .style(|s| s.height_px(32.0).font_size(32.0)),
-                            container(move || {
+                            container({
                                 label(move || " X ")
                                     .on_click(move |_| {
                                         print!("Item Removed");
@@ -139,7 +139,7 @@ fn enhanced_list() -> impl View {
                 .hover_style(|s| s.background(Color::LIGHT_GRAY).cursor(CursorStyle::Pointer))
             },
         )
-        .style(move |s| s.flex_col().width_px(list_width))
-    })
+        .style(move |s| s.flex_col().width_px(list_width)),
+    )
     .style(move |s| s.width_px(list_width).height_px(300.0).border(1.0))
 }

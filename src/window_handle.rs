@@ -20,19 +20,19 @@ use crate::{
     animate::{AnimPropKind, AnimUpdateMsg, AnimValue, AnimatedProp, SizeUnit},
     context::{
         AppState, EventCx, LayoutCx, MoveListener, PaintCx, PaintState, ResizeListener, UpdateCx,
-        ViewContext,
     },
     event::{Event, EventListener},
-    id::{Id, ID_PATHS},
+    id::{Id, IdPath, ID_PATHS},
     keyboard::KeyEvent,
     menu::Menu,
     pointer::{PointerButton, PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
     style::{CursorStyle, StyleSelector},
     update::{
-        UpdateMessage, ANIM_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES,
+        UpdateMessage, ANIM_UPDATE_MESSAGES, CENTRAL_DEFERRED_UPDATE_MESSAGES,
+        CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES,
         UPDATE_MESSAGES,
     },
-    view::{ChangeFlags, View},
+    view::{view_children_set_parent_id, ChangeFlags, View},
 };
 
 /// The top-level window handle that owns the winit Window.
@@ -45,7 +45,7 @@ pub(crate) struct WindowHandle {
     pub(crate) window: Option<winit::window::Window>,
     /// Reactive Scope for this WindowHandle
     scope: Scope,
-    pub(crate) view: Box<dyn View>,
+    view: Box<dyn View>,
     app_state: AppState,
     paint_state: PaintState,
     size: RwSignal<Size>,
@@ -63,12 +63,8 @@ impl WindowHandle {
         window: winit::window::Window,
         view_fn: impl FnOnce(winit::window::WindowId) -> Box<dyn View> + 'static,
     ) -> Self {
-        let window_id = window.id();
-        let id = Id::next();
-        set_current_view(id);
-
         let scope = Scope::new();
-
+        let window_id = window.id();
         let scale = window.scale_factor();
         let size: LogicalSize<f64> = window.inner_size().to_logical(scale);
         let size = Size::new(size.width, size.height);
@@ -76,26 +72,27 @@ impl WindowHandle {
 
         #[cfg(target_os = "linux")]
         let context_menu = scope.create_rw_signal(None);
-        let cx = ViewContext { id };
 
         #[cfg(not(target_os = "linux"))]
-        let view = ViewContext::with_context(cx, || with_scope(scope, move || view_fn(window_id)));
+        let view = with_scope(scope, move || view_fn(window_id));
 
         #[cfg(target_os = "linux")]
-        let view = ViewContext::with_context(cx, || {
-            with_scope(scope, move || {
-                Box::new(
-                    stack(|| {
-                        (
-                            container_box(move || view_fn(window_id))
-                                .style(|s| s.size_pct(100.0, 100.0)),
-                            context_menu_view(scope, window_id, context_menu, size),
-                        )
-                    })
-                    .style(|s| s.size_pct(100.0, 100.0)),
-                )
-            })
+        let view = with_scope(scope, move || {
+            Box::new(
+                stack((
+                    container_box(view_fn(window_id)).style(|s| s.size_pct(100.0, 100.0)),
+                    context_menu_view(scope, window_id, context_menu, size),
+                ))
+                .style(|s| s.size_pct(100.0, 100.0)),
+            )
         });
+
+        ID_PATHS.with(|id_paths| {
+            id_paths
+                .borrow_mut()
+                .insert(view.id(), IdPath(vec![view.id()]));
+        });
+        view_children_set_parent_id(&*view);
 
         let paint_state = PaintState::new(&window, scale, size.get_untracked() * scale);
         let mut window_handle = Self {
@@ -452,9 +449,42 @@ impl WindowHandle {
         }
     }
 
+    fn process_central_messages(&self) {
+        CENTRAL_UPDATE_MESSAGES.with(|central_msgs| {
+            if !central_msgs.borrow().is_empty() {
+                UPDATE_MESSAGES.with(|msgs| {
+                    let mut msgs = msgs.borrow_mut();
+                    let central_msgs = std::mem::take(&mut *central_msgs.borrow_mut());
+                    for (id, msg) in central_msgs {
+                        if let Some(root) = id.root_id() {
+                            let msgs = msgs.entry(root).or_default();
+                            msgs.push(msg);
+                        }
+                    }
+                });
+            }
+        });
+
+        CENTRAL_DEFERRED_UPDATE_MESSAGES.with(|central_msgs| {
+            if !central_msgs.borrow().is_empty() {
+                DEFERRED_UPDATE_MESSAGES.with(|msgs| {
+                    let mut msgs = msgs.borrow_mut();
+                    let central_msgs = std::mem::take(&mut *central_msgs.borrow_mut());
+                    for (id, msg) in central_msgs {
+                        if let Some(root) = id.root_id() {
+                            let msgs = msgs.entry(root).or_default();
+                            msgs.push((id, msg));
+                        }
+                    }
+                });
+            }
+        });
+    }
+
     fn process_update_messages(&mut self) -> ChangeFlags {
         let mut flags = ChangeFlags::empty();
         loop {
+            self.process_central_messages();
             let msgs = UPDATE_MESSAGES.with(|msgs| {
                 msgs.borrow_mut()
                     .remove(&self.view.id())
@@ -552,27 +582,23 @@ impl WindowHandle {
                     UpdateMessage::Draggable { id } => {
                         cx.app_state.draggable.insert(id);
                     }
-                    UpdateMessage::HandleTitleBar(_val) => {
+                    UpdateMessage::DragWindow => {
                         if let Some(window) = self.window.as_ref() {
                             let _ = window.drag_window();
                         }
                     }
                     UpdateMessage::ToggleWindowMaximized => {
-                        // let window_state = self.handle.get_window_state();
-                        // match window_state {
-                        //     glazier::WindowState::Maximized => {
-                        //         self.handle.set_window_state(WindowState::Restored);
-                        //     }
-                        //     glazier::WindowState::Minimized => {
-                        //         self.handle.set_window_state(WindowState::Maximized);
-                        //     }
-                        //     glazier::WindowState::Restored => {
-                        //         self.handle.set_window_state(WindowState::Maximized);
-                        //     }
-                        // }
+                        if let Some(window) = self.window.as_ref() {
+                            window.set_maximized(!window.is_maximized());
+                        }
                     }
-                    UpdateMessage::SetWindowDelta(_delta) => {
-                        // self.handle.set_position(self.handle.get_position() + delta);
+                    UpdateMessage::SetWindowDelta(delta) => {
+                        if let Some(window) = self.window.as_ref() {
+                            let pos = self.window_position + delta;
+                            window.set_outer_position(winit::dpi::Position::Logical(
+                                winit::dpi::LogicalPosition::new(pos.x, pos.y),
+                            ));
+                        }
                     }
                     UpdateMessage::EventListener {
                         id,
@@ -667,8 +693,8 @@ impl WindowHandle {
     }
 
     fn process_deferred_update_messages(&mut self) -> ChangeFlags {
+        self.process_central_messages();
         let mut flags = ChangeFlags::empty();
-
         let msgs = DEFERRED_UPDATE_MESSAGES.with(|msgs| {
             msgs.borrow_mut()
                 .remove(&self.view.id())
@@ -976,7 +1002,7 @@ fn context_menu_view(
         move |s| s.clone(),
         move |s| {
             if let Some((id, enabled, s)) = s {
-                container_box(|| Box::new(label(move || s.clone())))
+                container_box(label(move || s.clone()))
                     .on_click(move |_| {
                         context_menu.set(None);
                         if let Some(id) = id {
@@ -1003,14 +1029,12 @@ fn context_menu_view(
                     .active_style(|s| s.border_radius(10.0).background(Color::rgb8(92, 92, 92)))
                     .disabled_style(|s| s.color(Color::rgb8(92, 92, 92)))
             } else {
-                container_box(|| {
-                    Box::new(empty().style(|s| {
-                        s.width_pct(100.0)
-                            .height_px(1.0)
-                            .margin_vert_px(5.0)
-                            .background(Color::rgb8(92, 92, 92))
-                    }))
-                })
+                container_box(empty().style(|s| {
+                    s.width_pct(100.0)
+                        .height_px(1.0)
+                        .margin_vert_px(5.0)
+                        .background(Color::rgb8(92, 92, 92))
+                }))
                 .style(|s| s.min_width_pct(100.0).padding_horiz_px(20.0))
             }
         },

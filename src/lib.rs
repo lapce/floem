@@ -112,7 +112,6 @@ pub mod window;
 mod window_handle;
 
 pub use app::{launch, quit_app, AppEvent, Application};
-pub use context::ViewContext;
 pub use floem_reactive as reactive;
 pub use floem_renderer::cosmic_text;
 pub use floem_renderer::Renderer;

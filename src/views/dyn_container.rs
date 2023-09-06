@@ -2,9 +2,8 @@ use floem_reactive::{as_child_of_current_scope, create_effect, Scope};
 use kurbo::Rect;
 
 use crate::{
-    context::ViewContext,
     id::Id,
-    view::{ChangeFlags, View},
+    view::{view_children_set_parent_id, ChangeFlags, View},
 };
 
 type ChildFn<T> = dyn Fn(T) -> (Box<dyn View>, Scope);
@@ -15,7 +14,6 @@ pub struct DynamicContainer<T: 'static> {
     child: Box<dyn View>,
     child_scope: Scope,
     child_fn: Box<ChildFn<T>>,
-    cx: ViewContext,
 }
 
 /// A container for a dynamically updating View
@@ -75,11 +73,7 @@ pub fn dyn_container<CF: Fn(T) -> Box<dyn View> + 'static, T: 'static>(
     update_view: impl Fn() -> T + 'static,
     child_fn: CF,
 ) -> DynamicContainer<T> {
-    let cx = ViewContext::get_current();
-    let id = cx.new_id();
-
-    let mut child_cx = cx;
-    child_cx.id = id;
+    let id = Id::next();
 
     create_effect(move |_| {
         id.update_state(update_view(), false);
@@ -91,7 +85,6 @@ pub fn dyn_container<CF: Fn(T) -> Box<dyn View> + 'static, T: 'static>(
         child: Box::new(crate::views::empty()),
         child_scope: Scope::new(),
         child_fn,
-        cx: child_cx,
     }
 }
 
@@ -134,11 +127,11 @@ impl<T: 'static> View for DynamicContainer<T> {
         state: Box<dyn std::any::Any>,
     ) -> crate::view::ChangeFlags {
         if let Ok(val) = state.downcast::<T>() {
-            ViewContext::with_context(self.cx, || {
-                let old_child_scope = self.child_scope;
-                (self.child, self.child_scope) = (self.child_fn)(*val);
-                old_child_scope.dispose();
-            });
+            let old_child_scope = self.child_scope;
+            (self.child, self.child_scope) = (self.child_fn)(*val);
+            old_child_scope.dispose();
+            self.child.id().set_parent(self.id);
+            view_children_set_parent_id(&*self.child);
             cx.request_layout(self.id());
             ChangeFlags::LAYOUT
         } else {

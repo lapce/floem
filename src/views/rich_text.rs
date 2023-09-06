@@ -6,7 +6,7 @@ use kurbo::{Point, Rect};
 use taffy::{prelude::Node, style::Dimension};
 
 use crate::{
-    context::{EventCx, UpdateCx, ViewContext},
+    context::{EventCx, UpdateCx},
     event::Event,
     id::Id,
     style::{ComputedStyle, Style, TextOverflow},
@@ -22,8 +22,7 @@ pub struct RichText {
 }
 
 pub fn rich_text(text_layout: impl Fn() -> TextLayout + 'static) -> RichText {
-    let cx = ViewContext::get_current();
-    let id = cx.new_id();
+    let id = Id::next();
     let text = text_layout();
     create_effect(move |_| {
         let new_text_layout = text_layout();

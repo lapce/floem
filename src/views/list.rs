@@ -9,9 +9,9 @@ use rustc_hash::FxHasher;
 use smallvec::SmallVec;
 
 use crate::{
-    context::{AppState, EventCx, UpdateCx, ViewContext},
+    context::{AppState, EventCx, UpdateCx},
     id::Id,
-    view::{ChangeFlags, View},
+    view::{view_children_set_parent_id, ChangeFlags, View},
 };
 
 pub(crate) type FxIndexSet<T> = indexmap::IndexSet<T, BuildHasherDefault<FxHasher>>;
@@ -29,7 +29,6 @@ where
     children: Vec<Option<(V, Scope)>>,
     view_fn: Box<dyn Fn(T) -> (V, Scope)>,
     phantom: PhantomData<T>,
-    cx: ViewContext,
 }
 
 pub fn list<IF, I, T, KF, K, VF, V>(each_fn: IF, key_fn: KF, view_fn: VF) -> List<V, T>
@@ -42,11 +41,7 @@ where
     V: View + 'static,
     T: 'static,
 {
-    let cx = ViewContext::get_current();
-    let id = cx.new_id();
-
-    let mut child_cx = cx;
-    child_cx.id = id;
+    let id = Id::next();
     create_effect(move |prev_hash_run| {
         let items = each_fn();
         let items = items.into_iter().collect::<SmallVec<[_; 128]>>();
@@ -80,7 +75,6 @@ where
         children: Vec::new(),
         view_fn,
         phantom: PhantomData,
-        cx: child_cx,
     }
 }
 
@@ -139,9 +133,13 @@ impl<V: View + 'static, T> View for List<V, T> {
         state: Box<dyn std::any::Any>,
     ) -> crate::view::ChangeFlags {
         if let Ok(diff) = state.downcast() {
-            ViewContext::with_context(self.cx, || {
-                apply_diff(cx.app_state, *diff, &mut self.children, &self.view_fn);
-            });
+            apply_diff(
+                self.id,
+                cx.app_state,
+                *diff,
+                &mut self.children,
+                &self.view_fn,
+            );
             cx.request_layout(self.id());
             ChangeFlags::LAYOUT
         } else {
@@ -333,6 +331,7 @@ fn remove_index<V: View>(
 }
 
 pub(super) fn apply_diff<T, V, VF>(
+    view_id: Id,
     app_state: &mut AppState,
     mut diff: Diff<T>,
     children: &mut Vec<Option<(V, Scope)>>,
@@ -377,6 +376,10 @@ pub(super) fn apply_diff<T, V, VF>(
 
     for DiffOpAdd { at, view } in diff.added {
         children[at] = view.map(view_fn);
+        if let Some((child, _)) = children[at].as_ref() {
+            child.id().set_parent(view_id);
+            view_children_set_parent_id(child);
+        }
     }
 
     for (to, each_item) in items_to_move {
