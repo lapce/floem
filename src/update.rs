@@ -86,6 +86,8 @@ pub(crate) enum UpdateMessage {
         action: Box<dyn Fn()>,
     },
     ToggleWindowMaximized,
+    SetWindowMaximized(bool),
+    MinimizeWindow,
     DragWindow,
     SetWindowDelta(Vec2),
     Animation {

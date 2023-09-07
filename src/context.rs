@@ -519,18 +519,6 @@ impl AppState {
     }
 
     pub(crate) fn focus_changed(&mut self, old: Option<Id>, new: Option<Id>) {
-        if let Some(old_id) = old {
-            // To remove the styles applied by the Focus selector
-            if self.has_style_for_sel(old_id, StyleSelector::Focus)
-                || self.has_style_for_sel(old_id, StyleSelector::FocusVisible)
-            {
-                self.request_layout(old_id);
-            }
-            if let Some(action) = self.get_event_listener(old_id, &EventListener::FocusLost) {
-                (*action)(&Event::FocusLost);
-            }
-        }
-
         if let Some(id) = new {
             // To apply the styles of the Focus selector
             if self.has_style_for_sel(id, StyleSelector::Focus)
@@ -540,6 +528,18 @@ impl AppState {
             }
             if let Some(action) = self.get_event_listener(id, &EventListener::FocusGained) {
                 (*action)(&Event::FocusGained);
+            }
+        }
+
+        if let Some(old_id) = old {
+            // To remove the styles applied by the Focus selector
+            if self.has_style_for_sel(old_id, StyleSelector::Focus)
+                || self.has_style_for_sel(old_id, StyleSelector::FocusVisible)
+            {
+                self.request_layout(old_id);
+            }
+            if let Some(action) = self.get_event_listener(old_id, &EventListener::FocusLost) {
+                (*action)(&Event::FocusLost);
             }
         }
     }

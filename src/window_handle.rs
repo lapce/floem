@@ -49,6 +49,7 @@ pub(crate) struct WindowHandle {
     app_state: AppState,
     paint_state: PaintState,
     size: RwSignal<Size>,
+    is_maximized: bool,
     pub(crate) scale: f64,
     pub(crate) modifiers: ModifiersState,
     pub(crate) cursor_position: Point,
@@ -69,6 +70,7 @@ impl WindowHandle {
         let size: LogicalSize<f64> = window.inner_size().to_logical(scale);
         let size = Size::new(size.width, size.height);
         let size = scope.create_rw_signal(Size::new(size.width, size.height));
+        let is_maximized = window.is_maximized();
 
         #[cfg(target_os = "linux")]
         let context_menu = scope.create_rw_signal(None);
@@ -102,6 +104,7 @@ impl WindowHandle {
             app_state: AppState::new(),
             paint_state,
             size,
+            is_maximized,
             scale,
             modifiers: ModifiersState::default(),
             cursor_position: Point::ZERO,
@@ -273,6 +276,15 @@ impl WindowHandle {
         let scale = self.scale * self.app_state.scale;
         self.paint_state.resize(scale, size * self.scale);
         self.app_state.set_root_size(size);
+
+        if let Some(window) = self.window.as_ref() {
+            let is_maximized = window.is_maximized();
+            if is_maximized != self.is_maximized {
+                self.is_maximized = is_maximized;
+                self.event(Event::WindowMaximizeChanged(is_maximized));
+            }
+        }
+
         self.layout();
         self.process_update();
         self.request_paint();
@@ -590,6 +602,16 @@ impl WindowHandle {
                     UpdateMessage::ToggleWindowMaximized => {
                         if let Some(window) = self.window.as_ref() {
                             window.set_maximized(!window.is_maximized());
+                        }
+                    }
+                    UpdateMessage::SetWindowMaximized(maximized) => {
+                        if let Some(window) = self.window.as_ref() {
+                            window.set_maximized(maximized);
+                        }
+                    }
+                    UpdateMessage::MinimizeWindow => {
+                        if let Some(window) = self.window.as_ref() {
+                            window.set_minimized(true);
                         }
                     }
                     UpdateMessage::SetWindowDelta(delta) => {
@@ -969,43 +991,100 @@ fn context_menu_view(
     context_menu: RwSignal<Option<(Menu, Point)>>,
     window_size: RwSignal<Size>,
 ) -> impl View {
-    use floem_reactive::create_effect;
+    use floem_reactive::{create_effect, create_rw_signal};
     use peniko::Color;
 
     use crate::{
         app::{add_app_update_event, AppUpdateEvent},
-        views::{empty, label, list},
+        views::{empty, list, svg, text},
     };
+
+    #[derive(Clone, PartialEq, Eq, Hash)]
+    struct MenuDisplay {
+        id: Option<u64>,
+        enabled: bool,
+        title: String,
+        children: Option<Vec<Option<MenuDisplay>>>,
+    }
+
+    fn format_menu(menu: &Menu) -> Vec<Option<MenuDisplay>> {
+        menu.children
+            .iter()
+            .map(|e| match e {
+                crate::menu::MenuEntry::Separator => None,
+                crate::menu::MenuEntry::Item(i) => Some(MenuDisplay {
+                    id: Some(i.id),
+                    enabled: i.enabled,
+                    title: i.title.clone(),
+                    children: None,
+                }),
+                crate::menu::MenuEntry::SubMenu(m) => Some(MenuDisplay {
+                    id: None,
+                    enabled: m.item.enabled,
+                    title: m.item.title.clone(),
+                    children: Some(format_menu(m)),
+                }),
+            })
+            .collect()
+    }
 
     let context_menu_items = cx.create_memo(move |_| {
         context_menu.with(|menu| {
-            menu.as_ref().map(|menu: &(Menu, Point)| {
-                menu.0
-                    .children
-                    .iter()
-                    .map(|e| match e {
-                        crate::menu::MenuEntry::Separator => None,
-                        crate::menu::MenuEntry::Item(i) => {
-                            Some((Some(i.id), i.enabled, i.title.clone()))
-                        }
-                        crate::menu::MenuEntry::SubMenu(m) => {
-                            Some((None, m.item.enabled, m.item.title.clone()))
-                        }
-                    })
-                    .collect::<Vec<Option<(Option<u64>, bool, String)>>>()
-            })
+            menu.as_ref()
+                .map(|(menu, _): &(Menu, Point)| format_menu(menu))
         })
     });
     let context_menu_size = cx.create_rw_signal(Size::ZERO);
-    let view = list(
-        move || context_menu_items.get().unwrap_or_default(),
-        move |s| s.clone(),
-        move |s| {
-            if let Some((id, enabled, s)) = s {
-                container_box(label(move || s.clone()))
+    let focus_count = cx.create_rw_signal(0);
+
+    fn view_fn(
+        window_id: WindowId,
+        menu: Option<MenuDisplay>,
+        context_menu: RwSignal<Option<(Menu, Point)>>,
+        focus_count: RwSignal<i32>,
+        on_child_submenu_for_parent: RwSignal<bool>,
+    ) -> impl View {
+        if let Some(menu) = menu {
+            let menu_width = create_rw_signal(0.0);
+            let show_submenu = create_rw_signal(false);
+            let on_submenu = create_rw_signal(false);
+            let on_child_submenu = create_rw_signal(false);
+            let has_submenu = menu.children.is_some();
+            let submenu_svg = r#"<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M10.072 8.024L5.715 3.667l.618-.62L11 7.716v.618L6.333 13l-.618-.619 4.357-4.357z"/></svg>"#;
+            container_box(
+                stack((
+                    stack((
+                        text(menu.title),
+                        svg(|| submenu_svg.to_string()).style(move |s| {
+                            s.size_px(20.0, 20.0)
+                                .color(Color::rgb8(201, 201, 201))
+                                .margin_right_px(10.0)
+                                .margin_left_px(20.0)
+                                .apply_if(!has_submenu, |s| s.hide())
+                        }),
+                    ))
+                    .on_event(EventListener::PointerEnter, move |_| {
+                        if has_submenu {
+                            show_submenu.set(true);
+                        }
+                        true
+                    })
+                    .on_event(EventListener::PointerLeave, move |_| {
+                        if has_submenu {
+                            show_submenu.set(false);
+                        }
+                        true
+                    })
+                    .on_resize(move |rect| {
+                        let width = rect.width();
+                        if menu_width.get_untracked() != width {
+                            menu_width.set(width);
+                        }
+                    })
                     .on_click(move |_| {
                         context_menu.set(None);
-                        if let Some(id) = id {
+                        focus_count.set(0);
+                        if let Some(id) = menu.id {
                             add_app_update_event(AppUpdateEvent::MenuAction {
                                 window_id,
                                 action_id: id as usize,
@@ -1015,7 +1094,8 @@ fn context_menu_view(
                     })
                     .on_secondary_click(move |_| {
                         context_menu.set(None);
-                        if let Some(id) = id {
+                        focus_count.set(0);
+                        if let Some(id) = menu.id {
                             add_app_update_event(AppUpdateEvent::MenuAction {
                                 window_id,
                                 action_id: id as usize,
@@ -1023,21 +1103,103 @@ fn context_menu_view(
                         }
                         true
                     })
-                    .disabled(move || !enabled)
-                    .style(|s| s.min_width_pct(100.0).padding_horiz_px(20.0))
+                    .disabled(move || !menu.enabled)
+                    .style(|s| {
+                        s.width_pct(100.0)
+                            .min_width_pct(100.0)
+                            .padding_horiz_px(20.0)
+                            .justify_between()
+                            .items_center()
+                    })
                     .hover_style(|s| s.border_radius(10.0).background(Color::rgb8(65, 65, 65)))
                     .active_style(|s| s.border_radius(10.0).background(Color::rgb8(92, 92, 92)))
-                    .disabled_style(|s| s.color(Color::rgb8(92, 92, 92)))
-            } else {
-                container_box(empty().style(|s| {
-                    s.width_pct(100.0)
-                        .height_px(1.0)
-                        .margin_vert_px(5.0)
-                        .background(Color::rgb8(92, 92, 92))
-                }))
-                .style(|s| s.min_width_pct(100.0).padding_horiz_px(20.0))
-            }
-        },
+                    .disabled_style(|s| s.color(Color::rgb8(92, 92, 92))),
+                    list(
+                        move || menu.children.clone().unwrap_or_default(),
+                        move |s| s.clone(),
+                        move |menu| {
+                            view_fn(window_id, menu, context_menu, focus_count, on_child_submenu)
+                        },
+                    )
+                    .keyboard_navigatable()
+                    .on_event(EventListener::FocusGained, move |_| {
+                        focus_count.update(|count| {
+                            *count += 1;
+                        });
+                        true
+                    })
+                    .on_event(EventListener::FocusLost, move |_| {
+                        let count = focus_count
+                            .try_update(|count| {
+                                *count -= 1;
+                                *count
+                            })
+                            .unwrap();
+                        if count < 1 {
+                            context_menu.set(None);
+                        }
+                        true
+                    })
+                    .on_event(EventListener::KeyDown, move |event| {
+                        if let Event::KeyDown(event) = event {
+                            if event.key.logical_key == Key::Escape {
+                                context_menu.set(None);
+                            }
+                        }
+                        true
+                    })
+                    .on_event(EventListener::PointerDown, move |_| true)
+                    .on_event(EventListener::PointerEnter, move |_| {
+                        if has_submenu {
+                            on_submenu.set(true);
+                            on_child_submenu_for_parent.set(true);
+                        }
+                        true
+                    })
+                    .on_event(EventListener::PointerLeave, move |_| {
+                        if has_submenu {
+                            on_submenu.set(false);
+                            on_child_submenu_for_parent.set(false);
+                        }
+                        true
+                    })
+                    .style(move |s| {
+                        s.absolute()
+                            .min_width_px(200.0)
+                            .margin_top_px(-5.0)
+                            .margin_left_px(menu_width.get() as f32)
+                            .flex_col()
+                            .border_radius(10.0)
+                            .background(Color::rgb8(44, 44, 44))
+                            .padding_px(5.0)
+                            .cursor(CursorStyle::Default)
+                            .box_shadow_blur(5.0)
+                            .box_shadow_color(Color::BLACK)
+                            .apply_if(
+                                !show_submenu.get() && !on_submenu.get() && !on_child_submenu.get(),
+                                |s| s.hide(),
+                            )
+                    }),
+                ))
+                .style(|s| s.min_width_pct(100.0)),
+            )
+            .style(|s| s.min_width_pct(100.0))
+        } else {
+            container_box(empty().style(|s| {
+                s.width_pct(100.0)
+                    .height_px(1.0)
+                    .margin_vert_px(5.0)
+                    .background(Color::rgb8(92, 92, 92))
+            }))
+            .style(|s| s.min_width_pct(100.0).padding_horiz_px(20.0))
+        }
+    }
+
+    let on_child_submenu = create_rw_signal(false);
+    let view = list(
+        move || context_menu_items.get().unwrap_or_default(),
+        move |s| s.clone(),
+        move |menu| view_fn(window_id, menu, context_menu, focus_count, on_child_submenu),
     )
     .on_resize(move |rect| {
         context_menu_size.set(rect.size());
@@ -1052,8 +1214,22 @@ fn context_menu_view(
         }
         true
     })
+    .on_event(EventListener::FocusGained, move |_| {
+        focus_count.update(|count| {
+            *count += 1;
+        });
+        true
+    })
     .on_event(EventListener::FocusLost, move |_| {
-        context_menu.set(None);
+        let count = focus_count
+            .try_update(|count| {
+                *count -= 1;
+                *count
+            })
+            .unwrap();
+        if count < 1 {
+            context_menu.set(None);
+        }
         true
     })
     .style(move |s| {
@@ -1068,6 +1244,7 @@ fn context_menu_view(
             pos.y = window_size.height - menu_size.height;
         }
         s.absolute()
+            .min_width_px(200.0)
             .flex_col()
             .border_radius(10.0)
             .background(Color::rgb8(44, 44, 44))

@@ -184,14 +184,18 @@ impl ApplicationHandle {
             if let Some(pos) = config.position {
                 window_builder = window_builder.with_position(LogicalPosition::new(pos.x, pos.y));
             }
-            #[cfg(target_os = "macos")]
             if let Some(show_titlebar) = config.show_titlebar {
+                #[cfg(target_os = "macos")]
                 if !show_titlebar {
                     use winit::platform::macos::WindowBuilderExtMacOS;
                     window_builder = window_builder
                         .with_title_hidden(true)
                         .with_titlebar_transparent(true)
                         .with_fullsize_content_view(true);
+                }
+                #[cfg(not(target_os = "macos"))]
+                if !show_titlebar {
+                    window_builder = window_builder.with_decorations(false);
                 }
             }
         }

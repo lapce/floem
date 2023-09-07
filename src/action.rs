@@ -27,6 +27,14 @@ pub fn toggle_window_maximized() {
     add_update_message(UpdateMessage::ToggleWindowMaximized);
 }
 
+pub fn set_window_maximized(maximized: bool) {
+    add_update_message(UpdateMessage::SetWindowMaximized(maximized));
+}
+
+pub fn minimize_window() {
+    add_update_message(UpdateMessage::MinimizeWindow);
+}
+
 pub fn drag_window() {
     add_update_message(UpdateMessage::DragWindow);
 }
