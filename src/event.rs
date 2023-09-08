@@ -1,5 +1,5 @@
 use kurbo::{Point, Size};
-use winit::keyboard::KeyCode;
+use winit::{keyboard::KeyCode, window::Theme};
 
 use crate::{
     keyboard::KeyEvent,
@@ -31,6 +31,7 @@ pub enum EventListener {
     PointerWheel,
     FocusGained,
     FocusLost,
+    ThemeChanged,
     WindowClosed,
     WindowResized,
     WindowMoved,
@@ -60,6 +61,7 @@ pub enum Event {
     WindowResized(Size),
     WindowMoved(Point),
     WindowMaximizeChanged(bool),
+    ThemeChanged(Theme),
     FocusGained,
     FocusLost,
 }
@@ -77,6 +79,7 @@ impl Event {
             | Event::ImeDisabled
             | Event::ImePreedit { .. }
             | Event::ImeCommit(_)
+            | Event::ThemeChanged(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
             | Event::WindowMoved(_)
@@ -101,6 +104,7 @@ impl Event {
             | Event::ImeDisabled
             | Event::ImePreedit { .. }
             | Event::ImeCommit(_)
+            | Event::ThemeChanged(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
             | Event::WindowMoved(_)
@@ -137,6 +141,7 @@ impl Event {
             | Event::KeyDown(_)
             | Event::KeyUp(_) => false,
             Event::PointerMove(_)
+            | Event::ThemeChanged(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
             | Event::WindowMoved(_)
@@ -160,6 +165,7 @@ impl Event {
             | Event::ImeEnabled
             | Event::ImeDisabled
             | Event::ImePreedit { .. }
+            | Event::ThemeChanged(_)
             | Event::ImeCommit(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
@@ -191,6 +197,7 @@ impl Event {
             | Event::ImeEnabled
             | Event::ImeDisabled
             | Event::ImePreedit { .. }
+            | Event::ThemeChanged(_)
             | Event::ImeCommit(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
@@ -220,6 +227,7 @@ impl Event {
             | Event::ImeEnabled
             | Event::ImeDisabled
             | Event::ImePreedit { .. }
+            | Event::ThemeChanged(_)
             | Event::ImeCommit(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
@@ -251,6 +259,7 @@ impl Event {
             Event::WindowLostFocus => Some(EventListener::WindowLostFocus),
             Event::FocusLost => Some(EventListener::FocusLost),
             Event::FocusGained => Some(EventListener::FocusGained),
+            Event::ThemeChanged(_) => Some(EventListener::ThemeChanged),
         }
     }
 }

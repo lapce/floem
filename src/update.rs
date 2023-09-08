@@ -1,6 +1,7 @@
 use std::{any::Any, cell::RefCell, collections::HashMap};
 
 use kurbo::{Point, Size, Vec2};
+use winit::window::ResizeDirection;
 
 use crate::{
     animate::{AnimUpdateMsg, Animation},
@@ -89,6 +90,7 @@ pub(crate) enum UpdateMessage {
     SetWindowMaximized(bool),
     MinimizeWindow,
     DragWindow,
+    DragResizeWindow(ResizeDirection),
     SetWindowDelta(Vec2),
     Animation {
         id: Id,

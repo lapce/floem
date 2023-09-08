@@ -50,3 +50,6 @@ pub use empty::*;
 
 mod drag_window_area;
 pub use drag_window_area::*;
+
+mod drag_resize_window_area;
+pub use drag_resize_window_area::*;

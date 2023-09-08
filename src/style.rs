@@ -60,6 +60,14 @@ pub enum CursorStyle {
     Text,
     ColResize,
     RowResize,
+    WResize,
+    EResize,
+    SResize,
+    NResize,
+    NwResize,
+    NeResize,
+    SwResize,
+    SeResize,
 }
 
 #[derive(Debug, Clone, Copy)]

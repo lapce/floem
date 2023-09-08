@@ -1,4 +1,6 @@
 use kurbo::{Point, Size};
+pub use winit::window::ResizeDirection;
+pub use winit::window::Theme;
 pub use winit::window::WindowId;
 
 use crate::{

@@ -6,6 +6,7 @@ use std::{
 
 use floem_reactive::Scope;
 use kurbo::{Point, Size, Vec2};
+use winit::window::ResizeDirection;
 
 use crate::{
     app::{add_app_update_event, AppUpdateEvent},
@@ -37,6 +38,10 @@ pub fn minimize_window() {
 
 pub fn drag_window() {
     add_update_message(UpdateMessage::DragWindow);
+}
+
+pub fn drag_resize_window(direction: ResizeDirection) {
+    add_update_message(UpdateMessage::DragResizeWindow(direction));
 }
 
 pub fn set_window_delta(delta: Vec2) {

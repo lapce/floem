@@ -150,7 +150,9 @@ impl ApplicationHandle {
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 window_handle.scale(scale_factor);
             }
-            WindowEvent::ThemeChanged(_) => {}
+            WindowEvent::ThemeChanged(theme) => {
+                window_handle.theme_changed(theme);
+            }
             WindowEvent::Occluded(_) => {}
             WindowEvent::MenuAction(id) => {
                 window_handle.menu_action(id);

@@ -10,7 +10,7 @@ use winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::{ElementState, Ime, MouseButton, MouseScrollDelta},
     keyboard::{Key, ModifiersState},
-    window::CursorIcon,
+    window::{CursorIcon, Theme},
 };
 
 #[cfg(target_os = "linux")]
@@ -49,6 +49,7 @@ pub(crate) struct WindowHandle {
     app_state: AppState,
     paint_state: PaintState,
     size: RwSignal<Size>,
+    theme: RwSignal<Option<Theme>>,
     is_maximized: bool,
     pub(crate) scale: f64,
     pub(crate) modifiers: ModifiersState,
@@ -70,6 +71,7 @@ impl WindowHandle {
         let size: LogicalSize<f64> = window.inner_size().to_logical(scale);
         let size = Size::new(size.width, size.height);
         let size = scope.create_rw_signal(Size::new(size.width, size.height));
+        let theme = scope.create_rw_signal(window.theme());
         let is_maximized = window.is_maximized();
 
         #[cfg(target_os = "linux")]
@@ -104,6 +106,7 @@ impl WindowHandle {
             app_state: AppState::new(),
             paint_state,
             size,
+            theme,
             is_maximized,
             scale,
             modifiers: ModifiersState::default(),
@@ -267,6 +270,10 @@ impl WindowHandle {
         let scale = self.scale * self.app_state.scale;
         self.paint_state.set_scale(scale);
         self.request_paint();
+    }
+
+    pub(crate) fn theme_changed(&mut self, theme: Theme) {
+        self.theme.set(Some(theme));
     }
 
     pub(crate) fn size(&mut self, size: Size) {
@@ -599,6 +606,11 @@ impl WindowHandle {
                             let _ = window.drag_window();
                         }
                     }
+                    UpdateMessage::DragResizeWindow(direction) => {
+                        if let Some(window) = self.window.as_ref() {
+                            let _ = window.drag_resize_window(direction);
+                        }
+                    }
                     UpdateMessage::ToggleWindowMaximized => {
                         if let Some(window) = self.window.as_ref() {
                             window.set_maximized(!window.is_maximized());
@@ -880,6 +892,14 @@ impl WindowHandle {
             Some(CursorStyle::Text) => CursorIcon::Text,
             Some(CursorStyle::ColResize) => CursorIcon::ColResize,
             Some(CursorStyle::RowResize) => CursorIcon::RowResize,
+            Some(CursorStyle::WResize) => CursorIcon::WResize,
+            Some(CursorStyle::EResize) => CursorIcon::EResize,
+            Some(CursorStyle::NwResize) => CursorIcon::NwResize,
+            Some(CursorStyle::NeResize) => CursorIcon::NeResize,
+            Some(CursorStyle::SwResize) => CursorIcon::SwResize,
+            Some(CursorStyle::SeResize) => CursorIcon::SeResize,
+            Some(CursorStyle::SResize) => CursorIcon::SResize,
+            Some(CursorStyle::NResize) => CursorIcon::NResize,
             None => CursorIcon::Default,
         };
         if cursor != self.app_state.last_cursor {
