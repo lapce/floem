@@ -68,6 +68,8 @@ pub enum CursorStyle {
     NeResize,
     SwResize,
     SeResize,
+    NeswResize,
+    NwseResize,
 }
 
 #[derive(Debug, Clone, Copy)]

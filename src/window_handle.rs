@@ -900,6 +900,8 @@ impl WindowHandle {
             Some(CursorStyle::SeResize) => CursorIcon::SeResize,
             Some(CursorStyle::SResize) => CursorIcon::SResize,
             Some(CursorStyle::NResize) => CursorIcon::NResize,
+            Some(CursorStyle::NeswResize) => CursorIcon::NeswResize,
+            Some(CursorStyle::NwseResize) => CursorIcon::NwseResize,
             None => CursorIcon::Default,
         };
         if cursor != self.app_state.last_cursor {
