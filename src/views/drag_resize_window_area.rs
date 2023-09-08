@@ -26,7 +26,7 @@ pub fn drag_resize_window_area<V: View>(
             drag_resize_window(direction);
             true
         })
-        .style(move |s| {
+        .base_style(move |s| {
             let cursor = match direction {
                 ResizeDirection::East => CursorStyle::ColResize,
                 ResizeDirection::West => CursorStyle::ColResize,
