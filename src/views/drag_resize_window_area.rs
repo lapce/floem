@@ -28,14 +28,14 @@ pub fn drag_resize_window_area<V: View>(
         })
         .style(move |s| {
             let cursor = match direction {
-                ResizeDirection::East => CursorStyle::EResize,
-                ResizeDirection::North => CursorStyle::NResize,
-                ResizeDirection::NorthEast => CursorStyle::NeResize,
-                ResizeDirection::NorthWest => CursorStyle::NwResize,
-                ResizeDirection::South => CursorStyle::SResize,
-                ResizeDirection::SouthEast => CursorStyle::SeResize,
-                ResizeDirection::SouthWest => CursorStyle::SwResize,
-                ResizeDirection::West => CursorStyle::WResize,
+                ResizeDirection::East => CursorStyle::ColResize,
+                ResizeDirection::West => CursorStyle::ColResize,
+                ResizeDirection::North => CursorStyle::RowResize,
+                ResizeDirection::South => CursorStyle::RowResize,
+                ResizeDirection::NorthEast => CursorStyle::NeswResize,
+                ResizeDirection::SouthWest => CursorStyle::NeswResize,
+                ResizeDirection::SouthEast => CursorStyle::NwseResize,
+                ResizeDirection::NorthWest => CursorStyle::NwseResize,
             };
             s.cursor(cursor)
         })
