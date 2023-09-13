@@ -440,6 +440,9 @@ impl WindowHandle {
         };
         cx.paint_state.renderer.begin();
         self.view.paint_main(&mut cx);
+        if let Some(window) = self.window.as_ref() {
+            window.pre_present_notify();
+        }
         cx.paint_state.renderer.finish();
         self.process_update();
     }
