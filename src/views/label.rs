@@ -1,4 +1,4 @@
-use std::any::Any;
+use std::{any::Any, fmt::Display};
 
 use crate::{
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
@@ -38,15 +38,15 @@ pub struct Label {
     text_overflow: TextOverflow,
 }
 
-pub fn text<S: Into<String>>(text: S) -> Label {
-    let text = Into::<String>::into(text);
+pub fn text<S: Display>(text: S) -> Label {
+    let text = text.to_string();
     label(move || text.clone())
 }
 
-pub fn label<S: Into<String> + 'static>(label: impl Fn() -> S + 'static) -> Label {
+pub fn label<S: Display + 'static>(label: impl Fn() -> S + 'static) -> Label {
     let id = Id::next();
     create_effect(move |_| {
-        let new_label = Into::<String>::into(label());
+        let new_label = label().to_string();
         id.update_state(new_label, false);
     });
     Label {
