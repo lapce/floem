@@ -813,7 +813,7 @@ fn paint_bg(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
     }
 }
 
-fn paint_box_shadow(cx: &mut PaintCx, style: &ComputedStyle, rect: Rect, rect_radii: Option<f64>) {
+fn paint_box_shadow(cx: &mut PaintCx, style: &ComputedStyle, rect: Rect, rect_radius: Option<f64>) {
     if let Some(shadow) = style.box_shadow.as_ref() {
         let inset = Insets::new(
             -shadow.h_offset / 2.0,
@@ -822,7 +822,7 @@ fn paint_box_shadow(cx: &mut PaintCx, style: &ComputedStyle, rect: Rect, rect_ra
             shadow.v_offset / 2.0,
         );
         let rect = rect.inflate(shadow.spread, shadow.spread).inset(inset);
-        if let Some(radii) = rect_radii {
+        if let Some(radii) = rect_radius {
             let rounded_rect = RoundedRect::from_rect(rect, radii + shadow.spread);
             cx.fill(&rounded_rect, shadow.color, shadow.blur_radius);
         } else {
