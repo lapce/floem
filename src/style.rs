@@ -76,6 +76,21 @@ pub enum CursorStyle {
 pub struct BoxShadow {
     pub blur_radius: f64,
     pub color: Color,
+    pub spread: f64,
+    pub h_offset: f64,
+    pub v_offset: f64,
+}
+
+impl Default for BoxShadow {
+    fn default() -> Self {
+        Self {
+            blur_radius: 0.0,
+            color: Color::BLACK,
+            spread: 0.0,
+            h_offset: 0.0,
+            v_offset: 0.0,
+        }
+    }
 }
 
 /// The value for a [`Style`] property
@@ -615,7 +630,7 @@ impl Style {
 
         self.box_shadow = Some(BoxShadow {
             blur_radius,
-            color: Color::BLACK,
+            ..Default::default()
         })
         .into();
         self
@@ -630,8 +645,56 @@ impl Style {
         }
 
         self.box_shadow = Some(BoxShadow {
-            blur_radius: 0.0,
             color,
+            ..Default::default()
+        })
+        .into();
+        self
+    }
+
+    pub fn box_shadow_spread(mut self, spread: f64) -> Self {
+        if let Some(box_shadow) = self.box_shadow.as_mut() {
+            if let Some(box_shadow) = box_shadow.as_mut() {
+                box_shadow.spread = spread;
+                return self;
+            }
+        }
+
+        self.box_shadow = Some(BoxShadow {
+            spread,
+            ..Default::default()
+        })
+        .into();
+        self
+    }
+
+    pub fn box_shadow_h_offset(mut self, h_offset: f64) -> Self {
+        if let Some(box_shadow) = self.box_shadow.as_mut() {
+            if let Some(box_shadow) = box_shadow.as_mut() {
+                box_shadow.h_offset = h_offset;
+                return self;
+            }
+        }
+
+        self.box_shadow = Some(BoxShadow {
+            h_offset,
+            ..Default::default()
+        })
+        .into();
+        self
+    }
+
+    pub fn box_shadow_v_offset(mut self, v_offset: f64) -> Self {
+        if let Some(box_shadow) = self.box_shadow.as_mut() {
+            if let Some(box_shadow) = box_shadow.as_mut() {
+                box_shadow.v_offset = v_offset;
+                return self;
+            }
+        }
+
+        self.box_shadow = Some(BoxShadow {
+            v_offset,
+            ..Default::default()
         })
         .into();
         self

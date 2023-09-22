@@ -87,7 +87,7 @@ use std::any::Any;
 
 use bitflags::bitflags;
 use floem_renderer::Renderer;
-use kurbo::{Affine, Circle, Line, Point, Rect, Size};
+use kurbo::{Affine, Circle, Insets, Line, Point, Rect, RoundedRect, Size};
 use taffy::prelude::Node;
 
 use crate::{
@@ -795,29 +795,39 @@ fn paint_bg(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
             };
             cx.fill(&circle, bg, 0.0);
         } else {
-            let rect = rect.to_rounded_rect(radius as f64);
-            if let Some(shadow) = style.box_shadow.as_ref() {
-                if shadow.blur_radius > 0.0 {
-                    cx.fill(&rect, shadow.color, shadow.blur_radius);
-                }
-            }
+            paint_box_shadow(cx, style, rect, Some(radius as f64));
             let bg = match style.background {
                 Some(color) => color,
                 None => return,
             };
-            cx.fill(&rect, bg, 0.0);
+            let rounded_rect = rect.to_rounded_rect(radius as f64);
+            cx.fill(&rounded_rect, bg, 0.0);
         }
     } else {
-        if let Some(shadow) = style.box_shadow.as_ref() {
-            if shadow.blur_radius > 0.0 {
-                cx.fill(&size.to_rect(), shadow.color, shadow.blur_radius);
-            }
-        }
+        paint_box_shadow(cx, style, size.to_rect(), None);
         let bg = match style.background {
             Some(color) => color,
             None => return,
         };
         cx.fill(&size.to_rect(), bg, 0.0);
+    }
+}
+
+fn paint_box_shadow(cx: &mut PaintCx, style: &ComputedStyle, rect: Rect, rect_radius: Option<f64>) {
+    if let Some(shadow) = style.box_shadow.as_ref() {
+        let inset = Insets::new(
+            -shadow.h_offset / 2.0,
+            -shadow.v_offset / 2.0,
+            shadow.h_offset / 2.0,
+            shadow.v_offset / 2.0,
+        );
+        let rect = rect.inflate(shadow.spread, shadow.spread).inset(inset);
+        if let Some(radii) = rect_radius {
+            let rounded_rect = RoundedRect::from_rect(rect, radii + shadow.spread);
+            cx.fill(&rounded_rect, shadow.color, shadow.blur_radius);
+        } else {
+            cx.fill(&rect, shadow.color, shadow.blur_radius);
+        }
     }
 }
 
