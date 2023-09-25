@@ -2,7 +2,7 @@ use floem::{
     peniko::Color,
     reactive::{create_rw_signal, create_signal},
     view::View,
-    views::{label, stack, Decorators},
+    views::{label, stack, Decorators}, unit::Pct,
 };
 
 fn app_view() -> impl View {
@@ -105,14 +105,14 @@ fn app_view() -> impl View {
         })
         .style(|s| {
             s.absolute()
-                .size_pct(100.0, 100.0)
+                .size(Pct(100.0), Pct(100.0))
                 .items_start()
                 .justify_end()
         }),
     ))
     .window_scale(move || window_scale.get())
     .style(|s| {
-        s.size_pct(100.0, 100.0)
+        s.size(Pct(100.0), Pct(100.0))
             .flex_col()
             .items_center()
             .justify_center()

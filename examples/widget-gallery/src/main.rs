@@ -13,6 +13,7 @@ use floem::{
     peniko::Color,
     reactive::create_signal,
     style::CursorStyle,
+    unit::Pct,
     view::View,
     views::{
         container, container_box, label, scroll, stack, tab, virtual_list, Decorators,
@@ -82,7 +83,7 @@ fn app_view() -> impl View {
                                 .focus_visible_style(|s| s.border(2.).border_color(Color::BLUE))
                                 .style(move |s| {
                                     s.flex_row()
-                                        .width_pct(100.0)
+                                        .width(Pct(100.0))
                                         .height(32.0)
                                         .border_bottom(1.0)
                                         .border_color(Color::LIGHT_GRAY)
@@ -100,13 +101,13 @@ fn app_view() -> impl View {
                 .style(|s| {
                     s.flex_col()
                         .width(140.0)
-                        .height_pct(100.0)
+                        .height(Pct(100.0))
                         .border(1.0)
                         .border_color(Color::GRAY)
                 })
             })
             .style(|s| {
-                s.height_pct(100.0)
+                s.height(Pct(100.0))
                     .width(150.0)
                     .padding_vert(5.0)
                     .padding_horiz(5.0)
@@ -129,10 +130,10 @@ fn app_view() -> impl View {
                         _ => container_box(label(|| "Not implemented".to_owned())),
                     },
                 )
-                .style(|s| s.size_pct(100.0, 100.0))
+                .style(|s| s.size(Pct(100.0), Pct(100.0)))
             })
             .style(|s| {
-                s.size_pct(100.0, 100.0)
+                s.size(Pct(100.0), Pct(100.0))
                     .padding_vert(5.0)
                     .padding_horiz(5.0)
                     .flex_col()
@@ -140,7 +141,7 @@ fn app_view() -> impl View {
             }),
         )
     })
-    .style(|s| s.size_pct(100.0, 100.0))
+    .style(|s| s.size(Pct(100.0), Pct(100.0)))
 }
 
 fn main() {

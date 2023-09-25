@@ -166,26 +166,25 @@ impl ViewState {
                     let val =
                         animation.animate_prop(animation.elapsed().unwrap_or(Duration::ZERO), kind);
                     match kind {
-                        // AnimPropKind::Width => {
-                        //     computed_style = computed_style.width(val.get_f32());
-                        // }
-                        // AnimPropKind::Height => {
-                        //     computed_style = computed_style.height(val.get_f32());
-                        // }
-                        // AnimPropKind::Background => {
-                        //     computed_style = computed_style.background(val.get_color());
-                        // }
-                        // AnimPropKind::Color => {
-                        //     computed_style = computed_style.color(val.get_color());
-                        // }
-                        // AnimPropKind::BorderRadius => {
-                        //     computed_style = computed_style.border_radius(val.get_f32());
-                        // }
-                        // AnimPropKind::BorderColor => {
-                        //     computed_style = computed_style.border_color(val.get_color());
-                        // }
-                        // AnimPropKind::Scale => todo!(),
-                        _ => todo!(),
+                        AnimPropKind::Width => {
+                            computed_style = computed_style.width(val.get_f32());
+                        }
+                        AnimPropKind::Height => {
+                            computed_style = computed_style.height(val.get_f32());
+                        }
+                        AnimPropKind::Background => {
+                            computed_style = computed_style.background(val.get_color());
+                        }
+                        AnimPropKind::Color => {
+                            computed_style = computed_style.color(val.get_color());
+                        }
+                        AnimPropKind::BorderRadius => {
+                            computed_style = computed_style.border_radius(val.get_f32());
+                        }
+                        AnimPropKind::BorderColor => {
+                            computed_style = computed_style.border_color(val.get_color());
+                        }
+                        AnimPropKind::Scale => todo!(),
                     }
                 }
 

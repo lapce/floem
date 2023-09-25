@@ -1,6 +1,7 @@
 use floem::{
     peniko::Color,
     responsive::{range, ScreenSize},
+    unit::Pct,
     view::View,
     views::{label, stack, Decorators},
 };
@@ -21,7 +22,7 @@ fn app_view() -> impl View {
             .responsive_style(ScreenSize::XL, |s| s.background(Color::PINK))
             .responsive_style(ScreenSize::XXL, |s| s.background(Color::RED))
             .responsive_style(range(ScreenSize::XS..ScreenSize::LG), |s| {
-                s.width_pct(90.0).max_width(500.0)
+                s.width(Pct(90.0)).max_width(500.0)
             })
             .responsive_style(
                 // equivalent to: range(ScreenSize::LG..)
@@ -30,7 +31,7 @@ fn app_view() -> impl View {
             ),)
     })
     .style(|s| {
-        s.size_pct(100.0, 100.0)
+        s.size(Pct(100.0), Pct(100.0))
             .flex_col()
             .justify_center()
             .items_center()

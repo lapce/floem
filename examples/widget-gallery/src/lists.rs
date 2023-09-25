@@ -5,6 +5,7 @@ use floem::{
     peniko::Color,
     reactive::create_signal,
     style::{CursorStyle, Dimension, JustifyContent},
+    unit::Pct,
     view::View,
     views::{
         checkbox, container, label, scroll, stack, virtual_list, Decorators, VirtualListDirection,
@@ -89,7 +90,7 @@ fn enhanced_list() -> impl View {
                                     .hover_style(|s| s.color(Color::WHITE).background(Color::RED))
                             })
                             .style(|s| {
-                                s.flex_basis(Dimension::Points(0.0))
+                                s.flex_basis(0.0)
                                     .flex_grow(1.0)
                                     .justify_content(Some(JustifyContent::FlexEnd))
                             }),
@@ -129,7 +130,7 @@ fn enhanced_list() -> impl View {
                 .focus_visible_style(|s| s.border(2.).border_color(Color::BLUE))
                 .style(move |s| {
                     s.flex_row()
-                        .width_pct(list_width)
+                        .width(Pct(list_width))
                         .height(item_height)
                         .apply_if(index == selected.get(), |s| s.background(Color::GRAY))
                         .apply_if(index != 0, |s| {

@@ -1,5 +1,6 @@
 use floem::{
     cosmic_text::Weight,
+    unit::Pct,
     view::View,
     view_tuple::ViewTuple,
     views::{container, label, stack, Decorators},
@@ -11,7 +12,7 @@ pub fn form<VT: ViewTuple + 'static>(children: VT) -> impl View {
             .items_start()
             .margin(10.0)
             .padding(10.0)
-            .width_pct(100.0)
+            .width(Pct(100.0))
     })
 }
 
@@ -33,7 +34,7 @@ pub fn form_item<V: View + 'static>(
             .items_center()
             .margin_bottom(10.0)
             .padding(10.0)
-            .width_pct(100.0)
+            .width(Pct(100.0))
             .min_height(32.0)
     })
 }

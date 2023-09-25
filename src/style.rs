@@ -567,8 +567,8 @@ impl Style {
         self
     }
 
-    pub fn flex_basis(mut self, pt: impl Into<PxOrPct>) -> Self {
-        match pt.into() {
+    pub fn flex_basis(mut self, basis: impl Into<PxOrPct>) -> Self {
+        match basis.into() {
             PxOrPct::Px(Px(px)) => self.flex_basis = Dimension::Points(px as f32),
             PxOrPct::Pct(Pct(pct)) => self.flex_basis = Dimension::Percent(pct as f32 / 100.0),
         }
@@ -588,6 +588,38 @@ impl Style {
     pub fn z_index(mut self, z_index: i32) -> Self {
         self.z_index = Some(z_index);
         self
+    }
+
+    /// Allow the application of a function if the option exists.  
+    /// This is useful for chaining together a bunch of optional style changes.  
+    /// ```rust,ignore
+    /// let style = Style::default()
+    ///    .apply_opt(Some(5.0), Style::padding) // ran
+    ///    .apply_opt(None, Style::margin) // not ran
+    ///    .apply_opt(Some(5.0), |s, v| s.border_right(v * 2.0))
+    ///    .border_left(5.0); // ran, obviously
+    /// ```
+    pub fn apply_opt<T>(self, opt: Option<T>, f: impl FnOnce(Self, T) -> Self) -> Self {
+        if let Some(t) = opt {
+            f(self, t)
+        } else {
+            self
+        }
+    }
+
+    /// Allow the application of a function if the condition holds.  
+    /// This is useful for chaining together a bunch of optional style changes.
+    /// ```rust,ignore
+    /// let style = Style::default()
+    ///     .apply_if(true, |s| s.padding(5.0)) // ran
+    ///     .apply_if(false, |s| s.margin(5.0)) // not ran
+    /// ```
+    pub fn apply_if(self, cond: bool, f: impl FnOnce(Self) -> Self) -> Self {
+        if cond {
+            f(self)
+        } else {
+            self
+        }
     }
 }
 

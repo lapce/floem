@@ -3,7 +3,7 @@ use floem::{
     view::View,
     views::virtual_list,
     views::Decorators,
-    views::{container, label, scroll, VirtualListDirection, VirtualListItemSize},
+    views::{container, label, scroll, VirtualListDirection, VirtualListItemSize}, unit::Pct,
 };
 
 fn app_view() -> impl View {
@@ -21,10 +21,10 @@ fn app_view() -> impl View {
             )
             .style(|s| s.flex_col()),
         )
-        .style(|s| s.width(100.0).height_pct(100.0).border(1.0)),
+        .style(|s| s.width(100.0).height(Pct(100.0)).border(1.0)),
     )
     .style(|s| {
-        s.size_pct(100.0, 100.0)
+        s.size(Pct(100.0), Pct(100.0))
             .padding_vert(20.0)
             .flex_col()
             .items_center()
