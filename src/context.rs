@@ -101,7 +101,6 @@ impl ViewState {
 
     pub(crate) fn compute_style(
         &mut self,
-        view_style: Option<Box<dyn StyleFn>>,
         interact_state: InteractionState,
         screen_size_bp: ScreenSizeBp,
     ) {
@@ -371,11 +370,11 @@ impl AppState {
         self.compute_layout();
     }
 
-    pub(crate) fn compute_style(&mut self, id: Id, view_style: Option<Box<dyn StyleFn>>) {
+    pub(crate) fn compute_style(&mut self, id: Id) {
         let interact_state = self.get_interact_state(&id);
         let screen_size_bp = self.screen_size_bp;
         let view_state = self.view_state(id);
-        view_state.compute_style(view_style, interact_state, screen_size_bp);
+        view_state.compute_style(interact_state, screen_size_bp);
     }
 
     pub(crate) fn get_computed_style(&mut self, id: Id) -> &Style {

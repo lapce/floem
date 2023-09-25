@@ -95,7 +95,7 @@ use crate::{
     context::{AppState, DragState, EventCx, LayoutCx, PaintCx, UpdateCx},
     event::{Event, EventListener},
     id::Id,
-    style::{BoxShadow, Style, StyleFn},
+    style::{BoxShadow, Style},
 };
 
 bitflags! {
@@ -111,10 +111,6 @@ bitflags! {
 
 pub trait View {
     fn id(&self) -> Id;
-
-    fn view_style(&self) -> Option<Box<dyn StyleFn>> {
-        None
-    }
 
     fn child(&self, id: Id) -> Option<&dyn View>;
 
@@ -192,8 +188,7 @@ pub trait View {
     fn layout_main(&mut self, cx: &mut LayoutCx) -> Node {
         cx.save();
 
-        let view_style = self.view_style();
-        cx.app_state_mut().compute_style(self.id(), view_style);
+        cx.app_state_mut().compute_style(self.id());
         let style = cx.app_state_mut().get_computed_style(self.id()).clone();
 
         if style.color.is_some() {
@@ -1111,10 +1106,6 @@ pub(crate) fn view_debug_tree(root_view: &dyn View) {
 impl View for Box<dyn View> {
     fn id(&self) -> Id {
         (**self).id()
-    }
-
-    fn view_style(&self) -> Option<Box<dyn StyleFn>> {
-        (**self).view_style()
     }
 
     fn child(&self, id: Id) -> Option<&dyn View> {
