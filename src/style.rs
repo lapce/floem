@@ -186,7 +186,7 @@ define_styles!(
     cursor nocb: Option<CursorStyle> = None,
     color nocb: Option<Color> = None,
     background nocb: Option<Color> = None,
-    box_shadow nocb: Option<BoxShadow> = None,
+    box_shadows: Vec<BoxShadow> = Vec::new(),
     scroll_bar_color nocb: Option<Color> = None,
     scroll_bar_rounded nocb: Option<bool> = None,
     scroll_bar_thickness nocb: Option<Px> = None,
@@ -450,9 +450,8 @@ impl Style {
         self
     }
 
-    pub fn box_shadow(mut self, box_shadow: BoxShadow) -> Self {
-        self.box_shadow = Some(box_shadow);
-        self
+    pub fn box_shadow(self, box_shadow: BoxShadow) -> Self {
+        self.box_shadows(vec![box_shadow])
     }
 
     pub fn scroll_bar_color(mut self, color: impl Into<Color>) -> Self {
@@ -594,7 +593,7 @@ impl Style {
         self
     }
 
-        /// Allow the application of a function if the option exists.  
+    /// Allow the application of a function if the option exists.  
     /// This is useful for chaining together a bunch of optional style changes.  
     /// ```rust,ignore
     /// let style = Style::default()
