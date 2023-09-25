@@ -138,6 +138,10 @@ define_styles!(
     v_offset: Px = Px(0.0),
 );
 
+pub fn box_shadow() -> BoxShadow {
+    BoxShadow::default()
+}
+
 define_styles!(
     Style with:
     display: Display = Display::Flex,
@@ -590,7 +594,7 @@ impl Style {
         self
     }
 
-    /// Allow the application of a function if the option exists.  
+        /// Allow the application of a function if the option exists.  
     /// This is useful for chaining together a bunch of optional style changes.  
     /// ```rust,ignore
     /// let style = Style::default()

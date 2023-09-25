@@ -149,7 +149,7 @@ impl Id {
     }
 
     pub fn update_override_style(&self, style: Box<dyn StyleFn>) {
-        self.add_update_message(UpdateMessage::BaseStyle { id: *self, style });
+        self.add_update_message(UpdateMessage::OverrideStyle { id: *self, style });
     }
 
     pub fn update_style_selector(&self, style: Box<dyn StyleFn>, selector: StyleSelector) {
