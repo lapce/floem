@@ -131,15 +131,27 @@ use super::*;
 
 define_styles!(
     BoxShadow with:
-    blur_radius: Px = Px(0.0),
-    color: Color = Color::BLACK,
-    spread: Px = Px(0.0),
     h_offset: Px = Px(0.0),
     v_offset: Px = Px(0.0),
+    blur_radius: Px = Px(0.0),
+    spread: Px = Px(0.0),
+    color: Color = Color::BLACK,
 );
 
-pub fn box_shadow() -> BoxShadow {
-    BoxShadow::default()
+pub fn box_shadow(
+    h_offset: impl Into<Px>,
+    v_offset: impl Into<Px>,
+    blur_radius: impl Into<Px>,
+    spread: impl Into<Px>,
+    color: impl Into<Color>,
+) -> BoxShadow {
+    BoxShadow {
+        h_offset: h_offset.into(),
+        v_offset: v_offset.into(),
+        blur_radius: blur_radius.into(),
+        spread: spread.into(),
+        color: color.into(),
+    }
 }
 
 define_styles!(
@@ -683,6 +695,77 @@ impl Style {
         }
     }
 }
+
+pub mod short {
+    use peniko::Color;
+
+    use super::Style;
+    use crate::unit::PxOrPct;
+
+    impl Style {
+        pub fn p(self, p: impl Into<PxOrPct>) -> Self {
+            self.padding(p)
+        }
+
+        pub fn px(self, p: impl Into<PxOrPct>) -> Self {
+            self.padding_horiz(p)
+        }
+
+        pub fn py(self, p: impl Into<PxOrPct>) -> Self {
+            self.padding_vert(p)
+        }
+
+        pub fn pl(self, p: impl Into<PxOrPct>) -> Self {
+            self.padding_left(p)
+        }
+
+        pub fn pr(self, p: impl Into<PxOrPct>) -> Self {
+            self.padding_right(p)
+        }
+
+        pub fn pt(self, p: impl Into<PxOrPct>) -> Self {
+            self.padding_top(p)
+        }
+
+        pub fn pb(self, p: impl Into<PxOrPct>) -> Self {
+            self.padding_bottom(p)
+        }
+
+        pub fn m(self, m: impl Into<PxOrPct>) -> Self {
+            self.margin(m)
+        }
+
+        pub fn mx(self, m: impl Into<PxOrPct>) -> Self {
+            self.margin_horiz(m)
+        }
+
+        pub fn my(self, m: impl Into<PxOrPct>) -> Self {
+            self.margin_vert(m)
+        }
+
+        pub fn ml(self, m: impl Into<PxOrPct>) -> Self {
+            self.margin_left(m)
+        }
+
+        pub fn mr(self, m: impl Into<PxOrPct>) -> Self {
+            self.margin_right(m)
+        }
+
+        pub fn mt(self, m: impl Into<PxOrPct>) -> Self {
+            self.margin_top(m)
+        }
+
+        pub fn mb(self, m: impl Into<PxOrPct>) -> Self {
+            self.margin_bottom(m)
+        }
+
+        pub fn bg(self: Style, color: impl Into<Color>) -> Style {
+            self.background(color)
+        }
+    }
+}
+
+pub use short::*;
 
 // #[cfg(test)]
 // mod tests {

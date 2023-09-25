@@ -8,15 +8,10 @@ use floem::{
 };
 
 fn app_view() -> impl View {
-    let button_style = |s: Style| -> Style {
-        s.padding(10).border_radius(8).box_shadow(
-            box_shadow()
-                .blur_radius(8)
-                .h_offset(10)
-                .v_offset(10)
-                .spread(2)
-                .color(Color::rgb(0.6, 0.6, 0.6)),
-        )
+    let button_style = |s: Style| {
+        s.p(10)
+            .border_radius(8)
+            .box_shadow(box_shadow(10, 10, 8, 2, Color::rgb(0.6, 0.6, 0.6)))
     };
 
     let (counter, set_counter) = create_signal(0);
