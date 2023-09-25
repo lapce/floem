@@ -84,10 +84,10 @@ impl WindowHandle {
         let view = with_scope(scope, move || {
             Box::new(
                 stack((
-                    container_box(view_fn(window_id)).style(|s| s.size_pct(100.0, 100.0)),
+                    container_box(view_fn(window_id)).style(|s| s.size(Pct(100.0), Pct(100.0))),
                     context_menu_view(scope, window_id, context_menu, size),
                 ))
-                .style(|s| s.size_pct(100.0, 100.0)),
+                .style(|s| s.size(Pct(100.0), Pct(100.0))),
             )
         });
 
@@ -1135,8 +1135,8 @@ fn context_menu_view(
                     })
                     .disabled(move || !menu.enabled)
                     .style(|s| {
-                        s.width_pct(100.0)
-                            .min_width_pct(100.0)
+                        s.width(Pct(100.0))
+                            .min_width(Pct(100.0))
                             .padding_horiz(20.0)
                             .justify_between()
                             .items_center()
@@ -1211,17 +1211,17 @@ fn context_menu_view(
                             )
                     }),
                 ))
-                .style(|s| s.min_width_pct(100.0)),
+                .style(|s| s.min_width(Pct(100.0))),
             )
-            .style(|s| s.min_width_pct(100.0))
+            .style(|s| s.min_width(Pct(100.0)))
         } else {
             container_box(empty().style(|s| {
-                s.width_pct(100.0)
+                s.width(Pct(100.0))
                     .height(1.0)
                     .margin_vert(5.0)
                     .background(Color::rgb8(92, 92, 92))
             }))
-            .style(|s| s.min_width_pct(100.0).padding_horiz(20.0))
+            .style(|s| s.min_width(Pct(100.0)).padding_horiz(20.0))
         }
     }
 

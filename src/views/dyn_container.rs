@@ -60,7 +60,7 @@ pub struct DynamicContainer<T: 'static> {
 ///     ))
 ///     .style(|| {
 ///         Style::BASE
-///             .size_pct(100., 100.)
+///             .size(Pct(100), Pct(100))
 ///             .items_center()
 ///             .justify_center()
 ///             .gap(points(10.))

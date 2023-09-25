@@ -59,7 +59,7 @@
 //!     .style(move || {
 //!         Style::BASE
 //!             .flex_row()
-//!             .width_pct(100.0)
+//!             .width(Pct(100.0))
 //!             .height(32.0)
 //!             .border_bottom(1.0)
 //!             .border_color(Color::LIGHT_GRAY)
