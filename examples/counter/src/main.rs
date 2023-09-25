@@ -16,7 +16,7 @@ fn app_view() -> impl View {
 
     let (counter, set_counter) = create_signal(0);
     stack((
-        label(move || format!("Value: {}", counter.get())).style(|s| s.padding(10)),
+        label(move || format!("Value: {}", counter.get())).style(|s| s.p(10)),
         stack((
             text("Increment")
                 .style(move |s| button_style(s).background(Color::WHITE))
@@ -37,7 +37,7 @@ fn app_view() -> impl View {
                         true
                     }
                 })
-                .style(move |s| button_style(s).background(Color::WHITE).margin_left(16.0))
+                .style(move |s| button_style(s).background(Color::WHITE).ml(16.0))
                 .hover_style(|s| s.background(Color::rgb8(244, 67, 54)))
                 .active_style(|s| s.color(Color::WHITE).background(Color::RED))
                 .keyboard_navigatable()
@@ -51,7 +51,7 @@ fn app_view() -> impl View {
                 .disabled(move || counter.get() == 0)
                 .style(move |s| {
                     button_style(s)
-                        .margin_left(16)
+                        .ml(16)
                         .background(Color::LIGHT_BLUE)
                 })
                 .disabled_style(|s| s.background(Color::LIGHT_GRAY))
