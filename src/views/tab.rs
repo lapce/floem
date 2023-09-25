@@ -8,6 +8,7 @@ use taffy::style::Display;
 use crate::{
     context::{EventCx, UpdateCx},
     id::Id,
+    style::Style,
     view::{ChangeFlags, View},
 };
 
@@ -181,9 +182,11 @@ impl<V: View + 'static, T> View for Tab<V, T> {
                     let child_view = cx.app_state_mut().view_state(child_id);
                     if i != self.active {
                         // set display to none for non active child
-                        child_view.style.display = Display::None.into();
+                        child_view.override_style =
+                            Some(Box::new(|style: Style| style.display(Display::None)));
                     } else {
-                        child_view.style.display = Display::Flex.into();
+                        child_view.override_style =
+                            Some(Box::new(|style: Style| style.display(Display::Flex)));
                     }
                     let node = child.as_mut()?.0.layout_main(cx);
                     Some(node)

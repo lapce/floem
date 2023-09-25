@@ -41,12 +41,12 @@ pub fn checkbox(checked: crate::reactive::ReadSignal<bool>) -> Svg {
 
     svg(svg_str)
         .style(|base| {
-            base.width_px(20.)
-                .height_px(20.)
+            base.width(20)
+                .height(20)
                 .border_color(Color::BLACK)
-                .border(1.)
-                .border_radius(5.)
-                .margin_right_px(5.)
+                .border(1)
+                .border_radius(5)
+                .margin_right(5)
         })
         .keyboard_navigatable()
 }

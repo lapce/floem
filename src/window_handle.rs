@@ -573,7 +573,12 @@ impl WindowHandle {
                     }
                     UpdateMessage::Style { id, style } => {
                         let state = cx.app_state.view_state(id);
-                        state.style = style;
+                        state.style = Some(style);
+                        cx.request_layout(id);
+                    }
+                    UpdateMessage::OverrideStyle { id, style } => {
+                        let state = cx.app_state.view_state(id);
+                        state.override_style = Some(style);
                         cx.request_layout(id);
                     }
                     UpdateMessage::ResponsiveStyle { id, style, size } => {
@@ -808,7 +813,7 @@ impl WindowHandle {
             AnimPropKind::BorderRadius => {
                 let border_radius = view_state.computed_style.border_radius;
                 AnimatedProp::BorderRadius {
-                    from: border_radius as f64,
+                    from: border_radius.0 as f64,
                     to: val.get_f64(),
                 }
             }
@@ -1081,10 +1086,10 @@ fn context_menu_view(
                     stack((
                         text(menu.title),
                         svg(|| submenu_svg.to_string()).style(move |s| {
-                            s.size_px(20.0, 20.0)
+                            s.size(20.0, 20.0)
                                 .color(Color::rgb8(201, 201, 201))
-                                .margin_right_px(10.0)
-                                .margin_left_px(20.0)
+                                .margin_right(10.0)
+                                .margin_left(20.0)
                                 .apply_if(!has_submenu, |s| s.hide())
                         }),
                     ))
@@ -1132,7 +1137,7 @@ fn context_menu_view(
                     .style(|s| {
                         s.width_pct(100.0)
                             .min_width_pct(100.0)
-                            .padding_horiz_px(20.0)
+                            .padding_horiz(20.0)
                             .justify_between()
                             .items_center()
                     })
@@ -1190,13 +1195,13 @@ fn context_menu_view(
                     })
                     .style(move |s| {
                         s.absolute()
-                            .min_width_px(200.0)
-                            .margin_top_px(-5.0)
-                            .margin_left_px(menu_width.get() as f32)
+                            .min_width(200.0)
+                            .margin_top(-5.0)
+                            .margin_left(menu_width.get() as f32)
                             .flex_col()
                             .border_radius(10.0)
                             .background(Color::rgb8(44, 44, 44))
-                            .padding_px(5.0)
+                            .padding(5.0)
                             .cursor(CursorStyle::Default)
                             .box_shadow_blur(5.0)
                             .box_shadow_color(Color::BLACK)
@@ -1212,11 +1217,11 @@ fn context_menu_view(
         } else {
             container_box(empty().style(|s| {
                 s.width_pct(100.0)
-                    .height_px(1.0)
-                    .margin_vert_px(5.0)
+                    .height(1.0)
+                    .margin_vert(5.0)
                     .background(Color::rgb8(92, 92, 92))
             }))
-            .style(|s| s.min_width_pct(100.0).padding_horiz_px(20.0))
+            .style(|s| s.min_width_pct(100.0).padding_horiz(20.0))
         }
     }
 
@@ -1269,16 +1274,16 @@ fn context_menu_view(
             pos.y = window_size.height - menu_size.height;
         }
         s.absolute()
-            .min_width_px(200.0)
+            .min_width(200.0)
             .flex_col()
             .border_radius(10.0)
             .background(Color::rgb8(44, 44, 44))
             .color(Color::rgb8(201, 201, 201))
             .z_index(999)
             .line_height(2.0)
-            .padding_px(5.0)
-            .margin_left_px(pos.x as f32)
-            .margin_top_px(pos.y as f32)
+            .padding(5.0)
+            .margin_left(pos.x as f32)
+            .margin_top(pos.y as f32)
             .cursor(CursorStyle::Default)
             .apply_if(!is_acitve, |s| s.hide())
             .box_shadow_blur(5.0)

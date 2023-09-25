@@ -1,8 +1,12 @@
 use std::{any::Any, fmt::Display};
 
 use crate::{
+    context::{EventCx, UpdateCx},
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
-    style::{ComputedStyle, TextOverflow},
+    event::Event,
+    id::Id,
+    style::{Style, TextOverflow},
+    view::{ChangeFlags, View},
 };
 use floem_reactive::create_effect;
 use floem_renderer::{
@@ -11,15 +15,7 @@ use floem_renderer::{
 };
 use kurbo::{Point, Rect};
 use peniko::Color;
-use taffy::{prelude::Node, style::Dimension};
-
-use crate::{
-    context::{EventCx, UpdateCx},
-    event::Event,
-    id::Id,
-    style::Style,
-    view::{ChangeFlags, View},
-};
+use taffy::prelude::Node;
 
 pub struct Label {
     id: Id,
@@ -203,10 +199,9 @@ impl View for Label {
             }
             let text_node = self.text_node.unwrap();
 
-            let style = Style::BASE
-                .width(Dimension::Points(width))
-                .height(Dimension::Points(height))
-                .compute(&ComputedStyle::default())
+            let style = Style::default()
+                .width(width)
+                .height(height)
                 .to_taffy_style();
             let _ = cx.app_state_mut().taffy.set_style(text_node, style);
 

@@ -15,7 +15,7 @@ pub fn text_input_view() -> impl View {
         (
             form_item("Simple Input:".to_string(), 120.0, move || {
                 text_input(text)
-                    .style(|s| s.border(1.0).height_px(32.0))
+                    .style(|s| s.border(1.0).height(32.0))
                     .keyboard_navigatable()
             }),
             form_item("Styled Input:".to_string(), 120.0, move || {
@@ -25,7 +25,7 @@ pub fn text_input_view() -> impl View {
                             .background(Color::rgb8(224, 224, 224))
                             .border_radius(15.0)
                             .border_color(Color::rgb8(189, 189, 189))
-                            .padding_px(10.0)
+                            .padding(10.0)
                             .cursor(CursorStyle::Text)
                     })
                     .hover_style(|s| s.border_color(Color::rgb8(66, 66, 66)))
@@ -39,7 +39,7 @@ pub fn text_input_view() -> impl View {
                             .background(Color::rgb8(224, 224, 224))
                             .border_radius(15.0)
                             .border_color(Color::rgb8(189, 189, 189))
-                            .padding_px(10.0)
+                            .padding(10.0)
                             .cursor(CursorStyle::Text)
                     })
                     .hover_style(|s| s.border_color(Color::rgb8(66, 66, 66)))

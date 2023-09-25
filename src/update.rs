@@ -10,7 +10,7 @@ use crate::{
     id::Id,
     menu::Menu,
     responsive::ScreenSize,
-    style::{Style, StyleSelector},
+    style::{StyleFn, StyleSelector},
 };
 
 thread_local! {
@@ -47,21 +47,25 @@ pub(crate) enum UpdateMessage {
     },
     BaseStyle {
         id: Id,
-        style: Style,
+        style: Box<dyn StyleFn>,
     },
     Style {
         id: Id,
-        style: Style,
+        style: Box<dyn StyleFn>,
+    },
+    OverrideStyle {
+        id: Id,
+        style: Box<dyn StyleFn>,
     },
     ResponsiveStyle {
         id: Id,
-        style: Style,
+        style: Box<dyn StyleFn>,
         size: ScreenSize,
     },
     StyleSelector {
         id: Id,
         selector: StyleSelector,
-        style: Style,
+        style: Box<dyn StyleFn>,
     },
     KeyboardNavigable {
         id: Id,

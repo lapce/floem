@@ -32,11 +32,11 @@ fn simple_list() -> impl View {
             VirtualListItemSize::Fixed(Box::new(|| 20.0)),
             move || long_list.get(),
             move |item| *item,
-            move |item| label(move || item.to_string()).style(|s| s.height_px(24.0)),
+            move |item| label(move || item.to_string()).style(|s| s.height(24.0)),
         )
         .style(|s| s.flex_col()),
     )
-    .style(|s| s.width_px(100.0).height_px(300.0).border(1.0))
+    .style(|s| s.width(100.0).height(300.0).border(1.0))
 }
 
 fn enhanced_list() -> impl View {
@@ -67,7 +67,7 @@ fn enhanced_list() -> impl View {
                                 true
                             }),
                             label(move || item.to_string())
-                                .style(|s| s.height_px(32.0).font_size(32.0)),
+                                .style(|s| s.height(32.0).font_size(32.0)),
                             container({
                                 label(move || " X ")
                                     .on_click(move |_| {
@@ -78,13 +78,13 @@ fn enhanced_list() -> impl View {
                                         true
                                     })
                                     .style(|s| {
-                                        s.height_px(18.0)
+                                        s.height(18.0)
                                             .font_weight(Weight::BOLD)
                                             .color(Color::RED)
                                             .border(1.0)
                                             .border_color(Color::RED)
                                             .border_radius(16.0)
-                                            .margin_right_px(5.0)
+                                            .margin_right(5.0)
                                     })
                                     .hover_style(|s| s.color(Color::WHITE).background(Color::RED))
                             })
@@ -95,7 +95,7 @@ fn enhanced_list() -> impl View {
                             }),
                         )
                     })
-                    .style(move |s| s.height_px(item_height).width_px(list_width).items_center())
+                    .style(move |s| s.height(item_height).width(list_width).items_center())
                 })
                 .on_click(move |_| {
                     set_selected.update(|v: &mut usize| {
@@ -130,7 +130,7 @@ fn enhanced_list() -> impl View {
                 .style(move |s| {
                     s.flex_row()
                         .width_pct(list_width)
-                        .height_px(item_height)
+                        .height(item_height)
                         .apply_if(index == selected.get(), |s| s.background(Color::GRAY))
                         .apply_if(index != 0, |s| {
                             s.border_top(1.0).border_color(Color::LIGHT_GRAY)
@@ -139,7 +139,7 @@ fn enhanced_list() -> impl View {
                 .hover_style(|s| s.background(Color::LIGHT_GRAY).cursor(CursorStyle::Pointer))
             },
         )
-        .style(move |s| s.flex_col().width_px(list_width)),
+        .style(move |s| s.flex_col().width(list_width)),
     )
-    .style(move |s| s.width_px(list_width).height_px(300.0).border(1.0))
+    .style(move |s| s.width(list_width).height(300.0).border(1.0))
 }

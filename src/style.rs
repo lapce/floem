@@ -25,6 +25,7 @@
 //! ```
 //!
 
+use dyn_clone::DynClone;
 use floem_renderer::cosmic_text::{LineHeightValue, Style as FontStyle, Weight};
 use peniko::Color;
 pub use taffy::style::{
@@ -36,6 +37,21 @@ use taffy::{
     style::{FlexWrap, LengthPercentage, LengthPercentageAuto, Style as TaffyStyle},
     style_helpers::TaffyZero,
 };
+
+use crate::unit::{Pct, Px, PxOrPct};
+
+pub trait StyleFn: DynClone {
+    fn call(&self, style: Style) -> Style;
+}
+
+impl<F> StyleFn for F
+where
+    F: Fn(Style) -> Style + Clone,
+{
+    fn call(&self, style: Style) -> Style {
+        self(style)
+    }
+}
 
 pub enum StyleSelector {
     Hover,
@@ -72,107 +88,17 @@ pub enum CursorStyle {
     NwseResize,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct BoxShadow {
-    pub blur_radius: f64,
-    pub color: Color,
-    pub spread: f64,
-    pub h_offset: f64,
-    pub v_offset: f64,
-}
-
-impl Default for BoxShadow {
-    fn default() -> Self {
-        Self {
-            blur_radius: 0.0,
-            color: Color::BLACK,
-            spread: 0.0,
-            h_offset: 0.0,
-            v_offset: 0.0,
-        }
-    }
-}
-
-/// The value for a [`Style`] property
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StyleValue<T> {
-    Val(T),
-    /// Use the default value for the style, typically from the underlying `ComputedStyle`
-    Unset,
-    /// Use whatever the base style is. For an overriding style like hover, this uses the base
-    /// style. For the base style, this is equivalent to `Unset`
-    Base,
-}
-
-impl<T> StyleValue<T> {
-    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> StyleValue<U> {
-        match self {
-            Self::Val(x) => StyleValue::Val(f(x)),
-            Self::Unset => StyleValue::Unset,
-            Self::Base => StyleValue::Base,
-        }
-    }
-
-    pub fn unwrap_or(self, default: T) -> T {
-        match self {
-            Self::Val(x) => x,
-            Self::Unset => default,
-            Self::Base => default,
-        }
-    }
-
-    pub fn unwrap_or_else(self, f: impl FnOnce() -> T) -> T {
-        match self {
-            Self::Val(x) => x,
-            Self::Unset => f(),
-            Self::Base => f(),
-        }
-    }
-
-    pub fn as_mut(&mut self) -> Option<&mut T> {
-        match self {
-            Self::Val(x) => Some(x),
-            Self::Unset => None,
-            Self::Base => None,
-        }
-    }
-}
-
-impl<T> Default for StyleValue<T> {
-    fn default() -> Self {
-        // By default we let the `Style` decide what to do.
-        Self::Base
-    }
-}
-
-impl<T> From<T> for StyleValue<T> {
-    fn from(x: T) -> Self {
-        Self::Val(x)
-    }
-}
-
-// Creates `ComputedStyle` which has definite values for the fields, barring some specific cases.
-// Creates `Style` which has `StyleValue<T>`s for the fields
 macro_rules! define_styles {
     (
-        $($name:ident $($opt:ident)?: $typ:ty = $val:expr),* $(,)?
+        $struct_name:ident with: $($name:ident $($opt:ident)?: $typ:ty = $val:expr),* $(,)?
     ) => {
-        /// A style with definite values for most fields.
         #[derive(Debug, Clone)]
-        pub struct ComputedStyle {
+        pub struct $struct_name {
             $(
                 pub $name: $typ,
             )*
         }
-        impl ComputedStyle {
-            $(
-                pub fn $name(mut self, v: impl Into<$typ>) -> Self {
-                    self.$name = v.into();
-                    self
-                }
-            )*
-        }
-        impl Default for ComputedStyle {
+        impl Default for $struct_name {
             fn default() -> Self {
                 Self {
                     $(
@@ -182,120 +108,76 @@ macro_rules! define_styles {
             }
         }
 
-        #[derive(Debug, Clone)]
-        pub struct Style {
-            $(
-                pub $name: StyleValue<$typ>,
-            )*
-        }
-        impl Style {
-            pub const BASE: Style = Style{
-                $(
-                    $name: StyleValue::Base,
-                )*
-            };
-
-            pub const UNSET: Style = Style{
-                $(
-                    $name: StyleValue::Unset,
-                )*
-            };
-
+        impl $struct_name {
             $(
                 define_styles!(decl: $name $($opt)?: $typ = $val);
             )*
-
-            /// Convert this `Style` into a computed style, using the given `ComputedStyle` as a base
-            /// for any missing values.
-            pub fn compute(self, underlying: &ComputedStyle) -> ComputedStyle {
-                ComputedStyle {
-                    $(
-                        $name: self.$name.unwrap_or_else(|| underlying.$name.clone()),
-                    )*
-                }
-            }
-
-            /// Apply another `Style` to this style, returning a new `Style` with the overrides
-            ///
-            /// `StyleValue::Val` will override the value with the given value
-            /// `StyleValue::Unset` will unset the value, causing it to fall back to the underlying
-            /// `ComputedStyle` (aka setting it to `None`)
-            /// `StyleValue::Base` will leave the value as-is, whether falling back to the underlying
-            /// `ComputedStyle` or using the value in the `Style`.
-            pub fn apply(self, over: Style) -> Style {
-                Style {
-                    $(
-                        $name: match (self.$name, over.$name) {
-                            (_, StyleValue::Val(x)) => StyleValue::Val(x),
-                            (StyleValue::Val(x), StyleValue::Base) => StyleValue::Val(x),
-                            (StyleValue::Val(_), StyleValue::Unset) => StyleValue::Unset,
-                            (StyleValue::Base, StyleValue::Base) => StyleValue::Base,
-                            (StyleValue::Unset, StyleValue::Base) => StyleValue::Unset,
-                            (StyleValue::Base, StyleValue::Unset) => StyleValue::Unset,
-                            (StyleValue::Unset, StyleValue::Unset) => StyleValue::Unset,
-                        },
-                    )*
-                }
-            }
-
-            /// Apply multiple `Style`s to this style, returning a new `Style` with the overrides.
-            /// Later styles take precedence over earlier styles.
-            pub fn apply_overriding_styles(self, overrides: impl Iterator<Item = Style>) -> Style {
-                overrides.fold(self, |acc, x| acc.apply(x))
-            }
         }
     };
+
     // internal submacro
 
     // 'nocb' doesn't add a builder function
     (decl: $name:ident nocb: $typ:ty = $val:expr) => {};
     (decl: $name:ident: $typ:ty = $val:expr) => {
-        pub fn $name(mut self, v: impl Into<StyleValue<$typ>>) -> Self {
+        pub fn $name(mut self, v: impl Into<$typ>) -> Self {
             self.$name = v.into();
             self
         }
     }
 }
 
+use super::*;
+
 define_styles!(
+    BoxShadow with:
+    blur_radius: Px = Px(0.0),
+    color: Color = Color::BLACK,
+    spread: Px = Px(0.0),
+    h_offset: Px = Px(0.0),
+    v_offset: Px = Px(0.0),
+);
+
+define_styles!(
+    Style with:
     display: Display = Display::Flex,
     position: Position = Position::Relative,
-    width: Dimension = Dimension::Auto,
-    height: Dimension = Dimension::Auto,
-    min_width: Dimension = Dimension::Auto,
-    min_height: Dimension = Dimension::Auto,
-    max_width: Dimension = Dimension::Auto,
-    max_height: Dimension = Dimension::Auto,
+    width nocb: Dimension = Dimension::Auto,
+    height nocb: Dimension = Dimension::Auto,
+    min_width nocb: Dimension = Dimension::Auto,
+    min_height nocb: Dimension = Dimension::Auto,
+    max_width nocb: Dimension = Dimension::Auto,
+    max_height nocb: Dimension = Dimension::Auto,
     flex_direction: FlexDirection = FlexDirection::Row,
     flex_wrap: FlexWrap = FlexWrap::NoWrap,
     flex_grow: f32 = 0.0,
     flex_shrink: f32 = 1.0,
-    flex_basis: Dimension = Dimension::Auto,
+    flex_basis nocb: Dimension = Dimension::Auto,
     justify_content: Option<JustifyContent> = None,
     justify_self: Option<AlignItems> = None,
     align_items: Option<AlignItems> = None,
     align_content: Option<AlignContent> = None,
     align_self: Option<AlignItems> = None,
-    border_left: f32 = 0.0,
-    border_top: f32 = 0.0,
-    border_right: f32 = 0.0,
-    border_bottom: f32 = 0.0,
-    border_radius: f32 = 0.0,
+    border_left: Px = Px(0.0),
+    border_top: Px = Px(0.0),
+    border_right: Px = Px(0.0),
+    border_bottom: Px = Px(0.0),
+    border_radius: Px = Px(0.0),
     outline_color: Color = Color::TRANSPARENT,
-    outline: f32 = 0.0,
+    outline: Px = Px(0.0),
     border_color: Color = Color::BLACK,
-    padding_left: LengthPercentage = LengthPercentage::ZERO,
-    padding_top: LengthPercentage = LengthPercentage::ZERO,
-    padding_right: LengthPercentage = LengthPercentage::ZERO,
-    padding_bottom: LengthPercentage = LengthPercentage::ZERO,
-    margin_left: LengthPercentageAuto = LengthPercentageAuto::ZERO,
-    margin_top: LengthPercentageAuto = LengthPercentageAuto::ZERO,
-    margin_right: LengthPercentageAuto = LengthPercentageAuto::ZERO,
-    margin_bottom: LengthPercentageAuto = LengthPercentageAuto::ZERO,
-    inset_left: LengthPercentageAuto = LengthPercentageAuto::Auto,
-    inset_top: LengthPercentageAuto = LengthPercentageAuto::Auto,
-    inset_right: LengthPercentageAuto = LengthPercentageAuto::Auto,
-    inset_bottom: LengthPercentageAuto = LengthPercentageAuto::Auto,
+    padding_left nocb: LengthPercentage = LengthPercentage::ZERO,
+    padding_top nocb: LengthPercentage = LengthPercentage::ZERO,
+    padding_right nocb: LengthPercentage = LengthPercentage::ZERO,
+    padding_bottom nocb: LengthPercentage = LengthPercentage::ZERO,
+    margin_left nocb: LengthPercentageAuto = LengthPercentageAuto::ZERO,
+    margin_top nocb: LengthPercentageAuto = LengthPercentageAuto::ZERO,
+    margin_right nocb: LengthPercentageAuto = LengthPercentageAuto::ZERO,
+    margin_bottom nocb: LengthPercentageAuto = LengthPercentageAuto::ZERO,
+    inset_left nocb: LengthPercentageAuto = LengthPercentageAuto::Auto,
+    inset_top nocb: LengthPercentageAuto = LengthPercentageAuto::Auto,
+    inset_right nocb: LengthPercentageAuto = LengthPercentageAuto::Auto,
+    inset_bottom nocb: LengthPercentageAuto = LengthPercentageAuto::Auto,
     z_index nocb: Option<i32> = None,
     cursor nocb: Option<CursorStyle> = None,
     color nocb: Option<Color> = None,
@@ -303,8 +185,8 @@ define_styles!(
     box_shadow nocb: Option<BoxShadow> = None,
     scroll_bar_color nocb: Option<Color> = None,
     scroll_bar_rounded nocb: Option<bool> = None,
-    scroll_bar_thickness nocb: Option<f32> = None,
-    scroll_bar_edge_width nocb: Option<f32> = None,
+    scroll_bar_thickness nocb: Option<Px> = None,
+    scroll_bar_edge_width nocb: Option<Px> = None,
     font_size nocb: Option<f32> = None,
     font_family nocb: Option<String> = None,
     font_weight nocb: Option<Weight> = None,
@@ -317,421 +199,290 @@ define_styles!(
 );
 
 impl Style {
-    pub fn width_px(self, width: f32) -> Self {
-        self.width(Dimension::Points(width))
+    pub fn width(mut self, width: impl Into<PxOrPct>) -> Self {
+        self.width = match width.into() {
+            PxOrPct::Px(Px(px)) => Dimension::Points(px as f32),
+            PxOrPct::Pct(Pct(pct)) => Dimension::Percent(pct as f32 / 100.0),
+        };
+        self
     }
 
-    pub fn width_pct(self, width: f32) -> Self {
-        self.width(Dimension::Percent(width / 100.0))
+    pub fn height(mut self, height: impl Into<PxOrPct>) -> Self {
+        self.height = match height.into() {
+            PxOrPct::Px(Px(px)) => Dimension::Points(px as f32),
+            PxOrPct::Pct(Pct(pct)) => Dimension::Percent(pct as f32 / 100.0),
+        };
+        self
     }
 
-    pub fn height_px(self, height: f32) -> Self {
-        self.height(Dimension::Points(height))
-    }
-
-    pub fn height_pct(self, height: f32) -> Self {
-        self.height(Dimension::Percent(height / 100.0))
-    }
-
-    pub fn size(
-        self,
-        width: impl Into<StyleValue<Dimension>>,
-        height: impl Into<StyleValue<Dimension>>,
-    ) -> Self {
+    pub fn size(self, width: impl Into<PxOrPct>, height: impl Into<PxOrPct>) -> Self {
         self.width(width).height(height)
     }
 
-    pub fn size_px(self, width: f32, height: f32) -> Self {
-        self.width_px(width).height_px(height)
+    pub fn min_width(mut self, min_width: impl Into<PxOrPct>) -> Self {
+        self.min_width = match min_width.into() {
+            PxOrPct::Px(Px(px)) => Dimension::Points(px as f32),
+            PxOrPct::Pct(Pct(pct)) => Dimension::Percent(pct as f32 / 100.0),
+        };
+        self
     }
 
-    pub fn size_pct(self, width: f32, height: f32) -> Self {
-        self.width_pct(width).height_pct(height)
+    pub fn min_height(mut self, min_height: impl Into<PxOrPct>) -> Self {
+        self.min_height = match min_height.into() {
+            PxOrPct::Px(Px(px)) => Dimension::Points(px as f32),
+            PxOrPct::Pct(Pct(pct)) => Dimension::Percent(pct as f32 / 100.0),
+        };
+        self
     }
 
-    pub fn min_width_px(self, min_width: f32) -> Self {
-        self.min_width(Dimension::Points(min_width))
-    }
-
-    pub fn min_width_pct(self, min_width: f32) -> Self {
-        self.min_width(Dimension::Percent(min_width / 100.0))
-    }
-
-    pub fn min_height_px(self, min_height: f32) -> Self {
-        self.min_height(Dimension::Points(min_height))
-    }
-
-    pub fn min_height_pct(self, min_height: f32) -> Self {
-        self.min_height(Dimension::Percent(min_height / 100.0))
-    }
-
-    pub fn min_size(
-        self,
-        min_width: impl Into<StyleValue<Dimension>>,
-        min_height: impl Into<StyleValue<Dimension>>,
-    ) -> Self {
+    pub fn min_size(self, min_width: impl Into<PxOrPct>, min_height: impl Into<PxOrPct>) -> Self {
         self.min_width(min_width).min_height(min_height)
     }
 
-    pub fn min_size_px(self, min_width: f32, min_height: f32) -> Self {
-        self.min_width_px(min_width).min_height_px(min_height)
+    pub fn max_width(mut self, max_width: impl Into<PxOrPct>) -> Self {
+        self.max_width = match max_width.into() {
+            PxOrPct::Px(Px(px)) => Dimension::Points(px as f32),
+            PxOrPct::Pct(Pct(pct)) => Dimension::Percent(pct as f32 / 100.0),
+        };
+        self
     }
 
-    pub fn min_size_pct(self, min_width: f32, min_height: f32) -> Self {
-        self.min_width_pct(min_width).min_height_pct(min_height)
+    pub fn max_height(mut self, max_height: impl Into<PxOrPct>) -> Self {
+        self.max_height = match max_height.into() {
+            PxOrPct::Px(Px(px)) => Dimension::Points(px as f32),
+            PxOrPct::Pct(Pct(pct)) => Dimension::Percent(pct as f32 / 100.0),
+        };
+        self
     }
 
-    pub fn max_width_px(self, max_width: f32) -> Self {
-        self.max_width(Dimension::Points(max_width))
-    }
-
-    pub fn max_width_pct(self, max_width: f32) -> Self {
-        self.max_width(Dimension::Percent(max_width / 100.0))
-    }
-
-    pub fn max_height_px(self, max_height: f32) -> Self {
-        self.max_height(Dimension::Points(max_height))
-    }
-
-    pub fn max_height_pct(self, max_height: f32) -> Self {
-        self.max_height(Dimension::Percent(max_height / 100.0))
-    }
-
-    pub fn max_size(
-        self,
-        max_width: impl Into<StyleValue<Dimension>>,
-        max_height: impl Into<StyleValue<Dimension>>,
-    ) -> Self {
+    pub fn max_size(self, max_width: impl Into<PxOrPct>, max_height: impl Into<PxOrPct>) -> Self {
         self.max_width(max_width).max_height(max_height)
     }
 
-    pub fn max_size_px(self, max_width: f32, max_height: f32) -> Self {
-        self.max_width_px(max_width).max_height_px(max_height)
-    }
-
-    pub fn max_size_pct(self, max_width: f32, max_height: f32) -> Self {
-        self.max_width_pct(max_width).max_height_pct(max_height)
-    }
-
-    pub fn border(self, border: f32) -> Self {
-        self.border_left(border)
-            .border_top(border)
-            .border_right(border)
-            .border_bottom(border)
+    pub fn border(mut self, border: impl Into<Px>) -> Self {
+        let border = border.into();
+        self.border_left = border;
+        self.border_top = border;
+        self.border_right = border;
+        self.border_bottom = border;
+        self
     }
 
     /// Sets `border_left` and `border_right` to `border`
-    pub fn border_horiz(self, border: f32) -> Self {
-        self.border_left(border).border_right(border)
+    pub fn border_horiz(mut self, border: impl Into<Px>) -> Self {
+        let border = border.into();
+        self.border_left = border;
+        self.border_right = border;
+        self
     }
 
     /// Sets `border_top` and `border_bottom` to `border`
-    pub fn border_vert(self, border: f32) -> Self {
-        self.border_top(border).border_bottom(border)
+    pub fn border_vert(mut self, border: impl Into<Px>) -> Self {
+        let border = border.into();
+        self.border_top = border;
+        self.border_bottom = border;
+        self
     }
 
-    pub fn padding_left_px(self, padding: f32) -> Self {
-        self.padding_left(LengthPercentage::Points(padding))
+    pub fn padding_left(mut self, padding_left: impl Into<PxOrPct>) -> Self {
+        self.padding_left = match padding_left.into() {
+            PxOrPct::Px(Px(px)) => LengthPercentage::Points(px as f32),
+            PxOrPct::Pct(Pct(pct)) => LengthPercentage::Percent(pct as f32 / 100.0),
+        };
+        self
     }
 
-    pub fn padding_right_px(self, padding: f32) -> Self {
-        self.padding_right(LengthPercentage::Points(padding))
+    pub fn padding_right(mut self, padding_right: impl Into<PxOrPct>) -> Self {
+        self.padding_right = match padding_right.into() {
+            PxOrPct::Px(Px(px)) => LengthPercentage::Points(px as f32),
+            PxOrPct::Pct(Pct(pct)) => LengthPercentage::Percent(pct as f32 / 100.0),
+        };
+        self
     }
 
-    pub fn padding_top_px(self, padding: f32) -> Self {
-        self.padding_top(LengthPercentage::Points(padding))
+    pub fn padding_top(mut self, padding_top: impl Into<PxOrPct>) -> Self {
+        self.padding_top = match padding_top.into() {
+            PxOrPct::Px(Px(px)) => LengthPercentage::Points(px as f32),
+            PxOrPct::Pct(Pct(pct)) => LengthPercentage::Percent(pct as f32 / 100.0),
+        };
+        self
     }
 
-    pub fn padding_bottom_px(self, padding: f32) -> Self {
-        self.padding_bottom(LengthPercentage::Points(padding))
-    }
-
-    pub fn padding_left_pct(self, padding: f32) -> Self {
-        self.padding_left(LengthPercentage::Percent(padding / 100.0))
-    }
-
-    pub fn padding_right_pct(self, padding: f32) -> Self {
-        self.padding_right(LengthPercentage::Percent(padding / 100.0))
-    }
-
-    pub fn padding_top_pct(self, padding: f32) -> Self {
-        self.padding_top(LengthPercentage::Percent(padding / 100.0))
-    }
-
-    pub fn padding_bottom_pct(self, padding: f32) -> Self {
-        self.padding_bottom(LengthPercentage::Percent(padding / 100.0))
+    pub fn padding_bottom(mut self, padding_bottom: impl Into<PxOrPct>) -> Self {
+        self.padding_bottom = match padding_bottom.into() {
+            PxOrPct::Px(Px(px)) => LengthPercentage::Points(px as f32),
+            PxOrPct::Pct(Pct(pct)) => LengthPercentage::Percent(pct as f32 / 100.0),
+        };
+        self
     }
 
     /// Set padding on all directions
-    pub fn padding_px(self, padding: f32) -> Self {
-        self.padding_left_px(padding)
-            .padding_top_px(padding)
-            .padding_right_px(padding)
-            .padding_bottom_px(padding)
-    }
-
-    pub fn padding_pct(self, padding: f32) -> Self {
-        self.padding_left_pct(padding)
-            .padding_top_pct(padding)
-            .padding_right_pct(padding)
-            .padding_bottom_pct(padding)
+    pub fn padding(self, padding: impl Into<PxOrPct>) -> Self {
+        let padding = padding.into();
+        self.padding_left(padding)
+            .padding_top(padding)
+            .padding_right(padding)
+            .padding_bottom(padding)
     }
 
     /// Sets `padding_left` and `padding_right` to `padding`
-    pub fn padding_horiz_px(self, padding: f32) -> Self {
-        self.padding_left_px(padding).padding_right_px(padding)
-    }
-
-    pub fn padding_horiz_pct(self, padding: f32) -> Self {
-        self.padding_left_pct(padding).padding_right_pct(padding)
+    pub fn padding_horiz(self, padding: impl Into<PxOrPct>) -> Self {
+        let padding = padding.into();
+        self.padding_left(padding).padding_right(padding)
     }
 
     /// Sets `padding_top` and `padding_bottom` to `padding`
-    pub fn padding_vert_px(self, padding: f32) -> Self {
-        self.padding_top_px(padding).padding_bottom_px(padding)
+    pub fn padding_vert(self, padding: impl Into<PxOrPct>) -> Self {
+        let padding = padding.into();
+        self.padding_top(padding).padding_bottom(padding)
     }
 
-    pub fn padding_vert_pct(self, padding: f32) -> Self {
-        self.padding_top_pct(padding).padding_bottom_pct(padding)
+    pub fn margin_left(mut self, margin_left: impl Into<PxOrPct>) -> Self {
+        self.margin_left = match margin_left.into() {
+            PxOrPct::Px(Px(px)) => LengthPercentageAuto::Points(px as f32),
+            PxOrPct::Pct(Pct(pct)) => LengthPercentageAuto::Percent(pct as f32 / 100.0),
+        };
+        self
     }
 
-    pub fn margin_left_px(self, margin: f32) -> Self {
-        self.margin_left(LengthPercentageAuto::Points(margin))
+    pub fn margin_right(mut self, margin_right: impl Into<PxOrPct>) -> Self {
+        self.margin_right = match margin_right.into() {
+            PxOrPct::Px(Px(px)) => LengthPercentageAuto::Points(px as f32),
+            PxOrPct::Pct(Pct(pct)) => LengthPercentageAuto::Percent(pct as f32 / 100.0),
+        };
+        self
     }
 
-    pub fn margin_right_px(self, margin: f32) -> Self {
-        self.margin_right(LengthPercentageAuto::Points(margin))
+    pub fn margin_top(mut self, margin_top: impl Into<PxOrPct>) -> Self {
+        self.margin_top = match margin_top.into() {
+            PxOrPct::Px(Px(px)) => LengthPercentageAuto::Points(px as f32),
+            PxOrPct::Pct(Pct(pct)) => LengthPercentageAuto::Percent(pct as f32 / 100.0),
+        };
+        self
     }
 
-    pub fn margin_top_px(self, margin: f32) -> Self {
-        self.margin_top(LengthPercentageAuto::Points(margin))
+    pub fn margin_bottom(mut self, margin_bottom: impl Into<PxOrPct>) -> Self {
+        self.margin_bottom = match margin_bottom.into() {
+            PxOrPct::Px(Px(px)) => LengthPercentageAuto::Points(px as f32),
+            PxOrPct::Pct(Pct(pct)) => LengthPercentageAuto::Percent(pct as f32 / 100.0),
+        };
+        self
     }
 
-    pub fn margin_bottom_px(self, margin: f32) -> Self {
-        self.margin_bottom(LengthPercentageAuto::Points(margin))
-    }
-
-    pub fn margin_left_pct(self, margin: f32) -> Self {
-        self.margin_left(LengthPercentageAuto::Percent(margin / 100.0))
-    }
-
-    pub fn margin_right_pct(self, margin: f32) -> Self {
-        self.margin_right(LengthPercentageAuto::Percent(margin / 100.0))
-    }
-
-    pub fn margin_top_pct(self, margin: f32) -> Self {
-        self.margin_top(LengthPercentageAuto::Percent(margin / 100.0))
-    }
-
-    pub fn margin_bottom_pct(self, margin: f32) -> Self {
-        self.margin_bottom(LengthPercentageAuto::Percent(margin / 100.0))
-    }
-
-    pub fn margin_px(self, margin: f32) -> Self {
-        self.margin_left_px(margin)
-            .margin_top_px(margin)
-            .margin_right_px(margin)
-            .margin_bottom_px(margin)
-    }
-
-    pub fn margin_pct(self, margin: f32) -> Self {
-        self.margin_left_pct(margin)
-            .margin_top_pct(margin)
-            .margin_right_pct(margin)
-            .margin_bottom_pct(margin)
+    /// Set margin on all directions
+    pub fn margin(self, margin: impl Into<PxOrPct>) -> Self {
+        let margin = margin.into();
+        self.margin_left(margin)
+            .margin_top(margin)
+            .margin_right(margin)
+            .margin_bottom(margin)
     }
 
     /// Sets `margin_left` and `margin_right` to `margin`
-    pub fn margin_horiz_px(self, margin: f32) -> Self {
-        self.margin_left_px(margin).margin_right_px(margin)
-    }
-
-    pub fn margin_horiz_pct(self, margin: f32) -> Self {
-        self.margin_left_pct(margin).margin_right_pct(margin)
+    pub fn margin_horiz(self, margin: impl Into<PxOrPct>) -> Self {
+        let margin = margin.into();
+        self.margin_left(margin).margin_right(margin)
     }
 
     /// Sets `margin_top` and `margin_bottom` to `margin`
-    pub fn margin_vert_px(self, margin: f32) -> Self {
-        self.margin_top_px(margin).margin_bottom_px(margin)
+    pub fn margin_vert(self, margin: impl Into<PxOrPct>) -> Self {
+        let margin = margin.into();
+        self.margin_top(margin).margin_bottom(margin)
     }
 
-    pub fn margin_vert_pct(self, margin: f32) -> Self {
-        self.margin_top_pct(margin).margin_bottom_pct(margin)
-    }
-
-    pub fn inset_left_px(self, inset: f32) -> Self {
-        self.inset_left(LengthPercentageAuto::Points(inset))
-    }
-
-    pub fn inset_right_px(self, inset: f32) -> Self {
-        self.inset_right(LengthPercentageAuto::Points(inset))
-    }
-
-    pub fn inset_top_px(self, inset: f32) -> Self {
-        self.inset_top(LengthPercentageAuto::Points(inset))
-    }
-
-    pub fn inset_bottom_px(self, inset: f32) -> Self {
-        self.inset_bottom(LengthPercentageAuto::Points(inset))
-    }
-
-    pub fn inset_left_pct(self, inset: f32) -> Self {
-        self.inset_left(LengthPercentageAuto::Percent(inset / 100.0))
-    }
-
-    pub fn inset_right_pct(self, inset: f32) -> Self {
-        self.inset_right(LengthPercentageAuto::Percent(inset / 100.0))
-    }
-
-    pub fn inset_top_pct(self, inset: f32) -> Self {
-        self.inset_top(LengthPercentageAuto::Percent(inset / 100.0))
-    }
-
-    pub fn inset_bottom_pct(self, inset: f32) -> Self {
-        self.inset_bottom(LengthPercentageAuto::Percent(inset / 100.0))
-    }
-
-    pub fn inset_px(self, inset: f32) -> Self {
-        self.inset_left_px(inset)
-            .inset_top_px(inset)
-            .inset_right_px(inset)
-            .inset_bottom_px(inset)
-    }
-
-    pub fn inset_pct(self, inset: f32) -> Self {
-        self.inset_left_pct(inset)
-            .inset_top_pct(inset)
-            .inset_right_pct(inset)
-            .inset_bottom_pct(inset)
-    }
-
-    pub fn cursor(mut self, cursor: impl Into<StyleValue<CursorStyle>>) -> Self {
-        self.cursor = cursor.into().map(Some);
+    pub fn inset_left(mut self, inset_left: impl Into<PxOrPct>) -> Self {
+        self.inset_left = match inset_left.into() {
+            PxOrPct::Px(Px(px)) => LengthPercentageAuto::Points(px as f32),
+            PxOrPct::Pct(Pct(pct)) => LengthPercentageAuto::Percent(pct as f32 / 100.0),
+        };
         self
     }
 
-    pub fn color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
-        self.color = color.into().map(Some);
+    pub fn inset_right(mut self, inset_right: impl Into<PxOrPct>) -> Self {
+        self.inset_right = match inset_right.into() {
+            PxOrPct::Px(Px(px)) => LengthPercentageAuto::Points(px as f32),
+            PxOrPct::Pct(Pct(pct)) => LengthPercentageAuto::Percent(pct as f32 / 100.0),
+        };
         self
     }
 
-    pub fn background(mut self, color: impl Into<StyleValue<Color>>) -> Self {
-        self.background = color.into().map(Some);
+    pub fn inset_top(mut self, inset_top: impl Into<PxOrPct>) -> Self {
+        self.inset_top = match inset_top.into() {
+            PxOrPct::Px(Px(px)) => LengthPercentageAuto::Points(px as f32),
+            PxOrPct::Pct(Pct(pct)) => LengthPercentageAuto::Percent(pct as f32 / 100.0),
+        };
         self
     }
 
-    pub fn box_shadow_blur(mut self, blur_radius: f64) -> Self {
-        if let Some(box_shadow) = self.box_shadow.as_mut() {
-            if let Some(box_shadow) = box_shadow.as_mut() {
-                box_shadow.blur_radius = blur_radius;
-                return self;
-            }
-        }
-
-        self.box_shadow = Some(BoxShadow {
-            blur_radius,
-            ..Default::default()
-        })
-        .into();
+    pub fn inset_bottom(mut self, inset_bottom: impl Into<PxOrPct>) -> Self {
+        self.inset_bottom = match inset_bottom.into() {
+            PxOrPct::Px(Px(px)) => LengthPercentageAuto::Points(px as f32),
+            PxOrPct::Pct(Pct(pct)) => LengthPercentageAuto::Percent(pct as f32 / 100.0),
+        };
         self
     }
 
-    pub fn box_shadow_color(mut self, color: Color) -> Self {
-        if let Some(box_shadow) = self.box_shadow.as_mut() {
-            if let Some(box_shadow) = box_shadow.as_mut() {
-                box_shadow.color = color;
-                return self;
-            }
-        }
+    /// Set inset on all directions
+    pub fn inset(self, inset: impl Into<PxOrPct>) -> Self {
+        let inset = inset.into();
+        self.inset_left(inset)
+            .inset_top(inset)
+            .inset_right(inset)
+            .inset_bottom(inset)
+    }
 
-        self.box_shadow = Some(BoxShadow {
-            color,
-            ..Default::default()
-        })
-        .into();
+    pub fn cursor(mut self, cursor: CursorStyle) -> Self {
+        self.cursor = Some(cursor);
         self
     }
 
-    pub fn box_shadow_spread(mut self, spread: f64) -> Self {
-        if let Some(box_shadow) = self.box_shadow.as_mut() {
-            if let Some(box_shadow) = box_shadow.as_mut() {
-                box_shadow.spread = spread;
-                return self;
-            }
-        }
-
-        self.box_shadow = Some(BoxShadow {
-            spread,
-            ..Default::default()
-        })
-        .into();
+    pub fn color(mut self, color: impl Into<Color>) -> Self {
+        self.color = Some(color.into());
         self
     }
 
-    pub fn box_shadow_h_offset(mut self, h_offset: f64) -> Self {
-        if let Some(box_shadow) = self.box_shadow.as_mut() {
-            if let Some(box_shadow) = box_shadow.as_mut() {
-                box_shadow.h_offset = h_offset;
-                return self;
-            }
-        }
-
-        self.box_shadow = Some(BoxShadow {
-            h_offset,
-            ..Default::default()
-        })
-        .into();
+    pub fn background(mut self, color: impl Into<Color>) -> Self {
+        self.background = Some(color.into());
         self
     }
 
-    pub fn box_shadow_v_offset(mut self, v_offset: f64) -> Self {
-        if let Some(box_shadow) = self.box_shadow.as_mut() {
-            if let Some(box_shadow) = box_shadow.as_mut() {
-                box_shadow.v_offset = v_offset;
-                return self;
-            }
-        }
-
-        self.box_shadow = Some(BoxShadow {
-            v_offset,
-            ..Default::default()
-        })
-        .into();
+    pub fn box_shadow(mut self, box_shadow: BoxShadow) -> Self {
+        self.box_shadow = Some(box_shadow);
         self
     }
 
-    pub fn scroll_bar_color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
-        self.scroll_bar_color = color.into().map(Some);
+    pub fn scroll_bar_color(mut self, color: impl Into<Color>) -> Self {
+        self.scroll_bar_color = Some(color.into());
         self
     }
 
-    pub fn scroll_bar_rounded(mut self, rounded: impl Into<StyleValue<bool>>) -> Self {
-        self.scroll_bar_rounded = rounded.into().map(Some);
+    pub fn scroll_bar_rounded(mut self, rounded: bool) -> Self {
+        self.scroll_bar_rounded = Some(rounded);
         self
     }
 
-    pub fn scroll_bar_thickness(mut self, thickness: impl Into<StyleValue<f32>>) -> Self {
-        self.scroll_bar_thickness = thickness.into().map(Some);
+    pub fn scroll_bar_thickness(mut self, thickness: impl Into<Px>) -> Self {
+        self.scroll_bar_thickness = Some(thickness.into());
         self
     }
 
-    pub fn scroll_bar_edge_width(mut self, edge_width: impl Into<StyleValue<f32>>) -> Self {
-        self.scroll_bar_edge_width = edge_width.into().map(Some);
+    pub fn scroll_bar_edge_width(mut self, edge_width: impl Into<Px>) -> Self {
+        self.scroll_bar_edge_width = Some(edge_width.into());
         self
     }
 
-    pub fn font_size(mut self, size: impl Into<StyleValue<f32>>) -> Self {
-        self.font_size = size.into().map(Some);
+    pub fn font_size(mut self, size: impl Into<f32>) -> Self {
+        self.font_size = Some(size.into());
         self
     }
 
-    pub fn font_family(mut self, family: impl Into<StyleValue<String>>) -> Self {
-        self.font_family = family.into().map(Some);
+    pub fn font_family(mut self, family: impl Into<String>) -> Self {
+        self.font_family = Some(family.into());
         self
     }
 
-    pub fn font_weight(mut self, weight: impl Into<StyleValue<Weight>>) -> Self {
-        self.font_weight = weight.into().map(Some);
+    pub fn font_weight(mut self, weight: impl Into<Weight>) -> Self {
+        self.font_weight = Some(weight.into());
         self
     }
 
@@ -739,122 +490,108 @@ impl Style {
         self.font_weight(Weight::BOLD)
     }
 
-    pub fn font_style(mut self, style: impl Into<StyleValue<FontStyle>>) -> Self {
-        self.font_style = style.into().map(Some);
+    pub fn font_style(mut self, style: impl Into<FontStyle>) -> Self {
+        self.font_style = Some(style.into());
         self
     }
 
-    pub fn cursor_color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
-        self.cursor_color = color.into().map(Some);
+    pub fn cursor_color(mut self, color: impl Into<Color>) -> Self {
+        self.cursor_color = Some(color.into());
         self
     }
 
     pub fn line_height(mut self, normal: f32) -> Self {
-        self.line_height = Some(LineHeightValue::Normal(normal)).into();
+        self.line_height = Some(LineHeightValue::Normal(normal));
         self
     }
 
-    pub fn text_ellipsis(self) -> Self {
-        self.text_overflow(TextOverflow::Ellipsis)
+    pub fn text_ellipsis(mut self) -> Self {
+        self.text_overflow = TextOverflow::Ellipsis;
+        self
     }
 
-    pub fn text_clip(self) -> Self {
-        self.text_overflow(TextOverflow::Clip)
+    pub fn text_clip(mut self) -> Self {
+        self.text_overflow = TextOverflow::Clip;
+        self
     }
 
-    pub fn absolute(self) -> Self {
-        self.position(Position::Absolute)
+    pub fn absolute(mut self) -> Self {
+        self.position = Position::Absolute;
+        self
     }
 
-    pub fn items_start(self) -> Self {
-        self.align_items(Some(AlignItems::FlexStart))
+    pub fn items_start(mut self) -> Self {
+        self.align_items = Some(AlignItems::FlexStart);
+        self
     }
 
     /// Defines the alignment along the cross axis as Centered
-    pub fn items_center(self) -> Self {
-        self.align_items(Some(AlignItems::Center))
-    }
-
-    pub fn items_end(self) -> Self {
-        self.align_items(Some(AlignItems::FlexEnd))
-    }
-
-    /// Defines the alignment along the main axis as Centered
-    pub fn justify_center(self) -> Self {
-        self.justify_content(Some(JustifyContent::Center))
-    }
-
-    pub fn justify_end(self) -> Self {
-        self.justify_content(Some(JustifyContent::FlexEnd))
-    }
-
-    pub fn justify_start(self) -> Self {
-        self.justify_content(Some(JustifyContent::FlexStart))
-    }
-
-    pub fn justify_between(self) -> Self {
-        self.justify_content(Some(JustifyContent::SpaceBetween))
-    }
-
-    pub fn hide(self) -> Self {
-        self.display(Display::None)
-    }
-
-    pub fn flex(self) -> Self {
-        self.display(Display::Flex)
-    }
-
-    pub fn flex_basis_px(self, pt: f32) -> Self {
-        self.flex_basis(Dimension::Points(pt))
-    }
-
-    pub fn flex_row(self) -> Self {
-        self.flex_direction(FlexDirection::Row)
-    }
-
-    pub fn flex_col(self) -> Self {
-        self.flex_direction(FlexDirection::Column)
-    }
-
-    pub fn z_index(mut self, z_index: i32) -> Self {
-        self.z_index = Some(z_index).into();
+    pub fn items_center(mut self) -> Self {
+        self.align_items = Some(AlignItems::Center);
         self
     }
 
-    /// Allow the application of a function if the option exists.  
-    /// This is useful for chaining together a bunch of optional style changes.  
-    /// ```rust,ignore
-    /// let style = Style::default()
-    ///    .apply_opt(Some(5.0), Style::padding) // ran
-    ///    .apply_opt(None, Style::margin) // not ran
-    ///    .apply_opt(Some(5.0), |s, v| s.border_right(v * 2.0))
-    ///    .border_left(5.0); // ran, obviously
-    /// ```
-    pub fn apply_opt<T>(self, opt: Option<T>, f: impl FnOnce(Self, T) -> Self) -> Self {
-        if let Some(t) = opt {
-            f(self, t)
-        } else {
-            self
-        }
+    pub fn items_end(mut self) -> Self {
+        self.align_items = Some(AlignItems::FlexEnd);
+        self
     }
 
-    /// Allow the application of a function if the condition holds.  
-    /// This is useful for chaining together a bunch of optional style changes.
-    /// ```rust,ignore
-    /// let style = Style::default()
-    ///     .apply_if(true, |s| s.padding(5.0)) // ran
-    ///     .apply_if(false, |s| s.margin(5.0)) // not ran
-    /// ```
-    pub fn apply_if(self, cond: bool, f: impl FnOnce(Self) -> Self) -> Self {
-        if cond {
-            f(self)
-        } else {
-            self
+    /// Defines the alignment along the main axis as Centered
+    pub fn justify_center(mut self) -> Self {
+        self.justify_content = Some(JustifyContent::Center);
+        self
+    }
+
+    pub fn justify_end(mut self) -> Self {
+        self.justify_content = Some(JustifyContent::FlexEnd);
+        self
+    }
+
+    pub fn justify_start(mut self) -> Self {
+        self.justify_content = Some(JustifyContent::FlexStart);
+        self
+    }
+
+    pub fn justify_between(mut self) -> Self {
+        self.justify_content = Some(JustifyContent::SpaceBetween);
+        self
+    }
+
+    pub fn hide(mut self) -> Self {
+        self.display = Display::None;
+        self
+    }
+
+    pub fn flex(mut self) -> Self {
+        self.display = Display::Flex;
+        self
+    }
+
+    pub fn flex_basis(mut self, pt: impl Into<PxOrPct>) -> Self {
+        match pt.into() {
+            PxOrPct::Px(Px(px)) => self.flex_basis = Dimension::Points(px as f32),
+            PxOrPct::Pct(Pct(pct)) => self.flex_basis = Dimension::Percent(pct as f32 / 100.0),
         }
+        self
+    }
+
+    pub fn flex_row(mut self) -> Self {
+        self.flex_direction = FlexDirection::Row;
+        self
+    }
+
+    pub fn flex_col(mut self) -> Self {
+        self.flex_direction = FlexDirection::Column;
+        self
+    }
+
+    pub fn z_index(mut self, z_index: i32) -> Self {
+        self.z_index = Some(z_index);
+        self
     }
 }
 
-impl ComputedStyle {
+impl Style {
     pub fn to_taffy_style(&self) -> TaffyStyle {
         TaffyStyle {
             display: self.display,
@@ -883,10 +620,10 @@ impl ComputedStyle {
             align_self: self.align_self,
             aspect_ratio: self.aspect_ratio,
             border: Rect {
-                left: LengthPercentage::Points(self.border_left),
-                top: LengthPercentage::Points(self.border_top),
-                right: LengthPercentage::Points(self.border_right),
-                bottom: LengthPercentage::Points(self.border_bottom),
+                left: LengthPercentage::Points(self.border_left.0 as f32),
+                top: LengthPercentage::Points(self.border_top.0 as f32),
+                right: LengthPercentage::Points(self.border_right.0 as f32),
+                bottom: LengthPercentage::Points(self.border_bottom.0 as f32),
             },
             padding: Rect {
                 left: self.padding_left,
@@ -912,82 +649,82 @@ impl ComputedStyle {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use taffy::style::LengthPercentage;
+// #[cfg(test)]
+// mod tests {
+//     use taffy::style::LengthPercentage;
 
-    use super::{Style, StyleValue};
+//     use super::{Style, StyleValue};
 
-    #[test]
-    fn style_override() {
-        let style1 = Style::BASE.padding_left_px(32.0);
-        let style2 = Style::BASE.padding_left_px(64.0);
+//     #[test]
+//     fn style_override() {
+//         let style1 = Style::BASE.padding_left(32.0);
+//         let style2 = Style::BASE.padding_left(64.0);
 
-        let style = style1.apply(style2);
+//         let style = style1.apply(style2);
 
-        assert_eq!(
-            style.padding_left,
-            StyleValue::Val(LengthPercentage::Points(64.0))
-        );
+//         assert_eq!(
+//             style.padding_left,
+//             StyleValue::Val(LengthPercentage::Points(64.0))
+//         );
 
-        let style1 = Style::BASE.padding_left_px(32.0).padding_bottom_px(45.0);
-        let style2 = Style::BASE
-            .padding_left_px(64.0)
-            .padding_bottom(StyleValue::Base);
+//         let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
+//         let style2 = Style::BASE
+//             .padding_left(64.0)
+//             .padding_bottom(StyleValue::Base);
 
-        let style = style1.apply(style2);
+//         let style = style1.apply(style2);
 
-        assert_eq!(
-            style.padding_left,
-            StyleValue::Val(LengthPercentage::Points(64.0))
-        );
-        assert_eq!(
-            style.padding_bottom,
-            StyleValue::Val(LengthPercentage::Points(45.0))
-        );
+//         assert_eq!(
+//             style.padding_left,
+//             StyleValue::Val(LengthPercentage::Points(64.0))
+//         );
+//         assert_eq!(
+//             style.padding_bottom,
+//             StyleValue::Val(LengthPercentage::Points(45.0))
+//         );
 
-        let style1 = Style::BASE.padding_left_px(32.0).padding_bottom_px(45.0);
-        let style2 = Style::BASE
-            .padding_left(LengthPercentage::Points(64.0))
-            .padding_bottom(StyleValue::Unset);
+//         let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
+//         let style2 = Style::BASE
+//             .padding_left(LengthPercentage::Points(64.0))
+//             .padding_bottom(StyleValue::Unset);
 
-        let style = style1.apply(style2);
+//         let style = style1.apply(style2);
 
-        assert_eq!(
-            style.padding_left,
-            StyleValue::Val(LengthPercentage::Points(64.0))
-        );
-        assert_eq!(style.padding_bottom, StyleValue::Unset);
+//         assert_eq!(
+//             style.padding_left,
+//             StyleValue::Val(LengthPercentage::Points(64.0))
+//         );
+//         assert_eq!(style.padding_bottom, StyleValue::Unset);
 
-        let style1 = Style::BASE.padding_left_px(32.0).padding_bottom_px(45.0);
-        let style2 = Style::BASE
-            .padding_left_px(64.0)
-            .padding_bottom(StyleValue::Unset);
-        let style3 = Style::BASE.padding_bottom(StyleValue::Base);
+//         let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
+//         let style2 = Style::BASE
+//             .padding_left(64.0)
+//             .padding_bottom(StyleValue::Unset);
+//         let style3 = Style::BASE.padding_bottom(StyleValue::Base);
 
-        let style = style1.apply_overriding_styles([style2, style3].into_iter());
+//         let style = style1.apply_overriding_styles([style2, style3].into_iter());
 
-        assert_eq!(
-            style.padding_left,
-            StyleValue::Val(LengthPercentage::Points(64.0))
-        );
-        assert_eq!(style.padding_bottom, StyleValue::Unset);
+//         assert_eq!(
+//             style.padding_left,
+//             StyleValue::Val(LengthPercentage::Points(64.0))
+//         );
+//         assert_eq!(style.padding_bottom, StyleValue::Unset);
 
-        let style1 = Style::BASE.padding_left_px(32.0).padding_bottom_px(45.0);
-        let style2 = Style::BASE
-            .padding_left(LengthPercentage::Points(64.0))
-            .padding_bottom(StyleValue::Unset);
-        let style3 = Style::BASE.padding_bottom(StyleValue::Val(LengthPercentage::Points(100.0)));
+//         let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
+//         let style2 = Style::BASE
+//             .padding_left(LengthPercentage::Points(64.0))
+//             .padding_bottom(StyleValue::Unset);
+//         let style3 = Style::BASE.padding_bottom(StyleValue::Val(LengthPercentage::Points(100.0)));
 
-        let style = style1.apply_overriding_styles([style2, style3].into_iter());
+//         let style = style1.apply_overriding_styles([style2, style3].into_iter());
 
-        assert_eq!(
-            style.padding_left,
-            StyleValue::Val(LengthPercentage::Points(64.0))
-        );
-        assert_eq!(
-            style.padding_bottom,
-            StyleValue::Val(LengthPercentage::Points(100.0))
-        );
-    }
-}
+//         assert_eq!(
+//             style.padding_left,
+//             StyleValue::Val(LengthPercentage::Points(64.0))
+//         );
+//         assert_eq!(
+//             style.padding_bottom,
+//             StyleValue::Val(LengthPercentage::Points(100.0))
+//         );
+//     }
+// }

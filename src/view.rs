@@ -26,7 +26,7 @@
 //! pub fn label_and_input() -> impl View {
 //!     let text = create_rw_signal("Hello world".to_string());
 //!     stack(|| (text_input(text), label(|| text.get())))
-//!         .style(|| Style::BASE.padding_px(10.0))
+//!         .style(|| Style::BASE.padding(10.0))
 //! }
 //! ```
 //!
@@ -95,7 +95,7 @@ use crate::{
     context::{AppState, DragState, EventCx, LayoutCx, PaintCx, UpdateCx},
     event::{Event, EventListener},
     id::Id,
-    style::{ComputedStyle, Style},
+    style::{Style, StyleFn},
 };
 
 bitflags! {
@@ -112,7 +112,7 @@ bitflags! {
 pub trait View {
     fn id(&self) -> Id;
 
-    fn view_style(&self) -> Option<Style> {
+    fn view_style(&self) -> Option<Box<dyn StyleFn>> {
         None
     }
 
@@ -206,10 +206,10 @@ pub trait View {
             cx.scroll_bar_rounded = style.scroll_bar_rounded;
         }
         if style.scroll_bar_thickness.is_some() {
-            cx.scroll_bar_thickness = style.scroll_bar_thickness;
+            cx.scroll_bar_thickness = style.scroll_bar_thickness.map(|v| v.0 as f32);
         }
         if style.scroll_bar_edge_width.is_some() {
-            cx.scroll_bar_edge_width = style.scroll_bar_edge_width;
+            cx.scroll_bar_edge_width = style.scroll_bar_edge_width.map(|v| v.0 as f32);
         }
         if style.font_size.is_some() {
             cx.font_size = style.font_size;
@@ -687,10 +687,10 @@ pub trait View {
                 cx.scroll_bar_rounded = style.scroll_bar_rounded;
             }
             if style.scroll_bar_thickness.is_some() {
-                cx.scroll_bar_thickness = style.scroll_bar_thickness;
+                cx.scroll_bar_thickness = style.scroll_bar_thickness.map(|v| v.0 as f32);
             }
             if style.scroll_bar_edge_width.is_some() {
-                cx.scroll_bar_edge_width = style.scroll_bar_edge_width;
+                cx.scroll_bar_edge_width = style.scroll_bar_edge_width.map(|v| v.0 as f32);
             }
             if style.font_size.is_some() {
                 cx.font_size = style.font_size;
@@ -746,12 +746,8 @@ pub trait View {
 
                     let style = cx.app_state.get_computed_style(id).clone();
                     let view_state = cx.app_state.view_state(id);
-                    let style = if let Some(dragging_style) = view_state.dragging_style.clone() {
-                        view_state
-                            .combined_style
-                            .clone()
-                            .apply(dragging_style)
-                            .compute(&ComputedStyle::default())
+                    let style = if let Some(dragging_style) = &view_state.dragging_style {
+                        dragging_style.call(view_state.computed_style.clone())
                     } else {
                         style
                     };
@@ -780,8 +776,8 @@ pub trait View {
     fn paint(&mut self, cx: &mut PaintCx);
 }
 
-fn paint_bg(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
-    let radius = style.border_radius;
+fn paint_bg(cx: &mut PaintCx, style: &Style, size: Size) {
+    let radius = style.border_radius.0;
     if radius > 0.0 {
         let rect = size.to_rect();
         let width = rect.width();
@@ -795,7 +791,7 @@ fn paint_bg(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
             };
             cx.fill(&circle, bg, 0.0);
         } else {
-            paint_box_shadow(cx, style, rect, Some(radius as f64));
+            paint_box_shadow(cx, style, rect, Some(radius));
             let bg = match style.background {
                 Some(color) => color,
                 None => return,
@@ -813,53 +809,49 @@ fn paint_bg(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
     }
 }
 
-fn paint_box_shadow(cx: &mut PaintCx, style: &ComputedStyle, rect: Rect, rect_radius: Option<f64>) {
+fn paint_box_shadow(cx: &mut PaintCx, style: &Style, rect: Rect, rect_radius: Option<f64>) {
     if let Some(shadow) = style.box_shadow.as_ref() {
         let inset = Insets::new(
-            -shadow.h_offset / 2.0,
-            -shadow.v_offset / 2.0,
-            shadow.h_offset / 2.0,
-            shadow.v_offset / 2.0,
+            -shadow.h_offset.0 / 2.0,
+            -shadow.v_offset.0 / 2.0,
+            shadow.h_offset.0 / 2.0,
+            shadow.v_offset.0 / 2.0,
         );
-        let rect = rect.inflate(shadow.spread, shadow.spread).inset(inset);
-        if let Some(radii) = rect_radius {
-            let rounded_rect = RoundedRect::from_rect(rect, radii + shadow.spread);
-            cx.fill(&rounded_rect, shadow.color, shadow.blur_radius);
+        let rect = rect.inflate(shadow.spread.0, shadow.spread.0).inset(inset);
+        if let Some(radius) = rect_radius {
+            let rounded_rect = RoundedRect::from_rect(rect, radius + shadow.spread.0);
+            cx.fill(&rounded_rect, shadow.color, shadow.blur_radius.0);
         } else {
-            cx.fill(&rect, shadow.color, shadow.blur_radius);
+            cx.fill(&rect, shadow.color, shadow.blur_radius.0);
         }
     }
 }
 
-fn paint_outline(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
-    if style.outline == 0. {
+fn paint_outline(cx: &mut PaintCx, style: &Style, size: Size) {
+    if style.outline.0 == 0. {
         // TODO: we should warn! when outline is < 0
         return;
     }
-    let half = style.outline as f64 / 2.0;
+    let half = style.outline.0 / 2.0;
     let rect = size.to_rect().inflate(half, half);
-    cx.stroke(&rect, style.outline_color, style.outline as f64);
+    cx.stroke(&rect, style.outline_color, style.outline.0);
 }
 
-fn paint_border(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
-    let left = style.border_left;
-    let top = style.border_top;
-    let right = style.border_right;
-    let bottom = style.border_bottom;
+fn paint_border(cx: &mut PaintCx, style: &Style, size: Size) {
+    let left = style.border_left.0;
+    let top = style.border_top.0;
+    let right = style.border_right.0;
+    let bottom = style.border_bottom.0;
 
     let border_color = style.border_color;
     if left == top && top == right && right == bottom && bottom == left && left > 0.0 {
-        let half = left as f64 / 2.0;
+        let half = left / 2.0;
         let rect = size.to_rect().inflate(-half, -half);
-        let radius = style.border_radius;
+        let radius = style.border_radius.0;
         if radius > 0.0 {
-            cx.stroke(
-                &rect.to_rounded_rect(radius as f64),
-                border_color,
-                left as f64,
-            );
+            cx.stroke(&rect.to_rounded_rect(radius), border_color, left);
         } else {
-            cx.stroke(&rect, border_color, left as f64);
+            cx.stroke(&rect, border_color, left);
         }
     } else {
         if left > 0.0 {
@@ -1112,7 +1104,7 @@ impl View for Box<dyn View> {
         (**self).id()
     }
 
-    fn view_style(&self) -> Option<Style> {
+    fn view_style(&self) -> Option<Box<dyn StyleFn>> {
         (**self).view_style()
     }
 

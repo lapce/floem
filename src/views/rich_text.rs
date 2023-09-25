@@ -3,13 +3,13 @@ use std::any::Any;
 use floem_reactive::create_effect;
 use floem_renderer::{cosmic_text::TextLayout, Renderer};
 use kurbo::{Point, Rect};
-use taffy::{prelude::Node, style::Dimension};
+use taffy::prelude::Node;
 
 use crate::{
     context::{EventCx, UpdateCx},
     event::Event,
     id::Id,
-    style::{ComputedStyle, Style, TextOverflow},
+    style::{Style, TextOverflow},
     view::{ChangeFlags, View},
 };
 
@@ -105,10 +105,9 @@ impl View for RichText {
             }
             let text_node = self.text_node.unwrap();
 
-            let style = Style::BASE
-                .width(Dimension::Points(width))
-                .height(Dimension::Points(height))
-                .compute(&ComputedStyle::default())
+            let style = Style::default()
+                .width(width)
+                .height(height)
                 .to_taffy_style();
             let _ = cx.app_state_mut().taffy.set_style(text_node, style);
             vec![text_node]

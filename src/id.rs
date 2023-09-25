@@ -17,7 +17,7 @@ use crate::{
     context::{EventCallback, MenuCallback, ResizeCallback},
     event::EventListener,
     responsive::ScreenSize,
-    style::{Style, StyleSelector},
+    style::{StyleFn, StyleSelector},
     update::{UpdateMessage, CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES},
 };
 
@@ -140,15 +140,19 @@ impl Id {
         }
     }
 
-    pub fn update_base_style(&self, style: Style) {
+    pub fn update_base_style(&self, style: Box<dyn StyleFn>) {
         self.add_update_message(UpdateMessage::BaseStyle { id: *self, style });
     }
 
-    pub fn update_style(&self, style: Style) {
+    pub fn update_style(&self, style: Box<dyn StyleFn>) {
         self.add_update_message(UpdateMessage::Style { id: *self, style });
     }
 
-    pub fn update_style_selector(&self, style: Style, selector: StyleSelector) {
+    pub fn update_override_style(&self, style: Box<dyn StyleFn>) {
+        self.add_update_message(UpdateMessage::BaseStyle { id: *self, style });
+    }
+
+    pub fn update_style_selector(&self, style: Box<dyn StyleFn>, selector: StyleSelector) {
         self.add_update_message(UpdateMessage::StyleSelector {
             id: *self,
             style,
@@ -164,7 +168,7 @@ impl Id {
         self.add_update_message(UpdateMessage::Draggable { id: *self });
     }
 
-    pub fn update_responsive_style(&self, style: Style, size: ScreenSize) {
+    pub fn update_responsive_style(&self, style: Box<dyn StyleFn>, size: ScreenSize) {
         self.add_update_message(UpdateMessage::ResponsiveStyle {
             id: *self,
             style,

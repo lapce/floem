@@ -2,10 +2,7 @@ use crate::action::exec_after;
 use crate::keyboard::KeyEvent;
 use crate::reactive::{create_effect, RwSignal};
 use crate::{context::LayoutCx, style::CursorStyle};
-use taffy::{
-    prelude::{Layout, Node},
-    style::Dimension,
-};
+use taffy::prelude::{Layout, Node};
 
 use floem_renderer::{
     cosmic_text::{Cursor, Style as FontStyle, Weight},
@@ -22,10 +19,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::{
-    cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
-    style::ComputedStyle,
-};
+use crate::cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout};
 use kurbo::{Point, Rect};
 
 use crate::{
@@ -633,10 +627,9 @@ impl View for TextInput {
             }
             let text_node = self.text_node.unwrap();
 
-            let style = Style::BASE
-                .width(Dimension::Points(self.width))
-                .height(Dimension::Points(self.height))
-                .compute(&ComputedStyle::default())
+            let style = Style::default()
+                .width(self.width)
+                .height(self.height)
                 .to_taffy_style();
             let _ = cx.app_state_mut().taffy.set_style(text_node, style);
 

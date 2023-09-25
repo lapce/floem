@@ -9,11 +9,11 @@ fn app_view() -> impl View {
     let (counter, set_counter) = create_signal(0);
     let window_scale = create_rw_signal(1.0);
     stack((
-        label(move || format!("Value: {}", counter.get())).style(|s| s.padding_px(10.0)),
+        label(move || format!("Value: {}", counter.get())).style(|s| s.padding(10.0)),
         stack({
             (
                 label(|| "Increment")
-                    .style(|s| s.border(1.0).border_radius(10.0).padding_px(10.0))
+                    .style(|s| s.border(1.0).border_radius(10.0).padding(10.0))
                     .on_click(move |_| {
                         set_counter.update(|value| *value += 1);
                         true
@@ -30,8 +30,8 @@ fn app_view() -> impl View {
                     .style(|s| {
                         s.border(1.0)
                             .border_radius(10.0)
-                            .padding_px(10.0)
-                            .margin_left_px(10.0)
+                            .padding(10.0)
+                            .margin_left(10.0)
                     })
                     .hover_style(|s| s.background(Color::rgb8(244, 67, 54)))
                     .active_style(|s| s.color(Color::WHITE).background(Color::RED))
@@ -47,8 +47,8 @@ fn app_view() -> impl View {
                     .style(|s| {
                         s.border(1.0)
                             .border_radius(10.0)
-                            .padding_px(10.0)
-                            .margin_left_px(10.0)
+                            .padding(10.0)
+                            .margin_left(10.0)
                             .background(Color::LIGHT_BLUE)
                     })
                     .disabled_style(|s| s.background(Color::LIGHT_GRAY))
@@ -68,9 +68,9 @@ fn app_view() -> impl View {
                     .style(|s| {
                         s.border(1.0)
                             .border_radius(10.0)
-                            .margin_top_px(10.0)
-                            .margin_right_px(10.0)
-                            .padding_px(10.0)
+                            .margin_top(10.0)
+                            .margin_right(10.0)
+                            .padding(10.0)
                     })
                     .hover_style(|s| s.background(Color::LIGHT_GREEN)),
                 label(|| "Zoom Out")
@@ -81,9 +81,9 @@ fn app_view() -> impl View {
                     .style(|s| {
                         s.border(1.0)
                             .border_radius(10.0)
-                            .margin_top_px(10.0)
-                            .margin_right_px(10.0)
-                            .padding_px(10.0)
+                            .margin_top(10.0)
+                            .margin_right(10.0)
+                            .padding(10.0)
                     })
                     .hover_style(|s| s.background(Color::LIGHT_GREEN)),
                 label(|| "Zoom Reset")
@@ -95,9 +95,9 @@ fn app_view() -> impl View {
                     .style(|s| {
                         s.border(1.0)
                             .border_radius(10.0)
-                            .margin_top_px(10.0)
-                            .margin_right_px(10.0)
-                            .padding_px(10.0)
+                            .margin_top(10.0)
+                            .margin_right(10.0)
+                            .padding(10.0)
                     })
                     .hover_style(|s| s.background(Color::LIGHT_GREEN))
                     .disabled_style(|s| s.background(Color::LIGHT_GRAY)),

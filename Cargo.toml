@@ -12,7 +12,9 @@ rustc-hash = "1.1.0"
 smallvec = "1.10.0"
 educe = "0.4.20"
 taffy = "0.3.13"
-rfd = { version = "0.11.4", default-features = false, features = ["xdg-portal"] }
+rfd = { version = "0.11.4", default-features = false, features = [
+    "xdg-portal",
+] }
 raw-window-handle = "0.5.1"
 kurbo = { version = "0.9.5", features = ["serde"] }
 unicode-segmentation = "1.10.0"
@@ -21,6 +23,7 @@ crossbeam-channel = "0.5.6"
 once_cell = "1.17.1"
 im = "15.1.0"
 parking_lot = { version = "0.12.1" }
+dyn-clone = "1.0.14"
 floem_renderer = { path = "renderer" }
 floem_vger = { path = "vger" }
 floem_reactive = { path = "reactive" }

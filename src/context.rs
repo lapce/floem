@@ -23,7 +23,7 @@ use crate::{
     menu::Menu,
     pointer::PointerInputEvent,
     responsive::{GridBreakpoints, ScreenSize, ScreenSizeBp},
-    style::{ComputedStyle, CursorStyle, Style, StyleSelector},
+    style::{CursorStyle, Style, StyleFn, StyleSelector},
 };
 
 pub type EventCallback = dyn Fn(&Event) -> bool;
@@ -48,17 +48,18 @@ pub struct ViewState {
     pub(crate) viewport: Option<Rect>,
     pub(crate) layout_rect: Rect,
     pub(crate) animation: Option<Animation>,
-    pub(crate) base_style: Option<Style>,
-    pub(crate) style: Style,
-    pub(crate) dragging_style: Option<Style>,
-    pub(crate) hover_style: Option<Style>,
-    pub(crate) disabled_style: Option<Style>,
-    pub(crate) focus_style: Option<Style>,
-    pub(crate) focus_visible_style: Option<Style>,
-    pub(crate) responsive_styles: HashMap<ScreenSizeBp, Vec<Style>>,
-    pub(crate) active_style: Option<Style>,
-    pub(crate) combined_style: Style,
-    pub(crate) computed_style: ComputedStyle,
+    pub(crate) base_style: Option<Box<dyn StyleFn>>,
+    pub(crate) style: Option<Box<dyn StyleFn>>,
+    pub(crate) override_style: Option<Box<dyn StyleFn>>,
+    pub(crate) dragging_style: Option<Box<dyn StyleFn>>,
+    pub(crate) hover_style: Option<Box<dyn StyleFn>>,
+    pub(crate) disabled_style: Option<Box<dyn StyleFn>>,
+    pub(crate) focus_style: Option<Box<dyn StyleFn>>,
+    pub(crate) focus_visible_style: Option<Box<dyn StyleFn>>,
+    pub(crate) responsive_styles: HashMap<ScreenSizeBp, Vec<Box<dyn StyleFn>>>,
+    pub(crate) active_style: Option<Box<dyn StyleFn>>,
+    pub(crate) computed_style: Style,
+
     pub(crate) event_listeners: HashMap<EventListener, Box<EventCallback>>,
     pub(crate) context_menu: Option<Box<MenuCallback>>,
     pub(crate) popout_menu: Option<Box<MenuCallback>>,
@@ -77,9 +78,9 @@ impl ViewState {
             request_layout: true,
             animation: None,
             base_style: None,
-            style: Style::BASE,
-            combined_style: Style::BASE,
-            computed_style: ComputedStyle::default(),
+            style: None,
+            override_style: None,
+            computed_style: Style::default(),
             hover_style: None,
             dragging_style: None,
             disabled_style: None,
@@ -100,58 +101,56 @@ impl ViewState {
 
     pub(crate) fn compute_style(
         &mut self,
-        view_style: Option<Style>,
+        view_style: Option<Box<dyn StyleFn>>,
         interact_state: InteractionState,
         screen_size_bp: ScreenSizeBp,
     ) {
-        let mut computed_style = if let Some(view_style) = view_style {
-            if let Some(base_style) = self.base_style.clone() {
-                view_style.apply(base_style).apply(self.style.clone())
-            } else {
-                view_style.apply(self.style.clone())
-            }
-        } else if let Some(base_style) = self.base_style.clone() {
-            base_style.apply(self.style.clone())
-        } else {
-            self.style.clone()
-        };
+        let mut computed_style = Style::default();
+
+        if let Some(base_style) = &self.base_style {
+            computed_style = base_style.call(computed_style);
+        }
+
+        if let Some(style) = &self.style {
+            computed_style = style.call(computed_style);
+        }
 
         if let Some(resp_styles) = self.responsive_styles.get(&screen_size_bp) {
             for style in resp_styles {
-                computed_style = computed_style.apply(style.clone());
+                computed_style = style.call(computed_style);
             }
         }
 
         if interact_state.is_hovered && !interact_state.is_disabled {
-            if let Some(hover_style) = self.hover_style.clone() {
-                computed_style = computed_style.apply(hover_style);
+            if let Some(hover_style) = &self.hover_style {
+                computed_style = hover_style.call(computed_style);
             }
         }
 
         if interact_state.is_focused {
-            if let Some(focus_style) = self.focus_style.clone() {
-                computed_style = computed_style.apply(focus_style);
+            if let Some(focus_style) = &self.focus_style {
+                computed_style = focus_style.call(computed_style);
             }
         }
 
         let focused_keyboard =
             interact_state.using_keyboard_navigation && interact_state.is_focused;
         if focused_keyboard {
-            if let Some(focus_visible_style) = self.focus_visible_style.clone() {
-                computed_style = computed_style.apply(focus_visible_style);
+            if let Some(focus_visible_style) = &self.focus_visible_style {
+                computed_style = focus_visible_style.call(computed_style);
             }
         }
 
         let active_mouse = interact_state.is_hovered && !interact_state.using_keyboard_navigation;
         if interact_state.is_active && (active_mouse || focused_keyboard) {
-            if let Some(active_style) = self.active_style.clone() {
-                computed_style = computed_style.apply(active_style);
+            if let Some(active_style) = &self.active_style {
+                computed_style = active_style.call(computed_style);
             }
         }
 
         if interact_state.is_disabled {
-            if let Some(disabled_style) = self.disabled_style.clone() {
-                computed_style = computed_style.apply(disabled_style);
+            if let Some(disabled_style) = &self.disabled_style {
+                computed_style = disabled_style.call(computed_style);
             }
         }
 
@@ -167,25 +166,26 @@ impl ViewState {
                     let val =
                         animation.animate_prop(animation.elapsed().unwrap_or(Duration::ZERO), kind);
                     match kind {
-                        AnimPropKind::Width => {
-                            computed_style = computed_style.width_px(val.get_f32());
-                        }
-                        AnimPropKind::Height => {
-                            computed_style = computed_style.height_px(val.get_f32());
-                        }
-                        AnimPropKind::Background => {
-                            computed_style = computed_style.background(val.get_color());
-                        }
-                        AnimPropKind::Color => {
-                            computed_style = computed_style.color(val.get_color());
-                        }
-                        AnimPropKind::BorderRadius => {
-                            computed_style = computed_style.border_radius(val.get_f32());
-                        }
-                        AnimPropKind::BorderColor => {
-                            computed_style = computed_style.border_color(val.get_color());
-                        }
-                        AnimPropKind::Scale => todo!(),
+                        // AnimPropKind::Width => {
+                        //     computed_style = computed_style.width(val.get_f32());
+                        // }
+                        // AnimPropKind::Height => {
+                        //     computed_style = computed_style.height(val.get_f32());
+                        // }
+                        // AnimPropKind::Background => {
+                        //     computed_style = computed_style.background(val.get_color());
+                        // }
+                        // AnimPropKind::Color => {
+                        //     computed_style = computed_style.color(val.get_color());
+                        // }
+                        // AnimPropKind::BorderRadius => {
+                        //     computed_style = computed_style.border_radius(val.get_f32());
+                        // }
+                        // AnimPropKind::BorderColor => {
+                        //     computed_style = computed_style.border_color(val.get_color());
+                        // }
+                        // AnimPropKind::Scale => todo!(),
+                        _ => todo!(),
                     }
                 }
 
@@ -194,18 +194,21 @@ impl ViewState {
             }
         }
 
-        self.combined_style = computed_style.clone();
-        self.computed_style = computed_style.compute(&ComputedStyle::default());
+        if let Some(override_style) = &self.override_style {
+            computed_style = override_style.call(computed_style);
+        }
+
+        self.computed_style = computed_style;
     }
 
-    pub(crate) fn add_responsive_style(&mut self, size: ScreenSize, style: Style) {
+    pub(crate) fn add_responsive_style(&mut self, size: ScreenSize, style: Box<dyn StyleFn>) {
         let breakpoints = size.breakpoints();
 
         for breakpoint in breakpoints {
             self.responsive_styles
                 .entry(breakpoint)
                 .or_insert_with(Vec::new)
-                .push(style.clone())
+                .push(dyn_clone::clone_box(&*style))
         }
     }
 }
@@ -369,14 +372,14 @@ impl AppState {
         self.compute_layout();
     }
 
-    pub(crate) fn compute_style(&mut self, id: Id, view_style: Option<Style>) {
+    pub(crate) fn compute_style(&mut self, id: Id, view_style: Option<Box<dyn StyleFn>>) {
         let interact_state = self.get_interact_state(&id);
         let screen_size_bp = self.screen_size_bp;
         let view_state = self.view_state(id);
         view_state.compute_style(view_style, interact_state, screen_size_bp);
     }
 
-    pub(crate) fn get_computed_style(&mut self, id: Id) -> &ComputedStyle {
+    pub(crate) fn get_computed_style(&mut self, id: Id) -> &Style {
         let view_state = self.view_state(id);
         &view_state.computed_style
     }
@@ -564,14 +567,14 @@ impl<'a> EventCx<'a> {
         self.app_state.update_focus(id, keyboard_navigation);
     }
 
-    pub fn get_computed_style(&self, id: Id) -> Option<&ComputedStyle> {
+    pub fn get_computed_style(&self, id: Id) -> Option<&Style> {
         self.app_state
             .view_states
             .get(&id)
             .map(|s| &s.computed_style)
     }
 
-    pub fn get_hover_style(&self, id: Id) -> Option<&Style> {
+    pub fn get_hover_style(&self, id: Id) -> Option<&Box<dyn StyleFn>> {
         if let Some(vs) = self.app_state.view_states.get(&id) {
             return vs.hover_style.as_ref();
         }
@@ -827,7 +830,7 @@ impl<'a> LayoutCx<'a> {
         self.app_state.get_layout(id)
     }
 
-    pub fn get_computed_style(&mut self, id: Id) -> &ComputedStyle {
+    pub fn get_computed_style(&mut self, id: Id) -> &Style {
         self.app_state.get_computed_style(id)
     }
 
@@ -1004,7 +1007,7 @@ impl<'a> PaintCx<'a> {
         self.app_state.get_layout(id)
     }
 
-    pub fn get_computed_style(&mut self, id: Id) -> &ComputedStyle {
+    pub fn get_computed_style(&mut self, id: Id) -> &Style {
         self.app_state.get_computed_style(id)
     }
 

@@ -17,15 +17,15 @@ fn app_view() -> impl View {
                 VirtualListItemSize::Fixed(Box::new(|| 20.0)),
                 move || long_list.get(),
                 move |item| *item,
-                move |item| label(move || item.to_string()).style(|s| s.height_px(20.0)),
+                move |item| label(move || item.to_string()).style(|s| s.height(20.0)),
             )
             .style(|s| s.flex_col()),
         )
-        .style(|s| s.width_px(100.0).height_pct(100.0).border(1.0)),
+        .style(|s| s.width(100.0).height_pct(100.0).border(1.0)),
     )
     .style(|s| {
         s.size_pct(100.0, 100.0)
-            .padding_vert_px(20.0)
+            .padding_vert(20.0)
             .flex_col()
             .items_center()
     })
