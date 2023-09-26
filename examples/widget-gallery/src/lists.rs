@@ -4,7 +4,7 @@ use floem::{
     keyboard::Key,
     peniko::Color,
     reactive::create_signal,
-    style::{CursorStyle, Dimension, JustifyContent},
+    style::{CursorStyle, JustifyContent},
     unit::Pct,
     view::View,
     views::{

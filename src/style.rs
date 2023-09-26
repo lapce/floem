@@ -1,30 +1,3 @@
-//! # Style  
-//! Styles are divided into two parts:
-//! [`ComputedStyle`]: A style with definite values for most fields.  
-//!
-//! [`Style`]: A style with [`StyleValue`]s for the fields, where `Unset` falls back to the relevant
-//! field in the [`ComputedStyle`] and `Base` falls back to the underlying [`Style`] or the
-//! [`ComputedStyle`].
-//!
-//!
-//! A loose analogy with CSS might be:  
-//! [`ComputedStyle`] is like the browser's default style sheet for any given element (view).  
-//!   
-//! [`Style`] is like the styling associated with a *specific* element (view):
-//! ```html
-//! <div style="color: red; font-size: 12px;">
-//! ```
-//!   
-//! An override [`Style`] is perhaps closest to classes that can be applied to an element, like
-//! `div:hover { color: blue; }`.  
-//! However, we do not actually have 'classes' where you can define a separate collection of styles
-//! in the same way. So, the hover styling is still defined with the view as you construct it, so
-//! perhaps a closer pseudocode analogy is:
-//! ```html
-//! <div hover_style="color: blue;" style="color: red; font-size: 12px;">
-//! ```
-//!
-
 use dyn_clone::DynClone;
 use floem_renderer::cosmic_text::{LineHeightValue, Style as FontStyle, Weight};
 use peniko::Color;
@@ -767,82 +740,27 @@ pub mod short {
 
 pub use short::*;
 
-// #[cfg(test)]
-// mod tests {
-//     use taffy::style::LengthPercentage;
+#[cfg(test)]
+mod tests {
+    use taffy::style::LengthPercentage;
 
-//     use super::{Style, StyleValue};
+    use super::Style;
 
-//     #[test]
-//     fn style_override() {
-//         let style1 = Style::BASE.padding_left(32.0);
-//         let style2 = Style::BASE.padding_left(64.0);
+    #[test]
+    fn style_override() {
+        let style_fn1 = |s: Style| s.padding_left(32.0);
+        let style_fn2 = |s: Style| s.padding_left(64.0);
 
-//         let style = style1.apply(style2);
+        let style = style_fn2(style_fn1(Style::default()));
 
-//         assert_eq!(
-//             style.padding_left,
-//             StyleValue::Val(LengthPercentage::Points(64.0))
-//         );
+        assert_eq!(style.padding_left, LengthPercentage::Points(64.0));
 
-//         let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
-//         let style2 = Style::BASE
-//             .padding_left(64.0)
-//             .padding_bottom(StyleValue::Base);
+        let style_fn1 = |s: Style| s.padding_left(32.0).padding_bottom(45.0);
+        let style_fn2 = |s: Style| s.padding_left(64.0);
 
-//         let style = style1.apply(style2);
+        let style = style_fn2(style_fn1(Style::default()));
 
-//         assert_eq!(
-//             style.padding_left,
-//             StyleValue::Val(LengthPercentage::Points(64.0))
-//         );
-//         assert_eq!(
-//             style.padding_bottom,
-//             StyleValue::Val(LengthPercentage::Points(45.0))
-//         );
-
-//         let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
-//         let style2 = Style::BASE
-//             .padding_left(LengthPercentage::Points(64.0))
-//             .padding_bottom(StyleValue::Unset);
-
-//         let style = style1.apply(style2);
-
-//         assert_eq!(
-//             style.padding_left,
-//             StyleValue::Val(LengthPercentage::Points(64.0))
-//         );
-//         assert_eq!(style.padding_bottom, StyleValue::Unset);
-
-//         let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
-//         let style2 = Style::BASE
-//             .padding_left(64.0)
-//             .padding_bottom(StyleValue::Unset);
-//         let style3 = Style::BASE.padding_bottom(StyleValue::Base);
-
-//         let style = style1.apply_overriding_styles([style2, style3].into_iter());
-
-//         assert_eq!(
-//             style.padding_left,
-//             StyleValue::Val(LengthPercentage::Points(64.0))
-//         );
-//         assert_eq!(style.padding_bottom, StyleValue::Unset);
-
-//         let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
-//         let style2 = Style::BASE
-//             .padding_left(LengthPercentage::Points(64.0))
-//             .padding_bottom(StyleValue::Unset);
-//         let style3 = Style::BASE.padding_bottom(StyleValue::Val(LengthPercentage::Points(100.0)));
-
-//         let style = style1.apply_overriding_styles([style2, style3].into_iter());
-
-//         assert_eq!(
-//             style.padding_left,
-//             StyleValue::Val(LengthPercentage::Points(64.0))
-//         );
-//         assert_eq!(
-//             style.padding_bottom,
-//             StyleValue::Val(LengthPercentage::Points(100.0))
-//         );
-//     }
-// }
+        assert_eq!(style.padding_left, LengthPercentage::Points(64.0));
+        assert_eq!(style.padding_bottom, LengthPercentage::Points(45.0));
+    }
+}

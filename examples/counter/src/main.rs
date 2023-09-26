@@ -49,11 +49,7 @@ fn app_view() -> impl View {
                     true
                 })
                 .disabled(move || counter.get() == 0)
-                .style(move |s| {
-                    button_style(s)
-                        .ml(16)
-                        .background(Color::LIGHT_BLUE)
-                })
+                .style(move |s| button_style(s).ml(16).background(Color::LIGHT_BLUE))
                 .disabled_style(|s| s.background(Color::LIGHT_GRAY))
                 .hover_style(|s| s.background(Color::LIGHT_YELLOW))
                 .active_style(|s| s.color(Color::WHITE).background(Color::YELLOW_GREEN))
