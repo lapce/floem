@@ -347,8 +347,8 @@ impl TextInput {
             virtual_text.hit_position(selection.start).point.x - self.clip_start_x;
         let selection_start_x = selection_start_x.max(node_layout.location.x as f64 - left_padding);
 
-        let selection_end_x = virtual_text.hit_position(selection.end).point.x
-            + left_padding - self.clip_start_x;
+        let selection_end_x =
+            virtual_text.hit_position(selection.end).point.x + left_padding - self.clip_start_x;
         let selection_end_x =
             selection_end_x.min(selection_start_x + self.width as f64 + left_padding);
 
