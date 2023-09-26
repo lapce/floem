@@ -13,6 +13,7 @@ use floem::{
     peniko::Color,
     reactive::create_signal,
     style::CursorStyle,
+    unit::UnitExt,
     view::View,
     views::{
         container, container_box, label, scroll, stack, tab, virtual_list, Decorators,
@@ -82,8 +83,8 @@ fn app_view() -> impl View {
                                 .focus_visible_style(|s| s.border(2.).border_color(Color::BLUE))
                                 .style(move |s| {
                                     s.flex_row()
-                                        .width_pct(100.0)
-                                        .height_px(32.0)
+                                        .width(100.pct())
+                                        .height(32.0)
                                         .border_bottom(1.0)
                                         .border_color(Color::LIGHT_GRAY)
                                         .apply_if(index == active_tab.get(), |s| {
@@ -95,21 +96,21 @@ fn app_view() -> impl View {
                                 })
                         },
                     )
-                    .style(|s| s.flex_col().width_px(140.0))
+                    .style(|s| s.flex_col().width(140.0))
                 })
                 .style(|s| {
                     s.flex_col()
-                        .width_px(140.0)
-                        .height_pct(100.0)
+                        .width(140.0)
+                        .height(100.pct())
                         .border(1.0)
                         .border_color(Color::GRAY)
                 })
             })
             .style(|s| {
-                s.height_pct(100.0)
-                    .width_px(150.0)
-                    .padding_vert_px(5.0)
-                    .padding_horiz_px(5.0)
+                s.height(100.pct())
+                    .width(150.0)
+                    .padding_vert(5.0)
+                    .padding_horiz(5.0)
                     .flex_col()
                     .items_center()
             }),
@@ -129,18 +130,18 @@ fn app_view() -> impl View {
                         _ => container_box(label(|| "Not implemented".to_owned())),
                     },
                 )
-                .style(|s| s.size_pct(100.0, 100.0))
+                .style(|s| s.size(100.pct(), 100.pct()))
             })
             .style(|s| {
-                s.size_pct(100.0, 100.0)
-                    .padding_vert_px(5.0)
-                    .padding_horiz_px(5.0)
+                s.size(100.pct(), 100.pct())
+                    .padding_vert(5.0)
+                    .padding_horiz(5.0)
                     .flex_col()
                     .items_center()
             }),
         )
     })
-    .style(|s| s.size_pct(100.0, 100.0))
+    .style(|s| s.size(100.pct(), 100.pct()))
 }
 
 fn main() {

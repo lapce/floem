@@ -18,7 +18,7 @@ pub fn button_view() -> impl View {
                     })
                     .keyboard_navigatable()
                     .focus_visible_style(|s| s.border(2.).border_color(Color::BLUE))
-                    .style(|s| s.border(1.0).border_radius(10.0).padding_px(10.0))
+                    .style(|s| s.border(1.0).border_radius(10.0).padding(10.0))
             }),
             form_item("Styled Button:".to_string(), 120.0, || {
                 label(|| "Click me")
@@ -31,8 +31,8 @@ pub fn button_view() -> impl View {
                     .style(|s| {
                         s.border(1.0)
                             .border_radius(10.0)
-                            .padding_px(10.0)
-                            .margin_left_px(10.0)
+                            .padding(10.0)
+                            .margin_left(10.0)
                             .background(Color::YELLOW_GREEN)
                             .color(Color::DARK_GREEN)
                             .cursor(CursorStyle::Pointer)
@@ -52,7 +52,7 @@ pub fn button_view() -> impl View {
                     .style(|s| {
                         s.border(1.0)
                             .border_radius(10.0)
-                            .padding_px(10.0)
+                            .padding(10.0)
                             .color(Color::GRAY)
                     })
                     .hover_style(|s| s.background(Color::rgb8(224, 224, 224)))
@@ -65,7 +65,7 @@ pub fn button_view() -> impl View {
                     })
                     .keyboard_navigatable()
                     .focus_visible_style(|s| s.border(2.).border_color(Color::BLUE))
-                    .style(|s| s.border(1.0).border_radius(10.0).padding_px(10.0))
+                    .style(|s| s.border(1.0).border_radius(10.0).padding(10.0))
             }),
         )
     })
