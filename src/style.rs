@@ -472,7 +472,7 @@ impl Style {
         self.margin_bottom(margin.pct())
     }
 
-    pub fn margin(self, margin: impl Into<Px>) -> Self {
+    pub fn margin(self, margin: impl Into<PxPctAuto>) -> Self {
         let margin = margin.into();
         self.margin_left(margin)
             .margin_top(margin)
