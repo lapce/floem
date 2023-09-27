@@ -489,7 +489,7 @@ impl Style {
     }
 
     /// Sets `margin_left` and `margin_right` to `margin`
-    pub fn margin_horiz(self, margin: impl Into<Px>) -> Self {
+    pub fn margin_horiz(self, margin: impl Into<PxPctAuto>) -> Self {
         let margin = margin.into();
         self.margin_left(margin).margin_right(margin)
     }
@@ -500,7 +500,7 @@ impl Style {
     }
 
     /// Sets `margin_top` and `margin_bottom` to `margin`
-    pub fn margin_vert(self, margin: impl Into<Px>) -> Self {
+    pub fn margin_vert(self, margin: impl Into<PxPctAuto>) -> Self {
         let margin = margin.into();
         self.margin_top(margin).margin_bottom(margin)
     }
@@ -526,7 +526,7 @@ impl Style {
         self.inset_bottom(inset.pct())
     }
 
-    pub fn inset(self, inset: impl Into<Px>) -> Self {
+    pub fn inset(self, inset: impl Into<PxPctAuto>) -> Self {
         let inset = inset.into();
         self.inset_left(inset)
             .inset_top(inset)
