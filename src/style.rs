@@ -325,8 +325,16 @@ define_styles!(
 );
 
 impl Style {
+    pub fn width_full(self) -> Self {
+        self.width_pct(100.0)
+    }
+
     pub fn width_pct(self, width: f64) -> Self {
         self.width(width.pct())
+    }
+
+    pub fn height_full(self) -> Self {
+        self.height_pct(100.0)
     }
 
     pub fn height_pct(self, height: f64) -> Self {
@@ -337,16 +345,32 @@ impl Style {
         self.width(width).height(height)
     }
 
+    pub fn size_full(self) -> Self {
+        self.size_pct(100.0, 100.0)
+    }
+
     pub fn size_pct(self, width: f64, height: f64) -> Self {
         self.width(width.pct()).height(height.pct())
+    }
+
+    pub fn min_width_full(self) -> Self {
+        self.min_width_pct(100.0)
     }
 
     pub fn min_width_pct(self, min_width: f64) -> Self {
         self.min_width(min_width.pct())
     }
 
+    pub fn min_height_full(self) -> Self {
+        self.min_height_pct(100.0)
+    }
+
     pub fn min_height_pct(self, min_height: f64) -> Self {
         self.min_height(min_height.pct())
+    }
+
+    pub fn min_size_full(self) -> Self {
+        self.min_size_pct(100.0, 100.0)
     }
 
     pub fn min_size(
@@ -361,8 +385,16 @@ impl Style {
         self.min_size(min_width.pct(), min_height.pct())
     }
 
+    pub fn max_width_full(self) -> Self {
+        self.max_width_pct(100.0)
+    }
+
     pub fn max_width_pct(self, max_width: f64) -> Self {
         self.max_width(max_width.pct())
+    }
+
+    pub fn max_height_full(self) -> Self {
+        self.max_height_pct(100.0)
     }
 
     pub fn max_height_pct(self, max_height: f64) -> Self {
@@ -375,6 +407,10 @@ impl Style {
         max_height: impl Into<PxPctAuto>,
     ) -> Self {
         self.max_width(max_width).max_height(max_height)
+    }
+
+    pub fn max_size_full(self) -> Self {
+        self.max_size_pct(100.0, 100.0)
     }
 
     pub fn max_size_pct(self, max_width: f64, max_height: f64) -> Self {
