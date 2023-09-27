@@ -30,7 +30,7 @@
 //!            text_input(text),
 //!            label(|| text.get())
 //!        )
-//!     ).style(|| Style::BASE.padding_px(10.0))
+//!     ).style(|| Style::BASE.padding(10.0))
 //! }
 //! ```
 //! In this example `text` is a signal, containing a `String`,
@@ -59,8 +59,8 @@
 //!     .style(move || {
 //!         Style::BASE
 //!             .flex_row()
-//!             .width_pct(100.0)
-//!             .height_px(32.0)
+//!             .width(100.pct())
+//!             .height(32.0)
 //!             .border_bottom(1.0)
 //!             .border_color(Color::LIGHT_GRAY)
 //!             .apply_if(index == active_tab.get(), |s| {
@@ -104,6 +104,7 @@ pub mod pointer;
 pub mod renderer;
 pub mod responsive;
 pub mod style;
+pub mod unit;
 mod update;
 pub mod view;
 pub mod view_tuple;

@@ -1,11 +1,9 @@
 use crate::action::exec_after;
 use crate::keyboard::KeyEvent;
 use crate::reactive::{create_effect, RwSignal};
+use crate::unit::PxPct;
 use crate::{context::LayoutCx, style::CursorStyle};
-use taffy::{
-    prelude::{Layout, Node},
-    style::Dimension,
-};
+use taffy::prelude::{Layout, Node};
 
 use floem_renderer::{
     cosmic_text::{Cursor, Style as FontStyle, Weight},
@@ -570,12 +568,12 @@ impl View for TextInput {
                     let style = cx.app_state.get_computed_style(self.id);
 
                     let padding_left = match style.padding_left {
-                        taffy::style::LengthPercentage::Points(padding) => padding,
-                        taffy::style::LengthPercentage::Percent(pct) => pct * layout.size.width,
+                        PxPct::Px(padding) => padding as f32,
+                        PxPct::Pct(pct) => pct as f32 * layout.size.width,
                     };
                     let padding_top = match style.padding_top {
-                        taffy::style::LengthPercentage::Points(padding) => padding,
-                        taffy::style::LengthPercentage::Percent(pct) => pct * layout.size.height,
+                        PxPct::Px(padding) => padding as f32,
+                        PxPct::Pct(pct) => pct as f32 * layout.size.width,
                     };
                     self.cursor_glyph_idx = self
                         .text_buf
@@ -634,8 +632,8 @@ impl View for TextInput {
             let text_node = self.text_node.unwrap();
 
             let style = Style::BASE
-                .width(Dimension::Points(self.width))
-                .height(Dimension::Points(self.height))
+                .width(self.width)
+                .height(self.height)
                 .compute(&ComputedStyle::default())
                 .to_taffy_style();
             let _ = cx.app_state_mut().taffy.set_style(text_node, style);
