@@ -246,7 +246,7 @@ impl Event {
             Event::PointerMove(_) => Some(EventListener::PointerMove),
             Event::PointerWheel(_) => Some(EventListener::PointerWheel),
             Event::KeyDown(_) => Some(EventListener::KeyDown),
-            Event::KeyUp(_) => Some(EventListener::KeyDown),
+            Event::KeyUp(_) => Some(EventListener::KeyUp),
             Event::ImeEnabled => Some(EventListener::ImeEnabled),
             Event::ImeDisabled => Some(EventListener::ImeDisabled),
             Event::ImePreedit { .. } => Some(EventListener::ImePreedit),
