@@ -1,8 +1,9 @@
 use crate::action::exec_after;
-use crate::keyboard::KeyEvent;
+use crate::keyboard::{self, KeyEvent};
 use crate::reactive::{create_effect, RwSignal};
 use crate::unit::PxPct;
 use crate::{context::LayoutCx, style::CursorStyle};
+use clipboard::{ClipboardContext, ClipboardProvider};
 use taffy::prelude::{Layout, Node};
 
 use floem_renderer::{
@@ -10,7 +11,7 @@ use floem_renderer::{
     Renderer,
 };
 use unicode_segmentation::UnicodeSegmentation;
-use winit::keyboard::{Key, ModifiersState};
+use winit::keyboard::{Key, ModifiersState, SmolStr};
 
 use crate::{peniko::Color, style::Style, view::View};
 
@@ -66,7 +67,7 @@ pub struct TextInput {
     // and may cause the last character in the opposite direction to be "cut"
     clip_offset_x: f64,
     color: Option<Color>,
-    selection: Range<usize>,
+    selection: Option<Range<usize>>,
     font_size: f32,
     width: f32,
     height: f32,
@@ -117,7 +118,7 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         font_weight: None,
         font_style: None,
         cursor_x: 0.0,
-        selection: Range { start: 0, end: 0 },
+        selection: None,
         input_kind: InputKind::SingleLine,
         clip_start_idx: 0,
         clip_offset_x: 0.0,
@@ -131,14 +132,53 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
     .keyboard_navigatable()
 }
 
+#[derive(Copy, Clone, Debug)]
 enum ClipDirection {
     None,
     Forward,
     Backward,
 }
 
+enum TextCommand {
+    SelectAll,
+    Copy,
+    Paste,
+    Cut,
+    None,
+}
+
+impl From<(&KeyEvent, &SmolStr)> for TextCommand {
+    fn from(val: (&keyboard::KeyEvent, &SmolStr)) -> Self {
+        let (event, ch) = val;
+        #[cfg(target_os = "macos")]
+        match (event.modifiers, ch.as_str()) {
+            (ModifiersState::SUPER, "a") => Self::SelectAll,
+            (ModifiersState::SUPER, "c") => Self::Copy,
+            (ModifiersState::SUPER, "x") => Self::Cut,
+            (ModifiersState::SUPER, "v") => Self::Paste,
+            _ => {
+                dbg!("Unhandled action", event.modifiers, ch);
+                Self::None
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
+        match (event.modifiers, ch.as_str()) {
+            (ModifiersState::CONTROL, "a") => Self::SelectAll,
+            (ModifiersState::CONTROL, "c") => Self::Copy,
+            (ModifiersState::CONTROL, "x") => Self::Cut,
+            (ModifiersState::CONTROL, "v") => Self::Paste,
+            _ => {
+                dbg!("Unhandled action", event.modifiers, ch);
+                Self::None
+            }
+        }
+    }
+}
+
 const DEFAULT_FONT_SIZE: f32 = 14.0;
 const CURSOR_BLINK_INTERVAL_MS: u64 = 500;
+// see https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/text#size
+const APPROX_VISIBLE_CHARS: f32 = 10.0;
 
 impl TextInput {
     fn move_cursor(&mut self, move_kind: Movement, direction: Direction) -> bool {
@@ -291,14 +331,24 @@ impl TextInput {
         )
     }
 
-    fn get_selection_rect(&self, node_layout: &Layout) -> Rect {
-        if self.selection == (0..0) {
+    fn get_selection_rect(&self, node_layout: &Layout, left_padding: f64) -> Rect {
+        let selection = if let Some(curr_selection) = &self.selection {
+            curr_selection
+        } else {
             return Rect::ZERO;
-        }
+        };
+
         let virtual_text = self.text_buf.as_ref().unwrap();
         let text_height = virtual_text.size().height;
-        let selection_start_x = virtual_text.hit_position(self.selection.start).point.x;
-        let selection_end_x = virtual_text.hit_position(self.selection.end + 1).point.x;
+
+        let selection_start_x =
+            virtual_text.hit_position(selection.start).point.x - self.clip_start_x;
+        let selection_start_x = selection_start_x.max(node_layout.location.x as f64 - left_padding);
+
+        let selection_end_x =
+            virtual_text.hit_position(selection.end).point.x + left_padding - self.clip_start_x;
+        let selection_end_x =
+            selection_end_x.min(selection_start_x + self.width as f64 + left_padding);
 
         let node_location = node_layout.location;
 
@@ -309,10 +359,7 @@ impl TextInput {
 
         Rect::from_points(
             selection_start,
-            Point::new(
-                selection_start.x + selection_end_x - self.clip_start_x,
-                selection_start.y + text_height,
-            ),
+            Point::new(selection_end_x, selection_start.y + text_height),
         )
     }
 
@@ -323,7 +370,7 @@ impl TextInput {
         self.buffer
             .with_untracked(|buff| text_layout.set_text(buff, attrs.clone()));
 
-        self.width = 10.0 * self.font_size;
+        self.width = APPROX_VISIBLE_CHARS * self.font_size;
         self.height = self.font_size;
 
         // main buff should always get updated
@@ -362,38 +409,119 @@ impl TextInput {
         self.cursor_glyph_idx = new_cursor_x;
     }
 
-    fn select_all(&mut self) {
-        self.selection = 0..self.buffer.with(|val| val.len());
+    fn select_all(&mut self, cx: &mut EventCx) {
+        let text_node = self.text_node.unwrap();
+        let node_layout = *cx.app_state.taffy.layout(text_node).unwrap();
+        let len = self.buffer.with(|val| val.len());
+        self.cursor_glyph_idx = len;
+
+        let text_buf = self.text_buf.as_ref().unwrap();
+        let buf_width = text_buf.size().width;
+        let node_width = node_layout.size.width as f64;
+
+        if buf_width > node_width {
+            self.clip_text(&node_layout);
+        }
+
+        self.selection = Some(0..len);
     }
 
-    fn handle_key_down(&mut self, cx: &mut EventCx<'_>, event: &KeyEvent) -> bool {
+    fn handle_modifier_cmd(
+        &mut self,
+        event: &KeyEvent,
+        cx: &mut EventCx<'_>,
+        character: &SmolStr,
+    ) -> bool {
+        if event.modifiers.is_empty() {
+            return false;
+        }
+
+        let command = (event, character).into();
+
+        match command {
+            TextCommand::SelectAll => {
+                self.select_all(cx);
+                true
+            }
+            TextCommand::Copy => {
+                if let Some(selection) = &self.selection {
+                    let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+                    let selection_txt = self
+                        .buffer
+                        .get()
+                        .chars()
+                        .skip(selection.start)
+                        .take(selection.end - selection.start)
+                        .collect();
+                    ctx.set_contents(selection_txt).unwrap();
+                }
+                true
+            }
+            TextCommand::Cut => {
+                if let Some(selection) = &self.selection {
+                    let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+                    let selection_txt = self
+                        .buffer
+                        .get()
+                        .chars()
+                        .skip(selection.start)
+                        .take(selection.end - selection.start)
+                        .collect();
+                    ctx.set_contents(selection_txt).unwrap();
+
+                    self.buffer
+                        .update(|buf| replace_range(buf, selection.clone(), None));
+
+                    self.cursor_glyph_idx = selection.start;
+                    self.selection = None;
+                }
+
+                true
+            }
+            TextCommand::Paste => {
+                let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+                let clipboard_content = ctx.get_contents().unwrap();
+                if clipboard_content.is_empty() {
+                    return false;
+                }
+
+                if let Some(selection) = &self.selection {
+                    self.buffer.update(|buf| {
+                        replace_range(buf, selection.clone(), Some(&clipboard_content))
+                    });
+
+                    self.cursor_glyph_idx +=
+                        clipboard_content.len() - selection.len().min(clipboard_content.len());
+                    self.selection = None;
+                } else {
+                    self.buffer
+                        .update(|buf| buf.insert_str(self.cursor_glyph_idx, &clipboard_content));
+                    self.cursor_glyph_idx += clipboard_content.len();
+                }
+
+                true
+            }
+            TextCommand::None => {
+                self.selection = None;
+                false
+            }
+        }
+    }
+
+    fn handle_key_down(&mut self, cx: &mut EventCx, event: &KeyEvent) -> bool {
         match event.key.logical_key {
             Key::Character(ref ch) => {
-                let handled_modifier_command = !event.modifiers.is_empty()
-                    && match (event.modifiers, ch.as_str(), cfg!(target_os = "macos")) {
-                        (ModifiersState::CONTROL, "a", false) => {
-                            self.select_all();
-                            true
-                        }
-                        (ModifiersState::SUPER, "a", true) => {
-                            self.select_all();
-                            true
-                        }
-                        _ => {
-                            self.selection = 0..0;
-                            false
-                        }
-                    };
-
-                if handled_modifier_command {
+                let handled_modifier_cmd = self.handle_modifier_cmd(event, cx, ch);
+                if handled_modifier_cmd {
                     return true;
                 }
+
                 let selection = self.selection.clone();
-                if selection != (0..0) {
+                if let Some(selection) = selection {
                     self.buffer
                         .update(|buf| replace_range(buf, selection.clone(), None));
                     self.cursor_glyph_idx = selection.start;
-                    self.selection = 0..0;
+                    self.selection = None;
                 }
 
                 self.buffer
@@ -401,17 +529,24 @@ impl TextInput {
                 self.move_cursor(Movement::Glyph, Direction::Right)
             }
             Key::Space => {
-                self.buffer
-                    .update(|buf| buf.insert(self.cursor_glyph_idx, ' '));
+                if let Some(selection) = &self.selection {
+                    self.buffer
+                        .update(|buf| replace_range(buf, selection.clone(), None));
+                    self.cursor_glyph_idx = selection.start;
+                    self.selection = None;
+                } else {
+                    self.buffer
+                        .update(|buf| buf.insert(self.cursor_glyph_idx, ' '));
+                }
                 self.move_cursor(Movement::Glyph, Direction::Right)
             }
             Key::Backspace => {
                 let selection = self.selection.clone();
-                if selection != (0..0) {
+                if let Some(selection) = selection {
                     self.buffer
                         .update(|buf| replace_range(buf, selection, None));
                     self.cursor_glyph_idx = 0;
-                    self.selection = 0..0;
+                    self.selection = None;
                     true
                 } else {
                     let prev_cursor_idx = self.cursor_glyph_idx;
@@ -421,7 +556,6 @@ impl TextInput {
                     } else {
                         self.move_cursor(Movement::Glyph, Direction::Left);
                     }
-
                     if self.cursor_glyph_idx == prev_cursor_idx {
                         return false;
                     }
@@ -449,8 +583,6 @@ impl TextInput {
                     replace_range(buf, prev_cursor_idx..self.cursor_glyph_idx, None);
                 });
 
-                // Move cursor to the range to delete, delete it and move cursor back
-                // TODO: extract moving to next word logic as a method and use it here instead
                 self.cursor_glyph_idx = prev_cursor_idx;
                 true
             }
@@ -461,37 +593,105 @@ impl TextInput {
             Key::End => self.move_cursor(Movement::Line, Direction::Right),
             Key::Home => self.move_cursor(Movement::Line, Direction::Left),
             Key::ArrowLeft => {
-                if !self.selection.is_empty() {
-                    self.cursor_glyph_idx = self.selection.start;
-                    self.selection = 0..0;
-                    true
-                } else if event.modifiers.contains(ModifiersState::CONTROL) {
+                let old_glyph_idx = self.cursor_glyph_idx;
+
+                let cursor_moved = if event.modifiers.contains(ModifiersState::CONTROL) {
                     self.move_cursor(Movement::Word, Direction::Left)
                 } else {
                     self.move_cursor(Movement::Glyph, Direction::Left)
+                };
+
+                if cursor_moved {
+                    self.move_selection(
+                        old_glyph_idx,
+                        self.cursor_glyph_idx,
+                        event.modifiers,
+                        Direction::Left,
+                    );
+                } else if !event.modifiers.contains(ModifiersState::SHIFT)
+                    && self.selection.is_some()
+                {
+                    self.selection = None;
                 }
+
+                cursor_moved
             }
             Key::ArrowRight => {
-                if !self.selection.is_empty() {
-                    self.cursor_glyph_idx = self.selection.end;
-                    self.selection = 0..0;
-                    true
-                } else if event.modifiers.contains(ModifiersState::CONTROL) {
+                let old_glyph_idx = self.cursor_glyph_idx;
+
+                let cursor_moved = if event.modifiers.contains(ModifiersState::CONTROL) {
                     self.move_cursor(Movement::Word, Direction::Right)
                 } else {
                     self.move_cursor(Movement::Glyph, Direction::Right)
+                };
+
+                if cursor_moved {
+                    self.move_selection(
+                        old_glyph_idx,
+                        self.cursor_glyph_idx,
+                        event.modifiers,
+                        Direction::Right,
+                    );
+                } else if !event.modifiers.contains(ModifiersState::SHIFT)
+                    && self.selection.is_some()
+                {
+                    self.selection = None;
                 }
+
+                cursor_moved
             }
-            _ => {
-                dbg!("Unhandled key");
+            ref key => {
+                dbg!("Unhandled key", key);
                 false
             }
+        }
+    }
+
+    fn move_selection(
+        &mut self,
+        old_glyph_idx: usize,
+        curr_glyph_idx: usize,
+        modifiers: ModifiersState,
+        direction: Direction,
+    ) {
+        if !modifiers.contains(ModifiersState::SHIFT) {
+            if self.selection.is_some() {
+                self.selection = None;
+            }
+            return;
+        }
+
+        let new_selection = if let Some(selection) = &self.selection {
+            match (direction, selection.contains(&curr_glyph_idx)) {
+                (Direction::Left, true) | (Direction::Right, false) => {
+                    selection.start..curr_glyph_idx
+                }
+                (Direction::Right, true) | (Direction::Left, false) => {
+                    curr_glyph_idx..selection.end
+                }
+            }
+        } else {
+            match direction {
+                Direction::Left => curr_glyph_idx..old_glyph_idx,
+                Direction::Right => old_glyph_idx..curr_glyph_idx,
+            }
+        };
+        // when we move in the opposite direction and end up in the same selection range,
+        // the selection should be cancelled out
+        if self
+            .selection
+            .as_ref()
+            .is_some_and(|sel| sel == &new_selection)
+        {
+            self.selection = None;
+        } else {
+            self.selection = Some(new_selection);
         }
     }
 }
 
 fn replace_range(buff: &mut String, del_range: Range<usize>, replacement: Option<&str>) {
-    assert!(del_range.start < del_range.end);
+    assert!(del_range.start <= del_range.end);
     if !buff.is_char_boundary(del_range.end) {
         eprintln!(
             "[Floem] Tried to delete range with invalid end: {:?}",
@@ -717,15 +917,23 @@ impl View for TextInput {
             let cursor_rect = self.get_cursor_rect(&node_layout);
             cx.fill(&cursor_rect, cursor_color.unwrap_or(Color::BLACK), 0.0);
         }
+
+        let style = cx.app_state.get_computed_style(self.id);
+
+        let padding_left = match style.padding_left {
+            PxPct::Px(padding) => padding as f32,
+            PxPct::Pct(pct) => pct as f32 * node_layout.size.width,
+        };
+
         if cx.app_state.is_focused(&self.id) {
-            let selection_rect = self.get_selection_rect(&node_layout);
+            let selection_rect = self.get_selection_rect(&node_layout, padding_left as f64);
             cx.fill(
                 &selection_rect,
                 cursor_color.unwrap_or(Color::rgba8(0, 0, 0, 150)),
                 0.0,
             );
         } else {
-            self.selection = 0..0;
+            self.selection = None;
         }
 
         let id = self.id();
