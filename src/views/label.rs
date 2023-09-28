@@ -3,6 +3,7 @@ use std::{any::Any, fmt::Display};
 use crate::{
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
     style::{ComputedStyle, TextOverflow},
+    unit::PxPct,
 };
 use floem_reactive::create_effect;
 use floem_renderer::{
@@ -11,7 +12,7 @@ use floem_renderer::{
 };
 use kurbo::{Point, Rect};
 use peniko::Color;
-use taffy::{prelude::Node, style::Dimension};
+use taffy::prelude::Node;
 
 use crate::{
     context::{EventCx, UpdateCx},
@@ -204,8 +205,8 @@ impl View for Label {
             let text_node = self.text_node.unwrap();
 
             let style = Style::BASE
-                .width(Dimension::Points(width))
-                .height(Dimension::Points(height))
+                .width(width)
+                .height(height)
                 .compute(&ComputedStyle::default())
                 .to_taffy_style();
             let _ = cx.app_state_mut().taffy.set_style(text_node, style);
@@ -232,12 +233,12 @@ impl View for Label {
         let style = cx.app_state_mut().get_computed_style(self.id);
         let text_overflow = style.text_overflow;
         let padding_left = match style.padding_left {
-            taffy::style::LengthPercentage::Points(padding) => padding,
-            taffy::style::LengthPercentage::Percent(pct) => pct * layout.size.width,
+            PxPct::Px(padding) => padding as f32,
+            PxPct::Pct(pct) => pct as f32 * layout.size.width,
         };
         let padding_right = match style.padding_right {
-            taffy::style::LengthPercentage::Points(padding) => padding,
-            taffy::style::LengthPercentage::Percent(pct) => pct * layout.size.width,
+            PxPct::Px(padding) => padding as f32,
+            PxPct::Pct(pct) => pct as f32 * layout.size.width,
         };
         let padding = padding_left + padding_right;
 

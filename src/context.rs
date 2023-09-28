@@ -168,10 +168,10 @@ impl ViewState {
                         animation.animate_prop(animation.elapsed().unwrap_or(Duration::ZERO), kind);
                     match kind {
                         AnimPropKind::Width => {
-                            computed_style = computed_style.width_px(val.get_f32());
+                            computed_style = computed_style.width(val.get_f32());
                         }
                         AnimPropKind::Height => {
-                            computed_style = computed_style.height_px(val.get_f32());
+                            computed_style = computed_style.height(val.get_f32());
                         }
                         AnimPropKind::Background => {
                             computed_style = computed_style.background(val.get_color());

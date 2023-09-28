@@ -9,8 +9,8 @@ fn app_view() -> impl View {
         .style(|s| {
             s.border(1.0)
                 .border_radius(2.0)
-                .padding_px(10.0)
-                .margin_left_px(10.0)
+                .padding(10.0)
+                .margin_left(10.0)
         })
         .hover_style(|s| {
             s.background(Color::rgb8(244, 67, 54))

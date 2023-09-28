@@ -31,9 +31,9 @@ fn app_view() -> impl View {
                 s.border(1.0)
                     .background(Color::RED)
                     .color(Color::BLACK)
-                    .padding_px(10.0)
-                    .margin_px(20.0)
-                    .size_px(120.0, 120.0)
+                    .padding(10.0)
+                    .margin(20.0)
+                    .size(120.0, 120.0)
             })
             .active_style(|s| s.color(Color::BLACK))
             .animation(
@@ -56,8 +56,8 @@ fn app_view() -> impl View {
     .style(|s| {
         s.border(5.0)
             .background(Color::BLUE)
-            .padding_px(10.0)
-            .size_px(400.0, 400.0)
+            .padding(10.0)
+            .size(400.0, 400.0)
             .color(Color::BLACK)
     })
     .animation(

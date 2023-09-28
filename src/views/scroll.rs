@@ -2,16 +2,14 @@ use floem_reactive::create_effect;
 use floem_renderer::Renderer;
 use kurbo::{Point, Rect, Size, Vec2};
 use peniko::Color;
-use taffy::{
-    prelude::Node,
-    style::{Dimension, Position},
-};
+use taffy::{prelude::Node, style::Position};
 
 use crate::{
     context::{AppState, LayoutCx, PaintCx},
     event::Event,
     id::Id,
     style::{ComputedStyle, Style, StyleValue},
+    unit::PxPct,
     view::{ChangeFlags, View},
 };
 
@@ -247,20 +245,20 @@ impl<V: View> Scroll<V> {
 
         let style = app_state.get_computed_style(self.id);
         let padding_left = match style.padding_left {
-            taffy::style::LengthPercentage::Points(padding) => padding,
-            taffy::style::LengthPercentage::Percent(pct) => pct * layout.size.width,
+            PxPct::Px(padding) => padding as f32,
+            PxPct::Pct(pct) => pct as f32 * layout.size.width,
         };
         let padding_right = match style.padding_right {
-            taffy::style::LengthPercentage::Points(padding) => padding,
-            taffy::style::LengthPercentage::Percent(pct) => pct * layout.size.width,
+            PxPct::Px(padding) => padding as f32,
+            PxPct::Pct(pct) => pct as f32 * layout.size.width,
         };
         let padding_top = match style.padding_top {
-            taffy::style::LengthPercentage::Points(padding) => padding,
-            taffy::style::LengthPercentage::Percent(pct) => pct * layout.size.width,
+            PxPct::Px(padding) => padding as f32,
+            PxPct::Pct(pct) => pct as f32 * layout.size.width,
         };
         let padding_bottom = match style.padding_bottom {
-            taffy::style::LengthPercentage::Points(padding) => padding,
-            taffy::style::LengthPercentage::Percent(pct) => pct * layout.size.width,
+            PxPct::Px(padding) => padding as f32,
+            PxPct::Pct(pct) => pct as f32 * layout.size.width,
         };
         let mut actual_rect = self.size.to_rect();
         actual_rect.x0 += padding_left as f64;
@@ -589,10 +587,10 @@ impl<V: View> View for Scroll<V> {
             let child_node = self.child.layout_main(cx);
 
             let virtual_style = Style::BASE
-                .width(Dimension::Points(self.child_size.width as f32))
-                .height(Dimension::Points(self.child_size.height as f32))
-                .min_width(Dimension::Points(0.0))
-                .min_height(Dimension::Points(0.0))
+                .width(self.child_size.width)
+                .height(self.child_size.height)
+                .min_width(0.0)
+                .min_height(0.0)
                 .compute(&ComputedStyle::default())
                 .to_taffy_style();
             if self.virtual_node.is_none() {
@@ -758,9 +756,9 @@ impl<V: View> View for Scroll<V> {
             self.scroll_bar_style.edge_width = edge_width;
         }
         let style = cx.get_computed_style(self.id);
-        let radius = style.border_radius;
+        let radius = style.border_radius.0;
         if radius > 0.0 {
-            let rect = self.actual_rect.to_rounded_rect(radius as f64);
+            let rect = self.actual_rect.to_rounded_rect(radius);
             cx.clip(&rect);
         } else {
             cx.clip(&self.actual_rect);

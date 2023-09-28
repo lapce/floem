@@ -1,6 +1,7 @@
 use floem::{
     peniko::Color,
     reactive::create_signal,
+    unit::UnitExt,
     view::View,
     views::{label, stack, text, Decorators},
 };
@@ -8,12 +9,12 @@ use floem::{
 fn app_view() -> impl View {
     let (counter, set_counter) = create_signal(0);
     stack((
-        label(move || format!("Value: {}", counter.get())).style(|s| s.padding_px(10.0)),
+        label(move || format!("Value: {}", counter.get())).style(|s| s.padding(10.0)),
         stack((
             text("Increment")
                 .style(|s| {
                     s.border_radius(10.0)
-                        .padding_px(10.0)
+                        .padding(10.0)
                         .background(Color::WHITE)
                         .box_shadow_blur(5.0)
                 })
@@ -38,8 +39,8 @@ fn app_view() -> impl View {
                     s.box_shadow_blur(5.0)
                         .background(Color::WHITE)
                         .border_radius(10.0)
-                        .padding_px(10.0)
-                        .margin_left_px(10.0)
+                        .padding(10.0)
+                        .margin_left(10.0)
                 })
                 .hover_style(|s| s.background(Color::rgb8(244, 67, 54)))
                 .active_style(|s| s.color(Color::WHITE).background(Color::RED))
@@ -55,8 +56,8 @@ fn app_view() -> impl View {
                 .style(|s| {
                     s.box_shadow_blur(5.0)
                         .border_radius(10.0)
-                        .padding_px(10.0)
-                        .margin_left_px(10.0)
+                        .padding(10.0)
+                        .margin_left(10.0)
                         .background(Color::LIGHT_BLUE)
                 })
                 .disabled_style(|s| s.background(Color::LIGHT_GRAY))
@@ -67,7 +68,7 @@ fn app_view() -> impl View {
         )),
     ))
     .style(|s| {
-        s.size_pct(100.0, 100.0)
+        s.size(100.pct(), 100.pct())
             .flex_col()
             .items_center()
             .justify_center()
