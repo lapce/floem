@@ -96,7 +96,7 @@ use crate::{
     event::{Event, EventListener},
     id::Id,
     style::StyleAnimCtx,
-    style::{BoxShadow, Style},
+    style::{Shadow, Style},
 };
 
 bitflags! {
@@ -790,8 +790,8 @@ fn paint_bg(cx: &mut PaintCx, style: &Style, size: Size) {
             };
             cx.fill(&circle, bg, 0.0);
         } else {
-            for bs in &style.box_shadows {
-                paint_box_shadow(cx, bs, rect, Some(radius));
+            for bs in &style.shadows {
+                paint_shadow(cx, bs, rect, Some(radius));
             }
             let bg = match style.background {
                 Some(color) => color,
@@ -801,8 +801,8 @@ fn paint_bg(cx: &mut PaintCx, style: &Style, size: Size) {
             cx.fill(&rounded_rect, bg, 0.0);
         }
     } else {
-        for bs in &style.box_shadows {
-            paint_box_shadow(cx, bs, size.to_rect(), None);
+        for bs in &style.shadows {
+            paint_shadow(cx, bs, size.to_rect(), None);
         }
         let bg = match style.background {
             Some(color) => color,
@@ -812,26 +812,21 @@ fn paint_bg(cx: &mut PaintCx, style: &Style, size: Size) {
     }
 }
 
-fn paint_box_shadow(
-    cx: &mut PaintCx,
-    box_shadow: &BoxShadow,
-    rect: Rect,
-    rect_radius: Option<f64>,
-) {
+fn paint_shadow(cx: &mut PaintCx, shadow: &Shadow, rect: Rect, rect_radius: Option<f64>) {
     let inset = Insets::new(
-        -box_shadow.h_offset.0 / 2.0,
-        -box_shadow.v_offset.0 / 2.0,
-        box_shadow.h_offset.0 / 2.0,
-        box_shadow.v_offset.0 / 2.0,
+        -shadow.h_offset.0 / 2.0,
+        -shadow.v_offset.0 / 2.0,
+        shadow.h_offset.0 / 2.0,
+        shadow.v_offset.0 / 2.0,
     );
     let rect = rect
-        .inflate(box_shadow.spread.0, box_shadow.spread.0)
+        .inflate(shadow.spread.0, shadow.spread.0)
         .inset(inset);
     if let Some(radius) = rect_radius {
-        let rounded_rect = RoundedRect::from_rect(rect, radius + box_shadow.spread.0);
-        cx.fill(&rounded_rect, box_shadow.color, box_shadow.blur_radius.0);
+        let rounded_rect = RoundedRect::from_rect(rect, radius + shadow.spread.0);
+        cx.fill(&rounded_rect, shadow.color, shadow.blur_radius.0);
     } else {
-        cx.fill(&rect, box_shadow.color, box_shadow.blur_radius.0);
+        cx.fill(&rect, shadow.color, shadow.blur_radius.0);
     }
 }
 

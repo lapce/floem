@@ -146,7 +146,7 @@ impl StyleAnimCtx {
 }
 
 define_styles!(
-    BoxShadow with:
+    Shadow with:
     h_offset: Px = Px(0.0),
     v_offset: Px = Px(0.0),
     blur_radius: Px = Px(0.0),
@@ -154,8 +154,8 @@ define_styles!(
     color: Color = Color::BLACK,
 );
 
-pub fn box_shadow() -> BoxShadow {
-    BoxShadow::default()
+pub fn shadow() -> Shadow {
+    Shadow::default()
 }
 
 define_styles!(
@@ -202,7 +202,7 @@ define_styles!(
     cursor nocb: Option<CursorStyle> = None,
     color nocb: Option<Color> = None,
     background nocb: Option<Color> = None,
-    box_shadows: Vec<BoxShadow> = Vec::new(),
+    shadows: Vec<Shadow> = Vec::new(),
     scroll_bar_color nocb: Option<Color> = None,
     scroll_bar_rounded nocb: Option<bool> = None,
     scroll_bar_thickness nocb: Option<Px> = None,
@@ -262,7 +262,7 @@ define_modifier_fns!(
     cursor nocb: Option<CursorStyle>,
     color nocb: Option<Color>,
     background nocb: Option<Color>,
-    box_shadows: Vec<BoxShadow>,
+    shadows: Vec<Shadow>,
     scroll_bar_color nocb: Option<Color>,
     scroll_bar_rounded nocb: Option<bool>,
     scroll_bar_thickness nocb: Option<Px>,
@@ -584,8 +584,8 @@ impl StyleAnimCtx {
         self
     }
 
-    pub fn box_shadow(self, box_shadow: BoxShadow) -> Self {
-        self.box_shadows(vec![box_shadow])
+    pub fn shadow(self, shadow: Shadow) -> Self {
+        self.shadows(vec![shadow])
     }
 
     pub fn scroll_bar_color(mut self, color: impl Into<Color>) -> Self {
