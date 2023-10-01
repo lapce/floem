@@ -21,10 +21,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::{
-    cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
-    style::ComputedStyle,
-};
+use crate::cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout};
 use kurbo::{Point, Rect};
 
 use crate::{
@@ -175,7 +172,7 @@ impl From<(&KeyEvent, &SmolStr)> for TextCommand {
     }
 }
 
-const DEFAULT_FONT_SIZE: f32 = 14.0;
+pub(crate) const DEFAULT_FONT_SIZE: f32 = 14.0;
 const CURSOR_BLINK_INTERVAL_MS: u64 = 500;
 // see https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/text#size
 const APPROX_VISIBLE_CHARS: f32 = 10.0;
@@ -831,10 +828,9 @@ impl View for TextInput {
             }
             let text_node = self.text_node.unwrap();
 
-            let style = Style::BASE
+            let style = Style::default()
                 .width(self.width)
                 .height(self.height)
-                .compute(&ComputedStyle::default())
                 .to_taffy_style();
             let _ = cx.app_state_mut().taffy.set_style(text_node, style);
 

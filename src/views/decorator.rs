@@ -3,11 +3,12 @@ use kurbo::{Point, Rect};
 
 use crate::{
     action::{set_window_menu, set_window_title, update_window_scale},
-    animate::Animation,
+    animate::{fixed, style_anim, AnimDriver},
     event::{Event, EventListener},
+    id::Id,
     menu::Menu,
     responsive::ScreenSize,
-    style::{Style, StyleSelector},
+    style::{Style, StyleAnimCtx, StyleSelector},
     view::View,
 };
 
@@ -34,12 +35,16 @@ pub trait Decorators: View + Sized {
     /// ```
     /// If you are returning from a function that produces a view, you may want
     /// to use `base_style` for the returned [`View`] instead.  
-    fn style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
-        let id = self.id();
-        create_effect(move |_| {
-            let style = style(Style::BASE);
-            id.update_style(style);
-        });
+    fn style(self, style: impl Fn(StyleAnimCtx) -> StyleAnimCtx + Clone + 'static) -> Self {
+        self.style_anim(fixed(), style)
+    }
+
+    fn style_anim(
+        self,
+        driver: impl AnimDriver + Clone + 'static,
+        anim: impl Fn(StyleAnimCtx) -> StyleAnimCtx + Clone + 'static,
+    ) -> Self {
+        style_anim_with_selector(self.id(), StyleSelector::Main, driver, anim);
         self
     }
 
@@ -60,51 +65,93 @@ pub trait Decorators: View + Sized {
     ///     ))
     /// }
     /// ```
-    fn base_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
-        let id = self.id();
-        create_effect(move |_| {
-            let style = style(Style::BASE);
-            id.update_base_style(style);
-        });
+    fn base_style(self, style: impl Fn(StyleAnimCtx) -> StyleAnimCtx + Clone + 'static) -> Self {
+        self.base_style_anim(fixed(), style)
+    }
+
+    fn base_style_anim(
+        self,
+        driver: impl AnimDriver + Clone + 'static,
+        anim: impl Fn(StyleAnimCtx) -> StyleAnimCtx + Clone + 'static,
+    ) -> Self {
+        style_anim_with_selector(self.id(), StyleSelector::Base, driver, anim);
+        self
+    }
+
+    fn override_style(
+        self,
+        style: impl Fn(StyleAnimCtx) -> StyleAnimCtx + Clone + 'static,
+    ) -> Self {
+        self.override_style_anim(fixed(), style)
+    }
+
+    fn override_style_anim(
+        self,
+        driver: impl AnimDriver + Clone + 'static,
+        anim: impl Fn(StyleAnimCtx) -> StyleAnimCtx + Clone + 'static,
+    ) -> Self {
+        style_anim_with_selector(self.id(), StyleSelector::Override, driver, anim);
         self
     }
 
     /// The visual style to apply when the mouse hovers over the element
-    fn hover_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
-        let id = self.id();
-        create_effect(move |_| {
-            let style = style(Style::BASE);
-            id.update_style_selector(style, StyleSelector::Hover);
-        });
+    fn hover_style(self, style: impl Fn(StyleAnimCtx) -> StyleAnimCtx + Clone + 'static) -> Self {
+        self.hover_style_anim(fixed(), style)
+    }
+
+    fn hover_style_anim(
+        self,
+        driver: impl AnimDriver + Clone + 'static,
+        anim: impl Fn(StyleAnimCtx) -> StyleAnimCtx + Clone + 'static,
+    ) -> Self {
+        style_anim_with_selector(self.id(), StyleSelector::Hover, driver, anim);
         self
     }
 
     /// The visual style to apply when the mouse hovers over the element
-    fn dragging_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
-        let id = self.id();
-        create_effect(move |_| {
-            let style = style(Style::BASE);
-            id.update_style_selector(style, StyleSelector::Dragging);
-        });
+    fn dragging_style(
+        self,
+        style: impl Fn(StyleAnimCtx) -> StyleAnimCtx + Clone + 'static,
+    ) -> Self {
+        self.dragging_style_anim(fixed(), style)
+    }
+
+    fn dragging_style_anim(
+        self,
+        driver: impl AnimDriver + Clone + 'static,
+        anim: impl Fn(StyleAnimCtx) -> StyleAnimCtx + Clone + 'static,
+    ) -> Self {
+        style_anim_with_selector(self.id(), StyleSelector::Dragging, driver, anim);
         self
     }
 
-    fn focus_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
-        let id = self.id();
-        create_effect(move |_| {
-            let style = style(Style::BASE);
-            id.update_style_selector(style, StyleSelector::Focus);
-        });
+    fn focus_style(self, style: impl Fn(StyleAnimCtx) -> StyleAnimCtx + Clone + 'static) -> Self {
+        self.focus_style_anim(fixed(), style)
+    }
+
+    fn focus_style_anim(
+        self,
+        driver: impl AnimDriver + Clone + 'static,
+        anim: impl Fn(StyleAnimCtx) -> StyleAnimCtx + Clone + 'static,
+    ) -> Self {
+        style_anim_with_selector(self.id(), StyleSelector::Focus, driver, anim);
         self
     }
 
     /// Similar to the `:focus-visible` css selector, this style only activates when tab navigation is used.
-    fn focus_visible_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
-        let id = self.id();
-        create_effect(move |_| {
-            let style = style(Style::BASE);
-            id.update_style_selector(style, StyleSelector::FocusVisible);
-        });
+    fn focus_visible_style(
+        self,
+        style: impl Fn(StyleAnimCtx) -> StyleAnimCtx + Clone + 'static,
+    ) -> Self {
+        self.focus_visible_style_anim(fixed(), style)
+    }
+
+    fn focus_visible_style_anim(
+        self,
+        driver: impl AnimDriver + Clone + 'static,
+        anim: impl Fn(StyleAnimCtx) -> StyleAnimCtx + Clone + 'static,
+    ) -> Self {
+        style_anim_with_selector(self.id(), StyleSelector::FocusVisible, driver, anim);
         self
     }
 
@@ -121,29 +168,56 @@ pub trait Decorators: View + Sized {
         self
     }
 
-    fn active_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
-        let id = self.id();
-        create_effect(move |_| {
-            let style = style(Style::BASE);
-            id.update_style_selector(style, StyleSelector::Active);
-        });
+    fn active_style(self, style: impl Fn(StyleAnimCtx) -> StyleAnimCtx + Clone + 'static) -> Self {
+        self.active_style_anim(fixed(), style)
+    }
+
+    fn active_style_anim(
+        self,
+        driver: impl AnimDriver + Clone + 'static,
+        anim: impl Fn(StyleAnimCtx) -> StyleAnimCtx + Clone + 'static,
+    ) -> Self {
+        style_anim_with_selector(self.id(), StyleSelector::Active, driver, anim);
         self
     }
 
-    fn disabled_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
-        let id = self.id();
-        create_effect(move |_| {
-            let style = style(Style::BASE);
-            id.update_style_selector(style, StyleSelector::Disabled);
-        });
+    fn disabled_style(
+        self,
+        style: impl Fn(StyleAnimCtx) -> StyleAnimCtx + Clone + 'static,
+    ) -> Self {
+        self.disabled_style_anim(fixed(), style)
+    }
+
+    fn disabled_style_anim(
+        self,
+        driver: impl AnimDriver + Clone + 'static,
+        anim: impl Fn(StyleAnimCtx) -> StyleAnimCtx + Clone + 'static,
+    ) -> Self {
+        style_anim_with_selector(self.id(), StyleSelector::Disabled, driver, anim);
         self
     }
 
-    fn responsive_style(self, size: ScreenSize, style: impl Fn(Style) -> Style + 'static) -> Self {
+    fn responsive_style(
+        self,
+        size: ScreenSize,
+        style: impl Fn(StyleAnimCtx) -> StyleAnimCtx + Clone + 'static,
+    ) -> Self {
+        self.responsive_style_anim(size, fixed(), style)
+    }
+
+    fn responsive_style_anim(
+        self,
+        size: ScreenSize,
+        driver: impl AnimDriver + Clone + 'static,
+        anim_fn: impl Fn(StyleAnimCtx) -> StyleAnimCtx + Clone + 'static,
+    ) -> Self {
         let id = self.id();
+        let anim = style_anim(driver, anim_fn);
         create_effect(move |_| {
-            let style = style(Style::BASE);
-            id.update_responsive_style(style, size);
+            let anim = anim.clone();
+            // run once to track effects
+            _ = anim.anim_fn.call(StyleAnimCtx::done(Style::default()));
+            id.update_responsive_style(anim, size);
         });
         self
     }
@@ -201,14 +275,6 @@ pub trait Decorators: View + Sized {
         self
     }
 
-    fn animation(self, anim: Animation) -> Self {
-        let id = self.id();
-        create_effect(move |_| {
-            id.update_animation(anim.clone());
-        });
-        self
-    }
-
     fn window_scale(self, scale_fn: impl Fn() -> f64 + 'static) -> Self {
         create_effect(move |_| {
             let window_scale = scale_fn();
@@ -249,3 +315,18 @@ pub trait Decorators: View + Sized {
 }
 
 impl<V: View> Decorators for V {}
+
+fn style_anim_with_selector(
+    id: Id,
+    selector: StyleSelector,
+    driver: impl AnimDriver + Clone + 'static,
+    anim_fn: impl Fn(StyleAnimCtx) -> StyleAnimCtx + Clone + 'static,
+) {
+    let anim = style_anim(driver, anim_fn);
+    create_effect(move |_| {
+        let anim = anim.clone();
+        // run once to track effects
+        _ = anim.anim_fn.call(StyleAnimCtx::done(Style::default()));
+        id.update_style_selector(anim, selector);
+    });
+}

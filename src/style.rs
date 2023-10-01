@@ -1,30 +1,3 @@
-//! # Style  
-//! Styles are divided into two parts:
-//! [`ComputedStyle`]: A style with definite values for most fields.  
-//!
-//! [`Style`]: A style with [`StyleValue`]s for the fields, where `Unset` falls back to the relevant
-//! field in the [`ComputedStyle`] and `Base` falls back to the underlying [`Style`] or the
-//! [`ComputedStyle`].
-//!
-//!
-//! A loose analogy with CSS might be:  
-//! [`ComputedStyle`] is like the browser's default style sheet for any given element (view).  
-//!   
-//! [`Style`] is like the styling associated with a *specific* element (view):
-//! ```html
-//! <div style="color: red; font-size: 12px;">
-//! ```
-//!   
-//! An override [`Style`] is perhaps closest to classes that can be applied to an element, like
-//! `div:hover { color: blue; }`.  
-//! However, we do not actually have 'classes' where you can define a separate collection of styles
-//! in the same way. So, the hover styling is still defined with the view as you construct it, so
-//! perhaps a closer pseudocode analogy is:
-//! ```html
-//! <div hover_style="color: blue;" style="color: red; font-size: 12px;">
-//! ```
-//!
-
 use floem_renderer::cosmic_text::{LineHeightValue, Style as FontStyle, Weight};
 use peniko::Color;
 pub use taffy::style::{
@@ -36,15 +9,22 @@ use taffy::{
     style::{FlexWrap, LengthPercentage, Style as TaffyStyle},
 };
 
-use crate::unit::{Px, PxPct, PxPctAuto, UnitExt};
+use crate::{
+    animate::{alternating, ease, passes, Blendable, EasingFn, EasingMode},
+    unit::{Px, PxPct, PxPctAuto, UnitExt},
+};
 
+#[derive(Clone, Copy, Debug)]
 pub enum StyleSelector {
+    Base,
+    Main,
     Hover,
     Focus,
     FocusVisible,
     Disabled,
     Active,
     Dragging,
+    Override,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,107 +53,63 @@ pub enum CursorStyle {
     NwseResize,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct BoxShadow {
-    pub blur_radius: f64,
-    pub color: Color,
-    pub spread: f64,
-    pub h_offset: f64,
-    pub v_offset: f64,
-}
-
-impl Default for BoxShadow {
-    fn default() -> Self {
-        Self {
-            blur_radius: 0.0,
-            color: Color::BLACK,
-            spread: 0.0,
-            h_offset: 0.0,
-            v_offset: 0.0,
+macro_rules! define_modifier_fns {
+    ($struct_name:ident with: $($name:ident $($opt:ident)?: $typ:ty),* $(,)?) => {
+        impl $struct_name {
+            $(
+                define_modifier_fns!(decl: $name $($opt)?: $typ);
+            )*
         }
-    }
-}
-
-/// The value for a [`Style`] property
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StyleValue<T> {
-    Val(T),
-    /// Use the default value for the style, typically from the underlying `ComputedStyle`
-    Unset,
-    /// Use whatever the base style is. For an overriding style like hover, this uses the base
-    /// style. For the base style, this is equivalent to `Unset`
-    Base,
-}
-
-impl<T> StyleValue<T> {
-    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> StyleValue<U> {
-        match self {
-            Self::Val(x) => StyleValue::Val(f(x)),
-            Self::Unset => StyleValue::Unset,
-            Self::Base => StyleValue::Base,
+    };
+    ($struct_name:ident nested under $outer_struct:ident $nested_property:ident with: $($name:ident $($opt:ident)?: $typ:ty),* $(,)?) => {
+        impl $outer_struct {
+            $(
+                define_modifier_fns!(decl: $name $($opt)?: $typ, nested under $nested_property);
+            )*
         }
-    }
+    };
 
-    pub fn unwrap_or(self, default: T) -> T {
-        match self {
-            Self::Val(x) => x,
-            Self::Unset => default,
-            Self::Base => default,
+    // 'nocb' doesn't add a builder function
+    (decl: $name:ident nocb: $typ:ty) => {};
+    (decl: $name:ident nocb: $typ:ty, nested under $nested_property:ident) => {};
+    (decl: $name:ident: $typ:ty, nested under $nested_property:ident) => {
+        pub fn $name(mut self, v: impl Into<$typ>) -> Self {
+            self.$nested_property.$name = v.into();
+            self
         }
-    }
-
-    pub fn unwrap_or_else(self, f: impl FnOnce() -> T) -> T {
-        match self {
-            Self::Val(x) => x,
-            Self::Unset => f(),
-            Self::Base => f(),
+    };
+    (decl: $name:ident: $typ:ty) => {
+        pub fn $name(mut self, v: impl Into<$typ>) -> Self {
+            self.$name = v.into();
+            self
         }
-    }
-
-    pub fn as_mut(&mut self) -> Option<&mut T> {
-        match self {
-            Self::Val(x) => Some(x),
-            Self::Unset => None,
-            Self::Base => None,
+    };
+    (decl: $name:ident blendable: $typ:ty, nested under $nested_property:ident) => {
+        pub fn $name(mut self, v: impl Into<$typ>) -> Self {
+            if self.blend_style {
+                self.$nested_property.$name = self.$nested_property.$name.blend(v.into(), self.animation_value);
+            } else {
+                self.$nested_property.$name = v.into();
+            }
+            self
         }
-    }
+    };
 }
 
-impl<T> Default for StyleValue<T> {
-    fn default() -> Self {
-        // By default we let the `Style` decide what to do.
-        Self::Base
-    }
-}
-
-impl<T> From<T> for StyleValue<T> {
-    fn from(x: T) -> Self {
-        Self::Val(x)
-    }
-}
-
-// Creates `ComputedStyle` which has definite values for the fields, barring some specific cases.
-// Creates `Style` which has `StyleValue<T>`s for the fields
 macro_rules! define_styles {
     (
-        $($name:ident $name_sv:ident $($opt:ident)?: $typ:ty = $val:expr),* $(,)?
+        $struct_name:ident
+        $(nested under $outer_struct:ident $nested_property:ident)?
+        with:
+        $($name:ident $($opt:ident)?: $typ:ty = $val:expr),* $(,)?
     ) => {
-        /// A style with definite values for most fields.
         #[derive(Debug, Clone)]
-        pub struct ComputedStyle {
+        pub struct $struct_name {
             $(
                 pub $name: $typ,
             )*
         }
-        impl ComputedStyle {
-            $(
-                pub fn $name(mut self, v: impl Into<$typ>) -> Self {
-                    self.$name = v.into();
-                    self
-                }
-            )*
-        }
-        impl Default for ComputedStyle {
+        impl Default for $struct_name {
             fn default() -> Self {
                 Self {
                     $(
@@ -183,158 +119,203 @@ macro_rules! define_styles {
             }
         }
 
-        #[derive(Debug, Clone)]
-        pub struct Style {
+        define_modifier_fns!($struct_name with:
             $(
-                pub $name: StyleValue<$typ>,
+                $name $($opt)?: $typ,
             )*
-        }
-        impl Style {
-            pub const BASE: Style = Style{
-                $(
-                    $name: StyleValue::Base,
-                )*
-            };
-
-            pub const UNSET: Style = Style{
-                $(
-                    $name: StyleValue::Unset,
-                )*
-            };
-
-            $(
-                define_styles!(decl: $name $name_sv $($opt)?: $typ = $val);
-            )*
-
-            /// Convert this `Style` into a computed style, using the given `ComputedStyle` as a base
-            /// for any missing values.
-            pub fn compute(self, underlying: &ComputedStyle) -> ComputedStyle {
-                ComputedStyle {
-                    $(
-                        $name: self.$name.unwrap_or_else(|| underlying.$name.clone()),
-                    )*
-                }
-            }
-
-            /// Apply another `Style` to this style, returning a new `Style` with the overrides
-            ///
-            /// `StyleValue::Val` will override the value with the given value
-            /// `StyleValue::Unset` will unset the value, causing it to fall back to the underlying
-            /// `ComputedStyle` (aka setting it to `None`)
-            /// `StyleValue::Base` will leave the value as-is, whether falling back to the underlying
-            /// `ComputedStyle` or using the value in the `Style`.
-            pub fn apply(self, over: Style) -> Style {
-                Style {
-                    $(
-                        $name: match (self.$name, over.$name) {
-                            (_, StyleValue::Val(x)) => StyleValue::Val(x),
-                            (StyleValue::Val(x), StyleValue::Base) => StyleValue::Val(x),
-                            (StyleValue::Val(_), StyleValue::Unset) => StyleValue::Unset,
-                            (StyleValue::Base, StyleValue::Base) => StyleValue::Base,
-                            (StyleValue::Unset, StyleValue::Base) => StyleValue::Unset,
-                            (StyleValue::Base, StyleValue::Unset) => StyleValue::Unset,
-                            (StyleValue::Unset, StyleValue::Unset) => StyleValue::Unset,
-                        },
-                    )*
-                }
-            }
-
-            /// Apply multiple `Style`s to this style, returning a new `Style` with the overrides.
-            /// Later styles take precedence over earlier styles.
-            pub fn apply_overriding_styles(self, overrides: impl Iterator<Item = Style>) -> Style {
-                overrides.fold(self, |acc, x| acc.apply(x))
-            }
-        }
+        );
     };
-    // internal submacro
+}
 
-    // 'nocb' doesn't add a builder function
-    (decl: $name:ident $name_sv:ident nocb: $typ:ty = $val:expr) => {};
-    (decl: $name:ident $name_sv:ident: $typ:ty = $val:expr) => {
-        pub fn $name(mut self, v: impl Into<$typ>) -> Self
-        {
-            self.$name = StyleValue::Val(v.into());
-            self
-        }
+use super::*;
 
-        pub fn $name_sv(mut self, v: StyleValue<$typ>) -> Self
-        {
-            self.$name = v;
-            self
+pub struct StyleAnimCtx {
+    pub style: Style,
+    pub blend_style: bool,
+    pub animation_value: f64,
+}
+
+impl StyleAnimCtx {
+    pub fn done(style: Style) -> StyleAnimCtx {
+        StyleAnimCtx {
+            style,
+            blend_style: false,
+            animation_value: 1.0,
         }
     }
 }
 
 define_styles!(
-    display display_sv: Display = Display::Flex,
-    position position_sv: Position = Position::Relative,
-    width width_sv: PxPctAuto = PxPctAuto::Auto,
-    height height_sv: PxPctAuto = PxPctAuto::Auto,
-    min_width min_width_sv: PxPctAuto = PxPctAuto::Auto,
-    min_height min_height_sv: PxPctAuto = PxPctAuto::Auto,
-    max_width max_width_sv: PxPctAuto = PxPctAuto::Auto,
-    max_height max_height_sv: PxPctAuto = PxPctAuto::Auto,
-    flex_direction flex_direction_sv: FlexDirection = FlexDirection::Row,
-    flex_wrap flex_wrap_sv: FlexWrap = FlexWrap::NoWrap,
-    flex_grow flex_grow_sv: f32 = 0.0,
-    flex_shrink flex_shrink_sv: f32 = 1.0,
-    flex_basis flex_basis_sv: PxPctAuto = PxPctAuto::Auto,
-    justify_content justify_content_sv: Option<JustifyContent> = None,
-    justify_self justify_self_sv: Option<AlignItems> = None,
-    align_items align_items_sv: Option<AlignItems> = None,
-    align_content align_content_sv: Option<AlignContent> = None,
-    align_self align_self_sv: Option<AlignItems> = None,
-    border_left border_left_sv: Px = Px(0.0),
-    border_top border_top_sv: Px = Px(0.0),
-    border_right border_right_sv: Px = Px(0.0),
-    border_bottom border_bottom_sv: Px = Px(0.0),
-    border_radius border_radius_sv: Px = Px(0.0),
-    outline_color outline_color_sv: Color = Color::TRANSPARENT,
-    outline outline_sv: Px = Px(0.0),
-    border_color border_color_sv: Color = Color::BLACK,
-    padding_left padding_left_sv: PxPct = PxPct::Px(0.0),
-    padding_top padding_top_sv: PxPct = PxPct::Px(0.0),
-    padding_right padding_right_sv: PxPct = PxPct::Px(0.0),
-    padding_bottom padding_bottom_sv: PxPct = PxPct::Px(0.0),
-    margin_left margin_left_sv: PxPctAuto = PxPctAuto::Px(0.0),
-    margin_top margin_top_sv: PxPctAuto = PxPctAuto::Px(0.0),
-    margin_right margin_right_sv: PxPctAuto = PxPctAuto::Px(0.0),
-    margin_bottom margin_bottom_sv: PxPctAuto = PxPctAuto::Px(0.0),
-    inset_left inset_left_sv: PxPctAuto = PxPctAuto::Auto,
-    inset_top inset_top_sv: PxPctAuto = PxPctAuto::Auto,
-    inset_right inset_right_sv: PxPctAuto = PxPctAuto::Auto,
-    inset_bottom inset_bottom_sv: PxPctAuto = PxPctAuto::Auto,
-    z_index z_index_sv nocb: Option<i32> = None,
-    cursor cursor_sv nocb: Option<CursorStyle> = None,
-    color color_sv nocb: Option<Color> = None,
-    background background_sv nocb: Option<Color> = None,
-    box_shadow box_shadow_sv nocb: Option<BoxShadow> = None,
-    scroll_bar_color scroll_bar_color_sv nocb: Option<Color> = None,
-    scroll_bar_rounded scroll_bar_rounded_sv nocb: Option<bool> = None,
-    scroll_bar_thickness scroll_bar_thickness_sv nocb: Option<Px> = None,
-    scroll_bar_edge_width scroll_bar_edge_width_sv nocb: Option<Px> = None,
-    font_size font_size_sv nocb: Option<f32> = None,
-    font_family font_family_sv nocb: Option<String> = None,
-    font_weight font_weight_sv nocb: Option<Weight> = None,
-    font_style font_style_sv nocb: Option<FontStyle> = None,
-    cursor_color cursor_color_sv nocb: Option<Color> = None,
-    text_overflow text_overflow_sv: TextOverflow = TextOverflow::Wrap,
-    line_height line_height_sv nocb: Option<LineHeightValue> = None,
-    aspect_ratio aspect_ratio_sv: Option<f32> = None,
-    gap gap_sv: Size<LengthPercentage> = Size::zero(),
+    BoxShadow with:
+    h_offset: Px = Px(0.0),
+    v_offset: Px = Px(0.0),
+    blur_radius: Px = Px(0.0),
+    spread: Px = Px(0.0),
+    color: Color = Color::BLACK,
 );
 
-impl Style {
-    pub fn width_full(self) -> Self {
-        self.width_pct(100.0)
+pub fn box_shadow() -> BoxShadow {
+    BoxShadow::default()
+}
+
+define_styles!(
+    Style with:
+    display: Display = Display::Flex,
+    position: Position = Position::Relative,
+    width: PxPctAuto = PxPctAuto::Auto,
+    height: PxPctAuto = PxPctAuto::Auto,
+    min_width: PxPctAuto = PxPctAuto::Auto,
+    min_height: PxPctAuto = PxPctAuto::Auto,
+    max_width: PxPctAuto = PxPctAuto::Auto,
+    max_height: PxPctAuto = PxPctAuto::Auto,
+    flex_direction: FlexDirection = FlexDirection::Row,
+    flex_wrap: FlexWrap = FlexWrap::NoWrap,
+    flex_grow: f32 = 0.0,
+    flex_shrink: f32 = 1.0,
+    flex_basis: PxPctAuto = PxPctAuto::Auto,
+    justify_content: Option<JustifyContent> = None,
+    justify_self: Option<AlignItems> = None,
+    align_items: Option<AlignItems> = None,
+    align_content: Option<AlignContent> = None,
+    align_self: Option<AlignItems> = None,
+    border_left: Px = Px(0.0),
+    border_top: Px = Px(0.0),
+    border_right: Px = Px(0.0),
+    border_bottom: Px = Px(0.0),
+    border_radius: Px = Px(0.0),
+    outline_color: Color = Color::TRANSPARENT,
+    outline: Px = Px(0.0),
+    border_color: Color = Color::BLACK,
+    padding_left: PxPct = PxPct::Px(0.0),
+    padding_top: PxPct = PxPct::Px(0.0),
+    padding_right: PxPct = PxPct::Px(0.0),
+    padding_bottom: PxPct = PxPct::Px(0.0),
+    margin_left: PxPctAuto = PxPctAuto::Px(0.0),
+    margin_top: PxPctAuto = PxPctAuto::Px(0.0),
+    margin_right: PxPctAuto = PxPctAuto::Px(0.0),
+    margin_bottom: PxPctAuto = PxPctAuto::Px(0.0),
+    inset_left: PxPctAuto = PxPctAuto::Auto,
+    inset_top: PxPctAuto = PxPctAuto::Auto,
+    inset_right: PxPctAuto = PxPctAuto::Auto,
+    inset_bottom: PxPctAuto = PxPctAuto::Auto,
+    z_index nocb: Option<i32> = None,
+    cursor nocb: Option<CursorStyle> = None,
+    color nocb: Option<Color> = None,
+    background nocb: Option<Color> = None,
+    box_shadows: Vec<BoxShadow> = Vec::new(),
+    scroll_bar_color nocb: Option<Color> = None,
+    scroll_bar_rounded nocb: Option<bool> = None,
+    scroll_bar_thickness nocb: Option<Px> = None,
+    scroll_bar_edge_width nocb: Option<Px> = None,
+    font_size nocb: Option<f32> = None,
+    font_family nocb: Option<String> = None,
+    font_weight nocb: Option<Weight> = None,
+    font_style nocb: Option<FontStyle> = None,
+    cursor_color nocb: Option<Color> = None,
+    text_overflow: TextOverflow = TextOverflow::Wrap,
+    line_height nocb: Option<LineHeightValue> = None,
+    aspect_ratio: Option<f32> = None,
+    gap: Size<LengthPercentage> = Size::zero(),
+);
+
+define_modifier_fns!(
+    Style nested under StyleAnimCtx style with:
+    display: Display,
+    position: Position,
+    width blendable: PxPctAuto,
+    height blendable: PxPctAuto,
+    min_width blendable: PxPctAuto,
+    min_height blendable: PxPctAuto,
+    max_width blendable: PxPctAuto,
+    max_height blendable: PxPctAuto,
+    flex_direction: FlexDirection,
+    flex_wrap: FlexWrap,
+    flex_grow: f32,
+    flex_shrink: f32,
+    flex_basis: PxPctAuto,
+    justify_content: Option<JustifyContent>,
+    justify_self: Option<AlignItems>,
+    align_items: Option<AlignItems>,
+    align_content: Option<AlignContent>,
+    align_self: Option<AlignItems>,
+    border_left blendable: Px,
+    border_top blendable: Px,
+    border_right blendable: Px,
+    border_bottom blendable: Px,
+    border_radius blendable: Px,
+    outline_color blendable: Color,
+    outline blendable: Px,
+    border_color blendable: Color,
+    padding_left blendable: PxPct,
+    padding_top blendable: PxPct,
+    padding_right blendable: PxPct,
+    padding_bottom blendable: PxPct,
+    margin_left blendable: PxPctAuto,
+    margin_top blendable: PxPctAuto,
+    margin_right blendable: PxPctAuto,
+    margin_bottom blendable: PxPctAuto,
+    inset_left blendable: PxPctAuto,
+    inset_top blendable: PxPctAuto,
+    inset_right blendable: PxPctAuto,
+    inset_bottom blendable: PxPctAuto,
+    z_index nocb: Option<i32>,
+    cursor nocb: Option<CursorStyle>,
+    color nocb: Option<Color>,
+    background nocb: Option<Color>,
+    box_shadows: Vec<BoxShadow>,
+    scroll_bar_color nocb: Option<Color>,
+    scroll_bar_rounded nocb: Option<bool>,
+    scroll_bar_thickness nocb: Option<Px>,
+    scroll_bar_edge_width nocb: Option<Px>,
+    font_size nocb: Option<f32>,
+    font_family nocb: Option<String>,
+    font_weight nocb: Option<Weight>,
+    font_style nocb: Option<FontStyle>,
+    cursor_color nocb: Option<Color>,
+    text_overflow: TextOverflow,
+    line_height nocb: Option<LineHeightValue>,
+    aspect_ratio: Option<f32>,
+    gap: Size<LengthPercentage>,
+);
+
+impl StyleAnimCtx {
+    pub fn blend(mut self) -> Self {
+        self.blend_style = true;
+        self
+    }
+
+    pub fn passes(mut self, count: u16) -> Self {
+        self.animation_value = passes(count, self.animation_value);
+        self
+    }
+
+    pub fn alternating_anim(mut self) -> Self {
+        self.animation_value = alternating(self.animation_value);
+        self
+    }
+
+    pub fn ease(mut self, mode: EasingMode, func: EasingFn) -> Self {
+        self.animation_value = ease(self.animation_value, mode, func);
+        self
+    }
+
+    pub fn rescale_anim(mut self, from: f64, to: f64) -> Self {
+        self.animation_value = (self.animation_value - from) / (to - from);
+        self
+    }
+
+    pub fn animation_value(mut self, v: f64) -> Self {
+        self.animation_value = v;
+        self
+    }
+
+    pub fn clamp(mut self, min: f64, max: f64) -> Self {
+        self.animation_value = self.animation_value.clamp(min, max);
+        self
     }
 
     pub fn width_pct(self, width: f64) -> Self {
         self.width(width.pct())
-    }
-
-    pub fn height_full(self) -> Self {
-        self.height_pct(100.0)
     }
 
     pub fn height_pct(self, height: f64) -> Self {
@@ -578,133 +559,91 @@ impl Style {
             .inset_bottom(inset)
     }
 
-    pub fn cursor(mut self, cursor: impl Into<StyleValue<CursorStyle>>) -> Self {
-        self.cursor = cursor.into().map(Some);
+    pub fn cursor(mut self, cursor: CursorStyle) -> Self {
+        self.style.cursor = Some(cursor);
         self
     }
 
-    pub fn color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
-        self.color = color.into().map(Some);
-        self
-    }
-
-    pub fn background(mut self, color: impl Into<StyleValue<Color>>) -> Self {
-        self.background = color.into().map(Some);
-        self
-    }
-
-    pub fn box_shadow_blur(mut self, blur_radius: f64) -> Self {
-        if let Some(box_shadow) = self.box_shadow.as_mut() {
-            if let Some(box_shadow) = box_shadow.as_mut() {
-                box_shadow.blur_radius = blur_radius;
-                return self;
-            }
+    pub fn color(mut self, color: impl Into<Color>) -> Self {
+        if self.blend_style {
+            let current = self.style.color.unwrap_or(Color::BLACK);
+            self.style.color = Some(current.blend(color.into(), self.animation_value));
+        } else {
+            self.style.color = Some(color.into());
         }
-
-        self.box_shadow = Some(BoxShadow {
-            blur_radius,
-            ..Default::default()
-        })
-        .into();
         self
     }
 
-    pub fn box_shadow_color(mut self, color: Color) -> Self {
-        if let Some(box_shadow) = self.box_shadow.as_mut() {
-            if let Some(box_shadow) = box_shadow.as_mut() {
-                box_shadow.color = color;
-                return self;
-            }
+    pub fn background(mut self, color: impl Into<Color>) -> Self {
+        if self.blend_style {
+            let current = self.style.background.unwrap_or(Color::WHITE);
+            self.style.background = Some(current.blend(color.into(), self.animation_value));
+        } else {
+            self.style.background = Some(color.into());
         }
-
-        self.box_shadow = Some(BoxShadow {
-            color,
-            ..Default::default()
-        })
-        .into();
         self
     }
 
-    pub fn box_shadow_spread(mut self, spread: f64) -> Self {
-        if let Some(box_shadow) = self.box_shadow.as_mut() {
-            if let Some(box_shadow) = box_shadow.as_mut() {
-                box_shadow.spread = spread;
-                return self;
-            }
+    pub fn box_shadow(self, box_shadow: BoxShadow) -> Self {
+        self.box_shadows(vec![box_shadow])
+    }
+
+    pub fn scroll_bar_color(mut self, color: impl Into<Color>) -> Self {
+        if self.blend_style {
+            // TODO: what is the default color?
+            let current = self.style.scroll_bar_color.unwrap_or(Color::WHITE);
+            self.style.scroll_bar_color = Some(current.blend(color.into(), self.animation_value));
+        } else {
+            self.style.scroll_bar_color = Some(color.into());
         }
-
-        self.box_shadow = Some(BoxShadow {
-            spread,
-            ..Default::default()
-        })
-        .into();
         self
     }
 
-    pub fn box_shadow_h_offset(mut self, h_offset: f64) -> Self {
-        if let Some(box_shadow) = self.box_shadow.as_mut() {
-            if let Some(box_shadow) = box_shadow.as_mut() {
-                box_shadow.h_offset = h_offset;
-                return self;
-            }
-        }
-
-        self.box_shadow = Some(BoxShadow {
-            h_offset,
-            ..Default::default()
-        })
-        .into();
-        self
-    }
-
-    pub fn box_shadow_v_offset(mut self, v_offset: f64) -> Self {
-        if let Some(box_shadow) = self.box_shadow.as_mut() {
-            if let Some(box_shadow) = box_shadow.as_mut() {
-                box_shadow.v_offset = v_offset;
-                return self;
-            }
-        }
-
-        self.box_shadow = Some(BoxShadow {
-            v_offset,
-            ..Default::default()
-        })
-        .into();
-        self
-    }
-
-    pub fn scroll_bar_color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
-        self.scroll_bar_color = color.into().map(Some);
-        self
-    }
-
-    pub fn scroll_bar_rounded(mut self, rounded: impl Into<StyleValue<bool>>) -> Self {
-        self.scroll_bar_rounded = rounded.into().map(Some);
+    pub fn scroll_bar_rounded(mut self, rounded: bool) -> Self {
+        self.style.scroll_bar_rounded = Some(rounded);
         self
     }
 
     pub fn scroll_bar_thickness(mut self, thickness: impl Into<Px>) -> Self {
-        self.scroll_bar_thickness = StyleValue::Val(Some(thickness.into()));
+        if self.blend_style {
+            let current = self.style.scroll_bar_thickness.unwrap_or(0.px());
+            self.style.scroll_bar_thickness =
+                Some(current.blend(thickness.into(), self.animation_value));
+        } else {
+            self.style.scroll_bar_thickness = Some(thickness.into());
+        }
         self
     }
 
     pub fn scroll_bar_edge_width(mut self, edge_width: impl Into<Px>) -> Self {
-        self.scroll_bar_edge_width = StyleValue::Val(Some(edge_width.into()));
+        if self.blend_style {
+            let current = self.style.scroll_bar_thickness.unwrap_or(0.px());
+            self.style.scroll_bar_thickness =
+                Some(current.blend(edge_width.into(), self.animation_value));
+        } else {
+            self.style.scroll_bar_thickness = Some(edge_width.into());
+        }
         self
     }
 
-    pub fn font_size(mut self, size: impl Into<StyleValue<f32>>) -> Self {
-        self.font_size = size.into().map(Some);
+    pub fn font_size(mut self, size: impl Into<f32>) -> Self {
+        if self.blend_style {
+            // TODO: does not quite fit, something is missing for the default font size
+            let current = self.style.font_size.unwrap_or(views::DEFAULT_FONT_SIZE);
+            self.style.font_size = Some(current.blend(size.into(), self.animation_value));
+        } else {
+            self.style.font_size = Some(size.into());
+        }
         self
     }
 
-    pub fn font_family(mut self, family: impl Into<StyleValue<String>>) -> Self {
-        self.font_family = family.into().map(Some);
+    pub fn font_family(mut self, family: impl Into<String>) -> Self {
+        self.style.font_family = Some(family.into());
         self
     }
 
-    pub fn font_weight(mut self, weight: impl Into<StyleValue<Weight>>) -> Self {
-        self.font_weight = weight.into().map(Some);
+    pub fn font_weight(mut self, weight: impl Into<Weight>) -> Self {
+        self.style.font_weight = Some(weight.into());
         self
     }
 
@@ -712,65 +651,76 @@ impl Style {
         self.font_weight(Weight::BOLD)
     }
 
-    pub fn font_style(mut self, style: impl Into<StyleValue<FontStyle>>) -> Self {
-        self.font_style = style.into().map(Some);
+    pub fn font_style(mut self, style: impl Into<FontStyle>) -> Self {
+        self.style.font_style = Some(style.into());
         self
     }
 
-    pub fn cursor_color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
-        self.cursor_color = color.into().map(Some);
+    pub fn cursor_color(mut self, color: impl Into<Color>) -> Self {
+        self.style.cursor_color = Some(color.into());
         self
     }
 
     pub fn line_height(mut self, normal: f32) -> Self {
-        self.line_height = Some(LineHeightValue::Normal(normal)).into();
+        self.style.line_height = Some(LineHeightValue::Normal(normal));
         self
     }
 
-    pub fn text_ellipsis(self) -> Self {
-        self.text_overflow(TextOverflow::Ellipsis)
+    pub fn text_ellipsis(mut self) -> Self {
+        self.style.text_overflow = TextOverflow::Ellipsis;
+        self
     }
 
-    pub fn text_clip(self) -> Self {
-        self.text_overflow(TextOverflow::Clip)
+    pub fn text_clip(mut self) -> Self {
+        self.style.text_overflow = TextOverflow::Clip;
+        self
     }
 
-    pub fn absolute(self) -> Self {
-        self.position(Position::Absolute)
+    pub fn absolute(mut self) -> Self {
+        self.style.position = Position::Absolute;
+        self
     }
 
-    pub fn items_start(self) -> Self {
-        self.align_items(Some(AlignItems::FlexStart))
+    pub fn items_start(mut self) -> Self {
+        self.style.align_items = Some(AlignItems::FlexStart);
+        self
     }
 
     /// Defines the alignment along the cross axis as Centered
-    pub fn items_center(self) -> Self {
-        self.align_items(Some(AlignItems::Center))
+    pub fn items_center(mut self) -> Self {
+        self.style.align_items = Some(AlignItems::Center);
+        self
     }
 
-    pub fn items_end(self) -> Self {
-        self.align_items(Some(AlignItems::FlexEnd))
+    pub fn items_end(mut self) -> Self {
+        self.style.align_items = Some(AlignItems::FlexEnd);
+        self
     }
 
     /// Defines the alignment along the main axis as Centered
-    pub fn justify_center(self) -> Self {
-        self.justify_content(Some(JustifyContent::Center))
+    pub fn justify_center(mut self) -> Self {
+        self.style.justify_content = Some(JustifyContent::Center);
+        self
     }
 
-    pub fn justify_end(self) -> Self {
-        self.justify_content(Some(JustifyContent::FlexEnd))
+    pub fn justify_end(mut self) -> Self {
+        self.style.justify_content = Some(JustifyContent::FlexEnd);
+        self
     }
 
-    pub fn justify_start(self) -> Self {
-        self.justify_content(Some(JustifyContent::FlexStart))
+    pub fn justify_start(mut self) -> Self {
+        self.style.justify_content = Some(JustifyContent::FlexStart);
+        self
     }
 
-    pub fn justify_between(self) -> Self {
-        self.justify_content(Some(JustifyContent::SpaceBetween))
+    pub fn justify_between(mut self) -> Self {
+        self.style.justify_content = Some(JustifyContent::SpaceBetween);
+        self
     }
 
-    pub fn hide(self) -> Self {
-        self.display(Display::None)
+    pub fn hide(mut self) -> Self {
+        self.style.display = Display::None;
+        self
     }
 
     pub fn flex(self) -> Self {
@@ -781,12 +731,13 @@ impl Style {
         self.flex_direction(FlexDirection::Row)
     }
 
-    pub fn flex_col(self) -> Self {
-        self.flex_direction(FlexDirection::Column)
+    pub fn flex_col(mut self) -> Self {
+        self.style.flex_direction = FlexDirection::Column;
+        self
     }
 
     pub fn z_index(mut self, z_index: i32) -> Self {
-        self.z_index = Some(z_index).into();
+        self.style.z_index = Some(z_index);
         self
     }
 
@@ -823,7 +774,7 @@ impl Style {
     }
 }
 
-impl ComputedStyle {
+impl Style {
     pub fn to_taffy_style(&self) -> TaffyStyle {
         TaffyStyle {
             display: self.display,
@@ -883,59 +834,24 @@ impl ComputedStyle {
 
 #[cfg(test)]
 mod tests {
-    use super::{Style, StyleValue};
+    use super::Style;
     use crate::unit::PxPct;
 
     #[test]
     fn style_override() {
-        let style1 = Style::BASE.padding_left(32.0);
-        let style2 = Style::BASE.padding_left(64.0);
+        let style_fn1 = |s: Style| s.padding_left(32.0);
+        let style_fn2 = |s: Style| s.padding_left(64.0);
 
-        let style = style1.apply(style2);
+        let style = style_fn2(style_fn1(Style::default()));
 
-        assert_eq!(style.padding_left, StyleValue::Val(PxPct::Px(64.0)));
+        assert_eq!(style.padding_left, PxPct::Px(64.0));
 
-        let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
-        let style2 = Style::BASE
-            .padding_left(64.0)
-            .padding_bottom_sv(StyleValue::Base);
+        let style_fn1 = |s: Style| s.padding_left(32.0).padding_bottom(45.0);
+        let style_fn2 = |s: Style| s.padding_left(64.0);
 
-        let style = style1.apply(style2);
+        let style = style_fn2(style_fn1(Style::default()));
 
-        assert_eq!(style.padding_left, StyleValue::Val(PxPct::Px(64.0)));
-        assert_eq!(style.padding_bottom, StyleValue::Val(PxPct::Px(45.0)));
-
-        let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
-        let style2 = Style::BASE
-            .padding_left(64.0)
-            .padding_bottom_sv(StyleValue::Unset);
-
-        let style = style1.apply(style2);
-
-        assert_eq!(style.padding_left, StyleValue::Val(PxPct::Px(64.0)));
-        assert_eq!(style.padding_bottom, StyleValue::Unset);
-
-        let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
-        let style2 = Style::BASE
-            .padding_left(64.0)
-            .padding_bottom_sv(StyleValue::Unset);
-
-        let style3 = Style::BASE.padding_bottom_sv(StyleValue::Base);
-
-        let style = style1.apply_overriding_styles([style2, style3].into_iter());
-
-        assert_eq!(style.padding_left, StyleValue::Val(PxPct::Px(64.0)));
-        assert_eq!(style.padding_bottom, StyleValue::Unset);
-
-        let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
-        let style2 = Style::BASE
-            .padding_left(64.0)
-            .padding_bottom_sv(StyleValue::Unset);
-        let style3 = Style::BASE.padding_bottom(100.0);
-
-        let style = style1.apply_overriding_styles([style2, style3].into_iter());
-
-        assert_eq!(style.padding_left, StyleValue::Val(PxPct::Px(64.0)));
-        assert_eq!(style.padding_bottom, StyleValue::Val(PxPct::Px(100.0)));
+        assert_eq!(style.padding_left, PxPct::Px(64.0));
+        assert_eq!(style.padding_bottom, PxPct::Px(45.0));
     }
 }

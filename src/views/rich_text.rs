@@ -9,7 +9,7 @@ use crate::{
     context::{EventCx, UpdateCx},
     event::Event,
     id::Id,
-    style::{ComputedStyle, Style, TextOverflow},
+    style::{Style, TextOverflow},
     unit::PxPct,
     view::{ChangeFlags, View},
 };
@@ -106,10 +106,9 @@ impl View for RichText {
             }
             let text_node = self.text_node.unwrap();
 
-            let style = Style::BASE
+            let style = Style::default()
                 .width(width)
                 .height(height)
-                .compute(&ComputedStyle::default())
                 .to_taffy_style();
             let _ = cx.app_state_mut().taffy.set_style(text_node, style);
             vec![text_node]

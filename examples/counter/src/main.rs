@@ -1,6 +1,7 @@
 use floem::{
     peniko::Color,
     reactive::create_signal,
+    style::box_shadow,
     unit::UnitExt,
     view::View,
     views::{label, stack, text, Decorators},
@@ -16,7 +17,7 @@ fn app_view() -> impl View {
                     s.border_radius(10.0)
                         .padding(10.0)
                         .background(Color::WHITE)
-                        .box_shadow_blur(5.0)
+                        .box_shadow(box_shadow().blur_radius(5))
                 })
                 .on_click({
                     move |_| {
@@ -36,7 +37,7 @@ fn app_view() -> impl View {
                     }
                 })
                 .style(|s| {
-                    s.box_shadow_blur(5.0)
+                    s.box_shadow(box_shadow().blur_radius(5))
                         .background(Color::WHITE)
                         .border_radius(10.0)
                         .padding(10.0)
@@ -54,7 +55,7 @@ fn app_view() -> impl View {
                 })
                 .disabled(move || counter.get() == 0)
                 .style(|s| {
-                    s.box_shadow_blur(5.0)
+                    s.box_shadow(box_shadow().blur_radius(5))
                         .border_radius(10.0)
                         .padding(10.0)
                         .margin_left(10.0)

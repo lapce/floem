@@ -19,7 +19,6 @@ use crate::unit::UnitExt;
 use crate::views::{container_box, stack, Decorators};
 use crate::{
     action::exec_after,
-    animate::{AnimPropKind, AnimUpdateMsg, AnimValue, AnimatedProp, SizeUnit},
     context::{
         AppState, EventCx, LayoutCx, MoveListener, PaintCx, PaintState, ResizeListener, UpdateCx,
     },
@@ -30,9 +29,8 @@ use crate::{
     pointer::{PointerButton, PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
     style::{CursorStyle, StyleSelector},
     update::{
-        UpdateMessage, ANIM_UPDATE_MESSAGES, CENTRAL_DEFERRED_UPDATE_MESSAGES,
-        CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES,
-        UPDATE_MESSAGES,
+        UpdateMessage, CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES,
+        CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES,
     },
     view::{view_children_set_parent_id, ChangeFlags, View},
 };
@@ -230,9 +228,8 @@ impl WindowHandle {
             let hovered = &cx.app_state.hovered.clone();
             for id in was_hovered.unwrap().symmetric_difference(hovered) {
                 let view_state = cx.app_state.view_state(*id);
-                if view_state.hover_style.is_some()
-                    || view_state.active_style.is_some()
-                    || view_state.animation.is_some()
+                if view_state.get_style(StyleSelector::Hover).is_some()
+                    || view_state.get_style(StyleSelector::Active).is_some()
                 {
                     cx.app_state.request_layout(*id);
                 }
@@ -389,6 +386,8 @@ impl WindowHandle {
     }
 
     fn layout(&mut self) {
+        self.app_state.requesting_layout_next_frame.clear();
+
         let mut cx = LayoutCx::new(&mut self.app_state);
 
         cx.app_state_mut().root = Some(self.view.layout_main(&mut cx));
@@ -400,9 +399,7 @@ impl WindowHandle {
         // Currently we only need one ID with animation in progress to request layout, which will
         // advance the all the animations in progress.
         // This will be reworked once we change from request_layout to request_paint
-        let id = self.app_state.ids_with_anim_in_progress().get(0).cloned();
-
-        if let Some(id) = id {
+        if let Some(id) = self.app_state.requesting_layout_next_frame.first().cloned() {
             exec_after(Duration::from_millis(1), move |_| {
                 id.request_layout();
             });
@@ -453,17 +450,13 @@ impl WindowHandle {
         let mut flags = ChangeFlags::empty();
         loop {
             flags |= self.process_update_messages();
-            if !self.needs_layout()
-                && !self.has_deferred_update_messages()
-                && !self.has_anim_update_messages()
-            {
+            if !self.needs_layout() && !self.has_deferred_update_messages() {
                 break;
             }
             // QUESTION: why do we always request a layout?
             flags |= ChangeFlags::LAYOUT;
             self.layout();
             flags |= self.process_deferred_update_messages();
-            flags |= self.process_anim_update_messages();
         }
 
         self.set_cursor();
@@ -568,16 +561,6 @@ impl WindowHandle {
                             flags |= self.view.update_main(&mut cx, &id_path.0, state);
                         }
                     }
-                    UpdateMessage::BaseStyle { id, style } => {
-                        let state = cx.app_state.view_state(id);
-                        state.base_style = Some(style);
-                        cx.request_layout(id);
-                    }
-                    UpdateMessage::Style { id, style } => {
-                        let state = cx.app_state.view_state(id);
-                        state.style = style;
-                        cx.request_layout(id);
-                    }
                     UpdateMessage::ResponsiveStyle { id, style, size } => {
                         let state = cx.app_state.view_state(id);
 
@@ -589,15 +572,7 @@ impl WindowHandle {
                         selector,
                     } => {
                         let state = cx.app_state.view_state(id);
-                        let style = Some(style);
-                        match selector {
-                            StyleSelector::Hover => state.hover_style = style,
-                            StyleSelector::Focus => state.focus_style = style,
-                            StyleSelector::FocusVisible => state.focus_visible_style = style,
-                            StyleSelector::Disabled => state.disabled_style = style,
-                            StyleSelector::Active => state.active_style = style,
-                            StyleSelector::Dragging => state.dragging_style = style,
-                        }
+                        state.set_style(selector, style);
                         cx.request_layout(id);
                     }
                     UpdateMessage::KeyboardNavigable { id } => {
@@ -664,11 +639,6 @@ impl WindowHandle {
                     UpdateMessage::CleanupListener { id, action } => {
                         let state = cx.app_state.view_state(id);
                         state.cleanup_listener = Some(action);
-                    }
-                    UpdateMessage::Animation { id, animation } => {
-                        cx.app_state.animated.insert(id);
-                        let view_state = cx.app_state.view_state(id);
-                        view_state.animation = Some(animation);
                     }
                     UpdateMessage::WindowScale(scale) => {
                         cx.app_state.scale = scale;
@@ -756,104 +726,6 @@ impl WindowHandle {
         flags
     }
 
-    fn process_anim_update_messages(&mut self) -> ChangeFlags {
-        let mut flags = ChangeFlags::empty();
-        let msgs: Vec<AnimUpdateMsg> = ANIM_UPDATE_MESSAGES.with(|msgs| {
-            let mut msgs = msgs.borrow_mut();
-            let len = msgs.len();
-            msgs.drain(0..len).collect()
-        });
-
-        for msg in msgs {
-            match msg {
-                AnimUpdateMsg::Prop {
-                    id: anim_id,
-                    kind,
-                    val,
-                } => {
-                    let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
-                    flags |= self.process_update_anim_prop(view_id, kind, val);
-                }
-            }
-        }
-
-        flags
-    }
-
-    fn process_update_anim_prop(
-        &mut self,
-        view_id: Id,
-        kind: AnimPropKind,
-        val: AnimValue,
-    ) -> ChangeFlags {
-        let layout = self.app_state.get_layout(view_id).unwrap();
-        let view_state = self.app_state.view_state(view_id);
-        let anim = view_state.animation.as_mut().unwrap();
-        let prop = match kind {
-            AnimPropKind::Scale => todo!(),
-            AnimPropKind::Width => {
-                let width = layout.size.width;
-                AnimatedProp::Width {
-                    from: width as f64,
-                    to: val.get_f64(),
-                    unit: SizeUnit::Px,
-                }
-            }
-            AnimPropKind::Height => {
-                let height = layout.size.height;
-                AnimatedProp::Width {
-                    from: height as f64,
-                    to: val.get_f64(),
-                    unit: SizeUnit::Px,
-                }
-            }
-            AnimPropKind::BorderRadius => {
-                let border_radius = view_state.computed_style.border_radius;
-                AnimatedProp::BorderRadius {
-                    from: border_radius.0,
-                    to: val.get_f64(),
-                }
-            }
-            AnimPropKind::BorderColor => {
-                let border_color = view_state.computed_style.border_color;
-                AnimatedProp::BorderColor {
-                    from: border_color,
-                    to: val.get_color(),
-                }
-            }
-            AnimPropKind::Background => {
-                //TODO:  get from cx
-                let bg = view_state
-                    .computed_style
-                    .background
-                    .expect("Bg must be set in the styles");
-                AnimatedProp::Background {
-                    from: bg,
-                    to: val.get_color(),
-                }
-            }
-            AnimPropKind::Color => {
-                //TODO:  get from cx
-                let color = view_state
-                    .computed_style
-                    .color
-                    .expect("Color must be set in the animated view's style");
-                AnimatedProp::Color {
-                    from: color,
-                    to: val.get_color(),
-                }
-            }
-        };
-
-        // Overrides the old value
-        // TODO: logic based on the old val to make the animation smoother when overriding an old
-        // animation that was in progress
-        anim.props_mut().insert(kind, prop);
-        anim.begin();
-
-        ChangeFlags::LAYOUT
-    }
-
     fn needs_layout(&mut self) -> bool {
         self.app_state.view_state(self.view.id()).request_layout
     }
@@ -865,10 +737,6 @@ impl WindowHandle {
                 .map(|m| !m.is_empty())
                 .unwrap_or(false)
         })
-    }
-
-    fn has_anim_update_messages(&mut self) -> bool {
-        ANIM_UPDATE_MESSAGES.with(|m| !m.borrow().is_empty())
     }
 
     fn update_window_menu(&mut self, _menu: Menu) {

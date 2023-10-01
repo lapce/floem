@@ -95,7 +95,8 @@ use crate::{
     context::{AppState, DragState, EventCx, LayoutCx, PaintCx, UpdateCx},
     event::{Event, EventListener},
     id::Id,
-    style::{ComputedStyle, Style},
+    style::StyleAnimCtx,
+    style::{BoxShadow, Style},
 };
 
 bitflags! {
@@ -111,10 +112,6 @@ bitflags! {
 
 pub trait View {
     fn id(&self) -> Id;
-
-    fn view_style(&self) -> Option<Style> {
-        None
-    }
 
     fn child(&self, id: Id) -> Option<&dyn View>;
 
@@ -191,9 +188,7 @@ pub trait View {
     /// You shouldn't need to implement this.
     fn layout_main(&mut self, cx: &mut LayoutCx) -> Node {
         cx.save();
-
-        let view_style = self.view_style();
-        cx.app_state_mut().compute_style(self.id(), view_style);
+        cx.app_state_mut().compute_style(self.id());
         let style = cx.app_state_mut().get_computed_style(self.id()).clone();
 
         if style.color.is_some() {
@@ -709,7 +704,7 @@ pub trait View {
             }
             self.paint(cx);
             paint_border(cx, &style, size);
-            paint_outline(cx, &style, size)
+            paint_outline(cx, &style, size);
         }
 
         let mut drag_set_to_none = false;
@@ -744,16 +739,16 @@ pub trait View {
                     cx.set_z_index(1000);
                     cx.clear_clip();
 
-                    let style = cx.app_state.get_computed_style(id).clone();
+                    let mut style = cx.app_state.get_computed_style(id).clone();
                     let view_state = cx.app_state.view_state(id);
-                    let style = if let Some(dragging_style) = view_state.dragging_style.clone() {
-                        view_state
-                            .combined_style
-                            .clone()
-                            .apply(dragging_style)
-                            .compute(&ComputedStyle::default())
-                    } else {
-                        style
+                    if let Some(anim) = &mut view_state.dragging_style {
+                        let progress = anim.driver.next_value();
+                        let result = anim.anim_fn.call(StyleAnimCtx {
+                            style,
+                            blend_style: false,
+                            animation_value: progress,
+                        });
+                        style = result.style;
                     };
                     paint_bg(cx, &style, size);
 
@@ -780,7 +775,7 @@ pub trait View {
     fn paint(&mut self, cx: &mut PaintCx);
 }
 
-fn paint_bg(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
+fn paint_bg(cx: &mut PaintCx, style: &Style, size: Size) {
     let radius = style.border_radius.0;
     if radius > 0.0 {
         let rect = size.to_rect();
@@ -795,7 +790,9 @@ fn paint_bg(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
             };
             cx.fill(&circle, bg, 0.0);
         } else {
-            paint_box_shadow(cx, style, rect, Some(radius));
+            for bs in &style.box_shadows {
+                paint_box_shadow(cx, bs, rect, Some(radius));
+            }
             let bg = match style.background {
                 Some(color) => color,
                 None => return,
@@ -804,7 +801,9 @@ fn paint_bg(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
             cx.fill(&rounded_rect, bg, 0.0);
         }
     } else {
-        paint_box_shadow(cx, style, size.to_rect(), None);
+        for bs in &style.box_shadows {
+            paint_box_shadow(cx, bs, size.to_rect(), None);
+        }
         let bg = match style.background {
             Some(color) => color,
             None => return,
@@ -813,25 +812,30 @@ fn paint_bg(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
     }
 }
 
-fn paint_box_shadow(cx: &mut PaintCx, style: &ComputedStyle, rect: Rect, rect_radius: Option<f64>) {
-    if let Some(shadow) = style.box_shadow.as_ref() {
-        let inset = Insets::new(
-            -shadow.h_offset / 2.0,
-            -shadow.v_offset / 2.0,
-            shadow.h_offset / 2.0,
-            shadow.v_offset / 2.0,
-        );
-        let rect = rect.inflate(shadow.spread, shadow.spread).inset(inset);
-        if let Some(radii) = rect_radius {
-            let rounded_rect = RoundedRect::from_rect(rect, radii + shadow.spread);
-            cx.fill(&rounded_rect, shadow.color, shadow.blur_radius);
-        } else {
-            cx.fill(&rect, shadow.color, shadow.blur_radius);
-        }
+fn paint_box_shadow(
+    cx: &mut PaintCx,
+    box_shadow: &BoxShadow,
+    rect: Rect,
+    rect_radius: Option<f64>,
+) {
+    let inset = Insets::new(
+        -box_shadow.h_offset.0 / 2.0,
+        -box_shadow.v_offset.0 / 2.0,
+        box_shadow.h_offset.0 / 2.0,
+        box_shadow.v_offset.0 / 2.0,
+    );
+    let rect = rect
+        .inflate(box_shadow.spread.0, box_shadow.spread.0)
+        .inset(inset);
+    if let Some(radius) = rect_radius {
+        let rounded_rect = RoundedRect::from_rect(rect, radius + box_shadow.spread.0);
+        cx.fill(&rounded_rect, box_shadow.color, box_shadow.blur_radius.0);
+    } else {
+        cx.fill(&rect, box_shadow.color, box_shadow.blur_radius.0);
     }
 }
 
-fn paint_outline(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
+fn paint_outline(cx: &mut PaintCx, style: &Style, size: Size) {
     if style.outline.0 == 0. {
         // TODO: we should warn! when outline is < 0
         return;
@@ -841,7 +845,7 @@ fn paint_outline(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
     cx.stroke(&rect, style.outline_color, style.outline.0);
 }
 
-fn paint_border(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
+fn paint_border(cx: &mut PaintCx, style: &Style, size: Size) {
     let left = style.border_left.0;
     let top = style.border_top.0;
     let right = style.border_right.0;
@@ -1106,10 +1110,6 @@ pub(crate) fn view_debug_tree(root_view: &dyn View) {
 impl View for Box<dyn View> {
     fn id(&self) -> Id {
         (**self).id()
-    }
-
-    fn view_style(&self) -> Option<Style> {
-        (**self).view_style()
     }
 
     fn child(&self, id: Id) -> Option<&dyn View> {

@@ -1,7 +1,5 @@
 use std::f64::consts::PI;
 
-use super::assert_valid_time;
-
 /// Alters how the easing function behaves, i.e. how the animation interpolates.
 #[derive(Debug, Clone, Copy, Default)]
 pub enum EasingMode {
@@ -15,6 +13,8 @@ pub enum EasingMode {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
+// See https://easings.net/ and
+// https://learn.microsoft.com/en-us/dotnet/desktop/wpf/graphics-multimedia/easing-functions
 pub enum EasingFn {
     #[default]
     Linear,
@@ -43,14 +43,6 @@ pub enum EasingFn {
     Sine,
 }
 
-// See https://easings.net/ and
-// https://learn.microsoft.com/en-us/dotnet/desktop/wpf/graphics-multimedia/easing-functions
-#[derive(Debug, Clone, Default)]
-pub struct Easing {
-    pub(crate) mode: EasingMode,
-    pub(crate) func: EasingFn,
-}
-
 fn elastic_easing(time: f64) -> f64 {
     let c4: f64 = (2.0 * PI) / 3.0;
     if time == 0.0 {
@@ -62,42 +54,38 @@ fn elastic_easing(time: f64) -> f64 {
     }
 }
 
-impl Easing {
-    pub(crate) fn apply_easing_fn(&self, time: f64) -> f64 {
-        assert_valid_time(time);
-        match self.func {
-            EasingFn::Linear => time,
-            EasingFn::Circle => 1.0 - (1.0 - time.powi(2)).sqrt(),
-            EasingFn::Elastic => elastic_easing(time),
-            EasingFn::Exponential => {
-                if time == 0.0 {
-                    0.0
-                } else {
-                    2.0f64.powf(10.0 * time - 10.0)
-                }
+fn apply_easing_fn(v: f64, func: EasingFn) -> f64 {
+    match func {
+        EasingFn::Linear => v,
+        EasingFn::Circle => 1.0 - (1.0 - v.powi(2)).sqrt(),
+        EasingFn::Elastic => elastic_easing(v),
+        EasingFn::Exponential => {
+            if v == 0.0 {
+                0.0
+            } else {
+                2.0f64.powf(10.0 * v - 10.0)
             }
-            EasingFn::Power => todo!(),
-            EasingFn::Quadratic => time.powf(2.0),
-            EasingFn::Cubic => time.powf(3.0),
-            EasingFn::Quartic => time.powf(4.0),
-            EasingFn::Quintic => time.powf(5.0),
-            EasingFn::Sine => 1.0 - ((time * PI) / 2.0).cos(),
-            EasingFn::Back => todo!(),
-            EasingFn::Bounce => todo!(),
         }
+        EasingFn::Power => todo!(),
+        EasingFn::Quadratic => v.powf(2.0),
+        EasingFn::Cubic => v.powf(3.0),
+        EasingFn::Quartic => v.powf(4.0),
+        EasingFn::Quintic => v.powf(5.0),
+        EasingFn::Sine => 1.0 - ((v * PI) / 2.0).cos(),
+        EasingFn::Back => todo!(),
+        EasingFn::Bounce => todo!(),
     }
+}
 
-    pub(crate) fn ease(&self, time: f64) -> f64 {
-        assert_valid_time(time);
-        match self.mode {
-            EasingMode::In => self.apply_easing_fn(time),
-            EasingMode::Out => 1.0 - self.apply_easing_fn(1.0 - time),
-            EasingMode::InOut => {
-                if time < 0.5 {
-                    self.apply_easing_fn(time * 2.0) / 2.0
-                } else {
-                    1.0 - self.apply_easing_fn(2.0 - time * 2.0) / 2.0
-                }
+pub fn ease(v: f64, mode: EasingMode, func: EasingFn) -> f64 {
+    match mode {
+        EasingMode::In => apply_easing_fn(v, func),
+        EasingMode::Out => 1.0 - apply_easing_fn(1.0 - v, func),
+        EasingMode::InOut => {
+            if v < 0.5 {
+                apply_easing_fn(v * 2.0, func) / 2.0
+            } else {
+                1.0 - apply_easing_fn(2.0 - v * 2., func) / 2.0
             }
         }
     }

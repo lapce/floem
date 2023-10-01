@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
     ops::{Deref, DerefMut},
-    time::Duration,
 };
 
 use floem_renderer::{
@@ -17,13 +16,13 @@ use taffy::{
 use winit::window::CursorIcon;
 
 use crate::{
-    animate::{AnimId, AnimPropKind, Animation},
+    animate::StyleAnim,
     event::{Event, EventListener},
     id::Id,
     menu::Menu,
     pointer::PointerInputEvent,
     responsive::{GridBreakpoints, ScreenSize, ScreenSizeBp},
-    style::{ComputedStyle, CursorStyle, Style, StyleSelector},
+    style::{CursorStyle, Style, StyleAnimCtx, StyleSelector},
 };
 
 pub type EventCallback = dyn Fn(&Event) -> bool;
@@ -47,18 +46,18 @@ pub struct ViewState {
     pub(crate) request_layout: bool,
     pub(crate) viewport: Option<Rect>,
     pub(crate) layout_rect: Rect,
-    pub(crate) animation: Option<Animation>,
-    pub(crate) base_style: Option<Style>,
-    pub(crate) style: Style,
-    pub(crate) dragging_style: Option<Style>,
-    pub(crate) hover_style: Option<Style>,
-    pub(crate) disabled_style: Option<Style>,
-    pub(crate) focus_style: Option<Style>,
-    pub(crate) focus_visible_style: Option<Style>,
-    pub(crate) responsive_styles: HashMap<ScreenSizeBp, Vec<Style>>,
-    pub(crate) active_style: Option<Style>,
-    pub(crate) combined_style: Style,
-    pub(crate) computed_style: ComputedStyle,
+    base_style: Option<StyleAnim>,
+    main_style: Option<StyleAnim>,
+    override_style: Option<StyleAnim>,
+    pub(crate) dragging_style: Option<StyleAnim>,
+    hover_style: Option<StyleAnim>,
+    disabled_style: Option<StyleAnim>,
+    focus_style: Option<StyleAnim>,
+    focus_visible_style: Option<StyleAnim>,
+    pub(crate) responsive_styles: HashMap<ScreenSizeBp, Vec<StyleAnim>>,
+    active_style: Option<StyleAnim>,
+    pub(crate) computed_style: Style,
+    pub(crate) last_interaction_state: InteractionState,
     pub(crate) event_listeners: HashMap<EventListener, Box<EventCallback>>,
     pub(crate) context_menu: Option<Box<MenuCallback>>,
     pub(crate) popout_menu: Option<Box<MenuCallback>>,
@@ -75,11 +74,11 @@ impl ViewState {
             viewport: None,
             layout_rect: Rect::ZERO,
             request_layout: true,
-            animation: None,
             base_style: None,
-            style: Style::BASE,
-            combined_style: Style::BASE,
-            computed_style: ComputedStyle::default(),
+            main_style: None,
+            override_style: None,
+            computed_style: Style::default(),
+            last_interaction_state: InteractionState::default(),
             hover_style: None,
             dragging_style: None,
             disabled_style: None,
@@ -98,114 +97,142 @@ impl ViewState {
         }
     }
 
-    pub(crate) fn compute_style(
-        &mut self,
-        view_style: Option<Style>,
-        interact_state: InteractionState,
-        screen_size_bp: ScreenSizeBp,
-    ) {
-        let mut computed_style = if let Some(view_style) = view_style {
-            if let Some(base_style) = self.base_style.clone() {
-                view_style.apply(base_style).apply(self.style.clone())
-            } else {
-                view_style.apply(self.style.clone())
-            }
-        } else if let Some(base_style) = self.base_style.clone() {
-            base_style.apply(self.style.clone())
-        } else {
-            self.style.clone()
-        };
-
-        if let Some(resp_styles) = self.responsive_styles.get(&screen_size_bp) {
-            for style in resp_styles {
-                computed_style = computed_style.apply(style.clone());
-            }
-        }
-
-        if interact_state.is_hovered && !interact_state.is_disabled {
-            if let Some(hover_style) = self.hover_style.clone() {
-                computed_style = computed_style.apply(hover_style);
-            }
-        }
-
-        if interact_state.is_focused {
-            if let Some(focus_style) = self.focus_style.clone() {
-                computed_style = computed_style.apply(focus_style);
-            }
-        }
-
+    fn style_should_be_active(
+        &self,
+        selector: StyleSelector,
+        interaction_state: &InteractionState,
+    ) -> bool {
         let focused_keyboard =
-            interact_state.using_keyboard_navigation && interact_state.is_focused;
-        if focused_keyboard {
-            if let Some(focus_visible_style) = self.focus_visible_style.clone() {
-                computed_style = computed_style.apply(focus_visible_style);
+            interaction_state.using_keyboard_navigation && interaction_state.is_focused;
+
+        let active_mouse =
+            interaction_state.is_hovered && !interaction_state.using_keyboard_navigation;
+
+        match selector {
+            StyleSelector::Base => true,
+            StyleSelector::Main => true,
+            StyleSelector::Hover => interaction_state.is_hovered && !interaction_state.is_disabled,
+            StyleSelector::Focus => interaction_state.is_focused,
+            StyleSelector::FocusVisible => focused_keyboard,
+            StyleSelector::Disabled => interaction_state.is_disabled,
+            StyleSelector::Active => {
+                interaction_state.is_active && (active_mouse || focused_keyboard)
             }
+            // applied manually in view.rs
+            StyleSelector::Dragging => false,
+            StyleSelector::Override => true,
         }
-
-        let active_mouse = interact_state.is_hovered && !interact_state.using_keyboard_navigation;
-        if interact_state.is_active && (active_mouse || focused_keyboard) {
-            if let Some(active_style) = self.active_style.clone() {
-                computed_style = computed_style.apply(active_style);
-            }
-        }
-
-        if interact_state.is_disabled {
-            if let Some(disabled_style) = self.disabled_style.clone() {
-                computed_style = computed_style.apply(disabled_style);
-            }
-        }
-
-        'anim: {
-            if let Some(animation) = self.animation.as_mut() {
-                if animation.is_completed() && animation.is_auto_reverse() {
-                    break 'anim;
-                }
-
-                let props = animation.props();
-
-                for kind in props.keys() {
-                    let val =
-                        animation.animate_prop(animation.elapsed().unwrap_or(Duration::ZERO), kind);
-                    match kind {
-                        AnimPropKind::Width => {
-                            computed_style = computed_style.width(val.get_f32());
-                        }
-                        AnimPropKind::Height => {
-                            computed_style = computed_style.height(val.get_f32());
-                        }
-                        AnimPropKind::Background => {
-                            computed_style = computed_style.background(val.get_color());
-                        }
-                        AnimPropKind::Color => {
-                            computed_style = computed_style.color(val.get_color());
-                        }
-                        AnimPropKind::BorderRadius => {
-                            computed_style = computed_style.border_radius(val.get_f32());
-                        }
-                        AnimPropKind::BorderColor => {
-                            computed_style = computed_style.border_color(val.get_color());
-                        }
-                        AnimPropKind::Scale => todo!(),
-                    }
-                }
-
-                animation.advance();
-                debug_assert!(!animation.is_idle());
-            }
-        }
-
-        self.combined_style = computed_style.clone();
-        self.computed_style = computed_style.compute(&ComputedStyle::default());
     }
 
-    pub(crate) fn add_responsive_style(&mut self, size: ScreenSize, style: Style) {
+    pub(crate) fn set_style(&mut self, selector: StyleSelector, mut style_anim: StyleAnim) {
+        let should_be_active = self.style_should_be_active(selector, &self.last_interaction_state);
+        style_anim.driver.set_enabled(should_be_active, false);
+
+        match selector {
+            StyleSelector::Base => self.base_style = Some(style_anim),
+            StyleSelector::Main => self.main_style = Some(style_anim),
+            StyleSelector::Hover => self.hover_style = Some(style_anim),
+            StyleSelector::Focus => self.focus_style = Some(style_anim),
+            StyleSelector::FocusVisible => self.focus_visible_style = Some(style_anim),
+            StyleSelector::Disabled => self.disabled_style = Some(style_anim),
+            StyleSelector::Active => self.active_style = Some(style_anim),
+            StyleSelector::Dragging => self.dragging_style = Some(style_anim),
+            StyleSelector::Override => self.override_style = Some(style_anim),
+        }
+    }
+
+    pub(crate) fn get_style(&mut self, selector: StyleSelector) -> Option<&mut StyleAnim> {
+        match selector {
+            StyleSelector::Base => self.base_style.as_mut(),
+            StyleSelector::Main => self.main_style.as_mut(),
+            StyleSelector::Hover => self.hover_style.as_mut(),
+            StyleSelector::Focus => self.focus_style.as_mut(),
+            StyleSelector::FocusVisible => self.focus_visible_style.as_mut(),
+            StyleSelector::Disabled => self.disabled_style.as_mut(),
+            StyleSelector::Active => self.active_style.as_mut(),
+            StyleSelector::Dragging => self.dragging_style.as_mut(),
+            StyleSelector::Override => self.override_style.as_mut(),
+        }
+    }
+
+    pub(crate) fn compute_style(
+        &mut self,
+        interaction_state: InteractionState,
+        screen_size_bp: ScreenSizeBp,
+    ) -> bool {
+        let mut new_computed_style = Style::default();
+        let mut request_next_frame = false;
+
+        fn apply_anim(anim: &mut StyleAnim, style: Style) -> (Style, bool) {
+            if anim.driver.should_run() {
+                // save requests_next_frame before progressing the animation
+                // is_finished is delayed by one step, which ensures a run without the animation is performed when disabling it
+                let requests_next_frame = anim.driver.requests_next_frame();
+                let value = anim.driver.next_value();
+                let step_result = anim.anim_fn.call(StyleAnimCtx {
+                    style,
+                    blend_style: false,
+                    animation_value: value,
+                });
+                return (step_result.style, requests_next_frame);
+            }
+
+            (style, false)
+        }
+
+        for selector in [StyleSelector::Base, StyleSelector::Main] {
+            let should_be_active = self.style_should_be_active(selector, &interaction_state);
+            if let Some(anim) = self.get_style(selector) {
+                anim.driver.set_enabled(should_be_active, true);
+                let result = apply_anim(anim, new_computed_style);
+                new_computed_style = result.0;
+                request_next_frame |= result.1;
+            }
+        }
+
+        for (screen_size, anims) in self.responsive_styles.iter_mut() {
+            for anim in anims {
+                anim.driver
+                    .set_enabled(*screen_size == screen_size_bp, true);
+                let result = apply_anim(anim, new_computed_style);
+                new_computed_style = result.0;
+                request_next_frame |= result.1;
+            }
+        }
+
+        for selector in [
+            StyleSelector::Hover,
+            StyleSelector::Focus,
+            StyleSelector::FocusVisible,
+            StyleSelector::Active,
+            StyleSelector::Disabled,
+            StyleSelector::Override,
+        ] {
+            let should_be_active = self.style_should_be_active(selector, &interaction_state);
+            if let Some(anim) = self.get_style(selector) {
+                anim.driver.set_enabled(should_be_active, true);
+                let result = apply_anim(anim, new_computed_style);
+                new_computed_style = result.0;
+                request_next_frame |= result.1;
+            }
+        }
+
+        self.last_interaction_state = interaction_state;
+        self.computed_style = new_computed_style;
+        if request_next_frame {
+            self.request_layout = true;
+        }
+        request_next_frame
+    }
+
+    pub(crate) fn add_responsive_style(&mut self, size: ScreenSize, anim: StyleAnim) {
         let breakpoints = size.breakpoints();
 
         for breakpoint in breakpoints {
             self.responsive_styles
                 .entry(breakpoint)
                 .or_insert_with(Vec::new)
-                .push(style.clone())
+                .push(anim.clone())
         }
     }
 }
@@ -239,14 +266,12 @@ pub struct AppState {
     pub(crate) screen_size_bp: ScreenSizeBp,
     pub(crate) grid_bps: GridBreakpoints,
     pub(crate) hovered: HashSet<Id>,
-    /// This keeps track of all views that have an animation,
-    /// regardless of the status of the animation
-    pub(crate) animated: HashSet<Id>,
     pub(crate) cursor: Option<CursorStyle>,
     pub(crate) last_cursor: CursorIcon,
     pub(crate) keyboard_navigation: bool,
     pub(crate) window_menu: HashMap<usize, Box<dyn Fn()>>,
     pub(crate) context_menu: HashMap<usize, Box<dyn Fn()>>,
+    pub(crate) requesting_layout_next_frame: Vec<Id>,
 }
 
 impl Default for AppState {
@@ -269,7 +294,6 @@ impl AppState {
             stale_view_state: ViewState::new(&mut taffy),
             taffy,
             view_states: HashMap::new(),
-            animated: HashSet::new(),
             disabled: HashSet::new(),
             keyboard_navigable: HashSet::new(),
             draggable: HashSet::new(),
@@ -283,6 +307,7 @@ impl AppState {
             grid_bps: GridBreakpoints::default(),
             window_menu: HashMap::new(),
             context_menu: HashMap::new(),
+            requesting_layout_next_frame: Vec::new(),
         }
     }
 
@@ -295,20 +320,6 @@ impl AppState {
         self.view_states
             .entry(id)
             .or_insert_with(|| ViewState::new(&mut self.taffy))
-    }
-
-    pub fn ids_with_anim_in_progress(&mut self) -> Vec<Id> {
-        self.animated
-            .clone()
-            .into_iter()
-            .filter(|id| {
-                let anim = &self.view_state(*id).animation;
-                if let Some(anim) = anim {
-                    return !anim.is_completed();
-                }
-                false
-            })
-            .collect()
     }
 
     pub fn is_hidden(&self, id: Id) -> bool {
@@ -369,14 +380,18 @@ impl AppState {
         self.compute_layout();
     }
 
-    pub(crate) fn compute_style(&mut self, id: Id, view_style: Option<Style>) {
+    pub(crate) fn compute_style(&mut self, id: Id) {
         let interact_state = self.get_interact_state(&id);
         let screen_size_bp = self.screen_size_bp;
         let view_state = self.view_state(id);
-        view_state.compute_style(view_style, interact_state, screen_size_bp);
+        let requests_layout_next_frame = view_state.compute_style(interact_state, screen_size_bp);
+        if requests_layout_next_frame {
+            self.requesting_layout_next_frame.push(id);
+            self.request_layout(id);
+        }
     }
 
-    pub(crate) fn get_computed_style(&mut self, id: Id) -> &ComputedStyle {
+    pub(crate) fn get_computed_style(&mut self, id: Id) -> &Style {
         let view_state = self.view_state(id);
         &view_state.computed_style
     }
@@ -460,33 +475,9 @@ impl AppState {
         self.keyboard_navigation = keyboard_navigation;
     }
 
-    pub(crate) fn has_style_for_sel(&mut self, id: Id, selector_kind: StyleSelector) -> bool {
+    pub(crate) fn has_style_for_sel(&mut self, id: Id, selector: StyleSelector) -> bool {
         let view_state = self.view_state(id);
-
-        match selector_kind {
-            StyleSelector::Hover => view_state.hover_style.is_some(),
-            StyleSelector::Focus => view_state.focus_style.is_some(),
-            StyleSelector::FocusVisible => view_state.focus_visible_style.is_some(),
-            StyleSelector::Disabled => view_state.disabled_style.is_some(),
-            StyleSelector::Active => view_state.active_style.is_some(),
-            StyleSelector::Dragging => view_state.dragging_style.is_some(),
-        }
-    }
-
-    // TODO: animated should be a HashMap<Id, AnimId>
-    // so we don't have to loop through all view states
-    pub(crate) fn get_view_id_by_anim_id(&self, anim_id: AnimId) -> Id {
-        *self
-            .view_states
-            .iter()
-            .find(|(_, vs)| {
-                vs.animation
-                    .as_ref()
-                    .map(|a| a.id() == anim_id)
-                    .unwrap_or(false)
-            })
-            .unwrap()
-            .0
+        view_state.get_style(selector).is_some()
     }
 
     pub(crate) fn update_context_menu(&mut self, menu: &mut Menu) {
@@ -564,14 +555,14 @@ impl<'a> EventCx<'a> {
         self.app_state.update_focus(id, keyboard_navigation);
     }
 
-    pub fn get_computed_style(&self, id: Id) -> Option<&ComputedStyle> {
+    pub fn get_computed_style(&self, id: Id) -> Option<&Style> {
         self.app_state
             .view_states
             .get(&id)
             .map(|s| &s.computed_style)
     }
 
-    pub fn get_hover_style(&self, id: Id) -> Option<&Style> {
+    pub fn get_hover_style(&self, id: Id) -> Option<&StyleAnim> {
         if let Some(vs) = self.app_state.view_states.get(&id) {
             return vs.hover_style.as_ref();
         }
@@ -651,7 +642,7 @@ impl<'a> EventCx<'a> {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, PartialEq, Eq)]
 pub struct InteractionState {
     pub(crate) is_hovered: bool,
     pub(crate) is_disabled: bool,
@@ -827,7 +818,7 @@ impl<'a> LayoutCx<'a> {
         self.app_state.get_layout(id)
     }
 
-    pub fn get_computed_style(&mut self, id: Id) -> &ComputedStyle {
+    pub fn get_computed_style(&mut self, id: Id) -> &Style {
         self.app_state.get_computed_style(id)
     }
 
@@ -1004,7 +995,7 @@ impl<'a> PaintCx<'a> {
         self.app_state.get_layout(id)
     }
 
-    pub fn get_computed_style(&mut self, id: Id) -> &ComputedStyle {
+    pub fn get_computed_style(&mut self, id: Id) -> &Style {
         self.app_state.get_computed_style(id)
     }
 

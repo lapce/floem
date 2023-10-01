@@ -2,13 +2,14 @@ use floem_reactive::create_effect;
 use floem_renderer::Renderer;
 use kurbo::{Point, Rect, Size, Vec2};
 use peniko::Color;
-use taffy::{prelude::Node, style::Position};
+use taffy::prelude::Node;
 
 use crate::{
+    animate::{fixed, style_anim},
     context::{AppState, LayoutCx, PaintCx},
     event::Event,
     id::Id,
-    style::{ComputedStyle, Style, StyleValue},
+    style::Style,
     unit::PxPct,
     view::{ChangeFlags, View},
 };
@@ -583,15 +584,18 @@ impl<V: View> View for Scroll<V> {
 
             let child_id = self.child.id();
             let child_view = cx.app_state_mut().view_state(child_id);
-            child_view.style.position = StyleValue::Val(Position::Absolute);
+            child_view.set_style(
+                crate::style::StyleSelector::Override,
+                style_anim(fixed(), |s| s.absolute()),
+            );
+
             let child_node = self.child.layout_main(cx);
 
-            let virtual_style = Style::BASE
+            let virtual_style = Style::default()
                 .width(self.child_size.width)
                 .height(self.child_size.height)
-                .min_width(0.0)
-                .min_height(0.0)
-                .compute(&ComputedStyle::default())
+                .min_width(0)
+                .min_height(0)
                 .to_taffy_style();
             if self.virtual_node.is_none() {
                 self.virtual_node = Some(
