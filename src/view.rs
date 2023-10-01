@@ -784,14 +784,17 @@ fn paint_bg(cx: &mut PaintCx, style: &Style, size: Size) {
         if width > 0.0 && height > 0.0 && radius > width.max(height) / 2.0 {
             let radius = width.max(height) / 2.0;
             let circle = Circle::new(rect.center(), radius);
+            for s in &style.shadows {
+                paint_circle_shadow(cx, s, circle);
+            }
             let bg = match style.background {
                 Some(color) => color,
                 None => return,
             };
             cx.fill(&circle, bg, 0.0);
         } else {
-            for bs in &style.shadows {
-                paint_shadow(cx, bs, rect, Some(radius));
+            for s in &style.shadows {
+                paint_rect_shadow(cx, s, rect, Some(radius));
             }
             let bg = match style.background {
                 Some(color) => color,
@@ -801,8 +804,8 @@ fn paint_bg(cx: &mut PaintCx, style: &Style, size: Size) {
             cx.fill(&rounded_rect, bg, 0.0);
         }
     } else {
-        for bs in &style.shadows {
-            paint_shadow(cx, bs, size.to_rect(), None);
+        for s in &style.shadows {
+            paint_rect_shadow(cx, s, size.to_rect(), None);
         }
         let bg = match style.background {
             Some(color) => color,
@@ -812,22 +815,27 @@ fn paint_bg(cx: &mut PaintCx, style: &Style, size: Size) {
     }
 }
 
-fn paint_shadow(cx: &mut PaintCx, shadow: &Shadow, rect: Rect, rect_radius: Option<f64>) {
-    let inset = Insets::new(
-        -shadow.h_offset.0 / 2.0,
-        -shadow.v_offset.0 / 2.0,
-        shadow.h_offset.0 / 2.0,
-        shadow.v_offset.0 / 2.0,
-    );
-    let rect = rect
-        .inflate(shadow.spread.0, shadow.spread.0)
-        .inset(inset);
+fn paint_rect_shadow(cx: &mut PaintCx, shadow: &Shadow, rect: Rect, rect_radius: Option<f64>) {
+    let half_h = shadow.h_offset.0 / 2.0;
+    let half_v = shadow.v_offset.0 / 2.0;
+    let inset = Insets::new(-half_h, -half_v, half_h, half_v);
+    let rect = rect.inflate(shadow.spread.0, shadow.spread.0).inset(inset);
     if let Some(radius) = rect_radius {
         let rounded_rect = RoundedRect::from_rect(rect, radius + shadow.spread.0);
         cx.fill(&rounded_rect, shadow.color, shadow.blur_radius.0);
     } else {
         cx.fill(&rect, shadow.color, shadow.blur_radius.0);
     }
+}
+
+fn paint_circle_shadow(cx: &mut PaintCx, shadow: &Shadow, circle: Circle) {
+    let mut circle_shadow = circle;
+    circle_shadow.radius += shadow.spread.0;
+    circle_shadow.center.x += shadow.h_offset.0;
+    circle_shadow.center.y += shadow.v_offset.0;
+
+    // FIXME: blur_radius not implemented for circles in vger
+    cx.fill(&circle_shadow, shadow.color, shadow.blur_radius.0);
 }
 
 fn paint_outline(cx: &mut PaintCx, style: &Style, size: Size) {
