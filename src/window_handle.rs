@@ -16,6 +16,8 @@ use winit::{
 #[cfg(target_os = "linux")]
 use crate::unit::UnitExt;
 #[cfg(target_os = "linux")]
+use crate::style::shadow;
+#[cfg(target_os = "linux")]
 use crate::views::{container_box, stack, Decorators};
 use crate::{
     action::exec_after,
@@ -1068,7 +1070,7 @@ fn context_menu_view(
                             .background(Color::rgb8(44, 44, 44))
                             .padding(5.0)
                             .cursor(CursorStyle::Default)
-                            .shadow(shadow.blur_radius(5.0).color(Color::BLACK))
+                            .shadow(shadow().blur_radius(5.0).color(Color::BLACK))
                             .apply_if(
                                 !show_submenu.get() && !on_submenu.get() && !on_child_submenu.get(),
                                 |s| s.hide(),
@@ -1150,7 +1152,7 @@ fn context_menu_view(
             .margin_top(pos.y as f32)
             .cursor(CursorStyle::Default)
             .apply_if(!is_acitve, |s| s.hide())
-            .shadow(shadow.blur_radius(5.0).color(Color::BLACK))
+            .shadow(shadow().blur_radius(5.0).color(Color::BLACK))
     });
 
     let id = view.id();
