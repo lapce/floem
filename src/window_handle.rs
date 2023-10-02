@@ -14,9 +14,9 @@ use winit::{
 };
 
 #[cfg(target_os = "linux")]
-use crate::unit::UnitExt;
-#[cfg(target_os = "linux")]
 use crate::style::shadow;
+#[cfg(target_os = "linux")]
+use crate::unit::UnitExt;
 #[cfg(target_os = "linux")]
 use crate::views::{container_box, stack, Decorators};
 use crate::{
