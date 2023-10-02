@@ -1,6 +1,6 @@
 use floem::{
-    animate::{anim, EasingFn},
     peniko::Color,
+    style::{anim, EasingFn},
     view::View,
     views::{label, stack, Decorators},
 };
@@ -19,7 +19,7 @@ fn app_view() -> impl View {
             .active_style(|s| s.color(Color::BLACK))
             .hover_style_anim(anim(0.5), |s| {
                 s.blend()
-                    .ease(floem::animate::EasingMode::In, EasingFn::Quadratic)
+                    .ease(floem::style::EasingMode::In, EasingFn::Quadratic)
                     .background(Color::YELLOW)
             }),)
     })

@@ -5,11 +5,11 @@ use peniko::Color;
 use taffy::prelude::Node;
 
 use crate::{
-    animate::{fixed, style_anim},
     context::{AppState, LayoutCx, PaintCx},
     event::Event,
     id::Id,
     style::Style,
+    style::{fixed, style_anim},
     unit::PxPct,
     view::{ChangeFlags, View},
 };

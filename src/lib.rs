@@ -90,7 +90,6 @@
 //!
 //!
 pub mod action;
-pub mod animate;
 mod app;
 mod app_handle;
 pub mod context;

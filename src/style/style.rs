@@ -1,16 +1,3 @@
-//! # Style and animations
-//!
-//! Styles and style animations are defined by closures modifying the style.
-//!
-//! [`Style`]: A style with definite values for most fields.
-//!
-//! [`StyleAnimCtx`]: A wrapper for [`Style`] with an `animation_value`,
-//! typically representing the progress of the animation.
-//! 
-//! [`StyleAnimFn`]: A function or closure taking an [`StyleAnimCtx`] and returning a modified [`StyleAnimCtx`].
-//! 
-//! When defining static styles the `animation_value` will always be 1.0, when the style is applied.
-//!
 use floem_renderer::cosmic_text::{LineHeightValue, Style as FontStyle, Weight};
 use peniko::Color;
 pub use taffy::style::{
@@ -23,7 +10,7 @@ use taffy::{
 };
 
 use crate::{
-    animate::{alternating, ease, passes, Blendable, EasingFn, EasingMode},
+    style::{alternating, ease, passes, Blendable, EasingFn, EasingMode},
     unit::{Px, PxPct, PxPctAuto, UnitExt},
 };
 
@@ -139,8 +126,6 @@ macro_rules! define_styles {
         );
     };
 }
-
-use super::*;
 
 pub struct StyleAnimCtx {
     /// The style to modify.
@@ -672,7 +657,10 @@ impl StyleAnimCtx {
     pub fn font_size(mut self, size: impl Into<f32>) -> Self {
         if self.blend_style {
             // TODO: does not quite fit, something is missing for the default font size
-            let current = self.style.font_size.unwrap_or(views::DEFAULT_FONT_SIZE);
+            let current = self
+                .style
+                .font_size
+                .unwrap_or(crate::views::DEFAULT_FONT_SIZE);
             self.style.font_size = Some(current.blend(size.into(), self.animation_value));
         } else {
             self.style.font_size = Some(size.into());

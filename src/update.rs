@@ -4,12 +4,12 @@ use kurbo::{Point, Size, Vec2};
 use winit::window::ResizeDirection;
 
 use crate::{
-    animate::StyleAnim,
     context::{EventCallback, ResizeCallback},
     event::EventListener,
     id::Id,
     menu::Menu,
     responsive::ScreenSize,
+    style::StyleAnim,
     style::StyleSelector,
 };
 

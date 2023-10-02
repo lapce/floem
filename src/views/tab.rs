@@ -6,9 +6,9 @@ use smallvec::SmallVec;
 use taffy::style::Display;
 
 use crate::{
-    animate::{fixed, style_anim},
     context::{EventCx, UpdateCx},
     id::Id,
+    style::{fixed, style_anim},
     view::{ChangeFlags, View},
 };
 

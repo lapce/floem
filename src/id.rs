@@ -13,10 +13,10 @@ use std::{any::Any, cell::RefCell, collections::HashMap, sync::atomic::AtomicU64
 use kurbo::Point;
 
 use crate::{
-    animate::StyleAnim,
     context::{EventCallback, MenuCallback, ResizeCallback},
     event::EventListener,
     responsive::ScreenSize,
+    style::StyleAnim,
     style::StyleSelector,
     update::{UpdateMessage, CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES},
 };

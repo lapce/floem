@@ -3,11 +3,11 @@ use kurbo::{Point, Rect};
 
 use crate::{
     action::{set_window_menu, set_window_title, update_window_scale},
-    animate::{fixed, style_anim, AnimDriver},
     event::{Event, EventListener},
     id::Id,
     menu::Menu,
     responsive::ScreenSize,
+    style::{fixed, style_anim, AnimDriver},
     style::{Style, StyleAnimCtx, StyleSelector},
     view::View,
 };

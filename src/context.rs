@@ -16,12 +16,12 @@ use taffy::{
 use winit::window::CursorIcon;
 
 use crate::{
-    animate::StyleAnim,
     event::{Event, EventListener},
     id::Id,
     menu::Menu,
     pointer::PointerInputEvent,
     responsive::{GridBreakpoints, ScreenSize, ScreenSizeBp},
+    style::StyleAnim,
     style::{CursorStyle, Style, StyleAnimCtx, StyleSelector},
 };
 
