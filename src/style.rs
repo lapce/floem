@@ -1,3 +1,16 @@
+//! # Style and animations
+//!
+//! Styles and style animations are defined by closures modifying the style.
+//!
+//! [`Style`]: A style with definite values for most fields.
+//!
+//! [`StyleAnimCtx`]: A wrapper for [`Style`] with an `animation_value`,
+//! typically representing the progress of the animation.
+//! 
+//! [`StyleAnimFn`]: A function or closure taking an [`StyleAnimCtx`] and returning a modified [`StyleAnimCtx`].
+//! 
+//! When defining static styles the `animation_value` will always be 1.0, when the style is applied.
+//!
 use floem_renderer::cosmic_text::{LineHeightValue, Style as FontStyle, Weight};
 use peniko::Color;
 pub use taffy::style::{
@@ -130,8 +143,11 @@ macro_rules! define_styles {
 use super::*;
 
 pub struct StyleAnimCtx {
+    /// The style to modify.
     pub style: Style,
+    /// Whether style modifying functions should blend the property based on the `animation_value`
     pub blend_style: bool,
+    /// Value used for blending in animations. Usually in the interval [0.0, 1.0], representing the animation progress.
     pub animation_value: f64,
 }
 
@@ -279,36 +295,63 @@ define_modifier_fns!(
 );
 
 impl StyleAnimCtx {
+    /// Sets `blend_style` to `true`.
+    /// All following usages of style modifying functions for blendable properties will blend the property using the `animation_value`.
+    /// Blending assumes an `animation_value between 0.0 and 1.0`.
+    /// For `animation_values` values outside this range range blended Colors will be clipped, but other scalar values will be multiplied.
+    /// Values of type [`Color`], [`Px`], [`Pct`], [`PxPct`], [`PxPctAuto`], and some other scalars can be blended.
+    /// For `PxPct` and `PxPctAuto` blending is only possible with the same enum variant.
     pub fn blend(mut self) -> Self {
         self.blend_style = true;
         self
     }
 
+    /// Animate in `count` passes.
+    /// Assumes an `animation_value between 0.0 and 1.0.`
+    ///
+    /// # Example
+    ///
+    /// Given an animation value in \[0.0, 1.0] and a `count` of 2 the value will be mapped as follows:
+    /// \[0.0, 0.5) -> \[0.0, 1.0) and
+    /// \[0.5, 1.0] -> \[0.0, 1.0]
     pub fn passes(mut self, count: u16) -> Self {
         self.animation_value = passes(count, self.animation_value);
         self
     }
 
+    /// Reverses the animation back to the initial state once over an `animation_value` of 0.5.
+    /// Assumes an `animation_value between 0.0 and 1.0.`
+    ///
+    /// # Example
+    ///
+    /// Given an animation value in [0.0, 1.0] the value will be mapped as follows:
+    /// [0.0, 0.5] -> [0.0, 1.0]
+    /// (0.5, 1.0] -> (1.0, 0.0]
     pub fn alternating_anim(mut self) -> Self {
         self.animation_value = alternating(self.animation_value);
         self
     }
 
+    /// Applies an easing function to the `animation_value`.
+    /// Easing functions assume an `animation_value between 0.0 and 1.0.`
     pub fn ease(mut self, mode: EasingMode, func: EasingFn) -> Self {
         self.animation_value = ease(self.animation_value, mode, func);
         self
     }
 
+    /// Modifies the `animation_value` to range from 0.0 to 1.0, when before between `from` and `to`
     pub fn rescale_anim(mut self, from: f64, to: f64) -> Self {
         self.animation_value = (self.animation_value - from) / (to - from);
         self
     }
 
+    /// Set the `animation_value`
     pub fn animation_value(mut self, v: f64) -> Self {
         self.animation_value = v;
         self
     }
 
+    /// Clamps the `animation_value` to be within `min` and `max`
     pub fn clamp(mut self, min: f64, max: f64) -> Self {
         self.animation_value = self.animation_value.clamp(min, max);
         self
