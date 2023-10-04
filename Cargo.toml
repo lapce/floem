@@ -28,6 +28,9 @@ floem_reactive = { path = "reactive" }
 winit = { git = "https://github.com/lapce/winit", rev = "25edc72fa4869d0fa83c61c26f0e38d7d7be9b0d" }
 # winit = { path = "../winit" }
 
+[features]
+serde = ["winit/serde"]
+
 [workspace]
 members = ["renderer", "vger", "reactive", "examples/*"]
 
