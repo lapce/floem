@@ -45,7 +45,7 @@ pub trait Renderer {
 
     fn draw_svg<'b>(&mut self, svg: Svg<'b>, rect: Rect, brush: Option<impl Into<BrushRef<'b>>>);
 
-    fn draw_img<'b>(&mut self, img: Img<'_>, width: u32, height: u32, rect: Rect);
+    fn draw_img(&mut self, img: Img<'_>, width: u32, height: u32, rect: Rect);
 
     fn finish(&mut self);
 }

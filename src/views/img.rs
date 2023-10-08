@@ -135,6 +135,9 @@ impl Img {
 
             Some((computed_width, computed_height))
         } else {
+            // since we need to conditionally load the img in memory when both width & height are
+            // `Auto`, `if let` or `match` expressions result in less readable code
+            #[allow(clippy::unnecessary_unwrap)]
             Some((target_width_px.unwrap(), target_height_px.unwrap()))
         }
     }
@@ -204,7 +207,7 @@ impl View for Img {
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
-        let layout = cx.layout_node(self.id, true, |cx| {
+        cx.layout_node(self.id, true, |cx| {
             if self.content_node.is_none() {
                 self.content_node = Some(
                     cx.app_state_mut()
@@ -228,9 +231,7 @@ impl View for Img {
             let _ = cx.app_state_mut().taffy.set_style(content_node, style);
 
             vec![content_node]
-        });
-
-        layout
+        })
     }
 
     fn event(
@@ -257,7 +258,7 @@ impl View for Img {
             cx.draw_img(
                 floem_renderer::Img {
                     data: image.as_bytes(),
-                    hash: &self.img_hash.as_ref().unwrap(),
+                    hash: self.img_hash.as_ref().unwrap(),
                 },
                 width,
                 height,

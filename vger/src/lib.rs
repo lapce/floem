@@ -321,7 +321,7 @@ impl Renderer for VgerRenderer {
         }
     }
 
-    fn draw_img<'b>(&mut self, img: Img<'_>, img_width: u32, img_height: u32, rect: Rect) {
+    fn draw_img(&mut self, img: Img<'_>, img_width: u32, img_height: u32, rect: Rect) {
         let transform = self.transform.as_coeffs();
         let target_width = (rect.width() * self.scale).round() as u32;
         let target_height = (rect.height() * self.scale).round() as u32;
@@ -329,8 +329,8 @@ impl Renderer for VgerRenderer {
         let height = target_height.max(1);
         // for now we center the contents in the container
         // TODO: take into account ObjectPosition here
-        let offset_x = transform[4] + ((rect.width() as f64 - img_width as f64) * 0.5);
-        let offset_y = transform[5] + ((rect.height() as f64 - img_height as f64) * 0.5);
+        let offset_x = transform[4] + ((rect.width() - img_width as f64) * 0.5);
+        let offset_y = transform[5] + ((rect.height()- img_height as f64) * 0.5);
 
         let origin = rect.origin();
         let x = (origin.x + offset_x).round() as f32;
