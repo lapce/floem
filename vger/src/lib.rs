@@ -321,7 +321,7 @@ impl Renderer for VgerRenderer {
         }
     }
 
-    fn draw_img<'b>(&mut self, img: Img, img_width: u32, img_height: u32, rect: Rect) {
+    fn draw_img<'b>(&mut self, img: Img<'_>, img_width: u32, img_height: u32, rect: Rect) {
         let transform = self.transform.as_coeffs();
         let target_width = (rect.width() * self.scale).round() as u32;
         let target_height = (rect.height() * self.scale).round() as u32;
