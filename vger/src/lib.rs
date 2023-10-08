@@ -330,7 +330,7 @@ impl Renderer for VgerRenderer {
         // for now we center the contents in the container
         // TODO: take into account ObjectPosition here
         let offset_x = transform[4] + ((rect.width() - img_width as f64) * 0.5);
-        let offset_y = transform[5] + ((rect.height()- img_height as f64) * 0.5);
+        let offset_y = transform[5] + ((rect.height() - img_height as f64) * 0.5);
 
         let origin = rect.origin();
         let x = (origin.x + offset_x).round() as f32;
