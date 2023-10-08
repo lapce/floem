@@ -134,13 +134,7 @@ impl floem_renderer::Renderer for Renderer {
         }
     }
 
-    fn draw_img<'b>(
-        &mut self,
-        img: Img,
-        width: u32,
-        height: u32,
-        rect: Rect
-    ) {
+    fn draw_img<'b>(&mut self, img: Img, width: u32, height: u32, rect: Rect) {
         match self {
             Renderer::Vger(v) => {
                 v.draw_img(img, width, height, rect);
