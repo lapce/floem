@@ -386,25 +386,26 @@ impl Renderer for VgerRenderer {
     }
 
     fn finish(&mut self) {
-        let frame = self.surface.get_current_texture().unwrap();
-        let texture_view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        let desc = wgpu::RenderPassDescriptor {
-            label: None,
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &texture_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
-                    store: true,
-                },
-            })],
-            depth_stencil_attachment: None,
-        };
+        if let Ok(frame) = self.surface.get_current_texture() {
+            let texture_view = frame
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default());
+            let desc = wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &texture_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                        store: true,
+                    },
+                })],
+                depth_stencil_attachment: None,
+            };
 
-        self.vger.encode(&desc);
-        frame.present();
+            self.vger.encode(&desc);
+            frame.present();
+        }
     }
 }
 
