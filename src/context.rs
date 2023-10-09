@@ -204,7 +204,7 @@ impl ViewState {
         for breakpoint in breakpoints {
             self.responsive_styles
                 .entry(breakpoint)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(style.clone())
         }
     }

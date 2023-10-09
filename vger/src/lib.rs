@@ -312,7 +312,7 @@ impl Renderer for VgerRenderer {
                             cache_key.x_bin = subpx_x;
                             cache_key.y_bin = subpx_y;
                             let image = swash_cache.get_image_uncached(cache_key);
-                            image.unwrap_or_else(SwashImage::new)
+                            image.unwrap_or_default()
                         },
                         paint,
                     );
