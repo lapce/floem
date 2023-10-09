@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use floem_renderer::cosmic_text::{SubpixelBin, SwashCache, SwashImage, TextLayout};
+use floem_renderer::cosmic_text::{SubpixelBin, SwashCache, TextLayout};
 use floem_renderer::{tiny_skia, Img, Renderer};
 use image::EncodableLayout;
 use peniko::{
