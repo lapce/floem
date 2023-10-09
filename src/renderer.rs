@@ -48,6 +48,7 @@
 //! - Only one view can be focused at a time.
 //!
 use crate::cosmic_text::TextLayout;
+use floem_renderer::Img;
 use floem_vger::VgerRenderer;
 use kurbo::{Affine, Rect, Shape, Size};
 use peniko::BrushRef;
@@ -129,6 +130,14 @@ impl floem_renderer::Renderer for Renderer {
         match self {
             Renderer::Vger(v) => {
                 v.draw_text(layout, pos);
+            }
+        }
+    }
+
+    fn draw_img(&mut self, img: Img<'_>, width: u32, height: u32, rect: Rect) {
+        match self {
+            Renderer::Vger(v) => {
+                v.draw_img(img, width, height, rect);
             }
         }
     }

@@ -12,6 +12,11 @@ pub struct Svg<'a> {
     pub hash: &'a [u8],
 }
 
+pub struct Img<'a> {
+    pub data: &'a [u8],
+    pub hash: &'a [u8],
+}
+
 pub trait Renderer {
     fn begin(&mut self);
 
@@ -39,6 +44,8 @@ pub trait Renderer {
     fn draw_text(&mut self, layout: &TextLayout, pos: impl Into<Point>);
 
     fn draw_svg<'b>(&mut self, svg: Svg<'b>, rect: Rect, brush: Option<impl Into<BrushRef<'b>>>);
+
+    fn draw_img(&mut self, img: Img<'_>, width: u32, height: u32, rect: Rect);
 
     fn finish(&mut self);
 }
