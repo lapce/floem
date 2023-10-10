@@ -49,12 +49,15 @@
 //!
 use crate::cosmic_text::TextLayout;
 use floem_renderer::Img;
+use floem_tiny_skia::TinySkiaRenderer;
 use floem_vger::VgerRenderer;
 use kurbo::{Affine, Rect, Shape, Size};
 use peniko::BrushRef;
 
+#[allow(clippy::large_enum_variant)]
 pub enum Renderer {
     Vger(VgerRenderer),
+    TinySkia(TinySkiaRenderer),
 }
 
 impl Renderer {
@@ -63,19 +66,34 @@ impl Renderer {
         W: raw_window_handle::HasRawDisplayHandle + raw_window_handle::HasRawWindowHandle,
     {
         let size = Size::new(size.width.max(1.0), size.height.max(1.0));
-        Self::Vger(VgerRenderer::new(window, size.width as u32, size.height as u32, scale).unwrap())
+
+        let vger_err = match VgerRenderer::new(window, size.width as u32, size.height as u32, scale)
+        {
+            Ok(vger) => return Self::Vger(vger),
+            Err(vger_err) => vger_err,
+        };
+
+        let tiny_skia_err =
+            match TinySkiaRenderer::new(window, size.width as u32, size.height as u32, scale) {
+                Ok(tiny_skia) => return Self::TinySkia(tiny_skia),
+                Err(vger_err) => vger_err,
+            };
+
+        panic!("Failed to create VgerRenderer: {vger_err}\nFailed to create TinySkiaRenderer: {tiny_skia_err}")
     }
 
     pub fn resize(&mut self, scale: f64, size: Size) {
         let size = Size::new(size.width.max(1.0), size.height.max(1.0));
         match self {
             Renderer::Vger(r) => r.resize(size.width as u32, size.height as u32, scale),
+            Renderer::TinySkia(r) => r.resize(size.width as u32, size.height as u32, scale),
         }
     }
 
     pub fn set_scale(&mut self, scale: f64) {
         match self {
             Renderer::Vger(r) => r.set_scale(scale),
+            Renderer::TinySkia(r) => r.set_scale(scale),
         }
     }
 }
@@ -86,12 +104,18 @@ impl floem_renderer::Renderer for Renderer {
             Renderer::Vger(r) => {
                 r.begin();
             }
+            Renderer::TinySkia(r) => {
+                r.begin();
+            }
         }
     }
 
     fn clip(&mut self, shape: &impl Shape) {
         match self {
             Renderer::Vger(v) => {
+                v.clip(shape);
+            }
+            Renderer::TinySkia(v) => {
                 v.clip(shape);
             }
         }
@@ -102,12 +126,18 @@ impl floem_renderer::Renderer for Renderer {
             Renderer::Vger(v) => {
                 v.clear_clip();
             }
+            Renderer::TinySkia(v) => {
+                v.clear_clip();
+            }
         }
     }
 
     fn stroke<'b>(&mut self, shape: &impl Shape, brush: impl Into<BrushRef<'b>>, width: f64) {
         match self {
             Renderer::Vger(v) => {
+                v.stroke(shape, brush, width);
+            }
+            Renderer::TinySkia(v) => {
                 v.stroke(shape, brush, width);
             }
         }
@@ -123,6 +153,9 @@ impl floem_renderer::Renderer for Renderer {
             Renderer::Vger(v) => {
                 v.fill(path, brush, blur_radius);
             }
+            Renderer::TinySkia(v) => {
+                v.fill(path, brush, blur_radius);
+            }
         }
     }
 
@@ -131,12 +164,18 @@ impl floem_renderer::Renderer for Renderer {
             Renderer::Vger(v) => {
                 v.draw_text(layout, pos);
             }
+            Renderer::TinySkia(v) => {
+                v.draw_text(layout, pos);
+            }
         }
     }
 
     fn draw_img(&mut self, img: Img<'_>, width: u32, height: u32, rect: Rect) {
         match self {
             Renderer::Vger(v) => {
+                v.draw_img(img, width, height, rect);
+            }
+            Renderer::TinySkia(v) => {
                 v.draw_img(img, width, height, rect);
             }
         }
@@ -152,12 +191,18 @@ impl floem_renderer::Renderer for Renderer {
             Renderer::Vger(v) => {
                 v.draw_svg(svg, rect, brush);
             }
+            Renderer::TinySkia(v) => {
+                v.draw_svg(svg, rect, brush);
+            }
         }
     }
 
     fn transform(&mut self, transform: Affine) {
         match self {
             Renderer::Vger(v) => {
+                v.transform(transform);
+            }
+            Renderer::TinySkia(v) => {
                 v.transform(transform);
             }
         }
@@ -168,12 +213,18 @@ impl floem_renderer::Renderer for Renderer {
             Renderer::Vger(v) => {
                 v.set_z_index(z_index);
             }
+            Renderer::TinySkia(v) => {
+                v.set_z_index(z_index);
+            }
         }
     }
 
     fn finish(&mut self) {
         match self {
             Renderer::Vger(r) => {
+                r.finish();
+            }
+            Renderer::TinySkia(r) => {
                 r.finish();
             }
         }
