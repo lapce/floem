@@ -9,7 +9,7 @@ use peniko::{
     BrushRef, Color, GradientKind,
 };
 use vger::{Image, PaintIndex, PixelFormat, Vger};
-use wgpu::{Device, Queue, Surface, SurfaceConfiguration, TextureFormat};
+use wgpu::{Device, DeviceType, Queue, Surface, SurfaceConfiguration, TextureFormat};
 
 pub struct VgerRenderer {
     device: Arc<Device>,
@@ -43,6 +43,10 @@ impl VgerRenderer {
                 force_fallback_adapter: false,
             }))
             .ok_or_else(|| anyhow::anyhow!("can't get adaptor"))?;
+
+        if adapter.get_info().device_type == DeviceType::Cpu {
+            return Err(anyhow::anyhow!("only cpu adaptor found"));
+        }
 
         let (device, queue) = futures::executor::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
