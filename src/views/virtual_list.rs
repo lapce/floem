@@ -118,7 +118,8 @@ where
                     items.push(item);
                 }
 
-                after_size = item_size * (total_len.saturating_sub(end)) as f64;
+                after_size = item_size
+                    * (total_len.saturating_sub(start).saturating_sub(items.len())) as f64;
             }
             VirtualListItemSize::Fn(size_fn) => {
                 let mut main_axis = 0.0;
