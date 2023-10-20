@@ -150,6 +150,10 @@ pub fn set_window_title(title: String) {
     add_update_message(UpdateMessage::SetWindowTitle { title });
 }
 
+pub fn focus_window() {
+    add_update_message(UpdateMessage::FocusWindow);
+}
+
 pub fn set_ime_allowed(allowed: bool) {
     add_update_message(UpdateMessage::SetImeAllowed { allowed });
 }

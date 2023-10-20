@@ -611,6 +611,11 @@ impl WindowHandle {
                             let _ = window.drag_window();
                         }
                     }
+                    UpdateMessage::FocusWindow => {
+                        if let Some(window) = self.window.as_ref() {
+                            window.focus_window();
+                        }
+                    }
                     UpdateMessage::DragResizeWindow(direction) => {
                         if let Some(window) = self.window.as_ref() {
                             let _ = window.drag_resize_window(direction);

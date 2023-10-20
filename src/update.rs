@@ -114,6 +114,7 @@ pub(crate) enum UpdateMessage {
     SetWindowTitle {
         title: String,
     },
+    FocusWindow,
     SetImeAllowed {
         allowed: bool,
     },
