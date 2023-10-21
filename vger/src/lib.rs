@@ -50,7 +50,7 @@ impl VgerRenderer {
 
         let (device, queue) = futures::executor::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
-                features: wgpu::Features::empty(),
+                features: wgpu::Features::all_webgpu_mask(),
                 limits: wgpu::Limits::default(),
                 label: None,
             },
