@@ -134,7 +134,9 @@ impl ApplicationHandle {
                 window_handle.pointer_move(point);
             }
             WindowEvent::CursorEntered { .. } => {}
-            WindowEvent::CursorLeft { .. } => {}
+            WindowEvent::CursorLeft { .. } => {
+                window_handle.pointer_leave();
+            }
             WindowEvent::MouseWheel { delta, .. } => {
                 window_handle.mouse_wheel(delta);
             }

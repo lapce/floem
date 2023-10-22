@@ -310,6 +310,9 @@ define_styles!(
     background background_sv nocb: Option<Color> = None,
     box_shadow box_shadow_sv nocb: Option<BoxShadow> = None,
     scroll_bar_color scroll_bar_color_sv nocb: Option<Color> = None,
+    scroll_bar_hover_color scroll_bar_hover_color_sv nocb: Option<Color> = None,
+    scroll_bar_drag_color scroll_bar_drag_color_sv nocb: Option<Color> = None,
+    scroll_bar_bg_active_color scroll_bar_bg_active_color_sv nocb: Option<Color> = None,
     scroll_bar_rounded scroll_bar_rounded_sv nocb: Option<bool> = None,
     scroll_bar_thickness scroll_bar_thickness_sv nocb: Option<Px> = None,
     scroll_bar_edge_width scroll_bar_edge_width_sv nocb: Option<Px> = None,
@@ -675,6 +678,21 @@ impl Style {
 
     pub fn scroll_bar_color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
         self.scroll_bar_color = color.into().map(Some);
+        self
+    }
+
+    pub fn scroll_bar_hover_color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
+        self.scroll_bar_hover_color = color.into().map(Some);
+        self
+    }
+
+    pub fn scroll_bar_drag_color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
+        self.scroll_bar_drag_color = color.into().map(Some);
+        self
+    }
+
+    pub fn scroll_bar_bg_active_color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
+        self.scroll_bar_bg_active_color = color.into().map(Some);
         self
     }
 

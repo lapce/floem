@@ -29,7 +29,7 @@ thread_local! {
 /// A stable identifier for an element.
 pub struct Id(u64);
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct IdPath(pub(crate) Vec<Id>);
 
 impl Id {

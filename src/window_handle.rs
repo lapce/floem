@@ -240,10 +240,12 @@ impl WindowHandle {
                     if let Some(action) = cx.get_event_listener(*id, &EventListener::PointerEnter) {
                         (*action)(&event);
                     }
-                } else if let Some(action) =
-                    cx.get_event_listener(*id, &EventListener::PointerLeave)
-                {
-                    (*action)(&event);
+                } else {
+                    let id_path = ID_PATHS.with(|paths| paths.borrow().get(id).cloned());
+                    if let Some(id_path) = id_path {
+                        self.view
+                            .event_main(&mut cx, Some(&id_path.0), Event::PointerLeave);
+                    }
                 }
             }
             let dragging_over = &cx.app_state.dragging_over.clone();
@@ -326,6 +328,29 @@ impl WindowHandle {
             };
             self.event(Event::PointerMove(event));
         }
+    }
+
+    pub(crate) fn pointer_leave(&mut self) {
+        set_current_view(self.view.id());
+        let mut cx = EventCx {
+            app_state: &mut self.app_state,
+        };
+        let was_hovered = std::mem::take(&mut cx.app_state.hovered);
+        for id in was_hovered {
+            let view_state = cx.app_state.view_state(id);
+            if view_state.hover_style.is_some()
+                || view_state.active_style.is_some()
+                || view_state.animation.is_some()
+            {
+                cx.app_state.request_layout(id);
+            }
+            let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
+            if let Some(id_path) = id_path {
+                self.view
+                    .event_main(&mut cx, Some(&id_path.0), Event::PointerLeave);
+            }
+        }
+        self.process_update();
     }
 
     pub(crate) fn mouse_wheel(&mut self, delta: MouseScrollDelta) {

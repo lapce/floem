@@ -46,6 +46,7 @@ pub enum Event {
     PointerUp(PointerInputEvent),
     PointerMove(PointerMoveEvent),
     PointerWheel(PointerWheelEvent),
+    PointerLeave,
     KeyDown(KeyEvent),
     KeyUp(KeyEvent),
     ImeEnabled,
@@ -73,6 +74,7 @@ impl Event {
             | Event::PointerUp(_)
             | Event::PointerMove(_)
             | Event::PointerWheel(_)
+            | Event::PointerLeave
             | Event::FocusGained
             | Event::FocusLost
             | Event::ImeEnabled
@@ -95,7 +97,8 @@ impl Event {
             Event::PointerDown(_)
             | Event::PointerUp(_)
             | Event::PointerMove(_)
-            | Event::PointerWheel(_) => true,
+            | Event::PointerWheel(_)
+            | Event::PointerLeave => true,
             Event::KeyDown(_)
             | Event::KeyUp(_)
             | Event::FocusGained
@@ -140,7 +143,8 @@ impl Event {
             | Event::ImeCommit(_)
             | Event::KeyDown(_)
             | Event::KeyUp(_) => false,
-            Event::PointerMove(_)
+            Event::PointerLeave
+            | Event::PointerMove(_)
             | Event::ThemeChanged(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
@@ -158,7 +162,8 @@ impl Event {
             }
             Event::PointerMove(pointer_event) => Some(pointer_event.pos),
             Event::PointerWheel(pointer_event) => Some(pointer_event.pos),
-            Event::KeyDown(_)
+            Event::PointerLeave
+            | Event::KeyDown(_)
             | Event::KeyUp(_)
             | Event::FocusGained
             | Event::FocusLost
@@ -190,7 +195,8 @@ impl Event {
                 pointer_event.pos.x /= scale;
                 pointer_event.pos.y /= scale;
             }
-            Event::KeyDown(_)
+            Event::PointerLeave
+            | Event::KeyDown(_)
             | Event::KeyUp(_)
             | Event::FocusGained
             | Event::FocusLost
@@ -220,7 +226,8 @@ impl Event {
             Event::PointerWheel(pointer_event) => {
                 pointer_event.pos -= offset;
             }
-            Event::KeyDown(_)
+            Event::PointerLeave
+            | Event::KeyDown(_)
             | Event::KeyUp(_)
             | Event::FocusGained
             | Event::FocusLost
@@ -245,6 +252,7 @@ impl Event {
             Event::PointerUp(_) => Some(EventListener::PointerUp),
             Event::PointerMove(_) => Some(EventListener::PointerMove),
             Event::PointerWheel(_) => Some(EventListener::PointerWheel),
+            Event::PointerLeave => Some(EventListener::PointerLeave),
             Event::KeyDown(_) => Some(EventListener::KeyDown),
             Event::KeyUp(_) => Some(EventListener::KeyUp),
             Event::ImeEnabled => Some(EventListener::ImeEnabled),
