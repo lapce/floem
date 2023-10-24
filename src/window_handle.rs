@@ -1028,6 +1028,7 @@ fn context_menu_view(
 
     use crate::{
         app::{add_app_update_event, AppUpdateEvent},
+        keyboard::NamedKey,
         views::{empty, list, svg, text},
     };
 
@@ -1174,7 +1175,7 @@ fn context_menu_view(
                     })
                     .on_event(EventListener::KeyDown, move |event| {
                         if let Event::KeyDown(event) = event {
-                            if event.key.logical_key == Key::Escape {
+                            if event.key.logical_key == Key::Named(NamedKey::Escape) {
                                 context_menu.set(None);
                             }
                         }
@@ -1240,7 +1241,7 @@ fn context_menu_view(
     .keyboard_navigatable()
     .on_event(EventListener::KeyDown, move |event| {
         if let Event::KeyDown(event) = event {
-            if event.key.logical_key == Key::Escape {
+            if event.key.logical_key == Key::Named(NamedKey::Escape) {
                 context_menu.set(None);
             }
         }
