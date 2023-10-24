@@ -42,10 +42,23 @@ impl VgerRenderer {
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
             }))
-            .ok_or_else(|| anyhow::anyhow!("can't get adaptor"))?;
+            .ok_or_else(|| anyhow::anyhow!("can't get adapter"))?;
 
         if adapter.get_info().device_type == DeviceType::Cpu {
-            return Err(anyhow::anyhow!("only cpu adaptor found"));
+            return Err(anyhow::anyhow!("only cpu adapter found"));
+        }
+
+        let mut required_downlevel_flags = wgpu::DownlevelFlags::empty();
+        required_downlevel_flags.set(wgpu::DownlevelFlags::VERTEX_STORAGE, true);
+
+        if !adapter
+            .get_downlevel_capabilities()
+            .flags
+            .contains(required_downlevel_flags)
+        {
+            return Err(anyhow::anyhow!(
+                "adapter doesn't support required downlevel flags"
+            ));
         }
 
         let (device, queue) = futures::executor::block_on(adapter.request_device(
