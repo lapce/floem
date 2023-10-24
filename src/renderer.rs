@@ -170,13 +170,13 @@ impl floem_renderer::Renderer for Renderer {
         }
     }
 
-    fn draw_img(&mut self, img: Img<'_>, width: u32, height: u32, rect: Rect) {
+    fn draw_img(&mut self, img: Img<'_>, rect: Rect) {
         match self {
             Renderer::Vger(v) => {
-                v.draw_img(img, width, height, rect);
+                v.draw_img(img, rect);
             }
             Renderer::TinySkia(v) => {
-                v.draw_img(img, width, height, rect);
+                v.draw_img(img, rect);
             }
         }
     }

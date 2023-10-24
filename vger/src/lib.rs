@@ -325,38 +325,21 @@ impl Renderer for VgerRenderer {
         }
     }
 
-    fn draw_img(&mut self, img: Img<'_>, img_width: u32, img_height: u32, rect: Rect) {
+    fn draw_img(&mut self, img: Img<'_>, rect: Rect) {
         let transform = self.transform.as_coeffs();
-        let target_width = (rect.width() * self.scale).round() as u32;
-        let target_height = (rect.height() * self.scale).round() as u32;
-        let width = target_width.max(1);
-        let height = target_height.max(1);
-        // for now we center the contents in the container
-        // TODO: take into account ObjectPosition here
-        let offset_x = transform[4] + ((rect.width() - img_width as f64) * 0.5);
-        let offset_y = transform[5] + ((rect.height() - img_height as f64) * 0.5);
-
+        let width = (rect.width() * self.scale).round() as u32;
+        let height = (rect.height() * self.scale).round() as u32;
+        let width = width.max(1);
+        let height = height.max(1);
         let origin = rect.origin();
-        let x = (origin.x + offset_x).round() as f32;
-        let y = (origin.y + offset_y).round() as f32;
+        let x = ((origin.x + transform[4]) * self.scale).round() as f32;
+        let y = ((origin.y + transform[5]) * self.scale).round() as f32;
 
         self.vger.render_image(x, y, img.hash, width, height, || {
-            let new_img = image::load_from_memory(img.data).unwrap();
+            let rgba = img.img.clone().into_rgba8();
+            let data = rgba.as_bytes().to_vec();
 
-            let resized_rgba = new_img
-                // FIXME: resize should depend on the ObjectFit
-                .resize_exact(
-                    target_width,
-                    target_height,
-                    image::imageops::FilterType::Nearest,
-                )
-                // FIXME: vger currently supports only RGBA pixel format.
-                // This will add padding alpha channel for each pixel if the pixel format is RGB
-                .into_rgba8();
-
-            let data = resized_rgba.as_bytes().to_vec();
-
-            let (width, height) = resized_rgba.dimensions();
+            let (width, height) = rgba.dimensions();
             Image {
                 width,
                 height,

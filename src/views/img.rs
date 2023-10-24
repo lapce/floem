@@ -1,13 +1,13 @@
 use floem_reactive::create_effect;
 use floem_renderer::Renderer;
-use image::{EncodableLayout, GenericImageView};
+use image::{DynamicImage, GenericImageView};
 use kurbo::Size;
 use sha2::{Digest, Sha256};
 
 use crate::{
     id::Id,
     style::{ComputedStyle, Style},
-    unit::{PxPctAuto, UnitExt},
+    unit::UnitExt,
     view::{ChangeFlags, View},
 };
 
@@ -88,59 +88,10 @@ pub struct Img {
     id: Id,
     //FIXME: store the pixel format(once its added to vger), for now we only store RGBA(RGB is converted to RGBA)
     pixels: Option<Vec<u8>>,
+    img: Option<DynamicImage>,
     img_hash: Option<Vec<u8>>,
     img_dimensions: Option<(u32, u32)>,
     content_node: Option<Node>,
-}
-
-impl Img {
-    fn update_img_dimensions(&mut self, cx: &mut crate::context::LayoutCx) {
-        let pixels = if let Some(pixels) = self.pixels.as_ref() {
-            pixels
-        } else {
-            return;
-        };
-
-        let styles = cx.get_computed_style(self.id);
-        let target_width_px = match styles.width {
-            PxPctAuto::Px(px) => Some(px as u32),
-            PxPctAuto::Pct(_) => todo!("Percentage-based width for image not supported yet"),
-            PxPctAuto::Auto => None,
-        };
-
-        let target_height_px = match styles.height {
-            PxPctAuto::Px(px) => Some(px as u32),
-            PxPctAuto::Pct(_) => todo!("Percentage-based height for image not supported yet"),
-            PxPctAuto::Auto => None,
-        };
-
-        self.img_dimensions = if target_width_px.is_none() || target_height_px.is_none() {
-            // process the image pixels to determine its width and height - this operation is expensive,
-            // so it should happen only once every time the width/height/pixels/object_fit change
-            let img = image::load_from_memory(pixels.as_bytes()).unwrap();
-            let (img_width, img_height) = img.dimensions();
-
-            // TODO: computed width & height should take into account ObjectFit
-            let computed_width = if let Some(width_px) = target_width_px {
-                width_px
-            } else {
-                img_width
-            };
-
-            let computed_height = if let Some(height_px) = target_height_px {
-                height_px
-            } else {
-                img_height
-            };
-
-            Some((computed_width, computed_height))
-        } else {
-            // since we need to conditionally load the img in memory when both width & height are
-            // `Auto`, `if let` or `match` expressions result in less readable code
-            #[allow(clippy::unnecessary_unwrap)]
-            Some((target_width_px.unwrap(), target_height_px.unwrap()))
-        }
-    }
 }
 
 pub fn img(image: impl Fn() -> Vec<u8> + 'static) -> Img {
@@ -152,6 +103,7 @@ pub fn img(image: impl Fn() -> Vec<u8> + 'static) -> Img {
     Img {
         id,
         pixels: None,
+        img: None,
         img_hash: None,
         img_dimensions: None,
         content_node: None,
@@ -191,7 +143,10 @@ impl View for Img {
         if let Ok(state) = state.downcast::<Vec<u8>>() {
             let image = &*state;
 
+            let img = image::load_from_memory(image).ok();
+            self.img = img;
             self.pixels = Some(image.clone());
+            self.img_dimensions = self.img.as_ref().map(|img| img.dimensions());
 
             let mut hasher = Sha256::new();
             hasher.update(image);
@@ -218,10 +173,7 @@ impl View for Img {
             }
             let content_node = self.content_node.unwrap();
 
-            if self.img_dimensions.is_none() {
-                self.update_img_dimensions(cx);
-            }
-            let (width, height) = self.img_dimensions.unwrap();
+            let (width, height) = self.img_dimensions.unwrap_or((0, 0));
 
             let style = Style::BASE
                 .width((width as f64).px())
@@ -244,24 +196,15 @@ impl View for Img {
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        if self.img_dimensions.is_none() {
-            return;
-        }
-
-        if let Some(image) = self.pixels.as_ref() {
+        if let Some(img) = self.img.as_ref() {
             let size = cx.get_layout(self.id).unwrap().size;
             let rect = Size::new(size.width as f64, size.height as f64).to_rect();
-            let (width, height) = self.img_dimensions.unwrap();
-            assert!(width > 0);
-            assert!(height > 0);
-
             cx.draw_img(
                 floem_renderer::Img {
-                    data: image.as_bytes(),
+                    img,
+                    data: self.pixels.as_ref().unwrap(),
                     hash: self.img_hash.as_ref().unwrap(),
                 },
-                width,
-                height,
                 rect,
             );
         }

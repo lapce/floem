@@ -434,7 +434,7 @@ impl Renderer for TinySkiaRenderer {
         }
     }
 
-    fn draw_img(&mut self, img: Img<'_>, _img_width: u32, _img_height: u32, rect: Rect) {
+    fn draw_img(&mut self, img: Img<'_>, rect: Rect) {
         let rect = try_ret!(self.rect(rect));
         if let Some((color, pixmap)) = self.image_cache.get_mut(img.hash) {
             *color = self.cache_color;
