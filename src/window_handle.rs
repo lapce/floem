@@ -1028,7 +1028,6 @@ fn context_menu_view(
 
     use crate::{
         app::{add_app_update_event, AppUpdateEvent},
-        keyboard::NamedKey,
         views::{empty, list, svg, text},
     };
 
