@@ -443,7 +443,7 @@ impl Renderer for TinySkiaRenderer {
             return;
         }
 
-        let rgba_image = try_ret!(image::load_from_memory(img.data).ok()).into_rgba8();
+        let rgba_image = img.img.clone().into_rgba8();
         let mut pixmap = try_ret!(Pixmap::new(rgba_image.width(), rgba_image.height()));
         for (a, &b) in pixmap.pixels_mut().iter_mut().zip(rgba_image.pixels()) {
             *a = tiny_skia::Color::from_rgba8(b.0[0], b.0[1], b.0[2], b.0[3])
