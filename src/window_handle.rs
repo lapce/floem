@@ -9,7 +9,7 @@ use winit::window::WindowId;
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::{ElementState, Ime, MouseButton, MouseScrollDelta},
-    keyboard::{Key, ModifiersState},
+    keyboard::{Key, ModifiersState, NamedKey},
     window::{CursorIcon, Theme},
 };
 
@@ -173,7 +173,7 @@ impl WindowHandle {
 
                 if !processed {
                     if let Event::KeyDown(KeyEvent { key, modifiers }) = &event {
-                        if key.logical_key == Key::Tab {
+                        if key.logical_key == Key::Named(NamedKey::Tab) {
                             let _backwards = modifiers.contains(ModifiersState::SHIFT);
                             // view_tab_navigation(&self.view, cx.app_state, backwards);
                             // view_debug_tree(&self.view);

@@ -10,7 +10,7 @@ pub mod rich_text;
 
 use floem::{
     event::{Event, EventListener},
-    keyboard::Key,
+    keyboard::{Key, NamedKey},
     peniko::Color,
     reactive::create_signal,
     style::CursorStyle,
@@ -61,13 +61,13 @@ fn app_view() -> impl View {
                                     if let Event::KeyDown(key_event) = e {
                                         let active = active_tab.get();
                                         match key_event.key.logical_key {
-                                            Key::ArrowUp => {
+                                            Key::Named(NamedKey::ArrowUp) => {
                                                 if active > 0 {
                                                     set_active_tab.update(|v| *v -= 1)
                                                 }
                                                 true
                                             }
-                                            Key::ArrowDown => {
+                                            Key::Named(NamedKey::ArrowDown) => {
                                                 if active < tabs.get().len() - 1 {
                                                     set_active_tab.update(|v| *v += 1)
                                                 }

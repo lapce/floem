@@ -11,7 +11,7 @@ use floem_renderer::{
     Renderer,
 };
 use unicode_segmentation::UnicodeSegmentation;
-use winit::keyboard::{Key, ModifiersState, SmolStr};
+use winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
 
 use crate::{peniko::Color, style::Style, view::View};
 
@@ -528,7 +528,7 @@ impl TextInput {
                     .update(|buf| buf.insert_str(self.cursor_glyph_idx, &ch.clone()));
                 self.move_cursor(Movement::Glyph, Direction::Right)
             }
-            Key::Space => {
+            Key::Named(NamedKey::Space) => {
                 if let Some(selection) = &self.selection {
                     self.buffer
                         .update(|buf| replace_range(buf, selection.clone(), None));
@@ -540,7 +540,7 @@ impl TextInput {
                 }
                 self.move_cursor(Movement::Glyph, Direction::Right)
             }
-            Key::Backspace => {
+            Key::Named(NamedKey::Backspace) => {
                 let selection = self.selection.clone();
                 if let Some(selection) = selection {
                     self.buffer
@@ -566,7 +566,7 @@ impl TextInput {
                     true
                 }
             }
-            Key::Delete => {
+            Key::Named(NamedKey::Delete) => {
                 let prev_cursor_idx = self.cursor_glyph_idx;
 
                 if event.modifiers.contains(ModifiersState::CONTROL) {
@@ -586,13 +586,13 @@ impl TextInput {
                 self.cursor_glyph_idx = prev_cursor_idx;
                 true
             }
-            Key::Escape => {
+            Key::Named(NamedKey::Escape) => {
                 cx.app_state.clear_focus();
                 true
             }
-            Key::End => self.move_cursor(Movement::Line, Direction::Right),
-            Key::Home => self.move_cursor(Movement::Line, Direction::Left),
-            Key::ArrowLeft => {
+            Key::Named(NamedKey::End) => self.move_cursor(Movement::Line, Direction::Right),
+            Key::Named(NamedKey::Home) => self.move_cursor(Movement::Line, Direction::Left),
+            Key::Named(NamedKey::ArrowLeft) => {
                 let old_glyph_idx = self.cursor_glyph_idx;
 
                 let cursor_moved = if event.modifiers.contains(ModifiersState::CONTROL) {
@@ -616,7 +616,7 @@ impl TextInput {
 
                 cursor_moved
             }
-            Key::ArrowRight => {
+            Key::Named(NamedKey::ArrowRight) => {
                 let old_glyph_idx = self.cursor_glyph_idx;
 
                 let cursor_moved = if event.modifiers.contains(ModifiersState::CONTROL) {

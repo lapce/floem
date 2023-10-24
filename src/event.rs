@@ -1,5 +1,8 @@
 use kurbo::{Point, Size};
-use winit::{keyboard::KeyCode, window::Theme};
+use winit::{
+    keyboard::{KeyCode, PhysicalKey},
+    window::Theme,
+};
 
 use crate::{
     keyboard::KeyEvent,
@@ -120,7 +123,9 @@ impl Event {
             Event::KeyDown(key) | Event::KeyUp(key) => {
                 matches!(
                     key.key.physical_key,
-                    KeyCode::NumpadEnter | KeyCode::Enter | KeyCode::Space,
+                    PhysicalKey::Code(KeyCode::NumpadEnter)
+                        | PhysicalKey::Code(KeyCode::Enter)
+                        | PhysicalKey::Code(KeyCode::Space),
                 )
             }
             _ => false,

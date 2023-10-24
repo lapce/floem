@@ -3,7 +3,7 @@ use std::{cell::RefCell, sync::Arc};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use winit::{
-    event_loop::{EventLoop, EventLoopBuilder, EventLoopProxy},
+    event_loop::{ControlFlow, EventLoop, EventLoopBuilder, EventLoopProxy},
     window::WindowId,
 };
 
@@ -112,30 +112,28 @@ impl Application {
     pub fn run(mut self) {
         let mut handle = self.handle.take().unwrap();
         handle.idle();
-        let _ = self.event_loop.run(move |event, event_loop, control_flow| {
-            control_flow.set_wait();
-            handle.handle_timer(control_flow);
+        let _ = self.event_loop.run(move |event, event_loop| {
+            event_loop.set_control_flow(ControlFlow::Wait);
+            handle.handle_timer(event_loop);
 
             match event {
                 winit::event::Event::NewEvents(_) => {}
                 winit::event::Event::WindowEvent { window_id, event } => {
-                    handle.handle_window_event(window_id, event, control_flow);
+                    handle.handle_window_event(window_id, event, event_loop);
                 }
                 winit::event::Event::DeviceEvent { .. } => {}
                 winit::event::Event::UserEvent(event) => {
-                    handle.handle_user_event(event_loop, event, control_flow);
+                    handle.handle_user_event(event_loop, event);
                 }
                 winit::event::Event::Suspended => {}
                 winit::event::Event::Resumed => {}
                 winit::event::Event::AboutToWait => {}
-                winit::event::Event::RedrawRequested(window_id) => {
-                    handle.redraw_requested(window_id);
-                }
                 winit::event::Event::LoopExiting => {
                     if let Some(action) = self.event_listener.as_ref() {
                         action(AppEvent::WillTerminate);
                     }
                 }
+                winit::event::Event::MemoryWarning => {}
             }
         });
     }
