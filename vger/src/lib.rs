@@ -306,6 +306,10 @@ impl Renderer for VgerRenderer {
                     }
                 }
 
+                if glyph_run.is_tab {
+                    continue;
+                }
+
                 if let Some(paint) = self.brush_to_paint(glyph_run.color) {
                     let glyph_x = x * self.scale as f32;
                     let (new_x, subpx_x) = SubpixelBin::new(glyph_x);
