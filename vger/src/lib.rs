@@ -9,7 +9,7 @@ use peniko::{
     BrushRef, Color, GradientKind,
 };
 use vger::{Image, PaintIndex, PixelFormat, Vger};
-use wgpu::{Device, DeviceType, Queue, Surface, SurfaceConfiguration, TextureFormat};
+use wgpu::{Device, DeviceType, Queue, StoreOp, Surface, SurfaceConfiguration, TextureFormat};
 
 pub struct VgerRenderer {
     device: Arc<Device>,
@@ -443,10 +443,12 @@ impl Renderer for VgerRenderer {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
-                        store: true,
+                        store: StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
             };
 
             self.vger.encode(&desc);

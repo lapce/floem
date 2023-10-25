@@ -28,7 +28,7 @@ floem_renderer = { path = "renderer" }
 floem_vger = { path = "vger" }
 floem_tiny_skia = { path = "tiny_skia" }
 floem_reactive = { path = "reactive" }
-winit = { git = "https://github.com/lapce/winit", rev = "fa3a4f5cb8eadcfe07d9a629e57f4c3c0f6ce109", features = ["rwh_05"] }
+winit = { git = "https://github.com/lapce/winit", rev = "96d8a1f7d8ab7969d836f940d0b18d3540979e6c", features = ["rwh_05"] }
 # winit = { path = "../winit" }
 image = { version = "0.24", features = ["jpeg", "png"] }
 
