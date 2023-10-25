@@ -202,6 +202,18 @@ pub trait View {
         if style.scroll_bar_color.is_some() {
             cx.scroll_bar_color = style.scroll_bar_color;
         }
+        if style.scroll_bar_hover_color.is_some() {
+            cx.scroll_bar_hover_color = style.scroll_bar_hover_color;
+        }
+        if style.scroll_bar_drag_color.is_some() {
+            cx.scroll_bar_drag_color = style.scroll_bar_drag_color;
+        }
+        if style.scroll_bar_hover_color.is_some() {
+            cx.scroll_bar_hover_color = style.scroll_bar_hover_color;
+        }
+        if style.scroll_bar_bg_active_color.is_some() {
+            cx.scroll_bar_bg_active_color = style.scroll_bar_bg_active_color;
+        }
         if style.scroll_bar_rounded.is_some() {
             cx.scroll_bar_rounded = style.scroll_bar_rounded;
         }
@@ -389,9 +401,7 @@ pub trait View {
             // we're the parent of the event destination, so pass it on to the child
             if !id_path.is_empty() {
                 if let Some(child) = self.child_mut(id_path[0]) {
-                    if child.event_main(cx, Some(id_path), event.clone()) {
-                        return true;
-                    }
+                    return child.event_main(cx, Some(id_path), event.clone());
                 } else {
                     // we don't have the child, stop the event propagation
                     return false;

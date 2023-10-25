@@ -41,6 +41,9 @@ enum BarHeldState {
 
 pub struct ScrollBarStyle {
     color: Color,
+    hover_color: Color,
+    drag_color: Color,
+    bg_active_color: Color,
     rounded: bool,
     hide: bool,
     thickness: f32,
@@ -48,8 +51,11 @@ pub struct ScrollBarStyle {
 }
 impl ScrollBarStyle {
     pub const BASE: Self = ScrollBarStyle {
-        // 179 is 70% of 255 so a 70% alpha factor is the default
-        color: Color::rgba8(0, 0, 0, 179),
+        // 120 is 40% of 255 so a 40% alpha factor is the default
+        color: Color::rgba8(0, 0, 0, 120),
+        hover_color: Color::rgba8(0, 0, 0, 140),
+        drag_color: Color::rgba8(0, 0, 0, 160),
+        bg_active_color: Color::rgba8(0, 0, 0, 25),
         rounded: cfg!(target_os = "macos"),
         thickness: 10.,
         edge_width: 0.,
@@ -58,6 +64,14 @@ impl ScrollBarStyle {
 
     pub fn color(mut self, color: Color) -> Self {
         self.color = color;
+        self
+    }
+    pub fn hover_color(mut self, color: Color) -> Self {
+        self.hover_color = color;
+        self
+    }
+    pub fn drag_color(mut self, color: Color) -> Self {
+        self.drag_color = color;
         self
     }
     pub fn rounded(mut self, rounded: bool) -> Self {
@@ -85,6 +99,10 @@ pub struct Scroll<V: View> {
     child_viewport: Rect,
     onscroll: Option<Box<dyn Fn(Rect)>>,
     held: BarHeldState,
+    vbar_hover: bool,
+    hbar_hover: bool,
+    vbar_whole_hover: bool,
+    hbar_whole_hover: bool,
     virtual_node: Option<Node>,
     propagate_pointer_wheel: bool,
     vertical_scroll_as_horizontal: bool,
@@ -101,6 +119,10 @@ pub fn scroll<V: View>(child: V) -> Scroll<V> {
         child_viewport: Rect::ZERO,
         onscroll: None,
         held: BarHeldState::None,
+        vbar_hover: false,
+        hbar_hover: false,
+        vbar_whole_hover: false,
+        hbar_whole_hover: false,
         virtual_node: None,
         propagate_pointer_wheel: false,
         vertical_scroll_as_horizontal: false,
@@ -337,8 +359,20 @@ impl<V: View> Scroll<V> {
             }
         };
 
-        let color = self.scroll_bar_style.color;
         if let Some(bounds) = self.calc_vertical_bar_bounds(cx.app_state) {
+            let color = if let BarHeldState::Vertical(..) = self.held {
+                self.scroll_bar_style.drag_color
+            } else if self.vbar_hover {
+                self.scroll_bar_style.hover_color
+            } else {
+                self.scroll_bar_style.color
+            };
+            if self.vbar_whole_hover || matches!(self.held, BarHeldState::Vertical(..)) {
+                let mut bounds = bounds;
+                bounds.y0 = self.actual_rect.y0;
+                bounds.y1 = self.actual_rect.y1;
+                cx.fill(&bounds, self.scroll_bar_style.bg_active_color, 0.0);
+            }
             let rect = (bounds - scroll_offset).inset(-edge_width / 2.0);
             let rect = rect.to_rounded_rect(radius(rect, true));
             cx.fill(&rect, color, 0.0);
@@ -349,6 +383,19 @@ impl<V: View> Scroll<V> {
 
         // Horizontal bar
         if let Some(bounds) = self.calc_horizontal_bar_bounds(cx.app_state) {
+            let color = if let BarHeldState::Horizontal(..) = self.held {
+                self.scroll_bar_style.drag_color
+            } else if self.hbar_hover {
+                self.scroll_bar_style.hover_color
+            } else {
+                self.scroll_bar_style.color
+            };
+            if self.hbar_whole_hover || matches!(self.held, BarHeldState::Horizontal(..)) {
+                let mut bounds = bounds;
+                bounds.x0 = self.actual_rect.x0;
+                bounds.x1 = self.actual_rect.x1;
+                cx.fill(&bounds, self.scroll_bar_style.bg_active_color, 0.0);
+            }
             let rect = (bounds - scroll_offset).inset(-edge_width / 2.0);
             let rect = rect.to_rounded_rect(radius(rect, false));
             cx.fill(&rect, color, 0.0);
@@ -498,6 +545,31 @@ impl<V: View> Scroll<V> {
     fn are_bars_held(&self) -> bool {
         !matches!(self.held, BarHeldState::None)
     }
+
+    fn update_hover_states(&mut self, app_state: &mut AppState, pos: Point) {
+        let scroll_offset = self.child_viewport.origin().to_vec2();
+        let pos = pos + scroll_offset;
+        let hover = self.point_hits_vertical_bar(app_state, pos);
+        if self.vbar_hover != hover {
+            self.vbar_hover = hover;
+            app_state.request_layout(self.id);
+        }
+        let hover = self.point_hits_horizontal_bar(app_state, pos);
+        if self.hbar_hover != hover {
+            self.hbar_hover = hover;
+            app_state.request_layout(self.id);
+        }
+        let hover = self.point_within_vertical_bar(app_state, pos);
+        if self.vbar_whole_hover != hover {
+            self.vbar_whole_hover = hover;
+            app_state.request_layout(self.id);
+        }
+        let hover = self.point_within_horizontal_bar(app_state, pos);
+        if self.hbar_whole_hover != hover {
+            self.hbar_whole_hover = hover;
+            app_state.request_layout(self.id);
+        }
+    }
 }
 
 impl<V: View> View for Scroll<V> {
@@ -571,6 +643,15 @@ impl<V: View> View for Scroll<V> {
             if let Some(color) = cx.scroll_bar_color {
                 self.scroll_bar_style.color = color;
             }
+            if let Some(color) = cx.scroll_bar_hover_color {
+                self.scroll_bar_style.hover_color = color;
+            }
+            if let Some(color) = cx.scroll_bar_drag_color {
+                self.scroll_bar_style.drag_color = color;
+            }
+            if let Some(color) = cx.scroll_bar_bg_active_color {
+                self.scroll_bar_style.bg_active_color = color;
+            }
             if let Some(rounded) = cx.scroll_bar_rounded {
                 self.scroll_bar_style.rounded = rounded;
             }
@@ -643,6 +724,8 @@ impl<V: View> View for Scroll<V> {
                                 scroll_offset,
                             );
                             cx.update_active(self.id);
+                            // Force a repaint.
+                            cx.app_state.request_layout(self.id);
                             return true;
                         }
                         self.click_vertical_bar_area(cx.app_state, event.pos);
@@ -662,6 +745,8 @@ impl<V: View> View for Scroll<V> {
                                 scroll_offset,
                             );
                             cx.update_active(self.id);
+                            // Force a repaint.
+                            cx.app_state.request_layout(self.id);
                             return true;
                         }
                         self.click_horizontal_bar_area(cx.app_state, event.pos);
@@ -676,9 +761,18 @@ impl<V: View> View for Scroll<V> {
                     }
                 }
             }
-            Event::PointerUp(_event) => self.held = BarHeldState::None,
+            Event::PointerUp(_event) => {
+                if self.are_bars_held() {
+                    self.held = BarHeldState::None;
+                    // Force a repaint.
+                    cx.app_state.request_layout(self.id);
+                }
+            }
             Event::PointerMove(event) => {
                 if !self.scroll_bar_style.hide {
+                    let pos = event.pos + scroll_offset;
+                    self.update_hover_states(cx.app_state, event.pos);
+
                     if self.are_bars_held() {
                         match self.held {
                             BarHeldState::Vertical(offset, initial_scroll_offset) => {
@@ -701,15 +795,19 @@ impl<V: View> View for Scroll<V> {
                             }
                             BarHeldState::None => {}
                         }
-                    } else {
-                        let pos = event.pos + scroll_offset;
-                        if self.point_within_vertical_bar(cx.app_state, pos)
-                            || self.point_within_horizontal_bar(cx.app_state, pos)
-                        {
-                            return true;
-                        }
+                    } else if self.point_within_vertical_bar(cx.app_state, pos)
+                        || self.point_within_horizontal_bar(cx.app_state, pos)
+                    {
+                        return false;
                     }
                 }
+            }
+            Event::PointerLeave => {
+                self.vbar_hover = false;
+                self.hbar_hover = false;
+                self.vbar_whole_hover = false;
+                self.hbar_whole_hover = false;
+                cx.app_state.request_layout(self.id);
             }
             _ => {}
         }
@@ -735,6 +833,10 @@ impl<V: View> View for Scroll<V> {
                 delta
             };
             self.clamp_child_viewport(cx.app_state, self.child_viewport + delta);
+
+            // Check if the scroll bars now hover
+            self.update_hover_states(cx.app_state, pointer_event.pos);
+
             return !self.propagate_pointer_wheel;
         }
 
