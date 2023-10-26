@@ -143,6 +143,7 @@ impl WindowHandle {
 
         let is_pointer_down = matches!(&event, Event::PointerDown(_));
         let was_focused = if is_pointer_down {
+            cx.app_state.clicking.clear();
             cx.app_state.focus.take()
         } else {
             cx.app_state.focus
@@ -264,6 +265,22 @@ impl WindowHandle {
         }
         if was_focused != cx.app_state.focus {
             cx.app_state.focus_changed(was_focused, cx.app_state.focus);
+        }
+
+        if is_pointer_down {
+            for id in cx.app_state.clicking.clone() {
+                if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
+                    cx.app_state.request_layout(id);
+                }
+            }
+        }
+        if matches!(&event, Event::PointerUp(_)) {
+            for id in cx.app_state.clicking.clone() {
+                if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
+                    cx.app_state.request_layout(id);
+                }
+            }
+            cx.app_state.clicking.clear();
         }
 
         self.process_update();
@@ -403,6 +420,12 @@ impl WindowHandle {
                 self.event(Event::PointerUp(event));
             }
         }
+        // fire an pointer move event in case there's view change
+        // and hover needs to be updated
+        self.event(Event::PointerMove(PointerMoveEvent {
+            pos: self.cursor_position,
+            modifiers: self.modifiers,
+        }));
     }
 
     pub(crate) fn focused(&mut self, focused: bool) {

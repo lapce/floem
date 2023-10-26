@@ -143,7 +143,7 @@ impl ViewState {
         }
 
         let active_mouse = interact_state.is_hovered && !interact_state.using_keyboard_navigation;
-        if interact_state.is_active && (active_mouse || focused_keyboard) {
+        if interact_state.is_clicking && (active_mouse || focused_keyboard) {
             if let Some(active_style) = self.active_style.clone() {
                 computed_style = computed_style.apply(active_style);
             }
@@ -238,6 +238,7 @@ pub struct AppState {
     pub(crate) dragging_over: HashSet<Id>,
     pub(crate) screen_size_bp: ScreenSizeBp,
     pub(crate) grid_bps: GridBreakpoints,
+    pub(crate) clicking: HashSet<Id>,
     pub(crate) hovered: HashSet<Id>,
     /// This keeps track of all views that have an animation,
     /// regardless of the status of the animation
@@ -276,6 +277,7 @@ impl AppState {
             dragging: None,
             drag_start: None,
             dragging_over: HashSet::new(),
+            clicking: HashSet::new(),
             hovered: HashSet::new(),
             cursor: None,
             last_cursor: CursorIcon::Default,
@@ -347,6 +349,10 @@ impl AppState {
         self.active.map(|a| &a == id).unwrap_or(false)
     }
 
+    pub fn is_clicking(&self, id: &Id) -> bool {
+        self.clicking.contains(id)
+    }
+
     pub fn is_dragging(&self) -> bool {
         self.dragging
             .as_ref()
@@ -359,7 +365,7 @@ impl AppState {
             is_hovered: self.is_hovered(id),
             is_disabled: self.is_disabled(id),
             is_focused: self.is_focused(id),
-            is_active: self.is_active(id),
+            is_clicking: self.is_clicking(id),
             using_keyboard_navigation: self.keyboard_navigation,
         }
     }
@@ -656,7 +662,7 @@ pub struct InteractionState {
     pub(crate) is_hovered: bool,
     pub(crate) is_disabled: bool,
     pub(crate) is_focused: bool,
-    pub(crate) is_active: bool,
+    pub(crate) is_clicking: bool,
     pub(crate) using_keyboard_navigation: bool,
 }
 

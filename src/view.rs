@@ -422,6 +422,7 @@ pub trait View {
 
         match &event {
             Event::PointerDown(event) => {
+                cx.app_state.clicking.insert(self.id());
                 if event.button.is_primary() {
                     let rect = cx.get_size(self.id()).unwrap_or_default().to_rect();
                     let now_focused = rect.contains(event.pos);
@@ -435,12 +436,10 @@ pub trait View {
                         {
                             let view_state = cx.app_state.view_state(id);
                             view_state.last_pointer_down = Some(event.clone());
-                            cx.update_active(id);
                         }
                         if cx.has_event_listener(id, EventListener::Click) {
                             let view_state = cx.app_state.view_state(id);
                             view_state.last_pointer_down = Some(event.clone());
-                            cx.update_active(id);
                         }
 
                         let bottom_left = {
@@ -467,7 +466,6 @@ pub trait View {
                         if cx.has_event_listener(id, EventListener::SecondaryClick) {
                             let view_state = cx.app_state.view_state(id);
                             view_state.last_pointer_down = Some(event.clone());
-                            cx.update_active(id);
                         }
                     }
                 }
@@ -559,39 +557,42 @@ pub trait View {
                                 }
                             }
                         }
-                    } else {
-                        if let Some(dragging) =
-                            cx.app_state.dragging.as_mut().filter(|d| d.id == id)
+                    } else if let Some(dragging) =
+                        cx.app_state.dragging.as_mut().filter(|d| d.id == id)
+                    {
+                        let dragging_id = dragging.id;
+                        dragging.released_at = Some(std::time::Instant::now());
+                        id.request_paint();
+                        if let Some(action) =
+                            cx.get_event_listener(dragging_id, &EventListener::DragEnd)
                         {
-                            let dragging_id = dragging.id;
-                            dragging.released_at = Some(std::time::Instant::now());
-                            id.request_paint();
-                            if let Some(action) =
-                                cx.get_event_listener(dragging_id, &EventListener::DragEnd)
-                            {
-                                (*action)(&event);
-                            }
-                        }
-                        let last_pointer_down =
-                            cx.app_state.view_state(id).last_pointer_down.take();
-                        if let Some(action) = cx.get_event_listener(id, &EventListener::DoubleClick)
-                        {
-                            if on_view
-                                && last_pointer_down
-                                    .as_ref()
-                                    .map(|e| e.count == 2)
-                                    .unwrap_or(false)
-                                && (*action)(&event)
-                            {
-                                return true;
-                            }
-                        }
-                        if let Some(action) = cx.get_event_listener(id, &EventListener::Click) {
-                            if on_view && last_pointer_down.is_some() && (*action)(&event) {
-                                return true;
-                            }
+                            (*action)(&event);
                         }
                     }
+
+                    let last_pointer_down = cx.app_state.view_state(id).last_pointer_down.take();
+                    if let Some(action) = cx.get_event_listener(id, &EventListener::DoubleClick) {
+                        if on_view
+                            && cx.app_state.is_clicking(&id)
+                            && last_pointer_down
+                                .as_ref()
+                                .map(|e| e.count == 2)
+                                .unwrap_or(false)
+                            && (*action)(&event)
+                        {
+                            return true;
+                        }
+                    }
+                    if let Some(action) = cx.get_event_listener(id, &EventListener::Click) {
+                        if on_view
+                            && cx.app_state.is_clicking(&id)
+                            && last_pointer_down.is_some()
+                            && (*action)(&event)
+                        {
+                            return true;
+                        }
+                    }
+
                     if let Some(action) = cx.get_event_listener(id, &EventListener::PointerUp) {
                         if (*action)(&event) {
                             return true;
