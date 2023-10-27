@@ -57,7 +57,7 @@ pub(crate) struct WindowHandle {
     pub(crate) modifiers: ModifiersState,
     pub(crate) cursor_position: Point,
     pub(crate) window_position: Point,
-    pub(crate) last_pointer_down: Option<(u8, Instant)>,
+    pub(crate) last_pointer_down: Option<(u8, Point, Instant)>,
     #[cfg(target_os = "linux")]
     pub(crate) context_menu: RwSignal<Option<(Menu, Point)>>,
 }
@@ -337,7 +337,6 @@ impl WindowHandle {
 
     pub(crate) fn pointer_move(&mut self, pos: Point) {
         if self.cursor_position != pos {
-            self.last_pointer_down = None;
             self.cursor_position = pos;
             let event = PointerMoveEvent {
                 pos,
@@ -389,18 +388,21 @@ impl WindowHandle {
     pub(crate) fn mouse_input(&mut self, button: MouseButton, state: ElementState) {
         let button: PointerButton = button.into();
         let count = if state.is_pressed() && button.is_primary() {
-            if let Some((count, instant)) = self.last_pointer_down.as_mut() {
+            if let Some((count, last_pos, instant)) = self.last_pointer_down.as_mut() {
                 if *count == 4 {
                     *count = 1;
-                } else if instant.elapsed().as_millis() < 500 {
+                } else if instant.elapsed().as_millis() < 500
+                    && last_pos.distance(self.cursor_position) < 4.0
+                {
                     *count += 1;
                 } else {
                     *count = 1;
                 }
                 *instant = Instant::now();
+                *last_pos = self.cursor_position;
                 *count
             } else {
-                self.last_pointer_down = Some((1, Instant::now()));
+                self.last_pointer_down = Some((1, self.cursor_position, Instant::now()));
                 1
             }
         } else {
@@ -420,12 +422,6 @@ impl WindowHandle {
                 self.event(Event::PointerUp(event));
             }
         }
-        // fire an pointer move event in case there's view change
-        // and hover needs to be updated
-        self.event(Event::PointerMove(PointerMoveEvent {
-            pos: self.cursor_position,
-            modifiers: self.modifiers,
-        }));
     }
 
     pub(crate) fn focused(&mut self, focused: bool) {

@@ -112,7 +112,7 @@ where
                 } else {
                     usize::MAX
                 };
-                before_size = item_size * start as f64;
+                before_size = item_size * (start.min(total_len)) as f64;
 
                 for item in items_vector.slice(start..end) {
                     items.push(item);
