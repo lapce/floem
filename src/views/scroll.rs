@@ -41,21 +41,22 @@ enum BarHeldState {
 
 pub struct ScrollBarStyle {
     color: Color,
-    hover_color: Color,
-    drag_color: Color,
-    bg_active_color: Color,
+    hover_color: Option<Color>,
+    drag_color: Option<Color>,
+    bg_active_color: Option<Color>,
     rounded: bool,
     hide: bool,
     thickness: f32,
     edge_width: f32,
 }
+
 impl ScrollBarStyle {
     pub const BASE: Self = ScrollBarStyle {
         // 120 is 40% of 255 so a 40% alpha factor is the default
         color: Color::rgba8(0, 0, 0, 120),
-        hover_color: Color::rgba8(0, 0, 0, 140),
-        drag_color: Color::rgba8(0, 0, 0, 160),
-        bg_active_color: Color::rgba8(0, 0, 0, 25),
+        hover_color: None,
+        drag_color: None,
+        bg_active_color: None,
         rounded: cfg!(target_os = "macos"),
         thickness: 10.,
         edge_width: 0.,
@@ -66,12 +67,14 @@ impl ScrollBarStyle {
         self.color = color;
         self
     }
+
     pub fn hover_color(mut self, color: Color) -> Self {
-        self.hover_color = color;
+        self.hover_color = Some(color);
         self
     }
+
     pub fn drag_color(mut self, color: Color) -> Self {
-        self.drag_color = color;
+        self.drag_color = Some(color);
         self
     }
     pub fn rounded(mut self, rounded: bool) -> Self {
@@ -361,9 +364,17 @@ impl<V: View> Scroll<V> {
 
         if let Some(bounds) = self.calc_vertical_bar_bounds(cx.app_state) {
             let color = if let BarHeldState::Vertical(..) = self.held {
-                self.scroll_bar_style.drag_color
+                if let Some(color) = self.scroll_bar_style.drag_color {
+                    color
+                } else {
+                    self.scroll_bar_style.color
+                }
             } else if self.vbar_hover {
-                self.scroll_bar_style.hover_color
+                if let Some(color) = self.scroll_bar_style.hover_color {
+                    color
+                } else {
+                    self.scroll_bar_style.color
+                }
             } else {
                 self.scroll_bar_style.color
             };
@@ -371,7 +382,9 @@ impl<V: View> Scroll<V> {
                 let mut bounds = bounds;
                 bounds.y0 = self.actual_rect.y0;
                 bounds.y1 = self.actual_rect.y1;
-                cx.fill(&bounds, self.scroll_bar_style.bg_active_color, 0.0);
+                if let Some(color) = self.scroll_bar_style.bg_active_color {
+                    cx.fill(&bounds, color, 0.0);
+                }
             }
             let rect = (bounds - scroll_offset).inset(-edge_width / 2.0);
             let rect = rect.to_rounded_rect(radius(rect, true));
@@ -384,9 +397,17 @@ impl<V: View> Scroll<V> {
         // Horizontal bar
         if let Some(bounds) = self.calc_horizontal_bar_bounds(cx.app_state) {
             let color = if let BarHeldState::Horizontal(..) = self.held {
-                self.scroll_bar_style.drag_color
+                if let Some(color) = self.scroll_bar_style.drag_color {
+                    color
+                } else {
+                    self.scroll_bar_style.color
+                }
             } else if self.hbar_hover {
-                self.scroll_bar_style.hover_color
+                if let Some(color) = self.scroll_bar_style.hover_color {
+                    color
+                } else {
+                    self.scroll_bar_style.color
+                }
             } else {
                 self.scroll_bar_style.color
             };
@@ -394,7 +415,9 @@ impl<V: View> Scroll<V> {
                 let mut bounds = bounds;
                 bounds.x0 = self.actual_rect.x0;
                 bounds.x1 = self.actual_rect.x1;
-                cx.fill(&bounds, self.scroll_bar_style.bg_active_color, 0.0);
+                if let Some(color) = self.scroll_bar_style.bg_active_color {
+                    cx.fill(&bounds, color, 0.0);
+                }
             }
             let rect = (bounds - scroll_offset).inset(-edge_width / 2.0);
             let rect = rect.to_rounded_rect(radius(rect, false));
@@ -644,13 +667,13 @@ impl<V: View> View for Scroll<V> {
                 self.scroll_bar_style.color = color;
             }
             if let Some(color) = cx.scroll_bar_hover_color {
-                self.scroll_bar_style.hover_color = color;
+                self.scroll_bar_style.hover_color = Some(color);
             }
             if let Some(color) = cx.scroll_bar_drag_color {
-                self.scroll_bar_style.drag_color = color;
+                self.scroll_bar_style.drag_color = Some(color);
             }
             if let Some(color) = cx.scroll_bar_bg_active_color {
-                self.scroll_bar_style.bg_active_color = color;
+                self.scroll_bar_style.bg_active_color = Some(color);
             }
             if let Some(rounded) = cx.scroll_bar_rounded {
                 self.scroll_bar_style.rounded = rounded;
