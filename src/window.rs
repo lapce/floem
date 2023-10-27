@@ -1,9 +1,9 @@
 use kurbo::{Point, Size};
+pub use winit::window::Fullscreen;
 pub use winit::window::ResizeDirection;
 pub use winit::window::Theme;
-pub use winit::window::WindowId;
-pub use winit::window::Fullscreen;
 pub use winit::window::WindowButtons;
+pub use winit::window::WindowId;
 pub use winit::window::WindowLevel;
 
 use crate::{
