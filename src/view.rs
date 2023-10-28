@@ -83,7 +83,7 @@
 //!
 //!
 
-use std::any::Any;
+use std::{any::Any, rc::Rc};
 
 use bitflags::bitflags;
 use floem_renderer::Renderer;
@@ -95,7 +95,7 @@ use crate::{
     context::{AppState, DragState, EventCx, LayoutCx, PaintCx, UpdateCx},
     event::{Event, EventListener},
     id::Id,
-    style::{ComputedStyle, Style},
+    style::{ComputedStyle, Style, StyleMap},
 };
 
 bitflags! {
@@ -196,11 +196,24 @@ pub trait View {
         cx.app_state_mut().compute_style(self.id(), view_style);
         let style = cx.app_state_mut().get_computed_style(self.id()).clone();
 
+        cx.style.current = Rc::new(StyleMap {
+            map: cx
+                .style
+                .current
+                .map
+                .iter()
+                .map(|(p, v)| (*p, v.clone()))
+                .chain(
+                    style
+                        .other
+                        .map
+                        .into_iter()
+                        .filter(|(p, _)| p.info.inherited),
+                )
+                .collect(),
+        });
         if style.color.is_some() {
             cx.color = style.color;
-        }
-        if style.scroll_bar_color.is_some() {
-            cx.scroll_bar_color = style.scroll_bar_color;
         }
         if style.scroll_bar_hover_color.is_some() {
             cx.scroll_bar_hover_color = style.scroll_bar_hover_color;
@@ -210,9 +223,6 @@ pub trait View {
         }
         if style.scroll_bar_hover_color.is_some() {
             cx.scroll_bar_hover_color = style.scroll_bar_hover_color;
-        }
-        if style.scroll_bar_bg_active_color.is_some() {
-            cx.scroll_bar_bg_active_color = style.scroll_bar_bg_active_color;
         }
         if style.scroll_bar_rounded.is_some() {
             cx.scroll_bar_rounded = style.scroll_bar_rounded;
@@ -690,9 +700,6 @@ pub trait View {
 
             if style.color.is_some() {
                 cx.color = style.color;
-            }
-            if style.scroll_bar_color.is_some() {
-                cx.scroll_bar_color = style.scroll_bar_color;
             }
             if style.scroll_bar_rounded.is_some() {
                 cx.scroll_bar_rounded = style.scroll_bar_rounded;

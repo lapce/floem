@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     ops::{Deref, DerefMut},
+    rc::Rc,
     time::Duration,
 };
 
@@ -23,7 +24,7 @@ use crate::{
     menu::Menu,
     pointer::PointerInputEvent,
     responsive::{GridBreakpoints, ScreenSize, ScreenSizeBp},
-    style::{ComputedStyle, CursorStyle, Style, StyleSelector},
+    style::{ComputedStyle, CursorStyle, Style, StyleMap, StyleProp, StyleSelector},
 };
 
 pub type EventCallback = dyn Fn(&Event) -> bool;
@@ -666,16 +667,42 @@ pub struct InteractionState {
     pub(crate) using_keyboard_navigation: bool,
 }
 
+pub(crate) struct StyleCx {
+    pub(crate) current: Rc<StyleMap>,
+    saved: Vec<Rc<StyleMap>>,
+}
+
+impl StyleCx {
+    fn new() -> Self {
+        Self {
+            current: Default::default(),
+            saved: Default::default(),
+        }
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.current = Default::default();
+        self.saved.clear();
+    }
+
+    pub fn save(&mut self) {
+        self.saved.push(self.current.clone());
+    }
+
+    pub fn restore(&mut self) {
+        self.current = self.saved.pop().unwrap_or_default();
+    }
+}
+
 /// Holds current layout state for given position in the tree.
 /// You'll use this in the `View::layout` implementation to call `layout_node` on children and to access any font
 pub struct LayoutCx<'a> {
     app_state: &'a mut AppState,
     pub(crate) viewport: Option<Rect>,
     pub(crate) color: Option<Color>,
-    pub(crate) scroll_bar_color: Option<Color>,
+    pub(crate) style: StyleCx,
     pub(crate) scroll_bar_hover_color: Option<Color>,
     pub(crate) scroll_bar_drag_color: Option<Color>,
-    pub(crate) scroll_bar_bg_active_color: Option<Color>,
     pub(crate) scroll_bar_rounded: Option<bool>,
     pub(crate) scroll_bar_thickness: Option<f32>,
     pub(crate) scroll_bar_edge_width: Option<f32>,
@@ -687,10 +714,8 @@ pub struct LayoutCx<'a> {
     pub(crate) window_origin: Point,
     pub(crate) saved_viewports: Vec<Option<Rect>>,
     pub(crate) saved_colors: Vec<Option<Color>>,
-    pub(crate) saved_scroll_bar_colors: Vec<Option<Color>>,
     pub(crate) saved_scroll_bar_hover_colors: Vec<Option<Color>>,
     pub(crate) saved_scroll_bar_drag_colors: Vec<Option<Color>>,
-    pub(crate) saved_scroll_bar_bg_active_colors: Vec<Option<Color>>,
     pub(crate) saved_scroll_bar_roundeds: Vec<Option<bool>>,
     pub(crate) saved_scroll_bar_thicknesses: Vec<Option<f32>>,
     pub(crate) saved_scroll_bar_edge_widths: Vec<Option<f32>>,
@@ -714,6 +739,7 @@ impl<'a> LayoutCx<'a> {
             font_style: None,
             line_height: None,
             window_origin: Point::ZERO,
+            style: StyleCx::new(),
             saved_viewports: Vec::new(),
             saved_colors: Vec::new(),
             saved_font_sizes: Vec::new(),
@@ -722,29 +748,32 @@ impl<'a> LayoutCx<'a> {
             saved_font_styles: Vec::new(),
             saved_line_heights: Vec::new(),
             saved_window_origins: Vec::new(),
-            scroll_bar_color: None,
             scroll_bar_hover_color: None,
             scroll_bar_drag_color: None,
-            scroll_bar_bg_active_color: None,
             scroll_bar_rounded: None,
             scroll_bar_thickness: None,
             scroll_bar_edge_width: None,
-            saved_scroll_bar_colors: Vec::new(),
             saved_scroll_bar_hover_colors: Vec::new(),
             saved_scroll_bar_drag_colors: Vec::new(),
-            saved_scroll_bar_bg_active_colors: Vec::new(),
             saved_scroll_bar_roundeds: Vec::new(),
             saved_scroll_bar_thicknesses: Vec::new(),
             saved_scroll_bar_edge_widths: Vec::new(),
         }
     }
 
+    pub fn get_prop<P: StyleProp>(&self, _prop: P) -> Option<P::Type> {
+        self.style
+            .current
+            .map
+            .get(&P::prop_ref())
+            .and_then(|v| v.downcast_ref().cloned())
+    }
+
     pub(crate) fn clear(&mut self) {
+        self.style.clear();
         self.viewport = None;
-        self.scroll_bar_color = None;
         self.scroll_bar_hover_color = None;
         self.scroll_bar_drag_color = None;
-        self.scroll_bar_bg_active_color = None;
         self.scroll_bar_rounded = None;
         self.scroll_bar_thickness = None;
         self.scroll_bar_edge_width = None;
@@ -752,10 +781,8 @@ impl<'a> LayoutCx<'a> {
         self.window_origin = Point::ZERO;
         self.saved_colors.clear();
         self.saved_viewports.clear();
-        self.saved_scroll_bar_colors.clear();
         self.saved_scroll_bar_hover_colors.clear();
         self.saved_scroll_bar_drag_colors.clear();
-        self.saved_scroll_bar_bg_active_colors.clear();
         self.saved_scroll_bar_roundeds.clear();
         self.saved_scroll_bar_thicknesses.clear();
         self.saved_scroll_bar_edge_widths.clear();
@@ -768,15 +795,13 @@ impl<'a> LayoutCx<'a> {
     }
 
     pub fn save(&mut self) {
+        self.style.save();
         self.saved_viewports.push(self.viewport);
         self.saved_colors.push(self.color);
-        self.saved_scroll_bar_colors.push(self.scroll_bar_color);
         self.saved_scroll_bar_hover_colors
             .push(self.scroll_bar_hover_color);
         self.saved_scroll_bar_drag_colors
             .push(self.scroll_bar_drag_color);
-        self.saved_scroll_bar_bg_active_colors
-            .push(self.scroll_bar_bg_active_color);
         self.saved_scroll_bar_roundeds.push(self.scroll_bar_rounded);
         self.saved_scroll_bar_thicknesses
             .push(self.scroll_bar_thickness);
@@ -791,15 +816,11 @@ impl<'a> LayoutCx<'a> {
     }
 
     pub fn restore(&mut self) {
+        self.style.restore();
         self.viewport = self.saved_viewports.pop().unwrap_or_default();
         self.color = self.saved_colors.pop().unwrap_or_default();
-        self.scroll_bar_color = self.saved_scroll_bar_colors.pop().unwrap_or_default();
         self.scroll_bar_hover_color = self.saved_scroll_bar_hover_colors.pop().unwrap_or_default();
         self.scroll_bar_drag_color = self.saved_scroll_bar_drag_colors.pop().unwrap_or_default();
-        self.scroll_bar_bg_active_color = self
-            .saved_scroll_bar_bg_active_colors
-            .pop()
-            .unwrap_or_default();
         self.scroll_bar_rounded = self.saved_scroll_bar_roundeds.pop().unwrap_or_default();
         self.scroll_bar_thickness = self.saved_scroll_bar_thicknesses.pop().unwrap_or_default();
         self.scroll_bar_edge_width = self.saved_scroll_bar_edge_widths.pop().unwrap_or_default();
@@ -819,20 +840,12 @@ impl<'a> LayoutCx<'a> {
         self.app_state
     }
 
-    pub fn current_scroll_bar_color(&self) -> Option<Color> {
-        self.scroll_bar_color
-    }
-
     pub fn current_scroll_bar_hover_color(&self) -> Option<Color> {
         self.scroll_bar_hover_color
     }
 
     pub fn current_scroll_bar_drag_color(&self) -> Option<Color> {
         self.scroll_bar_drag_color
-    }
-
-    pub fn current_scroll_bar_bg_active_color(&self) -> Option<Color> {
-        self.scroll_bar_bg_active_color
     }
 
     pub fn current_scroll_bar_rounded(&self) -> Option<bool> {
@@ -945,7 +958,6 @@ pub struct PaintCx<'a> {
     pub(crate) transform: Affine,
     pub(crate) clip: Option<RoundedRect>,
     pub(crate) color: Option<Color>,
-    pub(crate) scroll_bar_color: Option<Color>,
     pub(crate) scroll_bar_rounded: Option<bool>,
     pub(crate) scroll_bar_thickness: Option<f32>,
     pub(crate) scroll_bar_edge_width: Option<f32>,
@@ -958,7 +970,6 @@ pub struct PaintCx<'a> {
     pub(crate) saved_transforms: Vec<Affine>,
     pub(crate) saved_clips: Vec<Option<RoundedRect>>,
     pub(crate) saved_colors: Vec<Option<Color>>,
-    pub(crate) saved_scroll_bar_colors: Vec<Option<Color>>,
     pub(crate) saved_scroll_bar_roundeds: Vec<Option<bool>>,
     pub(crate) saved_scroll_bar_thicknesses: Vec<Option<f32>>,
     pub(crate) saved_scroll_bar_edge_widths: Vec<Option<f32>>,
@@ -975,7 +986,6 @@ impl<'a> PaintCx<'a> {
         self.saved_transforms.push(self.transform);
         self.saved_clips.push(self.clip);
         self.saved_colors.push(self.color);
-        self.saved_scroll_bar_colors.push(self.scroll_bar_color);
         self.saved_scroll_bar_roundeds.push(self.scroll_bar_rounded);
         self.saved_scroll_bar_thicknesses
             .push(self.scroll_bar_thickness);
@@ -993,7 +1003,6 @@ impl<'a> PaintCx<'a> {
         self.transform = self.saved_transforms.pop().unwrap_or_default();
         self.clip = self.saved_clips.pop().unwrap_or_default();
         self.color = self.saved_colors.pop().unwrap_or_default();
-        self.scroll_bar_color = self.saved_scroll_bar_colors.pop().unwrap_or_default();
         self.scroll_bar_rounded = self.saved_scroll_bar_roundeds.pop().unwrap_or_default();
         self.scroll_bar_thickness = self.saved_scroll_bar_thicknesses.pop().unwrap_or_default();
         self.scroll_bar_edge_width = self.saved_scroll_bar_edge_widths.pop().unwrap_or_default();
@@ -1018,10 +1027,6 @@ impl<'a> PaintCx<'a> {
 
     pub fn current_color(&self) -> Option<Color> {
         self.color
-    }
-
-    pub fn current_scroll_bar_color(&self) -> Option<Color> {
-        self.scroll_bar_color
     }
 
     pub fn current_scroll_bar_rounded(&self) -> Option<bool> {
