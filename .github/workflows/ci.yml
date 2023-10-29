@@ -32,7 +32,7 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
         run: |
           sudo apt-get -y update
-          sudo apt-get -y install clang libwayland-dev libxkbcommon-x11-dev pkg-config libvulkan-dev
+          sudo apt-get -y install clang libwayland-dev libxkbcommon-x11-dev pkg-config libvulkan-dev libxcb-shape0-dev libxcb-xfixes0-dev
 
       - name: Update toolchain & add llvm-tools
         run: |
