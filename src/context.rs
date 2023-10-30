@@ -46,6 +46,7 @@ pub struct ViewState {
     pub(crate) node: Node,
     pub(crate) children_nodes: Vec<Node>,
     pub(crate) request_layout: bool,
+    pub(crate) hover_sensitive: bool,
     pub(crate) viewport: Option<Rect>,
     pub(crate) layout_rect: Rect,
     pub(crate) animation: Option<Animation>,
@@ -76,6 +77,7 @@ impl ViewState {
             viewport: None,
             layout_rect: Rect::ZERO,
             request_layout: true,
+            hover_sensitive: false,
             animation: None,
             base_style: None,
             style: Style::BASE,
@@ -669,6 +671,7 @@ pub struct InteractionState {
 
 pub(crate) struct StyleCx {
     pub(crate) current: Rc<StyleMap>,
+    pub(crate) direct: StyleMap,
     saved: Vec<Rc<StyleMap>>,
 }
 
@@ -676,6 +679,7 @@ impl StyleCx {
     fn new() -> Self {
         Self {
             current: Default::default(),
+            direct: Default::default(),
             saved: Default::default(),
         }
     }
@@ -763,10 +767,9 @@ impl<'a> LayoutCx<'a> {
 
     pub fn get_prop<P: StyleProp>(&self, _prop: P) -> Option<P::Type> {
         self.style
-            .current
-            .map
-            .get(&P::prop_ref())
-            .and_then(|v| v.downcast_ref().cloned())
+            .direct
+            .get_prop::<P>()
+            .or_else(|| self.style.current.get_prop::<P>())
     }
 
     pub(crate) fn clear(&mut self) {
