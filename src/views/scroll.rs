@@ -8,7 +8,8 @@ use crate::{
     context::{AppState, LayoutCx, PaintCx},
     event::Event,
     id::Id,
-    style::{ComputedStyle, Style, StyleValue},
+    prop, prop_extracter,
+    style::{ComputedStyle, OptionReader, Style, StyleValue},
     unit::PxPct,
     view::{ChangeFlags, View},
 };
@@ -39,11 +40,19 @@ enum BarHeldState {
     Horizontal(f64, Vec2),
 }
 
+prop!(pub scroll_bar_color: Color { inherited: true } = Color::rgba8(0, 0, 0, 120));
+prop!(pub bg_active_color: Color { inherited: true } = Color::rgba8(0, 0, 0, 30));
+
+prop_extracter! {
+    Extracter {
+        scroll_bar_color,
+        bg_active_color: OptionReader<bg_active_color>,
+    }
+}
+
 pub struct ScrollBarStyle {
-    color: Color,
     hover_color: Option<Color>,
     drag_color: Option<Color>,
-    bg_active_color: Option<Color>,
     rounded: bool,
     hide: bool,
     thickness: f32,
@@ -52,21 +61,13 @@ pub struct ScrollBarStyle {
 
 impl ScrollBarStyle {
     pub const BASE: Self = ScrollBarStyle {
-        // 120 is 40% of 255 so a 40% alpha factor is the default
-        color: Color::rgba8(0, 0, 0, 120),
         hover_color: None,
         drag_color: None,
-        bg_active_color: None,
         rounded: cfg!(target_os = "macos"),
         thickness: 10.,
         edge_width: 0.,
         hide: false,
     };
-
-    pub fn color(mut self, color: Color) -> Self {
-        self.color = color;
-        self
-    }
 
     pub fn hover_color(mut self, color: Color) -> Self {
         self.hover_color = Some(color);
@@ -110,6 +111,7 @@ pub struct Scroll<V: View> {
     propagate_pointer_wheel: bool,
     vertical_scroll_as_horizontal: bool,
     scroll_bar_style: ScrollBarStyle,
+    style: Extracter,
 }
 
 pub fn scroll<V: View>(child: V) -> Scroll<V> {
@@ -130,6 +132,7 @@ pub fn scroll<V: View>(child: V) -> Scroll<V> {
         propagate_pointer_wheel: false,
         vertical_scroll_as_horizontal: false,
         scroll_bar_style: ScrollBarStyle::BASE,
+        style: Default::default(),
     }
 }
 
@@ -367,22 +370,22 @@ impl<V: View> Scroll<V> {
                 if let Some(color) = self.scroll_bar_style.drag_color {
                     color
                 } else {
-                    self.scroll_bar_style.color
+                    self.style.scroll_bar_color()
                 }
             } else if self.vbar_hover {
                 if let Some(color) = self.scroll_bar_style.hover_color {
                     color
                 } else {
-                    self.scroll_bar_style.color
+                    self.style.scroll_bar_color()
                 }
             } else {
-                self.scroll_bar_style.color
+                self.style.scroll_bar_color()
             };
             if self.vbar_whole_hover || matches!(self.held, BarHeldState::Vertical(..)) {
                 let mut bounds = bounds;
                 bounds.y0 = self.actual_rect.y0;
                 bounds.y1 = self.actual_rect.y1;
-                if let Some(color) = self.scroll_bar_style.bg_active_color {
+                if let Some(color) = self.style.bg_active_color() {
                     cx.fill(&bounds, color, 0.0);
                 }
             }
@@ -400,22 +403,22 @@ impl<V: View> Scroll<V> {
                 if let Some(color) = self.scroll_bar_style.drag_color {
                     color
                 } else {
-                    self.scroll_bar_style.color
+                    self.style.scroll_bar_color()
                 }
             } else if self.hbar_hover {
                 if let Some(color) = self.scroll_bar_style.hover_color {
                     color
                 } else {
-                    self.scroll_bar_style.color
+                    self.style.scroll_bar_color()
                 }
             } else {
-                self.scroll_bar_style.color
+                self.style.scroll_bar_color()
             };
             if self.hbar_whole_hover || matches!(self.held, BarHeldState::Horizontal(..)) {
                 let mut bounds = bounds;
                 bounds.x0 = self.actual_rect.x0;
                 bounds.x1 = self.actual_rect.x1;
-                if let Some(color) = self.scroll_bar_style.bg_active_color {
+                if let Some(color) = self.style.bg_active_color() {
                     cx.fill(&bounds, color, 0.0);
                 }
             }
@@ -663,18 +666,13 @@ impl<V: View> View for Scroll<V> {
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
-            if let Some(color) = cx.scroll_bar_color {
-                self.scroll_bar_style.color = color;
-            }
             if let Some(color) = cx.scroll_bar_hover_color {
                 self.scroll_bar_style.hover_color = Some(color);
             }
             if let Some(color) = cx.scroll_bar_drag_color {
                 self.scroll_bar_style.drag_color = Some(color);
             }
-            if let Some(color) = cx.scroll_bar_bg_active_color {
-                self.scroll_bar_style.bg_active_color = Some(color);
-            }
+            self.style.read(cx);
             if let Some(rounded) = cx.scroll_bar_rounded {
                 self.scroll_bar_style.rounded = rounded;
             }
@@ -868,9 +866,6 @@ impl<V: View> View for Scroll<V> {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         cx.save();
-        if let Some(color) = cx.scroll_bar_color {
-            self.scroll_bar_style.color = color;
-        }
         if let Some(rounded) = cx.scroll_bar_rounded {
             self.scroll_bar_style.rounded = rounded;
         }

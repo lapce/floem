@@ -27,6 +27,12 @@
 
 use floem_renderer::cosmic_text::{LineHeightValue, Style as FontStyle, Weight};
 use peniko::Color;
+use std::any::Any;
+use std::collections::HashMap;
+use std::hash::Hash;
+use std::hash::Hasher;
+use std::ptr;
+use std::rc::Rc;
 pub use taffy::style::{
     AlignContent, AlignItems, Dimension, Display, FlexDirection, JustifyContent, Position,
 };
@@ -36,7 +42,164 @@ use taffy::{
     style::{FlexWrap, LengthPercentage, Style as TaffyStyle},
 };
 
+use crate::context::LayoutCx;
 use crate::unit::{Px, PxPct, PxPctAuto, UnitExt};
+use crate::views::scroll_bar_color;
+
+pub trait StyleProp: Default + Copy + 'static {
+    type Type: Clone;
+    fn prop_ref() -> StylePropRef;
+    fn default_value() -> Self::Type;
+}
+
+#[derive(Debug)]
+pub struct StylePropInfo {
+    #[allow(dead_code)]
+    pub(crate) name: &'static str,
+    pub(crate) inherited: bool,
+}
+
+impl StylePropInfo {
+    pub const fn new(name: &'static str, inherited: bool) -> Self {
+        StylePropInfo { name, inherited }
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct StylePropRef {
+    pub info: &'static StylePropInfo,
+}
+impl PartialEq for StylePropRef {
+    fn eq(&self, other: &Self) -> bool {
+        ptr::eq(self.info, other.info)
+    }
+}
+impl Hash for StylePropRef {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_usize(self.info as *const _ as usize)
+    }
+}
+impl Eq for StylePropRef {}
+
+pub trait StylePropReader {
+    type Type: Clone;
+    fn read(&mut self, cx: &LayoutCx);
+    fn get(&self) -> Self::Type;
+    fn new() -> Self;
+}
+
+pub struct DefaultReader<P: StyleProp> {
+    value: P::Type,
+}
+
+impl<P: StyleProp> StylePropReader for DefaultReader<P> {
+    type Type = P::Type;
+    fn read(&mut self, cx: &LayoutCx) {
+        self.value = cx
+            .get_prop(P::default())
+            .unwrap_or_else(|| P::default_value());
+    }
+    fn get(&self) -> Self::Type {
+        self.value.clone()
+    }
+    fn new() -> Self {
+        Self {
+            value: P::default_value(),
+        }
+    }
+}
+
+pub struct OptionReader<P: StyleProp> {
+    value: Option<P::Type>,
+}
+
+impl<P: StyleProp> StylePropReader for OptionReader<P> {
+    type Type = Option<P::Type>;
+    fn read(&mut self, cx: &LayoutCx) {
+        self.value = cx.get_prop(P::default());
+    }
+    fn get(&self) -> Self::Type {
+        self.value.clone()
+    }
+    fn new() -> Self {
+        Self { value: None }
+    }
+}
+
+#[macro_export]
+macro_rules! prop {
+    ($v:vis $name:ident: $ty:ty { inherited: $inherited:expr }
+         = $default:expr
+    ) => {
+        #[derive(Default, Copy, Clone)]
+        #[allow(non_camel_case_types)]
+        $v struct $name;
+        impl $crate::style::StyleProp for $name{
+            type Type = $ty;
+            fn prop_ref() -> $crate::style::StylePropRef {
+                static INFO: $crate::style::StylePropInfo = $crate::style::StylePropInfo::new(
+                    stringify!($name),
+                    $inherited,
+                );
+                $crate::style::StylePropRef { info: &INFO }
+            }
+            fn default_value() -> Self::Type {
+                $default
+            }
+        }
+
+    }
+}
+
+#[macro_export]
+macro_rules! prop_extracter {
+    (
+        $vis:vis $name:ident {
+            $($prop_vis:vis $prop:ident $(: $reader:ty)?),*
+            $(,)?
+        }
+    ) => {
+        #[allow(non_snake_case)]
+        $vis struct $name {
+            $(
+                $prop: prop_extracter!([impl reader][$prop $(: $reader)?]),
+            )*
+        }
+
+        impl $name {
+            fn read(&mut self, cx: &$crate::context::LayoutCx) {
+                $($crate::style::StylePropReader::read(&mut self.$prop, cx);)*
+            }
+
+            $($prop_vis fn $prop(&self) -> <prop_extracter!([impl reader][$prop $(: $reader)?])
+                as $crate::style::StylePropReader>::Type
+            {
+                $crate::style::StylePropReader::get(&self.$prop)
+            })*
+        }
+
+        impl Default for $name {
+            fn default() -> Self {
+                Self {
+                    $(
+                        $prop: $crate::style::StylePropReader::new(),
+                    )*
+                }
+            }
+        }
+    };
+    ([impl reader][$prop:ident: $reader:ty]) => {
+        $reader
+    };
+    ([impl reader][$prop:ident]) => {
+        $crate::style::DefaultReader<$prop>
+    };
+}
+
+#[derive(Default, Clone, Debug)]
+pub(crate) struct StyleMap {
+    pub(crate) map: HashMap<StylePropRef, Rc<dyn Any>>,
+}
 
 pub enum StyleSelector {
     Hover,
@@ -161,6 +324,7 @@ macro_rules! define_styles {
         /// A style with definite values for most fields.
         #[derive(Debug, Clone)]
         pub struct ComputedStyle {
+            pub(crate) other: StyleMap,
             $(
                 pub $name: $typ,
             )*
@@ -176,6 +340,7 @@ macro_rules! define_styles {
         impl Default for ComputedStyle {
             fn default() -> Self {
                 Self {
+                    other: Default::default(),
                     $(
                         $name: $val,
                     )*
@@ -185,18 +350,21 @@ macro_rules! define_styles {
 
         #[derive(Debug, Clone)]
         pub struct Style {
+            pub(crate) other: Option<HashMap<StylePropRef, StyleValue<Rc<dyn Any>>>>,
             $(
                 pub $name: StyleValue<$typ>,
             )*
         }
         impl Style {
             pub const BASE: Style = Style{
+                other: None,
                 $(
                     $name: StyleValue::Base,
                 )*
             };
 
             pub const UNSET: Style = Style{
+                other: None,
                 $(
                     $name: StyleValue::Unset,
                 )*
@@ -210,6 +378,12 @@ macro_rules! define_styles {
             /// for any missing values.
             pub fn compute(self, underlying: &ComputedStyle) -> ComputedStyle {
                 ComputedStyle {
+                    other: StyleMap {
+                        map: self.other.unwrap_or_default()
+                            .into_iter()
+                            .filter_map(|(k, mut v)| v.as_mut().map(|v| (k, v.clone())))
+                            .collect()
+                    },
                     $(
                         $name: self.$name.unwrap_or_else(|| underlying.$name.clone()),
                     )*
@@ -224,7 +398,20 @@ macro_rules! define_styles {
             /// `StyleValue::Base` will leave the value as-is, whether falling back to the underlying
             /// `ComputedStyle` or using the value in the `Style`.
             pub fn apply(self, over: Style) -> Style {
+                let mut other = self.other.unwrap_or_default();
+                for (k, v) in over.other.unwrap_or_default() {
+                    match v {
+                        StyleValue::Val(..) => {
+                            other.insert(k, v);
+                        },
+                        StyleValue::Base => (),
+                        StyleValue::Unset => {
+                            other.remove(&k);
+                        }
+                    }
+                }
                 Style {
+                    other: Some(other),
                     $(
                         $name: match (self.$name, over.$name) {
                             (_, StyleValue::Val(x)) => StyleValue::Val(x),
@@ -309,10 +496,8 @@ define_styles!(
     color color_sv nocb: Option<Color> = None,
     background background_sv nocb: Option<Color> = None,
     box_shadow box_shadow_sv nocb: Option<BoxShadow> = None,
-    scroll_bar_color scroll_bar_color_sv nocb: Option<Color> = None,
     scroll_bar_hover_color scroll_bar_hover_color_sv nocb: Option<Color> = None,
     scroll_bar_drag_color scroll_bar_drag_color_sv nocb: Option<Color> = None,
-    scroll_bar_bg_active_color scroll_bar_bg_active_color_sv nocb: Option<Color> = None,
     scroll_bar_rounded scroll_bar_rounded_sv nocb: Option<bool> = None,
     scroll_bar_thickness scroll_bar_thickness_sv nocb: Option<Px> = None,
     scroll_bar_edge_width scroll_bar_edge_width_sv nocb: Option<Px> = None,
@@ -328,6 +513,17 @@ define_styles!(
 );
 
 impl Style {
+    pub fn set<P: StyleProp>(self, prop: P, value: P::Type) -> Self {
+        self.set_style_value(prop, StyleValue::Val(value))
+    }
+
+    pub fn set_style_value<P: StyleProp>(mut self, _prop: P, value: StyleValue<P::Type>) -> Self {
+        let mut other = self.other.unwrap_or_default();
+        other.insert(P::prop_ref(), value.map(|v| -> Rc<dyn Any> { Rc::new(v) }));
+        self.other = Some(other);
+        self
+    }
+
     pub fn width_full(self) -> Self {
         self.width_pct(100.0)
     }
@@ -676,9 +872,8 @@ impl Style {
         self
     }
 
-    pub fn scroll_bar_color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
-        self.scroll_bar_color = color.into().map(Some);
-        self
+    pub fn scroll_bar_color(self, color: impl Into<StyleValue<Color>>) -> Self {
+        self.set_style_value(scroll_bar_color, color.into())
     }
 
     pub fn scroll_bar_hover_color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
@@ -688,11 +883,6 @@ impl Style {
 
     pub fn scroll_bar_drag_color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
         self.scroll_bar_drag_color = color.into().map(Some);
-        self
-    }
-
-    pub fn scroll_bar_bg_active_color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
-        self.scroll_bar_bg_active_color = color.into().map(Some);
         self
     }
 
