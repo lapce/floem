@@ -33,8 +33,8 @@ pub use decorator::*;
 mod virtual_list;
 pub use virtual_list::*;
 
-mod scroll;
-pub use scroll::*;
+pub mod scroll;
+pub use scroll::{scroll, Scroll};
 
 mod tab;
 pub use tab::*;

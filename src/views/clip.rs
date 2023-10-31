@@ -81,8 +81,8 @@ impl<V: View> View for Clip<V> {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         cx.save();
-        let style = cx.get_computed_style(self.id);
-        let radius = style.border_radius.0;
+        let style = cx.get_builtin_style(self.id);
+        let radius = style.border_radius().0;
         let size = cx
             .get_layout(self.id)
             .map(|layout| Size::new(layout.size.width as f64, layout.size.height as f64))

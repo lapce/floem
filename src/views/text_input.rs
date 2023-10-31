@@ -1,15 +1,13 @@
 use crate::action::exec_after;
 use crate::keyboard::{self, KeyEvent};
 use crate::reactive::{create_effect, RwSignal};
+use crate::style::CursorStyle;
+use crate::style::{FontProps, PaddingLeft};
 use crate::unit::PxPct;
-use crate::{context::LayoutCx, style::CursorStyle};
 use clipboard::{ClipboardContext, ClipboardProvider};
 use taffy::prelude::{Layout, Node};
 
-use floem_renderer::{
-    cosmic_text::{Cursor, Style as FontStyle, Weight},
-    Renderer,
-};
+use floem_renderer::{cosmic_text::Cursor, Renderer};
 use unicode_segmentation::UnicodeSegmentation;
 use winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
 
@@ -21,10 +19,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::{
-    cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
-    style::ComputedStyle,
-};
+use crate::cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout};
 use kurbo::{Point, Rect};
 
 use crate::{
@@ -68,12 +63,9 @@ pub struct TextInput {
     clip_offset_x: f64,
     color: Option<Color>,
     selection: Option<Range<usize>>,
-    font_size: f32,
     width: f32,
     height: f32,
-    font_family: Option<String>,
-    font_weight: Option<Weight>,
-    font_style: Option<FontStyle>,
+    font: FontProps,
     input_kind: InputKind,
     cursor_width: f64, // TODO: make this configurable
     is_focused: bool,
@@ -113,10 +105,7 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         clipped_text: None,
         clip_txt_buf: None,
         color: None,
-        font_size: DEFAULT_FONT_SIZE,
-        font_family: None,
-        font_weight: None,
-        font_style: None,
+        font: FontProps::default(),
         cursor_x: 0.0,
         selection: None,
         input_kind: InputKind::SingleLine,
@@ -245,13 +234,6 @@ impl TextInput {
         }
     }
 
-    fn text_layout_changed(&self, cx: &LayoutCx) -> bool {
-        self.font_size != cx.current_font_size().unwrap_or(DEFAULT_FONT_SIZE)
-            || self.font_family.as_deref() != cx.current_font_family()
-            || self.font_weight != cx.font_weight
-            || self.font_style != cx.font_style
-    }
-
     fn get_line_idx(&self) -> usize {
         match self.input_kind {
             InputKind::SingleLine => 0,
@@ -370,8 +352,8 @@ impl TextInput {
         self.buffer
             .with_untracked(|buff| text_layout.set_text(buff, attrs.clone()));
 
-        self.width = APPROX_VISIBLE_CHARS * self.font_size;
-        self.height = self.font_size;
+        self.width = APPROX_VISIBLE_CHARS * self.font_size();
+        self.height = self.font_size();
 
         // main buff should always get updated
         self.text_buf = Some(text_layout.clone());
@@ -384,22 +366,26 @@ impl TextInput {
         }
     }
 
+    fn font_size(&self) -> f32 {
+        self.font.size().unwrap_or(DEFAULT_FONT_SIZE)
+    }
+
     pub fn get_text_attrs(&self) -> AttrsList {
         let mut attrs = Attrs::new().color(self.color.unwrap_or(Color::BLACK));
 
-        attrs = attrs.font_size(self.font_size);
+        attrs = attrs.font_size(self.font_size());
 
-        if let Some(font_style) = self.font_style {
+        if let Some(font_style) = self.font.style() {
             attrs = attrs.style(font_style);
         }
-        let font_family = self.font_family.as_ref().map(|font_family| {
+        let font_family = self.font.family().as_ref().map(|font_family| {
             let family: Vec<FamilyOwned> = FamilyOwned::parse_list(font_family).collect();
             family
         });
         if let Some(font_family) = font_family.as_ref() {
             attrs = attrs.family(font_family);
         }
-        if let Some(font_weight) = self.font_weight {
+        if let Some(font_weight) = self.font.weight() {
             attrs = attrs.weight(font_weight);
         }
         AttrsList::new(attrs)
@@ -765,13 +751,13 @@ impl View for TextInput {
                 } else {
                     // Already focused - move cursor to click pos
                     let layout = cx.get_layout(self.id()).unwrap();
-                    let style = cx.app_state.get_computed_style(self.id);
+                    let style = cx.app_state.get_builtin_style(self.id);
 
-                    let padding_left = match style.padding_left {
+                    let padding_left = match style.padding_left() {
                         PxPct::Px(padding) => padding as f32,
                         PxPct::Pct(pct) => pct as f32 * layout.size.width,
                     };
-                    let padding_top = match style.padding_top {
+                    let padding_top = match style.padding_top() {
                         PxPct::Px(padding) => padding as f32,
                         PxPct::Pct(pct) => pct as f32 * layout.size.width,
                     };
@@ -811,13 +797,7 @@ impl View for TextInput {
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
             self.is_focused = cx.app_state().is_focused(&self.id);
-            if self.text_layout_changed(cx) {
-                self.font_size = cx.current_font_size().unwrap_or(DEFAULT_FONT_SIZE);
-                self.font_family = cx.current_font_family().map(|s| s.to_string());
-                self.font_weight = cx.font_weight;
-                self.font_style = cx.font_style;
-                self.update_text_layout();
-            } else if self.text_buf.is_none() {
+            if self.font.read(cx) || self.text_buf.is_none() {
                 self.update_text_layout();
             }
 
@@ -834,7 +814,7 @@ impl View for TextInput {
             let style = Style::BASE
                 .width(self.width)
                 .height(self.height)
-                .compute(&ComputedStyle::default())
+                .compute()
                 .to_taffy_style();
             let _ = cx.app_state_mut().taffy.set_style(text_node, style);
 
@@ -853,26 +833,16 @@ impl View for TextInput {
             return;
         }
 
-        if self.color != cx.color
-            || self.font_size != cx.font_size.unwrap_or(DEFAULT_FONT_SIZE)
-            || self.font_family.as_deref() != cx.font_family.as_deref()
-            || self.font_weight != cx.font_weight
-            || self.font_style != cx.font_style
-        {
-            self.color = cx.color;
-            self.font_size = cx.font_size.unwrap_or(DEFAULT_FONT_SIZE);
-            self.font_family = cx.font_family.clone();
-            self.font_weight = cx.font_weight;
-            self.font_style = cx.font_style;
-            self.update_text_layout();
-        }
-
         let text_node = self.text_node.unwrap();
         let text_buf = self.text_buf.as_ref().unwrap();
         let buf_width = text_buf.size().width;
         let node_layout = *cx.app_state.taffy.layout(text_node).unwrap();
         let node_width = node_layout.size.width as f64;
-        let cursor_color = cx.app_state.get_computed_style(self.id).cursor_color;
+        let cursor_color = cx
+            .app_state
+            .get_computed_style(self.id)
+            .get_builtin()
+            .cursor_color();
 
         match self.input_kind {
             InputKind::SingleLine => {
@@ -920,7 +890,7 @@ impl View for TextInput {
 
         let style = cx.app_state.get_computed_style(self.id);
 
-        let padding_left = match style.padding_left {
+        let padding_left = match style.get(PaddingLeft) {
             PxPct::Px(padding) => padding as f32,
             PxPct::Pct(pct) => pct as f32 * node_layout.size.width,
         };

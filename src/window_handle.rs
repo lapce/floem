@@ -855,40 +855,19 @@ impl WindowHandle {
                     unit: SizeUnit::Px,
                 }
             }
-            AnimPropKind::BorderRadius => {
-                let border_radius = view_state.computed_style.border_radius;
-                AnimatedProp::BorderRadius {
-                    from: border_radius.0,
-                    to: val.get_f64(),
-                }
-            }
-            AnimPropKind::BorderColor => {
-                let border_color = view_state.computed_style.border_color;
-                AnimatedProp::BorderColor {
-                    from: border_color,
-                    to: val.get_color(),
-                }
-            }
-            AnimPropKind::Background => {
+            AnimPropKind::Prop { prop } => {
                 //TODO:  get from cx
-                let bg = view_state
+                let from = view_state
                     .computed_style
-                    .background
-                    .expect("Bg must be set in the styles");
-                AnimatedProp::Background {
-                    from: bg,
-                    to: val.get_color(),
-                }
-            }
-            AnimPropKind::Color => {
-                //TODO:  get from cx
-                let color = view_state
-                    .computed_style
-                    .color
-                    .expect("Color must be set in the animated view's style");
-                AnimatedProp::Color {
-                    from: color,
-                    to: val.get_color(),
+                    .other
+                    .map
+                    .get(&prop)
+                    .and_then(|v| v.as_ref().cloned())
+                    .unwrap_or_else(|| (prop.info.default_as_any)());
+                AnimatedProp::Prop {
+                    prop,
+                    from,
+                    to: val.get_any(),
                 }
             }
         };

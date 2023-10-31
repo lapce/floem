@@ -25,49 +25,69 @@
 //! ```
 //!
 
-use floem_renderer::cosmic_text::{LineHeightValue, Style as FontStyle, Weight};
+use floem_renderer::cosmic_text;
+use floem_renderer::cosmic_text::{LineHeightValue, Weight};
 use peniko::Color;
-use std::any::Any;
+use std::any::{type_name, Any};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::fmt::{self, Debug};
 use std::hash::Hash;
 use std::hash::Hasher;
 use std::ptr;
 use std::rc::Rc;
 pub use taffy::style::{
-    AlignContent, AlignItems, Dimension, Display, FlexDirection, JustifyContent, Position,
+    AlignContent, AlignItems, Dimension, Display, FlexDirection, FlexWrap, JustifyContent, Position,
 };
 use taffy::{
     geometry::Size,
     prelude::Rect,
-    style::{FlexWrap, LengthPercentage, Style as TaffyStyle},
+    style::{LengthPercentage, Style as TaffyStyle},
 };
 
 use crate::context::InteractionState;
 use crate::context::LayoutCx;
 use crate::unit::{Px, PxPct, PxPctAuto, UnitExt};
-use crate::views::scroll_bar_color;
 
 pub trait StyleProp: Default + Copy + 'static {
-    type Type: Clone;
+    type Type: Clone + PartialEq + Debug;
     fn prop_ref() -> StylePropRef;
     fn default_value() -> Self::Type;
 }
 
 #[derive(Debug)]
 pub struct StylePropInfo {
-    #[allow(dead_code)]
-    pub(crate) name: &'static str,
+    pub(crate) name: fn() -> &'static str,
     pub(crate) inherited: bool,
+    pub(crate) default_as_any: fn() -> Rc<dyn Any>,
+    pub(crate) debug_any: fn(val: &dyn Any) -> String,
 }
 
 impl StylePropInfo {
-    pub const fn new(name: &'static str, inherited: bool) -> Self {
-        StylePropInfo { name, inherited }
+    pub const fn new<Name, T: Debug + 'static>(
+        inherited: bool,
+        default_as_any: fn() -> Rc<dyn Any>,
+    ) -> Self {
+        StylePropInfo {
+            name: || std::any::type_name::<Name>(),
+            inherited,
+            default_as_any,
+            debug_any: |val| {
+                if let Some(v) = val.downcast_ref::<T>() {
+                    format!("{:?}", v)
+                } else {
+                    panic!(
+                        "expected type {} for property {}",
+                        type_name::<T>(),
+                        std::any::type_name::<Name>(),
+                    )
+                }
+            },
+        }
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone)]
 pub struct StylePropRef {
     pub info: &'static StylePropInfo,
 }
@@ -82,66 +102,96 @@ impl Hash for StylePropRef {
     }
 }
 impl Eq for StylePropRef {}
+impl Debug for StylePropRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", (self.info.name)())
+    }
+}
 
 pub trait StylePropReader {
+    type State: Debug;
     type Type: Clone;
-    fn read(&mut self, cx: &LayoutCx);
-    fn get(&self) -> Self::Type;
-    fn new() -> Self;
+
+    /// Reads the property from the current style state.
+    /// Returns true if the property changed.
+    fn read(state: &mut Self::State, cx: &LayoutCx) -> bool;
+
+    fn get(state: &Self::State) -> Self::Type;
+    fn new() -> Self::State;
 }
 
-pub struct DefaultReader<P: StyleProp> {
-    value: P::Type,
-}
-
-impl<P: StyleProp> StylePropReader for DefaultReader<P> {
+impl<P: StyleProp> StylePropReader for P {
+    type State = P::Type;
     type Type = P::Type;
-    fn read(&mut self, cx: &LayoutCx) {
-        self.value = cx
+    fn read(state: &mut Self::State, cx: &LayoutCx) -> bool {
+        let new = cx
             .get_prop(P::default())
             .unwrap_or_else(|| P::default_value());
+        let changed = new != *state;
+        *state = new;
+        changed
     }
-    fn get(&self) -> Self::Type {
-        self.value.clone()
+    fn get(state: &Self::State) -> Self::Type {
+        state.clone()
     }
-    fn new() -> Self {
-        Self {
-            value: P::default_value(),
-        }
+    fn new() -> Self::State {
+        P::default_value()
     }
 }
 
-pub struct OptionReader<P: StyleProp> {
-    value: Option<P::Type>,
-}
-
-impl<P: StyleProp> StylePropReader for OptionReader<P> {
+impl<P: StyleProp> StylePropReader for Option<P> {
+    type State = Option<P::Type>;
     type Type = Option<P::Type>;
-    fn read(&mut self, cx: &LayoutCx) {
-        self.value = cx.get_prop(P::default());
+    fn read(state: &mut Self::State, cx: &LayoutCx) -> bool {
+        let new = cx.get_prop(P::default());
+        let changed = new != *state;
+        *state = new;
+        changed
     }
-    fn get(&self) -> Self::Type {
-        self.value.clone()
+    fn get(state: &Self::State) -> Self::Type {
+        state.clone()
     }
-    fn new() -> Self {
-        Self { value: None }
+    fn new() -> Self::State {
+        None
+    }
+}
+
+pub struct ExtratorField<R: StylePropReader> {
+    state: R::State,
+}
+
+impl<R: StylePropReader> Debug for ExtratorField<R> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.state.fmt(f)
+    }
+}
+
+impl<R: StylePropReader> ExtratorField<R> {
+    pub fn read(&mut self, cx: &LayoutCx) -> bool {
+        R::read(&mut self.state, cx)
+    }
+    pub fn get(&self) -> R::Type {
+        R::get(&self.state)
+    }
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        Self { state: R::new() }
     }
 }
 
 #[macro_export]
 macro_rules! prop {
-    ($v:vis $name:ident: $ty:ty { inherited: $inherited:expr }
-         = $default:expr
+    ($v:vis $name:ident: $ty:ty { $($options:tt)* } = $default:expr
     ) => {
         #[derive(Default, Copy, Clone)]
         #[allow(non_camel_case_types)]
         $v struct $name;
-        impl $crate::style::StyleProp for $name{
+        impl $crate::style::StyleProp for $name {
             type Type = $ty;
             fn prop_ref() -> $crate::style::StylePropRef {
-                static INFO: $crate::style::StylePropInfo = $crate::style::StylePropInfo::new(
-                    stringify!($name),
-                    $inherited,
+                static INFO: $crate::style::StylePropInfo = $crate::style::StylePropInfo::new::<$name, $ty>(
+                    prop!([impl inherited][$($options)*]),
+                    || std::rc::Rc::new($name::default_value()),
                 );
                 $crate::style::StylePropRef { info: &INFO }
             }
@@ -149,34 +199,39 @@ macro_rules! prop {
                 $default
             }
         }
-
-    }
+    };
+    ([impl inherited][inherited]) => {
+        true
+    };
+    ([impl inherited][]) => {
+        false
+    };
 }
 
 #[macro_export]
 macro_rules! prop_extracter {
     (
         $vis:vis $name:ident {
-            $($prop_vis:vis $prop:ident $(: $reader:ty)?),*
+            $($prop_vis:vis $prop:ident: $reader:ty),*
             $(,)?
         }
     ) => {
-        #[allow(non_snake_case)]
+        #[derive(Debug)]
         $vis struct $name {
             $(
-                $prop: prop_extracter!([impl reader][$prop $(: $reader)?]),
+                $prop_vis $prop: $crate::style::ExtratorField<$reader>,
             )*
         }
 
         impl $name {
-            fn read(&mut self, cx: &$crate::context::LayoutCx) {
-                $($crate::style::StylePropReader::read(&mut self.$prop, cx);)*
+            $vis fn read(&mut self, cx: &$crate::context::LayoutCx) -> bool {
+                false
+                $(| self.$prop.read(cx))*
             }
 
-            $($prop_vis fn $prop(&self) -> <prop_extracter!([impl reader][$prop $(: $reader)?])
-                as $crate::style::StylePropReader>::Type
+            $($prop_vis fn $prop(&self) -> <$reader as $crate::style::StylePropReader>::Type
             {
-                $crate::style::StylePropReader::get(&self.$prop)
+                self.$prop.get()
             })*
         }
 
@@ -184,17 +239,11 @@ macro_rules! prop_extracter {
             fn default() -> Self {
                 Self {
                     $(
-                        $prop: $crate::style::StylePropReader::new(),
+                        $prop: $crate::style::ExtratorField::new(),
                     )*
                 }
             }
         }
-    };
-    ([impl reader][$prop:ident: $reader:ty]) => {
-        $reader
-    };
-    ([impl reader][$prop:ident]) => {
-        $crate::style::DefaultReader<$prop>
     };
 }
 
@@ -214,7 +263,7 @@ impl<T> StyleMapValue<T> {
     }
 }
 
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone)]
 pub(crate) struct StyleMap {
     pub(crate) map: HashMap<StylePropRef, StyleMapValue<Rc<dyn Any>>>,
     pub(crate) selectors: HashMap<StyleSelector, StyleMap>,
@@ -225,7 +274,19 @@ impl StyleMap {
         self.map
             .get(&P::prop_ref())
             .and_then(|v| v.as_ref())
-            .and_then(|v| v.downcast_ref().cloned())
+            .map(|v| v.downcast_ref::<P::Type>().unwrap().clone())
+    }
+
+    pub(crate) fn get_prop_style_value<P: StyleProp>(&self) -> StyleValue<P::Type> {
+        self.map
+            .get(&P::prop_ref())
+            .map(|v| match v {
+                StyleMapValue::Val(v) => {
+                    StyleValue::Val(v.downcast_ref::<P::Type>().unwrap().clone())
+                }
+                StyleMapValue::Unset => StyleValue::Unset,
+            })
+            .unwrap_or(StyleValue::Base)
     }
 
     pub(crate) fn hover_sensitive(&self) -> bool {
@@ -274,6 +335,30 @@ impl StyleMap {
     }
 }
 
+impl Debug for StyleMap {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StyleMap")
+            .field(
+                "map",
+                &self
+                    .map
+                    .iter()
+                    .map(|(p, v)| {
+                        (
+                            *p,
+                            match v {
+                                StyleMapValue::Val(v) => (p.info.debug_any)(&**v),
+                                StyleMapValue::Unset => "Unset".to_owned(),
+                            },
+                        )
+                    })
+                    .collect::<HashMap<StylePropRef, String>>(),
+            )
+            .field("selectors", &self.selectors)
+            .finish()
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum StyleSelector {
     Hover,
@@ -291,7 +376,7 @@ pub enum TextOverflow {
     Ellipsis,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CursorStyle {
     Default,
     Pointer,
@@ -310,7 +395,7 @@ pub enum CursorStyle {
     NwseResize,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BoxShadow {
     pub blur_radius: f64,
     pub color: Color,
@@ -389,193 +474,183 @@ impl<T> From<T> for StyleValue<T> {
     }
 }
 
-// Creates `ComputedStyle` which has definite values for the fields, barring some specific cases.
-// Creates `Style` which has `StyleValue<T>`s for the fields
-macro_rules! define_styles {
+/// A style with definite values for most fields.
+#[derive(Default, Debug, Clone)]
+pub struct ComputedStyle {
+    pub(crate) other: StyleMap,
+}
+impl ComputedStyle {
+    pub(crate) fn get<P: StyleProp>(&self, _prop: P) -> P::Type {
+        self.other
+            .get_prop::<P>()
+            .unwrap_or_else(|| P::default_value())
+    }
+
+    pub(crate) fn get_builtin(&self) -> BuiltinStyleReader<'_> {
+        BuiltinStyleReader { style: self }
+    }
+}
+#[derive(Debug, Clone)]
+pub struct Style {
+    pub(crate) other: Option<StyleMap>,
+}
+impl Style {
+    pub const BASE: Style = Style { other: None };
+
+    pub const UNSET: Style = Style { other: None };
+
+    /// Convert this `Style` into a computed style.
+    pub fn compute(self) -> ComputedStyle {
+        ComputedStyle {
+            other: self.other.unwrap_or_default(),
+        }
+    }
+
+    /// Apply another `Style` to this style, returning a new `Style` with the overrides
+    ///
+    /// `StyleValue::Val` will override the value with the given value
+    /// `StyleValue::Unset` will unset the value, causing it to fall back to the underlying
+    /// `ComputedStyle` (aka setting it to `None`)
+    /// `StyleValue::Base` will leave the value as-is, whether falling back to the underlying
+    /// `ComputedStyle` or using the value in the `Style`.
+    pub fn apply(self, over: Style) -> Style {
+        let mut other = self.other.unwrap_or_default();
+        if let Some(over) = over.other {
+            other.apply(over);
+        }
+        Style { other: Some(other) }
+    }
+
+    /// Apply multiple `Style`s to this style, returning a new `Style` with the overrides.
+    /// Later styles take precedence over earlier styles.
+    pub fn apply_overriding_styles(self, overrides: impl Iterator<Item = Style>) -> Style {
+        overrides.fold(self, |acc, x| acc.apply(x))
+    }
+}
+
+macro_rules! define_style_methods {
     (
-        $($name:ident $name_sv:ident $($opt:ident)?: $typ:ty = $val:expr),* $(,)?
+        $($type_name:ident $name:ident $name_sv:ident $($opt:ident)?:
+            $typ:ty { $($options:tt)* } = $val:expr),*
+        $(,)?
     ) => {
-        /// A style with definite values for most fields.
-        #[derive(Debug, Clone)]
-        pub struct ComputedStyle {
-            pub(crate) other: StyleMap,
-            $(
-                pub $name: $typ,
-            )*
-        }
-        impl ComputedStyle {
-            $(
-                pub fn $name(mut self, v: impl Into<$typ>) -> Self {
-                    self.$name = v.into();
-                    self
-                }
-            )*
-        }
-        impl Default for ComputedStyle {
-            fn default() -> Self {
-                Self {
-                    other: Default::default(),
-                    $(
-                        $name: $val,
-                    )*
-                }
-            }
-        }
-
-        #[derive(Debug, Clone)]
-        pub struct Style {
-            pub(crate) other: Option<StyleMap>,
-            $(
-                pub $name: StyleValue<$typ>,
-            )*
-        }
+        $(
+            prop!(pub $type_name: $typ { $($options)* } = $val);
+        )*
         impl Style {
-            pub const BASE: Style = Style{
-                other: None,
-                $(
-                    $name: StyleValue::Base,
-                )*
-            };
-
-            pub const UNSET: Style = Style{
-                other: None,
-                $(
-                    $name: StyleValue::Unset,
-                )*
-            };
-
             $(
-                define_styles!(decl: $name $name_sv $($opt)?: $typ = $val);
+                define_style_methods!(decl: $type_name $name $name_sv $($opt)?: $typ = $val);
             )*
+        }
 
-            /// Convert this `Style` into a computed style, using the given `ComputedStyle` as a base
-            /// for any missing values.
-            pub fn compute(self, underlying: &ComputedStyle) -> ComputedStyle {
-                ComputedStyle {
-                    other: self.other.unwrap_or_default(),
-                    $(
-                        $name: self.$name.unwrap_or_else(|| underlying.$name.clone()),
-                    )*
+        impl BuiltinStyleReader<'_> {
+            $(
+                #[allow(dead_code)]
+                pub(crate) fn $name(&self) -> $typ {
+                    self.style.get($type_name)
                 }
-            }
-
-            /// Apply another `Style` to this style, returning a new `Style` with the overrides
-            ///
-            /// `StyleValue::Val` will override the value with the given value
-            /// `StyleValue::Unset` will unset the value, causing it to fall back to the underlying
-            /// `ComputedStyle` (aka setting it to `None`)
-            /// `StyleValue::Base` will leave the value as-is, whether falling back to the underlying
-            /// `ComputedStyle` or using the value in the `Style`.
-            pub fn apply(self, over: Style) -> Style {
-                let mut other = self.other.unwrap_or_default();
-                if let Some(over) = over.other {
-                    other.apply(over);
-                }
-                Style {
-                    other: Some(other),
-                    $(
-                        $name: match (self.$name, over.$name) {
-                            (_, StyleValue::Val(x)) => StyleValue::Val(x),
-                            (StyleValue::Val(x), StyleValue::Base) => StyleValue::Val(x),
-                            (StyleValue::Val(_), StyleValue::Unset) => StyleValue::Unset,
-                            (StyleValue::Base, StyleValue::Base) => StyleValue::Base,
-                            (StyleValue::Unset, StyleValue::Base) => StyleValue::Unset,
-                            (StyleValue::Base, StyleValue::Unset) => StyleValue::Unset,
-                            (StyleValue::Unset, StyleValue::Unset) => StyleValue::Unset,
-                        },
-                    )*
-                }
-            }
-
-            /// Apply multiple `Style`s to this style, returning a new `Style` with the overrides.
-            /// Later styles take precedence over earlier styles.
-            pub fn apply_overriding_styles(self, overrides: impl Iterator<Item = Style>) -> Style {
-                overrides.fold(self, |acc, x| acc.apply(x))
-            }
+            )*
         }
     };
-    // internal submacro
-
-    // 'nocb' doesn't add a builder function
-    (decl: $name:ident $name_sv:ident nocb: $typ:ty = $val:expr) => {};
-    (decl: $name:ident $name_sv:ident: $typ:ty = $val:expr) => {
-        pub fn $name(mut self, v: impl Into<$typ>) -> Self
-        {
-            self.$name = StyleValue::Val(v.into());
-            self
+    (decl: $type_name:ident $name:ident $name_sv:ident nocb: $typ:ty = $val:expr) => {};
+    (decl: $type_name:ident $name:ident $name_sv:ident: $typ:ty = $val:expr) => {
+        pub fn $name(self, v: impl Into<$typ>) -> Self {
+            self.set($type_name, v.into())
         }
 
-        pub fn $name_sv(mut self, v: StyleValue<$typ>) -> Self
-        {
-            self.$name = v;
-            self
+        pub fn $name_sv(self, v: StyleValue<$typ>) -> Self {
+            self.set_style_value($type_name, v)
         }
     }
 }
 
-define_styles!(
-    display display_sv: Display = Display::Flex,
-    position position_sv: Position = Position::Relative,
-    width width_sv: PxPctAuto = PxPctAuto::Auto,
-    height height_sv: PxPctAuto = PxPctAuto::Auto,
-    min_width min_width_sv: PxPctAuto = PxPctAuto::Auto,
-    min_height min_height_sv: PxPctAuto = PxPctAuto::Auto,
-    max_width max_width_sv: PxPctAuto = PxPctAuto::Auto,
-    max_height max_height_sv: PxPctAuto = PxPctAuto::Auto,
-    flex_direction flex_direction_sv: FlexDirection = FlexDirection::Row,
-    flex_wrap flex_wrap_sv: FlexWrap = FlexWrap::NoWrap,
-    flex_grow flex_grow_sv: f32 = 0.0,
-    flex_shrink flex_shrink_sv: f32 = 1.0,
-    flex_basis flex_basis_sv: PxPctAuto = PxPctAuto::Auto,
-    justify_content justify_content_sv: Option<JustifyContent> = None,
-    justify_self justify_self_sv: Option<AlignItems> = None,
-    align_items align_items_sv: Option<AlignItems> = None,
-    align_content align_content_sv: Option<AlignContent> = None,
-    align_self align_self_sv: Option<AlignItems> = None,
-    border_left border_left_sv: Px = Px(0.0),
-    border_top border_top_sv: Px = Px(0.0),
-    border_right border_right_sv: Px = Px(0.0),
-    border_bottom border_bottom_sv: Px = Px(0.0),
-    border_radius border_radius_sv: Px = Px(0.0),
-    outline_color outline_color_sv: Color = Color::TRANSPARENT,
-    outline outline_sv: Px = Px(0.0),
-    border_color border_color_sv: Color = Color::BLACK,
-    padding_left padding_left_sv: PxPct = PxPct::Px(0.0),
-    padding_top padding_top_sv: PxPct = PxPct::Px(0.0),
-    padding_right padding_right_sv: PxPct = PxPct::Px(0.0),
-    padding_bottom padding_bottom_sv: PxPct = PxPct::Px(0.0),
-    margin_left margin_left_sv: PxPctAuto = PxPctAuto::Px(0.0),
-    margin_top margin_top_sv: PxPctAuto = PxPctAuto::Px(0.0),
-    margin_right margin_right_sv: PxPctAuto = PxPctAuto::Px(0.0),
-    margin_bottom margin_bottom_sv: PxPctAuto = PxPctAuto::Px(0.0),
-    inset_left inset_left_sv: PxPctAuto = PxPctAuto::Auto,
-    inset_top inset_top_sv: PxPctAuto = PxPctAuto::Auto,
-    inset_right inset_right_sv: PxPctAuto = PxPctAuto::Auto,
-    inset_bottom inset_bottom_sv: PxPctAuto = PxPctAuto::Auto,
-    z_index z_index_sv nocb: Option<i32> = None,
-    cursor cursor_sv nocb: Option<CursorStyle> = None,
-    color color_sv nocb: Option<Color> = None,
-    background background_sv nocb: Option<Color> = None,
-    box_shadow box_shadow_sv nocb: Option<BoxShadow> = None,
-    scroll_bar_hover_color scroll_bar_hover_color_sv nocb: Option<Color> = None,
-    scroll_bar_drag_color scroll_bar_drag_color_sv nocb: Option<Color> = None,
-    scroll_bar_rounded scroll_bar_rounded_sv nocb: Option<bool> = None,
-    scroll_bar_thickness scroll_bar_thickness_sv nocb: Option<Px> = None,
-    scroll_bar_edge_width scroll_bar_edge_width_sv nocb: Option<Px> = None,
-    font_size font_size_sv nocb: Option<f32> = None,
-    font_family font_family_sv nocb: Option<String> = None,
-    font_weight font_weight_sv nocb: Option<Weight> = None,
-    font_style font_style_sv nocb: Option<FontStyle> = None,
-    cursor_color cursor_color_sv nocb: Option<Color> = None,
-    text_overflow text_overflow_sv: TextOverflow = TextOverflow::Wrap,
-    line_height line_height_sv nocb: Option<LineHeightValue> = None,
-    aspect_ratio aspect_ratio_sv: Option<f32> = None,
-    gap gap_sv: Size<LengthPercentage> = Size::zero(),
+pub(crate) struct BuiltinStyleReader<'a> {
+    style: &'a ComputedStyle,
+}
+
+define_style_methods!(
+    DisplayProp display display_sv: Display {} = Display::Flex,
+    PositionProp position position_sv: Position {} = Position::Relative,
+    Width width width_sv: PxPctAuto {} = PxPctAuto::Auto,
+    Height height height_sv: PxPctAuto {} = PxPctAuto::Auto,
+    MinWidth min_width min_width_sv: PxPctAuto {} = PxPctAuto::Auto,
+    MinHeight min_height min_height_sv: PxPctAuto {} = PxPctAuto::Auto,
+    MaxWidth max_width max_width_sv: PxPctAuto {} = PxPctAuto::Auto,
+    MaxHeight max_height max_height_sv: PxPctAuto {} = PxPctAuto::Auto,
+    FlexDirectionProp flex_direction flex_direction_sv: FlexDirection {} = FlexDirection::Row,
+    FlexWrapProp flex_wrap flex_wrap_sv: FlexWrap {} = FlexWrap::NoWrap,
+    FlexGrow flex_grow flex_grow_sv: f32 {} = 0.0,
+    FlexShrink flex_shrink flex_shrink_sv: f32 {} = 1.0,
+    FlexBasis flex_basis flex_basis_sv: PxPctAuto {} = PxPctAuto::Auto,
+    JustifyContentProp justify_content justify_content_sv: Option<JustifyContent> {} = None,
+    JustifySelf justify_self justify_self_sv: Option<AlignItems> {} = None,
+    AlignItemsProp align_items align_items_sv: Option<AlignItems> {} = None,
+    AlignContentProp align_content align_content_sv: Option<AlignContent> {} = None,
+    AlignSelf align_self align_self_sv: Option<AlignItems> {} = None,
+    BorderLeft border_left border_left_sv: Px {} = Px(0.0),
+    BorderTop border_top border_top_sv: Px {} = Px(0.0),
+    BorderRight border_right border_right_sv: Px {} = Px(0.0),
+    BorderBottom border_bottom border_bottom_sv: Px {} = Px(0.0),
+    BorderRadius border_radius border_radius_sv: Px {} = Px(0.0),
+    OutlineColor outline_color outline_color_sv: Color {} = Color::TRANSPARENT,
+    Outline outline outline_sv: Px {} = Px(0.0),
+    BorderColor border_color border_color_sv: Color {} = Color::BLACK,
+    PaddingLeft padding_left padding_left_sv: PxPct {} = PxPct::Px(0.0),
+    PaddingTop padding_top padding_top_sv: PxPct {} = PxPct::Px(0.0),
+    PaddingRight padding_right padding_right_sv: PxPct {} = PxPct::Px(0.0),
+    PaddingBottom padding_bottom padding_bottom_sv: PxPct {} = PxPct::Px(0.0),
+    MarginLeft margin_left margin_left_sv: PxPctAuto {} = PxPctAuto::Px(0.0),
+    MarginTop margin_top margin_top_sv: PxPctAuto {} = PxPctAuto::Px(0.0),
+    MarginRight margin_right margin_right_sv: PxPctAuto {} = PxPctAuto::Px(0.0),
+    MarginBottom margin_bottom margin_bottom_sv: PxPctAuto {} = PxPctAuto::Px(0.0),
+    InsetLeft inset_left inset_left_sv: PxPctAuto {} = PxPctAuto::Auto,
+    InsetTop inset_top inset_top_sv: PxPctAuto {} = PxPctAuto::Auto,
+    InsetRight inset_right inset_right_sv: PxPctAuto {} = PxPctAuto::Auto,
+    InsetBottom inset_bottom inset_bottom_sv: PxPctAuto {} = PxPctAuto::Auto,
+    ZIndex z_index z_index_sv nocb: Option<i32> {} = None,
+    Cursor cursor cursor_sv nocb: Option<CursorStyle> {} = None,
+    TextColor color color_sv nocb: Option<Color> {} = None,
+    Background background background_sv nocb: Option<Color> {} = None,
+    BoxShadowProp box_shadow box_shadow_sv nocb: Option<BoxShadow> {} = None,
+    FontSize font_size font_size_sv nocb: Option<f32> { inherited } = None,
+    FontFamily font_family font_family_sv nocb: Option<String> { inherited } = None,
+    FontWeight font_weight font_weight_sv nocb: Option<Weight> { inherited } = None,
+    FontStyle font_style font_style_sv nocb: Option<cosmic_text::Style> { inherited } = None,
+    CursorColor cursor_color cursor_color_sv nocb: Option<Color> {} = None,
+    TextOverflowProp text_overflow text_overflow_sv: TextOverflow {} = TextOverflow::Wrap,
+    LineHeight line_height line_height_sv nocb: Option<LineHeightValue> { inherited } = None,
+    AspectRatio aspect_ratio aspect_ratio_sv: Option<f32> {} = None,
+    Gap gap gap_sv: Size<LengthPercentage> {} = Size::zero(),
 );
 
+prop_extracter! {
+    pub FontProps {
+        pub size: FontSize,
+        pub family: FontFamily,
+        pub weight: FontWeight,
+        pub style: FontStyle,
+    }
+}
+
 impl Style {
-    pub fn set<P: StyleProp>(self, prop: P, value: P::Type) -> Self {
-        self.set_style_value(prop, StyleValue::Val(value))
+    pub fn get<P: StyleProp>(&self, _prop: P) -> P::Type {
+        if let Some(other) = &self.other {
+            other.get_prop::<P>().unwrap_or_else(|| P::default_value())
+        } else {
+            P::default_value()
+        }
+    }
+
+    pub fn get_style_value<P: StyleProp>(&self, _prop: P) -> StyleValue<P::Type> {
+        if let Some(other) = &self.other {
+            other.get_prop_style_value::<P>()
+        } else {
+            StyleValue::Base
+        }
+    }
+
+    pub fn set<P: StyleProp>(self, prop: P, value: impl Into<P::Type>) -> Self {
+        self.set_style_value(prop, StyleValue::Val(value.into()))
     }
 
     pub fn set_style_value<P: StyleProp>(mut self, _prop: P, value: StyleValue<P::Type>) -> Self {
@@ -595,7 +670,6 @@ impl Style {
     }
 
     pub fn hover(mut self, style: impl Fn(Style) -> Style + 'static) -> Self {
-        // FIXME: Ignores field style properties.
         let over = style(Style::BASE).other.unwrap_or_default();
         let mut other = self.other.unwrap_or_default();
         other.set_selector(StyleSelector::Hover, over);
@@ -856,162 +930,74 @@ impl Style {
             .inset_bottom(inset)
     }
 
-    pub fn cursor(mut self, cursor: impl Into<StyleValue<CursorStyle>>) -> Self {
-        self.cursor = cursor.into().map(Some);
-        self
+    pub fn cursor(self, cursor: impl Into<StyleValue<CursorStyle>>) -> Self {
+        self.set_style_value(Cursor, cursor.into().map(Some))
     }
 
-    pub fn color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
-        self.color = color.into().map(Some);
-        self
+    pub fn color(self, color: impl Into<StyleValue<Color>>) -> Self {
+        self.set_style_value(TextColor, color.into().map(Some))
     }
 
-    pub fn background(mut self, color: impl Into<StyleValue<Color>>) -> Self {
-        self.background = color.into().map(Some);
-        self
+    pub fn background(self, color: impl Into<StyleValue<Color>>) -> Self {
+        self.set_style_value(Background, color.into().map(Some))
     }
 
-    pub fn box_shadow_blur(mut self, blur_radius: f64) -> Self {
-        if let Some(box_shadow) = self.box_shadow.as_mut() {
-            if let Some(box_shadow) = box_shadow.as_mut() {
-                box_shadow.blur_radius = blur_radius;
-                return self;
-            }
-        }
-
-        self.box_shadow = Some(BoxShadow {
-            blur_radius,
-            ..Default::default()
-        })
-        .into();
-        self
+    pub fn box_shadow_blur(self, blur_radius: f64) -> Self {
+        let mut value = self.get(BoxShadowProp).unwrap_or_default();
+        value.blur_radius = blur_radius;
+        self.set(BoxShadowProp, Some(value))
     }
 
-    pub fn box_shadow_color(mut self, color: Color) -> Self {
-        if let Some(box_shadow) = self.box_shadow.as_mut() {
-            if let Some(box_shadow) = box_shadow.as_mut() {
-                box_shadow.color = color;
-                return self;
-            }
-        }
-
-        self.box_shadow = Some(BoxShadow {
-            color,
-            ..Default::default()
-        })
-        .into();
-        self
+    pub fn box_shadow_color(self, color: Color) -> Self {
+        let mut value = self.get(BoxShadowProp).unwrap_or_default();
+        value.color = color;
+        self.set(BoxShadowProp, Some(value))
     }
 
-    pub fn box_shadow_spread(mut self, spread: f64) -> Self {
-        if let Some(box_shadow) = self.box_shadow.as_mut() {
-            if let Some(box_shadow) = box_shadow.as_mut() {
-                box_shadow.spread = spread;
-                return self;
-            }
-        }
-
-        self.box_shadow = Some(BoxShadow {
-            spread,
-            ..Default::default()
-        })
-        .into();
-        self
+    pub fn box_shadow_spread(self, spread: f64) -> Self {
+        let mut value = self.get(BoxShadowProp).unwrap_or_default();
+        value.spread = spread;
+        self.set(BoxShadowProp, Some(value))
     }
 
-    pub fn box_shadow_h_offset(mut self, h_offset: f64) -> Self {
-        if let Some(box_shadow) = self.box_shadow.as_mut() {
-            if let Some(box_shadow) = box_shadow.as_mut() {
-                box_shadow.h_offset = h_offset;
-                return self;
-            }
-        }
-
-        self.box_shadow = Some(BoxShadow {
-            h_offset,
-            ..Default::default()
-        })
-        .into();
-        self
+    pub fn box_shadow_h_offset(self, h_offset: f64) -> Self {
+        let mut value = self.get(BoxShadowProp).unwrap_or_default();
+        value.h_offset = h_offset;
+        self.set(BoxShadowProp, Some(value))
     }
 
-    pub fn box_shadow_v_offset(mut self, v_offset: f64) -> Self {
-        if let Some(box_shadow) = self.box_shadow.as_mut() {
-            if let Some(box_shadow) = box_shadow.as_mut() {
-                box_shadow.v_offset = v_offset;
-                return self;
-            }
-        }
-
-        self.box_shadow = Some(BoxShadow {
-            v_offset,
-            ..Default::default()
-        })
-        .into();
-        self
+    pub fn box_shadow_v_offset(self, v_offset: f64) -> Self {
+        let mut value = self.get(BoxShadowProp).unwrap_or_default();
+        value.v_offset = v_offset;
+        self.set(BoxShadowProp, Some(value))
     }
 
-    pub fn scroll_bar_color(self, color: impl Into<StyleValue<Color>>) -> Self {
-        self.set_style_value(scroll_bar_color, color.into())
+    pub fn font_size(self, size: impl Into<StyleValue<f32>>) -> Self {
+        self.set_style_value(FontSize, size.into().map(Some))
     }
 
-    pub fn scroll_bar_hover_color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
-        self.scroll_bar_hover_color = color.into().map(Some);
-        self
+    pub fn font_family(self, family: impl Into<StyleValue<String>>) -> Self {
+        self.set_style_value(FontFamily, family.into().map(Some))
     }
 
-    pub fn scroll_bar_drag_color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
-        self.scroll_bar_drag_color = color.into().map(Some);
-        self
-    }
-
-    pub fn scroll_bar_rounded(mut self, rounded: impl Into<StyleValue<bool>>) -> Self {
-        self.scroll_bar_rounded = rounded.into().map(Some);
-        self
-    }
-
-    pub fn scroll_bar_thickness(mut self, thickness: impl Into<Px>) -> Self {
-        self.scroll_bar_thickness = StyleValue::Val(Some(thickness.into()));
-        self
-    }
-
-    pub fn scroll_bar_edge_width(mut self, edge_width: impl Into<Px>) -> Self {
-        self.scroll_bar_edge_width = StyleValue::Val(Some(edge_width.into()));
-        self
-    }
-
-    pub fn font_size(mut self, size: impl Into<StyleValue<f32>>) -> Self {
-        self.font_size = size.into().map(Some);
-        self
-    }
-
-    pub fn font_family(mut self, family: impl Into<StyleValue<String>>) -> Self {
-        self.font_family = family.into().map(Some);
-        self
-    }
-
-    pub fn font_weight(mut self, weight: impl Into<StyleValue<Weight>>) -> Self {
-        self.font_weight = weight.into().map(Some);
-        self
+    pub fn font_weight(self, weight: impl Into<StyleValue<Weight>>) -> Self {
+        self.set_style_value(FontWeight, weight.into().map(Some))
     }
 
     pub fn font_bold(self) -> Self {
         self.font_weight(Weight::BOLD)
     }
 
-    pub fn font_style(mut self, style: impl Into<StyleValue<FontStyle>>) -> Self {
-        self.font_style = style.into().map(Some);
-        self
+    pub fn font_style(self, style: impl Into<StyleValue<cosmic_text::Style>>) -> Self {
+        self.set_style_value(FontStyle, style.into().map(Some))
     }
 
-    pub fn cursor_color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
-        self.cursor_color = color.into().map(Some);
-        self
+    pub fn cursor_color(self, color: impl Into<StyleValue<Color>>) -> Self {
+        self.set_style_value(CursorColor, color.into().map(Some))
     }
 
-    pub fn line_height(mut self, normal: f32) -> Self {
-        self.line_height = Some(LineHeightValue::Normal(normal)).into();
-        self
+    pub fn line_height(self, normal: f32) -> Self {
+        self.set(LineHeight, Some(LineHeightValue::Normal(normal)))
     }
 
     pub fn text_ellipsis(self) -> Self {
@@ -1023,58 +1009,57 @@ impl Style {
     }
 
     pub fn absolute(self) -> Self {
-        self.position(Position::Absolute)
+        self.position(taffy::style::Position::Absolute)
     }
 
     pub fn items_start(self) -> Self {
-        self.align_items(Some(AlignItems::FlexStart))
+        self.align_items(Some(taffy::style::AlignItems::FlexStart))
     }
 
     /// Defines the alignment along the cross axis as Centered
     pub fn items_center(self) -> Self {
-        self.align_items(Some(AlignItems::Center))
+        self.align_items(Some(taffy::style::AlignItems::Center))
     }
 
     pub fn items_end(self) -> Self {
-        self.align_items(Some(AlignItems::FlexEnd))
+        self.align_items(Some(taffy::style::AlignItems::FlexEnd))
     }
 
     /// Defines the alignment along the main axis as Centered
     pub fn justify_center(self) -> Self {
-        self.justify_content(Some(JustifyContent::Center))
+        self.justify_content(Some(taffy::style::JustifyContent::Center))
     }
 
     pub fn justify_end(self) -> Self {
-        self.justify_content(Some(JustifyContent::FlexEnd))
+        self.justify_content(Some(taffy::style::JustifyContent::FlexEnd))
     }
 
     pub fn justify_start(self) -> Self {
-        self.justify_content(Some(JustifyContent::FlexStart))
+        self.justify_content(Some(taffy::style::JustifyContent::FlexStart))
     }
 
     pub fn justify_between(self) -> Self {
-        self.justify_content(Some(JustifyContent::SpaceBetween))
+        self.justify_content(Some(taffy::style::JustifyContent::SpaceBetween))
     }
 
     pub fn hide(self) -> Self {
-        self.display(Display::None)
+        self.display(taffy::style::Display::None)
     }
 
     pub fn flex(self) -> Self {
-        self.display(Display::Flex)
+        self.display(taffy::style::Display::Flex)
     }
 
     pub fn flex_row(self) -> Self {
-        self.flex_direction(FlexDirection::Row)
+        self.flex_direction(taffy::style::FlexDirection::Row)
     }
 
     pub fn flex_col(self) -> Self {
-        self.flex_direction(FlexDirection::Column)
+        self.flex_direction(taffy::style::FlexDirection::Column)
     }
 
-    pub fn z_index(mut self, z_index: i32) -> Self {
-        self.z_index = Some(z_index).into();
-        self
+    pub fn z_index(self, z_index: i32) -> Self {
+        self.set(ZIndex, Some(z_index))
     }
 
     /// Allow the application of a function if the option exists.  
@@ -1112,57 +1097,58 @@ impl Style {
 
 impl ComputedStyle {
     pub fn to_taffy_style(&self) -> TaffyStyle {
+        let style = self.get_builtin();
         TaffyStyle {
-            display: self.display,
-            position: self.position,
+            display: style.display(),
+            position: style.position(),
             size: taffy::prelude::Size {
-                width: self.width.into(),
-                height: self.height.into(),
+                width: style.width().into(),
+                height: style.height().into(),
             },
             min_size: taffy::prelude::Size {
-                width: self.min_width.into(),
-                height: self.min_height.into(),
+                width: style.min_width().into(),
+                height: style.min_height().into(),
             },
             max_size: taffy::prelude::Size {
-                width: self.max_width.into(),
-                height: self.max_height.into(),
+                width: style.max_width().into(),
+                height: style.max_height().into(),
             },
-            flex_direction: self.flex_direction,
-            flex_grow: self.flex_grow,
-            flex_shrink: self.flex_shrink,
-            flex_basis: self.flex_basis.into(),
-            flex_wrap: self.flex_wrap,
-            justify_content: self.justify_content,
-            justify_self: self.justify_self,
-            align_items: self.align_items,
-            align_content: self.align_content,
-            align_self: self.align_self,
-            aspect_ratio: self.aspect_ratio,
+            flex_direction: style.flex_direction(),
+            flex_grow: style.flex_grow(),
+            flex_shrink: style.flex_shrink(),
+            flex_basis: style.flex_basis().into(),
+            flex_wrap: style.flex_wrap(),
+            justify_content: style.justify_content(),
+            justify_self: style.justify_self(),
+            align_items: style.align_items(),
+            align_content: style.align_content(),
+            align_self: style.align_self(),
+            aspect_ratio: style.aspect_ratio(),
             border: Rect {
-                left: LengthPercentage::Points(self.border_left.0 as f32),
-                top: LengthPercentage::Points(self.border_top.0 as f32),
-                right: LengthPercentage::Points(self.border_right.0 as f32),
-                bottom: LengthPercentage::Points(self.border_bottom.0 as f32),
+                left: LengthPercentage::Points(style.border_left().0 as f32),
+                top: LengthPercentage::Points(style.border_top().0 as f32),
+                right: LengthPercentage::Points(style.border_right().0 as f32),
+                bottom: LengthPercentage::Points(style.border_bottom().0 as f32),
             },
             padding: Rect {
-                left: self.padding_left.into(),
-                top: self.padding_top.into(),
-                right: self.padding_right.into(),
-                bottom: self.padding_bottom.into(),
+                left: style.padding_left().into(),
+                top: style.padding_top().into(),
+                right: style.padding_right().into(),
+                bottom: style.padding_bottom().into(),
             },
             margin: Rect {
-                left: self.margin_left.into(),
-                top: self.margin_top.into(),
-                right: self.margin_right.into(),
-                bottom: self.margin_bottom.into(),
+                left: style.margin_left().into(),
+                top: style.margin_top().into(),
+                right: style.margin_right().into(),
+                bottom: style.margin_bottom().into(),
             },
             inset: Rect {
-                left: self.inset_left.into(),
-                top: self.inset_top.into(),
-                right: self.inset_right.into(),
-                bottom: self.inset_bottom.into(),
+                left: style.inset_left().into(),
+                top: style.inset_top().into(),
+                right: style.inset_right().into(),
+                bottom: style.inset_bottom().into(),
             },
-            gap: self.gap,
+            gap: style.gap(),
             ..Default::default()
         }
     }
@@ -1171,7 +1157,10 @@ impl ComputedStyle {
 #[cfg(test)]
 mod tests {
     use super::{Style, StyleValue};
-    use crate::unit::PxPct;
+    use crate::{
+        style::{PaddingBottom, PaddingLeft},
+        unit::PxPct,
+    };
 
     #[test]
     fn style_override() {
@@ -1180,7 +1169,10 @@ mod tests {
 
         let style = style1.apply(style2);
 
-        assert_eq!(style.padding_left, StyleValue::Val(PxPct::Px(64.0)));
+        assert_eq!(
+            style.get_style_value(PaddingLeft),
+            StyleValue::Val(PxPct::Px(64.0))
+        );
 
         let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
         let style2 = Style::BASE
@@ -1189,8 +1181,14 @@ mod tests {
 
         let style = style1.apply(style2);
 
-        assert_eq!(style.padding_left, StyleValue::Val(PxPct::Px(64.0)));
-        assert_eq!(style.padding_bottom, StyleValue::Val(PxPct::Px(45.0)));
+        assert_eq!(
+            style.get_style_value(PaddingLeft),
+            StyleValue::Val(PxPct::Px(64.0))
+        );
+        assert_eq!(
+            style.get_style_value(PaddingBottom),
+            StyleValue::Val(PxPct::Px(45.0))
+        );
 
         let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
         let style2 = Style::BASE
@@ -1199,8 +1197,11 @@ mod tests {
 
         let style = style1.apply(style2);
 
-        assert_eq!(style.padding_left, StyleValue::Val(PxPct::Px(64.0)));
-        assert_eq!(style.padding_bottom, StyleValue::Unset);
+        assert_eq!(
+            style.get_style_value(PaddingLeft),
+            StyleValue::Val(PxPct::Px(64.0))
+        );
+        assert_eq!(style.get_style_value(PaddingBottom), StyleValue::Unset);
 
         let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
         let style2 = Style::BASE
@@ -1211,8 +1212,11 @@ mod tests {
 
         let style = style1.apply_overriding_styles([style2, style3].into_iter());
 
-        assert_eq!(style.padding_left, StyleValue::Val(PxPct::Px(64.0)));
-        assert_eq!(style.padding_bottom, StyleValue::Unset);
+        assert_eq!(
+            style.get_style_value(PaddingLeft),
+            StyleValue::Val(PxPct::Px(64.0))
+        );
+        assert_eq!(style.get_style_value(PaddingBottom), StyleValue::Unset);
 
         let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
         let style2 = Style::BASE
@@ -1222,7 +1226,13 @@ mod tests {
 
         let style = style1.apply_overriding_styles([style2, style3].into_iter());
 
-        assert_eq!(style.padding_left, StyleValue::Val(PxPct::Px(64.0)));
-        assert_eq!(style.padding_bottom, StyleValue::Val(PxPct::Px(100.0)));
+        assert_eq!(
+            style.get_style_value(PaddingLeft),
+            StyleValue::Val(PxPct::Px(64.0))
+        );
+        assert_eq!(
+            style.get_style_value(PaddingBottom),
+            StyleValue::Val(PxPct::Px(100.0))
+        );
     }
 }

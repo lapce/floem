@@ -95,7 +95,7 @@ use crate::{
     context::{AppState, DragState, EventCx, LayoutCx, PaintCx, UpdateCx},
     event::{Event, EventListener},
     id::Id,
-    style::{ComputedStyle, Style, StyleMap},
+    style::{BoxShadowProp, ComputedStyle, Outline, OutlineColor, Style, StyleMap, ZIndex},
 };
 
 bitflags! {
@@ -196,49 +196,8 @@ pub trait View {
         cx.app_state_mut().compute_style(self.id(), view_style);
         let style = cx.app_state_mut().get_computed_style(self.id()).clone();
 
-        cx.app_state_mut().view_state(self.id()).hover_sensitive = style.other.hover_sensitive();
-
-        let interact_state = cx.app_state().get_interact_state(&self.id());
         cx.style.direct = style.other.clone();
-        cx.style.direct.apply_interact_state(interact_state);
         StyleMap::apply_only_inherited(&mut cx.style.current, &cx.style.direct);
-
-        if style.color.is_some() {
-            cx.color = style.color;
-        }
-        if style.scroll_bar_hover_color.is_some() {
-            cx.scroll_bar_hover_color = style.scroll_bar_hover_color;
-        }
-        if style.scroll_bar_drag_color.is_some() {
-            cx.scroll_bar_drag_color = style.scroll_bar_drag_color;
-        }
-        if style.scroll_bar_hover_color.is_some() {
-            cx.scroll_bar_hover_color = style.scroll_bar_hover_color;
-        }
-        if style.scroll_bar_rounded.is_some() {
-            cx.scroll_bar_rounded = style.scroll_bar_rounded;
-        }
-        if style.scroll_bar_thickness.is_some() {
-            cx.scroll_bar_thickness = style.scroll_bar_thickness.map(|v| v.0 as f32);
-        }
-        if style.scroll_bar_edge_width.is_some() {
-            cx.scroll_bar_edge_width = style.scroll_bar_edge_width.map(|v| v.0 as f32);
-        }
-        if style.font_size.is_some() {
-            cx.font_size = style.font_size;
-        }
-        if style.font_family.is_some() {
-            cx.font_family = style.font_family;
-        }
-        if style.font_weight.is_some() {
-            cx.font_weight = style.font_weight;
-        }
-        if style.font_style.is_some() {
-            cx.font_style = style.font_style;
-        }
-        if style.line_height.is_some() {
-            cx.line_height = style.line_height;
-        }
 
         let node = self.layout(cx);
 
@@ -266,22 +225,6 @@ pub trait View {
         }
 
         cx.save();
-        let style = cx.app_state_mut().get_computed_style(self.id()).clone();
-        if style.font_size.is_some() {
-            cx.font_size = style.font_size;
-        }
-        if style.font_family.is_some() {
-            cx.font_family = style.font_family;
-        }
-        if style.font_weight.is_some() {
-            cx.font_weight = style.font_weight;
-        }
-        if style.font_style.is_some() {
-            cx.font_style = style.font_style;
-        }
-        if style.line_height.is_some() {
-            cx.line_height = style.line_height;
-        }
 
         let layout = cx
             .app_state()
@@ -481,8 +424,8 @@ pub trait View {
                         }
                     } else {
                         cx.app_state.hovered.insert(id);
-                        let style = cx.app_state.get_computed_style(id);
-                        if let Some(cursor) = style.cursor {
+                        let style = cx.app_state.get_builtin_style(id);
+                        if let Some(cursor) = style.cursor() {
                             if cx.app_state.cursor.is_none() {
                                 cx.app_state.cursor = Some(cursor);
                             }
@@ -683,39 +626,12 @@ pub trait View {
         if !is_empty {
             let style = cx.app_state.get_computed_style(id).clone();
 
-            if let Some(z_index) = style.z_index {
+            if let Some(z_index) = style.get(ZIndex) {
                 cx.set_z_index(z_index);
             }
 
             paint_bg(cx, &style, size);
 
-            if style.color.is_some() {
-                cx.color = style.color;
-            }
-            if style.scroll_bar_rounded.is_some() {
-                cx.scroll_bar_rounded = style.scroll_bar_rounded;
-            }
-            if style.scroll_bar_thickness.is_some() {
-                cx.scroll_bar_thickness = style.scroll_bar_thickness.map(|v| v.0 as f32);
-            }
-            if style.scroll_bar_edge_width.is_some() {
-                cx.scroll_bar_edge_width = style.scroll_bar_edge_width.map(|v| v.0 as f32);
-            }
-            if style.font_size.is_some() {
-                cx.font_size = style.font_size;
-            }
-            if style.font_family.is_some() {
-                cx.font_family = style.font_family.clone();
-            }
-            if style.font_weight.is_some() {
-                cx.font_weight = style.font_weight;
-            }
-            if style.font_style.is_some() {
-                cx.font_style = style.font_style;
-            }
-            if style.line_height.is_some() {
-                cx.line_height = style.line_height;
-            }
             self.paint(cx);
             paint_border(cx, &style, size);
             paint_outline(cx, &style, size)
@@ -760,15 +676,12 @@ pub trait View {
                             .combined_style
                             .clone()
                             .apply(dragging_style)
-                            .compute(&ComputedStyle::default())
+                            .compute()
                     } else {
                         style
                     };
                     paint_bg(cx, &style, size);
 
-                    if style.color.is_some() {
-                        cx.color = style.color;
-                    }
                     self.paint(cx);
                     paint_border(cx, &style, size);
                     paint_outline(cx, &style, size);
@@ -789,8 +702,9 @@ pub trait View {
     fn paint(&mut self, cx: &mut PaintCx);
 }
 
-fn paint_bg(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
-    let radius = style.border_radius.0;
+fn paint_bg(cx: &mut PaintCx, computed_style: &ComputedStyle, size: Size) {
+    let style = computed_style.get_builtin();
+    let radius = style.border_radius().0;
     if radius > 0.0 {
         let rect = size.to_rect();
         let width = rect.width();
@@ -798,14 +712,14 @@ fn paint_bg(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
         if width > 0.0 && height > 0.0 && radius > width.max(height) / 2.0 {
             let radius = width.max(height) / 2.0;
             let circle = Circle::new(rect.center(), radius);
-            let bg = match style.background {
+            let bg = match style.background() {
                 Some(color) => color,
                 None => return,
             };
             cx.fill(&circle, bg, 0.0);
         } else {
-            paint_box_shadow(cx, style, rect, Some(radius));
-            let bg = match style.background {
+            paint_box_shadow(cx, computed_style, rect, Some(radius));
+            let bg = match style.background() {
                 Some(color) => color,
                 None => return,
             };
@@ -813,8 +727,8 @@ fn paint_bg(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
             cx.fill(&rounded_rect, bg, 0.0);
         }
     } else {
-        paint_box_shadow(cx, style, size.to_rect(), None);
-        let bg = match style.background {
+        paint_box_shadow(cx, computed_style, size.to_rect(), None);
+        let bg = match style.background() {
             Some(color) => color,
             None => return,
         };
@@ -823,7 +737,7 @@ fn paint_bg(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
 }
 
 fn paint_box_shadow(cx: &mut PaintCx, style: &ComputedStyle, rect: Rect, rect_radius: Option<f64>) {
-    if let Some(shadow) = style.box_shadow.as_ref() {
+    if let Some(shadow) = style.get(BoxShadowProp).as_ref() {
         let inset = Insets::new(
             -shadow.h_offset / 2.0,
             -shadow.v_offset / 2.0,
@@ -841,26 +755,28 @@ fn paint_box_shadow(cx: &mut PaintCx, style: &ComputedStyle, rect: Rect, rect_ra
 }
 
 fn paint_outline(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
-    if style.outline.0 == 0. {
+    let outline = style.get(Outline).0;
+    if outline == 0. {
         // TODO: we should warn! when outline is < 0
         return;
     }
-    let half = style.outline.0 / 2.0;
+    let half = outline / 2.0;
     let rect = size.to_rect().inflate(half, half);
-    cx.stroke(&rect, style.outline_color, style.outline.0);
+    cx.stroke(&rect, style.get(OutlineColor), outline);
 }
 
 fn paint_border(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
-    let left = style.border_left.0;
-    let top = style.border_top.0;
-    let right = style.border_right.0;
-    let bottom = style.border_bottom.0;
+    let style = style.get_builtin();
+    let left = style.border_left().0;
+    let top = style.border_top().0;
+    let right = style.border_right().0;
+    let bottom = style.border_bottom().0;
 
-    let border_color = style.border_color;
+    let border_color = style.border_color();
     if left == top && top == right && right == bottom && bottom == left && left > 0.0 {
         let half = left / 2.0;
         let rect = size.to_rect().inflate(-half, -half);
-        let radius = style.border_radius.0;
+        let radius = style.border_radius().0;
         if radius > 0.0 {
             cx.stroke(&rect.to_rounded_rect(radius), border_color, left);
         } else {
