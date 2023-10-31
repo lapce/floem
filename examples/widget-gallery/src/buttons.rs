@@ -36,9 +36,9 @@ pub fn button_view() -> impl View {
                             .background(Color::YELLOW_GREEN)
                             .color(Color::DARK_GREEN)
                             .cursor(CursorStyle::Pointer)
+                            .active(|s| s.color(Color::WHITE).background(Color::RED))
+                            .hover(|s| s.background(Color::rgb8(244, 67, 54)))
                     })
-                    .hover_style(|s| s.background(Color::rgb8(244, 67, 54)))
-                    .active_style(|s| s.color(Color::WHITE).background(Color::RED))
             }),
             form_item("Distabled Button:".to_string(), 120.0, || {
                 label(|| "Click me")
