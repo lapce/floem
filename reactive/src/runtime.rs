@@ -1,11 +1,17 @@
 use std::{
     any::{Any, TypeId},
-    cell::RefCell,
+    cell::{Cell, RefCell},
     collections::{HashMap, HashSet},
     rc::Rc,
 };
 
-use crate::{effect::EffectTrait, id::Id, signal::Signal};
+use smallvec::SmallVec;
+
+use crate::{
+    effect::{run_effect, EffectTrait},
+    id::Id,
+    signal::Signal,
+};
 
 thread_local! {
     pub(crate) static RUNTIME: Runtime = Runtime::new();
@@ -19,6 +25,8 @@ pub(crate) struct Runtime {
     pub(crate) children: RefCell<HashMap<Id, HashSet<Id>>>,
     pub(crate) signals: RefCell<HashMap<Id, Signal>>,
     pub(crate) contexts: RefCell<HashMap<TypeId, Box<dyn Any>>>,
+    pub(crate) batching: Cell<bool>,
+    pub(crate) pending_effects: RefCell<SmallVec<[Rc<dyn EffectTrait>; 10]>>,
 }
 
 impl Default for Runtime {
@@ -35,6 +43,26 @@ impl Runtime {
             children: RefCell::new(HashMap::new()),
             signals: Default::default(),
             contexts: Default::default(),
+            batching: Cell::new(false),
+            pending_effects: RefCell::new(SmallVec::new()),
+        }
+    }
+
+    pub(crate) fn add_pending_effect(&self, effect: Rc<dyn EffectTrait>) {
+        let has_effect = self
+            .pending_effects
+            .borrow()
+            .iter()
+            .any(|e| e.id() == effect.id());
+        if !has_effect {
+            self.pending_effects.borrow_mut().push(effect);
+        }
+    }
+
+    pub(crate) fn run_pending_effects(&self) {
+        let pending_effects = self.pending_effects.take();
+        for effect in pending_effects {
+            run_effect(effect);
         }
     }
 }
