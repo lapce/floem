@@ -47,9 +47,9 @@ pub fn text_input_view() -> impl View {
                             .padding(10.0)
                             .cursor(CursorStyle::Text)
                             .disabled(|s| s.background(Color::rgb8(224, 224, 224)))
+                            .hover(|s| s.border_color(Color::rgb8(66, 66, 66)))
+                            .focus(|s| s.border_color(Color::LIGHT_SKY_BLUE))
                     })
-                    .hover_style(|s| s.border_color(Color::rgb8(66, 66, 66)))
-                    .focus_style(|s| s.border_color(Color::LIGHT_SKY_BLUE))
                     .keyboard_navigatable()
                     .disabled(|| true)
             }),

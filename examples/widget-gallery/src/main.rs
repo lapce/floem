@@ -81,7 +81,6 @@ fn app_view() -> impl View {
                                 })
                                 .keyboard_navigatable()
                                 .draggable()
-                                .focus_visible_style(|s| s.border(2.).border_color(Color::BLUE))
                                 .style(move |s| {
                                     s.flex_row()
                                         .width(100.pct())
@@ -91,6 +90,7 @@ fn app_view() -> impl View {
                                         .apply_if(index == active_tab.get(), |s| {
                                             s.background(Color::GRAY)
                                         })
+                                        .focus_visible(|s| s.border(2.).border_color(Color::BLUE))
                                 })
                                 .hover_style(|s| {
                                     s.background(Color::LIGHT_GRAY).cursor(CursorStyle::Pointer)

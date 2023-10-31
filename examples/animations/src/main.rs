@@ -34,8 +34,8 @@ fn app_view() -> impl View {
                     .padding(10.0)
                     .margin(20.0)
                     .size(120.0, 120.0)
+                    .active(|s| s.color(Color::BLACK))
             })
-            .active_style(|s| s.color(Color::BLACK))
             .animation(
                 animation()
                     .border_radius(move || if is_hovered.get() { 1.0 } else { 40.0 })
