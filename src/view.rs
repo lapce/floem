@@ -83,7 +83,7 @@
 //!
 //!
 
-use std::{any::Any, rc::Rc};
+use std::any::Any;
 
 use bitflags::bitflags;
 use floem_renderer::Renderer;
@@ -196,22 +196,13 @@ pub trait View {
         cx.app_state_mut().compute_style(self.id(), view_style);
         let style = cx.app_state_mut().get_computed_style(self.id()).clone();
 
-        cx.style.current = Rc::new(StyleMap {
-            map: cx
-                .style
-                .current
-                .map
-                .iter()
-                .map(|(p, v)| (*p, v.clone()))
-                .chain(
-                    style
-                        .other
-                        .map
-                        .into_iter()
-                        .filter(|(p, _)| p.info.inherited),
-                )
-                .collect(),
-        });
+        cx.app_state_mut().view_state(self.id()).hover_sensitive = style.other.hover_sensitive();
+
+        let interact_state = cx.app_state().get_interact_state(&self.id());
+        cx.style.direct = style.other.clone();
+        cx.style.direct.apply_interact_state(interact_state);
+        StyleMap::apply_only_inherited(&mut cx.style.current, &cx.style.direct);
+
         if style.color.is_some() {
             cx.color = style.color;
         }

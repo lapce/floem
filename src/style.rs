@@ -28,6 +28,7 @@
 use floem_renderer::cosmic_text::{LineHeightValue, Style as FontStyle, Weight};
 use peniko::Color;
 use std::any::Any;
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::hash::Hasher;
@@ -42,6 +43,7 @@ use taffy::{
     style::{FlexWrap, LengthPercentage, Style as TaffyStyle},
 };
 
+use crate::context::InteractionState;
 use crate::context::LayoutCx;
 use crate::unit::{Px, PxPct, PxPctAuto, UnitExt};
 use crate::views::scroll_bar_color;
@@ -196,11 +198,83 @@ macro_rules! prop_extracter {
     };
 }
 
-#[derive(Default, Clone, Debug)]
-pub(crate) struct StyleMap {
-    pub(crate) map: HashMap<StylePropRef, Rc<dyn Any>>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StyleMapValue<T> {
+    Val(T),
+    /// Use the default value for the style, typically from the underlying `ComputedStyle`
+    Unset,
 }
 
+impl<T> StyleMapValue<T> {
+    pub(crate) fn as_ref(&self) -> Option<&T> {
+        match self {
+            Self::Val(v) => Some(v),
+            Self::Unset => None,
+        }
+    }
+}
+
+#[derive(Default, Clone, Debug)]
+pub(crate) struct StyleMap {
+    pub(crate) map: HashMap<StylePropRef, StyleMapValue<Rc<dyn Any>>>,
+    pub(crate) selectors: HashMap<StyleSelector, StyleMap>,
+}
+
+impl StyleMap {
+    pub(crate) fn get_prop<P: StyleProp>(&self) -> Option<P::Type> {
+        self.map
+            .get(&P::prop_ref())
+            .and_then(|v| v.as_ref())
+            .and_then(|v| v.downcast_ref().cloned())
+    }
+
+    pub(crate) fn hover_sensitive(&self) -> bool {
+        self.selectors
+            .iter()
+            .any(|(selector, map)| *selector == StyleSelector::Hover || map.hover_sensitive())
+    }
+
+    pub(crate) fn apply_interact_state(&mut self, interact_state: InteractionState) {
+        if interact_state.is_hovered && !interact_state.is_disabled {
+            if let Some(mut map) = self.selectors.remove(&StyleSelector::Hover) {
+                map.apply_interact_state(interact_state);
+                self.apply(map);
+            }
+        }
+    }
+
+    pub(crate) fn apply_only_inherited(map: &mut Rc<StyleMap>, over: &StyleMap) {
+        let any_inherited = over.map.iter().any(|(p, _)| p.info.inherited);
+
+        if any_inherited {
+            let inherited = over
+                .map
+                .iter()
+                .filter(|(p, _)| p.info.inherited)
+                .map(|(p, v)| (*p, v.clone()));
+
+            Rc::make_mut(map).map.extend(inherited);
+        }
+    }
+
+    fn set_selector(&mut self, selector: StyleSelector, map: StyleMap) {
+        match self.selectors.entry(selector) {
+            Entry::Occupied(mut e) => e.get_mut().apply(map),
+            Entry::Vacant(e) => {
+                e.insert(map);
+            }
+        }
+    }
+
+    fn apply(&mut self, over: StyleMap) {
+        self.map.extend(over.map);
+        for (selector, map) in over.selectors {
+            self.set_selector(selector, map);
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum StyleSelector {
     Hover,
     Focus,
@@ -350,7 +424,7 @@ macro_rules! define_styles {
 
         #[derive(Debug, Clone)]
         pub struct Style {
-            pub(crate) other: Option<HashMap<StylePropRef, StyleValue<Rc<dyn Any>>>>,
+            pub(crate) other: Option<StyleMap>,
             $(
                 pub $name: StyleValue<$typ>,
             )*
@@ -378,12 +452,7 @@ macro_rules! define_styles {
             /// for any missing values.
             pub fn compute(self, underlying: &ComputedStyle) -> ComputedStyle {
                 ComputedStyle {
-                    other: StyleMap {
-                        map: self.other.unwrap_or_default()
-                            .into_iter()
-                            .filter_map(|(k, mut v)| v.as_mut().map(|v| (k, v.clone())))
-                            .collect()
-                    },
+                    other: self.other.unwrap_or_default(),
                     $(
                         $name: self.$name.unwrap_or_else(|| underlying.$name.clone()),
                     )*
@@ -399,16 +468,8 @@ macro_rules! define_styles {
             /// `ComputedStyle` or using the value in the `Style`.
             pub fn apply(self, over: Style) -> Style {
                 let mut other = self.other.unwrap_or_default();
-                for (k, v) in over.other.unwrap_or_default() {
-                    match v {
-                        StyleValue::Val(..) => {
-                            other.insert(k, v);
-                        },
-                        StyleValue::Base => (),
-                        StyleValue::Unset => {
-                            other.remove(&k);
-                        }
-                    }
+                if let Some(over) = over.other {
+                    other.apply(over);
                 }
                 Style {
                     other: Some(other),
@@ -519,7 +580,25 @@ impl Style {
 
     pub fn set_style_value<P: StyleProp>(mut self, _prop: P, value: StyleValue<P::Type>) -> Self {
         let mut other = self.other.unwrap_or_default();
-        other.insert(P::prop_ref(), value.map(|v| -> Rc<dyn Any> { Rc::new(v) }));
+        let insert: StyleMapValue<Rc<dyn Any>> = match value {
+            StyleValue::Val(value) => StyleMapValue::Val(Rc::new(value)),
+            StyleValue::Unset => StyleMapValue::Unset,
+            StyleValue::Base => {
+                other.map.remove(&P::prop_ref());
+                self.other = Some(other);
+                return self;
+            }
+        };
+        other.map.insert(P::prop_ref(), insert);
+        self.other = Some(other);
+        self
+    }
+
+    pub fn hover(mut self, style: impl Fn(Style) -> Style + 'static) -> Self {
+        // FIXME: Ignores field style properties.
+        let over = style(Style::BASE).other.unwrap_or_default();
+        let mut other = self.other.unwrap_or_default();
+        other.set_selector(StyleSelector::Hover, over);
         self.other = Some(other);
         self
     }

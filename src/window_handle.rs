@@ -234,6 +234,7 @@ impl WindowHandle {
                 if view_state.hover_style.is_some()
                     || view_state.active_style.is_some()
                     || view_state.animation.is_some()
+                    || view_state.hover_sensitive
                 {
                     cx.app_state.request_layout(*id);
                 }
