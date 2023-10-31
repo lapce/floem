@@ -234,7 +234,8 @@ impl WindowHandle {
                 if view_state.hover_style.is_some()
                     || view_state.active_style.is_some()
                     || view_state.animation.is_some()
-                    || view_state.hover_sensitive
+                    || view_state.has_style_selectors.has(StyleSelector::Hover)
+                    || view_state.has_style_selectors.has(StyleSelector::Active)
                 {
                     cx.app_state.request_layout(*id);
                 }

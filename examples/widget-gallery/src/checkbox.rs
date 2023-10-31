@@ -13,7 +13,7 @@ pub fn checkbox_view() -> impl View {
         (
             form_item("Basic Checkbox:".to_string(), 120.0, move || {
                 checkbox(is_checked)
-                    .focus_visible_style(|s| s.border_color(Color::BLUE).border(2.))
+                    .style(|s| s.focus_visible(|s| s.border(2.).border_color(Color::BLUE)))
                     .on_click(move |_| {
                         set_is_checked.update(|checked| *checked = !*checked);
                         true
@@ -23,7 +23,7 @@ pub fn checkbox_view() -> impl View {
                 stack({
                     (
                         checkbox(is_checked)
-                            .focus_visible_style(|s| s.border_color(Color::BLUE).border(2.)),
+                            .style(|s| s.focus_visible(|s| s.border(2.).border_color(Color::BLUE))),
                         label(|| "Check me!"),
                     )
                 })
@@ -36,7 +36,7 @@ pub fn checkbox_view() -> impl View {
                 stack({
                     (
                         checkbox(is_checked)
-                            .focus_visible_style(|s| s.border_color(Color::BLUE).border(2.)),
+                            .style(|s| s.focus_visible(|s| s.border(2.).border_color(Color::BLUE))),
                         label(|| "Check me!"),
                     )
                 })

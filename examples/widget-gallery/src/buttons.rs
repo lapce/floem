@@ -17,8 +17,12 @@ pub fn button_view() -> impl View {
                         true
                     })
                     .keyboard_navigatable()
-                    .focus_visible_style(|s| s.border(2.).border_color(Color::BLUE))
-                    .style(|s| s.border(1.0).border_radius(10.0).padding(10.0))
+                    .style(|s| {
+                        s.border(1.0)
+                            .border_radius(10.0)
+                            .padding(10.0)
+                            .focus_visible(|s| s.border(2.).border_color(Color::BLUE))
+                    })
             }),
             form_item("Styled Button:".to_string(), 120.0, || {
                 label(|| "Click me")
@@ -27,7 +31,6 @@ pub fn button_view() -> impl View {
                         true
                     })
                     .keyboard_navigatable()
-                    .focus_visible_style(|s| s.border(2.).border_color(Color::BLUE))
                     .style(|s| {
                         s.border(1.0)
                             .border_radius(10.0)
@@ -36,9 +39,10 @@ pub fn button_view() -> impl View {
                             .background(Color::YELLOW_GREEN)
                             .color(Color::DARK_GREEN)
                             .cursor(CursorStyle::Pointer)
+                            .active(|s| s.color(Color::WHITE).background(Color::RED))
+                            .hover(|s| s.background(Color::rgb8(244, 67, 54)))
+                            .focus_visible(|s| s.border(2.).border_color(Color::BLUE))
                     })
-                    .hover_style(|s| s.background(Color::rgb8(244, 67, 54)))
-                    .active_style(|s| s.color(Color::WHITE).background(Color::RED))
             }),
             form_item("Distabled Button:".to_string(), 120.0, || {
                 label(|| "Click me")
@@ -48,14 +52,14 @@ pub fn button_view() -> impl View {
                         true
                     })
                     .keyboard_navigatable()
-                    .focus_visible_style(|s| s.border(2.).border_color(Color::BLUE))
                     .style(|s| {
                         s.border(1.0)
                             .border_radius(10.0)
                             .padding(10.0)
                             .color(Color::GRAY)
+                            .focus_visible(|s| s.border(2.).border_color(Color::BLUE))
+                            .hover(|s| s.background(Color::rgb8(224, 224, 224)))
                     })
-                    .hover_style(|s| s.background(Color::rgb8(224, 224, 224)))
             }),
             form_item("Secondary click button:".to_string(), 120.0, || {
                 label(|| "Right click me")
@@ -64,8 +68,12 @@ pub fn button_view() -> impl View {
                         true
                     })
                     .keyboard_navigatable()
-                    .focus_visible_style(|s| s.border(2.).border_color(Color::BLUE))
-                    .style(|s| s.border(1.0).border_radius(10.0).padding(10.0))
+                    .style(|s| {
+                        s.border(1.0)
+                            .border_radius(10.0)
+                            .padding(10.0)
+                            .focus_visible(|s| s.border(2.).border_color(Color::BLUE))
+                    })
             }),
         )
     })

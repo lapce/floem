@@ -26,7 +26,7 @@ use crate::{
     responsive::{GridBreakpoints, ScreenSize, ScreenSizeBp},
     style::{
         BuiltinStyleReader, ComputedStyle, CursorStyle, DisplayProp, Style, StyleMap, StyleProp,
-        StyleSelector,
+        StyleSelector, StyleSelectors,
     },
 };
 
@@ -49,7 +49,7 @@ pub struct ViewState {
     pub(crate) node: Node,
     pub(crate) children_nodes: Vec<Node>,
     pub(crate) request_layout: bool,
-    pub(crate) hover_sensitive: bool,
+    pub(crate) has_style_selectors: StyleSelectors,
     pub(crate) viewport: Option<Rect>,
     pub(crate) layout_rect: Rect,
     pub(crate) animation: Option<Animation>,
@@ -80,7 +80,7 @@ impl ViewState {
             viewport: None,
             layout_rect: Rect::ZERO,
             request_layout: true,
-            hover_sensitive: false,
+            has_style_selectors: StyleSelectors::default(),
             animation: None,
             base_style: None,
             style: Style::BASE,
@@ -197,14 +197,14 @@ impl ViewState {
             }
         }
 
-        self.hover_sensitive = computed_style
+        self.has_style_selectors = computed_style
             .other
             .as_ref()
-            .map(|map| map.hover_sensitive())
+            .map(|map| map.selectors())
             .unwrap_or_default();
 
         if let Some(map) = computed_style.other.as_mut() {
-            map.apply_interact_state(interact_state);
+            map.apply_interact_state(&interact_state);
         }
 
         self.combined_style = computed_style.clone();
@@ -486,14 +486,15 @@ impl AppState {
     pub(crate) fn has_style_for_sel(&mut self, id: Id, selector_kind: StyleSelector) -> bool {
         let view_state = self.view_state(id);
 
-        match selector_kind {
-            StyleSelector::Hover => view_state.hover_style.is_some(),
-            StyleSelector::Focus => view_state.focus_style.is_some(),
-            StyleSelector::FocusVisible => view_state.focus_visible_style.is_some(),
-            StyleSelector::Disabled => view_state.disabled_style.is_some(),
-            StyleSelector::Active => view_state.active_style.is_some(),
-            StyleSelector::Dragging => view_state.dragging_style.is_some(),
-        }
+        view_state.has_style_selectors.has(selector_kind)
+            || match selector_kind {
+                StyleSelector::Hover => view_state.hover_style.is_some(),
+                StyleSelector::Focus => view_state.focus_style.is_some(),
+                StyleSelector::FocusVisible => view_state.focus_visible_style.is_some(),
+                StyleSelector::Disabled => view_state.disabled_style.is_some(),
+                StyleSelector::Active => view_state.active_style.is_some(),
+                StyleSelector::Dragging => view_state.dragging_style.is_some(),
+            }
     }
 
     // TODO: animated should be a HashMap<Id, AnimId>

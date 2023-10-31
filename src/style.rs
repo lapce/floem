@@ -289,15 +289,48 @@ impl StyleMap {
             .unwrap_or(StyleValue::Base)
     }
 
-    pub(crate) fn hover_sensitive(&self) -> bool {
+    pub(crate) fn selectors(&self) -> StyleSelectors {
         self.selectors
             .iter()
-            .any(|(selector, map)| *selector == StyleSelector::Hover || map.hover_sensitive())
+            .fold(StyleSelectors::default(), |mut s, (selector, map)| {
+                s.selectors |= map.selectors().selectors;
+                s.set(*selector, true)
+            })
     }
 
-    pub(crate) fn apply_interact_state(&mut self, interact_state: InteractionState) {
+    pub(crate) fn apply_interact_state(&mut self, interact_state: &InteractionState) {
         if interact_state.is_hovered && !interact_state.is_disabled {
             if let Some(mut map) = self.selectors.remove(&StyleSelector::Hover) {
+                map.apply_interact_state(interact_state);
+                self.apply(map);
+            }
+        }
+        if interact_state.is_focused {
+            if let Some(mut map) = self.selectors.remove(&StyleSelector::Focus) {
+                map.apply_interact_state(interact_state);
+                self.apply(map);
+            }
+        }
+        if interact_state.is_disabled {
+            if let Some(mut map) = self.selectors.remove(&StyleSelector::Disabled) {
+                map.apply_interact_state(interact_state);
+                self.apply(map);
+            }
+        }
+
+        let focused_keyboard =
+            interact_state.using_keyboard_navigation && interact_state.is_focused;
+
+        if focused_keyboard {
+            if let Some(mut map) = self.selectors.remove(&StyleSelector::FocusVisible) {
+                map.apply_interact_state(interact_state);
+                self.apply(map);
+            }
+        }
+
+        let active_mouse = interact_state.is_hovered && !interact_state.using_keyboard_navigation;
+        if interact_state.is_clicking && (active_mouse || focused_keyboard) {
+            if let Some(mut map) = self.selectors.remove(&StyleSelector::Active) {
                 map.apply_interact_state(interact_state);
                 self.apply(map);
             }
@@ -359,7 +392,7 @@ impl Debug for StyleMap {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum StyleSelector {
     Hover,
     Focus,
@@ -367,6 +400,26 @@ pub enum StyleSelector {
     Disabled,
     Active,
     Dragging,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default)]
+pub(crate) struct StyleSelectors {
+    selectors: u8,
+}
+
+impl StyleSelectors {
+    pub(crate) fn set(self, selector: StyleSelector, value: bool) -> Self {
+        let v = (selector as isize).try_into().unwrap();
+        let bit = 1_u8.checked_shl(v).unwrap();
+        StyleSelectors {
+            selectors: (self.selectors & !bit) | ((value as u8) << v),
+        }
+    }
+    pub(crate) fn has(self, selector: StyleSelector) -> bool {
+        let v = (selector as isize).try_into().unwrap();
+        let bit = 1_u8.checked_shl(v).unwrap();
+        self.selectors & bit != 0
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -669,12 +722,36 @@ impl Style {
         self
     }
 
-    pub fn hover(mut self, style: impl Fn(Style) -> Style + 'static) -> Self {
+    fn selector(
+        mut self,
+        selector: StyleSelector,
+        style: impl Fn(Style) -> Style + 'static,
+    ) -> Self {
         let over = style(Style::BASE).other.unwrap_or_default();
         let mut other = self.other.unwrap_or_default();
-        other.set_selector(StyleSelector::Hover, over);
+        other.set_selector(selector, over);
         self.other = Some(other);
         self
+    }
+
+    pub fn hover(self, style: impl Fn(Style) -> Style + 'static) -> Self {
+        self.selector(StyleSelector::Hover, style)
+    }
+
+    pub fn focus(self, style: impl Fn(Style) -> Style + 'static) -> Self {
+        self.selector(StyleSelector::Focus, style)
+    }
+
+    pub fn focus_visible(self, style: impl Fn(Style) -> Style + 'static) -> Self {
+        self.selector(StyleSelector::FocusVisible, style)
+    }
+
+    pub fn disabled(self, style: impl Fn(Style) -> Style + 'static) -> Self {
+        self.selector(StyleSelector::Disabled, style)
+    }
+
+    pub fn active(self, style: impl Fn(Style) -> Style + 'static) -> Self {
+        self.selector(StyleSelector::Active, style)
     }
 
     pub fn width_full(self) -> Self {
