@@ -1,6 +1,6 @@
-use std::sync::atomic::AtomicUsize;
+use std::{rc::Rc, sync::atomic::AtomicUsize};
 
-use crate::update::ANIM_UPDATE_MESSAGES;
+use crate::{style::StyleProp, update::ANIM_UPDATE_MESSAGES};
 
 use super::{anim_val::AnimValue, AnimPropKind, AnimUpdateMsg};
 
@@ -25,6 +25,19 @@ impl AnimId {
                 id: *self,
                 kind,
                 val,
+            });
+        });
+    }
+
+    pub(crate) fn update_style_prop<P: StyleProp>(&self, _prop: P, val: P::Type) {
+        ANIM_UPDATE_MESSAGES.with(|msgs| {
+            let mut msgs = msgs.borrow_mut();
+            msgs.push(AnimUpdateMsg::Prop {
+                id: *self,
+                kind: AnimPropKind::Prop {
+                    prop: P::prop_ref(),
+                },
+                val: AnimValue::Prop(Rc::new(val)),
             });
         });
     }

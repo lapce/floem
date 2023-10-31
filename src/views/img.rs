@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     id::Id,
-    style::{ComputedStyle, Style},
+    style::Style,
     unit::UnitExt,
     view::{ChangeFlags, View},
 };
@@ -178,7 +178,7 @@ impl View for Img {
             let style = Style::BASE
                 .width((width as f64).px())
                 .height((height as f64).px())
-                .compute(&ComputedStyle::default())
+                .compute()
                 .to_taffy_style();
             let _ = cx.app_state_mut().taffy.set_style(content_node, style);
 

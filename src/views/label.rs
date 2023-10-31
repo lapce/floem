@@ -2,14 +2,12 @@ use std::{any::Any, fmt::Display};
 
 use crate::{
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
-    style::{ComputedStyle, TextOverflow},
+    prop_extracter,
+    style::{FontProps, FontSize, LineHeight, TextColor, TextOverflow, TextOverflowProp},
     unit::PxPct,
 };
 use floem_reactive::create_effect;
-use floem_renderer::{
-    cosmic_text::{LineHeightValue, Style as FontStyle, Weight},
-    Renderer,
-};
+use floem_renderer::Renderer;
 use kurbo::{Point, Rect};
 use peniko::Color;
 use taffy::prelude::Node;
@@ -22,6 +20,14 @@ use crate::{
     view::{ChangeFlags, View},
 };
 
+prop_extracter! {
+    Extracter {
+        color: TextColor,
+        text_overflow: TextOverflowProp,
+        line_height: LineHeight,
+    }
+}
+
 pub struct Label {
     id: Id,
     label: String,
@@ -30,13 +36,8 @@ pub struct Label {
     available_text: Option<String>,
     available_width: Option<f32>,
     available_text_layout: Option<TextLayout>,
-    color: Option<Color>,
-    font_size: Option<f32>,
-    font_family: Option<String>,
-    font_weight: Option<Weight>,
-    font_style: Option<FontStyle>,
-    line_height: Option<LineHeightValue>,
-    text_overflow: TextOverflow,
+    font: FontProps,
+    style: Extracter,
 }
 
 pub fn text<S: Display>(text: S) -> Label {
@@ -58,36 +59,31 @@ pub fn label<S: Display + 'static>(label: impl Fn() -> S + 'static) -> Label {
         available_text: None,
         available_width: None,
         available_text_layout: None,
-        color: None,
-        font_size: None,
-        font_family: None,
-        font_weight: None,
-        font_style: None,
-        line_height: None,
-        text_overflow: TextOverflow::Wrap,
+        font: FontProps::default(),
+        style: Default::default(),
     }
 }
 
 impl Label {
     fn get_attrs_list(&self) -> AttrsList {
-        let mut attrs = Attrs::new().color(self.color.unwrap_or(Color::BLACK));
-        if let Some(font_size) = self.font_size {
+        let mut attrs = Attrs::new().color(self.style.color().unwrap_or(Color::BLACK));
+        if let Some(font_size) = self.font.size() {
             attrs = attrs.font_size(font_size);
         }
-        if let Some(font_style) = self.font_style {
+        if let Some(font_style) = self.font.style() {
             attrs = attrs.style(font_style);
         }
-        let font_family = self.font_family.as_ref().map(|font_family| {
+        let font_family = self.font.family().as_ref().map(|font_family| {
             let family: Vec<FamilyOwned> = FamilyOwned::parse_list(font_family).collect();
             family
         });
         if let Some(font_family) = font_family.as_ref() {
             attrs = attrs.family(font_family);
         }
-        if let Some(font_weight) = self.font_weight {
+        if let Some(font_weight) = self.font.weight() {
             attrs = attrs.weight(font_weight);
         }
-        if let Some(line_height) = self.line_height {
+        if let Some(line_height) = self.style.line_height() {
             attrs = attrs.line_height(line_height);
         }
         AttrsList::new(attrs)
@@ -153,29 +149,13 @@ impl View for Label {
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
             let (width, height) = if self.label.is_empty() {
-                (0.0, cx.current_font_size().unwrap_or(14.0))
+                (0.0, cx.get_prop(FontSize).and_then(|s| s).unwrap_or(14.0))
             } else {
-                let text_overflow = cx.app_state_mut().get_computed_style(self.id).text_overflow;
-                if self.color != cx.color
-                    || self.font_size != cx.font_size
-                    || self.font_family.as_deref() != cx.current_font_family()
-                    || self.font_weight != cx.font_weight
-                    || self.font_style != cx.font_style
-                    || self.line_height != cx.line_height
-                    || self.text_overflow != text_overflow
-                {
-                    self.color = cx.color;
-                    self.font_size = cx.font_size;
-                    self.font_family = cx.current_font_family().map(|s| s.to_string());
-                    self.font_weight = cx.font_weight;
-                    self.font_style = cx.font_style;
-                    self.line_height = cx.line_height;
-                    self.text_overflow = text_overflow;
+                if self.font.read(cx) | self.style.read(cx) {
                     self.text_layout = None;
                     self.available_text = None;
                     self.available_width = None;
                     self.available_text_layout = None;
-                    self.set_text_layout();
                 }
                 if self.text_layout.is_none() {
                     self.set_text_layout();
@@ -185,7 +165,7 @@ impl View for Label {
                 let width = size.width.ceil() as f32;
                 let mut height = size.height as f32;
 
-                if text_overflow == TextOverflow::Wrap {
+                if self.style.text_overflow() == TextOverflow::Wrap {
                     if let Some(t) = self.available_text_layout.as_ref() {
                         height = height.max(t.size().height as f32);
                     }
@@ -207,7 +187,7 @@ impl View for Label {
             let style = Style::BASE
                 .width(width)
                 .height(height)
-                .compute(&ComputedStyle::default())
+                .compute()
                 .to_taffy_style();
             let _ = cx.app_state_mut().taffy.set_style(text_node, style);
 
@@ -220,23 +200,14 @@ impl View for Label {
             return None;
         }
 
-        if self.font_size != cx.font_size
-            || self.font_family.as_deref() != cx.current_font_family()
-            || self.font_weight != cx.font_weight
-            || self.font_style != cx.font_style
-            || self.line_height != cx.line_height
-        {
-            cx.app_state_mut().request_layout(self.id());
-        }
-
         let layout = cx.get_layout(self.id()).unwrap();
-        let style = cx.app_state_mut().get_computed_style(self.id);
-        let text_overflow = style.text_overflow;
-        let padding_left = match style.padding_left {
+        let style = cx.app_state_mut().get_builtin_style(self.id);
+        let text_overflow = style.text_overflow();
+        let padding_left = match style.padding_left() {
             PxPct::Px(padding) => padding as f32,
             PxPct::Pct(pct) => pct as f32 * layout.size.width,
         };
-        let padding_right = match style.padding_right {
+        let padding_right = match style.padding_right() {
             PxPct::Px(padding) => padding as f32,
             PxPct::Pct(pct) => pct as f32 * layout.size.width,
         };
@@ -296,21 +267,6 @@ impl View for Label {
             return;
         }
 
-        if self.color != cx.color
-            || self.font_size != cx.font_size
-            || self.font_family.as_deref() != cx.font_family.as_deref()
-            || self.font_weight != cx.font_weight
-            || self.font_style != cx.font_style
-            || self.line_height != cx.line_height
-        {
-            self.color = cx.color;
-            self.font_size = cx.font_size;
-            self.font_family = cx.font_family.clone();
-            self.font_weight = cx.font_weight;
-            self.font_style = cx.font_style;
-            self.line_height = cx.line_height;
-            self.set_text_layout();
-        }
         let text_node = self.text_node.unwrap();
         let location = cx.app_state.taffy.layout(text_node).unwrap().location;
         let point = Point::new(location.x as f64, location.y as f64);

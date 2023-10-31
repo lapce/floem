@@ -9,8 +9,8 @@ use crate::{
     event::Event,
     id::Id,
     prop, prop_extracter,
-    style::{ComputedStyle, OptionReader, Style, StyleValue},
-    unit::PxPct,
+    style::{BorderRadius, PositionProp, Style},
+    unit::{Px, PxPct},
     view::{ChangeFlags, View},
 };
 
@@ -40,55 +40,23 @@ enum BarHeldState {
     Horizontal(f64, Vec2),
 }
 
-prop!(pub scroll_bar_color: Color { inherited: true } = Color::rgba8(0, 0, 0, 120));
-prop!(pub bg_active_color: Color { inherited: true } = Color::rgba8(0, 0, 0, 30));
+prop!(pub HandleColor: Color { inherited } = Color::rgba8(0, 0, 0, 120));
+prop!(pub HoverColor: Color { inherited } = Color::rgba8(0, 0, 0, 140));
+prop!(pub DragColor: Color { inherited } = Color::rgba8(0, 0, 0, 160));
+prop!(pub Rounded: bool { inherited } = cfg!(target_os = "macos"));
+prop!(pub Thickness: Px { inherited } = Px(10.0));
+prop!(pub EdgeWidth: Px { inherited } = Px(0.0));
+prop!(pub BgActiveColor: Color { inherited } = Color::rgba8(0, 0, 0, 25));
 
 prop_extracter! {
-    Extracter {
-        scroll_bar_color,
-        bg_active_color: OptionReader<bg_active_color>,
-    }
-}
-
-pub struct ScrollBarStyle {
-    hover_color: Option<Color>,
-    drag_color: Option<Color>,
-    rounded: bool,
-    hide: bool,
-    thickness: f32,
-    edge_width: f32,
-}
-
-impl ScrollBarStyle {
-    pub const BASE: Self = ScrollBarStyle {
-        hover_color: None,
-        drag_color: None,
-        rounded: cfg!(target_os = "macos"),
-        thickness: 10.,
-        edge_width: 0.,
-        hide: false,
-    };
-
-    pub fn hover_color(mut self, color: Color) -> Self {
-        self.hover_color = Some(color);
-        self
-    }
-
-    pub fn drag_color(mut self, color: Color) -> Self {
-        self.drag_color = Some(color);
-        self
-    }
-    pub fn rounded(mut self, rounded: bool) -> Self {
-        self.rounded = rounded;
-        self
-    }
-    pub fn thickness(mut self, thickness: f32) -> Self {
-        self.thickness = thickness;
-        self
-    }
-    pub fn edge_width(mut self, edge_width: f32) -> Self {
-        self.edge_width = edge_width;
-        self
+    ScrollStyle {
+        handle_color: HandleColor,
+        hover_color: Option<HoverColor>,
+        drag_color: Option<DragColor>,
+        rounded: Rounded,
+        thickness: Thickness,
+        edge_width: EdgeWidth,
+        bg_active_color: Option<BgActiveColor>,
     }
 }
 
@@ -110,8 +78,8 @@ pub struct Scroll<V: View> {
     virtual_node: Option<Node>,
     propagate_pointer_wheel: bool,
     vertical_scroll_as_horizontal: bool,
-    scroll_bar_style: ScrollBarStyle,
-    style: Extracter,
+    style: ScrollStyle,
+    hide: bool,
 }
 
 pub fn scroll<V: View>(child: V) -> Scroll<V> {
@@ -131,7 +99,7 @@ pub fn scroll<V: View>(child: V) -> Scroll<V> {
         virtual_node: None,
         propagate_pointer_wheel: false,
         vertical_scroll_as_horizontal: false,
-        scroll_bar_style: ScrollBarStyle::BASE,
+        hide: false,
         style: Default::default(),
     }
 }
@@ -271,20 +239,20 @@ impl<V: View> Scroll<V> {
         let layout = app_state.get_layout(self.id).unwrap();
         self.size = Size::new(layout.size.width as f64, layout.size.height as f64);
 
-        let style = app_state.get_computed_style(self.id);
-        let padding_left = match style.padding_left {
+        let style = app_state.get_builtin_style(self.id);
+        let padding_left = match style.padding_left() {
             PxPct::Px(padding) => padding as f32,
             PxPct::Pct(pct) => pct as f32 * layout.size.width,
         };
-        let padding_right = match style.padding_right {
+        let padding_right = match style.padding_right() {
             PxPct::Px(padding) => padding as f32,
             PxPct::Pct(pct) => pct as f32 * layout.size.width,
         };
-        let padding_top = match style.padding_top {
+        let padding_top = match style.padding_top() {
             PxPct::Px(padding) => padding as f32,
             PxPct::Pct(pct) => pct as f32 * layout.size.width,
         };
-        let padding_bottom = match style.padding_bottom {
+        let padding_bottom = match style.padding_bottom() {
             PxPct::Px(padding) => padding as f32,
             PxPct::Pct(pct) => pct as f32 * layout.size.width,
         };
@@ -351,10 +319,10 @@ impl<V: View> Scroll<V> {
     }
 
     fn draw_bars(&self, cx: &mut PaintCx) {
-        let edge_width = self.scroll_bar_style.edge_width as f64;
+        let edge_width = self.style.edge_width().0;
         let scroll_offset = self.child_viewport.origin().to_vec2();
         let radius = |rect: Rect, vertical| {
-            if self.scroll_bar_style.rounded {
+            if self.style.rounded() {
                 if vertical {
                     (rect.x1 - rect.x0) / 2.
                 } else {
@@ -367,19 +335,19 @@ impl<V: View> Scroll<V> {
 
         if let Some(bounds) = self.calc_vertical_bar_bounds(cx.app_state) {
             let color = if let BarHeldState::Vertical(..) = self.held {
-                if let Some(color) = self.scroll_bar_style.drag_color {
+                if let Some(color) = self.style.drag_color() {
                     color
                 } else {
-                    self.style.scroll_bar_color()
+                    self.style.handle_color()
                 }
             } else if self.vbar_hover {
-                if let Some(color) = self.scroll_bar_style.hover_color {
+                if let Some(color) = self.style.hover_color() {
                     color
                 } else {
-                    self.style.scroll_bar_color()
+                    self.style.handle_color()
                 }
             } else {
-                self.style.scroll_bar_color()
+                self.style.handle_color()
             };
             if self.vbar_whole_hover || matches!(self.held, BarHeldState::Vertical(..)) {
                 let mut bounds = bounds;
@@ -400,19 +368,19 @@ impl<V: View> Scroll<V> {
         // Horizontal bar
         if let Some(bounds) = self.calc_horizontal_bar_bounds(cx.app_state) {
             let color = if let BarHeldState::Horizontal(..) = self.held {
-                if let Some(color) = self.scroll_bar_style.drag_color {
+                if let Some(color) = self.style.drag_color() {
                     color
                 } else {
-                    self.style.scroll_bar_color()
+                    self.style.handle_color()
                 }
             } else if self.hbar_hover {
-                if let Some(color) = self.scroll_bar_style.hover_color {
+                if let Some(color) = self.style.hover_color() {
                     color
                 } else {
-                    self.style.scroll_bar_color()
+                    self.style.handle_color()
                 }
             } else {
-                self.style.scroll_bar_color()
+                self.style.handle_color()
             };
             if self.hbar_whole_hover || matches!(self.held, BarHeldState::Horizontal(..)) {
                 let mut bounds = bounds;
@@ -440,7 +408,7 @@ impl<V: View> Scroll<V> {
             return None;
         }
 
-        let bar_width = self.scroll_bar_style.thickness as f64;
+        let bar_width = self.style.thickness().0;
         let bar_pad = 0.0;
 
         let percent_visible = viewport_size.height / content_size.height;
@@ -448,7 +416,7 @@ impl<V: View> Scroll<V> {
 
         let length = (percent_visible * viewport_size.height).ceil();
         // Vertical scroll bar must have ast least the same height as it's width
-        let length = length.max(self.scroll_bar_style.thickness as f64);
+        let length = length.max(self.style.thickness().0);
 
         let top_y_offset = ((viewport_size.height - length) * percent_scrolled).ceil();
         let bottom_y_offset = top_y_offset + length;
@@ -471,7 +439,7 @@ impl<V: View> Scroll<V> {
             return None;
         }
 
-        let bar_width = self.scroll_bar_style.thickness as f64;
+        let bar_width = self.style.thickness().0;
         let bar_pad = 0.0;
 
         let percent_visible = viewport_size.width / content_size.width;
@@ -648,7 +616,7 @@ impl<V: View> View for Scroll<V> {
                     self.scroll_to(cx.app_state, origin);
                 }
                 ScrollState::HiddenBar(hide) => {
-                    self.scroll_bar_style.hide = hide;
+                    self.hide = hide;
                 }
                 ScrollState::PropagatePointerWheel(value) => {
                     self.propagate_pointer_wheel = value;
@@ -666,26 +634,14 @@ impl<V: View> View for Scroll<V> {
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
-            if let Some(color) = cx.scroll_bar_hover_color {
-                self.scroll_bar_style.hover_color = Some(color);
-            }
-            if let Some(color) = cx.scroll_bar_drag_color {
-                self.scroll_bar_style.drag_color = Some(color);
-            }
             self.style.read(cx);
-            if let Some(rounded) = cx.scroll_bar_rounded {
-                self.scroll_bar_style.rounded = rounded;
-            }
-            if let Some(thickness) = cx.scroll_bar_thickness {
-                self.scroll_bar_style.thickness = thickness;
-            }
-            if let Some(edge_width) = cx.scroll_bar_edge_width {
-                self.scroll_bar_style.edge_width = edge_width;
-            }
 
             let child_id = self.child.id();
             let child_view = cx.app_state_mut().view_state(child_id);
-            child_view.style.position = StyleValue::Val(Position::Absolute);
+            child_view.style = child_view
+                .style
+                .clone()
+                .set(PositionProp, Position::Absolute);
             let child_node = self.child.layout_main(cx);
 
             let virtual_style = Style::BASE
@@ -693,7 +649,7 @@ impl<V: View> View for Scroll<V> {
                 .height(self.child_size.height)
                 .min_width(0.0)
                 .min_height(0.0)
-                .compute(&ComputedStyle::default())
+                .compute()
                 .to_taffy_style();
             if self.virtual_node.is_none() {
                 self.virtual_node = Some(
@@ -732,7 +688,7 @@ impl<V: View> View for Scroll<V> {
 
         match &event {
             Event::PointerDown(event) => {
-                if !self.scroll_bar_style.hide && event.button.is_primary() {
+                if !self.hide && event.button.is_primary() {
                     self.held = BarHeldState::None;
 
                     let pos = event.pos + scroll_offset;
@@ -790,7 +746,7 @@ impl<V: View> View for Scroll<V> {
                 }
             }
             Event::PointerMove(event) => {
-                if !self.scroll_bar_style.hide {
+                if !self.hide {
                     let pos = event.pos + scroll_offset;
                     self.update_hover_states(cx.app_state, event.pos);
 
@@ -866,17 +822,8 @@ impl<V: View> View for Scroll<V> {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         cx.save();
-        if let Some(rounded) = cx.scroll_bar_rounded {
-            self.scroll_bar_style.rounded = rounded;
-        }
-        if let Some(thickness) = cx.scroll_bar_thickness {
-            self.scroll_bar_style.thickness = thickness;
-        }
-        if let Some(edge_width) = cx.scroll_bar_edge_width {
-            self.scroll_bar_style.edge_width = edge_width;
-        }
         let style = cx.get_computed_style(self.id);
-        let radius = style.border_radius.0;
+        let radius = style.get(BorderRadius).0;
         if radius > 0.0 {
             let rect = self.actual_rect.to_rounded_rect(radius);
             cx.clip(&rect);
@@ -887,7 +834,7 @@ impl<V: View> View for Scroll<V> {
         self.child.paint_main(cx);
         cx.restore();
 
-        if !self.scroll_bar_style.hide {
+        if !self.hide {
             self.draw_bars(cx);
         }
     }

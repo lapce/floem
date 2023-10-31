@@ -115,7 +115,7 @@ impl View for Svg {
             let hash = self.svg_hash.as_ref().unwrap();
             let layout = cx.get_layout(self.id).unwrap();
             let rect = Size::new(layout.size.width as f64, layout.size.height as f64).to_rect();
-            let color = cx.app_state.get_computed_style(self.id).color;
+            let color = cx.app_state.get_builtin_style(self.id).color();
             cx.draw_svg(floem_renderer::Svg { tree, hash }, rect, color);
         }
     }

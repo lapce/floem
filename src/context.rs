@@ -24,7 +24,10 @@ use crate::{
     menu::Menu,
     pointer::PointerInputEvent,
     responsive::{GridBreakpoints, ScreenSize, ScreenSizeBp},
-    style::{ComputedStyle, CursorStyle, Style, StyleMap, StyleProp, StyleSelector},
+    style::{
+        BuiltinStyleReader, ComputedStyle, CursorStyle, DisplayProp, Style, StyleMap, StyleProp,
+        StyleSelector,
+    },
 };
 
 pub type EventCallback = dyn Fn(&Event) -> bool;
@@ -176,17 +179,14 @@ impl ViewState {
                         AnimPropKind::Height => {
                             computed_style = computed_style.height(val.get_f32());
                         }
-                        AnimPropKind::Background => {
-                            computed_style = computed_style.background(val.get_color());
-                        }
-                        AnimPropKind::Color => {
-                            computed_style = computed_style.color(val.get_color());
-                        }
-                        AnimPropKind::BorderRadius => {
-                            computed_style = computed_style.border_radius(val.get_f32());
-                        }
-                        AnimPropKind::BorderColor => {
-                            computed_style = computed_style.border_color(val.get_color());
+                        AnimPropKind::Prop { prop } => {
+                            computed_style.other = Some(computed_style.other.unwrap_or_default());
+                            computed_style
+                                .other
+                                .as_mut()
+                                .unwrap()
+                                .map
+                                .insert(*prop, crate::style::StyleMapValue::Val(val.get_any()));
                         }
                         AnimPropKind::Scale => todo!(),
                     }
@@ -197,8 +197,18 @@ impl ViewState {
             }
         }
 
+        self.hover_sensitive = computed_style
+            .other
+            .as_ref()
+            .map(|map| map.hover_sensitive())
+            .unwrap_or_default();
+
+        if let Some(map) = computed_style.other.as_mut() {
+            map.apply_interact_state(interact_state);
+        }
+
         self.combined_style = computed_style.clone();
-        self.computed_style = computed_style.compute(&ComputedStyle::default());
+        self.computed_style = computed_style.compute();
     }
 
     pub(crate) fn add_responsive_style(&mut self, size: ScreenSize, style: Style) {
@@ -319,7 +329,7 @@ impl AppState {
     pub fn is_hidden(&self, id: Id) -> bool {
         self.view_states
             .get(&id)
-            .map(|s| s.computed_style.display == Display::None)
+            .map(|s| s.computed_style.get(DisplayProp) == Display::None)
             .unwrap_or(false)
     }
 
@@ -388,6 +398,10 @@ impl AppState {
     pub(crate) fn get_computed_style(&mut self, id: Id) -> &ComputedStyle {
         let view_state = self.view_state(id);
         &view_state.computed_style
+    }
+
+    pub(crate) fn get_builtin_style(&mut self, id: Id) -> BuiltinStyleReader<'_> {
+        self.get_computed_style(id).get_builtin()
     }
 
     pub fn compute_layout(&mut self) {
@@ -703,31 +717,9 @@ impl StyleCx {
 pub struct LayoutCx<'a> {
     app_state: &'a mut AppState,
     pub(crate) viewport: Option<Rect>,
-    pub(crate) color: Option<Color>,
     pub(crate) style: StyleCx,
-    pub(crate) scroll_bar_hover_color: Option<Color>,
-    pub(crate) scroll_bar_drag_color: Option<Color>,
-    pub(crate) scroll_bar_rounded: Option<bool>,
-    pub(crate) scroll_bar_thickness: Option<f32>,
-    pub(crate) scroll_bar_edge_width: Option<f32>,
-    pub(crate) font_size: Option<f32>,
-    pub(crate) font_family: Option<String>,
-    pub(crate) font_weight: Option<Weight>,
-    pub(crate) font_style: Option<FontStyle>,
-    pub(crate) line_height: Option<LineHeightValue>,
     pub(crate) window_origin: Point,
     pub(crate) saved_viewports: Vec<Option<Rect>>,
-    pub(crate) saved_colors: Vec<Option<Color>>,
-    pub(crate) saved_scroll_bar_hover_colors: Vec<Option<Color>>,
-    pub(crate) saved_scroll_bar_drag_colors: Vec<Option<Color>>,
-    pub(crate) saved_scroll_bar_roundeds: Vec<Option<bool>>,
-    pub(crate) saved_scroll_bar_thicknesses: Vec<Option<f32>>,
-    pub(crate) saved_scroll_bar_edge_widths: Vec<Option<f32>>,
-    pub(crate) saved_font_sizes: Vec<Option<f32>>,
-    pub(crate) saved_font_families: Vec<Option<String>>,
-    pub(crate) saved_font_weights: Vec<Option<Weight>>,
-    pub(crate) saved_font_styles: Vec<Option<FontStyle>>,
-    pub(crate) saved_line_heights: Vec<Option<LineHeightValue>>,
     pub(crate) saved_window_origins: Vec<Point>,
 }
 
@@ -736,32 +728,10 @@ impl<'a> LayoutCx<'a> {
         Self {
             app_state,
             viewport: None,
-            color: None,
-            font_size: None,
-            font_family: None,
-            font_weight: None,
-            font_style: None,
-            line_height: None,
             window_origin: Point::ZERO,
             style: StyleCx::new(),
             saved_viewports: Vec::new(),
-            saved_colors: Vec::new(),
-            saved_font_sizes: Vec::new(),
-            saved_font_families: Vec::new(),
-            saved_font_weights: Vec::new(),
-            saved_font_styles: Vec::new(),
-            saved_line_heights: Vec::new(),
             saved_window_origins: Vec::new(),
-            scroll_bar_hover_color: None,
-            scroll_bar_drag_color: None,
-            scroll_bar_rounded: None,
-            scroll_bar_thickness: None,
-            scroll_bar_edge_width: None,
-            saved_scroll_bar_hover_colors: Vec::new(),
-            saved_scroll_bar_drag_colors: Vec::new(),
-            saved_scroll_bar_roundeds: Vec::new(),
-            saved_scroll_bar_thicknesses: Vec::new(),
-            saved_scroll_bar_edge_widths: Vec::new(),
         }
     }
 
@@ -775,63 +745,20 @@ impl<'a> LayoutCx<'a> {
     pub(crate) fn clear(&mut self) {
         self.style.clear();
         self.viewport = None;
-        self.scroll_bar_hover_color = None;
-        self.scroll_bar_drag_color = None;
-        self.scroll_bar_rounded = None;
-        self.scroll_bar_thickness = None;
-        self.scroll_bar_edge_width = None;
-        self.font_size = None;
         self.window_origin = Point::ZERO;
-        self.saved_colors.clear();
         self.saved_viewports.clear();
-        self.saved_scroll_bar_hover_colors.clear();
-        self.saved_scroll_bar_drag_colors.clear();
-        self.saved_scroll_bar_roundeds.clear();
-        self.saved_scroll_bar_thicknesses.clear();
-        self.saved_scroll_bar_edge_widths.clear();
-        self.saved_font_sizes.clear();
-        self.saved_font_families.clear();
-        self.saved_font_weights.clear();
-        self.saved_font_styles.clear();
-        self.saved_line_heights.clear();
         self.saved_window_origins.clear();
     }
 
     pub fn save(&mut self) {
         self.style.save();
         self.saved_viewports.push(self.viewport);
-        self.saved_colors.push(self.color);
-        self.saved_scroll_bar_hover_colors
-            .push(self.scroll_bar_hover_color);
-        self.saved_scroll_bar_drag_colors
-            .push(self.scroll_bar_drag_color);
-        self.saved_scroll_bar_roundeds.push(self.scroll_bar_rounded);
-        self.saved_scroll_bar_thicknesses
-            .push(self.scroll_bar_thickness);
-        self.saved_scroll_bar_edge_widths
-            .push(self.scroll_bar_edge_width);
-        self.saved_font_sizes.push(self.font_size);
-        self.saved_font_families.push(self.font_family.clone());
-        self.saved_font_weights.push(self.font_weight);
-        self.saved_font_styles.push(self.font_style);
-        self.saved_line_heights.push(self.line_height);
         self.saved_window_origins.push(self.window_origin);
     }
 
     pub fn restore(&mut self) {
         self.style.restore();
         self.viewport = self.saved_viewports.pop().unwrap_or_default();
-        self.color = self.saved_colors.pop().unwrap_or_default();
-        self.scroll_bar_hover_color = self.saved_scroll_bar_hover_colors.pop().unwrap_or_default();
-        self.scroll_bar_drag_color = self.saved_scroll_bar_drag_colors.pop().unwrap_or_default();
-        self.scroll_bar_rounded = self.saved_scroll_bar_roundeds.pop().unwrap_or_default();
-        self.scroll_bar_thickness = self.saved_scroll_bar_thicknesses.pop().unwrap_or_default();
-        self.scroll_bar_edge_width = self.saved_scroll_bar_edge_widths.pop().unwrap_or_default();
-        self.font_size = self.saved_font_sizes.pop().unwrap_or_default();
-        self.font_family = self.saved_font_families.pop().unwrap_or_default();
-        self.font_weight = self.saved_font_weights.pop().unwrap_or_default();
-        self.font_style = self.saved_font_styles.pop().unwrap_or_default();
-        self.line_height = self.saved_line_heights.pop().unwrap_or_default();
         self.window_origin = self.saved_window_origins.pop().unwrap_or_default();
     }
 
@@ -841,46 +768,6 @@ impl<'a> LayoutCx<'a> {
 
     pub fn app_state(&self) -> &AppState {
         self.app_state
-    }
-
-    pub fn current_scroll_bar_hover_color(&self) -> Option<Color> {
-        self.scroll_bar_hover_color
-    }
-
-    pub fn current_scroll_bar_drag_color(&self) -> Option<Color> {
-        self.scroll_bar_drag_color
-    }
-
-    pub fn current_scroll_bar_rounded(&self) -> Option<bool> {
-        self.scroll_bar_rounded
-    }
-
-    pub fn current_scroll_bar_thickness(&self) -> Option<f32> {
-        self.scroll_bar_thickness
-    }
-
-    pub fn current_scroll_bar_edge_width(&self) -> Option<f32> {
-        self.scroll_bar_edge_width
-    }
-
-    pub fn current_font_size(&self) -> Option<f32> {
-        self.font_size
-    }
-
-    pub fn current_font_family(&self) -> Option<&str> {
-        self.font_family.as_deref()
-    }
-
-    pub fn current_font_weight(&self) -> Option<Weight> {
-        self.font_weight
-    }
-
-    pub fn current_font_style(&self) -> Option<FontStyle> {
-        self.font_style
-    }
-
-    pub fn current_line_height(&self) -> Option<LineHeightValue> {
-        self.line_height
     }
 
     pub fn current_viewport(&self) -> Option<Rect> {
@@ -1062,6 +949,10 @@ impl<'a> PaintCx<'a> {
 
     pub fn get_computed_style(&mut self, id: Id) -> &ComputedStyle {
         self.app_state.get_computed_style(id)
+    }
+
+    pub(crate) fn get_builtin_style(&mut self, id: Id) -> BuiltinStyleReader<'_> {
+        self.app_state.get_builtin_style(id)
     }
 
     /// Clip the drawing area to the given shape.

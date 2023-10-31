@@ -1,35 +1,45 @@
+use std::{any::Any, rc::Rc};
+
 use peniko::Color;
 
-use crate::animate::AnimDirection;
+use crate::{animate::AnimDirection, style::StylePropRef, unit::Px};
 
 use super::{anim_val::AnimValue, assert_valid_time, SizeUnit};
 
 #[derive(Clone, Debug)]
 pub enum AnimatedProp {
-    Width { from: f64, to: f64, unit: SizeUnit },
-    Height { from: f64, to: f64, unit: SizeUnit },
-    Scale { from: f64, to: f64 },
+    Width {
+        from: f64,
+        to: f64,
+        unit: SizeUnit,
+    },
+    Height {
+        from: f64,
+        to: f64,
+        unit: SizeUnit,
+    },
+    Scale {
+        from: f64,
+        to: f64,
+    },
     // Opacity { from: f64, to: f64 },
     // TranslateX,
     // TranslateY,
-    Background { from: Color, to: Color },
-    BorderRadius { from: f64, to: f64 },
-    BorderWidth { from: f64, to: f64 },
-    BorderColor { from: Color, to: Color },
-    Color { from: Color, to: Color },
+    Prop {
+        prop: StylePropRef,
+        from: Rc<dyn Any>,
+        to: Rc<dyn Any>,
+    },
 }
 
 impl AnimatedProp {
     pub(crate) fn from(&self) -> AnimValue {
         match self {
-            AnimatedProp::Width { from, .. }
-            | AnimatedProp::Height { from, .. }
-            | AnimatedProp::BorderWidth { from, .. }
-            | AnimatedProp::BorderRadius { from, .. } => AnimValue::Float(*from),
+            AnimatedProp::Prop { from, .. } => AnimValue::Prop(from.clone()),
+            AnimatedProp::Width { from, .. } | AnimatedProp::Height { from, .. } => {
+                AnimValue::Float(*from)
+            }
             AnimatedProp::Scale { .. } => todo!(),
-            AnimatedProp::Background { from, .. }
-            | AnimatedProp::BorderColor { from, .. }
-            | AnimatedProp::Color { from, .. } => AnimValue::Color(*from),
         }
     }
 
@@ -108,19 +118,40 @@ impl AnimatedProp {
 
     pub(crate) fn animate(&self, time: f64, direction: AnimDirection) -> AnimValue {
         match self {
+            AnimatedProp::Prop { prop, from, to } => {
+                if let Some(from) = from.downcast_ref::<Px>() {
+                    let to = to.downcast_ref::<Px>().unwrap();
+                    return AnimValue::Prop(Rc::new(Px(
+                        self.animate_float(from.0, to.0, time, direction)
+                    )));
+                }
+                if let Some(from) = from.downcast_ref::<f64>() {
+                    let to = to.downcast_ref::<f64>().unwrap();
+                    return AnimValue::Prop(Rc::new(
+                        self.animate_float(*from, *to, time, direction),
+                    ));
+                }
+                if let Some(from) = from.downcast_ref::<Color>() {
+                    let to = to.downcast_ref::<Color>().unwrap();
+                    return AnimValue::Prop(Rc::new(
+                        self.animate_color(*from, *to, time, direction),
+                    ));
+                }
+                if let Some(from) = from.downcast_ref::<Option<Color>>() {
+                    let to = to.downcast_ref::<Option<Color>>().unwrap();
+                    let from = from.unwrap();
+                    let to = to.unwrap();
+                    return AnimValue::Prop(Rc::new(Some(
+                        self.animate_color(from, to, time, direction),
+                    )));
+                }
+                panic!("unknown type for {prop:?}")
+            }
             AnimatedProp::Width { from, to, unit: _ }
             | AnimatedProp::Height { from, to, unit: _ } => {
                 AnimValue::Float(self.animate_float(*from, *to, time, direction))
             }
-            AnimatedProp::Background { from, to }
-            | AnimatedProp::BorderColor { from, to }
-            | AnimatedProp::Color { from, to } => {
-                AnimValue::Color(self.animate_color(*from, *to, time, direction))
-            }
             AnimatedProp::Scale { .. } => todo!(),
-            AnimatedProp::BorderRadius { from, to } | AnimatedProp::BorderWidth { from, to } => {
-                AnimValue::Float(self.animate_float(*from, *to, time, direction))
-            }
         }
     }
 }
@@ -131,9 +162,6 @@ pub enum AnimPropKind {
     // TranslateX,
     // TranslateY,
     Width,
-    Background,
-    Color,
     Height,
-    BorderRadius,
-    BorderColor,
+    Prop { prop: StylePropRef },
 }

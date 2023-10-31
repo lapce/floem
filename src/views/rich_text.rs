@@ -9,7 +9,7 @@ use crate::{
     context::{EventCx, UpdateCx},
     event::Event,
     id::Id,
-    style::{ComputedStyle, Style, TextOverflow},
+    style::{Style, TextOverflow},
     unit::PxPct,
     view::{ChangeFlags, View},
 };
@@ -109,7 +109,7 @@ impl View for RichText {
             let style = Style::BASE
                 .width(width)
                 .height(height)
-                .compute(&ComputedStyle::default())
+                .compute()
                 .to_taffy_style();
             let _ = cx.app_state_mut().taffy.set_style(text_node, style);
             vec![text_node]
@@ -118,18 +118,18 @@ impl View for RichText {
 
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<Rect> {
         let layout = cx.get_layout(self.id()).unwrap();
-        let style = cx.app_state_mut().get_computed_style(self.id);
-        let padding_left = match style.padding_left {
+        let style = cx.app_state_mut().get_builtin_style(self.id);
+        let padding_left = match style.padding_left() {
             PxPct::Px(padding) => padding as f32,
             PxPct::Pct(pct) => pct as f32 * layout.size.width,
         };
-        let padding_right = match style.padding_right {
+        let padding_right = match style.padding_right() {
             PxPct::Px(padding) => padding as f32,
             PxPct::Pct(pct) => pct as f32 * layout.size.width,
         };
         let padding = padding_left + padding_right;
         let available_width = layout.size.width - padding;
-        self.text_overflow = style.text_overflow;
+        self.text_overflow = style.text_overflow();
         if self.text_overflow == TextOverflow::Wrap && self.available_width != available_width {
             self.available_width = available_width;
             self.text_layout.set_size(self.available_width, f32::MAX);
