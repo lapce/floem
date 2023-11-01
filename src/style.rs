@@ -685,6 +685,19 @@ prop_extracter! {
     }
 }
 
+prop_extracter! {
+    pub(crate) LayoutProps {
+        pub border_left: BorderLeft,
+        pub border_top: BorderTop,
+        pub border_right: BorderRight,
+        pub border_bottom: BorderBottom,
+        pub padding_left: PaddingLeft,
+        pub padding_top: PaddingTop,
+        pub padding_right: PaddingRight,
+        pub padding_bottom: PaddingBottom,
+    }
+}
+
 impl Style {
     pub fn get<P: StyleProp>(&self, _prop: P) -> P::Type {
         if let Some(other) = &self.other {

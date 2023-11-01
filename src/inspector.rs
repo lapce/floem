@@ -17,6 +17,7 @@ use std::fmt::Display;
 use std::rc::Rc;
 use std::time::Instant;
 use taffy::style::AlignItems;
+use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowId;
 
 #[derive(Clone, Debug)]
@@ -222,6 +223,7 @@ fn header(label: impl Display) -> Label {
         s.padding(5.0)
             .background(Color::WHITE_SMOKE)
             .width_full()
+            .height(27.0)
             .border_bottom(1.0)
             .border_color(Color::LIGHT_GRAY)
     })
@@ -273,6 +275,7 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl 
                         selected.set(None);
                         true
                     });
+                let clear = stack((clear,));
                 Box::new(stack((name, count, x, y, w, h, clear)).style(|s| s.flex_col()))
             } else {
                 Box::new(info("No selection".to_string()))
@@ -386,7 +389,7 @@ fn capture_view(capture: &Rc<Capture>) -> impl View {
 
     let seperator = empty().style(move |s| {
         s.height_full()
-            .width(1.0)
+            .min_width(1.0)
             .background(Color::BLACK.with_alpha_factor(0.2))
     });
 
@@ -434,11 +437,25 @@ pub fn capture(window_id: WindowId) {
         RUNNING.set(true);
         new_window(
             move |_| {
-                dyn_container(
+                let view = dyn_container(
                     move || capture.get(),
                     |capture| Box::new(inspector_view(&capture.map(Rc::new))),
+                );
+                let id = view.id();
+                view.style(|s| s.width_full().height_full()).on_event(
+                    EventListener::KeyUp,
+                    move |e| {
+                        if let Event::KeyUp(e) = e {
+                            if e.key.logical_key == Key::Named(NamedKey::F11)
+                                && e.modifiers.shift_key()
+                            {
+                                id.inspect();
+                                return true;
+                            }
+                        }
+                        false
+                    },
                 )
-                .style(|s| s.width_full().height_full())
             },
             Some(WindowConfig {
                 size: Some(Size {

@@ -3,7 +3,6 @@ use std::rc::Rc;
 use floem_reactive::create_effect;
 use floem_renderer::Renderer;
 use image::{DynamicImage, GenericImageView};
-use kurbo::Size;
 use sha2::{Digest, Sha256};
 
 use crate::{
@@ -194,8 +193,7 @@ impl View for Img {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         if let Some(img) = self.img.as_ref() {
-            let size = cx.get_layout(self.id).unwrap().size;
-            let rect = Size::new(size.width as f64, size.height as f64).to_rect();
+            let rect = cx.get_content_rect(self.id);
             cx.draw_img(
                 floem_renderer::Img {
                     img,

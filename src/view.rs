@@ -95,7 +95,9 @@ use crate::{
     context::{AppState, DragState, EventCx, LayoutCx, PaintCx, UpdateCx},
     event::{Event, EventListener},
     id::Id,
-    style::{BoxShadowProp, ComputedStyle, Outline, OutlineColor, Style, StyleMap, ZIndex},
+    style::{
+        BoxShadowProp, ComputedStyle, LayoutProps, Outline, OutlineColor, Style, StyleMap, ZIndex,
+    },
 };
 
 bitflags! {
@@ -198,6 +200,12 @@ pub trait View {
 
         cx.style.direct = style.other.clone();
         StyleMap::apply_only_inherited(&mut cx.style.current, &cx.style.direct);
+
+        // Extract the relevant layout properties so the content rect can be calculated
+        // when painting.
+        let mut props = LayoutProps::default();
+        props.read(cx);
+        cx.app_state_mut().view_state(self.id()).layout_props = props;
 
         let node = self.layout(cx);
 
