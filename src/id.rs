@@ -214,6 +214,10 @@ impl Id {
         self.add_update_message(UpdateMessage::PopoutMenu { id: *self, menu });
     }
 
+    pub fn inspect(&self) {
+        self.add_update_message(UpdateMessage::Inspect);
+    }
+
     fn add_update_message(&self, msg: UpdateMessage) {
         CENTRAL_UPDATE_MESSAGES.with(|msgs| {
             msgs.borrow_mut().push((*self, msg));

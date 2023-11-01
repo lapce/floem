@@ -98,6 +98,7 @@ pub mod event;
 pub mod ext_event;
 pub mod file;
 pub mod id;
+mod inspector;
 pub mod keyboard;
 pub mod menu;
 pub mod pointer;

@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use floem_reactive::create_effect;
 use floem_renderer::Renderer;
 use image::{DynamicImage, GenericImageView};
@@ -87,22 +89,23 @@ impl ImageStyle {
 pub struct Img {
     id: Id,
     //FIXME: store the pixel format(once its added to vger), for now we only store RGBA(RGB is converted to RGBA)
-    pixels: Option<Vec<u8>>,
-    img: Option<DynamicImage>,
+    img: Option<Rc<DynamicImage>>,
     img_hash: Option<Vec<u8>>,
     img_dimensions: Option<(u32, u32)>,
     content_node: Option<Node>,
 }
 
 pub fn img(image: impl Fn() -> Vec<u8> + 'static) -> Img {
+    img_dynamic(move || image::load_from_memory(&image()).ok().map(Rc::new))
+}
+
+pub(crate) fn img_dynamic(image: impl Fn() -> Option<Rc<DynamicImage>> + 'static) -> Img {
     let id = Id::next();
     create_effect(move |_| {
-        let img_data = image();
-        id.update_state(img_data, false);
+        id.update_state(image(), false);
     });
     Img {
         id,
-        pixels: None,
         img: None,
         img_hash: None,
         img_dimensions: None,
@@ -140,23 +143,17 @@ impl View for Img {
         cx: &mut crate::context::UpdateCx,
         state: Box<dyn std::any::Any>,
     ) -> crate::view::ChangeFlags {
-        if let Ok(state) = state.downcast::<Vec<u8>>() {
-            let image = &*state;
-
-            let img = image::load_from_memory(image).ok();
-            self.img = img;
-            self.pixels = Some(image.clone());
+        if let Ok(img) = state.downcast::<Option<Rc<DynamicImage>>>() {
+            self.img_hash = (*img).as_ref().map(|img| {
+                let mut hasher = Sha256::new();
+                hasher.update(img.as_bytes());
+                hasher.finalize().to_vec()
+            });
+            self.img = *img;
             self.img_dimensions = self.img.as_ref().map(|img| img.dimensions());
-
-            let mut hasher = Sha256::new();
-            hasher.update(image);
-            let hash = hasher.finalize().to_vec();
-
-            self.img_hash = Some(hash);
             cx.request_layout(self.id());
             ChangeFlags::LAYOUT
         } else {
-            eprintln!("downcast failed");
             ChangeFlags::empty()
         }
     }
@@ -202,7 +199,7 @@ impl View for Img {
             cx.draw_img(
                 floem_renderer::Img {
                     img,
-                    data: self.pixels.as_ref().unwrap(),
+                    data: img.as_bytes(),
                     hash: self.img_hash.as_ref().unwrap(),
                 },
                 rect,

@@ -12,6 +12,7 @@ use crate::{
     action::{Timer, TimerToken},
     app::{AppUpdateEvent, UserEvent, APP_UPDATE_EVENTS},
     ext_event::EXT_EVENT_HANDLER,
+    inspector::Capture,
     view::View,
     window::WindowConfig,
     window_handle::WindowHandle,
@@ -63,6 +64,9 @@ impl ApplicationHandle {
                 }
                 AppUpdateEvent::RequestTimer { timer } => {
                     self.request_timer(timer, event_loop);
+                }
+                AppUpdateEvent::CaptureWindow { window_id, capture } => {
+                    capture.set(self.capture_window(window_id));
                 }
                 #[cfg(target_os = "linux")]
                 AppUpdateEvent::MenuAction {
@@ -233,6 +237,12 @@ impl ApplicationHandle {
         if self.window_handles.is_empty() {
             event_loop.exit();
         }
+    }
+
+    fn capture_window(&mut self, window_id: WindowId) -> Option<Capture> {
+        self.window_handles
+            .get_mut(&window_id)
+            .map(|handle| handle.capture())
     }
 
     pub(crate) fn idle(&mut self) {

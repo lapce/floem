@@ -1,16 +1,17 @@
-use std::time::{Duration, Instant};
+use std::{
+    rc::Rc,
+    time::{Duration, Instant},
+};
 
 use floem_reactive::{with_scope, RwSignal, Scope};
 use floem_renderer::Renderer;
+use image::DynamicImage;
 use kurbo::{Affine, Point, Rect, Size, Vec2};
-
-#[cfg(target_os = "linux")]
-use winit::window::WindowId;
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::{ElementState, Ime, MouseButton, MouseScrollDelta},
     keyboard::{Key, ModifiersState, NamedKey},
-    window::{CursorIcon, Theme},
+    window::{CursorIcon, Theme, WindowId},
 };
 
 #[cfg(target_os = "linux")]
@@ -25,6 +26,7 @@ use crate::{
     },
     event::{Event, EventListener},
     id::{Id, IdPath, ID_PATHS},
+    inspector::{self, Capture, CapturedView},
     keyboard::KeyEvent,
     menu::Menu,
     pointer::{PointerButton, PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
@@ -45,6 +47,7 @@ use crate::{
 /// - requesting a new animation frame from the backend
 pub(crate) struct WindowHandle {
     pub(crate) window: Option<winit::window::Window>,
+    window_id: WindowId,
     id: Id,
     /// Reactive Scope for this WindowHandle
     scope: Scope,
@@ -109,6 +112,7 @@ impl WindowHandle {
         let paint_state = PaintState::new(&window, scale, size.get_untracked() * scale);
         let mut window_handle = Self {
             window: Some(window),
+            window_id,
             id,
             scope,
             view,
@@ -460,13 +464,15 @@ impl WindowHandle {
         let id = self.app_state.ids_with_anim_in_progress().get(0).cloned();
 
         if let Some(id) = id {
+            if self.app_state.capture.is_none() {
             exec_after(Duration::from_millis(1), move |_| {
                 id.request_layout();
             });
         }
     }
+    }
 
-    pub fn paint(&mut self) {
+    pub fn paint(&mut self) -> Option<DynamicImage> {
         let mut cx = PaintCx {
             app_state: &mut self.app_state,
             paint_state: &mut self.paint_state,
@@ -495,7 +501,9 @@ impl WindowHandle {
             saved_scroll_bar_thicknesses: Vec::new(),
             saved_scroll_bar_edge_widths: Vec::new(),
         };
-        cx.paint_state.renderer.begin();
+        cx.paint_state
+            .renderer
+            .begin(cx.app_state.capture.is_some());
         if !self.transparent {
             // fill window with default white background if it's not transparent
             cx.fill(
@@ -506,10 +514,48 @@ impl WindowHandle {
         }
         self.view.paint_main(&mut cx);
         if let Some(window) = self.window.as_ref() {
+            if cx.app_state.capture.is_none() {
             window.pre_present_notify();
         }
-        cx.paint_state.renderer.finish();
+        }
+        let image = cx.paint_state.renderer.finish();
+
+        if cx.app_state.capture.is_none() {
         self.process_update();
+    }
+
+        image
+    }
+
+    pub(crate) fn capture(&mut self) -> Capture {
+        // Ensure we run layout again for accurate timing.
+        self.app_state
+            .view_states
+            .values_mut()
+            .for_each(|state| state.request_layout = true);
+        self.app_state.capture = Some(());
+
+        let start = Instant::now();
+
+        self.layout();
+        let post_layout = Instant::now();
+        let window = self.paint().map(Rc::new);
+        let end = Instant::now();
+
+        self.app_state.capture = None;
+
+        let root_layout = self.app_state.get_layout_rect(self.view.id());
+        let capture = Capture {
+            start,
+            post_layout,
+            end,
+            window,
+            root: CapturedView::capture(&self.view, &mut self.app_state, root_layout),
+        };
+        // Process any updates produced by capturing
+        self.process_update();
+
+        capture
     }
 
     pub(crate) fn process_update(&mut self) {
@@ -790,8 +836,11 @@ impl WindowHandle {
                             );
                         }
                     }
+                    UpdateMessage::Inspect => {
+                        inspector::capture(self.window_id);
                 }
             }
+        }
         }
         flags
     }

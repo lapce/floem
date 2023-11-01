@@ -261,6 +261,9 @@ pub struct AppState {
     pub(crate) keyboard_navigation: bool,
     pub(crate) window_menu: HashMap<usize, Box<dyn Fn()>>,
     pub(crate) context_menu: HashMap<usize, Box<dyn Fn()>>,
+
+    /// This is set if we're currently capturing the window for the inspector.
+    pub(crate) capture: Option<()>,
 }
 
 impl Default for AppState {
@@ -298,6 +301,7 @@ impl AppState {
             grid_bps: GridBreakpoints::default(),
             window_menu: HashMap::new(),
             context_menu: HashMap::new(),
+            capture: None,
         }
     }
 
