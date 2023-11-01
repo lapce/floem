@@ -347,6 +347,16 @@ impl Signal {
     }
 
     pub(crate) fn run_effects(&self) {
+        // If we are batching then add it as a pending effect
+        if RUNTIME.with(|r| r.batching.get()) {
+            RUNTIME.with(|r| {
+                for (_, subscriber) in self.subscribers() {
+                    r.add_pending_effect(subscriber);
+                }
+            });
+            return;
+        }
+
         for (_, subscriber) in self.subscribers() {
             run_effect(subscriber);
         }
