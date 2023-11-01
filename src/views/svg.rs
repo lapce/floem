@@ -40,7 +40,7 @@ pub fn checkbox(checked: crate::reactive::ReadSignal<bool>) -> Svg {
     let svg_str = move || if checked.get() { CHECKBOX_SVG } else { "" }.to_string();
 
     svg(svg_str)
-        .style(|base| {
+        .base_style(|base| {
             base.width(20.)
                 .height(20.)
                 .border_color(Color::BLACK)
