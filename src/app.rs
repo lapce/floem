@@ -4,6 +4,7 @@ use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use winit::{
     event_loop::{ControlFlow, EventLoop, EventLoopBuilder, EventLoopProxy},
+    monitor::MonitorHandle,
     window::WindowId,
 };
 
@@ -142,6 +143,14 @@ impl Application {
         if let Some(proxy) = EVENT_LOOP_PROXY.lock().as_ref() {
             f(proxy);
         }
+    }
+
+    pub fn available_monitors(&self) -> impl Iterator<Item = MonitorHandle> {
+        self.event_loop.available_monitors()
+    }
+
+    pub fn primary_monitor(&self) -> Option<MonitorHandle> {
+        self.event_loop.primary_monitor()
     }
 }
 

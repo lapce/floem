@@ -194,6 +194,18 @@ impl ApplicationHandle {
                     window_builder = window_builder.with_decorations(false);
                 }
             }
+            if let Some(transparent) = config.with_transparency {
+                window_builder = window_builder.with_transparent(transparent);
+            }
+            if let Some(fullscreen) = config.fullscreen {
+                window_builder = window_builder.with_fullscreen(Some(fullscreen));
+            }
+            if let Some(window_level) = config.window_level {
+                window_builder = window_builder.with_window_level(window_level);
+            }
+            if let Some(title) = config.title {
+                window_builder = window_builder.with_title(title);
+            }
         }
         let result = window_builder.build(event_loop);
         let window = match result {
