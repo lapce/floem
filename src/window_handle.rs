@@ -45,6 +45,7 @@ use crate::{
 /// - requesting a new animation frame from the backend
 pub(crate) struct WindowHandle {
     pub(crate) window: Option<winit::window::Window>,
+    id: Id,
     /// Reactive Scope for this WindowHandle
     scope: Scope,
     view: Box<dyn View>,
@@ -69,12 +70,19 @@ impl WindowHandle {
     ) -> Self {
         let scope = Scope::new();
         let window_id = window.id();
+        let id = Id::next();
         let scale = window.scale_factor();
         let size: LogicalSize<f64> = window.inner_size().to_logical(scale);
         let size = Size::new(size.width, size.height);
         let size = scope.create_rw_signal(Size::new(size.width, size.height));
         let theme = scope.create_rw_signal(window.theme());
         let is_maximized = window.is_maximized();
+
+        set_current_view(id);
+
+        ID_PATHS.with(|id_paths| {
+            id_paths.borrow_mut().insert(id, IdPath(vec![id]));
+        });
 
         #[cfg(target_os = "linux")]
         let context_menu = scope.create_rw_signal(None);
@@ -93,16 +101,13 @@ impl WindowHandle {
             )
         });
 
-        ID_PATHS.with(|id_paths| {
-            id_paths
-                .borrow_mut()
-                .insert(view.id(), IdPath(vec![view.id()]));
-        });
+        view.id().set_parent(id);
         view_children_set_parent_id(&*view);
 
         let paint_state = PaintState::new(&window, scale, size.get_untracked() * scale);
         let mut window_handle = Self {
             window: Some(window),
+            id,
             scope,
             view,
             app_state: AppState::new(),
@@ -123,7 +128,7 @@ impl WindowHandle {
     }
 
     pub fn event(&mut self, event: Event) {
-        set_current_view(self.view.id());
+        set_current_view(self.id);
         let event = event.scale(self.app_state.scale);
 
         let mut cx = EventCx {
@@ -210,7 +215,7 @@ impl WindowHandle {
             let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
             if let Some(id_path) = id_path {
                 self.view
-                    .event_main(&mut cx, Some(&id_path.0), event.clone());
+                    .event_main(&mut cx, Some(id_path.dispatch()), event.clone());
             }
             if let Event::PointerUp(_) = &event {
                 // To remove the styles applied by the Active selector
@@ -246,8 +251,11 @@ impl WindowHandle {
                 } else {
                     let id_path = ID_PATHS.with(|paths| paths.borrow().get(id).cloned());
                     if let Some(id_path) = id_path {
-                        self.view
-                            .event_main(&mut cx, Some(&id_path.0), Event::PointerLeave);
+                        self.view.event_main(
+                            &mut cx,
+                            Some(id_path.dispatch()),
+                            Event::PointerLeave,
+                        );
                     }
                 }
             }
@@ -349,7 +357,7 @@ impl WindowHandle {
     }
 
     pub(crate) fn pointer_leave(&mut self) {
-        set_current_view(self.view.id());
+        set_current_view(self.id);
         let mut cx = EventCx {
             app_state: &mut self.app_state,
         };
@@ -365,7 +373,7 @@ impl WindowHandle {
             let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
             if let Some(id_path) = id_path {
                 self.view
-                    .event_main(&mut cx, Some(&id_path.0), Event::PointerLeave);
+                    .event_main(&mut cx, Some(id_path.dispatch()), Event::PointerLeave);
             }
         }
         self.process_update();
@@ -553,11 +561,8 @@ impl WindowHandle {
         let mut flags = ChangeFlags::empty();
         loop {
             self.process_central_messages();
-            let msgs = UPDATE_MESSAGES.with(|msgs| {
-                msgs.borrow_mut()
-                    .remove(&self.view.id())
-                    .unwrap_or_default()
-            });
+            let msgs =
+                UPDATE_MESSAGES.with(|msgs| msgs.borrow_mut().remove(&self.id).unwrap_or_default());
             if msgs.is_empty() {
                 break;
             }
@@ -609,7 +614,7 @@ impl WindowHandle {
                     UpdateMessage::State { id, state } => {
                         let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
                         if let Some(id_path) = id_path {
-                            flags |= self.view.update_main(&mut cx, &id_path.0, state);
+                            flags |= self.view.update_main(&mut cx, id_path.dispatch(), state);
                         }
                     }
                     UpdateMessage::BaseStyle { id, style } => {
@@ -783,11 +788,8 @@ impl WindowHandle {
     fn process_deferred_update_messages(&mut self) -> ChangeFlags {
         self.process_central_messages();
         let mut flags = ChangeFlags::empty();
-        let msgs = DEFERRED_UPDATE_MESSAGES.with(|msgs| {
-            msgs.borrow_mut()
-                .remove(&self.view.id())
-                .unwrap_or_default()
-        });
+        let msgs = DEFERRED_UPDATE_MESSAGES
+            .with(|msgs| msgs.borrow_mut().remove(&self.id).unwrap_or_default());
         if msgs.is_empty() {
             return flags;
         }
@@ -798,7 +800,7 @@ impl WindowHandle {
         for (id, state) in msgs {
             let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
             if let Some(id_path) = id_path {
-                flags |= self.view.update_main(&mut cx, &id_path.0, state);
+                flags |= self.view.update_main(&mut cx, id_path.dispatch(), state);
             }
         }
 
@@ -889,7 +891,7 @@ impl WindowHandle {
     fn has_deferred_update_messages(&self) -> bool {
         DEFERRED_UPDATE_MESSAGES.with(|m| {
             m.borrow()
-                .get(&self.view.id())
+                .get(&self.id)
                 .map(|m| !m.is_empty())
                 .unwrap_or(false)
         })
@@ -1001,7 +1003,7 @@ impl WindowHandle {
     }
 
     pub(crate) fn menu_action(&mut self, id: usize) {
-        set_current_view(self.view.id());
+        set_current_view(self.id);
         if let Some(action) = self.app_state.window_menu.get(&id) {
             (*action)();
             self.process_update();

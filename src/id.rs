@@ -32,6 +32,13 @@ pub struct Id(u64);
 #[derive(Clone, Default, Debug)]
 pub struct IdPath(pub(crate) Vec<Id>);
 
+impl IdPath {
+    /// Returns the slice of the ids excluding the first id identifying the window.
+    pub(crate) fn dispatch(&self) -> &[Id] {
+        &self.0[1..]
+    }
+}
+
 impl Id {
     /// Allocate a new, unique `Id`.
     pub fn next() -> Id {
