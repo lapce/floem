@@ -449,11 +449,14 @@ impl WindowHandle {
         }
     }
 
-    fn layout(&mut self) {
+    fn layout(&mut self) -> Duration {
         let mut cx = LayoutCx::new(&mut self.app_state);
 
         cx.app_state_mut().root = Some(self.view.layout_main(&mut cx));
+
+        let start = Instant::now();
         cx.app_state_mut().compute_layout();
+        let taffy_duration = Instant::now().saturating_duration_since(start);
 
         cx.clear();
         self.view.compute_layout_main(&mut cx);
@@ -465,11 +468,13 @@ impl WindowHandle {
 
         if let Some(id) = id {
             if self.app_state.capture.is_none() {
-            exec_after(Duration::from_millis(1), move |_| {
-                id.request_layout();
-            });
+                exec_after(Duration::from_millis(1), move |_| {
+                    id.request_layout();
+                });
+            }
         }
-    }
+
+        taffy_duration
     }
 
     pub fn paint(&mut self) -> Option<DynamicImage> {
@@ -505,9 +510,15 @@ impl WindowHandle {
             .renderer
             .begin(cx.app_state.capture.is_some());
         if !self.transparent {
+            let scale = cx.app_state.scale;
             // fill window with default white background if it's not transparent
             cx.fill(
-                &self.size.get_untracked().to_rect(),
+                &self
+                    .size
+                    .get_untracked()
+                    .to_rect()
+                    .scale_from_origin(1.0 / scale)
+                    .expand(),
                 peniko::Color::WHITE,
                 0.0,
             );
@@ -515,29 +526,34 @@ impl WindowHandle {
         self.view.paint_main(&mut cx);
         if let Some(window) = self.window.as_ref() {
             if cx.app_state.capture.is_none() {
-            window.pre_present_notify();
-        }
+                window.pre_present_notify();
+            }
         }
         let image = cx.paint_state.renderer.finish();
 
         if cx.app_state.capture.is_none() {
-        self.process_update();
-    }
+            self.process_update();
+        }
 
         image
     }
 
     pub(crate) fn capture(&mut self) -> Capture {
+        self.app_state.capture = Some(());
+
+        // Trigger painting to create a Vger renderer which can capture the output.
+        // This can be expensive so it could skew the paint time measurement.
+        self.paint();
+
         // Ensure we run layout again for accurate timing.
         self.app_state
             .view_states
             .values_mut()
             .for_each(|state| state.request_layout = true);
-        self.app_state.capture = Some(());
 
         let start = Instant::now();
 
-        self.layout();
+        let taffy_duration = self.layout();
         let post_layout = Instant::now();
         let window = self.paint().map(Rc::new);
         let end = Instant::now();
@@ -549,7 +565,10 @@ impl WindowHandle {
             start,
             post_layout,
             end,
+            taffy_duration,
             window,
+            window_size: self.size.get_untracked() / self.app_state.scale,
+            scale: self.scale * self.app_state.scale,
             root: CapturedView::capture(&self.view, &mut self.app_state, root_layout),
         };
         // Process any updates produced by capturing
@@ -838,9 +857,9 @@ impl WindowHandle {
                     }
                     UpdateMessage::Inspect => {
                         inspector::capture(self.window_id);
+                    }
                 }
             }
-        }
         }
         flags
     }

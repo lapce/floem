@@ -1,3 +1,4 @@
+use std::mem;
 use std::sync::mpsc::sync_channel;
 use std::sync::Arc;
 
@@ -18,6 +19,7 @@ pub struct VgerRenderer {
     queue: Arc<Queue>,
     surface: Surface,
     vger: Vger,
+    alt_vger: Option<Vger>,
     config: SurfaceConfiguration,
     scale: f64,
     transform: Affine,
@@ -106,6 +108,7 @@ impl VgerRenderer {
             queue,
             surface,
             vger,
+            alt_vger: None,
             scale,
             config,
             transform: Affine::IDENTITY,
@@ -265,7 +268,19 @@ impl VgerRenderer {
 
 impl Renderer for VgerRenderer {
     fn begin(&mut self, capture: bool) {
-        self.capture = capture;
+        // Switch to the capture Vger if needed
+        if self.capture != capture {
+            self.capture = capture;
+            if self.alt_vger.is_none() {
+                self.alt_vger = Some(vger::Vger::new(
+                    self.device.clone(),
+                    self.queue.clone(),
+                    TextureFormat::Rgba8Unorm,
+                ));
+            }
+            mem::swap(&mut self.vger, self.alt_vger.as_mut().unwrap())
+        }
+
         self.transform = Affine::IDENTITY;
         self.vger.begin(
             self.config.width as f32,

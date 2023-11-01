@@ -74,7 +74,6 @@ fn app_view() -> impl View {
             .flex_col()
             .items_center()
             .justify_center()
-            .background(Color::WHITE)
     });
 
     let id = view.id();

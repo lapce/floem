@@ -1061,8 +1061,8 @@ impl View for Box<dyn View> {
         (**self).children_mut()
     }
 
-    fn compute_layout(&mut self, cx: &mut LayoutCx) -> Option<Rect> {
-        (**self).compute_layout(cx)
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        (**self).debug_name()
     }
 
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags {
@@ -1071,6 +1071,10 @@ impl View for Box<dyn View> {
 
     fn layout(&mut self, cx: &mut LayoutCx) -> Node {
         (**self).layout(cx)
+    }
+
+    fn compute_layout(&mut self, cx: &mut LayoutCx) -> Option<Rect> {
+        (**self).compute_layout(cx)
     }
 
     fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {

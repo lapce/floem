@@ -3,6 +3,7 @@ use crate::context::AppState;
 use crate::event::{Event, EventListener};
 use crate::id::Id;
 use crate::new_window;
+use crate::style::TextOverflow;
 use crate::view::View;
 use crate::views::{
     dyn_container, empty, img_dynamic, list, scroll, stack, text, Decorators, Label,
@@ -15,7 +16,7 @@ use peniko::Color;
 use std::cell::Cell;
 use std::fmt::Display;
 use std::rc::Rc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use taffy::style::AlignItems;
 use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowId;
@@ -71,7 +72,10 @@ pub struct Capture {
     pub start: Instant,
     pub post_layout: Instant,
     pub end: Instant,
+    pub taffy_duration: Duration,
     pub window: Option<Rc<DynamicImage>>,
+    pub window_size: Size,
+    pub scale: f64,
 }
 
 impl Capture {}
@@ -83,7 +87,7 @@ pub fn captured_view(
     highlighted: RwSignal<Option<Id>>,
 ) -> Box<dyn View> {
     let offset = depth as f64 * 14.0;
-    let name = text(view.name.clone());
+    let name = text(view.name.clone()).style(|s| s.text_overflow(TextOverflow::Ellipsis));
     let height = 20.0;
     let id = view.id;
 
@@ -91,6 +95,7 @@ pub fn captured_view(
         return Box::new(
             name.style(move |s| {
                 s.width_full()
+                    .text_overflow(TextOverflow::Ellipsis)
                     .padding_left(20.0 + offset)
                     .hover(move |s| {
                         s.background(Color::rgba8(228, 237, 216, 160))
@@ -229,20 +234,28 @@ fn header(label: impl Display) -> Label {
     })
 }
 
+fn info(s: String) -> Label {
+    text(s).style(|s| s.padding(5.0))
+}
+
 fn stats(capture: &Capture) -> impl View {
     let layout_time = capture.post_layout.saturating_duration_since(capture.start);
     let paint_time = capture.end.saturating_duration_since(capture.post_layout);
-    let layout_time = text(format!(
+    let layout_time = info(format!(
         "Layout time: {:.4} ms",
         layout_time.as_secs_f64() * 1000.0
-    ))
-    .style(|s| s.padding(5.0));
-    let paint_time = text(format!(
+    ));
+    let taffy_time = info(format!(
+        "Taffy time: {:.4} ms",
+        capture.taffy_duration.as_secs_f64() * 1000.0
+    ));
+    let paint_time = info(format!(
         "Paint time: {:.4} ms",
         paint_time.as_secs_f64() * 1000.0
-    ))
-    .style(|s| s.padding(5.0));
-    stack((layout_time, paint_time)).style(|s| s.flex_col())
+    ));
+    let w = info(format!("Window Width: {}", capture.window_size.width));
+    let h = info(format!("Window Height: {}", capture.window_size.height));
+    stack((layout_time, taffy_time, paint_time, w, h)).style(|s| s.flex_col())
 }
 
 fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl View {
@@ -250,14 +263,38 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl 
     dyn_container(
         move || selected.get(),
         move |current| {
-            let info = |i| text(i).style(|s| s.padding(5.0));
             if let Some(view) = current.and_then(|id| capture.root.find(id)) {
                 let name = info(format!("Type: {}", view.name));
                 let count = info(format!("Child Count: {}", view.children.len()));
-                let x = info(format!("X: {}", view.layout.x0));
-                let y = info(format!("Y: {}", view.layout.y0));
-                let w = info(format!("Width: {}", view.layout.width()));
-                let h = info(format!("Height: {}", view.layout.height()));
+                let beyond = |view: f64, window| {
+                    if view > window {
+                        format!(" ({} after window edge)", view - window)
+                    } else if view < 0.0 {
+                        format!(" ({} before window edge)", -view)
+                    } else {
+                        String::new()
+                    }
+                };
+                let x = info(format!(
+                    "X: {}{}",
+                    view.layout.x0,
+                    beyond(view.layout.x0, capture.window_size.width)
+                ));
+                let y = info(format!(
+                    "Y: {}{}",
+                    view.layout.y0,
+                    beyond(view.layout.y0, capture.window_size.height)
+                ));
+                let w = info(format!(
+                    "Width: {}{}",
+                    view.layout.width(),
+                    beyond(view.layout.x1, capture.window_size.width)
+                ));
+                let h = info(format!(
+                    "Height: {}{}",
+                    view.layout.height(),
+                    beyond(view.layout.y1, capture.window_size.height)
+                ));
                 let clear = text("Clear selection")
                     .style(|s| {
                         s.background(Color::WHITE_SMOKE)
@@ -291,13 +328,25 @@ fn capture_view(capture: &Rc<Capture>) -> impl View {
     let window = capture.window.clone();
     let capture_ = capture.clone();
     let capture__ = capture.clone();
+    let (image_width, image_height) = capture
+        .window
+        .as_ref()
+        .map(|img| {
+            (
+                img.width() as f64 / capture.scale,
+                img.height() as f64 / capture.scale,
+            )
+        })
+        .unwrap_or_default();
     let image = img_dynamic(move || window.clone())
-        .style(|s| {
+        .style(move |s| {
             s.margin(5.0)
                 .border(1.0)
                 .border_color(Color::BLACK.with_alpha_factor(0.5))
-                .margin_bottom(25.0)
-                .margin_right(25.0)
+                .width(image_width + 2.0)
+                .height(image_height + 2.0)
+                .margin_bottom(21.0)
+                .margin_right(21.0)
         })
         .on_event(EventListener::PointerMove, move |e| {
             if let Event::PointerMove(e) = e {
@@ -362,13 +411,20 @@ fn capture_view(capture: &Rc<Capture>) -> impl View {
 
     let image = stack((image, selected_overlay, highlighted_overlay));
 
+    let left_scroll = scroll(
+        stack((
+            header("Selected View"),
+            selected_view(capture, selected),
+            header("Stats"),
+            stats(capture),
+        ))
+        .style(|s| s.flex_col().width_full()),
+    );
+
     let left = stack((
         header("Captured Window"),
         scroll(image).style(|s| s.max_height_pct(60.0)),
-        header("Selected View"),
-        scroll(selected_view(capture, selected)),
-        header("Stats"),
-        scroll(stats(capture)),
+        left_scroll,
     ))
     .style(|s| s.flex_col().height_full().max_width_pct(60.0));
 
@@ -414,12 +470,13 @@ fn inspector_view(capture: &Option<Rc<Capture>>) -> impl View {
                 .width_full()
                 .height_full()
                 .background(Color::WHITE)
-                .set(scroll::Thickness, 20.0)
+                .set(scroll::Thickness, 16.0)
                 .set(scroll::Rounded, false)
+                .set(scroll::HandleRadius, 4.0)
                 .set(scroll::HandleColor, Color::rgba8(166, 166, 166, 140))
                 .set(scroll::DragColor, Color::rgb8(166, 166, 166))
                 .set(scroll::HoverColor, Color::rgb8(184, 184, 184))
-                .set(scroll::BgActiveColor, Color::rgba8(166, 166, 166, 40))
+                .set(scroll::BgActiveColor, Color::rgba8(166, 166, 166, 30))
         })
 }
 
