@@ -144,6 +144,7 @@ fn app_view() -> impl View {
         )
     })
     .style(|s| s.size(100.pct(), 100.pct()))
+    .window_title(|| "Widget Gallery".to_owned())
 }
 
 fn main() {
