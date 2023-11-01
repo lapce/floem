@@ -167,6 +167,7 @@ impl ApplicationHandle {
         config: Option<WindowConfig>,
     ) {
         let mut window_builder = winit::window::WindowBuilder::new();
+        let transparent = config.as_ref().and_then(|c| c.transparent).unwrap_or(false);
         if let Some(config) = config {
             if let Some(size) = config.size {
                 let size = if size.width == 0.0 || size.height == 0.0 {
@@ -194,7 +195,7 @@ impl ApplicationHandle {
                     window_builder = window_builder.with_decorations(false);
                 }
             }
-            if let Some(transparent) = config.with_transparency {
+            if let Some(transparent) = config.transparent {
                 window_builder = window_builder.with_transparent(transparent);
             }
             if let Some(fullscreen) = config.fullscreen {
@@ -213,7 +214,7 @@ impl ApplicationHandle {
             Err(_) => return,
         };
         let window_id = window.id();
-        let window_handle = WindowHandle::new(window, view_fn);
+        let window_handle = WindowHandle::new(window, view_fn, transparent);
         self.window_handles.insert(window_id, window_handle);
     }
 

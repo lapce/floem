@@ -16,7 +16,7 @@ pub struct WindowConfig {
     pub(crate) size: Option<Size>,
     pub(crate) position: Option<Point>,
     pub(crate) show_titlebar: Option<bool>,
-    pub(crate) with_transparency: Option<bool>,
+    pub(crate) transparent: Option<bool>,
     pub(crate) fullscreen: Option<Fullscreen>,
     pub(crate) window_icon: Option<bool>,
     pub(crate) title: Option<String>,
@@ -41,8 +41,8 @@ impl WindowConfig {
         self
     }
 
-    pub fn with_transparency(mut self, with_transparency: bool) -> Self {
-        self.with_transparency = Some(with_transparency);
+    pub fn with_transparent(mut self, transparent: bool) -> Self {
+        self.transparent = Some(transparent);
         self
     }
 

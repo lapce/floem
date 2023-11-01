@@ -54,6 +54,7 @@ pub(crate) struct WindowHandle {
     size: RwSignal<Size>,
     theme: RwSignal<Option<Theme>>,
     is_maximized: bool,
+    transparent: bool,
     pub(crate) scale: f64,
     pub(crate) modifiers: ModifiersState,
     pub(crate) cursor_position: Point,
@@ -67,6 +68,7 @@ impl WindowHandle {
     pub(crate) fn new(
         window: winit::window::Window,
         view_fn: impl FnOnce(winit::window::WindowId) -> Box<dyn View> + 'static,
+        transparent: bool,
     ) -> Self {
         let scope = Scope::new();
         let window_id = window.id();
@@ -115,6 +117,7 @@ impl WindowHandle {
             size,
             theme,
             is_maximized,
+            transparent,
             scale,
             modifiers: ModifiersState::default(),
             cursor_position: Point::ZERO,
@@ -493,6 +496,14 @@ impl WindowHandle {
             saved_scroll_bar_edge_widths: Vec::new(),
         };
         cx.paint_state.renderer.begin();
+        if !self.transparent {
+            // fill window with default white background if it's not transparent
+            cx.fill(
+                &self.size.get_untracked().to_rect(),
+                peniko::Color::WHITE,
+                0.0,
+            );
+        }
         self.view.paint_main(&mut cx);
         if let Some(window) = self.window.as_ref() {
             window.pre_present_notify();
