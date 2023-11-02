@@ -1,9 +1,11 @@
+use std::mem;
+use std::sync::mpsc::sync_channel;
 use std::sync::Arc;
 
 use anyhow::Result;
 use floem_renderer::cosmic_text::{SubpixelBin, SwashCache, TextLayout};
 use floem_renderer::{tiny_skia, Img, Renderer};
-use image::EncodableLayout;
+use image::{DynamicImage, EncodableLayout, RgbaImage};
 use peniko::{
     kurbo::{Affine, Point, Rect, Shape, Vec2},
     BrushRef, Color, GradientKind,
@@ -17,11 +19,20 @@ pub struct VgerRenderer {
     queue: Arc<Queue>,
     surface: Surface,
     vger: Vger,
+    alt_vger: Option<Vger>,
     config: SurfaceConfiguration,
     scale: f64,
     transform: Affine,
     clip: Option<Rect>,
+    capture: bool,
 }
+
+const CLEAR_COLOR: wgpu::Color = wgpu::Color {
+    r: 0.0,
+    g: 0.0,
+    b: 0.0,
+    a: 0.0,
+};
 
 impl VgerRenderer {
     pub fn new<
@@ -97,10 +108,12 @@ impl VgerRenderer {
             queue,
             surface,
             vger,
+            alt_vger: None,
             scale,
             config,
             transform: Affine::IDENTITY,
             clip: None,
+            capture: false,
         })
     }
 
@@ -161,10 +174,113 @@ impl VgerRenderer {
         let size = (end - origin).to_size();
         vger::defs::LocalRect::new(origin, size)
     }
+
+    fn render_image(&mut self) -> Option<DynamicImage> {
+        let width_align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT - 1;
+        let width = (self.config.width + width_align) & !width_align;
+        let height = self.config.height;
+        let texture_desc = wgpu::TextureDescriptor {
+            size: wgpu::Extent3d {
+                width: self.config.width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            label: Some("render_texture"),
+            view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
+        };
+        let texture = self.device.create_texture(&texture_desc);
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let desc = wgpu::RenderPassDescriptor {
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &view,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(CLEAR_COLOR),
+                    store: StoreOp::Store,
+                },
+            })],
+            ..Default::default()
+        };
+
+        self.vger.encode(&desc);
+
+        let bytes_per_pixel = 4;
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: (width as u64 * height as u64 * bytes_per_pixel),
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let bytes_per_row = width * bytes_per_pixel as u32;
+        assert!(bytes_per_row % wgpu::COPY_BYTES_PER_ROW_ALIGNMENT == 0);
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        encoder.copy_texture_to_buffer(
+            texture.as_image_copy(),
+            wgpu::ImageCopyBuffer {
+                buffer: &buffer,
+                layout: wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(bytes_per_row),
+                    rows_per_image: None,
+                },
+            },
+            texture_desc.size,
+        );
+        let command_buffer = encoder.finish();
+        self.queue.submit(Some(command_buffer));
+        self.device.poll(wgpu::Maintain::Wait);
+
+        let slice = buffer.slice(..);
+        let (tx, rx) = sync_channel(1);
+        slice.map_async(wgpu::MapMode::Read, move |r| tx.send(r).unwrap());
+
+        loop {
+            if let Ok(r) = rx.try_recv() {
+                break r.ok()?;
+            }
+            if self.device.poll(wgpu::MaintainBase::Wait) {
+                rx.recv().ok()?.ok()?;
+                break;
+            }
+        }
+
+        let mut cropped_buffer = Vec::new();
+        let buffer: Vec<u8> = slice.get_mapped_range().to_owned();
+
+        let mut cursor = 0;
+        let row_size = self.config.width as usize * bytes_per_pixel as usize;
+        for _ in 0..height {
+            cropped_buffer.extend_from_slice(&buffer[cursor..(cursor + row_size)]);
+            cursor += bytes_per_row as usize;
+        }
+
+        RgbaImage::from_raw(self.config.width, height, cropped_buffer).map(DynamicImage::ImageRgba8)
+    }
 }
 
 impl Renderer for VgerRenderer {
-    fn begin(&mut self) {
+    fn begin(&mut self, capture: bool) {
+        // Switch to the capture Vger if needed
+        if self.capture != capture {
+            self.capture = capture;
+            if self.alt_vger.is_none() {
+                self.alt_vger = Some(vger::Vger::new(
+                    self.device.clone(),
+                    self.queue.clone(),
+                    TextureFormat::Rgba8Unorm,
+                ));
+            }
+            mem::swap(&mut self.vger, self.alt_vger.as_mut().unwrap())
+        }
+
         self.transform = Affine::IDENTITY;
         self.vger.begin(
             self.config.width as f32,
@@ -431,33 +547,33 @@ impl Renderer for VgerRenderer {
         self.clip = None;
     }
 
-    fn finish(&mut self) {
-        if let Ok(frame) = self.surface.get_current_texture() {
-            let texture_view = frame
-                .texture
-                .create_view(&wgpu::TextureViewDescriptor::default());
-            let desc = wgpu::RenderPassDescriptor {
-                label: None,
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &texture_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.0,
-                            g: 0.0,
-                            b: 0.0,
-                            a: 0.0,
-                        }),
-                        store: StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            };
+    fn finish(&mut self) -> Option<DynamicImage> {
+        if self.capture {
+            self.render_image()
+        } else {
+            if let Ok(frame) = self.surface.get_current_texture() {
+                let texture_view = frame
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor::default());
+                let desc = wgpu::RenderPassDescriptor {
+                    label: None,
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &texture_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(CLEAR_COLOR),
+                            store: StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                };
 
-            self.vger.encode(&desc);
-            frame.present();
+                self.vger.encode(&desc);
+                frame.present();
+            }
+            None
         }
     }
 }

@@ -95,7 +95,10 @@ use crate::{
     context::{AppState, DragState, EventCx, LayoutCx, PaintCx, UpdateCx},
     event::{Event, EventListener},
     id::Id,
-    style::{BoxShadowProp, ComputedStyle, Outline, OutlineColor, Style, StyleMap, ZIndex},
+    inspector::CaptureState,
+    style::{
+        BoxShadowProp, ComputedStyle, LayoutProps, Outline, OutlineColor, Style, StyleMap, ZIndex,
+    },
 };
 
 bitflags! {
@@ -198,6 +201,13 @@ pub trait View {
 
         cx.style.direct = style.other.clone();
         StyleMap::apply_only_inherited(&mut cx.style.current, &cx.style.direct);
+        CaptureState::capture_style(self.id(), cx);
+
+        // Extract the relevant layout properties so the content rect can be calculated
+        // when painting.
+        let mut props = LayoutProps::default();
+        props.read(cx);
+        cx.app_state_mut().view_state(self.id()).layout_props = props;
 
         let node = self.layout(cx);
 
@@ -1053,8 +1063,8 @@ impl View for Box<dyn View> {
         (**self).children_mut()
     }
 
-    fn compute_layout(&mut self, cx: &mut LayoutCx) -> Option<Rect> {
-        (**self).compute_layout(cx)
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        (**self).debug_name()
     }
 
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags {
@@ -1063,6 +1073,10 @@ impl View for Box<dyn View> {
 
     fn layout(&mut self, cx: &mut LayoutCx) -> Node {
         (**self).layout(cx)
+    }
+
+    fn compute_layout(&mut self, cx: &mut LayoutCx) -> Option<Rect> {
+        (**self).compute_layout(cx)
     }
 
     fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {

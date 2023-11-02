@@ -46,6 +46,7 @@ prop!(pub DragColor: Color { inherited } = Color::rgba8(0, 0, 0, 160));
 prop!(pub Rounded: bool { inherited } = cfg!(target_os = "macos"));
 prop!(pub Thickness: Px { inherited } = Px(10.0));
 prop!(pub EdgeWidth: Px { inherited } = Px(0.0));
+prop!(pub HandleRadius: Px { inherited } = Px(0.0));
 prop!(pub BgActiveColor: Color { inherited } = Color::rgba8(0, 0, 0, 25));
 
 prop_extracter! {
@@ -53,6 +54,7 @@ prop_extracter! {
         handle_color: HandleColor,
         hover_color: Option<HoverColor>,
         drag_color: Option<DragColor>,
+        handle_radius: HandleRadius,
         rounded: Rounded,
         thickness: Thickness,
         edge_width: EdgeWidth,
@@ -329,7 +331,7 @@ impl<V: View> Scroll<V> {
                     (rect.y1 - rect.y0) / 2.
                 }
             } else {
-                0.
+                self.style.handle_radius().0
             }
         };
 
@@ -350,7 +352,7 @@ impl<V: View> Scroll<V> {
                 self.style.handle_color()
             };
             if self.vbar_whole_hover || matches!(self.held, BarHeldState::Vertical(..)) {
-                let mut bounds = bounds;
+                let mut bounds = bounds - scroll_offset;
                 bounds.y0 = self.actual_rect.y0;
                 bounds.y1 = self.actual_rect.y1;
                 if let Some(color) = self.style.bg_active_color() {
@@ -383,7 +385,7 @@ impl<V: View> Scroll<V> {
                 self.style.handle_color()
             };
             if self.hbar_whole_hover || matches!(self.held, BarHeldState::Horizontal(..)) {
-                let mut bounds = bounds;
+                let mut bounds = bounds - scroll_offset;
                 bounds.x0 = self.actual_rect.x0;
                 bounds.x1 = self.actual_rect.x1;
                 if let Some(color) = self.style.bg_active_color() {

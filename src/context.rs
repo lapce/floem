@@ -9,7 +9,7 @@ use floem_renderer::{
     cosmic_text::{LineHeightValue, Style as FontStyle, Weight},
     Renderer as FloemRenderer,
 };
-use kurbo::{Affine, Point, Rect, RoundedRect, Shape, Size, Vec2};
+use kurbo::{Affine, Insets, Point, Rect, RoundedRect, Shape, Size, Vec2};
 use peniko::Color;
 use taffy::{
     prelude::{Layout, Node},
@@ -21,13 +21,15 @@ use crate::{
     animate::{AnimId, AnimPropKind, Animation},
     event::{Event, EventListener},
     id::Id,
+    inspector::CaptureState,
     menu::Menu,
     pointer::PointerInputEvent,
     responsive::{GridBreakpoints, ScreenSize, ScreenSizeBp},
     style::{
-        BuiltinStyleReader, ComputedStyle, CursorStyle, DisplayProp, Style, StyleMap, StyleProp,
-        StyleSelector, StyleSelectors,
+        BuiltinStyleReader, ComputedStyle, CursorStyle, DisplayProp, LayoutProps, Style, StyleMap,
+        StyleProp, StyleSelector, StyleSelectors,
     },
+    unit::PxPct,
 };
 
 pub type EventCallback = dyn Fn(&Event) -> bool;
@@ -52,6 +54,7 @@ pub struct ViewState {
     pub(crate) has_style_selectors: StyleSelectors,
     pub(crate) viewport: Option<Rect>,
     pub(crate) layout_rect: Rect,
+    pub(crate) layout_props: LayoutProps,
     pub(crate) animation: Option<Animation>,
     pub(crate) base_style: Option<Style>,
     pub(crate) style: Style,
@@ -79,6 +82,7 @@ impl ViewState {
             node: taffy.new_leaf(taffy::style::Style::DEFAULT).unwrap(),
             viewport: None,
             layout_rect: Rect::ZERO,
+            layout_props: Default::default(),
             request_layout: true,
             has_style_selectors: StyleSelectors::default(),
             animation: None,
@@ -261,6 +265,9 @@ pub struct AppState {
     pub(crate) keyboard_navigation: bool,
     pub(crate) window_menu: HashMap<usize, Box<dyn Fn()>>,
     pub(crate) context_menu: HashMap<usize, Box<dyn Fn()>>,
+
+    /// This is set if we're currently capturing the window for the inspector.
+    pub(crate) capture: Option<CaptureState>,
 }
 
 impl Default for AppState {
@@ -298,6 +305,7 @@ impl AppState {
             grid_bps: GridBreakpoints::default(),
             window_menu: HashMap::new(),
             context_menu: HashMap::new(),
+            capture: None,
         }
     }
 
@@ -438,6 +446,23 @@ impl AppState {
             .map(|view| view.node)
             .and_then(|node| self.taffy.layout(node).ok())
             .copied()
+    }
+
+    pub(crate) fn get_content_rect(&mut self, id: Id) -> Rect {
+        let view_state = self.view_state(id);
+        let rect = view_state.layout_rect;
+        let props = &view_state.layout_props;
+        let pixels = |px_pct, abs| match px_pct {
+            PxPct::Px(v) => v,
+            PxPct::Pct(pct) => pct * abs,
+        };
+        let origin = rect.origin();
+        rect.inset(-Insets {
+            x0: props.border_left().0 + pixels(props.padding_left(), rect.width()),
+            x1: props.border_right().0 + pixels(props.padding_right(), rect.width()),
+            y0: props.border_top().0 + pixels(props.padding_top(), rect.height()),
+            y1: props.border_bottom().0 + pixels(props.padding_bottom(), rect.height()),
+        }) - origin.to_vec2()
     }
 
     pub(crate) fn get_layout_rect(&mut self, id: Id) -> Rect {
@@ -946,6 +971,11 @@ impl<'a> PaintCx<'a> {
 
     pub fn get_layout(&mut self, id: Id) -> Option<Layout> {
         self.app_state.get_layout(id)
+    }
+
+    /// Returns the layout rect excluding borders, padding and position.
+    pub fn get_content_rect(&mut self, id: Id) -> Rect {
+        self.app_state.get_content_rect(id)
     }
 
     pub fn get_computed_style(&mut self, id: Id) -> &ComputedStyle {

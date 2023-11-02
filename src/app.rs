@@ -1,5 +1,6 @@
-use std::{cell::RefCell, sync::Arc};
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 
+use floem_reactive::WriteSignal;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use winit::{
@@ -8,7 +9,10 @@ use winit::{
     window::WindowId,
 };
 
-use crate::{action::Timer, app_handle::ApplicationHandle, view::View, window::WindowConfig};
+use crate::{
+    action::Timer, app_handle::ApplicationHandle, inspector::Capture, view::View,
+    window::WindowConfig,
+};
 
 type AppEventCallback = dyn Fn(AppEvent);
 
@@ -41,6 +45,10 @@ pub(crate) enum AppUpdateEvent {
     },
     CloseWindow {
         window_id: WindowId,
+    },
+    CaptureWindow {
+        window_id: WindowId,
+        capture: WriteSignal<Option<Rc<Capture>>>,
     },
     RequestTimer {
         timer: Timer,

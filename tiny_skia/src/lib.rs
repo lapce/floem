@@ -6,6 +6,7 @@ use floem_renderer::tiny_skia::{
 };
 use floem_renderer::Img;
 use floem_renderer::Renderer;
+use image::DynamicImage;
 use peniko::kurbo::PathEl;
 use peniko::{
     kurbo::{Affine, Point, Rect, Shape},
@@ -338,7 +339,7 @@ impl TinySkiaRenderer {
 }
 
 impl Renderer for TinySkiaRenderer {
-    fn begin(&mut self) {
+    fn begin(&mut self, _capture: bool) {
         self.transform = Affine::IDENTITY;
         self.pixmap.fill(tiny_skia::Color::WHITE);
         self.clip = None;
@@ -521,7 +522,7 @@ impl Renderer for TinySkiaRenderer {
         self.clip = None;
     }
 
-    fn finish(&mut self) {
+    fn finish(&mut self) -> Option<DynamicImage> {
         // Remove cache entries which were not accessed.
         self.image_cache.retain(|_, (c, _)| *c == self.cache_color);
         self.glyph_cache.retain(|_, (c, _)| *c == self.cache_color);
@@ -543,5 +544,7 @@ impl Renderer for TinySkiaRenderer {
         buffer
             .present()
             .expect("failed to present the surface buffer");
+
+        None
     }
 }

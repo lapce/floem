@@ -20,7 +20,7 @@ pub struct Img<'a> {
 }
 
 pub trait Renderer {
-    fn begin(&mut self);
+    fn begin(&mut self, capture: bool);
 
     fn transform(&mut self, transform: Affine);
 
@@ -49,5 +49,5 @@ pub trait Renderer {
 
     fn draw_img(&mut self, img: Img<'_>, rect: Rect);
 
-    fn finish(&mut self);
+    fn finish(&mut self) -> Option<DynamicImage>;
 }

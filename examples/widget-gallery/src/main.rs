@@ -31,7 +31,7 @@ fn app_view() -> impl View {
     let (tabs, _set_tabs) = create_signal(tabs);
 
     let (active_tab, set_active_tab) = create_signal(0);
-    stack({
+    let view = stack({
         (
             container({
                 scroll({
@@ -144,7 +144,17 @@ fn app_view() -> impl View {
         )
     })
     .style(|s| s.size(100.pct(), 100.pct()))
-    .window_title(|| "Widget Gallery".to_owned())
+    .window_title(|| "Widget Gallery".to_owned());
+
+    let id = view.id();
+    view.on_event(EventListener::KeyUp, move |e| {
+        if let Event::KeyUp(e) = e {
+            if e.key.logical_key == Key::Named(NamedKey::F11) {
+                id.inspect();
+            }
+        }
+        true
+    })
 }
 
 fn main() {

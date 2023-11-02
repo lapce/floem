@@ -1,4 +1,6 @@
 use floem::{
+    event::{Event, EventListener},
+    keyboard::{Key, NamedKey},
     peniko::Color,
     reactive::{create_rw_signal, create_signal},
     unit::UnitExt,
@@ -9,7 +11,7 @@ use floem::{
 fn app_view() -> impl View {
     let (counter, set_counter) = create_signal(0);
     let window_scale = create_rw_signal(1.0);
-    stack((
+    let view = stack((
         label(move || format!("Value: {}", counter.get())).style(|s| s.padding(10.0)),
         stack({
             (
@@ -121,6 +123,16 @@ fn app_view() -> impl View {
             .flex_col()
             .items_center()
             .justify_center()
+    });
+
+    let id = view.id();
+    view.on_event(EventListener::KeyUp, move |e| {
+        if let Event::KeyUp(e) = e {
+            if e.key.logical_key == Key::Named(NamedKey::F11) {
+                id.inspect();
+            }
+        }
+        true
     })
 }
 

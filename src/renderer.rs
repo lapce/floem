@@ -51,6 +51,7 @@ use crate::cosmic_text::TextLayout;
 use floem_renderer::Img;
 use floem_tiny_skia::TinySkiaRenderer;
 use floem_vger::VgerRenderer;
+use image::DynamicImage;
 use kurbo::{Affine, Rect, Shape, Size};
 use peniko::BrushRef;
 
@@ -99,13 +100,13 @@ impl Renderer {
 }
 
 impl floem_renderer::Renderer for Renderer {
-    fn begin(&mut self) {
+    fn begin(&mut self, capture: bool) {
         match self {
             Renderer::Vger(r) => {
-                r.begin();
+                r.begin(capture);
             }
             Renderer::TinySkia(r) => {
-                r.begin();
+                r.begin(capture);
             }
         }
     }
@@ -219,14 +220,10 @@ impl floem_renderer::Renderer for Renderer {
         }
     }
 
-    fn finish(&mut self) {
+    fn finish(&mut self) -> Option<DynamicImage> {
         match self {
-            Renderer::Vger(r) => {
-                r.finish();
-            }
-            Renderer::TinySkia(r) => {
-                r.finish();
-            }
+            Renderer::Vger(r) => r.finish(),
+            Renderer::TinySkia(r) => r.finish(),
         }
     }
 }

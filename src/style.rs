@@ -48,9 +48,88 @@ use taffy::{
 use crate::context::InteractionState;
 use crate::context::LayoutCx;
 use crate::unit::{Px, PxPct, PxPctAuto, UnitExt};
+use crate::view::View;
+use crate::views::{empty, stack, text, Decorators};
+
+pub trait StylePropValue: Clone + PartialEq + Debug {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        None
+    }
+}
+
+impl StylePropValue for i32 {}
+impl StylePropValue for bool {}
+impl StylePropValue for f32 {}
+impl StylePropValue for f64 {}
+impl StylePropValue for Display {}
+impl StylePropValue for Position {}
+impl StylePropValue for FlexDirection {}
+impl StylePropValue for FlexWrap {}
+impl StylePropValue for AlignItems {}
+impl StylePropValue for AlignContent {}
+impl StylePropValue for CursorStyle {}
+impl StylePropValue for BoxShadow {}
+impl StylePropValue for String {}
+impl StylePropValue for Weight {}
+impl StylePropValue for cosmic_text::Style {}
+impl StylePropValue for TextOverflow {}
+impl StylePropValue for LineHeightValue {}
+impl StylePropValue for Size<LengthPercentage> {}
+
+impl<T: StylePropValue> StylePropValue for Option<T> {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        self.as_ref().and_then(|v| v.debug_view())
+    }
+}
+impl StylePropValue for Px {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        Some(Box::new(text(format!("{} px", self.0))))
+    }
+}
+impl StylePropValue for PxPctAuto {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let label = match self {
+            Self::Px(v) => format!("{} px", v),
+            Self::Pct(v) => format!("{}%", v),
+            Self::Auto => "auto".to_string(),
+        };
+        Some(Box::new(text(label)))
+    }
+}
+impl StylePropValue for PxPct {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let label = match self {
+            Self::Px(v) => format!("{} px", v),
+            Self::Pct(v) => format!("{}%", v),
+        };
+        Some(Box::new(text(label)))
+    }
+}
+impl StylePropValue for Color {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let color = *self;
+        let color = empty().style(move |s| {
+            s.background(color)
+                .width(22.0)
+                .height(14.0)
+                .border(1)
+                .border_color(Color::WHITE.with_alpha_factor(0.5))
+                .border_radius(5.0)
+        });
+        let color = stack((color,)).style(|s| {
+            s.border(1)
+                .border_color(Color::BLACK.with_alpha_factor(0.5))
+                .border_radius(5.0)
+                .margin_left(6.0)
+        });
+        Some(Box::new(
+            stack((text(format!("{self:?}")), color)).style(|s| s.align_items(AlignItems::Center)),
+        ))
+    }
+}
 
 pub trait StyleProp: Default + Copy + 'static {
-    type Type: Clone + PartialEq + Debug;
+    type Type: StylePropValue;
     fn prop_ref() -> StylePropRef;
     fn default_value() -> Self::Type;
 }
@@ -61,10 +140,11 @@ pub struct StylePropInfo {
     pub(crate) inherited: bool,
     pub(crate) default_as_any: fn() -> Rc<dyn Any>,
     pub(crate) debug_any: fn(val: &dyn Any) -> String,
+    pub(crate) debug_view: fn(val: &dyn Any) -> Option<Box<dyn View>>,
 }
 
 impl StylePropInfo {
-    pub const fn new<Name, T: Debug + 'static>(
+    pub const fn new<Name, T: StylePropValue + 'static>(
         inherited: bool,
         default_as_any: fn() -> Rc<dyn Any>,
     ) -> Self {
@@ -75,6 +155,17 @@ impl StylePropInfo {
             debug_any: |val| {
                 if let Some(v) = val.downcast_ref::<T>() {
                     format!("{:?}", v)
+                } else {
+                    panic!(
+                        "expected type {} for property {}",
+                        type_name::<T>(),
+                        std::any::type_name::<Name>(),
+                    )
+                }
+            },
+            debug_view: |val| {
+                if let Some(v) = val.downcast_ref::<T>() {
+                    v.debug_view()
                 } else {
                     panic!(
                         "expected type {} for property {}",
@@ -360,7 +451,7 @@ impl StyleMap {
         }
     }
 
-    fn apply(&mut self, over: StyleMap) {
+    pub(crate) fn apply(&mut self, over: StyleMap) {
         self.map.extend(over.map);
         for (selector, map) in over.selectors {
             self.set_selector(selector, map);
@@ -682,6 +773,19 @@ prop_extracter! {
         pub family: FontFamily,
         pub weight: FontWeight,
         pub style: FontStyle,
+    }
+}
+
+prop_extracter! {
+    pub(crate) LayoutProps {
+        pub border_left: BorderLeft,
+        pub border_top: BorderTop,
+        pub border_right: BorderRight,
+        pub border_bottom: BorderBottom,
+        pub padding_left: PaddingLeft,
+        pub padding_top: PaddingTop,
+        pub padding_right: PaddingRight,
+        pub padding_bottom: PaddingBottom,
     }
 }
 
