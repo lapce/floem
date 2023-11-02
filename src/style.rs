@@ -649,7 +649,7 @@ impl<T> From<T> for StyleValue<T> {
 
 macro_rules! define_builtin_props {
     (
-        $($type_name:ident $name:ident $name_sv:ident $($opt:ident)?:
+        $($type_name:ident $name:ident $($opt:ident)?:
             $typ:ty { $($options:tt)* } = $val:expr),*
         $(,)?
     ) => {
@@ -658,7 +658,7 @@ macro_rules! define_builtin_props {
         )*
         impl Style {
             $(
-                define_builtin_props!(decl: $type_name $name $name_sv $($opt)?: $typ = $val);
+                define_builtin_props!(decl: $type_name $name $($opt)?: $typ = $val);
             )*
         }
 
@@ -670,14 +670,10 @@ macro_rules! define_builtin_props {
             )*
         }
     };
-    (decl: $type_name:ident $name:ident $name_sv:ident nocb: $typ:ty = $val:expr) => {};
-    (decl: $type_name:ident $name:ident $name_sv:ident: $typ:ty = $val:expr) => {
+    (decl: $type_name:ident $name:ident nocb: $typ:ty = $val:expr) => {};
+    (decl: $type_name:ident $name:ident: $typ:ty = $val:expr) => {
         pub fn $name(self, v: impl Into<$typ>) -> Self {
             self.set($type_name, v.into())
-        }
-
-        pub fn $name_sv(self, v: StyleValue<$typ>) -> Self {
-            self.set_style_value($type_name, v)
         }
     }
 }
@@ -687,58 +683,58 @@ pub struct BuiltinStyle<'a> {
 }
 
 define_builtin_props!(
-    DisplayProp display display_sv: Display {} = Display::Flex,
-    PositionProp position position_sv: Position {} = Position::Relative,
-    Width width width_sv: PxPctAuto {} = PxPctAuto::Auto,
-    Height height height_sv: PxPctAuto {} = PxPctAuto::Auto,
-    MinWidth min_width min_width_sv: PxPctAuto {} = PxPctAuto::Auto,
-    MinHeight min_height min_height_sv: PxPctAuto {} = PxPctAuto::Auto,
-    MaxWidth max_width max_width_sv: PxPctAuto {} = PxPctAuto::Auto,
-    MaxHeight max_height max_height_sv: PxPctAuto {} = PxPctAuto::Auto,
-    FlexDirectionProp flex_direction flex_direction_sv: FlexDirection {} = FlexDirection::Row,
-    FlexWrapProp flex_wrap flex_wrap_sv: FlexWrap {} = FlexWrap::NoWrap,
-    FlexGrow flex_grow flex_grow_sv: f32 {} = 0.0,
-    FlexShrink flex_shrink flex_shrink_sv: f32 {} = 1.0,
-    FlexBasis flex_basis flex_basis_sv: PxPctAuto {} = PxPctAuto::Auto,
-    JustifyContentProp justify_content justify_content_sv: Option<JustifyContent> {} = None,
-    JustifySelf justify_self justify_self_sv: Option<AlignItems> {} = None,
-    AlignItemsProp align_items align_items_sv: Option<AlignItems> {} = None,
-    AlignContentProp align_content align_content_sv: Option<AlignContent> {} = None,
-    AlignSelf align_self align_self_sv: Option<AlignItems> {} = None,
-    BorderLeft border_left border_left_sv: Px {} = Px(0.0),
-    BorderTop border_top border_top_sv: Px {} = Px(0.0),
-    BorderRight border_right border_right_sv: Px {} = Px(0.0),
-    BorderBottom border_bottom border_bottom_sv: Px {} = Px(0.0),
-    BorderRadius border_radius border_radius_sv: Px {} = Px(0.0),
-    OutlineColor outline_color outline_color_sv: Color {} = Color::TRANSPARENT,
-    Outline outline outline_sv: Px {} = Px(0.0),
-    BorderColor border_color border_color_sv: Color {} = Color::BLACK,
-    PaddingLeft padding_left padding_left_sv: PxPct {} = PxPct::Px(0.0),
-    PaddingTop padding_top padding_top_sv: PxPct {} = PxPct::Px(0.0),
-    PaddingRight padding_right padding_right_sv: PxPct {} = PxPct::Px(0.0),
-    PaddingBottom padding_bottom padding_bottom_sv: PxPct {} = PxPct::Px(0.0),
-    MarginLeft margin_left margin_left_sv: PxPctAuto {} = PxPctAuto::Px(0.0),
-    MarginTop margin_top margin_top_sv: PxPctAuto {} = PxPctAuto::Px(0.0),
-    MarginRight margin_right margin_right_sv: PxPctAuto {} = PxPctAuto::Px(0.0),
-    MarginBottom margin_bottom margin_bottom_sv: PxPctAuto {} = PxPctAuto::Px(0.0),
-    InsetLeft inset_left inset_left_sv: PxPctAuto {} = PxPctAuto::Auto,
-    InsetTop inset_top inset_top_sv: PxPctAuto {} = PxPctAuto::Auto,
-    InsetRight inset_right inset_right_sv: PxPctAuto {} = PxPctAuto::Auto,
-    InsetBottom inset_bottom inset_bottom_sv: PxPctAuto {} = PxPctAuto::Auto,
-    ZIndex z_index z_index_sv nocb: Option<i32> {} = None,
-    Cursor cursor cursor_sv nocb: Option<CursorStyle> {} = None,
-    TextColor color color_sv nocb: Option<Color> {} = None,
-    Background background background_sv nocb: Option<Color> {} = None,
-    BoxShadowProp box_shadow box_shadow_sv nocb: Option<BoxShadow> {} = None,
-    FontSize font_size font_size_sv nocb: Option<f32> { inherited } = None,
-    FontFamily font_family font_family_sv nocb: Option<String> { inherited } = None,
-    FontWeight font_weight font_weight_sv nocb: Option<Weight> { inherited } = None,
-    FontStyle font_style font_style_sv nocb: Option<cosmic_text::Style> { inherited } = None,
-    CursorColor cursor_color cursor_color_sv nocb: Option<Color> {} = None,
-    TextOverflowProp text_overflow text_overflow_sv: TextOverflow {} = TextOverflow::Wrap,
-    LineHeight line_height line_height_sv nocb: Option<LineHeightValue> { inherited } = None,
-    AspectRatio aspect_ratio aspect_ratio_sv: Option<f32> {} = None,
-    Gap gap gap_sv: Size<LengthPercentage> {} = Size::zero(),
+    DisplayProp display: Display {} = Display::Flex,
+    PositionProp position: Position {} = Position::Relative,
+    Width width: PxPctAuto {} = PxPctAuto::Auto,
+    Height height: PxPctAuto {} = PxPctAuto::Auto,
+    MinWidth min_width: PxPctAuto {} = PxPctAuto::Auto,
+    MinHeight min_height: PxPctAuto {} = PxPctAuto::Auto,
+    MaxWidth max_width: PxPctAuto {} = PxPctAuto::Auto,
+    MaxHeight max_height: PxPctAuto {} = PxPctAuto::Auto,
+    FlexDirectionProp flex_direction: FlexDirection {} = FlexDirection::Row,
+    FlexWrapProp flex_wrap: FlexWrap {} = FlexWrap::NoWrap,
+    FlexGrow flex_grow: f32 {} = 0.0,
+    FlexShrink flex_shrink: f32 {} = 1.0,
+    FlexBasis flex_basis: PxPctAuto {} = PxPctAuto::Auto,
+    JustifyContentProp justify_content: Option<JustifyContent> {} = None,
+    JustifySelf justify_self: Option<AlignItems> {} = None,
+    AlignItemsProp align_items: Option<AlignItems> {} = None,
+    AlignContentProp align_content: Option<AlignContent> {} = None,
+    AlignSelf align_self: Option<AlignItems> {} = None,
+    BorderLeft border_left: Px {} = Px(0.0),
+    BorderTop border_top: Px {} = Px(0.0),
+    BorderRight border_right: Px {} = Px(0.0),
+    BorderBottom border_bottom: Px {} = Px(0.0),
+    BorderRadius border_radius: Px {} = Px(0.0),
+    OutlineColor outline_color: Color {} = Color::TRANSPARENT,
+    Outline outline: Px {} = Px(0.0),
+    BorderColor border_color: Color {} = Color::BLACK,
+    PaddingLeft padding_left: PxPct {} = PxPct::Px(0.0),
+    PaddingTop padding_top: PxPct {} = PxPct::Px(0.0),
+    PaddingRight padding_right: PxPct {} = PxPct::Px(0.0),
+    PaddingBottom padding_bottom: PxPct {} = PxPct::Px(0.0),
+    MarginLeft margin_left: PxPctAuto {} = PxPctAuto::Px(0.0),
+    MarginTop margin_top: PxPctAuto {} = PxPctAuto::Px(0.0),
+    MarginRight margin_right: PxPctAuto {} = PxPctAuto::Px(0.0),
+    MarginBottom margin_bottom: PxPctAuto {} = PxPctAuto::Px(0.0),
+    InsetLeft inset_left: PxPctAuto {} = PxPctAuto::Auto,
+    InsetTop inset_top: PxPctAuto {} = PxPctAuto::Auto,
+    InsetRight inset_right: PxPctAuto {} = PxPctAuto::Auto,
+    InsetBottom inset_bottom: PxPctAuto {} = PxPctAuto::Auto,
+    ZIndex z_index nocb: Option<i32> {} = None,
+    Cursor cursor nocb: Option<CursorStyle> {} = None,
+    TextColor color nocb: Option<Color> {} = None,
+    Background background nocb: Option<Color> {} = None,
+    BoxShadowProp box_shadow nocb: Option<BoxShadow> {} = None,
+    FontSize font_size nocb: Option<f32> { inherited } = None,
+    FontFamily font_family nocb: Option<String> { inherited } = None,
+    FontWeight font_weight nocb: Option<Weight> { inherited } = None,
+    FontStyle font_style nocb: Option<cosmic_text::Style> { inherited } = None,
+    CursorColor cursor_color nocb: Option<Color> {} = None,
+    TextOverflowProp text_overflow: TextOverflow {} = TextOverflow::Wrap,
+    LineHeight line_height nocb: Option<LineHeightValue> { inherited } = None,
+    AspectRatio aspect_ratio: Option<f32> {} = None,
+    Gap gap: Size<LengthPercentage> {} = Size::zero(),
 );
 
 prop_extracter! {
@@ -1321,7 +1317,7 @@ mod tests {
         let style1 = Style::new().padding_left(32.0).padding_bottom(45.0);
         let style2 = Style::new()
             .padding_left(64.0)
-            .padding_bottom_sv(StyleValue::Base);
+            .set_style_value(PaddingBottom, StyleValue::Base);
 
         let style = style1.apply(style2);
 
@@ -1337,7 +1333,7 @@ mod tests {
         let style1 = Style::new().padding_left(32.0).padding_bottom(45.0);
         let style2 = Style::new()
             .padding_left(64.0)
-            .padding_bottom_sv(StyleValue::Unset);
+            .set_style_value(PaddingBottom, StyleValue::Unset);
 
         let style = style1.apply(style2);
 
@@ -1350,9 +1346,9 @@ mod tests {
         let style1 = Style::new().padding_left(32.0).padding_bottom(45.0);
         let style2 = Style::new()
             .padding_left(64.0)
-            .padding_bottom_sv(StyleValue::Unset);
+            .set_style_value(PaddingBottom, StyleValue::Unset);
 
-        let style3 = Style::new().padding_bottom_sv(StyleValue::Base);
+        let style3 = Style::new().set_style_value(PaddingBottom, StyleValue::Base);
 
         let style = style1.apply_overriding_styles([style2, style3].into_iter());
 
@@ -1365,7 +1361,7 @@ mod tests {
         let style1 = Style::new().padding_left(32.0).padding_bottom(45.0);
         let style2 = Style::new()
             .padding_left(64.0)
-            .padding_bottom_sv(StyleValue::Unset);
+            .set_style_value(PaddingBottom, StyleValue::Unset);
         let style3 = Style::new().padding_bottom(100.0);
 
         let style = style1.apply_overriding_styles([style2, style3].into_iter());
