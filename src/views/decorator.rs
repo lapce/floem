@@ -6,7 +6,6 @@ use crate::{
     animate::Animation,
     event::{Event, EventListener},
     menu::Menu,
-    responsive::ScreenSize,
     style::{Style, StyleSelector},
     view::View,
 };
@@ -37,7 +36,7 @@ pub trait Decorators: View + Sized {
     fn style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
-            let style = style(Style::BASE);
+            let style = style(Style::new());
             id.update_style(style);
         });
         self
@@ -63,18 +62,8 @@ pub trait Decorators: View + Sized {
     fn base_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
-            let style = style(Style::BASE);
+            let style = style(Style::new());
             id.update_base_style(style);
-        });
-        self
-    }
-
-    /// The visual style to apply when the mouse hovers over the element
-    fn hover_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
-        let id = self.id();
-        create_effect(move |_| {
-            let style = style(Style::BASE);
-            id.update_style_selector(style, StyleSelector::Hover);
         });
         self
     }
@@ -83,27 +72,8 @@ pub trait Decorators: View + Sized {
     fn dragging_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
-            let style = style(Style::BASE);
+            let style = style(Style::new());
             id.update_style_selector(style, StyleSelector::Dragging);
-        });
-        self
-    }
-
-    fn focus_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
-        let id = self.id();
-        create_effect(move |_| {
-            let style = style(Style::BASE);
-            id.update_style_selector(style, StyleSelector::Focus);
-        });
-        self
-    }
-
-    /// Similar to the `:focus-visible` css selector, this style only activates when tab navigation is used.
-    fn focus_visible_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
-        let id = self.id();
-        create_effect(move |_| {
-            let style = style(Style::BASE);
-            id.update_style_selector(style, StyleSelector::FocusVisible);
         });
         self
     }
@@ -118,33 +88,6 @@ pub trait Decorators: View + Sized {
     fn draggable(self) -> Self {
         let id = self.id();
         id.draggable();
-        self
-    }
-
-    fn active_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
-        let id = self.id();
-        create_effect(move |_| {
-            let style = style(Style::BASE);
-            id.update_style_selector(style, StyleSelector::Active);
-        });
-        self
-    }
-
-    fn disabled_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
-        let id = self.id();
-        create_effect(move |_| {
-            let style = style(Style::BASE);
-            id.update_style_selector(style, StyleSelector::Disabled);
-        });
-        self
-    }
-
-    fn responsive_style(self, size: ScreenSize, style: impl Fn(Style) -> Style + 'static) -> Self {
-        let id = self.id();
-        create_effect(move |_| {
-            let style = style(Style::BASE);
-            id.update_responsive_style(style, size);
-        });
         self
     }
 

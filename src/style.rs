@@ -47,6 +47,7 @@ use taffy::{
 
 use crate::context::InteractionState;
 use crate::context::LayoutCx;
+use crate::responsive::{ScreenSize, ScreenSizeBp};
 use crate::unit::{Px, PxPct, PxPctAuto, UnitExt};
 use crate::view::View;
 use crate::views::{empty, stack, text, Decorators};
@@ -355,12 +356,21 @@ impl<T> StyleMapValue<T> {
 }
 
 #[derive(Default, Clone)]
-pub(crate) struct StyleMap {
+pub struct Style {
     pub(crate) map: HashMap<StylePropRef, StyleMapValue<Rc<dyn Any>>>,
-    pub(crate) selectors: HashMap<StyleSelector, StyleMap>,
+    pub(crate) selectors: HashMap<StyleSelector, Style>,
+    pub(crate) responsive: HashMap<ScreenSizeBp, Style>,
 }
 
-impl StyleMap {
+impl Style {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn get_prop_or_default<P: StyleProp>(&self) -> P::Type {
+        self.get_prop::<P>().unwrap_or_else(|| P::default_value())
+    }
+
     pub(crate) fn get_prop<P: StyleProp>(&self) -> Option<P::Type> {
         self.map
             .get(&P::prop_ref())
@@ -381,31 +391,43 @@ impl StyleMap {
     }
 
     pub(crate) fn selectors(&self) -> StyleSelectors {
-        self.selectors
-            .iter()
-            .fold(StyleSelectors::default(), |mut s, (selector, map)| {
-                s.selectors |= map.selectors().selectors;
-                s.set(*selector, true)
-            })
+        let mut result =
+            self.selectors
+                .iter()
+                .fold(StyleSelectors::default(), |mut s, (selector, map)| {
+                    s.selectors |= map.selectors().selectors;
+                    s.set(*selector, true)
+                });
+        result.responsive |= !self.responsive.is_empty();
+        result
     }
 
-    pub(crate) fn apply_interact_state(&mut self, interact_state: &InteractionState) {
+    pub(crate) fn apply_interact_state(
+        &mut self,
+        interact_state: &InteractionState,
+        screen_size_bp: ScreenSizeBp,
+    ) {
+        if let Some(mut map) = self.responsive.remove(&screen_size_bp) {
+            map.apply_interact_state(interact_state, screen_size_bp);
+            self.apply_mut(map);
+        }
+
         if interact_state.is_hovered && !interact_state.is_disabled {
             if let Some(mut map) = self.selectors.remove(&StyleSelector::Hover) {
-                map.apply_interact_state(interact_state);
-                self.apply(map);
+                map.apply_interact_state(interact_state, screen_size_bp);
+                self.apply_mut(map);
             }
         }
         if interact_state.is_focused {
             if let Some(mut map) = self.selectors.remove(&StyleSelector::Focus) {
-                map.apply_interact_state(interact_state);
-                self.apply(map);
+                map.apply_interact_state(interact_state, screen_size_bp);
+                self.apply_mut(map);
             }
         }
         if interact_state.is_disabled {
             if let Some(mut map) = self.selectors.remove(&StyleSelector::Disabled) {
-                map.apply_interact_state(interact_state);
-                self.apply(map);
+                map.apply_interact_state(interact_state, screen_size_bp);
+                self.apply_mut(map);
             }
         }
 
@@ -414,21 +436,21 @@ impl StyleMap {
 
         if focused_keyboard {
             if let Some(mut map) = self.selectors.remove(&StyleSelector::FocusVisible) {
-                map.apply_interact_state(interact_state);
-                self.apply(map);
+                map.apply_interact_state(interact_state, screen_size_bp);
+                self.apply_mut(map);
             }
         }
 
         let active_mouse = interact_state.is_hovered && !interact_state.using_keyboard_navigation;
         if interact_state.is_clicking && (active_mouse || focused_keyboard) {
             if let Some(mut map) = self.selectors.remove(&StyleSelector::Active) {
-                map.apply_interact_state(interact_state);
-                self.apply(map);
+                map.apply_interact_state(interact_state, screen_size_bp);
+                self.apply_mut(map);
             }
         }
     }
 
-    pub(crate) fn apply_only_inherited(map: &mut Rc<StyleMap>, over: &StyleMap) {
+    pub(crate) fn apply_only_inherited(map: &mut Rc<Style>, over: &Style) {
         let any_inherited = over.map.iter().any(|(p, _)| p.info.inherited);
 
         if any_inherited {
@@ -442,26 +464,59 @@ impl StyleMap {
         }
     }
 
-    fn set_selector(&mut self, selector: StyleSelector, map: StyleMap) {
+    fn set_selector(&mut self, selector: StyleSelector, map: Style) {
         match self.selectors.entry(selector) {
-            Entry::Occupied(mut e) => e.get_mut().apply(map),
+            Entry::Occupied(mut e) => e.get_mut().apply_mut(map),
             Entry::Vacant(e) => {
                 e.insert(map);
             }
         }
     }
 
-    pub(crate) fn apply(&mut self, over: StyleMap) {
+    fn set_breakpoint(&mut self, breakpoint: ScreenSizeBp, map: Style) {
+        match self.responsive.entry(breakpoint) {
+            Entry::Occupied(mut e) => e.get_mut().apply_mut(map),
+            Entry::Vacant(e) => {
+                e.insert(map);
+            }
+        }
+    }
+
+    pub(crate) fn builtin(&self) -> BuiltinStyle<'_> {
+        BuiltinStyle { style: self }
+    }
+
+    pub(crate) fn apply_mut(&mut self, over: Style) {
         self.map.extend(over.map);
         for (selector, map) in over.selectors {
             self.set_selector(selector, map);
         }
+        for (breakpoint, map) in over.responsive {
+            self.set_breakpoint(breakpoint, map);
+        }
+    }
+
+    /// Apply another `Style` to this style, returning a new `Style` with the overrides
+    ///
+    /// `StyleValue::Val` will override the value with the given value
+    /// `StyleValue::Unset` will unset the value, causing it to fall back to the default.
+    /// `StyleValue::Base` will leave the value as-is, whether falling back to the default
+    /// or using the value in the `Style`.
+    pub fn apply(mut self, over: Style) -> Style {
+        self.apply_mut(over);
+        self
+    }
+
+    /// Apply multiple `Style`s to this style, returning a new `Style` with the overrides.
+    /// Later styles take precedence over earlier styles.
+    pub fn apply_overriding_styles(self, overrides: impl Iterator<Item = Style>) -> Style {
+        overrides.fold(self, |acc, x| acc.apply(x))
     }
 }
 
-impl Debug for StyleMap {
+impl Debug for Style {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("StyleMap")
+        f.debug_struct("Style")
             .field(
                 "map",
                 &self
@@ -496,20 +551,23 @@ pub enum StyleSelector {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default)]
 pub(crate) struct StyleSelectors {
     selectors: u8,
+    responsive: bool,
 }
 
 impl StyleSelectors {
-    pub(crate) fn set(self, selector: StyleSelector, value: bool) -> Self {
+    pub(crate) fn set(mut self, selector: StyleSelector, value: bool) -> Self {
         let v = (selector as isize).try_into().unwrap();
         let bit = 1_u8.checked_shl(v).unwrap();
-        StyleSelectors {
-            selectors: (self.selectors & !bit) | ((value as u8) << v),
-        }
+        self.selectors = (self.selectors & !bit) | ((value as u8) << v);
+        self
     }
     pub(crate) fn has(self, selector: StyleSelector) -> bool {
         let v = (selector as isize).try_into().unwrap();
         let bit = 1_u8.checked_shl(v).unwrap();
         self.selectors & bit != 0
+    }
+    pub(crate) fn has_responsive(self) -> bool {
+        self.responsive
     }
 }
 
@@ -618,63 +676,9 @@ impl<T> From<T> for StyleValue<T> {
     }
 }
 
-/// A style with definite values for most fields.
-#[derive(Default, Debug, Clone)]
-pub struct ComputedStyle {
-    pub(crate) other: StyleMap,
-}
-impl ComputedStyle {
-    pub(crate) fn get<P: StyleProp>(&self, _prop: P) -> P::Type {
-        self.other
-            .get_prop::<P>()
-            .unwrap_or_else(|| P::default_value())
-    }
-
-    pub(crate) fn get_builtin(&self) -> BuiltinStyleReader<'_> {
-        BuiltinStyleReader { style: self }
-    }
-}
-#[derive(Debug, Clone)]
-pub struct Style {
-    pub(crate) other: Option<StyleMap>,
-}
-impl Style {
-    pub const BASE: Style = Style { other: None };
-
-    pub const UNSET: Style = Style { other: None };
-
-    /// Convert this `Style` into a computed style.
-    pub fn compute(self) -> ComputedStyle {
-        ComputedStyle {
-            other: self.other.unwrap_or_default(),
-        }
-    }
-
-    /// Apply another `Style` to this style, returning a new `Style` with the overrides
-    ///
-    /// `StyleValue::Val` will override the value with the given value
-    /// `StyleValue::Unset` will unset the value, causing it to fall back to the underlying
-    /// `ComputedStyle` (aka setting it to `None`)
-    /// `StyleValue::Base` will leave the value as-is, whether falling back to the underlying
-    /// `ComputedStyle` or using the value in the `Style`.
-    pub fn apply(self, over: Style) -> Style {
-        let mut other = self.other.unwrap_or_default();
-        if let Some(over) = over.other {
-            other.apply(over);
-        }
-        Style { other: Some(other) }
-    }
-
-    /// Apply multiple `Style`s to this style, returning a new `Style` with the overrides.
-    /// Later styles take precedence over earlier styles.
-    pub fn apply_overriding_styles(self, overrides: impl Iterator<Item = Style>) -> Style {
-        overrides.fold(self, |acc, x| acc.apply(x))
-    }
-}
-
-macro_rules! define_style_methods {
+macro_rules! define_builtin_props {
     (
-        $($type_name:ident $name:ident $name_sv:ident $($opt:ident)?:
+        $($type_name:ident $name:ident $($opt:ident)?:
             $typ:ty { $($options:tt)* } = $val:expr),*
         $(,)?
     ) => {
@@ -683,88 +687,83 @@ macro_rules! define_style_methods {
         )*
         impl Style {
             $(
-                define_style_methods!(decl: $type_name $name $name_sv $($opt)?: $typ = $val);
+                define_builtin_props!(decl: $type_name $name $($opt)?: $typ = $val);
             )*
         }
 
-        impl BuiltinStyleReader<'_> {
+        impl BuiltinStyle<'_> {
             $(
-                #[allow(dead_code)]
-                pub(crate) fn $name(&self) -> $typ {
+                pub fn $name(&self) -> $typ {
                     self.style.get($type_name)
                 }
             )*
         }
     };
-    (decl: $type_name:ident $name:ident $name_sv:ident nocb: $typ:ty = $val:expr) => {};
-    (decl: $type_name:ident $name:ident $name_sv:ident: $typ:ty = $val:expr) => {
+    (decl: $type_name:ident $name:ident nocb: $typ:ty = $val:expr) => {};
+    (decl: $type_name:ident $name:ident: $typ:ty = $val:expr) => {
         pub fn $name(self, v: impl Into<$typ>) -> Self {
             self.set($type_name, v.into())
-        }
-
-        pub fn $name_sv(self, v: StyleValue<$typ>) -> Self {
-            self.set_style_value($type_name, v)
         }
     }
 }
 
-pub(crate) struct BuiltinStyleReader<'a> {
-    style: &'a ComputedStyle,
+pub struct BuiltinStyle<'a> {
+    style: &'a Style,
 }
 
-define_style_methods!(
-    DisplayProp display display_sv: Display {} = Display::Flex,
-    PositionProp position position_sv: Position {} = Position::Relative,
-    Width width width_sv: PxPctAuto {} = PxPctAuto::Auto,
-    Height height height_sv: PxPctAuto {} = PxPctAuto::Auto,
-    MinWidth min_width min_width_sv: PxPctAuto {} = PxPctAuto::Auto,
-    MinHeight min_height min_height_sv: PxPctAuto {} = PxPctAuto::Auto,
-    MaxWidth max_width max_width_sv: PxPctAuto {} = PxPctAuto::Auto,
-    MaxHeight max_height max_height_sv: PxPctAuto {} = PxPctAuto::Auto,
-    FlexDirectionProp flex_direction flex_direction_sv: FlexDirection {} = FlexDirection::Row,
-    FlexWrapProp flex_wrap flex_wrap_sv: FlexWrap {} = FlexWrap::NoWrap,
-    FlexGrow flex_grow flex_grow_sv: f32 {} = 0.0,
-    FlexShrink flex_shrink flex_shrink_sv: f32 {} = 1.0,
-    FlexBasis flex_basis flex_basis_sv: PxPctAuto {} = PxPctAuto::Auto,
-    JustifyContentProp justify_content justify_content_sv: Option<JustifyContent> {} = None,
-    JustifySelf justify_self justify_self_sv: Option<AlignItems> {} = None,
-    AlignItemsProp align_items align_items_sv: Option<AlignItems> {} = None,
-    AlignContentProp align_content align_content_sv: Option<AlignContent> {} = None,
-    AlignSelf align_self align_self_sv: Option<AlignItems> {} = None,
-    BorderLeft border_left border_left_sv: Px {} = Px(0.0),
-    BorderTop border_top border_top_sv: Px {} = Px(0.0),
-    BorderRight border_right border_right_sv: Px {} = Px(0.0),
-    BorderBottom border_bottom border_bottom_sv: Px {} = Px(0.0),
-    BorderRadius border_radius border_radius_sv: Px {} = Px(0.0),
-    OutlineColor outline_color outline_color_sv: Color {} = Color::TRANSPARENT,
-    Outline outline outline_sv: Px {} = Px(0.0),
-    BorderColor border_color border_color_sv: Color {} = Color::BLACK,
-    PaddingLeft padding_left padding_left_sv: PxPct {} = PxPct::Px(0.0),
-    PaddingTop padding_top padding_top_sv: PxPct {} = PxPct::Px(0.0),
-    PaddingRight padding_right padding_right_sv: PxPct {} = PxPct::Px(0.0),
-    PaddingBottom padding_bottom padding_bottom_sv: PxPct {} = PxPct::Px(0.0),
-    MarginLeft margin_left margin_left_sv: PxPctAuto {} = PxPctAuto::Px(0.0),
-    MarginTop margin_top margin_top_sv: PxPctAuto {} = PxPctAuto::Px(0.0),
-    MarginRight margin_right margin_right_sv: PxPctAuto {} = PxPctAuto::Px(0.0),
-    MarginBottom margin_bottom margin_bottom_sv: PxPctAuto {} = PxPctAuto::Px(0.0),
-    InsetLeft inset_left inset_left_sv: PxPctAuto {} = PxPctAuto::Auto,
-    InsetTop inset_top inset_top_sv: PxPctAuto {} = PxPctAuto::Auto,
-    InsetRight inset_right inset_right_sv: PxPctAuto {} = PxPctAuto::Auto,
-    InsetBottom inset_bottom inset_bottom_sv: PxPctAuto {} = PxPctAuto::Auto,
-    ZIndex z_index z_index_sv nocb: Option<i32> {} = None,
-    Cursor cursor cursor_sv nocb: Option<CursorStyle> {} = None,
-    TextColor color color_sv nocb: Option<Color> {} = None,
-    Background background background_sv nocb: Option<Color> {} = None,
-    BoxShadowProp box_shadow box_shadow_sv nocb: Option<BoxShadow> {} = None,
-    FontSize font_size font_size_sv nocb: Option<f32> { inherited } = None,
-    FontFamily font_family font_family_sv nocb: Option<String> { inherited } = None,
-    FontWeight font_weight font_weight_sv nocb: Option<Weight> { inherited } = None,
-    FontStyle font_style font_style_sv nocb: Option<cosmic_text::Style> { inherited } = None,
-    CursorColor cursor_color cursor_color_sv nocb: Option<Color> {} = None,
-    TextOverflowProp text_overflow text_overflow_sv: TextOverflow {} = TextOverflow::Wrap,
-    LineHeight line_height line_height_sv nocb: Option<LineHeightValue> { inherited } = None,
-    AspectRatio aspect_ratio aspect_ratio_sv: Option<f32> {} = None,
-    Gap gap gap_sv: Size<LengthPercentage> {} = Size::zero(),
+define_builtin_props!(
+    DisplayProp display: Display {} = Display::Flex,
+    PositionProp position: Position {} = Position::Relative,
+    Width width: PxPctAuto {} = PxPctAuto::Auto,
+    Height height: PxPctAuto {} = PxPctAuto::Auto,
+    MinWidth min_width: PxPctAuto {} = PxPctAuto::Auto,
+    MinHeight min_height: PxPctAuto {} = PxPctAuto::Auto,
+    MaxWidth max_width: PxPctAuto {} = PxPctAuto::Auto,
+    MaxHeight max_height: PxPctAuto {} = PxPctAuto::Auto,
+    FlexDirectionProp flex_direction: FlexDirection {} = FlexDirection::Row,
+    FlexWrapProp flex_wrap: FlexWrap {} = FlexWrap::NoWrap,
+    FlexGrow flex_grow: f32 {} = 0.0,
+    FlexShrink flex_shrink: f32 {} = 1.0,
+    FlexBasis flex_basis: PxPctAuto {} = PxPctAuto::Auto,
+    JustifyContentProp justify_content: Option<JustifyContent> {} = None,
+    JustifySelf justify_self: Option<AlignItems> {} = None,
+    AlignItemsProp align_items: Option<AlignItems> {} = None,
+    AlignContentProp align_content: Option<AlignContent> {} = None,
+    AlignSelf align_self: Option<AlignItems> {} = None,
+    BorderLeft border_left: Px {} = Px(0.0),
+    BorderTop border_top: Px {} = Px(0.0),
+    BorderRight border_right: Px {} = Px(0.0),
+    BorderBottom border_bottom: Px {} = Px(0.0),
+    BorderRadius border_radius: Px {} = Px(0.0),
+    OutlineColor outline_color: Color {} = Color::TRANSPARENT,
+    Outline outline: Px {} = Px(0.0),
+    BorderColor border_color: Color {} = Color::BLACK,
+    PaddingLeft padding_left: PxPct {} = PxPct::Px(0.0),
+    PaddingTop padding_top: PxPct {} = PxPct::Px(0.0),
+    PaddingRight padding_right: PxPct {} = PxPct::Px(0.0),
+    PaddingBottom padding_bottom: PxPct {} = PxPct::Px(0.0),
+    MarginLeft margin_left: PxPctAuto {} = PxPctAuto::Px(0.0),
+    MarginTop margin_top: PxPctAuto {} = PxPctAuto::Px(0.0),
+    MarginRight margin_right: PxPctAuto {} = PxPctAuto::Px(0.0),
+    MarginBottom margin_bottom: PxPctAuto {} = PxPctAuto::Px(0.0),
+    InsetLeft inset_left: PxPctAuto {} = PxPctAuto::Auto,
+    InsetTop inset_top: PxPctAuto {} = PxPctAuto::Auto,
+    InsetRight inset_right: PxPctAuto {} = PxPctAuto::Auto,
+    InsetBottom inset_bottom: PxPctAuto {} = PxPctAuto::Auto,
+    ZIndex z_index nocb: Option<i32> {} = None,
+    Cursor cursor nocb: Option<CursorStyle> {} = None,
+    TextColor color nocb: Option<Color> {} = None,
+    Background background nocb: Option<Color> {} = None,
+    BoxShadowProp box_shadow nocb: Option<BoxShadow> {} = None,
+    FontSize font_size nocb: Option<f32> { inherited } = None,
+    FontFamily font_family nocb: Option<String> { inherited } = None,
+    FontWeight font_weight nocb: Option<Weight> { inherited } = None,
+    FontStyle font_style nocb: Option<cosmic_text::Style> { inherited } = None,
+    CursorColor cursor_color nocb: Option<Color> {} = None,
+    TextOverflowProp text_overflow: TextOverflow {} = TextOverflow::Wrap,
+    LineHeight line_height nocb: Option<LineHeightValue> { inherited } = None,
+    AspectRatio aspect_ratio: Option<f32> {} = None,
+    Gap gap: Size<LengthPercentage> {} = Size::zero(),
 );
 
 prop_extracter! {
@@ -791,19 +790,11 @@ prop_extracter! {
 
 impl Style {
     pub fn get<P: StyleProp>(&self, _prop: P) -> P::Type {
-        if let Some(other) = &self.other {
-            other.get_prop::<P>().unwrap_or_else(|| P::default_value())
-        } else {
-            P::default_value()
-        }
+        self.get_prop_or_default::<P>()
     }
 
     pub fn get_style_value<P: StyleProp>(&self, _prop: P) -> StyleValue<P::Type> {
-        if let Some(other) = &self.other {
-            other.get_prop_style_value::<P>()
-        } else {
-            StyleValue::Base
-        }
+        self.get_prop_style_value::<P>()
     }
 
     pub fn set<P: StyleProp>(self, prop: P, value: impl Into<P::Type>) -> Self {
@@ -811,18 +802,15 @@ impl Style {
     }
 
     pub fn set_style_value<P: StyleProp>(mut self, _prop: P, value: StyleValue<P::Type>) -> Self {
-        let mut other = self.other.unwrap_or_default();
         let insert: StyleMapValue<Rc<dyn Any>> = match value {
             StyleValue::Val(value) => StyleMapValue::Val(Rc::new(value)),
             StyleValue::Unset => StyleMapValue::Unset,
             StyleValue::Base => {
-                other.map.remove(&P::prop_ref());
-                self.other = Some(other);
+                self.map.remove(&P::prop_ref());
                 return self;
             }
         };
-        other.map.insert(P::prop_ref(), insert);
-        self.other = Some(other);
+        self.map.insert(P::prop_ref(), insert);
         self
     }
 
@@ -831,13 +819,12 @@ impl Style {
         selector: StyleSelector,
         style: impl Fn(Style) -> Style + 'static,
     ) -> Self {
-        let over = style(Style::BASE).other.unwrap_or_default();
-        let mut other = self.other.unwrap_or_default();
-        other.set_selector(selector, over);
-        self.other = Some(other);
+        let over = style(Style::default());
+        self.set_selector(selector, over);
         self
     }
 
+    /// The visual style to apply when the mouse hovers over the element
     pub fn hover(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         self.selector(StyleSelector::Hover, style)
     }
@@ -846,6 +833,7 @@ impl Style {
         self.selector(StyleSelector::Focus, style)
     }
 
+    /// Similar to the `:focus-visible` css selector, this style only activates when tab navigation is used.
     pub fn focus_visible(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         self.selector(StyleSelector::FocusVisible, style)
     }
@@ -856,6 +844,18 @@ impl Style {
 
     pub fn active(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         self.selector(StyleSelector::Active, style)
+    }
+
+    pub fn responsive(
+        mut self,
+        size: ScreenSize,
+        style: impl Fn(Style) -> Style + 'static,
+    ) -> Self {
+        let over = style(Style::default());
+        for breakpoint in size.breakpoints() {
+            self.set_breakpoint(breakpoint, over.clone());
+        }
+        self
     }
 
     pub fn width_full(self) -> Self {
@@ -1276,9 +1276,9 @@ impl Style {
     }
 }
 
-impl ComputedStyle {
+impl Style {
     pub fn to_taffy_style(&self) -> TaffyStyle {
-        let style = self.get_builtin();
+        let style = self.builtin();
         TaffyStyle {
             display: style.display(),
             position: style.position(),
@@ -1345,8 +1345,8 @@ mod tests {
 
     #[test]
     fn style_override() {
-        let style1 = Style::BASE.padding_left(32.0);
-        let style2 = Style::BASE.padding_left(64.0);
+        let style1 = Style::new().padding_left(32.0);
+        let style2 = Style::new().padding_left(64.0);
 
         let style = style1.apply(style2);
 
@@ -1355,10 +1355,10 @@ mod tests {
             StyleValue::Val(PxPct::Px(64.0))
         );
 
-        let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
-        let style2 = Style::BASE
+        let style1 = Style::new().padding_left(32.0).padding_bottom(45.0);
+        let style2 = Style::new()
             .padding_left(64.0)
-            .padding_bottom_sv(StyleValue::Base);
+            .set_style_value(PaddingBottom, StyleValue::Base);
 
         let style = style1.apply(style2);
 
@@ -1371,10 +1371,10 @@ mod tests {
             StyleValue::Val(PxPct::Px(45.0))
         );
 
-        let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
-        let style2 = Style::BASE
+        let style1 = Style::new().padding_left(32.0).padding_bottom(45.0);
+        let style2 = Style::new()
             .padding_left(64.0)
-            .padding_bottom_sv(StyleValue::Unset);
+            .set_style_value(PaddingBottom, StyleValue::Unset);
 
         let style = style1.apply(style2);
 
@@ -1384,12 +1384,12 @@ mod tests {
         );
         assert_eq!(style.get_style_value(PaddingBottom), StyleValue::Unset);
 
-        let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
-        let style2 = Style::BASE
+        let style1 = Style::new().padding_left(32.0).padding_bottom(45.0);
+        let style2 = Style::new()
             .padding_left(64.0)
-            .padding_bottom_sv(StyleValue::Unset);
+            .set_style_value(PaddingBottom, StyleValue::Unset);
 
-        let style3 = Style::BASE.padding_bottom_sv(StyleValue::Base);
+        let style3 = Style::new().set_style_value(PaddingBottom, StyleValue::Base);
 
         let style = style1.apply_overriding_styles([style2, style3].into_iter());
 
@@ -1399,11 +1399,11 @@ mod tests {
         );
         assert_eq!(style.get_style_value(PaddingBottom), StyleValue::Unset);
 
-        let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
-        let style2 = Style::BASE
+        let style1 = Style::new().padding_left(32.0).padding_bottom(45.0);
+        let style2 = Style::new()
             .padding_left(64.0)
-            .padding_bottom_sv(StyleValue::Unset);
-        let style3 = Style::BASE.padding_bottom(100.0);
+            .set_style_value(PaddingBottom, StyleValue::Unset);
+        let style3 = Style::new().padding_bottom(100.0);
 
         let style = style1.apply_overriding_styles([style2, style3].into_iter());
 

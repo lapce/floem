@@ -646,12 +646,11 @@ impl<V: View> View for Scroll<V> {
                 .set(PositionProp, Position::Absolute);
             let child_node = self.child.layout_main(cx);
 
-            let virtual_style = Style::BASE
+            let virtual_style = Style::new()
                 .width(self.child_size.width)
                 .height(self.child_size.height)
                 .min_width(0.0)
                 .min_height(0.0)
-                .compute()
                 .to_taffy_style();
             if self.virtual_node.is_none() {
                 self.virtual_node = Some(

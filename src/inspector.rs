@@ -3,7 +3,7 @@ use crate::context::{AppState, LayoutCx};
 use crate::event::{Event, EventListener};
 use crate::id::Id;
 use crate::new_window;
-use crate::style::{StyleMap, StyleMapValue, TextOverflow};
+use crate::style::{Style, StyleMapValue, TextOverflow};
 use crate::view::View;
 use crate::views::{
     dyn_container, empty, img_dynamic, list, scroll, stack, text, Decorators, Label,
@@ -81,7 +81,7 @@ pub struct Capture {
 
 #[derive(Default)]
 pub struct CaptureState {
-    styles: HashMap<Id, StyleMap>,
+    styles: HashMap<Id, Style>,
 }
 
 impl CaptureState {
@@ -89,7 +89,7 @@ impl CaptureState {
         if cx.app_state_mut().capture.is_some() {
             let direct = cx.style.direct.clone();
             let mut current = (*cx.style.current).clone();
-            current.apply(direct);
+            current.apply_mut(direct);
             cx.app_state_mut()
                 .capture
                 .as_mut()

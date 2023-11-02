@@ -9,7 +9,6 @@ use crate::{
     event::EventListener,
     id::Id,
     menu::Menu,
-    responsive::ScreenSize,
     style::{Style, StyleSelector},
 };
 
@@ -52,11 +51,6 @@ pub(crate) enum UpdateMessage {
     Style {
         id: Id,
         style: Style,
-    },
-    ResponsiveStyle {
-        id: Id,
-        style: Style,
-        size: ScreenSize,
     },
     StyleSelector {
         id: Id,

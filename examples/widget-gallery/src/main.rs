@@ -91,9 +91,10 @@ fn app_view() -> impl View {
                                             s.background(Color::GRAY)
                                         })
                                         .focus_visible(|s| s.border(2.).border_color(Color::BLUE))
-                                })
-                                .hover_style(|s| {
-                                    s.background(Color::LIGHT_GRAY).cursor(CursorStyle::Pointer)
+                                        .hover(|s| {
+                                            s.background(Color::LIGHT_GRAY)
+                                                .cursor(CursorStyle::Pointer)
+                                        })
                                 })
                         },
                     )
