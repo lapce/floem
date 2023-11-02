@@ -939,8 +939,7 @@ impl WindowHandle {
             AnimPropKind::Prop { prop } => {
                 //TODO:  get from cx
                 let from = view_state
-                    .computed_style
-                    .other
+                    .combined_style
                     .map
                     .get(&prop)
                     .and_then(|v| v.as_ref().cloned())

@@ -26,7 +26,7 @@
 //! pub fn label_and_input() -> impl View {
 //!     let text = create_rw_signal("Hello world".to_string());
 //!     stack(|| (text_input(text), label(|| text.get())))
-//!         .style(|| Style::BASE.padding(10.0))
+//!         .style(|| Style::new().padding(10.0))
 //! }
 //! ```
 //!
@@ -96,9 +96,7 @@ use crate::{
     event::{Event, EventListener},
     id::Id,
     inspector::CaptureState,
-    style::{
-        BoxShadowProp, ComputedStyle, LayoutProps, Outline, OutlineColor, Style, StyleMap, ZIndex,
-    },
+    style::{BoxShadowProp, LayoutProps, Outline, OutlineColor, Style, ZIndex},
 };
 
 bitflags! {
@@ -199,8 +197,8 @@ pub trait View {
         cx.app_state_mut().compute_style(self.id(), view_style);
         let style = cx.app_state_mut().get_computed_style(self.id()).clone();
 
-        cx.style.direct = style.other.clone();
-        StyleMap::apply_only_inherited(&mut cx.style.current, &cx.style.direct);
+        cx.style.direct = style;
+        Style::apply_only_inherited(&mut cx.style.current, &cx.style.direct);
         CaptureState::capture_style(self.id(), cx);
 
         // Extract the relevant layout properties so the content rect can be calculated
@@ -682,11 +680,7 @@ pub trait View {
                     let style = cx.app_state.get_computed_style(id).clone();
                     let view_state = cx.app_state.view_state(id);
                     let style = if let Some(dragging_style) = view_state.dragging_style.clone() {
-                        view_state
-                            .combined_style
-                            .clone()
-                            .apply(dragging_style)
-                            .compute()
+                        view_state.combined_style.clone().apply(dragging_style)
                     } else {
                         style
                     };
@@ -712,8 +706,8 @@ pub trait View {
     fn paint(&mut self, cx: &mut PaintCx);
 }
 
-fn paint_bg(cx: &mut PaintCx, computed_style: &ComputedStyle, size: Size) {
-    let style = computed_style.get_builtin();
+fn paint_bg(cx: &mut PaintCx, computed_style: &Style, size: Size) {
+    let style = computed_style.builtin();
     let radius = style.border_radius().0;
     if radius > 0.0 {
         let rect = size.to_rect();
@@ -746,7 +740,7 @@ fn paint_bg(cx: &mut PaintCx, computed_style: &ComputedStyle, size: Size) {
     }
 }
 
-fn paint_box_shadow(cx: &mut PaintCx, style: &ComputedStyle, rect: Rect, rect_radius: Option<f64>) {
+fn paint_box_shadow(cx: &mut PaintCx, style: &Style, rect: Rect, rect_radius: Option<f64>) {
     if let Some(shadow) = style.get(BoxShadowProp).as_ref() {
         let inset = Insets::new(
             -shadow.h_offset / 2.0,
@@ -764,7 +758,7 @@ fn paint_box_shadow(cx: &mut PaintCx, style: &ComputedStyle, rect: Rect, rect_ra
     }
 }
 
-fn paint_outline(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
+fn paint_outline(cx: &mut PaintCx, style: &Style, size: Size) {
     let outline = style.get(Outline).0;
     if outline == 0. {
         // TODO: we should warn! when outline is < 0
@@ -775,8 +769,8 @@ fn paint_outline(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
     cx.stroke(&rect, style.get(OutlineColor), outline);
 }
 
-fn paint_border(cx: &mut PaintCx, style: &ComputedStyle, size: Size) {
-    let style = style.get_builtin();
+fn paint_border(cx: &mut PaintCx, style: &Style, size: Size) {
+    let style = style.builtin();
     let left = style.border_left().0;
     let top = style.border_top().0;
     let right = style.border_right().0;

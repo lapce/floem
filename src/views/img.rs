@@ -171,10 +171,9 @@ impl View for Img {
 
             let (width, height) = self.img_dimensions.unwrap_or((0, 0));
 
-            let style = Style::BASE
+            let style = Style::new()
                 .width((width as f64).px())
                 .height((height as f64).px())
-                .compute()
                 .to_taffy_style();
             let _ = cx.app_state_mut().taffy.set_style(content_node, style);
 

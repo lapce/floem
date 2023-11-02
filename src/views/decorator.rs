@@ -37,7 +37,7 @@ pub trait Decorators: View + Sized {
     fn style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
-            let style = style(Style::BASE);
+            let style = style(Style::new());
             id.update_style(style);
         });
         self
@@ -63,7 +63,7 @@ pub trait Decorators: View + Sized {
     fn base_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
-            let style = style(Style::BASE);
+            let style = style(Style::new());
             id.update_base_style(style);
         });
         self
@@ -73,7 +73,7 @@ pub trait Decorators: View + Sized {
     fn hover_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
-            let style = style(Style::BASE);
+            let style = style(Style::new());
             id.update_style_selector(style, StyleSelector::Hover);
         });
         self
@@ -83,7 +83,7 @@ pub trait Decorators: View + Sized {
     fn dragging_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
-            let style = style(Style::BASE);
+            let style = style(Style::new());
             id.update_style_selector(style, StyleSelector::Dragging);
         });
         self
@@ -92,7 +92,7 @@ pub trait Decorators: View + Sized {
     fn focus_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
-            let style = style(Style::BASE);
+            let style = style(Style::new());
             id.update_style_selector(style, StyleSelector::Focus);
         });
         self
@@ -102,7 +102,7 @@ pub trait Decorators: View + Sized {
     fn focus_visible_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
-            let style = style(Style::BASE);
+            let style = style(Style::new());
             id.update_style_selector(style, StyleSelector::FocusVisible);
         });
         self
@@ -124,7 +124,7 @@ pub trait Decorators: View + Sized {
     fn active_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
-            let style = style(Style::BASE);
+            let style = style(Style::new());
             id.update_style_selector(style, StyleSelector::Active);
         });
         self
@@ -133,7 +133,7 @@ pub trait Decorators: View + Sized {
     fn disabled_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
-            let style = style(Style::BASE);
+            let style = style(Style::new());
             id.update_style_selector(style, StyleSelector::Disabled);
         });
         self
@@ -142,7 +142,7 @@ pub trait Decorators: View + Sized {
     fn responsive_style(self, size: ScreenSize, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
-            let style = style(Style::BASE);
+            let style = style(Style::new());
             id.update_responsive_style(style, size);
         });
         self

@@ -26,8 +26,8 @@ use crate::{
     pointer::PointerInputEvent,
     responsive::{GridBreakpoints, ScreenSize, ScreenSizeBp},
     style::{
-        BuiltinStyleReader, ComputedStyle, CursorStyle, DisplayProp, LayoutProps, Style, StyleMap,
-        StyleProp, StyleSelector, StyleSelectors,
+        BuiltinStyle, CursorStyle, DisplayProp, LayoutProps, Style, StyleProp, StyleSelector,
+        StyleSelectors,
     },
     unit::PxPct,
 };
@@ -66,7 +66,6 @@ pub struct ViewState {
     pub(crate) responsive_styles: HashMap<ScreenSizeBp, Vec<Style>>,
     pub(crate) active_style: Option<Style>,
     pub(crate) combined_style: Style,
-    pub(crate) computed_style: ComputedStyle,
     pub(crate) event_listeners: HashMap<EventListener, Box<EventCallback>>,
     pub(crate) context_menu: Option<Box<MenuCallback>>,
     pub(crate) popout_menu: Option<Box<MenuCallback>>,
@@ -87,9 +86,8 @@ impl ViewState {
             has_style_selectors: StyleSelectors::default(),
             animation: None,
             base_style: None,
-            style: Style::BASE,
-            combined_style: Style::BASE,
-            computed_style: ComputedStyle::default(),
+            style: Style::new(),
+            combined_style: Style::new(),
             hover_style: None,
             dragging_style: None,
             disabled_style: None,
@@ -184,11 +182,7 @@ impl ViewState {
                             computed_style = computed_style.height(val.get_f32());
                         }
                         AnimPropKind::Prop { prop } => {
-                            computed_style.other = Some(computed_style.other.unwrap_or_default());
                             computed_style
-                                .other
-                                .as_mut()
-                                .unwrap()
                                 .map
                                 .insert(*prop, crate::style::StyleMapValue::Val(val.get_any()));
                         }
@@ -201,18 +195,11 @@ impl ViewState {
             }
         }
 
-        self.has_style_selectors = computed_style
-            .other
-            .as_ref()
-            .map(|map| map.selectors())
-            .unwrap_or_default();
+        self.has_style_selectors = computed_style.selectors();
 
-        if let Some(map) = computed_style.other.as_mut() {
-            map.apply_interact_state(&interact_state);
-        }
+        computed_style.apply_interact_state(&interact_state);
 
-        self.combined_style = computed_style.clone();
-        self.computed_style = computed_style.compute();
+        self.combined_style = computed_style;
     }
 
     pub(crate) fn add_responsive_style(&mut self, size: ScreenSize, style: Style) {
@@ -337,7 +324,7 @@ impl AppState {
     pub fn is_hidden(&self, id: Id) -> bool {
         self.view_states
             .get(&id)
-            .map(|s| s.computed_style.get(DisplayProp) == Display::None)
+            .map(|s| s.combined_style.get(DisplayProp) == Display::None)
             .unwrap_or(false)
     }
 
@@ -403,13 +390,13 @@ impl AppState {
         view_state.compute_style(view_style, interact_state, screen_size_bp);
     }
 
-    pub(crate) fn get_computed_style(&mut self, id: Id) -> &ComputedStyle {
+    pub(crate) fn get_computed_style(&mut self, id: Id) -> &Style {
         let view_state = self.view_state(id);
-        &view_state.computed_style
+        &view_state.combined_style
     }
 
-    pub(crate) fn get_builtin_style(&mut self, id: Id) -> BuiltinStyleReader<'_> {
-        self.get_computed_style(id).get_builtin()
+    pub(crate) fn get_builtin_style(&mut self, id: Id) -> BuiltinStyle<'_> {
+        self.get_computed_style(id).builtin()
     }
 
     pub fn compute_layout(&mut self) {
@@ -613,11 +600,11 @@ impl<'a> EventCx<'a> {
         self.app_state.update_focus(id, keyboard_navigation);
     }
 
-    pub fn get_computed_style(&self, id: Id) -> Option<&ComputedStyle> {
+    pub fn get_computed_style(&self, id: Id) -> Option<&Style> {
         self.app_state
             .view_states
             .get(&id)
-            .map(|s| &s.computed_style)
+            .map(|s| &s.combined_style)
     }
 
     pub fn get_hover_style(&self, id: Id) -> Option<&Style> {
@@ -710,9 +697,9 @@ pub struct InteractionState {
 }
 
 pub(crate) struct StyleCx {
-    pub(crate) current: Rc<StyleMap>,
-    pub(crate) direct: StyleMap,
-    saved: Vec<Rc<StyleMap>>,
+    pub(crate) current: Rc<Style>,
+    pub(crate) direct: Style,
+    saved: Vec<Rc<Style>>,
 }
 
 impl StyleCx {
@@ -804,7 +791,7 @@ impl<'a> LayoutCx<'a> {
         self.app_state.get_layout(id)
     }
 
-    pub fn get_computed_style(&mut self, id: Id) -> &ComputedStyle {
+    pub fn get_computed_style(&mut self, id: Id) -> &Style {
         self.app_state.get_computed_style(id)
     }
 
@@ -840,7 +827,7 @@ impl<'a> LayoutCx<'a> {
             return node;
         }
         view_state.request_layout = false;
-        let style = view_state.computed_style.to_taffy_style();
+        let style = view_state.combined_style.to_taffy_style();
         let _ = self.app_state.taffy.set_style(node, style);
 
         if has_children {
@@ -978,11 +965,11 @@ impl<'a> PaintCx<'a> {
         self.app_state.get_content_rect(id)
     }
 
-    pub fn get_computed_style(&mut self, id: Id) -> &ComputedStyle {
+    pub fn get_computed_style(&mut self, id: Id) -> &Style {
         self.app_state.get_computed_style(id)
     }
 
-    pub(crate) fn get_builtin_style(&mut self, id: Id) -> BuiltinStyleReader<'_> {
+    pub(crate) fn get_builtin_style(&mut self, id: Id) -> BuiltinStyle<'_> {
         self.app_state.get_builtin_style(id)
     }
 

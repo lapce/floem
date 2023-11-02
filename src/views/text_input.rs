@@ -811,10 +811,9 @@ impl View for TextInput {
             }
             let text_node = self.text_node.unwrap();
 
-            let style = Style::BASE
+            let style = Style::new()
                 .width(self.width)
                 .height(self.height)
-                .compute()
                 .to_taffy_style();
             let _ = cx.app_state_mut().taffy.set_style(text_node, style);
 
@@ -841,7 +840,7 @@ impl View for TextInput {
         let cursor_color = cx
             .app_state
             .get_computed_style(self.id)
-            .get_builtin()
+            .builtin()
             .cursor_color();
 
         match self.input_kind {

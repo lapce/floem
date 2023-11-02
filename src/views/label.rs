@@ -184,11 +184,7 @@ impl View for Label {
             }
             let text_node = self.text_node.unwrap();
 
-            let style = Style::BASE
-                .width(width)
-                .height(height)
-                .compute()
-                .to_taffy_style();
+            let style = Style::new().width(width).height(height).to_taffy_style();
             let _ = cx.app_state_mut().taffy.set_style(text_node, style);
 
             vec![text_node]

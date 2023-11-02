@@ -355,12 +355,20 @@ impl<T> StyleMapValue<T> {
 }
 
 #[derive(Default, Clone)]
-pub(crate) struct StyleMap {
+pub struct Style {
     pub(crate) map: HashMap<StylePropRef, StyleMapValue<Rc<dyn Any>>>,
-    pub(crate) selectors: HashMap<StyleSelector, StyleMap>,
+    pub(crate) selectors: HashMap<StyleSelector, Style>,
 }
 
-impl StyleMap {
+impl Style {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn get_prop_or_default<P: StyleProp>(&self) -> P::Type {
+        self.get_prop::<P>().unwrap_or_else(|| P::default_value())
+    }
+
     pub(crate) fn get_prop<P: StyleProp>(&self) -> Option<P::Type> {
         self.map
             .get(&P::prop_ref())
@@ -393,19 +401,19 @@ impl StyleMap {
         if interact_state.is_hovered && !interact_state.is_disabled {
             if let Some(mut map) = self.selectors.remove(&StyleSelector::Hover) {
                 map.apply_interact_state(interact_state);
-                self.apply(map);
+                self.apply_mut(map);
             }
         }
         if interact_state.is_focused {
             if let Some(mut map) = self.selectors.remove(&StyleSelector::Focus) {
                 map.apply_interact_state(interact_state);
-                self.apply(map);
+                self.apply_mut(map);
             }
         }
         if interact_state.is_disabled {
             if let Some(mut map) = self.selectors.remove(&StyleSelector::Disabled) {
                 map.apply_interact_state(interact_state);
-                self.apply(map);
+                self.apply_mut(map);
             }
         }
 
@@ -415,7 +423,7 @@ impl StyleMap {
         if focused_keyboard {
             if let Some(mut map) = self.selectors.remove(&StyleSelector::FocusVisible) {
                 map.apply_interact_state(interact_state);
-                self.apply(map);
+                self.apply_mut(map);
             }
         }
 
@@ -423,12 +431,12 @@ impl StyleMap {
         if interact_state.is_clicking && (active_mouse || focused_keyboard) {
             if let Some(mut map) = self.selectors.remove(&StyleSelector::Active) {
                 map.apply_interact_state(interact_state);
-                self.apply(map);
+                self.apply_mut(map);
             }
         }
     }
 
-    pub(crate) fn apply_only_inherited(map: &mut Rc<StyleMap>, over: &StyleMap) {
+    pub(crate) fn apply_only_inherited(map: &mut Rc<Style>, over: &Style) {
         let any_inherited = over.map.iter().any(|(p, _)| p.info.inherited);
 
         if any_inherited {
@@ -442,26 +450,47 @@ impl StyleMap {
         }
     }
 
-    fn set_selector(&mut self, selector: StyleSelector, map: StyleMap) {
+    fn set_selector(&mut self, selector: StyleSelector, map: Style) {
         match self.selectors.entry(selector) {
-            Entry::Occupied(mut e) => e.get_mut().apply(map),
+            Entry::Occupied(mut e) => e.get_mut().apply_mut(map),
             Entry::Vacant(e) => {
                 e.insert(map);
             }
         }
     }
 
-    pub(crate) fn apply(&mut self, over: StyleMap) {
+    pub(crate) fn builtin(&self) -> BuiltinStyle<'_> {
+        BuiltinStyle { style: self }
+    }
+
+    pub(crate) fn apply_mut(&mut self, over: Style) {
         self.map.extend(over.map);
         for (selector, map) in over.selectors {
             self.set_selector(selector, map);
         }
     }
+
+    /// Apply another `Style` to this style, returning a new `Style` with the overrides
+    ///
+    /// `StyleValue::Val` will override the value with the given value
+    /// `StyleValue::Unset` will unset the value, causing it to fall back to the default.
+    /// `StyleValue::Base` will leave the value as-is, whether falling back to the default
+    /// or using the value in the `Style`.
+    pub fn apply(mut self, over: Style) -> Style {
+        self.apply_mut(over);
+        self
+    }
+
+    /// Apply multiple `Style`s to this style, returning a new `Style` with the overrides.
+    /// Later styles take precedence over earlier styles.
+    pub fn apply_overriding_styles(self, overrides: impl Iterator<Item = Style>) -> Style {
+        overrides.fold(self, |acc, x| acc.apply(x))
+    }
 }
 
-impl Debug for StyleMap {
+impl Debug for Style {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("StyleMap")
+        f.debug_struct("Style")
             .field(
                 "map",
                 &self
@@ -618,61 +647,7 @@ impl<T> From<T> for StyleValue<T> {
     }
 }
 
-/// A style with definite values for most fields.
-#[derive(Default, Debug, Clone)]
-pub struct ComputedStyle {
-    pub(crate) other: StyleMap,
-}
-impl ComputedStyle {
-    pub(crate) fn get<P: StyleProp>(&self, _prop: P) -> P::Type {
-        self.other
-            .get_prop::<P>()
-            .unwrap_or_else(|| P::default_value())
-    }
-
-    pub(crate) fn get_builtin(&self) -> BuiltinStyleReader<'_> {
-        BuiltinStyleReader { style: self }
-    }
-}
-#[derive(Debug, Clone)]
-pub struct Style {
-    pub(crate) other: Option<StyleMap>,
-}
-impl Style {
-    pub const BASE: Style = Style { other: None };
-
-    pub const UNSET: Style = Style { other: None };
-
-    /// Convert this `Style` into a computed style.
-    pub fn compute(self) -> ComputedStyle {
-        ComputedStyle {
-            other: self.other.unwrap_or_default(),
-        }
-    }
-
-    /// Apply another `Style` to this style, returning a new `Style` with the overrides
-    ///
-    /// `StyleValue::Val` will override the value with the given value
-    /// `StyleValue::Unset` will unset the value, causing it to fall back to the underlying
-    /// `ComputedStyle` (aka setting it to `None`)
-    /// `StyleValue::Base` will leave the value as-is, whether falling back to the underlying
-    /// `ComputedStyle` or using the value in the `Style`.
-    pub fn apply(self, over: Style) -> Style {
-        let mut other = self.other.unwrap_or_default();
-        if let Some(over) = over.other {
-            other.apply(over);
-        }
-        Style { other: Some(other) }
-    }
-
-    /// Apply multiple `Style`s to this style, returning a new `Style` with the overrides.
-    /// Later styles take precedence over earlier styles.
-    pub fn apply_overriding_styles(self, overrides: impl Iterator<Item = Style>) -> Style {
-        overrides.fold(self, |acc, x| acc.apply(x))
-    }
-}
-
-macro_rules! define_style_methods {
+macro_rules! define_builtin_props {
     (
         $($type_name:ident $name:ident $name_sv:ident $($opt:ident)?:
             $typ:ty { $($options:tt)* } = $val:expr),*
@@ -683,14 +658,13 @@ macro_rules! define_style_methods {
         )*
         impl Style {
             $(
-                define_style_methods!(decl: $type_name $name $name_sv $($opt)?: $typ = $val);
+                define_builtin_props!(decl: $type_name $name $name_sv $($opt)?: $typ = $val);
             )*
         }
 
-        impl BuiltinStyleReader<'_> {
+        impl BuiltinStyle<'_> {
             $(
-                #[allow(dead_code)]
-                pub(crate) fn $name(&self) -> $typ {
+                pub fn $name(&self) -> $typ {
                     self.style.get($type_name)
                 }
             )*
@@ -708,11 +682,11 @@ macro_rules! define_style_methods {
     }
 }
 
-pub(crate) struct BuiltinStyleReader<'a> {
-    style: &'a ComputedStyle,
+pub struct BuiltinStyle<'a> {
+    style: &'a Style,
 }
 
-define_style_methods!(
+define_builtin_props!(
     DisplayProp display display_sv: Display {} = Display::Flex,
     PositionProp position position_sv: Position {} = Position::Relative,
     Width width width_sv: PxPctAuto {} = PxPctAuto::Auto,
@@ -791,19 +765,11 @@ prop_extracter! {
 
 impl Style {
     pub fn get<P: StyleProp>(&self, _prop: P) -> P::Type {
-        if let Some(other) = &self.other {
-            other.get_prop::<P>().unwrap_or_else(|| P::default_value())
-        } else {
-            P::default_value()
-        }
+        self.get_prop_or_default::<P>()
     }
 
     pub fn get_style_value<P: StyleProp>(&self, _prop: P) -> StyleValue<P::Type> {
-        if let Some(other) = &self.other {
-            other.get_prop_style_value::<P>()
-        } else {
-            StyleValue::Base
-        }
+        self.get_prop_style_value::<P>()
     }
 
     pub fn set<P: StyleProp>(self, prop: P, value: impl Into<P::Type>) -> Self {
@@ -811,18 +777,15 @@ impl Style {
     }
 
     pub fn set_style_value<P: StyleProp>(mut self, _prop: P, value: StyleValue<P::Type>) -> Self {
-        let mut other = self.other.unwrap_or_default();
         let insert: StyleMapValue<Rc<dyn Any>> = match value {
             StyleValue::Val(value) => StyleMapValue::Val(Rc::new(value)),
             StyleValue::Unset => StyleMapValue::Unset,
             StyleValue::Base => {
-                other.map.remove(&P::prop_ref());
-                self.other = Some(other);
+                self.map.remove(&P::prop_ref());
                 return self;
             }
         };
-        other.map.insert(P::prop_ref(), insert);
-        self.other = Some(other);
+        self.map.insert(P::prop_ref(), insert);
         self
     }
 
@@ -831,10 +794,8 @@ impl Style {
         selector: StyleSelector,
         style: impl Fn(Style) -> Style + 'static,
     ) -> Self {
-        let over = style(Style::BASE).other.unwrap_or_default();
-        let mut other = self.other.unwrap_or_default();
-        other.set_selector(selector, over);
-        self.other = Some(other);
+        let over = style(Style::default());
+        self.set_selector(selector, over);
         self
     }
 
@@ -1276,9 +1237,9 @@ impl Style {
     }
 }
 
-impl ComputedStyle {
+impl Style {
     pub fn to_taffy_style(&self) -> TaffyStyle {
-        let style = self.get_builtin();
+        let style = self.builtin();
         TaffyStyle {
             display: style.display(),
             position: style.position(),
@@ -1345,8 +1306,8 @@ mod tests {
 
     #[test]
     fn style_override() {
-        let style1 = Style::BASE.padding_left(32.0);
-        let style2 = Style::BASE.padding_left(64.0);
+        let style1 = Style::new().padding_left(32.0);
+        let style2 = Style::new().padding_left(64.0);
 
         let style = style1.apply(style2);
 
@@ -1355,8 +1316,8 @@ mod tests {
             StyleValue::Val(PxPct::Px(64.0))
         );
 
-        let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
-        let style2 = Style::BASE
+        let style1 = Style::new().padding_left(32.0).padding_bottom(45.0);
+        let style2 = Style::new()
             .padding_left(64.0)
             .padding_bottom_sv(StyleValue::Base);
 
@@ -1371,8 +1332,8 @@ mod tests {
             StyleValue::Val(PxPct::Px(45.0))
         );
 
-        let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
-        let style2 = Style::BASE
+        let style1 = Style::new().padding_left(32.0).padding_bottom(45.0);
+        let style2 = Style::new()
             .padding_left(64.0)
             .padding_bottom_sv(StyleValue::Unset);
 
@@ -1384,12 +1345,12 @@ mod tests {
         );
         assert_eq!(style.get_style_value(PaddingBottom), StyleValue::Unset);
 
-        let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
-        let style2 = Style::BASE
+        let style1 = Style::new().padding_left(32.0).padding_bottom(45.0);
+        let style2 = Style::new()
             .padding_left(64.0)
             .padding_bottom_sv(StyleValue::Unset);
 
-        let style3 = Style::BASE.padding_bottom_sv(StyleValue::Base);
+        let style3 = Style::new().padding_bottom_sv(StyleValue::Base);
 
         let style = style1.apply_overriding_styles([style2, style3].into_iter());
 
@@ -1399,11 +1360,11 @@ mod tests {
         );
         assert_eq!(style.get_style_value(PaddingBottom), StyleValue::Unset);
 
-        let style1 = Style::BASE.padding_left(32.0).padding_bottom(45.0);
-        let style2 = Style::BASE
+        let style1 = Style::new().padding_left(32.0).padding_bottom(45.0);
+        let style2 = Style::new()
             .padding_left(64.0)
             .padding_bottom_sv(StyleValue::Unset);
-        let style3 = Style::BASE.padding_bottom(100.0);
+        let style3 = Style::new().padding_bottom(100.0);
 
         let style = style1.apply_overriding_styles([style2, style3].into_iter());
 
