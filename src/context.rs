@@ -370,7 +370,7 @@ impl AppState {
         }
     }
 
-    pub(crate) fn request_layout(&mut self, id: Id) {
+    pub fn request_layout(&mut self, id: Id) {
         let view = self.view_state(id);
         if view.request_layout {
             return;

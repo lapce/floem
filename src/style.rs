@@ -880,7 +880,7 @@ define_builtin_props!(
     InsetBottom inset_bottom: PxPctAuto {} = PxPctAuto::Auto,
     ZIndex z_index nocb: Option<i32> {} = None,
     Cursor cursor nocb: Option<CursorStyle> {} = None,
-    TextColor color nocb: Option<Color> {} = None,
+    TextColor color nocb: Option<Color> { inherited } = None,
     Background background nocb: Option<Color> {} = None,
     BoxShadowProp box_shadow nocb: Option<BoxShadow> {} = None,
     FontSize font_size nocb: Option<f32> { inherited } = None,
@@ -942,43 +942,35 @@ impl Style {
         self
     }
 
-    fn selector(
-        mut self,
-        selector: StyleSelector,
-        style: impl Fn(Style) -> Style + 'static,
-    ) -> Self {
+    fn selector(mut self, selector: StyleSelector, style: impl FnOnce(Style) -> Style) -> Self {
         let over = style(Style::default());
         self.set_selector(selector, over);
         self
     }
 
     /// The visual style to apply when the mouse hovers over the element
-    pub fn hover(self, style: impl Fn(Style) -> Style + 'static) -> Self {
+    pub fn hover(self, style: impl FnOnce(Style) -> Style) -> Self {
         self.selector(StyleSelector::Hover, style)
     }
 
-    pub fn focus(self, style: impl Fn(Style) -> Style + 'static) -> Self {
+    pub fn focus(self, style: impl FnOnce(Style) -> Style) -> Self {
         self.selector(StyleSelector::Focus, style)
     }
 
     /// Similar to the `:focus-visible` css selector, this style only activates when tab navigation is used.
-    pub fn focus_visible(self, style: impl Fn(Style) -> Style + 'static) -> Self {
+    pub fn focus_visible(self, style: impl FnOnce(Style) -> Style) -> Self {
         self.selector(StyleSelector::FocusVisible, style)
     }
 
-    pub fn disabled(self, style: impl Fn(Style) -> Style + 'static) -> Self {
+    pub fn disabled(self, style: impl FnOnce(Style) -> Style) -> Self {
         self.selector(StyleSelector::Disabled, style)
     }
 
-    pub fn active(self, style: impl Fn(Style) -> Style + 'static) -> Self {
+    pub fn active(self, style: impl FnOnce(Style) -> Style) -> Self {
         self.selector(StyleSelector::Active, style)
     }
 
-    pub fn responsive(
-        mut self,
-        size: ScreenSize,
-        style: impl Fn(Style) -> Style + 'static,
-    ) -> Self {
+    pub fn responsive(mut self, size: ScreenSize, style: impl FnOnce(Style) -> Style) -> Self {
         let over = style(Style::default());
         for breakpoint in size.breakpoints() {
             self.set_breakpoint(breakpoint, over.clone());

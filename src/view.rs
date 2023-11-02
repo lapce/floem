@@ -253,6 +253,9 @@ pub trait View {
 
         cx.save();
 
+        cx.style.direct = cx.app_state_mut().get_computed_style(self.id()).clone();
+        Style::apply_only_inherited(&mut cx.style.current, &cx.style.direct);
+
         let layout = cx
             .app_state()
             .get_layout(self.id())
