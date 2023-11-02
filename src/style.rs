@@ -129,6 +129,58 @@ impl StylePropValue for Color {
     }
 }
 
+pub trait StyleClass: Default + Copy + 'static {
+    fn class_ref() -> StyleClassRef;
+}
+
+#[derive(Debug)]
+pub struct StyleClassInfo {
+    pub(crate) name: fn() -> &'static str,
+}
+
+impl StyleClassInfo {
+    pub const fn new<Name>() -> Self {
+        StyleClassInfo {
+            name: || std::any::type_name::<Name>(),
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct StyleClassRef {
+    pub info: &'static StyleClassInfo,
+}
+impl PartialEq for StyleClassRef {
+    fn eq(&self, other: &Self) -> bool {
+        ptr::eq(self.info, other.info)
+    }
+}
+impl Hash for StyleClassRef {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_usize(self.info as *const _ as usize)
+    }
+}
+impl Eq for StyleClassRef {}
+impl Debug for StyleClassRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", (self.info.name)())
+    }
+}
+
+#[macro_export]
+macro_rules! style_class {
+    ($v:vis $name:ident) => {
+        #[derive(Default, Copy, Clone)]
+        $v struct $name;
+        impl $crate::style::StyleClass for $name {
+            fn class_ref() -> $crate::style::StyleClassRef {
+                static INFO: $crate::style::StyleClassInfo = $crate::style::StyleClassInfo::new::<$name>();
+                $crate::style::StyleClassRef { info: &INFO }
+            }
+        }
+    };
+}
+
 pub trait StyleProp: Default + Copy + 'static {
     type Type: StylePropValue;
     fn prop_ref() -> StylePropRef;
@@ -208,6 +260,10 @@ pub trait StylePropReader {
     /// Returns true if the property changed.
     fn read(state: &mut Self::State, cx: &LayoutCx) -> bool;
 
+    /// Reads the property from the style.
+    /// Returns true if the property changed.
+    fn read_style(state: &mut Self::State, style: &Style) -> bool;
+
     fn get(state: &Self::State) -> Self::Type;
     fn new() -> Self::State;
 }
@@ -219,6 +275,12 @@ impl<P: StyleProp> StylePropReader for P {
         let new = cx
             .get_prop(P::default())
             .unwrap_or_else(|| P::default_value());
+        let changed = new != *state;
+        *state = new;
+        changed
+    }
+    fn read_style(state: &mut Self::State, style: &Style) -> bool {
+        let new = style.get_prop_or_default::<P>();
         let changed = new != *state;
         *state = new;
         changed
@@ -236,6 +298,12 @@ impl<P: StyleProp> StylePropReader for Option<P> {
     type Type = Option<P::Type>;
     fn read(state: &mut Self::State, cx: &LayoutCx) -> bool {
         let new = cx.get_prop(P::default());
+        let changed = new != *state;
+        *state = new;
+        changed
+    }
+    fn read_style(state: &mut Self::State, style: &Style) -> bool {
+        let new = style.get_prop::<P>();
         let changed = new != *state;
         *state = new;
         changed
@@ -262,6 +330,9 @@ impl<R: StylePropReader> ExtratorField<R> {
     pub fn read(&mut self, cx: &LayoutCx) -> bool {
         R::read(&mut self.state, cx)
     }
+    pub fn read_style(&mut self, style: &Style) -> bool {
+        R::read_style(&mut self.state, style)
+    }
     pub fn get(&self) -> R::Type {
         R::get(&self.state)
     }
@@ -276,7 +347,6 @@ macro_rules! prop {
     ($v:vis $name:ident: $ty:ty { $($options:tt)* } = $default:expr
     ) => {
         #[derive(Default, Copy, Clone)]
-        #[allow(non_camel_case_types)]
         $v struct $name;
         impl $crate::style::StyleProp for $name {
             type Type = $ty;
@@ -316,6 +386,13 @@ macro_rules! prop_extracter {
         }
 
         impl $name {
+            #[allow(dead_code)]
+            $vis fn read_style(&mut self, style: &$crate::style::Style) -> bool {
+                false
+                $(| self.$prop.read_style(style))*
+            }
+
+            #[allow(dead_code)]
             $vis fn read(&mut self, cx: &$crate::context::LayoutCx) -> bool {
                 false
                 $(| self.$prop.read(cx))*
@@ -360,6 +437,7 @@ pub struct Style {
     pub(crate) map: HashMap<StylePropRef, StyleMapValue<Rc<dyn Any>>>,
     pub(crate) selectors: HashMap<StyleSelector, Style>,
     pub(crate) responsive: HashMap<ScreenSizeBp, Style>,
+    pub(crate) classes: HashMap<StyleClassRef, Style>,
 }
 
 impl Style {
@@ -391,15 +469,43 @@ impl Style {
     }
 
     pub(crate) fn selectors(&self) -> StyleSelectors {
-        let mut result =
-            self.selectors
-                .iter()
-                .fold(StyleSelectors::default(), |mut s, (selector, map)| {
-                    s.selectors |= map.selectors().selectors;
-                    s.set(*selector, true)
-                });
+        let mut result = self
+            .selectors
+            .iter()
+            .fold(StyleSelectors::default(), |s, (selector, map)| {
+                s.union(map.selectors()).set(*selector, true)
+            });
         result.responsive |= !self.responsive.is_empty();
         result
+    }
+
+    pub(crate) fn apply_classes_from_context(
+        mut self,
+        classes: &[StyleClassRef],
+        context: &Style,
+    ) -> Style {
+        for class in classes {
+            if let Some(map) = context.classes.get(class) {
+                self.apply_mut(map.clone());
+            }
+        }
+        self
+    }
+
+    pub fn apply_class<C: StyleClass>(mut self, _class: C) -> Style {
+        if let Some(map) = self.classes.get(&C::class_ref()) {
+            self.apply_mut(map.clone());
+        }
+        self
+    }
+
+    pub fn apply_selectors(mut self, selectors: &[StyleSelector]) -> Style {
+        for selector in selectors {
+            if let Some(map) = self.selectors.remove(selector) {
+                self.apply_mut(map.apply_selectors(selectors));
+            }
+        }
+        self
     }
 
     pub(crate) fn apply_interact_state(
@@ -450,17 +556,21 @@ impl Style {
         }
     }
 
-    pub(crate) fn apply_only_inherited(map: &mut Rc<Style>, over: &Style) {
+    pub(crate) fn apply_only_inherited(this: &mut Rc<Style>, over: &Style) {
         let any_inherited = over.map.iter().any(|(p, _)| p.info.inherited);
 
-        if any_inherited {
+        if any_inherited || !over.classes.is_empty() {
             let inherited = over
                 .map
                 .iter()
                 .filter(|(p, _)| p.info.inherited)
                 .map(|(p, v)| (*p, v.clone()));
 
-            Rc::make_mut(map).map.extend(inherited);
+            let this = Rc::make_mut(this);
+            this.map.extend(inherited);
+            for (class, map) in &over.classes {
+                this.set_class(*class, map.clone());
+            }
         }
     }
 
@@ -482,6 +592,15 @@ impl Style {
         }
     }
 
+    fn set_class(&mut self, class: StyleClassRef, map: Style) {
+        match self.classes.entry(class) {
+            Entry::Occupied(mut e) => e.get_mut().apply_mut(map),
+            Entry::Vacant(e) => {
+                e.insert(map);
+            }
+        }
+    }
+
     pub(crate) fn builtin(&self) -> BuiltinStyle<'_> {
         BuiltinStyle { style: self }
     }
@@ -493,6 +612,9 @@ impl Style {
         }
         for (breakpoint, map) in over.responsive {
             self.set_breakpoint(breakpoint, map);
+        }
+        for (class, map) in over.classes {
+            self.set_class(class, map);
         }
     }
 
@@ -565,6 +687,12 @@ impl StyleSelectors {
         let v = (selector as isize).try_into().unwrap();
         let bit = 1_u8.checked_shl(v).unwrap();
         self.selectors & bit != 0
+    }
+    pub(crate) fn union(self, other: StyleSelectors) -> StyleSelectors {
+        StyleSelectors {
+            selectors: self.selectors | other.selectors,
+            responsive: self.responsive | other.responsive,
+        }
     }
     pub(crate) fn has_responsive(self) -> bool {
         self.responsive
@@ -855,6 +983,16 @@ impl Style {
         for breakpoint in size.breakpoints() {
             self.set_breakpoint(breakpoint, over.clone());
         }
+        self
+    }
+
+    pub fn class<C: StyleClass>(
+        mut self,
+        _class: C,
+        style: impl Fn(Style) -> Style + 'static,
+    ) -> Self {
+        let over = style(Style::default());
+        self.set_class(C::class_ref(), over);
         self
     }
 

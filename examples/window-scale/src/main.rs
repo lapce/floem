@@ -3,10 +3,13 @@ use floem::{
     keyboard::{Key, NamedKey},
     peniko::Color,
     reactive::{create_rw_signal, create_signal},
+    style_class,
     unit::UnitExt,
     view::View,
     views::{label, stack, Decorators},
 };
+
+style_class!(pub Button);
 
 fn app_view() -> impl View {
     let (counter, set_counter) = create_signal(0);
@@ -16,35 +19,26 @@ fn app_view() -> impl View {
         stack({
             (
                 label(|| "Increment")
-                    .style(|s| {
-                        s.border(1.0)
-                            .border_radius(10.0)
-                            .padding(10.0)
-                            .focus_visible(|s| s.border(2.).border_color(Color::BLUE))
-                            .hover(|s| s.background(Color::LIGHT_GREEN))
-                            .active(|s| s.color(Color::WHITE).background(Color::DARK_GREEN))
-                    })
+                    .class(Button)
                     .on_click(move |_| {
                         set_counter.update(|value| *value += 1);
                         true
                     })
                     .keyboard_navigatable(),
                 label(|| "Decrement")
+                    .class(Button)
                     .on_click(move |_| {
                         set_counter.update(|value| *value -= 1);
                         true
                     })
                     .style(|s| {
-                        s.border(1.0)
-                            .border_radius(10.0)
-                            .padding(10.0)
-                            .margin_left(10.0)
-                            .focus_visible(|s| s.border(2.).border_color(Color::BLUE))
+                        s.margin_left(10.0)
                             .hover(|s| s.background(Color::rgb8(244, 67, 54)))
-                            .active(|s| s.color(Color::WHITE).background(Color::RED))
+                            .active(|s| s.background(Color::RED))
                     })
                     .keyboard_navigatable(),
                 label(|| "Reset to 0")
+                    .class(Button)
                     .on_click(move |_| {
                         println!("Reset counter pressed"); // will not fire if button is disabled
                         set_counter.update(|value| *value = 0);
@@ -52,15 +46,10 @@ fn app_view() -> impl View {
                     })
                     .disabled(move || counter.get() == 0)
                     .style(|s| {
-                        s.border(1.0)
-                            .border_radius(10.0)
-                            .padding(10.0)
-                            .margin_left(10.0)
+                        s.margin_left(10.0)
                             .background(Color::LIGHT_BLUE)
-                            .focus_visible(|s| s.border(2.).border_color(Color::BLUE))
-                            .disabled(|s| s.background(Color::LIGHT_GRAY))
                             .hover(|s| s.background(Color::LIGHT_YELLOW))
-                            .active(|s| s.color(Color::WHITE).background(Color::YELLOW_GREEN))
+                            .active(|s| s.background(Color::YELLOW_GREEN))
                     })
                     .keyboard_navigatable(),
             )
@@ -68,46 +57,27 @@ fn app_view() -> impl View {
         stack({
             (
                 label(|| "Zoom In")
+                    .class(Button)
                     .on_click(move |_| {
                         window_scale.update(|scale| *scale *= 1.2);
                         true
                     })
-                    .style(|s| {
-                        s.border(1.0)
-                            .border_radius(10.0)
-                            .margin_top(10.0)
-                            .margin_right(10.0)
-                            .padding(10.0)
-                            .hover(|s| s.background(Color::LIGHT_GREEN))
-                    }),
+                    .style(|s| s.margin_top(10.0).margin_right(10.0)),
                 label(|| "Zoom Out")
+                    .class(Button)
                     .on_click(move |_| {
                         window_scale.update(|scale| *scale /= 1.2);
                         true
                     })
-                    .style(|s| {
-                        s.border(1.0)
-                            .border_radius(10.0)
-                            .margin_top(10.0)
-                            .margin_right(10.0)
-                            .padding(10.0)
-                            .hover(|s| s.background(Color::LIGHT_GREEN))
-                    }),
+                    .style(|s| s.margin_top(10.0).margin_right(10.0)),
                 label(|| "Zoom Reset")
+                    .class(Button)
                     .disabled(move || window_scale.get() == 1.0)
                     .on_click(move |_| {
                         window_scale.set(1.0);
                         true
                     })
-                    .style(|s| {
-                        s.border(1.0)
-                            .border_radius(10.0)
-                            .margin_top(10.0)
-                            .margin_right(10.0)
-                            .padding(10.0)
-                            .hover(|s| s.background(Color::LIGHT_GREEN))
-                            .disabled(|s| s.background(Color::LIGHT_GRAY))
-                    }),
+                    .style(|s| s.margin_top(10.0).margin_right(10.0)),
             )
         })
         .style(|s| {
@@ -123,6 +93,15 @@ fn app_view() -> impl View {
             .flex_col()
             .items_center()
             .justify_center()
+            .class(Button, |s| {
+                s.border(1.0)
+                    .border_radius(10.0)
+                    .padding(10.0)
+                    .focus_visible(|s| s.border(2.).border_color(Color::BLUE))
+                    .disabled(|s| s.background(Color::LIGHT_GRAY))
+                    .hover(|s| s.background(Color::LIGHT_GREEN))
+                    .active(|s| s.color(Color::WHITE).background(Color::DARK_GREEN))
+            })
     });
 
     let id = view.id();

@@ -16,7 +16,7 @@ use crate::{
     animate::Animation,
     context::{EventCallback, MenuCallback, ResizeCallback},
     event::EventListener,
-    style::{Style, StyleSelector},
+    style::{Style, StyleClassRef, StyleSelector},
     update::{UpdateMessage, CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES},
 };
 
@@ -152,6 +152,10 @@ impl Id {
 
     pub fn update_style(&self, style: Style) {
         self.add_update_message(UpdateMessage::Style { id: *self, style });
+    }
+
+    pub fn update_class(&self, class: StyleClassRef) {
+        self.add_update_message(UpdateMessage::Class { id: *self, class });
     }
 
     pub(crate) fn update_style_selector(&self, style: Style, selector: StyleSelector) {

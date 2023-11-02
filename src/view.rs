@@ -96,7 +96,7 @@ use crate::{
     event::{Event, EventListener},
     id::Id,
     inspector::CaptureState,
-    style::{BoxShadowProp, LayoutProps, Outline, OutlineColor, Style, ZIndex},
+    style::{BoxShadowProp, LayoutProps, Outline, OutlineColor, Style, StyleClassRef, ZIndex},
 };
 
 bitflags! {
@@ -114,6 +114,10 @@ pub trait View {
     fn id(&self) -> Id;
 
     fn view_style(&self) -> Option<Style> {
+        None
+    }
+
+    fn view_class(&self) -> Option<StyleClassRef> {
         None
     }
 
@@ -194,7 +198,22 @@ pub trait View {
         cx.save();
 
         let view_style = self.view_style();
-        cx.app_state_mut().compute_style(self.id(), view_style);
+        let view_class = self.view_class();
+        let class = cx.app_state_mut().view_state(self.id()).class;
+        let class_array;
+        let classes = if let Some(class) = class {
+            class_array = [class];
+            &class_array[..]
+        } else {
+            &[]
+        };
+        cx.app_state.compute_style(
+            self.id(),
+            view_style,
+            view_class,
+            classes,
+            &cx.style.current,
+        );
         let style = cx.app_state_mut().get_computed_style(self.id()).clone();
 
         cx.style.direct = style;
@@ -1039,6 +1058,10 @@ impl View for Box<dyn View> {
 
     fn view_style(&self) -> Option<Style> {
         (**self).view_style()
+    }
+
+    fn view_class(&self) -> Option<StyleClassRef> {
+        (**self).view_class()
     }
 
     fn child(&self, id: Id) -> Option<&dyn View> {
