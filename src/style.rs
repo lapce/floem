@@ -978,11 +978,7 @@ impl Style {
         self
     }
 
-    pub fn class<C: StyleClass>(
-        mut self,
-        _class: C,
-        style: impl Fn(Style) -> Style + 'static,
-    ) -> Self {
+    pub fn class<C: StyleClass>(mut self, _class: C, style: impl FnOnce(Style) -> Style) -> Self {
         let over = style(Style::default());
         self.set_class(C::class_ref(), over);
         self
