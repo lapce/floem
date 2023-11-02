@@ -168,9 +168,9 @@ impl WindowHandle {
                 if let Some(id) = cx.app_state.focus {
                     let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
                     if let Some(id_path) = id_path {
-                        processed |= self
-                            .view
-                            .event_main(&mut cx, Some(&id_path.0), event.clone());
+                        processed |=
+                            self.view
+                                .event_main(&mut cx, Some(id_path.dispatch()), event.clone());
                     } else {
                         cx.app_state.focus = None;
                     }
