@@ -6,7 +6,6 @@ use crate::{
     animate::Animation,
     event::{Event, EventListener},
     menu::Menu,
-    responsive::ScreenSize,
     style::{Style, StyleSelector},
     view::View,
 };
@@ -89,15 +88,6 @@ pub trait Decorators: View + Sized {
     fn draggable(self) -> Self {
         let id = self.id();
         id.draggable();
-        self
-    }
-
-    fn responsive_style(self, size: ScreenSize, style: impl Fn(Style) -> Style + 'static) -> Self {
-        let id = self.id();
-        create_effect(move |_| {
-            let style = style(Style::new());
-            id.update_responsive_style(style, size);
-        });
         self
     }
 

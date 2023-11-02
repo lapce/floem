@@ -583,7 +583,7 @@ pub trait View {
             }
             Event::WindowResized(_) => {
                 if let Some(view_state) = cx.app_state.view_states.get(&self.id()) {
-                    if !view_state.responsive_styles.is_empty() {
+                    if view_state.has_style_selectors.has_responsive() {
                         cx.app_state.request_layout(self.id());
                     }
                 }

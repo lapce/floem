@@ -47,6 +47,7 @@ use taffy::{
 
 use crate::context::InteractionState;
 use crate::context::LayoutCx;
+use crate::responsive::{ScreenSize, ScreenSizeBp};
 use crate::unit::{Px, PxPct, PxPctAuto, UnitExt};
 use crate::view::View;
 use crate::views::{empty, stack, text, Decorators};
@@ -358,6 +359,7 @@ impl<T> StyleMapValue<T> {
 pub struct Style {
     pub(crate) map: HashMap<StylePropRef, StyleMapValue<Rc<dyn Any>>>,
     pub(crate) selectors: HashMap<StyleSelector, Style>,
+    pub(crate) responsive: HashMap<ScreenSizeBp, Style>,
 }
 
 impl Style {
@@ -389,30 +391,42 @@ impl Style {
     }
 
     pub(crate) fn selectors(&self) -> StyleSelectors {
-        self.selectors
-            .iter()
-            .fold(StyleSelectors::default(), |mut s, (selector, map)| {
-                s.selectors |= map.selectors().selectors;
-                s.set(*selector, true)
-            })
+        let mut result =
+            self.selectors
+                .iter()
+                .fold(StyleSelectors::default(), |mut s, (selector, map)| {
+                    s.selectors |= map.selectors().selectors;
+                    s.set(*selector, true)
+                });
+        result.responsive |= !self.responsive.is_empty();
+        result
     }
 
-    pub(crate) fn apply_interact_state(&mut self, interact_state: &InteractionState) {
+    pub(crate) fn apply_interact_state(
+        &mut self,
+        interact_state: &InteractionState,
+        screen_size_bp: ScreenSizeBp,
+    ) {
+        if let Some(mut map) = self.responsive.remove(&screen_size_bp) {
+            map.apply_interact_state(interact_state, screen_size_bp);
+            self.apply_mut(map);
+        }
+
         if interact_state.is_hovered && !interact_state.is_disabled {
             if let Some(mut map) = self.selectors.remove(&StyleSelector::Hover) {
-                map.apply_interact_state(interact_state);
+                map.apply_interact_state(interact_state, screen_size_bp);
                 self.apply_mut(map);
             }
         }
         if interact_state.is_focused {
             if let Some(mut map) = self.selectors.remove(&StyleSelector::Focus) {
-                map.apply_interact_state(interact_state);
+                map.apply_interact_state(interact_state, screen_size_bp);
                 self.apply_mut(map);
             }
         }
         if interact_state.is_disabled {
             if let Some(mut map) = self.selectors.remove(&StyleSelector::Disabled) {
-                map.apply_interact_state(interact_state);
+                map.apply_interact_state(interact_state, screen_size_bp);
                 self.apply_mut(map);
             }
         }
@@ -422,7 +436,7 @@ impl Style {
 
         if focused_keyboard {
             if let Some(mut map) = self.selectors.remove(&StyleSelector::FocusVisible) {
-                map.apply_interact_state(interact_state);
+                map.apply_interact_state(interact_state, screen_size_bp);
                 self.apply_mut(map);
             }
         }
@@ -430,7 +444,7 @@ impl Style {
         let active_mouse = interact_state.is_hovered && !interact_state.using_keyboard_navigation;
         if interact_state.is_clicking && (active_mouse || focused_keyboard) {
             if let Some(mut map) = self.selectors.remove(&StyleSelector::Active) {
-                map.apply_interact_state(interact_state);
+                map.apply_interact_state(interact_state, screen_size_bp);
                 self.apply_mut(map);
             }
         }
@@ -459,6 +473,15 @@ impl Style {
         }
     }
 
+    fn set_breakpoint(&mut self, breakpoint: ScreenSizeBp, map: Style) {
+        match self.responsive.entry(breakpoint) {
+            Entry::Occupied(mut e) => e.get_mut().apply_mut(map),
+            Entry::Vacant(e) => {
+                e.insert(map);
+            }
+        }
+    }
+
     pub(crate) fn builtin(&self) -> BuiltinStyle<'_> {
         BuiltinStyle { style: self }
     }
@@ -467,6 +490,9 @@ impl Style {
         self.map.extend(over.map);
         for (selector, map) in over.selectors {
             self.set_selector(selector, map);
+        }
+        for (breakpoint, map) in over.responsive {
+            self.set_breakpoint(breakpoint, map);
         }
     }
 
@@ -525,20 +551,23 @@ pub enum StyleSelector {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default)]
 pub(crate) struct StyleSelectors {
     selectors: u8,
+    responsive: bool,
 }
 
 impl StyleSelectors {
-    pub(crate) fn set(self, selector: StyleSelector, value: bool) -> Self {
+    pub(crate) fn set(mut self, selector: StyleSelector, value: bool) -> Self {
         let v = (selector as isize).try_into().unwrap();
         let bit = 1_u8.checked_shl(v).unwrap();
-        StyleSelectors {
-            selectors: (self.selectors & !bit) | ((value as u8) << v),
-        }
+        self.selectors = (self.selectors & !bit) | ((value as u8) << v);
+        self
     }
     pub(crate) fn has(self, selector: StyleSelector) -> bool {
         let v = (selector as isize).try_into().unwrap();
         let bit = 1_u8.checked_shl(v).unwrap();
         self.selectors & bit != 0
+    }
+    pub(crate) fn has_responsive(self) -> bool {
+        self.responsive
     }
 }
 
@@ -815,6 +844,18 @@ impl Style {
 
     pub fn active(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         self.selector(StyleSelector::Active, style)
+    }
+
+    pub fn responsive(
+        mut self,
+        size: ScreenSize,
+        style: impl Fn(Style) -> Style + 'static,
+    ) -> Self {
+        let over = style(Style::default());
+        for breakpoint in size.breakpoints() {
+            self.set_breakpoint(breakpoint, over.clone());
+        }
+        self
     }
 
     pub fn width_full(self) -> Self {

@@ -700,11 +700,6 @@ impl WindowHandle {
                         state.style = style;
                         cx.request_layout(id);
                     }
-                    UpdateMessage::ResponsiveStyle { id, style, size } => {
-                        let state = cx.app_state.view_state(id);
-
-                        state.add_responsive_style(size, style);
-                    }
                     UpdateMessage::StyleSelector {
                         id,
                         style,

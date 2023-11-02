@@ -16,7 +16,6 @@ use crate::{
     animate::Animation,
     context::{EventCallback, MenuCallback, ResizeCallback},
     event::EventListener,
-    responsive::ScreenSize,
     style::{Style, StyleSelector},
     update::{UpdateMessage, CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES},
 };
@@ -169,14 +168,6 @@ impl Id {
 
     pub fn draggable(&self) {
         self.add_update_message(UpdateMessage::Draggable { id: *self });
-    }
-
-    pub fn update_responsive_style(&self, style: Style, size: ScreenSize) {
-        self.add_update_message(UpdateMessage::ResponsiveStyle {
-            id: *self,
-            style,
-            size,
-        });
     }
 
     pub fn update_event_listener(&self, listener: EventListener, action: Box<EventCallback>) {

@@ -24,7 +24,7 @@ use crate::{
     inspector::CaptureState,
     menu::Menu,
     pointer::PointerInputEvent,
-    responsive::{GridBreakpoints, ScreenSize, ScreenSizeBp},
+    responsive::{GridBreakpoints, ScreenSizeBp},
     style::{
         BuiltinStyle, CursorStyle, DisplayProp, LayoutProps, Style, StyleProp, StyleSelector,
         StyleSelectors,
@@ -59,7 +59,6 @@ pub struct ViewState {
     pub(crate) base_style: Option<Style>,
     pub(crate) style: Style,
     pub(crate) dragging_style: Option<Style>,
-    pub(crate) responsive_styles: HashMap<ScreenSizeBp, Vec<Style>>,
     pub(crate) combined_style: Style,
     pub(crate) event_listeners: HashMap<EventListener, Box<EventCallback>>,
     pub(crate) context_menu: Option<Box<MenuCallback>>,
@@ -84,7 +83,6 @@ impl ViewState {
             style: Style::new(),
             combined_style: Style::new(),
             dragging_style: None,
-            responsive_styles: HashMap::new(),
             children_nodes: Vec::new(),
             event_listeners: HashMap::new(),
             context_menu: None,
@@ -113,12 +111,6 @@ impl ViewState {
         } else {
             self.style.clone()
         };
-
-        if let Some(resp_styles) = self.responsive_styles.get(&screen_size_bp) {
-            for style in resp_styles {
-                computed_style = computed_style.apply(style.clone());
-            }
-        }
 
         'anim: {
             if let Some(animation) = self.animation.as_mut() {
@@ -154,20 +146,9 @@ impl ViewState {
 
         self.has_style_selectors = computed_style.selectors();
 
-        computed_style.apply_interact_state(&interact_state);
+        computed_style.apply_interact_state(&interact_state, screen_size_bp);
 
         self.combined_style = computed_style;
-    }
-
-    pub(crate) fn add_responsive_style(&mut self, size: ScreenSize, style: Style) {
-        let breakpoints = size.breakpoints();
-
-        for breakpoint in breakpoints {
-            self.responsive_styles
-                .entry(breakpoint)
-                .or_default()
-                .push(style.clone())
-        }
     }
 }
 
