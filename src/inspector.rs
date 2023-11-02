@@ -2,13 +2,13 @@ use crate::app::{add_app_update_event, AppUpdateEvent};
 use crate::context::{AppState, LayoutCx};
 use crate::event::{Event, EventListener};
 use crate::id::Id;
-use crate::new_window;
-use crate::style::{Style, StyleMapValue, TextOverflow};
+use crate::style::{Style, StyleMapValue};
 use crate::view::View;
 use crate::views::{
-    dyn_container, empty, img_dynamic, list, scroll, stack, text, Decorators, Label,
+    dyn_container, empty, img_dynamic, list, scroll, stack, static_list, text, Decorators, Label,
 };
 use crate::window::WindowConfig;
+use crate::{new_window, style};
 use floem_reactive::{create_rw_signal, RwSignal, Scope};
 use image::DynamicImage;
 use kurbo::{Point, Rect, Size};
@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
+use taffy::prelude::Layout;
 use taffy::style::{AlignItems, FlexDirection};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowId;
@@ -27,6 +28,7 @@ pub struct CapturedView {
     id: Id,
     name: String,
     layout: Rect,
+    taffy: Layout,
     clipped: Rect,
     children: Vec<Rc<CapturedView>>,
 }
@@ -34,11 +36,13 @@ pub struct CapturedView {
 impl CapturedView {
     pub fn capture(view: &dyn View, app_state: &mut AppState, clip: Rect) -> Self {
         let layout = app_state.get_layout_rect(view.id());
+        let taffy = app_state.get_layout(view.id()).unwrap();
         let clipped = layout.intersect(clip);
         Self {
             id: view.id(),
             name: view.debug_name().to_string(),
             layout,
+            taffy,
             clipped,
             children: view
                 .children()
@@ -100,51 +104,64 @@ impl CaptureState {
     }
 }
 
-pub fn captured_view(
+// Outlined to reduce stack usage.
+#[inline(never)]
+fn captured_view_no_children(
     view: &CapturedView,
     depth: usize,
     selected: RwSignal<Option<Id>>,
     highlighted: RwSignal<Option<Id>>,
 ) -> Box<dyn View> {
     let offset = depth as f64 * 14.0;
-    let name = text(view.name.clone()).style(|s| s.text_overflow(TextOverflow::Ellipsis));
+    let name = text(view.name.clone());
     let height = 20.0;
     let id = view.id;
 
-    if view.children.is_empty() {
-        return Box::new(
-            name.style(move |s| {
-                s.width_full()
-                    .text_overflow(TextOverflow::Ellipsis)
-                    .padding_left(20.0 + offset)
-                    .hover(move |s| {
-                        s.background(Color::rgba8(228, 237, 216, 160))
-                            .apply_if(selected.get() == Some(id), |s| {
-                                s.background(Color::rgb8(186, 180, 216))
-                            })
-                    })
-                    .height(height)
-                    .apply_if(highlighted.get() == Some(id), |s| {
-                        s.background(Color::rgba8(228, 237, 216, 160))
-                    })
-                    .apply_if(selected.get() == Some(id), |s| {
-                        if highlighted.get() == Some(id) {
+    Box::new(
+        name.style(move |s| {
+            s.padding_left(20.0 + offset)
+                .hover(move |s| {
+                    s.background(Color::rgba8(228, 237, 216, 160))
+                        .apply_if(selected.get() == Some(id), |s| {
                             s.background(Color::rgb8(186, 180, 216))
-                        } else {
-                            s.background(Color::rgb8(213, 208, 216))
-                        }
-                    })
-            })
-            .on_click(move |_| {
-                selected.set(Some(id));
-                true
-            })
-            .on_event(EventListener::PointerEnter, move |_| {
-                highlighted.set(Some(id));
-                false
-            }),
-        );
-    }
+                        })
+                })
+                .height(height)
+                .apply_if(highlighted.get() == Some(id), |s| {
+                    s.background(Color::rgba8(228, 237, 216, 160))
+                })
+                .apply_if(selected.get() == Some(id), |s| {
+                    if highlighted.get() == Some(id) {
+                        s.background(Color::rgb8(186, 180, 216))
+                    } else {
+                        s.background(Color::rgb8(213, 208, 216))
+                    }
+                })
+        })
+        .on_click(move |_| {
+            selected.set(Some(id));
+            true
+        })
+        .on_event(EventListener::PointerEnter, move |_| {
+            highlighted.set(Some(id));
+            false
+        }),
+    )
+}
+
+// Outlined to reduce stack usage.
+#[inline(never)]
+fn captured_view_with_children(
+    view: &CapturedView,
+    depth: usize,
+    selected: RwSignal<Option<Id>>,
+    highlighted: RwSignal<Option<Id>>,
+    children: Vec<Box<dyn View>>,
+) -> Box<dyn View> {
+    let offset = depth as f64 * 14.0;
+    let name = text(view.name.clone());
+    let height = 20.0;
+    let id = view.id;
 
     let expanded = create_rw_signal(true);
 
@@ -179,8 +196,7 @@ pub fn captured_view(
         name,
     ))
     .style(move |s| {
-        s.width_full()
-            .padding_left(3.0)
+        s.padding_left(3.0)
             .align_items(AlignItems::Center)
             .hover(move |s| {
                 s.background(Color::rgba8(228, 237, 216, 160))
@@ -209,8 +225,6 @@ pub fn captured_view(
         false
     });
 
-    let children = view.children.clone();
-
     let line = empty().style(move |s| {
         s.absolute()
             .height_full()
@@ -219,28 +233,35 @@ pub fn captured_view(
             .background(Color::BLACK.with_alpha_factor(0.1))
     });
 
-    let list = dyn_container(
-        move || expanded.get(),
-        move |expanded| {
-            if expanded {
-                let children = children.clone();
-                Box::new(
-                    list(
-                        move || children.clone().into_iter().enumerate(),
-                        |(i, _)| *i,
-                        move |(_, child)| captured_view(&child, depth + 1, selected, highlighted),
-                    )
-                    .style(|s| s.flex_col().width_full()),
-                )
-            } else {
-                Box::new(empty())
-            }
-        },
-    );
+    let list = static_list(children).style(move |s| {
+        s.flex_col().display(if expanded.get() {
+            style::Display::Flex
+        } else {
+            style::Display::None
+        })
+    });
 
-    let list = stack((line, list)).style(|s| s.flex_col().width_full());
+    let list = stack((line, list)).style(|s| s.flex_col());
 
-    Box::new(stack((row, list)).style(|s| s.flex_col().width_full()))
+    Box::new(stack((row, list)).style(|s| s.flex_col().min_width_full()))
+}
+
+fn captured_view(
+    view: &CapturedView,
+    depth: usize,
+    selected: RwSignal<Option<Id>>,
+    highlighted: RwSignal<Option<Id>>,
+) -> Box<dyn View> {
+    if view.children.is_empty() {
+        captured_view_no_children(view, depth, selected, highlighted)
+    } else {
+        let children: Vec<_> = view
+            .children
+            .iter()
+            .map(|view| captured_view(view, depth + 1, selected, highlighted))
+            .collect();
+        captured_view_with_children(view, depth, selected, highlighted, children)
+    }
 }
 
 fn header(label: impl Display) -> Label {
@@ -254,27 +275,42 @@ fn header(label: impl Display) -> Label {
     })
 }
 
-fn info(s: String) -> Label {
-    text(s).style(|s| s.padding(5.0))
+fn info(name: impl Display, value: String) -> impl View {
+    info_row(name.to_string(), text(value))
+}
+
+fn info_row(name: String, view: impl View + 'static) -> impl View {
+    stack((
+        stack((text(name).style(|s| {
+            s.margin_right(5.0)
+                .color(Color::BLACK.with_alpha_factor(0.6))
+        }),))
+        .style(|s| s.min_width(150.0).flex_direction(FlexDirection::RowReverse)),
+        view,
+    ))
+    .style(|s| {
+        s.padding(5.0)
+            .hover(|s| s.background(Color::rgba8(228, 237, 216, 160)))
+    })
 }
 
 fn stats(capture: &Capture) -> impl View {
     let layout_time = capture.post_layout.saturating_duration_since(capture.start);
     let paint_time = capture.end.saturating_duration_since(capture.post_layout);
-    let layout_time = info(format!(
-        "Layout time: {:.4} ms",
-        layout_time.as_secs_f64() * 1000.0
-    ));
-    let taffy_time = info(format!(
-        "Taffy time: {:.4} ms",
-        capture.taffy_duration.as_secs_f64() * 1000.0
-    ));
-    let paint_time = info(format!(
-        "Paint time: {:.4} ms",
-        paint_time.as_secs_f64() * 1000.0
-    ));
-    let w = info(format!("Window Width: {}", capture.window_size.width));
-    let h = info(format!("Window Height: {}", capture.window_size.height));
+    let layout_time = info(
+        "Layout time",
+        format!("{:.4} ms", layout_time.as_secs_f64() * 1000.0),
+    );
+    let taffy_time = info(
+        "Taffy time",
+        format!("{:.4} ms", capture.taffy_duration.as_secs_f64() * 1000.0),
+    );
+    let paint_time = info(
+        "Paint time",
+        format!("Paint time: {:.4} ms", paint_time.as_secs_f64() * 1000.0),
+    );
+    let w = info("Window Width", format!("{}", capture.window_size.width));
+    let h = info("Window Height", format!("{}", capture.window_size.height));
     stack((layout_time, taffy_time, paint_time, w, h)).style(|s| s.flex_col())
 }
 
@@ -284,8 +320,8 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl 
         move || selected.get(),
         move |current| {
             if let Some(view) = current.and_then(|id| capture.root.find(id)) {
-                let name = info(format!("Type: {}", view.name));
-                let count = info(format!("Child Count: {}", view.children.len()));
+                let name = info("Type", view.name.clone());
+                let count = info("Child Count", format!("{}", view.children.len()));
                 let beyond = |view: f64, window| {
                     if view > window {
                         format!(" ({} after window edge)", view - window)
@@ -295,26 +331,82 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl 
                         String::new()
                     }
                 };
-                let x = info(format!(
-                    "X: {}{}",
-                    view.layout.x0,
-                    beyond(view.layout.x0, capture.window_size.width)
-                ));
-                let y = info(format!(
-                    "Y: {}{}",
-                    view.layout.y0,
-                    beyond(view.layout.y0, capture.window_size.height)
-                ));
-                let w = info(format!(
-                    "Width: {}{}",
-                    view.layout.width(),
-                    beyond(view.layout.x1, capture.window_size.width)
-                ));
-                let h = info(format!(
-                    "Height: {}{}",
-                    view.layout.height(),
-                    beyond(view.layout.y1, capture.window_size.height)
-                ));
+                let x = info(
+                    "X",
+                    format!(
+                        "{}{}",
+                        view.layout.x0,
+                        beyond(view.layout.x0, capture.window_size.width)
+                    ),
+                );
+                let y = info(
+                    "Y",
+                    format!(
+                        "{}{}",
+                        view.layout.y0,
+                        beyond(view.layout.y0, capture.window_size.height)
+                    ),
+                );
+                let w = info(
+                    "Width",
+                    format!(
+                        "{}{}",
+                        view.layout.width(),
+                        beyond(view.layout.x1, capture.window_size.width)
+                    ),
+                );
+                let h = info(
+                    "Height",
+                    format!(
+                        "{}{}",
+                        view.layout.height(),
+                        beyond(view.layout.y1, capture.window_size.height)
+                    ),
+                );
+                let tx = info(
+                    "Taffy X",
+                    format!(
+                        "{}{}",
+                        view.taffy.location.x,
+                        beyond(
+                            view.taffy.location.x as f64 + view.taffy.size.width as f64,
+                            capture.window_size.width
+                        )
+                    ),
+                );
+                let ty = info(
+                    "Taffy Y",
+                    format!(
+                        "{}{}",
+                        view.taffy.location.y,
+                        beyond(
+                            view.taffy.location.x as f64 + view.taffy.size.width as f64,
+                            capture.window_size.width
+                        )
+                    ),
+                );
+                let tw = info(
+                    "Taffy Width",
+                    format!(
+                        "{}{}",
+                        view.taffy.size.width,
+                        beyond(
+                            view.taffy.location.x as f64 + view.taffy.size.width as f64,
+                            capture.window_size.width
+                        )
+                    ),
+                );
+                let th = info(
+                    "Taffy Height",
+                    format!(
+                        "{}{}",
+                        view.taffy.size.height,
+                        beyond(
+                            view.taffy.location.y as f64 + view.taffy.size.height as f64,
+                            capture.window_size.height
+                        )
+                    ),
+                );
                 let clear = text("Clear selection")
                     .style(|s| {
                         s.background(Color::WHITE_SMOKE)
@@ -380,11 +472,25 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl 
                 .style(|s| s.flex_col().width_full());
 
                 Box::new(
-                    stack((name, count, x, y, w, h, clear, style_header, style_list))
-                        .style(|s| s.flex_col().width_full()),
+                    stack((
+                        name,
+                        count,
+                        x,
+                        y,
+                        w,
+                        h,
+                        tx,
+                        ty,
+                        tw,
+                        th,
+                        clear,
+                        style_header,
+                        style_list,
+                    ))
+                    .style(|s| s.flex_col().width_full()),
                 )
             } else {
-                Box::new(info("No selection".to_string()))
+                Box::new(text("No selection".to_string()).style(|s| s.padding(5.0)))
             }
         },
     )
@@ -488,19 +594,33 @@ fn capture_view(capture: &Rc<Capture>) -> impl View {
             stats(capture),
         ))
         .style(|s| s.flex_col().width_full()),
-    );
+    )
+    .style(|s| s.width_full().flex_basis(0).min_height(0).flex_grow(1.0));
+
+    let seperator = empty().style(move |s| {
+        s.width_full()
+            .min_height(1.0)
+            .background(Color::BLACK.with_alpha_factor(0.2))
+    });
 
     let left = stack((
         header("Captured Window"),
         scroll(image).style(|s| s.max_height_pct(60.0)),
+        seperator,
         left_scroll,
     ))
-    .style(|s| s.flex_col().height_full().max_width_pct(60.0));
+    .style(|s| s.flex_col().max_width_pct(60.0));
 
     let tree = stack((
         header("View Tree"),
         scroll(captured_view(&capture.root, 0, selected, highlighted))
-            .style(|s| s.width_full().height_full())
+            .style(|s| {
+                s.flex_col()
+                    .width_full()
+                    .min_height(0)
+                    .flex_basis(0)
+                    .flex_grow(1.0)
+            })
             .on_event(EventListener::PointerLeave, move |_| {
                 highlighted.set(None);
                 false
@@ -510,7 +630,13 @@ fn capture_view(capture: &Rc<Capture>) -> impl View {
                 true
             }),
     ))
-    .style(|s| s.flex_col().width_full().height_full());
+    .style(|s| {
+        s.flex_col()
+            .height_full()
+            .min_width(0)
+            .flex_basis(0)
+            .flex_grow(1.0)
+    });
 
     let seperator = empty().style(move |s| {
         s.height_full()
@@ -518,7 +644,8 @@ fn capture_view(capture: &Rc<Capture>) -> impl View {
             .background(Color::BLACK.with_alpha_factor(0.2))
     });
 
-    stack((left, seperator, tree)).style(|s| s.flex_row().width_full().height_full())
+    stack((left, seperator, tree))
+        .style(|s| s.flex_row().height_full().width_full().max_width_full())
 }
 
 fn inspector_view(capture: &Option<Rc<Capture>>) -> impl View {
