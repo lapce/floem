@@ -799,6 +799,7 @@ impl Style {
         self
     }
 
+    /// The visual style to apply when the mouse hovers over the element
     pub fn hover(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         self.selector(StyleSelector::Hover, style)
     }
@@ -807,6 +808,7 @@ impl Style {
         self.selector(StyleSelector::Focus, style)
     }
 
+    /// Similar to the `:focus-visible` css selector, this style only activates when tab navigation is used.
     pub fn focus_visible(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         self.selector(StyleSelector::FocusVisible, style)
     }

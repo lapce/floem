@@ -70,40 +70,11 @@ pub trait Decorators: View + Sized {
     }
 
     /// The visual style to apply when the mouse hovers over the element
-    fn hover_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
-        let id = self.id();
-        create_effect(move |_| {
-            let style = style(Style::new());
-            id.update_style_selector(style, StyleSelector::Hover);
-        });
-        self
-    }
-
-    /// The visual style to apply when the mouse hovers over the element
     fn dragging_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
             let style = style(Style::new());
             id.update_style_selector(style, StyleSelector::Dragging);
-        });
-        self
-    }
-
-    fn focus_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
-        let id = self.id();
-        create_effect(move |_| {
-            let style = style(Style::new());
-            id.update_style_selector(style, StyleSelector::Focus);
-        });
-        self
-    }
-
-    /// Similar to the `:focus-visible` css selector, this style only activates when tab navigation is used.
-    fn focus_visible_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
-        let id = self.id();
-        create_effect(move |_| {
-            let style = style(Style::new());
-            id.update_style_selector(style, StyleSelector::FocusVisible);
         });
         self
     }
@@ -118,24 +89,6 @@ pub trait Decorators: View + Sized {
     fn draggable(self) -> Self {
         let id = self.id();
         id.draggable();
-        self
-    }
-
-    fn active_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
-        let id = self.id();
-        create_effect(move |_| {
-            let style = style(Style::new());
-            id.update_style_selector(style, StyleSelector::Active);
-        });
-        self
-    }
-
-    fn disabled_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
-        let id = self.id();
-        create_effect(move |_| {
-            let style = style(Style::new());
-            id.update_style_selector(style, StyleSelector::Disabled);
-        });
         self
     }
 

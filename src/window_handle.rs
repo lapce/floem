@@ -243,9 +243,7 @@ impl WindowHandle {
             let hovered = &cx.app_state.hovered.clone();
             for id in was_hovered.unwrap().symmetric_difference(hovered) {
                 let view_state = cx.app_state.view_state(*id);
-                if view_state.hover_style.is_some()
-                    || view_state.active_style.is_some()
-                    || view_state.animation.is_some()
+                if view_state.animation.is_some()
                     || view_state.has_style_selectors.has(StyleSelector::Hover)
                     || view_state.has_style_selectors.has(StyleSelector::Active)
                 {
@@ -371,8 +369,8 @@ impl WindowHandle {
         let was_hovered = std::mem::take(&mut cx.app_state.hovered);
         for id in was_hovered {
             let view_state = cx.app_state.view_state(id);
-            if view_state.hover_style.is_some()
-                || view_state.active_style.is_some()
+            if view_state.has_style_selectors.has(StyleSelector::Hover)
+                || view_state.has_style_selectors.has(StyleSelector::Active)
                 || view_state.animation.is_some()
             {
                 cx.app_state.request_layout(id);
@@ -715,12 +713,8 @@ impl WindowHandle {
                         let state = cx.app_state.view_state(id);
                         let style = Some(style);
                         match selector {
-                            StyleSelector::Hover => state.hover_style = style,
-                            StyleSelector::Focus => state.focus_style = style,
-                            StyleSelector::FocusVisible => state.focus_visible_style = style,
-                            StyleSelector::Disabled => state.disabled_style = style,
-                            StyleSelector::Active => state.active_style = style,
                             StyleSelector::Dragging => state.dragging_style = style,
+                            _ => panic!(),
                         }
                         cx.request_layout(id);
                     }
@@ -1244,10 +1238,10 @@ fn context_menu_view(
                             .padding_horiz(20.0)
                             .justify_between()
                             .items_center()
-                    })
-                    .hover_style(|s| s.border_radius(10.0).background(Color::rgb8(65, 65, 65)))
-                    .active_style(|s| s.border_radius(10.0).background(Color::rgb8(92, 92, 92)))
-                    .disabled_style(|s| s.color(Color::rgb8(92, 92, 92))),
+                            .hover(|s| s.border_radius(10.0).background(Color::rgb8(65, 65, 65)))
+                            .active(|s| s.border_radius(10.0).background(Color::rgb8(92, 92, 92)))
+                            .disabled(|s| s.color(Color::rgb8(92, 92, 92)))
+                    }),
                     list(
                         move || menu.children.clone().unwrap_or_default(),
                         move |s| s.clone(),

@@ -59,12 +59,7 @@ pub struct ViewState {
     pub(crate) base_style: Option<Style>,
     pub(crate) style: Style,
     pub(crate) dragging_style: Option<Style>,
-    pub(crate) hover_style: Option<Style>,
-    pub(crate) disabled_style: Option<Style>,
-    pub(crate) focus_style: Option<Style>,
-    pub(crate) focus_visible_style: Option<Style>,
     pub(crate) responsive_styles: HashMap<ScreenSizeBp, Vec<Style>>,
-    pub(crate) active_style: Option<Style>,
     pub(crate) combined_style: Style,
     pub(crate) event_listeners: HashMap<EventListener, Box<EventCallback>>,
     pub(crate) context_menu: Option<Box<MenuCallback>>,
@@ -88,12 +83,7 @@ impl ViewState {
             base_style: None,
             style: Style::new(),
             combined_style: Style::new(),
-            hover_style: None,
             dragging_style: None,
-            disabled_style: None,
-            focus_style: None,
-            focus_visible_style: None,
-            active_style: None,
             responsive_styles: HashMap::new(),
             children_nodes: Vec::new(),
             event_listeners: HashMap::new(),
@@ -127,39 +117,6 @@ impl ViewState {
         if let Some(resp_styles) = self.responsive_styles.get(&screen_size_bp) {
             for style in resp_styles {
                 computed_style = computed_style.apply(style.clone());
-            }
-        }
-
-        if interact_state.is_hovered && !interact_state.is_disabled {
-            if let Some(hover_style) = self.hover_style.clone() {
-                computed_style = computed_style.apply(hover_style);
-            }
-        }
-
-        if interact_state.is_focused {
-            if let Some(focus_style) = self.focus_style.clone() {
-                computed_style = computed_style.apply(focus_style);
-            }
-        }
-
-        let focused_keyboard =
-            interact_state.using_keyboard_navigation && interact_state.is_focused;
-        if focused_keyboard {
-            if let Some(focus_visible_style) = self.focus_visible_style.clone() {
-                computed_style = computed_style.apply(focus_visible_style);
-            }
-        }
-
-        let active_mouse = interact_state.is_hovered && !interact_state.using_keyboard_navigation;
-        if interact_state.is_clicking && (active_mouse || focused_keyboard) {
-            if let Some(active_style) = self.active_style.clone() {
-                computed_style = computed_style.apply(active_style);
-            }
-        }
-
-        if interact_state.is_disabled {
-            if let Some(disabled_style) = self.disabled_style.clone() {
-                computed_style = computed_style.apply(disabled_style);
             }
         }
 
@@ -499,14 +456,7 @@ impl AppState {
         let view_state = self.view_state(id);
 
         view_state.has_style_selectors.has(selector_kind)
-            || match selector_kind {
-                StyleSelector::Hover => view_state.hover_style.is_some(),
-                StyleSelector::Focus => view_state.focus_style.is_some(),
-                StyleSelector::FocusVisible => view_state.focus_visible_style.is_some(),
-                StyleSelector::Disabled => view_state.disabled_style.is_some(),
-                StyleSelector::Active => view_state.active_style.is_some(),
-                StyleSelector::Dragging => view_state.dragging_style.is_some(),
-            }
+            || (selector_kind == StyleSelector::Dragging && view_state.dragging_style.is_some())
     }
 
     // TODO: animated should be a HashMap<Id, AnimId>
@@ -605,14 +555,6 @@ impl<'a> EventCx<'a> {
             .view_states
             .get(&id)
             .map(|s| &s.combined_style)
-    }
-
-    pub fn get_hover_style(&self, id: Id) -> Option<&Style> {
-        if let Some(vs) = self.app_state.view_states.get(&id) {
-            return vs.hover_style.as_ref();
-        }
-
-        None
     }
 
     pub fn get_layout(&self, id: Id) -> Option<Layout> {

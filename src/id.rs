@@ -155,7 +155,7 @@ impl Id {
         self.add_update_message(UpdateMessage::Style { id: *self, style });
     }
 
-    pub fn update_style_selector(&self, style: Style, selector: StyleSelector) {
+    pub(crate) fn update_style_selector(&self, style: Style, selector: StyleSelector) {
         self.add_update_message(UpdateMessage::StyleSelector {
             id: *self,
             style,
