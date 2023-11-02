@@ -539,13 +539,17 @@ fn inspector_view(capture: &Option<Rc<Capture>>) -> impl View {
                 .width_full()
                 .height_full()
                 .background(Color::WHITE)
-                .set(scroll::Thickness, 16.0)
-                .set(scroll::Rounded, false)
-                .set(scroll::HandleRadius, 4.0)
-                .set(scroll::HandleColor, Color::rgba8(166, 166, 166, 140))
-                .set(scroll::DragColor, Color::rgb8(166, 166, 166))
-                .set(scroll::HoverColor, Color::rgb8(184, 184, 184))
-                .set(scroll::BgActiveColor, Color::rgba8(166, 166, 166, 30))
+                .class(scroll::Handle, |s| {
+                    s.border_radius(4.0)
+                        .background(Color::rgba8(166, 166, 166, 140))
+                        .set(scroll::Thickness, 16.0)
+                        .set(scroll::Rounded, false)
+                        .active(|s| s.background(Color::rgb8(166, 166, 166)))
+                        .hover(|s| s.background(Color::rgb8(184, 184, 184)))
+                })
+                .class(scroll::Track, |s| {
+                    s.hover(|s| s.background(Color::rgba8(166, 166, 166, 30)))
+                })
         })
 }
 

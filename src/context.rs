@@ -26,8 +26,8 @@ use crate::{
     pointer::PointerInputEvent,
     responsive::{GridBreakpoints, ScreenSizeBp},
     style::{
-        BuiltinStyle, CursorStyle, DisplayProp, LayoutProps, Style, StyleProp, StyleSelector,
-        StyleSelectors,
+        BuiltinStyle, CursorStyle, DisplayProp, LayoutProps, Style, StyleClassRef, StyleProp,
+        StyleSelector, StyleSelectors,
     },
     unit::PxPct,
 };
@@ -58,6 +58,7 @@ pub struct ViewState {
     pub(crate) animation: Option<Animation>,
     pub(crate) base_style: Option<Style>,
     pub(crate) style: Style,
+    pub(crate) class: Option<StyleClassRef>,
     pub(crate) dragging_style: Option<Style>,
     pub(crate) combined_style: Style,
     pub(crate) event_listeners: HashMap<EventListener, Box<EventCallback>>,
@@ -81,6 +82,7 @@ impl ViewState {
             animation: None,
             base_style: None,
             style: Style::new(),
+            class: None,
             combined_style: Style::new(),
             dragging_style: None,
             children_nodes: Vec::new(),
@@ -99,18 +101,23 @@ impl ViewState {
         view_style: Option<Style>,
         interact_state: InteractionState,
         screen_size_bp: ScreenSizeBp,
+        view_class: Option<StyleClassRef>,
+        classes: &[StyleClassRef],
+        context: &Style,
     ) {
-        let mut computed_style = if let Some(view_style) = view_style {
-            if let Some(base_style) = self.base_style.clone() {
-                view_style.apply(base_style).apply(self.style.clone())
-            } else {
-                view_style.apply(self.style.clone())
-            }
-        } else if let Some(base_style) = self.base_style.clone() {
-            base_style.apply(self.style.clone())
-        } else {
-            self.style.clone()
-        };
+        let mut computed_style = Style::new();
+        if let Some(view_style) = view_style {
+            computed_style.apply_mut(view_style);
+        }
+        if let Some(view_class) = view_class {
+            computed_style = computed_style.apply_classes_from_context(&[view_class], context);
+        }
+        if let Some(base_style) = self.base_style.clone() {
+            computed_style.apply_mut(base_style);
+        }
+        computed_style = computed_style
+            .apply_classes_from_context(classes, context)
+            .apply(self.style.clone());
 
         'anim: {
             if let Some(animation) = self.animation.as_mut() {
@@ -321,11 +328,25 @@ impl AppState {
         self.compute_layout();
     }
 
-    pub(crate) fn compute_style(&mut self, id: Id, view_style: Option<Style>) {
+    pub(crate) fn compute_style(
+        &mut self,
+        id: Id,
+        view_style: Option<Style>,
+        view_class: Option<StyleClassRef>,
+        classes: &[StyleClassRef],
+        context: &Style,
+    ) {
         let interact_state = self.get_interact_state(&id);
         let screen_size_bp = self.screen_size_bp;
         let view_state = self.view_state(id);
-        view_state.compute_style(view_style, interact_state, screen_size_bp);
+        view_state.compute_style(
+            view_style,
+            interact_state,
+            screen_size_bp,
+            view_class,
+            classes,
+            context,
+        );
     }
 
     pub(crate) fn get_computed_style(&mut self, id: Id) -> &Style {
@@ -651,7 +672,7 @@ impl StyleCx {
 /// Holds current layout state for given position in the tree.
 /// You'll use this in the `View::layout` implementation to call `layout_node` on children and to access any font
 pub struct LayoutCx<'a> {
-    app_state: &'a mut AppState,
+    pub(crate) app_state: &'a mut AppState,
     pub(crate) viewport: Option<Rect>,
     pub(crate) style: StyleCx,
     pub(crate) window_origin: Point,
@@ -676,6 +697,12 @@ impl<'a> LayoutCx<'a> {
             .direct
             .get_prop::<P>()
             .or_else(|| self.style.current.get_prop::<P>())
+    }
+
+    pub fn style(&self) -> Style {
+        (*self.style.current)
+            .clone()
+            .apply(self.style.direct.clone())
     }
 
     pub(crate) fn clear(&mut self) {

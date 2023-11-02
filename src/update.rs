@@ -9,7 +9,7 @@ use crate::{
     event::EventListener,
     id::Id,
     menu::Menu,
-    style::{Style, StyleSelector},
+    style::{Style, StyleClassRef, StyleSelector},
 };
 
 thread_local! {
@@ -51,6 +51,10 @@ pub(crate) enum UpdateMessage {
     Style {
         id: Id,
         style: Style,
+    },
+    Class {
+        id: Id,
+        class: StyleClassRef,
     },
     StyleSelector {
         id: Id,

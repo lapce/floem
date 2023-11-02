@@ -6,7 +6,7 @@ use crate::{
     animate::Animation,
     event::{Event, EventListener},
     menu::Menu,
-    style::{Style, StyleSelector},
+    style::{Style, StyleClass, StyleSelector},
     view::View,
 };
 
@@ -75,6 +75,11 @@ pub trait Decorators: View + Sized {
             let style = style(Style::new());
             id.update_style_selector(style, StyleSelector::Dragging);
         });
+        self
+    }
+
+    fn class<C: StyleClass>(self, _class: C) -> Self {
+        self.id().update_class(C::class_ref());
         self
     }
 

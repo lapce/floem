@@ -700,6 +700,11 @@ impl WindowHandle {
                         state.style = style;
                         cx.request_layout(id);
                     }
+                    UpdateMessage::Class { id, class } => {
+                        let state = cx.app_state.view_state(id);
+                        state.class = Some(class);
+                        cx.request_layout(id);
+                    }
                     UpdateMessage::StyleSelector {
                         id,
                         style,
