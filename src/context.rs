@@ -21,6 +21,7 @@ use crate::{
     animate::{AnimId, AnimPropKind, Animation},
     event::{Event, EventListener},
     id::Id,
+    inspector::CaptureState,
     menu::Menu,
     pointer::PointerInputEvent,
     responsive::{GridBreakpoints, ScreenSize, ScreenSizeBp},
@@ -266,7 +267,7 @@ pub struct AppState {
     pub(crate) context_menu: HashMap<usize, Box<dyn Fn()>>,
 
     /// This is set if we're currently capturing the window for the inspector.
-    pub(crate) capture: Option<()>,
+    pub(crate) capture: Option<CaptureState>,
 }
 
 impl Default for AppState {

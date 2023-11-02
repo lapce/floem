@@ -1,4 +1,4 @@
-use std::{cell::RefCell, sync::Arc};
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use floem_reactive::WriteSignal;
 use once_cell::sync::Lazy;
@@ -48,7 +48,7 @@ pub(crate) enum AppUpdateEvent {
     },
     CaptureWindow {
         window_id: WindowId,
-        capture: WriteSignal<Option<Capture>>,
+        capture: WriteSignal<Option<Rc<Capture>>>,
     },
     RequestTimer {
         timer: Timer,

@@ -26,7 +26,7 @@ use crate::{
     },
     event::{Event, EventListener},
     id::{Id, IdPath, ID_PATHS},
-    inspector::{self, Capture, CapturedView},
+    inspector::{self, Capture, CaptureState, CapturedView},
     keyboard::KeyEvent,
     menu::Menu,
     pointer::{PointerButton, PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
@@ -539,7 +539,7 @@ impl WindowHandle {
     }
 
     pub(crate) fn capture(&mut self) -> Capture {
-        self.app_state.capture = Some(());
+        self.app_state.capture = Some(CaptureState::default());
 
         // Trigger painting to create a Vger renderer which can capture the output.
         // This can be expensive so it could skew the paint time measurement.
@@ -558,8 +558,6 @@ impl WindowHandle {
         let window = self.paint().map(Rc::new);
         let end = Instant::now();
 
-        self.app_state.capture = None;
-
         let root_layout = self.app_state.get_layout_rect(self.view.id());
         let capture = Capture {
             start,
@@ -570,6 +568,7 @@ impl WindowHandle {
             window_size: self.size.get_untracked() / self.app_state.scale,
             scale: self.scale * self.app_state.scale,
             root: CapturedView::capture(&self.view, &mut self.app_state, root_layout),
+            state: self.app_state.capture.take().unwrap(),
         };
         // Process any updates produced by capturing
         self.process_update();

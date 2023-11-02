@@ -1,9 +1,9 @@
 use crate::app::{add_app_update_event, AppUpdateEvent};
-use crate::context::AppState;
+use crate::context::{AppState, LayoutCx};
 use crate::event::{Event, EventListener};
 use crate::id::Id;
 use crate::new_window;
-use crate::style::TextOverflow;
+use crate::style::{StyleMap, StyleMapValue, TextOverflow};
 use crate::view::View;
 use crate::views::{
     dyn_container, empty, img_dynamic, list, scroll, stack, text, Decorators, Label,
@@ -14,10 +14,11 @@ use image::DynamicImage;
 use kurbo::{Point, Rect, Size};
 use peniko::Color;
 use std::cell::Cell;
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
-use taffy::style::AlignItems;
+use taffy::style::{AlignItems, FlexDirection};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::WindowId;
 
@@ -66,7 +67,6 @@ impl CapturedView {
     }
 }
 
-#[derive(Clone, Debug)]
 pub struct Capture {
     pub root: CapturedView,
     pub start: Instant,
@@ -76,9 +76,29 @@ pub struct Capture {
     pub window: Option<Rc<DynamicImage>>,
     pub window_size: Size,
     pub scale: f64,
+    pub state: CaptureState,
 }
 
-impl Capture {}
+#[derive(Default)]
+pub struct CaptureState {
+    styles: HashMap<Id, StyleMap>,
+}
+
+impl CaptureState {
+    pub(crate) fn capture_style(id: Id, cx: &mut LayoutCx) {
+        if cx.app_state_mut().capture.is_some() {
+            let direct = cx.style.direct.clone();
+            let mut current = (*cx.style.current).clone();
+            current.apply(direct);
+            cx.app_state_mut()
+                .capture
+                .as_mut()
+                .unwrap()
+                .styles
+                .insert(id, current);
+        }
+    }
+}
 
 pub fn captured_view(
     view: &CapturedView,
@@ -313,7 +333,56 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl 
                         true
                     });
                 let clear = stack((clear,));
-                Box::new(stack((name, count, x, y, w, h, clear)).style(|s| s.flex_col()))
+
+                let style_header = header("View Style");
+
+                let mut styles = capture
+                    .state
+                    .styles
+                    .get(&view.id)
+                    .cloned()
+                    .unwrap_or_default()
+                    .map
+                    .into_iter()
+                    .map(|(p, v)| ((p, format!("{p:?}")), v))
+                    .collect::<Vec<_>>();
+                styles.sort_unstable_by(|a, b| a.0 .1.cmp(&b.0 .1));
+
+                let style_list = list(
+                    move || styles.clone(),
+                    |(i, _)| i.0,
+                    move |((p, name), v)| {
+                        let v: Box<dyn View> = match v {
+                            StyleMapValue::Val(v) => {
+                                let v = &*v;
+                                (p.info.debug_view)(v)
+                                    .unwrap_or_else(|| Box::new(text((p.info.debug_any)(v))))
+                            }
+                            StyleMapValue::Unset => Box::new(text("Unset".to_owned())),
+                        };
+                        stack((
+                            stack((text(name.strip_prefix("floem::style::").unwrap_or(&name))
+                                .style(|s| {
+                                    s.margin_right(5.0)
+                                        .color(Color::BLACK.with_alpha_factor(0.6))
+                                }),))
+                            .style(|s| {
+                                s.min_width(150.0).flex_direction(FlexDirection::RowReverse)
+                            }),
+                            v,
+                        ))
+                        .style(|s| {
+                            s.padding(5.0)
+                                .hover(|s| s.background(Color::rgba8(228, 237, 216, 160)))
+                        })
+                    },
+                )
+                .style(|s| s.flex_col().width_full());
+
+                Box::new(
+                    stack((name, count, x, y, w, h, clear, style_header, style_list))
+                        .style(|s| s.flex_col().width_full()),
+                )
             } else {
                 Box::new(info("No selection".to_string()))
             }
@@ -482,7 +551,7 @@ fn inspector_view(capture: &Option<Rc<Capture>>) -> impl View {
 
 thread_local! {
     pub(crate) static RUNNING: Cell<bool> = Cell::new(false);
-    pub(crate) static CAPTURE: RwSignal<Option<Capture>> = {
+    pub(crate) static CAPTURE: RwSignal<Option<Rc<Capture>>> = {
         Scope::new().create_rw_signal(None)
     };
 }
@@ -496,7 +565,7 @@ pub fn capture(window_id: WindowId) {
             move |_| {
                 let view = dyn_container(
                     move || capture.get(),
-                    |capture| Box::new(inspector_view(&capture.map(Rc::new))),
+                    |capture| Box::new(inspector_view(&capture)),
                 );
                 let id = view.id();
                 view.style(|s| s.width_full().height_full()).on_event(

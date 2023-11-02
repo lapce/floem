@@ -1,4 +1,4 @@
-use std::{collections::HashMap, time::Instant};
+use std::{collections::HashMap, rc::Rc, time::Instant};
 
 use kurbo::{Point, Size};
 use winit::{
@@ -66,7 +66,7 @@ impl ApplicationHandle {
                     self.request_timer(timer, event_loop);
                 }
                 AppUpdateEvent::CaptureWindow { window_id, capture } => {
-                    capture.set(self.capture_window(window_id));
+                    capture.set(self.capture_window(window_id).map(Rc::new));
                 }
                 #[cfg(target_os = "linux")]
                 AppUpdateEvent::MenuAction {
