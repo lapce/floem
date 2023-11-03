@@ -190,9 +190,11 @@ impl ApplicationHandle {
                 if !show_titlebar {
                     use winit::platform::macos::WindowBuilderExtMacOS;
                     window_builder = window_builder
+                        .with_movable(false)
                         .with_title_hidden(true)
                         .with_titlebar_transparent(true)
-                        .with_fullsize_content_view(true);
+                        .with_fullsize_content_view(true)
+                        .with_traffic_lights_offset(11.0, 16.0);
                 }
                 #[cfg(not(target_os = "macos"))]
                 if !show_titlebar {
