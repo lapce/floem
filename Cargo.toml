@@ -12,7 +12,7 @@ rustc-hash = "1.1.0"
 clipboard = "0.5.0"
 smallvec = "1.10.0"
 educe = "0.4.20"
-taffy = "0.3.13"
+taffy = "0.3.18"
 rfd = { version = "0.11.4", default-features = false, features = [
     "xdg-portal",
 ] }
