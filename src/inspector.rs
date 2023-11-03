@@ -77,6 +77,8 @@ pub struct Capture {
     pub post_layout: Instant,
     pub end: Instant,
     pub taffy_duration: Duration,
+    pub taffy_node_count: usize,
+    pub taffy_depth: usize,
     pub window: Option<Rc<DynamicImage>>,
     pub window_size: Size,
     pub scale: f64,
@@ -305,13 +307,24 @@ fn stats(capture: &Capture) -> impl View {
         "Taffy time",
         format!("{:.4} ms", capture.taffy_duration.as_secs_f64() * 1000.0),
     );
+    let taffy_node_count = info("Taffy node count", capture.taffy_node_count.to_string());
+    let taffy_depth = info("Taffy depth", capture.taffy_depth.to_string());
     let paint_time = info(
         "Paint time",
         format!("Paint time: {:.4} ms", paint_time.as_secs_f64() * 1000.0),
     );
     let w = info("Window Width", format!("{}", capture.window_size.width));
     let h = info("Window Height", format!("{}", capture.window_size.height));
-    stack((layout_time, taffy_time, paint_time, w, h)).style(|s| s.flex_col())
+    stack((
+        layout_time,
+        taffy_time,
+        taffy_node_count,
+        taffy_depth,
+        paint_time,
+        w,
+        h,
+    ))
+    .style(|s| s.flex_col())
 }
 
 fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl View {
