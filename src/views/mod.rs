@@ -12,6 +12,9 @@ pub use rich_text::*;
 mod list;
 pub use list::*;
 
+mod static_list;
+pub use static_list::*;
+
 mod svg;
 pub use svg::*;
 
