@@ -45,8 +45,7 @@ use taffy::{
     style::{LengthPercentage, Style as TaffyStyle},
 };
 
-use crate::context::InteractionState;
-use crate::context::LayoutCx;
+use crate::context::{InteractionState, StyleCx};
 use crate::responsive::{ScreenSize, ScreenSizeBp};
 use crate::unit::{Px, PxPct, PxPctAuto, UnitExt};
 use crate::view::View;
@@ -258,7 +257,7 @@ pub trait StylePropReader {
 
     /// Reads the property from the current style state.
     /// Returns true if the property changed.
-    fn read(state: &mut Self::State, cx: &LayoutCx) -> bool;
+    fn read(state: &mut Self::State, cx: &StyleCx) -> bool;
 
     /// Reads the property from the style.
     /// Returns true if the property changed.
@@ -271,7 +270,7 @@ pub trait StylePropReader {
 impl<P: StyleProp> StylePropReader for P {
     type State = P::Type;
     type Type = P::Type;
-    fn read(state: &mut Self::State, cx: &LayoutCx) -> bool {
+    fn read(state: &mut Self::State, cx: &StyleCx) -> bool {
         let new = cx
             .get_prop(P::default())
             .unwrap_or_else(|| P::default_value());
@@ -296,7 +295,7 @@ impl<P: StyleProp> StylePropReader for P {
 impl<P: StyleProp> StylePropReader for Option<P> {
     type State = Option<P::Type>;
     type Type = Option<P::Type>;
-    fn read(state: &mut Self::State, cx: &LayoutCx) -> bool {
+    fn read(state: &mut Self::State, cx: &StyleCx) -> bool {
         let new = cx.get_prop(P::default());
         let changed = new != *state;
         *state = new;
@@ -327,7 +326,7 @@ impl<R: StylePropReader> Debug for ExtratorField<R> {
 }
 
 impl<R: StylePropReader> ExtratorField<R> {
-    pub fn read(&mut self, cx: &LayoutCx) -> bool {
+    pub fn read(&mut self, cx: &StyleCx) -> bool {
         R::read(&mut self.state, cx)
     }
     pub fn read_style(&mut self, style: &Style) -> bool {
@@ -393,7 +392,7 @@ macro_rules! prop_extracter {
             }
 
             #[allow(dead_code)]
-            $vis fn read(&mut self, cx: &$crate::context::LayoutCx) -> bool {
+            $vis fn read(&mut self, cx: &$crate::context::StyleCx) -> bool {
                 false
                 $(| self.$prop.read(cx))*
             }
@@ -658,6 +657,8 @@ impl Debug for Style {
                     .collect::<HashMap<StylePropRef, String>>(),
             )
             .field("selectors", &self.selectors)
+            .field("classes", &self.classes)
+            .field("responsive", &self.responsive)
             .finish()
     }
 }

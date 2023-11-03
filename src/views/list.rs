@@ -140,8 +140,8 @@ impl<V: View + 'static, T> View for List<V, T> {
                 &mut self.children,
                 &self.view_fn,
             );
-            cx.request_layout(self.id());
-            ChangeFlags::LAYOUT
+            cx.request_all(self.id());
+            ChangeFlags::all()
         } else {
             ChangeFlags::empty()
         }

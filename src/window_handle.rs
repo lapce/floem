@@ -22,7 +22,8 @@ use crate::{
     action::exec_after,
     animate::{AnimPropKind, AnimUpdateMsg, AnimValue, AnimatedProp, SizeUnit},
     context::{
-        AppState, EventCx, LayoutCx, MoveListener, PaintCx, PaintState, ResizeListener, UpdateCx,
+        AppState, EventCx, LayoutCx, MoveListener, PaintCx, PaintState, ResizeListener, StyleCx,
+        UpdateCx,
     },
     event::{Event, EventListener},
     id::{Id, IdPath, ID_PATHS},
@@ -205,7 +206,7 @@ impl WindowHandle {
                         if let Some(id) = cx.app_state.active {
                             // To remove the styles applied by the Active selector
                             if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
-                                cx.app_state.request_layout(id);
+                                cx.app_state.request_style(id);
                             }
 
                             cx.app_state.active = None;
@@ -227,7 +228,7 @@ impl WindowHandle {
             if let Event::PointerUp(_) = &event {
                 // To remove the styles applied by the Active selector
                 if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
-                    cx.app_state.request_layout(id);
+                    cx.app_state.request_style(id);
                 }
 
                 cx.app_state.active = None;
@@ -247,7 +248,7 @@ impl WindowHandle {
                     || view_state.has_style_selectors.has(StyleSelector::Hover)
                     || view_state.has_style_selectors.has(StyleSelector::Active)
                 {
-                    cx.app_state.request_layout(*id);
+                    cx.app_state.request_style(*id);
                 }
                 if hovered.contains(id) {
                     if let Some(action) = cx.get_event_listener(*id, &EventListener::PointerEnter) {
@@ -285,14 +286,14 @@ impl WindowHandle {
         if is_pointer_down {
             for id in cx.app_state.clicking.clone() {
                 if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
-                    cx.app_state.request_layout(id);
+                    cx.app_state.request_style(id);
                 }
             }
         }
         if matches!(&event, Event::PointerUp(_)) {
             for id in cx.app_state.clicking.clone() {
                 if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
-                    cx.app_state.request_layout(id);
+                    cx.app_state.request_style(id);
                 }
             }
             cx.app_state.clicking.clear();
@@ -328,6 +329,7 @@ impl WindowHandle {
             }
         }
 
+        self.style();
         self.layout();
         self.process_update();
         self.request_paint();
@@ -373,7 +375,7 @@ impl WindowHandle {
                 || view_state.has_style_selectors.has(StyleSelector::Active)
                 || view_state.animation.is_some()
             {
-                cx.app_state.request_layout(id);
+                cx.app_state.request_style(id);
             }
             let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
             if let Some(id_path) = id_path {
@@ -445,6 +447,11 @@ impl WindowHandle {
         } else {
             self.event(Event::WindowLostFocus);
         }
+    }
+
+    fn style(&mut self) {
+        let mut cx = StyleCx::new(&mut self.app_state);
+        self.view.style_main(&mut cx);
     }
 
     fn layout(&mut self) -> Duration {
@@ -537,17 +544,23 @@ impl WindowHandle {
     }
 
     pub(crate) fn capture(&mut self) -> Capture {
+        // Capture the view before we run `style` and `layout` to catch missing `request_style`` or
+        // `request_layout` flags.
+        let root_layout = self.app_state.get_layout_rect(self.view.id());
+        let root = CapturedView::capture(&self.view, &mut self.app_state, root_layout);
+
         self.app_state.capture = Some(CaptureState::default());
 
         // Trigger painting to create a Vger renderer which can capture the output.
         // This can be expensive so it could skew the paint time measurement.
         self.paint();
 
-        // Ensure we run layout again for accurate timing.
-        self.app_state
-            .view_states
-            .values_mut()
-            .for_each(|state| state.request_layout = true);
+        // Ensure we run layout and styling again for accurate timing. We also need to ensure
+        // styles are recomputed to capture them.
+        self.app_state.view_states.values_mut().for_each(|state| {
+            state.request_layout = true;
+            state.request_style = true;
+        });
 
         fn get_taffy_depth(taffy: &taffy::Taffy, root: taffy::node::Node) -> usize {
             let children = taffy.children(root).unwrap();
@@ -564,6 +577,8 @@ impl WindowHandle {
         }
 
         let start = Instant::now();
+        self.style();
+        let post_style = Instant::now();
 
         let taffy_root_node = self.app_state.view_state(self.view.id()).node;
         let taffy_duration = self.layout();
@@ -571,9 +586,9 @@ impl WindowHandle {
         let window = self.paint().map(Rc::new);
         let end = Instant::now();
 
-        let root_layout = self.app_state.get_layout_rect(self.view.id());
         let capture = Capture {
             start,
+            post_style,
             post_layout,
             end,
             taffy_duration,
@@ -582,7 +597,7 @@ impl WindowHandle {
             window,
             window_size: self.size.get_untracked() / self.app_state.scale,
             scale: self.scale * self.app_state.scale,
-            root: CapturedView::capture(&self.view, &mut self.app_state, root_layout),
+            root,
             state: self.app_state.capture.take().unwrap(),
         };
         // Process any updates produced by capturing
@@ -596,14 +611,23 @@ impl WindowHandle {
         loop {
             flags |= self.process_update_messages();
             if !self.needs_layout()
+                && !self.needs_style()
                 && !self.has_deferred_update_messages()
                 && !self.has_anim_update_messages()
             {
                 break;
             }
-            // QUESTION: why do we always request a layout?
-            flags |= ChangeFlags::LAYOUT;
-            self.layout();
+
+            if self.needs_style() {
+                flags |= ChangeFlags::STYLE;
+                self.style();
+            }
+
+            if self.needs_layout() {
+                flags |= ChangeFlags::LAYOUT;
+                self.layout();
+            }
+
             flags |= self.process_deferred_update_messages();
             flags |= self.process_anim_update_messages();
         }
@@ -684,12 +708,12 @@ impl WindowHandle {
                                 .app_state
                                 .has_style_for_sel(old_id, StyleSelector::Active)
                             {
-                                cx.app_state.request_layout(old_id);
+                                cx.app_state.request_style(old_id);
                             }
                         }
 
                         if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
-                            cx.app_state.request_layout(id);
+                            cx.app_state.request_style(id);
                         }
                     }
                     UpdateMessage::Disabled { id, is_disabled } => {
@@ -699,7 +723,7 @@ impl WindowHandle {
                         } else {
                             cx.app_state.disabled.remove(&id);
                         }
-                        cx.app_state.request_layout(id);
+                        cx.app_state.request_style(id);
                     }
                     UpdateMessage::State { id, state } => {
                         let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
@@ -712,9 +736,9 @@ impl WindowHandle {
                         let old_any_inherited = state.style.any_inherited();
                         state.base_style = Some(style);
                         if state.style.any_inherited() || old_any_inherited {
-                            cx.app_state.request_layout_recursive(id);
+                            cx.app_state.request_style_recursive(id);
                         } else {
-                            cx.request_layout(id);
+                            cx.request_style(id);
                         }
                     }
                     UpdateMessage::Style { id, style } => {
@@ -722,15 +746,15 @@ impl WindowHandle {
                         let old_any_inherited = state.style.any_inherited();
                         state.style = style;
                         if state.style.any_inherited() || old_any_inherited {
-                            cx.app_state.request_layout_recursive(id);
+                            cx.app_state.request_style_recursive(id);
                         } else {
-                            cx.request_layout(id);
+                            cx.request_style(id);
                         }
                     }
                     UpdateMessage::Class { id, class } => {
                         let state = cx.app_state.view_state(id);
                         state.class = Some(class);
-                        cx.app_state.request_layout_recursive(id);
+                        cx.app_state.request_style_recursive(id);
                     }
                     UpdateMessage::StyleSelector {
                         id,
@@ -743,7 +767,7 @@ impl WindowHandle {
                             StyleSelector::Dragging => state.dragging_style = style,
                             _ => panic!(),
                         }
-                        cx.request_layout(id);
+                        cx.request_style(id);
                     }
                     UpdateMessage::KeyboardNavigable { id } => {
                         cx.app_state.keyboard_navigable.insert(id);
@@ -984,6 +1008,10 @@ impl WindowHandle {
 
     fn needs_layout(&mut self) -> bool {
         self.app_state.view_state(self.view.id()).request_layout
+    }
+
+    fn needs_style(&mut self) -> bool {
+        self.app_state.view_state(self.view.id()).request_style
     }
 
     fn has_deferred_update_messages(&self) -> bool {

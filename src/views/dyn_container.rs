@@ -118,7 +118,7 @@ impl<T: 'static> View for DynamicContainer<T> {
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        "ContainerBox".into()
+        "DynamicContainer".into()
     }
 
     fn update(
@@ -132,8 +132,8 @@ impl<T: 'static> View for DynamicContainer<T> {
             old_child_scope.dispose();
             self.child.id().set_parent(self.id);
             view_children_set_parent_id(&*self.child);
-            cx.request_layout(self.id());
-            ChangeFlags::LAYOUT
+            cx.request_all(self.id());
+            ChangeFlags::all()
         } else {
             ChangeFlags::empty()
         }

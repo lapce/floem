@@ -45,11 +45,18 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn std::any::Any>) -> ChangeFlags {
         if let Ok(state) = state.downcast() {
             self.children = *state;
-            cx.request_layout(self.id);
-            ChangeFlags::LAYOUT
+            cx.request_all(self.id);
+            ChangeFlags::all()
         } else {
             ChangeFlags::empty()
         }
+    }
+
+    fn style(&mut self, cx: &mut crate::context::StyleCx) {
+        self.children.foreach_mut(&mut |view| {
+            view.style_main(cx);
+            false
+        });
     }
 
     fn event(

@@ -161,11 +161,11 @@ impl<V: View + 'static, T> View for Tab<V, T> {
                     self.active = active;
                 }
             }
-            cx.request_layout(self.id());
+            cx.request_all(self.id());
             for (child, _) in self.children.iter().flatten() {
-                cx.request_layout(child.id());
+                cx.request_all(child.id());
             }
-            ChangeFlags::LAYOUT
+            ChangeFlags::all()
         } else {
             ChangeFlags::empty()
         }
@@ -180,7 +180,7 @@ impl<V: View + 'static, T> View for Tab<V, T> {
                 .filter_map(|(i, child)| {
                     let child_id = child.as_ref()?.0.id();
                     let child_view = cx.app_state_mut().view_state(child_id);
-                    child_view.style = child_view.style.clone().set(
+                    child_view.combined_style = child_view.style.clone().set(
                         DisplayProp,
                         if i != self.active {
                             // set display to none for non active child
