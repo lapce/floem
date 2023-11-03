@@ -549,8 +549,23 @@ impl WindowHandle {
             .values_mut()
             .for_each(|state| state.request_layout = true);
 
+        fn get_taffy_depth(taffy: &taffy::Taffy, root: taffy::node::Node) -> usize {
+            let children = taffy.children(root).unwrap();
+            if children.is_empty() {
+                1
+            } else {
+                children
+                    .iter()
+                    .map(|child| get_taffy_depth(taffy, *child))
+                    .max()
+                    .unwrap()
+                    + 1
+            }
+        }
+
         let start = Instant::now();
 
+        let taffy_root_node = self.app_state.view_state(self.view.id()).node;
         let taffy_duration = self.layout();
         let post_layout = Instant::now();
         let window = self.paint().map(Rc::new);
@@ -562,6 +577,8 @@ impl WindowHandle {
             post_layout,
             end,
             taffy_duration,
+            taffy_node_count: self.app_state.taffy.total_node_count(),
+            taffy_depth: get_taffy_depth(&self.app_state.taffy, taffy_root_node),
             window,
             window_size: self.size.get_untracked() / self.app_state.scale,
             scale: self.scale * self.app_state.scale,
