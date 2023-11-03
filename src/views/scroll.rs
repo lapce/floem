@@ -44,9 +44,9 @@ enum BarHeldState {
 style_class!(pub Handle);
 style_class!(pub Track);
 
-prop!(pub Rounded: bool { inherited } = cfg!(target_os = "macos"));
-prop!(pub Thickness: Px { inherited } = Px(10.0));
-prop!(pub Border: Px { inherited } = Px(0.0));
+prop!(pub Rounded: bool {} = cfg!(target_os = "macos"));
+prop!(pub Thickness: Px {} = Px(10.0));
+prop!(pub Border: Px {} = Px(0.0));
 
 prop_extracter! {
     ScrollStyle {

@@ -556,10 +556,12 @@ impl Style {
         }
     }
 
-    pub(crate) fn apply_only_inherited(this: &mut Rc<Style>, over: &Style) {
-        let any_inherited = over.map.iter().any(|(p, _)| p.info.inherited);
+    pub(crate) fn any_inherited(&self) -> bool {
+        !self.classes.is_empty() || self.map.iter().any(|(p, _)| p.info.inherited)
+    }
 
-        if any_inherited || !over.classes.is_empty() {
+    pub(crate) fn apply_only_inherited(this: &mut Rc<Style>, over: &Style) {
+        if over.any_inherited() {
             let inherited = over
                 .map
                 .iter()
