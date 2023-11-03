@@ -70,14 +70,22 @@ pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
 }
 
 pub fn batch<T>(f: impl FnOnce() -> T) -> T {
-    RUNTIME.with(|runtime| {
-        runtime.batching.set(true);
+    let already_batching = RUNTIME.with(|runtime| {
+        let batching = runtime.batching.get();
+        if !batching {
+            runtime.batching.set(true);
+        }
+
+        batching
     });
+
     let result = f();
-    RUNTIME.with(|runtime| {
-        runtime.batching.set(false);
-        runtime.run_pending_effects();
-    });
+    if !already_batching {
+        RUNTIME.with(|runtime| {
+            runtime.batching.set(false);
+            runtime.run_pending_effects();
+        });
+    }
 
     result
 }
