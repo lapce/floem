@@ -196,15 +196,6 @@ impl View for Label {
             return None;
         }
 
-        if self.font.read(cx) | self.style.read(cx) {
-            self.text_layout = None;
-            self.available_text = None;
-            self.available_width = None;
-            self.available_text_layout = None;
-            self.set_text_layout();
-            cx.app_state_mut().request_layout(self.id());
-        }
-
         let layout = cx.get_layout(self.id()).unwrap();
         let style = cx.app_state_mut().get_builtin_style(self.id);
         let text_overflow = style.text_overflow();

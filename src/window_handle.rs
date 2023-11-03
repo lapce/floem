@@ -692,18 +692,28 @@ impl WindowHandle {
                     }
                     UpdateMessage::BaseStyle { id, style } => {
                         let state = cx.app_state.view_state(id);
+                        let old_any_inherited = state.style.any_inherited();
                         state.base_style = Some(style);
-                        cx.request_layout(id);
+                        if state.style.any_inherited() || old_any_inherited {
+                            cx.app_state.request_layout_recursive(id);
+                        } else {
+                            cx.request_layout(id);
+                        }
                     }
                     UpdateMessage::Style { id, style } => {
                         let state = cx.app_state.view_state(id);
+                        let old_any_inherited = state.style.any_inherited();
                         state.style = style;
-                        cx.request_layout(id);
+                        if state.style.any_inherited() || old_any_inherited {
+                            cx.app_state.request_layout_recursive(id);
+                        } else {
+                            cx.request_layout(id);
+                        }
                     }
                     UpdateMessage::Class { id, class } => {
                         let state = cx.app_state.view_state(id);
                         state.class = Some(class);
-                        cx.request_layout(id);
+                        cx.app_state.request_layout_recursive(id);
                     }
                     UpdateMessage::StyleSelector {
                         id,

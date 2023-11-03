@@ -51,6 +51,8 @@ pub struct ViewState {
     pub(crate) node: Node,
     pub(crate) children_nodes: Vec<Node>,
     pub(crate) request_layout: bool,
+    /// Layout is requested on all direct and indirect children.
+    pub(crate) request_layout_recursive: bool,
     pub(crate) has_style_selectors: StyleSelectors,
     pub(crate) viewport: Option<Rect>,
     pub(crate) layout_rect: Rect,
@@ -78,6 +80,7 @@ impl ViewState {
             layout_rect: Rect::ZERO,
             layout_props: Default::default(),
             request_layout: true,
+            request_layout_recursive: false,
             has_style_selectors: StyleSelectors::default(),
             animation: None,
             base_style: None,
@@ -368,6 +371,13 @@ impl AppState {
                 },
             );
         }
+    }
+
+    /// Requests layout for a view and all direct and indirect children.
+    pub(crate) fn request_layout_recursive(&mut self, id: Id) {
+        let view = self.view_state(id);
+        view.request_layout_recursive = true;
+        self.request_layout(id);
     }
 
     pub fn request_layout(&mut self, id: Id) {

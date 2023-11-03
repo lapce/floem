@@ -197,9 +197,11 @@ pub trait View {
     fn layout_main(&mut self, cx: &mut LayoutCx) -> Node {
         cx.save();
 
+        let view_state = cx.app_state_mut().view_state(self.id());
+
         let view_style = self.view_style();
         let view_class = self.view_class();
-        let class = cx.app_state_mut().view_state(self.id()).class;
+        let class = view_state.class;
         let class_array;
         let classes = if let Some(class) = class {
             class_array = [class];
@@ -207,6 +209,18 @@ pub trait View {
         } else {
             &[]
         };
+
+        // Propagate layout requests to children if needed.
+        if view_state.request_layout_recursive {
+            view_state.request_layout_recursive = false;
+            view_state.request_layout = true;
+            for child in self.children() {
+                cx.app_state_mut()
+                    .view_state(child.id())
+                    .request_layout_recursive = true;
+            }
+        }
+
         cx.app_state.compute_style(
             self.id(),
             view_style,
@@ -252,9 +266,6 @@ pub trait View {
         }
 
         cx.save();
-
-        cx.style.direct = cx.app_state_mut().get_computed_style(self.id()).clone();
-        Style::apply_only_inherited(&mut cx.style.current, &cx.style.direct);
 
         let layout = cx
             .app_state()
