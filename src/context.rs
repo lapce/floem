@@ -51,8 +51,9 @@ pub struct ViewState {
     pub(crate) node: Node,
     pub(crate) children_nodes: Vec<Node>,
     pub(crate) request_layout: bool,
+    pub(crate) request_style: bool,
     /// Layout is requested on all direct and indirect children.
-    pub(crate) request_layout_recursive: bool,
+    pub(crate) request_style_recursive: bool,
     pub(crate) has_style_selectors: StyleSelectors,
     pub(crate) viewport: Option<Rect>,
     pub(crate) layout_rect: Rect,
@@ -63,6 +64,7 @@ pub struct ViewState {
     pub(crate) class: Option<StyleClassRef>,
     pub(crate) dragging_style: Option<Style>,
     pub(crate) combined_style: Style,
+    pub(crate) taffy_style: taffy::style::Style,
     pub(crate) event_listeners: HashMap<EventListener, Box<EventCallback>>,
     pub(crate) context_menu: Option<Box<MenuCallback>>,
     pub(crate) popout_menu: Option<Box<MenuCallback>>,
@@ -80,13 +82,15 @@ impl ViewState {
             layout_rect: Rect::ZERO,
             layout_props: Default::default(),
             request_layout: true,
-            request_layout_recursive: false,
+            request_style: true,
+            request_style_recursive: false,
             has_style_selectors: StyleSelectors::default(),
             animation: None,
             base_style: None,
             style: Style::new(),
             class: None,
             combined_style: Style::new(),
+            taffy_style: taffy::style::Style::DEFAULT,
             dragging_style: None,
             children_nodes: Vec::new(),
             event_listeners: HashMap::new(),
@@ -373,11 +377,22 @@ impl AppState {
         }
     }
 
-    /// Requests layout for a view and all direct and indirect children.
-    pub(crate) fn request_layout_recursive(&mut self, id: Id) {
+    /// Requests style for a view and all direct and indirect children.
+    pub(crate) fn request_style_recursive(&mut self, id: Id) {
         let view = self.view_state(id);
-        view.request_layout_recursive = true;
-        self.request_layout(id);
+        view.request_style_recursive = true;
+        self.request_style(id);
+    }
+
+    pub fn request_style(&mut self, id: Id) {
+        let view = self.view_state(id);
+        if view.request_style {
+            return;
+        }
+        view.request_style = true;
+        if let Some(parent) = id.parent() {
+            self.request_style(parent);
+        }
     }
 
     pub fn request_layout(&mut self, id: Id) {
@@ -388,6 +403,14 @@ impl AppState {
         view.request_layout = true;
         if let Some(parent) = id.parent() {
             self.request_layout(parent);
+        }
+    }
+
+    pub fn request_paint(&mut self, id: Id) {
+        // Painting currently happens on any change, so request styling on the root
+        // view.
+        if let Some(id) = id.id_path().and_then(|path| path.0.get(1).copied()) {
+            self.request_style(id)
         }
     }
 
@@ -435,7 +458,7 @@ impl AppState {
 
         // To apply the styles of the Active selector
         if self.has_style_for_sel(id, StyleSelector::Active) {
-            self.request_layout(id);
+            self.request_style(id);
         }
     }
 
@@ -448,7 +471,7 @@ impl AppState {
         if let Some(old_id) = self.focus {
             // To remove the styles applied by the Focus selector
             if self.has_style_for_sel(old_id, StyleSelector::Focus) {
-                self.request_layout(old_id);
+                self.request_style(old_id);
             }
         }
 
@@ -522,7 +545,7 @@ impl AppState {
             if self.has_style_for_sel(id, StyleSelector::Focus)
                 || self.has_style_for_sel(id, StyleSelector::FocusVisible)
             {
-                self.request_layout(id);
+                self.request_style(id);
             }
             if let Some(action) = self.get_event_listener(id, &EventListener::FocusGained) {
                 (*action)(&Event::FocusGained);
@@ -534,7 +557,7 @@ impl AppState {
             if self.has_style_for_sel(old_id, StyleSelector::Focus)
                 || self.has_style_for_sel(old_id, StyleSelector::FocusVisible)
             {
-                self.request_layout(old_id);
+                self.request_style(old_id);
             }
             if let Some(action) = self.get_event_listener(old_id, &EventListener::FocusLost) {
                 (*action)(&Event::FocusLost);
@@ -549,6 +572,31 @@ pub struct EventCx<'a> {
 }
 
 impl<'a> EventCx<'a> {
+    /// request that this node be styled, laid out and painted again
+    /// This will recursively request this for all parents.
+    pub fn request_all(&mut self, id: Id) {
+        self.app_state.request_style(id);
+        self.app_state.request_layout(id);
+    }
+
+    /// request that this node be styled again
+    /// This will recursively request style for all parents.
+    pub fn request_style(&mut self, id: Id) {
+        self.app_state.request_style(id);
+    }
+
+    /// request that this node be laid out again
+    /// This will recursively request layout for all parents and set the `ChangeFlag::LAYOUT` at root
+    pub fn request_layout(&mut self, id: Id) {
+        self.app_state.request_layout(id);
+    }
+
+    /// request that this node be painted again
+    /// This will recursively request painting for all parents
+    pub fn request_paint(&mut self, id: Id) {
+        self.app_state.request_paint(id);
+    }
+
     pub fn update_active(&mut self, id: Id) {
         self.app_state.update_active(id);
     }
@@ -650,24 +698,21 @@ pub struct InteractionState {
     pub(crate) using_keyboard_navigation: bool,
 }
 
-pub(crate) struct StyleCx {
+pub struct StyleCx<'a> {
+    pub(crate) app_state: &'a mut AppState,
     pub(crate) current: Rc<Style>,
     pub(crate) direct: Style,
     saved: Vec<Rc<Style>>,
 }
 
-impl StyleCx {
-    fn new() -> Self {
+impl<'a> StyleCx<'a> {
+    pub(crate) fn new(app_state: &'a mut AppState) -> Self {
         Self {
+            app_state,
             current: Default::default(),
             direct: Default::default(),
             saved: Default::default(),
         }
-    }
-
-    pub(crate) fn clear(&mut self) {
-        self.current = Default::default();
-        self.saved.clear();
     }
 
     pub fn save(&mut self) {
@@ -677,6 +722,24 @@ impl StyleCx {
     pub fn restore(&mut self) {
         self.current = self.saved.pop().unwrap_or_default();
     }
+
+    pub fn get_prop<P: StyleProp>(&self, _prop: P) -> Option<P::Type> {
+        self.direct
+            .get_prop::<P>()
+            .or_else(|| self.current.get_prop::<P>())
+    }
+
+    pub fn style(&self) -> Style {
+        (*self.current).clone().apply(self.direct.clone())
+    }
+
+    pub fn app_state_mut(&mut self) -> &mut AppState {
+        self.app_state
+    }
+
+    pub fn app_state(&self) -> &AppState {
+        self.app_state
+    }
 }
 
 /// Holds current layout state for given position in the tree.
@@ -684,7 +747,6 @@ impl StyleCx {
 pub struct LayoutCx<'a> {
     pub(crate) app_state: &'a mut AppState,
     pub(crate) viewport: Option<Rect>,
-    pub(crate) style: StyleCx,
     pub(crate) window_origin: Point,
     pub(crate) saved_viewports: Vec<Option<Rect>>,
     pub(crate) saved_window_origins: Vec<Point>,
@@ -696,27 +758,12 @@ impl<'a> LayoutCx<'a> {
             app_state,
             viewport: None,
             window_origin: Point::ZERO,
-            style: StyleCx::new(),
             saved_viewports: Vec::new(),
             saved_window_origins: Vec::new(),
         }
     }
 
-    pub fn get_prop<P: StyleProp>(&self, _prop: P) -> Option<P::Type> {
-        self.style
-            .direct
-            .get_prop::<P>()
-            .or_else(|| self.style.current.get_prop::<P>())
-    }
-
-    pub fn style(&self) -> Style {
-        (*self.style.current)
-            .clone()
-            .apply(self.style.direct.clone())
-    }
-
     pub(crate) fn clear(&mut self) {
-        self.style.clear();
         self.viewport = None;
         self.window_origin = Point::ZERO;
         self.saved_viewports.clear();
@@ -724,13 +771,11 @@ impl<'a> LayoutCx<'a> {
     }
 
     pub fn save(&mut self) {
-        self.style.save();
         self.saved_viewports.push(self.viewport);
         self.saved_window_origins.push(self.window_origin);
     }
 
     pub fn restore(&mut self) {
-        self.style.restore();
         self.viewport = self.saved_viewports.pop().unwrap_or_default();
         self.window_origin = self.saved_window_origins.pop().unwrap_or_default();
     }
@@ -1032,6 +1077,19 @@ pub struct UpdateCx<'a> {
 }
 
 impl<'a> UpdateCx<'a> {
+    /// request that this node be styled, laid out and painted again
+    /// This will recursively request this for all parents.
+    pub fn request_all(&mut self, id: Id) {
+        self.app_state.request_style(id);
+        self.app_state.request_layout(id);
+    }
+
+    /// request that this node be styled again
+    /// This will recursively request style for all parents.
+    pub fn request_style(&mut self, id: Id) {
+        self.app_state.request_style(id);
+    }
+
     /// request that this node be laid out again
     /// This will recursively request layout for all parents and set the `ChangeFlag::LAYOUT` at root
     pub fn request_layout(&mut self, id: Id) {

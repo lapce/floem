@@ -68,6 +68,12 @@ impl<V: View> View for StaticList<V> {
         ChangeFlags::empty()
     }
 
+    fn style(&mut self, cx: &mut crate::context::StyleCx) {
+        for child in &mut self.children {
+            child.style_main(cx);
+        }
+    }
+
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
             let nodes = self

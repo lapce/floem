@@ -11,7 +11,7 @@ use crate::{
     prop, prop_extracter,
     style::{Background, BorderColor, BorderRadius, PositionProp, Style, StyleSelector},
     style_class,
-    unit::{Px, PxPct},
+    unit::Px,
     view::{ChangeFlags, View},
 };
 
@@ -64,9 +64,7 @@ const HANDLE_COLOR: Color = Color::rgba8(0, 0, 0, 120);
 pub struct Scroll<V: View> {
     id: Id,
     child: V,
-    // the total of the scroll view, including padding
-    size: Size,
-    // the actual rect of the scroll view excluding padding
+    // the actual rect of the scroll view excluding padding and borders
     actual_rect: Rect,
     child_size: Size,
     child_viewport: Rect,
@@ -91,7 +89,6 @@ pub fn scroll<V: View>(child: V) -> Scroll<V> {
     Scroll {
         id: Id::next(),
         child,
-        size: Size::ZERO,
         actual_rect: Rect::ZERO,
         child_size: Size::ZERO,
         child_viewport: Rect::ZERO,
@@ -245,34 +242,10 @@ impl<V: View> Scroll<V> {
         let new_child_size = self.child_size(app_state).unwrap_or_default();
         self.child_size = new_child_size;
 
-        let layout = app_state.get_layout(self.id).unwrap();
-        self.size = Size::new(layout.size.width as f64, layout.size.height as f64);
+        self.actual_rect = app_state.get_content_rect(self.id);
 
-        let style = app_state.get_builtin_style(self.id);
-        let padding_left = match style.padding_left() {
-            PxPct::Px(padding) => padding as f32,
-            PxPct::Pct(pct) => pct as f32 * layout.size.width,
-        };
-        let padding_right = match style.padding_right() {
-            PxPct::Px(padding) => padding as f32,
-            PxPct::Pct(pct) => pct as f32 * layout.size.width,
-        };
-        let padding_top = match style.padding_top() {
-            PxPct::Px(padding) => padding as f32,
-            PxPct::Pct(pct) => pct as f32 * layout.size.width,
-        };
-        let padding_bottom = match style.padding_bottom() {
-            PxPct::Px(padding) => padding as f32,
-            PxPct::Pct(pct) => pct as f32 * layout.size.width,
-        };
-        let mut actual_rect = self.size.to_rect();
-        actual_rect.x0 += padding_left as f64;
-        actual_rect.x1 -= padding_right as f64;
-        actual_rect.y0 += padding_top as f64;
-        actual_rect.y1 -= padding_bottom as f64;
-        self.actual_rect = actual_rect;
-
-        if child_size != new_child_size {
+        // Round to prevent loops due to floating point accuracy
+        if (child_size * 128.0).round() != (new_child_size * 128.0).round() {
             app_state.request_layout(self.id);
         }
     }
@@ -562,22 +535,22 @@ impl<V: View> Scroll<V> {
         let hover = self.point_hits_vertical_bar(app_state, pos);
         if self.v_handle_hover != hover {
             self.v_handle_hover = hover;
-            app_state.request_layout(self.id);
+            app_state.request_paint(self.id);
         }
         let hover = self.point_hits_horizontal_bar(app_state, pos);
         if self.h_handle_hover != hover {
             self.h_handle_hover = hover;
-            app_state.request_layout(self.id);
+            app_state.request_paint(self.id);
         }
         let hover = self.point_within_vertical_bar(app_state, pos);
         if self.v_track_hover != hover {
             self.v_track_hover = hover;
-            app_state.request_layout(self.id);
+            app_state.request_paint(self.id);
         }
         let hover = self.point_within_horizontal_bar(app_state, pos);
         if self.h_track_hover != hover {
             self.h_track_hover = hover;
-            app_state.request_layout(self.id);
+            app_state.request_paint(self.id);
         }
     }
 }
@@ -648,29 +621,33 @@ impl<V: View> View for Scroll<V> {
         }
     }
 
+    fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+        let style = cx.style();
+
+        let handle_style = style.clone().apply_class(Handle);
+        self.handle_style.read_style(&handle_style);
+        self.handle_hover_style.read_style(
+            &handle_style
+                .clone()
+                .apply_selectors(&[StyleSelector::Hover]),
+        );
+        self.handle_active_style
+            .read_style(&handle_style.apply_selectors(&[StyleSelector::Active]));
+
+        let track_style = style.apply_class(Track);
+        self.track_style.read_style(&track_style);
+        self.track_hover_style
+            .read_style(&track_style.apply_selectors(&[StyleSelector::Hover]));
+
+        self.child.style_main(cx);
+    }
+
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
-            let style = cx.style();
-
-            let handle_style = style.clone().apply_class(Handle);
-            self.handle_style.read_style(&handle_style);
-            self.handle_hover_style.read_style(
-                &handle_style
-                    .clone()
-                    .apply_selectors(&[StyleSelector::Hover]),
-            );
-            self.handle_active_style
-                .read_style(&handle_style.apply_selectors(&[StyleSelector::Active]));
-
-            let track_style = style.apply_class(Track);
-            self.track_style.read_style(&track_style);
-            self.track_hover_style
-                .read_style(&track_style.apply_selectors(&[StyleSelector::Hover]));
-
             let child_id = self.child.id();
             let child_view = cx.app_state_mut().view_state(child_id);
-            child_view.style = child_view
-                .style
+            child_view.combined_style = child_view
+                .combined_style
                 .clone()
                 .set(PositionProp, Position::Absolute);
             let child_node = self.child.layout_main(cx);
@@ -732,7 +709,7 @@ impl<V: View> View for Scroll<V> {
                             );
                             cx.update_active(self.id);
                             // Force a repaint.
-                            cx.app_state.request_layout(self.id);
+                            cx.request_paint(self.id);
                             return true;
                         }
                         self.click_vertical_bar_area(cx.app_state, event.pos);
@@ -753,7 +730,7 @@ impl<V: View> View for Scroll<V> {
                             );
                             cx.update_active(self.id);
                             // Force a repaint.
-                            cx.app_state.request_layout(self.id);
+                            cx.request_paint(self.id);
                             return true;
                         }
                         self.click_horizontal_bar_area(cx.app_state, event.pos);
@@ -772,7 +749,7 @@ impl<V: View> View for Scroll<V> {
                 if self.are_bars_held() {
                     self.held = BarHeldState::None;
                     // Force a repaint.
-                    cx.app_state.request_layout(self.id);
+                    cx.request_paint(self.id);
                 }
             }
             Event::PointerMove(event) => {
@@ -814,7 +791,7 @@ impl<V: View> View for Scroll<V> {
                 self.h_handle_hover = false;
                 self.v_track_hover = false;
                 self.h_track_hover = false;
-                cx.app_state.request_layout(self.id);
+                cx.request_paint(self.id);
             }
             _ => {}
         }

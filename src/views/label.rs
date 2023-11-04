@@ -3,7 +3,7 @@ use std::{any::Any, fmt::Display};
 use crate::{
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
     prop_extracter,
-    style::{FontProps, FontSize, LineHeight, TextColor, TextOverflow, TextOverflowProp},
+    style::{FontProps, LineHeight, TextColor, TextOverflow, TextOverflowProp},
     unit::PxPct,
 };
 use floem_reactive::create_effect;
@@ -146,17 +146,21 @@ impl View for Label {
         false
     }
 
+    fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+        if self.font.read(cx) | self.style.read(cx) {
+            self.text_layout = None;
+            self.available_text = None;
+            self.available_width = None;
+            self.available_text_layout = None;
+            cx.app_state_mut().request_layout(self.id);
+        }
+    }
+
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
             let (width, height) = if self.label.is_empty() {
-                (0.0, cx.get_prop(FontSize).and_then(|s| s).unwrap_or(14.0))
+                (0.0, self.font.size().unwrap_or(14.0))
             } else {
-                if self.font.read(cx) | self.style.read(cx) {
-                    self.text_layout = None;
-                    self.available_text = None;
-                    self.available_width = None;
-                    self.available_text_layout = None;
-                }
                 if self.text_layout.is_none() {
                     self.set_text_layout();
                 }

@@ -92,7 +92,7 @@ use taffy::prelude::Node;
 
 use crate::{
     action::{exec_after, show_context_menu},
-    context::{AppState, DragState, EventCx, LayoutCx, PaintCx, UpdateCx},
+    context::{AppState, DragState, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx},
     event::{Event, EventListener},
     id::Id,
     inspector::CaptureState,
@@ -100,13 +100,14 @@ use crate::{
 };
 
 bitflags! {
-    #[derive(Default)]
+    #[derive(Default, Copy, Clone)]
     #[must_use]
     pub struct ChangeFlags: u8 {
         const UPDATE = 1;
-        const LAYOUT = 2;
-        const ACCESSIBILITY = 4;
-        const PAINT = 8;
+        const STYLE = 1 << 1;
+        const LAYOUT = 1 << 2;
+        const ACCESSIBILITY = 1 << 3;
+        const PAINT = 1 << 4;
     }
 }
 
@@ -190,14 +191,17 @@ pub trait View {
     /// indicating if you'd like a layout or paint pass to be scheduled.
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags;
 
-    /// Internal method used by Floem to compute the styles for the view and to invoke the
-    /// user-defined `View::layout` method.
+    /// Internal method used by Floem to compute the styles for the view.
     ///
     /// You shouldn't need to implement this.
-    fn layout_main(&mut self, cx: &mut LayoutCx) -> Node {
+    fn style_main(&mut self, cx: &mut StyleCx<'_>) {
         cx.save();
 
         let view_state = cx.app_state_mut().view_state(self.id());
+        if !view_state.request_style {
+            return;
+        }
+        view_state.request_style = false;
 
         let view_style = self.view_style();
         let view_class = self.view_class();
@@ -210,35 +214,54 @@ pub trait View {
             &[]
         };
 
-        // Propagate layout requests to children if needed.
-        if view_state.request_layout_recursive {
-            view_state.request_layout_recursive = false;
-            view_state.request_layout = true;
+        // Propagate style requests to children if needed.
+        if view_state.request_style_recursive {
+            view_state.request_style_recursive = false;
             for child in self.children() {
-                cx.app_state_mut()
-                    .view_state(child.id())
-                    .request_layout_recursive = true;
+                let state = cx.app_state_mut().view_state(child.id());
+                state.request_style_recursive = true;
+                state.request_style = true;
             }
         }
 
-        cx.app_state.compute_style(
-            self.id(),
-            view_style,
-            view_class,
-            classes,
-            &cx.style.current,
-        );
+        cx.app_state
+            .compute_style(self.id(), view_style, view_class, classes, &cx.current);
         let style = cx.app_state_mut().get_computed_style(self.id()).clone();
-
-        cx.style.direct = style;
-        Style::apply_only_inherited(&mut cx.style.current, &cx.style.direct);
+        cx.direct = style;
+        Style::apply_only_inherited(&mut cx.current, &cx.direct);
         CaptureState::capture_style(self.id(), cx);
+
+        // If there's any changes to the Taffy style, request layout.
+        let taffy_style = cx.direct.to_taffy_style();
+        let view_state = cx.app_state_mut().view_state(self.id());
+        if taffy_style != view_state.taffy_style {
+            view_state.taffy_style = taffy_style;
+            cx.app_state_mut().request_layout(self.id());
+        }
 
         // Extract the relevant layout properties so the content rect can be calculated
         // when painting.
         let mut props = LayoutProps::default();
         props.read(cx);
         cx.app_state_mut().view_state(self.id()).layout_props = props;
+
+        self.style(cx);
+
+        cx.restore();
+    }
+
+    /// Use this method to style the view's children.
+    fn style(&mut self, cx: &mut StyleCx<'_>) {
+        for child in self.children_mut() {
+            child.style_main(cx)
+        }
+    }
+
+    /// Internal method used by Floem to invoke the user-defined `View::layout` method.
+    ///
+    /// You shouldn't need to implement this.
+    fn layout_main(&mut self, cx: &mut LayoutCx) -> Node {
+        cx.save();
 
         let node = self.layout(cx);
 
@@ -617,7 +640,7 @@ pub trait View {
             Event::WindowResized(_) => {
                 if let Some(view_state) = cx.app_state.view_states.get(&self.id()) {
                     if view_state.has_style_selectors.has_responsive() {
-                        cx.app_state.request_layout(self.id());
+                        cx.app_state.request_style(self.id());
                     }
                 }
             }
@@ -1100,6 +1123,10 @@ impl View for Box<dyn View> {
 
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags {
         (**self).update(cx, state)
+    }
+
+    fn style(&mut self, cx: &mut StyleCx) {
+        (**self).style(cx)
     }
 
     fn layout(&mut self, cx: &mut LayoutCx) -> Node {

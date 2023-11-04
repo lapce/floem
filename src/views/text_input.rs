@@ -794,12 +794,16 @@ impl View for TextInput {
         false
     }
 
+    fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+        if self.font.read(cx) || self.text_buf.is_none() {
+            self.update_text_layout();
+            cx.app_state_mut().request_layout(self.id);
+        }
+    }
+
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
             self.is_focused = cx.app_state().is_focused(&self.id);
-            if self.font.read(cx) || self.text_buf.is_none() {
-                self.update_text_layout();
-            }
 
             if self.text_node.is_none() {
                 self.text_node = Some(

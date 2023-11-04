@@ -1,11 +1,11 @@
 use crate::app::{add_app_update_event, AppUpdateEvent};
-use crate::context::{AppState, LayoutCx};
+use crate::context::{AppState, StyleCx};
 use crate::event::{Event, EventListener};
 use crate::id::Id;
 use crate::style::{Style, StyleMapValue};
 use crate::view::View;
 use crate::views::{
-    dyn_container, empty, img_dynamic, list, scroll, stack, static_list, text, Decorators, Label,
+    dyn_container, empty, img_dynamic, scroll, stack, static_list, text, Decorators, Label,
 };
 use crate::window::WindowConfig;
 use crate::{new_window, style};
@@ -14,7 +14,7 @@ use image::DynamicImage;
 use kurbo::{Point, Rect, Size};
 use peniko::Color;
 use std::cell::Cell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -31,19 +31,29 @@ pub struct CapturedView {
     taffy: Layout,
     clipped: Rect,
     children: Vec<Rc<CapturedView>>,
+    direct_style: Style,
+    request_style: bool,
+    request_layout: bool,
 }
 
 impl CapturedView {
     pub fn capture(view: &dyn View, app_state: &mut AppState, clip: Rect) -> Self {
-        let layout = app_state.get_layout_rect(view.id());
-        let taffy = app_state.get_layout(view.id()).unwrap();
+        let id = view.id();
+        let layout = app_state.get_layout_rect(id);
+        let taffy = app_state.get_layout(id).unwrap();
+        let computed_style = app_state.get_computed_style(id).clone();
+        let state = app_state.view_state(id);
+
         let clipped = layout.intersect(clip);
         Self {
-            id: view.id(),
+            id,
             name: view.debug_name().to_string(),
             layout,
             taffy,
             clipped,
+            direct_style: computed_style,
+            request_style: state.request_style,
+            request_layout: state.request_layout,
             children: view
                 .children()
                 .into_iter()
@@ -69,11 +79,18 @@ impl CapturedView {
             .next()
             .or_else(|| self.clipped.contains(pos).then_some(self))
     }
+
+    fn warnings(&self) -> bool {
+        self.request_layout
+            || self.request_style
+            || self.children.iter().any(|child| child.warnings())
+    }
 }
 
 pub struct Capture {
     pub root: CapturedView,
     pub start: Instant,
+    pub post_style: Instant,
     pub post_layout: Instant,
     pub end: Instant,
     pub taffy_duration: Duration,
@@ -91,10 +108,10 @@ pub struct CaptureState {
 }
 
 impl CaptureState {
-    pub(crate) fn capture_style(id: Id, cx: &mut LayoutCx) {
+    pub(crate) fn capture_style(id: Id, cx: &mut StyleCx) {
         if cx.app_state_mut().capture.is_some() {
-            let direct = cx.style.direct.clone();
-            let mut current = (*cx.style.current).clone();
+            let direct = cx.direct.clone();
+            let mut current = (*cx.current).clone();
             current.apply_mut(direct);
             cx.app_state_mut()
                 .capture
@@ -297,8 +314,15 @@ fn info_row(name: String, view: impl View + 'static) -> impl View {
 }
 
 fn stats(capture: &Capture) -> impl View {
-    let layout_time = capture.post_layout.saturating_duration_since(capture.start);
+    let style_time = capture.post_style.saturating_duration_since(capture.start);
+    let layout_time = capture
+        .post_layout
+        .saturating_duration_since(capture.post_style);
     let paint_time = capture.end.saturating_duration_since(capture.post_layout);
+    let style_time = info(
+        "Style Time",
+        format!("{:.4} ms", style_time.as_secs_f64() * 1000.0),
+    );
     let layout_time = info(
         "Layout Time",
         format!("{:.4} ms", layout_time.as_secs_f64() * 1000.0),
@@ -316,6 +340,7 @@ fn stats(capture: &Capture) -> impl View {
     let w = info("Window Width", format!("{}", capture.window_size.width));
     let h = info("Window Height", format!("{}", capture.window_size.height));
     stack((
+        style_time,
         layout_time,
         taffy_time,
         taffy_node_count,
@@ -441,6 +466,8 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl 
 
                 let style_header = header("View Style");
 
+                let direct: HashSet<_> = view.direct_style.map.keys().copied().collect();
+
                 let mut styles = capture
                     .state
                     .styles
@@ -451,37 +478,49 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl 
                     .into_iter()
                     .map(|(p, v)| ((p, format!("{p:?}")), v))
                     .collect::<Vec<_>>();
+
                 styles.sort_unstable_by(|a, b| a.0 .1.cmp(&b.0 .1));
 
-                let style_list = list(
-                    move || styles.clone(),
-                    |(i, _)| i.0,
-                    move |((p, name), v)| {
-                        let v: Box<dyn View> = match v {
-                            StyleMapValue::Val(v) => {
-                                let v = &*v;
-                                (p.info.debug_view)(v)
-                                    .unwrap_or_else(|| Box::new(text((p.info.debug_any)(v))))
-                            }
-                            StyleMapValue::Unset => Box::new(text("Unset".to_owned())),
-                        };
-                        stack((
-                            stack((text(name.strip_prefix("floem::style::").unwrap_or(&name))
-                                .style(|s| {
-                                    s.margin_right(5.0)
-                                        .color(Color::BLACK.with_alpha_factor(0.6))
-                                }),))
-                            .style(|s| {
-                                s.min_width(150.0).flex_direction(FlexDirection::RowReverse)
+                let style_list = static_list(styles.into_iter().map(|((prop, name), value)| {
+                    let name = name.strip_prefix("floem::style::").unwrap_or(&name);
+                    let name: Box<dyn View> = if direct.contains(&prop) {
+                        Box::new(text(name))
+                    } else {
+                        Box::new(stack((
+                            text("Inherited").style(|s| {
+                                s.margin_right(5.0)
+                                    .background(Color::WHITE_SMOKE.with_alpha_factor(0.6))
+                                    .border(1.0)
+                                    .border_radius(5.0)
+                                    .border_color(Color::WHITE_SMOKE)
+                                    .padding(1.0)
+                                    .font_size(10.0)
+                                    .color(Color::BLACK.with_alpha_factor(0.4))
                             }),
-                            v,
-                        ))
-                        .style(|s| {
-                            s.padding(5.0)
-                                .hover(|s| s.background(Color::rgba8(228, 237, 216, 160)))
-                        })
-                    },
-                )
+                            text(name),
+                        )))
+                    };
+                    let v: Box<dyn View> = match value {
+                        StyleMapValue::Val(v) => {
+                            let v = &*v;
+                            (prop.info.debug_view)(v)
+                                .unwrap_or_else(|| Box::new(text((prop.info.debug_any)(v))))
+                        }
+                        StyleMapValue::Unset => Box::new(text("Unset".to_owned())),
+                    };
+                    stack((
+                        stack((name.style(|s| {
+                            s.margin_right(5.0)
+                                .color(Color::BLACK.with_alpha_factor(0.6))
+                        }),))
+                        .style(|s| s.min_width(150.0).flex_direction(FlexDirection::RowReverse)),
+                        v,
+                    ))
+                    .style(|s| {
+                        s.padding(5.0)
+                            .hover(|s| s.background(Color::rgba8(228, 237, 216, 160)))
+                    })
+                }))
                 .style(|s| s.flex_col().width_full());
 
                 Box::new(
@@ -539,7 +578,9 @@ fn capture_view(capture: &Rc<Capture>) -> impl View {
         .on_event(EventListener::PointerMove, move |e| {
             if let Event::PointerMove(e) = e {
                 if let Some(view) = capture_.root.find_by_pos(e.pos) {
-                    highlighted.set(Some(view.id));
+                    if highlighted.get() != Some(view.id) {
+                        highlighted.set(Some(view.id));
+                    }
                     return false;
                 }
             }
@@ -624,26 +665,30 @@ fn capture_view(capture: &Rc<Capture>) -> impl View {
     ))
     .style(|s| s.flex_col().max_width_pct(60.0));
 
-    let tree = stack((
-        header("View Tree"),
-        scroll(captured_view(&capture.root, 0, selected, highlighted))
-            .style(|s| {
-                s.flex_col()
-                    .width_full()
-                    .min_height(0)
-                    .flex_basis(0)
-                    .flex_grow(1.0)
-            })
-            .on_event(EventListener::PointerLeave, move |_| {
-                highlighted.set(None);
-                false
-            })
-            .on_click(move |_| {
-                selected.set(None);
-                true
-            }),
-    ))
-    .style(|s| {
+    let tree = scroll(captured_view(&capture.root, 0, selected, highlighted))
+        .style(|s| {
+            s.flex_col()
+                .width_full()
+                .min_height(0)
+                .flex_basis(0)
+                .flex_grow(1.0)
+        })
+        .on_event(EventListener::PointerLeave, move |_| {
+            highlighted.set(None);
+            false
+        })
+        .on_click(move |_| {
+            selected.set(None);
+            true
+        });
+
+    let tree: Box<dyn View> = if capture.root.warnings() {
+        Box::new(stack((header("Warnings"), header("View Tree"), tree)))
+    } else {
+        Box::new(stack((header("View Tree"), tree)))
+    };
+
+    let tree = tree.style(|s| {
         s.flex_col()
             .height_full()
             .min_width(0)
