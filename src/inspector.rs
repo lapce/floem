@@ -468,60 +468,85 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl 
 
                 let direct: HashSet<_> = view.direct_style.map.keys().copied().collect();
 
-                let mut styles = capture
+                let style = capture
                     .state
                     .styles
                     .get(&view.id)
                     .cloned()
-                    .unwrap_or_default()
+                    .unwrap_or_default();
+
+                let mut style_list = style
                     .map
+                    .clone()
                     .into_iter()
                     .map(|(p, v)| ((p, format!("{p:?}")), v))
                     .collect::<Vec<_>>();
 
-                styles.sort_unstable_by(|a, b| a.0 .1.cmp(&b.0 .1));
+                style_list.sort_unstable_by(|a, b| a.0 .1.cmp(&b.0 .1));
 
-                let style_list = static_list(styles.into_iter().map(|((prop, name), value)| {
-                    let name = name.strip_prefix("floem::style::").unwrap_or(&name);
-                    let name: Box<dyn View> = if direct.contains(&prop) {
-                        Box::new(text(name))
-                    } else {
-                        Box::new(stack((
-                            text("Inherited").style(|s| {
-                                s.margin_right(5.0)
-                                    .background(Color::WHITE_SMOKE.with_alpha_factor(0.6))
-                                    .border(1.0)
-                                    .border_radius(5.0)
-                                    .border_color(Color::WHITE_SMOKE)
-                                    .padding(1.0)
-                                    .font_size(10.0)
-                                    .color(Color::BLACK.with_alpha_factor(0.4))
-                            }),
-                            text(name),
-                        )))
-                    };
-                    let v: Box<dyn View> = match value {
-                        StyleMapValue::Val(v) => {
-                            let v = &*v;
-                            (prop.info.debug_view)(v)
-                                .unwrap_or_else(|| Box::new(text((prop.info.debug_any)(v))))
+                let style_list =
+                    static_list(style_list.into_iter().map(|((prop, name), value)| {
+                        let name = name.strip_prefix("floem::style::").unwrap_or(&name);
+                        let name: Box<dyn View> = if direct.contains(&prop) {
+                            Box::new(text(name))
+                        } else {
+                            Box::new(stack((
+                                text("Inherited").style(|s| {
+                                    s.margin_right(5.0)
+                                        .background(Color::WHITE_SMOKE.with_alpha_factor(0.6))
+                                        .border(1.0)
+                                        .border_radius(5.0)
+                                        .border_color(Color::WHITE_SMOKE)
+                                        .padding(1.0)
+                                        .font_size(10.0)
+                                        .color(Color::BLACK.with_alpha_factor(0.4))
+                                }),
+                                text(name),
+                            )))
+                        };
+                        let mut v: Box<dyn View> = match value {
+                            StyleMapValue::Val(v) => {
+                                let v = &*v;
+                                (prop.info.debug_view)(v)
+                                    .unwrap_or_else(|| Box::new(text((prop.info.debug_any)(v))))
+                            }
+                            StyleMapValue::Unset => Box::new(text("Unset".to_owned())),
+                        };
+                        if let Some(transition) = style.transitions.get(&prop).cloned() {
+                            let transition = stack((
+                                text("Transition").style(|s| {
+                                    s.margin_top(5.0)
+                                        .margin_right(5.0)
+                                        .background(Color::WHITE_SMOKE.with_alpha_factor(0.6))
+                                        .border(1.0)
+                                        .border_radius(5.0)
+                                        .border_color(Color::WHITE_SMOKE)
+                                        .padding(1.0)
+                                        .font_size(10.0)
+                                        .color(Color::BLACK.with_alpha_factor(0.4))
+                                }),
+                                text(format!("{transition:?}")),
+                            ))
+                            .style(|s| s.items_center());
+                            v = Box::new(stack((v, transition)).style(|s| s.flex_col()));
                         }
-                        StyleMapValue::Unset => Box::new(text("Unset".to_owned())),
-                    };
-                    stack((
-                        stack((name.style(|s| {
-                            s.margin_right(5.0)
-                                .color(Color::BLACK.with_alpha_factor(0.6))
-                        }),))
-                        .style(|s| s.min_width(150.0).flex_direction(FlexDirection::RowReverse)),
-                        v,
-                    ))
-                    .style(|s| {
-                        s.padding(5.0)
-                            .hover(|s| s.background(Color::rgba8(228, 237, 216, 160)))
-                    })
-                }))
-                .style(|s| s.flex_col().width_full());
+                        stack((
+                            stack((name.style(|s| {
+                                s.margin_right(5.0)
+                                    .color(Color::BLACK.with_alpha_factor(0.6))
+                            }),))
+                            .style(|s| {
+                                s.min_width(150.0).flex_direction(FlexDirection::RowReverse)
+                            }),
+                            v,
+                        ))
+                        .style(|s| {
+                            s.padding(5.0)
+                                .items_center()
+                                .hover(|s| s.background(Color::rgba8(228, 237, 216, 160)))
+                        })
+                    }))
+                    .style(|s| s.flex_col().width_full());
 
                 Box::new(
                     stack((

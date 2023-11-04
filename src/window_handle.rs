@@ -1,4 +1,5 @@
 use std::{
+    mem,
     rc::Rc,
     time::{Duration, Instant},
 };
@@ -450,7 +451,7 @@ impl WindowHandle {
     }
 
     fn style(&mut self) {
-        let mut cx = StyleCx::new(&mut self.app_state);
+        let mut cx = StyleCx::new(&mut self.app_state, self.view.id());
         self.view.style_main(&mut cx);
     }
 
@@ -632,6 +633,15 @@ impl WindowHandle {
 
         if !flags.is_empty() {
             self.request_paint();
+        }
+
+        if !self.app_state.transitioning.is_empty() {
+            let transitioning = mem::take(&mut self.app_state.transitioning);
+            exec_after(Duration::from_millis(1), move |_| {
+                for id in transitioning {
+                    id.request_change(ChangeFlags::STYLE);
+                }
+            });
         }
     }
 

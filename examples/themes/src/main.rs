@@ -3,7 +3,7 @@ use floem::{
     keyboard::{Key, NamedKey},
     peniko::Color,
     reactive::create_signal,
-    style::Style,
+    style::{Background, BorderColor, Style, TextColor, Transition},
     style_class,
     view::View,
     views::{label, stack, text, Decorators},
@@ -20,6 +20,9 @@ fn app_view() -> impl View {
         .border(1.0)
         .border_color(Color::rgb8(109, 121, 135))
         .hover(|s| s.background(Color::rgb8(170, 175, 187)))
+        .transition(TextColor, Transition::linear(0.06))
+        .transition(BorderColor, Transition::linear(0.06))
+        .transition(Background, Transition::linear(0.06))
         .disabled(|s| {
             s.background(Color::DARK_GRAY.with_alpha_factor(0.1))
                 .border_color(Color::BLACK.with_alpha_factor(0.2))
@@ -30,9 +33,13 @@ fn app_view() -> impl View {
         .border_radius(5.0);
     let blue_theme = Style::new()
         .background(Color::rgb8(95, 102, 118))
+        .transition(Background, Transition::linear(0.1))
+        .transition(TextColor, Transition::linear(0.1))
         .color(Color::WHITE)
         .class(Button, move |_| blue_button)
-        .class(Label, |s| s.margin(4.0))
+        .class(Label, |s| {
+            s.margin(4.0).transition(TextColor, Transition::linear(0.1))
+        })
         .font_size(12.0);
 
     let green_button = Style::new()
@@ -40,10 +47,14 @@ fn app_view() -> impl View {
         .disabled(|s| {
             s.background(Color::rgb8(180, 188, 175).with_alpha_factor(0.3))
                 .border_color(Color::rgb8(131, 145, 123).with_alpha_factor(0.3))
+                .color(Color::GRAY)
         })
         .active(|s| s.background(Color::rgb8(95, 105, 88)).color(Color::WHITE))
         .color(Color::BLACK.with_alpha_factor(0.7))
         .border(2.0)
+        .transition(TextColor, Transition::linear(0.3))
+        .transition(BorderColor, Transition::linear(0.3))
+        .transition(Background, Transition::linear(0.3))
         .border_color(Color::rgb8(131, 145, 123))
         .hover(|s| s.background(Color::rgb8(204, 209, 201)))
         .padding(8.0)
@@ -51,8 +62,11 @@ fn app_view() -> impl View {
         .margin(6.0);
     let green_theme = Style::new()
         .background(Color::rgb8(227, 231, 226))
+        .transition(Background, Transition::linear(0.5))
         .class(Button, move |_| green_button)
-        .class(Label, |s| s.margin(4.0))
+        .class(Label, |s| {
+            s.margin(4.0).transition(TextColor, Transition::linear(0.5))
+        })
         .class(Frame, |s| {
             s.border(2.0)
                 .border_color(Color::rgb8(131, 145, 123).with_alpha_factor(0.2))
@@ -64,7 +78,7 @@ fn app_view() -> impl View {
         .font_size(16.0);
 
     let (counter, set_counter) = create_signal(0);
-    let (theme, set_theme) = create_signal(true);
+    let (theme, set_theme) = create_signal(false);
     let view = stack((stack((
         text("Toggle Theme")
             .class(Button)
@@ -120,7 +134,8 @@ fn app_view() -> impl View {
         .flex_col()
         .items_center()
         .justify_center()
-    });
+    })
+    .window_title(|| "Themes Example".to_string());
 
     let id = view.id();
     view.on_event(EventListener::KeyUp, move |e| {

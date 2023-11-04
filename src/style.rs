@@ -36,6 +36,7 @@ use std::hash::Hash;
 use std::hash::Hasher;
 use std::ptr;
 use std::rc::Rc;
+use std::time::Instant;
 pub use taffy::style::{
     AlignContent, AlignItems, Dimension, Display, FlexDirection, FlexWrap, JustifyContent, Position,
 };
@@ -45,7 +46,7 @@ use taffy::{
     style::{LengthPercentage, Style as TaffyStyle},
 };
 
-use crate::context::{InteractionState, StyleCx};
+use crate::context::InteractionState;
 use crate::responsive::{ScreenSize, ScreenSizeBp};
 use crate::unit::{Px, PxPct, PxPctAuto, UnitExt};
 use crate::view::View;
@@ -55,12 +56,20 @@ pub trait StylePropValue: Clone + PartialEq + Debug {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         None
     }
+
+    fn interpolate(&self, _other: &Self, _value: f64) -> Option<Self> {
+        None
+    }
 }
 
 impl StylePropValue for i32 {}
 impl StylePropValue for bool {}
 impl StylePropValue for f32 {}
-impl StylePropValue for f64 {}
+impl StylePropValue for f64 {
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some(*self * (1.0 - value) + *other * value)
+    }
+}
 impl StylePropValue for Display {}
 impl StylePropValue for Position {}
 impl StylePropValue for FlexDirection {}
@@ -79,6 +88,14 @@ impl StylePropValue for Size<LengthPercentage> {}
 impl<T: StylePropValue> StylePropValue for Option<T> {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         self.as_ref().and_then(|v| v.debug_view())
+    }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        self.as_ref().and_then(|this| {
+            other
+                .as_ref()
+                .and_then(|other| this.interpolate(other, value).map(Some))
+        })
     }
 }
 impl StylePropValue for Px {
@@ -123,8 +140,24 @@ impl StylePropValue for Color {
                 .margin_left(6.0)
         });
         Some(Box::new(
-            stack((text(format!("{self:?}")), color)).style(|s| s.align_items(AlignItems::Center)),
+            stack((text(format!("{self:?}")), color)).style(|s| s.items_center()),
         ))
+    }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        let r = f64::interpolate(&(self.r as f64), &(other.r as f64), value)
+            .unwrap()
+            .round() as u8;
+        let g = f64::interpolate(&(self.g as f64), &(other.g as f64), value)
+            .unwrap()
+            .round() as u8;
+        let b = f64::interpolate(&(self.b as f64), &(other.b as f64), value)
+            .unwrap()
+            .round() as u8;
+        let a = f64::interpolate(&(self.a as f64), &(other.a as f64), value)
+            .unwrap()
+            .round() as u8;
+        Some(Color { r, g, b, a })
     }
 }
 
@@ -255,54 +288,65 @@ pub trait StylePropReader {
     type State: Debug;
     type Type: Clone;
 
-    /// Reads the property from the current style state.
-    /// Returns true if the property changed.
-    fn read(state: &mut Self::State, cx: &StyleCx) -> bool;
-
     /// Reads the property from the style.
     /// Returns true if the property changed.
-    fn read_style(state: &mut Self::State, style: &Style) -> bool;
+    fn read(
+        state: &mut Self::State,
+        style: &Style,
+        fallback: &Style,
+        now: &Instant,
+        request_transition: &mut bool,
+    ) -> bool;
 
     fn get(state: &Self::State) -> Self::Type;
     fn new() -> Self::State;
 }
 
 impl<P: StyleProp> StylePropReader for P {
-    type State = P::Type;
+    type State = (P::Type, TransitionState<P::Type>);
     type Type = P::Type;
-    fn read(state: &mut Self::State, cx: &StyleCx) -> bool {
-        let new = cx
-            .get_prop(P::default())
+    fn read(
+        state: &mut Self::State,
+        style: &Style,
+        fallback: &Style,
+        now: &Instant,
+        request_transition: &mut bool,
+    ) -> bool {
+        let new = style
+            .get_prop::<P>()
+            .or_else(|| fallback.get_prop::<P>())
             .unwrap_or_else(|| P::default_value());
-        let changed = new != *state;
-        *state = new;
-        changed
-    }
-    fn read_style(state: &mut Self::State, style: &Style) -> bool {
-        let new = style.get_prop_or_default::<P>();
-        let changed = new != *state;
-        *state = new;
-        changed
+        state.1.read(
+            style
+                .get_transition::<P>()
+                .or_else(|| fallback.get_transition::<P>()),
+        );
+        let changed = new != state.0;
+        if changed {
+            state.1.transition(&Self::get(state), &new);
+            state.0 = new;
+        }
+        changed | state.1.step(now, request_transition)
     }
     fn get(state: &Self::State) -> Self::Type {
-        state.clone()
+        state.1.get(&state.0)
     }
     fn new() -> Self::State {
-        P::default_value()
+        (P::default_value(), TransitionState::default())
     }
 }
 
 impl<P: StyleProp> StylePropReader for Option<P> {
     type State = Option<P::Type>;
     type Type = Option<P::Type>;
-    fn read(state: &mut Self::State, cx: &StyleCx) -> bool {
-        let new = cx.get_prop(P::default());
-        let changed = new != *state;
-        *state = new;
-        changed
-    }
-    fn read_style(state: &mut Self::State, style: &Style) -> bool {
-        let new = style.get_prop::<P>();
+    fn read(
+        state: &mut Self::State,
+        style: &Style,
+        fallback: &Style,
+        _now: &Instant,
+        _transition: &mut bool,
+    ) -> bool {
+        let new = style.get_prop::<P>().or_else(|| fallback.get_prop::<P>());
         let changed = new != *state;
         *state = new;
         changed
@@ -315,6 +359,7 @@ impl<P: StyleProp> StylePropReader for Option<P> {
     }
 }
 
+#[derive(Clone)]
 pub struct ExtratorField<R: StylePropReader> {
     state: R::State,
 }
@@ -326,11 +371,14 @@ impl<R: StylePropReader> Debug for ExtratorField<R> {
 }
 
 impl<R: StylePropReader> ExtratorField<R> {
-    pub fn read(&mut self, cx: &StyleCx) -> bool {
-        R::read(&mut self.state, cx)
-    }
-    pub fn read_style(&mut self, style: &Style) -> bool {
-        R::read_style(&mut self.state, style)
+    pub fn read(
+        &mut self,
+        style: &Style,
+        fallback: &Style,
+        now: &Instant,
+        request_transition: &mut bool,
+    ) -> bool {
+        R::read(&mut self.state, style, fallback, now, request_transition)
     }
     pub fn get(&self) -> R::Type {
         R::get(&self.state)
@@ -377,7 +425,7 @@ macro_rules! prop_extracter {
             $(,)?
         }
     ) => {
-        #[derive(Debug)]
+        #[derive(Debug, Clone)]
         $vis struct $name {
             $(
                 $prop_vis $prop: $crate::style::ExtratorField<$reader>,
@@ -386,15 +434,34 @@ macro_rules! prop_extracter {
 
         impl $name {
             #[allow(dead_code)]
-            $vis fn read_style(&mut self, style: &$crate::style::Style) -> bool {
-                false
-                $(| self.$prop.read_style(style))*
+            $vis fn read_style(&mut self, cx: &mut $crate::context::StyleCx, style: &$crate::style::Style) -> bool {
+                let mut transition = false;
+                let changed = false $(| self.$prop.read(style, style, &cx.now, &mut transition))*;
+                if transition {
+                    cx.request_transition();
+                }
+                changed
             }
 
             #[allow(dead_code)]
-            $vis fn read(&mut self, cx: &$crate::context::StyleCx) -> bool {
-                false
-                $(| self.$prop.read(cx))*
+            $vis fn read(&mut self, cx: &mut $crate::context::StyleCx) -> bool {
+                let mut transition = false;
+                let changed = self.read_explicit(&cx.direct, &cx.current, &cx.now, &mut transition);
+                if transition {
+                    cx.request_transition();
+                }
+                changed
+            }
+
+            #[allow(dead_code)]
+            $vis fn read_explicit(
+                &mut self,
+                style: &Style,
+                fallback: &Style,
+                now: &std::time::Instant,
+                request_transition: &mut bool
+            ) -> bool {
+                false $(| self.$prop.read(style, fallback, now, request_transition))*
             }
 
             $($prop_vis fn $prop(&self) -> <$reader as $crate::style::StylePropReader>::Type
@@ -431,17 +498,112 @@ impl<T> StyleMapValue<T> {
     }
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct ActiveTransition<T: StylePropValue> {
+    start: Instant,
+    before: T,
+    current: T,
+    after: T,
+}
+
+#[derive(Clone, Debug)]
+pub struct TransitionState<T: StylePropValue> {
+    transition: Option<Transition>,
+    active: Option<ActiveTransition<T>>,
+    initial: bool,
+}
+
+impl<T: StylePropValue> TransitionState<T> {
+    fn read(&mut self, transition: Option<Transition>) {
+        self.transition = transition;
+    }
+
+    fn transition(&mut self, before: &T, after: &T) {
+        if !self.initial {
+            return;
+        }
+        if self.transition.is_some() {
+            self.active = Some(ActiveTransition {
+                start: Instant::now(),
+                before: before.clone(),
+                current: before.clone(),
+                after: after.clone(),
+            });
+        }
+    }
+
+    fn step(&mut self, now: &Instant, request_transition: &mut bool) -> bool {
+        if !self.initial {
+            // We have observed the initial value. Any further changes may trigger animations.
+            self.initial = true;
+        }
+        if let Some(active) = &mut self.active {
+            if let Some(transition) = &self.transition {
+                let time = now.saturating_duration_since(active.start).as_secs_f64();
+                if time < transition.duration {
+                    if let Some(i) =
+                        T::interpolate(&active.before, &active.after, time / transition.duration)
+                    {
+                        active.current = i;
+                        *request_transition = true;
+                        return true;
+                    }
+                }
+            }
+            self.active = None;
+
+            true
+        } else {
+            false
+        }
+    }
+
+    fn get(&self, value: &T) -> T {
+        if let Some(active) = &self.active {
+            active.current.clone()
+        } else {
+            value.clone()
+        }
+    }
+}
+
+impl<T: StylePropValue> Default for TransitionState<T> {
+    fn default() -> Self {
+        Self {
+            transition: None,
+            active: None,
+            initial: false,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Transition {
+    duration: f64,
+}
+
+impl Transition {
+    pub fn linear(duration: f64) -> Self {
+        Self { duration }
+    }
+}
+
 #[derive(Default, Clone)]
 pub struct Style {
     pub(crate) map: HashMap<StylePropRef, StyleMapValue<Rc<dyn Any>>>,
     pub(crate) selectors: HashMap<StyleSelector, Style>,
     pub(crate) responsive: HashMap<ScreenSizeBp, Style>,
     pub(crate) classes: HashMap<StyleClassRef, Style>,
+    pub(crate) transitions: HashMap<StylePropRef, Transition>,
 }
 
 impl Style {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub(crate) fn get_transition<P: StyleProp>(&self) -> Option<Transition> {
+        self.transitions.get(&P::prop_ref()).cloned()
     }
 
     pub(crate) fn get_prop_or_default<P: StyleProp>(&self) -> P::Type {
@@ -608,6 +770,7 @@ impl Style {
 
     pub(crate) fn apply_mut(&mut self, over: Style) {
         self.map.extend(over.map);
+        self.transitions.extend(over.transitions);
         for (selector, map) in over.selectors {
             self.set_selector(selector, map);
         }
@@ -659,6 +822,7 @@ impl Debug for Style {
             .field("selectors", &self.selectors)
             .field("classes", &self.classes)
             .field("responsive", &self.responsive)
+            .field("transitions", &self.transitions)
             .finish()
     }
 }
@@ -942,6 +1106,11 @@ impl Style {
             }
         };
         self.map.insert(P::prop_ref(), insert);
+        self
+    }
+
+    pub fn transition<P: StyleProp>(mut self, _prop: P, transition: Transition) -> Self {
+        self.transitions.insert(P::prop_ref(), transition);
         self
     }
 
