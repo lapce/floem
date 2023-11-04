@@ -100,7 +100,7 @@ use crate::{
 };
 
 bitflags! {
-    #[derive(Default)]
+    #[derive(Default, Copy, Clone)]
     #[must_use]
     pub struct ChangeFlags: u8 {
         const UPDATE = 1;

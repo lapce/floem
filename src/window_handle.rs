@@ -466,17 +466,13 @@ impl WindowHandle {
         cx.clear();
         self.view.compute_layout_main(&mut cx);
 
-        // Currently we only need one ID with animation in progress to request layout, which will
-        // advance the all the animations in progress.
-        // This will be reworked once we change from request_layout to request_paint
-        let id = self.app_state.ids_with_anim_in_progress().get(0).cloned();
-
-        if let Some(id) = id {
-            if self.app_state.capture.is_none() {
-                exec_after(Duration::from_millis(1), move |_| {
-                    id.request_layout();
-                });
-            }
+        if self.app_state.capture.is_none() && !self.app_state.animated.is_empty() {
+            let animated = self.app_state.animated.clone();
+            exec_after(Duration::from_millis(1), move |_| {
+                for id in animated {
+                    id.request_change(ChangeFlags::STYLE);
+                }
+            });
         }
 
         taffy_duration
@@ -685,6 +681,18 @@ impl WindowHandle {
                     app_state: &mut self.app_state,
                 };
                 match msg {
+                    UpdateMessage::RequestChange { id, flags: changes } => {
+                        flags |= changes;
+                        if changes.contains(ChangeFlags::STYLE) {
+                            cx.app_state.request_style(id);
+                        }
+                        if changes.contains(ChangeFlags::LAYOUT) {
+                            cx.app_state.request_layout(id);
+                        }
+                        if changes.contains(ChangeFlags::PAINT) {
+                            cx.app_state.request_paint(id);
+                        }
+                    }
                     UpdateMessage::RequestPaint => {
                         flags |= ChangeFlags::PAINT;
                     }
