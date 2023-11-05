@@ -11,37 +11,40 @@ use crate::{
 
 use super::Decorators;
 
-pub struct DragResizeWindowArea<V: View> {
+pub struct DragResizeWindowArea {
     id: Id,
-    child: V,
+    child: Box<dyn View>,
 }
 
-pub fn drag_resize_window_area<V: View>(
+pub fn drag_resize_window_area<V: View + 'static>(
     direction: ResizeDirection,
     child: V,
-) -> DragResizeWindowArea<V> {
+) -> DragResizeWindowArea {
     let id = Id::next();
-    DragResizeWindowArea { id, child }
-        .on_event(EventListener::PointerDown, move |_| {
-            drag_resize_window(direction);
-            true
-        })
-        .base_style(move |s| {
-            let cursor = match direction {
-                ResizeDirection::East => CursorStyle::ColResize,
-                ResizeDirection::West => CursorStyle::ColResize,
-                ResizeDirection::North => CursorStyle::RowResize,
-                ResizeDirection::South => CursorStyle::RowResize,
-                ResizeDirection::NorthEast => CursorStyle::NeswResize,
-                ResizeDirection::SouthWest => CursorStyle::NeswResize,
-                ResizeDirection::SouthEast => CursorStyle::NwseResize,
-                ResizeDirection::NorthWest => CursorStyle::NwseResize,
-            };
-            s.cursor(cursor)
-        })
+    DragResizeWindowArea {
+        id,
+        child: Box::new(child),
+    }
+    .on_event(EventListener::PointerDown, move |_| {
+        drag_resize_window(direction);
+        true
+    })
+    .base_style(move |s| {
+        let cursor = match direction {
+            ResizeDirection::East => CursorStyle::ColResize,
+            ResizeDirection::West => CursorStyle::ColResize,
+            ResizeDirection::North => CursorStyle::RowResize,
+            ResizeDirection::South => CursorStyle::RowResize,
+            ResizeDirection::NorthEast => CursorStyle::NeswResize,
+            ResizeDirection::SouthWest => CursorStyle::NeswResize,
+            ResizeDirection::SouthEast => CursorStyle::NwseResize,
+            ResizeDirection::NorthWest => CursorStyle::NwseResize,
+        };
+        s.cursor(cursor)
+    })
 }
 
-impl<V: View> View for DragResizeWindowArea<V> {
+impl View for DragResizeWindowArea {
     fn id(&self) -> Id {
         self.id
     }

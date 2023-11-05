@@ -9,25 +9,28 @@ use crate::{
 
 use super::Decorators;
 
-pub struct DragWindowArea<V: View> {
+pub struct DragWindowArea {
     id: Id,
-    child: V,
+    child: Box<dyn View>,
 }
 
-pub fn drag_window_area<V: View>(child: V) -> DragWindowArea<V> {
+pub fn drag_window_area<V: View + 'static>(child: V) -> DragWindowArea {
     let id = Id::next();
-    DragWindowArea { id, child }
-        .on_event(EventListener::PointerDown, |_| {
-            drag_window();
-            true
-        })
-        .on_double_click(|_| {
-            toggle_window_maximized();
-            true
-        })
+    DragWindowArea {
+        id,
+        child: Box::new(child),
+    }
+    .on_event(EventListener::PointerDown, |_| {
+        drag_window();
+        true
+    })
+    .on_double_click(|_| {
+        toggle_window_maximized();
+        true
+    })
 }
 
-impl<V: View> View for DragWindowArea<V> {
+impl View for DragWindowArea {
     fn id(&self) -> Id {
         self.id
     }

@@ -18,6 +18,10 @@ pub trait ViewTuple {
     fn children(&self) -> Vec<&dyn View>;
 
     fn children_mut(&mut self) -> Vec<&mut dyn View>;
+
+    fn into_views(self) -> Vec<Box<dyn View>>
+    where
+        Self: 'static;
 }
 
 macro_rules! impl_view_tuple {
@@ -58,6 +62,13 @@ macro_rules! impl_view_tuple {
                 $(
                     self.$i.paint(cx);
                 )*
+            }
+
+            fn into_views(self) -> Vec<Box<dyn View>>
+            where
+                Self: 'static
+            {
+                vec![$(Box::new(self.$i),)*]
             }
         }
     }

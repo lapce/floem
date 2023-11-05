@@ -7,25 +7,25 @@ use crate::{
 use kurbo::Rect;
 use taffy::style::FlexDirection;
 
-pub struct StaticList<V>
-where
-    V: View,
-{
+pub struct StaticList {
     id: Id,
-    children: Vec<V>,
+    children: Vec<Box<dyn View>>,
 }
 
-pub fn static_list<V>(iterator: impl IntoIterator<Item = V>) -> StaticList<V>
+pub fn static_list<V>(iterator: impl IntoIterator<Item = V>) -> StaticList
 where
-    V: View,
+    V: View + 'static,
 {
     StaticList {
         id: Id::next(),
-        children: iterator.into_iter().collect(),
+        children: iterator
+            .into_iter()
+            .map(|v| -> Box<dyn View> { Box::new(v) })
+            .collect(),
     }
 }
 
-impl<V: View> View for StaticList<V> {
+impl View for StaticList {
     fn id(&self) -> Id {
         self.id
     }

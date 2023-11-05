@@ -61,9 +61,9 @@ prop_extracter! {
 
 const HANDLE_COLOR: Color = Color::rgba8(0, 0, 0, 120);
 
-pub struct Scroll<V: View> {
+pub struct Scroll {
     id: Id,
-    child: V,
+    child: Box<dyn View>,
     // the actual rect of the scroll view excluding padding and borders
     actual_rect: Rect,
     child_size: Size,
@@ -85,10 +85,10 @@ pub struct Scroll<V: View> {
     hide: bool,
 }
 
-pub fn scroll<V: View>(child: V) -> Scroll<V> {
+pub fn scroll<V: View + 'static>(child: V) -> Scroll {
     Scroll {
         id: Id::next(),
-        child,
+        child: Box::new(child),
         actual_rect: Rect::ZERO,
         child_size: Size::ZERO,
         child_viewport: Rect::ZERO,
@@ -110,7 +110,7 @@ pub fn scroll<V: View>(child: V) -> Scroll<V> {
     }
 }
 
-impl<V: View> Scroll<V> {
+impl Scroll {
     pub fn on_scroll(mut self, onscroll: impl Fn(Rect) + 'static) -> Self {
         self.onscroll = Some(Box::new(onscroll));
         self
@@ -555,7 +555,7 @@ impl<V: View> Scroll<V> {
     }
 }
 
-impl<V: View> View for Scroll<V> {
+impl View for Scroll {
     fn id(&self) -> Id {
         self.id
     }
