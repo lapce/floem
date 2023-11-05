@@ -1,8 +1,10 @@
 use kurbo::Rect;
+use taffy::style::FlexDirection;
 
 use crate::{
     context::{EventCx, UpdateCx},
     id::Id,
+    style::Style,
     view::{ChangeFlags, View},
     view_tuple::ViewTuple,
 };
@@ -10,16 +12,46 @@ use crate::{
 pub struct Stack<VT> {
     id: Id,
     children: VT,
+    direction: Option<FlexDirection>,
 }
 
 pub fn stack<VT: ViewTuple + 'static>(children: VT) -> Stack<VT> {
     let id = Id::next();
-    Stack { id, children }
+    Stack {
+        id,
+        children,
+        direction: None,
+    }
+}
+
+/// A stack which defaults to `FlexDirection::Row`.
+pub fn h_stack<VT: ViewTuple + 'static>(children: VT) -> Stack<VT> {
+    let id = Id::next();
+    Stack {
+        id,
+        children,
+        direction: Some(FlexDirection::Row),
+    }
+}
+
+/// A stack which defaults to `FlexDirection::Column`.
+pub fn v_stack<VT: ViewTuple + 'static>(children: VT) -> Stack<VT> {
+    let id = Id::next();
+    Stack {
+        id,
+        children,
+        direction: Some(FlexDirection::Column),
+    }
 }
 
 impl<VT: ViewTuple + 'static> View for Stack<VT> {
     fn id(&self) -> Id {
         self.id
+    }
+
+    fn view_style(&self) -> Option<crate::style::Style> {
+        self.direction
+            .map(|direction| Style::new().flex_direction(direction))
     }
 
     fn child(&self, id: Id) -> Option<&dyn View> {
@@ -39,7 +71,11 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        "Stack".into()
+        match self.direction {
+            Some(FlexDirection::Column) => "Vertical Stack".into(),
+            Some(FlexDirection::Row) => "Horizontal Stack".into(),
+            _ => "Stack".into(),
+        }
     }
 
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn std::any::Any>) -> ChangeFlags {
