@@ -54,7 +54,7 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
 
     fn style(&mut self, cx: &mut crate::context::StyleCx) {
         self.children.foreach_mut(&mut |view| {
-            view.style_main(cx);
+            cx.style_view(view);
             false
         });
     }

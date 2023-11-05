@@ -452,7 +452,7 @@ impl WindowHandle {
 
     fn style(&mut self) {
         let mut cx = StyleCx::new(&mut self.app_state, self.view.id());
-        self.view.style_main(&mut cx);
+        cx.style_view(&mut self.view);
     }
 
     fn layout(&mut self) -> Duration {

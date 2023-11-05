@@ -777,6 +777,83 @@ impl<'a> StyleCx<'a> {
         }
     }
 
+    /// Internal method used by Floem to compute the styles for the view.
+    pub fn style_view(&mut self, view: &mut dyn View) {
+        self.save();
+        let id = view.id();
+        let view_state = self.app_state_mut().view_state(id);
+        if !view_state.request_style {
+            return;
+        }
+        view_state.request_style = false;
+
+        let view_style = view.view_style();
+        let view_class = view.view_class();
+        let class = view_state.class;
+        let class_array;
+        let classes = if let Some(class) = class {
+            class_array = [class];
+            &class_array[..]
+        } else {
+            &[]
+        };
+
+        // Propagate style requests to children if needed.
+        if view_state.request_style_recursive {
+            view_state.request_style_recursive = false;
+            for child in view.children() {
+                let state = self.app_state_mut().view_state(child.id());
+                state.request_style_recursive = true;
+                state.request_style = true;
+            }
+        }
+
+        self.app_state
+            .compute_style(id, view_style, view_class, classes, &self.current);
+        let style = self.app_state_mut().get_computed_style(id).clone();
+        self.direct = style;
+        Style::apply_only_inherited(&mut self.current, &self.direct);
+        CaptureState::capture_style(id, self);
+
+        // If there's any changes to the Taffy style, request layout.
+        let taffy_style = self.direct.to_taffy_style();
+        let view_state = self.app_state_mut().view_state(id);
+        if taffy_style != view_state.taffy_style {
+            view_state.taffy_style = taffy_style;
+            self.app_state_mut().request_layout(id);
+        }
+
+        // This is used by the `request_transition` and `style` methods below.
+        self.current_view = id;
+
+        let view_state = self.app_state.view_state(id);
+
+        let mut transition = false;
+
+        // Extract the relevant layout properties so the content rect can be calculated
+        // when painting.
+        view_state.layout_props.read_explicit(
+            &self.direct,
+            &self.current,
+            &self.now,
+            &mut transition,
+        );
+
+        view_state.view_style_props.read_explicit(
+            &self.direct,
+            &self.current,
+            &self.now,
+            &mut transition,
+        );
+        if transition {
+            self.request_transition();
+        }
+
+        view.style(self);
+
+        self.restore();
+    }
+
     pub fn save(&mut self) {
         self.saved.push(self.current.clone());
     }

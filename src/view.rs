@@ -95,7 +95,6 @@ use crate::{
     context::{AppState, DragState, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx, ViewStyleProps},
     event::{Event, EventListener},
     id::Id,
-    inspector::CaptureState,
     style::{BoxShadowProp, Outline, OutlineColor, Style, StyleClassRef, ZIndex},
 };
 
@@ -146,86 +145,10 @@ pub trait View {
     /// indicating if you'd like a layout or paint pass to be scheduled.
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags;
 
-    /// Internal method used by Floem to compute the styles for the view.
-    ///
-    /// You shouldn't need to implement this.
-    fn style_main(&mut self, cx: &mut StyleCx<'_>) {
-        cx.save();
-
-        let view_state = cx.app_state_mut().view_state(self.id());
-        if !view_state.request_style {
-            return;
-        }
-        view_state.request_style = false;
-
-        let view_style = self.view_style();
-        let view_class = self.view_class();
-        let class = view_state.class;
-        let class_array;
-        let classes = if let Some(class) = class {
-            class_array = [class];
-            &class_array[..]
-        } else {
-            &[]
-        };
-
-        // Propagate style requests to children if needed.
-        if view_state.request_style_recursive {
-            view_state.request_style_recursive = false;
-            for child in self.children() {
-                let state = cx.app_state_mut().view_state(child.id());
-                state.request_style_recursive = true;
-                state.request_style = true;
-            }
-        }
-
-        cx.app_state
-            .compute_style(self.id(), view_style, view_class, classes, &cx.current);
-        let style = cx.app_state_mut().get_computed_style(self.id()).clone();
-        cx.direct = style;
-        Style::apply_only_inherited(&mut cx.current, &cx.direct);
-        CaptureState::capture_style(self.id(), cx);
-
-        // If there's any changes to the Taffy style, request layout.
-        let taffy_style = cx.direct.to_taffy_style();
-        let view_state = cx.app_state_mut().view_state(self.id());
-        if taffy_style != view_state.taffy_style {
-            view_state.taffy_style = taffy_style;
-            cx.app_state_mut().request_layout(self.id());
-        }
-
-        // This is used by the `request_transition` and `style` methods below.
-        cx.current_view = self.id();
-
-        let view_state = cx.app_state.view_state(self.id());
-
-        let mut transition = false;
-
-        // Extract the relevant layout properties so the content rect can be calculated
-        // when painting.
-        view_state
-            .layout_props
-            .read_explicit(&cx.direct, &cx.current, &cx.now, &mut transition);
-
-        view_state.view_style_props.read_explicit(
-            &cx.direct,
-            &cx.current,
-            &cx.now,
-            &mut transition,
-        );
-        if transition {
-            cx.request_transition();
-        }
-
-        self.style(cx);
-
-        cx.restore();
-    }
-
     /// Use this method to style the view's children.
     fn style(&mut self, cx: &mut StyleCx<'_>) {
         for child in self.children_mut() {
-            child.style_main(cx)
+            cx.style_view(child)
         }
     }
 

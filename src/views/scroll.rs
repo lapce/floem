@@ -640,7 +640,7 @@ impl<V: View> View for Scroll<V> {
         self.track_hover_style
             .read_style(cx, &track_style.apply_selectors(&[StyleSelector::Hover]));
 
-        self.child.style_main(cx);
+        cx.style_view(&mut self.child);
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {

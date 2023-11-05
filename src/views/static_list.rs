@@ -70,7 +70,7 @@ impl<V: View> View for StaticList<V> {
 
     fn style(&mut self, cx: &mut crate::context::StyleCx) {
         for child in &mut self.children {
-            child.style_main(cx);
+            cx.style_view(child);
         }
     }
 
