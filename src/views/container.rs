@@ -81,6 +81,6 @@ impl<V: View> View for Container<V> {
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        self.child.paint_main(cx);
+        cx.paint_view(&mut self.child);
     }
 }

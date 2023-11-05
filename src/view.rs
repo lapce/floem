@@ -83,19 +83,17 @@
 //!
 //!
 
-use std::any::Any;
-
 use bitflags::bitflags;
 use floem_renderer::Renderer;
-use kurbo::{Affine, Circle, Insets, Line, Point, Rect, RoundedRect, Size};
+use kurbo::{Circle, Insets, Line, Point, Rect, RoundedRect, Size};
+use std::any::Any;
 use taffy::prelude::Node;
 
 use crate::{
-    action::exec_after,
     context::{AppState, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx, ViewStyleProps},
     event::Event,
     id::Id,
-    style::{BoxShadowProp, Outline, OutlineColor, Style, StyleClassRef, ZIndex},
+    style::{BoxShadowProp, Outline, OutlineColor, Style, StyleClassRef},
 };
 
 bitflags! {
@@ -168,102 +166,17 @@ pub trait View {
     /// Return true to stop the event from propagating to other views
     fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool;
 
-    /// The entry point for painting a view. You shouldn't need to implement this yourself. Instead, implement [`View::paint`].
-    /// It handles the internal work before and after painting [`View::paint`] implementations.
-    /// It is responsible for
-    /// - managing hidden status
-    /// - clipping
-    /// - painting computed styles like background color, border, font-styles, and z-index and handling painting requirements of drag and drop
-    fn paint_main(&mut self, cx: &mut PaintCx) {
-        let id = self.id();
-        if cx.app_state.is_hidden(id) {
-            return;
-        }
-
-        cx.save();
-        let size = cx.transform(id);
-        let is_empty = cx
-            .clip
-            .map(|rect| rect.rect().intersect(size.to_rect()).is_empty())
-            .unwrap_or(false);
-        if !is_empty {
-            let style = cx.app_state.get_computed_style(id).clone();
-            let view_style_props = cx.app_state.view_state(id).view_style_props.clone();
-
-            if let Some(z_index) = style.get(ZIndex) {
-                cx.set_z_index(z_index);
-            }
-
-            paint_bg(cx, &style, &view_style_props, size);
-
-            self.paint(cx);
-            paint_border(cx, &view_style_props, size);
-            paint_outline(cx, &style, size)
-        }
-
-        let mut drag_set_to_none = false;
-        if let Some(dragging) = cx.app_state.dragging.as_ref() {
-            if dragging.id == id {
-                let dragging_offset = dragging.offset;
-                let mut offset_scale = None;
-                if let Some(released_at) = dragging.released_at {
-                    const LIMIT: f64 = 300.0;
-                    let elapsed = released_at.elapsed().as_millis() as f64;
-                    if elapsed < LIMIT {
-                        offset_scale = Some(1.0 - elapsed / LIMIT);
-                        exec_after(std::time::Duration::from_millis(8), move |_| {
-                            id.request_paint();
-                        });
-                    } else {
-                        drag_set_to_none = true;
-                    }
-                } else {
-                    offset_scale = Some(1.0);
-                }
-
-                if let Some(offset_scale) = offset_scale {
-                    let offset = dragging_offset * offset_scale;
-                    cx.save();
-
-                    let mut new = cx.transform.as_coeffs();
-                    new[4] += offset.x;
-                    new[5] += offset.y;
-                    cx.transform = Affine::new(new);
-                    cx.paint_state.renderer.transform(cx.transform);
-                    cx.set_z_index(1000);
-                    cx.clear_clip();
-
-                    let style = cx.app_state.get_computed_style(id).clone();
-                    let view_state = cx.app_state.view_state(id);
-                    let view_style_props = view_state.view_style_props.clone();
-                    let style = if let Some(dragging_style) = view_state.dragging_style.clone() {
-                        view_state.combined_style.clone().apply(dragging_style)
-                    } else {
-                        style
-                    };
-                    paint_bg(cx, &style, &view_style_props, size);
-
-                    self.paint(cx);
-                    paint_border(cx, &view_style_props, size);
-                    paint_outline(cx, &style, size);
-
-                    cx.restore();
-                }
-            }
-        }
-        if drag_set_to_none {
-            cx.app_state.dragging = None;
-        }
-
-        cx.restore();
-    }
-
     /// `View`-specific implementation. Will be called in the [`View::paint_main`] entry point method.
     /// Usually you'll call the child `View::paint_main` method. But you might also draw text, adjust the offset, clip or draw text.
     fn paint(&mut self, cx: &mut PaintCx);
 }
 
-fn paint_bg(cx: &mut PaintCx, computed_style: &Style, style: &ViewStyleProps, size: Size) {
+pub(crate) fn paint_bg(
+    cx: &mut PaintCx,
+    computed_style: &Style,
+    style: &ViewStyleProps,
+    size: Size,
+) {
     let radius = style.border_radius().0;
     if radius > 0.0 {
         let rect = size.to_rect();
@@ -314,7 +227,7 @@ fn paint_box_shadow(cx: &mut PaintCx, style: &Style, rect: Rect, rect_radius: Op
     }
 }
 
-fn paint_outline(cx: &mut PaintCx, style: &Style, size: Size) {
+pub(crate) fn paint_outline(cx: &mut PaintCx, style: &Style, size: Size) {
     let outline = style.get(Outline).0;
     if outline == 0. {
         // TODO: we should warn! when outline is < 0
@@ -325,7 +238,7 @@ fn paint_outline(cx: &mut PaintCx, style: &Style, size: Size) {
     cx.stroke(&rect, style.get(OutlineColor), outline);
 }
 
-fn paint_border(cx: &mut PaintCx, style: &ViewStyleProps, size: Size) {
+pub(crate) fn paint_border(cx: &mut PaintCx, style: &ViewStyleProps, size: Size) {
     let left = style.border_left().0;
     let top = style.border_top().0;
     let right = style.border_right().0;

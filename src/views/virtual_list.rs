@@ -376,7 +376,7 @@ impl<V: View + 'static, T> View for VirtualList<V, T> {
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         for child in &mut self.children {
             if let Some((child, _)) = child.as_mut() {
-                child.paint_main(cx);
+                cx.paint_view(child);
             }
         }
     }

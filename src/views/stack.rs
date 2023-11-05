@@ -96,7 +96,7 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         self.children.foreach_mut(&mut |view| {
-            view.paint_main(cx);
+            cx.paint_view(view);
             false
         });
     }

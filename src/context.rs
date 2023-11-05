@@ -19,7 +19,7 @@ use taffy::{
 use winit::window::CursorIcon;
 
 use crate::{
-    action::show_context_menu,
+    action::{exec_after, show_context_menu},
     animate::{AnimId, AnimPropKind, Animation},
     event::{Event, EventListener},
     id::Id,
@@ -31,10 +31,10 @@ use crate::{
     style::{
         Background, BorderBottom, BorderColor, BorderLeft, BorderRadius, BorderRight, BorderTop,
         BuiltinStyle, CursorStyle, DisplayProp, LayoutProps, Style, StyleClassRef, StyleProp,
-        StyleSelector, StyleSelectors,
+        StyleSelector, StyleSelectors, ZIndex,
     },
     unit::PxPct,
-    view::{ChangeFlags, View},
+    view::{paint_bg, paint_border, paint_outline, ChangeFlags, View},
 };
 
 pub type EventCallback = dyn Fn(&Event) -> bool;
@@ -1488,6 +1488,96 @@ impl<'a> PaintCx<'a> {
         } else {
             self.paint_state.renderer.clear_clip();
         }
+    }
+
+    /// The entry point for painting a view. You shouldn't need to implement this yourself. Instead, implement [`View::paint`].
+    /// It handles the internal work before and after painting [`View::paint`] implementations.
+    /// It is responsible for
+    /// - managing hidden status
+    /// - clipping
+    /// - painting computed styles like background color, border, font-styles, and z-index and handling painting requirements of drag and drop
+    pub fn paint_view(&mut self, view: &mut dyn View) {
+        let id = view.id();
+        if self.app_state.is_hidden(id) {
+            return;
+        }
+
+        self.save();
+        let size = self.transform(id);
+        let is_empty = self
+            .clip
+            .map(|rect| rect.rect().intersect(size.to_rect()).is_empty())
+            .unwrap_or(false);
+        if !is_empty {
+            let style = self.app_state.get_computed_style(id).clone();
+            let view_style_props = self.app_state.view_state(id).view_style_props.clone();
+
+            if let Some(z_index) = style.get(ZIndex) {
+                self.set_z_index(z_index);
+            }
+
+            paint_bg(self, &style, &view_style_props, size);
+
+            view.paint(self);
+            paint_border(self, &view_style_props, size);
+            paint_outline(self, &style, size)
+        }
+
+        let mut drag_set_to_none = false;
+        if let Some(dragging) = self.app_state.dragging.as_ref() {
+            if dragging.id == id {
+                let dragging_offset = dragging.offset;
+                let mut offset_scale = None;
+                if let Some(released_at) = dragging.released_at {
+                    const LIMIT: f64 = 300.0;
+                    let elapsed = released_at.elapsed().as_millis() as f64;
+                    if elapsed < LIMIT {
+                        offset_scale = Some(1.0 - elapsed / LIMIT);
+                        exec_after(std::time::Duration::from_millis(8), move |_| {
+                            id.request_paint();
+                        });
+                    } else {
+                        drag_set_to_none = true;
+                    }
+                } else {
+                    offset_scale = Some(1.0);
+                }
+
+                if let Some(offset_scale) = offset_scale {
+                    let offset = dragging_offset * offset_scale;
+                    self.save();
+
+                    let mut new = self.transform.as_coeffs();
+                    new[4] += offset.x;
+                    new[5] += offset.y;
+                    self.transform = Affine::new(new);
+                    self.paint_state.renderer.transform(self.transform);
+                    self.set_z_index(1000);
+                    self.clear_clip();
+
+                    let style = self.app_state.get_computed_style(id).clone();
+                    let view_state = self.app_state.view_state(id);
+                    let view_style_props = view_state.view_style_props.clone();
+                    let style = if let Some(dragging_style) = view_state.dragging_style.clone() {
+                        view_state.combined_style.clone().apply(dragging_style)
+                    } else {
+                        style
+                    };
+                    paint_bg(self, &style, &view_style_props, size);
+
+                    view.paint(self);
+                    paint_border(self, &view_style_props, size);
+                    paint_outline(self, &style, size);
+
+                    self.restore();
+                }
+            }
+        }
+        if drag_set_to_none {
+            self.app_state.dragging = None;
+        }
+
+        self.restore();
     }
 
     pub fn current_color(&self) -> Option<Color> {

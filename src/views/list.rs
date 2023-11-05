@@ -187,7 +187,7 @@ impl<V: View + 'static, T> View for List<V, T> {
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         for child in self.children.iter_mut() {
             if let Some((child, _)) = child.as_mut() {
-                child.paint_main(cx);
+                cx.paint_view(child);
             }
         }
     }

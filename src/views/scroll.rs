@@ -837,7 +837,7 @@ impl<V: View> View for Scroll<V> {
             cx.clip(&self.actual_rect);
         }
         cx.offset((-self.child_viewport.x0, -self.child_viewport.y0));
-        self.child.paint_main(cx);
+        cx.paint_view(&mut self.child);
         cx.restore();
 
         if !self.hide {

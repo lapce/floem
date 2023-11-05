@@ -222,7 +222,7 @@ impl<V: View + 'static, T> View for Tab<V, T> {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         if let Some(Some((child, _))) = self.children.get_mut(self.active) {
-            child.paint_main(cx);
+            cx.paint_view(child);
         }
     }
 }

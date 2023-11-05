@@ -109,7 +109,7 @@ impl<V: View> View for StaticList<V> {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         for child in self.children.iter_mut() {
-            child.paint_main(cx);
+            cx.paint_view(child);
         }
     }
 }

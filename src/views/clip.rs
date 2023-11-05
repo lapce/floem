@@ -89,7 +89,7 @@ impl<V: View> View for Clip<V> {
         } else {
             cx.clip(&size.to_rect());
         }
-        self.child.paint_main(cx);
+        cx.paint_view(&mut self.child);
         cx.restore();
     }
 }

@@ -533,7 +533,7 @@ impl WindowHandle {
                 0.0,
             );
         }
-        self.view.paint_main(&mut cx);
+        cx.paint_view(&mut self.view);
         if let Some(window) = self.window.as_ref() {
             if cx.app_state.capture.is_none() {
                 window.pre_present_notify();
