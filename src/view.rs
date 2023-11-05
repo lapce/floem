@@ -111,6 +111,14 @@ bitflags! {
 pub trait View {
     fn id(&self) -> Id;
 
+    /// This method walk over children and must be implemented if the view has any children.
+    /// It should return children back to front and should stop if `_for_each` returns `true`.
+    fn for_each_child<'a>(&'a self, _for_each: &mut dyn FnMut(&'a dyn View) -> bool) {}
+
+    /// This method walk over children and must be implemented if the view has any children.
+    /// It should return children back to front and should stop if `_for_each` returns `true`.
+    fn for_each_child_mut<'a>(&'a mut self, _for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {}
+
     fn view_style(&self) -> Option<Style> {
         None
     }
@@ -119,14 +127,50 @@ pub trait View {
         None
     }
 
-    fn child(&self, id: Id) -> Option<&dyn View>;
+    fn child(&self, id: Id) -> Option<&dyn View> {
+        let mut result = None;
+        self.for_each_child(&mut |view| {
+            if view.id() == id {
+                result = Some(view);
+                true
+            } else {
+                false
+            }
+        });
+        result
+    }
 
-    fn child_mut(&mut self, id: Id) -> Option<&mut dyn View>;
+    fn child_mut(&mut self, id: Id) -> Option<&mut dyn View> {
+        let mut result = None;
+        self.for_each_child_mut(&mut |view| {
+            if view.id() == id {
+                result = Some(view);
+                true
+            } else {
+                false
+            }
+        });
+        result
+    }
 
-    fn children(&self) -> Vec<&dyn View>;
+    fn children(&self) -> Vec<&dyn View> {
+        let mut result = Vec::new();
+        self.for_each_child(&mut |view| {
+            result.push(view);
+            false
+        });
+        result
+    }
 
     /// At the moment, this is used only to build the debug tree.
-    fn children_mut(&mut self) -> Vec<&mut dyn View>;
+    fn children_mut(&mut self) -> Vec<&mut dyn View> {
+        let mut result = Vec::new();
+        self.for_each_child_mut(&mut |view| {
+            result.push(view);
+            false
+        });
+        result
+    }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         core::any::type_name::<Self>().into()
@@ -141,7 +185,9 @@ pub trait View {
     ///
     /// You are in charge of downcasting the state to the expected type and you're required to return
     /// indicating if you'd like a layout or paint pass to be scheduled.
-    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags;
+    fn update(&mut self, _cx: &mut UpdateCx, _state: Box<dyn Any>) -> ChangeFlags {
+        ChangeFlags::empty()
+    }
 
     /// Use this method to style the view's children.
     fn style(&mut self, cx: &mut StyleCx<'_>) {
@@ -152,23 +198,52 @@ pub trait View {
 
     /// Use this method to layout the view's children.
     /// Usually you'll do this by calling `LayoutCx::layout_node`
-    fn layout(&mut self, cx: &mut LayoutCx) -> Node;
+    fn layout(&mut self, cx: &mut LayoutCx) -> Node {
+        cx.layout_node(self.id(), true, |cx| {
+            let mut nodes = Vec::new();
+            self.for_each_child_mut(&mut |child| {
+                nodes.push(cx.layout_view(child));
+                false
+            });
+            nodes
+        })
+    }
 
-    /// You must implement this if your view has children.
-    ///
     /// Responsible for computing the layout of the view's children.
-    fn compute_layout(&mut self, _cx: &mut LayoutCx) -> Option<Rect> {
-        None
+    fn compute_layout(&mut self, cx: &mut LayoutCx) -> Option<Rect> {
+        let mut layout_rect: Option<Rect> = None;
+        self.for_each_child_mut(&mut |child| {
+            let child_layout = cx.compute_view_layout(child);
+            if let Some(rect) = layout_rect {
+                layout_rect = Some(rect.union(child_layout));
+            } else {
+                layout_rect = Some(child_layout);
+            }
+            false
+        });
+        layout_rect
     }
 
     /// Implement this to handle events and to pass them down to children
     ///
     /// Return true to stop the event from propagating to other views
-    fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool;
+    fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {
+        let mut handled = false;
+        self.for_each_child_mut(&mut |child| {
+            handled |= cx.view_event(child, id_path, event.clone());
+            handled
+        });
+        handled
+    }
 
     /// `View`-specific implementation. Will be called in the [`View::paint_main`] entry point method.
     /// Usually you'll call the child `View::paint_main` method. But you might also draw text, adjust the offset, clip or draw text.
-    fn paint(&mut self, cx: &mut PaintCx);
+    fn paint(&mut self, cx: &mut PaintCx) {
+        self.for_each_child_mut(&mut |child| {
+            cx.paint_view(child);
+            false
+        });
+    }
 }
 
 pub(crate) fn paint_bg(

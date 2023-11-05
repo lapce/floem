@@ -1,24 +1,20 @@
 use std::{any::Any, fmt::Display};
 
 use crate::{
+    context::UpdateCx,
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
+    id::Id,
     prop_extracter,
+    style::Style,
     style::{FontProps, LineHeight, TextColor, TextOverflow, TextOverflowProp},
     unit::PxPct,
+    view::{ChangeFlags, View},
 };
 use floem_reactive::create_effect;
 use floem_renderer::Renderer;
 use kurbo::{Point, Rect};
 use peniko::Color;
 use taffy::prelude::Node;
-
-use crate::{
-    context::{EventCx, UpdateCx},
-    event::Event,
-    id::Id,
-    style::Style,
-    view::{ChangeFlags, View},
-};
 
 prop_extracter! {
     Extracter {
@@ -108,22 +104,6 @@ impl View for Label {
         self.id
     }
 
-    fn child(&self, _id: Id) -> Option<&dyn View> {
-        None
-    }
-
-    fn child_mut(&mut self, _id: Id) -> Option<&mut dyn View> {
-        None
-    }
-
-    fn children(&self) -> Vec<&dyn View> {
-        Vec::new()
-    }
-
-    fn children_mut(&mut self) -> Vec<&mut dyn View> {
-        Vec::new()
-    }
-
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         format!("Label: {:?}", self.label).into()
     }
@@ -140,10 +120,6 @@ impl View for Label {
         } else {
             ChangeFlags::empty()
         }
-    }
-
-    fn event(&mut self, _cx: &mut EventCx, _id_path: Option<&[Id]>, _event: Event) -> bool {
-        false
     }
 
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {

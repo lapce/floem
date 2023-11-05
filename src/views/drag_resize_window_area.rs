@@ -1,12 +1,7 @@
-use kurbo::Rect;
 use winit::window::ResizeDirection;
 
 use crate::{
-    action::drag_resize_window,
-    event::{Event, EventListener},
-    id::Id,
-    style::CursorStyle,
-    view::View,
+    action::drag_resize_window, event::EventListener, id::Id, style::CursorStyle, view::View,
 };
 
 use super::Decorators;
@@ -49,56 +44,11 @@ impl View for DragResizeWindowArea {
         self.id
     }
 
-    fn child(&self, id: Id) -> Option<&dyn View> {
-        if self.child.id() == id {
-            Some(&self.child)
-        } else {
-            None
-        }
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
+        for_each(&self.child);
     }
 
-    fn child_mut(&mut self, id: Id) -> Option<&mut dyn View> {
-        if self.child.id() == id {
-            Some(&mut self.child)
-        } else {
-            None
-        }
-    }
-
-    fn children(&self) -> Vec<&dyn View> {
-        vec![&self.child]
-    }
-
-    fn children_mut(&mut self) -> Vec<&mut dyn View> {
-        vec![&mut self.child]
-    }
-
-    fn update(
-        &mut self,
-        _cx: &mut crate::context::UpdateCx,
-        _state: Box<dyn std::any::Any>,
-    ) -> crate::view::ChangeFlags {
-        crate::view::ChangeFlags::empty()
-    }
-
-    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
-        cx.layout_node(self.id, true, |cx| vec![cx.layout_view(&mut self.child)])
-    }
-
-    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<Rect> {
-        Some(cx.compute_view_layout(&mut self.child))
-    }
-
-    fn event(
-        &mut self,
-        cx: &mut crate::context::EventCx,
-        id_path: Option<&[Id]>,
-        event: Event,
-    ) -> bool {
-        cx.view_event(&mut self.child, id_path, event)
-    }
-
-    fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        cx.paint_view(&mut self.child);
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
+        for_each(&mut self.child);
     }
 }

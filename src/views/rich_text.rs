@@ -6,8 +6,7 @@ use kurbo::{Point, Rect};
 use taffy::prelude::Node;
 
 use crate::{
-    context::{EventCx, UpdateCx},
-    event::Event,
+    context::UpdateCx,
     id::Id,
     style::{Style, TextOverflow},
     unit::PxPct,
@@ -43,22 +42,6 @@ impl View for RichText {
         self.id
     }
 
-    fn child(&self, _id: Id) -> Option<&dyn View> {
-        None
-    }
-
-    fn child_mut(&mut self, _id: Id) -> Option<&mut dyn View> {
-        None
-    }
-
-    fn children(&self) -> Vec<&dyn View> {
-        Vec::new()
-    }
-
-    fn children_mut(&mut self) -> Vec<&mut dyn View> {
-        Vec::new()
-    }
-
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         format!(
             "RichText: {:?}",
@@ -84,10 +67,6 @@ impl View for RichText {
         } else {
             ChangeFlags::empty()
         }
-    }
-
-    fn event(&mut self, _cx: &mut EventCx, _id_path: Option<&[Id]>, _event: Event) -> bool {
-        false
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {

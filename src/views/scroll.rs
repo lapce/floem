@@ -560,28 +560,12 @@ impl View for Scroll {
         self.id
     }
 
-    fn child(&self, id: Id) -> Option<&dyn View> {
-        if self.child.id() == id {
-            Some(&self.child)
-        } else {
-            None
-        }
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
+        for_each(&self.child);
     }
 
-    fn child_mut(&mut self, id: Id) -> Option<&mut dyn View> {
-        if self.child.id() == id {
-            Some(&mut self.child)
-        } else {
-            None
-        }
-    }
-
-    fn children(&self) -> Vec<&dyn View> {
-        vec![&self.child]
-    }
-
-    fn children_mut(&mut self) -> Vec<&mut dyn View> {
-        vec![&mut self.child]
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
+        for_each(&mut self.child);
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
