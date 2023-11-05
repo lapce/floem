@@ -1,12 +1,11 @@
 use std::{hash::Hash, marker::PhantomData};
 
 use floem_reactive::{as_child_of_current_scope, create_effect, Scope};
-use kurbo::Rect;
 use smallvec::SmallVec;
 use taffy::style::Display;
 
 use crate::{
-    context::{EventCx, UpdateCx},
+    context::UpdateCx,
     id::Id,
     style::DisplayProp,
     view::{ChangeFlags, View},
@@ -97,44 +96,20 @@ impl<V: View + 'static, T> View for Tab<V, T> {
         self.id
     }
 
-    fn child(&self, id: Id) -> Option<&dyn View> {
-        let child = self
-            .children
-            .iter()
-            .find(|v| v.as_ref().map(|(v, _)| v.id() == id).unwrap_or(false));
-        if let Some(child) = child {
-            child.as_ref().map(|(view, _)| view as &dyn View)
-        } else {
-            None
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
+        for child in self.children.iter().filter_map(|child| child.as_ref()) {
+            if for_each(&child.0) {
+                break;
+            }
         }
     }
 
-    fn child_mut(&mut self, id: Id) -> Option<&mut dyn View> {
-        let child = self
-            .children
-            .iter_mut()
-            .find(|v| v.as_ref().map(|(v, _)| v.id() == id).unwrap_or(false));
-        if let Some(child) = child {
-            child.as_mut().map(|(view, _)| view as &mut dyn View)
-        } else {
-            None
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
+        for child in self.children.iter_mut().filter_map(|child| child.as_mut()) {
+            if for_each(&mut child.0) {
+                break;
+            }
         }
-    }
-
-    fn children(&self) -> Vec<&dyn View> {
-        self.children
-            .iter()
-            .filter_map(|child| child.as_ref())
-            .map(|child| &child.0 as &dyn View)
-            .collect()
-    }
-
-    fn children_mut(&mut self) -> Vec<&mut dyn View> {
-        self.children
-            .iter_mut()
-            .filter_map(|child| child.as_mut())
-            .map(|child| &mut child.0 as &mut dyn View)
-            .collect()
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -172,6 +147,7 @@ impl<V: View + 'static, T> View for Tab<V, T> {
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
+        // FIXME: This should only layout the selected view.
         cx.layout_node(self.id, true, |cx| {
             let nodes = self
                 .children
@@ -196,15 +172,13 @@ impl<V: View + 'static, T> View for Tab<V, T> {
             nodes
         })
     }
-
+    /*
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<Rect> {
-        let mut layout_rect = Rect::ZERO;
-        for child in &mut self.children {
-            if let Some((child, _)) = child.as_mut() {
-                layout_rect = layout_rect.union(cx.compute_view_layout(child));
-            }
+        if let Some(Some((child, _))) = self.children.get_mut(self.active) {
+            Some(cx.compute_view_layout(child))
+        } else {
+            None
         }
-        Some(layout_rect)
     }
 
     fn event(
@@ -224,5 +198,5 @@ impl<V: View + 'static, T> View for Tab<V, T> {
         if let Some(Some((child, _))) = self.children.get_mut(self.active) {
             cx.paint_view(child);
         }
-    }
+    }*/
 }

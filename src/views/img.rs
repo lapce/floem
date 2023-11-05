@@ -117,22 +117,6 @@ impl View for Img {
         self.id
     }
 
-    fn child(&self, _id: Id) -> Option<&dyn View> {
-        None
-    }
-
-    fn child_mut(&mut self, _id: Id) -> Option<&mut dyn View> {
-        None
-    }
-
-    fn children(&self) -> Vec<&dyn View> {
-        Vec::new()
-    }
-
-    fn children_mut(&mut self) -> Vec<&mut dyn View> {
-        Vec::new()
-    }
-
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         "Img".into()
     }
@@ -179,15 +163,6 @@ impl View for Img {
 
             vec![content_node]
         })
-    }
-
-    fn event(
-        &mut self,
-        _cx: &mut crate::context::EventCx,
-        _id_path: Option<&[Id]>,
-        _event: crate::event::Event,
-    ) -> bool {
-        false
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {

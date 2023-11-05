@@ -1,10 +1,4 @@
-use crate::{
-    context::{EventCx, UpdateCx},
-    id::Id,
-    style::Style,
-    view::{ChangeFlags, View},
-};
-use kurbo::Rect;
+use crate::{id::Id, style::Style, view::View};
 use taffy::style::FlexDirection;
 
 pub struct StaticList {
@@ -30,92 +24,27 @@ impl View for StaticList {
         self.id
     }
 
-    fn view_style(&self) -> Option<crate::style::Style> {
-        Some(Style::new().flex_direction(FlexDirection::Column))
-    }
-
-    fn child(&self, id: Id) -> Option<&dyn View> {
-        self.children
-            .iter()
-            .find(|v| v.id() == id)
-            .map(|child| child as &dyn View)
-    }
-
-    fn child_mut(&mut self, id: Id) -> Option<&mut dyn View> {
-        self.children
-            .iter_mut()
-            .find(|v| v.id() == id)
-            .map(|child| child as &mut dyn View)
-    }
-
-    fn children(&self) -> Vec<&dyn View> {
-        self.children
-            .iter()
-            .map(|child| child as &dyn View)
-            .collect()
-    }
-
-    fn children_mut(&mut self) -> Vec<&mut dyn View> {
-        self.children
-            .iter_mut()
-            .map(|child| child as &mut dyn View)
-            .collect()
-    }
-
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         "StaticList".into()
     }
 
-    fn update(
-        &mut self,
-        _cx: &mut UpdateCx,
-        _state: Box<dyn std::any::Any>,
-    ) -> crate::view::ChangeFlags {
-        ChangeFlags::empty()
+    fn view_style(&self) -> Option<crate::style::Style> {
+        Some(Style::new().flex_direction(FlexDirection::Column))
     }
 
-    fn style(&mut self, cx: &mut crate::context::StyleCx) {
-        for child in &mut self.children {
-            cx.style_view(child);
-        }
-    }
-
-    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
-        cx.layout_node(self.id, true, |cx| {
-            let nodes = self
-                .children
-                .iter_mut()
-                .map(|child| cx.layout_view(child))
-                .collect::<Vec<_>>();
-            nodes
-        })
-    }
-
-    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<Rect> {
-        let mut layout_rect = Rect::ZERO;
-        for child in &mut self.children {
-            layout_rect = layout_rect.union(cx.compute_view_layout(child));
-        }
-        Some(layout_rect)
-    }
-
-    fn event(
-        &mut self,
-        cx: &mut EventCx,
-        id_path: Option<&[Id]>,
-        event: crate::event::Event,
-    ) -> bool {
-        for child in self.children.iter_mut() {
-            if cx.view_event(child, id_path, event.clone()) {
-                return true;
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
+        for child in &self.children {
+            if for_each(child) {
+                break;
             }
         }
-        false
     }
 
-    fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        for child in self.children.iter_mut() {
-            cx.paint_view(child);
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
+        for child in &mut self.children {
+            if for_each(child) {
+                break;
+            }
         }
     }
 }
