@@ -131,29 +131,6 @@ pub trait View {
     /// At the moment, this is used only to build the debug tree.
     fn children_mut(&mut self) -> Vec<&mut dyn View>;
 
-    fn cleanup(&mut self, app_state: &mut crate::context::AppState) {
-        for child in self.children_mut() {
-            child.cleanup(app_state);
-        }
-        let id = self.id();
-        let view_state = app_state.view_state(id);
-        if let Some(action) = view_state.cleanup_listener.as_ref() {
-            action();
-        }
-        let node = view_state.node;
-        if let Ok(children) = app_state.taffy.children(node) {
-            for child in children {
-                let _ = app_state.taffy.remove(child);
-            }
-        }
-        let _ = app_state.taffy.remove(node);
-        id.remove_id_path();
-        app_state.view_states.remove(&id);
-        if app_state.focus == Some(id) {
-            app_state.focus = None;
-        }
-    }
-
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         core::any::type_name::<Self>().into()
     }

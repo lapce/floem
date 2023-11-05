@@ -281,6 +281,42 @@ impl AppState {
             .or_insert_with(|| ViewState::new(&mut self.taffy))
     }
 
+    /// This removes a view from the app state.
+    pub fn remove_view(&mut self, view: &mut dyn View) {
+        for child in view.children_mut() {
+            self.remove_view(child);
+        }
+        let id = view.id();
+        let view_state = self.view_state(id);
+        if let Some(action) = view_state.cleanup_listener.as_ref() {
+            action();
+        }
+        let node = view_state.node;
+        if let Ok(children) = self.taffy.children(node) {
+            for child in children {
+                let _ = self.taffy.remove(child);
+            }
+        }
+        let _ = self.taffy.remove(node);
+        id.remove_id_path();
+        self.view_states.remove(&id);
+        self.disabled.remove(&id);
+        self.keyboard_navigable.remove(&id);
+        self.draggable.remove(&id);
+        self.dragging_over.remove(&id);
+        self.clicking.remove(&id);
+        self.hovered.remove(&id);
+        self.animated.remove(&id);
+        self.transitioning.remove(&id);
+        self.clicking.remove(&id);
+        if self.focus == Some(id) {
+            self.focus = None;
+        }
+        if self.active == Some(id) {
+            self.active = None;
+        }
+    }
+
     pub fn ids_with_anim_in_progress(&mut self) -> Vec<Id> {
         self.animated
             .clone()
