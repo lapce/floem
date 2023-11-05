@@ -997,6 +997,92 @@ impl<'a> LayoutCx<'a> {
         node
     }
 
+    /// Internal method used by Floem. This method derives its calculations based on the [Taffy Node](taffy::prelude::Node) returned by the `View::layout` method.
+    ///
+    /// It's responsible for:
+    /// - calculating and setting the view's origin (local coordinates and window coordinates)
+    /// - calculating and setting the view's viewport
+    /// - invoking any attached context::ResizeListeners
+    ///
+    /// Returns the bounding rect that encompasses this view and its children
+    pub fn compute_view_layout(&mut self, view: &mut dyn View) -> Rect {
+        let id = view.id();
+        if self.app_state().is_hidden(id) {
+            return Rect::ZERO;
+        }
+
+        self.save();
+
+        let layout = self
+            .app_state()
+            .get_layout(id)
+            .unwrap_or(taffy::layout::Layout::new());
+        let origin = Point::new(layout.location.x as f64, layout.location.y as f64);
+        let parent_viewport = self.viewport.map(|rect| {
+            rect.with_origin(Point::new(
+                rect.x0 - layout.location.x as f64,
+                rect.y0 - layout.location.y as f64,
+            ))
+        });
+        let viewport = self
+            .app_state()
+            .view_states
+            .get(&id)
+            .and_then(|view| view.viewport);
+        let size = Size::new(layout.size.width as f64, layout.size.height as f64);
+        match (parent_viewport, viewport) {
+            (Some(parent_viewport), Some(viewport)) => {
+                self.viewport = Some(
+                    parent_viewport
+                        .intersect(viewport)
+                        .intersect(size.to_rect()),
+                );
+            }
+            (Some(parent_viewport), None) => {
+                self.viewport = Some(parent_viewport.intersect(size.to_rect()));
+            }
+            (None, Some(viewport)) => {
+                self.viewport = Some(viewport.intersect(size.to_rect()));
+            }
+            (None, None) => {
+                self.viewport = None;
+            }
+        }
+
+        let viewport = self.viewport.unwrap_or_default();
+        let window_origin = origin + self.window_origin.to_vec2() - viewport.origin().to_vec2();
+        self.window_origin = window_origin;
+
+        if let Some(resize) = self.get_resize_listener(id) {
+            let new_rect = size.to_rect().with_origin(origin);
+            if new_rect != resize.rect {
+                resize.rect = new_rect;
+                (*resize.callback)(new_rect);
+            }
+        }
+
+        if let Some(listener) = self.get_move_listener(id) {
+            if window_origin != listener.window_origin {
+                listener.window_origin = window_origin;
+                (*listener.callback)(window_origin);
+            }
+        }
+
+        let child_layout_rect = view.compute_layout(self);
+
+        let layout_rect = size.to_rect().with_origin(self.window_origin);
+        let layout_rect = if let Some(child_layout_rect) = child_layout_rect {
+            layout_rect.union(child_layout_rect)
+        } else {
+            layout_rect
+        };
+        self.app_state_mut().view_state(id).layout_rect = layout_rect;
+
+        self.restore();
+
+        layout_rect
+    }
+
     pub(crate) fn get_resize_listener(&mut self, id: Id) -> Option<&mut ResizeListener> {
         self.app_state
             .view_states

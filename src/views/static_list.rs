@@ -88,7 +88,7 @@ impl<V: View> View for StaticList<V> {
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<Rect> {
         let mut layout_rect = Rect::ZERO;
         for child in &mut self.children {
-            layout_rect = layout_rect.union(child.compute_layout_main(cx));
+            layout_rect = layout_rect.union(cx.compute_view_layout(child));
         }
         Some(layout_rect)
     }

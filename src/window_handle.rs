@@ -465,7 +465,7 @@ impl WindowHandle {
         let taffy_duration = Instant::now().saturating_duration_since(start);
 
         cx.clear();
-        self.view.compute_layout_main(&mut cx);
+        cx.compute_view_layout(&mut self.view);
 
         if self.app_state.capture.is_none() && !self.app_state.animated.is_empty() {
             let animated = self.app_state.animated.clone();

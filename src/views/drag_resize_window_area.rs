@@ -83,7 +83,7 @@ impl<V: View> View for DragResizeWindowArea<V> {
     }
 
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<Rect> {
-        Some(self.child.compute_layout_main(cx))
+        Some(cx.compute_view_layout(&mut self.child))
     }
 
     fn event(

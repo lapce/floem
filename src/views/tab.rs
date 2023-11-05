@@ -201,7 +201,7 @@ impl<V: View + 'static, T> View for Tab<V, T> {
         let mut layout_rect = Rect::ZERO;
         for child in &mut self.children {
             if let Some((child, _)) = child.as_mut() {
-                layout_rect = layout_rect.union(child.compute_layout_main(cx));
+                layout_rect = layout_rect.union(cx.compute_view_layout(child));
             }
         }
         Some(layout_rect)

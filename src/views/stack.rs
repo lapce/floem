@@ -94,7 +94,7 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<Rect> {
         let mut layout_rect = Rect::ZERO;
         self.children.foreach_mut(&mut |view| {
-            layout_rect = layout_rect.union(view.compute_layout_main(cx));
+            layout_rect = layout_rect.union(cx.compute_view_layout(view));
             false
         });
         Some(layout_rect)

@@ -680,7 +680,7 @@ impl<V: View> View for Scroll<V> {
     fn compute_layout(&mut self, cx: &mut LayoutCx) -> Option<Rect> {
         self.update_size(cx.app_state_mut());
         self.clamp_child_viewport(cx.app_state_mut(), self.child_viewport);
-        self.child.compute_layout_main(cx);
+        cx.compute_view_layout(&mut self.child);
         None
     }
 
