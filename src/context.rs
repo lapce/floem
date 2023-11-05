@@ -19,6 +19,7 @@ use taffy::{
 use winit::window::CursorIcon;
 
 use crate::{
+    action::show_context_menu,
     animate::{AnimId, AnimPropKind, Animation},
     event::{Event, EventListener},
     id::Id,
@@ -677,6 +678,324 @@ impl<'a> EventCx<'a> {
 
     pub fn get_layout(&self, id: Id) -> Option<Layout> {
         self.app_state.get_layout(id)
+    }
+
+    /// Internal method used by Floem. This can be called from parent `View`s to propagate an event to the child `View`.
+    pub fn view_event(
+        &mut self,
+        view: &mut dyn View,
+        id_path: Option<&[Id]>,
+        event: Event,
+    ) -> bool {
+        if self.should_send(view.id(), &event) {
+            self.unconditional_view_event(view, id_path, event)
+        } else {
+            false
+        }
+    }
+
+    /// Internal method used by Floem. This can be called from parent `View`s to propagate an event to the child `View`.
+    pub(crate) fn unconditional_view_event(
+        &mut self,
+        view: &mut dyn View,
+        id_path: Option<&[Id]>,
+        event: Event,
+    ) -> bool {
+        let id = view.id();
+        if self.app_state.is_hidden(id) {
+            // we don't process events for hidden view
+            return false;
+        }
+        if self.app_state.is_disabled(&id) && !event.allow_disabled() {
+            // if the view is disabled and the event is not processed
+            // for disabled views
+            return false;
+        }
+
+        // offset the event positions if the event has positions
+        // e.g. pointer events, so that the position is relative
+        // to the view, taking into account of the layout location
+        // of the view and the viewport of the view if it's in a scroll.
+        let event = self.offset_event(id, event);
+
+        // if there's id_path, it's an event only for a view.
+        if let Some(id_path) = id_path {
+            if id_path.is_empty() {
+                // this happens when the parent is the destination,
+                // but the parent just passed the event on,
+                // so it's not really for this view and we stop
+                // the event propagation.
+                return false;
+            }
+
+            let id = id_path[0];
+            let id_path = &id_path[1..];
+
+            if id != view.id() {
+                // This shouldn't happen
+                return false;
+            }
+
+            // we're the parent of the event destination, so pass it on to the child
+            if !id_path.is_empty() {
+                if let Some(child) = view.child_mut(id_path[0]) {
+                    return self.unconditional_view_event(child, Some(id_path), event.clone());
+                } else {
+                    // we don't have the child, stop the event propagation
+                    return false;
+                }
+            }
+        }
+
+        // if the event was dispatched to an id_path, the event is supposed to be only
+        // handled by this view only, so we pass an empty id_path
+        // and the event propagation would be stopped at this view
+        if view.event(
+            self,
+            if id_path.is_some() { Some(&[]) } else { None },
+            event.clone(),
+        ) {
+            return true;
+        }
+
+        match &event {
+            Event::PointerDown(event) => {
+                self.app_state.clicking.insert(id);
+                if event.button.is_primary() {
+                    let rect = self.get_size(id).unwrap_or_default().to_rect();
+                    let now_focused = rect.contains(event.pos);
+
+                    if now_focused {
+                        if self.app_state.keyboard_navigable.contains(&id) {
+                            // if the view can be focused, we update the focus
+                            self.app_state.update_focus(id, false);
+                        }
+                        if event.count == 2
+                            && self.has_event_listener(id, EventListener::DoubleClick)
+                        {
+                            let view_state = self.app_state.view_state(id);
+                            view_state.last_pointer_down = Some(event.clone());
+                        }
+                        if self.has_event_listener(id, EventListener::Click) {
+                            let view_state = self.app_state.view_state(id);
+                            view_state.last_pointer_down = Some(event.clone());
+                        }
+
+                        let bottom_left = {
+                            let layout = self.app_state.view_state(id).layout_rect;
+                            Point::new(layout.x0, layout.y1)
+                        };
+                        if let Some(menu) = &self.app_state.view_state(id).popout_menu {
+                            show_context_menu(menu(), Some(bottom_left))
+                        }
+                        if self.app_state.draggable.contains(&id)
+                            && self.app_state.drag_start.is_none()
+                        {
+                            self.app_state.drag_start = Some((id, event.pos));
+                        }
+                    }
+                } else if event.button.is_secondary() {
+                    let rect = self.get_size(id).unwrap_or_default().to_rect();
+                    let now_focused = rect.contains(event.pos);
+
+                    if now_focused {
+                        if self.app_state.keyboard_navigable.contains(&id) {
+                            // if the view can be focused, we update the focus
+                            self.app_state.update_focus(id, false);
+                        }
+                        if self.has_event_listener(id, EventListener::SecondaryClick) {
+                            let view_state = self.app_state.view_state(id);
+                            view_state.last_pointer_down = Some(event.clone());
+                        }
+                    }
+                }
+            }
+            Event::PointerMove(pointer_event) => {
+                let rect = self.get_size(id).unwrap_or_default().to_rect();
+                if rect.contains(pointer_event.pos) {
+                    if self.app_state.is_dragging() {
+                        self.app_state.dragging_over.insert(id);
+                        if let Some(action) = self.get_event_listener(id, &EventListener::DragOver)
+                        {
+                            (*action)(&event);
+                        }
+                    } else {
+                        self.app_state.hovered.insert(id);
+                        let style = self.app_state.get_builtin_style(id);
+                        if let Some(cursor) = style.cursor() {
+                            if self.app_state.cursor.is_none() {
+                                self.app_state.cursor = Some(cursor);
+                            }
+                        }
+                    }
+                }
+                if self.app_state.draggable.contains(&id) {
+                    if let Some((_, drag_start)) = self
+                        .app_state
+                        .drag_start
+                        .as_ref()
+                        .filter(|(drag_id, _)| drag_id == &id)
+                    {
+                        let vec2 = pointer_event.pos - *drag_start;
+
+                        if let Some(dragging) = self
+                            .app_state
+                            .dragging
+                            .as_mut()
+                            .filter(|d| d.id == id && d.released_at.is_none())
+                        {
+                            // update the dragging offset if the view is dragging and not released
+                            dragging.offset = vec2;
+                            id.request_paint();
+                        } else if vec2.x.abs() + vec2.y.abs() > 1.0 {
+                            // start dragging when moved 1 px
+                            self.app_state.active = None;
+                            self.update_active(id);
+                            self.app_state.dragging = Some(DragState {
+                                id,
+                                offset: vec2,
+                                released_at: None,
+                            });
+                            id.request_paint();
+                            if let Some(action) =
+                                self.get_event_listener(id, &EventListener::DragStart)
+                            {
+                                (*action)(&event);
+                            }
+                        }
+                    }
+                }
+                if let Some(action) = self.get_event_listener(id, &EventListener::PointerMove) {
+                    if (*action)(&event) {
+                        return true;
+                    }
+                }
+            }
+            Event::PointerUp(pointer_event) => {
+                if pointer_event.button.is_primary() {
+                    let rect = self.get_size(id).unwrap_or_default().to_rect();
+                    let on_view = rect.contains(pointer_event.pos);
+
+                    if id_path.is_none() {
+                        if on_view {
+                            if let Some(dragging) = self.app_state.dragging.as_mut() {
+                                let dragging_id = dragging.id;
+                                if let Some(action) =
+                                    self.get_event_listener(id, &EventListener::Drop)
+                                {
+                                    if (*action)(&event) {
+                                        // if the drop is processed, we set dragging to none so that the animation
+                                        // for the dragged view back to its original position isn't played.
+                                        self.app_state.dragging = None;
+                                        id.request_paint();
+                                        if let Some(action) = self.get_event_listener(
+                                            dragging_id,
+                                            &EventListener::DragEnd,
+                                        ) {
+                                            (*action)(&event);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else if let Some(dragging) =
+                        self.app_state.dragging.as_mut().filter(|d| d.id == id)
+                    {
+                        let dragging_id = dragging.id;
+                        dragging.released_at = Some(std::time::Instant::now());
+                        id.request_paint();
+                        if let Some(action) =
+                            self.get_event_listener(dragging_id, &EventListener::DragEnd)
+                        {
+                            (*action)(&event);
+                        }
+                    }
+
+                    let last_pointer_down = self.app_state.view_state(id).last_pointer_down.take();
+                    if let Some(action) = self.get_event_listener(id, &EventListener::DoubleClick) {
+                        if on_view
+                            && self.app_state.is_clicking(&id)
+                            && last_pointer_down
+                                .as_ref()
+                                .map(|e| e.count == 2)
+                                .unwrap_or(false)
+                            && (*action)(&event)
+                        {
+                            return true;
+                        }
+                    }
+                    if let Some(action) = self.get_event_listener(id, &EventListener::Click) {
+                        if on_view
+                            && self.app_state.is_clicking(&id)
+                            && last_pointer_down.is_some()
+                            && (*action)(&event)
+                        {
+                            return true;
+                        }
+                    }
+
+                    if let Some(action) = self.get_event_listener(id, &EventListener::PointerUp) {
+                        if (*action)(&event) {
+                            return true;
+                        }
+                    }
+                } else if pointer_event.button.is_secondary() {
+                    let rect = self.get_size(id).unwrap_or_default().to_rect();
+                    let on_view = rect.contains(pointer_event.pos);
+
+                    let last_pointer_down = self.app_state.view_state(id).last_pointer_down.take();
+                    if let Some(action) =
+                        self.get_event_listener(id, &EventListener::SecondaryClick)
+                    {
+                        if on_view && last_pointer_down.is_some() && (*action)(&event) {
+                            return true;
+                        }
+                    }
+
+                    let viewport_event_position = {
+                        let layout = self.app_state.view_state(id).layout_rect;
+                        Point::new(
+                            layout.x0 + pointer_event.pos.x,
+                            layout.y0 + pointer_event.pos.y,
+                        )
+                    };
+                    if let Some(menu) = &self.app_state.view_state(id).context_menu {
+                        show_context_menu(menu(), Some(viewport_event_position))
+                    }
+                }
+            }
+            Event::KeyDown(_) => {
+                if self.app_state.is_focused(&id) && event.is_keyboard_trigger() {
+                    if let Some(action) = self.get_event_listener(id, &EventListener::Click) {
+                        (*action)(&event);
+                    }
+                }
+            }
+            Event::WindowResized(_) => {
+                if let Some(view_state) = self.app_state.view_states.get(&id) {
+                    if view_state.has_style_selectors.has_responsive() {
+                        self.app_state.request_style(id);
+                    }
+                }
+            }
+            _ => (),
+        }
+
+        if let Some(listener) = event.listener() {
+            if let Some(action) = self.get_event_listener(id, &listener) {
+                let should_run = if let Some(pos) = event.point() {
+                    let rect = self.get_size(id).unwrap_or_default().to_rect();
+                    rect.contains(pos)
+                } else {
+                    true
+                };
+                if should_run && (*action)(&event) {
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 
     pub(crate) fn get_size(&self, id: Id) -> Option<Size> {

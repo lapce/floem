@@ -365,8 +365,7 @@ impl<V: View + 'static, T> View for VirtualList<V, T> {
     ) -> bool {
         for child in self.children.iter_mut() {
             if let Some((child, _)) = child.as_mut() {
-                let id = child.id();
-                if cx.should_send(id, &event) && child.event_main(cx, id_path, event.clone()) {
+                if cx.view_event(child, id_path, event.clone()) {
                     return true;
                 }
             }

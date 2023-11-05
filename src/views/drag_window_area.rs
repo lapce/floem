@@ -78,11 +78,7 @@ impl<V: View> View for DragWindowArea<V> {
         id_path: Option<&[Id]>,
         event: Event,
     ) -> bool {
-        if cx.should_send(self.child.id(), &event) {
-            self.child.event_main(cx, id_path, event)
-        } else {
-            false
-        }
+        cx.view_event(&mut self.child, id_path, event)
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {

@@ -170,9 +170,11 @@ impl WindowHandle {
                 if let Some(id) = cx.app_state.focus {
                     let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
                     if let Some(id_path) = id_path {
-                        processed |=
-                            self.view
-                                .event_main(&mut cx, Some(id_path.dispatch()), event.clone());
+                        processed |= cx.unconditional_view_event(
+                            &mut self.view,
+                            Some(id_path.dispatch()),
+                            event.clone(),
+                        );
                     } else {
                         cx.app_state.focus = None;
                     }
@@ -217,14 +219,17 @@ impl WindowHandle {
             }
         } else if cx.app_state.active.is_some() && event.is_pointer() {
             if cx.app_state.is_dragging() {
-                self.view.event_main(&mut cx, None, event.clone());
+                cx.unconditional_view_event(&mut self.view, None, event.clone());
             }
 
             let id = cx.app_state.active.unwrap();
             let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
             if let Some(id_path) = id_path {
-                self.view
-                    .event_main(&mut cx, Some(id_path.dispatch()), event.clone());
+                cx.unconditional_view_event(
+                    &mut self.view,
+                    Some(id_path.dispatch()),
+                    event.clone(),
+                );
             }
             if let Event::PointerUp(_) = &event {
                 // To remove the styles applied by the Active selector
@@ -235,7 +240,7 @@ impl WindowHandle {
                 cx.app_state.active = None;
             }
         } else {
-            self.view.event_main(&mut cx, None, event.clone());
+            cx.unconditional_view_event(&mut self.view, None, event.clone());
         }
 
         if let Event::PointerUp(_) = &event {
@@ -258,8 +263,8 @@ impl WindowHandle {
                 } else {
                     let id_path = ID_PATHS.with(|paths| paths.borrow().get(id).cloned());
                     if let Some(id_path) = id_path {
-                        self.view.event_main(
-                            &mut cx,
+                        cx.unconditional_view_event(
+                            &mut self.view,
                             Some(id_path.dispatch()),
                             Event::PointerLeave,
                         );
@@ -380,8 +385,11 @@ impl WindowHandle {
             }
             let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
             if let Some(id_path) = id_path {
-                self.view
-                    .event_main(&mut cx, Some(id_path.dispatch()), Event::PointerLeave);
+                cx.unconditional_view_event(
+                    &mut self.view,
+                    Some(id_path.dispatch()),
+                    Event::PointerLeave,
+                );
             }
         }
         self.process_update();

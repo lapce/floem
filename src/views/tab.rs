@@ -214,11 +214,7 @@ impl<V: View + 'static, T> View for Tab<V, T> {
         event: crate::event::Event,
     ) -> bool {
         if let Some(Some((child, _))) = self.children.get_mut(self.active) {
-            if cx.should_send(child.id(), &event) {
-                child.event_main(cx, id_path, event)
-            } else {
-                false
-            }
+            cx.view_event(child, id_path, event)
         } else {
             false
         }

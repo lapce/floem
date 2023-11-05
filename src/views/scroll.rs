@@ -797,9 +797,7 @@ impl<V: View> View for Scroll<V> {
             _ => {}
         }
 
-        if cx.should_send(self.child.id(), &event)
-            && self.child.event_main(cx, id_path, event.clone())
-        {
+        if cx.view_event(&mut self.child, id_path, event.clone()) {
             return true;
         }
 

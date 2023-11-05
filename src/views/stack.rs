@@ -67,14 +67,8 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
     ) -> bool {
         let mut handled = false;
         self.children.foreach_rev(&mut |view| {
-            let id = view.id();
-            if cx.should_send(id, &event) {
-                handled = view.event_main(cx, id_path, event.clone());
-                if handled {
-                    return true;
-                }
-            }
-            false
+            handled |= cx.view_event(view, id_path, event.clone());
+            handled
         });
         handled
     }
