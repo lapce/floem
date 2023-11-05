@@ -2,7 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     ops::{Deref, DerefMut},
     rc::Rc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use floem_renderer::{
@@ -24,8 +24,10 @@ use crate::{
     inspector::CaptureState,
     menu::Menu,
     pointer::PointerInputEvent,
+    prop_extracter,
     responsive::{GridBreakpoints, ScreenSizeBp},
     style::{
+        Background, BorderBottom, BorderColor, BorderLeft, BorderRadius, BorderRight, BorderTop,
         BuiltinStyle, CursorStyle, DisplayProp, LayoutProps, Style, StyleClassRef, StyleProp,
         StyleSelector, StyleSelectors,
     },
@@ -47,6 +49,19 @@ pub(crate) struct MoveListener {
     pub(crate) callback: Box<dyn Fn(Point)>,
 }
 
+prop_extracter! {
+    pub(crate) ViewStyleProps {
+        pub border_left: BorderLeft,
+        pub border_top: BorderTop,
+        pub border_right: BorderRight,
+        pub border_bottom: BorderBottom,
+        pub border_radius: BorderRadius,
+
+        pub border_color: BorderColor,
+        pub background: Background,
+    }
+}
+
 pub struct ViewState {
     pub(crate) node: Node,
     pub(crate) children_nodes: Vec<Node>,
@@ -58,6 +73,7 @@ pub struct ViewState {
     pub(crate) viewport: Option<Rect>,
     pub(crate) layout_rect: Rect,
     pub(crate) layout_props: LayoutProps,
+    pub(crate) view_style_props: ViewStyleProps,
     pub(crate) animation: Option<Animation>,
     pub(crate) base_style: Option<Style>,
     pub(crate) style: Style,
@@ -81,6 +97,7 @@ impl ViewState {
             viewport: None,
             layout_rect: Rect::ZERO,
             layout_props: Default::default(),
+            view_style_props: Default::default(),
             request_layout: true,
             request_style: true,
             request_style_recursive: false,
@@ -199,6 +216,8 @@ pub struct AppState {
     /// This keeps track of all views that have an animation,
     /// regardless of the status of the animation
     pub(crate) animated: HashSet<Id>,
+    /// This is a set of view which have active transition animations.
+    pub(crate) transitioning: HashSet<Id>,
     pub(crate) cursor: Option<CursorStyle>,
     pub(crate) last_cursor: CursorIcon,
     pub(crate) keyboard_navigation: bool,
@@ -230,6 +249,7 @@ impl AppState {
             taffy,
             view_states: HashMap::new(),
             animated: HashSet::new(),
+            transitioning: HashSet::new(),
             disabled: HashSet::new(),
             keyboard_navigable: HashSet::new(),
             draggable: HashSet::new(),
@@ -700,18 +720,22 @@ pub struct InteractionState {
 
 pub struct StyleCx<'a> {
     pub(crate) app_state: &'a mut AppState,
+    pub(crate) current_view: Id,
     pub(crate) current: Rc<Style>,
     pub(crate) direct: Style,
     saved: Vec<Rc<Style>>,
+    pub(crate) now: Instant,
 }
 
 impl<'a> StyleCx<'a> {
-    pub(crate) fn new(app_state: &'a mut AppState) -> Self {
+    pub(crate) fn new(app_state: &'a mut AppState, root: Id) -> Self {
         Self {
             app_state,
+            current_view: root,
             current: Default::default(),
             direct: Default::default(),
             saved: Default::default(),
+            now: Instant::now(),
         }
     }
 
@@ -731,6 +755,11 @@ impl<'a> StyleCx<'a> {
 
     pub fn style(&self) -> Style {
         (*self.current).clone().apply(self.direct.clone())
+    }
+
+    pub(crate) fn request_transition(&mut self) {
+        let id = self.current_view;
+        self.app_state_mut().transitioning.insert(id);
     }
 
     pub fn app_state_mut(&mut self) -> &mut AppState {

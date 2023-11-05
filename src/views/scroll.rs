@@ -625,19 +625,20 @@ impl<V: View> View for Scroll<V> {
         let style = cx.style();
 
         let handle_style = style.clone().apply_class(Handle);
-        self.handle_style.read_style(&handle_style);
+        self.handle_style.read_style(cx, &handle_style);
         self.handle_hover_style.read_style(
+            cx,
             &handle_style
                 .clone()
                 .apply_selectors(&[StyleSelector::Hover]),
         );
         self.handle_active_style
-            .read_style(&handle_style.apply_selectors(&[StyleSelector::Active]));
+            .read_style(cx, &handle_style.apply_selectors(&[StyleSelector::Active]));
 
         let track_style = style.apply_class(Track);
-        self.track_style.read_style(&track_style);
+        self.track_style.read_style(cx, &track_style);
         self.track_hover_style
-            .read_style(&track_style.apply_selectors(&[StyleSelector::Hover]));
+            .read_style(cx, &track_style.apply_selectors(&[StyleSelector::Hover]));
 
         self.child.style_main(cx);
     }

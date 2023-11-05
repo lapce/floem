@@ -92,11 +92,11 @@ use taffy::prelude::Node;
 
 use crate::{
     action::{exec_after, show_context_menu},
-    context::{AppState, DragState, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx},
+    context::{AppState, DragState, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx, ViewStyleProps},
     event::{Event, EventListener},
     id::Id,
     inspector::CaptureState,
-    style::{BoxShadowProp, LayoutProps, Outline, OutlineColor, Style, StyleClassRef, ZIndex},
+    style::{BoxShadowProp, Outline, OutlineColor, Style, StyleClassRef, ZIndex},
 };
 
 bitflags! {
@@ -239,11 +239,28 @@ pub trait View {
             cx.app_state_mut().request_layout(self.id());
         }
 
+        // This is used by the `request_transition` and `style` methods below.
+        cx.current_view = self.id();
+
+        let view_state = cx.app_state.view_state(self.id());
+
+        let mut transition = false;
+
         // Extract the relevant layout properties so the content rect can be calculated
         // when painting.
-        let mut props = LayoutProps::default();
-        props.read(cx);
-        cx.app_state_mut().view_state(self.id()).layout_props = props;
+        view_state
+            .layout_props
+            .read_explicit(&cx.direct, &cx.current, &cx.now, &mut transition);
+
+        view_state.view_style_props.read_explicit(
+            &cx.direct,
+            &cx.current,
+            &cx.now,
+            &mut transition,
+        );
+        if transition {
+            cx.request_transition();
+        }
 
         self.style(cx);
 
@@ -689,15 +706,16 @@ pub trait View {
             .unwrap_or(false);
         if !is_empty {
             let style = cx.app_state.get_computed_style(id).clone();
+            let view_style_props = cx.app_state.view_state(id).view_style_props.clone();
 
             if let Some(z_index) = style.get(ZIndex) {
                 cx.set_z_index(z_index);
             }
 
-            paint_bg(cx, &style, size);
+            paint_bg(cx, &style, &view_style_props, size);
 
             self.paint(cx);
-            paint_border(cx, &style, size);
+            paint_border(cx, &view_style_props, size);
             paint_outline(cx, &style, size)
         }
 
@@ -735,15 +753,16 @@ pub trait View {
 
                     let style = cx.app_state.get_computed_style(id).clone();
                     let view_state = cx.app_state.view_state(id);
+                    let view_style_props = view_state.view_style_props.clone();
                     let style = if let Some(dragging_style) = view_state.dragging_style.clone() {
                         view_state.combined_style.clone().apply(dragging_style)
                     } else {
                         style
                     };
-                    paint_bg(cx, &style, size);
+                    paint_bg(cx, &style, &view_style_props, size);
 
                     self.paint(cx);
-                    paint_border(cx, &style, size);
+                    paint_border(cx, &view_style_props, size);
                     paint_outline(cx, &style, size);
 
                     cx.restore();
@@ -762,8 +781,7 @@ pub trait View {
     fn paint(&mut self, cx: &mut PaintCx);
 }
 
-fn paint_bg(cx: &mut PaintCx, computed_style: &Style, size: Size) {
-    let style = computed_style.builtin();
+fn paint_bg(cx: &mut PaintCx, computed_style: &Style, style: &ViewStyleProps, size: Size) {
     let radius = style.border_radius().0;
     if radius > 0.0 {
         let rect = size.to_rect();
@@ -825,8 +843,7 @@ fn paint_outline(cx: &mut PaintCx, style: &Style, size: Size) {
     cx.stroke(&rect, style.get(OutlineColor), outline);
 }
 
-fn paint_border(cx: &mut PaintCx, style: &Style, size: Size) {
-    let style = style.builtin();
+fn paint_border(cx: &mut PaintCx, style: &ViewStyleProps, size: Size) {
     let left = style.border_left().0;
     let top = style.border_top().0;
     let right = style.border_right().0;
