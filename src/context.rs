@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     collections::{HashMap, HashSet},
     ops::{Deref, DerefMut},
     rc::Rc,
@@ -32,6 +33,7 @@ use crate::{
         StyleSelector, StyleSelectors,
     },
     unit::PxPct,
+    view::{ChangeFlags, View},
 };
 
 pub type EventCallback = dyn Fn(&Event) -> bool;
@@ -1123,6 +1125,26 @@ impl<'a> UpdateCx<'a> {
     /// This will recursively request layout for all parents and set the `ChangeFlag::LAYOUT` at root
     pub fn request_layout(&mut self, id: Id) {
         self.app_state.request_layout(id);
+    }
+
+    /// Used internally by Floem to send an update to the correct view based on the `Id` path.
+    /// It will invoke only once `update` when the correct view is located.
+    pub fn update_view(
+        &mut self,
+        view: &mut dyn View,
+        id_path: &[Id],
+        state: Box<dyn Any>,
+    ) -> ChangeFlags {
+        let id = id_path[0];
+        let id_path = &id_path[1..];
+        if id == view.id() {
+            if id_path.is_empty() {
+                return view.update(self, state);
+            } else if let Some(child) = view.child_mut(id_path[0]) {
+                return self.update_view(child, id_path, state);
+            }
+        }
+        ChangeFlags::empty()
     }
 }
 

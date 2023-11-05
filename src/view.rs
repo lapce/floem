@@ -158,28 +158,6 @@ pub trait View {
         core::any::type_name::<Self>().into()
     }
 
-    /// Used internally by Floem to send an update to the correct view based on the `Id` path.
-    /// It will invoke only once `update` when the correct view is located.
-    ///
-    /// You shouldn't need to implement this.
-    fn update_main(
-        &mut self,
-        cx: &mut UpdateCx,
-        id_path: &[Id],
-        state: Box<dyn Any>,
-    ) -> ChangeFlags {
-        let id = id_path[0];
-        let id_path = &id_path[1..];
-        if id == self.id() {
-            if id_path.is_empty() {
-                return self.update(cx, state);
-            } else if let Some(child) = self.child_mut(id_path[0]) {
-                return child.update_main(cx, id_path, state);
-            }
-        }
-        ChangeFlags::empty()
-    }
-
     /// Use this method to react to changes in view-related state.
     /// You will usually send state to this hook manually using the `View`'s `Id` handle
     ///

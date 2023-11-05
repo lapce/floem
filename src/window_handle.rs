@@ -746,7 +746,7 @@ impl WindowHandle {
                     UpdateMessage::State { id, state } => {
                         let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
                         if let Some(id_path) = id_path {
-                            flags |= self.view.update_main(&mut cx, id_path.dispatch(), state);
+                            flags |= cx.update_view(&mut self.view, id_path.dispatch(), state);
                         }
                     }
                     UpdateMessage::BaseStyle { id, style } => {
@@ -941,7 +941,7 @@ impl WindowHandle {
         for (id, state) in msgs {
             let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
             if let Some(id_path) = id_path {
-                flags |= self.view.update_main(&mut cx, id_path.dispatch(), state);
+                flags |= cx.update_view(&mut self.view, id_path.dispatch(), state);
             }
         }
 
