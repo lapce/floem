@@ -651,7 +651,7 @@ impl<V: View> View for Scroll<V> {
                 .combined_style
                 .clone()
                 .set(PositionProp, Position::Absolute);
-            let child_node = self.child.layout_main(cx);
+            let child_node = cx.layout_view(&mut self.child);
 
             let virtual_style = Style::new()
                 .width(self.child_size.width)

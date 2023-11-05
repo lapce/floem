@@ -9,14 +9,14 @@ use crate::{
 
 use super::Decorators;
 
-pub struct DargWindowArea<V: View> {
+pub struct DragWindowArea<V: View> {
     id: Id,
     child: V,
 }
 
-pub fn drag_window_area<V: View>(child: V) -> DargWindowArea<V> {
+pub fn drag_window_area<V: View>(child: V) -> DragWindowArea<V> {
     let id = Id::next();
-    DargWindowArea { id, child }
+    DragWindowArea { id, child }
         .on_event(EventListener::PointerDown, |_| {
             drag_window();
             true
@@ -27,7 +27,7 @@ pub fn drag_window_area<V: View>(child: V) -> DargWindowArea<V> {
         })
 }
 
-impl<V: View> View for DargWindowArea<V> {
+impl<V: View> View for DragWindowArea<V> {
     fn id(&self) -> Id {
         self.id
     }
@@ -65,7 +65,7 @@ impl<V: View> View for DargWindowArea<V> {
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
-        cx.layout_node(self.id, true, |cx| vec![self.child.layout_main(cx)])
+        cx.layout_node(self.id, true, |cx| vec![cx.layout_view(&mut self.child)])
     }
 
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<Rect> {

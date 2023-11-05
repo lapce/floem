@@ -252,18 +252,6 @@ pub trait View {
         }
     }
 
-    /// Internal method used by Floem to invoke the user-defined `View::layout` method.
-    ///
-    /// You shouldn't need to implement this.
-    fn layout_main(&mut self, cx: &mut LayoutCx) -> Node {
-        cx.save();
-
-        let node = self.layout(cx);
-
-        cx.restore();
-        node
-    }
-
     /// Use this method to layout the view's children.
     /// Usually you'll do this by calling `LayoutCx::layout_node`
     fn layout(&mut self, cx: &mut LayoutCx) -> Node;

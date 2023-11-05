@@ -79,7 +79,7 @@ impl<V: View> View for StaticList<V> {
             let nodes = self
                 .children
                 .iter_mut()
-                .map(|child| child.layout_main(cx))
+                .map(|child| cx.layout_view(child))
                 .collect::<Vec<_>>();
             nodes
         })

@@ -458,7 +458,7 @@ impl WindowHandle {
     fn layout(&mut self) -> Duration {
         let mut cx = LayoutCx::new(&mut self.app_state);
 
-        cx.app_state_mut().root = Some(self.view.layout_main(&mut cx));
+        cx.app_state_mut().root = Some(cx.layout_view(&mut self.view));
 
         let start = Instant::now();
         cx.app_state_mut().compute_layout();

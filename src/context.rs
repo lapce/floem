@@ -876,6 +876,14 @@ impl<'a> LayoutCx<'a> {
         node
     }
 
+    /// Internal method used by Floem to invoke the user-defined `View::layout` method.
+    pub fn layout_view(&mut self, view: &mut dyn View) -> Node {
+        self.save();
+        let node = view.layout(self);
+        self.restore();
+        node
+    }
+
     pub(crate) fn get_resize_listener(&mut self, id: Id) -> Option<&mut ResizeListener> {
         self.app_state
             .view_states

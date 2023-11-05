@@ -189,7 +189,7 @@ impl<V: View + 'static, T> View for Tab<V, T> {
                             Display::Flex
                         },
                     );
-                    let node = child.as_mut()?.0.layout_main(cx);
+                    let node = cx.layout_view(&mut child.as_mut()?.0);
                     Some(node)
                 })
                 .collect::<Vec<_>>();

@@ -278,7 +278,7 @@ impl<V: View + 'static, T> View for VirtualList<V, T> {
             let mut nodes = self
                 .children
                 .iter_mut()
-                .filter_map(|child| Some(child.as_mut()?.0.layout_main(cx)))
+                .filter_map(|child| Some(cx.layout_view(&mut child.as_mut()?.0)))
                 .collect::<Vec<_>>();
             let before_size = match self.direction {
                 VirtualListDirection::Vertical => taffy::prelude::Size {

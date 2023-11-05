@@ -83,7 +83,7 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
         cx.layout_node(self.id, true, |cx| {
             let mut nodes = Vec::new();
             self.children.foreach_mut(&mut |view| {
-                let node = view.layout_main(cx);
+                let node = cx.layout_view(view);
                 nodes.push(node);
                 false
             });
