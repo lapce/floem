@@ -9,14 +9,14 @@ use crate::{
 
 use super::Decorators;
 
-pub struct DargWindowArea<V: View> {
+pub struct DragWindowArea<V: View> {
     id: Id,
     child: V,
 }
 
-pub fn drag_window_area<V: View>(child: V) -> DargWindowArea<V> {
+pub fn drag_window_area<V: View>(child: V) -> DragWindowArea<V> {
     let id = Id::next();
-    DargWindowArea { id, child }
+    DragWindowArea { id, child }
         .on_event(EventListener::PointerDown, |_| {
             drag_window();
             true
@@ -27,7 +27,7 @@ pub fn drag_window_area<V: View>(child: V) -> DargWindowArea<V> {
         })
 }
 
-impl<V: View> View for DargWindowArea<V> {
+impl<V: View> View for DragWindowArea<V> {
     fn id(&self) -> Id {
         self.id
     }
@@ -65,11 +65,11 @@ impl<V: View> View for DargWindowArea<V> {
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
-        cx.layout_node(self.id, true, |cx| vec![self.child.layout_main(cx)])
+        cx.layout_node(self.id, true, |cx| vec![cx.layout_view(&mut self.child)])
     }
 
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<Rect> {
-        Some(self.child.compute_layout_main(cx))
+        Some(cx.compute_view_layout(&mut self.child))
     }
 
     fn event(
@@ -78,14 +78,10 @@ impl<V: View> View for DargWindowArea<V> {
         id_path: Option<&[Id]>,
         event: Event,
     ) -> bool {
-        if cx.should_send(self.child.id(), &event) {
-            self.child.event_main(cx, id_path, event)
-        } else {
-            false
-        }
+        cx.view_event(&mut self.child, id_path, event)
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        self.child.paint_main(cx);
+        cx.paint_view(&mut self.child);
     }
 }

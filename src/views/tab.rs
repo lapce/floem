@@ -189,7 +189,7 @@ impl<V: View + 'static, T> View for Tab<V, T> {
                             Display::Flex
                         },
                     );
-                    let node = child.as_mut()?.0.layout_main(cx);
+                    let node = cx.layout_view(&mut child.as_mut()?.0);
                     Some(node)
                 })
                 .collect::<Vec<_>>();
@@ -201,7 +201,7 @@ impl<V: View + 'static, T> View for Tab<V, T> {
         let mut layout_rect = Rect::ZERO;
         for child in &mut self.children {
             if let Some((child, _)) = child.as_mut() {
-                layout_rect = layout_rect.union(child.compute_layout_main(cx));
+                layout_rect = layout_rect.union(cx.compute_view_layout(child));
             }
         }
         Some(layout_rect)
@@ -214,11 +214,7 @@ impl<V: View + 'static, T> View for Tab<V, T> {
         event: crate::event::Event,
     ) -> bool {
         if let Some(Some((child, _))) = self.children.get_mut(self.active) {
-            if cx.should_send(child.id(), &event) {
-                child.event_main(cx, id_path, event)
-            } else {
-                false
-            }
+            cx.view_event(child, id_path, event)
         } else {
             false
         }
@@ -226,7 +222,7 @@ impl<V: View + 'static, T> View for Tab<V, T> {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         if let Some(Some((child, _))) = self.children.get_mut(self.active) {
-            child.paint_main(cx);
+            cx.paint_view(child);
         }
     }
 }

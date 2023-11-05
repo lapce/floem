@@ -170,9 +170,11 @@ impl WindowHandle {
                 if let Some(id) = cx.app_state.focus {
                     let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
                     if let Some(id_path) = id_path {
-                        processed |=
-                            self.view
-                                .event_main(&mut cx, Some(id_path.dispatch()), event.clone());
+                        processed |= cx.unconditional_view_event(
+                            &mut self.view,
+                            Some(id_path.dispatch()),
+                            event.clone(),
+                        );
                     } else {
                         cx.app_state.focus = None;
                     }
@@ -217,14 +219,17 @@ impl WindowHandle {
             }
         } else if cx.app_state.active.is_some() && event.is_pointer() {
             if cx.app_state.is_dragging() {
-                self.view.event_main(&mut cx, None, event.clone());
+                cx.unconditional_view_event(&mut self.view, None, event.clone());
             }
 
             let id = cx.app_state.active.unwrap();
             let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
             if let Some(id_path) = id_path {
-                self.view
-                    .event_main(&mut cx, Some(id_path.dispatch()), event.clone());
+                cx.unconditional_view_event(
+                    &mut self.view,
+                    Some(id_path.dispatch()),
+                    event.clone(),
+                );
             }
             if let Event::PointerUp(_) = &event {
                 // To remove the styles applied by the Active selector
@@ -235,7 +240,7 @@ impl WindowHandle {
                 cx.app_state.active = None;
             }
         } else {
-            self.view.event_main(&mut cx, None, event.clone());
+            cx.unconditional_view_event(&mut self.view, None, event.clone());
         }
 
         if let Event::PointerUp(_) = &event {
@@ -258,8 +263,8 @@ impl WindowHandle {
                 } else {
                     let id_path = ID_PATHS.with(|paths| paths.borrow().get(id).cloned());
                     if let Some(id_path) = id_path {
-                        self.view.event_main(
-                            &mut cx,
+                        cx.unconditional_view_event(
+                            &mut self.view,
                             Some(id_path.dispatch()),
                             Event::PointerLeave,
                         );
@@ -380,8 +385,11 @@ impl WindowHandle {
             }
             let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
             if let Some(id_path) = id_path {
-                self.view
-                    .event_main(&mut cx, Some(id_path.dispatch()), Event::PointerLeave);
+                cx.unconditional_view_event(
+                    &mut self.view,
+                    Some(id_path.dispatch()),
+                    Event::PointerLeave,
+                );
             }
         }
         self.process_update();
@@ -452,20 +460,20 @@ impl WindowHandle {
 
     fn style(&mut self) {
         let mut cx = StyleCx::new(&mut self.app_state, self.view.id());
-        self.view.style_main(&mut cx);
+        cx.style_view(&mut self.view);
     }
 
     fn layout(&mut self) -> Duration {
         let mut cx = LayoutCx::new(&mut self.app_state);
 
-        cx.app_state_mut().root = Some(self.view.layout_main(&mut cx));
+        cx.app_state_mut().root = Some(cx.layout_view(&mut self.view));
 
         let start = Instant::now();
         cx.app_state_mut().compute_layout();
         let taffy_duration = Instant::now().saturating_duration_since(start);
 
         cx.clear();
-        self.view.compute_layout_main(&mut cx);
+        cx.compute_view_layout(&mut self.view);
 
         if self.app_state.capture.is_none() && !self.app_state.animated.is_empty() {
             let animated = self.app_state.animated.clone();
@@ -525,7 +533,7 @@ impl WindowHandle {
                 0.0,
             );
         }
-        self.view.paint_main(&mut cx);
+        cx.paint_view(&mut self.view);
         if let Some(window) = self.window.as_ref() {
             if cx.app_state.capture.is_none() {
                 window.pre_present_notify();
@@ -746,7 +754,7 @@ impl WindowHandle {
                     UpdateMessage::State { id, state } => {
                         let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
                         if let Some(id_path) = id_path {
-                            flags |= self.view.update_main(&mut cx, id_path.dispatch(), state);
+                            flags |= cx.update_view(&mut self.view, id_path.dispatch(), state);
                         }
                     }
                     UpdateMessage::BaseStyle { id, style } => {
@@ -941,7 +949,7 @@ impl WindowHandle {
         for (id, state) in msgs {
             let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
             if let Some(id_path) = id_path {
-                flags |= self.view.update_main(&mut cx, id_path.dispatch(), state);
+                flags |= cx.update_view(&mut self.view, id_path.dispatch(), state);
             }
         }
 

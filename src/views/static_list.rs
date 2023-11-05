@@ -76,7 +76,7 @@ impl<V: View> View for StaticList<V> {
 
     fn style(&mut self, cx: &mut crate::context::StyleCx) {
         for child in &mut self.children {
-            child.style_main(cx);
+            cx.style_view(child);
         }
     }
 
@@ -85,7 +85,7 @@ impl<V: View> View for StaticList<V> {
             let nodes = self
                 .children
                 .iter_mut()
-                .map(|child| child.layout_main(cx))
+                .map(|child| cx.layout_view(child))
                 .collect::<Vec<_>>();
             nodes
         })
@@ -94,7 +94,7 @@ impl<V: View> View for StaticList<V> {
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<Rect> {
         let mut layout_rect = Rect::ZERO;
         for child in &mut self.children {
-            layout_rect = layout_rect.union(child.compute_layout_main(cx));
+            layout_rect = layout_rect.union(cx.compute_view_layout(child));
         }
         Some(layout_rect)
     }
@@ -106,8 +106,7 @@ impl<V: View> View for StaticList<V> {
         event: crate::event::Event,
     ) -> bool {
         for child in self.children.iter_mut() {
-            let id = child.id();
-            if cx.should_send(id, &event) && child.event_main(cx, id_path, event.clone()) {
+            if cx.view_event(child, id_path, event.clone()) {
                 return true;
             }
         }
@@ -116,7 +115,7 @@ impl<V: View> View for StaticList<V> {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         for child in self.children.iter_mut() {
-            child.paint_main(cx);
+            cx.paint_view(child);
         }
     }
 }

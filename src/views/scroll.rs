@@ -640,7 +640,7 @@ impl<V: View> View for Scroll<V> {
         self.track_hover_style
             .read_style(cx, &track_style.apply_selectors(&[StyleSelector::Hover]));
 
-        self.child.style_main(cx);
+        cx.style_view(&mut self.child);
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
@@ -651,7 +651,7 @@ impl<V: View> View for Scroll<V> {
                 .combined_style
                 .clone()
                 .set(PositionProp, Position::Absolute);
-            let child_node = self.child.layout_main(cx);
+            let child_node = cx.layout_view(&mut self.child);
 
             let virtual_style = Style::new()
                 .width(self.child_size.width)
@@ -680,7 +680,7 @@ impl<V: View> View for Scroll<V> {
     fn compute_layout(&mut self, cx: &mut LayoutCx) -> Option<Rect> {
         self.update_size(cx.app_state_mut());
         self.clamp_child_viewport(cx.app_state_mut(), self.child_viewport);
-        self.child.compute_layout_main(cx);
+        cx.compute_view_layout(&mut self.child);
         None
     }
 
@@ -797,9 +797,7 @@ impl<V: View> View for Scroll<V> {
             _ => {}
         }
 
-        if cx.should_send(self.child.id(), &event)
-            && self.child.event_main(cx, id_path, event.clone())
-        {
+        if cx.view_event(&mut self.child, id_path, event.clone()) {
             return true;
         }
 
@@ -839,7 +837,7 @@ impl<V: View> View for Scroll<V> {
             cx.clip(&self.actual_rect);
         }
         cx.offset((-self.child_viewport.x0, -self.child_viewport.y0));
-        self.child.paint_main(cx);
+        cx.paint_view(&mut self.child);
         cx.restore();
 
         if !self.hide {

@@ -59,11 +59,11 @@ impl<V: View> View for Clip<V> {
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
-        cx.layout_node(self.id, true, |cx| vec![self.child.layout_main(cx)])
+        cx.layout_node(self.id, true, |cx| vec![cx.layout_view(&mut self.child)])
     }
 
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<Rect> {
-        Some(self.child.compute_layout_main(cx))
+        Some(cx.compute_view_layout(&mut self.child))
     }
 
     fn event(
@@ -72,11 +72,7 @@ impl<V: View> View for Clip<V> {
         id_path: Option<&[Id]>,
         event: crate::event::Event,
     ) -> bool {
-        if cx.should_send(self.child.id(), &event) {
-            self.child.event_main(cx, id_path, event)
-        } else {
-            false
-        }
+        cx.view_event(&mut self.child, id_path, event)
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
@@ -93,7 +89,7 @@ impl<V: View> View for Clip<V> {
         } else {
             cx.clip(&size.to_rect());
         }
-        self.child.paint_main(cx);
+        cx.paint_view(&mut self.child);
         cx.restore();
     }
 }

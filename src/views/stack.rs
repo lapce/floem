@@ -90,7 +90,7 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
 
     fn style(&mut self, cx: &mut crate::context::StyleCx) {
         self.children.foreach_mut(&mut |view| {
-            view.style_main(cx);
+            cx.style_view(view);
             false
         });
     }
@@ -103,14 +103,8 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
     ) -> bool {
         let mut handled = false;
         self.children.foreach_rev(&mut |view| {
-            let id = view.id();
-            if cx.should_send(id, &event) {
-                handled = view.event_main(cx, id_path, event.clone());
-                if handled {
-                    return true;
-                }
-            }
-            false
+            handled |= cx.view_event(view, id_path, event.clone());
+            handled
         });
         handled
     }
@@ -119,7 +113,7 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
         cx.layout_node(self.id, true, |cx| {
             let mut nodes = Vec::new();
             self.children.foreach_mut(&mut |view| {
-                let node = view.layout_main(cx);
+                let node = cx.layout_view(view);
                 nodes.push(node);
                 false
             });
@@ -130,7 +124,7 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<Rect> {
         let mut layout_rect = Rect::ZERO;
         self.children.foreach_mut(&mut |view| {
-            layout_rect = layout_rect.union(view.compute_layout_main(cx));
+            layout_rect = layout_rect.union(cx.compute_view_layout(view));
             false
         });
         Some(layout_rect)
@@ -138,7 +132,7 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         self.children.foreach_mut(&mut |view| {
-            view.paint_main(cx);
+            cx.paint_view(view);
             false
         });
     }

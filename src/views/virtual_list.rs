@@ -278,7 +278,7 @@ impl<V: View + 'static, T> View for VirtualList<V, T> {
             let mut nodes = self
                 .children
                 .iter_mut()
-                .filter_map(|child| Some(child.as_mut()?.0.layout_main(cx)))
+                .filter_map(|child| Some(cx.layout_view(&mut child.as_mut()?.0)))
                 .collect::<Vec<_>>();
             let before_size = match self.direction {
                 VirtualListDirection::Vertical => taffy::prelude::Size {
@@ -351,7 +351,7 @@ impl<V: View + 'static, T> View for VirtualList<V, T> {
         let mut layout_rect = Rect::ZERO;
         for child in &mut self.children {
             if let Some((child, _)) = child.as_mut() {
-                layout_rect = layout_rect.union(child.compute_layout_main(cx));
+                layout_rect = layout_rect.union(cx.compute_view_layout(child));
             }
         }
         Some(layout_rect)
@@ -365,8 +365,7 @@ impl<V: View + 'static, T> View for VirtualList<V, T> {
     ) -> bool {
         for child in self.children.iter_mut() {
             if let Some((child, _)) = child.as_mut() {
-                let id = child.id();
-                if cx.should_send(id, &event) && child.event_main(cx, id_path, event.clone()) {
+                if cx.view_event(child, id_path, event.clone()) {
                     return true;
                 }
             }
@@ -377,7 +376,7 @@ impl<V: View + 'static, T> View for VirtualList<V, T> {
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         for child in &mut self.children {
             if let Some((child, _)) = child.as_mut() {
-                child.paint_main(cx);
+                cx.paint_view(child);
             }
         }
     }
