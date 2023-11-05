@@ -1,9 +1,11 @@
 use crate::{
     context::{EventCx, UpdateCx},
     id::Id,
+    style::Style,
     view::{ChangeFlags, View},
 };
 use kurbo::Rect;
+use taffy::style::FlexDirection;
 
 pub struct StaticList<V>
 where
@@ -26,6 +28,10 @@ where
 impl<V: View> View for StaticList<V> {
     fn id(&self) -> Id {
         self.id
+    }
+
+    fn view_style(&self) -> Option<crate::style::Style> {
+        Some(Style::new().flex_direction(FlexDirection::Column))
     }
 
     fn child(&self, id: Id) -> Option<&dyn View> {

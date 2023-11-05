@@ -5,7 +5,7 @@ use crate::id::Id;
 use crate::style::{Style, StyleMapValue};
 use crate::view::View;
 use crate::views::{
-    dyn_container, empty, img_dynamic, scroll, stack, static_list, text, Decorators, Label,
+    dyn_container, empty, img_dynamic, scroll, stack, static_list, text, v_stack, Decorators, Label,
 };
 use crate::window::WindowConfig;
 use crate::{new_window, style};
@@ -253,16 +253,16 @@ fn captured_view_with_children(
     });
 
     let list = static_list(children).style(move |s| {
-        s.flex_col().display(if expanded.get() {
+        s.display(if expanded.get() {
             style::Display::Flex
         } else {
             style::Display::None
         })
     });
 
-    let list = stack((line, list)).style(|s| s.flex_col());
+    let list = v_stack((line, list));
 
-    Box::new(stack((row, list)).style(|s| s.flex_col().min_width_full()))
+    Box::new(v_stack((row, list)).style(|s| s.min_width_full()))
 }
 
 fn captured_view(
@@ -339,7 +339,7 @@ fn stats(capture: &Capture) -> impl View {
     );
     let w = info("Window Width", format!("{}", capture.window_size.width));
     let h = info("Window Height", format!("{}", capture.window_size.height));
-    stack((
+    v_stack((
         style_time,
         layout_time,
         taffy_time,
@@ -349,7 +349,6 @@ fn stats(capture: &Capture) -> impl View {
         w,
         h,
     ))
-    .style(|s| s.flex_col())
 }
 
 fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl View {
@@ -528,7 +527,7 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl 
                                 text(format!("{transition:?}")),
                             ))
                             .style(|s| s.items_center());
-                            v = Box::new(stack((v, transition)).style(|s| s.flex_col()));
+                            v = Box::new(v_stack((v, transition)));
                         }
                         stack((
                             stack((name.style(|s| {
@@ -546,10 +545,10 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl 
                                 .hover(|s| s.background(Color::rgba8(228, 237, 216, 160)))
                         })
                     }))
-                    .style(|s| s.flex_col().width_full());
+                    .style(|s| s.width_full());
 
                 Box::new(
-                    stack((
+                    v_stack((
                         name,
                         count,
                         x,
@@ -564,7 +563,7 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl 
                         style_header,
                         style_list,
                     ))
-                    .style(|s| s.flex_col().width_full()),
+                    .style(|s| s.width_full()),
                 )
             } else {
                 Box::new(text("No selection".to_string()).style(|s| s.padding(5.0)))
@@ -666,13 +665,13 @@ fn capture_view(capture: &Rc<Capture>) -> impl View {
     let image = stack((image, selected_overlay, highlighted_overlay));
 
     let left_scroll = scroll(
-        stack((
+        v_stack((
             header("Selected View"),
             selected_view(capture, selected),
             header("Stats"),
             stats(capture),
         ))
-        .style(|s| s.flex_col().width_full()),
+        .style(|s| s.width_full()),
     )
     .style(|s| s.width_full().flex_basis(0).min_height(0).flex_grow(1.0));
 
@@ -682,22 +681,16 @@ fn capture_view(capture: &Rc<Capture>) -> impl View {
             .background(Color::BLACK.with_alpha_factor(0.2))
     });
 
-    let left = stack((
+    let left = v_stack((
         header("Captured Window"),
         scroll(image).style(|s| s.max_height_pct(60.0)),
         seperator,
         left_scroll,
     ))
-    .style(|s| s.flex_col().max_width_pct(60.0));
+    .style(|s| s.max_width_pct(60.0));
 
     let tree = scroll(captured_view(&capture.root, 0, selected, highlighted))
-        .style(|s| {
-            s.flex_col()
-                .width_full()
-                .min_height(0)
-                .flex_basis(0)
-                .flex_grow(1.0)
-        })
+        .style(|s| s.width_full().min_height(0).flex_basis(0).flex_grow(1.0))
         .on_event(EventListener::PointerLeave, move |_| {
             highlighted.set(None);
             false
@@ -708,18 +701,12 @@ fn capture_view(capture: &Rc<Capture>) -> impl View {
         });
 
     let tree: Box<dyn View> = if capture.root.warnings() {
-        Box::new(stack((header("Warnings"), header("View Tree"), tree)))
+        Box::new(v_stack((header("Warnings"), header("View Tree"), tree)))
     } else {
-        Box::new(stack((header("View Tree"), tree)))
+        Box::new(v_stack((header("View Tree"), tree)))
     };
 
-    let tree = tree.style(|s| {
-        s.flex_col()
-            .height_full()
-            .min_width(0)
-            .flex_basis(0)
-            .flex_grow(1.0)
-    });
+    let tree = tree.style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0));
 
     let seperator = empty().style(move |s| {
         s.height_full()
