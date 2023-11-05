@@ -5,19 +5,19 @@ use crate::{
     view::{ChangeFlags, View},
 };
 
-pub struct Clip<V: View> {
+pub struct Clip {
     id: Id,
-    child: V,
+    child: Box<dyn View>,
 }
 
-pub fn clip<V: View>(child: V) -> Clip<V> {
+pub fn clip<V: View + 'static>(child: V) -> Clip {
     Clip {
         id: Id::next(),
-        child,
+        child: Box::new(child),
     }
 }
 
-impl<V: View> View for Clip<V> {
+impl View for Clip {
     fn id(&self) -> Id {
         self.id
     }

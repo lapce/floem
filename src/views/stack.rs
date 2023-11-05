@@ -9,42 +9,42 @@ use crate::{
     view_tuple::ViewTuple,
 };
 
-pub struct Stack<VT> {
+pub struct Stack {
     id: Id,
-    children: VT,
+    children: Vec<Box<dyn View>>,
     direction: Option<FlexDirection>,
 }
 
-pub fn stack<VT: ViewTuple + 'static>(children: VT) -> Stack<VT> {
+pub fn stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
     let id = Id::next();
     Stack {
         id,
-        children,
+        children: children.into_views(),
         direction: None,
     }
 }
 
 /// A stack which defaults to `FlexDirection::Row`.
-pub fn h_stack<VT: ViewTuple + 'static>(children: VT) -> Stack<VT> {
+pub fn h_stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
     let id = Id::next();
     Stack {
         id,
-        children,
+        children: children.into_views(),
         direction: Some(FlexDirection::Row),
     }
 }
 
 /// A stack which defaults to `FlexDirection::Column`.
-pub fn v_stack<VT: ViewTuple + 'static>(children: VT) -> Stack<VT> {
+pub fn v_stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
     let id = Id::next();
     Stack {
         id,
-        children,
+        children: children.into_views(),
         direction: Some(FlexDirection::Column),
     }
 }
 
-impl<VT: ViewTuple + 'static> View for Stack<VT> {
+impl View for Stack {
     fn id(&self) -> Id {
         self.id
     }
@@ -55,19 +55,31 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
     }
 
     fn child(&self, id: Id) -> Option<&dyn View> {
-        self.children.child(id)
+        self.children
+            .iter()
+            .find(|v| v.id() == id)
+            .map(|child| child as &dyn View)
     }
 
     fn child_mut(&mut self, id: Id) -> Option<&mut dyn View> {
-        self.children.child_mut(id)
+        self.children
+            .iter_mut()
+            .find(|v| v.id() == id)
+            .map(|child| child as &mut dyn View)
     }
 
     fn children(&self) -> Vec<&dyn View> {
-        self.children.children()
+        self.children
+            .iter()
+            .map(|child| child as &dyn View)
+            .collect()
     }
 
     fn children_mut(&mut self) -> Vec<&mut dyn View> {
-        self.children.children_mut()
+        self.children
+            .iter_mut()
+            .map(|child| child as &mut dyn View)
+            .collect()
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -89,10 +101,9 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
     }
 
     fn style(&mut self, cx: &mut crate::context::StyleCx) {
-        self.children.foreach_mut(&mut |view| {
-            cx.style_view(view);
-            false
-        });
+        for child in &mut self.children {
+            cx.style_view(child);
+        }
     }
 
     fn event(
@@ -101,39 +112,36 @@ impl<VT: ViewTuple + 'static> View for Stack<VT> {
         id_path: Option<&[Id]>,
         event: crate::event::Event,
     ) -> bool {
-        let mut handled = false;
-        self.children.foreach_rev(&mut |view| {
-            handled |= cx.view_event(view, id_path, event.clone());
-            handled
-        });
-        handled
+        for child in self.children.iter_mut() {
+            if cx.view_event(child, id_path, event.clone()) {
+                return true;
+            }
+        }
+        false
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
-            let mut nodes = Vec::new();
-            self.children.foreach_mut(&mut |view| {
-                let node = cx.layout_view(view);
-                nodes.push(node);
-                false
-            });
+            let nodes = self
+                .children
+                .iter_mut()
+                .map(|child| cx.layout_view(child))
+                .collect::<Vec<_>>();
             nodes
         })
     }
 
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<Rect> {
         let mut layout_rect = Rect::ZERO;
-        self.children.foreach_mut(&mut |view| {
-            layout_rect = layout_rect.union(cx.compute_view_layout(view));
-            false
-        });
+        for child in &mut self.children {
+            layout_rect = layout_rect.union(cx.compute_view_layout(child));
+        }
         Some(layout_rect)
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        self.children.foreach_mut(&mut |view| {
-            cx.paint_view(view);
-            false
-        });
+        for child in self.children.iter_mut() {
+            cx.paint_view(child);
+        }
     }
 }
