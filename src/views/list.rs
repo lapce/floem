@@ -98,6 +98,22 @@ impl<V: View + 'static, T> View for List<V, T> {
         }
     }
 
+    fn for_each_child_rev_mut<'a>(
+        &'a mut self,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
+    ) {
+        for child in self
+            .children
+            .iter_mut()
+            .rev()
+            .filter_map(|child| child.as_mut())
+        {
+            if for_each(&mut child.0) {
+                break;
+            }
+        }
+    }
+
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         "List".into()
     }

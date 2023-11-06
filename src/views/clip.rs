@@ -27,6 +27,13 @@ impl View for Clip {
         for_each(&mut self.child);
     }
 
+    fn for_each_child_rev_mut<'a>(
+        &'a mut self,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
+    ) {
+        for_each(&mut self.child);
+    }
+
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         "Clip".into()
     }

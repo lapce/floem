@@ -47,4 +47,15 @@ impl View for StaticList {
             }
         }
     }
+
+    fn for_each_child_rev_mut<'a>(
+        &'a mut self,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
+    ) {
+        for child in &mut self.children.iter_mut().rev() {
+            if for_each(child) {
+                break;
+            }
+        }
+    }
 }

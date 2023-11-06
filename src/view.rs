@@ -111,13 +111,21 @@ bitflags! {
 pub trait View {
     fn id(&self) -> Id;
 
-    /// This method walk over children and must be implemented if the view has any children.
+    /// This method walks over children and must be implemented if the view has any children.
     /// It should return children back to front and should stop if `_for_each` returns `true`.
     fn for_each_child<'a>(&'a self, _for_each: &mut dyn FnMut(&'a dyn View) -> bool) {}
 
-    /// This method walk over children and must be implemented if the view has any children.
+    /// This method walks over children and must be implemented if the view has any children.
     /// It should return children back to front and should stop if `_for_each` returns `true`.
     fn for_each_child_mut<'a>(&'a mut self, _for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {}
+
+    /// This method walks over children and must be implemented if the view has any children.
+    /// It should return children front to back and should stop if `_for_each` returns `true`.
+    fn for_each_child_rev_mut<'a>(
+        &'a mut self,
+        _for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
+    ) {
+    }
 
     fn view_style(&self) -> Option<Style> {
         None
@@ -229,7 +237,7 @@ pub trait View {
     /// Return true to stop the event from propagating to other views
     fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {
         let mut handled = false;
-        self.for_each_child_mut(&mut |child| {
+        self.for_each_child_rev_mut(&mut |child| {
             handled |= cx.view_event(child, id_path, event.clone());
             handled
         });
@@ -578,6 +586,21 @@ pub(crate) fn view_debug_tree(root_view: &dyn View) {
 impl View for Box<dyn View> {
     fn id(&self) -> Id {
         (**self).id()
+    }
+
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
+        (**self).for_each_child(for_each)
+    }
+
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
+        (**self).for_each_child_mut(for_each)
+    }
+
+    fn for_each_child_rev_mut<'a>(
+        &'a mut self,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
+    ) {
+        (**self).for_each_child_rev_mut(for_each)
     }
 
     fn view_style(&self) -> Option<Style> {

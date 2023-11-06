@@ -112,6 +112,22 @@ impl<V: View + 'static, T> View for Tab<V, T> {
         }
     }
 
+    fn for_each_child_rev_mut<'a>(
+        &'a mut self,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
+    ) {
+        for child in self
+            .children
+            .iter_mut()
+            .rev()
+            .filter_map(|child| child.as_mut())
+        {
+            if for_each(&mut child.0) {
+                break;
+            }
+        }
+    }
+
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         format!("Tab: {}", self.active).into()
     }
@@ -172,31 +188,4 @@ impl<V: View + 'static, T> View for Tab<V, T> {
             nodes
         })
     }
-    /*
-    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<Rect> {
-        if let Some(Some((child, _))) = self.children.get_mut(self.active) {
-            Some(cx.compute_view_layout(child))
-        } else {
-            None
-        }
-    }
-
-    fn event(
-        &mut self,
-        cx: &mut EventCx,
-        id_path: Option<&[Id]>,
-        event: crate::event::Event,
-    ) -> bool {
-        if let Some(Some((child, _))) = self.children.get_mut(self.active) {
-            cx.view_event(child, id_path, event)
-        } else {
-            false
-        }
-    }
-
-    fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        if let Some(Some((child, _))) = self.children.get_mut(self.active) {
-            cx.paint_view(child);
-        }
-    }*/
 }
