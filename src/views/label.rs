@@ -36,9 +36,28 @@ pub struct Label {
     style: Extracter,
 }
 
+impl Label {
+    fn new(id: Id, label: String) -> Self {
+        Label {
+            id,
+            label,
+            text_layout: None,
+            text_node: None,
+            available_text: None,
+            available_width: None,
+            available_text_layout: None,
+            font: FontProps::default(),
+            style: Default::default(),
+        }
+    }
+}
+
 pub fn text<S: Display>(text: S) -> Label {
-    let text = text.to_string();
-    label(move || text.clone())
+    static_label(text.to_string())
+}
+
+pub fn static_label(label: impl Into<String>) -> Label {
+    Label::new(Id::next(), label.into())
 }
 
 pub fn label<S: Display + 'static>(label: impl Fn() -> S + 'static) -> Label {
@@ -47,17 +66,7 @@ pub fn label<S: Display + 'static>(label: impl Fn() -> S + 'static) -> Label {
         let new_label = label().to_string();
         id.update_state(new_label, false);
     });
-    Label {
-        id,
-        label: "".to_string(),
-        text_layout: None,
-        text_node: None,
-        available_text: None,
-        available_width: None,
-        available_text_layout: None,
-        font: FontProps::default(),
-        style: Default::default(),
-    }
+    Label::new(id, String::new())
 }
 
 impl Label {
