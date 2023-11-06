@@ -5,12 +5,11 @@ use winit::window::ResizeDirection;
 
 use crate::{
     animate::{AnimUpdateMsg, Animation},
-    context::{EventCallback, ResizeCallback},
+    context::{ChangeFlags, EventCallback, ResizeCallback},
     event::EventListener,
     id::Id,
     menu::Menu,
     style::{Style, StyleClassRef, StyleSelector},
-    view::ChangeFlags,
 };
 
 thread_local! {
@@ -41,6 +40,7 @@ pub(crate) enum UpdateMessage {
         id: Id,
         flags: ChangeFlags,
     },
+    RequestPaint,
     State {
         id: Id,
         state: Box<dyn Any>,

@@ -22,8 +22,8 @@ use crate::views::{container_box, stack, Decorators};
 use crate::{
     animate::{AnimPropKind, AnimUpdateMsg, AnimValue, AnimatedProp, SizeUnit},
     context::{
-        AppState, EventCx, LayoutCx, MoveListener, PaintCx, PaintState, ResizeListener, StyleCx,
-        UpdateCx,
+        AppState, ChangeFlags, EventCx, LayoutCx, MoveListener, PaintCx, PaintState,
+        ResizeListener, StyleCx, UpdateCx,
     },
     event::{Event, EventListener},
     id::{Id, IdPath, ID_PATHS},
@@ -37,7 +37,7 @@ use crate::{
         CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES,
         UPDATE_MESSAGES,
     },
-    view::{view_children_set_parent_id, ChangeFlags, View},
+    view::{view_children_set_parent_id, View},
 };
 
 /// The top-level window handle that owns the winit Window.
@@ -482,12 +482,12 @@ impl WindowHandle {
         if !self.app_state.transitioning.is_empty() {
             let transitioning = mem::take(&mut self.app_state.transitioning);
             for id in transitioning {
-                id.request_change(ChangeFlags::STYLE);
+                self.app_state.request_style(id);
             }
         }
         if !self.app_state.animated.is_empty() {
             for id in self.app_state.ids_with_anim_in_progress() {
-                id.request_change(ChangeFlags::STYLE);
+                self.app_state.request_style(id);
             }
         }
 
@@ -555,7 +555,7 @@ impl WindowHandle {
         // Ensure we run layout and styling again for accurate timing. We also need to ensure
         // styles are recomputed to capture them.
         self.app_state.view_states.values_mut().for_each(|state| {
-            state.requested_changes = ChangeFlags::used();
+            state.requested_changes = ChangeFlags::all();
         });
 
         fn get_taffy_depth(taffy: &taffy::Taffy, root: taffy::node::Node) -> usize {
@@ -638,7 +638,8 @@ impl WindowHandle {
 
         self.set_cursor();
 
-        paint
+        // TODO: This should only use `self.app_state.request_paint)`
+        paint || mem::take(&mut self.app_state.request_paint)
     }
 
     fn process_central_messages(&self) {
@@ -693,9 +694,9 @@ impl WindowHandle {
                         if changes.contains(ChangeFlags::LAYOUT) {
                             cx.app_state.request_layout(id);
                         }
-                        if changes.contains(ChangeFlags::PAINT) {
-                            cx.app_state.request_paint(id);
-                        }
+                    }
+                    UpdateMessage::RequestPaint => {
+                        cx.app_state.request_paint = true;
                     }
                     UpdateMessage::Focus(id) => {
                         if cx.app_state.focus != Some(id) {

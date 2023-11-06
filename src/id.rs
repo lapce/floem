@@ -14,11 +14,10 @@ use kurbo::Point;
 
 use crate::{
     animate::Animation,
-    context::{EventCallback, MenuCallback, ResizeCallback},
+    context::{ChangeFlags, EventCallback, MenuCallback, ResizeCallback},
     event::EventListener,
     style::{Style, StyleClassRef, StyleSelector},
     update::{UpdateMessage, CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES},
-    view::ChangeFlags,
 };
 
 thread_local! {
@@ -126,16 +125,15 @@ impl Id {
         });
     }
 
-    pub fn request_change(&self, flags: ChangeFlags) {
-        self.add_update_message(UpdateMessage::RequestChange { id: *self, flags });
-    }
-
     pub fn request_paint(&self) {
-        self.request_change(ChangeFlags::PAINT);
+        self.add_update_message(UpdateMessage::RequestPaint);
     }
 
     pub fn request_layout(&self) {
-        self.request_change(ChangeFlags::LAYOUT);
+        self.add_update_message(UpdateMessage::RequestChange {
+            id: *self,
+            flags: ChangeFlags::LAYOUT,
+        });
     }
 
     pub fn update_state(&self, state: impl Any, deferred: bool) {

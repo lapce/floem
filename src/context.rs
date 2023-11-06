@@ -6,6 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use bitflags::bitflags;
 use floem_renderer::Renderer as FloemRenderer;
 use kurbo::{Affine, Insets, Point, Rect, RoundedRect, Shape, Size, Vec2};
 use taffy::{
@@ -30,7 +31,7 @@ use crate::{
         StyleSelector, StyleSelectors, ZIndex,
     },
     unit::PxPct,
-    view::{paint_bg, paint_border, paint_outline, ChangeFlags, View},
+    view::{paint_bg, paint_border, paint_outline, View},
 };
 
 pub type EventCallback = dyn Fn(&Event) -> bool;
@@ -58,6 +59,15 @@ prop_extracter! {
 
         pub border_color: BorderColor,
         pub background: Background,
+    }
+}
+
+bitflags! {
+    #[derive(Default, Copy, Clone, Debug)]
+    #[must_use]
+    pub(crate) struct ChangeFlags: u8 {
+        const STYLE = 1;
+        const LAYOUT = 1 << 1;
     }
 }
 
@@ -96,7 +106,7 @@ impl ViewState {
             layout_rect: Rect::ZERO,
             layout_props: Default::default(),
             view_style_props: Default::default(),
-            requested_changes: ChangeFlags::used(),
+            requested_changes: ChangeFlags::all(),
             request_style_recursive: false,
             has_style_selectors: StyleSelectors::default(),
             animation: None,
@@ -200,6 +210,7 @@ pub struct AppState {
     pub taffy: taffy::Taffy,
     pub(crate) view_states: HashMap<Id, ViewState>,
     stale_view_state: ViewState,
+    pub(crate) request_paint: bool,
     pub(crate) disabled: HashSet<Id>,
     pub(crate) keyboard_navigable: HashSet<Id>,
     pub(crate) draggable: HashSet<Id>,
@@ -247,6 +258,7 @@ impl AppState {
             view_states: HashMap::new(),
             animated: HashSet::new(),
             transitioning: HashSet::new(),
+            request_paint: false,
             disabled: HashSet::new(),
             keyboard_navigable: HashSet::new(),
             draggable: HashSet::new(),
@@ -438,7 +450,14 @@ impl AppState {
         self.request_style(id);
     }
 
-    pub fn request_changes(&mut self, id: Id, flags: ChangeFlags) {
+    /// Request that this the `id` view be styled, laid out and painted again.
+    /// This will recursively request this for all parents.
+    pub fn request_all(&mut self, id: Id) {
+        self.request_changes(id, ChangeFlags::all());
+        self.request_paint(id);
+    }
+
+    pub(crate) fn request_changes(&mut self, id: Id, flags: ChangeFlags) {
         let view = self.view_state(id);
         if view.requested_changes.contains(flags) {
             return;
@@ -457,12 +476,9 @@ impl AppState {
         self.request_changes(id, ChangeFlags::LAYOUT)
     }
 
-    pub fn request_paint(&mut self, id: Id) {
-        // Painting currently happens on any change, so request styling on the root
-        // view.
-        if let Some(id) = id.id_path().and_then(|path| path.0.get(1).copied()) {
-            self.request_style(id)
-        }
+    // `Id` is unused currently, but could be used to calculate damage regions.
+    pub fn request_paint(&mut self, _id: Id) {
+        self.request_paint = true;
     }
 
     pub(crate) fn set_viewport(&mut self, id: Id, viewport: Rect) {
@@ -643,7 +659,6 @@ impl<'a> EventCx<'a> {
     }
 
     /// request that this node be painted again
-    /// This will recursively request painting for all parents
     pub fn request_paint(&mut self, id: Id) {
         self.app_state.request_paint(id);
     }
@@ -1664,7 +1679,7 @@ impl<'a> UpdateCx<'a> {
     /// request that this node be styled, laid out and painted again
     /// This will recursively request this for all parents.
     pub fn request_all(&mut self, id: Id) {
-        self.app_state.request_changes(id, ChangeFlags::used());
+        self.app_state.request_all(id);
     }
 
     /// request that this node be styled again

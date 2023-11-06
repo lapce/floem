@@ -83,7 +83,6 @@
 //!
 //!
 
-use bitflags::bitflags;
 use floem_renderer::Renderer;
 use kurbo::{Circle, Insets, Line, Point, Rect, RoundedRect, Size};
 use std::any::Any;
@@ -95,23 +94,6 @@ use crate::{
     id::Id,
     style::{BoxShadowProp, Outline, OutlineColor, Style, StyleClassRef},
 };
-
-bitflags! {
-    #[derive(Default, Copy, Clone, Debug)]
-    #[must_use]
-    pub struct ChangeFlags: u8 {
-        const STYLE = 1;
-        const LAYOUT = 1 << 1;
-        const ACCESSIBILITY = 1 << 2;
-        const PAINT = 1 << 3;
-    }
-}
-
-impl ChangeFlags {
-    pub(crate) fn used() -> Self {
-        ChangeFlags::STYLE | ChangeFlags::LAYOUT
-    }
-}
 
 pub trait View {
     fn id(&self) -> Id;
