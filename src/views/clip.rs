@@ -1,4 +1,4 @@
-use kurbo::{Rect, Size};
+use kurbo::Size;
 
 use crate::{id::Id, view::View};
 
@@ -36,14 +36,6 @@ impl View for Clip {
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         "Clip".into()
-    }
-
-    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
-        cx.layout_node(self.id, true, |cx| vec![cx.layout_view(&mut self.child)])
-    }
-
-    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<Rect> {
-        Some(cx.compute_view_layout(&mut self.child))
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {

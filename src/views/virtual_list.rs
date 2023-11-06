@@ -8,7 +8,7 @@ use taffy::{prelude::Node, style::Dimension};
 use crate::{
     context::LayoutCx,
     id::Id,
-    view::{ChangeFlags, View},
+    view::{self, ChangeFlags, View},
 };
 
 use super::{apply_diff, diff, Diff, DiffOpAdd, FxIndexSet, HashRun};
@@ -340,13 +340,7 @@ impl<V: View + 'static, T> View for VirtualList<V, T> {
             self.set_viewport.set(viewport);
         }
 
-        let mut layout_rect = Rect::ZERO;
-        for child in &mut self.children {
-            if let Some((child, _)) = child.as_mut() {
-                layout_rect = layout_rect.union(cx.compute_view_layout(child));
-            }
-        }
-        Some(layout_rect)
+        view::default_compute_layout(self, cx)
     }
 }
 

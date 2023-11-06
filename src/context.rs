@@ -1326,18 +1326,16 @@ impl<'a> LayoutCx<'a> {
     /// - invoking any attached context::ResizeListeners
     ///
     /// Returns the bounding rect that encompasses this view and its children
-    pub fn compute_view_layout(&mut self, view: &mut dyn View) -> Rect {
+    pub fn compute_view_layout(&mut self, view: &mut dyn View) -> Option<Rect> {
         let id = view.id();
         if self.app_state().is_hidden(id) {
-            return Rect::ZERO;
+            self.app_state_mut().view_state(id).layout_rect = Rect::ZERO;
+            return None;
         }
 
         self.save();
 
-        let layout = self
-            .app_state()
-            .get_layout(id)
-            .unwrap_or(taffy::layout::Layout::new());
+        let layout = self.app_state().get_layout(id).unwrap();
         let origin = Point::new(layout.location.x as f64, layout.location.y as f64);
         let parent_viewport = self.viewport.map(|rect| {
             rect.with_origin(Point::new(
@@ -1401,7 +1399,7 @@ impl<'a> LayoutCx<'a> {
 
         self.restore();
 
-        layout_rect
+        Some(layout_rect)
     }
 
     pub(crate) fn get_resize_listener(&mut self, id: Id) -> Option<&mut ResizeListener> {
