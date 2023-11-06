@@ -127,6 +127,7 @@ impl ViewState {
         }
     }
 
+    /// Returns `true` if a new frame is requested.
     pub(crate) fn compute_style(
         &mut self,
         view_style: Option<Style>,
@@ -135,7 +136,8 @@ impl ViewState {
         view_class: Option<StyleClassRef>,
         classes: &[StyleClassRef],
         context: &Style,
-    ) {
+    ) -> bool {
+        let mut new_frame = false;
         let mut computed_style = Style::new();
         if let Some(view_style) = view_style {
             computed_style.apply_mut(view_style);
@@ -155,6 +157,8 @@ impl ViewState {
                 if animation.is_completed() && animation.is_auto_reverse() {
                     break 'anim;
                 }
+
+                new_frame = true;
 
                 let props = animation.props();
 
@@ -187,6 +191,8 @@ impl ViewState {
         computed_style.apply_interact_state(&interact_state, screen_size_bp);
 
         self.combined_style = computed_style;
+
+        new_frame
     }
 }
 
@@ -194,6 +200,12 @@ pub struct DragState {
     pub(crate) id: Id,
     pub(crate) offset: Vec2,
     pub(crate) released_at: Option<std::time::Instant>,
+}
+
+pub(crate) enum FrameUpdate {
+    Style(Id),
+    Layout(Id),
+    Paint(Id),
 }
 
 /// Encapsulates and owns the global state of the application,
@@ -210,6 +222,7 @@ pub struct AppState {
     pub taffy: taffy::Taffy,
     pub(crate) view_states: HashMap<Id, ViewState>,
     stale_view_state: ViewState,
+    pub(crate) scheduled_updates: Vec<FrameUpdate>,
     pub(crate) request_paint: bool,
     pub(crate) disabled: HashSet<Id>,
     pub(crate) keyboard_navigable: HashSet<Id>,
@@ -223,9 +236,6 @@ pub struct AppState {
     pub(crate) hovered: HashSet<Id>,
     /// This keeps track of all views that have an animation,
     /// regardless of the status of the animation
-    pub(crate) animated: HashSet<Id>,
-    /// This is a set of view which have active transition animations.
-    pub(crate) transitioning: HashSet<Id>,
     pub(crate) cursor: Option<CursorStyle>,
     pub(crate) last_cursor: CursorIcon,
     pub(crate) keyboard_navigation: bool,
@@ -256,8 +266,7 @@ impl AppState {
             stale_view_state: ViewState::new(&mut taffy),
             taffy,
             view_states: HashMap::new(),
-            animated: HashSet::new(),
-            transitioning: HashSet::new(),
+            scheduled_updates: Vec::new(),
             request_paint: false,
             disabled: HashSet::new(),
             keyboard_navigable: HashSet::new(),
@@ -314,8 +323,6 @@ impl AppState {
         self.dragging_over.remove(&id);
         self.clicking.remove(&id);
         self.hovered.remove(&id);
-        self.animated.remove(&id);
-        self.transitioning.remove(&id);
         self.clicking.remove(&id);
         if self.focus == Some(id) {
             self.focus = None;
@@ -323,20 +330,6 @@ impl AppState {
         if self.active == Some(id) {
             self.active = None;
         }
-    }
-
-    pub fn ids_with_anim_in_progress(&mut self) -> Vec<Id> {
-        self.animated
-            .clone()
-            .into_iter()
-            .filter(|id| {
-                let anim = &self.view_state(*id).animation;
-                if let Some(anim) = anim {
-                    return !anim.is_completed();
-                }
-                false
-            })
-            .collect()
     }
 
     pub fn is_hidden(&self, id: Id) -> bool {
@@ -408,7 +401,7 @@ impl AppState {
         view_class: Option<StyleClassRef>,
         classes: &[StyleClassRef],
         context: &Style,
-    ) {
+    ) -> bool {
         let interact_state = self.get_interact_state(&id);
         let screen_size_bp = self.screen_size_bp;
         let view_state = self.view_state(id);
@@ -419,7 +412,7 @@ impl AppState {
             view_class,
             classes,
             context,
-        );
+        )
     }
 
     pub(crate) fn get_computed_style(&mut self, id: Id) -> &Style {
@@ -466,6 +459,24 @@ impl AppState {
         if let Some(parent) = id.parent() {
             self.request_changes(parent, flags);
         }
+    }
+
+    /// Requests that the style pass will run for `id` on the next frame, and ensures new frame is
+    /// scheduled to happen.
+    pub fn schedule_style(&mut self, id: Id) {
+        self.scheduled_updates.push(FrameUpdate::Style(id));
+    }
+
+    /// Requests that the layout pass will run for `id` on the next frame, and ensures new frame is
+    /// scheduled to happen.
+    pub fn schedule_layout(&mut self, id: Id) {
+        self.scheduled_updates.push(FrameUpdate::Layout(id));
+    }
+
+    /// Requests that the paint pass will run for `id` on the next frame, and ensures new frame is
+    /// scheduled to happen.
+    pub fn schedule_paint(&mut self, id: Id) {
+        self.scheduled_updates.push(FrameUpdate::Paint(id));
     }
 
     pub fn request_style(&mut self, id: Id) {
@@ -1143,8 +1154,10 @@ impl<'a> StyleCx<'a> {
             });
         }
 
-        self.app_state
-            .compute_style(id, view_style, view_class, classes, &self.current);
+        let mut new_frame =
+            self.app_state
+                .compute_style(id, view_style, view_class, classes, &self.current);
+
         let style = self.app_state_mut().get_computed_style(id).clone();
         self.direct = style;
         Style::apply_only_inherited(&mut self.current, &self.direct);
@@ -1163,25 +1176,23 @@ impl<'a> StyleCx<'a> {
 
         let view_state = self.app_state.view_state(id);
 
-        let mut transition = false;
-
         // Extract the relevant layout properties so the content rect can be calculated
         // when painting.
         view_state.layout_props.read_explicit(
             &self.direct,
             &self.current,
             &self.now,
-            &mut transition,
+            &mut new_frame,
         );
 
         view_state.view_style_props.read_explicit(
             &self.direct,
             &self.current,
             &self.now,
-            &mut transition,
+            &mut new_frame,
         );
-        if transition {
-            self.request_transition();
+        if new_frame {
+            self.app_state.schedule_style(id);
         }
 
         view.style(self);
@@ -1207,9 +1218,9 @@ impl<'a> StyleCx<'a> {
         (*self.current).clone().apply(self.direct.clone())
     }
 
-    pub(crate) fn request_transition(&mut self) {
+    pub fn request_transition(&mut self) {
         let id = self.current_view;
-        self.app_state_mut().transitioning.insert(id);
+        self.app_state_mut().schedule_style(id);
     }
 
     pub fn app_state_mut(&mut self) -> &mut AppState {

@@ -22,7 +22,7 @@ use crate::views::{container_box, stack, Decorators};
 use crate::{
     animate::{AnimPropKind, AnimUpdateMsg, AnimValue, AnimatedProp, SizeUnit},
     context::{
-        AppState, ChangeFlags, EventCx, LayoutCx, MoveListener, PaintCx, PaintState,
+        AppState, ChangeFlags, EventCx, FrameUpdate, LayoutCx, MoveListener, PaintCx, PaintState,
         ResizeListener, StyleCx, UpdateCx,
     },
     event::{Event, EventListener},
@@ -478,27 +478,20 @@ impl WindowHandle {
     }
 
     pub fn render_frame(&mut self) {
-        // Request animation updates if needed
-        if !self.app_state.transitioning.is_empty() {
-            let transitioning = mem::take(&mut self.app_state.transitioning);
-            for id in transitioning {
-                self.app_state.request_style(id);
-            }
-        }
-        if !self.app_state.animated.is_empty() {
-            for id in self.app_state.ids_with_anim_in_progress() {
-                self.app_state.request_style(id);
+        // Processes updates scheduled on this frame.
+        for update in mem::take(&mut self.app_state.scheduled_updates) {
+            match update {
+                FrameUpdate::Style(id) => self.app_state.request_style(id),
+                FrameUpdate::Layout(id) => self.app_state.request_layout(id),
+                FrameUpdate::Paint(id) => self.app_state.request_paint(id),
             }
         }
 
         self.process_update_no_paint();
-
-        let any_animations = !self.app_state.transitioning.is_empty()
-            || !self.app_state.ids_with_anim_in_progress().is_empty();
-
         self.paint();
 
-        if any_animations {
+        // Request a new frame if there's any scheduled updates.
+        if !self.app_state.scheduled_updates.is_empty() {
             self.schedule_repaint();
         }
     }
@@ -847,9 +840,9 @@ impl WindowHandle {
                         state.cleanup_listener = Some(action);
                     }
                     UpdateMessage::Animation { id, animation } => {
-                        cx.app_state.animated.insert(id);
                         let view_state = cx.app_state.view_state(id);
                         view_state.animation = Some(animation);
+                        cx.request_style(id);
                     }
                     UpdateMessage::WindowScale(scale) => {
                         cx.app_state.scale = scale;
