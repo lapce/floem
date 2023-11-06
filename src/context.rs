@@ -284,9 +284,10 @@ impl AppState {
 
     /// This removes a view from the app state.
     pub fn remove_view(&mut self, view: &mut dyn View) {
-        for child in view.children_mut() {
+        view.for_each_child_mut(&mut |child| {
             self.remove_view(child);
-        }
+            false
+        });
         let id = view.id();
         let view_state = self.view_state(id);
         if let Some(action) = view_state.cleanup_listener.as_ref() {
@@ -1120,11 +1121,12 @@ impl<'a> StyleCx<'a> {
         // Propagate style requests to children if needed.
         if view_state.request_style_recursive {
             view_state.request_style_recursive = false;
-            for child in view.children() {
+            view.for_each_child(&mut |child| {
                 let state = self.app_state_mut().view_state(child.id());
                 state.request_style_recursive = true;
                 state.request_style = true;
-            }
+                false
+            });
         }
 
         self.app_state
