@@ -201,17 +201,7 @@ pub trait View {
 
     /// Responsible for computing the layout of the view's children.
     fn compute_layout(&mut self, cx: &mut LayoutCx) -> Option<Rect> {
-        let mut layout_rect: Option<Rect> = None;
-        self.for_each_child_mut(&mut |child| {
-            let child_layout = cx.compute_view_layout(child);
-            if let Some(rect) = layout_rect {
-                layout_rect = Some(rect.union(child_layout));
-            } else {
-                layout_rect = Some(child_layout);
-            }
-            false
-        });
-        layout_rect
+        default_compute_layout(self, cx)
     }
 
     /// Implement this to handle events and to pass them down to children
@@ -234,6 +224,23 @@ pub trait View {
             false
         });
     }
+}
+
+/// Computes the layout of the view's children, if any.
+pub fn default_compute_layout<V: View + ?Sized>(view: &mut V, cx: &mut LayoutCx) -> Option<Rect> {
+    let mut layout_rect: Option<Rect> = None;
+    view.for_each_child_mut(&mut |child| {
+        let child_layout = cx.compute_view_layout(child);
+        if let Some(child_layout) = child_layout {
+            if let Some(rect) = layout_rect {
+                layout_rect = Some(rect.union(child_layout));
+            } else {
+                layout_rect = Some(child_layout);
+            }
+        }
+        false
+    });
+    layout_rect
 }
 
 pub(crate) fn paint_bg(
