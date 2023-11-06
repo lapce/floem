@@ -5,8 +5,8 @@ use crate::id::Id;
 use crate::style::{Style, StyleMapValue};
 use crate::view::{view_children, View};
 use crate::views::{
-    dyn_container, empty, img_dynamic, scroll, stack, static_label, static_list, text, v_stack,
-    Decorators, Label,
+    dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label, static_list, text,
+    v_stack, Decorators, Label,
 };
 use crate::window::WindowConfig;
 use crate::{new_window, style};
@@ -34,6 +34,8 @@ pub struct CapturedView {
     children: Vec<Rc<CapturedView>>,
     direct_style: Style,
     requested_changes: ChangeFlags,
+    keyboard_navigable: bool,
+    focused: bool,
 }
 
 impl CapturedView {
@@ -42,8 +44,9 @@ impl CapturedView {
         let layout = app_state.get_layout_rect(id);
         let taffy = app_state.get_layout(id).unwrap();
         let computed_style = app_state.get_computed_style(id).clone();
+        let keyboard_navigable = app_state.keyboard_navigable.contains(&id);
+        let focused = app_state.focus == Some(id);
         let state = app_state.view_state(id);
-
         let clipped = layout.intersect(clip);
         Self {
             id,
@@ -53,6 +56,8 @@ impl CapturedView {
             clipped,
             direct_style: computed_style,
             requested_changes: state.requested_changes,
+            keyboard_navigable,
+            focused,
             children: view_children(view)
                 .into_iter()
                 .map(|view| Rc::new(CapturedView::capture(view, app_state, clipped)))
@@ -119,6 +124,46 @@ impl CaptureState {
     }
 }
 
+fn captured_view_name(view: &CapturedView) -> impl View {
+    let name = static_label(view.name.clone());
+    let id = text(view.id.to_raw()).style(|s| {
+        s.margin_right(5.0)
+            .background(Color::BLACK.with_alpha_factor(0.02))
+            .border(1.0)
+            .border_radius(5.0)
+            .border_color(Color::BLACK.with_alpha_factor(0.07))
+            .padding(3.0)
+            .padding_top(0.0)
+            .padding_bottom(0.0)
+            .font_size(12.0)
+            .color(Color::BLACK.with_alpha_factor(0.6))
+    });
+    let tab: Box<dyn View> = if view.focused {
+        Box::new(text("Focus").style(|s| {
+            s.margin_right(5.0)
+                .background(Color::rgb8(63, 81, 101).with_alpha_factor(0.6))
+                .border_radius(5.0)
+                .padding(1.0)
+                .font_size(10.0)
+                .color(Color::WHITE.with_alpha_factor(0.8))
+        }))
+    } else if view.keyboard_navigable {
+        Box::new(text("Tab").style(|s| {
+            s.margin_right(5.0)
+                .background(Color::rgb8(204, 217, 221).with_alpha_factor(0.4))
+                .border(1.0)
+                .border_radius(5.0)
+                .border_color(Color::BLACK.with_alpha_factor(0.07))
+                .padding(1.0)
+                .font_size(10.0)
+                .color(Color::BLACK.with_alpha_factor(0.4))
+        }))
+    } else {
+        Box::new(empty())
+    };
+    h_stack((id, tab, name)).style(|s| s.items_center())
+}
+
 // Outlined to reduce stack usage.
 #[inline(never)]
 fn captured_view_no_children(
@@ -128,7 +173,7 @@ fn captured_view_no_children(
     highlighted: RwSignal<Option<Id>>,
 ) -> Box<dyn View> {
     let offset = depth as f64 * 14.0;
-    let name = static_label(view.name.clone());
+    let name = captured_view_name(view);
     let height = 20.0;
     let id = view.id;
 
@@ -174,7 +219,7 @@ fn captured_view_with_children(
     children: Vec<Box<dyn View>>,
 ) -> Box<dyn View> {
     let offset = depth as f64 * 14.0;
-    let name = static_label(view.name.clone());
+    let name = captured_view_name(view);
     let height = 20.0;
     let id = view.id;
 
@@ -354,6 +399,7 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl 
         move |current| {
             if let Some(view) = current.and_then(|id| capture.root.find(id)) {
                 let name = info("Type", view.name.clone());
+                let id = info("Id", view.id.to_raw().to_string());
                 let count = info("Child Count", format!("{}", view.children.len()));
                 let beyond = |view: f64, window| {
                     if view > window {
@@ -547,6 +593,7 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl 
                 Box::new(
                     v_stack((
                         name,
+                        id,
                         count,
                         x,
                         y,

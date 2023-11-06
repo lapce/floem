@@ -3,7 +3,7 @@ use floem::{
     keyboard::{Key, NamedKey},
     peniko::Color,
     reactive::create_signal,
-    style::{Background, BorderColor, Style, TextColor, Transition},
+    style::{Background, BorderColor, Outline, OutlineColor, Style, TextColor, Transition},
     style_class,
     view::View,
     views::{label, stack, text, Decorators},
@@ -23,6 +23,11 @@ fn app_view() -> impl View {
         .transition(TextColor, Transition::linear(0.06))
         .transition(BorderColor, Transition::linear(0.06))
         .transition(Background, Transition::linear(0.06))
+        .transition(Outline, Transition::linear(0.1))
+        .focus_visible(|s| {
+            s.outline(2.0)
+                .outline_color(Color::WHITE.with_alpha_factor(0.7))
+        })
         .disabled(|s| {
             s.background(Color::DARK_GRAY.with_alpha_factor(0.1))
                 .border_color(Color::BLACK.with_alpha_factor(0.2))
@@ -55,6 +60,13 @@ fn app_view() -> impl View {
         .transition(TextColor, Transition::linear(0.3))
         .transition(BorderColor, Transition::linear(0.3))
         .transition(Background, Transition::linear(0.3))
+        .transition(Outline, Transition::linear(0.2))
+        .transition(OutlineColor, Transition::linear(0.2))
+        .outline_color(Color::rgba8(131, 145, 123, 0))
+        .focus_visible(|s| {
+            s.outline(10.0)
+                .outline_color(Color::rgb8(131, 145, 123).with_alpha_factor(0.3))
+        })
         .border_color(Color::rgb8(131, 145, 123))
         .hover(|s| s.background(Color::rgb8(204, 209, 201)))
         .padding(8.0)

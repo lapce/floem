@@ -23,6 +23,10 @@ pub fn checkbox_view() -> impl View {
                 stack({
                     (
                         checkbox(is_checked)
+                            .on_click(move |_| {
+                                set_is_checked.update(|checked| *checked = !*checked);
+                                true
+                            })
                             .style(|s| s.focus_visible(|s| s.border(2.).border_color(Color::BLUE))),
                         label(|| "Check me!"),
                     )
@@ -36,12 +40,12 @@ pub fn checkbox_view() -> impl View {
                 stack({
                     (
                         checkbox(is_checked)
+                            .disabled(|| true)
                             .style(|s| s.focus_visible(|s| s.border(2.).border_color(Color::BLUE))),
                         label(|| "Check me!"),
                     )
                 })
                 .style(|s| s.color(Color::GRAY))
-                .disabled(|| true)
                 .on_click(move |_| {
                     set_is_checked.update(|checked| *checked = !*checked);
                     true
