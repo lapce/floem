@@ -41,10 +41,6 @@ pub(crate) enum UpdateMessage {
         id: Id,
         flags: ChangeFlags,
     },
-    RequestPaint,
-    RequestLayout {
-        id: Id,
-    },
     State {
         id: Id,
         state: Box<dyn Any>,

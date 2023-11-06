@@ -10,7 +10,7 @@ use crate::{
     id::Id,
     style::{Style, TextOverflow},
     unit::PxPct,
-    view::{ChangeFlags, View},
+    view::View,
 };
 
 pub struct RichText {
@@ -54,7 +54,7 @@ impl View for RichText {
         .into()
     }
 
-    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags {
+    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {
         if let Ok(state) = state.downcast() {
             let mut text_layout: TextLayout = *state;
             if self.text_overflow == TextOverflow::Wrap && self.available_width > 0.0 {
@@ -63,9 +63,6 @@ impl View for RichText {
 
             self.text_layout = text_layout;
             cx.request_layout(self.id());
-            ChangeFlags::LAYOUT
-        } else {
-            ChangeFlags::empty()
         }
     }
 

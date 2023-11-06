@@ -131,11 +131,11 @@ impl Id {
     }
 
     pub fn request_paint(&self) {
-        self.add_update_message(UpdateMessage::RequestPaint);
+        self.request_change(ChangeFlags::PAINT);
     }
 
     pub fn request_layout(&self) {
-        self.add_update_message(UpdateMessage::RequestLayout { id: *self });
+        self.request_change(ChangeFlags::LAYOUT);
     }
 
     pub fn update_state(&self, state: impl Any, deferred: bool) {

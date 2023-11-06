@@ -476,12 +476,14 @@ impl WindowHandle {
         cx.compute_view_layout(&mut self.view);
 
         if self.app_state.capture.is_none() && !self.app_state.animated.is_empty() {
-            let animated = self.app_state.animated.clone();
-            exec_after(Duration::from_millis(1), move |_| {
-                for id in animated {
-                    id.request_change(ChangeFlags::STYLE);
-                }
-            });
+            let animated = self.app_state.ids_with_anim_in_progress();
+            if !animated.is_empty() {
+                exec_after(Duration::from_millis(1), move |_| {
+                    for id in animated {
+                        id.request_change(ChangeFlags::STYLE);
+                    }
+                });
+            }
         }
 
         taffy_duration
@@ -563,8 +565,7 @@ impl WindowHandle {
         // Ensure we run layout and styling again for accurate timing. We also need to ensure
         // styles are recomputed to capture them.
         self.app_state.view_states.values_mut().for_each(|state| {
-            state.request_layout = true;
-            state.request_style = true;
+            state.requested_changes = ChangeFlags::used();
         });
 
         fn get_taffy_depth(taffy: &taffy::Taffy, root: taffy::node::Node) -> usize {
@@ -612,9 +613,9 @@ impl WindowHandle {
     }
 
     pub(crate) fn process_update(&mut self) {
-        let mut flags = ChangeFlags::empty();
+        let mut paint = false;
         loop {
-            flags |= self.process_update_messages();
+            self.process_update_messages();
             if !self.needs_layout()
                 && !self.needs_style()
                 && !self.has_deferred_update_messages()
@@ -624,22 +625,22 @@ impl WindowHandle {
             }
 
             if self.needs_style() {
-                flags |= ChangeFlags::STYLE;
+                paint = true;
                 self.style();
             }
 
             if self.needs_layout() {
-                flags |= ChangeFlags::LAYOUT;
+                paint = true;
                 self.layout();
             }
 
-            flags |= self.process_deferred_update_messages();
-            flags |= self.process_anim_update_messages();
+            self.process_deferred_update_messages();
+            self.process_anim_update_messages();
         }
 
         self.set_cursor();
 
-        if !flags.is_empty() {
+        if paint {
             self.request_paint();
         }
 
@@ -685,8 +686,7 @@ impl WindowHandle {
         });
     }
 
-    fn process_update_messages(&mut self) -> ChangeFlags {
-        let mut flags = ChangeFlags::empty();
+    fn process_update_messages(&mut self) {
         loop {
             self.process_central_messages();
             let msgs =
@@ -700,7 +700,6 @@ impl WindowHandle {
                 };
                 match msg {
                     UpdateMessage::RequestChange { id, flags: changes } => {
-                        flags |= changes;
                         if changes.contains(ChangeFlags::STYLE) {
                             cx.app_state.request_style(id);
                         }
@@ -710,12 +709,6 @@ impl WindowHandle {
                         if changes.contains(ChangeFlags::PAINT) {
                             cx.app_state.request_paint(id);
                         }
-                    }
-                    UpdateMessage::RequestPaint => {
-                        flags |= ChangeFlags::PAINT;
-                    }
-                    UpdateMessage::RequestLayout { id } => {
-                        cx.app_state.request_layout(id);
                     }
                     UpdateMessage::Focus(id) => {
                         if cx.app_state.focus != Some(id) {
@@ -754,7 +747,7 @@ impl WindowHandle {
                     UpdateMessage::State { id, state } => {
                         let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
                         if let Some(id_path) = id_path {
-                            flags |= cx.update_view(&mut self.view, id_path.dispatch(), state);
+                            cx.update_view(&mut self.view, id_path.dispatch(), state);
                         }
                     }
                     UpdateMessage::BaseStyle { id, style } => {
@@ -931,33 +924,24 @@ impl WindowHandle {
                 }
             }
         }
-        flags
     }
 
-    fn process_deferred_update_messages(&mut self) -> ChangeFlags {
+    fn process_deferred_update_messages(&mut self) {
         self.process_central_messages();
-        let mut flags = ChangeFlags::empty();
         let msgs = DEFERRED_UPDATE_MESSAGES
             .with(|msgs| msgs.borrow_mut().remove(&self.id).unwrap_or_default());
-        if msgs.is_empty() {
-            return flags;
-        }
-
         let mut cx = UpdateCx {
             app_state: &mut self.app_state,
         };
         for (id, state) in msgs {
             let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
             if let Some(id_path) = id_path {
-                flags |= cx.update_view(&mut self.view, id_path.dispatch(), state);
+                cx.update_view(&mut self.view, id_path.dispatch(), state);
             }
         }
-
-        flags
     }
 
-    fn process_anim_update_messages(&mut self) -> ChangeFlags {
-        let mut flags = ChangeFlags::empty();
+    fn process_anim_update_messages(&mut self) {
         let msgs: Vec<AnimUpdateMsg> = ANIM_UPDATE_MESSAGES.with(|msgs| {
             let mut msgs = msgs.borrow_mut();
             let len = msgs.len();
@@ -972,20 +956,13 @@ impl WindowHandle {
                     val,
                 } => {
                     let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
-                    flags |= self.process_update_anim_prop(view_id, kind, val);
+                    self.process_update_anim_prop(view_id, kind, val);
                 }
             }
         }
-
-        flags
     }
 
-    fn process_update_anim_prop(
-        &mut self,
-        view_id: Id,
-        kind: AnimPropKind,
-        val: AnimValue,
-    ) -> ChangeFlags {
+    fn process_update_anim_prop(&mut self, view_id: Id, kind: AnimPropKind, val: AnimValue) {
         let layout = self.app_state.get_layout(view_id).unwrap();
         let view_state = self.app_state.view_state(view_id);
         let anim = view_state.animation.as_mut().unwrap();
@@ -1029,15 +1006,21 @@ impl WindowHandle {
         anim.props_mut().insert(kind, prop);
         anim.begin();
 
-        ChangeFlags::LAYOUT
+        self.app_state.request_style(view_id);
     }
 
     fn needs_layout(&mut self) -> bool {
-        self.app_state.view_state(self.view.id()).request_layout
+        self.app_state
+            .view_state(self.view.id())
+            .requested_changes
+            .contains(ChangeFlags::LAYOUT)
     }
 
     fn needs_style(&mut self) -> bool {
-        self.app_state.view_state(self.view.id()).request_style
+        self.app_state
+            .view_state(self.view.id())
+            .requested_changes
+            .contains(ChangeFlags::STYLE)
     }
 
     fn has_deferred_update_messages(&self) -> bool {

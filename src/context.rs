@@ -68,8 +68,7 @@ prop_extracter! {
 pub struct ViewState {
     pub(crate) node: Node,
     pub(crate) children_nodes: Vec<Node>,
-    pub(crate) request_layout: bool,
-    pub(crate) request_style: bool,
+    pub(crate) requested_changes: ChangeFlags,
     /// Layout is requested on all direct and indirect children.
     pub(crate) request_style_recursive: bool,
     pub(crate) has_style_selectors: StyleSelectors,
@@ -101,8 +100,7 @@ impl ViewState {
             layout_rect: Rect::ZERO,
             layout_props: Default::default(),
             view_style_props: Default::default(),
-            request_layout: true,
-            request_style: true,
+            requested_changes: ChangeFlags::used(),
             request_style_recursive: false,
             has_style_selectors: StyleSelectors::default(),
             animation: None,
@@ -444,26 +442,23 @@ impl AppState {
         self.request_style(id);
     }
 
-    pub fn request_style(&mut self, id: Id) {
+    pub fn request_changes(&mut self, id: Id, flags: ChangeFlags) {
         let view = self.view_state(id);
-        if view.request_style {
+        if view.requested_changes.contains(flags) {
             return;
         }
-        view.request_style = true;
+        view.requested_changes.insert(flags);
         if let Some(parent) = id.parent() {
-            self.request_style(parent);
+            self.request_changes(parent, flags);
         }
     }
 
+    pub fn request_style(&mut self, id: Id) {
+        self.request_changes(id, ChangeFlags::STYLE)
+    }
+
     pub fn request_layout(&mut self, id: Id) {
-        let view = self.view_state(id);
-        if view.request_layout {
-            return;
-        }
-        view.request_layout = true;
-        if let Some(parent) = id.parent() {
-            self.request_layout(parent);
-        }
+        self.request_changes(id, ChangeFlags::LAYOUT)
     }
 
     pub fn request_paint(&mut self, id: Id) {
@@ -655,6 +650,14 @@ impl<'a> EventCx<'a> {
     /// This will recursively request painting for all parents
     pub fn request_paint(&mut self, id: Id) {
         self.app_state.request_paint(id);
+    }
+
+    pub fn app_state_mut(&mut self) -> &mut AppState {
+        self.app_state
+    }
+
+    pub fn app_state(&self) -> &AppState {
+        self.app_state
     }
 
     pub fn update_active(&mut self, id: Id) {
@@ -1102,10 +1105,10 @@ impl<'a> StyleCx<'a> {
         self.save();
         let id = view.id();
         let view_state = self.app_state_mut().view_state(id);
-        if !view_state.request_style {
+        if !view_state.requested_changes.contains(ChangeFlags::STYLE) {
             return;
         }
-        view_state.request_style = false;
+        view_state.requested_changes.remove(ChangeFlags::STYLE);
 
         let view_style = view.view_style();
         let view_class = view.view_class();
@@ -1124,7 +1127,7 @@ impl<'a> StyleCx<'a> {
             view.for_each_child(&mut |child| {
                 let state = self.app_state_mut().view_state(child.id());
                 state.request_style_recursive = true;
-                state.request_style = true;
+                state.requested_changes.insert(ChangeFlags::STYLE);
                 false
             });
         }
@@ -1293,10 +1296,10 @@ impl<'a> LayoutCx<'a> {
     ) -> Node {
         let view_state = self.app_state.view_state(id);
         let node = view_state.node;
-        if !view_state.request_layout {
+        if !view_state.requested_changes.contains(ChangeFlags::LAYOUT) {
             return node;
         }
-        view_state.request_layout = false;
+        view_state.requested_changes.remove(ChangeFlags::LAYOUT);
         let style = view_state.combined_style.to_taffy_style();
         let _ = self.app_state.taffy.set_style(node, style);
 
@@ -1727,8 +1730,7 @@ impl<'a> UpdateCx<'a> {
     /// request that this node be styled, laid out and painted again
     /// This will recursively request this for all parents.
     pub fn request_all(&mut self, id: Id) {
-        self.app_state.request_style(id);
-        self.app_state.request_layout(id);
+        self.app_state.request_changes(id, ChangeFlags::used());
     }
 
     /// request that this node be styled again
@@ -1743,24 +1745,26 @@ impl<'a> UpdateCx<'a> {
         self.app_state.request_layout(id);
     }
 
+    pub fn app_state_mut(&mut self) -> &mut AppState {
+        self.app_state
+    }
+
+    pub fn app_state(&self) -> &AppState {
+        self.app_state
+    }
+
     /// Used internally by Floem to send an update to the correct view based on the `Id` path.
     /// It will invoke only once `update` when the correct view is located.
-    pub fn update_view(
-        &mut self,
-        view: &mut dyn View,
-        id_path: &[Id],
-        state: Box<dyn Any>,
-    ) -> ChangeFlags {
+    pub fn update_view(&mut self, view: &mut dyn View, id_path: &[Id], state: Box<dyn Any>) {
         let id = id_path[0];
         let id_path = &id_path[1..];
         if id == view.id() {
             if id_path.is_empty() {
-                return view.update(self, state);
+                view.update(self, state);
             } else if let Some(child) = view.child_mut(id_path[0]) {
-                return self.update_view(child, id_path, state);
+                self.update_view(child, id_path, state);
             }
         }
-        ChangeFlags::empty()
     }
 }
 

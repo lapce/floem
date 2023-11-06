@@ -2,7 +2,7 @@ use floem_reactive::{as_child_of_current_scope, create_effect, Scope};
 
 use crate::{
     id::Id,
-    view::{view_children_set_parent_id, ChangeFlags, View},
+    view::{view_children_set_parent_id, View},
 };
 
 type ChildFn<T> = dyn Fn(T) -> (Box<dyn View>, Scope);
@@ -111,11 +111,7 @@ impl<T: 'static> View for DynamicContainer<T> {
         "DynamicContainer".into()
     }
 
-    fn update(
-        &mut self,
-        cx: &mut crate::context::UpdateCx,
-        state: Box<dyn std::any::Any>,
-    ) -> crate::view::ChangeFlags {
+    fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(val) = state.downcast::<T>() {
             let old_child_scope = self.child_scope;
             (self.child, self.child_scope) = (self.child_fn)(*val);
@@ -123,9 +119,6 @@ impl<T: 'static> View for DynamicContainer<T> {
             self.child.id().set_parent(self.id);
             view_children_set_parent_id(&*self.child);
             cx.request_all(self.id());
-            ChangeFlags::all()
-        } else {
-            ChangeFlags::empty()
         }
     }
 }

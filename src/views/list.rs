@@ -10,7 +10,7 @@ use smallvec::SmallVec;
 use crate::{
     context::{AppState, UpdateCx},
     id::Id,
-    view::{view_children_set_parent_id, ChangeFlags, View},
+    view::{view_children_set_parent_id, View},
 };
 
 pub(crate) type FxIndexSet<T> = indexmap::IndexSet<T, BuildHasherDefault<FxHasher>>;
@@ -118,11 +118,7 @@ impl<V: View + 'static, T> View for List<V, T> {
         "List".into()
     }
 
-    fn update(
-        &mut self,
-        cx: &mut UpdateCx,
-        state: Box<dyn std::any::Any>,
-    ) -> crate::view::ChangeFlags {
+    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(diff) = state.downcast() {
             apply_diff(
                 self.id,
@@ -132,9 +128,6 @@ impl<V: View + 'static, T> View for List<V, T> {
                 &self.view_fn,
             );
             cx.request_all(self.id());
-            ChangeFlags::all()
-        } else {
-            ChangeFlags::empty()
         }
     }
 }

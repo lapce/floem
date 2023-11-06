@@ -8,7 +8,7 @@ use taffy::{prelude::Node, style::Dimension};
 use crate::{
     context::LayoutCx,
     id::Id,
-    view::{self, ChangeFlags, View},
+    view::{self, View},
 };
 
 use super::{apply_diff, diff, Diff, DiffOpAdd, FxIndexSet, HashRun};
@@ -237,17 +237,13 @@ impl<V: View + 'static, T> View for VirtualList<V, T> {
         "VirtualList".into()
     }
 
-    fn update(
-        &mut self,
-        cx: &mut crate::context::UpdateCx,
-        state: Box<dyn std::any::Any>,
-    ) -> crate::view::ChangeFlags {
+    fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast::<VirtualListState<T>>() {
             if self.before_size == state.before_size
                 && self.after_size == state.after_size
                 && state.diff.is_empty()
             {
-                return ChangeFlags::empty();
+                return;
             }
             self.before_size = state.before_size;
             self.after_size = state.after_size;
@@ -259,9 +255,6 @@ impl<V: View + 'static, T> View for VirtualList<V, T> {
                 &self.view_fn,
             );
             cx.request_all(self.id());
-            ChangeFlags::all()
-        } else {
-            ChangeFlags::empty()
         }
     }
 
