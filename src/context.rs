@@ -6,12 +6,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use floem_renderer::{
-    cosmic_text::{LineHeightValue, Style as FontStyle, Weight},
-    Renderer as FloemRenderer,
-};
+use floem_renderer::Renderer as FloemRenderer;
 use kurbo::{Affine, Insets, Point, Rect, RoundedRect, Shape, Size, Vec2};
-use peniko::Color;
 use taffy::{
     prelude::{Layout, Node},
     style::{AvailableSpace, Display},
@@ -1425,27 +1421,9 @@ pub struct PaintCx<'a> {
     pub(crate) paint_state: &'a mut PaintState,
     pub(crate) transform: Affine,
     pub(crate) clip: Option<RoundedRect>,
-    pub(crate) color: Option<Color>,
-    pub(crate) scroll_bar_rounded: Option<bool>,
-    pub(crate) scroll_bar_thickness: Option<f32>,
-    pub(crate) scroll_bar_edge_width: Option<f32>,
-    pub(crate) font_size: Option<f32>,
-    pub(crate) font_family: Option<String>,
-    pub(crate) font_weight: Option<Weight>,
-    pub(crate) font_style: Option<FontStyle>,
-    pub(crate) line_height: Option<LineHeightValue>,
     pub(crate) z_index: Option<i32>,
     pub(crate) saved_transforms: Vec<Affine>,
     pub(crate) saved_clips: Vec<Option<RoundedRect>>,
-    pub(crate) saved_colors: Vec<Option<Color>>,
-    pub(crate) saved_scroll_bar_roundeds: Vec<Option<bool>>,
-    pub(crate) saved_scroll_bar_thicknesses: Vec<Option<f32>>,
-    pub(crate) saved_scroll_bar_edge_widths: Vec<Option<f32>>,
-    pub(crate) saved_font_sizes: Vec<Option<f32>>,
-    pub(crate) saved_font_families: Vec<Option<String>>,
-    pub(crate) saved_font_weights: Vec<Option<Weight>>,
-    pub(crate) saved_font_styles: Vec<Option<FontStyle>>,
-    pub(crate) saved_line_heights: Vec<Option<LineHeightValue>>,
     pub(crate) saved_z_indexes: Vec<Option<i32>>,
 }
 
@@ -1453,32 +1431,12 @@ impl<'a> PaintCx<'a> {
     pub fn save(&mut self) {
         self.saved_transforms.push(self.transform);
         self.saved_clips.push(self.clip);
-        self.saved_colors.push(self.color);
-        self.saved_scroll_bar_roundeds.push(self.scroll_bar_rounded);
-        self.saved_scroll_bar_thicknesses
-            .push(self.scroll_bar_thickness);
-        self.saved_scroll_bar_edge_widths
-            .push(self.scroll_bar_edge_width);
-        self.saved_font_sizes.push(self.font_size);
-        self.saved_font_families.push(self.font_family.clone());
-        self.saved_font_weights.push(self.font_weight);
-        self.saved_font_styles.push(self.font_style);
-        self.saved_line_heights.push(self.line_height);
         self.saved_z_indexes.push(self.z_index);
     }
 
     pub fn restore(&mut self) {
         self.transform = self.saved_transforms.pop().unwrap_or_default();
         self.clip = self.saved_clips.pop().unwrap_or_default();
-        self.color = self.saved_colors.pop().unwrap_or_default();
-        self.scroll_bar_rounded = self.saved_scroll_bar_roundeds.pop().unwrap_or_default();
-        self.scroll_bar_thickness = self.saved_scroll_bar_thicknesses.pop().unwrap_or_default();
-        self.scroll_bar_edge_width = self.saved_scroll_bar_edge_widths.pop().unwrap_or_default();
-        self.font_size = self.saved_font_sizes.pop().unwrap_or_default();
-        self.font_family = self.saved_font_families.pop().unwrap_or_default();
-        self.font_weight = self.saved_font_weights.pop().unwrap_or_default();
-        self.font_style = self.saved_font_styles.pop().unwrap_or_default();
-        self.line_height = self.saved_line_heights.pop().unwrap_or_default();
         self.z_index = self.saved_z_indexes.pop().unwrap_or_default();
         self.paint_state.renderer.transform(self.transform);
         if let Some(z_index) = self.z_index {
@@ -1581,30 +1539,6 @@ impl<'a> PaintCx<'a> {
         }
 
         self.restore();
-    }
-
-    pub fn current_color(&self) -> Option<Color> {
-        self.color
-    }
-
-    pub fn current_scroll_bar_rounded(&self) -> Option<bool> {
-        self.scroll_bar_rounded
-    }
-
-    pub fn current_scroll_bar_thickness(&self) -> Option<f32> {
-        self.scroll_bar_thickness
-    }
-
-    pub fn current_scroll_bar_edge_width(&self) -> Option<f32> {
-        self.scroll_bar_edge_width
-    }
-
-    pub fn current_font_size(&self) -> Option<f32> {
-        self.font_size
-    }
-
-    pub fn current_font_family(&self) -> Option<&str> {
-        self.font_family.as_deref()
     }
 
     pub fn layout(&self, node: Node) -> Option<Layout> {

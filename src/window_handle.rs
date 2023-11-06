@@ -20,7 +20,6 @@ use crate::unit::UnitExt;
 #[cfg(target_os = "linux")]
 use crate::views::{container_box, stack, Decorators};
 use crate::{
-    action::exec_after,
     animate::{AnimPropKind, AnimUpdateMsg, AnimValue, AnimatedProp, SizeUnit},
     context::{
         AppState, EventCx, LayoutCx, MoveListener, PaintCx, PaintState, ResizeListener, StyleCx,
@@ -312,7 +311,7 @@ impl WindowHandle {
         self.scale = scale;
         let scale = self.scale * self.app_state.scale;
         self.paint_state.set_scale(scale);
-        self.request_paint();
+        self.schedule_repaint();
     }
 
     pub(crate) fn theme_changed(&mut self, theme: Theme) {
@@ -338,7 +337,7 @@ impl WindowHandle {
         self.style();
         self.layout();
         self.process_update();
-        self.request_paint();
+        self.schedule_repaint();
     }
 
     pub(crate) fn position(&mut self, point: Point) {
@@ -475,18 +474,33 @@ impl WindowHandle {
         cx.clear();
         cx.compute_view_layout(&mut self.view);
 
-        if self.app_state.capture.is_none() && !self.app_state.animated.is_empty() {
-            let animated = self.app_state.ids_with_anim_in_progress();
-            if !animated.is_empty() {
-                exec_after(Duration::from_millis(1), move |_| {
-                    for id in animated {
-                        id.request_change(ChangeFlags::STYLE);
-                    }
-                });
+        taffy_duration
+    }
+
+    pub fn render_frame(&mut self) {
+        // Request animation updates if needed
+        if !self.app_state.transitioning.is_empty() {
+            let transitioning = mem::take(&mut self.app_state.transitioning);
+            for id in transitioning {
+                id.request_change(ChangeFlags::STYLE);
+            }
+        }
+        if !self.app_state.animated.is_empty() {
+            for id in self.app_state.ids_with_anim_in_progress() {
+                id.request_change(ChangeFlags::STYLE);
             }
         }
 
-        taffy_duration
+        self.process_update_no_paint();
+
+        let any_animations = !self.app_state.transitioning.is_empty()
+            || !self.app_state.ids_with_anim_in_progress().is_empty();
+
+        self.paint();
+
+        if any_animations {
+            self.schedule_repaint();
+        }
     }
 
     pub fn paint(&mut self) -> Option<DynamicImage> {
@@ -495,28 +509,10 @@ impl WindowHandle {
             paint_state: &mut self.paint_state,
             transform: Affine::IDENTITY,
             clip: None,
-            color: None,
-            font_size: None,
-            font_family: None,
-            font_weight: None,
-            font_style: None,
-            line_height: None,
             z_index: None,
             saved_transforms: Vec::new(),
             saved_clips: Vec::new(),
-            saved_colors: Vec::new(),
-            saved_font_sizes: Vec::new(),
-            saved_font_families: Vec::new(),
-            saved_font_weights: Vec::new(),
-            saved_font_styles: Vec::new(),
-            saved_line_heights: Vec::new(),
             saved_z_indexes: Vec::new(),
-            scroll_bar_rounded: None,
-            scroll_bar_thickness: None,
-            scroll_bar_edge_width: None,
-            saved_scroll_bar_roundeds: Vec::new(),
-            saved_scroll_bar_thicknesses: Vec::new(),
-            saved_scroll_bar_edge_widths: Vec::new(),
         };
         cx.paint_state
             .renderer
@@ -541,13 +537,7 @@ impl WindowHandle {
                 window.pre_present_notify();
             }
         }
-        let image = cx.paint_state.renderer.finish();
-
-        if cx.app_state.capture.is_none() {
-            self.process_update();
-        }
-
-        image
+        cx.paint_state.renderer.finish()
     }
 
     pub(crate) fn capture(&mut self) -> Capture {
@@ -613,6 +603,14 @@ impl WindowHandle {
     }
 
     pub(crate) fn process_update(&mut self) {
+        if self.process_update_no_paint() {
+            self.schedule_repaint();
+        }
+    }
+
+    /// Processes updates and runs style and layout if needed.
+    /// Returns `true` if painting is required.
+    pub(crate) fn process_update_no_paint(&mut self) -> bool {
         let mut paint = false;
         loop {
             self.process_update_messages();
@@ -640,18 +638,7 @@ impl WindowHandle {
 
         self.set_cursor();
 
-        if paint {
-            self.request_paint();
-        }
-
-        if !self.app_state.transitioning.is_empty() {
-            let transitioning = mem::take(&mut self.app_state.transitioning);
-            exec_after(Duration::from_millis(1), move |_| {
-                for id in transitioning {
-                    id.request_change(ChangeFlags::STYLE);
-                }
-            });
-        }
+        paint
     }
 
     fn process_central_messages(&self) {
@@ -1082,7 +1069,7 @@ impl WindowHandle {
         }
     }
 
-    fn request_paint(&self) {
+    fn schedule_repaint(&self) {
         if let Some(window) = self.window.as_ref() {
             window.request_redraw();
         }
