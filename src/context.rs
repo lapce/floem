@@ -6,12 +6,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use floem_renderer::{
-    cosmic_text::{LineHeightValue, Style as FontStyle, Weight},
-    Renderer as FloemRenderer,
-};
+use bitflags::bitflags;
+use floem_renderer::Renderer as FloemRenderer;
 use kurbo::{Affine, Insets, Point, Rect, RoundedRect, Shape, Size, Vec2};
-use peniko::Color;
 use taffy::{
     prelude::{Layout, Node},
     style::{AvailableSpace, Display},
@@ -34,7 +31,7 @@ use crate::{
         StyleSelector, StyleSelectors, ZIndex,
     },
     unit::PxPct,
-    view::{paint_bg, paint_border, paint_outline, ChangeFlags, View},
+    view::{paint_bg, paint_border, paint_outline, View},
 };
 
 pub type EventCallback = dyn Fn(&Event) -> bool;
@@ -65,11 +62,19 @@ prop_extracter! {
     }
 }
 
+bitflags! {
+    #[derive(Default, Copy, Clone, Debug)]
+    #[must_use]
+    pub(crate) struct ChangeFlags: u8 {
+        const STYLE = 1;
+        const LAYOUT = 1 << 1;
+    }
+}
+
 pub struct ViewState {
     pub(crate) node: Node,
     pub(crate) children_nodes: Vec<Node>,
-    pub(crate) request_layout: bool,
-    pub(crate) request_style: bool,
+    pub(crate) requested_changes: ChangeFlags,
     /// Layout is requested on all direct and indirect children.
     pub(crate) request_style_recursive: bool,
     pub(crate) has_style_selectors: StyleSelectors,
@@ -101,8 +106,7 @@ impl ViewState {
             layout_rect: Rect::ZERO,
             layout_props: Default::default(),
             view_style_props: Default::default(),
-            request_layout: true,
-            request_style: true,
+            requested_changes: ChangeFlags::all(),
             request_style_recursive: false,
             has_style_selectors: StyleSelectors::default(),
             animation: None,
@@ -123,6 +127,7 @@ impl ViewState {
         }
     }
 
+    /// Returns `true` if a new frame is requested.
     pub(crate) fn compute_style(
         &mut self,
         view_style: Option<Style>,
@@ -131,7 +136,8 @@ impl ViewState {
         view_class: Option<StyleClassRef>,
         classes: &[StyleClassRef],
         context: &Style,
-    ) {
+    ) -> bool {
+        let mut new_frame = false;
         let mut computed_style = Style::new();
         if let Some(view_style) = view_style {
             computed_style.apply_mut(view_style);
@@ -151,6 +157,8 @@ impl ViewState {
                 if animation.is_completed() && animation.is_auto_reverse() {
                     break 'anim;
                 }
+
+                new_frame = true;
 
                 let props = animation.props();
 
@@ -183,6 +191,8 @@ impl ViewState {
         computed_style.apply_interact_state(&interact_state, screen_size_bp);
 
         self.combined_style = computed_style;
+
+        new_frame
     }
 }
 
@@ -190,6 +200,12 @@ pub struct DragState {
     pub(crate) id: Id,
     pub(crate) offset: Vec2,
     pub(crate) released_at: Option<std::time::Instant>,
+}
+
+pub(crate) enum FrameUpdate {
+    Style(Id),
+    Layout(Id),
+    Paint(Id),
 }
 
 /// Encapsulates and owns the global state of the application,
@@ -206,6 +222,8 @@ pub struct AppState {
     pub taffy: taffy::Taffy,
     pub(crate) view_states: HashMap<Id, ViewState>,
     stale_view_state: ViewState,
+    pub(crate) scheduled_updates: Vec<FrameUpdate>,
+    pub(crate) request_paint: bool,
     pub(crate) disabled: HashSet<Id>,
     pub(crate) keyboard_navigable: HashSet<Id>,
     pub(crate) draggable: HashSet<Id>,
@@ -218,9 +236,6 @@ pub struct AppState {
     pub(crate) hovered: HashSet<Id>,
     /// This keeps track of all views that have an animation,
     /// regardless of the status of the animation
-    pub(crate) animated: HashSet<Id>,
-    /// This is a set of view which have active transition animations.
-    pub(crate) transitioning: HashSet<Id>,
     pub(crate) cursor: Option<CursorStyle>,
     pub(crate) last_cursor: CursorIcon,
     pub(crate) keyboard_navigation: bool,
@@ -251,8 +266,8 @@ impl AppState {
             stale_view_state: ViewState::new(&mut taffy),
             taffy,
             view_states: HashMap::new(),
-            animated: HashSet::new(),
-            transitioning: HashSet::new(),
+            scheduled_updates: Vec::new(),
+            request_paint: false,
             disabled: HashSet::new(),
             keyboard_navigable: HashSet::new(),
             draggable: HashSet::new(),
@@ -308,8 +323,6 @@ impl AppState {
         self.dragging_over.remove(&id);
         self.clicking.remove(&id);
         self.hovered.remove(&id);
-        self.animated.remove(&id);
-        self.transitioning.remove(&id);
         self.clicking.remove(&id);
         if self.focus == Some(id) {
             self.focus = None;
@@ -317,20 +330,6 @@ impl AppState {
         if self.active == Some(id) {
             self.active = None;
         }
-    }
-
-    pub fn ids_with_anim_in_progress(&mut self) -> Vec<Id> {
-        self.animated
-            .clone()
-            .into_iter()
-            .filter(|id| {
-                let anim = &self.view_state(*id).animation;
-                if let Some(anim) = anim {
-                    return !anim.is_completed();
-                }
-                false
-            })
-            .collect()
     }
 
     pub fn is_hidden(&self, id: Id) -> bool {
@@ -402,7 +401,7 @@ impl AppState {
         view_class: Option<StyleClassRef>,
         classes: &[StyleClassRef],
         context: &Style,
-    ) {
+    ) -> bool {
         let interact_state = self.get_interact_state(&id);
         let screen_size_bp = self.screen_size_bp;
         let view_state = self.view_state(id);
@@ -413,7 +412,7 @@ impl AppState {
             view_class,
             classes,
             context,
-        );
+        )
     }
 
     pub(crate) fn get_computed_style(&mut self, id: Id) -> &Style {
@@ -444,34 +443,53 @@ impl AppState {
         self.request_style(id);
     }
 
-    pub fn request_style(&mut self, id: Id) {
+    /// Request that this the `id` view be styled, laid out and painted again.
+    /// This will recursively request this for all parents.
+    pub fn request_all(&mut self, id: Id) {
+        self.request_changes(id, ChangeFlags::all());
+        self.request_paint(id);
+    }
+
+    pub(crate) fn request_changes(&mut self, id: Id, flags: ChangeFlags) {
         let view = self.view_state(id);
-        if view.request_style {
+        if view.requested_changes.contains(flags) {
             return;
         }
-        view.request_style = true;
+        view.requested_changes.insert(flags);
         if let Some(parent) = id.parent() {
-            self.request_style(parent);
+            self.request_changes(parent, flags);
         }
+    }
+
+    /// Requests that the style pass will run for `id` on the next frame, and ensures new frame is
+    /// scheduled to happen.
+    pub fn schedule_style(&mut self, id: Id) {
+        self.scheduled_updates.push(FrameUpdate::Style(id));
+    }
+
+    /// Requests that the layout pass will run for `id` on the next frame, and ensures new frame is
+    /// scheduled to happen.
+    pub fn schedule_layout(&mut self, id: Id) {
+        self.scheduled_updates.push(FrameUpdate::Layout(id));
+    }
+
+    /// Requests that the paint pass will run for `id` on the next frame, and ensures new frame is
+    /// scheduled to happen.
+    pub fn schedule_paint(&mut self, id: Id) {
+        self.scheduled_updates.push(FrameUpdate::Paint(id));
+    }
+
+    pub fn request_style(&mut self, id: Id) {
+        self.request_changes(id, ChangeFlags::STYLE)
     }
 
     pub fn request_layout(&mut self, id: Id) {
-        let view = self.view_state(id);
-        if view.request_layout {
-            return;
-        }
-        view.request_layout = true;
-        if let Some(parent) = id.parent() {
-            self.request_layout(parent);
-        }
+        self.request_changes(id, ChangeFlags::LAYOUT)
     }
 
-    pub fn request_paint(&mut self, id: Id) {
-        // Painting currently happens on any change, so request styling on the root
-        // view.
-        if let Some(id) = id.id_path().and_then(|path| path.0.get(1).copied()) {
-            self.request_style(id)
-        }
+    // `Id` is unused currently, but could be used to calculate damage regions.
+    pub fn request_paint(&mut self, _id: Id) {
+        self.request_paint = true;
     }
 
     pub(crate) fn set_viewport(&mut self, id: Id, viewport: Rect) {
@@ -652,9 +670,16 @@ impl<'a> EventCx<'a> {
     }
 
     /// request that this node be painted again
-    /// This will recursively request painting for all parents
     pub fn request_paint(&mut self, id: Id) {
         self.app_state.request_paint(id);
+    }
+
+    pub fn app_state_mut(&mut self) -> &mut AppState {
+        self.app_state
+    }
+
+    pub fn app_state(&self) -> &AppState {
+        self.app_state
     }
 
     pub fn update_active(&mut self, id: Id) {
@@ -1102,10 +1127,10 @@ impl<'a> StyleCx<'a> {
         self.save();
         let id = view.id();
         let view_state = self.app_state_mut().view_state(id);
-        if !view_state.request_style {
+        if !view_state.requested_changes.contains(ChangeFlags::STYLE) {
             return;
         }
-        view_state.request_style = false;
+        view_state.requested_changes.remove(ChangeFlags::STYLE);
 
         let view_style = view.view_style();
         let view_class = view.view_class();
@@ -1124,13 +1149,15 @@ impl<'a> StyleCx<'a> {
             view.for_each_child(&mut |child| {
                 let state = self.app_state_mut().view_state(child.id());
                 state.request_style_recursive = true;
-                state.request_style = true;
+                state.requested_changes.insert(ChangeFlags::STYLE);
                 false
             });
         }
 
-        self.app_state
-            .compute_style(id, view_style, view_class, classes, &self.current);
+        let mut new_frame =
+            self.app_state
+                .compute_style(id, view_style, view_class, classes, &self.current);
+
         let style = self.app_state_mut().get_computed_style(id).clone();
         self.direct = style;
         Style::apply_only_inherited(&mut self.current, &self.direct);
@@ -1149,25 +1176,23 @@ impl<'a> StyleCx<'a> {
 
         let view_state = self.app_state.view_state(id);
 
-        let mut transition = false;
-
         // Extract the relevant layout properties so the content rect can be calculated
         // when painting.
         view_state.layout_props.read_explicit(
             &self.direct,
             &self.current,
             &self.now,
-            &mut transition,
+            &mut new_frame,
         );
 
         view_state.view_style_props.read_explicit(
             &self.direct,
             &self.current,
             &self.now,
-            &mut transition,
+            &mut new_frame,
         );
-        if transition {
-            self.request_transition();
+        if new_frame {
+            self.app_state.schedule_style(id);
         }
 
         view.style(self);
@@ -1193,9 +1218,9 @@ impl<'a> StyleCx<'a> {
         (*self.current).clone().apply(self.direct.clone())
     }
 
-    pub(crate) fn request_transition(&mut self) {
+    pub fn request_transition(&mut self) {
         let id = self.current_view;
-        self.app_state_mut().transitioning.insert(id);
+        self.app_state_mut().schedule_style(id);
     }
 
     pub fn app_state_mut(&mut self) -> &mut AppState {
@@ -1293,10 +1318,10 @@ impl<'a> LayoutCx<'a> {
     ) -> Node {
         let view_state = self.app_state.view_state(id);
         let node = view_state.node;
-        if !view_state.request_layout {
+        if !view_state.requested_changes.contains(ChangeFlags::LAYOUT) {
             return node;
         }
-        view_state.request_layout = false;
+        view_state.requested_changes.remove(ChangeFlags::LAYOUT);
         let style = view_state.combined_style.to_taffy_style();
         let _ = self.app_state.taffy.set_style(node, style);
 
@@ -1422,27 +1447,9 @@ pub struct PaintCx<'a> {
     pub(crate) paint_state: &'a mut PaintState,
     pub(crate) transform: Affine,
     pub(crate) clip: Option<RoundedRect>,
-    pub(crate) color: Option<Color>,
-    pub(crate) scroll_bar_rounded: Option<bool>,
-    pub(crate) scroll_bar_thickness: Option<f32>,
-    pub(crate) scroll_bar_edge_width: Option<f32>,
-    pub(crate) font_size: Option<f32>,
-    pub(crate) font_family: Option<String>,
-    pub(crate) font_weight: Option<Weight>,
-    pub(crate) font_style: Option<FontStyle>,
-    pub(crate) line_height: Option<LineHeightValue>,
     pub(crate) z_index: Option<i32>,
     pub(crate) saved_transforms: Vec<Affine>,
     pub(crate) saved_clips: Vec<Option<RoundedRect>>,
-    pub(crate) saved_colors: Vec<Option<Color>>,
-    pub(crate) saved_scroll_bar_roundeds: Vec<Option<bool>>,
-    pub(crate) saved_scroll_bar_thicknesses: Vec<Option<f32>>,
-    pub(crate) saved_scroll_bar_edge_widths: Vec<Option<f32>>,
-    pub(crate) saved_font_sizes: Vec<Option<f32>>,
-    pub(crate) saved_font_families: Vec<Option<String>>,
-    pub(crate) saved_font_weights: Vec<Option<Weight>>,
-    pub(crate) saved_font_styles: Vec<Option<FontStyle>>,
-    pub(crate) saved_line_heights: Vec<Option<LineHeightValue>>,
     pub(crate) saved_z_indexes: Vec<Option<i32>>,
 }
 
@@ -1450,32 +1457,12 @@ impl<'a> PaintCx<'a> {
     pub fn save(&mut self) {
         self.saved_transforms.push(self.transform);
         self.saved_clips.push(self.clip);
-        self.saved_colors.push(self.color);
-        self.saved_scroll_bar_roundeds.push(self.scroll_bar_rounded);
-        self.saved_scroll_bar_thicknesses
-            .push(self.scroll_bar_thickness);
-        self.saved_scroll_bar_edge_widths
-            .push(self.scroll_bar_edge_width);
-        self.saved_font_sizes.push(self.font_size);
-        self.saved_font_families.push(self.font_family.clone());
-        self.saved_font_weights.push(self.font_weight);
-        self.saved_font_styles.push(self.font_style);
-        self.saved_line_heights.push(self.line_height);
         self.saved_z_indexes.push(self.z_index);
     }
 
     pub fn restore(&mut self) {
         self.transform = self.saved_transforms.pop().unwrap_or_default();
         self.clip = self.saved_clips.pop().unwrap_or_default();
-        self.color = self.saved_colors.pop().unwrap_or_default();
-        self.scroll_bar_rounded = self.saved_scroll_bar_roundeds.pop().unwrap_or_default();
-        self.scroll_bar_thickness = self.saved_scroll_bar_thicknesses.pop().unwrap_or_default();
-        self.scroll_bar_edge_width = self.saved_scroll_bar_edge_widths.pop().unwrap_or_default();
-        self.font_size = self.saved_font_sizes.pop().unwrap_or_default();
-        self.font_family = self.saved_font_families.pop().unwrap_or_default();
-        self.font_weight = self.saved_font_weights.pop().unwrap_or_default();
-        self.font_style = self.saved_font_styles.pop().unwrap_or_default();
-        self.line_height = self.saved_line_heights.pop().unwrap_or_default();
         self.z_index = self.saved_z_indexes.pop().unwrap_or_default();
         self.paint_state.renderer.transform(self.transform);
         if let Some(z_index) = self.z_index {
@@ -1578,30 +1565,6 @@ impl<'a> PaintCx<'a> {
         }
 
         self.restore();
-    }
-
-    pub fn current_color(&self) -> Option<Color> {
-        self.color
-    }
-
-    pub fn current_scroll_bar_rounded(&self) -> Option<bool> {
-        self.scroll_bar_rounded
-    }
-
-    pub fn current_scroll_bar_thickness(&self) -> Option<f32> {
-        self.scroll_bar_thickness
-    }
-
-    pub fn current_scroll_bar_edge_width(&self) -> Option<f32> {
-        self.scroll_bar_edge_width
-    }
-
-    pub fn current_font_size(&self) -> Option<f32> {
-        self.font_size
-    }
-
-    pub fn current_font_family(&self) -> Option<&str> {
-        self.font_family.as_deref()
     }
 
     pub fn layout(&self, node: Node) -> Option<Layout> {
@@ -1727,8 +1690,7 @@ impl<'a> UpdateCx<'a> {
     /// request that this node be styled, laid out and painted again
     /// This will recursively request this for all parents.
     pub fn request_all(&mut self, id: Id) {
-        self.app_state.request_style(id);
-        self.app_state.request_layout(id);
+        self.app_state.request_all(id);
     }
 
     /// request that this node be styled again
@@ -1743,24 +1705,26 @@ impl<'a> UpdateCx<'a> {
         self.app_state.request_layout(id);
     }
 
+    pub fn app_state_mut(&mut self) -> &mut AppState {
+        self.app_state
+    }
+
+    pub fn app_state(&self) -> &AppState {
+        self.app_state
+    }
+
     /// Used internally by Floem to send an update to the correct view based on the `Id` path.
     /// It will invoke only once `update` when the correct view is located.
-    pub fn update_view(
-        &mut self,
-        view: &mut dyn View,
-        id_path: &[Id],
-        state: Box<dyn Any>,
-    ) -> ChangeFlags {
+    pub fn update_view(&mut self, view: &mut dyn View, id_path: &[Id], state: Box<dyn Any>) {
         let id = id_path[0];
         let id_path = &id_path[1..];
         if id == view.id() {
             if id_path.is_empty() {
-                return view.update(self, state);
+                view.update(self, state);
             } else if let Some(child) = view.child_mut(id_path[0]) {
-                return self.update_view(child, id_path, state);
+                self.update_view(child, id_path, state);
             }
         }
-        ChangeFlags::empty()
     }
 }
 

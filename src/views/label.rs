@@ -8,7 +8,7 @@ use crate::{
     style::Style,
     style::{FontProps, LineHeight, TextColor, TextOverflow, TextOverflowProp},
     unit::PxPct,
-    view::{ChangeFlags, View},
+    view::View,
 };
 use floem_reactive::create_effect;
 use floem_renderer::Renderer;
@@ -108,7 +108,7 @@ impl View for Label {
         format!("Label: {:?}", self.label).into()
     }
 
-    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags {
+    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {
         if let Ok(state) = state.downcast() {
             self.label = *state;
             self.text_layout = None;
@@ -116,9 +116,6 @@ impl View for Label {
             self.available_width = None;
             self.available_text_layout = None;
             cx.request_layout(self.id());
-            ChangeFlags::LAYOUT
-        } else {
-            ChangeFlags::empty()
         }
     }
 

@@ -26,7 +26,6 @@ use crate::{
     context::{EventCx, UpdateCx},
     event::Event,
     id::Id,
-    view::ChangeFlags,
 };
 
 use super::Decorators;
@@ -716,13 +715,11 @@ impl View for TextInput {
         format!("TextInput: {:?}", self.buffer.get_untracked()).into()
     }
 
-    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags {
+    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {
         if state.downcast::<String>().is_ok() {
             cx.request_layout(self.id());
-            ChangeFlags::LAYOUT
         } else {
             dbg!("downcast failed");
-            ChangeFlags::empty()
         }
     }
 

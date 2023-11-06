@@ -1,5 +1,5 @@
 use crate::app::{add_app_update_event, AppUpdateEvent};
-use crate::context::{AppState, StyleCx};
+use crate::context::{AppState, ChangeFlags, StyleCx};
 use crate::event::{Event, EventListener};
 use crate::id::Id;
 use crate::style::{Style, StyleMapValue};
@@ -32,8 +32,7 @@ pub struct CapturedView {
     clipped: Rect,
     children: Vec<Rc<CapturedView>>,
     direct_style: Style,
-    request_style: bool,
-    request_layout: bool,
+    requested_changes: ChangeFlags,
 }
 
 impl CapturedView {
@@ -52,8 +51,7 @@ impl CapturedView {
             taffy,
             clipped,
             direct_style: computed_style,
-            request_style: state.request_style,
-            request_layout: state.request_layout,
+            requested_changes: state.requested_changes,
             children: view_children(view)
                 .into_iter()
                 .map(|view| Rc::new(CapturedView::capture(view, app_state, clipped)))
@@ -80,9 +78,7 @@ impl CapturedView {
     }
 
     fn warnings(&self) -> bool {
-        self.request_layout
-            || self.request_style
-            || self.children.iter().any(|child| child.warnings())
+        !self.requested_changes.is_empty() || self.children.iter().any(|child| child.warnings())
     }
 }
 

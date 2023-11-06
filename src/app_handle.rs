@@ -159,7 +159,7 @@ impl ApplicationHandle {
                 window_handle.menu_action(id);
             }
             WindowEvent::RedrawRequested => {
-                window_handle.paint();
+                window_handle.render_frame();
             }
         }
     }

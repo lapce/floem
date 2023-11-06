@@ -12,7 +12,7 @@ use crate::{
     style::{Background, BorderColor, BorderRadius, PositionProp, Style, StyleSelector},
     style_class,
     unit::Px,
-    view::{ChangeFlags, View},
+    view::View,
 };
 
 enum ScrollState {
@@ -579,11 +579,7 @@ impl View for Scroll {
         "Scroll".into()
     }
 
-    fn update(
-        &mut self,
-        cx: &mut crate::context::UpdateCx,
-        state: Box<dyn std::any::Any>,
-    ) -> crate::view::ChangeFlags {
+    fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast::<ScrollState>() {
             match *state {
                 ScrollState::EnsureVisible(rect) => {
@@ -606,9 +602,6 @@ impl View for Scroll {
                 }
             }
             cx.request_layout(self.id());
-            ChangeFlags::LAYOUT
-        } else {
-            ChangeFlags::empty()
         }
     }
 

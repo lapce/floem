@@ -83,7 +83,6 @@
 //!
 //!
 
-use bitflags::bitflags;
 use floem_renderer::Renderer;
 use kurbo::{Circle, Insets, Line, Point, Rect, RoundedRect, Size};
 use std::any::Any;
@@ -95,18 +94,6 @@ use crate::{
     id::Id,
     style::{BoxShadowProp, Outline, OutlineColor, Style, StyleClassRef},
 };
-
-bitflags! {
-    #[derive(Default, Copy, Clone)]
-    #[must_use]
-    pub struct ChangeFlags: u8 {
-        const UPDATE = 1;
-        const STYLE = 1 << 1;
-        const LAYOUT = 1 << 2;
-        const ACCESSIBILITY = 1 << 3;
-        const PAINT = 1 << 4;
-    }
-}
 
 pub trait View {
     fn id(&self) -> Id;
@@ -172,13 +159,16 @@ pub trait View {
     /// self.id.update_state(SomeState)
     /// ```
     ///
-    /// You are in charge of downcasting the state to the expected type and you're required to return
-    /// indicating if you'd like a layout or paint pass to be scheduled.
-    fn update(&mut self, _cx: &mut UpdateCx, _state: Box<dyn Any>) -> ChangeFlags {
-        ChangeFlags::empty()
-    }
+    /// You are in charge of downcasting the state to the expected type.
+    ///
+    /// If the update needs other passes to run you're expected to call
+    /// `_cx.app_state_mut().request_changes`.
+    fn update(&mut self, _cx: &mut UpdateCx, _state: Box<dyn Any>) {}
 
     /// Use this method to style the view's children.
+    ///
+    /// If the style changes needs other passes to run you're expected to call
+    /// `cx.app_state_mut().request_changes`.
     fn style(&mut self, cx: &mut StyleCx<'_>) {
         self.for_each_child_mut(&mut |child| {
             cx.style_view(child);
@@ -187,7 +177,10 @@ pub trait View {
     }
 
     /// Use this method to layout the view's children.
-    /// Usually you'll do this by calling `LayoutCx::layout_node`
+    /// Usually you'll do this by calling `LayoutCx::layout_node`.
+    ///
+    /// If the layout changes needs other passes to run you're expected to call
+    /// `cx.app_state_mut().request_changes`.
     fn layout(&mut self, cx: &mut LayoutCx) -> Node {
         cx.layout_node(self.id(), true, |cx| {
             let mut nodes = Vec::new();
@@ -200,6 +193,9 @@ pub trait View {
     }
 
     /// Responsible for computing the layout of the view's children.
+    ///
+    /// If the layout changes needs other passes to run you're expected to call
+    /// `cx.app_state_mut().request_changes`.
     fn compute_layout(&mut self, cx: &mut LayoutCx) -> Option<Rect> {
         default_compute_layout(self, cx)
     }
@@ -207,6 +203,9 @@ pub trait View {
     /// Implement this to handle events and to pass them down to children
     ///
     /// Return true to stop the event from propagating to other views
+    ///
+    /// If the event needs other passes to run you're expected to call
+    /// `cx.app_state_mut().request_changes`.
     fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {
         let mut handled = false;
         self.for_each_child_rev_mut(&mut |child| {
@@ -622,7 +621,7 @@ impl View for Box<dyn View> {
         (**self).debug_name()
     }
 
-    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) -> ChangeFlags {
+    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {
         (**self).update(cx, state)
     }
 

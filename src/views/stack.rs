@@ -1,12 +1,6 @@
 use taffy::style::FlexDirection;
 
-use crate::{
-    context::UpdateCx,
-    id::Id,
-    style::Style,
-    view::{ChangeFlags, View},
-    view_tuple::ViewTuple,
-};
+use crate::{context::UpdateCx, id::Id, style::Style, view::View, view_tuple::ViewTuple};
 
 pub struct Stack {
     id: Id,
@@ -88,13 +82,10 @@ impl View for Stack {
         }
     }
 
-    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn std::any::Any>) -> ChangeFlags {
+    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast() {
             self.children = *state;
             cx.request_all(self.id);
-            ChangeFlags::all()
-        } else {
-            ChangeFlags::empty()
         }
     }
 }

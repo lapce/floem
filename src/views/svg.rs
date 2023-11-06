@@ -8,11 +8,7 @@ use kurbo::Size;
 use peniko::Color;
 use sha2::{Digest, Sha256};
 
-use crate::{
-    id::Id,
-    view::{ChangeFlags, View},
-    views::Decorators,
-};
+use crate::{id::Id, view::View, views::Decorators};
 
 pub struct Svg {
     id: Id,
@@ -60,11 +56,7 @@ impl View for Svg {
         "Svg".into()
     }
 
-    fn update(
-        &mut self,
-        cx: &mut crate::context::UpdateCx,
-        state: Box<dyn std::any::Any>,
-    ) -> crate::view::ChangeFlags {
+    fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast::<String>() {
             let text = &*state;
             self.svg_tree = Tree::from_str(text, &usvg::Options::default()).ok();
@@ -75,9 +67,6 @@ impl View for Svg {
             self.svg_hash = Some(hash);
 
             cx.request_layout(self.id());
-            ChangeFlags::LAYOUT
-        } else {
-            ChangeFlags::empty()
         }
     }
 

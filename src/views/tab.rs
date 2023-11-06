@@ -4,12 +4,7 @@ use floem_reactive::{as_child_of_current_scope, create_effect, Scope};
 use smallvec::SmallVec;
 use taffy::style::Display;
 
-use crate::{
-    context::UpdateCx,
-    id::Id,
-    style::DisplayProp,
-    view::{ChangeFlags, View},
-};
+use crate::{context::UpdateCx, id::Id, style::DisplayProp, view::View};
 
 use super::{apply_diff, diff, Diff, DiffOpAdd, FxIndexSet, HashRun};
 
@@ -132,11 +127,7 @@ impl<V: View + 'static, T> View for Tab<V, T> {
         format!("Tab: {}", self.active).into()
     }
 
-    fn update(
-        &mut self,
-        cx: &mut UpdateCx,
-        state: Box<dyn std::any::Any>,
-    ) -> crate::view::ChangeFlags {
+    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast::<TabState<T>>() {
             match *state {
                 TabState::Diff(diff) => {
@@ -156,9 +147,6 @@ impl<V: View + 'static, T> View for Tab<V, T> {
             for (child, _) in self.children.iter().flatten() {
                 cx.request_all(child.id());
             }
-            ChangeFlags::all()
-        } else {
-            ChangeFlags::empty()
         }
     }
 

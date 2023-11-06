@@ -5,12 +5,7 @@ use floem_renderer::Renderer;
 use image::{DynamicImage, GenericImageView};
 use sha2::{Digest, Sha256};
 
-use crate::{
-    id::Id,
-    style::Style,
-    unit::UnitExt,
-    view::{ChangeFlags, View},
-};
+use crate::{id::Id, style::Style, unit::UnitExt, view::View};
 
 use taffy::prelude::Node;
 
@@ -121,11 +116,7 @@ impl View for Img {
         "Img".into()
     }
 
-    fn update(
-        &mut self,
-        cx: &mut crate::context::UpdateCx,
-        state: Box<dyn std::any::Any>,
-    ) -> crate::view::ChangeFlags {
+    fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(img) = state.downcast::<Option<Rc<DynamicImage>>>() {
             self.img_hash = (*img).as_ref().map(|img| {
                 let mut hasher = Sha256::new();
@@ -135,9 +126,6 @@ impl View for Img {
             self.img = *img;
             self.img_dimensions = self.img.as_ref().map(|img| img.dimensions());
             cx.request_layout(self.id());
-            ChangeFlags::LAYOUT
-        } else {
-            ChangeFlags::empty()
         }
     }
 
