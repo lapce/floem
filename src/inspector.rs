@@ -5,7 +5,8 @@ use crate::id::Id;
 use crate::style::{Style, StyleMapValue};
 use crate::view::{view_children, View};
 use crate::views::{
-    dyn_container, empty, img_dynamic, scroll, stack, static_list, text, v_stack, Decorators, Label,
+    dyn_container, empty, img_dynamic, scroll, stack, static_label, static_list, text, v_stack,
+    Decorators, Label,
 };
 use crate::window::WindowConfig;
 use crate::{new_window, style};
@@ -127,7 +128,7 @@ fn captured_view_no_children(
     highlighted: RwSignal<Option<Id>>,
 ) -> Box<dyn View> {
     let offset = depth as f64 * 14.0;
-    let name = text(view.name.clone());
+    let name = static_label(view.name.clone());
     let height = 20.0;
     let id = view.id;
 
@@ -173,7 +174,7 @@ fn captured_view_with_children(
     children: Vec<Box<dyn View>>,
 ) -> Box<dyn View> {
     let offset = depth as f64 * 14.0;
-    let name = text(view.name.clone());
+    let name = static_label(view.name.clone());
     let height = 20.0;
     let id = view.id;
 
@@ -290,12 +291,12 @@ fn header(label: impl Display) -> Label {
 }
 
 fn info(name: impl Display, value: String) -> impl View {
-    info_row(name.to_string(), text(value))
+    info_row(name.to_string(), static_label(value))
 }
 
 fn info_row(name: String, view: impl View + 'static) -> impl View {
     stack((
-        stack((text(name).style(|s| {
+        stack((static_label(name).style(|s| {
             s.margin_right(5.0)
                 .color(Color::BLACK.with_alpha_factor(0.6))
         }),))
@@ -501,10 +502,11 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl 
                         let mut v: Box<dyn View> = match value {
                             StyleMapValue::Val(v) => {
                                 let v = &*v;
-                                (prop.info.debug_view)(v)
-                                    .unwrap_or_else(|| Box::new(text((prop.info.debug_any)(v))))
+                                (prop.info.debug_view)(v).unwrap_or_else(|| {
+                                    Box::new(static_label((prop.info.debug_any)(v)))
+                                })
                             }
-                            StyleMapValue::Unset => Box::new(text("Unset".to_owned())),
+                            StyleMapValue::Unset => Box::new(text("Unset")),
                         };
                         if let Some(transition) = style.transitions.get(&prop).cloned() {
                             let transition = stack((
@@ -519,7 +521,7 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl 
                                         .font_size(10.0)
                                         .color(Color::BLACK.with_alpha_factor(0.4))
                                 }),
-                                text(format!("{transition:?}")),
+                                static_label(format!("{transition:?}")),
                             ))
                             .style(|s| s.items_center());
                             v = Box::new(v_stack((v, transition)));
@@ -561,7 +563,7 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl 
                     .style(|s| s.width_full()),
                 )
             } else {
-                Box::new(text("No selection".to_string()).style(|s| s.padding(5.0)))
+                Box::new(text("No selection").style(|s| s.padding(5.0)))
             }
         },
     )
