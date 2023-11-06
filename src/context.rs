@@ -27,8 +27,8 @@ use crate::{
     responsive::{GridBreakpoints, ScreenSizeBp},
     style::{
         Background, BorderBottom, BorderColor, BorderLeft, BorderRadius, BorderRight, BorderTop,
-        BuiltinStyle, CursorStyle, DisplayProp, LayoutProps, Style, StyleClassRef, StyleProp,
-        StyleSelector, StyleSelectors, ZIndex,
+        BuiltinStyle, CursorStyle, DisplayProp, LayoutProps, Outline, OutlineColor, Style,
+        StyleClassRef, StyleProp, StyleSelector, StyleSelectors, ZIndex,
     },
     unit::PxPct,
     view::{paint_bg, paint_border, paint_outline, View},
@@ -57,6 +57,8 @@ prop_extracter! {
         pub border_bottom: BorderBottom,
         pub border_radius: BorderRadius,
 
+        pub outline: Outline,
+        pub outline_color: OutlineColor,
         pub border_color: BorderColor,
         pub background: Background,
     }
@@ -548,7 +550,9 @@ impl AppState {
     pub(crate) fn clear_focus(&mut self) {
         if let Some(old_id) = self.focus {
             // To remove the styles applied by the Focus selector
-            if self.has_style_for_sel(old_id, StyleSelector::Focus) {
+            if self.has_style_for_sel(old_id, StyleSelector::Focus)
+                || self.has_style_for_sel(old_id, StyleSelector::FocusVisible)
+            {
                 self.request_style(old_id);
             }
         }
@@ -563,6 +567,12 @@ impl AppState {
 
         self.focus = Some(id);
         self.keyboard_navigation = keyboard_navigation;
+
+        if self.has_style_for_sel(id, StyleSelector::Focus)
+            || self.has_style_for_sel(id, StyleSelector::FocusVisible)
+        {
+            self.request_style(id);
+        }
     }
 
     pub(crate) fn has_style_for_sel(&mut self, id: Id, selector_kind: StyleSelector) -> bool {
@@ -1507,7 +1517,7 @@ impl<'a> PaintCx<'a> {
 
             view.paint(self);
             paint_border(self, &view_style_props, size);
-            paint_outline(self, &style, size)
+            paint_outline(self, &view_style_props, size)
         }
 
         let mut drag_set_to_none = false;
@@ -1554,7 +1564,7 @@ impl<'a> PaintCx<'a> {
 
                     view.paint(self);
                     paint_border(self, &view_style_props, size);
-                    paint_outline(self, &style, size);
+                    paint_outline(self, &view_style_props, size);
 
                     self.restore();
                 }

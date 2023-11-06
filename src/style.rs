@@ -102,6 +102,9 @@ impl StylePropValue for Px {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         Some(Box::new(text(format!("{} px", self.0))))
     }
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        self.0.interpolate(&other.0, value).map(Px)
+    }
 }
 impl StylePropValue for PxPctAuto {
     fn debug_view(&self) -> Option<Box<dyn View>> {

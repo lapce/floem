@@ -37,7 +37,7 @@ use crate::{
         CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES,
         UPDATE_MESSAGES,
     },
-    view::{view_children_set_parent_id, View},
+    view::{view_children_set_parent_id, view_tab_navigation, View},
 };
 
 /// The top-level window handle that owns the winit Window.
@@ -190,8 +190,8 @@ impl WindowHandle {
                 if !processed {
                     if let Event::KeyDown(KeyEvent { key, modifiers }) = &event {
                         if key.logical_key == Key::Named(NamedKey::Tab) {
-                            let _backwards = modifiers.contains(ModifiersState::SHIFT);
-                            // view_tab_navigation(&self.view, cx.app_state, backwards);
+                            let backwards = modifiers.contains(ModifiersState::SHIFT);
+                            view_tab_navigation(&self.view, cx.app_state, backwards);
                             // view_debug_tree(&self.view);
                         } else if let Key::Character(character) = &key.logical_key {
                             // 'I' displays some debug information
