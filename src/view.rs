@@ -161,25 +161,6 @@ pub trait View {
         result
     }
 
-    fn children(&self) -> Vec<&dyn View> {
-        let mut result = Vec::new();
-        self.for_each_child(&mut |view| {
-            result.push(view);
-            false
-        });
-        result
-    }
-
-    /// At the moment, this is used only to build the debug tree.
-    fn children_mut(&mut self) -> Vec<&mut dyn View> {
-        let mut result = Vec::new();
-        self.for_each_child_mut(&mut |view| {
-            result.push(view);
-            false
-        });
-        result
-    }
-
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         core::any::type_name::<Self>().into()
     }
@@ -199,9 +180,10 @@ pub trait View {
 
     /// Use this method to style the view's children.
     fn style(&mut self, cx: &mut StyleCx<'_>) {
-        for child in self.children_mut() {
-            cx.style_view(child)
-        }
+        self.for_each_child_mut(&mut |child| {
+            cx.style_view(child);
+            false
+        });
     }
 
     /// Use this method to layout the view's children.
@@ -379,6 +361,15 @@ pub(crate) fn paint_border(cx: &mut PaintCx, style: &ViewStyleProps, size: Size)
     }
 }
 
+pub(crate) fn view_children(view: &dyn View) -> Vec<&dyn View> {
+    let mut result = Vec::new();
+    view.for_each_child(&mut |view| {
+        result.push(view);
+        false
+    });
+    result
+}
+
 /// Tab navigation finds the next or previous view with the `keyboard_navigatable` status in the tree.
 #[allow(dead_code)]
 pub(crate) fn view_tab_navigation(root_view: &dyn View, app_state: &mut AppState, backwards: bool) {
@@ -407,15 +398,15 @@ pub(crate) fn view_tab_navigation(root_view: &dyn View, app_state: &mut AppState
     println!("Tab to {new_focus:?}");
 }
 
-fn view_children<'a>(view: &'a dyn View, id_path: &[Id]) -> Vec<&'a dyn View> {
+fn view_filtered_children<'a>(view: &'a dyn View, id_path: &[Id]) -> Vec<&'a dyn View> {
     let id = id_path[0];
     let id_path = &id_path[1..];
 
     if id == view.id() {
         if id_path.is_empty() {
-            view.children()
+            view_children(view)
         } else if let Some(child) = view.child(id_path[0]) {
-            view_children(child, id_path)
+            view_filtered_children(child, id_path)
         } else {
             Vec::new()
         }
@@ -431,7 +422,7 @@ fn view_tree_next(root_view: &dyn View, id: &Id, app_state: &AppState) -> Option
     println!("id is {id:?}");
     println!("id path is {:?}", id_path.0);
 
-    let children = view_children(root_view, &id_path.0);
+    let children = view_filtered_children(root_view, &id_path.0);
 
     println!(
         "children is {:?}",
@@ -477,7 +468,7 @@ fn view_next_sibling<'a>(
         if id_path.len() == 1 {
             println!("id is {id:?} id_path is {:?}", id_path);
             let child_id = id_path[0];
-            let children = view.children();
+            let children = view_children(view);
             let pos = children.iter().position(|v| v.id() == child_id);
             if let Some(pos) = pos {
                 if children.len() > 1 && pos < children.len() - 1 {
@@ -522,7 +513,7 @@ fn view_previous_sibling<'a>(
 
         if id_path.len() == 1 {
             let child_id = id_path[0];
-            let children = view.children();
+            let children = view_children(view);
             let pos = children.iter().position(|v| v.id() == child_id);
             if let Some(pos) = pos {
                 if pos > 0 {
@@ -541,15 +532,16 @@ fn view_previous_sibling<'a>(
 
 pub(crate) fn view_children_set_parent_id(view: &dyn View) {
     let parent_id = view.id();
-    for child in view.children() {
+    view.for_each_child(&mut |child| {
         child.id().set_parent(parent_id);
         view_children_set_parent_id(child);
-    }
+        false
+    });
 }
 
 fn view_nested_last_child(view: &dyn View) -> &dyn View {
     let mut last_child = view;
-    while let Some(new_last_child) = last_child.children().pop() {
+    while let Some(new_last_child) = view_children(last_child).pop() {
         last_child = new_last_child;
     }
     last_child
@@ -569,7 +561,7 @@ pub(crate) fn view_debug_tree(root_view: &dyn View) {
         }
         println!("{:?} {}", current_view.id(), &current_view.debug_name());
 
-        let mut children = current_view.children();
+        let mut children = view_children(current_view);
         if let Some(last_child) = children.pop() {
             views.push((last_child, [active_lines.as_slice(), &[false]].concat()));
         }
@@ -617,14 +609,6 @@ impl View for Box<dyn View> {
 
     fn child_mut(&mut self, id: Id) -> Option<&mut dyn View> {
         (**self).child_mut(id)
-    }
-
-    fn children(&self) -> Vec<&dyn View> {
-        (**self).children()
-    }
-
-    fn children_mut(&mut self) -> Vec<&mut dyn View> {
-        (**self).children_mut()
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {

@@ -3,7 +3,7 @@ use crate::context::{AppState, StyleCx};
 use crate::event::{Event, EventListener};
 use crate::id::Id;
 use crate::style::{Style, StyleMapValue};
-use crate::view::View;
+use crate::view::{view_children, View};
 use crate::views::{
     dyn_container, empty, img_dynamic, scroll, stack, static_list, text, v_stack, Decorators, Label,
 };
@@ -54,8 +54,7 @@ impl CapturedView {
             direct_style: computed_style,
             request_style: state.request_style,
             request_layout: state.request_layout,
-            children: view
-                .children()
+            children: view_children(view)
                 .into_iter()
                 .map(|view| Rc::new(CapturedView::capture(view, app_state, clipped)))
                 .collect(),
