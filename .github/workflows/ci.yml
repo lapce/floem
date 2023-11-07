@@ -47,20 +47,13 @@ jobs:
 
       - name: Build
         run: cargo build
-
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
-
-      - name: Run tests and coverage
-        run: cargo llvm-cov --no-cfg-coverage --all-features --workspace --lcov --output-path lcov.info
+        
+      - name: Run tests
+        run: cargo test --workspace
 
       - name: Run doc tests
         run: cargo test --doc --workspace
 
-      - name: Upload coverage
-        uses: codecov/codecov-action@v3
-        with:
-          files: lcov.info
 
   fmt:
     name: Rustfmt
