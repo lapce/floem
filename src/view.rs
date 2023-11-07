@@ -396,20 +396,8 @@ pub(crate) fn view_tab_navigation(root_view: &dyn View, app_state: &mut AppState
         }
     };
 
-    let hidden = |app_state: &mut AppState, id: Id| {
-        id.id_path()
-            .unwrap()
-            .dispatch()
-            .iter()
-            .any(|id| app_state.is_hidden(*id))
-    };
-
     let mut new_focus = tree_iter(start);
-    while new_focus != start
-        && (!app_state.keyboard_navigable.contains(&new_focus)
-            || app_state.is_disabled(&new_focus)
-            || hidden(app_state, new_focus))
-    {
+    while new_focus != start && !app_state.can_focus(new_focus) {
         new_focus = tree_iter(new_focus);
     }
 
