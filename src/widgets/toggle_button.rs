@@ -9,18 +9,18 @@ use crate::{
 };
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum SwitchBehavior {
+pub enum ToggleButtonBehavior {
     Follow,
     Switch,
 }
 
-impl style::StylePropValue for SwitchBehavior {}
+impl style::StylePropValue for ToggleButtonBehavior {}
 
 prop!(pub ToggleButtonBg: Option<Color> {} = None);
 prop!(pub ToggleButtonFg: Option<Color> {} = None);
 prop!(pub ToggleButtonInset: PxPct {} = PxPct::Px(0.));
 prop!(pub ToggleButtonCircleRad: PxPct {} = PxPct::Pct(95.));
-prop!(pub ToggleButtonSwitch: SwitchBehavior {} = SwitchBehavior::Switch);
+prop!(pub ToggleButtonSwitch: ToggleButtonBehavior {} = ToggleButtonBehavior::Switch);
 
 prop_extracter! {
     ToggleStyle {
@@ -128,7 +128,7 @@ impl View for ToggleButton {
                 if self.held == ToggleState::Held || self.held == ToggleState::Drag {
                     self.held = ToggleState::Drag;
                     match self.style.switch_behavior() {
-                        SwitchBehavior::Follow => {
+                        ToggleButtonBehavior::Follow => {
                             self.position = event.pos.x as f32;
                             if self.position > self.width / 2. && !self.state {
                                 self.state = true;
@@ -143,7 +143,7 @@ impl View for ToggleButton {
                             }
                             cx.app_state_mut().request_layout(self.id());
                         }
-                        SwitchBehavior::Switch => {
+                        ToggleButtonBehavior::Switch => {
                             if event.pos.x as f32 > self.width / 2. && !self.state {
                                 self.position = self.width;
                                 cx.app_state_mut().request_layout(self.id());
