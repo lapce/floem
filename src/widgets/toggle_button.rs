@@ -4,15 +4,19 @@ use kurbo::{Point, Size};
 use peniko::Color;
 use winit::keyboard::{Key, NamedKey};
 
-use crate::{id, prop, prop_extracter, style_class, view::View, views::Decorators};
+use crate::{id, prop, prop_extracter, style_class, unit::PxPct, view::View, views::Decorators};
 
 prop!(pub ToggleButtonBg: Option<Color> {} = None);
 prop!(pub ToggleButtonFg: Option<Color> {} = None);
+prop!(pub ToggleButtonInset: Option<PxPct> {} = None);
+prop!(pub ToggleButtonCircleRad: Option<PxPct> {} = None);
 
 prop_extracter! {
     ToggleStyle {
         foreground: ToggleButtonFg,
         background: ToggleButtonBg,
+        inset: ToggleButtonInset,
+        circle_rad: ToggleButtonCircleRad
     }
 }
 style_class!(pub ToggleButtonClass);
@@ -28,10 +32,10 @@ pub struct ToggleButton {
     id: id::Id,
     state: bool,
     ontoggle: Option<Box<dyn Fn(bool)>>,
-    position: f64,
+    position: f32,
     held: ToggleState,
-    width: f64,
-    radius: f64,
+    width: f32,
+    radius: f32,
     style: ToggleStyle,
 }
 pub fn toggle_button(state: impl Fn() -> bool + 'static) -> ToggleButton {
@@ -106,7 +110,7 @@ impl View for ToggleButton {
                 if self.held == ToggleState::Held || self.held == ToggleState::Drag {
                     self.held = ToggleState::Drag;
                     cx.app_state_mut().request_layout(self.id());
-                    self.position = event.pos.x;
+                    self.position = event.pos.x as f32;
                 }
             }
             crate::event::Event::FocusLost => {
@@ -127,9 +131,13 @@ impl View for ToggleButton {
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<kurbo::Rect> {
         let layout = cx.get_layout(self.id()).unwrap();
         let size = layout.size;
-        self.width = size.width as f64;
-        let circle_radius = size.width.min(size.height) / 2. * 0.75;
-        self.radius = circle_radius as f64;
+        self.width = size.width;
+        let circle_radius = match self.style.circle_rad() {
+            Some(PxPct::Px(px)) => px as f32,
+            Some(PxPct::Pct(pct)) => size.width.min(size.height) / 2. * (pct as f32 / 100.),
+            None => size.width.min(size.height) / 2. * 0.75,
+        };
+        self.radius = circle_radius;
         self.update_restrict_position(false);
 
         None
@@ -145,8 +153,8 @@ impl View for ToggleButton {
         let layout = cx.get_layout(self.id).unwrap();
         let size = Size::new(layout.size.width as f64, layout.size.height as f64);
         let rounded_rect = size.to_rounded_rect(size.min_side());
-        let circle_point = Point::new(self.position, rounded_rect.center().y);
-        let circle = crate::kurbo::Circle::new(circle_point, self.radius);
+        let circle_point = Point::new(self.position as f64, rounded_rect.center().y);
+        let circle = crate::kurbo::Circle::new(circle_point, self.radius as f64);
         // here fill default themes
         if let Some(color) = self.style.background() {
             cx.fill(&rounded_rect, color, 0.);
@@ -158,7 +166,11 @@ impl View for ToggleButton {
 }
 impl ToggleButton {
     fn update_restrict_position(&mut self, end_pos: bool) {
-        let inset = self.width * 0.05;
+        let inset = match self.style.inset() {
+            Some(PxPct::Px(px)) => px as f32,
+            Some(PxPct::Pct(pct)) => (self.width * (pct as f32 / 100.)).min(self.width / 2.),
+            None => self.width * 0.05,
+        };
 
         if self.held == ToggleState::Nothing || end_pos {
             self.position = if self.state { self.width } else { 0. };
