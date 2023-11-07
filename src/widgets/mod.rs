@@ -3,9 +3,15 @@
 //! This module contains all of the built-in widgets of Floem.
 //!
 
-mod checkbox;
+use crate::{
+    style::{Background, Style, Transition},
+    unit::UnitExt,
+    views::scroll,
+};
+use peniko::Color;
 use std::rc::Rc;
 
+mod checkbox;
 pub use checkbox::*;
 
 mod toggle_button;
@@ -13,13 +19,9 @@ pub use toggle_button::*;
 
 mod button;
 pub use button::*;
-use peniko::Color;
 
-use crate::{
-    style::{Background, Style, Transition},
-    unit::UnitExt,
-    views::scroll,
-};
+mod text_input;
+pub use text_input::*;
 
 pub(crate) struct Theme {
     pub(crate) background: Color,
@@ -35,6 +37,9 @@ pub(crate) fn default_theme() -> Theme {
     let hover_bg_color = Color::rgba8(228, 237, 216, 160);
     let focus_hover_bg_color = Color::rgb8(234, 230, 236);
     let active_bg_color = Color::rgb8(160, 160, 160);
+
+    let light_hover_bg_color = Color::rgb8(250, 252, 248);
+    let light_focus_hover_bg_color = Color::rgb8(250, 249, 251);
 
     let focus_applied_style = Style::new().border_color(Color::rgb8(114, 74, 140));
 
@@ -81,6 +86,7 @@ pub(crate) fn default_theme() -> Theme {
         .active(|s| s.background(active_bg_color))
         .transition(Background, Transition::linear(0.04))
         .hover(|s| s.background(hover_bg_color))
+        .focus(|s| s.hover(|s| s.background(focus_hover_bg_color)))
         .apply(border_style.clone())
         .apply(focus_style.clone())
         .disabled(|s| {
@@ -102,16 +108,31 @@ pub(crate) fn default_theme() -> Theme {
         .disabled(|s| {
             s.color(Color::GRAY).class(CheckboxClass, |s| {
                 s.background(Color::rgb8(180, 188, 175).with_alpha_factor(0.3))
+                    .color(Color::GRAY)
                     .hover(|s| s.background(Color::rgb8(180, 188, 175).with_alpha_factor(0.3)))
             })
         })
         .apply(focus_style.clone());
 
     const FONT_SIZE: f32 = 13.0;
+
+    let input_style = Style::new()
+        .background(Color::WHITE)
+        .hover(|s| s.background(light_hover_bg_color))
+        .focus(|s| s.hover(|s| s.background(light_focus_hover_bg_color)))
+        .apply(border_style.clone())
+        .apply(focus_style.clone())
+        .padding_vert(8.0)
+        .disabled(|s| {
+            s.background(Color::rgb8(180, 188, 175).with_alpha_factor(0.3))
+                .color(Color::GRAY)
+        });
+
     let theme = Style::new()
         .class(FocusClass, |_| focus_style)
         .class(LabeledCheckboxClass, |_| labeled_checkbox_style)
         .class(CheckboxClass, |_| checkbox_style)
+        .class(TextInputClass, |_| input_style)
         .class(ButtonClass, |_| button_style)
         .class(scroll::Handle, |s| {
             s.border_radius(4.0)
