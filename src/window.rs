@@ -23,6 +23,7 @@ pub struct WindowConfig {
     pub(crate) enabled_buttons: Option<WindowButtons>,
     pub(crate) resizable: Option<bool>,
     pub(crate) window_level: Option<WindowLevel>,
+    pub(crate) themed: Option<bool>,
 }
 
 impl WindowConfig {
@@ -73,6 +74,11 @@ impl WindowConfig {
 
     pub fn window_level(mut self, window_level: WindowLevel) -> Self {
         self.window_level = Some(window_level);
+        self
+    }
+
+    pub fn themed(mut self, themed: bool) -> Self {
+        self.themed = Some(themed);
         self
     }
 }

@@ -111,6 +111,7 @@ mod update;
 pub mod view;
 pub mod view_tuple;
 pub mod views;
+pub mod widgets;
 pub mod window;
 mod window_handle;
 

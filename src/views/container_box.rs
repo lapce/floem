@@ -31,6 +31,7 @@ pub struct ContainerBox {
 ///
 /// ```
 /// use floem::views::*;
+/// use floem::widgets::*;
 /// use floem_reactive::*;
 /// let check = true;
 ///

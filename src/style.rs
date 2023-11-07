@@ -1061,7 +1061,7 @@ define_builtin_props!(
     TextOverflowProp text_overflow: TextOverflow {} = TextOverflow::Wrap,
     LineHeight line_height nocb: Option<LineHeightValue> { inherited } = None,
     AspectRatio aspect_ratio: Option<f32> {} = None,
-    Gap gap: Size<LengthPercentage> {} = Size::zero(),
+    Gap gap nocb: Size<LengthPercentage> {} = Size::zero(),
 );
 
 prop_extracter! {
@@ -1173,6 +1173,18 @@ impl Style {
 
     pub fn height_pct(self, height: f64) -> Self {
         self.height(height.pct())
+    }
+
+    pub fn gap(self, width: impl Into<PxPct>, height: impl Into<PxPct>) -> Self {
+        let width: PxPct = width.into();
+        let height: PxPct = height.into();
+        self.set(
+            Gap,
+            Size {
+                width: width.into(),
+                height: height.into(),
+            },
+        )
     }
 
     pub fn size(self, width: impl Into<PxPctAuto>, height: impl Into<PxPctAuto>) -> Self {

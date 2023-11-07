@@ -12,7 +12,7 @@ use winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::{ElementState, Ime, MouseButton, MouseScrollDelta},
     keyboard::{Key, ModifiersState, NamedKey},
-    window::{CursorIcon, Theme, WindowId},
+    window::{CursorIcon, WindowId},
 };
 
 #[cfg(target_os = "linux")]
@@ -39,6 +39,7 @@ use crate::{
         UPDATE_MESSAGES,
     },
     view::{view_children_set_parent_id, view_tab_navigation, View},
+    widgets::{default_theme, Theme},
 };
 
 /// The top-level window handle that owns the winit Window.
@@ -57,7 +58,8 @@ pub(crate) struct WindowHandle {
     app_state: AppState,
     paint_state: PaintState,
     size: RwSignal<Size>,
-    theme: RwSignal<Option<Theme>>,
+    theme: Option<Theme>,
+    os_theme: RwSignal<Option<winit::window::Theme>>,
     is_maximized: bool,
     transparent: bool,
     pub(crate) scale: f64,
@@ -74,6 +76,7 @@ impl WindowHandle {
         window: winit::window::Window,
         view_fn: impl FnOnce(winit::window::WindowId) -> Box<dyn View> + 'static,
         transparent: bool,
+        themed: bool,
     ) -> Self {
         let scope = Scope::new();
         let window_id = window.id();
@@ -121,7 +124,8 @@ impl WindowHandle {
             app_state: AppState::new(),
             paint_state,
             size,
-            theme,
+            theme: themed.then(default_theme),
+            os_theme: theme,
             is_maximized,
             transparent,
             scale,
@@ -221,7 +225,7 @@ impl WindowHandle {
                         if let Some(id) = cx.app_state.active {
                             // To remove the styles applied by the Active selector
                             if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
-                                cx.app_state.request_style(id);
+                                cx.app_state.request_style_recursive(id);
                             }
 
                             cx.app_state.active = None;
@@ -246,7 +250,7 @@ impl WindowHandle {
             if let Event::PointerUp(_) = &event {
                 // To remove the styles applied by the Active selector
                 if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
-                    cx.app_state.request_style(id);
+                    cx.app_state.request_style_recursive(id);
                 }
 
                 cx.app_state.active = None;
@@ -304,14 +308,14 @@ impl WindowHandle {
         if is_pointer_down {
             for id in cx.app_state.clicking.clone() {
                 if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
-                    cx.app_state.request_style(id);
+                    cx.app_state.request_style_recursive(id);
                 }
             }
         }
         if matches!(&event, Event::PointerUp(_)) {
             for id in cx.app_state.clicking.clone() {
                 if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
-                    cx.app_state.request_style(id);
+                    cx.app_state.request_style_recursive(id);
                 }
             }
             cx.app_state.clicking.clear();
@@ -327,8 +331,8 @@ impl WindowHandle {
         self.schedule_repaint();
     }
 
-    pub(crate) fn theme_changed(&mut self, theme: Theme) {
-        self.theme.set(Some(theme));
+    pub(crate) fn os_theme_changed(&mut self, theme: winit::window::Theme) {
+        self.os_theme.set(Some(theme));
     }
 
     pub(crate) fn size(&mut self, size: Size) {
@@ -472,6 +476,9 @@ impl WindowHandle {
 
     fn style(&mut self) {
         let mut cx = StyleCx::new(&mut self.app_state, self.view.id());
+        if let Some(style) = self.theme.as_ref().map(|theme| theme.style.clone()) {
+            cx.current = style;
+        }
         cx.style_view(&mut self.view);
     }
 
@@ -525,6 +532,11 @@ impl WindowHandle {
             .begin(cx.app_state.capture.is_some());
         if !self.transparent {
             let scale = cx.app_state.scale;
+            let color = self
+                .theme
+                .as_ref()
+                .map(|theme| theme.background)
+                .unwrap_or(peniko::Color::WHITE);
             // fill window with default white background if it's not transparent
             cx.fill(
                 &self
@@ -533,7 +545,7 @@ impl WindowHandle {
                     .to_rect()
                     .scale_from_origin(1.0 / scale)
                     .expand(),
-                peniko::Color::WHITE,
+                color,
                 0.0,
             );
         }
@@ -721,12 +733,12 @@ impl WindowHandle {
                                 .app_state
                                 .has_style_for_sel(old_id, StyleSelector::Active)
                             {
-                                cx.app_state.request_style(old_id);
+                                cx.app_state.request_style_recursive(old_id);
                             }
                         }
 
                         if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
-                            cx.app_state.request_style(id);
+                            cx.app_state.request_style_recursive(id);
                         }
                     }
                     UpdateMessage::Disabled { id, is_disabled } => {
