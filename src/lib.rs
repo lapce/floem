@@ -101,6 +101,7 @@ pub mod id;
 mod inspector;
 pub mod keyboard;
 pub mod menu;
+mod nav;
 pub mod pointer;
 pub mod renderer;
 pub mod responsive;

@@ -30,6 +30,7 @@ use crate::{
     inspector::{self, Capture, CaptureState, CapturedView},
     keyboard::KeyEvent,
     menu::Menu,
+    nav::view_arrow_navigation,
     pointer::{PointerButton, PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
     style::{CursorStyle, StyleSelector},
     update::{
@@ -189,7 +190,9 @@ impl WindowHandle {
 
                 if !processed {
                     if let Event::KeyDown(KeyEvent { key, modifiers }) = &event {
-                        if key.logical_key == Key::Named(NamedKey::Tab) {
+                        if key.logical_key == Key::Named(NamedKey::Tab)
+                            && (modifiers.is_empty() || *modifiers == ModifiersState::SHIFT)
+                        {
                             let backwards = modifiers.contains(ModifiersState::SHIFT);
                             view_tab_navigation(&self.view, cx.app_state, backwards);
                             // view_debug_tree(&self.view);
@@ -197,6 +200,16 @@ impl WindowHandle {
                             // 'I' displays some debug information
                             if character.eq_ignore_ascii_case("i") {
                                 // view_debug_tree(&self.view);
+                            }
+                        } else if *modifiers == ModifiersState::ALT {
+                            if let Key::Named(
+                                name @ (NamedKey::ArrowUp
+                                | NamedKey::ArrowDown
+                                | NamedKey::ArrowLeft
+                                | NamedKey::ArrowRight),
+                            ) = key.logical_key
+                            {
+                                view_arrow_navigation(name, cx.app_state, &self.view);
                             }
                         }
                     }

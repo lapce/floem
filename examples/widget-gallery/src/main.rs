@@ -60,20 +60,24 @@ fn app_view() -> impl View {
                                 .on_event(EventListener::KeyDown, move |e| {
                                     if let Event::KeyDown(key_event) = e {
                                         let active = active_tab.get();
-                                        match key_event.key.logical_key {
-                                            Key::Named(NamedKey::ArrowUp) => {
-                                                if active > 0 {
-                                                    set_active_tab.update(|v| *v -= 1)
+                                        if key_event.modifiers.is_empty() {
+                                            match key_event.key.logical_key {
+                                                Key::Named(NamedKey::ArrowUp) => {
+                                                    if active > 0 {
+                                                        set_active_tab.update(|v| *v -= 1)
+                                                    }
+                                                    true
                                                 }
-                                                true
-                                            }
-                                            Key::Named(NamedKey::ArrowDown) => {
-                                                if active < tabs.get().len() - 1 {
-                                                    set_active_tab.update(|v| *v += 1)
+                                                Key::Named(NamedKey::ArrowDown) => {
+                                                    if active < tabs.get().len() - 1 {
+                                                        set_active_tab.update(|v| *v += 1)
+                                                    }
+                                                    true
                                                 }
-                                                true
+                                                _ => false,
                                             }
-                                            _ => false,
+                                        } else {
+                                            false
                                         }
                                     } else {
                                         false

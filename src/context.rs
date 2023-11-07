@@ -354,6 +354,17 @@ impl AppState {
         false
     }
 
+    pub(crate) fn can_focus(&self, id: Id) -> bool {
+        self.keyboard_navigable.contains(&id)
+            && !self.is_disabled(&id)
+            && !id
+                .id_path()
+                .unwrap()
+                .dispatch()
+                .iter()
+                .any(|id| self.is_hidden(*id))
+    }
+
     pub fn is_hovered(&self, id: &Id) -> bool {
         self.hovered.contains(id)
     }
