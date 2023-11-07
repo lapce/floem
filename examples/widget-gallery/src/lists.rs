@@ -8,9 +8,10 @@ use floem::{
     unit::UnitExt,
     view::View,
     views::{
-        checkbox, container, label, scroll, stack, virtual_list, Decorators, VirtualListDirection,
+        container, label, scroll, stack, virtual_list, Decorators, VirtualListDirection,
         VirtualListItemSize,
     },
+    widgets::checkbox,
 };
 
 use crate::form::{form, form_item};

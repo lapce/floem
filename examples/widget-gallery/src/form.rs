@@ -27,7 +27,7 @@ pub fn form_item<V: View + 'static>(
                 .style(move |s| s.width(label_width).justify_end().margin_right(10.0)),
             view_fn(),
         ))
-        .style(|s| s.flex_row().items_start()),
+        .style(|s| s.flex_row().items_center()),
     )
     .style(|s| {
         s.flex_row()

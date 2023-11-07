@@ -152,7 +152,7 @@ impl ApplicationHandle {
                 window_handle.scale(scale_factor);
             }
             WindowEvent::ThemeChanged(theme) => {
-                window_handle.theme_changed(theme);
+                window_handle.os_theme_changed(theme);
             }
             WindowEvent::Occluded(_) => {}
             WindowEvent::MenuAction(id) => {
@@ -172,7 +172,7 @@ impl ApplicationHandle {
     ) {
         let mut window_builder = winit::window::WindowBuilder::new();
         let transparent = config.as_ref().and_then(|c| c.transparent).unwrap_or(false);
-        if let Some(config) = config {
+        let themed = if let Some(config) = config {
             if let Some(size) = config.size {
                 let size = if size.width == 0.0 || size.height == 0.0 {
                     Size::new(800.0, 600.0)
@@ -213,14 +213,17 @@ impl ApplicationHandle {
             if let Some(title) = config.title {
                 window_builder = window_builder.with_title(title);
             }
-        }
+            config.themed.unwrap_or(true)
+        } else {
+            true
+        };
         let result = window_builder.build(event_loop);
         let window = match result {
             Ok(window) => window,
             Err(_) => return,
         };
         let window_id = window.id();
-        let window_handle = WindowHandle::new(window, view_fn, transparent);
+        let window_handle = WindowHandle::new(window, view_fn, transparent, themed);
         self.window_handles.insert(window_id, window_handle);
     }
 

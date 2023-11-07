@@ -114,6 +114,7 @@ impl<T: 'static> View for DynamicContainer<T> {
     fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(val) = state.downcast::<T>() {
             let old_child_scope = self.child_scope;
+            cx.app_state_mut().remove_view(&mut self.child);
             (self.child, self.child_scope) = (self.child_fn)(*val);
             old_child_scope.dispose();
             self.child.id().set_parent(self.id);

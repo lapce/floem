@@ -5,10 +5,9 @@ use floem_renderer::{
     Renderer,
 };
 use kurbo::Size;
-use peniko::Color;
 use sha2::{Digest, Sha256};
 
-use crate::{id::Id, view::View, views::Decorators};
+use crate::{id::Id, view::View};
 
 pub struct Svg {
     id: Id,
@@ -27,24 +26,6 @@ pub fn svg(svg_str: impl Fn() -> String + 'static) -> Svg {
         svg_tree: None,
         svg_hash: None,
     }
-}
-
-/// Renders a checkbox using an svg and the provided checked signal.
-/// Can be combined with a label and a stack with a click event (as in `examples/widget-gallery`).
-pub fn checkbox(checked: crate::reactive::ReadSignal<bool>) -> Svg {
-    const CHECKBOX_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 -2 16 16"><polygon points="5.19,11.83 0.18,7.44 1.82,5.56 4.81,8.17 10,1.25 12,2.75" /></svg>"#;
-    let svg_str = move || if checked.get() { CHECKBOX_SVG } else { "" }.to_string();
-
-    svg(svg_str)
-        .base_style(|base| {
-            base.width(20.)
-                .height(20.)
-                .border_color(Color::BLACK)
-                .border(1.)
-                .border_radius(5.)
-                .margin_right(5.)
-        })
-        .keyboard_navigatable()
 }
 
 impl View for Svg {

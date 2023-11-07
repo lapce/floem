@@ -1,9 +1,4 @@
-use floem::{
-    peniko::Color,
-    style::CursorStyle,
-    view::View,
-    views::{label, Decorators},
-};
+use floem::{peniko::Color, style::CursorStyle, view::View, views::Decorators, widgets::button};
 
 use crate::form::{form, form_item};
 
@@ -11,26 +6,17 @@ pub fn button_view() -> impl View {
     form({
         (
             form_item("Basic Button:".to_string(), 120.0, || {
-                label(|| "Click me")
-                    .on_click(|_| {
-                        println!("Button clicked");
-                        true
-                    })
-                    .keyboard_navigatable()
-                    .style(|s| {
-                        s.border(1.0)
-                            .border_radius(10.0)
-                            .padding(10.0)
-                            .focus_visible(|s| s.border(2.).border_color(Color::BLUE))
-                    })
+                button(|| "Click me").on_click(|_| {
+                    println!("Button clicked");
+                    true
+                })
             }),
             form_item("Styled Button:".to_string(), 120.0, || {
-                label(|| "Click me")
+                button(|| "Click me")
                     .on_click(|_| {
                         println!("Button clicked");
                         true
                     })
-                    .keyboard_navigatable()
                     .style(|s| {
                         s.border(1.0)
                             .border_radius(10.0)
@@ -44,36 +30,17 @@ pub fn button_view() -> impl View {
                             .focus_visible(|s| s.border(2.).border_color(Color::BLUE))
                     })
             }),
-            form_item("Distabled Button:".to_string(), 120.0, || {
-                label(|| "Click me")
-                    .disabled(|| true)
-                    .on_click(|_| {
-                        println!("Button clicked");
-                        true
-                    })
-                    .keyboard_navigatable()
-                    .style(|s| {
-                        s.border(1.0)
-                            .border_radius(10.0)
-                            .padding(10.0)
-                            .color(Color::GRAY)
-                            .focus_visible(|s| s.border(2.).border_color(Color::BLUE))
-                            .hover(|s| s.background(Color::rgb8(224, 224, 224)))
-                    })
+            form_item("Disabled Button:".to_string(), 120.0, || {
+                button(|| "Click me").disabled(|| true).on_click(|_| {
+                    println!("Button clicked");
+                    true
+                })
             }),
             form_item("Secondary click button:".to_string(), 120.0, || {
-                label(|| "Right click me")
-                    .on_secondary_click(|_| {
-                        println!("Secondary mouse button click.");
-                        true
-                    })
-                    .keyboard_navigatable()
-                    .style(|s| {
-                        s.border(1.0)
-                            .border_radius(10.0)
-                            .padding(10.0)
-                            .focus_visible(|s| s.border(2.).border_color(Color::BLUE))
-                    })
+                button(|| "Right click me").on_secondary_click(|_| {
+                    println!("Secondary mouse button click.");
+                    true
+                })
             }),
         )
     })

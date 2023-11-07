@@ -387,6 +387,12 @@ pub(crate) fn view_tab_navigation(root_view: &dyn View, app_state: &mut AppState
         .focus
         .filter(|id| id.id_path().is_some())
         .unwrap_or(root_view.id());
+
+    assert!(
+        view_filtered_children(root_view, start.id_path().unwrap().dispatch()).is_some(),
+        "The focused view is missing from the tree"
+    );
+
     let tree_iter = |id: Id| {
         if backwards {
             view_tree_previous(root_view, &id)
@@ -405,20 +411,20 @@ pub(crate) fn view_tab_navigation(root_view: &dyn View, app_state: &mut AppState
     app_state.update_focus(new_focus, true);
 }
 
-fn view_filtered_children<'a>(view: &'a dyn View, id_path: &[Id]) -> Vec<&'a dyn View> {
+fn view_filtered_children<'a>(view: &'a dyn View, id_path: &[Id]) -> Option<Vec<&'a dyn View>> {
     let id = id_path[0];
     let id_path = &id_path[1..];
 
     if id == view.id() {
         if id_path.is_empty() {
-            view_children(view)
+            Some(view_children(view))
         } else if let Some(child) = view.child(id_path[0]) {
             view_filtered_children(child, id_path)
         } else {
-            Vec::new()
+            None
         }
     } else {
-        Vec::new()
+        None
     }
 }
 
@@ -427,6 +433,7 @@ fn view_tree_next(root_view: &dyn View, id: &Id) -> Option<Id> {
     let id_path = id.id_path().unwrap();
 
     if let Some(child) = view_filtered_children(root_view, id_path.dispatch())
+        .unwrap()
         .into_iter()
         .next()
     {
@@ -456,7 +463,7 @@ fn view_next_sibling<'a>(root_view: &'a dyn View, id_path: &[Id]) -> Option<&'a 
         return None;
     }
 
-    let children = view_filtered_children(root_view, parent);
+    let children = view_filtered_children(root_view, parent).unwrap();
     let pos = children.iter().position(|v| v.id() == id).unwrap();
 
     if pos + 1 < children.len() {
@@ -485,7 +492,7 @@ fn view_previous_sibling<'a>(root_view: &'a dyn View, id_path: &[Id]) -> Option<
         return None;
     }
 
-    let children = view_filtered_children(root_view, parent);
+    let children = view_filtered_children(root_view, parent).unwrap();
     let pos = children.iter().position(|v| v.id() == id).unwrap();
 
     if pos > 0 {

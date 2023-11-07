@@ -8,6 +8,7 @@ use crate::views::{
     dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label, static_list, text,
     v_stack, Decorators, Label,
 };
+use crate::widgets::button;
 use crate::window::WindowConfig;
 use crate::{new_window, style};
 use floem_reactive::{create_rw_signal, RwSignal, Scope};
@@ -486,19 +487,8 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl 
                         )
                     ),
                 );
-                let clear = text("Clear selection")
-                    .style(|s| {
-                        s.background(Color::WHITE_SMOKE)
-                            .border(1.0)
-                            .padding(5.0)
-                            .margin(5.0)
-                            .border_color(Color::BLACK.with_alpha_factor(0.4))
-                            .border_radius(4.0)
-                            .hover(move |s| {
-                                s.border_color(Color::BLACK.with_alpha_factor(0.2))
-                                    .background(Color::GRAY.with_alpha_factor(0.6))
-                            })
-                    })
+                let clear = button(|| "Clear selection")
+                    .style(|s| s.margin(5.0))
                     .on_click(move |_| {
                         selected.set(None);
                         true

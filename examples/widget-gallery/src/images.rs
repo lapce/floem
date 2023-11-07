@@ -1,7 +1,7 @@
 use floem::{
     unit::UnitExt,
     view::View,
-    views::{img, scroll, Decorators},
+    views::{img, Decorators},
 };
 
 use crate::form::{form, form_item};
@@ -10,7 +10,7 @@ pub fn img_view() -> impl View {
     let ferris = include_bytes!("./../assets/ferris.png");
     let sunflower = include_bytes!("./../assets/sunflower.jpg");
 
-    scroll(form({
+    form({
         (
             form_item("PNG:".to_string(), 120.0, move || {
                 img(move || ferris.to_vec())
@@ -32,6 +32,5 @@ pub fn img_view() -> impl View {
             //     .object_fit(ObjectFit::Contain).object_position(VertPosition::Top, HorizPosition::Left))
             //
         )
-    }))
-    .style(|s| s.flex_col().min_width(1000.px()))
+    })
 }
