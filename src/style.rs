@@ -459,8 +459,8 @@ macro_rules! prop_extracter {
             #[allow(dead_code)]
             $vis fn read_explicit(
                 &mut self,
-                style: &Style,
-                fallback: &Style,
+                style: &$crate::style::Style,
+                fallback: &$crate::style::Style,
                 now: &std::time::Instant,
                 request_transition: &mut bool
             ) -> bool {

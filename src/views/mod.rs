@@ -59,6 +59,3 @@ pub use drag_resize_window_area::*;
 
 mod img;
 pub use img::*;
-
-pub mod toggle_button;
-pub use toggle_button::toggle_button;

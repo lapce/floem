@@ -8,6 +8,9 @@ use std::rc::Rc;
 
 pub use checkbox::*;
 
+mod toggle_button;
+pub use toggle_button::*;
+
 mod button;
 pub use button::*;
 use peniko::Color;
