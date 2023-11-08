@@ -897,21 +897,21 @@ pub enum CursorStyle {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BoxShadow {
-    pub blur_radius: f64,
+    pub blur_radius: PxPct,
     pub color: Color,
-    pub spread: f64,
-    pub h_offset: f64,
-    pub v_offset: f64,
+    pub spread: PxPct,
+    pub h_offset: PxPct,
+    pub v_offset: PxPct,
 }
 
 impl Default for BoxShadow {
     fn default() -> Self {
         Self {
-            blur_radius: 0.0,
+            blur_radius: PxPct::Px(0.),
             color: Color::BLACK,
-            spread: 0.0,
-            h_offset: 0.0,
-            v_offset: 0.0,
+            spread: PxPct::Px(0.),
+            h_offset: PxPct::Px(0.),
+            v_offset: PxPct::Px(0.),
         }
     }
 }
@@ -1436,9 +1436,9 @@ impl Style {
         self.set_style_value(Background, color.into().map(Some))
     }
 
-    pub fn box_shadow_blur(self, blur_radius: f64) -> Self {
+    pub fn box_shadow_blur(self, blur_radius: impl Into<PxPct>) -> Self {
         let mut value = self.get(BoxShadowProp).unwrap_or_default();
-        value.blur_radius = blur_radius;
+        value.blur_radius = blur_radius.into();
         self.set(BoxShadowProp, Some(value))
     }
 
@@ -1448,21 +1448,21 @@ impl Style {
         self.set(BoxShadowProp, Some(value))
     }
 
-    pub fn box_shadow_spread(self, spread: f64) -> Self {
+    pub fn box_shadow_spread(self, spread: impl Into<PxPct>) -> Self {
         let mut value = self.get(BoxShadowProp).unwrap_or_default();
-        value.spread = spread;
+        value.spread = spread.into();
         self.set(BoxShadowProp, Some(value))
     }
 
-    pub fn box_shadow_h_offset(self, h_offset: f64) -> Self {
+    pub fn box_shadow_h_offset(self, h_offset: impl Into<PxPct>) -> Self {
         let mut value = self.get(BoxShadowProp).unwrap_or_default();
-        value.h_offset = h_offset;
+        value.h_offset = h_offset.into();
         self.set(BoxShadowProp, Some(value))
     }
 
-    pub fn box_shadow_v_offset(self, v_offset: f64) -> Self {
+    pub fn box_shadow_v_offset(self, v_offset: impl Into<PxPct>) -> Self {
         let mut value = self.get(BoxShadowProp).unwrap_or_default();
-        value.v_offset = v_offset;
+        value.v_offset = v_offset.into();
         self.set(BoxShadowProp, Some(value))
     }
 
