@@ -8,12 +8,16 @@ use std::rc::Rc;
 
 pub use checkbox::*;
 
+mod toggle_button;
+pub use toggle_button::*;
+
 mod button;
 pub use button::*;
 use peniko::Color;
 
 use crate::{
     style::{Background, Style, Transition},
+    unit::UnitExt,
     views::scroll,
 };
 
@@ -103,6 +107,7 @@ pub(crate) fn default_theme() -> Theme {
         })
         .apply(focus_style.clone());
 
+    const FONT_SIZE: f32 = 13.0;
     let theme = Style::new()
         .class(FocusClass, |_| focus_style)
         .class(LabeledCheckboxClass, |_| labeled_checkbox_style)
@@ -119,7 +124,12 @@ pub(crate) fn default_theme() -> Theme {
         .class(scroll::Track, |s| {
             s.hover(|s| s.background(Color::rgba8(166, 166, 166, 30)))
         })
-        .font_size(13.0)
+        .class(ToggleButtonClass, |s| {
+            s.height(FONT_SIZE * 1.5)
+                .aspect_ratio(2.)
+                .border_radius(100.pct())
+        })
+        .font_size(FONT_SIZE)
         .color(Color::BLACK);
 
     Theme {
