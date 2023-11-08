@@ -1,11 +1,15 @@
 use floem_reactive::create_effect;
 use floem_renderer::Renderer;
 use kurbo::{Point, Size};
-use peniko::Color;
 use winit::keyboard::{Key, NamedKey};
 
 use crate::{
-    id, prop, prop_extracter, style, style_class, unit::PxPct, view::View, views::Decorators,
+    id, prop, prop_extracter,
+    style::{self, Background, BorderRadius, Foreground},
+    style_class,
+    unit::PxPct,
+    view::View,
+    views::Decorators,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -16,16 +20,15 @@ pub enum ToggleButtonBehavior {
 
 impl style::StylePropValue for ToggleButtonBehavior {}
 
-prop!(pub ToggleButtonBg: Option<Color> {} = None);
-prop!(pub ToggleButtonFg: Option<Color> {} = None);
 prop!(pub ToggleButtonInset: PxPct {} = PxPct::Px(0.));
 prop!(pub ToggleButtonCircleRad: PxPct {} = PxPct::Pct(95.));
 prop!(pub ToggleButtonSwitch: ToggleButtonBehavior {} = ToggleButtonBehavior::Switch);
 
 prop_extracter! {
     ToggleStyle {
-        foreground: ToggleButtonFg,
-        background: ToggleButtonBg,
+        foreground: Foreground,
+        background: Background,
+        border_radius: BorderRadius,
         inset: ToggleButtonInset,
         circle_rad: ToggleButtonCircleRad,
         switch_behavior: ToggleButtonSwitch
@@ -202,7 +205,11 @@ impl View for ToggleButton {
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         let layout = cx.get_layout(self.id).unwrap();
         let size = Size::new(layout.size.width as f64, layout.size.height as f64);
-        let rounded_rect = size.to_rounded_rect(size.min_side());
+        let border_radius = match self.style.border_radius() {
+            PxPct::Px(px) => px,
+            PxPct::Pct(pct) => size.min_side() * (pct / 100.),
+        };
+        let rounded_rect = size.to_rounded_rect(border_radius);
         let circle_point = Point::new(self.position as f64, rounded_rect.center().y);
         let circle = crate::kurbo::Circle::new(circle_point, self.radius as f64);
         // here fill default themes

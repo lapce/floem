@@ -330,7 +330,10 @@ impl Scroll {
                     (rect.y1 - rect.y0) / 2.
                 }
             } else {
-                style.border_radius().0
+                match style.border_radius() {
+                    crate::unit::PxPct::Px(px) => px,
+                    crate::unit::PxPct::Pct(pct) => rect.size().min_side() * (pct / 100.),
+                }
             }
         };
 
@@ -389,6 +392,7 @@ impl Scroll {
         let content_size = self.child_size;
         let scroll_offset = self.child_viewport.origin().to_vec2();
 
+        // dbg!(viewport_size.height, content_size.height);
         if viewport_size.height >= content_size.height {
             return None;
         }
@@ -813,7 +817,10 @@ impl View for Scroll {
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         cx.save();
         let style = cx.get_computed_style(self.id);
-        let radius = style.get(BorderRadius).0;
+        let radius = match style.get(BorderRadius) {
+            crate::unit::PxPct::Px(px) => px,
+            crate::unit::PxPct::Pct(pct) => self.actual_rect.size().min_side() * (pct / 100.),
+        };
         if radius > 0.0 {
             let rect = self.actual_rect.to_rounded_rect(radius);
             cx.clip(&rect);

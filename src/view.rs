@@ -248,7 +248,10 @@ pub(crate) fn paint_bg(
     style: &ViewStyleProps,
     size: Size,
 ) {
-    let radius = style.border_radius().0;
+    let radius = match style.border_radius() {
+        crate::unit::PxPct::Px(px) => px,
+        crate::unit::PxPct::Pct(pct) => size.min_side() * (pct / 100.),
+    };
     if radius > 0.0 {
         let rect = size.to_rect();
         let width = rect.width();
@@ -306,8 +309,12 @@ pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, size: Size
     }
     let half = outline / 2.0;
     let rect = size.to_rect().inflate(half, half);
+    let border_radius = match style.border_radius() {
+        crate::unit::PxPct::Px(px) => px,
+        crate::unit::PxPct::Pct(pct) => size.min_side() * (pct / 100.),
+    };
     cx.stroke(
-        &rect.to_rounded_rect(style.border_radius().0 + half),
+        &rect.to_rounded_rect(border_radius + half),
         style.outline_color(),
         outline,
     );
@@ -323,7 +330,10 @@ pub(crate) fn paint_border(cx: &mut PaintCx, style: &ViewStyleProps, size: Size)
     if left == top && top == right && right == bottom && bottom == left && left > 0.0 {
         let half = left / 2.0;
         let rect = size.to_rect().inflate(-half, -half);
-        let radius = style.border_radius().0;
+        let radius = match style.border_radius() {
+            crate::unit::PxPct::Px(px) => px,
+            crate::unit::PxPct::Pct(pct) => size.min_side() * (pct / 100.),
+        };
         if radius > 0.0 {
             cx.stroke(&rect.to_rounded_rect(radius), border_color, left);
         } else {
