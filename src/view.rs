@@ -285,18 +285,35 @@ pub(crate) fn paint_bg(
 
 fn paint_box_shadow(cx: &mut PaintCx, style: &Style, rect: Rect, rect_radius: Option<f64>) {
     if let Some(shadow) = style.get(BoxShadowProp).as_ref() {
+        let min = rect.size().min_side();
+        let h_offset = match shadow.h_offset {
+            crate::unit::PxPct::Px(px) => px,
+            crate::unit::PxPct::Pct(pct) => min * (pct / 100.),
+        };
+        let v_offset = match shadow.v_offset {
+            crate::unit::PxPct::Px(px) => px,
+            crate::unit::PxPct::Pct(pct) => min * (pct / 100.),
+        };
+        let spread = match shadow.spread {
+            crate::unit::PxPct::Px(px) => px,
+            crate::unit::PxPct::Pct(pct) => min * (pct / 100.),
+        };
+        let blur_radius = match shadow.blur_radius {
+            crate::unit::PxPct::Px(px) => px,
+            crate::unit::PxPct::Pct(pct) => min * (pct / 100.),
+        };
         let inset = Insets::new(
-            -shadow.h_offset / 2.0,
-            -shadow.v_offset / 2.0,
-            shadow.h_offset / 2.0,
-            shadow.v_offset / 2.0,
+            -h_offset / 2.0,
+            -v_offset / 2.0,
+            h_offset / 2.0,
+            v_offset / 2.0,
         );
-        let rect = rect.inflate(shadow.spread, shadow.spread).inset(inset);
+        let rect = rect.inflate(spread, spread).inset(inset);
         if let Some(radii) = rect_radius {
-            let rounded_rect = RoundedRect::from_rect(rect, radii + shadow.spread);
-            cx.fill(&rounded_rect, shadow.color, shadow.blur_radius);
+            let rounded_rect = RoundedRect::from_rect(rect, radii + spread);
+            cx.fill(&rounded_rect, shadow.color, blur_radius);
         } else {
-            cx.fill(&rect, shadow.color, shadow.blur_radius);
+            cx.fill(&rect, shadow.color, blur_radius);
         }
     }
 }
