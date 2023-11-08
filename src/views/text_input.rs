@@ -1,7 +1,8 @@
 use crate::action::exec_after;
 use crate::keyboard::{self, KeyEvent};
+use crate::prop_extracter;
 use crate::reactive::{create_effect, RwSignal};
-use crate::style::CursorStyle;
+use crate::style::{CursorStyle, TextColor};
 use crate::style::{FontProps, PaddingLeft};
 use crate::unit::PxPct;
 use clipboard::{ClipboardContext, ClipboardProvider};
@@ -29,6 +30,12 @@ use crate::{
 };
 
 use super::Decorators;
+
+prop_extracter! {
+    Extracter {
+        color: TextColor,
+    }
+}
 
 enum InputKind {
     SingleLine,
@@ -60,10 +67,10 @@ pub struct TextInput {
     // This makes sure character under the cursor is always fully visible and correctly aligned,
     // and may cause the last character in the opposite direction to be "cut"
     clip_offset_x: f64,
-    color: Option<Color>,
     selection: Option<Range<usize>>,
     width: f32,
     height: f32,
+    style: Extracter,
     font: FontProps,
     input_kind: InputKind,
     cursor_width: f64, // TODO: make this configurable
@@ -103,7 +110,7 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         text_node: None,
         clipped_text: None,
         clip_txt_buf: None,
-        color: None,
+        style: Default::default(),
         font: FontProps::default(),
         cursor_x: 0.0,
         selection: None,
@@ -370,7 +377,7 @@ impl TextInput {
     }
 
     pub fn get_text_attrs(&self) -> AttrsList {
-        let mut attrs = Attrs::new().color(self.color.unwrap_or(Color::BLACK));
+        let mut attrs = Attrs::new().color(self.style.color().unwrap_or(Color::BLACK));
 
         attrs = attrs.font_size(self.font_size());
 
@@ -779,6 +786,9 @@ impl View for TextInput {
         if self.font.read(cx) || self.text_buf.is_none() {
             self.update_text_layout();
             cx.app_state_mut().request_layout(self.id);
+        }
+        if self.style.read(cx) {
+            cx.app_state_mut().request_paint(self.id());
         }
     }
 

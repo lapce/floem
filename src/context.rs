@@ -644,7 +644,7 @@ impl AppState {
             if self.has_style_for_sel(id, StyleSelector::Focus)
                 || self.has_style_for_sel(id, StyleSelector::FocusVisible)
             {
-                self.request_style(id);
+                self.request_style_recursive(id);
             }
             if let Some(action) = self.get_event_listener(id, &EventListener::FocusGained) {
                 (*action)(&Event::FocusGained);
@@ -656,7 +656,7 @@ impl AppState {
             if self.has_style_for_sel(old_id, StyleSelector::Focus)
                 || self.has_style_for_sel(old_id, StyleSelector::FocusVisible)
             {
-                self.request_style(old_id);
+                self.request_style_recursive(old_id);
             }
             if let Some(action) = self.get_event_listener(old_id, &EventListener::FocusLost) {
                 (*action)(&Event::FocusLost);
