@@ -205,17 +205,8 @@ impl View for ToggleButton {
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         let layout = cx.get_layout(self.id).unwrap();
         let size = Size::new(layout.size.width as f64, layout.size.height as f64);
-        let border_radius = match self.style.border_radius() {
-            PxPct::Px(px) => px,
-            PxPct::Pct(pct) => size.min_side() * (pct / 100.),
-        };
-        let rounded_rect = size.to_rounded_rect(border_radius);
-        let circle_point = Point::new(self.position as f64, rounded_rect.center().y);
+        let circle_point = Point::new(self.position as f64, size.to_rect().center().y);
         let circle = crate::kurbo::Circle::new(circle_point, self.radius as f64);
-        // here fill default themes
-        if let Some(color) = self.style.background() {
-            cx.fill(&rounded_rect, color, 0.);
-        }
         if let Some(color) = self.style.foreground() {
             cx.fill(&circle, color, 0.);
         }
