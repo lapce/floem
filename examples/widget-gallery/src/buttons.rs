@@ -65,25 +65,14 @@ pub fn button_view() -> impl View {
                 toggle_button(|| true)
                     .on_toggle(|_| {
                         println!("Button Toggled");
-                        // true
                     })
                     .style(|s| {
-                        s.background(Color::DARK_GRAY).set(
+                        s.set(
                             widgets::ToggleButtonBehavior,
                             widgets::ToggleButtonSwitch::Follow,
                         )
                     })
             }),
         )
-    })
-    .base_style(|s| {
-        s.class(ToggleButtonClass, |s| {
-            s.background(Color::DARK_GRAY)
-                .set(Foreground, Color::WHITE_SMOKE)
-                .border(1.)
-                .height(25)
-                .set(widgets::ToggleButtonCircleRad, 75.pct())
-                .set(widgets::ToggleButtonInset, 10.pct())
-        })
     })
 }
