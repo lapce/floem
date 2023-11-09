@@ -1375,18 +1375,20 @@ impl<'a> LayoutCx<'a> {
 
         let layout = self.app_state().get_layout(id).unwrap();
         let origin = Point::new(layout.location.x as f64, layout.location.y as f64);
-        let parent_viewport = self.viewport.map(|rect| {
-            rect.with_origin(Point::new(
-                rect.x0 - layout.location.x as f64,
-                rect.y0 - layout.location.y as f64,
-            ))
-        });
         let this_viewport = self
             .app_state()
             .view_states
             .get(&id)
             .and_then(|view| view.viewport);
         let size = Size::new(layout.size.width as f64, layout.size.height as f64);
+        let parent_viewport = self.viewport.map(|rect| {
+            rect.with_origin(
+                Point::new(
+                    rect.x0 - layout.location.x as f64,
+                    rect.y0 - layout.location.y as f64,
+                ) + this_viewport.unwrap_or_default().origin().to_vec2(),
+            )
+        });
         match (parent_viewport, this_viewport) {
             (Some(parent_viewport), Some(viewport)) => {
                 self.viewport = Some(
