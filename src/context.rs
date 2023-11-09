@@ -343,26 +343,17 @@ impl AppState {
 
     /// Is this view, or any parent view, marked as hidden
     pub fn is_hidden_recursive(&self, id: Id) -> bool {
-        let mut ancestor = Some(id);
-        while let Some(current_ancestor) = ancestor {
-            if self.is_hidden(current_ancestor) {
-                return true;
-            }
-            ancestor = current_ancestor.parent();
-        }
-
-        false
+        id.id_path()
+            .unwrap()
+            .dispatch()
+            .iter()
+            .any(|id| self.is_hidden(*id))
     }
 
     pub(crate) fn can_focus(&self, id: Id) -> bool {
         self.keyboard_navigable.contains(&id)
             && !self.is_disabled(&id)
-            && !id
-                .id_path()
-                .unwrap()
-                .dispatch()
-                .iter()
-                .any(|id| self.is_hidden(*id))
+            && !self.is_hidden_recursive(id)
     }
 
     pub fn is_hovered(&self, id: &Id) -> bool {
@@ -505,6 +496,7 @@ impl AppState {
         self.request_paint = true;
     }
 
+    /// `viewport` is relative to the `id` view.
     pub(crate) fn set_viewport(&mut self, id: Id, viewport: Rect) {
         let view = self.view_state(id);
         view.viewport = Some(viewport);
@@ -1389,13 +1381,13 @@ impl<'a> LayoutCx<'a> {
                 rect.y0 - layout.location.y as f64,
             ))
         });
-        let viewport = self
+        let this_viewport = self
             .app_state()
             .view_states
             .get(&id)
             .and_then(|view| view.viewport);
         let size = Size::new(layout.size.width as f64, layout.size.height as f64);
-        match (parent_viewport, viewport) {
+        match (parent_viewport, this_viewport) {
             (Some(parent_viewport), Some(viewport)) => {
                 self.viewport = Some(
                     parent_viewport
@@ -1414,8 +1406,8 @@ impl<'a> LayoutCx<'a> {
             }
         }
 
-        let viewport = self.viewport.unwrap_or_default();
-        let window_origin = origin + self.window_origin.to_vec2() - viewport.origin().to_vec2();
+        let window_origin = origin + self.window_origin.to_vec2()
+            - this_viewport.unwrap_or_default().origin().to_vec2();
         self.window_origin = window_origin;
 
         if let Some(resize) = self.get_resize_listener(id) {

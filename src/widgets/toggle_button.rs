@@ -5,7 +5,7 @@ use winit::keyboard::{Key, NamedKey};
 
 use crate::{
     id, prop, prop_extracter,
-    style::{self, Background, BorderRadius, Foreground},
+    style::{self, Foreground},
     style_class,
     unit::PxPct,
     view::View,
@@ -27,8 +27,6 @@ prop!(pub ToggleButtonSwitch: ToggleButtonBehavior {} = ToggleButtonBehavior::Sw
 prop_extracter! {
     ToggleStyle {
         foreground: Foreground,
-        background: Background,
-        border_radius: BorderRadius,
         inset: ToggleButtonInset,
         circle_rad: ToggleButtonCircleRad,
         switch_behavior: ToggleButtonSwitch
