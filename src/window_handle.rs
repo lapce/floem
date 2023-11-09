@@ -493,8 +493,14 @@ impl WindowHandle {
 
         cx.clear();
         cx.compute_view_layout(&mut self.view);
+        self.app_state.request_compute_layout = false;
 
         taffy_duration
+    }
+
+    fn compute_layout(&mut self) {
+        let mut cx = LayoutCx::new(&mut self.app_state);
+        cx.compute_view_layout(&mut self.view);
     }
 
     pub fn render_frame(&mut self) {
@@ -636,6 +642,7 @@ impl WindowHandle {
                 && !self.needs_style()
                 && !self.has_deferred_update_messages()
                 && !self.has_anim_update_messages()
+                && !self.app_state.request_compute_layout
             {
                 break;
             }
@@ -648,6 +655,10 @@ impl WindowHandle {
             if self.needs_layout() {
                 paint = true;
                 self.layout();
+            }
+
+            if mem::take(&mut self.app_state.request_compute_layout) {
+                self.compute_layout();
             }
 
             self.process_deferred_update_messages();

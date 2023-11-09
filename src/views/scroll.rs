@@ -304,7 +304,8 @@ impl Scroll {
 
         if child_viewport != self.child_viewport {
             app_state.set_viewport(self.child.id(), child_viewport);
-            app_state.request_layout(self.id);
+            app_state.request_compute_layout_recursive(self.id);
+            app_state.request_paint(self.id);
             self.child_viewport = child_viewport;
             if let Some(onscroll) = &self.onscroll {
                 onscroll(child_viewport);
