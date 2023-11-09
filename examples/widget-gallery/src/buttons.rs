@@ -1,10 +1,9 @@
 use floem::{
     peniko::Color,
-    style::{CursorStyle, Foreground},
-    unit::UnitExt,
+    style::CursorStyle,
     view::View,
     views::Decorators,
-    widgets::{self, button, toggle_button, ToggleButtonClass},
+    widgets::{self, button, toggle_button},
 };
 
 use crate::form::{form, form_item};
