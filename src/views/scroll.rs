@@ -19,6 +19,7 @@ enum ScrollState {
     EnsureVisible(Rect),
     ScrollDelta(Vec2),
     ScrollTo(Point),
+    ScrollToView(Id),
     HiddenBar(bool),
     PropagatePointerWheel(bool),
     VerticalScrollAsHorizontal(bool),
@@ -64,10 +65,20 @@ const HANDLE_COLOR: Color = Color::rgba8(0, 0, 0, 120);
 pub struct Scroll {
     id: Id,
     child: Box<dyn View>,
-    // the actual rect of the scroll view excluding padding and borders
+
+    /// the actual rect of the scroll view excluding padding and borders. The origin is relative to this view.
     actual_rect: Rect,
+
     child_size: Size,
+
+    /// The origin is relative to `actual_rect`.
     child_viewport: Rect,
+
+    /// This is the value of `child_viewport` for the last `compute_layout`. This is used in
+    /// handling for `ScrollToView` as scrolling updates may mutate `child_viewport`.
+    /// The origin is relative to `actual_rect`.
+    computed_child_viewport: Rect,
+
     onscroll: Option<Box<dyn Fn(Rect)>>,
     held: BarHeldState,
     v_handle_hover: bool,
@@ -92,6 +103,7 @@ pub fn scroll<V: View + 'static>(child: V) -> Scroll {
         actual_rect: Rect::ZERO,
         child_size: Size::ZERO,
         child_viewport: Rect::ZERO,
+        computed_child_viewport: Rect::ZERO,
         onscroll: None,
         held: BarHeldState::None,
         v_handle_hover: false,
@@ -141,6 +153,17 @@ impl Scroll {
         create_effect(move |_| {
             if let Some(origin) = origin() {
                 id.update_state(ScrollState::ScrollTo(origin), true);
+            }
+        });
+
+        self
+    }
+
+    pub fn scroll_to_view(self, view: impl Fn() -> Option<Id> + 'static) -> Self {
+        let id = self.id;
+        create_effect(move |_| {
+            if let Some(view) = view() {
+                id.update_state(ScrollState::ScrollToView(view), true);
             }
         });
 
@@ -595,6 +618,26 @@ impl View for Scroll {
                 ScrollState::ScrollTo(origin) => {
                     self.scroll_to(cx.app_state, origin);
                 }
+                ScrollState::ScrollToView(id) => {
+                    if cx.app_state.get_layout(id).is_some()
+                        && !cx.app_state.is_hidden_recursive(id)
+                    {
+                        let rect = cx.app_state.get_layout_rect(id);
+
+                        // `get_layout_rect` is window-relative so we have to
+                        // convert it to child view relative.
+
+                        // TODO: How to deal with nested viewports / scrolls?
+                        let rect = rect.with_origin(
+                            rect.origin()
+                                - cx.app_state.get_layout_rect(self.id).origin().to_vec2()
+                                - self.actual_rect.origin().to_vec2()
+                                + self.computed_child_viewport.origin().to_vec2(),
+                        );
+
+                        self.pan_to_visible(cx.app_state, rect);
+                    }
+                }
                 ScrollState::HiddenBar(hide) => {
                     self.hide = hide;
                 }
@@ -668,6 +711,7 @@ impl View for Scroll {
     fn compute_layout(&mut self, cx: &mut LayoutCx) -> Option<Rect> {
         self.update_size(cx.app_state_mut());
         self.clamp_child_viewport(cx.app_state_mut(), self.child_viewport);
+        self.computed_child_viewport = self.child_viewport;
         cx.compute_view_layout(&mut self.child);
         None
     }

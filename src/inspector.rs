@@ -5,13 +5,13 @@ use crate::id::Id;
 use crate::style::{Style, StyleMapValue};
 use crate::view::{view_children, View};
 use crate::views::{
-    dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label, static_list, text,
-    v_stack, Decorators, Label,
+    container, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label,
+    static_list, text, v_stack, Decorators, Label,
 };
 use crate::widgets::button;
 use crate::window::WindowConfig;
 use crate::{new_window, style};
-use floem_reactive::{create_rw_signal, RwSignal, Scope};
+use floem_reactive::{create_effect, create_rw_signal, RwSignal, Scope};
 use image::DynamicImage;
 use kurbo::{Point, Rect, Size};
 use peniko::Color;
@@ -90,7 +90,7 @@ impl CapturedView {
 }
 
 pub struct Capture {
-    pub root: CapturedView,
+    pub root: Rc<CapturedView>,
     pub start: Instant,
     pub post_style: Instant,
     pub post_layout: Instant,
@@ -170,62 +170,84 @@ fn captured_view_name(view: &CapturedView) -> impl View {
 fn captured_view_no_children(
     view: &CapturedView,
     depth: usize,
-    selected: RwSignal<Option<Id>>,
-    highlighted: RwSignal<Option<Id>>,
+    capture_view: &CaptureView,
 ) -> Box<dyn View> {
     let offset = depth as f64 * 14.0;
     let name = captured_view_name(view);
+    let name_id = name.id();
     let height = 20.0;
     let id = view.id;
+    let selected = capture_view.selected;
+    let highlighted = capture_view.highlighted;
 
-    Box::new(
-        name.style(move |s| {
-            s.padding_left(20.0 + offset)
-                .hover(move |s| {
-                    s.background(Color::rgba8(228, 237, 216, 160))
-                        .apply_if(selected.get() == Some(id), |s| {
+    let row = Box::new(
+        container(name)
+            .style(move |s| {
+                s.padding_left(20.0 + offset)
+                    .hover(move |s| {
+                        s.background(Color::rgba8(228, 237, 216, 160))
+                            .apply_if(selected.get() == Some(id), |s| {
+                                s.background(Color::rgb8(186, 180, 216))
+                            })
+                    })
+                    .height(height)
+                    .apply_if(highlighted.get() == Some(id), |s| {
+                        s.background(Color::rgba8(228, 237, 216, 160))
+                    })
+                    .apply_if(selected.get() == Some(id), |s| {
+                        if highlighted.get() == Some(id) {
                             s.background(Color::rgb8(186, 180, 216))
-                        })
-                })
-                .height(height)
-                .apply_if(highlighted.get() == Some(id), |s| {
-                    s.background(Color::rgba8(228, 237, 216, 160))
-                })
-                .apply_if(selected.get() == Some(id), |s| {
-                    if highlighted.get() == Some(id) {
-                        s.background(Color::rgb8(186, 180, 216))
-                    } else {
-                        s.background(Color::rgb8(213, 208, 216))
-                    }
-                })
-        })
-        .on_click(move |_| {
-            selected.set(Some(id));
-            true
-        })
-        .on_event(EventListener::PointerEnter, move |_| {
-            highlighted.set(Some(id));
-            false
-        }),
-    )
+                        } else {
+                            s.background(Color::rgb8(213, 208, 216))
+                        }
+                    })
+            })
+            .on_click(move |_| {
+                selected.set(Some(id));
+                true
+            })
+            .on_event(EventListener::PointerEnter, move |_| {
+                highlighted.set(Some(id));
+                false
+            }),
+    );
+
+    let row_id = row.id();
+    let scroll_to = capture_view.scroll_to;
+    let expanding_selection = capture_view.expanding_selection;
+    create_effect(move |_| {
+        if let Some(selection) = expanding_selection.get() {
+            if selection == id {
+                // Scroll to the row, then to the name part of the row.
+                scroll_to.set(Some(row_id));
+                scroll_to.set(Some(name_id));
+            }
+        }
+    });
+
+    row
 }
 
 // Outlined to reduce stack usage.
 #[inline(never)]
 fn captured_view_with_children(
-    view: &CapturedView,
+    view: &Rc<CapturedView>,
     depth: usize,
-    selected: RwSignal<Option<Id>>,
-    highlighted: RwSignal<Option<Id>>,
+    capture_view: &CaptureView,
     children: Vec<Box<dyn View>>,
 ) -> Box<dyn View> {
     let offset = depth as f64 * 14.0;
     let name = captured_view_name(view);
     let height = 20.0;
     let id = view.id;
+    let selected = capture_view.selected;
+    let highlighted = capture_view.highlighted;
+    let expanding_selection = capture_view.expanding_selection;
+    let view_ = view.clone();
 
     let expanded = create_rw_signal(true);
 
+    let name_id = name.id();
     let row = stack((
         empty()
             .style(move |s| {
@@ -286,6 +308,21 @@ fn captured_view_with_children(
         false
     });
 
+    let row_id = row.id();
+    let scroll_to = capture_view.scroll_to;
+    create_effect(move |_| {
+        if let Some(selection) = expanding_selection.get() {
+            if selection != id && view_.find(selection).is_some() {
+                expanded.set(true);
+            }
+            if selection == id {
+                // Scroll to the row, then to the name part of the row.
+                scroll_to.set(Some(row_id));
+                scroll_to.set(Some(name_id));
+            }
+        }
+    });
+
     let line = empty().style(move |s| {
         s.absolute()
             .height_full()
@@ -308,20 +345,19 @@ fn captured_view_with_children(
 }
 
 fn captured_view(
-    view: &CapturedView,
+    view: &Rc<CapturedView>,
     depth: usize,
-    selected: RwSignal<Option<Id>>,
-    highlighted: RwSignal<Option<Id>>,
+    capture_view: &CaptureView,
 ) -> Box<dyn View> {
     if view.children.is_empty() {
-        captured_view_no_children(view, depth, selected, highlighted)
+        captured_view_no_children(view, depth, capture_view)
     } else {
         let children: Vec<_> = view
             .children
             .iter()
-            .map(|view| captured_view(view, depth + 1, selected, highlighted))
+            .map(|view| captured_view(view, depth + 1, capture_view))
             .collect();
-        captured_view_with_children(view, depth, selected, highlighted, children)
+        captured_view_with_children(view, depth, capture_view, children)
     }
 }
 
@@ -606,9 +642,21 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl 
     )
 }
 
+#[derive(Clone, Copy)]
+struct CaptureView {
+    expanding_selection: RwSignal<Option<Id>>,
+    scroll_to: RwSignal<Option<Id>>,
+    selected: RwSignal<Option<Id>>,
+    highlighted: RwSignal<Option<Id>>,
+}
+
 fn capture_view(capture: &Rc<Capture>) -> impl View {
-    let selected = create_rw_signal(None);
-    let highlighted = create_rw_signal(None);
+    let capture_view = CaptureView {
+        expanding_selection: create_rw_signal(None),
+        scroll_to: create_rw_signal(None),
+        selected: create_rw_signal(None),
+        highlighted: create_rw_signal(None),
+    };
 
     let window = capture.window.clone();
     let capture_ = capture.clone();
@@ -636,37 +684,42 @@ fn capture_view(capture: &Rc<Capture>) -> impl View {
         .on_event(EventListener::PointerMove, move |e| {
             if let Event::PointerMove(e) = e {
                 if let Some(view) = capture_.root.find_by_pos(e.pos) {
-                    if highlighted.get() != Some(view.id) {
-                        highlighted.set(Some(view.id));
+                    if capture_view.highlighted.get() != Some(view.id) {
+                        capture_view.highlighted.set(Some(view.id));
                     }
                     return false;
                 }
             }
-            if highlighted.get().is_some() {
-                highlighted.set(None);
+            if capture_view.highlighted.get().is_some() {
+                capture_view.highlighted.set(None);
             }
             false
         })
         .on_click(move |e| {
             if let Event::PointerUp(e) = e {
                 if let Some(view) = capture__.root.find_by_pos(e.pos) {
-                    selected.set(Some(view.id));
+                    capture_view.selected.set(Some(view.id));
+                    capture_view.expanding_selection.set(Some(view.id));
                     return true;
                 }
             }
-            if selected.get().is_some() {
-                selected.set(None);
+            if capture_view.selected.get().is_some() {
+                capture_view.selected.set(None);
             }
             true
         })
         .on_event(EventListener::PointerLeave, move |_| {
-            highlighted.set(None);
+            capture_view.highlighted.set(None);
             false
         });
 
     let capture_ = capture.clone();
     let selected_overlay = empty().style(move |s| {
-        if let Some(view) = selected.get().and_then(|id| capture_.root.find(id)) {
+        if let Some(view) = capture_view
+            .selected
+            .get()
+            .and_then(|id| capture_.root.find(id))
+        {
             s.absolute()
                 .margin_left(5.0 + view.layout.x0)
                 .margin_top(5.0 + view.layout.y0)
@@ -682,7 +735,11 @@ fn capture_view(capture: &Rc<Capture>) -> impl View {
 
     let capture_ = capture.clone();
     let highlighted_overlay = empty().style(move |s| {
-        if let Some(view) = highlighted.get().and_then(|id| capture_.root.find(id)) {
+        if let Some(view) = capture_view
+            .highlighted
+            .get()
+            .and_then(|id| capture_.root.find(id))
+        {
             s.absolute()
                 .margin_left(5.0 + view.layout.x0)
                 .margin_top(5.0 + view.layout.y0)
@@ -701,7 +758,7 @@ fn capture_view(capture: &Rc<Capture>) -> impl View {
     let left_scroll = scroll(
         v_stack((
             header("Selected View"),
-            selected_view(capture, selected),
+            selected_view(capture, capture_view.selected),
             header("Stats"),
             stats(capture),
         ))
@@ -723,16 +780,17 @@ fn capture_view(capture: &Rc<Capture>) -> impl View {
     ))
     .style(|s| s.max_width_pct(60.0));
 
-    let tree = scroll(captured_view(&capture.root, 0, selected, highlighted))
+    let tree = scroll(captured_view(&capture.root, 0, &capture_view))
         .style(|s| s.width_full().min_height(0).flex_basis(0).flex_grow(1.0))
         .on_event(EventListener::PointerLeave, move |_| {
-            highlighted.set(None);
+            capture_view.highlighted.set(None);
             false
         })
         .on_click(move |_| {
-            selected.set(None);
+            capture_view.selected.set(None);
             true
-        });
+        })
+        .scroll_to_view(move || capture_view.scroll_to.get());
 
     let tree: Box<dyn View> = if capture.root.warnings() {
         Box::new(v_stack((header("Warnings"), header("View Tree"), tree)))
