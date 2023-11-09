@@ -4,7 +4,7 @@
 //!
 
 use crate::{
-    style::{Background, Style, Transition},
+    style::{Background, Foreground, Style, Transition},
     unit::UnitExt,
     views::scroll,
 };
@@ -149,6 +149,8 @@ pub(crate) fn default_theme() -> Theme {
             s.height(FONT_SIZE * 1.5)
                 .aspect_ratio(2.)
                 .border_radius(100.pct())
+                .background(Color::DARK_GRAY)
+                .set(Foreground, Color::WHITE_SMOKE)
         })
         .font_size(FONT_SIZE)
         .color(Color::BLACK);

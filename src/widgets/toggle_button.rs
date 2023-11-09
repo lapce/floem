@@ -1,3 +1,5 @@
+//! A toggle button widget. An example can be found in widget-gallery/button in the floem examples.
+
 use floem_reactive::create_effect;
 use floem_renderer::Renderer;
 use kurbo::{Point, Size};
@@ -12,24 +14,27 @@ use crate::{
     views::Decorators,
 };
 
+/// Controls the switching behavior of the switch. The cooresponding style prop is [ToggleButtonBehavior]
 #[derive(Debug, Clone, PartialEq)]
-pub enum ToggleButtonBehavior {
+pub enum ToggleButtonSwitch {
+    /// The switch foreground item will follow the position of the cursor. The toggle event happens when the cursor passes teh 50% threshhold.
     Follow,
+    /// The switch foreground item will "jump" from being toggled off/on when the cursor passes the 50% threshhold.
     Switch,
 }
 
-impl style::StylePropValue for ToggleButtonBehavior {}
+impl style::StylePropValue for ToggleButtonSwitch {}
 
 prop!(pub ToggleButtonInset: PxPct {} = PxPct::Px(0.));
 prop!(pub ToggleButtonCircleRad: PxPct {} = PxPct::Pct(95.));
-prop!(pub ToggleButtonSwitch: ToggleButtonBehavior {} = ToggleButtonBehavior::Switch);
+prop!(pub ToggleButtonBehavior: ToggleButtonSwitch {} = ToggleButtonSwitch::Switch);
 
 prop_extracter! {
     ToggleStyle {
         foreground: Foreground,
         inset: ToggleButtonInset,
         circle_rad: ToggleButtonCircleRad,
-        switch_behavior: ToggleButtonSwitch
+        switch_behavior: ToggleButtonBehavior
     }
 }
 style_class!(pub ToggleButtonClass);
@@ -41,6 +46,7 @@ enum ToggleState {
     Drag,
 }
 
+/// A toggle button
 pub struct ToggleButton {
     id: id::Id,
     state: bool,
@@ -51,6 +57,25 @@ pub struct ToggleButton {
     radius: f32,
     style: ToggleStyle,
 }
+
+/// A reactive toggle button. When the button is toggled by clicking or dragging the widget an update will be sent to the [ToggleButton::on_toggle] handler.
+/// See also [ToggleButtonClass], [ToggleButtonSwitch] and the other toggle button styles that can be applied.
+///
+/// By default this toggle button has a style class of [ToggleButtonClass] applied with a default style provided.
+///
+/// Styles:  
+/// background color: [style::Background]  
+/// foreground color: [style::Foreground]  
+/// inner switch inset: [ToggleButtonInset]  
+/// inner switch (circle) size/radius: [ToggleButtonCircleRad]  
+/// toggle button switch behavior: [ToggleButtonBehavior] / [ToggleButtonSwitch]
+///
+/// An example using RwSignal
+/// ```rust
+/// let state = create_new_rw_signal(true);
+/// toggle_button(move || state.get())
+///         .on_toggle(move |new_state| state.set(new_state))
+///```
 pub fn toggle_button(state: impl Fn() -> bool + 'static) -> ToggleButton {
     let id = crate::id::Id::next();
     create_effect(move |_| {
@@ -129,7 +154,7 @@ impl View for ToggleButton {
                 if self.held == ToggleState::Held || self.held == ToggleState::Drag {
                     self.held = ToggleState::Drag;
                     match self.style.switch_behavior() {
-                        ToggleButtonBehavior::Follow => {
+                        ToggleButtonSwitch::Follow => {
                             self.position = event.pos.x as f32;
                             if self.position > self.width / 2. && !self.state {
                                 self.state = true;
@@ -144,7 +169,7 @@ impl View for ToggleButton {
                             }
                             cx.app_state_mut().request_layout(self.id());
                         }
-                        ToggleButtonBehavior::Switch => {
+                        ToggleButtonSwitch::Switch => {
                             if event.pos.x as f32 > self.width / 2. && !self.state {
                                 self.position = self.width;
                                 cx.app_state_mut().request_layout(self.id());

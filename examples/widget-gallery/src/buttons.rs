@@ -1,4 +1,11 @@
-use floem::{peniko::Color, style::CursorStyle, view::View, views::Decorators, widgets::button};
+use floem::{
+    peniko::Color,
+    style::{CursorStyle, Foreground},
+    unit::UnitExt,
+    view::View,
+    views::Decorators,
+    widgets::{self, button, toggle_button, ToggleButtonClass},
+};
 
 use crate::form::{form, form_item};
 
@@ -42,6 +49,41 @@ pub fn button_view() -> impl View {
                     true
                 })
             }),
+            form_item("Toggle button - Switch:".to_string(), 120.0, || {
+                toggle_button(|| true)
+                    .on_toggle(|_| {
+                        println!("Button Toggled");
+                    })
+                    .style(|s| {
+                        s.set(
+                            widgets::ToggleButtonBehavior,
+                            widgets::ToggleButtonSwitch::Switch,
+                        )
+                    })
+            }),
+            form_item("Toggle button - Follow:".to_string(), 120.0, || {
+                toggle_button(|| true)
+                    .on_toggle(|_| {
+                        println!("Button Toggled");
+                        // true
+                    })
+                    .style(|s| {
+                        s.background(Color::DARK_GRAY).set(
+                            widgets::ToggleButtonBehavior,
+                            widgets::ToggleButtonSwitch::Follow,
+                        )
+                    })
+            }),
         )
+    })
+    .base_style(|s| {
+        s.class(ToggleButtonClass, |s| {
+            s.background(Color::DARK_GRAY)
+                .set(Foreground, Color::WHITE_SMOKE)
+                .border(1.)
+                .height(25)
+                .set(widgets::ToggleButtonCircleRad, 75.pct())
+                .set(widgets::ToggleButtonInset, 10.pct())
+        })
     })
 }
