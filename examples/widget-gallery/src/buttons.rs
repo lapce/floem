@@ -1,9 +1,14 @@
 use floem::{
     peniko::Color,
     style::CursorStyle,
+    style::{CursorStyle, Foreground},
+    unit::UnitExt,
+    view::View,
     view::View,
     views::Decorators,
+    views::Decorators,
     widgets::{self, button, toggle_button},
+    widgets::{self, button, toggle_button, ToggleButtonClass},
 };
 
 use crate::form::{form, form_item};
@@ -66,12 +71,22 @@ pub fn button_view() -> impl View {
                         println!("Button Toggled");
                     })
                     .style(|s| {
-                        s.set(
+                        s.background(Color::DARK_GRAY).set(
                             widgets::ToggleButtonBehavior,
                             widgets::ToggleButtonSwitch::Follow,
                         )
                     })
             }),
         )
+    })
+    .base_style(|s| {
+        s.class(ToggleButtonClass, |s| {
+            s.background(Color::DARK_GRAY)
+                .set(Foreground, Color::WHITE_SMOKE)
+                .border(1.)
+                .height(25)
+                .set(widgets::ToggleButtonCircleRad, 75.pct())
+                .set(widgets::ToggleButtonInset, 10.pct())
+        })
     })
 }
