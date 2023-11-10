@@ -103,6 +103,7 @@ pub mod keyboard;
 pub mod menu;
 mod nav;
 pub mod pointer;
+mod profiler;
 pub mod renderer;
 pub mod responsive;
 pub mod style;

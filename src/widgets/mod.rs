@@ -114,7 +114,7 @@ pub(crate) fn default_theme() -> Theme {
         })
         .apply(focus_style.clone());
 
-    const FONT_SIZE: f32 = 13.0;
+    const FONT_SIZE: f32 = 12.0;
 
     let input_style = Style::new()
         .background(Color::WHITE)
