@@ -32,6 +32,7 @@ use crate::{
     menu::Menu,
     nav::view_arrow_navigation,
     pointer::{PointerButton, PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
+    profiler::Profile,
     style::{CursorStyle, StyleSelector},
     update::{
         UpdateMessage, ANIM_UPDATE_MESSAGES, CENTRAL_DEFERRED_UPDATE_MESSAGES,
@@ -59,6 +60,7 @@ pub(crate) struct WindowHandle {
     paint_state: PaintState,
     size: RwSignal<Size>,
     theme: Option<Theme>,
+    pub(crate) profile: Option<Profile>,
     os_theme: RwSignal<Option<winit::window::Theme>>,
     is_maximized: bool,
     transparent: bool,
@@ -128,6 +130,7 @@ impl WindowHandle {
             os_theme: theme,
             is_maximized,
             transparent,
+            profile: None,
             scale,
             modifiers: ModifiersState::default(),
             cursor_position: Point::ZERO,
@@ -270,7 +273,7 @@ impl WindowHandle {
                     || view_state.has_style_selectors.has(StyleSelector::Hover)
                     || view_state.has_style_selectors.has(StyleSelector::Active)
                 {
-                    cx.app_state.request_style(*id);
+                    cx.app_state.request_style_recursive(*id);
                 }
                 if hovered.contains(id) {
                     if let Some(action) = cx.get_event_listener(*id, &EventListener::PointerEnter) {
@@ -397,7 +400,7 @@ impl WindowHandle {
                 || view_state.has_style_selectors.has(StyleSelector::Active)
                 || view_state.animation.is_some()
             {
-                cx.app_state.request_style(id);
+                cx.app_state.request_style_recursive(id);
             }
             let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
             if let Some(id_path) = id_path {

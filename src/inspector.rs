@@ -2,16 +2,17 @@ use crate::app::{add_app_update_event, AppUpdateEvent};
 use crate::context::{AppState, ChangeFlags, StyleCx};
 use crate::event::{Event, EventListener};
 use crate::id::Id;
+use crate::profiler::profiler;
 use crate::style::{Style, StyleMapValue};
 use crate::view::{view_children, View};
 use crate::views::{
     container, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label,
-    static_list, text, v_stack, Decorators, Label,
+    static_list, tab, text, v_stack, Decorators, Label,
 };
 use crate::widgets::button;
 use crate::window::WindowConfig;
 use crate::{new_window, style};
-use floem_reactive::{create_effect, create_rw_signal, RwSignal, Scope};
+use floem_reactive::{create_effect, create_rw_signal, create_signal, RwSignal, Scope};
 use image::DynamicImage;
 use kurbo::{Point, Rect, Size};
 use peniko::Color;
@@ -361,7 +362,7 @@ fn captured_view(
     }
 }
 
-fn header(label: impl Display) -> Label {
+pub(crate) fn header(label: impl Display) -> Label {
     text(label).style(|s| {
         s.padding(5.0)
             .background(Color::WHITE_SMOKE)
@@ -806,8 +807,7 @@ fn capture_view(capture: &Rc<Capture>) -> impl View {
             .background(Color::BLACK.with_alpha_factor(0.2))
     });
 
-    stack((left, seperator, tree))
-        .style(|s| s.flex_row().height_full().width_full().max_width_full())
+    h_stack((left, seperator, tree)).style(|s| s.height_full().width_full().max_width_full())
 }
 
 fn inspector_view(capture: &Option<Rc<Capture>>) -> impl View {
@@ -819,13 +819,8 @@ fn inspector_view(capture: &Option<Rc<Capture>>) -> impl View {
 
     stack((view,))
         .window_title(|| "Floem Inspector".to_owned())
-        .on_event(EventListener::WindowClosed, |_| {
-            RUNNING.set(false);
-            false
-        })
         .style(|s| {
-            s.font_size(12.0)
-                .width_full()
+            s.width_full()
                 .height_full()
                 .background(Color::WHITE)
                 .class(scroll::Handle, |s| {
@@ -856,14 +851,64 @@ pub fn capture(window_id: WindowId) {
         RUNNING.set(true);
         new_window(
             move |_| {
-                let view = dyn_container(
-                    move || capture.get(),
-                    |capture| Box::new(inspector_view(&capture)),
-                );
-                let id = view.id();
-                view.style(|s| s.width_full().height_full()).on_event(
-                    EventListener::KeyUp,
-                    move |e| {
+                let (selected, set_selected) = create_signal(0);
+
+                let tab_item = |name, index| {
+                    text(name)
+                        .on_click(move |_| {
+                            set_selected.set(index);
+                            true
+                        })
+                        .style(move |s| {
+                            s.padding(5.0)
+                                .border_right(1)
+                                .border_color(Color::BLACK.with_alpha_factor(0.2))
+                                .hover(move |s| {
+                                    s.background(Color::rgba8(228, 237, 216, 160))
+                                        .apply_if(selected.get() == index, |s| {
+                                            s.background(Color::rgb8(186, 180, 216))
+                                        })
+                                })
+                                .apply_if(selected.get() == index, |s| {
+                                    s.background(Color::rgb8(213, 208, 216))
+                                })
+                        })
+                };
+
+                let tabs = h_stack((tab_item("Views", 0), tab_item("Profiler", 1)))
+                    .style(|s| s.background(Color::WHITE));
+
+                let tab = tab(
+                    move || selected.get(),
+                    move || [0, 1].into_iter(),
+                    |it| *it,
+                    move |it| -> Box<dyn View> {
+                        match it {
+                            0 => Box::new(
+                                dyn_container(
+                                    move || capture.get(),
+                                    |capture| Box::new(inspector_view(&capture)),
+                                )
+                                .style(|s| s.width_full().height_full()),
+                            ),
+                            1 => Box::new(profiler(window_id)),
+                            _ => panic!(),
+                        }
+                    },
+                )
+                .style(|s| s.flex_basis(0.0).min_height(0.0).flex_grow(1.0));
+
+                let seperator = empty().style(move |s| {
+                    s.width_full()
+                        .min_height(1.0)
+                        .background(Color::BLACK.with_alpha_factor(0.2))
+                });
+
+                let stack = v_stack((tabs, seperator, tab));
+                let id = stack.id();
+                stack
+                    .style(|s| s.width_full().height_full())
+                    .on_event(EventListener::KeyUp, move |e| {
                         if let Event::KeyUp(e) = e {
                             if e.key.logical_key == Key::Named(NamedKey::F11)
                                 && e.modifiers.shift_key()
@@ -873,8 +918,11 @@ pub fn capture(window_id: WindowId) {
                             }
                         }
                         false
-                    },
-                )
+                    })
+                    .on_event(EventListener::WindowClosed, |_| {
+                        RUNNING.set(false);
+                        false
+                    })
             },
             Some(WindowConfig {
                 size: Some(Size {

@@ -13,6 +13,7 @@ use crate::{
     app::{AppUpdateEvent, UserEvent, APP_UPDATE_EVENTS},
     ext_event::EXT_EVENT_HANDLER,
     inspector::Capture,
+    profiler::{Profile, ProfileEvent},
     view::View,
     window::WindowConfig,
     window_handle::WindowHandle,
@@ -68,6 +69,22 @@ impl ApplicationHandle {
                 AppUpdateEvent::CaptureWindow { window_id, capture } => {
                     capture.set(self.capture_window(window_id).map(Rc::new));
                 }
+                AppUpdateEvent::ProfileWindow {
+                    window_id,
+                    end_profile,
+                } => {
+                    let handle = self.window_handles.get_mut(&window_id);
+                    if let Some(handle) = handle {
+                        if let Some(profile) = end_profile {
+                            profile.set(handle.profile.take().map(|mut profile| {
+                                profile.next_frame();
+                                Rc::new(profile)
+                            }));
+                        } else {
+                            handle.profile = Some(Profile::default());
+                        }
+                    }
+                }
                 #[cfg(target_os = "linux")]
                 AppUpdateEvent::MenuAction {
                     window_id,
@@ -93,6 +110,44 @@ impl ApplicationHandle {
             Some(window_handle) => window_handle,
             None => return,
         };
+
+        let start = window_handle.profile.is_some().then(|| {
+            let name = match event {
+                WindowEvent::ActivationTokenDone { .. } => "ActivationTokenDone",
+                WindowEvent::Resized(..) => "Resized",
+                WindowEvent::Moved(..) => "Moved",
+                WindowEvent::CloseRequested => "CloseRequested",
+                WindowEvent::Destroyed => "Destroyed",
+                WindowEvent::DroppedFile(_) => "DroppedFile",
+                WindowEvent::HoveredFile(_) => "HoveredFile",
+                WindowEvent::HoveredFileCancelled => "HoveredFileCancelled",
+                WindowEvent::Focused(..) => "Focused",
+                WindowEvent::KeyboardInput { .. } => "KeyboardInput",
+                WindowEvent::ModifiersChanged(..) => "ModifiersChanged",
+                WindowEvent::Ime(..) => "Ime",
+                WindowEvent::CursorMoved { .. } => "CursorMoved",
+                WindowEvent::CursorEntered { .. } => "CursorEntered",
+                WindowEvent::CursorLeft { .. } => "CursorLeft",
+                WindowEvent::MouseWheel { .. } => "MouseWheel",
+                WindowEvent::MouseInput { .. } => "MouseInput",
+                WindowEvent::TouchpadMagnify { .. } => "TouchpadMagnify",
+                WindowEvent::SmartMagnify { .. } => "SmartMagnify",
+                WindowEvent::TouchpadRotate { .. } => "TouchpadRotate",
+                WindowEvent::TouchpadPressure { .. } => "TouchpadPressure",
+                WindowEvent::AxisMotion { .. } => "AxisMotion",
+                WindowEvent::Touch(_) => "Touch",
+                WindowEvent::ScaleFactorChanged { .. } => "ScaleFactorChanged",
+                WindowEvent::ThemeChanged(..) => "ThemeChanged",
+                WindowEvent::Occluded(..) => "Occluded",
+                WindowEvent::MenuAction(..) => "MenuAction",
+                WindowEvent::RedrawRequested => "RedrawRequested",
+            };
+            (
+                name,
+                Instant::now(),
+                matches!(event, WindowEvent::RedrawRequested),
+            )
+        });
 
         match event {
             WindowEvent::ActivationTokenDone { .. } => {}
@@ -160,6 +215,23 @@ impl ApplicationHandle {
             }
             WindowEvent::RedrawRequested => {
                 window_handle.render_frame();
+            }
+        }
+
+        if let Some((name, start, new_frame)) = start {
+            let end = Instant::now();
+
+            if let Some(window_handle) = self.window_handles.get_mut(&window_id) {
+                let profile = window_handle.profile.as_mut().unwrap();
+
+                profile
+                    .current
+                    .events
+                    .push(ProfileEvent { start, end, name });
+
+                if new_frame {
+                    profile.next_frame();
+                }
             }
         }
     }

@@ -10,8 +10,8 @@ use winit::{
 };
 
 use crate::{
-    action::Timer, app_handle::ApplicationHandle, inspector::Capture, view::View,
-    window::WindowConfig,
+    action::Timer, app_handle::ApplicationHandle, inspector::Capture, profiler::Profile,
+    view::View, window::WindowConfig,
 };
 
 type AppEventCallback = dyn Fn(AppEvent);
@@ -49,6 +49,10 @@ pub(crate) enum AppUpdateEvent {
     CaptureWindow {
         window_id: WindowId,
         capture: WriteSignal<Option<Rc<Capture>>>,
+    },
+    ProfileWindow {
+        window_id: WindowId,
+        end_profile: Option<WriteSignal<Option<Rc<Profile>>>>,
     },
     RequestTimer {
         timer: Timer,
