@@ -83,7 +83,7 @@ where
 
     let (viewport, set_viewport) = create_signal(Rect::ZERO);
 
-    create_effect(move |prev_hash_run| {
+    create_effect(move |prev| {
         let mut items_vector = each_fn();
         let viewport = viewport.get();
         let min = match direction {
@@ -148,35 +148,39 @@ where
         };
 
         let hashed_items = items.iter().map(&key_fn).collect::<FxIndexSet<_>>();
-        let diff = if let Some(HashRun(prev_hash_run)) = prev_hash_run {
-            let mut diff = diff(&prev_hash_run, &hashed_items);
-            let mut items = items
-                .into_iter()
-                .map(|i| Some(i))
-                .collect::<SmallVec<[Option<_>; 128]>>();
-            for added in &mut diff.added {
-                added.view = Some(items[added.at].take().unwrap());
-            }
-            diff
-        } else {
-            let mut diff = Diff::default();
-            for (i, item) in items.into_iter().enumerate() {
-                diff.added.push(DiffOpAdd {
-                    at: i,
-                    view: Some(item),
-                });
-            }
-            diff
-        };
-        id.update_state(
-            VirtualListState {
-                diff,
-                before_size,
-                after_size,
-            },
-            false,
-        );
-        HashRun(hashed_items)
+        let (prev_before_size, prev_after_size, diff) =
+            if let Some((prev_before_size, prev_after_size, HashRun(prev_hash_run))) = prev {
+                let mut diff = diff(&prev_hash_run, &hashed_items);
+                let mut items = items
+                    .into_iter()
+                    .map(|i| Some(i))
+                    .collect::<SmallVec<[Option<_>; 128]>>();
+                for added in &mut diff.added {
+                    added.view = Some(items[added.at].take().unwrap());
+                }
+                (prev_before_size, prev_after_size, diff)
+            } else {
+                let mut diff = Diff::default();
+                for (i, item) in items.into_iter().enumerate() {
+                    diff.added.push(DiffOpAdd {
+                        at: i,
+                        view: Some(item),
+                    });
+                }
+                (0.0, 0.0, diff)
+            };
+
+        if !diff.is_empty() || prev_before_size != before_size || prev_after_size != after_size {
+            id.update_state(
+                VirtualListState {
+                    diff,
+                    before_size,
+                    after_size,
+                },
+                false,
+            );
+        }
+        (before_size, after_size, HashRun(hashed_items))
     });
 
     let view_fn = Box::new(as_child_of_current_scope(view_fn));

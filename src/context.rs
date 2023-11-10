@@ -225,6 +225,7 @@ pub struct AppState {
     pub(crate) view_states: HashMap<Id, ViewState>,
     stale_view_state: ViewState,
     pub(crate) scheduled_updates: Vec<FrameUpdate>,
+    pub(crate) request_compute_layout: bool,
     pub(crate) request_paint: bool,
     pub(crate) disabled: HashSet<Id>,
     pub(crate) keyboard_navigable: HashSet<Id>,
@@ -270,6 +271,7 @@ impl AppState {
             view_states: HashMap::new(),
             scheduled_updates: Vec::new(),
             request_paint: false,
+            request_compute_layout: false,
             disabled: HashSet::new(),
             keyboard_navigable: HashSet::new(),
             draggable: HashSet::new(),
@@ -489,6 +491,11 @@ impl AppState {
 
     pub fn request_layout(&mut self, id: Id) {
         self.request_changes(id, ChangeFlags::LAYOUT)
+    }
+
+    /// Requests that `compute_layout` will run for `_id` and all direct and indirect children.
+    pub fn request_compute_layout_recursive(&mut self, _id: Id) {
+        self.request_compute_layout = true;
     }
 
     // `Id` is unused currently, but could be used to calculate damage regions.
