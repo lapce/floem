@@ -838,7 +838,7 @@ fn inspector_view(capture: &Option<Rc<Capture>>) -> impl View {
 }
 
 thread_local! {
-    pub(crate) static RUNNING: Cell<bool> = Cell::new(false);
+    pub(crate) static RUNNING: Rc<Cell<bool>> = Rc::new(Cell::new(false));
     pub(crate) static CAPTURE: RwSignal<Option<Rc<Capture>>> = {
         Scope::new().create_rw_signal(None)
     };
@@ -846,9 +846,10 @@ thread_local! {
 
 pub fn capture(window_id: WindowId) {
     let capture = CAPTURE.with(|c| *c);
+    let running = RUNNING.with(|r| r.clone());
 
-    if !RUNNING.get() {
-        RUNNING.set(true);
+    if !running.get() {
+        running.set(true);
         new_window(
             move |_| {
                 let (selected, set_selected) = create_signal(0);
@@ -919,8 +920,8 @@ pub fn capture(window_id: WindowId) {
                         }
                         false
                     })
-                    .on_event(EventListener::WindowClosed, |_| {
-                        RUNNING.set(false);
+                    .on_event(EventListener::WindowClosed, move|_| {
+                        running.set(false);
                         false
                     })
             },
