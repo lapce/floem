@@ -252,6 +252,11 @@ impl ToggleButton {
             .max(self.radius + inset)
             .min(self.width - self.radius - inset);
     }
+
+    /// Add an event handler to be run when the button is toggled.
+    ///
+    ///This does not run if the state is changed because of an outside signal.
+    /// This handler is only called if this button is clicked or switched
     pub fn on_toggle(mut self, ontoggle: impl Fn(bool) + 'static) -> Self {
         self.ontoggle = Some(Box::new(ontoggle));
         self

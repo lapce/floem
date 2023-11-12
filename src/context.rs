@@ -36,7 +36,9 @@ use crate::{
 
 /// Control whether an event will continue propagating or whether it should stop.
 pub enum EventPropagation {
+    /// Stop event propagation and mark the event as processed
     Stop,
+    /// Let event propagation continue
     Continue,
 }
 impl EventPropagation {
