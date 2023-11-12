@@ -1277,17 +1277,15 @@ fn context_menu_view(
                                 .apply_if(!has_submenu, |s| s.hide())
                         }),
                     ))
-                    .on_event(EventListener::PointerEnter, move |_| {
+                    .on_event_stop(EventListener::PointerEnter, move |_| {
                         if has_submenu {
                             show_submenu.set(true);
                         }
-                        true
                     })
-                    .on_event(EventListener::PointerLeave, move |_| {
+                    .on_event_stop(EventListener::PointerLeave, move |_| {
                         if has_submenu {
                             show_submenu.set(false);
                         }
-                        true
                     })
                     .on_resize(move |rect| {
                         let width = rect.width();
@@ -1295,7 +1293,7 @@ fn context_menu_view(
                             menu_width.set(width);
                         }
                     })
-                    .on_click(move |_| {
+                    .on_click_stop(move |_| {
                         context_menu.set(None);
                         focus_count.set(0);
                         if let Some(id) = menu.id {
@@ -1304,9 +1302,8 @@ fn context_menu_view(
                                 action_id: id as usize,
                             });
                         }
-                        true
                     })
-                    .on_secondary_click(move |_| {
+                    .on_secondary_click_stop(move |_| {
                         context_menu.set(None);
                         focus_count.set(0);
                         if let Some(id) = menu.id {
@@ -1315,7 +1312,6 @@ fn context_menu_view(
                                 action_id: id as usize,
                             });
                         }
-                        true
                     })
                     .disabled(move || !menu.enabled)
                     .style(|s| {
@@ -1336,13 +1332,12 @@ fn context_menu_view(
                         },
                     )
                     .keyboard_navigatable()
-                    .on_event(EventListener::FocusGained, move |_| {
+                    .on_event_stop(EventListener::FocusGained, move |_| {
                         focus_count.update(|count| {
                             *count += 1;
                         });
-                        true
                     })
-                    .on_event(EventListener::FocusLost, move |_| {
+                    .on_event_stop(EventListener::FocusLost, move |_| {
                         let count = focus_count
                             .try_update(|count| {
                                 *count -= 1;
@@ -1352,30 +1347,26 @@ fn context_menu_view(
                         if count < 1 {
                             context_menu.set(None);
                         }
-                        true
                     })
-                    .on_event(EventListener::KeyDown, move |event| {
+                    .on_event_stop(EventListener::KeyDown, move |event| {
                         if let Event::KeyDown(event) = event {
                             if event.key.logical_key == Key::Named(NamedKey::Escape) {
                                 context_menu.set(None);
                             }
                         }
-                        true
                     })
-                    .on_event(EventListener::PointerDown, move |_| true)
-                    .on_event(EventListener::PointerEnter, move |_| {
+                    .on_event_stop(EventListener::PointerDown, move |_| {})
+                    .on_event_stop(EventListener::PointerEnter, move |_| {
                         if has_submenu {
                             on_submenu.set(true);
                             on_child_submenu_for_parent.set(true);
                         }
-                        true
                     })
-                    .on_event(EventListener::PointerLeave, move |_| {
+                    .on_event_stop(EventListener::PointerLeave, move |_| {
                         if has_submenu {
                             on_submenu.set(false);
                             on_child_submenu_for_parent.set(false);
                         }
-                        true
                     })
                     .style(move |s| {
                         s.absolute()
@@ -1418,23 +1409,21 @@ fn context_menu_view(
     .on_resize(move |rect| {
         context_menu_size.set(rect.size());
     })
-    .on_event(EventListener::PointerDown, move |_| true)
+    .on_event_stop(EventListener::PointerDown, move |_| {})
     .keyboard_navigatable()
-    .on_event(EventListener::KeyDown, move |event| {
+    .on_event_stop(EventListener::KeyDown, move |event| {
         if let Event::KeyDown(event) = event {
             if event.key.logical_key == Key::Named(NamedKey::Escape) {
                 context_menu.set(None);
             }
         }
-        true
     })
-    .on_event(EventListener::FocusGained, move |_| {
+    .on_event_stop(EventListener::FocusGained, move |_| {
         focus_count.update(|count| {
             *count += 1;
         });
-        true
     })
-    .on_event(EventListener::FocusLost, move |_| {
+    .on_event_stop(EventListener::FocusLost, move |_| {
         let count = focus_count
             .try_update(|count| {
                 *count -= 1;
@@ -1444,7 +1433,6 @@ fn context_menu_view(
         if count < 1 {
             context_menu.set(None);
         }
-        true
     })
     .style(move |s| {
         let window_size = window_size.get();
