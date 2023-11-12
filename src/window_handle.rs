@@ -177,11 +177,13 @@ impl WindowHandle {
                 if let Some(id) = cx.app_state.focus {
                     let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
                     if let Some(id_path) = id_path {
-                        processed |= cx.unconditional_view_event(
-                            &mut self.view,
-                            Some(id_path.dispatch()),
-                            event.clone(),
-                        );
+                        processed |= cx
+                            .unconditional_view_event(
+                                &mut self.view,
+                                Some(id_path.dispatch()),
+                                event.clone(),
+                            )
+                            .is_processed();
                     } else {
                         cx.app_state.focus = None;
                     }
@@ -190,7 +192,7 @@ impl WindowHandle {
                 if !processed {
                     if let Some(listener) = event.listener() {
                         if let Some(action) = cx.get_event_listener(self.view.id(), &listener) {
-                            processed |= (*action)(&event);
+                            processed |= (*action)(&event).is_processed();
                         }
                     }
                 }

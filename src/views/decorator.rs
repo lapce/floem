@@ -8,6 +8,7 @@ use crate::{
     menu::Menu,
     style::{Style, StyleClass, StyleSelector},
     view::View,
+    EventPropagation,
 };
 
 pub trait Decorators: View + Sized {
@@ -107,27 +108,33 @@ pub trait Decorators: View + Sized {
         self
     }
 
-    fn on_event(self, listener: EventListener, action: impl Fn(&Event) -> bool + 'static) -> Self {
+    /// Add a
+    fn on_event(
+        self,
+        listener: EventListener,
+        action: impl Fn(&Event) -> EventPropagation + 'static,
+    ) -> Self {
         let id = self.id();
         id.update_event_listener(listener, Box::new(action));
         self
     }
 
+    /// This event will be handled with the given closure and the event will continue propagating
     fn on_event_cont(self, listener: EventListener, action: impl Fn(&Event) + 'static) -> Self {
         self.on_event(listener, move |e| {
             action(e);
-            false
+            EventPropagation::Continue
         })
     }
 
     fn on_event_stop(self, listener: EventListener, action: impl Fn(&Event) + 'static) -> Self {
         self.on_event(listener, move |e| {
             action(e);
-            true
+            EventPropagation::Stop
         })
     }
 
-    fn on_click(self, action: impl Fn(&Event) -> bool + 'static) -> Self {
+    fn on_click(self, action: impl Fn(&Event) -> EventPropagation + 'static) -> Self {
         let id = self.id();
         id.update_event_listener(EventListener::Click, Box::new(action));
         self
@@ -137,7 +144,7 @@ pub trait Decorators: View + Sized {
     fn on_click_cont(self, action: impl Fn(&Event) + 'static) -> Self {
         self.on_click(move |e| {
             action(e);
-            false
+            EventPropagation::Continue
         })
     }
 
@@ -145,47 +152,49 @@ pub trait Decorators: View + Sized {
     fn on_click_stop(self, action: impl Fn(&Event) + 'static) -> Self {
         self.on_click(move |e| {
             action(e);
-            true
+            EventPropagation::Stop
         })
     }
 
-    fn on_double_click(self, action: impl Fn(&Event) -> bool + 'static) -> Self {
+    fn on_double_click(self, action: impl Fn(&Event) -> EventPropagation + 'static) -> Self {
         let id = self.id();
         id.update_event_listener(EventListener::DoubleClick, Box::new(action));
         self
     }
 
+    /// This event will be handled with the given closure and the event will continue propagating
     fn on_double_click_cont(self, action: impl Fn(&Event) + 'static) -> Self {
         self.on_double_click(move |e| {
             action(e);
-            false
+            EventPropagation::Continue
         })
     }
 
     fn on_double_click_stop(self, action: impl Fn(&Event) + 'static) -> Self {
         self.on_double_click(move |e| {
             action(e);
-            true
+            EventPropagation::Stop
         })
     }
 
-    fn on_secondary_click(self, action: impl Fn(&Event) -> bool + 'static) -> Self {
+    fn on_secondary_click(self, action: impl Fn(&Event) -> EventPropagation + 'static) -> Self {
         let id = self.id();
         id.update_event_listener(EventListener::SecondaryClick, Box::new(action));
         self
     }
 
+    /// This event will be handled with the given closure and the event will continue propagating
     fn on_secondary_click_cont(self, action: impl Fn(&Event) + 'static) -> Self {
         self.on_secondary_click(move |e| {
             action(e);
-            false
+            EventPropagation::Continue
         })
     }
 
     fn on_secondary_click_stop(self, action: impl Fn(&Event) + 'static) -> Self {
         self.on_secondary_click(move |e| {
             action(e);
-            true
+            EventPropagation::Stop
         })
     }
 

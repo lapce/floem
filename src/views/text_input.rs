@@ -1,10 +1,10 @@
 use crate::action::exec_after;
 use crate::keyboard::{self, KeyEvent};
-use crate::prop_extracter;
 use crate::reactive::{create_effect, RwSignal};
 use crate::style::{CursorStyle, TextColor};
 use crate::style::{FontProps, PaddingLeft};
 use crate::unit::PxPct;
+use crate::{prop_extracter, EventPropagation};
 use clipboard::{ClipboardContext, ClipboardProvider};
 use taffy::prelude::{Layout, Node};
 
@@ -730,7 +730,12 @@ impl View for TextInput {
         }
     }
 
-    fn event(&mut self, cx: &mut EventCx, _id_path: Option<&[Id]>, event: Event) -> bool {
+    fn event(
+        &mut self,
+        cx: &mut EventCx,
+        _id_path: Option<&[Id]>,
+        event: Event,
+    ) -> EventPropagation {
         let is_handled = match &event {
             Event::PointerDown(event) => {
                 if !self.is_focused {
@@ -767,7 +772,7 @@ impl View for TextInput {
             Event::PointerMove(_) => {
                 if !matches!(cx.app_state.cursor, Some(CursorStyle::Text)) {
                     cx.app_state.cursor = Some(CursorStyle::Text);
-                    return false;
+                    return EventPropagation::Continue;
                 }
                 false
             }
@@ -779,7 +784,7 @@ impl View for TextInput {
             self.last_cursor_action_on = Instant::now();
         }
 
-        false
+        EventPropagation::Continue
     }
 
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {

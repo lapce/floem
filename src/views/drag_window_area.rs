@@ -18,14 +18,8 @@ pub fn drag_window_area<V: View + 'static>(child: V) -> DragWindowArea {
         id,
         child: Box::new(child),
     }
-    .on_event(EventListener::PointerDown, |_| {
-        drag_window();
-        true
-    })
-    .on_double_click(|_| {
-        toggle_window_maximized();
-        true
-    })
+    .on_event_stop(EventListener::PointerDown, |_| drag_window())
+    .on_double_click_stop(|_| toggle_window_maximized())
 }
 
 impl View for DragWindowArea {
