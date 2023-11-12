@@ -113,10 +113,40 @@ pub trait Decorators: View + Sized {
         self
     }
 
+    fn on_event_cont(self, listener: EventListener, action: impl Fn(&Event) + 'static) -> Self {
+        self.on_event(listener, move |e| {
+            action(e);
+            false
+        })
+    }
+
+    fn on_event_stop(self, listener: EventListener, action: impl Fn(&Event) + 'static) -> Self {
+        self.on_event(listener, move |e| {
+            action(e);
+            true
+        })
+    }
+
     fn on_click(self, action: impl Fn(&Event) -> bool + 'static) -> Self {
         let id = self.id();
         id.update_event_listener(EventListener::Click, Box::new(action));
         self
+    }
+
+    /// This event will be handled with the given closure and the event will continue propagating
+    fn on_click_cont(self, action: impl Fn(&Event) + 'static) -> Self {
+        self.on_click(move |e| {
+            action(e);
+            false
+        })
+    }
+
+    /// This event will be handled with the given closure and the event will stop propagating
+    fn on_click_stop(self, action: impl Fn(&Event) + 'static) -> Self {
+        self.on_click(move |e| {
+            action(e);
+            true
+        })
     }
 
     fn on_double_click(self, action: impl Fn(&Event) -> bool + 'static) -> Self {
@@ -125,10 +155,38 @@ pub trait Decorators: View + Sized {
         self
     }
 
+    fn on_double_click_cont(self, action: impl Fn(&Event) + 'static) -> Self {
+        self.on_double_click(move |e| {
+            action(e);
+            false
+        })
+    }
+
+    fn on_double_click_stop(self, action: impl Fn(&Event) + 'static) -> Self {
+        self.on_double_click(move |e| {
+            action(e);
+            true
+        })
+    }
+
     fn on_secondary_click(self, action: impl Fn(&Event) -> bool + 'static) -> Self {
         let id = self.id();
         id.update_event_listener(EventListener::SecondaryClick, Box::new(action));
         self
+    }
+
+    fn on_secondary_click_cont(self, action: impl Fn(&Event) + 'static) -> Self {
+        self.on_secondary_click(move |e| {
+            action(e);
+            false
+        })
+    }
+
+    fn on_secondary_click_stop(self, action: impl Fn(&Event) + 'static) -> Self {
+        self.on_secondary_click(move |e| {
+            action(e);
+            true
+        })
     }
 
     fn on_resize(self, action: impl Fn(Rect) + 'static) -> Self {
