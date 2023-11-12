@@ -94,10 +94,9 @@ fn app_view() -> impl View {
     let view = stack((stack((
         text("Toggle Theme")
             .class(Button)
-            .on_click({
+            .on_click_stop({
                 move |_| {
                     set_theme.update(|theme| *theme = !*theme);
-                    true
                 }
             })
             .keyboard_navigatable(),
@@ -105,28 +104,25 @@ fn app_view() -> impl View {
             label(move || format!("Value: {}", counter.get())).class(Label),
             text("Increment")
                 .class(Button)
-                .on_click({
+                .on_click_stop({
                     move |_| {
                         set_counter.update(|value| *value += 1);
-                        true
                     }
                 })
                 .keyboard_navigatable(),
             text("Decrement")
                 .class(Button)
-                .on_click({
+                .on_click_stop({
                     move |_| {
                         set_counter.update(|value| *value -= 1);
-                        true
                     }
                 })
                 .keyboard_navigatable(),
             text("Reset to 0")
                 .class(Button)
-                .on_click(move |_| {
+                .on_click_stop(move |_| {
                     println!("Reset counter pressed"); // will not fire if button is disabled
                     set_counter.update(|value| *value = 0);
-                    true
                 })
                 .disabled(move || counter.get() == 0)
                 .keyboard_navigatable(),
@@ -150,13 +146,12 @@ fn app_view() -> impl View {
     .window_title(|| "Themes Example".to_string());
 
     let id = view.id();
-    view.on_event(EventListener::KeyUp, move |e| {
+    view.on_event_stop(EventListener::KeyUp, move |e| {
         if let Event::KeyUp(e) = e {
             if e.key.logical_key == Key::Named(NamedKey::F11) {
                 id.inspect();
             }
         }
-        true
     })
 }
 

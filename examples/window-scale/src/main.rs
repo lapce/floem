@@ -20,16 +20,14 @@ fn app_view() -> impl View {
             (
                 label(|| "Increment")
                     .class(Button)
-                    .on_click(move |_| {
+                    .on_click_stop(move |_| {
                         set_counter.update(|value| *value += 1);
-                        true
                     })
                     .keyboard_navigatable(),
                 label(|| "Decrement")
                     .class(Button)
-                    .on_click(move |_| {
+                    .on_click_stop(move |_| {
                         set_counter.update(|value| *value -= 1);
-                        true
                     })
                     .style(|s| {
                         s.margin_left(10.0)
@@ -39,10 +37,9 @@ fn app_view() -> impl View {
                     .keyboard_navigatable(),
                 label(|| "Reset to 0")
                     .class(Button)
-                    .on_click(move |_| {
+                    .on_click_stop(move |_| {
                         println!("Reset counter pressed"); // will not fire if button is disabled
                         set_counter.update(|value| *value = 0);
-                        true
                     })
                     .disabled(move || counter.get() == 0)
                     .style(|s| {
@@ -58,24 +55,21 @@ fn app_view() -> impl View {
             (
                 label(|| "Zoom In")
                     .class(Button)
-                    .on_click(move |_| {
+                    .on_click_stop(move |_| {
                         window_scale.update(|scale| *scale *= 1.2);
-                        true
                     })
                     .style(|s| s.margin_top(10.0).margin_right(10.0)),
                 label(|| "Zoom Out")
                     .class(Button)
-                    .on_click(move |_| {
+                    .on_click_stop(move |_| {
                         window_scale.update(|scale| *scale /= 1.2);
-                        true
                     })
                     .style(|s| s.margin_top(10.0).margin_right(10.0)),
                 label(|| "Zoom Reset")
                     .class(Button)
                     .disabled(move || window_scale.get() == 1.0)
-                    .on_click(move |_| {
+                    .on_click_stop(move |_| {
                         window_scale.set(1.0);
-                        true
                     })
                     .style(|s| s.margin_top(10.0).margin_right(10.0)),
             )
@@ -105,13 +99,12 @@ fn app_view() -> impl View {
     });
 
     let id = view.id();
-    view.on_event(EventListener::KeyUp, move |e| {
+    view.on_event_stop(EventListener::KeyUp, move |e| {
         if let Event::KeyUp(e) = e {
             if e.key.logical_key == Key::Named(NamedKey::F11) {
                 id.inspect();
             }
         }
-        true
     })
 }
 

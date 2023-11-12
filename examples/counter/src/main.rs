@@ -23,18 +23,16 @@ fn app_view() -> impl View {
                         .hover(|s| s.background(Color::LIGHT_GREEN))
                         .active(|s| s.color(Color::WHITE).background(Color::DARK_GREEN))
                 })
-                .on_click({
+                .on_click_stop({
                     move |_| {
                         set_counter.update(|value| *value += 1);
-                        true
                     }
                 })
                 .keyboard_navigatable(),
             text("Decrement")
-                .on_click({
+                .on_click_stop({
                     move |_| {
                         set_counter.update(|value| *value -= 1);
-                        true
                     }
                 })
                 .style(|s| {
@@ -49,10 +47,9 @@ fn app_view() -> impl View {
                 })
                 .keyboard_navigatable(),
             text("Reset to 0")
-                .on_click(move |_| {
+                .on_click_stop(move |_| {
                     println!("Reset counter pressed"); // will not fire if button is disabled
                     set_counter.update(|value| *value = 0);
-                    true
                 })
                 .disabled(move || counter.get() == 0)
                 .style(|s| {
@@ -77,13 +74,12 @@ fn app_view() -> impl View {
     });
 
     let id = view.id();
-    view.on_event(EventListener::KeyUp, move |e| {
+    view.on_event_stop(EventListener::KeyUp, move |e| {
         if let Event::KeyUp(e) = e {
             if e.key.logical_key == Key::Named(NamedKey::F11) {
                 id.inspect();
             }
         }
-        true
     })
 }
 
