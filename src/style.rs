@@ -439,7 +439,7 @@ macro_rules! prop_extracter {
             #[allow(dead_code)]
             $vis fn read_style(&mut self, cx: &mut $crate::context::StyleCx, style: &$crate::style::Style) -> bool {
                 let mut transition = false;
-                let changed = false $(| self.$prop.read(style, style, &cx.now, &mut transition))*;
+                let changed = false $(| self.$prop.read(style, style, &cx.now(), &mut transition))*;
                 if transition {
                     cx.request_transition();
                 }
@@ -449,7 +449,7 @@ macro_rules! prop_extracter {
             #[allow(dead_code)]
             $vis fn read(&mut self, cx: &mut $crate::context::StyleCx) -> bool {
                 let mut transition = false;
-                let changed = self.read_explicit(&cx.direct, &cx.current, &cx.now, &mut transition);
+                let changed = self.read_explicit(&cx.direct_style(), &cx.indirect_style(), &cx.now(), &mut transition);
                 if transition {
                     cx.request_transition();
                 }

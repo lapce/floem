@@ -517,21 +517,26 @@ impl AppState {
             .copied()
     }
 
-    pub(crate) fn get_content_rect(&mut self, id: Id) -> Rect {
+    /// Returns the layout rect excluding borders, padding and position.
+    /// This is relative to the view.
+    pub fn get_content_rect(&mut self, id: Id) -> Rect {
+        let size = self
+            .get_layout(id)
+            .map(|layout| layout.size)
+            .unwrap_or_default();
+        let rect = Size::new(size.width as f64, size.height as f64).to_rect();
         let view_state = self.view_state(id);
-        let rect = view_state.layout_rect;
         let props = &view_state.layout_props;
         let pixels = |px_pct, abs| match px_pct {
             PxPct::Px(v) => v,
             PxPct::Pct(pct) => pct * abs,
         };
-        let origin = rect.origin();
         rect.inset(-Insets {
             x0: props.border_left().0 + pixels(props.padding_left(), rect.width()),
             x1: props.border_right().0 + pixels(props.padding_right(), rect.width()),
             y0: props.border_top().0 + pixels(props.padding_top(), rect.height()),
             y1: props.border_bottom().0 + pixels(props.padding_bottom(), rect.height()),
-        }) - origin.to_vec2()
+        })
     }
 
     pub(crate) fn get_layout_rect(&mut self, id: Id) -> Rect {
@@ -1220,6 +1225,10 @@ impl<'a> StyleCx<'a> {
         self.restore();
     }
 
+    pub fn now(&self) -> Instant {
+        self.now
+    }
+
     pub fn save(&mut self) {
         self.saved.push(self.current.clone());
     }
@@ -1236,6 +1245,14 @@ impl<'a> StyleCx<'a> {
 
     pub fn style(&self) -> Style {
         (*self.current).clone().apply(self.direct.clone())
+    }
+
+    pub fn direct_style(&self) -> &Style {
+        &self.direct
+    }
+
+    pub fn indirect_style(&self) -> &Style {
+        &self.current
     }
 
     pub fn request_transition(&mut self) {
@@ -1598,6 +1615,7 @@ impl<'a> PaintCx<'a> {
     }
 
     /// Returns the layout rect excluding borders, padding and position.
+    /// This is relative to the view.
     pub fn get_content_rect(&mut self, id: Id) -> Rect {
         self.app_state.get_content_rect(id)
     }
