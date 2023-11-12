@@ -941,7 +941,7 @@ impl<'a> EventCx<'a> {
                     }
                 }
                 if let Some(action) = self.get_event_listener(id, &EventListener::PointerMove) {
-                    if (*action)(&event).is_stop() {
+                    if (*action)(&event).is_processed() {
                         return EventPropagation::Stop;
                     }
                 }
@@ -958,7 +958,7 @@ impl<'a> EventCx<'a> {
                                 if let Some(action) =
                                     self.get_event_listener(id, &EventListener::Drop)
                                 {
-                                    if (*action)(&event).is_stop() {
+                                    if (*action)(&event).is_processed() {
                                         // if the drop is processed, we set dragging to none so that the animation
                                         // for the dragged view back to its original position isn't played.
                                         self.app_state.dragging = None;
@@ -994,7 +994,7 @@ impl<'a> EventCx<'a> {
                                 .as_ref()
                                 .map(|e| e.count == 2)
                                 .unwrap_or(false)
-                            && (*action)(&event).is_stop()
+                            && (*action)(&event).is_processed()
                         {
                             return EventPropagation::Stop;
                         }
@@ -1003,14 +1003,14 @@ impl<'a> EventCx<'a> {
                         if on_view
                             && self.app_state.is_clicking(&id)
                             && last_pointer_down.is_some()
-                            && (*action)(&event).is_stop()
+                            && (*action)(&event).is_processed()
                         {
                             return EventPropagation::Stop;
                         }
                     }
 
                     if let Some(action) = self.get_event_listener(id, &EventListener::PointerUp) {
-                        if (*action)(&event).is_stop() {
+                        if (*action)(&event).is_processed() {
                             return EventPropagation::Stop;
                         }
                     }
@@ -1022,7 +1022,10 @@ impl<'a> EventCx<'a> {
                     if let Some(action) =
                         self.get_event_listener(id, &EventListener::SecondaryClick)
                     {
-                        if on_view && last_pointer_down.is_some() && (*action)(&event).is_stop() {
+                        if on_view
+                            && last_pointer_down.is_some()
+                            && (*action)(&event).is_processed()
+                        {
                             return EventPropagation::Stop;
                         }
                     }
@@ -1064,7 +1067,7 @@ impl<'a> EventCx<'a> {
                 } else {
                     true
                 };
-                if should_run && (*action)(&event).is_stop() {
+                if should_run && (*action)(&event).is_processed() {
                     return EventPropagation::Stop;
                 }
             }
