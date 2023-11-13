@@ -15,6 +15,7 @@ use crate::{
     unit::PxPct,
     view::View,
     views::Decorators,
+    EventPropagation,
     // EventPropagation,
 };
 
@@ -120,7 +121,7 @@ impl View for Slider {
         cx: &mut crate::context::EventCx,
         _id_path: Option<&[crate::id::Id]>,
         event: crate::event::Event,
-    ) -> bool {
+    ) -> EventPropagation {
         match event {
             crate::event::Event::PointerDown(event) => {
                 cx.update_active(self.id);
@@ -161,7 +162,7 @@ impl View for Slider {
             }
             _ => {}
         };
-        false
+        EventPropagation::Continue
     }
 
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
