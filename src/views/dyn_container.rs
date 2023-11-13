@@ -1,4 +1,4 @@
-use floem_reactive::{as_child_of_current_scope, create_effect, Scope};
+use floem_reactive::{as_child_of_current_scope, create_updater, Scope};
 
 use crate::{
     id::Id,
@@ -74,15 +74,16 @@ pub fn dyn_container<CF: Fn(T) -> Box<dyn View> + 'static, T: 'static>(
 ) -> DynamicContainer<T> {
     let id = Id::next();
 
-    create_effect(move |_| {
-        id.update_state(update_view(), false);
+    let initial = create_updater(update_view, move |new_state| {
+        id.update_state(new_state, false)
     });
 
     let child_fn = Box::new(as_child_of_current_scope(child_fn));
+    let (child, child_scope) = child_fn(initial);
     DynamicContainer {
         id,
-        child: Box::new(crate::views::empty()),
-        child_scope: Scope::new(),
+        child,
+        child_scope,
         child_fn,
     }
 }
