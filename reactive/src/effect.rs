@@ -1,4 +1,4 @@
-use std::{any::Any, cell::RefCell, collections::HashSet, marker::PhantomData, rc::Rc};
+use std::{any::Any, cell::RefCell, collections::HashSet, mem, rc::Rc};
 
 use crate::{
     id::Id,
@@ -10,7 +10,7 @@ pub(crate) trait EffectTrait {
     fn id(&self) -> Id;
     fn run(&self) -> bool;
     fn add_observer(&self, id: Id);
-    fn clear_observers(&self) -> Option<HashSet<Id>>;
+    fn clear_observers(&self) -> HashSet<Id>;
 }
 
 struct Effect<T, F>
@@ -20,9 +20,8 @@ where
 {
     id: Id,
     f: F,
-    value: RefCell<Box<dyn Any>>,
-    ty: PhantomData<T>,
-    observers: RefCell<Option<HashSet<Id>>>,
+    value: RefCell<Option<T>>,
+    observers: RefCell<HashSet<Id>>,
 }
 
 impl<T, F> Drop for Effect<T, F>
@@ -50,13 +49,12 @@ where
     let effect = Rc::new(Effect {
         id,
         f,
-        value: RefCell::new(Box::new(None::<T>)),
-        ty: PhantomData,
-        observers: RefCell::new(None),
+        value: RefCell::new(None),
+        observers: RefCell::new(HashSet::default()),
     });
     id.set_scope();
 
-    run_effect(effect);
+    run_initial_effect(effect);
 }
 
 struct UpdaterEffect<T, I, C, U>
@@ -67,9 +65,8 @@ where
     id: Id,
     compute: C,
     on_change: U,
-    value: RefCell<Box<dyn Any>>,
-    ty: PhantomData<T>,
-    observers: RefCell<Option<HashSet<Id>>>,
+    value: RefCell<Option<T>>,
+    observers: RefCell<HashSet<Id>>,
 }
 
 impl<T, I, C, U> Drop for UpdaterEffect<T, I, C, U>
@@ -106,9 +103,8 @@ where
         id,
         compute,
         on_change,
-        value: RefCell::new(Box::new(None::<T>)),
-        ty: PhantomData,
-        observers: RefCell::new(None),
+        value: RefCell::new(None),
+        observers: RefCell::new(HashSet::default()),
     });
     id.set_scope();
 
@@ -146,6 +142,22 @@ pub fn batch<T>(f: impl FnOnce() -> T) -> T {
     result
 }
 
+pub(crate) fn run_initial_effect(effect: Rc<dyn EffectTrait>) {
+    let effect_id = effect.id();
+
+    RUNTIME.with(|runtime| {
+        *runtime.current_effect.borrow_mut() = Some(effect.clone());
+
+        let effect_scope = Scope(effect_id);
+        with_scope(effect_scope, || {
+            effect_scope.track();
+            effect.run();
+        });
+
+        *runtime.current_effect.borrow_mut() = None;
+    });
+}
+
 pub(crate) fn run_effect(effect: Rc<dyn EffectTrait>) {
     let effect_id = effect.id();
     effect_id.dispose();
@@ -154,15 +166,13 @@ pub(crate) fn run_effect(effect: Rc<dyn EffectTrait>) {
 
     RUNTIME.with(|runtime| {
         *runtime.current_effect.borrow_mut() = Some(effect.clone());
-    });
 
-    let effect_scope = Scope(effect_id);
-    with_scope(effect_scope, move || {
-        effect_scope.track();
-        effect.run();
-    });
+        let effect_scope = Scope(effect_id);
+        with_scope(effect_scope, move || {
+            effect_scope.track();
+            effect.run();
+        });
 
-    RUNTIME.with(|runtime| {
         *runtime.current_effect.borrow_mut() = None;
     });
 }
@@ -186,11 +196,7 @@ where
         });
 
         // set new value
-        let mut value = effect.value.borrow_mut();
-        let value = value
-            .downcast_mut::<Option<T>>()
-            .expect("to downcast effect value");
-        *value = Some(new_value);
+        *effect.value.borrow_mut() = Some(new_value);
 
         *runtime.current_effect.borrow_mut() = None;
 
@@ -206,11 +212,9 @@ where
 pub(crate) fn observer_clean_up(effect: &Rc<dyn EffectTrait>) {
     let effect_id = effect.id();
     let observers = effect.clear_observers();
-    if let Some(observers) = observers {
-        for observer in observers {
-            if let Some(signal) = observer.signal() {
-                signal.subscribers.borrow_mut().remove(&effect_id);
-            }
+    for observer in observers {
+        if let Some(signal) = observer.signal() {
+            signal.subscribers.borrow_mut().remove(&effect_id);
         }
     }
 }
@@ -225,39 +229,22 @@ where
     }
 
     fn run(&self) -> bool {
-        let curr_value = {
-            // downcast value
-            let mut value = self.value.borrow_mut();
-            let value = value
-                .downcast_mut::<Option<T>>()
-                .expect("to downcast effect value");
-            value.take()
-        };
+        let curr_value = self.value.borrow_mut().take();
 
         // run the effect
         let new_value = (self.f)(curr_value);
 
-        // set new value
-        let mut value = self.value.borrow_mut();
-        let value = value
-            .downcast_mut::<Option<T>>()
-            .expect("to downcast effect value");
-        *value = Some(new_value);
+        *self.value.borrow_mut() = Some(new_value);
 
         true
     }
 
     fn add_observer(&self, id: Id) {
-        let mut observers = self.observers.borrow_mut();
-        if let Some(observers) = observers.as_mut() {
-            observers.insert(id);
-        } else {
-            *observers = Some(HashSet::from_iter([id]));
-        }
+        self.observers.borrow_mut().insert(id);
     }
 
-    fn clear_observers(&self) -> Option<HashSet<Id>> {
-        self.observers.borrow_mut().take()
+    fn clear_observers(&self) -> HashSet<Id> {
+        mem::take(&mut *self.observers.borrow_mut())
     }
 }
 
@@ -272,39 +259,21 @@ where
     }
 
     fn run(&self) -> bool {
-        let curr_value = {
-            // downcast value
-            let mut value = self.value.borrow_mut();
-            let value = value
-                .downcast_mut::<Option<T>>()
-                .expect("to downcast effect value");
-            value.take()
-        };
+        let curr_value = self.value.borrow_mut().take();
 
         // run the effect
         let (i, t) = (self.compute)(curr_value);
         let new_value = (self.on_change)(i, t);
 
-        // set new value
-        let mut value = self.value.borrow_mut();
-        let value = value
-            .downcast_mut::<Option<T>>()
-            .expect("to downcast effect value");
-        *value = Some(new_value);
-
+        *self.value.borrow_mut() = Some(new_value);
         true
     }
 
     fn add_observer(&self, id: Id) {
-        let mut observers = self.observers.borrow_mut();
-        if let Some(observers) = observers.as_mut() {
-            observers.insert(id);
-        } else {
-            *observers = Some(HashSet::from_iter([id]));
-        }
+        self.observers.borrow_mut().insert(id);
     }
 
-    fn clear_observers(&self) -> Option<HashSet<Id>> {
-        self.observers.borrow_mut().take()
+    fn clear_observers(&self) -> HashSet<Id> {
+        mem::take(&mut *self.observers.borrow_mut())
     }
 }
