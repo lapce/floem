@@ -12,6 +12,7 @@ use floem::{
         VirtualListItemSize,
     },
     widgets::checkbox,
+    EventPropagation,
 };
 
 use crate::form::{form, form_item};
@@ -64,20 +65,18 @@ fn enhanced_list() -> impl View {
                 container({
                     stack({
                         (
-                            checkbox(is_checked).on_click(move |_| {
+                            checkbox(is_checked).on_click_stop(move |_| {
                                 set_is_checked.update(|checked: &mut bool| *checked = !*checked);
-                                true
                             }),
                             label(move || item.to_string())
                                 .style(|s| s.height(32.0).font_size(32.0)),
                             container({
                                 label(move || " X ")
-                                    .on_click(move |_| {
+                                    .on_click_stop(move |_| {
                                         print!("Item Removed");
                                         set_long_list.update(|x| {
                                             x.remove(index);
                                         });
-                                        true
                                     })
                                     .style(|s| {
                                         s.height(18.0)
@@ -99,11 +98,10 @@ fn enhanced_list() -> impl View {
                     })
                     .style(move |s| s.height(item_height).width(list_width).items_center())
                 })
-                .on_click(move |_| {
+                .on_click_stop(move |_| {
                     set_selected.update(|v: &mut usize| {
                         *v = long_list.get().iter().position(|it| *it == item).unwrap();
                     });
-                    true
                 })
                 .on_event(EventListener::KeyDown, move |e| {
                     if let Event::KeyDown(key_event) = e {
@@ -113,18 +111,18 @@ fn enhanced_list() -> impl View {
                                 if sel > 0 {
                                     set_selected.update(|v| *v -= 1);
                                 }
-                                true
+                                EventPropagation::Stop
                             }
                             Key::Named(NamedKey::ArrowDown) => {
                                 if sel < long_list.get().len() - 1 {
                                     set_selected.update(|v| *v += 1);
                                 }
-                                true
+                                EventPropagation::Stop
                             }
-                            _ => false,
+                            _ => EventPropagation::Continue,
                         }
                     } else {
-                        false
+                        EventPropagation::Continue
                     }
                 })
                 .keyboard_navigatable()

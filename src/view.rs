@@ -93,6 +93,7 @@ use crate::{
     event::Event,
     id::Id,
     style::{BoxShadowProp, Style, StyleClassRef},
+    EventPropagation,
 };
 
 pub trait View {
@@ -206,13 +207,22 @@ pub trait View {
     ///
     /// If the event needs other passes to run you're expected to call
     /// `cx.app_state_mut().request_changes`.
-    fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {
+    fn event(
+        &mut self,
+        cx: &mut EventCx,
+        id_path: Option<&[Id]>,
+        event: Event,
+    ) -> EventPropagation {
         let mut handled = false;
         self.for_each_child_rev_mut(&mut |child| {
-            handled |= cx.view_event(child, id_path, event.clone());
+            handled |= cx.view_event(child, id_path, event.clone()).is_processed();
             handled
         });
-        handled
+        if handled {
+            EventPropagation::Stop
+        } else {
+            EventPropagation::Continue
+        }
     }
 
     /// `View`-specific implementation. Will be called in the [`View::paint_main`] entry point method.
@@ -630,7 +640,12 @@ impl View for Box<dyn View> {
         (**self).compute_layout(cx)
     }
 
-    fn event(&mut self, cx: &mut EventCx, id_path: Option<&[Id]>, event: Event) -> bool {
+    fn event(
+        &mut self,
+        cx: &mut EventCx,
+        id_path: Option<&[Id]>,
+        event: Event,
+    ) -> EventPropagation {
         (**self).event(cx, id_path, event)
     }
 

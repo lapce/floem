@@ -13,6 +13,7 @@ use crate::{
     style_class,
     unit::Px,
     view::View,
+    EventPropagation,
 };
 
 enum ScrollState {
@@ -722,7 +723,7 @@ impl View for Scroll {
         cx: &mut crate::context::EventCx,
         id_path: Option<&[Id]>,
         event: crate::event::Event,
-    ) -> bool {
+    ) -> EventPropagation {
         let viewport_size = self.child_viewport.size();
         let scroll_offset = self.child_viewport.origin().to_vec2();
         let content_size = self.child_size;
@@ -744,7 +745,7 @@ impl View for Scroll {
                             cx.update_active(self.id);
                             // Force a repaint.
                             cx.request_paint(self.id);
-                            return true;
+                            return EventPropagation::Stop;
                         }
                         self.click_vertical_bar_area(cx.app_state, event.pos);
                         let scroll_offset = self.child_viewport.origin().to_vec2();
@@ -754,7 +755,7 @@ impl View for Scroll {
                             scroll_offset,
                         );
                         cx.update_active(self.id);
-                        return true;
+                        return EventPropagation::Stop;
                     } else if self.point_within_horizontal_bar(cx.app_state, pos) {
                         if self.point_hits_horizontal_bar(cx.app_state, pos) {
                             self.held = BarHeldState::Horizontal(
@@ -765,7 +766,7 @@ impl View for Scroll {
                             cx.update_active(self.id);
                             // Force a repaint.
                             cx.request_paint(self.id);
-                            return true;
+                            return EventPropagation::Stop;
                         }
                         self.click_horizontal_bar_area(cx.app_state, event.pos);
                         let scroll_offset = self.child_viewport.origin().to_vec2();
@@ -775,7 +776,7 @@ impl View for Scroll {
                             scroll_offset,
                         );
                         cx.update_active(self.id);
-                        return true;
+                        return EventPropagation::Stop;
                     }
                 }
             }
@@ -816,7 +817,7 @@ impl View for Scroll {
                     } else if self.point_within_vertical_bar(cx.app_state, pos)
                         || self.point_within_horizontal_bar(cx.app_state, pos)
                     {
-                        return false;
+                        return EventPropagation::Continue;
                     }
                 }
             }
@@ -830,15 +831,18 @@ impl View for Scroll {
             _ => {}
         }
 
-        if cx.view_event(&mut self.child, id_path, event.clone()) {
-            return true;
+        if cx
+            .view_event(&mut self.child, id_path, event.clone())
+            .is_processed()
+        {
+            return EventPropagation::Stop;
         }
 
         if let Event::PointerWheel(pointer_event) = &event {
             if let Some(listener) = event.listener() {
                 if let Some(action) = cx.get_event_listener(self.id, &listener) {
-                    if (*action)(&event) {
-                        return true;
+                    if (*action)(&event).is_processed() {
+                        return EventPropagation::Stop;
                     }
                 }
             }
@@ -853,10 +857,14 @@ impl View for Scroll {
             // Check if the scroll bars now hover
             self.update_hover_states(cx.app_state, pointer_event.pos);
 
-            return !self.propagate_pointer_wheel;
+            return if !self.propagate_pointer_wheel {
+                EventPropagation::Stop
+            } else {
+                EventPropagation::Continue
+            };
         }
 
-        false
+        EventPropagation::Continue
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {

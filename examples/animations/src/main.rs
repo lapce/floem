@@ -15,17 +15,14 @@ fn app_view() -> impl View {
 
     stack({
         (label(|| "Hover or click me!")
-            .on_click(move |_| {
+            .on_click_stop(move |_| {
                 set_counter.update(|value| *value += 1.0);
-                true
             })
-            .on_event(EventListener::PointerEnter, move |_| {
+            .on_event_stop(EventListener::PointerEnter, move |_| {
                 set_is_hovered.update(|val| *val = true);
-                true
             })
-            .on_event(EventListener::PointerLeave, move |_| {
+            .on_event_stop(EventListener::PointerLeave, move |_| {
                 set_is_hovered.update(|val| *val = false);
-                true
             })
             .style(|s| {
                 s.border(1.0)

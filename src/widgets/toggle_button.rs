@@ -12,6 +12,7 @@ use crate::{
     unit::PxPct,
     view::View,
     views::Decorators,
+    EventPropagation,
 };
 
 /// Controls the switching behavior of the switch. The cooresponding style prop is [ToggleButtonBehavior]
@@ -117,7 +118,7 @@ impl View for ToggleButton {
         cx: &mut crate::context::EventCx,
         _id_path: Option<&[crate::id::Id]>,
         event: crate::event::Event,
-    ) -> bool {
+    ) -> EventPropagation {
         match event {
             crate::event::Event::PointerDown(_event) => {
                 cx.update_active(self.id);
@@ -202,7 +203,7 @@ impl View for ToggleButton {
             }
             _ => {}
         };
-        false
+        EventPropagation::Continue
     }
 
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<kurbo::Rect> {
@@ -251,6 +252,11 @@ impl ToggleButton {
             .max(self.radius + inset)
             .min(self.width - self.radius - inset);
     }
+
+    /// Add an event handler to be run when the button is toggled.
+    ///
+    ///This does not run if the state is changed because of an outside signal.
+    /// This handler is only called if this button is clicked or switched
     pub fn on_toggle(mut self, ontoggle: impl Fn(bool) + 'static) -> Self {
         self.ontoggle = Some(Box::new(ontoggle));
         self

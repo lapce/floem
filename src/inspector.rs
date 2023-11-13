@@ -11,7 +11,7 @@ use crate::views::{
 };
 use crate::widgets::button;
 use crate::window::WindowConfig;
-use crate::{new_window, style};
+use crate::{new_window, style, EventPropagation};
 use floem_reactive::{create_effect, create_rw_signal, create_signal, RwSignal, Scope};
 use image::DynamicImage;
 use kurbo::{Point, Rect, Size};
@@ -203,13 +203,9 @@ fn captured_view_no_children(
                         }
                     })
             })
-            .on_click(move |_| {
-                selected.set(Some(id));
-                true
-            })
-            .on_event(EventListener::PointerEnter, move |_| {
-                highlighted.set(Some(id));
-                false
+            .on_click_stop(move |_| selected.set(Some(id)))
+            .on_event_cont(EventListener::PointerEnter, move |_| {
+                highlighted.set(Some(id))
             }),
     );
 
@@ -273,9 +269,8 @@ fn captured_view_with_children(
                         })
                 })
             })
-            .on_click(move |_| {
+            .on_click_stop(move |_| {
                 expanded.set(!expanded.get());
-                true
             }),
         name,
     ))
@@ -300,13 +295,9 @@ fn captured_view_with_children(
                 }
             })
     })
-    .on_click(move |_| {
-        selected.set(Some(id));
-        true
-    })
-    .on_event(EventListener::PointerEnter, move |_| {
-        highlighted.set(Some(id));
-        false
+    .on_click_stop(move |_| selected.set(Some(id)))
+    .on_event_cont(EventListener::PointerEnter, move |_| {
+        highlighted.set(Some(id))
     });
 
     let row_id = row.id();
@@ -526,10 +517,7 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl 
                 );
                 let clear = button(|| "Clear selection")
                     .style(|s| s.margin(5.0))
-                    .on_click(move |_| {
-                        selected.set(None);
-                        true
-                    });
+                    .on_click_stop(move |_| selected.set(None));
                 let clear = stack((clear,));
 
                 let style_header = header("View Style");
@@ -688,30 +676,29 @@ fn capture_view(capture: &Rc<Capture>) -> impl View {
                     if capture_view.highlighted.get() != Some(view.id) {
                         capture_view.highlighted.set(Some(view.id));
                     }
-                    return false;
+                    return EventPropagation::Continue;
                 }
             }
             if capture_view.highlighted.get().is_some() {
                 capture_view.highlighted.set(None);
             }
-            false
+            EventPropagation::Continue
         })
         .on_click(move |e| {
             if let Event::PointerUp(e) = e {
                 if let Some(view) = capture__.root.find_by_pos(e.pos) {
                     capture_view.selected.set(Some(view.id));
                     capture_view.expanding_selection.set(Some(view.id));
-                    return true;
+                    return EventPropagation::Stop;
                 }
             }
             if capture_view.selected.get().is_some() {
                 capture_view.selected.set(None);
             }
-            true
+            EventPropagation::Stop
         })
-        .on_event(EventListener::PointerLeave, move |_| {
-            capture_view.highlighted.set(None);
-            false
+        .on_event_cont(EventListener::PointerLeave, move |_| {
+            capture_view.highlighted.set(None)
         });
 
     let capture_ = capture.clone();
@@ -783,14 +770,10 @@ fn capture_view(capture: &Rc<Capture>) -> impl View {
 
     let tree = scroll(captured_view(&capture.root, 0, &capture_view))
         .style(|s| s.width_full().min_height(0).flex_basis(0).flex_grow(1.0))
-        .on_event(EventListener::PointerLeave, move |_| {
-            capture_view.highlighted.set(None);
-            false
+        .on_event_cont(EventListener::PointerLeave, move |_| {
+            capture_view.highlighted.set(None)
         })
-        .on_click(move |_| {
-            capture_view.selected.set(None);
-            true
-        })
+        .on_click_stop(move |_| capture_view.selected.set(None))
         .scroll_to_view(move || capture_view.scroll_to.get());
 
     let tree: Box<dyn View> = if capture.root.warnings() {
@@ -855,10 +838,7 @@ pub fn capture(window_id: WindowId) {
 
                 let tab_item = |name, index| {
                     text(name)
-                        .on_click(move |_| {
-                            set_selected.set(index);
-                            true
-                        })
+                        .on_click_stop(move |_| set_selected.set(index))
                         .style(move |s| {
                             s.padding(5.0)
                                 .border_right(1)
@@ -914,14 +894,14 @@ pub fn capture(window_id: WindowId) {
                                 && e.modifiers.shift_key()
                             {
                                 id.inspect();
-                                return true;
+                                return EventPropagation::Stop;
                             }
                         }
-                        false
+                        EventPropagation::Continue
                     })
                     .on_event(EventListener::WindowClosed, |_| {
                         RUNNING.set(false);
-                        false
+                        EventPropagation::Continue
                     })
             },
             Some(WindowConfig {

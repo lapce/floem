@@ -7,6 +7,7 @@ use crate::views::{
     static_list, text, v_stack, Decorators,
 };
 use crate::widgets::button;
+use crate::EventPropagation;
 use floem_reactive::{create_rw_signal, RwSignal, Scope};
 use peniko::Color;
 use std::fmt::Display;
@@ -106,10 +107,9 @@ fn profile_view(profile: &Rc<Profile>) -> impl View {
                 static_label(format!("{:.4} ms", frame.sum.as_secs_f64() * 1000.0))
                     .style(|s| s.margin_right(16)),
             ))
-            .on_click(move |_| {
+            .on_click_stop(move |_| {
                 selected_frame.set(Some(frame.clone()));
                 zoom.set(1.0);
-                true
             })
             .style(move |s| {
                 let selected = selected_frame
@@ -200,9 +200,8 @@ fn profile_view(profile: &Rc<Profile>) -> impl View {
                                     .background(Color::BLACK.with_alpha_factor(0.6))
                             })
                     })
-                    .on_event(EventListener::PointerEnter, move |_| {
-                        hovered_event.set(Some(event_.clone()));
-                        false
+                    .on_event_cont(EventListener::PointerEnter, move |_| {
+                        hovered_event.set(Some(event_.clone()))
                     })
                 });
                 Box::new(
@@ -214,9 +213,9 @@ fn profile_view(profile: &Rc<Profile>) -> impl View {
                     .on_event(EventListener::PointerWheel, move |e| {
                         if let Event::PointerWheel(e) = e {
                             zoom.set(zoom.get() * (1.0 - e.delta.y / 400.0));
-                            true
+                            EventPropagation::Stop
                         } else {
-                            false
+                            EventPropagation::Continue
                         }
                     }),
                 )
@@ -257,7 +256,7 @@ pub fn profiler(window_id: WindowId) -> impl View {
                 "Start Profiling"
             }
         })
-        .on_click(move |_| {
+        .on_click_stop(move |_| {
             add_app_update_event(AppUpdateEvent::ProfileWindow {
                 window_id,
                 end_profile: if profiling.get() {
@@ -267,7 +266,6 @@ pub fn profiler(window_id: WindowId) -> impl View {
                 },
             });
             profiling.set(!profiling.get());
-            true
         })
         .style(|s| s.margin(5.0)),
         label(move || if profiling.get() { "Profiling..." } else { "" }),
@@ -295,13 +293,12 @@ pub fn profiler(window_id: WindowId) -> impl View {
     // FIXME: This needs an extra `container` or the `v_stack` ends up horizontal.
     container(v_stack((button, seperator, lower)).style(|s| s.width_full().height_full()))
         .style(|s| s.width_full().height_full())
-        .on_event(EventListener::WindowClosed, move |_| {
+        .on_event_cont(EventListener::WindowClosed, move |_| {
             if profiling.get() {
                 add_app_update_event(AppUpdateEvent::ProfileWindow {
                     window_id,
                     end_profile: Some(profile.write_only()),
                 });
             }
-            false
         })
 }

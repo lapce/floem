@@ -21,6 +21,7 @@ use floem::{
         Decorators, VirtualListDirection, VirtualListItemSize,
     },
     widgets::button,
+    EventPropagation,
 };
 
 fn app_view() -> impl View {
@@ -46,7 +47,7 @@ fn app_view() -> impl View {
                     .position(|it| *it == item)
                     .unwrap();
                 stack((label(move || item).style(|s| s.font_size(18.0)),))
-                    .on_click(move |_| {
+                    .on_click_stop(move |_| {
                         set_active_tab.update(|v: &mut usize| {
                             *v = tabs
                                 .get_untracked()
@@ -54,7 +55,6 @@ fn app_view() -> impl View {
                                 .position(|it| *it == item)
                                 .unwrap();
                         });
-                        true
                     })
                     .on_event(EventListener::KeyDown, move |e| {
                         if let Event::KeyDown(key_event) = e {
@@ -65,21 +65,21 @@ fn app_view() -> impl View {
                                         if active > 0 {
                                             set_active_tab.update(|v| *v -= 1)
                                         }
-                                        true
+                                        EventPropagation::Stop
                                     }
                                     Key::Named(NamedKey::ArrowDown) => {
                                         if active < tabs.get().len() - 1 {
                                             set_active_tab.update(|v| *v += 1)
                                         }
-                                        true
+                                        EventPropagation::Stop
                                     }
-                                    _ => false,
+                                    _ => EventPropagation::Continue,
                                 }
                             } else {
-                                false
+                                EventPropagation::Continue
                             }
                         } else {
-                            false
+                            EventPropagation::Continue
                         }
                     })
                     .keyboard_navigatable()
@@ -126,9 +126,8 @@ fn app_view() -> impl View {
 
     let id = list.id();
     let inspector = button(|| "Open Inspector")
-        .on_click(move |_| {
+        .on_click_stop(move |_| {
             id.inspect();
-            true
         })
         .style(|s| s);
 
@@ -159,13 +158,12 @@ fn app_view() -> impl View {
         .window_title(|| "Widget Gallery".to_owned());
 
     let id = view.id();
-    view.on_event(EventListener::KeyUp, move |e| {
+    view.on_event_stop(EventListener::KeyUp, move |e| {
         if let Event::KeyUp(e) = e {
             if e.key.logical_key == Key::Named(NamedKey::F11) {
                 id.inspect();
             }
         }
-        true
     })
 }
 

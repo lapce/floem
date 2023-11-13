@@ -12,16 +12,14 @@ pub fn button_view() -> impl View {
     form({
         (
             form_item("Basic Button:".to_string(), 120.0, || {
-                button(|| "Click me").on_click(|_| {
+                button(|| "Click me").on_click_stop(|_| {
                     println!("Button clicked");
-                    true
                 })
             }),
             form_item("Styled Button:".to_string(), 120.0, || {
                 button(|| "Click me")
-                    .on_click(|_| {
+                    .on_click_stop(|_| {
                         println!("Button clicked");
-                        true
                     })
                     .style(|s| {
                         s.border(1.0)
@@ -37,15 +35,13 @@ pub fn button_view() -> impl View {
                     })
             }),
             form_item("Disabled Button:".to_string(), 120.0, || {
-                button(|| "Click me").disabled(|| true).on_click(|_| {
+                button(|| "Click me").disabled(|| true).on_click_stop(|_| {
                     println!("Button clicked");
-                    true
                 })
             }),
             form_item("Secondary click button:".to_string(), 120.0, || {
-                button(|| "Right click me").on_secondary_click(|_| {
+                button(|| "Right click me").on_secondary_click_stop(|_| {
                     println!("Secondary mouse button click.");
-                    true
                 })
             }),
             form_item("Toggle button - Switch:".to_string(), 120.0, || {

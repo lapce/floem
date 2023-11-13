@@ -34,7 +34,28 @@ use crate::{
     view::{paint_bg, paint_border, paint_outline, View},
 };
 
-pub type EventCallback = dyn Fn(&Event) -> bool;
+/// Control whether an event will continue propagating or whether it should stop.
+pub enum EventPropagation {
+    /// Stop event propagation and mark the event as processed
+    Stop,
+    /// Let event propagation continue
+    Continue,
+}
+impl EventPropagation {
+    pub fn is_continue(&self) -> bool {
+        matches!(self, EventPropagation::Continue)
+    }
+
+    pub fn is_stop(&self) -> bool {
+        matches!(self, EventPropagation::Stop)
+    }
+
+    pub fn is_processed(&self) -> bool {
+        matches!(self, EventPropagation::Stop)
+    }
+}
+
+pub type EventCallback = dyn Fn(&Event) -> EventPropagation;
 pub type ResizeCallback = dyn Fn(Rect);
 pub type MenuCallback = dyn Fn() -> Menu;
 
@@ -636,7 +657,7 @@ impl AppState {
         &self,
         id: Id,
         listener: &EventListener,
-    ) -> Option<&impl Fn(&Event) -> bool> {
+    ) -> Option<&impl Fn(&Event) -> EventPropagation> {
         self.view_states
             .get(&id)
             .and_then(|s| s.event_listeners.get(listener))
@@ -737,11 +758,11 @@ impl<'a> EventCx<'a> {
         view: &mut dyn View,
         id_path: Option<&[Id]>,
         event: Event,
-    ) -> bool {
+    ) -> EventPropagation {
         if self.should_send(view.id(), &event) {
             self.unconditional_view_event(view, id_path, event)
         } else {
-            false
+            EventPropagation::Continue
         }
     }
 
@@ -751,16 +772,16 @@ impl<'a> EventCx<'a> {
         view: &mut dyn View,
         id_path: Option<&[Id]>,
         event: Event,
-    ) -> bool {
+    ) -> EventPropagation {
         let id = view.id();
         if self.app_state.is_hidden(id) {
             // we don't process events for hidden view
-            return false;
+            return EventPropagation::Continue;
         }
         if self.app_state.is_disabled(&id) && !event.allow_disabled() {
             // if the view is disabled and the event is not processed
             // for disabled views
-            return false;
+            return EventPropagation::Continue;
         }
 
         // offset the event positions if the event has positions
@@ -776,7 +797,7 @@ impl<'a> EventCx<'a> {
                 // but the parent just passed the event on,
                 // so it's not really for this view and we stop
                 // the event propagation.
-                return false;
+                return EventPropagation::Continue;
             }
 
             let id = id_path[0];
@@ -784,7 +805,7 @@ impl<'a> EventCx<'a> {
 
             if id != view.id() {
                 // This shouldn't happen
-                return false;
+                return EventPropagation::Continue;
             }
 
             // we're the parent of the event destination, so pass it on to the child
@@ -793,7 +814,7 @@ impl<'a> EventCx<'a> {
                     return self.unconditional_view_event(child, Some(id_path), event.clone());
                 } else {
                     // we don't have the child, stop the event propagation
-                    return false;
+                    return EventPropagation::Continue;
                 }
             }
         }
@@ -801,12 +822,15 @@ impl<'a> EventCx<'a> {
         // if the event was dispatched to an id_path, the event is supposed to be only
         // handled by this view only, so we pass an empty id_path
         // and the event propagation would be stopped at this view
-        if view.event(
-            self,
-            if id_path.is_some() { Some(&[]) } else { None },
-            event.clone(),
-        ) {
-            return true;
+        if view
+            .event(
+                self,
+                if id_path.is_some() { Some(&[]) } else { None },
+                event.clone(),
+            )
+            .is_processed()
+        {
+            return EventPropagation::Stop;
         }
 
         match &event {
@@ -917,8 +941,8 @@ impl<'a> EventCx<'a> {
                     }
                 }
                 if let Some(action) = self.get_event_listener(id, &EventListener::PointerMove) {
-                    if (*action)(&event) {
-                        return true;
+                    if (*action)(&event).is_processed() {
+                        return EventPropagation::Stop;
                     }
                 }
             }
@@ -934,7 +958,7 @@ impl<'a> EventCx<'a> {
                                 if let Some(action) =
                                     self.get_event_listener(id, &EventListener::Drop)
                                 {
-                                    if (*action)(&event) {
+                                    if (*action)(&event).is_processed() {
                                         // if the drop is processed, we set dragging to none so that the animation
                                         // for the dragged view back to its original position isn't played.
                                         self.app_state.dragging = None;
@@ -970,24 +994,24 @@ impl<'a> EventCx<'a> {
                                 .as_ref()
                                 .map(|e| e.count == 2)
                                 .unwrap_or(false)
-                            && (*action)(&event)
+                            && (*action)(&event).is_processed()
                         {
-                            return true;
+                            return EventPropagation::Stop;
                         }
                     }
                     if let Some(action) = self.get_event_listener(id, &EventListener::Click) {
                         if on_view
                             && self.app_state.is_clicking(&id)
                             && last_pointer_down.is_some()
-                            && (*action)(&event)
+                            && (*action)(&event).is_processed()
                         {
-                            return true;
+                            return EventPropagation::Stop;
                         }
                     }
 
                     if let Some(action) = self.get_event_listener(id, &EventListener::PointerUp) {
-                        if (*action)(&event) {
-                            return true;
+                        if (*action)(&event).is_processed() {
+                            return EventPropagation::Stop;
                         }
                     }
                 } else if pointer_event.button.is_secondary() {
@@ -998,8 +1022,11 @@ impl<'a> EventCx<'a> {
                     if let Some(action) =
                         self.get_event_listener(id, &EventListener::SecondaryClick)
                     {
-                        if on_view && last_pointer_down.is_some() && (*action)(&event) {
-                            return true;
+                        if on_view
+                            && last_pointer_down.is_some()
+                            && (*action)(&event).is_processed()
+                        {
+                            return EventPropagation::Stop;
                         }
                     }
 
@@ -1040,13 +1067,13 @@ impl<'a> EventCx<'a> {
                 } else {
                     true
                 };
-                if should_run && (*action)(&event) {
-                    return true;
+                if should_run && (*action)(&event).is_processed() {
+                    return EventPropagation::Stop;
                 }
             }
         }
 
-        false
+        EventPropagation::Continue
     }
 
     pub(crate) fn get_size(&self, id: Id) -> Option<Size> {
@@ -1067,7 +1094,7 @@ impl<'a> EventCx<'a> {
         &self,
         id: Id,
         listener: &EventListener,
-    ) -> Option<&impl Fn(&Event) -> bool> {
+    ) -> Option<&impl Fn(&Event) -> EventPropagation> {
         self.app_state.get_event_listener(id, listener)
     }
 

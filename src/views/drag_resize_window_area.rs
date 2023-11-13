@@ -20,9 +20,8 @@ pub fn drag_resize_window_area<V: View + 'static>(
         id,
         child: Box::new(child),
     }
-    .on_event(EventListener::PointerDown, move |_| {
-        drag_resize_window(direction);
-        true
+    .on_event_stop(EventListener::PointerDown, move |_| {
+        drag_resize_window(direction)
     })
     .base_style(move |s| {
         let cursor = match direction {
