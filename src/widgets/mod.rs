@@ -5,9 +5,9 @@
 
 use crate::{
     style::{Background, Foreground, Style, Transition},
-    unit::UnitExt,
+    unit::{PxPct, UnitExt},
     views::scroll,
-    widgets,
+    widgets::{self, slider::SliderClass},
 };
 use peniko::Color;
 use std::rc::Rc;
@@ -17,6 +17,8 @@ pub use checkbox::*;
 
 mod toggle_button;
 pub use toggle_button::*;
+
+pub mod slider;
 
 mod button;
 pub use button::*;
@@ -155,6 +157,18 @@ pub(crate) fn default_theme() -> Theme {
                 .border(1.)
                 .set(widgets::ToggleButtonCircleRad, 75.pct())
                 .set(widgets::ToggleButtonInset, 10.pct())
+        })
+        .class(slider::Bar, |s| {
+            s.background(Color::BLACK).border_radius(100.pct())
+        })
+        .class(slider::AccentBar, |s| {
+            s.background(Color::GREEN).border_radius(100.pct())
+        })
+        .class(SliderClass, |s| {
+            s.set(Foreground, Color::DARK_GRAY)
+                .set(slider::BarExtends, true)
+                .set(slider::CircleRad, PxPct::Pct(100.))
+                .set(slider::BarExtends, false)
         })
         .font_size(FONT_SIZE)
         .color(Color::BLACK);
