@@ -115,7 +115,7 @@ impl Scope {
 }
 
 /// Runs the given code with the given Scope
-pub fn with_scope<T>(scope: Scope, f: impl FnOnce() -> T + 'static) -> T
+pub fn with_scope<T>(scope: Scope, f: impl FnOnce() -> T) -> T
 where
     T: 'static,
 {

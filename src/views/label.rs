@@ -10,7 +10,7 @@ use crate::{
     unit::PxPct,
     view::View,
 };
-use floem_reactive::create_effect;
+use floem_reactive::create_updater;
 use floem_renderer::Renderer;
 use kurbo::{Point, Rect};
 use peniko::Color;
@@ -62,11 +62,11 @@ pub fn static_label(label: impl Into<String>) -> Label {
 
 pub fn label<S: Display + 'static>(label: impl Fn() -> S + 'static) -> Label {
     let id = Id::next();
-    create_effect(move |_| {
-        let new_label = label().to_string();
-        id.update_state(new_label, false);
-    });
-    Label::new(id, String::new())
+    let initial_label = create_updater(
+        move || label().to_string(),
+        move |new_label| id.update_state(new_label, false),
+    );
+    Label::new(id, initial_label)
 }
 
 impl Label {
