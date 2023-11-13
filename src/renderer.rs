@@ -68,19 +68,35 @@ impl Renderer {
     {
         let size = Size::new(size.width.max(1.0), size.height.max(1.0));
 
-        let vger_err = match VgerRenderer::new(window, size.width as u32, size.height as u32, scale)
+        let force_tiny_skia = if let Some(val) = std::env::var("FLOEM_FORCE_TINY_SKIA")
+            .ok()
+            .map(|val| val.as_str() == "1")
         {
-            Ok(vger) => return Self::Vger(vger),
-            Err(vger_err) => vger_err,
+            val
+        } else {
+            false
+        };
+
+        let vger_err = if !force_tiny_skia {
+            match VgerRenderer::new(window, size.width as u32, size.height as u32, scale) {
+                Ok(vger) => return Self::Vger(vger),
+                Err(err) => Some(err),
+            }
+        } else {
+            None
         };
 
         let tiny_skia_err =
             match TinySkiaRenderer::new(window, size.width as u32, size.height as u32, scale) {
                 Ok(tiny_skia) => return Self::TinySkia(tiny_skia),
-                Err(vger_err) => vger_err,
+                Err(err) => err,
             };
 
-        panic!("Failed to create VgerRenderer: {vger_err}\nFailed to create TinySkiaRenderer: {tiny_skia_err}")
+        if !force_tiny_skia {
+            panic!("Failed to create VgerRenderer: {}\nFailed to create TinySkiaRenderer: {tiny_skia_err}", vger_err.unwrap());
+        } else {
+            panic!("Failed to create TinySkiaRenderer: {tiny_skia_err}");
+        }
     }
 
     pub fn resize(&mut self, scale: f64, size: Size) {
