@@ -7,13 +7,15 @@ use peniko::Color;
 use winit::keyboard::{Key, NamedKey};
 
 use crate::{
-    id, prop, prop_extracter,
+    id,
+    prop,
+    prop_extracter,
     style::{Background, BorderRadius, Foreground},
     style_class,
     unit::PxPct,
     view::View,
     views::Decorators,
-    EventPropagation,
+    // EventPropagation,
 };
 
 prop!(pub CircleRad: PxPct {} = PxPct::Pct(98.));
@@ -118,7 +120,7 @@ impl View for Slider {
         cx: &mut crate::context::EventCx,
         _id_path: Option<&[crate::id::Id]>,
         event: crate::event::Event,
-    ) -> EventPropagation {
+    ) -> bool {
         match event {
             crate::event::Event::PointerDown(event) => {
                 cx.update_active(self.id);
@@ -159,7 +161,7 @@ impl View for Slider {
             }
             _ => {}
         };
-        EventPropagation::Continue
+        false
     }
 
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
