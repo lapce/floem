@@ -177,7 +177,7 @@ impl View for Label {
         })
     }
 
-    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<Rect> {
+    fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
         if self.label.is_empty() {
             return None;
         }

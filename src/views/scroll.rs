@@ -5,7 +5,7 @@ use peniko::Color;
 use taffy::{prelude::Node, style::Position};
 
 use crate::{
-    context::{AppState, LayoutCx, PaintCx},
+    context::{AppState, ComputeLayoutCx, PaintCx},
     event::Event,
     id::Id,
     prop, prop_extracter,
@@ -710,7 +710,7 @@ impl View for Scroll {
         })
     }
 
-    fn compute_layout(&mut self, cx: &mut LayoutCx) -> Option<Rect> {
+    fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
         self.update_size(cx.app_state_mut());
         self.clamp_child_viewport(cx.app_state_mut(), self.child_viewport);
         self.computed_child_viewport = self.child_viewport;

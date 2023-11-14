@@ -821,7 +821,7 @@ impl View for TextInput {
         })
     }
 
-    fn compute_layout(&mut self, _cx: &mut crate::context::LayoutCx) -> Option<Rect> {
+    fn compute_layout(&mut self, _cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
         self.update_text_layout();
         None
     }

@@ -88,7 +88,7 @@ impl View for RichText {
         })
     }
 
-    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<Rect> {
+    fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
         let layout = cx.get_layout(self.id()).unwrap();
         let style = cx.app_state_mut().get_builtin_style(self.id);
         let padding_left = match style.padding_left() {

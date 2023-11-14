@@ -22,8 +22,8 @@ use crate::views::{container_box, stack, Decorators};
 use crate::{
     animate::{AnimPropKind, AnimUpdateMsg, AnimValue, AnimatedProp, SizeUnit},
     context::{
-        AppState, ChangeFlags, EventCx, FrameUpdate, LayoutCx, MoveListener, PaintCx, PaintState,
-        ResizeListener, StyleCx, UpdateCx,
+        AppState, ChangeFlags, ComputeLayoutCx, EventCx, FrameUpdate, LayoutCx, MoveListener,
+        PaintCx, PaintState, ResizeListener, StyleCx, UpdateCx,
     },
     event::{Event, EventListener},
     id::{Id, IdPath, ID_PATHS},
@@ -496,15 +496,15 @@ impl WindowHandle {
         cx.app_state_mut().compute_layout();
         let taffy_duration = Instant::now().saturating_duration_since(start);
 
-        cx.clear();
-        cx.compute_view_layout(&mut self.view);
-        self.app_state.request_compute_layout = false;
+        self.compute_layout();
 
         taffy_duration
     }
 
     fn compute_layout(&mut self) {
-        let mut cx = LayoutCx::new(&mut self.app_state);
+        self.app_state.request_compute_layout = false;
+        let viewport = (self.app_state.root_size / self.app_state.scale).to_rect();
+        let mut cx = ComputeLayoutCx::new(&mut self.app_state, viewport);
         cx.compute_view_layout(&mut self.view);
     }
 
@@ -662,7 +662,7 @@ impl WindowHandle {
                 self.layout();
             }
 
-            if mem::take(&mut self.app_state.request_compute_layout) {
+            if self.app_state.request_compute_layout {
                 self.compute_layout();
             }
 
