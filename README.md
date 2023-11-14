@@ -19,12 +19,12 @@ fn app_view() -> impl View {
             text("Increment")
                 .on_click(move |_| {
                     set_counter.update(|value| *value += 1);
-                    true
+                    EventPropagation::Stop
                 }),
             text("Decrement")
                 .on_click(move |_| {
                     set_counter.update(|value| *value -= 1);
-                    true
+                    EventPropagation::Stop
                 }),
         )),
     ))
