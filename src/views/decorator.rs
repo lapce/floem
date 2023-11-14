@@ -1,4 +1,4 @@
-use floem_reactive::create_effect;
+use floem_reactive::{create_effect, create_updater};
 use kurbo::{Point, Rect};
 
 use crate::{
@@ -34,12 +34,13 @@ pub trait Decorators: View + Sized {
     /// ```
     /// If you are returning from a function that produces a view, you may want
     /// to use `base_style` for the returned [`View`] instead.  
-    fn style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
+    fn style(mut self, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();
-        create_effect(move |_| {
-            let style = style(Style::new());
-            id.update_style(style);
-        });
+        let style = create_updater(
+            move || style(Style::new()),
+            move |style| id.update_style(style),
+        );
+        self.view_data_mut().style = style;
         self
     }
 

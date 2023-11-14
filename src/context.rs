@@ -31,7 +31,7 @@ use crate::{
         StyleClassRef, StyleProp, StyleSelector, StyleSelectors, ZIndex,
     },
     unit::PxPct,
-    view::{paint_bg, paint_border, paint_outline, View},
+    view::{paint_bg, paint_border, paint_outline, View, ViewData},
 };
 
 /// Control whether an event will continue propagating or whether it should stop.
@@ -107,7 +107,6 @@ pub struct ViewState {
     pub(crate) view_style_props: ViewStyleProps,
     pub(crate) animation: Option<Animation>,
     pub(crate) base_style: Option<Style>,
-    pub(crate) style: Style,
     pub(crate) class: Option<StyleClassRef>,
     pub(crate) dragging_style: Option<Style>,
     pub(crate) combined_style: Style,
@@ -134,7 +133,6 @@ impl ViewState {
             has_style_selectors: StyleSelectors::default(),
             animation: None,
             base_style: None,
-            style: Style::new(),
             class: None,
             combined_style: Style::new(),
             taffy_style: taffy::style::Style::DEFAULT,
@@ -151,8 +149,10 @@ impl ViewState {
     }
 
     /// Returns `true` if a new frame is requested.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn compute_style(
         &mut self,
+        view_data: &mut ViewData,
         view_style: Option<Style>,
         interact_state: InteractionState,
         screen_size_bp: ScreenSizeBp,
@@ -173,7 +173,7 @@ impl ViewState {
         }
         computed_style = computed_style
             .apply_classes_from_context(classes, context)
-            .apply(self.style.clone());
+            .apply(view_data.style.clone());
 
         'anim: {
             if let Some(animation) = self.animation.as_mut() {
@@ -424,6 +424,7 @@ impl AppState {
     pub(crate) fn compute_style(
         &mut self,
         id: Id,
+        view_data: &mut ViewData,
         view_style: Option<Style>,
         view_class: Option<StyleClassRef>,
         classes: &[StyleClassRef],
@@ -433,6 +434,7 @@ impl AppState {
         let screen_size_bp = self.screen_size_bp;
         let view_state = self.view_state(id);
         view_state.compute_style(
+            view_data,
             view_style,
             interact_state,
             screen_size_bp,
@@ -1206,9 +1208,14 @@ impl<'a> StyleCx<'a> {
             });
         }
 
-        let mut new_frame =
-            self.app_state
-                .compute_style(id, view_style, view_class, classes, &self.current);
+        let mut new_frame = self.app_state.compute_style(
+            id,
+            view.view_data_mut(),
+            view_style,
+            view_class,
+            classes,
+            &self.current,
+        );
 
         let style = self.app_state_mut().get_computed_style(id).clone();
         self.direct = style;
