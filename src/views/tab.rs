@@ -4,7 +4,12 @@ use floem_reactive::{as_child_of_current_scope, create_effect, Scope};
 use smallvec::SmallVec;
 use taffy::style::Display;
 
-use crate::{context::UpdateCx, id::Id, style::DisplayProp, view::View};
+use crate::{
+    context::{StyleCx, UpdateCx},
+    id::Id,
+    style::DisplayProp,
+    view::View,
+};
 
 use super::{apply_diff, diff, Diff, DiffOpAdd, FxIndexSet, HashRun};
 
@@ -150,41 +155,24 @@ impl<V: View + 'static, T> View for Tab<V, T> {
         }
     }
 
-    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
-        // FIXME: This should only layout the selected view.
-        cx.layout_node(self.id, true, |cx| {
-            let nodes = self
-                .children
-                .iter_mut()
-                .enumerate()
-                .filter_map(|(i, child)| {
-                    let child_id = child.as_ref()?.0.id();
-                    let child_view = cx.app_state_mut().view_state(child_id);
-                    child_view.combined_style = child_view.style.clone().set(
-                        DisplayProp,
-                        if i != self.active {
-                            // set display to none for non active child
-                            Display::None
-                        } else {
-                            Display::Flex
-                        },
-                    );
-                    let node = cx.layout_view(&mut child.as_mut()?.0);
-                    Some(node)
-                })
-                .collect::<Vec<_>>();
-            nodes
-        })
-    }
-
-    fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        let child = if let Some(Some((child, _))) = self.children.get_mut(self.active) {
-            child
-        } else if let Some(Some((child, _))) = self.children.first_mut() {
-            child
-        } else {
-            return;
-        };
-        child.paint(cx);
+    fn style(&mut self, cx: &mut StyleCx<'_>) {
+        for (i, child) in self
+            .children
+            .iter_mut()
+            .enumerate()
+            .filter_map(|(i, child)| child.as_mut().map(|child| (i, &mut child.0)))
+        {
+            cx.style_view(child);
+            let child_view = cx.app_state_mut().view_state(child.id());
+            child_view.combined_style = child_view.combined_style.clone().set(
+                DisplayProp,
+                if i != self.active {
+                    // set display to none for non active child
+                    Display::None
+                } else {
+                    Display::Flex
+                },
+            );
+        }
     }
 }
