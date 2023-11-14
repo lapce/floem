@@ -314,6 +314,7 @@ impl<V: View + 'static, T> View for VirtualList<V, T> {
             let _ = cx.app_state_mut().taffy.set_style(
                 before_node,
                 taffy::style::Style {
+                    min_size: before_size,
                     size: before_size,
                     ..Default::default()
                 },
@@ -321,6 +322,7 @@ impl<V: View + 'static, T> View for VirtualList<V, T> {
             let _ = cx.app_state_mut().taffy.set_style(
                 after_node,
                 taffy::style::Style {
+                    min_size: after_size,
                     size: after_size,
                     ..Default::default()
                 },

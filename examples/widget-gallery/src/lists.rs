@@ -5,7 +5,6 @@ use floem::{
     peniko::Color,
     reactive::create_signal,
     style::{CursorStyle, JustifyContent},
-    unit::UnitExt,
     view::View,
     views::{
         container, label, scroll, stack, virtual_list, Decorators, VirtualListDirection,
@@ -20,7 +19,7 @@ use crate::form::{form, form_item};
 pub fn virt_list_view() -> impl View {
     stack({
         (
-            form((form_item("Simple List".to_string(), 120.0, simple_list),)),
+            form((form_item("Simple List".to_string(), 100.0, simple_list),)),
             form((form_item("Enhanced List".to_string(), 120.0, enhanced_list),)),
         )
     })
@@ -69,7 +68,7 @@ fn enhanced_list() -> impl View {
                                 set_is_checked.update(|checked: &mut bool| *checked = !*checked);
                             }),
                             label(move || item.to_string())
-                                .style(|s| s.height(32.0).font_size(32.0)),
+                                .style(|s| s.height(32.0).font_size(22.0)),
                             container({
                                 label(move || " X ")
                                     .on_click_stop(move |_| {
@@ -96,7 +95,7 @@ fn enhanced_list() -> impl View {
                             }),
                         )
                     })
-                    .style(move |s| s.height(item_height).width(list_width).items_center())
+                    .style(move |s| s.height(item_height).width_full().items_center())
                 })
                 .on_click_stop(move |_| {
                     set_selected.update(|v: &mut usize| {
@@ -128,7 +127,6 @@ fn enhanced_list() -> impl View {
                 .keyboard_navigatable()
                 .style(move |s| {
                     s.flex_row()
-                        .width(list_width.pct())
                         .height(item_height)
                         .apply_if(index == selected.get(), |s| s.background(Color::GRAY))
                         .apply_if(index != 0, |s| {
@@ -139,7 +137,7 @@ fn enhanced_list() -> impl View {
                 })
             },
         )
-        .style(move |s| s.flex_col().width(list_width)),
+        .style(move |s| s.flex_col().flex_grow(1.0)),
     )
     .style(move |s| s.width(list_width).height(300.0).border(1.0))
 }
