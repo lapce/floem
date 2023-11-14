@@ -323,7 +323,8 @@ impl ApplicationHandle {
     }
 
     pub(crate) fn idle(&mut self) {
-        while let Some(trigger) = { EXT_EVENT_HANDLER.queue.lock().pop_front() } {
+        let triggers: Vec<_> = EXT_EVENT_HANDLER.queue.lock().drain(..).collect();
+        for trigger in triggers {
             trigger.notify();
         }
         for (_, handle) in self.window_handles.iter_mut() {

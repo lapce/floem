@@ -1,5 +1,6 @@
 use std::{collections::VecDeque, sync::Arc};
 
+use crossbeam_channel::TryRecvError;
 use floem_reactive::{create_effect, untrack, with_scope, ReadSignal, Scope, Trigger, WriteSignal};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
@@ -74,33 +75,23 @@ pub fn update_signal_from_channel<T: Send + 'static>(
     let cx = Scope::new();
     let trigger = cx.create_trigger();
 
-    let channel_closed = cx.create_rw_signal(false);
-    let data = Arc::new(Mutex::new(VecDeque::new()));
-
-    {
-        let data = data.clone();
-        cx.create_effect(move |_| {
-            trigger.track();
-            while let Some(value) = data.lock().pop_front() {
-                writer.try_set(value);
+    cx.create_effect(move |_| {
+        trigger.track();
+        loop {
+            match rx.try_recv() {
+                Ok(event) => {
+                    writer.try_set(Some(event))
+                }
+                Err(TryRecvError::Empty) => {
+                    EXT_EVENT_HANDLER.add_trigger(trigger);
+                    break;
+                }
+                Err(TryRecvError::Disconnected) => {
+                    cx.dispose();
+                    break;
+                }
             }
-
-            if channel_closed.get() {
-                cx.dispose();
-            }
-        });
-    }
-
-    let send = create_ext_action(cx, move |_| {
-        channel_closed.set(true);
-    });
-
-    std::thread::spawn(move || {
-        while let Ok(event) = rx.recv() {
-            data.lock().push_back(Some(event));
-            EXT_EVENT_HANDLER.add_trigger(trigger);
         }
-        send(());
     });
 }
 
@@ -109,35 +100,25 @@ pub fn create_signal_from_channel<T: Send + 'static>(
 ) -> ReadSignal<Option<T>> {
     let cx = Scope::new();
     let trigger = cx.create_trigger();
-
-    let channel_closed = cx.create_rw_signal(false);
     let (read, write) = cx.create_signal(None);
-    let data = Arc::new(Mutex::new(VecDeque::new()));
 
-    {
-        let data = data.clone();
-        cx.create_effect(move |_| {
-            trigger.track();
-            while let Some(value) = data.lock().pop_front() {
-                write.set(value);
+    cx.create_effect(move |_| {
+        trigger.track();
+        loop {
+            match rx.try_recv() {
+                Ok(event) => {
+                    write.set(Some(event))
+                }
+                Err(TryRecvError::Empty) => {
+                    EXT_EVENT_HANDLER.add_trigger(trigger);
+                    break;
+                }
+                Err(TryRecvError::Disconnected) => {
+                    cx.dispose();
+                    break;
+                }
             }
-
-            if channel_closed.get() {
-                cx.dispose();
-            }
-        });
-    }
-
-    let send = create_ext_action(cx, move |_| {
-        channel_closed.set(true);
-    });
-
-    std::thread::spawn(move || {
-        while let Ok(event) = rx.recv() {
-            data.lock().push_back(Some(event));
-            EXT_EVENT_HANDLER.add_trigger(trigger);
         }
-        send(());
     });
 
     read
