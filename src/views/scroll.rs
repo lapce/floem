@@ -12,7 +12,7 @@ use crate::{
     style::{Background, BorderColor, BorderRadius, PositionProp, Style, StyleSelector},
     style_class,
     unit::Px,
-    view::View,
+    view::{View, ViewData},
     EventPropagation,
 };
 
@@ -64,7 +64,7 @@ prop_extracter! {
 const HANDLE_COLOR: Color = Color::rgba8(0, 0, 0, 120);
 
 pub struct Scroll {
-    id: Id,
+    data: ViewData,
     child: Box<dyn View>,
 
     /// the actual rect of the scroll view excluding padding and borders. The origin is relative to this view.
@@ -99,7 +99,7 @@ pub struct Scroll {
 
 pub fn scroll<V: View + 'static>(child: V) -> Scroll {
     Scroll {
-        id: Id::next(),
+        data: ViewData::new(Id::next()),
         child: Box::new(child),
         actual_rect: Rect::ZERO,
         child_size: Size::ZERO,
@@ -130,7 +130,7 @@ impl Scroll {
     }
 
     pub fn on_ensure_visible(self, to: impl Fn() -> Rect + 'static) -> Self {
-        let id = self.id;
+        let id = self.id();
         create_effect(move |_| {
             let rect = to();
             id.update_state(ScrollState::EnsureVisible(rect), true);
@@ -140,7 +140,7 @@ impl Scroll {
     }
 
     pub fn on_scroll_delta(self, delta: impl Fn() -> Vec2 + 'static) -> Self {
-        let id = self.id;
+        let id = self.id();
         create_effect(move |_| {
             let delta = delta();
             id.update_state(ScrollState::ScrollDelta(delta), false);
@@ -150,7 +150,7 @@ impl Scroll {
     }
 
     pub fn on_scroll_to(self, origin: impl Fn() -> Option<Point> + 'static) -> Self {
-        let id = self.id;
+        let id = self.id();
         create_effect(move |_| {
             if let Some(origin) = origin() {
                 id.update_state(ScrollState::ScrollTo(origin), true);
@@ -161,7 +161,7 @@ impl Scroll {
     }
 
     pub fn scroll_to_view(self, view: impl Fn() -> Option<Id> + 'static) -> Self {
-        let id = self.id;
+        let id = self.id();
         create_effect(move |_| {
             if let Some(view) = view() {
                 id.update_state(ScrollState::ScrollToView(view), true);
@@ -172,7 +172,7 @@ impl Scroll {
     }
 
     pub fn hide_bar(self, hide: impl Fn() -> bool + 'static) -> Self {
-        let id = self.id;
+        let id = self.id();
         create_effect(move |_| {
             id.update_state(ScrollState::HiddenBar(hide()), false);
         });
@@ -180,7 +180,7 @@ impl Scroll {
     }
 
     pub fn propagate_pointer_wheel(self, value: impl Fn() -> bool + 'static) -> Self {
-        let id = self.id;
+        let id = self.id();
         create_effect(move |_| {
             id.update_state(ScrollState::PropagatePointerWheel(value()), false);
         });
@@ -188,7 +188,7 @@ impl Scroll {
     }
 
     pub fn vertical_scroll_as_horizontal(self, value: impl Fn() -> bool + 'static) -> Self {
-        let id = self.id;
+        let id = self.id();
         create_effect(move |_| {
             id.update_state(ScrollState::VerticalScrollAsHorizontal(value()), false);
         });
@@ -266,11 +266,11 @@ impl Scroll {
         let new_child_size = self.child_size(app_state).unwrap_or_default();
         self.child_size = new_child_size;
 
-        self.actual_rect = app_state.get_content_rect(self.id);
+        self.actual_rect = app_state.get_content_rect(self.id());
 
         // Round to prevent loops due to floating point accuracy
         if (child_size * 128.0).round() != (new_child_size * 128.0).round() {
-            app_state.request_layout(self.id);
+            app_state.request_layout(self.id());
         }
     }
 
@@ -305,8 +305,8 @@ impl Scroll {
 
         if child_viewport != self.child_viewport {
             app_state.set_viewport(self.child.id(), child_viewport);
-            app_state.request_compute_layout_recursive(self.id);
-            app_state.request_paint(self.id);
+            app_state.request_compute_layout_recursive(self.id());
+            app_state.request_paint(self.id());
             self.child_viewport = child_viewport;
             if let Some(onscroll) = &self.onscroll {
                 onscroll(child_viewport);
@@ -318,7 +318,7 @@ impl Scroll {
     fn child_size(&self, app_state: &mut AppState) -> Option<Size> {
         app_state
             .view_states
-            .get(&self.id)
+            .get(&self.id())
             .map(|view| &view.children_nodes)
             .and_then(|nodes| nodes.get(1))
             .and_then(|node| app_state.taffy.layout(*node).ok())
@@ -564,29 +564,33 @@ impl Scroll {
         let hover = self.point_hits_vertical_bar(app_state, pos);
         if self.v_handle_hover != hover {
             self.v_handle_hover = hover;
-            app_state.request_paint(self.id);
+            app_state.request_paint(self.id());
         }
         let hover = self.point_hits_horizontal_bar(app_state, pos);
         if self.h_handle_hover != hover {
             self.h_handle_hover = hover;
-            app_state.request_paint(self.id);
+            app_state.request_paint(self.id());
         }
         let hover = self.point_within_vertical_bar(app_state, pos);
         if self.v_track_hover != hover {
             self.v_track_hover = hover;
-            app_state.request_paint(self.id);
+            app_state.request_paint(self.id());
         }
         let hover = self.point_within_horizontal_bar(app_state, pos);
         if self.h_track_hover != hover {
             self.h_track_hover = hover;
-            app_state.request_paint(self.id);
+            app_state.request_paint(self.id());
         }
     }
 }
 
 impl View for Scroll {
-    fn id(&self) -> Id {
-        self.id
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
     }
 
     fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
@@ -632,7 +636,7 @@ impl View for Scroll {
                         // TODO: How to deal with nested viewports / scrolls?
                         let rect = rect.with_origin(
                             rect.origin()
-                                - cx.app_state.get_layout_rect(self.id).origin().to_vec2()
+                                - cx.app_state.get_layout_rect(self.id()).origin().to_vec2()
                                 - self.actual_rect.origin().to_vec2()
                                 + self.computed_child_viewport.origin().to_vec2(),
                         );
@@ -677,7 +681,7 @@ impl View for Scroll {
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
-        cx.layout_node(self.id, true, |cx| {
+        cx.layout_node(self.id(), true, |cx| {
             let child_id = self.child.id();
             let child_view = cx.app_state_mut().view_state(child_id);
             child_view.combined_style = child_view
@@ -742,9 +746,9 @@ impl View for Scroll {
                                 event.pos.y,
                                 scroll_offset,
                             );
-                            cx.update_active(self.id);
+                            cx.update_active(self.id());
                             // Force a repaint.
-                            cx.request_paint(self.id);
+                            cx.request_paint(self.id());
                             return EventPropagation::Stop;
                         }
                         self.click_vertical_bar_area(cx.app_state, event.pos);
@@ -754,7 +758,7 @@ impl View for Scroll {
                             event.pos.y,
                             scroll_offset,
                         );
-                        cx.update_active(self.id);
+                        cx.update_active(self.id());
                         return EventPropagation::Stop;
                     } else if self.point_within_horizontal_bar(cx.app_state, pos) {
                         if self.point_hits_horizontal_bar(cx.app_state, pos) {
@@ -763,9 +767,9 @@ impl View for Scroll {
                                 event.pos.x,
                                 scroll_offset,
                             );
-                            cx.update_active(self.id);
+                            cx.update_active(self.id());
                             // Force a repaint.
-                            cx.request_paint(self.id);
+                            cx.request_paint(self.id());
                             return EventPropagation::Stop;
                         }
                         self.click_horizontal_bar_area(cx.app_state, event.pos);
@@ -775,7 +779,7 @@ impl View for Scroll {
                             event.pos.x,
                             scroll_offset,
                         );
-                        cx.update_active(self.id);
+                        cx.update_active(self.id());
                         return EventPropagation::Stop;
                     }
                 }
@@ -784,7 +788,7 @@ impl View for Scroll {
                 if self.are_bars_held() {
                     self.held = BarHeldState::None;
                     // Force a repaint.
-                    cx.request_paint(self.id);
+                    cx.request_paint(self.id());
                 }
             }
             Event::PointerMove(event) => {
@@ -826,7 +830,7 @@ impl View for Scroll {
                 self.h_handle_hover = false;
                 self.v_track_hover = false;
                 self.h_track_hover = false;
-                cx.request_paint(self.id);
+                cx.request_paint(self.id());
             }
             _ => {}
         }
@@ -840,7 +844,7 @@ impl View for Scroll {
 
         if let Event::PointerWheel(pointer_event) = &event {
             if let Some(listener) = event.listener() {
-                if let Some(action) = cx.get_event_listener(self.id, &listener) {
+                if let Some(action) = cx.get_event_listener(self.id(), &listener) {
                     if (*action)(&event).is_processed() {
                         return EventPropagation::Stop;
                     }
@@ -869,7 +873,7 @@ impl View for Scroll {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         cx.save();
-        let style = cx.get_computed_style(self.id);
+        let style = cx.get_computed_style(self.id());
         let radius = match style.get(BorderRadius) {
             crate::unit::PxPct::Px(px) => px,
             crate::unit::PxPct::Pct(pct) => self.actual_rect.size().min_side() * (pct / 100.),

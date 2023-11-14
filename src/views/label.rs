@@ -8,7 +8,7 @@ use crate::{
     style::Style,
     style::{FontProps, LineHeight, TextColor, TextOverflow, TextOverflowProp},
     unit::PxPct,
-    view::View,
+    view::{View, ViewData},
 };
 use floem_reactive::create_updater;
 use floem_renderer::Renderer;
@@ -25,7 +25,7 @@ prop_extracter! {
 }
 
 pub struct Label {
-    id: Id,
+    data: ViewData,
     label: String,
     text_layout: Option<TextLayout>,
     text_node: Option<Node>,
@@ -39,7 +39,7 @@ pub struct Label {
 impl Label {
     fn new(id: Id, label: String) -> Self {
         Label {
-            id,
+            data: ViewData::new(id),
             label,
             text_layout: None,
             text_node: None,
@@ -109,8 +109,12 @@ impl Label {
 }
 
 impl View for Label {
-    fn id(&self) -> Id {
-        self.id
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -134,12 +138,12 @@ impl View for Label {
             self.available_text = None;
             self.available_width = None;
             self.available_text_layout = None;
-            cx.app_state_mut().request_layout(self.id);
+            cx.app_state_mut().request_layout(self.id());
         }
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
-        cx.layout_node(self.id, true, |cx| {
+        cx.layout_node(self.id(), true, |cx| {
             let (width, height) = if self.label.is_empty() {
                 (0.0, self.font.size().unwrap_or(14.0))
             } else {
@@ -183,7 +187,7 @@ impl View for Label {
         }
 
         let layout = cx.get_layout(self.id()).unwrap();
-        let style = cx.app_state_mut().get_builtin_style(self.id);
+        let style = cx.app_state_mut().get_builtin_style(self.id());
         let text_overflow = style.text_overflow();
         let padding_left = match style.padding_left() {
             PxPct::Px(padding) => padding as f32,

@@ -5,7 +5,12 @@ use floem_renderer::Renderer;
 use image::{DynamicImage, GenericImageView};
 use sha2::{Digest, Sha256};
 
-use crate::{id::Id, style::Style, unit::UnitExt, view::View};
+use crate::{
+    id::Id,
+    style::Style,
+    unit::UnitExt,
+    view::{View, ViewData},
+};
 
 use taffy::prelude::Node;
 
@@ -81,7 +86,7 @@ impl ImageStyle {
 }
 
 pub struct Img {
-    id: Id,
+    data: ViewData,
     //FIXME: store the pixel format(once its added to vger), for now we only store RGBA(RGB is converted to RGBA)
     img: Option<Rc<DynamicImage>>,
     img_hash: Option<Vec<u8>>,
@@ -99,7 +104,7 @@ pub(crate) fn img_dynamic(image: impl Fn() -> Option<Rc<DynamicImage>> + 'static
         id.update_state(image(), false);
     });
     Img {
-        id,
+        data: ViewData::new(id),
         img: None,
         img_hash: None,
         img_dimensions: None,
@@ -108,8 +113,12 @@ pub(crate) fn img_dynamic(image: impl Fn() -> Option<Rc<DynamicImage>> + 'static
 }
 
 impl View for Img {
-    fn id(&self) -> Id {
-        self.id
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -130,7 +139,7 @@ impl View for Img {
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
-        cx.layout_node(self.id, true, |cx| {
+        cx.layout_node(self.id(), true, |cx| {
             if self.content_node.is_none() {
                 self.content_node = Some(
                     cx.app_state_mut()
@@ -155,7 +164,7 @@ impl View for Img {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         if let Some(img) = self.img.as_ref() {
-            let rect = cx.get_content_rect(self.id);
+            let rect = cx.get_content_rect(self.id());
             cx.draw_img(
                 floem_renderer::Img {
                     img,

@@ -1,8 +1,12 @@
-use crate::{id::Id, style::Style, view::View};
+use crate::{
+    id::Id,
+    style::Style,
+    view::{View, ViewData},
+};
 use taffy::style::FlexDirection;
 
 pub struct StaticList {
-    id: Id,
+    data: ViewData,
     children: Vec<Box<dyn View>>,
 }
 
@@ -11,7 +15,7 @@ where
     V: View + 'static,
 {
     StaticList {
-        id: Id::next(),
+        data: ViewData::new(Id::next()),
         children: iterator
             .into_iter()
             .map(|v| -> Box<dyn View> { Box::new(v) })
@@ -20,8 +24,12 @@ where
 }
 
 impl View for StaticList {
-    fn id(&self) -> Id {
-        self.id
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {

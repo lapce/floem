@@ -97,7 +97,8 @@ use crate::{
 };
 
 pub trait View {
-    fn id(&self) -> Id;
+    fn view_data(&self) -> &ViewData;
+    fn view_data_mut(&mut self) -> &mut ViewData;
 
     /// This method walks over children and must be implemented if the view has any children.
     /// It should return children back to front and should stop if `_for_each` returns `true`.
@@ -113,6 +114,10 @@ pub trait View {
         &'a mut self,
         _for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
+    }
+
+    fn id(&self) -> Id {
+        self.view_data().id()
     }
 
     fn view_style(&self) -> Option<Style> {
@@ -232,6 +237,19 @@ pub trait View {
             cx.paint_view(child);
             false
         });
+    }
+}
+
+pub struct ViewData {
+    pub(crate) id: Id,
+}
+
+impl ViewData {
+    pub fn new(id: Id) -> Self {
+        Self { id }
+    }
+    pub fn id(&self) -> Id {
+        self.id
     }
 }
 
@@ -585,8 +603,12 @@ pub(crate) fn view_debug_tree(root_view: &dyn View) {
 }
 
 impl View for Box<dyn View> {
-    fn id(&self) -> Id {
-        (**self).id()
+    fn view_data(&self) -> &ViewData {
+        (**self).view_data()
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        (**self).view_data_mut()
     }
 
     fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
@@ -602,6 +624,10 @@ impl View for Box<dyn View> {
         for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         (**self).for_each_child_rev_mut(for_each)
+    }
+
+    fn id(&self) -> Id {
+        (**self).id()
     }
 
     fn view_style(&self) -> Option<Style> {

@@ -1,17 +1,22 @@
 use taffy::style::FlexDirection;
 
-use crate::{context::UpdateCx, id::Id, style::Style, view::View, view_tuple::ViewTuple};
+use crate::{
+    context::UpdateCx,
+    id::Id,
+    style::Style,
+    view::{View, ViewData},
+    view_tuple::ViewTuple,
+};
 
 pub struct Stack {
-    id: Id,
+    data: ViewData,
     children: Vec<Box<dyn View>>,
     direction: Option<FlexDirection>,
 }
 
 pub fn stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
-    let id = Id::next();
     Stack {
-        id,
+        data: ViewData::new(Id::next()),
         children: children.into_views(),
         direction: None,
     }
@@ -19,9 +24,8 @@ pub fn stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
 
 /// A stack which defaults to `FlexDirection::Row`.
 pub fn h_stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
-    let id = Id::next();
     Stack {
-        id,
+        data: ViewData::new(Id::next()),
         children: children.into_views(),
         direction: Some(FlexDirection::Row),
     }
@@ -29,17 +33,20 @@ pub fn h_stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
 
 /// A stack which defaults to `FlexDirection::Column`.
 pub fn v_stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
-    let id = Id::next();
     Stack {
-        id,
+        data: ViewData::new(Id::next()),
         children: children.into_views(),
         direction: Some(FlexDirection::Column),
     }
 }
 
 impl View for Stack {
-    fn id(&self) -> Id {
-        self.id
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
     }
 
     fn view_style(&self) -> Option<crate::style::Style> {
@@ -85,7 +92,7 @@ impl View for Stack {
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast() {
             self.children = *state;
-            cx.request_all(self.id);
+            cx.request_all(self.id());
         }
     }
 }

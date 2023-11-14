@@ -10,11 +10,11 @@ use crate::{
     id::Id,
     style::{Style, TextOverflow},
     unit::PxPct,
-    view::View,
+    view::{View, ViewData},
 };
 
 pub struct RichText {
-    id: Id,
+    data: ViewData,
     text_layout: TextLayout,
     text_node: Option<Node>,
     text_overflow: TextOverflow,
@@ -29,7 +29,7 @@ pub fn rich_text(text_layout: impl Fn() -> TextLayout + 'static) -> RichText {
         id.update_state(new_text_layout, false);
     });
     RichText {
-        id,
+        data: ViewData::new(id),
         text_layout: text,
         text_node: None,
         text_overflow: TextOverflow::Wrap,
@@ -38,8 +38,12 @@ pub fn rich_text(text_layout: impl Fn() -> TextLayout + 'static) -> RichText {
 }
 
 impl View for RichText {
-    fn id(&self) -> Id {
-        self.id
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -67,7 +71,7 @@ impl View for RichText {
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
-        cx.layout_node(self.id, true, |cx| {
+        cx.layout_node(self.id(), true, |cx| {
             let size = self.text_layout.size();
             let width = size.width as f32;
             let height = size.height as f32;
@@ -90,7 +94,7 @@ impl View for RichText {
 
     fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<Rect> {
         let layout = cx.get_layout(self.id()).unwrap();
-        let style = cx.app_state_mut().get_builtin_style(self.id);
+        let style = cx.app_state_mut().get_builtin_style(self.id());
         let padding_left = match style.padding_left() {
             PxPct::Px(padding) => padding as f32,
             PxPct::Pct(pct) => pct as f32 * layout.size.width,

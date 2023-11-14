@@ -2,20 +2,20 @@ use crate::{
     action::{drag_window, toggle_window_maximized},
     event::EventListener,
     id::Id,
-    view::View,
+    view::{View, ViewData},
 };
 
 use super::Decorators;
 
 pub struct DragWindowArea {
-    id: Id,
+    data: ViewData,
     child: Box<dyn View>,
 }
 
 pub fn drag_window_area<V: View + 'static>(child: V) -> DragWindowArea {
     let id = Id::next();
     DragWindowArea {
-        id,
+        data: ViewData::new(id),
         child: Box::new(child),
     }
     .on_event_stop(EventListener::PointerDown, |_| drag_window())
@@ -23,8 +23,12 @@ pub fn drag_window_area<V: View + 'static>(child: V) -> DragWindowArea {
 }
 
 impl View for DragWindowArea {
-    fn id(&self) -> Id {
-        self.id
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
     }
 
     fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {

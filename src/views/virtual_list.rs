@@ -8,7 +8,7 @@ use taffy::{prelude::Node, style::Dimension};
 use crate::{
     context::LayoutCx,
     id::Id,
-    view::{self, View},
+    view::{self, View, ViewData},
 };
 
 use super::{apply_diff, diff, Diff, DiffOpAdd, FxIndexSet, HashRun};
@@ -44,7 +44,7 @@ pub struct VirtualList<V: View, T>
 where
     T: 'static,
 {
-    id: Id,
+    data: ViewData,
     direction: VirtualListDirection,
     children: Vec<Option<(V, Scope)>>,
     viewport: Rect,
@@ -186,7 +186,7 @@ where
     let view_fn = Box::new(as_child_of_current_scope(view_fn));
 
     VirtualList {
-        id,
+        data: ViewData::new(id),
         direction,
         children: Vec::new(),
         viewport: Rect::ZERO,
@@ -201,8 +201,12 @@ where
 }
 
 impl<V: View + 'static, T> View for VirtualList<V, T> {
-    fn id(&self) -> Id {
-        self.id
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
     }
 
     fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
@@ -252,7 +256,7 @@ impl<V: View + 'static, T> View for VirtualList<V, T> {
             self.before_size = state.before_size;
             self.after_size = state.after_size;
             apply_diff(
-                self.id,
+                self.id(),
                 cx.app_state,
                 state.diff,
                 &mut self.children,
@@ -263,7 +267,7 @@ impl<V: View + 'static, T> View for VirtualList<V, T> {
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
-        cx.layout_node(self.id, true, |cx| {
+        cx.layout_node(self.id(), true, |cx| {
             let mut nodes = self
                 .children
                 .iter_mut()
@@ -330,7 +334,7 @@ impl<V: View + 'static, T> View for VirtualList<V, T> {
     fn compute_layout(&mut self, cx: &mut LayoutCx) -> Option<Rect> {
         let viewport = cx.viewport.unwrap_or_default();
         if self.viewport != viewport {
-            let layout = cx.app_state().get_layout(self.id).unwrap();
+            let layout = cx.app_state().get_layout(self.id()).unwrap();
             let _size = Size::new(layout.size.width as f64, layout.size.height as f64);
 
             self.viewport = viewport;

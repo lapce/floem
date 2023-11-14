@@ -2,14 +2,14 @@ use floem_reactive::{as_child_of_current_scope, create_updater, Scope};
 
 use crate::{
     id::Id,
-    view::{view_children_set_parent_id, View},
+    view::{view_children_set_parent_id, View, ViewData},
 };
 
 type ChildFn<T> = dyn Fn(T) -> (Box<dyn View>, Scope);
 
 /// A container for a dynamically updating View. See [`dyn_container`]
 pub struct DynamicContainer<T: 'static> {
-    id: Id,
+    data: ViewData,
     child: Box<dyn View>,
     child_scope: Scope,
     child_fn: Box<ChildFn<T>>,
@@ -81,7 +81,7 @@ pub fn dyn_container<CF: Fn(T) -> Box<dyn View> + 'static, T: 'static>(
     let child_fn = Box::new(as_child_of_current_scope(child_fn));
     let (child, child_scope) = child_fn(initial);
     DynamicContainer {
-        id,
+        data: ViewData::new(id),
         child,
         child_scope,
         child_fn,
@@ -89,8 +89,12 @@ pub fn dyn_container<CF: Fn(T) -> Box<dyn View> + 'static, T: 'static>(
 }
 
 impl<T: 'static> View for DynamicContainer<T> {
-    fn id(&self) -> Id {
-        self.id
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
     }
 
     fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
@@ -118,7 +122,7 @@ impl<T: 'static> View for DynamicContainer<T> {
             cx.app_state_mut().remove_view(&mut self.child);
             (self.child, self.child_scope) = (self.child_fn)(*val);
             old_child_scope.dispose();
-            self.child.id().set_parent(self.id);
+            self.child.id().set_parent(self.id());
             view_children_set_parent_id(&*self.child);
             cx.request_all(self.id());
         }
