@@ -449,7 +449,7 @@ impl AppState {
         &view_state.combined_style
     }
 
-    pub(crate) fn get_builtin_style(&mut self, id: Id) -> BuiltinStyle<'_> {
+    pub fn get_builtin_style(&mut self, id: Id) -> BuiltinStyle<'_> {
         self.get_computed_style(id).builtin()
     }
 
