@@ -1303,32 +1303,31 @@ impl<'a> StyleCx<'a> {
     }
 }
 
-/// Holds current layout state for given position in the tree.
-/// You'll use this in the `View::layout` implementation to call `layout_node` on children and to access any font
-pub struct LayoutCx<'a> {
+pub struct ComputeLayoutCx<'a> {
     pub(crate) app_state: &'a mut AppState,
-    pub(crate) viewport: Option<Rect>,
+    pub(crate) viewport: Rect,
     pub(crate) window_origin: Point,
-    pub(crate) saved_viewports: Vec<Option<Rect>>,
+    pub(crate) saved_viewports: Vec<Rect>,
     pub(crate) saved_window_origins: Vec<Point>,
 }
 
-impl<'a> LayoutCx<'a> {
-    pub(crate) fn new(app_state: &'a mut AppState) -> Self {
+impl<'a> ComputeLayoutCx<'a> {
+    pub(crate) fn new(app_state: &'a mut AppState, viewport: Rect) -> Self {
         Self {
             app_state,
-            viewport: None,
+            viewport,
             window_origin: Point::ZERO,
             saved_viewports: Vec::new(),
             saved_window_origins: Vec::new(),
         }
     }
 
-    pub(crate) fn clear(&mut self) {
-        self.viewport = None;
-        self.window_origin = Point::ZERO;
-        self.saved_viewports.clear();
-        self.saved_window_origins.clear();
+    pub fn app_state_mut(&mut self) -> &mut AppState {
+        self.app_state
+    }
+
+    pub fn app_state(&self) -> &AppState {
+        self.app_state
     }
 
     pub fn save(&mut self) {
@@ -1341,6 +1340,113 @@ impl<'a> LayoutCx<'a> {
         self.window_origin = self.saved_window_origins.pop().unwrap_or_default();
     }
 
+    pub fn current_viewport(&self) -> Rect {
+        self.viewport
+    }
+
+    pub fn get_layout(&self, id: Id) -> Option<Layout> {
+        self.app_state.get_layout(id)
+    }
+
+    pub fn layout(&self, node: Node) -> Option<Layout> {
+        self.app_state.taffy.layout(node).ok().copied()
+    }
+
+    pub(crate) fn get_resize_listener(&mut self, id: Id) -> Option<&mut ResizeListener> {
+        self.app_state
+            .view_states
+            .get_mut(&id)
+            .and_then(|s| s.resize_listener.as_mut())
+    }
+
+    pub(crate) fn get_move_listener(&mut self, id: Id) -> Option<&mut MoveListener> {
+        self.app_state
+            .view_states
+            .get_mut(&id)
+            .and_then(|s| s.move_listener.as_mut())
+    }
+    /// Internal method used by Floem. This method derives its calculations based on the [Taffy Node](taffy::prelude::Node) returned by the `View::layout` method.
+    ///
+    /// It's responsible for:
+    /// - calculating and setting the view's origin (local coordinates and window coordinates)
+    /// - calculating and setting the view's viewport
+    /// - invoking any attached context::ResizeListeners
+    ///
+    /// Returns the bounding rect that encompasses this view and its children
+    pub fn compute_view_layout(&mut self, view: &mut dyn View) -> Option<Rect> {
+        let id = view.id();
+        if self.app_state().is_hidden(id) {
+            self.app_state_mut().view_state(id).layout_rect = Rect::ZERO;
+            return None;
+        }
+
+        self.save();
+
+        let layout = self.app_state().get_layout(id).unwrap();
+        let origin = Point::new(layout.location.x as f64, layout.location.y as f64);
+        let this_viewport = self
+            .app_state()
+            .view_states
+            .get(&id)
+            .and_then(|view| view.viewport);
+        let this_viewport_origin = this_viewport.unwrap_or_default().origin().to_vec2();
+        let size = Size::new(layout.size.width as f64, layout.size.height as f64);
+        let parent_viewport = self.viewport.with_origin(
+            Point::new(
+                self.viewport.x0 - layout.location.x as f64,
+                self.viewport.y0 - layout.location.y as f64,
+            ) + this_viewport_origin,
+        );
+        self.viewport = parent_viewport.intersect(size.to_rect());
+        if let Some(this_viewport) = this_viewport {
+            self.viewport = self.viewport.intersect(this_viewport);
+        }
+
+        let window_origin = origin + self.window_origin.to_vec2() - this_viewport_origin;
+        self.window_origin = window_origin;
+
+        if let Some(resize) = self.get_resize_listener(id) {
+            let new_rect = size.to_rect().with_origin(origin);
+            if new_rect != resize.rect {
+                resize.rect = new_rect;
+                (*resize.callback)(new_rect);
+            }
+        }
+
+        if let Some(listener) = self.get_move_listener(id) {
+            if window_origin != listener.window_origin {
+                listener.window_origin = window_origin;
+                (*listener.callback)(window_origin);
+            }
+        }
+
+        let child_layout_rect = view.compute_layout(self);
+
+        let layout_rect = size.to_rect().with_origin(self.window_origin);
+        let layout_rect = if let Some(child_layout_rect) = child_layout_rect {
+            layout_rect.union(child_layout_rect)
+        } else {
+            layout_rect
+        };
+        self.app_state_mut().view_state(id).layout_rect = layout_rect;
+
+        self.restore();
+
+        Some(layout_rect)
+    }
+}
+
+/// Holds current layout state for given position in the tree.
+/// You'll use this in the `View::layout` implementation to call `layout_node` on children and to access any font
+pub struct LayoutCx<'a> {
+    pub(crate) app_state: &'a mut AppState,
+}
+
+impl<'a> LayoutCx<'a> {
+    pub(crate) fn new(app_state: &'a mut AppState) -> Self {
+        Self { app_state }
+    }
+
     pub fn app_state_mut(&mut self) -> &mut AppState {
         self.app_state
     }
@@ -1349,24 +1455,12 @@ impl<'a> LayoutCx<'a> {
         self.app_state
     }
 
-    pub fn current_viewport(&self) -> Option<Rect> {
-        self.viewport
-    }
-
-    pub fn get_layout(&self, id: Id) -> Option<Layout> {
-        self.app_state.get_layout(id)
-    }
-
     pub fn get_computed_style(&mut self, id: Id) -> &Style {
         self.app_state.get_computed_style(id)
     }
 
     pub fn set_style(&mut self, node: Node, style: taffy::style::Style) {
         let _ = self.app_state.taffy.set_style(node, style);
-    }
-
-    pub fn layout(&self, node: Node) -> Option<Layout> {
-        self.app_state.taffy.layout(node).ok().copied()
     }
 
     pub fn new_node(&mut self) -> Node {
@@ -1408,110 +1502,7 @@ impl<'a> LayoutCx<'a> {
 
     /// Internal method used by Floem to invoke the user-defined `View::layout` method.
     pub fn layout_view(&mut self, view: &mut dyn View) -> Node {
-        self.save();
-        let node = view.layout(self);
-        self.restore();
-        node
-    }
-
-    /// Internal method used by Floem. This method derives its calculations based on the [Taffy Node](taffy::prelude::Node) returned by the `View::layout` method.
-    ///
-    /// It's responsible for:
-    /// - calculating and setting the view's origin (local coordinates and window coordinates)
-    /// - calculating and setting the view's viewport
-    /// - invoking any attached context::ResizeListeners
-    ///
-    /// Returns the bounding rect that encompasses this view and its children
-    pub fn compute_view_layout(&mut self, view: &mut dyn View) -> Option<Rect> {
-        let id = view.id();
-        if self.app_state().is_hidden(id) {
-            self.app_state_mut().view_state(id).layout_rect = Rect::ZERO;
-            return None;
-        }
-
-        self.save();
-
-        let layout = self.app_state().get_layout(id).unwrap();
-        let origin = Point::new(layout.location.x as f64, layout.location.y as f64);
-        let this_viewport = self
-            .app_state()
-            .view_states
-            .get(&id)
-            .and_then(|view| view.viewport);
-        let size = Size::new(layout.size.width as f64, layout.size.height as f64);
-        let parent_viewport = self.viewport.map(|rect| {
-            rect.with_origin(
-                Point::new(
-                    rect.x0 - layout.location.x as f64,
-                    rect.y0 - layout.location.y as f64,
-                ) + this_viewport.unwrap_or_default().origin().to_vec2(),
-            )
-        });
-        match (parent_viewport, this_viewport) {
-            (Some(parent_viewport), Some(viewport)) => {
-                self.viewport = Some(
-                    parent_viewport
-                        .intersect(viewport)
-                        .intersect(size.to_rect()),
-                );
-            }
-            (Some(parent_viewport), None) => {
-                self.viewport = Some(parent_viewport.intersect(size.to_rect()));
-            }
-            (None, Some(viewport)) => {
-                self.viewport = Some(viewport.intersect(size.to_rect()));
-            }
-            (None, None) => {
-                self.viewport = None;
-            }
-        }
-
-        let window_origin = origin + self.window_origin.to_vec2()
-            - this_viewport.unwrap_or_default().origin().to_vec2();
-        self.window_origin = window_origin;
-
-        if let Some(resize) = self.get_resize_listener(id) {
-            let new_rect = size.to_rect().with_origin(origin);
-            if new_rect != resize.rect {
-                resize.rect = new_rect;
-                (*resize.callback)(new_rect);
-            }
-        }
-
-        if let Some(listener) = self.get_move_listener(id) {
-            if window_origin != listener.window_origin {
-                listener.window_origin = window_origin;
-                (*listener.callback)(window_origin);
-            }
-        }
-
-        let child_layout_rect = view.compute_layout(self);
-
-        let layout_rect = size.to_rect().with_origin(self.window_origin);
-        let layout_rect = if let Some(child_layout_rect) = child_layout_rect {
-            layout_rect.union(child_layout_rect)
-        } else {
-            layout_rect
-        };
-        self.app_state_mut().view_state(id).layout_rect = layout_rect;
-
-        self.restore();
-
-        Some(layout_rect)
-    }
-
-    pub(crate) fn get_resize_listener(&mut self, id: Id) -> Option<&mut ResizeListener> {
-        self.app_state
-            .view_states
-            .get_mut(&id)
-            .and_then(|s| s.resize_listener.as_mut())
-    }
-
-    pub(crate) fn get_move_listener(&mut self, id: Id) -> Option<&mut MoveListener> {
-        self.app_state
-            .view_states
-            .get_mut(&id)
-            .and_then(|s| s.move_listener.as_mut())
+        view.layout(self)
     }
 }
 

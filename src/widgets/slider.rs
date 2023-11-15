@@ -182,7 +182,7 @@ impl View for Slider {
         }
     }
 
-    fn compute_layout(&mut self, cx: &mut crate::context::LayoutCx) -> Option<kurbo::Rect> {
+    fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<kurbo::Rect> {
         let layout = cx.get_layout(self.id()).unwrap();
 
         self.size = layout.size;

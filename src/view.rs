@@ -89,7 +89,9 @@ use std::any::Any;
 use taffy::prelude::Node;
 
 use crate::{
-    context::{AppState, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx, ViewStyleProps},
+    context::{
+        AppState, ComputeLayoutCx, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx, ViewStyleProps,
+    },
     event::Event,
     id::{Id, ID_PATHS},
     style::{BoxShadowProp, Style, StyleClassRef},
@@ -202,7 +204,7 @@ pub trait View {
     ///
     /// If the layout changes needs other passes to run you're expected to call
     /// `cx.app_state_mut().request_changes`.
-    fn compute_layout(&mut self, cx: &mut LayoutCx) -> Option<Rect> {
+    fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
         default_compute_layout(self, cx)
     }
 
@@ -277,7 +279,10 @@ pub(crate) fn update_data(id: Id, root: &mut dyn View, f: impl FnOnce(&mut ViewD
 }
 
 /// Computes the layout of the view's children, if any.
-pub fn default_compute_layout<V: View + ?Sized>(view: &mut V, cx: &mut LayoutCx) -> Option<Rect> {
+pub fn default_compute_layout<V: View + ?Sized>(
+    view: &mut V,
+    cx: &mut ComputeLayoutCx,
+) -> Option<Rect> {
     let mut layout_rect: Option<Rect> = None;
     view.for_each_child_mut(&mut |child| {
         let child_layout = cx.compute_view_layout(child);
@@ -685,7 +690,7 @@ impl View for Box<dyn View> {
         (**self).layout(cx)
     }
 
-    fn compute_layout(&mut self, cx: &mut LayoutCx) -> Option<Rect> {
+    fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
         (**self).compute_layout(cx)
     }
 

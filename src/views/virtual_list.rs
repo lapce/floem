@@ -6,7 +6,7 @@ use smallvec::SmallVec;
 use taffy::{prelude::Node, style::Dimension};
 
 use crate::{
-    context::LayoutCx,
+    context::ComputeLayoutCx,
     id::Id,
     view::{self, View, ViewData},
 };
@@ -331,8 +331,8 @@ impl<V: View + 'static, T> View for VirtualList<V, T> {
         })
     }
 
-    fn compute_layout(&mut self, cx: &mut LayoutCx) -> Option<Rect> {
-        let viewport = cx.viewport.unwrap_or_default();
+    fn compute_layout(&mut self, cx: &mut ComputeLayoutCx<'_>) -> Option<Rect> {
+        let viewport = cx.current_viewport();
         if self.viewport != viewport {
             let layout = cx.app_state().get_layout(self.id()).unwrap();
             let _size = Size::new(layout.size.width as f64, layout.size.height as f64);
