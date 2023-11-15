@@ -39,7 +39,7 @@ use crate::{
         CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES,
         UPDATE_MESSAGES,
     },
-    view::{view_children_set_parent_id, view_tab_navigation, View},
+    view::{update_data, view_children_set_parent_id, view_tab_navigation, View},
     widgets::{default_theme, Theme},
 };
 
@@ -774,24 +774,28 @@ impl WindowHandle {
                     }
                     UpdateMessage::BaseStyle { id, style } => {
                         let state = cx.app_state.view_state(id);
-                        let old_any_inherited = state.style.any_inherited();
+                        let old_any_inherited = state
+                            .base_style
+                            .as_ref()
+                            .map(|style| style.any_inherited())
+                            .unwrap_or(false);
+                        let new_any_inherited = style.any_inherited();
                         state.base_style = Some(style);
-                        if state.style.any_inherited() || old_any_inherited {
+                        if new_any_inherited || old_any_inherited {
                             cx.app_state.request_style_recursive(id);
                         } else {
                             cx.request_style(id);
                         }
                     }
-                    UpdateMessage::Style { id, style } => {
-                        let state = cx.app_state.view_state(id);
-                        let old_any_inherited = state.style.any_inherited();
-                        state.style = style;
-                        if state.style.any_inherited() || old_any_inherited {
+                    UpdateMessage::Style { id, style } => update_data(id, &mut self.view, |data| {
+                        let old_any_inherited = data.style.any_inherited();
+                        data.style = style;
+                        if data.style.any_inherited() || old_any_inherited {
                             cx.app_state.request_style_recursive(id);
                         } else {
                             cx.request_style(id);
                         }
-                    }
+                    }),
                     UpdateMessage::Class { id, class } => {
                         let state = cx.app_state.view_state(id);
                         state.class = Some(class);

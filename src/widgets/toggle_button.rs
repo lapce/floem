@@ -6,11 +6,11 @@ use kurbo::{Point, Size};
 use winit::keyboard::{Key, NamedKey};
 
 use crate::{
-    id, prop, prop_extracter,
+    prop, prop_extracter,
     style::{self, Foreground},
     style_class,
     unit::PxPct,
-    view::View,
+    view::{View, ViewData},
     views::Decorators,
     EventPropagation,
 };
@@ -49,7 +49,7 @@ enum ToggleState {
 
 /// A toggle button
 pub struct ToggleButton {
-    id: id::Id,
+    data: ViewData,
     state: bool,
     ontoggle: Option<Box<dyn Fn(bool)>>,
     position: f32,
@@ -85,7 +85,7 @@ pub fn toggle_button(state: impl Fn() -> bool + 'static) -> ToggleButton {
     });
 
     ToggleButton {
-        id,
+        data: ViewData::new(id),
         state: false,
         ontoggle: None,
         position: 0.0,
@@ -99,8 +99,12 @@ pub fn toggle_button(state: impl Fn() -> bool + 'static) -> ToggleButton {
 }
 
 impl View for ToggleButton {
-    fn id(&self) -> crate::id::Id {
-        self.id
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
     }
 
     fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
@@ -121,7 +125,7 @@ impl View for ToggleButton {
     ) -> EventPropagation {
         match event {
             crate::event::Event::PointerDown(_event) => {
-                cx.update_active(self.id);
+                cx.update_active(self.id());
                 self.held = ToggleState::Held;
             }
             crate::event::Event::PointerUp(_event) => {
@@ -222,12 +226,12 @@ impl View for ToggleButton {
 
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         if self.style.read(cx) {
-            cx.app_state_mut().request_paint(self.id);
+            cx.app_state_mut().request_paint(self.id());
         }
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        let layout = cx.get_layout(self.id).unwrap();
+        let layout = cx.get_layout(self.id()).unwrap();
         let size = Size::new(layout.size.width as f64, layout.size.height as f64);
         let circle_point = Point::new(self.position as f64, size.to_rect().center().y);
         let circle = crate::kurbo::Circle::new(circle_point, self.radius as f64);

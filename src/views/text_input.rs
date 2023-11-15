@@ -4,6 +4,7 @@ use crate::reactive::{create_effect, RwSignal};
 use crate::style::{CursorStyle, TextColor};
 use crate::style::{FontProps, PaddingLeft};
 use crate::unit::PxPct;
+use crate::view::ViewData;
 use crate::{prop_extracter, EventPropagation};
 use clipboard::{ClipboardContext, ClipboardProvider};
 use taffy::prelude::{Layout, Node};
@@ -48,7 +49,7 @@ enum InputKind {
 
 /// Text Input View
 pub struct TextInput {
-    id: Id,
+    data: ViewData,
     buffer: RwSignal<String>,
     // Where are we in the main buffer
     cursor_glyph_idx: usize,
@@ -103,7 +104,7 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
     }
 
     TextInput {
-        id,
+        data: ViewData::new(id),
         cursor_glyph_idx: 0,
         buffer,
         text_buf: None,
@@ -714,8 +715,12 @@ fn replace_range(buff: &mut String, del_range: Range<usize>, replacement: Option
 }
 
 impl View for TextInput {
-    fn id(&self) -> Id {
-        self.id
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -744,7 +749,7 @@ impl View for TextInput {
                 } else {
                     // Already focused - move cursor to click pos
                     let layout = cx.get_layout(self.id()).unwrap();
-                    let style = cx.app_state.get_builtin_style(self.id);
+                    let style = cx.app_state.get_builtin_style(self.id());
 
                     let padding_left = match style.padding_left() {
                         PxPct::Px(padding) => padding as f32,
@@ -780,7 +785,7 @@ impl View for TextInput {
         };
 
         if is_handled {
-            cx.app_state.request_layout(self.id);
+            cx.app_state.request_layout(self.id());
             self.last_cursor_action_on = Instant::now();
         }
 
@@ -790,7 +795,7 @@ impl View for TextInput {
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         if self.font.read(cx) || self.text_buf.is_none() {
             self.update_text_layout();
-            cx.app_state_mut().request_layout(self.id);
+            cx.app_state_mut().request_layout(self.id());
         }
         if self.style.read(cx) {
             cx.app_state_mut().request_paint(self.id());
@@ -798,8 +803,8 @@ impl View for TextInput {
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
-        cx.layout_node(self.id, true, |cx| {
-            self.is_focused = cx.app_state().is_focused(&self.id);
+        cx.layout_node(self.id(), true, |cx| {
+            self.is_focused = cx.app_state().is_focused(&self.id());
 
             if self.text_node.is_none() {
                 self.text_node = Some(
@@ -827,7 +832,8 @@ impl View for TextInput {
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        if !cx.app_state.is_focused(&self.id) && self.buffer.with_untracked(|buff| buff.is_empty())
+        if !cx.app_state.is_focused(&self.id())
+            && self.buffer.with_untracked(|buff| buff.is_empty())
         {
             return;
         }
@@ -839,7 +845,7 @@ impl View for TextInput {
         let node_width = node_layout.size.width as f64;
         let cursor_color = cx
             .app_state
-            .get_computed_style(self.id)
+            .get_computed_style(self.id())
             .builtin()
             .cursor_color();
 
@@ -876,7 +882,7 @@ impl View for TextInput {
             cx.draw_text(self.text_buf.as_ref().unwrap(), text_start_point);
         }
 
-        let is_cursor_visible = cx.app_state.is_focused(&self.id)
+        let is_cursor_visible = cx.app_state.is_focused(&self.id())
             && (self.last_cursor_action_on.elapsed().as_millis()
                 / CURSOR_BLINK_INTERVAL_MS as u128)
                 % 2
@@ -887,14 +893,14 @@ impl View for TextInput {
             cx.fill(&cursor_rect, cursor_color.unwrap_or(Color::BLACK), 0.0);
         }
 
-        let style = cx.app_state.get_computed_style(self.id);
+        let style = cx.app_state.get_computed_style(self.id());
 
         let padding_left = match style.get(PaddingLeft) {
             PxPct::Px(padding) => padding as f32,
             PxPct::Pct(pct) => pct as f32 * node_layout.size.width,
         };
 
-        if cx.app_state.is_focused(&self.id) {
+        if cx.app_state.is_focused(&self.id()) {
             let selection_rect = self.get_selection_rect(&node_layout, padding_left as f64);
             cx.fill(
                 &selection_rect,

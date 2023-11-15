@@ -8,7 +8,7 @@ use crate::{
     context::{StyleCx, UpdateCx},
     id::Id,
     style::DisplayProp,
-    view::View,
+    view::{View, ViewData},
 };
 
 use super::{apply_diff, diff, Diff, DiffOpAdd, FxIndexSet, HashRun};
@@ -23,7 +23,7 @@ where
     V: View,
     T: 'static,
 {
-    id: Id,
+    data: ViewData,
     active: usize,
     children: Vec<Option<(V, Scope)>>,
     view_fn: Box<dyn Fn(T) -> (V, Scope)>,
@@ -83,7 +83,7 @@ where
     let view_fn = Box::new(as_child_of_current_scope(view_fn));
 
     Tab {
-        id,
+        data: ViewData::new(id),
         active: 0,
         children: Vec::new(),
         view_fn,
@@ -92,8 +92,12 @@ where
 }
 
 impl<V: View + 'static, T> View for Tab<V, T> {
-    fn id(&self) -> Id {
-        self.id
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
     }
 
     fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
@@ -137,7 +141,7 @@ impl<V: View + 'static, T> View for Tab<V, T> {
             match *state {
                 TabState::Diff(diff) => {
                     apply_diff(
-                        self.id,
+                        self.id(),
                         cx.app_state,
                         *diff,
                         &mut self.children,

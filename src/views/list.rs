@@ -10,7 +10,7 @@ use smallvec::SmallVec;
 use crate::{
     context::{AppState, UpdateCx},
     id::Id,
-    view::{view_children_set_parent_id, View},
+    view::{view_children_set_parent_id, View, ViewData},
 };
 
 pub(crate) type FxIndexSet<T> = indexmap::IndexSet<T, BuildHasherDefault<FxHasher>>;
@@ -24,7 +24,7 @@ where
     V: View,
     T: 'static,
 {
-    id: Id,
+    data: ViewData,
     children: Vec<Option<(V, Scope)>>,
     view_fn: Box<dyn Fn(T) -> (V, Scope)>,
     phantom: PhantomData<T>,
@@ -70,7 +70,7 @@ where
     });
     let view_fn = Box::new(as_child_of_current_scope(view_fn));
     List {
-        id,
+        data: ViewData::new(id),
         children: Vec::new(),
         view_fn,
         phantom: PhantomData,
@@ -78,8 +78,12 @@ where
 }
 
 impl<V: View + 'static, T> View for List<V, T> {
-    fn id(&self) -> Id {
-        self.id
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
     }
 
     fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
@@ -121,7 +125,7 @@ impl<V: View + 'static, T> View for List<V, T> {
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(diff) = state.downcast() {
             apply_diff(
-                self.id,
+                self.id(),
                 cx.app_state,
                 *diff,
                 &mut self.children,

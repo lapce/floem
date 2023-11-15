@@ -7,13 +7,12 @@ use peniko::Color;
 use winit::keyboard::{Key, NamedKey};
 
 use crate::{
-    id,
     prop,
     prop_extracter,
     style::{Background, BorderRadius, Foreground},
     style_class,
     unit::PxPct,
-    view::View,
+    view::{View, ViewData},
     views::Decorators,
     EventPropagation,
     // EventPropagation,
@@ -45,7 +44,7 @@ prop_extracter! {
 
 /// A slider
 pub struct Slider {
-    id: id::Id,
+    data: ViewData,
     onchangepx: Option<Box<dyn Fn(f32)>>,
     onchangepct: Option<Box<dyn Fn(f32)>>,
     held: bool,
@@ -84,9 +83,8 @@ pub fn slider(state: impl Fn() -> f32 + 'static) -> Slider {
         let state = state();
         id.update_state(state, false);
     });
-
     Slider {
-        id,
+        data: ViewData::new(id),
         onchangepx: None,
         onchangepct: None,
         held: false,
@@ -105,8 +103,12 @@ pub fn slider(state: impl Fn() -> f32 + 'static) -> Slider {
 }
 
 impl View for Slider {
-    fn id(&self) -> crate::id::Id {
-        self.id
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
     }
 
     fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
@@ -124,7 +126,7 @@ impl View for Slider {
     ) -> EventPropagation {
         match event {
             crate::event::Event::PointerDown(event) => {
-                cx.update_active(self.id);
+                cx.update_active(self.id());
                 cx.app_state_mut().request_layout(self.id());
                 self.held = true;
                 self.position = event.pos.x as f32;
@@ -176,7 +178,7 @@ impl View for Slider {
         paint |= self.accent_bar_style.read_style(cx, &accent_bar_style);
         paint |= self.style.read(cx);
         if paint {
-            cx.app_state_mut().request_paint(self.id);
+            cx.app_state_mut().request_paint(self.data.id());
         }
     }
 

@@ -1,8 +1,11 @@
-use crate::{id::Id, view::View};
+use crate::{
+    id::Id,
+    view::{View, ViewData},
+};
 
 /// A wrapper around any type that implements View. See [`container_box`]
 pub struct ContainerBox {
-    id: Id,
+    data: ViewData,
     child: Box<dyn View>,
 }
 
@@ -43,14 +46,18 @@ pub struct ContainerBox {
 /// ```
 pub fn container_box(child: impl View + 'static) -> ContainerBox {
     ContainerBox {
-        id: Id::next(),
+        data: ViewData::new(Id::next()),
         child: Box::new(child),
     }
 }
 
 impl View for ContainerBox {
-    fn id(&self) -> Id {
-        self.id
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
     }
 
     fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {

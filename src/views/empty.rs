@@ -1,15 +1,24 @@
-use crate::{id::Id, view::View};
+use crate::{
+    id::Id,
+    view::{View, ViewData},
+};
 
 pub struct Empty {
-    id: Id,
+    data: ViewData,
 }
 
 pub fn empty() -> Empty {
-    Empty { id: Id::next() }
+    Empty {
+        data: ViewData::new(Id::next()),
+    }
 }
 
 impl View for Empty {
-    fn id(&self) -> Id {
-        self.id
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
     }
 }

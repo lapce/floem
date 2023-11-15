@@ -91,13 +91,14 @@ use taffy::prelude::Node;
 use crate::{
     context::{AppState, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx, ViewStyleProps},
     event::Event,
-    id::Id,
+    id::{Id, ID_PATHS},
     style::{BoxShadowProp, Style, StyleClassRef},
     EventPropagation,
 };
 
 pub trait View {
-    fn id(&self) -> Id;
+    fn view_data(&self) -> &ViewData;
+    fn view_data_mut(&mut self) -> &mut ViewData;
 
     /// This method walks over children and must be implemented if the view has any children.
     /// It should return children back to front and should stop if `_for_each` returns `true`.
@@ -113,6 +114,10 @@ pub trait View {
         &'a mut self,
         _for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
+    }
+
+    fn id(&self) -> Id {
+        self.view_data().id()
     }
 
     fn view_style(&self) -> Option<Style> {
@@ -232,6 +237,42 @@ pub trait View {
             cx.paint_view(child);
             false
         });
+    }
+}
+
+pub struct ViewData {
+    pub(crate) id: Id,
+    pub(crate) style: Style,
+}
+
+impl ViewData {
+    pub fn new(id: Id) -> Self {
+        Self {
+            id,
+            style: Style::new(),
+        }
+    }
+    pub fn id(&self) -> Id {
+        self.id
+    }
+}
+
+pub(crate) fn update_data(id: Id, root: &mut dyn View, f: impl FnOnce(&mut ViewData)) {
+    pub(crate) fn update_inner(id_path: &[Id], view: &mut dyn View, f: impl FnOnce(&mut ViewData)) {
+        let id = id_path[0];
+        let id_path = &id_path[1..];
+        if id == view.id() {
+            if id_path.is_empty() {
+                f(view.view_data_mut());
+            } else if let Some(child) = view.child_mut(id_path[0]) {
+                update_inner(id_path, child, f);
+            }
+        }
+    }
+
+    let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
+    if let Some(id_path) = id_path {
+        update_inner(id_path.dispatch(), root, f)
     }
 }
 
@@ -585,8 +626,12 @@ pub(crate) fn view_debug_tree(root_view: &dyn View) {
 }
 
 impl View for Box<dyn View> {
-    fn id(&self) -> Id {
-        (**self).id()
+    fn view_data(&self) -> &ViewData {
+        (**self).view_data()
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        (**self).view_data_mut()
     }
 
     fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
@@ -602,6 +647,10 @@ impl View for Box<dyn View> {
         for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         (**self).for_each_child_rev_mut(for_each)
+    }
+
+    fn id(&self) -> Id {
+        (**self).id()
     }
 
     fn view_style(&self) -> Option<Style> {
