@@ -145,10 +145,7 @@ impl From<(&KeyEvent, &SmolStr)> for TextCommand {
             (ModifiersState::SUPER, "c") => Self::Copy,
             (ModifiersState::SUPER, "x") => Self::Cut,
             (ModifiersState::SUPER, "v") => Self::Paste,
-            _ => {
-                dbg!("Unhandled action", event.modifiers, ch);
-                Self::None
-            }
+            _ => Self::None,
         }
         #[cfg(not(target_os = "macos"))]
         match (event.modifiers, ch.as_str()) {
@@ -156,10 +153,7 @@ impl From<(&KeyEvent, &SmolStr)> for TextCommand {
             (ModifiersState::CONTROL, "c") => Self::Copy,
             (ModifiersState::CONTROL, "x") => Self::Cut,
             (ModifiersState::CONTROL, "v") => Self::Paste,
-            _ => {
-                dbg!("Unhandled action", event.modifiers, ch);
-                Self::None
-            }
+            _ => Self::None,
         }
     }
 }
@@ -294,10 +288,9 @@ impl TextInput {
     }
 
     fn get_cursor_rect(&self, node_layout: &Layout) -> Rect {
-        let virtual_text = self.text_buf.as_ref().unwrap();
-        let text_height = virtual_text.size().height;
-
         let node_location = node_layout.location;
+
+        let text_height = self.height;
 
         let cursor_start = Point::new(
             self.cursor_x + node_location.x as f64,
@@ -308,7 +301,7 @@ impl TextInput {
             cursor_start,
             Point::new(
                 cursor_start.x + self.cursor_width,
-                cursor_start.y + text_height,
+                cursor_start.y + text_height as f64,
             ),
         )
     }
@@ -347,20 +340,24 @@ impl TextInput {
 
     fn update_text_layout(&mut self) {
         let mut text_layout = TextLayout::new();
-        let attrs = self.get_text_attrs();
+        let attrs_list = self.get_text_attrs();
 
         self.buffer
-            .with_untracked(|buff| text_layout.set_text(buff, attrs.clone()));
+            .with_untracked(|buff| text_layout.set_text(buff, attrs_list.clone()));
 
         self.width = APPROX_VISIBLE_CHARS * self.font_size();
-        self.height = self.font_size();
+
+        // determine the height of the text, even if the buff is empty
+        let mut tmp = TextLayout::new();
+        tmp.set_text("W", attrs_list.clone());
+        self.height = tmp.size().height as f32;
 
         // main buff should always get updated
         self.text_buf = Some(text_layout.clone());
 
         if let Some(cr_text) = self.clipped_text.clone().as_ref() {
             let mut clp_txt_lay = text_layout;
-            clp_txt_lay.set_text(cr_text, attrs);
+            clp_txt_lay.set_text(cr_text, attrs_list);
 
             self.clip_txt_buf = Some(clp_txt_lay);
         }
@@ -626,10 +623,7 @@ impl TextInput {
 
                 cursor_moved
             }
-            ref key => {
-                dbg!("Unhandled key", key);
-                false
-            }
+            _ => false,
         }
     }
 
