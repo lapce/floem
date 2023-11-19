@@ -395,10 +395,6 @@ impl TextInput {
         AttrsList::new(attrs)
     }
 
-    fn set_cursor_glyph_idx(&mut self, new_cursor_x: usize) {
-        self.cursor_glyph_idx = new_cursor_x;
-    }
-
     fn select_all(&mut self, cx: &mut EventCx) {
         let text_node = self.text_node.unwrap();
         let node_layout = *cx.app_state.taffy.layout(text_node).unwrap();
@@ -735,11 +731,18 @@ impl View for TextInput {
         _id_path: Option<&[Id]>,
         event: Event,
     ) -> EventPropagation {
+        let buff_len = self.buffer.with_untracked(|buff| buff.len());
+        // Workaround for cursor going out of bounds when text buffer is modified externally
+        // TODO: find a better way to handle this
+        if self.cursor_glyph_idx > buff_len {
+            self.cursor_glyph_idx = buff_len;
+        }
+
         let is_handled = match &event {
             Event::PointerDown(event) => {
                 if !self.is_focused {
                     // Just gained focus - move cursor to buff end
-                    self.set_cursor_glyph_idx(self.buffer.with_untracked(|buff| buff.len()));
+                    self.cursor_glyph_idx = self.buffer.with_untracked(|buff| buff.len());
                 } else {
                     // Already focused - move cursor to click pos
                     let layout = cx.get_layout(self.id()).unwrap();
