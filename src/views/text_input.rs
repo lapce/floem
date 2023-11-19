@@ -1,9 +1,9 @@
 use crate::action::exec_after;
 use crate::keyboard::{self, KeyEvent};
 use crate::reactive::{create_effect, RwSignal};
-use crate::style::{CursorStyle, TextColor};
+use crate::style::{CursorStyle, TextColor, Width};
 use crate::style::{FontProps, PaddingLeft};
-use crate::unit::PxPct;
+use crate::unit::{PxPct, PxPctAuto};
 use crate::view::ViewData;
 use crate::{prop_extracter, EventPropagation};
 use clipboard::{ClipboardContext, ClipboardProvider};
@@ -22,7 +22,7 @@ use std::{
 };
 
 use crate::cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout};
-use kurbo::{Point, Rect};
+use kurbo::{Point, Rect, Size};
 
 use crate::{
     context::{EventCx, UpdateCx},
@@ -70,7 +70,10 @@ pub struct TextInput {
     clip_offset_x: f64,
     selection: Option<Range<usize>>,
     width: f32,
+    is_auto_width: bool,
     height: f32,
+    // Approx max size of a glyph, given the current font weight & size.
+    glyph_max_size: Size,
     style: Extracter,
     font: FontProps,
     input_kind: InputKind,
@@ -115,7 +118,9 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         font: FontProps::default(),
         cursor_x: 0.0,
         selection: None,
+        is_auto_width: false,
         input_kind: InputKind::SingleLine,
+        glyph_max_size: Size::ZERO,
         clip_start_idx: 0,
         clip_offset_x: 0.0,
         clip_start_x: 0.0,
@@ -167,8 +172,11 @@ impl From<(&KeyEvent, &SmolStr)> for TextCommand {
 
 const DEFAULT_FONT_SIZE: f32 = 14.0;
 const CURSOR_BLINK_INTERVAL_MS: u64 = 500;
-// see https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/text#size
-const APPROX_VISIBLE_CHARS: f32 = 10.0;
+/// How many characters wide the input field should be when width is not set in the styles.
+/// Since character widths vary, may not be exact and should not be relied upon to be so.
+/// See https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/text#size
+// TODO: allow this to be configurable
+const APPROX_VISIBLE_CHARS_TARGET: f32 = 10.0;
 
 impl TextInput {
     fn move_cursor(&mut self, move_kind: Movement, direction: Direction) -> bool {
@@ -228,10 +236,7 @@ impl TextInput {
                     true
                 })
             }
-            (movement, dir) => {
-                dbg!(movement, dir);
-                false
-            }
+            (_movement, _dir) => false,
         }
     }
 
@@ -345,6 +350,14 @@ impl TextInput {
         )
     }
 
+    /// Determine approximate max size of a single glyph, given the current font weight & size
+    fn get_font_glyph_max_size(&self) -> Size {
+        let mut tmp = TextLayout::new();
+        let attrs_list = self.get_text_attrs();
+        tmp.set_text("W", attrs_list);
+        tmp.size()
+    }
+
     fn update_text_layout(&mut self) {
         let mut text_layout = TextLayout::new();
         let attrs_list = self.get_text_attrs();
@@ -352,12 +365,12 @@ impl TextInput {
         self.buffer
             .with_untracked(|buff| text_layout.set_text(buff, attrs_list.clone()));
 
-        self.width = APPROX_VISIBLE_CHARS * self.font_size();
-
-        // determine the height of the text, even if the buff is empty
-        let mut tmp = TextLayout::new();
-        tmp.set_text("W", attrs_list.clone());
-        self.height = tmp.size().height as f32;
+        let glyph_max_size = self.get_font_glyph_max_size();
+        if self.is_auto_width {
+            self.width = APPROX_VISIBLE_CHARS_TARGET * glyph_max_size.width as f32;
+        }
+        self.height = glyph_max_size.height as f32;
+        self.glyph_max_size = glyph_max_size;
 
         // main buff should always get updated
         self.text_buf = Some(text_layout.clone());
@@ -811,10 +824,24 @@ impl View for TextInput {
                         .unwrap(),
                 );
             }
+
+            let layout = cx.app_state.get_layout(self.id()).unwrap();
+            let style = cx.app_state.get_computed_style(self.id());
+            let style_width = &style.get(Width);
+
             let text_node = self.text_node.unwrap();
+            let width_px = match style_width {
+                crate::unit::PxPctAuto::Px(px) => *px as f32,
+                crate::unit::PxPctAuto::Pct(pct) => layout.size.width * (*pct as f32),
+                crate::unit::PxPctAuto::Auto => {
+                    APPROX_VISIBLE_CHARS_TARGET * self.glyph_max_size.width as f32
+                }
+            };
+            self.is_auto_width = matches!(style_width, PxPctAuto::Auto);
+            self.width = width_px;
 
             let style = Style::new()
-                .width(self.width)
+                .width(width_px)
                 .height(self.height)
                 .to_taffy_style();
             let _ = cx.app_state_mut().taffy.set_style(text_node, style);
