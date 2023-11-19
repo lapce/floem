@@ -220,16 +220,7 @@ pub trait View {
         id_path: Option<&[Id]>,
         event: Event,
     ) -> EventPropagation {
-        let mut handled = false;
-        self.for_each_child_rev_mut(&mut |child| {
-            handled |= cx.view_event(child, id_path, event.clone()).is_processed();
-            handled
-        });
-        if handled {
-            EventPropagation::Stop
-        } else {
-            EventPropagation::Continue
-        }
+        default_event(self, cx, id_path, event)
     }
 
     /// `View`-specific implementation. Will be called in the [`View::paint_main`] entry point method.
@@ -296,6 +287,24 @@ pub fn default_compute_layout<V: View + ?Sized>(
         false
     });
     layout_rect
+}
+
+pub fn default_event<V: View + ?Sized>(
+    view: &mut V,
+    cx: &mut EventCx,
+    id_path: Option<&[Id]>,
+    event: Event,
+) -> EventPropagation {
+    let mut handled = false;
+    view.for_each_child_rev_mut(&mut |child| {
+        handled |= cx.view_event(child, id_path, event.clone()).is_processed();
+        handled
+    });
+    if handled {
+        EventPropagation::Stop
+    } else {
+        EventPropagation::Continue
+    }
 }
 
 pub(crate) fn paint_bg(
