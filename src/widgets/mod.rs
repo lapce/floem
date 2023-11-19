@@ -18,6 +18,9 @@ pub use checkbox::*;
 mod toggle_button;
 pub use toggle_button::*;
 
+mod tooltip;
+pub use tooltip::*;
+
 pub mod slider;
 
 mod button;
@@ -169,6 +172,19 @@ pub(crate) fn default_theme() -> Theme {
                 .set(slider::BarExtends, true)
                 .set(slider::CircleRad, PxPct::Pct(100.))
                 .set(slider::BarExtends, false)
+        })
+        .class(TooltipClass, |s| {
+            s.border(0.5)
+                .border_color(Color::rgb8(140, 140, 140))
+                .color(Color::rgb8(80, 80, 80))
+                .border_radius(2.0)
+                .padding(padding)
+                .margin(10.0)
+                .background(Color::WHITE_SMOKE)
+                .box_shadow_blur(2.0)
+                .box_shadow_h_offset(2.0)
+                .box_shadow_v_offset(2.0)
+                .box_shadow_color(Color::BLACK.with_alpha_factor(0.2))
         })
         .font_size(FONT_SIZE)
         .color(Color::BLACK);

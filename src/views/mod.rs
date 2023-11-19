@@ -42,6 +42,9 @@ pub use scroll::{scroll, Scroll};
 mod tab;
 pub use tab::*;
 
+mod tooltip;
+pub use tooltip::*;
+
 mod stack;
 pub use stack::*;
 
