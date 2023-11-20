@@ -1,8 +1,7 @@
 use crate::action::exec_after;
 use crate::keyboard::{self, KeyEvent};
 use crate::reactive::{create_effect, RwSignal};
-use crate::style::{CursorStyle, TextColor};
-use crate::style::{FontProps, PaddingLeft};
+use crate::style::{FontProps, PaddingLeft, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
 use crate::view::ViewData;
 use crate::{prop_extracter, EventPropagation};
@@ -784,13 +783,6 @@ impl View for TextInput {
                 true
             }
             Event::KeyDown(event) => self.handle_key_down(cx, event),
-            Event::PointerMove(_) => {
-                if !matches!(cx.app_state.cursor, Some(CursorStyle::Text)) {
-                    cx.app_state.cursor = Some(CursorStyle::Text);
-                    return EventPropagation::Continue;
-                }
-                false
-            }
             _ => false,
         };
 
