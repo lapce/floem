@@ -10,6 +10,7 @@ use crate::{
     id::Id,
     menu::Menu,
     style::{Style, StyleClassRef, StyleSelector},
+    view::View,
 };
 
 thread_local! {
@@ -112,6 +113,14 @@ pub(crate) enum UpdateMessage {
     },
     SetWindowTitle {
         title: String,
+    },
+    AddOverlay {
+        id: Id,
+        position: Point,
+        view: Box<dyn FnOnce() -> Box<dyn View>>,
+    },
+    RemoveOverlay {
+        id: Id,
     },
     Inspect,
     FocusWindow,
