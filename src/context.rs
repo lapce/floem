@@ -1675,6 +1675,12 @@ impl<'a> PaintCx<'a> {
         self.clip = Some(rect);
     }
 
+    /// Remove clipping so the entire window can be rendered to.
+    pub fn clear_clip(&mut self) {
+        self.clip = None;
+        self.paint_state.renderer.clear_clip();
+    }
+
     pub fn offset(&mut self, offset: (f64, f64)) {
         let mut new = self.transform.as_coeffs();
         new[4] += offset.0;
