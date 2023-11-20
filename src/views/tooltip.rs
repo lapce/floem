@@ -4,7 +4,7 @@ use taffy::style::Display;
 
 use crate::{
     action::{exec_after, TimerToken},
-    context::{EventCx, StyleCx},
+    context::{EventCx, PaintCx, StyleCx},
     event::Event,
     id::Id,
     prop, prop_extracter,
@@ -137,5 +137,17 @@ impl View for Tooltip {
         }
 
         default_event(self, cx, id_path, event)
+    }
+
+    fn paint(&mut self, cx: &mut PaintCx) {
+        cx.paint_view(&mut self.child);
+
+        if self.visible {
+            // Remove clipping for the tooltip.
+            cx.save();
+            cx.clear_clip();
+            cx.paint_view(&mut self.tip);
+            cx.restore();
+        }
     }
 }
