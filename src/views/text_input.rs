@@ -1,7 +1,7 @@
 use crate::action::exec_after;
 use crate::keyboard::{self, KeyEvent};
 use crate::reactive::{create_effect, RwSignal};
-use crate::style::{CursorStyle, TextColor, Width};
+use crate::style::{CursorStyle, TextColor};
 use crate::style::{FontProps, PaddingLeft};
 use crate::unit::{PxPct, PxPctAuto};
 use crate::view::ViewData;
@@ -734,7 +734,7 @@ impl View for TextInput {
         if state.downcast::<String>().is_ok() {
             cx.request_layout(self.id());
         } else {
-            dbg!("downcast failed");
+            eprintln!("downcast failed");
         }
     }
 
@@ -825,23 +825,37 @@ impl View for TextInput {
                 );
             }
 
-            let layout = cx.app_state.get_layout(self.id()).unwrap();
-            let style = cx.app_state.get_computed_style(self.id());
-            let style_width = &style.get(Width);
-
             let text_node = self.text_node.unwrap();
+
+            let layout = cx.app_state.get_layout(self.id()).unwrap();
+            let style = cx.app_state_mut().get_builtin_style(self.id());
+            let node_width = layout.size.width;
+
+            let style_width = style.width();
             let width_px = match style_width {
-                crate::unit::PxPctAuto::Px(px) => *px as f32,
-                crate::unit::PxPctAuto::Pct(pct) => layout.size.width * (*pct as f32),
+                crate::unit::PxPctAuto::Px(px) => px as f32,
+                crate::unit::PxPctAuto::Pct(pct) => pct as f32 / 100.0 * node_width,
                 crate::unit::PxPctAuto::Auto => {
                     APPROX_VISIBLE_CHARS_TARGET * self.glyph_max_size.width as f32
                 }
             };
             self.is_auto_width = matches!(style_width, PxPctAuto::Auto);
-            self.width = width_px;
+
+            let padding_left = match style.padding_left() {
+                PxPct::Px(padding) => padding as f32,
+                PxPct::Pct(pct) => pct as f32 / 100.0 * node_width,
+            };
+            let padding_right = match style.padding_right() {
+                PxPct::Px(padding) => padding as f32,
+                PxPct::Pct(pct) => pct as f32 / 100.0 * node_width,
+            };
+            let padding = padding_left + padding_right;
+            let borders = (style.border_left().0 + style.border_right().0) as f32;
+
+            self.width = f32::max(width_px - (padding + borders), 1.0);
 
             let style = Style::new()
-                .width(width_px)
+                .width(self.width)
                 .height(self.height)
                 .to_taffy_style();
             let _ = cx.app_state_mut().taffy.set_style(text_node, style);
@@ -920,12 +934,12 @@ impl View for TextInput {
         let style = cx.app_state.get_computed_style(self.id());
 
         let padding_left = match style.get(PaddingLeft) {
-            PxPct::Px(padding) => padding as f32,
-            PxPct::Pct(pct) => pct as f32 * node_layout.size.width,
+            PxPct::Px(padding) => padding,
+            PxPct::Pct(pct) => pct / 100.0 * node_width,
         };
 
         if cx.app_state.is_focused(&self.id()) {
-            let selection_rect = self.get_selection_rect(&node_layout, padding_left as f64);
+            let selection_rect = self.get_selection_rect(&node_layout, padding_left);
             cx.fill(
                 &selection_rect,
                 cursor_color.unwrap_or(Color::rgba8(0, 0, 0, 150)),
