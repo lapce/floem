@@ -173,6 +173,10 @@ pub(crate) fn default_theme() -> Theme {
                 .set(slider::CircleRad, PxPct::Pct(100.))
                 .set(slider::BarExtends, false)
         })
+        .class(PlaceholderTextClass, |s| {
+            s.color(Color::rgba8(158, 158, 158, 30))
+                .font_size(FONT_SIZE)
+        })
         .class(TooltipClass, |s| {
             s.border(0.5)
                 .border_color(Color::rgb8(140, 140, 140))
