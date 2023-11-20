@@ -4,7 +4,7 @@
 //!
 
 use crate::{
-    style::{Background, Foreground, Style, Transition},
+    style::{Background, CursorStyle, Foreground, Style, Transition},
     unit::{PxPct, UnitExt},
     views::scroll,
     widgets::{self, slider::SliderClass},
@@ -128,6 +128,7 @@ pub(crate) fn default_theme() -> Theme {
         .focus(|s| s.hover(|s| s.background(light_focus_hover_bg_color)))
         .apply(border_style.clone())
         .apply(focus_style.clone())
+        .cursor(CursorStyle::Text)
         .padding_vert(8.0)
         .disabled(|s| {
             s.background(Color::rgb8(180, 188, 175).with_alpha_factor(0.3))

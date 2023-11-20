@@ -2,7 +2,6 @@ use floem::{
     cosmic_text::{self, Weight},
     peniko::Color,
     reactive::create_rw_signal,
-    style::CursorStyle,
     view::View,
     views::Decorators,
     widgets::{text_input, PlaceholderTextClass},
@@ -30,7 +29,6 @@ pub fn text_input_view() -> impl View {
                             .border_radius(15.0)
                             .border_color(Color::rgb8(189, 189, 189))
                             .padding(10.0)
-                            .cursor(CursorStyle::Text)
                             .hover(|s| {
                                 s.background(Color::rgb8(224, 224, 224).with_alpha_factor(0.2))
                                     .border_color(Color::rgb8(66, 66, 66))
