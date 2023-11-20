@@ -1,5 +1,10 @@
 use floem::{
-    peniko::Color, reactive::create_rw_signal, view::View, views::Decorators, widgets::text_input,
+    cosmic_text::{self, Weight},
+    peniko::Color,
+    reactive::create_rw_signal,
+    view::View,
+    views::Decorators,
+    widgets::{text_input, PlaceholderTextClass},
 };
 
 use crate::form::{form, form_item};
@@ -10,10 +15,13 @@ pub fn text_input_view() -> impl View {
     form({
         (
             form_item("Simple Input:".to_string(), 120.0, move || {
-                text_input(text).keyboard_navigatable()
+                text_input(text)
+                    .placeholder("Placeholder text")
+                    .keyboard_navigatable()
             }),
             form_item("Styled Input:".to_string(), 120.0, move || {
                 text_input(text)
+                    .placeholder("Placeholder text")
                     .style(|s| {
                         s.border(1.5)
                             .width(250.0)
@@ -28,6 +36,11 @@ pub fn text_input_view() -> impl View {
                             .focus(|s| {
                                 s.border_color(Color::LIGHT_SKY_BLUE.with_alpha_factor(0.8))
                                     .hover(|s| s.border_color(Color::LIGHT_SKY_BLUE))
+                            })
+                            .class(PlaceholderTextClass, |s| {
+                                s.color(Color::LIGHT_SKY_BLUE)
+                                    .font_style(cosmic_text::Style::Italic)
+                                    .font_weight(Weight::BOLD)
                             })
                     })
                     .keyboard_navigatable()
