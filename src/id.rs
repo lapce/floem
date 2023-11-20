@@ -32,9 +32,9 @@ pub struct Id(u64);
 pub struct IdPath(pub(crate) Vec<Id>);
 
 impl IdPath {
-    /// Returns the slice of the ids excluding the first id identifying the window.
+    /// Returns the slice of the ids including the first id identifying the window.
     pub(crate) fn dispatch(&self) -> &[Id] {
-        &self.0[1..]
+        &self.0[..]
     }
 }
 

@@ -7,6 +7,7 @@ use std::{
 use floem_reactive::{with_scope, RwSignal, Scope};
 use floem_renderer::Renderer;
 use image::DynamicImage;
+use indexmap::IndexMap;
 use kurbo::{Affine, Point, Rect, Size, Vec2};
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
@@ -33,13 +34,13 @@ use crate::{
     nav::view_arrow_navigation,
     pointer::{PointerButton, PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
     profiler::Profile,
-    style::{CursorStyle, StyleSelector},
+    style::{CursorStyle, Style, StyleSelector},
     update::{
         UpdateMessage, ANIM_UPDATE_MESSAGES, CENTRAL_DEFERRED_UPDATE_MESSAGES,
         CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES,
         UPDATE_MESSAGES,
     },
-    view::{update_data, view_children_set_parent_id, view_tab_navigation, View},
+    view::{update_data, view_children_set_parent_id, view_tab_navigation, View, ViewData},
     widgets::{default_theme, Theme},
 };
 
@@ -55,7 +56,7 @@ pub(crate) struct WindowHandle {
     id: Id,
     /// Reactive Scope for this WindowHandle
     scope: Scope,
-    view: Box<dyn View>,
+    view: WindowView,
     app_state: AppState,
     paint_state: PaintState,
     size: RwSignal<Size>,
@@ -115,6 +116,12 @@ impl WindowHandle {
 
         view.id().set_parent(id);
         view_children_set_parent_id(&*view);
+
+        let view = WindowView {
+            data: ViewData::new(id),
+            main: view,
+            overlays: Default::default(),
+        };
 
         let paint_state = PaintState::new(&window, scale, size.get_untracked() * scale);
         let mut window_handle = Self {
@@ -191,7 +198,8 @@ impl WindowHandle {
 
                 if !processed {
                     if let Some(listener) = event.listener() {
-                        if let Some(action) = cx.get_event_listener(self.view.id(), &listener) {
+                        if let Some(action) = cx.get_event_listener(self.view.main.id(), &listener)
+                        {
                             processed |= (*action)(&event).is_processed();
                         }
                     }
@@ -947,6 +955,30 @@ impl WindowHandle {
                     UpdateMessage::Inspect => {
                         inspector::capture(self.window_id);
                     }
+                    UpdateMessage::AddOverlay { id, position, view } => {
+                        let scope = self.scope.create_child();
+
+                        let view = with_scope(scope, view);
+
+                        let view = OverlayView {
+                            data: ViewData::new(id),
+                            position,
+                            scope,
+                            child: view,
+                        };
+
+                        view.id().set_parent(self.id);
+                        view_children_set_parent_id(&view);
+
+                        self.view.overlays.insert(id, view);
+                        cx.app_state.request_all(self.id);
+                    }
+                    UpdateMessage::RemoveOverlay { id } => {
+                        let mut overlay = self.view.overlays.remove(&id).unwrap();
+                        cx.app_state.remove_view(&mut overlay);
+                        overlay.scope.dispose();
+                        cx.app_state.request_all(self.id);
+                    }
                 }
             }
         }
@@ -1475,4 +1507,98 @@ fn context_menu_view(
     });
 
     view
+}
+
+struct OverlayView {
+    data: ViewData,
+    scope: Scope,
+    position: Point,
+    child: Box<dyn View>,
+}
+
+impl View for OverlayView {
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
+    }
+
+    fn view_style(&self) -> Option<crate::style::Style> {
+        Some(
+            Style::new()
+                .absolute()
+                .inset_left(self.position.x)
+                .inset_top(self.position.y),
+        )
+    }
+
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
+        for_each(&self.child);
+    }
+
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
+        for_each(&mut self.child);
+    }
+
+    fn for_each_child_rev_mut<'a>(
+        &'a mut self,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
+    ) {
+        for_each(&mut self.child);
+    }
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "Overlay".into()
+    }
+}
+
+/// A view representing a window which manages the main window view and any overlays.
+struct WindowView {
+    data: ViewData,
+    main: Box<dyn View>,
+    overlays: IndexMap<Id, OverlayView>,
+}
+
+impl View for WindowView {
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_style(&self) -> Option<crate::style::Style> {
+        Some(Style::new().width_full().height_full())
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
+    }
+
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
+        for_each(&self.main);
+        for overlay in self.overlays.values() {
+            for_each(overlay);
+        }
+    }
+
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
+        for_each(&mut self.main);
+        for overlay in self.overlays.values_mut() {
+            for_each(overlay);
+        }
+    }
+
+    fn for_each_child_rev_mut<'a>(
+        &'a mut self,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
+    ) {
+        for overlay in self.overlays.values_mut().rev() {
+            for_each(overlay);
+        }
+        for_each(&mut self.main);
+    }
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "Window".into()
+    }
 }

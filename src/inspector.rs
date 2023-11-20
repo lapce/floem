@@ -80,6 +80,7 @@ impl CapturedView {
     fn find_by_pos(&self, pos: Point) -> Option<&CapturedView> {
         self.children
             .iter()
+            .rev()
             .filter_map(|child| child.find_by_pos(pos))
             .next()
             .or_else(|| self.clipped.contains(pos).then_some(self))

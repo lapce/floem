@@ -12,8 +12,10 @@ use crate::{
     app::{add_app_update_event, AppUpdateEvent},
     ext_event::create_ext_action,
     file::{FileDialogOptions, FileInfo},
+    id::Id,
     menu::Menu,
     update::{UpdateMessage, CENTRAL_UPDATE_MESSAGES},
+    view::View,
     window_handle::{get_current_view, set_current_view},
 };
 
@@ -160,4 +162,20 @@ pub fn set_ime_allowed(allowed: bool) {
 
 pub fn set_ime_cursor_area(position: Point, size: Size) {
     add_update_message(UpdateMessage::SetImeCursorArea { position, size });
+}
+
+/// Creates a new overlay on the current window.
+pub fn add_overlay<V: View + 'static>(position: Point, view: impl FnOnce(Id) -> V + 'static) -> Id {
+    let id = Id::next();
+    add_update_message(UpdateMessage::AddOverlay {
+        id,
+        position,
+        view: Box::new(move || Box::new(view(id))),
+    });
+    id
+}
+
+/// Removes an overlay from the current window.
+pub fn remove_overlay(id: Id) {
+    add_update_message(UpdateMessage::RemoveOverlay { id });
 }
