@@ -2,14 +2,13 @@ use floem_reactive::create_effect;
 use floem_renderer::Renderer;
 use kurbo::{Point, Rect, Size, Vec2};
 use peniko::Color;
-use taffy::{prelude::Node, style::Position};
 
 use crate::{
     context::{AppState, ComputeLayoutCx, PaintCx},
     event::Event,
     id::Id,
     prop, prop_extracter,
-    style::{Background, BorderColor, BorderRadius, PositionProp, Style, StyleSelector},
+    style::{Background, BorderColor, BorderRadius, Style, StyleSelector},
     style_class,
     unit::Px,
     view::{View, ViewData},
@@ -86,7 +85,6 @@ pub struct Scroll {
     h_handle_hover: bool,
     v_track_hover: bool,
     h_track_hover: bool,
-    virtual_node: Option<Node>,
     propagate_pointer_wheel: bool,
     vertical_scroll_as_horizontal: bool,
     handle_style: ScrollStyle,
@@ -111,7 +109,6 @@ pub fn scroll<V: View + 'static>(child: V) -> Scroll {
         h_handle_hover: false,
         v_track_hover: false,
         h_track_hover: false,
-        virtual_node: None,
         propagate_pointer_wheel: false,
         vertical_scroll_as_horizontal: false,
         hide: false,
@@ -262,16 +259,8 @@ impl Scroll {
     }
 
     fn update_size(&mut self, app_state: &mut AppState) {
-        let child_size = self.child_size;
-        let new_child_size = self.child_size(app_state).unwrap_or_default();
-        self.child_size = new_child_size;
-
+        self.child_size = self.child_size(app_state);
         self.actual_rect = app_state.get_content_rect(self.id());
-
-        // Round to prevent loops due to floating point accuracy
-        if (child_size * 128.0).round() != (new_child_size * 128.0).round() {
-            app_state.request_layout(self.id());
-        }
     }
 
     fn clamp_child_viewport(
@@ -315,14 +304,11 @@ impl Scroll {
         Some(())
     }
 
-    fn child_size(&self, app_state: &mut AppState) -> Option<Size> {
+    fn child_size(&self, app_state: &mut AppState) -> Size {
         app_state
-            .view_states
-            .get(&self.id())
-            .map(|view| &view.children_nodes)
-            .and_then(|nodes| nodes.get(1))
-            .and_then(|node| app_state.taffy.layout(*node).ok())
+            .get_layout(self.child.id())
             .map(|layout| Size::new(layout.size.width as f64, layout.size.height as f64))
+            .unwrap()
     }
 
     fn v_handle_style(&self) -> &ScrollStyle {
@@ -612,6 +598,10 @@ impl View for Scroll {
         "Scroll".into()
     }
 
+    fn view_style(&self) -> Option<Style> {
+        Some(Style::new().items_start())
+    }
+
     fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast::<ScrollState>() {
             match *state {
@@ -678,40 +668,6 @@ impl View for Scroll {
             .read_style(cx, &track_style.apply_selectors(&[StyleSelector::Hover]));
 
         cx.style_view(&mut self.child);
-    }
-
-    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
-        cx.layout_node(self.id(), true, |cx| {
-            let child_id = self.child.id();
-            let child_view = cx.app_state_mut().view_state(child_id);
-            child_view.combined_style = child_view
-                .combined_style
-                .clone()
-                .set(PositionProp, Position::Absolute);
-            let child_node = cx.layout_view(&mut self.child);
-
-            let virtual_style = Style::new()
-                .width(self.child_size.width)
-                .height(self.child_size.height)
-                .min_width(0.0)
-                .min_height(0.0)
-                .to_taffy_style();
-            if self.virtual_node.is_none() {
-                self.virtual_node = Some(
-                    cx.app_state_mut()
-                        .taffy
-                        .new_leaf(virtual_style.clone())
-                        .unwrap(),
-                );
-            }
-            let virtual_node = self.virtual_node.unwrap();
-            let _ = cx
-                .app_state_mut()
-                .taffy
-                .set_style(virtual_node, virtual_style);
-
-            vec![virtual_node, child_node]
-        })
     }
 
     fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {

@@ -334,7 +334,7 @@ fn captured_view_with_children(
 
     let list = v_stack((line, list));
 
-    Box::new(v_stack((row, list)).style(|s| s.min_width_full()))
+    Box::new(v_stack((row, list)))
 }
 
 fn captured_view(
@@ -751,9 +751,15 @@ fn capture_view(capture: &Rc<Capture>) -> impl View {
             header("Stats"),
             stats(capture),
         ))
-        .style(|s| s.width_full()),
+        .style(|s| s.min_width_full()),
     )
-    .style(|s| s.width_full().flex_basis(0).min_height(0).flex_grow(1.0));
+    .style(|s| {
+        s.width_full()
+            .flex_basis(0)
+            .min_height(0)
+            .flex_grow(1.0)
+            .flex_col()
+    });
 
     let seperator = empty().style(move |s| {
         s.width_full()
@@ -769,8 +775,14 @@ fn capture_view(capture: &Rc<Capture>) -> impl View {
     ))
     .style(|s| s.max_width_pct(60.0));
 
-    let tree = scroll(captured_view(&capture.root, 0, &capture_view))
-        .style(|s| s.width_full().min_height(0).flex_basis(0).flex_grow(1.0))
+    let tree = scroll(captured_view(&capture.root, 0, &capture_view).style(|s| s.min_width_full()))
+        .style(|s| {
+            s.width_full()
+                .min_height(0)
+                .flex_basis(0)
+                .flex_grow(1.0)
+                .flex_col()
+        })
         .on_event_cont(EventListener::PointerLeave, move |_| {
             capture_view.highlighted.set(None)
         })
