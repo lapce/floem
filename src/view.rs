@@ -571,7 +571,12 @@ fn view_tree_previous(root_view: &dyn View, id: &Id) -> Option<Id> {
 
     view_previous_sibling(root_view, id_path.dispatch())
         .map(|view| view_nested_last_child(view).id())
-        .or_else(|| (root_view.id() != *id).then_some(id.parent().unwrap()))
+        .or_else(|| {
+            (root_view.id() != *id).then_some(
+                id.parent()
+                    .unwrap_or_else(|| view_nested_last_child(root_view).id()),
+            )
+        })
 }
 
 /// Get the id of the view before this one (but with the same parent and level of nesting)
