@@ -93,7 +93,6 @@ pub struct TextInput {
     cursor_width: f64, // TODO: make this configurable
     is_focused: bool,
     last_cursor_action_on: Instant,
-    held: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -146,7 +145,6 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         height: 0.0,
         is_focused: false,
         last_cursor_action_on: Instant::now(),
-        held: false,
     }
     .keyboard_navigatable()
 }
@@ -861,22 +859,20 @@ impl View for TextInput {
                     cx.update_active(self.id());
                     cx.app_state_mut().request_layout(self.id());
                     self.selection = None;
-                    self.held = true;
                     self.cursor_glyph_idx = self.get_box_position(event.pos.x, event.pos.y, cx);
                 }
                 true
             }
             Event::PointerUp(event) => {
                 cx.app_state_mut().request_layout(self.id());
-                if self.selection != None {
+                if self.selection.is_some() {
                     self.cursor_glyph_idx = self.get_box_position(event.pos.x, event.pos.y, cx);
                 }
-                self.held = false;
                 true
             }
             Event::PointerMove(event) => {
                 cx.app_state_mut().request_layout(self.id());
-                if self.held {
+                if cx.is_active(self.id()) {
                     let selection_stop = self.get_box_position(event.pos.x, event.pos.y, cx);
                     self.update_selection(self.cursor_glyph_idx, selection_stop);
                 }
