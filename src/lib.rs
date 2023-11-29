@@ -118,7 +118,7 @@ pub mod window;
 mod window_handle;
 
 pub use app::{launch, quit_app, AppEvent, Application};
-pub use clipboard::{Clipboard, CLIPBOARD};
+pub use clipboard::{Clipboard, ClipboardError};
 pub use context::EventPropagation;
 pub use floem_reactive as reactive;
 pub use floem_renderer::cosmic_text;
