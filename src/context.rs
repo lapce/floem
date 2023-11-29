@@ -1608,9 +1608,17 @@ impl<'a> PaintCx<'a> {
 
                     let style = self.app_state.get_computed_style(id).clone();
                     let view_state = self.app_state.view_state(id);
-                    let view_style_props = view_state.view_style_props.clone();
+                    let mut view_style_props = view_state.view_style_props.clone();
                     let style = if let Some(dragging_style) = view_state.dragging_style.clone() {
-                        view_state.combined_style.clone().apply(dragging_style)
+                        let style = style.apply(dragging_style);
+                        let mut _new_frame = false;
+                        view_style_props.read_explicit(
+                            &style,
+                            &style,
+                            &Instant::now(),
+                            &mut _new_frame,
+                        );
+                        style
                     } else {
                         style
                     };
