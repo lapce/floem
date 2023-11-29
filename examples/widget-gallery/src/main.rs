@@ -1,5 +1,6 @@
 pub mod buttons;
 pub mod checkbox;
+pub mod clipboard;
 pub mod context_menu;
 pub mod form;
 pub mod images;
@@ -26,7 +27,15 @@ use floem::{
 
 fn app_view() -> impl View {
     let tabs: im::Vector<&str> = vec![
-        "Label", "Button", "Checkbox", "Input", "List", "Menu", "RichText", "Image",
+        "Label",
+        "Button",
+        "Checkbox",
+        "Input",
+        "List",
+        "Menu",
+        "RichText",
+        "Image",
+        "Clipboard",
     ]
     .into_iter()
     .collect();
@@ -146,6 +155,7 @@ fn app_view() -> impl View {
             "Menu" => container_box(context_menu::menu_view()),
             "RichText" => container_box(rich_text::rich_text_view()),
             "Image" => container_box(images::img_view()),
+            "Clipboard" => container_box(clipboard::clipboard_view()),
             _ => container_box(label(|| "Not implemented".to_owned())),
         },
     )
