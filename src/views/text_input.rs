@@ -620,9 +620,9 @@ impl TextInput {
             Key::Named(NamedKey::Backspace) => {
                 let selection = self.selection.clone();
                 if let Some(selection) = selection {
+                    self.cursor_glyph_idx = selection.start;
                     self.buffer
                         .update(|buf| replace_range(buf, selection, None));
-                    self.cursor_glyph_idx = 0;
                     self.selection = None;
                     true
                 } else {
