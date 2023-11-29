@@ -93,6 +93,7 @@ pub mod action;
 pub mod animate;
 mod app;
 mod app_handle;
+mod clipboard;
 pub mod context;
 pub mod event;
 pub mod ext_event;
@@ -117,6 +118,7 @@ pub mod window;
 mod window_handle;
 
 pub use app::{launch, quit_app, AppEvent, Application};
+pub use clipboard::{Clipboard, CLIPBOARD};
 pub use context::EventPropagation;
 pub use floem_reactive as reactive;
 pub use floem_renderer::cosmic_text;
