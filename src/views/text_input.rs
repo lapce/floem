@@ -6,8 +6,8 @@ use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
 use crate::view::ViewData;
 use crate::widgets::PlaceholderTextClass;
+use crate::CLIPBOARD;
 use crate::{prop_extracter, EventPropagation};
-use clipboard::{ClipboardContext, ClipboardProvider};
 use taffy::prelude::{Layout, Node};
 
 use floem_renderer::{cosmic_text::Cursor, Renderer};
@@ -483,7 +483,8 @@ impl TextInput {
             }
             TextCommand::Copy => {
                 if let Some(selection) = &self.selection {
-                    let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+                    let mut clipboard = CLIPBOARD.lock();
+                    let ctx = &mut clipboard.as_mut().unwrap().clipboard;
                     let selection_txt = self
                         .buffer
                         .get()
@@ -497,7 +498,8 @@ impl TextInput {
             }
             TextCommand::Cut => {
                 if let Some(selection) = &self.selection {
-                    let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+                    let mut clipboard = CLIPBOARD.lock();
+                    let ctx = &mut clipboard.as_mut().unwrap().clipboard;
                     let selection_txt = self
                         .buffer
                         .get()
@@ -517,7 +519,8 @@ impl TextInput {
                 true
             }
             TextCommand::Paste => {
-                let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+                let mut clipboard = CLIPBOARD.lock();
+                let ctx = &mut clipboard.as_mut().unwrap().clipboard;
                 let clipboard_content = ctx.get_contents().unwrap();
                 if clipboard_content.is_empty() {
                     return false;

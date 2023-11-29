@@ -10,9 +10,11 @@ use winit::{
 };
 
 use crate::{
-    action::Timer, app_handle::ApplicationHandle, inspector::Capture, profiler::Profile,
-    view::View, window::WindowConfig,
+    action::Timer, app_handle::ApplicationHandle, clipboard::Clipboard, inspector::Capture,
+    profiler::Profile, view::View, window::WindowConfig,
 };
+
+use raw_window_handle::HasRawDisplayHandle;
 
 type AppEventCallback = dyn Fn(AppEvent);
 
@@ -94,6 +96,9 @@ impl Application {
             .expect("can't start the event loop");
         let event_loop_proxy = event_loop.create_proxy();
         *EVENT_LOOP_PROXY.lock() = Some(event_loop_proxy.clone());
+        unsafe {
+            Clipboard::init(event_loop.raw_display_handle());
+        }
         let handle = ApplicationHandle::new();
         Self {
             handle: Some(handle),
