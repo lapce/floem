@@ -18,6 +18,7 @@ pub struct Clipboard {
     selection: Option<Box<dyn ClipboardProvider>>,
 }
 
+#[derive(Clone, Debug)]
 pub enum ClipboardError {
     NotAvailable,
     ProviderError(String),
