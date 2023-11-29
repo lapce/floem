@@ -6,8 +6,7 @@ use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
 use crate::view::ViewData;
 use crate::widgets::PlaceholderTextClass;
-use crate::CLIPBOARD;
-use crate::{prop_extracter, EventPropagation};
+use crate::{prop_extracter, Clipboard, EventPropagation};
 use taffy::prelude::{Layout, Node};
 
 use floem_renderer::{cosmic_text::Cursor, Renderer};
@@ -522,8 +521,6 @@ impl TextInput {
             }
             TextCommand::Copy => {
                 if let Some(selection) = &self.selection {
-                    let mut clipboard = CLIPBOARD.lock();
-                    let ctx = &mut clipboard.as_mut().unwrap().clipboard;
                     let selection_txt = self
                         .buffer
                         .get()
@@ -531,14 +528,12 @@ impl TextInput {
                         .skip(selection.start)
                         .take(selection.end - selection.start)
                         .collect();
-                    ctx.set_contents(selection_txt).unwrap();
+                    let _ = Clipboard::set_contents(selection_txt);
                 }
                 true
             }
             TextCommand::Cut => {
                 if let Some(selection) = &self.selection {
-                    let mut clipboard = CLIPBOARD.lock();
-                    let ctx = &mut clipboard.as_mut().unwrap().clipboard;
                     let selection_txt = self
                         .buffer
                         .get()
@@ -546,7 +541,7 @@ impl TextInput {
                         .skip(selection.start)
                         .take(selection.end - selection.start)
                         .collect();
-                    ctx.set_contents(selection_txt).unwrap();
+                    let _ = Clipboard::set_contents(selection_txt);
 
                     self.buffer
                         .update(|buf| replace_range(buf, selection.clone(), None));
@@ -558,9 +553,10 @@ impl TextInput {
                 true
             }
             TextCommand::Paste => {
-                let mut clipboard = CLIPBOARD.lock();
-                let ctx = &mut clipboard.as_mut().unwrap().clipboard;
-                let clipboard_content = ctx.get_contents().unwrap();
+                let clipboard_content = match Clipboard::get_contents() {
+                    Ok(content) => content,
+                    Err(_) => return false,
+                };
                 if clipboard_content.is_empty() {
                     return false;
                 }

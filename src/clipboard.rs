@@ -10,32 +10,38 @@ use copypasta::{
 
 use copypasta::{ClipboardContext, ClipboardProvider};
 
-pub static CLIPBOARD: Lazy<Mutex<Option<Clipboard>>> = Lazy::new(|| Mutex::new(None));
+static CLIPBOARD: Lazy<Mutex<Option<Clipboard>>> = Lazy::new(|| Mutex::new(None));
 
 pub struct Clipboard {
-    pub clipboard: Box<dyn ClipboardProvider>,
-    pub selection: Option<Box<dyn ClipboardProvider>>,
+    clipboard: Box<dyn ClipboardProvider>,
+    #[allow(dead_code)]
+    selection: Option<Box<dyn ClipboardProvider>>,
+}
+
+pub enum ClipboardError {
+    NotAvailable,
+    ProviderError(String),
 }
 
 impl Clipboard {
-    pub fn get_contents() -> Option<String> {
+    pub fn get_contents() -> Result<String, ClipboardError> {
         CLIPBOARD
             .lock()
             .as_mut()
-            .unwrap()
+            .ok_or(ClipboardError::NotAvailable)?
             .clipboard
             .get_contents()
-            .ok()
+            .map_err(|e| ClipboardError::ProviderError(e.to_string()))
     }
 
-    pub fn set_contents(s: &str) {
+    pub fn set_contents(s: String) -> Result<(), ClipboardError> {
         CLIPBOARD
             .lock()
             .as_mut()
-            .unwrap()
+            .ok_or(ClipboardError::NotAvailable)?
             .clipboard
-            .set_contents(s.to_string())
-            .ok();
+            .set_contents(s)
+            .map_err(|e| ClipboardError::ProviderError(e.to_string()))
     }
 
     pub(crate) unsafe fn init(display: RawDisplayHandle) {
