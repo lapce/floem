@@ -332,6 +332,16 @@ impl TextInput {
         )
     }
 
+    fn handle_double_click(&mut self, pos_x: f64, pos_y: f64, cx: &mut EventCx) {
+        let clicked_glyph_idx = self.get_box_position(pos_x, pos_y, cx);
+        self.cursor_glyph_idx = clicked_glyph_idx;
+
+        self.buffer.with_untracked(|buff| {
+            let selection = get_dbl_click_selection(clicked_glyph_idx, buff);
+            self.selection = Some(selection);
+        })
+    }
+
     fn get_box_position(&self, pos_x: f64, pos_y: f64, cx: &mut EventCx) -> usize {
         // Already focused - move cursor to click pos
         let layout = cx.get_layout(self.id()).unwrap();
@@ -811,6 +821,43 @@ fn replace_range(buff: &mut String, del_range: Range<usize>, replacement: Option
     buff.push_str(&after_del_range);
 }
 
+fn get_dbl_click_selection(glyph_idx: usize, buffer: &String) -> Range<usize> {
+    let mut selectable_ranges: Vec<Range<usize>> = Vec::new();
+    let glyph_idx = usize::min(glyph_idx, buffer.len() - 1);
+
+    for (idx, word) in buffer.unicode_word_indices() {
+        let word_range = idx..idx + word.len();
+
+        if let Some(prev) = selectable_ranges.last() {
+            if prev.end != idx {
+                // non-alphanumeric char sequence between previous word and current word
+                selectable_ranges.push(prev.end..idx);
+            }
+        } else if idx > 0 {
+            // non-alphanumeric char sequence at the beginning of the buffer(before the first word)
+            selectable_ranges.push(0..idx);
+        }
+
+        selectable_ranges.push(word_range);
+    }
+
+    // left-over non-alphanumeric char sequence at the end of the buffer(after the last word)
+    if let Some(last) = selectable_ranges.last() {
+        if last.end != buffer.len() {
+            selectable_ranges.push(last.end..buffer.len());
+        }
+    }
+
+    for range in selectable_ranges {
+        if range.contains(&glyph_idx) {
+            return range;
+        }
+    }
+
+    // should reach here only if buffer does not contain any words(only non-alphanumeric characters)
+    0..buffer.len()
+}
+
 impl View for TextInput {
     fn view_data(&self) -> &ViewData {
         &self.data
@@ -845,16 +892,22 @@ impl View for TextInput {
             self.cursor_glyph_idx = buff_len;
         }
 
+        let was_focused = self.is_focused;
         let is_handled = match &event {
             Event::PointerDown(event) => {
-                if !self.is_focused {
+                if !was_focused {
                     // Just gained focus - move cursor to buff end
                     self.cursor_glyph_idx = self.buffer.with_untracked(|buff| buff.len());
                 } else {
                     cx.update_active(self.id());
                     cx.app_state_mut().request_layout(self.id());
-                    self.selection = None;
-                    self.cursor_glyph_idx = self.get_box_position(event.pos.x, event.pos.y, cx);
+
+                    if event.count == 2 {
+                        self.handle_double_click(event.pos.x, event.pos.y, cx);
+                    } else {
+                        self.cursor_glyph_idx = self.get_box_position(event.pos.x, event.pos.y, cx);
+                        self.selection = None;
+                    }
                 }
                 true
             }
@@ -1076,6 +1129,8 @@ impl View for TextInput {
 
 #[cfg(test)]
 mod tests {
+    use crate::views::text_input::get_dbl_click_selection;
+
     use super::replace_range;
 
     #[test]
@@ -1122,5 +1177,119 @@ mod tests {
         let len = s.len();
         replace_range(&mut s, 6..len, None);
         assert_eq!("Sample", s);
+    }
+
+    #[test]
+    fn dbl_click_whitespace_before_word() {
+        let s = "  select  ".to_owned();
+
+        let range = get_dbl_click_selection(0, &s);
+        assert_eq!(range, 0..2);
+
+        let range = get_dbl_click_selection(1, &s);
+        assert_eq!(range, 0..2);
+    }
+
+    #[test]
+    fn dbl_click_word_surrounded_by_whitespace() {
+        let s = "  select  ".to_owned();
+
+        let range = get_dbl_click_selection(2, &s);
+        assert_eq!(range, 2..8);
+
+        let range = get_dbl_click_selection(6, &s);
+        assert_eq!(range, 2..8);
+    }
+
+    #[test]
+    fn dbl_click_whitespace_bween_words() {
+        let s = "select   select".to_owned();
+
+        let range = get_dbl_click_selection(6, &s);
+        assert_eq!(range, 6..9);
+
+        let range = get_dbl_click_selection(7, &s);
+        assert_eq!(range, 6..9);
+
+        let range = get_dbl_click_selection(8, &s);
+        assert_eq!(range, 6..9);
+    }
+
+    #[test]
+    fn dbl_click_whitespace_after_word() {
+        let s = "  select  ".to_owned();
+
+        let range = get_dbl_click_selection(8, &s);
+        assert_eq!(range, 8..10);
+
+        let range = get_dbl_click_selection(9, &s);
+        assert_eq!(range, 8..10);
+    }
+
+    #[test]
+    fn dbl_click_letter_after_whitespace() {
+        let s = "     s".to_owned();
+        let range = get_dbl_click_selection(5, &s);
+
+        assert_eq!(range, 5..6);
+    }
+
+    #[test]
+    fn dbl_click_single_letter() {
+        let s = "s".to_owned();
+        let range = get_dbl_click_selection(0, &s);
+
+        assert_eq!(range, 0..1);
+    }
+
+    #[test]
+    fn dbl_click_outside_boundaries_selects_all() {
+        let s = "     ".to_owned();
+        let range = get_dbl_click_selection(100, &s);
+
+        assert_eq!(range, 0..5);
+    }
+
+    #[test]
+    fn dbl_click_letters_with_whitespace() {
+        let s = " s  s  ".to_owned();
+        let range = get_dbl_click_selection(1, &s);
+        assert_eq!(range, 1..2);
+
+        let range = get_dbl_click_selection(4, &s);
+        assert_eq!(range, 4..5);
+    }
+
+    #[test]
+    fn dbl_click_single_word() {
+        let s = "123testttttttttttttttttttt123".to_owned();
+        let range = get_dbl_click_selection(1, &s);
+        let len = s.len();
+        assert_eq!(range, 0..len);
+
+        let range = get_dbl_click_selection(5, &s);
+        assert_eq!(range, 0..len);
+
+        let range = get_dbl_click_selection(len - 1, &s);
+        assert_eq!(range, 0..len);
+    }
+
+    #[test]
+    fn dbl_click_two_words_and_whitespace() {
+        let s = "  word1  word2 ".to_owned();
+
+        let range = get_dbl_click_selection(2, &s);
+        assert_eq!(range, 2..7);
+
+        let range = get_dbl_click_selection(6, &s);
+        assert_eq!(range, 2..7);
+    }
+
+    #[test]
+    fn dbl_click_whitespace_only() {
+        let s = "       ".to_owned();
+        let range = get_dbl_click_selection(2, &s);
+
+        assert_eq!(range, 0..s.len());
     }
 }
