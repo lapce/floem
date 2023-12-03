@@ -13,7 +13,6 @@ pub fn rich_text_view() -> impl View {
     fn main() {
         println(\"Hello World!\");
     }";
-    // ddddd
     scroll({
         rich_text(move || {
             let attrs = Attrs::new().color(Color::BLACK);

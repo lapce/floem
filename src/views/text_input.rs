@@ -82,7 +82,6 @@ pub struct TextInput {
     clip_offset_x: f64,
     selection: Option<Range<usize>>,
     width: f32,
-    is_auto_width: bool,
     height: f32,
     // Approx max size of a glyph, given the current font weight & size.
     glyph_max_size: Size,
@@ -133,7 +132,6 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         font: FontProps::default(),
         cursor_x: 0.0,
         selection: None,
-        is_auto_width: false,
         input_kind: InputKind::SingleLine,
         glyph_max_size: Size::ZERO,
         clip_start_idx: 0,
@@ -187,10 +185,11 @@ impl From<(&KeyEvent, &SmolStr)> for TextCommand {
 
 const DEFAULT_FONT_SIZE: f32 = 14.0;
 const CURSOR_BLINK_INTERVAL_MS: u64 = 500;
-/// How many characters wide the input field should be when width is not set in the styles.
-/// Since character widths vary, may not be exact and should not be relied upon to be so.
+/// Specifies approximately how many characters wide the input field should be
+/// (i.e., how many characters can be seen at a time), when the width is not set in the styles.
+/// Since character widths vary(depending on the font), may not be exact and should not be relied upon to be so.
 /// See https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/text#size
-// TODO: allow this to be configurable
+// TODO: allow this to be set in the styles
 const APPROX_VISIBLE_CHARS_TARGET: f32 = 10.0;
 
 impl TextInput {
@@ -420,9 +419,6 @@ impl TextInput {
             .with_untracked(|buff| text_layout.set_text(buff, attrs_list.clone()));
 
         let glyph_max_size = self.get_font_glyph_max_size();
-        if self.is_auto_width {
-            self.width = APPROX_VISIBLE_CHARS_TARGET * glyph_max_size.width as f32;
-        }
         self.height = glyph_max_size.height as f32;
         self.glyph_max_size = glyph_max_size;
 
@@ -934,28 +930,38 @@ impl View for TextInput {
             let style_width = style.width();
             let width_px = match style_width {
                 crate::unit::PxPctAuto::Px(px) => px as f32,
-                crate::unit::PxPctAuto::Pct(pct) => pct as f32 / 100.0 * node_width,
+                // the percent is already applied to the view, so we don't need to
+                // apply it to the inner text node as well
+                crate::unit::PxPctAuto::Pct(_) => node_width,
                 crate::unit::PxPctAuto::Auto => {
                     APPROX_VISIBLE_CHARS_TARGET * self.glyph_max_size.width as f32
                 }
             };
-            self.is_auto_width = matches!(style_width, PxPctAuto::Auto);
 
-            let padding_left = match style.padding_left() {
-                PxPct::Px(padding) => padding as f32,
-                PxPct::Pct(pct) => pct as f32 / 100.0 * node_width,
+            let is_auto_width = matches!(style_width, PxPctAuto::Auto);
+            self.width = if is_auto_width {
+                width_px
+            } else {
+                let padding_left = match style.padding_left() {
+                    PxPct::Px(padding) => padding as f32,
+                    PxPct::Pct(pct) => pct as f32 / 100.0 * node_width,
+                };
+                let padding_right = match style.padding_right() {
+                    PxPct::Px(padding) => padding as f32,
+                    PxPct::Pct(pct) => pct as f32 / 100.0 * node_width,
+                };
+                let padding = padding_left + padding_right;
+                f32::max(width_px - padding, 1.0)
             };
-            let padding_right = match style.padding_right() {
-                PxPct::Px(padding) => padding as f32,
-                PxPct::Pct(pct) => pct as f32 / 100.0 * node_width,
-            };
-            let padding = padding_left + padding_right;
-            let borders = (style.border_left().0 + style.border_right().0) as f32;
 
-            self.width = f32::max(width_px - (padding + borders), 1.0);
+            let taffy_node_width = match style_width {
+                PxPctAuto::Px(_) | PxPctAuto::Auto => PxPctAuto::Px(self.width as f64),
+                // the pct is already applied to the text input view, so text node should be 100% of parent
+                PxPctAuto::Pct(_) => PxPctAuto::Pct(100.),
+            };
 
             let style = Style::new()
-                .width(self.width)
+                .width(taffy_node_width)
                 .height(self.height)
                 .to_taffy_style();
             let _ = cx.app_state_mut().taffy.set_style(text_node, style);
@@ -964,31 +970,15 @@ impl View for TextInput {
         })
     }
 
-    fn compute_layout(&mut self, _cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
+    fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
         self.update_text_layout();
-        None
-    }
 
-    fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        if !cx.app_state.is_focused(&self.id())
-            && self.buffer.with_untracked(|buff| buff.is_empty())
-        {
-            if let Some(placeholder_buff) = &self.placeholder_buff {
-                self.paint_placeholder_text(placeholder_buff, cx);
-            }
-            return;
-        }
-
-        let text_node = self.text_node.unwrap();
         let text_buf = self.text_buf.as_ref().unwrap();
         let buf_width = text_buf.size().width;
+
+        let text_node = self.text_node.unwrap();
         let node_layout = *cx.app_state.taffy.layout(text_node).unwrap();
         let node_width = node_layout.size.width as f64;
-        let cursor_color = cx
-            .app_state
-            .get_computed_style(self.id())
-            .builtin()
-            .cursor_color();
 
         match self.input_kind {
             InputKind::SingleLine => {
@@ -1010,6 +1000,28 @@ impl View for TextInput {
                 todo!();
             }
         }
+
+        None
+    }
+
+    fn paint(&mut self, cx: &mut crate::context::PaintCx) {
+        if !cx.app_state.is_focused(&self.id())
+            && self.buffer.with_untracked(|buff| buff.is_empty())
+        {
+            if let Some(placeholder_buff) = &self.placeholder_buff {
+                self.paint_placeholder_text(placeholder_buff, cx);
+            }
+            return;
+        }
+
+        let text_node = self.text_node.unwrap();
+        let node_layout = *cx.app_state.taffy.layout(text_node).unwrap();
+        let node_width = node_layout.size.width as f64;
+        let cursor_color = cx
+            .app_state
+            .get_computed_style(self.id())
+            .builtin()
+            .cursor_color();
 
         let location = node_layout.location;
         let text_start_point = Point::new(location.x as f64, location.y as f64);
