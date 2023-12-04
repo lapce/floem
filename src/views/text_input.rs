@@ -823,7 +823,7 @@ fn replace_range(buff: &mut String, del_range: Range<usize>, replacement: Option
 
 fn get_dbl_click_selection(glyph_idx: usize, buffer: &String) -> Range<usize> {
     let mut selectable_ranges: Vec<Range<usize>> = Vec::new();
-    let glyph_idx = usize::min(glyph_idx, buffer.len() - 1);
+    let glyph_idx = usize::min(glyph_idx, buffer.len().saturating_sub(1));
 
     for (idx, word) in buffer.unicode_word_indices() {
         let word_range = idx..idx + word.len();
@@ -1283,6 +1283,17 @@ mod tests {
 
         let range = get_dbl_click_selection(6, &s);
         assert_eq!(range, 2..7);
+    }
+
+    #[test]
+    fn dbl_click_empty_string() {
+        let s = "".to_owned();
+
+        let range = get_dbl_click_selection(0, &s);
+        assert_eq!(range, 0..0);
+
+        let range = get_dbl_click_selection(1, &s);
+        assert_eq!(range, 0..0);
     }
 
     #[test]
