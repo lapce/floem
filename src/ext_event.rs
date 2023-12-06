@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::{cell::Cell, collections::VecDeque, sync::Arc};
 
 use floem_reactive::{create_effect, untrack, with_scope, ReadSignal, Scope, Trigger, WriteSignal};
 use once_cell::sync::Lazy;
@@ -36,7 +36,7 @@ impl ExtEventHandler {
 
 pub fn create_ext_action<T: Send + 'static>(
     cx: Scope,
-    action: impl Fn(T) + 'static,
+    action: impl FnOnce(T) + 'static,
 ) -> impl FnOnce(T) {
     let view = get_current_view();
     let cx = cx.create_child();
@@ -45,6 +45,7 @@ pub fn create_ext_action<T: Send + 'static>(
 
     {
         let data = data.clone();
+        let action = Cell::new(Some(action));
         with_scope(cx, move || {
             create_effect(move |_| {
                 trigger.track();
@@ -52,6 +53,7 @@ pub fn create_ext_action<T: Send + 'static>(
                     untrack(|| {
                         let current_view = get_current_view();
                         set_current_view(view);
+                        let action = action.take().unwrap();
                         action(event);
                         set_current_view(current_view);
                     });
