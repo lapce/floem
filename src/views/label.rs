@@ -24,6 +24,11 @@ prop_extracter! {
     }
 }
 
+struct TextOverflowListener {
+    last_is_overflown: Option<bool>,
+    on_change_fn: Box<dyn Fn(bool) + 'static>,
+}
+
 pub struct Label {
     data: ViewData,
     label: String,
@@ -32,6 +37,7 @@ pub struct Label {
     available_text: Option<String>,
     available_width: Option<f32>,
     available_text_layout: Option<TextLayout>,
+    text_overflow_listener: Option<TextOverflowListener>,
     font: FontProps,
     style: Extracter,
 }
@@ -46,6 +52,7 @@ impl Label {
             available_text: None,
             available_width: None,
             available_text_layout: None,
+            text_overflow_listener: None,
             font: FontProps::default(),
             style: Default::default(),
         }
@@ -70,6 +77,14 @@ pub fn label<S: Display + 'static>(label: impl Fn() -> S + 'static) -> Label {
 }
 
 impl Label {
+    pub fn on_text_overflow(mut self, is_text_overflown_fn: impl Fn(bool) + 'static) -> Self {
+        self.text_overflow_listener = Some(TextOverflowListener {
+            on_change_fn: Box::new(is_text_overflown_fn),
+            last_is_overflown: None,
+        });
+        self
+    }
+
     fn get_attrs_list(&self) -> AttrsList {
         let mut attrs = Attrs::new().color(self.style.color().unwrap_or(Color::BLACK));
         if let Some(font_size) = self.font.size() {
@@ -243,6 +258,16 @@ impl View for Label {
                 self.available_text = None;
                 self.available_width = None;
                 self.available_text_layout = None;
+            }
+        }
+
+        if let Some(listener) = self.text_overflow_listener.as_mut() {
+            let was_overflown = listener.last_is_overflown;
+            let now_overflown = width > available_width;
+
+            if was_overflown != Some(now_overflown) {
+                (listener.on_change_fn)(now_overflown);
+                listener.last_is_overflown = Some(now_overflown);
             }
         }
         None
