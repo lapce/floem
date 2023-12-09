@@ -324,10 +324,10 @@ impl TextInput {
 
     fn handle_double_click(&mut self, pos_x: f64, pos_y: f64, cx: &mut EventCx) {
         let clicked_glyph_idx = self.get_box_position(pos_x, pos_y, cx);
-        self.cursor_glyph_idx = clicked_glyph_idx;
 
         self.buffer.with_untracked(|buff| {
             let selection = get_dbl_click_selection(clicked_glyph_idx, buff);
+            self.cursor_glyph_idx = selection.end;
             self.selection = Some(selection);
         })
     }
@@ -923,13 +923,6 @@ impl View for TextInput {
                 }
                 true
             }
-            Event::PointerUp(event) => {
-                cx.app_state_mut().request_layout(self.id());
-                if self.selection.is_some() {
-                    self.cursor_glyph_idx = self.get_box_position(event.pos.x, event.pos.y, cx);
-                }
-                true
-            }
             Event::PointerMove(event) => {
                 cx.app_state_mut().request_layout(self.id());
                 if cx.is_active(self.id()) {
@@ -1094,6 +1087,7 @@ impl View for TextInput {
         }
 
         let is_cursor_visible = cx.app_state.is_focused(&self.id())
+            && self.selection.is_none()
             && (self.last_cursor_action_on.elapsed().as_millis()
                 / CURSOR_BLINK_INTERVAL_MS as u128)
                 % 2
