@@ -3,7 +3,7 @@ use floem::{
     peniko::Color,
     reactive::create_rw_signal,
     view::View,
-    views::Decorators,
+    views::{Decorators, SelectionCornerRadius},
     widgets::{text_input, PlaceholderTextClass},
 };
 
@@ -33,6 +33,7 @@ pub fn text_input_view() -> impl View {
                                 s.background(Color::rgb8(224, 224, 224).with_alpha_factor(0.2))
                                     .border_color(Color::rgb8(66, 66, 66))
                             })
+                            .set(SelectionCornerRadius, 4.0)
                             .focus(|s| {
                                 s.border_color(Color::LIGHT_SKY_BLUE.with_alpha_factor(0.8))
                                     .hover(|s| s.border_color(Color::LIGHT_SKY_BLUE))
