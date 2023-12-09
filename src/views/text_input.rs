@@ -1,12 +1,12 @@
 use crate::action::exec_after;
 use crate::keyboard::{self, KeyEvent};
 use crate::reactive::{create_effect, RwSignal};
-use crate::style::{FontProps, PaddingLeft};
+use crate::style::{CursorColor, FontProps, PaddingLeft};
 use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
 use crate::view::ViewData;
 use crate::widgets::PlaceholderTextClass;
-use crate::{prop_extracter, Clipboard, EventPropagation};
+use crate::{prop, prop_extracter, Clipboard, EventPropagation};
 use taffy::prelude::{Layout, Node};
 
 use floem_renderer::{cosmic_text::Cursor, Renderer};
@@ -38,6 +38,15 @@ prop_extracter! {
     }
 }
 
+prop!(pub SelectionCornerRadius: f64 {} = 0.0);
+
+prop_extracter! {
+    SelectionStyle {
+        //TODO: background color?
+        selection_corner_radius: SelectionCornerRadius,
+    }
+}
+
 prop_extracter! {
     PlaceholderStyle {
         pub color: TextColor,
@@ -47,15 +56,6 @@ prop_extracter! {
     }
 }
 
-enum InputKind {
-    SingleLine,
-    #[allow(unused)]
-    MultiLine {
-        //TODO:
-        line_index: usize,
-    },
-}
-
 /// Text Input View
 pub struct TextInput {
     data: ViewData,
@@ -63,6 +63,7 @@ pub struct TextInput {
     pub(crate) placeholder_text: Option<String>,
     placeholder_buff: Option<TextLayout>,
     placeholder_style: PlaceholderStyle,
+    selection_style: SelectionStyle,
     // Where are we in the main buffer
     cursor_glyph_idx: usize,
     // This can be retrieved from the glyph, but we store it for efficiency
@@ -87,7 +88,6 @@ pub struct TextInput {
     glyph_max_size: Size,
     style: Extracter,
     font: FontProps,
-    input_kind: InputKind,
     cursor_width: f64, // TODO: make this configurable
     is_focused: bool,
     last_cursor_action_on: Instant,
@@ -123,6 +123,7 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         placeholder_text: None,
         placeholder_buff: None,
         placeholder_style: Default::default(),
+        selection_style: Default::default(),
         buffer,
         text_buf: None,
         text_node: None,
@@ -132,7 +133,6 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         font: FontProps::default(),
         cursor_x: 0.0,
         selection: None,
-        input_kind: InputKind::SingleLine,
         glyph_max_size: Size::ZERO,
         clip_start_idx: 0,
         clip_offset_x: 0.0,
@@ -194,9 +194,6 @@ const APPROX_VISIBLE_CHARS_TARGET: f32 = 10.0;
 
 impl TextInput {
     fn move_cursor(&mut self, move_kind: Movement, direction: Direction) -> bool {
-        if matches!(self.input_kind, InputKind::MultiLine { line_index: _ }) {
-            todo!();
-        }
         match (move_kind, direction) {
             (Movement::Glyph, Direction::Left) => {
                 if self.cursor_glyph_idx >= 1 {
@@ -254,17 +251,10 @@ impl TextInput {
         }
     }
 
-    fn get_line_idx(&self) -> usize {
-        match self.input_kind {
-            InputKind::SingleLine => 0,
-            InputKind::MultiLine { line_index: _ } => todo!(),
-        }
-    }
-
     fn clip_text(&mut self, node_layout: &Layout) {
         let virt_text = self.text_buf.as_ref().unwrap();
         let node_width = node_layout.size.width as f64;
-        let cursor_text_loc = Cursor::new(self.get_line_idx(), self.cursor_glyph_idx);
+        let cursor_text_loc = Cursor::new(0, self.cursor_glyph_idx);
         let layout_cursor = virt_text.layout_cursor(&cursor_text_loc);
         let cursor_glyph_pos = virt_text.hit_position(layout_cursor.glyph);
         let cursor_x = cursor_glyph_pos.point.x;
@@ -343,7 +333,6 @@ impl TextInput {
     }
 
     fn get_box_position(&self, pos_x: f64, pos_y: f64, cx: &mut EventCx) -> usize {
-        // Already focused - move cursor to click pos
         let layout = cx.get_layout(self.id()).unwrap();
         let style = cx.app_state.get_builtin_style(self.id());
 
@@ -788,6 +777,28 @@ impl TextInput {
         let text_start_point = Point::new(node_location.x as f64, node_location.y as f64);
         cx.draw_text(placeholder_buff, text_start_point);
     }
+
+    fn paint_selection_rect(&self, &node_layout: &Layout, cx: &mut crate::context::PaintCx<'_>) {
+        let style = cx.app_state.get_computed_style(self.id());
+        let cursor_color = style.get(CursorColor);
+
+        let padding_left = match style.get(PaddingLeft) {
+            PxPct::Px(padding) => padding,
+            PxPct::Pct(pct) => pct / 100.0 * node_layout.size.width as f64,
+        };
+
+        let horiz_pad = 1.0;
+        let border_radius = self.selection_style.selection_corner_radius();
+        let selection_rect = self
+            .get_selection_rect(&node_layout, padding_left)
+            .inflate(horiz_pad, 0.0)
+            .to_rounded_rect(border_radius);
+        cx.fill(
+            &selection_rect,
+            cursor_color.unwrap_or(Color::rgba8(0, 0, 0, 150)),
+            0.0,
+        );
+    }
 }
 
 fn replace_range(buff: &mut String, del_range: Range<usize>, replacement: Option<&str>) {
@@ -899,6 +910,7 @@ impl View for TextInput {
                     // Just gained focus - move cursor to buff end
                     self.cursor_glyph_idx = self.buffer.with_untracked(|buff| buff.len());
                 } else {
+                    // Already focused - move cursor to click pos
                     cx.update_active(self.id());
                     cx.app_state_mut().request_layout(self.id());
 
@@ -948,13 +960,20 @@ impl View for TextInput {
             cx.app_state_mut().request_paint(self.id());
         }
 
+        self.selection_style.read_style(cx, &style);
+
         let placeholder_style = style.clone().apply_class(PlaceholderTextClass);
         self.placeholder_style.read_style(cx, &placeholder_style);
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id(), true, |cx| {
+            let was_focused = self.is_focused;
             self.is_focused = cx.app_state().is_focused(&self.id());
+
+            if was_focused && !self.is_focused {
+                self.selection = None;
+            }
 
             if self.text_node.is_none() {
                 self.text_node = Some(
@@ -1028,30 +1047,22 @@ impl View for TextInput {
 
         let text_buf = self.text_buf.as_ref().unwrap();
         let buf_width = text_buf.size().width;
-
         let text_node = self.text_node.unwrap();
         let node_layout = *cx.app_state.taffy.layout(text_node).unwrap();
         let node_width = node_layout.size.width as f64;
 
-        match self.input_kind {
-            InputKind::SingleLine => {
-                if buf_width > node_width {
-                    self.clip_text(&node_layout);
-                } else {
-                    self.clip_txt_buf = None;
-                    self.clip_start_idx = 0;
-                    self.clip_start_x = 0.0;
-                    let hit_pos = self
-                        .text_buf
-                        .as_ref()
-                        .unwrap()
-                        .hit_position(self.cursor_glyph_idx);
-                    self.cursor_x = hit_pos.point.x;
-                }
-            }
-            InputKind::MultiLine { .. } => {
-                todo!();
-            }
+        if buf_width > node_width {
+            self.clip_text(&node_layout);
+        } else {
+            self.clip_txt_buf = None;
+            self.clip_start_idx = 0;
+            self.clip_start_x = 0.0;
+            let hit_pos = self
+                .text_buf
+                .as_ref()
+                .unwrap()
+                .hit_position(self.cursor_glyph_idx);
+            self.cursor_x = hit_pos.point.x;
         }
 
         None
@@ -1069,12 +1080,6 @@ impl View for TextInput {
 
         let text_node = self.text_node.unwrap();
         let node_layout = *cx.app_state.taffy.layout(text_node).unwrap();
-        let node_width = node_layout.size.width as f64;
-        let cursor_color = cx
-            .app_state
-            .get_computed_style(self.id())
-            .builtin()
-            .cursor_color();
 
         let location = node_layout.location;
         let text_start_point = Point::new(location.x as f64, location.y as f64);
@@ -1095,26 +1100,17 @@ impl View for TextInput {
                 == 0;
 
         if is_cursor_visible {
+            let cursor_color = cx
+                .app_state
+                .get_computed_style(self.id())
+                .builtin()
+                .cursor_color();
             let cursor_rect = self.get_cursor_rect(&node_layout);
             cx.fill(&cursor_rect, cursor_color.unwrap_or(Color::BLACK), 0.0);
         }
 
-        let style = cx.app_state.get_computed_style(self.id());
-
-        let padding_left = match style.get(PaddingLeft) {
-            PxPct::Px(padding) => padding,
-            PxPct::Pct(pct) => pct / 100.0 * node_width,
-        };
-
-        if cx.app_state.is_focused(&self.id()) {
-            let selection_rect = self.get_selection_rect(&node_layout, padding_left);
-            cx.fill(
-                &selection_rect,
-                cursor_color.unwrap_or(Color::rgba8(0, 0, 0, 150)),
-                0.0,
-            );
-        } else {
-            self.selection = None;
+        if cx.app_state.is_focused(&self.id()) && self.selection.is_some() {
+            self.paint_selection_rect(&node_layout, cx);
         }
 
         let id = self.id();
