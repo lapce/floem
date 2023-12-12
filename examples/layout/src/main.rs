@@ -9,9 +9,11 @@ use floem::{
     window::{new_window, WindowConfig},
 };
 
+pub mod draggable_sidebar;
 pub mod holy_grail;
 pub mod left_sidebar;
 pub mod right_sidebar;
+pub mod tab_navigation;
 
 fn list_item<V: View + 'static>(name: String, view_fn: impl Fn() -> V) -> impl View {
     h_stack((
@@ -23,7 +25,8 @@ fn list_item<V: View + 'static>(name: String, view_fn: impl Fn() -> V) -> impl V
 
 fn app_view() -> impl View {
     let view = v_stack((
-        label(move || String::from("Layouts")).style(|s| s.font_size(30.0).margin_bottom(15.0)),
+        label(move || String::from("Static layouts"))
+            .style(|s| s.font_size(30.0).margin_bottom(15.0)),
         list_item(String::from("Left sidebar"), move || {
             button(|| "Open").on_click_stop(|_| {
                 new_window(
@@ -56,6 +59,32 @@ fn app_view() -> impl View {
                         WindowConfig::default()
                             .size(Size::new(700.0, 400.0))
                             .title("Holy Grail"),
+                    ),
+                );
+            })
+        }),
+        label(move || String::from("Interactive layouts"))
+            .style(|s| s.font_size(30.0).margin_top(15.0).margin_bottom(15.0)),
+        list_item(String::from("Tab navigation"), move || {
+            button(|| "Open").on_click_stop(|_| {
+                new_window(
+                    |_| tab_navigation::tab_navigation_view(),
+                    Some(
+                        WindowConfig::default()
+                            .size(Size::new(400.0, 250.0))
+                            .title("Tab navigation"),
+                    ),
+                );
+            })
+        }),
+        list_item(String::from("Draggable sidebar"), move || {
+            button(|| "Open").on_click_stop(|_| {
+                new_window(
+                    |_| draggable_sidebar::draggable_sidebar_view(),
+                    Some(
+                        WindowConfig::default()
+                            .size(Size::new(700.0, 400.0))
+                            .title("Draggable sidebar"),
                     ),
                 );
             })

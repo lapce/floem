@@ -11,14 +11,14 @@ use floem::{
 };
 
 const SIDEBAR_WIDTH: f64 = 140.0;
-const SEARCHBAR_HEIGHT: f64 = 30.0;
+const TOPBAR_HEIGHT: f64 = 30.0;
 
 pub fn right_sidebar_view() -> impl View {
     let long_list: im::Vector<i32> = (0..100).collect();
     let (long_list, _set_long_list) = create_signal(long_list);
 
     let top_bar = label(|| String::from("Top bar"))
-        .style(|s| s.padding(10.0).width_full().height(SEARCHBAR_HEIGHT));
+        .style(|s| s.padding(10.0).width_full().height(TOPBAR_HEIGHT));
 
     let side_bar = scroll({
         virtual_list(
@@ -62,7 +62,7 @@ pub fn right_sidebar_view() -> impl View {
 
     let content = h_stack((main_window, side_bar)).style(|s| {
         s.position(Position::Absolute)
-            .inset_top(SEARCHBAR_HEIGHT)
+            .inset_top(TOPBAR_HEIGHT)
             .inset_bottom(0.0)
             .width_full()
     });
