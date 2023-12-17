@@ -221,8 +221,8 @@ pub trait StyleProp: Default + Copy + 'static {
     fn prop_ref() -> StylePropRef;
     fn default_value() -> Self::Type;
 }
-
 #[derive(Debug)]
+
 pub struct StylePropInfo {
     pub(crate) name: fn() -> &'static str,
     pub(crate) inherited: bool,

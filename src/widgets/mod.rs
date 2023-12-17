@@ -29,6 +29,9 @@ pub use button::*;
 mod text_input;
 pub use text_input::*;
 
+mod splitter;
+pub use splitter::*;
+
 pub(crate) struct Theme {
     pub(crate) background: Color,
     pub(crate) style: Rc<Style>,
@@ -190,6 +193,17 @@ pub(crate) fn default_theme() -> Theme {
                 .box_shadow_h_offset(2.0)
                 .box_shadow_v_offset(2.0)
                 .box_shadow_color(Color::BLACK.with_alpha_factor(0.2))
+        })
+        .class(SplitterClass, |s| {
+            s.background(Color::RED)
+        })
+        .class(SplitterVerticalHandleClass, |s| {
+            s.cursor(CursorStyle::RowResize)
+                .height(4.0.px())
+        })
+        .class(SplitterHorizontalHandleClass, |s| {
+            s.cursor(CursorStyle::ColResize)
+                .width(4.0.px())
         })
         .font_size(FONT_SIZE)
         .color(Color::BLACK);

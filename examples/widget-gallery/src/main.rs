@@ -18,10 +18,11 @@ use floem::{
     unit::UnitExt,
     view::View,
     views::{
-        container, container_box, h_stack, label, scroll, stack, tab, v_stack, virtual_list,
+        container, container_box, label, scroll, stack, tab, v_stack, virtual_list,
         Decorators, VirtualListDirection, VirtualListItemSize,
     },
     widgets::button,
+    widgets::h_splitter,
     EventPropagation,
 };
 
@@ -116,7 +117,7 @@ fn app_view() -> impl View {
                     })
             },
         )
-        .style(|s| s.flex_col().width(140.0))
+        .style(|s| s.flex_col().width_full())
     })
     .style(|s| {
         s.flex_col()
@@ -140,7 +141,7 @@ fn app_view() -> impl View {
         })
         .style(|s| s);
 
-    let left = v_stack((list, inspector)).style(|s| s.height_full().gap(0.0, 5.0));
+    let left = v_stack((list, inspector)).style(|s| s.height_full().width_full().gap(0.0, 5.0));
 
     let tab = tab(
         move || active_tab.get(),
@@ -163,7 +164,7 @@ fn app_view() -> impl View {
 
     let tab = scroll(tab).style(|s| s.flex_basis(0).min_width(0).flex_grow(1.0));
 
-    let view = h_stack((left, tab))
+    let view = h_splitter(150.px(), left, tab)
         .style(|s| s.padding(5.0).width_full().height_full().gap(5.0, 0.0))
         .window_title(|| "Widget Gallery".to_owned());
 
