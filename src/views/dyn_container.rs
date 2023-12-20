@@ -25,13 +25,13 @@ pub struct DynamicContainer<T: 'static> {
 ///     views::{dyn_container, label, v_stack, Decorators},
 ///     widgets::toggle_button,
 /// };
-/// 
+///
 /// #[derive(Clone)]
 /// enum ViewSwitcher {
 ///     One,
 ///     Two,
 /// }
-/// 
+///
 /// fn app_view() -> impl View {
 ///     let view = create_rw_signal(ViewSwitcher::One);
 ///     v_stack((
@@ -60,7 +60,7 @@ pub struct DynamicContainer<T: 'static> {
 ///             .gap(10, 0)
 ///     })
 /// }
-/// 
+///
 /// fn main() {
 ///     floem::launch(app_view);
 /// }
