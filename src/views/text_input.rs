@@ -183,6 +183,14 @@ impl From<(&KeyEvent, &SmolStr)> for TextCommand {
     }
 }
 
+fn is_word_based_action(event: &KeyEvent) -> bool {
+    #[cfg(not(target_os = "macos"))]
+    return event.modifiers.contains(ModifiersState::CONTROL);
+
+    #[cfg(target_os = "macos")]
+    return event.modifiers.contains(ModifiersState::SUPER);
+}
+
 const DEFAULT_FONT_SIZE: f32 = 14.0;
 const CURSOR_BLINK_INTERVAL_MS: u64 = 500;
 /// Specifies approximately how many characters wide the input field should be
@@ -622,7 +630,7 @@ impl TextInput {
                 } else {
                     let prev_cursor_idx = self.cursor_glyph_idx;
 
-                    if event.modifiers.contains(ModifiersState::CONTROL) {
+                    if is_word_based_action(event) {
                         self.move_cursor(Movement::Word, Direction::Left);
                     } else {
                         self.move_cursor(Movement::Glyph, Direction::Left);
@@ -649,7 +657,7 @@ impl TextInput {
 
                 let prev_cursor_idx = self.cursor_glyph_idx;
 
-                if event.modifiers.contains(ModifiersState::CONTROL) {
+                if is_word_based_action(event) {
                     self.move_cursor(Movement::Word, Direction::Right);
                 } else {
                     self.move_cursor(Movement::Glyph, Direction::Right);
@@ -675,7 +683,7 @@ impl TextInput {
             Key::Named(NamedKey::ArrowLeft) => {
                 let old_glyph_idx = self.cursor_glyph_idx;
 
-                let cursor_moved = if event.modifiers.contains(ModifiersState::CONTROL) {
+                let cursor_moved = if is_word_based_action(event) {
                     self.move_cursor(Movement::Word, Direction::Left)
                 } else {
                     self.move_cursor(Movement::Glyph, Direction::Left)
@@ -699,7 +707,7 @@ impl TextInput {
             Key::Named(NamedKey::ArrowRight) => {
                 let old_glyph_idx = self.cursor_glyph_idx;
 
-                let cursor_moved = if event.modifiers.contains(ModifiersState::CONTROL) {
+                let cursor_moved = if is_word_based_action(event) {
                     self.move_cursor(Movement::Word, Direction::Right)
                 } else {
                     self.move_cursor(Movement::Glyph, Direction::Right)
