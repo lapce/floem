@@ -19,51 +19,50 @@ pub struct DynamicContainer<T: 'static> {
 ///
 /// ## Example
 /// ```ignore
-/// #[derive(Debug, Clone)]
+/// use floem::{
+///     reactive::create_rw_signal,
+///     view::View,
+///     views::{dyn_container, label, v_stack, Decorators},
+///     widgets::toggle_button,
+/// };
+///
+/// #[derive(Clone)]
 /// enum ViewSwitcher {
 ///     One,
 ///     Two,
 /// }
 ///
-/// fn app() -> impl View {
-///
+/// fn app_view() -> impl View {
 ///     let view = create_rw_signal(ViewSwitcher::One);
-///
-///     let button = || {
-///         // imaginary toggle button and state
-///         toggle_button(
-///             // on toggle function
-///             move |state| match state {
-///                 State::On => view.update(|val| *val = Views::One),
-///                 State::Off => view.update(|val| *val = Views::Two),
-///             },
-///         )
-///     };
-///
-///     stack(|| (
-///         button(),
+///     v_stack((
+///         toggle_button(|| true)
+///             .on_toggle(move |is_on| {
+///                 if is_on {
+///                     view.update(|val| *val = ViewSwitcher::One);
+///                 } else {
+///                     view.update(|val| *val = ViewSwitcher::Two);
+///                 }
+///             })
+///             .style(|s| s.margin_bottom(20)),
 ///         dyn_container(
 ///             move || view.get(),
-///             move |val: ViewSwitcher| match val {
-///                 ViewSwitcher::One => Box::new(label(|| "one".into())),
-///                 ViewSwitcher::Two => {
-///                     Box::new(
-///                       stack(|| (
-///                           label(|| "stacked".into()),
-///                           label(|| "two".into())
-///                       ))
-///                     ),
-///                 }
+///             move |value| match value {
+///                 ViewSwitcher::One => Box::new(label(|| "One")),
+///                 ViewSwitcher::Two => Box::new(v_stack((label(|| "Stacked"), label(|| "Two")))),
 ///             },
-///         )
+///         ),
 ///     ))
-///     .style(|| {
-///         Style::new()
-///             .size(100.pct(), 100.pct())
+///     .style(|s| {
+///         s.width_full()
+///             .height_full()
 ///             .items_center()
 ///             .justify_center()
-///             .gap(points(10.))
+///             .gap(10, 0)
 ///     })
+/// }
+///
+/// fn main() {
+///     floem::launch(app_view);
 /// }
 /// ```
 ///
