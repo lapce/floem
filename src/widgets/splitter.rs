@@ -77,23 +77,19 @@ impl View for Splitter {
 
     fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
         if for_each(&self.child_1) {
-        } else {
-            if for_each(&self.handle) {
+        } else if for_each(&self.handle) {
 
-            } else {
-                for_each(&self.child_2);
-            }
+        } else {
+            for_each(&self.child_2);
         }
     }
 
     fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
         if for_each(&mut self.child_1) {
-        } else {
-            if for_each(&mut self.handle) {
+        } else if for_each(&mut self.handle) {
 
-            } else {
-                for_each(&mut self.child_2);
-            }
+        } else {
+            for_each(&mut self.child_2);
         }
     }
 
@@ -102,12 +98,10 @@ impl View for Splitter {
         for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         if for_each(&mut self.child_2) {
-        } else {
-            if for_each(&mut self.handle) {
+        } else if for_each(&mut self.handle) {
 
-            } else {
-                for_each(&mut self.child_1);
-            }
+        } else {
+            for_each(&mut self.child_1);
         }
     }
 
@@ -140,7 +134,7 @@ impl View for Splitter {
                         let rect = Rect::new(handle_layout.location.x as f64, handle_layout.location.y as f64, (handle_layout.location.x + handle_layout.size.width) as f64, (handle_layout.location.y + handle_layout.size.height) as f64);
                         if rect.contains(evt.pos) {
                             if let Some(child_1_layout) = cx.get_layout(self.child_1.id()) {
-                                self.down_position = Some(evt.pos.clone());
+                                self.down_position = Some(evt.pos);
                                 self.down_size = Some(Size::new(child_1_layout.size.width as f64, child_1_layout.size.height as f64));
 
                                 return EventPropagation::Stop;
