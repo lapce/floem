@@ -76,19 +76,13 @@ impl View for Splitter {
     }
 
     fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
-        if for_each(&self.child_1) {
-        } else if for_each(&self.handle) {
-
-        } else {
+        if !for_each(&self.child_1) && !for_each(&self.handle) {
             for_each(&self.child_2);
         }
     }
 
     fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
-        if for_each(&mut self.child_1) {
-        } else if for_each(&mut self.handle) {
-
-        } else {
+        if !for_each(&mut self.child_1) && !for_each(&mut self.handle) {
             for_each(&mut self.child_2);
         }
     }
@@ -97,10 +91,7 @@ impl View for Splitter {
         &'a mut self,
         for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
-        if for_each(&mut self.child_2) {
-        } else if for_each(&mut self.handle) {
-
-        } else {
+        if !for_each(&mut self.child_2) && !for_each(&mut self.handle) {
             for_each(&mut self.child_1);
         }
     }
