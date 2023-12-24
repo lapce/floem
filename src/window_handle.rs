@@ -772,7 +772,7 @@ impl WindowHandle {
                         } else {
                             cx.app_state.disabled.remove(&id);
                         }
-                        cx.app_state.request_style(id);
+                        cx.app_state.request_style_recursive(id);
                     }
                     UpdateMessage::State { id, state } => {
                         let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
