@@ -384,7 +384,17 @@ impl AppState {
     }
 
     pub fn is_disabled(&self, id: &Id) -> bool {
-        self.disabled.contains(id)
+        if self.disabled.contains(id) {
+            return true;
+        }
+        if let Some(id_path) = id.id_path() {
+            for ancestor in id_path.0.iter() {
+                if self.disabled.contains(ancestor) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     pub fn is_focused(&self, id: &Id) -> bool {
