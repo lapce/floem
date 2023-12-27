@@ -421,22 +421,23 @@ impl AppState {
         self.compute_layout();
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn compute_style(
         &mut self,
         id: Id,
         view_data: &mut ViewData,
         view_style: Option<Style>,
+        view_interact_state: InteractionState,
         view_class: Option<StyleClassRef>,
         classes: &[StyleClassRef],
         context: &Style,
     ) -> bool {
-        let interact_state = self.get_interact_state(&id);
         let screen_size_bp = self.screen_size_bp;
         let view_state = self.view_state(id);
         view_state.compute_style(
             view_data,
             view_style,
-            interact_state,
+            view_interact_state,
             screen_size_bp,
             view_class,
             classes,
@@ -1162,6 +1163,8 @@ pub struct StyleCx<'a> {
     pub(crate) direct: Style,
     saved: Vec<Rc<Style>>,
     pub(crate) now: Instant,
+    saved_disabled: Vec<bool>,
+    disabled: bool,
 }
 
 impl<'a> StyleCx<'a> {
@@ -1173,6 +1176,8 @@ impl<'a> StyleCx<'a> {
             direct: Default::default(),
             saved: Default::default(),
             now: Instant::now(),
+            saved_disabled: Default::default(),
+            disabled: false,
         }
     }
 
@@ -1208,10 +1213,14 @@ impl<'a> StyleCx<'a> {
             });
         }
 
+        let mut view_interact_state = self.app_state.get_interact_state(&id);
+        view_interact_state.is_disabled |= self.disabled;
+        self.disabled = view_interact_state.is_disabled;
         let mut new_frame = self.app_state.compute_style(
             id,
             view.view_data_mut(),
             view_style,
+            view_interact_state,
             view_class,
             classes,
             &self.current,
@@ -1265,10 +1274,12 @@ impl<'a> StyleCx<'a> {
 
     pub fn save(&mut self) {
         self.saved.push(self.current.clone());
+        self.saved_disabled.push(self.disabled);
     }
 
     pub fn restore(&mut self) {
         self.current = self.saved.pop().unwrap_or_default();
+        self.disabled = self.saved_disabled.pop().unwrap_or_default();
     }
 
     pub fn get_prop<P: StyleProp>(&self, _prop: P) -> Option<P::Type> {
