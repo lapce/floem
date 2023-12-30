@@ -204,18 +204,26 @@ impl TextInput {
     fn move_cursor(&mut self, move_kind: Movement, direction: Direction) -> bool {
         match (move_kind, direction) {
             (Movement::Glyph, Direction::Left) => {
-                if self.cursor_glyph_idx >= 1 {
-                    self.cursor_glyph_idx -= 1;
-                    return true;
+                let untracked_buffer = self.buffer.get_untracked();
+                let mut grapheme_iter = untracked_buffer[..self.cursor_glyph_idx].graphemes(true);
+                match grapheme_iter.next_back() {
+                    None => false,
+                    Some(prev_character) => {
+                        self.cursor_glyph_idx -= prev_character.len();
+                        true
+                    }
                 }
-                false
             }
             (Movement::Glyph, Direction::Right) => {
-                if self.cursor_glyph_idx < self.buffer.with_untracked(|buff| buff.len()) {
-                    self.cursor_glyph_idx += 1;
-                    return true;
+                let untracked_buffer = self.buffer.get_untracked();
+                let mut grapheme_iter = untracked_buffer[self.cursor_glyph_idx..].graphemes(true);
+                match grapheme_iter.next() {
+                    None => false,
+                    Some(next_character) => {
+                        self.cursor_glyph_idx += next_character.len();
+                        true
+                    }
                 }
-                false
             }
             (Movement::Line, Direction::Right) => {
                 if self.cursor_glyph_idx < self.buffer.with_untracked(|buff| buff.len()) {
