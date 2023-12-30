@@ -204,6 +204,10 @@ impl Id {
         });
     }
 
+    pub fn clear_focus(&self) {
+        self.add_update_message(UpdateMessage::ClearFocus(*self));
+    }
+
     pub fn update_context_menu(&self, menu: Box<MenuCallback>) {
         self.add_update_message(UpdateMessage::ContextMenu { id: *self, menu });
     }

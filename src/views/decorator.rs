@@ -247,6 +247,15 @@ pub trait Decorators: View + Sized {
         self
     }
 
+    fn clear_focus(self, when: impl Fn() + 'static) -> Self {
+        let id = self.id();
+        create_effect(move |_| {
+            when();
+            id.clear_focus();
+        });
+        self
+    }
+
     fn window_scale(self, scale_fn: impl Fn() -> f64 + 'static) -> Self {
         create_effect(move |_| {
             let window_scale = scale_fn();
