@@ -747,8 +747,9 @@ impl WindowHandle {
                             cx.app_state.focus_changed(old, cx.app_state.focus);
                         }
                     }
-                    UpdateMessage::ClearFocus => {
+                    UpdateMessage::ClearFocus(id) => {
                         cx.app_state.clear_focus();
+                        cx.app_state.focus_changed(Some(id), None);
                     }
                     UpdateMessage::Active(id) => {
                         let old = cx.app_state.active;
