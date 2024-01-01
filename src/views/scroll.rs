@@ -159,7 +159,7 @@ impl Scroll {
     }
 
     /// Scroll the scroll view to a percent (0-100)
-    pub fn on_scroll_to_percent(self, percent: impl Fn() -> f32 + 'static) -> Self {
+    pub fn scroll_to_percent(self, percent: impl Fn() -> f32 + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
             let percent = percent() / 100.;
