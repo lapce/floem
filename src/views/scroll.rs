@@ -19,6 +19,7 @@ enum ScrollState {
     EnsureVisible(Rect),
     ScrollDelta(Vec2),
     ScrollTo(Point),
+    ScrollToPercent(f32),
     ScrollToView(Id),
     HiddenBar(bool),
     PropagatePointerWheel(bool),
@@ -154,6 +155,16 @@ impl Scroll {
             }
         });
 
+        self
+    }
+
+    /// Scroll the scroll view to a percent (0-100)
+    pub fn on_scroll_to_percent(self, percent: impl Fn() -> f32 + 'static) -> Self {
+        let id = self.id();
+        create_effect(move |_| {
+            let percent = percent() / 100.;
+            id.update_state(ScrollState::ScrollToPercent(percent), true);
+        });
         self
     }
 
@@ -613,6 +624,12 @@ impl View for Scroll {
                 }
                 ScrollState::ScrollTo(origin) => {
                     self.scroll_to(cx.app_state, origin);
+                }
+                ScrollState::ScrollToPercent(percent) => {
+                    let mut child_size = self.child_size;
+                    child_size *= percent as f64;
+                    let point = child_size.to_vec2().to_point();
+                    self.scroll_to(cx.app_state, point);
                 }
                 ScrollState::ScrollToView(id) => {
                     if cx.app_state.get_layout(id).is_some()
