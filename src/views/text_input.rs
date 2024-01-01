@@ -1,5 +1,6 @@
 use crate::action::exec_after;
 use crate::keyboard::{self, KeyEvent};
+use crate::pointer::{PointerButton, PointerInputEvent};
 use crate::reactive::{create_effect, RwSignal};
 use crate::style::{CursorColor, FontProps, PaddingLeft};
 use crate::style::{FontStyle, FontWeight, TextColor};
@@ -913,7 +914,13 @@ impl View for TextInput {
 
         let was_focused = self.is_focused;
         let is_handled = match &event {
-            Event::PointerDown(event) => {
+            // match on pointer primary button press
+            Event::PointerDown(
+                event @ PointerInputEvent {
+                    button: PointerButton::Primary,
+                    ..
+                },
+            ) => {
                 if !was_focused {
                     // Just gained focus - move cursor to buff end
                     self.cursor_glyph_idx = self.buffer.with_untracked(|buff| buff.len());
