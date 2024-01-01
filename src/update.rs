@@ -5,12 +5,13 @@ use winit::window::ResizeDirection;
 
 use crate::{
     animate::{AnimUpdateMsg, Animation},
-    context::{ChangeFlags, EventCallback, ResizeCallback},
+    context::{EventCallback, ResizeCallback},
     event::EventListener,
     id::Id,
     menu::Menu,
     style::{Style, StyleClassRef, StyleSelector},
     view::View,
+    view_data::ChangeFlags,
 };
 
 thread_local! {

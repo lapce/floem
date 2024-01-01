@@ -1,14 +1,12 @@
+use floem_renderer::Renderer as FloemRenderer;
+use kurbo::{Affine, Insets, Point, Rect, RoundedRect, Shape, Size, Vec2};
 use std::{
     any::Any,
     collections::{HashMap, HashSet},
     ops::{Deref, DerefMut},
     rc::Rc,
-    time::{Duration, Instant},
+    time::Instant,
 };
-
-use bitflags::bitflags;
-use floem_renderer::Renderer as FloemRenderer;
-use kurbo::{Affine, Insets, Point, Rect, RoundedRect, Shape, Size, Vec2};
 use taffy::{
     prelude::{Layout, Node},
     style::{AvailableSpace, Display},
@@ -17,22 +15,22 @@ use winit::window::CursorIcon;
 
 use crate::{
     action::{exec_after, show_context_menu},
-    animate::{AnimId, AnimPropKind, Animation},
+    animate::AnimId,
     event::{Event, EventListener},
     id::Id,
     inspector::CaptureState,
     menu::Menu,
-    pointer::PointerInputEvent,
-    prop_extracter,
     responsive::{GridBreakpoints, ScreenSizeBp},
     style::{
-        Background, BorderBottom, BorderColor, BorderLeft, BorderRadius, BorderRight, BorderTop,
-        BuiltinStyle, CursorStyle, DisplayProp, LayoutProps, Outline, OutlineColor, Style,
-        StyleClassRef, StyleProp, StyleSelector, StyleSelectors, ZIndex,
+        BuiltinStyle, CursorStyle, DisplayProp, Style, StyleClassRef, StyleProp, StyleSelector,
+        ZIndex,
     },
     unit::PxPct,
     view::{paint_bg, paint_border, paint_outline, View, ViewData},
+    view_data::ChangeFlags,
 };
+
+pub use crate::view_data::ViewState;
 
 /// Control whether an event will continue propagating or whether it should stop.
 pub enum EventPropagation {
@@ -68,155 +66,6 @@ pub(crate) struct ResizeListener {
 pub(crate) struct MoveListener {
     pub(crate) window_origin: Point,
     pub(crate) callback: Box<dyn Fn(Point)>,
-}
-
-prop_extracter! {
-    pub(crate) ViewStyleProps {
-        pub border_left: BorderLeft,
-        pub border_top: BorderTop,
-        pub border_right: BorderRight,
-        pub border_bottom: BorderBottom,
-        pub border_radius: BorderRadius,
-
-        pub outline: Outline,
-        pub outline_color: OutlineColor,
-        pub border_color: BorderColor,
-        pub background: Background,
-    }
-}
-
-bitflags! {
-    #[derive(Default, Copy, Clone, Debug)]
-    #[must_use]
-    pub(crate) struct ChangeFlags: u8 {
-        const STYLE = 1;
-        const LAYOUT = 1 << 1;
-    }
-}
-
-pub struct ViewState {
-    pub(crate) node: Node,
-    pub(crate) children_nodes: Vec<Node>,
-    pub(crate) requested_changes: ChangeFlags,
-    /// Layout is requested on all direct and indirect children.
-    pub(crate) request_style_recursive: bool,
-    pub(crate) has_style_selectors: StyleSelectors,
-    pub(crate) viewport: Option<Rect>,
-    pub(crate) layout_rect: Rect,
-    pub(crate) layout_props: LayoutProps,
-    pub(crate) view_style_props: ViewStyleProps,
-    pub(crate) animation: Option<Animation>,
-    pub(crate) base_style: Option<Style>,
-    pub(crate) class: Option<StyleClassRef>,
-    pub(crate) dragging_style: Option<Style>,
-    pub(crate) combined_style: Style,
-    pub(crate) taffy_style: taffy::style::Style,
-    pub(crate) event_listeners: HashMap<EventListener, Box<EventCallback>>,
-    pub(crate) context_menu: Option<Box<MenuCallback>>,
-    pub(crate) popout_menu: Option<Box<MenuCallback>>,
-    pub(crate) resize_listener: Option<ResizeListener>,
-    pub(crate) move_listener: Option<MoveListener>,
-    pub(crate) cleanup_listener: Option<Box<dyn Fn()>>,
-    pub(crate) last_pointer_down: Option<PointerInputEvent>,
-}
-
-impl ViewState {
-    fn new(taffy: &mut taffy::Taffy) -> Self {
-        Self {
-            node: taffy.new_leaf(taffy::style::Style::DEFAULT).unwrap(),
-            viewport: None,
-            layout_rect: Rect::ZERO,
-            layout_props: Default::default(),
-            view_style_props: Default::default(),
-            requested_changes: ChangeFlags::all(),
-            request_style_recursive: false,
-            has_style_selectors: StyleSelectors::default(),
-            animation: None,
-            base_style: None,
-            class: None,
-            combined_style: Style::new(),
-            taffy_style: taffy::style::Style::DEFAULT,
-            dragging_style: None,
-            children_nodes: Vec::new(),
-            event_listeners: HashMap::new(),
-            context_menu: None,
-            popout_menu: None,
-            resize_listener: None,
-            move_listener: None,
-            cleanup_listener: None,
-            last_pointer_down: None,
-        }
-    }
-
-    /// Returns `true` if a new frame is requested.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn compute_style(
-        &mut self,
-        view_data: &mut ViewData,
-        view_style: Option<Style>,
-        interact_state: InteractionState,
-        screen_size_bp: ScreenSizeBp,
-        view_class: Option<StyleClassRef>,
-        classes: &[StyleClassRef],
-        context: &Style,
-    ) -> bool {
-        let mut new_frame = false;
-        let mut computed_style = Style::new();
-        if let Some(view_style) = view_style {
-            computed_style.apply_mut(view_style);
-        }
-        if let Some(view_class) = view_class {
-            computed_style = computed_style.apply_classes_from_context(&[view_class], context);
-        }
-        if let Some(base_style) = self.base_style.clone() {
-            computed_style.apply_mut(base_style);
-        }
-        computed_style = computed_style
-            .apply_classes_from_context(classes, context)
-            .apply(view_data.style.clone());
-
-        'anim: {
-            if let Some(animation) = self.animation.as_mut() {
-                if animation.is_completed() && animation.is_auto_reverse() {
-                    break 'anim;
-                }
-
-                new_frame = true;
-
-                let props = animation.props();
-
-                for kind in props.keys() {
-                    let val =
-                        animation.animate_prop(animation.elapsed().unwrap_or(Duration::ZERO), kind);
-                    match kind {
-                        AnimPropKind::Width => {
-                            computed_style = computed_style.width(val.get_f32());
-                        }
-                        AnimPropKind::Height => {
-                            computed_style = computed_style.height(val.get_f32());
-                        }
-                        AnimPropKind::Prop { prop } => {
-                            computed_style
-                                .map
-                                .insert(*prop, crate::style::StyleMapValue::Val(val.get_any()));
-                        }
-                        AnimPropKind::Scale => todo!(),
-                    }
-                }
-
-                animation.advance();
-                debug_assert!(!animation.is_idle());
-            }
-        }
-
-        self.has_style_selectors = computed_style.selectors();
-
-        computed_style.apply_interact_state(&interact_state, screen_size_bp);
-
-        self.combined_style = computed_style;
-
-        new_frame
-    }
 }
 
 pub struct DragState {

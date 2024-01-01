@@ -23,8 +23,8 @@ use crate::views::{container_box, stack, Decorators};
 use crate::{
     animate::{AnimPropKind, AnimUpdateMsg, AnimValue, AnimatedProp, SizeUnit},
     context::{
-        AppState, ChangeFlags, ComputeLayoutCx, EventCx, FrameUpdate, LayoutCx, MoveListener,
-        PaintCx, PaintState, ResizeListener, StyleCx, UpdateCx,
+        AppState, ComputeLayoutCx, EventCx, FrameUpdate, LayoutCx, MoveListener, PaintCx,
+        PaintState, ResizeListener, StyleCx, UpdateCx,
     },
     event::{Event, EventListener},
     id::{Id, IdPath, ID_PATHS},
@@ -40,7 +40,8 @@ use crate::{
         CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES,
         UPDATE_MESSAGES,
     },
-    view::{update_data, view_children_set_parent_id, view_tab_navigation, View, ViewData},
+    view::{view_children_set_parent_id, view_tab_navigation, View, ViewData},
+    view_data::{update_data, ChangeFlags},
     widgets::{default_theme, Theme},
 };
 

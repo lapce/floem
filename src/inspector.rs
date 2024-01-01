@@ -1,10 +1,11 @@
 use crate::app::{add_app_update_event, AppUpdateEvent};
-use crate::context::{AppState, ChangeFlags, StyleCx};
+use crate::context::{AppState, StyleCx};
 use crate::event::{Event, EventListener};
 use crate::id::Id;
 use crate::profiler::profiler;
 use crate::style::{Style, StyleMapValue};
 use crate::view::{view_children, View};
+use crate::view_data::ChangeFlags;
 use crate::views::{
     container, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label,
     static_list, tab, text, v_stack, Decorators, Label,
