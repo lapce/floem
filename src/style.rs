@@ -42,8 +42,8 @@ pub use taffy::style::{
 };
 use taffy::{
     geometry::Size,
-    prelude::Rect,
-    style::{LengthPercentage, Style as TaffyStyle},
+    prelude::{GridPlacement, Line, Rect},
+    style::{LengthPercentage, Style as TaffyStyle, TrackSizingFunction},
 };
 
 use crate::context::InteractionState;
@@ -76,6 +76,9 @@ impl StylePropValue for FlexDirection {}
 impl StylePropValue for FlexWrap {}
 impl StylePropValue for AlignItems {}
 impl StylePropValue for AlignContent {}
+impl StylePropValue for TrackSizingFunction {}
+impl<T: StylePropValue> StylePropValue for Line<T> {}
+impl StylePropValue for GridPlacement {}
 impl StylePropValue for CursorStyle {}
 impl StylePropValue for BoxShadow {}
 impl StylePropValue for String {}
@@ -96,6 +99,15 @@ impl<T: StylePropValue> StylePropValue for Option<T> {
                 .as_ref()
                 .and_then(|other| this.interpolate(other, value).map(Some))
         })
+    }
+}
+impl<T: StylePropValue> StylePropValue for Vec<T> {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        None
+    }
+
+    fn interpolate(&self, _other: &Self, _value: f64) -> Option<Self> {
+        None
     }
 }
 impl StylePropValue for Px {
@@ -1027,6 +1039,10 @@ define_builtin_props!(
     JustifySelf justify_self: Option<AlignItems> {} = None,
     AlignItemsProp align_items: Option<AlignItems> {} = None,
     AlignContentProp align_content: Option<AlignContent> {} = None,
+    GridTemplateRows grid_template_rows: Vec<TrackSizingFunction> {} = Vec::new(),
+    GridTemplateColumns grid_template_columns: Vec<TrackSizingFunction> {} = Vec::new(),
+    GridRow grid_row: Line<GridPlacement> {} = Line::default(),
+    GridColumn grid_column: Line<GridPlacement> {} = Line::default(),
     AlignSelf align_self: Option<AlignItems> {} = None,
     BorderLeft border_left: Px {} = Px(0.0),
     BorderTop border_top: Px {} = Px(0.0),
@@ -1644,6 +1660,10 @@ impl Style {
                 bottom: style.inset_bottom().into(),
             },
             gap: style.gap(),
+            grid_template_rows: style.grid_template_rows(),
+            grid_template_columns: style.grid_template_columns(),
+            grid_row: style.grid_row(),
+            grid_column: style.grid_column(),
             ..Default::default()
         }
     }
