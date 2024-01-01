@@ -800,15 +800,17 @@ impl WindowHandle {
                             cx.request_style(id);
                         }
                     }
-                    UpdateMessage::Style { id, style } => update_data(id, &mut self.view, |data| {
-                        let old_any_inherited = data.style.any_inherited();
-                        data.style = style;
-                        if data.style.any_inherited() || old_any_inherited {
-                            cx.app_state.request_style_recursive(id);
-                        } else {
-                            cx.request_style(id);
-                        }
-                    }),
+                    UpdateMessage::Style { id, style, offset } => {
+                        update_data(id, &mut self.view, |data| {
+                            let old_any_inherited = data.style().any_inherited();
+                            data.style.set(offset, style);
+                            if data.style().any_inherited() || old_any_inherited {
+                                cx.app_state.request_style_recursive(id);
+                            } else {
+                                cx.request_style(id);
+                            }
+                        })
+                    }
                     UpdateMessage::Class { id, class } => {
                         let state = cx.app_state.view_state(id);
                         state.class = Some(class);

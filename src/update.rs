@@ -11,7 +11,7 @@ use crate::{
     menu::Menu,
     style::{Style, StyleClassRef, StyleSelector},
     view::View,
-    view_data::ChangeFlags,
+    view_data::{ChangeFlags, StackOffset},
 };
 
 thread_local! {
@@ -55,6 +55,7 @@ pub(crate) enum UpdateMessage {
     Style {
         id: Id,
         style: Style,
+        offset: StackOffset<Style>,
     },
     Class {
         id: Id,

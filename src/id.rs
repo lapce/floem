@@ -18,7 +18,7 @@ use crate::{
     event::EventListener,
     style::{Style, StyleClassRef, StyleSelector},
     update::{UpdateMessage, CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES},
-    view_data::ChangeFlags,
+    view_data::{ChangeFlags, StackOffset},
 };
 
 thread_local! {
@@ -154,8 +154,12 @@ impl Id {
         self.add_update_message(UpdateMessage::BaseStyle { id: *self, style });
     }
 
-    pub fn update_style(&self, style: Style) {
-        self.add_update_message(UpdateMessage::Style { id: *self, style });
+    pub(crate) fn update_style(&self, style: Style, offset: StackOffset<Style>) {
+        self.add_update_message(UpdateMessage::Style {
+            id: *self,
+            style,
+            offset,
+        });
     }
 
     pub fn update_class(&self, class: StyleClassRef) {

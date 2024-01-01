@@ -14,25 +14,68 @@ use crate::{
 };
 use bitflags::bitflags;
 use kurbo::Rect;
-use std::{collections::HashMap, time::Duration};
+use smallvec::SmallVec;
+use std::{collections::HashMap, marker::PhantomData, time::Duration};
 use taffy::node::Node;
+
+/// A stack of view attributes. Each entry is associated with a view decorator call.
+#[derive(Default)]
+pub(crate) struct Stack<T> {
+    stack: SmallVec<[T; 1]>,
+}
+
+pub(crate) struct StackOffset<T> {
+    offset: usize,
+    phantom: PhantomData<T>,
+}
+
+impl<T> Clone for StackOffset<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Copy for StackOffset<T> {}
+
+impl<T> Stack<T> {
+    pub fn next_offset(&mut self) -> StackOffset<T> {
+        StackOffset {
+            offset: self.stack.len(),
+            phantom: PhantomData,
+        }
+    }
+    pub fn push(&mut self, value: T) {
+        self.stack.push(value);
+    }
+    pub fn set(&mut self, offset: StackOffset<T>, value: T) {
+        self.stack[offset.offset] = value;
+    }
+}
 
 /// View data stores internal state associated with a view.
 /// Each view is expected to own and give access to this data.
 pub struct ViewData {
     pub(crate) id: Id,
-    pub(crate) style: Style,
+    pub(crate) style: Stack<Style>,
 }
 
 impl ViewData {
     pub fn new(id: Id) -> Self {
         Self {
             id,
-            style: Style::new(),
+            style: Default::default(),
         }
     }
     pub fn id(&self) -> Id {
         self.id
+    }
+
+    pub(crate) fn style(&self) -> Style {
+        let mut result = Style::new();
+        for entry in self.style.stack.iter() {
+            result.apply_mut(entry.clone());
+        }
+        result
     }
 }
 
@@ -159,7 +202,7 @@ impl ViewState {
         }
         computed_style = computed_style
             .apply_classes_from_context(classes, context)
-            .apply(view_data.style.clone());
+            .apply(view_data.style());
 
         'anim: {
             if let Some(animation) = self.animation.as_mut() {

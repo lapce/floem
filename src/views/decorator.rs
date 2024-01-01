@@ -36,11 +36,12 @@ pub trait Decorators: View + Sized {
     /// to use `base_style` for the returned [`View`] instead.  
     fn style(mut self, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();
+        let offset = self.view_data_mut().style.next_offset();
         let style = create_updater(
             move || style(Style::new()),
-            move |style| id.update_style(style),
+            move |style| id.update_style(style, offset),
         );
-        self.view_data_mut().style = style;
+        self.view_data_mut().style.push(style);
         self
     }
 
