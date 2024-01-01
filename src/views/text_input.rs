@@ -696,8 +696,34 @@ impl TextInput {
                 cx.app_state.clear_focus();
                 true
             }
-            Key::Named(NamedKey::End) => self.move_cursor(Movement::Line, Direction::Right),
-            Key::Named(NamedKey::Home) => self.move_cursor(Movement::Line, Direction::Left),
+            Key::Named(NamedKey::End) => {
+                if event.modifiers.contains(ModifiersState::SHIFT) {
+                    match &self.selection {
+                        Some(selection_value) => self.update_selection(
+                            selection_value.start,
+                            self.buffer.get_untracked().len(),
+                        ),
+                        None => self.update_selection(
+                            self.cursor_glyph_idx,
+                            self.buffer.get_untracked().len(),
+                        ),
+                    }
+                } else {
+                    self.selection = None;
+                }
+                self.move_cursor(Movement::Line, Direction::Right)
+            }
+            Key::Named(NamedKey::Home) => {
+                if event.modifiers.contains(ModifiersState::SHIFT) {
+                    match &self.selection {
+                        Some(selection_value) => self.update_selection(0, selection_value.end),
+                        None => self.update_selection(0, self.cursor_glyph_idx),
+                    }
+                } else {
+                    self.selection = None;
+                }
+                self.move_cursor(Movement::Line, Direction::Left)
+            }
             Key::Named(NamedKey::ArrowLeft) => {
                 let old_glyph_idx = self.cursor_glyph_idx;
 
