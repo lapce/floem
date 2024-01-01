@@ -135,7 +135,6 @@ pub struct ViewState {
     pub(crate) layout_props: LayoutProps,
     pub(crate) view_style_props: ViewStyleProps,
     pub(crate) animation: Option<Animation>,
-    pub(crate) base_style: Option<Style>,
     pub(crate) class: Option<StyleClassRef>,
     pub(crate) dragging_style: Option<Style>,
     pub(crate) combined_style: Style,
@@ -161,7 +160,6 @@ impl ViewState {
             request_style_recursive: false,
             has_style_selectors: StyleSelectors::default(),
             animation: None,
-            base_style: None,
             class: None,
             combined_style: Style::new(),
             taffy_style: taffy::style::Style::DEFAULT,
@@ -196,9 +194,6 @@ impl ViewState {
         }
         if let Some(view_class) = view_class {
             computed_style = computed_style.apply_classes_from_context(&[view_class], context);
-        }
-        if let Some(base_style) = self.base_style.clone() {
-            computed_style.apply_mut(base_style);
         }
         computed_style = computed_style
             .apply_classes_from_context(classes, context)

@@ -31,6 +31,6 @@ pub fn labeled_checkbox<S: Display + 'static>(
 ) -> impl View {
     h_stack((checkbox_svg(checked), views::label(label)))
         .class(LabeledCheckboxClass)
-        .base_style(|s| s.items_center().justify_center())
+        .style(|s| s.items_center().justify_center())
         .keyboard_navigatable()
 }

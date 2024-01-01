@@ -48,10 +48,6 @@ pub(crate) enum UpdateMessage {
         id: Id,
         state: Box<dyn Any>,
     },
-    BaseStyle {
-        id: Id,
-        style: Style,
-    },
     Style {
         id: Id,
         style: Style,

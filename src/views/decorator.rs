@@ -14,9 +14,7 @@ use crate::{
 pub trait Decorators: View + Sized {
     /// Alter the style of the view.  
     ///
-    /// -----
-    ///
-    /// Note: repeated applications of `style` overwrite previous styles.  
+    /// Earlier applications of `style` have lower priority than later calls.  
     /// ```rust
     /// # use floem::{peniko::Color, view::View, views::{Decorators, label, stack}};
     /// fn view() -> impl View {
@@ -32,8 +30,6 @@ pub trait Decorators: View + Sized {
     ///     ))
     /// }
     /// ```
-    /// If you are returning from a function that produces a view, you may want
-    /// to use `base_style` for the returned [`View`] instead.  
     fn style(mut self, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();
         let offset = self.view_data_mut().style.next_offset();
@@ -42,32 +38,6 @@ pub trait Decorators: View + Sized {
             move |style| id.update_style(style, offset),
         );
         self.view_data_mut().style.push(style);
-        self
-    }
-
-    /// Alter the base style of the view.  
-    /// This is applied before `style`, and so serves as a good place to set defaults.  
-    /// ```rust
-    /// # use floem::{peniko::Color, view::View, views::{Decorators, label, stack}};
-    /// fn view() -> impl View {
-    ///    label(|| "Hello".to_string())
-    ///       .base_style(|s| s.font_size(20.0).color(Color::RED))
-    /// }
-    ///
-    /// fn other() -> impl View {
-    ///     stack((
-    ///         view(), // will be red and size 20
-    ///         // will be green and size 20
-    ///         view().style(|s| s.color(Color::GREEN)),
-    ///     ))
-    /// }
-    /// ```
-    fn base_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
-        let id = self.id();
-        create_effect(move |_| {
-            let style = style(Style::new());
-            id.update_base_style(style);
-        });
         self
     }
 

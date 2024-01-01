@@ -150,10 +150,6 @@ impl Id {
         }
     }
 
-    pub fn update_base_style(&self, style: Style) {
-        self.add_update_message(UpdateMessage::BaseStyle { id: *self, style });
-    }
-
     pub(crate) fn update_style(&self, style: Style, offset: StackOffset<Style>) {
         self.add_update_message(UpdateMessage::Style {
             id: *self,
