@@ -1,4 +1,5 @@
 use crate::action::exec_after;
+use crate::event::EventListener;
 use crate::keyboard::{self, KeyEvent};
 use crate::pointer::{PointerButton, PointerInputEvent};
 use crate::reactive::{create_effect, RwSignal};
@@ -8,6 +9,7 @@ use crate::unit::{PxPct, PxPctAuto};
 use crate::view::ViewData;
 use crate::widgets::PlaceholderTextClass;
 use crate::{prop, prop_extracter, Clipboard, EventPropagation};
+use floem_reactive::create_rw_signal;
 use taffy::prelude::{Layout, Node};
 
 use floem_renderer::{cosmic_text::Cursor, Renderer};
@@ -110,11 +112,12 @@ pub enum Direction {
 /// Text Input View
 pub fn text_input(buffer: RwSignal<String>) -> TextInput {
     let id = Id::next();
+    let is_focused = create_rw_signal(false);
 
     {
         create_effect(move |_| {
             let text = buffer.get();
-            id.update_state(text, false);
+            id.update_state((text, is_focused.get()), false);
         });
     }
 
@@ -145,6 +148,12 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         last_cursor_action_on: Instant::now(),
     }
     .keyboard_navigatable()
+    .on_event_stop(EventListener::FocusGained, move |_| {
+        is_focused.set(true);
+    })
+    .on_event_stop(EventListener::FocusLost, move |_| {
+        is_focused.set(false);
+    })
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -900,7 +909,13 @@ impl View for TextInput {
     }
 
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {
-        if state.downcast::<String>().is_ok() {
+        if let Ok(state) = state.downcast::<(String, bool)>() {
+            let (_, is_focused) = *state;
+            if is_focused {
+                self.cursor_glyph_idx = self.buffer.with_untracked(|buff| buff.len());
+            }
+
+            self.is_focused = is_focused;
             cx.request_layout(self.id());
         } else {
             eprintln!("downcast failed");
@@ -920,7 +935,6 @@ impl View for TextInput {
             self.cursor_glyph_idx = buff_len;
         }
 
-        let was_focused = self.is_focused;
         let is_handled = match &event {
             // match on pointer primary button press
             Event::PointerDown(
@@ -929,20 +943,14 @@ impl View for TextInput {
                     ..
                 },
             ) => {
-                if !was_focused {
-                    // Just gained focus - move cursor to buff end
-                    self.cursor_glyph_idx = self.buffer.with_untracked(|buff| buff.len());
-                } else {
-                    // Already focused - move cursor to click pos
-                    cx.update_active(self.id());
-                    cx.app_state_mut().request_layout(self.id());
+                cx.update_active(self.id());
+                cx.app_state_mut().request_layout(self.id());
 
-                    if event.count == 2 {
-                        self.handle_double_click(event.pos.x, event.pos.y, cx);
-                    } else {
-                        self.cursor_glyph_idx = self.get_box_position(event.pos.x, event.pos.y, cx);
-                        self.selection = None;
-                    }
+                if event.count == 2 {
+                    self.handle_double_click(event.pos.x, event.pos.y, cx);
+                } else {
+                    self.cursor_glyph_idx = self.get_box_position(event.pos.x, event.pos.y, cx);
+                    self.selection = None;
                 }
                 true
             }
