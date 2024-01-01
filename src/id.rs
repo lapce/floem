@@ -14,10 +14,11 @@ use kurbo::Point;
 
 use crate::{
     animate::Animation,
-    context::{ChangeFlags, EventCallback, MenuCallback, ResizeCallback},
+    context::{EventCallback, MenuCallback, ResizeCallback},
     event::EventListener,
     style::{Style, StyleClassRef, StyleSelector},
     update::{UpdateMessage, CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES},
+    view_data::ChangeFlags,
 };
 
 thread_local! {

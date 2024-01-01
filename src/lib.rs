@@ -111,6 +111,7 @@ pub mod style;
 pub mod unit;
 mod update;
 pub mod view;
+pub(crate) mod view_data;
 pub mod view_tuple;
 pub mod views;
 pub mod widgets;

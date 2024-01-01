@@ -89,14 +89,15 @@ use std::any::Any;
 use taffy::prelude::Node;
 
 use crate::{
-    context::{
-        AppState, ComputeLayoutCx, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx, ViewStyleProps,
-    },
+    context::{AppState, ComputeLayoutCx, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx},
     event::Event,
-    id::{Id, ID_PATHS},
+    id::Id,
     style::{BoxShadowProp, Style, StyleClassRef},
+    view_data::ViewStyleProps,
     EventPropagation,
 };
+
+pub use crate::view_data::ViewData;
 
 pub trait View {
     fn view_data(&self) -> &ViewData;
@@ -230,42 +231,6 @@ pub trait View {
             cx.paint_view(child);
             false
         });
-    }
-}
-
-pub struct ViewData {
-    pub(crate) id: Id,
-    pub(crate) style: Style,
-}
-
-impl ViewData {
-    pub fn new(id: Id) -> Self {
-        Self {
-            id,
-            style: Style::new(),
-        }
-    }
-    pub fn id(&self) -> Id {
-        self.id
-    }
-}
-
-pub(crate) fn update_data(id: Id, root: &mut dyn View, f: impl FnOnce(&mut ViewData)) {
-    pub(crate) fn update_inner(id_path: &[Id], view: &mut dyn View, f: impl FnOnce(&mut ViewData)) {
-        let id = id_path[0];
-        let id_path = &id_path[1..];
-        if id == view.id() {
-            if id_path.is_empty() {
-                f(view.view_data_mut());
-            } else if let Some(child) = view.child_mut(id_path[0]) {
-                update_inner(id_path, child, f);
-            }
-        }
-    }
-
-    let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
-    if let Some(id_path) = id_path {
-        update_inner(id_path.dispatch(), root, f)
     }
 }
 
