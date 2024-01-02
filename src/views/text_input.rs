@@ -193,12 +193,22 @@ impl From<(&KeyEvent, &SmolStr)> for TextCommand {
     }
 }
 
-fn is_word_based_action(event: &KeyEvent) -> bool {
+fn get_word_based_motion(event: &KeyEvent) -> Option<Movement> {
     #[cfg(not(target_os = "macos"))]
-    return event.modifiers.contains(ModifiersState::CONTROL);
+    return event
+        .modifiers
+        .contains(ModifiersState::CONTROL)
+        .then_some(Movement::Word);
 
     #[cfg(target_os = "macos")]
-    return event.modifiers.contains(ModifiersState::SUPER);
+    return event
+        .modifiers
+        .contains(ModifiersState::ALT)
+        .then_some(Movement::Word)
+        .or(event
+            .modifiers
+            .contains(ModifiersState::SUPER)
+            .then_some(Movement::Line));
 }
 
 const DEFAULT_FONT_SIZE: f32 = 14.0;
@@ -648,11 +658,11 @@ impl TextInput {
                 } else {
                     let prev_cursor_idx = self.cursor_glyph_idx;
 
-                    if is_word_based_action(event) {
-                        self.move_cursor(Movement::Word, Direction::Left);
-                    } else {
-                        self.move_cursor(Movement::Glyph, Direction::Left);
-                    }
+                    self.move_cursor(
+                        get_word_based_motion(event).unwrap_or(Movement::Glyph),
+                        Direction::Left,
+                    );
+
                     if self.cursor_glyph_idx == prev_cursor_idx {
                         return false;
                     }
@@ -675,11 +685,10 @@ impl TextInput {
 
                 let prev_cursor_idx = self.cursor_glyph_idx;
 
-                if is_word_based_action(event) {
-                    self.move_cursor(Movement::Word, Direction::Right);
-                } else {
-                    self.move_cursor(Movement::Glyph, Direction::Right);
-                }
+                self.move_cursor(
+                    get_word_based_motion(event).unwrap_or(Movement::Glyph),
+                    Direction::Right,
+                );
 
                 if self.cursor_glyph_idx == prev_cursor_idx {
                     return false;
@@ -727,11 +736,10 @@ impl TextInput {
             Key::Named(NamedKey::ArrowLeft) => {
                 let old_glyph_idx = self.cursor_glyph_idx;
 
-                let cursor_moved = if is_word_based_action(event) {
-                    self.move_cursor(Movement::Word, Direction::Left)
-                } else {
-                    self.move_cursor(Movement::Glyph, Direction::Left)
-                };
+                let cursor_moved = self.move_cursor(
+                    get_word_based_motion(event).unwrap_or(Movement::Glyph),
+                    Direction::Left,
+                );
 
                 if cursor_moved {
                     self.move_selection(
@@ -751,11 +759,10 @@ impl TextInput {
             Key::Named(NamedKey::ArrowRight) => {
                 let old_glyph_idx = self.cursor_glyph_idx;
 
-                let cursor_moved = if is_word_based_action(event) {
-                    self.move_cursor(Movement::Word, Direction::Right)
-                } else {
-                    self.move_cursor(Movement::Glyph, Direction::Right)
-                };
+                let cursor_moved = self.move_cursor(
+                    get_word_based_motion(event).unwrap_or(Movement::Glyph),
+                    Direction::Right,
+                );
 
                 if cursor_moved {
                     self.move_selection(
