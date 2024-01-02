@@ -40,6 +40,44 @@ pub fn v_stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
     }
 }
 
+fn from_iter<V>(iterator: impl IntoIterator<Item = V>, direction: Option<FlexDirection>) -> Stack
+where
+    V: View + 'static,
+{
+    Stack {
+        data: ViewData::new(Id::next()),
+        children: iterator
+            .into_iter()
+            .map(|v| -> Box<dyn View> { Box::new(v) })
+            .collect(),
+        direction,
+    }
+}
+
+/// Creates a stack from an iterator of views.
+pub fn stack_from_iter<V>(iterator: impl IntoIterator<Item = V>) -> Stack
+where
+    V: View + 'static,
+{
+    from_iter(iterator, None)
+}
+
+/// Creates a stack from an iterator of views. It defaults to `FlexDirection::Row`.
+pub fn h_stack_from_iter<V>(iterator: impl IntoIterator<Item = V>) -> Stack
+where
+    V: View + 'static,
+{
+    from_iter(iterator, Some(FlexDirection::Row))
+}
+
+/// Creates a stack from an iterator of views. It defaults to `FlexDirection::Column`.
+pub fn v_stack_from_iter<V>(iterator: impl IntoIterator<Item = V>) -> Stack
+where
+    V: View + 'static,
+{
+    from_iter(iterator, Some(FlexDirection::Column))
+}
+
 impl View for Stack {
     fn view_data(&self) -> &ViewData {
         &self.data

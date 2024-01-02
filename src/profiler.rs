@@ -3,8 +3,8 @@ use crate::event::{Event, EventListener};
 use crate::inspector::header;
 use crate::view::View;
 use crate::views::{
-    clip, container, dyn_container, empty, h_stack, label, scroll, stack, static_label,
-    static_list, text, v_stack, Decorators,
+    clip, container, dyn_container, empty, h_stack, label, scroll, stack, static_label, text,
+    v_stack, v_stack_from_iter, Decorators,
 };
 use crate::widgets::button;
 use crate::EventPropagation;
@@ -149,7 +149,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl View {
 
     let frames = v_stack((
         header("Frames"),
-        scroll(static_list(frames).style(|s| s.width_full())).style(|s| {
+        scroll(v_stack_from_iter(frames).style(|s| s.width_full())).style(|s| {
             s.background(Color::WHITE)
                 .flex_basis(0)
                 .min_height(0)
@@ -206,7 +206,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl View {
                 });
                 Box::new(
                     scroll(
-                        static_list(list)
+                        v_stack_from_iter(list)
                             .style(move |s| s.min_width_pct(zoom.get() * 100.0).height_full()),
                     )
                     .style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0))

@@ -7,8 +7,8 @@ use crate::style::{Style, StyleMapValue};
 use crate::view::{view_children, View};
 use crate::view_data::ChangeFlags;
 use crate::views::{
-    container, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label,
-    static_list, tab, text, v_stack, Decorators, Label,
+    container, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label, tab, text,
+    v_stack, v_stack_from_iter, Decorators, Label,
 };
 use crate::widgets::button;
 use crate::window::WindowConfig;
@@ -325,7 +325,7 @@ fn captured_view_with_children(
             .background(Color::BLACK.with_alpha_factor(0.1))
     });
 
-    let list = static_list(children).style(move |s| {
+    let list = v_stack_from_iter(children).style(move |s| {
         s.display(if expanded.get() {
             style::Display::Flex
         } else {
@@ -543,7 +543,7 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl 
                 style_list.sort_unstable_by(|a, b| a.0 .1.cmp(&b.0 .1));
 
                 let style_list =
-                    static_list(style_list.into_iter().map(|((prop, name), value)| {
+                    v_stack_from_iter(style_list.into_iter().map(|((prop, name), value)| {
                         let name = name.strip_prefix("floem::style::").unwrap_or(&name);
                         let name: Box<dyn View> = if direct.contains(&prop) {
                             Box::new(text(name))
