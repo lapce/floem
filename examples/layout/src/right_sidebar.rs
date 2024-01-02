@@ -5,8 +5,8 @@ use floem::{
     style::Position,
     view::View,
     views::{
-        container, h_stack, label, scroll, v_stack, virtual_list, Decorators, VirtualListDirection,
-        VirtualListItemSize,
+        container, h_stack, label, scroll, v_stack, virtual_stack, Decorators,
+        VirtualStackDirection, VirtualStackItemSize,
     },
 };
 
@@ -21,9 +21,9 @@ pub fn right_sidebar_view() -> impl View {
         .style(|s| s.padding(10.0).width_full().height(TOPBAR_HEIGHT));
 
     let side_bar = scroll({
-        virtual_list(
-            VirtualListDirection::Vertical,
-            VirtualListItemSize::Fixed(Box::new(|| 22.0)),
+        virtual_stack(
+            VirtualStackDirection::Vertical,
+            VirtualStackItemSize::Fixed(Box::new(|| 22.0)),
             move || long_list.get(),
             move |item| *item,
             move |item| {

@@ -2,9 +2,9 @@ use floem::{
     reactive::create_signal,
     unit::UnitExt,
     view::View,
-    views::virtual_list,
+    views::virtual_stack,
     views::Decorators,
-    views::{container, label, scroll, VirtualListDirection, VirtualListItemSize},
+    views::{container, label, scroll, VirtualStackDirection, VirtualStackItemSize},
 };
 
 fn app_view() -> impl View {
@@ -13,9 +13,9 @@ fn app_view() -> impl View {
 
     container(
         scroll(
-            virtual_list(
-                VirtualListDirection::Vertical,
-                VirtualListItemSize::Fixed(Box::new(|| 20.0)),
+            virtual_stack(
+                VirtualStackDirection::Vertical,
+                VirtualStackItemSize::Fixed(Box::new(|| 20.0)),
                 move || long_list.get(),
                 move |item| *item,
                 move |item| label(move || item.to_string()).style(|s| s.height(20.0)),

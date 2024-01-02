@@ -19,7 +19,7 @@ pub(crate) type FxIndexSet<T> = indexmap::IndexSet<T, BuildHasherDefault<FxHashe
 #[educe(Debug)]
 pub(crate) struct HashRun<T>(#[educe(Debug(ignore))] pub(crate) T);
 
-pub struct List<V, T>
+pub struct DynStack<V, T>
 where
     V: View,
     T: 'static,
@@ -30,7 +30,7 @@ where
     phantom: PhantomData<T>,
 }
 
-pub fn list<IF, I, T, KF, K, VF, V>(each_fn: IF, key_fn: KF, view_fn: VF) -> List<V, T>
+pub fn dyn_stack<IF, I, T, KF, K, VF, V>(each_fn: IF, key_fn: KF, view_fn: VF) -> DynStack<V, T>
 where
     IF: Fn() -> I + 'static,
     I: IntoIterator<Item = T>,
@@ -69,7 +69,7 @@ where
         HashRun(hashed_items)
     });
     let view_fn = Box::new(as_child_of_current_scope(view_fn));
-    List {
+    DynStack {
         data: ViewData::new(id),
         children: Vec::new(),
         view_fn,
@@ -77,7 +77,7 @@ where
     }
 }
 
-impl<V: View + 'static, T> View for List<V, T> {
+impl<V: View + 'static, T> View for DynStack<V, T> {
     fn view_data(&self) -> &ViewData {
         &self.data
     }
@@ -119,7 +119,7 @@ impl<V: View + 'static, T> View for List<V, T> {
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        "List".into()
+        "DynStack".into()
     }
 
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn std::any::Any>) {

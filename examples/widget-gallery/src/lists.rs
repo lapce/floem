@@ -7,8 +7,8 @@ use floem::{
     style::{CursorStyle, JustifyContent},
     view::View,
     views::{
-        container, label, scroll, stack, virtual_list, Decorators, VirtualListDirection,
-        VirtualListItemSize,
+        container, label, scroll, stack, virtual_stack, Decorators, VirtualStackDirection,
+        VirtualStackItemSize,
     },
     widgets::checkbox,
     EventPropagation,
@@ -29,9 +29,9 @@ fn simple_list() -> impl View {
     let long_list: im::Vector<i32> = (0..100).collect();
     let (long_list, _set_long_list) = create_signal(long_list);
     scroll(
-        virtual_list(
-            VirtualListDirection::Vertical,
-            VirtualListItemSize::Fixed(Box::new(|| 20.0)),
+        virtual_stack(
+            VirtualStackDirection::Vertical,
+            VirtualStackItemSize::Fixed(Box::new(|| 20.0)),
             move || long_list.get(),
             move |item| *item,
             move |item| label(move || item.to_string()).style(|s| s.height(24.0)),
@@ -49,9 +49,9 @@ fn enhanced_list() -> impl View {
     let list_width = 180.0;
     let item_height = 32.0;
     scroll(
-        virtual_list(
-            VirtualListDirection::Vertical,
-            VirtualListItemSize::Fixed(Box::new(|| 32.0)),
+        virtual_stack(
+            VirtualStackDirection::Vertical,
+            VirtualStackItemSize::Fixed(Box::new(|| 32.0)),
             move || long_list.get(),
             move |item| *item,
             move |item| {
