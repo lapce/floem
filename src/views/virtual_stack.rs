@@ -14,17 +14,17 @@ use crate::{
 use super::{apply_diff, diff, Diff, DiffOpAdd, FxIndexSet, HashRun};
 
 #[derive(Clone, Copy)]
-pub enum VirtualListDirection {
+pub enum VirtualStackDirection {
     Vertical,
     Horizontal,
 }
 
-pub enum VirtualListItemSize<T> {
+pub enum VirtualStackItemSize<T> {
     Fn(Box<dyn Fn(&T) -> f64>),
     Fixed(Box<dyn Fn() -> f64>),
 }
 
-pub trait VirtualListVector<T> {
+pub trait VirtualStackVector<T> {
     type ItemIterator: Iterator<Item = T>;
 
     fn total_len(&self) -> usize;
@@ -40,12 +40,12 @@ pub trait VirtualListVector<T> {
     fn slice(&mut self, range: Range<usize>) -> Self::ItemIterator;
 }
 
-pub struct VirtualList<V: View, T>
+pub struct VirtualStack<V: View, T>
 where
     T: 'static,
 {
     data: ViewData,
-    direction: VirtualListDirection,
+    direction: VirtualStackDirection,
     children: Vec<Option<(V, Scope)>>,
     viewport: Rect,
     set_viewport: WriteSignal<Rect>,
@@ -57,23 +57,23 @@ where
     after_node: Option<Node>,
 }
 
-struct VirtualListState<T> {
+struct VirtualStackState<T> {
     diff: Diff<T>,
     before_size: f64,
     after_size: f64,
 }
 
-pub fn virtual_list<T, IF, I, KF, K, VF, V>(
-    direction: VirtualListDirection,
-    item_size: VirtualListItemSize<T>,
+pub fn virtual_stack<T, IF, I, KF, K, VF, V>(
+    direction: VirtualStackDirection,
+    item_size: VirtualStackItemSize<T>,
     each_fn: IF,
     key_fn: KF,
     view_fn: VF,
-) -> VirtualList<V, T>
+) -> VirtualStack<V, T>
 where
     T: 'static,
     IF: Fn() -> I + 'static,
-    I: VirtualListVector<T>,
+    I: VirtualStackVector<T>,
     KF: Fn(&T) -> K + 'static,
     K: Eq + Hash + 'static,
     VF: Fn(T) -> V + 'static,
@@ -87,19 +87,19 @@ where
         let mut items_vector = each_fn();
         let viewport = viewport.get();
         let min = match direction {
-            VirtualListDirection::Vertical => viewport.y0,
-            VirtualListDirection::Horizontal => viewport.x0,
+            VirtualStackDirection::Vertical => viewport.y0,
+            VirtualStackDirection::Horizontal => viewport.x0,
         };
         let max = match direction {
-            VirtualListDirection::Vertical => viewport.height() + viewport.y0,
-            VirtualListDirection::Horizontal => viewport.width() + viewport.x0,
+            VirtualStackDirection::Vertical => viewport.height() + viewport.y0,
+            VirtualStackDirection::Horizontal => viewport.width() + viewport.x0,
         };
         let mut items = Vec::new();
 
         let mut before_size = 0.0;
         let mut after_size = 0.0;
         match &item_size {
-            VirtualListItemSize::Fixed(item_size) => {
+            VirtualStackItemSize::Fixed(item_size) => {
                 let item_size = item_size();
                 let total_len = items_vector.total_len();
                 let start = if item_size > 0.0 {
@@ -121,7 +121,7 @@ where
                 after_size = item_size
                     * (total_len.saturating_sub(start).saturating_sub(items.len())) as f64;
             }
-            VirtualListItemSize::Fn(size_fn) => {
+            VirtualStackItemSize::Fn(size_fn) => {
                 let mut main_axis = 0.0;
                 let total_len = items_vector.total_len();
                 let total_size = items_vector.total_size();
@@ -172,7 +172,7 @@ where
 
         if !diff.is_empty() || prev_before_size != before_size || prev_after_size != after_size {
             id.update_state(
-                VirtualListState {
+                VirtualStackState {
                     diff,
                     before_size,
                     after_size,
@@ -185,7 +185,7 @@ where
 
     let view_fn = Box::new(as_child_of_current_scope(view_fn));
 
-    VirtualList {
+    VirtualStack {
         data: ViewData::new(id),
         direction,
         children: Vec::new(),
@@ -200,7 +200,7 @@ where
     }
 }
 
-impl<V: View + 'static, T> View for VirtualList<V, T> {
+impl<V: View + 'static, T> View for VirtualStack<V, T> {
     fn view_data(&self) -> &ViewData {
         &self.data
     }
@@ -242,11 +242,11 @@ impl<V: View + 'static, T> View for VirtualList<V, T> {
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        "VirtualList".into()
+        "VirtualStack".into()
     }
 
     fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
-        if let Ok(state) = state.downcast::<VirtualListState<T>>() {
+        if let Ok(state) = state.downcast::<VirtualStackState<T>>() {
             if self.before_size == state.before_size
                 && self.after_size == state.after_size
                 && state.diff.is_empty()
@@ -274,21 +274,21 @@ impl<V: View + 'static, T> View for VirtualList<V, T> {
                 .filter_map(|child| Some(cx.layout_view(&mut child.as_mut()?.0)))
                 .collect::<Vec<_>>();
             let before_size = match self.direction {
-                VirtualListDirection::Vertical => taffy::prelude::Size {
+                VirtualStackDirection::Vertical => taffy::prelude::Size {
                     width: Dimension::Percent(1.0),
                     height: Dimension::Points(self.before_size as f32),
                 },
-                VirtualListDirection::Horizontal => taffy::prelude::Size {
+                VirtualStackDirection::Horizontal => taffy::prelude::Size {
                     width: Dimension::Points(self.before_size as f32),
                     height: Dimension::Percent(1.0),
                 },
             };
             let after_size = match self.direction {
-                VirtualListDirection::Vertical => taffy::prelude::Size {
+                VirtualStackDirection::Vertical => taffy::prelude::Size {
                     width: Dimension::Percent(1.0),
                     height: Dimension::Points(self.after_size as f32),
                 },
-                VirtualListDirection::Horizontal => taffy::prelude::Size {
+                VirtualStackDirection::Horizontal => taffy::prelude::Size {
                     width: Dimension::Points(self.after_size as f32),
                     height: Dimension::Percent(1.0),
                 },
@@ -347,7 +347,7 @@ impl<V: View + 'static, T> View for VirtualList<V, T> {
     }
 }
 
-impl<T: Clone> VirtualListVector<T> for im::Vector<T> {
+impl<T: Clone> VirtualStackVector<T> for im::Vector<T> {
     type ItemIterator = im::vector::ConsumingIter<T>;
 
     fn total_len(&self) -> usize {

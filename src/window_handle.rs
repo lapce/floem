@@ -1238,7 +1238,7 @@ fn context_menu_view(
 
     use crate::{
         app::{add_app_update_event, AppUpdateEvent},
-        views::{empty, list, svg, text},
+        views::{dyn_stack, empty, svg, text},
     };
 
     #[derive(Clone, PartialEq, Eq, Hash)]
@@ -1352,7 +1352,7 @@ fn context_menu_view(
                             .active(|s| s.border_radius(10.0).background(Color::rgb8(92, 92, 92)))
                             .disabled(|s| s.color(Color::rgb8(92, 92, 92)))
                     }),
-                    list(
+                    dyn_stack(
                         move || menu.children.clone().unwrap_or_default(),
                         move |s| s.clone(),
                         move |menu| {
@@ -1429,7 +1429,7 @@ fn context_menu_view(
     }
 
     let on_child_submenu = create_rw_signal(false);
-    let view = list(
+    let view = dyn_stack(
         move || context_menu_items.get().unwrap_or_default(),
         move |s| s.clone(),
         move |menu| view_fn(window_id, menu, context_menu, focus_count, on_child_submenu),
