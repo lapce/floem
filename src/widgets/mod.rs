@@ -15,6 +15,9 @@ use std::rc::Rc;
 mod checkbox;
 pub use checkbox::*;
 
+mod list;
+pub use list::*;
+
 mod toggle_button;
 pub use toggle_button::*;
 
@@ -43,6 +46,12 @@ pub(crate) fn default_theme() -> Theme {
     let hover_bg_color = Color::rgba8(228, 237, 216, 160);
     let focus_hover_bg_color = Color::rgb8(234, 230, 236);
     let active_bg_color = Color::rgb8(160, 160, 160);
+
+    let selected_bg_color = Color::rgb8(213, 208, 216);
+    let selected_hover_bg_color = Color::rgb8(186, 180, 216);
+
+    let selected_unfocused_bg_color = Color::rgb8(212, 212, 212);
+    let selected_unfocused_hover_bg_color = Color::rgb8(197, 197, 197);
 
     let light_hover_bg_color = Color::rgb8(250, 252, 248);
     let light_focus_hover_bg_color = Color::rgb8(250, 249, 251);
@@ -135,7 +144,23 @@ pub(crate) fn default_theme() -> Theme {
                 .color(Color::GRAY)
         });
 
+    let item_focused_style = Style::new().selected(|s| {
+        s.background(selected_bg_color)
+            .hover(|s| s.background(selected_hover_bg_color))
+    });
+
+    let item_unfocused_style = Style::new()
+        .hover(|s| s.background(hover_bg_color))
+        .selected(|s| {
+            s.background(selected_unfocused_bg_color)
+                .hover(|s| s.background(selected_unfocused_hover_bg_color))
+        });
+
     let theme = Style::new()
+        .class(ListClass, |s| {
+            s.focus(|s| s.class(ListItemClass, |_| item_focused_style))
+                .class(ListItemClass, |_| item_unfocused_style)
+        })
         .class(FocusClass, |_| focus_style)
         .class(LabeledCheckboxClass, |_| labeled_checkbox_style)
         .class(CheckboxClass, |_| checkbox_style)

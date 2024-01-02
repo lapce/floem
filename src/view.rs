@@ -232,6 +232,20 @@ pub trait View {
             false
         });
     }
+
+    /// Scrolls the view and all direct and indirect children to bring the `target` view to be
+    /// visible. Returns true if this view contains or is the target.
+    fn scroll_to(&mut self, cx: &mut AppState, target: Id) -> bool {
+        if self.id() == target {
+            return true;
+        }
+        let mut found = false;
+        self.for_each_child_mut(&mut |child| {
+            found |= child.scroll_to(cx, target);
+            found
+        });
+        found
+    }
 }
 
 /// Computes the layout of the view's children, if any.
@@ -684,5 +698,9 @@ impl View for Box<dyn View> {
 
     fn paint(&mut self, cx: &mut PaintCx) {
         (**self).paint(cx)
+    }
+
+    fn scroll_to(&mut self, cx: &mut AppState, target: Id) -> bool {
+        (**self).scroll_to(cx, target)
     }
 }

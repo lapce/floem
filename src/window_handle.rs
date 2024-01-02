@@ -770,6 +770,9 @@ impl WindowHandle {
                             cx.app_state.request_style_recursive(id);
                         }
                     }
+                    UpdateMessage::ScrollTo { id } => {
+                        self.view.scroll_to(cx.app_state, id);
+                    }
                     UpdateMessage::Disabled { id, is_disabled } => {
                         if is_disabled {
                             cx.app_state.disabled.insert(id);

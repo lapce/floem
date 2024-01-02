@@ -10,7 +10,7 @@ use crate::{
 
 pub struct Stack {
     data: ViewData,
-    children: Vec<Box<dyn View>>,
+    pub(crate) children: Vec<Box<dyn View>>,
     direction: Option<FlexDirection>,
 }
 

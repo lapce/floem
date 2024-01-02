@@ -255,16 +255,6 @@ impl AppState {
             .unwrap_or(false)
     }
 
-    pub fn get_interact_state(&self, id: &Id) -> InteractionState {
-        InteractionState {
-            is_hovered: self.is_hovered(id),
-            is_disabled: self.is_disabled(id),
-            is_focused: self.is_focused(id),
-            is_clicking: self.is_clicking(id),
-            using_keyboard_navigation: self.keyboard_navigation,
-        }
-    }
-
     pub fn set_root_size(&mut self, size: Size) {
         self.root_size = size;
         self.compute_layout();
@@ -316,7 +306,7 @@ impl AppState {
     }
 
     /// Requests style for a view and all direct and indirect children.
-    pub(crate) fn request_style_recursive(&mut self, id: Id) {
+    pub fn request_style_recursive(&mut self, id: Id) {
         let view = self.view_state(id);
         view.request_style_recursive = true;
         self.request_style(id);
@@ -999,6 +989,7 @@ impl<'a> EventCx<'a> {
 #[derive(Default)]
 pub struct InteractionState {
     pub(crate) is_hovered: bool,
+    pub(crate) is_selected: bool,
     pub(crate) is_disabled: bool,
     pub(crate) is_focused: bool,
     pub(crate) is_clicking: bool,
@@ -1013,7 +1004,9 @@ pub struct StyleCx<'a> {
     saved: Vec<Rc<Style>>,
     pub(crate) now: Instant,
     saved_disabled: Vec<bool>,
+    saved_selected: Vec<bool>,
     disabled: bool,
+    selected: bool,
 }
 
 impl<'a> StyleCx<'a> {
@@ -1026,7 +1019,25 @@ impl<'a> StyleCx<'a> {
             saved: Default::default(),
             now: Instant::now(),
             saved_disabled: Default::default(),
+            saved_selected: Default::default(),
             disabled: false,
+            selected: false,
+        }
+    }
+
+    /// Marks the current context as selected.
+    pub fn selected(&mut self) {
+        self.selected = true;
+    }
+
+    fn get_interact_state(&self, id: &Id) -> InteractionState {
+        InteractionState {
+            is_selected: self.selected,
+            is_hovered: self.app_state.is_hovered(id),
+            is_disabled: self.app_state.is_disabled(id),
+            is_focused: self.app_state.is_focused(id),
+            is_clicking: self.app_state.is_clicking(id),
+            using_keyboard_navigation: self.app_state.keyboard_navigation,
         }
     }
 
@@ -1062,7 +1073,7 @@ impl<'a> StyleCx<'a> {
             });
         }
 
-        let mut view_interact_state = self.app_state.get_interact_state(&id);
+        let mut view_interact_state = self.get_interact_state(&id);
         view_interact_state.is_disabled |= self.disabled;
         self.disabled = view_interact_state.is_disabled;
         let mut new_frame = self.app_state.compute_style(
@@ -1124,11 +1135,13 @@ impl<'a> StyleCx<'a> {
     pub fn save(&mut self) {
         self.saved.push(self.current.clone());
         self.saved_disabled.push(self.disabled);
+        self.saved_selected.push(self.selected);
     }
 
     pub fn restore(&mut self) {
         self.current = self.saved.pop().unwrap_or_default();
         self.disabled = self.saved_disabled.pop().unwrap_or_default();
+        self.selected = self.saved_selected.pop().unwrap_or_default();
     }
 
     pub fn get_prop<P: StyleProp>(&self, _prop: P) -> Option<P::Type> {
