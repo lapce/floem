@@ -217,6 +217,10 @@ impl Id {
         self.add_update_message(UpdateMessage::PopoutMenu { id: *self, menu });
     }
 
+    pub fn scroll_to(&self) {
+        self.add_update_message(UpdateMessage::ScrollTo { id: *self });
+    }
+
     pub fn inspect(&self) {
         self.add_update_message(UpdateMessage::Inspect);
     }

@@ -122,6 +122,9 @@ pub(crate) enum UpdateMessage {
         id: Id,
     },
     Inspect,
+    ScrollTo {
+        id: Id,
+    },
     FocusWindow,
     SetImeAllowed {
         allowed: bool,

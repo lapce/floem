@@ -579,6 +579,25 @@ impl Scroll {
             app_state.request_paint(self.id());
         }
     }
+
+    fn do_scroll_to_view(&mut self, app_state: &mut AppState, target: Id) {
+        if app_state.get_layout(target).is_some() && !app_state.is_hidden_recursive(target) {
+            let rect = app_state.get_layout_rect(target);
+
+            // `get_layout_rect` is window-relative so we have to
+            // convert it to child view relative.
+
+            // TODO: How to deal with nested viewports / scrolls?
+            let rect = rect.with_origin(
+                rect.origin()
+                    - app_state.get_layout_rect(self.id()).origin().to_vec2()
+                    - self.actual_rect.origin().to_vec2()
+                    + self.computed_child_viewport.origin().to_vec2(),
+            );
+
+            self.pan_to_visible(app_state, rect);
+        }
+    }
 }
 
 impl View for Scroll {
@@ -632,24 +651,7 @@ impl View for Scroll {
                     self.scroll_to(cx.app_state, point);
                 }
                 ScrollState::ScrollToView(id) => {
-                    if cx.app_state.get_layout(id).is_some()
-                        && !cx.app_state.is_hidden_recursive(id)
-                    {
-                        let rect = cx.app_state.get_layout_rect(id);
-
-                        // `get_layout_rect` is window-relative so we have to
-                        // convert it to child view relative.
-
-                        // TODO: How to deal with nested viewports / scrolls?
-                        let rect = rect.with_origin(
-                            rect.origin()
-                                - cx.app_state.get_layout_rect(self.id()).origin().to_vec2()
-                                - self.actual_rect.origin().to_vec2()
-                                + self.computed_child_viewport.origin().to_vec2(),
-                        );
-
-                        self.pan_to_visible(cx.app_state, rect);
-                    }
+                    self.do_scroll_to_view(cx.app_state, id);
                 }
                 ScrollState::HiddenBar(hide) => {
                     self.hide = hide;
@@ -663,6 +665,14 @@ impl View for Scroll {
             }
             cx.request_layout(self.id());
         }
+    }
+
+    fn scroll_to(&mut self, cx: &mut AppState, target: Id) -> bool {
+        let found = self.child.scroll_to(cx, target);
+        if found {
+            self.do_scroll_to_view(cx, target);
+        }
+        found
     }
 
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {

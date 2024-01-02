@@ -706,6 +706,12 @@ impl Style {
                 self.apply_mut(map);
             }
         }
+        if interact_state.is_selected {
+            if let Some(mut map) = self.selectors.remove(&StyleSelector::Selected) {
+                map.apply_interact_state(interact_state, screen_size_bp);
+                self.apply_mut(map);
+            }
+        }
         if interact_state.is_disabled {
             if let Some(mut map) = self.selectors.remove(&StyleSelector::Disabled) {
                 map.apply_interact_state(interact_state, screen_size_bp);
@@ -850,6 +856,7 @@ pub enum StyleSelector {
     Disabled,
     Active,
     Dragging,
+    Selected,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default)]
@@ -1152,6 +1159,10 @@ impl Style {
     /// Similar to the `:focus-visible` css selector, this style only activates when tab navigation is used.
     pub fn focus_visible(self, style: impl FnOnce(Style) -> Style) -> Self {
         self.selector(StyleSelector::FocusVisible, style)
+    }
+
+    pub fn selected(self, style: impl FnOnce(Style) -> Style) -> Self {
+        self.selector(StyleSelector::Selected, style)
     }
 
     pub fn disabled(self, style: impl FnOnce(Style) -> Style) -> Self {
