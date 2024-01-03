@@ -10,7 +10,7 @@
 
 use std::{any::Any, cell::RefCell, collections::HashMap, sync::atomic::AtomicU64};
 
-use kurbo::Point;
+use kurbo::{Point, Rect};
 
 use crate::{
     animate::Animation,
@@ -217,8 +217,8 @@ impl Id {
         self.add_update_message(UpdateMessage::PopoutMenu { id: *self, menu });
     }
 
-    pub fn scroll_to(&self) {
-        self.add_update_message(UpdateMessage::ScrollTo { id: *self });
+    pub fn scroll_to(&self, rect: Option<Rect>) {
+        self.add_update_message(UpdateMessage::ScrollTo { id: *self, rect });
     }
 
     pub fn inspect(&self) {

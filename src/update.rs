@@ -1,6 +1,6 @@
 use std::{any::Any, cell::RefCell, collections::HashMap};
 
-use kurbo::{Point, Size, Vec2};
+use kurbo::{Point, Rect, Size, Vec2};
 use winit::window::ResizeDirection;
 
 use crate::{
@@ -124,6 +124,7 @@ pub(crate) enum UpdateMessage {
     Inspect,
     ScrollTo {
         id: Id,
+        rect: Option<Rect>,
     },
     FocusWindow,
     SetImeAllowed {

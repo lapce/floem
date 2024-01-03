@@ -16,11 +16,11 @@ enum ListUpdate {
     ScrollToSelected,
 }
 
-struct Item {
-    data: ViewData,
-    index: usize,
-    selection: RwSignal<Option<usize>>,
-    child: Box<dyn View>,
+pub(crate) struct Item {
+    pub(crate) data: ViewData,
+    pub(crate) index: usize,
+    pub(crate) selection: RwSignal<Option<usize>>,
+    pub(crate) child: Box<dyn View>,
 }
 
 pub struct List {
@@ -171,7 +171,7 @@ impl View for List {
                 }
                 ListUpdate::ScrollToSelected => {
                     if let Some(index) = self.selection.get_untracked() {
-                        self.child.children[index].id().scroll_to();
+                        self.child.children[index].id().scroll_to(None);
                     }
                 }
             }

@@ -1,17 +1,14 @@
 use floem::{
     cosmic_text::Weight,
-    event::{Event, EventListener},
-    keyboard::{Key, NamedKey},
     peniko::Color,
     reactive::create_signal,
-    style::{CursorStyle, JustifyContent},
+    style::JustifyContent,
     view::View,
     views::{
-        container, label, scroll, stack, virtual_stack, Decorators, VirtualStackDirection,
-        VirtualStackItemSize,
+        container, label, scroll, stack, Decorators, VirtualDirection, VirtualItemSize,
+        VirtualVector,
     },
-    widgets::{checkbox, list},
-    EventPropagation,
+    widgets::{checkbox, list, virtual_list},
 };
 
 use crate::form::{form, form_item};
@@ -37,21 +34,15 @@ fn enhanced_list() -> impl View {
     let long_list: im::Vector<i32> = (0..100).collect();
     let (long_list, set_long_list) = create_signal(long_list);
 
-    let (selected, set_selected) = create_signal(0);
     let list_width = 180.0;
     let item_height = 32.0;
     scroll(
-        virtual_stack(
-            VirtualStackDirection::Vertical,
-            VirtualStackItemSize::Fixed(Box::new(|| 32.0)),
-            move || long_list.get(),
-            move |item| *item,
-            move |item| {
-                let index = long_list
-                    .get_untracked()
-                    .iter()
-                    .position(|it| *it == item)
-                    .unwrap();
+        virtual_list(
+            VirtualDirection::Vertical,
+            VirtualItemSize::Fixed(Box::new(|| 32.0)),
+            move || long_list.get().enumerate(),
+            move |(_, item)| *item,
+            move |(index, item)| {
                 let (is_checked, set_is_checked) = create_signal(true);
                 container({
                     stack({
@@ -87,45 +78,12 @@ fn enhanced_list() -> impl View {
                             }),
                         )
                     })
-                    .style(move |s| s.height(item_height).width_full().items_center())
+                    .style(move |s| s.height_full().width_full().items_center())
                 })
-                .on_click_stop(move |_| {
-                    set_selected.update(|v: &mut usize| {
-                        *v = long_list.get().iter().position(|it| *it == item).unwrap();
-                    });
-                })
-                .on_event(EventListener::KeyDown, move |e| {
-                    if let Event::KeyDown(key_event) = e {
-                        let sel = selected.get();
-                        match key_event.key.logical_key {
-                            Key::Named(NamedKey::ArrowUp) => {
-                                if sel > 0 {
-                                    set_selected.update(|v| *v -= 1);
-                                }
-                                EventPropagation::Stop
-                            }
-                            Key::Named(NamedKey::ArrowDown) => {
-                                if sel < long_list.get().len() - 1 {
-                                    set_selected.update(|v| *v += 1);
-                                }
-                                EventPropagation::Stop
-                            }
-                            _ => EventPropagation::Continue,
-                        }
-                    } else {
-                        EventPropagation::Continue
-                    }
-                })
-                .keyboard_navigatable()
                 .style(move |s| {
-                    s.flex_row()
-                        .height(item_height)
-                        .apply_if(index == selected.get(), |s| s.background(Color::GRAY))
-                        .apply_if(index != 0, |s| {
-                            s.border_top(1.0).border_color(Color::LIGHT_GRAY)
-                        })
-                        .focus_visible(|s| s.border(2.).border_color(Color::BLUE))
-                        .hover(|s| s.background(Color::LIGHT_GRAY).cursor(CursorStyle::Pointer))
+                    s.flex_row().height(item_height).apply_if(index != 0, |s| {
+                        s.border_top(1.0).border_color(Color::LIGHT_GRAY)
+                    })
                 })
             },
         )

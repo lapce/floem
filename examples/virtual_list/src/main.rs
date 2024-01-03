@@ -4,7 +4,7 @@ use floem::{
     view::View,
     views::virtual_stack,
     views::Decorators,
-    views::{container, label, scroll, VirtualStackDirection, VirtualStackItemSize},
+    views::{container, label, scroll, VirtualDirection, VirtualItemSize},
 };
 
 fn app_view() -> impl View {
@@ -14,8 +14,8 @@ fn app_view() -> impl View {
     container(
         scroll(
             virtual_stack(
-                VirtualStackDirection::Vertical,
-                VirtualStackItemSize::Fixed(Box::new(|| 20.0)),
+                VirtualDirection::Vertical,
+                VirtualItemSize::Fixed(Box::new(|| 20.0)),
                 move || long_list.get(),
                 move |item| *item,
                 move |item| label(move || item.to_string()).style(|s| s.height(20.0)),

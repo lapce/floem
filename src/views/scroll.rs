@@ -580,9 +580,25 @@ impl Scroll {
         }
     }
 
-    fn do_scroll_to_view(&mut self, app_state: &mut AppState, target: Id) {
+    fn do_scroll_to_view(
+        &mut self,
+        app_state: &mut AppState,
+        target: Id,
+        target_rect: Option<Rect>,
+    ) {
         if app_state.get_layout(target).is_some() && !app_state.is_hidden_recursive(target) {
-            let rect = app_state.get_layout_rect(target);
+            let mut rect = app_state.get_layout_rect(target);
+
+            if let Some(target_rect) = target_rect {
+                rect = rect + target_rect.origin().to_vec2();
+
+                let new_size = target_rect
+                    .size()
+                    .to_rect()
+                    .intersect(rect.size().to_rect())
+                    .size();
+                rect = rect.with_size(new_size);
+            }
 
             // `get_layout_rect` is window-relative so we have to
             // convert it to child view relative.
@@ -651,7 +667,7 @@ impl View for Scroll {
                     self.scroll_to(cx.app_state, point);
                 }
                 ScrollState::ScrollToView(id) => {
-                    self.do_scroll_to_view(cx.app_state, id);
+                    self.do_scroll_to_view(cx.app_state, id, None);
                 }
                 ScrollState::HiddenBar(hide) => {
                     self.hide = hide;
@@ -667,10 +683,10 @@ impl View for Scroll {
         }
     }
 
-    fn scroll_to(&mut self, cx: &mut AppState, target: Id) -> bool {
-        let found = self.child.scroll_to(cx, target);
+    fn scroll_to(&mut self, cx: &mut AppState, target: Id, rect: Option<Rect>) -> bool {
+        let found = self.child.scroll_to(cx, target, rect);
         if found {
-            self.do_scroll_to_view(cx, target);
+            self.do_scroll_to_view(cx, target, rect);
         }
         found
     }

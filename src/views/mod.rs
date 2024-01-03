@@ -33,6 +33,9 @@ pub use decorator::*;
 mod list;
 pub use list::*;
 
+mod virtual_list;
+pub use virtual_list::*;
+
 mod virtual_stack;
 pub use virtual_stack::*;
 
