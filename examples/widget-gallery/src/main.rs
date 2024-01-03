@@ -19,7 +19,7 @@ use floem::{
     view::View,
     views::{
         container, container_box, h_stack, label, scroll, stack, tab, v_stack, virtual_stack,
-        Decorators, VirtualStackDirection, VirtualStackItemSize,
+        Decorators, VirtualDirection, VirtualItemSize,
     },
     widgets::button,
     EventPropagation,
@@ -45,8 +45,8 @@ fn app_view() -> impl View {
 
     let list = scroll({
         virtual_stack(
-            VirtualStackDirection::Vertical,
-            VirtualStackItemSize::Fixed(Box::new(|| 36.0)),
+            VirtualDirection::Vertical,
+            VirtualItemSize::Fixed(Box::new(|| 36.0)),
             move || tabs.get(),
             move |item| *item,
             move |item| {

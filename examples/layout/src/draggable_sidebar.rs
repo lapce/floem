@@ -5,8 +5,8 @@ use floem::{
     style::{CursorStyle, Position},
     view::View,
     views::{
-        container, h_stack, label, scroll, virtual_stack, Decorators, VirtualStackDirection,
-        VirtualStackItemSize,
+        container, h_stack, label, scroll, virtual_stack, Decorators, VirtualDirection,
+        VirtualItemSize,
     },
     EventPropagation,
 };
@@ -21,8 +21,8 @@ pub fn draggable_sidebar_view() -> impl View {
 
     let side_bar = scroll({
         virtual_stack(
-            VirtualStackDirection::Vertical,
-            VirtualStackItemSize::Fixed(Box::new(|| 22.0)),
+            VirtualDirection::Vertical,
+            VirtualItemSize::Fixed(Box::new(|| 22.0)),
             move || long_list.get(),
             move |item| *item,
             move |item| {

@@ -14,19 +14,17 @@ use crate::{
 use super::{apply_diff, diff, Diff, DiffOpAdd, FxIndexSet, HashRun};
 
 #[derive(Clone, Copy)]
-pub enum VirtualStackDirection {
+pub enum VirtualDirection {
     Vertical,
     Horizontal,
 }
 
-pub enum VirtualStackItemSize<T> {
+pub enum VirtualItemSize<T> {
     Fn(Box<dyn Fn(&T) -> f64>),
     Fixed(Box<dyn Fn() -> f64>),
 }
 
-pub trait VirtualStackVector<T> {
-    type ItemIterator: Iterator<Item = T>;
-
+pub trait VirtualVector<T> {
     fn total_len(&self) -> usize;
 
     fn total_size(&self) -> Option<f64> {
@@ -37,7 +35,17 @@ pub trait VirtualStackVector<T> {
         self.total_len() == 0
     }
 
-    fn slice(&mut self, range: Range<usize>) -> Self::ItemIterator;
+    fn slice(&mut self, range: Range<usize>) -> impl Iterator<Item = T>;
+
+    fn enumerate(self) -> Enumerate<Self, T>
+    where
+        Self: Sized,
+    {
+        Enumerate {
+            inner: self,
+            phantom: PhantomData,
+        }
+    }
 }
 
 pub struct VirtualStack<V: View, T>
@@ -45,7 +53,7 @@ where
     T: 'static,
 {
     data: ViewData,
-    direction: VirtualStackDirection,
+    direction: VirtualDirection,
     children: Vec<Option<(V, Scope)>>,
     viewport: Rect,
     set_viewport: WriteSignal<Rect>,
@@ -64,8 +72,8 @@ struct VirtualStackState<T> {
 }
 
 pub fn virtual_stack<T, IF, I, KF, K, VF, V>(
-    direction: VirtualStackDirection,
-    item_size: VirtualStackItemSize<T>,
+    direction: VirtualDirection,
+    item_size: VirtualItemSize<T>,
     each_fn: IF,
     key_fn: KF,
     view_fn: VF,
@@ -73,7 +81,7 @@ pub fn virtual_stack<T, IF, I, KF, K, VF, V>(
 where
     T: 'static,
     IF: Fn() -> I + 'static,
-    I: VirtualStackVector<T>,
+    I: VirtualVector<T>,
     KF: Fn(&T) -> K + 'static,
     K: Eq + Hash + 'static,
     VF: Fn(T) -> V + 'static,
@@ -87,19 +95,19 @@ where
         let mut items_vector = each_fn();
         let viewport = viewport.get();
         let min = match direction {
-            VirtualStackDirection::Vertical => viewport.y0,
-            VirtualStackDirection::Horizontal => viewport.x0,
+            VirtualDirection::Vertical => viewport.y0,
+            VirtualDirection::Horizontal => viewport.x0,
         };
         let max = match direction {
-            VirtualStackDirection::Vertical => viewport.height() + viewport.y0,
-            VirtualStackDirection::Horizontal => viewport.width() + viewport.x0,
+            VirtualDirection::Vertical => viewport.height() + viewport.y0,
+            VirtualDirection::Horizontal => viewport.width() + viewport.x0,
         };
         let mut items = Vec::new();
 
         let mut before_size = 0.0;
         let mut after_size = 0.0;
         match &item_size {
-            VirtualStackItemSize::Fixed(item_size) => {
+            VirtualItemSize::Fixed(item_size) => {
                 let item_size = item_size();
                 let total_len = items_vector.total_len();
                 let start = if item_size > 0.0 {
@@ -121,7 +129,7 @@ where
                 after_size = item_size
                     * (total_len.saturating_sub(start).saturating_sub(items.len())) as f64;
             }
-            VirtualStackItemSize::Fn(size_fn) => {
+            VirtualItemSize::Fn(size_fn) => {
                 let mut main_axis = 0.0;
                 let total_len = items_vector.total_len();
                 let total_size = items_vector.total_size();
@@ -274,21 +282,21 @@ impl<V: View + 'static, T> View for VirtualStack<V, T> {
                 .filter_map(|child| Some(cx.layout_view(&mut child.as_mut()?.0)))
                 .collect::<Vec<_>>();
             let before_size = match self.direction {
-                VirtualStackDirection::Vertical => taffy::prelude::Size {
+                VirtualDirection::Vertical => taffy::prelude::Size {
                     width: Dimension::Percent(1.0),
                     height: Dimension::Points(self.before_size as f32),
                 },
-                VirtualStackDirection::Horizontal => taffy::prelude::Size {
+                VirtualDirection::Horizontal => taffy::prelude::Size {
                     width: Dimension::Points(self.before_size as f32),
                     height: Dimension::Percent(1.0),
                 },
             };
             let after_size = match self.direction {
-                VirtualStackDirection::Vertical => taffy::prelude::Size {
+                VirtualDirection::Vertical => taffy::prelude::Size {
                     width: Dimension::Percent(1.0),
                     height: Dimension::Points(self.after_size as f32),
                 },
-                VirtualStackDirection::Horizontal => taffy::prelude::Size {
+                VirtualDirection::Horizontal => taffy::prelude::Size {
                     width: Dimension::Points(self.after_size as f32),
                     height: Dimension::Percent(1.0),
                 },
@@ -347,14 +355,31 @@ impl<V: View + 'static, T> View for VirtualStack<V, T> {
     }
 }
 
-impl<T: Clone> VirtualStackVector<T> for im::Vector<T> {
-    type ItemIterator = im::vector::ConsumingIter<T>;
-
+impl<T: Clone> VirtualVector<T> for im::Vector<T> {
     fn total_len(&self) -> usize {
         self.len()
     }
 
-    fn slice(&mut self, range: Range<usize>) -> Self::ItemIterator {
+    fn slice(&mut self, range: Range<usize>) -> impl Iterator<Item = T> {
         self.slice(range).into_iter()
+    }
+}
+
+pub struct Enumerate<V: VirtualVector<T>, T> {
+    inner: V,
+    phantom: PhantomData<T>,
+}
+
+impl<V: VirtualVector<T>, T> VirtualVector<(usize, T)> for Enumerate<V, T> {
+    fn total_len(&self) -> usize {
+        self.inner.total_len()
+    }
+
+    fn slice(&mut self, range: Range<usize>) -> impl Iterator<Item = (usize, T)> {
+        let start = range.start;
+        self.inner
+            .slice(range)
+            .enumerate()
+            .map(move |(i, e)| (i + start, e))
     }
 }

@@ -18,6 +18,9 @@ pub use checkbox::*;
 mod list;
 pub use list::*;
 
+mod virtual_list;
+pub use virtual_list::*;
+
 mod toggle_button;
 pub use toggle_button::*;
 

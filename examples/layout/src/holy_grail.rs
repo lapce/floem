@@ -5,8 +5,8 @@ use floem::{
     style::Position,
     view::View,
     views::{
-        container, h_stack, label, scroll, v_stack, virtual_stack, Decorators,
-        VirtualStackDirection, VirtualStackItemSize,
+        container, h_stack, label, scroll, v_stack, virtual_stack, Decorators, VirtualDirection,
+        VirtualItemSize,
     },
 };
 
@@ -22,8 +22,8 @@ pub fn holy_grail_view() -> impl View {
 
     let side_bar_right = scroll({
         virtual_stack(
-            VirtualStackDirection::Vertical,
-            VirtualStackItemSize::Fixed(Box::new(|| 22.0)),
+            VirtualDirection::Vertical,
+            VirtualItemSize::Fixed(Box::new(|| 22.0)),
             move || long_list.get(),
             move |item| *item,
             move |item| {
@@ -49,8 +49,8 @@ pub fn holy_grail_view() -> impl View {
 
     let side_bar_left = scroll({
         virtual_stack(
-            VirtualStackDirection::Vertical,
-            VirtualStackItemSize::Fixed(Box::new(|| 22.0)),
+            VirtualDirection::Vertical,
+            VirtualItemSize::Fixed(Box::new(|| 22.0)),
             move || long_list.get(),
             move |item| *item,
             move |item| {
