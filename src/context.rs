@@ -1367,8 +1367,6 @@ impl<'a> LayoutCx<'a> {
         if has_children {
             let nodes = children(self);
             let _ = self.app_state.taffy.set_children(node, &nodes);
-            let view = self.app_state.view_state(id);
-            view.children_nodes = nodes;
         }
 
         node

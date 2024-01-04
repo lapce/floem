@@ -125,7 +125,6 @@ bitflags! {
 /// View state stores internal state associated with a view which is owned and managed by Floem.
 pub struct ViewState {
     pub(crate) node: Node,
-    pub(crate) children_nodes: Vec<Node>,
     pub(crate) requested_changes: ChangeFlags,
     /// Layout is requested on all direct and indirect children.
     pub(crate) request_style_recursive: bool,
@@ -164,7 +163,6 @@ impl ViewState {
             combined_style: Style::new(),
             taffy_style: taffy::style::Style::DEFAULT,
             dragging_style: None,
-            children_nodes: Vec::new(),
             event_listeners: HashMap::new(),
             context_menu: None,
             popout_menu: None,
