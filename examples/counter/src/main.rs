@@ -1,6 +1,5 @@
 use floem::{
-    event::{Event, EventListener},
-    keyboard::{Key, NamedKey},
+    keyboard::{Key, ModifiersState, NamedKey},
     peniko::Color,
     reactive::create_signal,
     unit::UnitExt,
@@ -74,13 +73,11 @@ fn app_view() -> impl View {
     });
 
     let id = view.id();
-    view.on_event_stop(EventListener::KeyUp, move |e| {
-        if let Event::KeyUp(e) = e {
-            if e.key.logical_key == Key::Named(NamedKey::F11) {
-                id.inspect();
-            }
-        }
-    })
+    view.on_key_up(
+        Key::Named(NamedKey::F11),
+        ModifiersState::empty(),
+        move |_| id.inspect(),
+    )
 }
 
 fn main() {

@@ -198,6 +198,13 @@ impl WindowHandle {
                 }
 
                 if !processed {
+                    for handler in &self.view.main.view_data().event_handlers {
+                        if (handler)(&event).is_processed() {
+                            processed = true;
+                            break;
+                        }
+                    }
+
                     if let Some(listener) = event.listener() {
                         if let Some(action) = cx.get_event_listener(self.view.main.id(), &listener)
                         {
