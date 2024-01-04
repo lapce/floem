@@ -24,6 +24,9 @@ jobs:
         id: pages
         uses: actions/configure-pages@v4
 
+      - name: Update toolchain
+        run: rustup update
+
       - name: Build docs
         run: |
             cargo doc --no-deps --workspace --lib --all-features --release
