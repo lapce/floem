@@ -11,6 +11,7 @@ use crate::{
 };
 use peniko::Color;
 use std::rc::Rc;
+use taffy::style::AlignItems;
 
 mod checkbox;
 pub use checkbox::*;
@@ -31,6 +32,9 @@ pub mod slider;
 
 mod button;
 pub use button::*;
+
+mod radio_button;
+pub use radio_button::*;
 
 mod text_input;
 pub use text_input::*;
@@ -132,6 +136,55 @@ pub(crate) fn default_theme() -> Theme {
         })
         .apply(focus_style.clone());
 
+    let radio_button_style = Style::new()
+        .width(20.)
+        .height(20.)
+        .align_items(AlignItems::Center)
+        .justify_center()
+        .background(Color::WHITE)
+        .active(|s| s.background(active_bg_color))
+        .transition(Background, Transition::linear(0.04))
+        .hover(|s| s.background(hover_bg_color))
+        .focus(|s| s.hover(|s| s.background(focus_hover_bg_color)))
+        .apply(border_style.clone())
+        .padding(0.)
+        .border_radius(100.0)
+        .apply(focus_style.clone())
+        .disabled(|s| {
+            s.background(Color::rgb8(180, 188, 175).with_alpha_factor(0.3))
+                .color(Color::GRAY)
+        });
+
+    let radio_button_dot_style = Style::new()
+        .width(8.)
+        .height(8.)
+        .border_radius(100.0)
+        .background(Color::BLACK)
+        .disabled(|s| {
+            s.background(Color::rgb(0.5, 0.5, 0.5))
+                .hover(|s| s.background(Color::rgb(0.5, 0.5, 0.5)))
+        });
+
+    let labeled_radio_button_style = Style::new()
+        .gap(padding, 0.0)
+        .hover(|s| s.background(hover_bg_color))
+        .padding(padding)
+        .transition(Background, Transition::linear(0.04))
+        .border_radius(border_radius)
+        .active(|s| s.class(RadioButtonClass, |s| s.background(active_bg_color)))
+        .focus(|s| {
+            s.class(RadioButtonClass, |_| focus_applied_style.clone())
+                .hover(|s| s.background(focus_hover_bg_color))
+        })
+        .disabled(|s| {
+            s.color(Color::GRAY).class(RadioButtonClass, |s| {
+                s.background(Color::rgb8(180, 188, 175).with_alpha_factor(0.3))
+                    .color(Color::GRAY)
+                    .hover(|s| s.background(Color::rgb8(180, 188, 175).with_alpha_factor(0.3)))
+            })
+        })
+        .apply(focus_style.clone());
+
     const FONT_SIZE: f32 = 12.0;
 
     let input_style = Style::new()
@@ -166,6 +219,9 @@ pub(crate) fn default_theme() -> Theme {
         })
         .class(LabeledCheckboxClass, |_| labeled_checkbox_style)
         .class(CheckboxClass, |_| checkbox_style)
+        .class(RadioButtonClass, |_| radio_button_style)
+        .class(RadioButtonDotClass, |_| radio_button_dot_style)
+        .class(LabeledRadioButtonClass, |_| labeled_radio_button_style)
         .class(TextInputClass, |_| input_style)
         .class(ButtonClass, |_| button_style)
         .class(scroll::Handle, |s| {

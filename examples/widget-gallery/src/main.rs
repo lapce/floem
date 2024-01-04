@@ -7,6 +7,7 @@ pub mod images;
 pub mod inputs;
 pub mod labels;
 pub mod lists;
+pub mod radio_buttons;
 pub mod rich_text;
 
 use floem::{
@@ -30,6 +31,7 @@ fn app_view() -> impl View {
         "Label",
         "Button",
         "Checkbox",
+        "Radio",
         "Input",
         "List",
         "Menu",
@@ -150,6 +152,7 @@ fn app_view() -> impl View {
             "Label" => container_box(labels::label_view()),
             "Button" => container_box(buttons::button_view()),
             "Checkbox" => container_box(checkbox::checkbox_view()),
+            "Radio" => container_box(radio_buttons::radio_buttons_view()),
             "Input" => container_box(inputs::text_input_view()),
             "List" => container_box(lists::virt_list_view()),
             "Menu" => container_box(context_menu::menu_view()),
