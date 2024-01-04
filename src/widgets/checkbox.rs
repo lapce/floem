@@ -6,8 +6,6 @@ use crate::{
 use floem_reactive::ReadSignal;
 use std::fmt::Display;
 
-style_class!(pub FocusClass);
-
 style_class!(pub CheckboxClass);
 
 style_class!(pub LabeledCheckboxClass);

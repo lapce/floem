@@ -164,7 +164,6 @@ pub(crate) fn default_theme() -> Theme {
             s.focus(|s| s.class(ListItemClass, |_| item_focused_style))
                 .class(ListItemClass, |_| item_unfocused_style)
         })
-        .class(FocusClass, |_| focus_style)
         .class(LabeledCheckboxClass, |_| labeled_checkbox_style)
         .class(CheckboxClass, |_| checkbox_style)
         .class(TextInputClass, |_| input_style)
