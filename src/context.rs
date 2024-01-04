@@ -901,6 +901,12 @@ impl<'a> EventCx<'a> {
             _ => (),
         }
 
+        for handler in &view.view_data().event_handlers {
+            if (handler)(&event).is_processed() {
+                return EventPropagation::Stop;
+            }
+        }
+
         if let Some(listener) = event.listener() {
             if let Some(action) = self.get_event_listener(id, &listener) {
                 let should_run = if let Some(pos) = event.point() {

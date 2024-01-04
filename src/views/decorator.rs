@@ -1,5 +1,6 @@
 use floem_reactive::{create_effect, create_updater};
 use kurbo::{Point, Rect};
+use winit::keyboard::{Key, ModifiersState};
 
 use crate::{
     action::{set_window_menu, set_window_title, update_window_scale},
@@ -88,6 +89,44 @@ pub trait Decorators: View + Sized {
     ) -> Self {
         let id = self.id();
         id.update_event_listener(listener, Box::new(action));
+        self
+    }
+
+    /// Add an handler for pressing down a specific key.
+    fn on_key_down(
+        mut self,
+        key: Key,
+        modifiers: ModifiersState,
+        action: impl Fn(&Event) + 'static,
+    ) -> Self {
+        self.view_data_mut().event_handlers.push(Box::new(move |e| {
+            if let Event::KeyDown(ke) = e {
+                if ke.key.logical_key == key && ke.modifiers == modifiers {
+                    action(e);
+                    return EventPropagation::Stop;
+                }
+            }
+            EventPropagation::Continue
+        }));
+        self
+    }
+
+    /// Add an handler for a specific key being released.
+    fn on_key_up(
+        mut self,
+        key: Key,
+        modifiers: ModifiersState,
+        action: impl Fn(&Event) + 'static,
+    ) -> Self {
+        self.view_data_mut().event_handlers.push(Box::new(move |e| {
+            if let Event::KeyUp(ke) = e {
+                if ke.key.logical_key == key && ke.modifiers == modifiers {
+                    action(e);
+                    return EventPropagation::Stop;
+                }
+            }
+            EventPropagation::Continue
+        }));
         self
     }
 
