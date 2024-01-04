@@ -3,7 +3,10 @@ use std::{hash::Hash, marker::PhantomData, ops::Range};
 use floem_reactive::{as_child_of_current_scope, create_effect, create_signal, Scope, WriteSignal};
 use kurbo::{Rect, Size};
 use smallvec::SmallVec;
-use taffy::{prelude::Node, style::Dimension};
+use taffy::{
+    prelude::Node,
+    style::{Dimension, FlexDirection, LengthPercentage},
+};
 
 use crate::{
     context::ComputeLayoutCx,
@@ -26,10 +29,6 @@ pub enum VirtualItemSize<T> {
 
 pub trait VirtualVector<T> {
     fn total_len(&self) -> usize;
-
-    fn total_size(&self) -> Option<f64> {
-        None
-    }
 
     fn is_empty(&self) -> bool {
         self.total_len() == 0
@@ -60,15 +59,15 @@ where
     view_fn: Box<dyn Fn(T) -> (V, Scope)>,
     phatom: PhantomData<T>,
     before_size: f64,
-    after_size: f64,
-    before_node: Option<Node>,
-    after_node: Option<Node>,
+    content_size: f64,
+    offset_node: Option<Node>,
+    content_node: Option<Node>,
 }
 
 struct VirtualStackState<T> {
     diff: Diff<T>,
     before_size: f64,
-    after_size: f64,
+    content_size: f64,
 }
 
 pub fn virtual_stack<T, IF, I, KF, K, VF, V>(
@@ -105,7 +104,7 @@ where
         let mut items = Vec::new();
 
         let mut before_size = 0.0;
-        let mut after_size = 0.0;
+        let mut content_size = 0.0;
         match &item_size {
             VirtualItemSize::Fixed(item_size) => {
                 let item_size = item_size();
@@ -126,15 +125,14 @@ where
                     items.push(item);
                 }
 
-                after_size = item_size
-                    * (total_len.saturating_sub(start).saturating_sub(items.len())) as f64;
+                content_size = item_size * total_len as f64;
             }
             VirtualItemSize::Fn(size_fn) => {
                 let mut main_axis = 0.0;
                 let total_len = items_vector.total_len();
-                let total_size = items_vector.total_size();
                 for item in items_vector.slice(0..total_len) {
                     let item_size = size_fn(&item);
+                    content_size += item_size;
                     if main_axis + item_size < min {
                         main_axis += item_size;
                         before_size += item_size;
@@ -144,20 +142,14 @@ where
                     if main_axis <= max {
                         main_axis += item_size;
                         items.push(item);
-                    } else {
-                        if let Some(total_size) = total_size {
-                            after_size = (total_size - main_axis).max(0.0);
-                            break;
-                        }
-                        after_size += item_size;
                     }
                 }
             }
         };
 
         let hashed_items = items.iter().map(&key_fn).collect::<FxIndexSet<_>>();
-        let (prev_before_size, prev_after_size, diff) =
-            if let Some((prev_before_size, prev_after_size, HashRun(prev_hash_run))) = prev {
+        let (prev_before_size, prev_content_size, diff) =
+            if let Some((prev_before_size, prev_content_size, HashRun(prev_hash_run))) = prev {
                 let mut diff = diff(&prev_hash_run, &hashed_items);
                 let mut items = items
                     .into_iter()
@@ -166,7 +158,7 @@ where
                 for added in &mut diff.added {
                     added.view = Some(items[added.at].take().unwrap());
                 }
-                (prev_before_size, prev_after_size, diff)
+                (prev_before_size, prev_content_size, diff)
             } else {
                 let mut diff = Diff::default();
                 for (i, item) in items.into_iter().enumerate() {
@@ -178,17 +170,18 @@ where
                 (0.0, 0.0, diff)
             };
 
-        if !diff.is_empty() || prev_before_size != before_size || prev_after_size != after_size {
+        if !diff.is_empty() || prev_before_size != before_size || prev_content_size != content_size
+        {
             id.update_state(
                 VirtualStackState {
                     diff,
                     before_size,
-                    after_size,
+                    content_size,
                 },
                 false,
             );
         }
-        (before_size, after_size, HashRun(hashed_items))
+        (before_size, content_size, HashRun(hashed_items))
     });
 
     let view_fn = Box::new(as_child_of_current_scope(view_fn));
@@ -202,9 +195,9 @@ where
         view_fn,
         phatom: PhantomData,
         before_size: 0.0,
-        after_size: 0.0,
-        before_node: None,
-        after_node: None,
+        content_size: 0.0,
+        offset_node: None,
+        content_node: None,
     }
 }
 
@@ -256,13 +249,13 @@ impl<V: View + 'static, T> View for VirtualStack<V, T> {
     fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast::<VirtualStackState<T>>() {
             if self.before_size == state.before_size
-                && self.after_size == state.after_size
+                && self.content_size == state.content_size
                 && state.diff.is_empty()
             {
                 return;
             }
             self.before_size = state.before_size;
-            self.after_size = state.after_size;
+            self.content_size = state.content_size;
             apply_diff(
                 self.id(),
                 cx.app_state,
@@ -276,68 +269,82 @@ impl<V: View + 'static, T> View for VirtualStack<V, T> {
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
         cx.layout_node(self.id(), true, |cx| {
-            let mut nodes = self
+            let nodes = self
                 .children
                 .iter_mut()
                 .filter_map(|child| Some(cx.layout_view(&mut child.as_mut()?.0)))
                 .collect::<Vec<_>>();
-            let before_size = match self.direction {
+            let content_size = match self.direction {
                 VirtualDirection::Vertical => taffy::prelude::Size {
                     width: Dimension::Percent(1.0),
-                    height: Dimension::Points(self.before_size as f32),
+                    height: Dimension::Points(self.content_size as f32),
                 },
                 VirtualDirection::Horizontal => taffy::prelude::Size {
-                    width: Dimension::Points(self.before_size as f32),
+                    width: Dimension::Points(self.content_size as f32),
                     height: Dimension::Percent(1.0),
                 },
             };
-            let after_size = match self.direction {
-                VirtualDirection::Vertical => taffy::prelude::Size {
-                    width: Dimension::Percent(1.0),
-                    height: Dimension::Points(self.after_size as f32),
-                },
-                VirtualDirection::Horizontal => taffy::prelude::Size {
-                    width: Dimension::Points(self.after_size as f32),
-                    height: Dimension::Percent(1.0),
-                },
-            };
-            if self.before_node.is_none() {
-                self.before_node = Some(
+            if self.offset_node.is_none() {
+                self.offset_node = Some(
                     cx.app_state_mut()
                         .taffy
                         .new_leaf(taffy::style::Style::DEFAULT)
                         .unwrap(),
                 );
             }
-            if self.after_node.is_none() {
-                self.after_node = Some(
+            if self.content_node.is_none() {
+                self.content_node = Some(
                     cx.app_state_mut()
                         .taffy
                         .new_leaf(taffy::style::Style::DEFAULT)
                         .unwrap(),
                 );
             }
-            let before_node = self.before_node.unwrap();
-            let after_node = self.after_node.unwrap();
+            let offset_node = self.offset_node.unwrap();
+            let content_node = self.content_node.unwrap();
             let _ = cx.app_state_mut().taffy.set_style(
-                before_node,
+                offset_node,
                 taffy::style::Style {
-                    min_size: before_size,
-                    size: before_size,
+                    position: taffy::style::Position::Absolute,
+                    padding: match self.direction {
+                        VirtualDirection::Vertical => taffy::prelude::Rect {
+                            left: LengthPercentage::Points(0.0),
+                            top: LengthPercentage::Points(self.before_size as f32),
+                            right: LengthPercentage::Points(0.0),
+                            bottom: LengthPercentage::Points(0.0),
+                        },
+                        VirtualDirection::Horizontal => taffy::prelude::Rect {
+                            left: LengthPercentage::Points(self.before_size as f32),
+                            top: LengthPercentage::Points(0.0),
+                            right: LengthPercentage::Points(0.0),
+                            bottom: LengthPercentage::Points(0.0),
+                        },
+                    },
+                    flex_direction: match self.direction {
+                        VirtualDirection::Vertical => FlexDirection::Column,
+                        VirtualDirection::Horizontal => FlexDirection::Row,
+                    },
+                    size: taffy::prelude::Size {
+                        width: Dimension::Percent(1.0),
+                        height: Dimension::Percent(1.0),
+                    },
                     ..Default::default()
                 },
             );
             let _ = cx.app_state_mut().taffy.set_style(
-                after_node,
+                content_node,
                 taffy::style::Style {
-                    min_size: after_size,
-                    size: after_size,
+                    min_size: content_size,
+                    size: content_size,
                     ..Default::default()
                 },
             );
-            nodes.insert(0, before_node);
-            nodes.push(after_node);
-            nodes
+            let _ = cx.app_state_mut().taffy.set_children(offset_node, &nodes);
+            let _ = cx
+                .app_state_mut()
+                .taffy
+                .set_children(content_node, &[offset_node]);
+            vec![content_node]
         })
     }
 
