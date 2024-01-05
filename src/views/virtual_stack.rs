@@ -11,6 +11,7 @@ use taffy::{
 use crate::{
     context::ComputeLayoutCx,
     id::Id,
+    unit::PxPct,
     view::{self, View, ViewData},
 };
 
@@ -359,6 +360,27 @@ impl<V: View + 'static, T> View for VirtualStack<V, T> {
         }
 
         view::default_compute_layout(self, cx)
+    }
+
+    fn paint(&mut self, cx: &mut crate::context::PaintCx) {
+        cx.save();
+        let layout = cx.get_layout(self.id()).unwrap();
+        let style = cx.get_builtin_style(self.id());
+        let padding_left = match style.padding_left() {
+            PxPct::Px(padding) => padding,
+            PxPct::Pct(pct) => pct * layout.size.width as f64,
+        };
+        let padding_top = match style.padding_top() {
+            PxPct::Px(padding) => padding,
+            PxPct::Pct(pct) => pct * layout.size.width as f64,
+        };
+        cx.offset((padding_left, padding_top));
+        self.for_each_child_mut(&mut |child| {
+            cx.paint_view(child);
+            false
+        });
+
+        cx.restore();
     }
 }
 
