@@ -59,24 +59,7 @@ pub struct Slider {
     style: SliderStyle,
 }
 
-/// A reactive toggle button. When the button is toggled by clicking or dragging the widget an update will be sent to the [ToggleButton::on_toggle] handler.
-/// See also [ToggleButtonClass], [ToggleButtonSwitch] and the other toggle button styles that can be applied.
-///
-/// By default this toggle button has a style class of [ToggleButtonClass] applied with a default style provided.
-///
-/// Styles:  
-/// background color: [style::Background]  
-/// foreground color: [style::Foreground]  
-/// inner switch inset: [ToggleButtonInset]  
-/// inner switch (circle) size/radius: [ToggleButtonCircleRad]  
-/// toggle button switch behavior: [ToggleButtonBehavior] / [ToggleButtonSwitch]
-///
-/// An example using RwSignal
-/// ```rust
-/// let state = floem::reactive::create_rw_signal(true);
-/// floem::widgets::toggle_button(move || state.get())
-///         .on_toggle(move |new_state| state.set(new_state));
-///```
+/// A reactive slider.
 pub fn slider(state: impl Fn() -> f32 + 'static) -> Slider {
     let id = crate::id::Id::next();
     create_effect(move |_| {

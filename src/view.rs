@@ -224,8 +224,9 @@ pub trait View {
         default_event(self, cx, id_path, event)
     }
 
-    /// `View`-specific implementation. Will be called in the [`View::paint_main`] entry point method.
-    /// Usually you'll call the child `View::paint_main` method. But you might also draw text, adjust the offset, clip or draw text.
+    /// `View`-specific implementation. Will be called in [`PaintCx::paint_view`](crate::context::PaintCx::paint_view).
+    /// Usually you'll call `paint_view` for every child view. But you might also draw text, adjust the offset, clip
+    /// or draw text.
     fn paint(&mut self, cx: &mut PaintCx) {
         self.for_each_child_mut(&mut |child| {
             cx.paint_view(child);
