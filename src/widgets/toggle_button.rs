@@ -59,7 +59,8 @@ pub struct ToggleButton {
     style: ToggleStyle,
 }
 
-/// A reactive toggle button. When the button is toggled by clicking or dragging the widget an update will be sent to the [ToggleButton::on_toggle] handler.
+/// A reactive toggle button. When the button is toggled by clicking or dragging the widget an update will be
+/// sent to the [`ToggleButton::on_toggle`](crate::widgets::toggle_button::ToggleButton::on_toggle) handler.
 /// See also [ToggleButtonClass], [ToggleButtonSwitch] and the other toggle button styles that can be applied.
 ///
 /// By default this toggle button has a style class of [ToggleButtonClass] applied with a default style provided.
@@ -71,7 +72,7 @@ pub struct ToggleButton {
 /// inner switch (circle) size/radius: [ToggleButtonCircleRad]  
 /// toggle button switch behavior: [ToggleButtonBehavior] / [ToggleButtonSwitch]
 ///
-/// An example using RwSignal
+/// An example using [`RwSignal`](floem_reactive::RwSignal):
 /// ```rust
 /// let state = floem::reactive::create_rw_signal(true);
 /// floem::widgets::toggle_button(move || state.get())

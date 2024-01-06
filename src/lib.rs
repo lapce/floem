@@ -2,92 +2,117 @@
 //! Floem is cross-platform GUI framework for Rust 🦀. It aims to be extremely performant while providing world-class developer ergonomics.
 //!
 //! ## Views
-//! Floem models the UI using a tree of [Views](view::View) that are built once.
-//! Views ar self-contained components that can be composed together to create complex UIs that react to state changes and events.
+//! Floem models the UI using a tree of [View](view::View) instances that is constructed once. Views are self-contained
+//! components that can be composed together to create complex UIs, capable of reacting to state changes and events.
 //!
-//! Views themselves do not update in response to changes in the reactive system. This is to prevent unnecessary rebuilds of View components which can be expensive. For Views that do update reactively see [dyn_container](views::dyn_container)
+//! To ensure good UI performance, view composition functions are not rerun in response to changes in the reactive system.
+//! Unnecessary rebuilds of views can be expensive. If you have a use case for which having a view composition
+//! function that responds to reactivity is essential, you may wish to consider [dyn_container](views::dyn_container).
+//!
+//! You can read more about [authoring your own views](crate::view) or see [all built-in views](crate::views).
+//!
+//! ## Widgets
+//! Widgets are specialized high-level views providing certain functionality. Common examples include buttons, labels or
+//! text input fields. For a list of Floem's built-in widgets, refer [here](widgets#functions). You can try them out
+//! via the [widget gallery example](https://github.com/lapce/floem/blob/main/examples/widget-gallery/src/main.rs).
 //!
 //! ## State management  
-//! Floem uses reactivity built on signals and effects for its state management. This pattern
-//! of reactivity has been popularized by Solidjs in the javascript ecosystem and that directly
-//! inspired Leptos in the Rust ecosystem. Floem uses it's own reactive system but it's API is
-//! nearly identical to the API in the leptos_reactive crate. The leptos reactive create has
-//! [documentation](https://docs.rs/leptos_reactive/latest/leptos_reactive/), as well as the
-//! [Leptos book](https://leptos-rs.github.io/leptos/), that are very helpful
-//! for learning about signals and effects.
+//! Floem uses reactivity built on signals and effects for its state management. This design
+//! pattern has been popularized by SolidJS in the JavaScript ecosystem and directly
+//! inspired Leptos in the Rust ecosystem. Floem uses its own reactive system with an API that
+//! is nearly identical to the one in the leptos_reactive crate. To learn more about signals and
+//! effects, you may want to explore Leptos' [documentation](https://docs.rs/leptos_reactive/latest/leptos_reactive/)
+//! and their [book](https://leptos-rs.github.io/leptos/).
 //!
-//! ### Local state
+//! #### Local state
 //!
-//! You can can create a signal anywhere in the program. When you use the signal within a view by using one of the available accessor methods, such as [get](floem_reactive::ReadSignal::get) or [with](floem_reactive::ReadSignal::with), the runtime will automatically subscribe the correct side effects to changes in that signal, creating reactivity. To the programmer this is invisible and the reactivity 'just works' by accessing the value where you want to use it.
+//! You can create a signal anywhere in the program using [`create_rw_signal`](floem_reactive::create_rw_signal)
+//! or [`create_signal`](floem_reactive::create_signal). When you use a signal's value within a view by calling
+//! [`get`](floem_reactive::ReadSignal::get) or [`with`](floem_reactive::ReadSignal::with),
+//! the runtime will automatically subscribe the correct side effects
+//! to changes in that signal, creating reactivity. To the programmer this is transparent. The reactivity
+//! "just works" by accessing the value where you want to use it.
 //!
-//! ```ignore
-//! pub fn input_and_label() -> impl View {
-//!
+//! ```
+//! # use floem::reactive::create_rw_signal;
+//! # use floem::view::View;
+//! # use floem::views::{label, v_stack, Decorators};
+//! # use floem::widgets::text_input;
+//! #
+//! fn app_view() -> impl View {
 //!     let text = create_rw_signal("Hello world".to_string());
-//!
-//!     stack(||
-//!        (
-//!            text_input(text),
-//!            label(|| text.get())
-//!        )
-//!     ).style(|| Style::new().padding(10.0))
+//!     v_stack((text_input(text), label(move || text.get()))).style(|s| s.padding(10.0))
 //! }
 //! ```
-//! In this example `text` is a signal, containing a `String`,
-//! that can be both read from and written to. It is then used in two different places in the
-//! [Stack View](views::stack). The [text_input](views::text_input) has direct access to the RwSignal and
-//! will mutate the underlying `String` when the user types in the input box. This will
-//! reactivly update the [label](views::label), which displays the same text, in real time.
 //!
-//! ### Global state
+//! In this example, `text` is a signal containing a `String` that can both be read from and written to.
+//! The signal is used in two different places in the [vertical stack](crate::views::v_stack).
+//! The [text input](crate::views::text_input) has direct access to the [`RwSignal`](floem_reactive::RwSignal)
+//! and will mutate the underlying `String` when the user types in the input box. The reactivity will then
+//! trigger a rerender of the [label](crate::views::label) with the updated text value.
 //!
-//! Global state can be implemented using [provide_context](floem_reactive::provide_context) and [use_context](floem_reactive::use_context).
+//! [`create_signal`](floem_reactive::create_signal) returns a separated
+//! [`ReadSignal`](floem_reactive::ReadSignal) and [`WriteSignal`](floem_reactive::WriteSignal) for a variable.
+//! An existing `RwSignal` may be converted using [`RwSignal::read_only`](floem_reactive::RwSignal::read_only)
+//! and [`RwSignal::write_only`](floem_reactive::RwSignal::write_only) where necessary, but the reverse is not
+//! possible.
 //!
-//! ## Styling
-//! You can style your views by applying [Styles](style::Style) through the
-//! [style](views::Decorators::style) method that is implemented for all types that impl View.
+//! #### Global state
 //!
-//! The sizing and positioning layout system is based on
-//! the flexbox (or grid) model using Taffy as the layout engine.
+//! Global state can be implemented using [provide_context](floem_reactive::provide_context) and
+//! [use_context](floem_reactive::use_context).
 //!
-//! Some Style properties, such as font size, are inherited from parent views and can be overridden.
+//! ## Customizing appearance
 //!
-//! Styles can be updated reactively using any signal
+//! You can style a View instance by calling its [`style`](view::View::style) method. You'll need to import the
+//! `floem::views::Decorators` trait to use it. The `style` method takes a function exposing a
+//! [`Style`](crate::style::Style) parameter. Through this parameter, you can access methods that modify a variety
+//! of familiar properties like width, padding and background. Some `Style` properties
+//! such as font size are inherited from parent views and can be overridden.
 //!
-//! ```ignore
-//!     some_view()
-//!     .style(move || {
-//!         Style::new()
-//!             .flex_row()
-//!             .width(100.pct())
-//!             .height(32.0)
-//!             .border_bottom(1.0)
-//!             .border_color(Color::LIGHT_GRAY)
-//!             .apply_if(index == active_tab.get(), |s| {
-//!                 s.background(Color::GRAY)
-//!             })
-//!     })
+//! Styles can be updated reactively using any signal. Here's how to apply a gray background color while the value
+//! held by the `active_tab` signal equals 0:
+//!
+//! ```
+//! #  use floem::peniko::Color;
+//! #  use floem::reactive::create_signal;
+//! #  use floem::style::Style;
+//! #  use floem::unit::UnitExt;
+//! #  use floem::view::View;
+//! #  use floem::views::{label, Decorators};
+//! #
+//! # let (active_tab, _set_active_tab) = create_signal(0);
+//! #
+//! label(|| "Some text").style(move |s| {
+//!     s.flex_row()
+//!         .width(100.pct())
+//!         .height(32.0)
+//!         .border_bottom(1.0)
+//!         .border_color(Color::LIGHT_GRAY)
+//!         .apply_if(active_tab.get() == 0, |s| s.background(Color::GRAY))
+//! });
 //! ```
 //!
+//! For additional information about styling, [see here](crate::style::Style).
 //!
+//! ## Customizing widgets
 //!
-//! ## More
+//! Floem widgets ship with default styling that can be customized to your liking using style
+//! classes. Take the [text input widget](https://github.com/lapce/floem/blob/main/src/widgets/text_input.rs)
+//! for example: it exposes a style class `TextInputClass`. Any styling rules that are attached
+//! to this class using [Style's `class` method](style::Style::class) will be applied to the text input.
+//! Widgets may expose multiple classes to enable customization of different aspects of their UI. The
+//! labeled checkbox is an example of this: both the checkbox itself and the label next to it can
+//! be customized using `CheckboxClass` and `LabeledCheckboxClass` respectively.
 //!
-//! #### Check out all of the built-in [View](view::View)s
-//! See the [Views module](views) for more info.
+//! Don't have the time or patience to develop your own? You may try your luck finding a reusable theme
+//! by browsing the [floem-themes](https://github.com/topics/floem-themes) topic on GitHub. This list
+//! is unmoderated.
 //!
-//! #### Authoring your own custom [View](view::View)s
-//! See the [View module](view) for more info.
+//! ## Additional reading
 //!
-//! #### Understanding Ids
-//! See the [Id module](id) for more info.
-//!
-//! #### Understanding Styles
-//! See the [Style module](style) for more info.
-//!
-//! #### Understanding the update lifecycle
-//! See the [Renderer module](renderer) for more info.
-//!
+//! - [Understanding Ids](crate::id)
+//! - [How the update lifecycle works](crate::renderer)
 //!
 pub mod action;
 pub mod animate;

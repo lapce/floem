@@ -20,7 +20,7 @@ pub struct ImageStyle {
 }
 
 /// How the content of a replaced element, such as an img or video, should be resized to fit its container.
-/// See  https://developer.mozilla.org/en-US/docs/Web/CSS/object-fit
+/// See <https://developer.mozilla.org/en-US/docs/Web/CSS/object-fit>.
 pub enum ObjectFit {
     /// The replaced content is sized to fill the element's content box.
     /// The entire object will completely fill the box.
@@ -41,7 +41,7 @@ pub enum ObjectFit {
 
 /// Specifies the alignment of the element's contents within the element's box.
 /// Areas of the box which aren't covered by the replaced element's object will show the element's background.
-/// See https://developer.mozilla.org/en-US/docs/Web/CSS/object-position.
+/// See <https://developer.mozilla.org/en-US/docs/Web/CSS/object-position>.
 pub struct ObjectPosition {
     #[allow(unused)]
     horiz: HorizPosition,
