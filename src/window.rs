@@ -23,7 +23,7 @@ pub struct WindowConfig {
     pub(crate) enabled_buttons: Option<WindowButtons>,
     pub(crate) resizable: Option<bool>,
     pub(crate) window_level: Option<WindowLevel>,
-    pub(crate) themed: Option<bool>,
+    pub(crate) apply_default_theme: Option<bool>,
 }
 
 impl WindowConfig {
@@ -77,8 +77,11 @@ impl WindowConfig {
         self
     }
 
-    pub fn themed(mut self, themed: bool) -> Self {
-        self.themed = Some(themed);
+    /// If set to true, the stylesheet for Floem's default theme will be
+    /// injected into your window. You may want to disable this when using a
+    /// completely custom theme.
+    pub fn apply_default_theme(mut self, apply_default_theme: bool) -> Self {
+        self.apply_default_theme = Some(apply_default_theme);
         self
     }
 }

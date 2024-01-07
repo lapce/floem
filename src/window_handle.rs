@@ -80,7 +80,7 @@ impl WindowHandle {
         window: winit::window::Window,
         view_fn: impl FnOnce(winit::window::WindowId) -> Box<dyn View> + 'static,
         transparent: bool,
-        themed: bool,
+        apply_default_theme: bool,
     ) -> Self {
         let scope = Scope::new();
         let window_id = window.id();
@@ -134,7 +134,7 @@ impl WindowHandle {
             app_state: AppState::new(),
             paint_state,
             size,
-            theme: themed.then(default_theme),
+            theme: apply_default_theme.then(default_theme),
             os_theme: theme,
             is_maximized,
             transparent,

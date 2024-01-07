@@ -244,7 +244,7 @@ impl ApplicationHandle {
     ) {
         let mut window_builder = winit::window::WindowBuilder::new();
         let transparent = config.as_ref().and_then(|c| c.transparent).unwrap_or(false);
-        let themed = if let Some(config) = config {
+        let apply_default_theme = if let Some(config) = config {
             if let Some(size) = config.size {
                 let size = if size.width == 0.0 || size.height == 0.0 {
                     Size::new(800.0, 600.0)
@@ -285,7 +285,7 @@ impl ApplicationHandle {
             if let Some(title) = config.title {
                 window_builder = window_builder.with_title(title);
             }
-            config.themed.unwrap_or(true)
+            config.apply_default_theme.unwrap_or(true)
         } else {
             true
         };
@@ -295,7 +295,7 @@ impl ApplicationHandle {
             Err(_) => return,
         };
         let window_id = window.id();
-        let window_handle = WindowHandle::new(window, view_fn, transparent, themed);
+        let window_handle = WindowHandle::new(window, view_fn, transparent, apply_default_theme);
         self.window_handles.insert(window_id, window_handle);
     }
 
