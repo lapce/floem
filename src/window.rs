@@ -1,3 +1,4 @@
+use crate::widgets::WindowTheme;
 use kurbo::{Point, Size};
 pub use winit::window::Fullscreen;
 pub use winit::window::ResizeDirection;
@@ -23,7 +24,7 @@ pub struct WindowConfig {
     pub(crate) enabled_buttons: Option<WindowButtons>,
     pub(crate) resizable: Option<bool>,
     pub(crate) window_level: Option<WindowLevel>,
-    pub(crate) themed: Option<bool>,
+    pub(crate) theme: WindowTheme,
 }
 
 impl WindowConfig {
@@ -77,8 +78,8 @@ impl WindowConfig {
         self
     }
 
-    pub fn themed(mut self, themed: bool) -> Self {
-        self.themed = Some(themed);
+    pub fn theme(mut self, theme: WindowTheme) -> Self {
+        self.theme = theme;
         self
     }
 }

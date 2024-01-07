@@ -39,12 +39,34 @@ pub use radio_button::*;
 mod text_input;
 pub use text_input::*;
 
-pub(crate) struct Theme {
+#[derive(Debug)]
+pub struct WindowTheme {
     pub(crate) background: Color,
     pub(crate) style: Rc<Style>,
 }
 
-pub(crate) fn default_theme() -> Theme {
+impl Default for WindowTheme {
+    fn default() -> Self {
+        default_theme()
+    }
+}
+
+impl WindowTheme {
+    /// Overrides the current background. If your window is configured to be
+    /// transparent, this value will be ignored.
+    pub fn background(mut self, background: Color) -> Self {
+        self.background = background;
+        self
+    }
+
+    /// Overrides the current style.
+    pub fn style(mut self, style: Style) -> Self {
+        self.style = style.into();
+        self
+    }
+}
+
+pub(crate) fn default_theme() -> WindowTheme {
     let border = Color::rgb8(140, 140, 140);
 
     let padding = 5.0;
@@ -277,7 +299,7 @@ pub(crate) fn default_theme() -> Theme {
         .font_size(FONT_SIZE)
         .color(Color::BLACK);
 
-    Theme {
+    WindowTheme {
         background: Color::rgb8(248, 248, 248),
         style: Rc::new(theme),
     }

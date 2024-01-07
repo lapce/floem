@@ -7,6 +7,7 @@ use crate::{
     prop_extracter,
     style::Style,
     style::{FontProps, LineHeight, TextColor, TextOverflow, TextOverflowProp},
+    style_class,
     unit::PxPct,
     view::{View, ViewData},
 };
@@ -15,6 +16,10 @@ use floem_renderer::Renderer;
 use kurbo::{Point, Rect};
 use peniko::Color;
 use taffy::prelude::Node;
+
+use super::Decorators;
+
+style_class!(pub LabelClass);
 
 prop_extracter! {
     Extracter {
@@ -73,7 +78,7 @@ pub fn label<S: Display + 'static>(label: impl Fn() -> S + 'static) -> Label {
         move || label().to_string(),
         move |new_label| id.update_state(new_label, false),
     );
-    Label::new(id, initial_label)
+    Label::new(id, initial_label).class(LabelClass)
 }
 
 impl Label {

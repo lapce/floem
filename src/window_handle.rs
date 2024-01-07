@@ -42,7 +42,7 @@ use crate::{
     },
     view::{view_children_set_parent_id, view_tab_navigation, View, ViewData},
     view_data::{update_data, ChangeFlags},
-    widgets::{default_theme, Theme},
+    widgets::WindowTheme,
 };
 
 /// The top-level window handle that owns the winit Window.
@@ -61,7 +61,7 @@ pub(crate) struct WindowHandle {
     app_state: AppState,
     paint_state: PaintState,
     size: RwSignal<Size>,
-    theme: Option<Theme>,
+    window_theme: WindowTheme,
     pub(crate) profile: Option<Profile>,
     os_theme: RwSignal<Option<winit::window::Theme>>,
     is_maximized: bool,
@@ -80,7 +80,7 @@ impl WindowHandle {
         window: winit::window::Window,
         view_fn: impl FnOnce(winit::window::WindowId) -> Box<dyn View> + 'static,
         transparent: bool,
-        themed: bool,
+        theme: WindowTheme,
     ) -> Self {
         let scope = Scope::new();
         let window_id = window.id();
@@ -89,7 +89,7 @@ impl WindowHandle {
         let size: LogicalSize<f64> = window.inner_size().to_logical(scale);
         let size = Size::new(size.width, size.height);
         let size = scope.create_rw_signal(Size::new(size.width, size.height));
-        let theme = scope.create_rw_signal(window.theme());
+        let os_theme = scope.create_rw_signal(window.theme());
         let is_maximized = window.is_maximized();
 
         set_current_view(id);
@@ -134,8 +134,8 @@ impl WindowHandle {
             app_state: AppState::new(),
             paint_state,
             size,
-            theme: themed.then(default_theme),
-            os_theme: theme,
+            window_theme: theme,
+            os_theme,
             is_maximized,
             transparent,
             profile: None,
@@ -497,9 +497,7 @@ impl WindowHandle {
 
     fn style(&mut self) {
         let mut cx = StyleCx::new(&mut self.app_state, self.view.id());
-        if let Some(style) = self.theme.as_ref().map(|theme| theme.style.clone()) {
-            cx.current = style;
-        }
+        cx.current = self.window_theme.style.clone();
         cx.style_view(&mut self.view);
     }
 
@@ -559,11 +557,7 @@ impl WindowHandle {
             .begin(cx.app_state.capture.is_some());
         if !self.transparent {
             let scale = cx.app_state.scale;
-            let color = self
-                .theme
-                .as_ref()
-                .map(|theme| theme.background)
-                .unwrap_or(peniko::Color::WHITE);
+            let color = self.window_theme.background;
             // fill window with default white background if it's not transparent
             cx.fill(
                 &self

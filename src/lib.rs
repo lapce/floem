@@ -99,15 +99,19 @@
 //!
 //! Floem widgets ship with default styling that can be customized to your liking using style
 //! classes. Take the [text input widget](https://github.com/lapce/floem/blob/main/src/widgets/text_input.rs)
-//! for example: it exposes a style class `TextInputClass`. Any styling rules that are attached
-//! to this class using [Style's `class` method](style::Style::class) will be applied to the text input.
-//! Widgets may expose multiple classes to enable customization of different aspects of their UI. The
-//! labeled checkbox is an example of this: both the checkbox itself and the label next to it can
-//! be customized using `CheckboxClass` and `LabeledCheckboxClass` respectively.
+//! for example: it exposes a style class [`TextInputClass`](crate::widgets::TextInputClass).
+//! Any styling rules that are attached to this class using [Style's `class` method](style::Style::class)
+//! will be applied to the text input. Widgets may expose multiple classes to enable customization
+//! of different aspects of their UI. The labeled checkbox is an example of this: both the checkbox
+//! itself and the label next to it can be customized using `CheckboxClass` and `LabeledCheckboxClass`
+//! respectively.
 //!
-//! Don't have the time or patience to develop your own? You may try your luck finding a reusable theme
-//! by browsing the [floem-themes](https://github.com/topics/floem-themes) topic on GitHub. This list
-//! is unmoderated.
+//! Check the [custom theme](https://github.com/lapce/floem/blob/main/examples/custom-theme/src/main.rs)
+//! example for some guidance on how this works in practice.
+//!
+//! Don't have the time or patience to roll your own? Theme developers can publish their work
+//! as a library under the [floem-themes](https://github.com/topics/floem-themes) topic on GitHub.
+//! This list is unmoderated.
 //!
 //! ## Additional reading
 //!
