@@ -158,10 +158,7 @@ impl VgerRenderer {
     fn vger_point(&self, point: Point) -> vger::defs::LocalPoint {
         let coeffs = self.transform.as_coeffs();
         let point = point + Vec2::new(coeffs[4], coeffs[5]);
-        vger::defs::LocalPoint::new(
-            (point.x * self.scale).round() as f32,
-            (point.y * self.scale).round() as f32,
-        )
+        vger::defs::LocalPoint::new((point.x * self.scale) as f32, (point.y * self.scale) as f32)
     }
 
     fn vger_rect(&self, rect: Rect) -> vger::defs::LocalRect {
