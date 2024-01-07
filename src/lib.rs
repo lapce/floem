@@ -95,7 +95,7 @@
 //!
 //! For additional information about styling, [see here](crate::style::Style).
 //!
-//! ## Customizing widgets
+//! ## Themes and widget customizations
 //!
 //! Floem widgets ship with default styling that can be customized to your liking using style
 //! classes. Take the [text input widget](https://github.com/lapce/floem/blob/main/src/widgets/text_input.rs)
@@ -105,9 +105,15 @@
 //! labeled checkbox is an example of this: both the checkbox itself and the label next to it can
 //! be customized using `CheckboxClass` and `LabeledCheckboxClass` respectively.
 //!
-//! Don't have the time or patience to develop your own? You may try your luck finding a reusable theme
-//! by browsing the [floem-themes](https://github.com/topics/floem-themes) topic on GitHub. This list
-//! is unmoderated.
+//! To theme a window, call the [`style`](crate::view::View::style) method on your root view and inject
+//! your stylesheet. In your [`WindowConfig`](crate::window::WindowConfig), you may want to disable the
+//! injection of Floem's default styling. The
+//! [`themes` example](https://github.com/lapce/floem/blob/main/examples/themes/src/main.rs) is available
+//! as a reference.
+//!
+//! Don't have the time or patience to develop your own theme? Check the
+//! [floem-themes](https://github.com/topics/floem-themes) GitHub topic for a list of reusable
+//! themes made by the community. This list is unmoderated.
 //!
 //! ## Additional reading
 //!
