@@ -27,13 +27,14 @@
 
 use floem_renderer::cosmic_text;
 use floem_renderer::cosmic_text::{LineHeightValue, Weight};
+use im_rc::hashmap::Entry;
 use peniko::Color;
+use rustc_hash::FxHasher;
 use std::any::{type_name, Any};
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt::{self, Debug};
-use std::hash::Hash;
 use std::hash::Hasher;
+use std::hash::{BuildHasherDefault, Hash};
 use std::ptr;
 use std::rc::Rc;
 use std::time::Instant;
@@ -603,13 +604,15 @@ impl Transition {
     }
 }
 
+type ImHashMap<K, V> = im_rc::HashMap<K, V, BuildHasherDefault<FxHasher>>;
+
 #[derive(Default, Clone)]
 pub struct Style {
-    pub(crate) map: HashMap<StylePropRef, StyleMapValue<Rc<dyn Any>>>,
-    pub(crate) selectors: HashMap<StyleSelector, Style>,
-    pub(crate) responsive: HashMap<ScreenSizeBp, Style>,
-    pub(crate) classes: HashMap<StyleClassRef, Style>,
-    pub(crate) transitions: HashMap<StylePropRef, Transition>,
+    pub(crate) map: ImHashMap<StylePropRef, StyleMapValue<Rc<dyn Any>>>,
+    pub(crate) selectors: ImHashMap<StyleSelector, Style>,
+    pub(crate) responsive: ImHashMap<ScreenSizeBp, Style>,
+    pub(crate) classes: ImHashMap<StyleClassRef, Style>,
+    pub(crate) transitions: ImHashMap<StylePropRef, Transition>,
 }
 
 impl Style {
