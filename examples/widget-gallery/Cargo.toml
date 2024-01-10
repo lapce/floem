@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 im = "15.1.0"
 floem = { path = "../.." }
+strum = { version = "0.25.0", features = ["derive"] }
