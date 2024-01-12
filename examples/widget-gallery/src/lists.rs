@@ -79,7 +79,7 @@ fn enhanced_list() -> impl View {
                                             .border(1.0)
                                             .border_color(Color::RED)
                                             .border_radius(16.0)
-                                            .margin_right(5.0)
+                                            .margin_right(20.0)
                                             .hover(|s| s.color(Color::WHITE).background(Color::RED))
                                     })
                             })
