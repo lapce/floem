@@ -1,7 +1,7 @@
 use std::{any::Any, cell::RefCell, collections::HashMap};
 
+use floem_winit::window::ResizeDirection;
 use kurbo::{Point, Rect, Size, Vec2};
-use winit::window::ResizeDirection;
 
 use crate::{
     animate::{AnimUpdateMsg, Animation},

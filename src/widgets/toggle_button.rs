@@ -2,8 +2,8 @@
 
 use floem_reactive::create_effect;
 use floem_renderer::Renderer;
+use floem_winit::keyboard::{Key, NamedKey};
 use kurbo::{Point, Size};
-use winit::keyboard::{Key, NamedKey};
 
 use crate::{
     prop, prop_extracter,

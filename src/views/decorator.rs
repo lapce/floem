@@ -1,6 +1,6 @@
 use floem_reactive::{create_effect, create_updater};
+use floem_winit::keyboard::{Key, ModifiersState};
 use kurbo::{Point, Rect};
-use winit::keyboard::{Key, ModifiersState};
 
 use crate::{
     action::{set_window_menu, set_window_title, update_window_scale},

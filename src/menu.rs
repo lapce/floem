@@ -46,11 +46,11 @@ impl Menu {
         self.entry(MenuEntry::Separator)
     }
 
-    pub(crate) fn platform_menu(&self) -> winit::menu::Menu {
+    pub(crate) fn platform_menu(&self) -> floem_winit::menu::Menu {
         let mut menu = if self.popup {
-            winit::menu::Menu::new_for_popup()
+            floem_winit::menu::Menu::new_for_popup()
         } else {
-            winit::menu::Menu::new()
+            floem_winit::menu::Menu::new()
         };
         for entry in &self.children {
             match entry {
