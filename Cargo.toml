@@ -1,9 +1,13 @@
 [package]
 name = "floem"
 version = "0.1.0"
+authors = ["The Floem contributors"]
+readme = "README.md"
+repository = "https://github.com/lapce/floem"
+description = "A native Rust UI library with fine-grained reactivity"
 edition = "2021"
-license.workspace = true
 rust-version = "1.75"
+license.workspace = true
 
 [dependencies]
 sha2 = "0.10.6"

@@ -58,14 +58,6 @@ To sample Floem's capabilities, check out the repo and run the [widget gallery](
 
 ![Widget gallery](docs/img/widget-gallery.png)
 
-## Installation and usage
-
-Floem can be installed as a Git dependency. We aim to make Floem available on crates.io [eventually](https://github.com/lapce/floem/discussions/232).
-
-```bash
-cargo add --git 'https://github.com/lapce/floem' floem
-```
-
 To help you master Floem, we provide [documentation](http://lapce.dev/floem/floem/) and [code examples](examples/).
 
 ## Contributions
