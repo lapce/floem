@@ -9,7 +9,7 @@ resvg = "0.33.0"
 raw-window-handle = "0.5.1"
 futures = "0.3.26"
 anyhow = "1.0.69"
-peniko = { git = "https://github.com/linebender/peniko", rev = "cafdac9a211a0fb2fec5656bd663d1ac770bcc81" }
+floem-peniko = "0.1.0"
 swash = "0.1.8"
 floem_renderer = { path = "../renderer" }
 softbuffer = "0.3.1"

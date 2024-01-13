@@ -10,10 +10,10 @@ use crate::{
     unit::PxPct,
     view::{View, ViewData},
 };
+use floem_peniko::Color;
 use floem_reactive::create_updater;
 use floem_renderer::Renderer;
 use kurbo::{Point, Rect};
-use peniko::Color;
 use taffy::prelude::Node;
 
 prop_extracter! {

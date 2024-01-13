@@ -9,7 +9,7 @@ use crate::{
     views::scroll,
     widgets::{self, slider::SliderClass},
 };
-use peniko::Color;
+use floem_peniko::Color;
 use std::rc::Rc;
 use taffy::style::AlignItems;
 

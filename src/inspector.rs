@@ -13,12 +13,12 @@ use crate::views::{
 use crate::widgets::button;
 use crate::window::WindowConfig;
 use crate::{new_window, style, EventPropagation};
+use floem_peniko::Color;
 use floem_reactive::{create_effect, create_rw_signal, create_signal, RwSignal, Scope};
 use floem_winit::keyboard::{Key, NamedKey};
 use floem_winit::window::WindowId;
 use image::DynamicImage;
 use kurbo::{Point, Rect, Size};
-use peniko::Color;
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;

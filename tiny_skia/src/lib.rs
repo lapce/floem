@@ -1,4 +1,9 @@
 use anyhow::{anyhow, Result};
+use floem_peniko::kurbo::PathEl;
+use floem_peniko::{
+    kurbo::{Affine, Point, Rect, Shape},
+    BrushRef, Color, GradientKind,
+};
 use floem_renderer::cosmic_text::{CacheKey, SubpixelBin, SwashCache, SwashContent, TextLayout};
 use floem_renderer::tiny_skia::{
     self, FillRule, FilterQuality, GradientStop, LinearGradient, Mask, MaskType, Paint, Path,
@@ -7,11 +12,6 @@ use floem_renderer::tiny_skia::{
 use floem_renderer::Img;
 use floem_renderer::Renderer;
 use image::DynamicImage;
-use peniko::kurbo::PathEl;
-use peniko::{
-    kurbo::{Affine, Point, Rect, Shape},
-    BrushRef, Color, GradientKind,
-};
 use softbuffer::{Context, Surface};
 use std::collections::HashMap;
 use std::num::NonZeroU32;

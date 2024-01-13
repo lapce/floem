@@ -6,8 +6,8 @@ use super::{
 };
 use std::{borrow::BorrowMut, collections::HashMap, time::Duration, time::Instant};
 
+use floem_peniko::Color;
 use floem_reactive::create_effect;
-use peniko::Color;
 
 #[derive(Clone, Debug)]
 pub struct Animation {

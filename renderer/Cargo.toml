@@ -7,6 +7,5 @@ license.workspace = true
 [dependencies]
 resvg = "0.33.0"
 image = { version = "0.24", features = ["jpeg", "png"] }
-peniko = { git = "https://github.com/linebender/peniko", rev = "cafdac9a211a0fb2fec5656bd663d1ac770bcc81" }
-cosmic-text = { git = "https://github.com/lapce/cosmic-text", rev = "fdc5165f79bb24c76bfeb335dbfa133094636e25" }
-# cosmic-text = { path = "../../cosmic-text" }
+floem-peniko = "0.1.0"
+floem-cosmic-text = "0.7.0"

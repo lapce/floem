@@ -25,10 +25,10 @@
 //! ```
 //!
 
+use floem_peniko::Color;
 use floem_renderer::cosmic_text;
 use floem_renderer::cosmic_text::{LineHeightValue, Weight};
 use im_rc::hashmap::Entry;
-use peniko::Color;
 use rustc_hash::FxHasher;
 use std::any::{type_name, Any};
 use std::collections::HashMap;

@@ -3,14 +3,14 @@ use std::sync::mpsc::sync_channel;
 use std::sync::Arc;
 
 use anyhow::Result;
-use floem_renderer::cosmic_text::{SubpixelBin, SwashCache, TextLayout};
-use floem_renderer::{tiny_skia, Img, Renderer};
-use image::{DynamicImage, EncodableLayout, RgbaImage};
-use peniko::{
+use floem_peniko::{
     kurbo::{Affine, Point, Rect, Shape, Vec2},
     BrushRef, Color, GradientKind,
 };
-use vger::{Image, PaintIndex, PixelFormat, Vger};
+use floem_renderer::cosmic_text::{SubpixelBin, SwashCache, TextLayout};
+use floem_renderer::{tiny_skia, Img, Renderer};
+use floem_vger_rs::{Image, PaintIndex, PixelFormat, Vger};
+use image::{DynamicImage, EncodableLayout, RgbaImage};
 use wgpu::{Device, DeviceType, Queue, StoreOp, Surface, SurfaceConfiguration, TextureFormat};
 
 pub struct VgerRenderer {
@@ -101,7 +101,7 @@ impl VgerRenderer {
         };
         surface.configure(&device, &config);
 
-        let vger = vger::Vger::new(device.clone(), queue.clone(), texture_format);
+        let vger = floem_vger_rs::Vger::new(device.clone(), queue.clone(), texture_format);
 
         Ok(Self {
             device,
@@ -142,8 +142,9 @@ impl VgerRenderer {
                     let outer_color = stops.next()?;
                     let inner_color = vger_color(inner_color.color);
                     let outer_color = vger_color(outer_color.color);
-                    let start = vger::defs::LocalPoint::new(start.x as f32, start.y as f32);
-                    let end = vger::defs::LocalPoint::new(end.x as f32, end.y as f32);
+                    let start =
+                        floem_vger_rs::defs::LocalPoint::new(start.x as f32, start.y as f32);
+                    let end = floem_vger_rs::defs::LocalPoint::new(end.x as f32, end.y as f32);
                     self.vger
                         .linear_gradient(start, end, inner_color, outer_color, 0.0)
                 }
@@ -155,13 +156,16 @@ impl VgerRenderer {
         Some(paint)
     }
 
-    fn vger_point(&self, point: Point) -> vger::defs::LocalPoint {
+    fn vger_point(&self, point: Point) -> floem_vger_rs::defs::LocalPoint {
         let coeffs = self.transform.as_coeffs();
         let point = point + Vec2::new(coeffs[4], coeffs[5]);
-        vger::defs::LocalPoint::new((point.x * self.scale) as f32, (point.y * self.scale) as f32)
+        floem_vger_rs::defs::LocalPoint::new(
+            (point.x * self.scale) as f32,
+            (point.y * self.scale) as f32,
+        )
     }
 
-    fn vger_rect(&self, rect: Rect) -> vger::defs::LocalRect {
+    fn vger_rect(&self, rect: Rect) -> floem_vger_rs::defs::LocalRect {
         let origin = rect.origin();
         let origin = self.vger_point(origin);
 
@@ -169,7 +173,7 @@ impl VgerRenderer {
         let end = self.vger_point(end);
 
         let size = (end - origin).to_size();
-        vger::defs::LocalRect::new(origin, size)
+        floem_vger_rs::defs::LocalRect::new(origin, size)
     }
 
     fn render_image(&mut self) -> Option<DynamicImage> {
@@ -269,7 +273,7 @@ impl Renderer for VgerRenderer {
         if self.capture != capture {
             self.capture = capture;
             if self.alt_vger.is_none() {
-                self.alt_vger = Some(vger::Vger::new(
+                self.alt_vger = Some(floem_vger_rs::Vger::new(
                     self.device.clone(),
                     self.queue.clone(),
                     TextureFormat::Rgba8Unorm,
@@ -323,8 +327,8 @@ impl Renderer for VgerRenderer {
         } else {
             for segment in shape.path_segments(0.0) {
                 match segment {
-                    peniko::kurbo::PathSeg::Line(_) => todo!(),
-                    peniko::kurbo::PathSeg::Quad(bez) => {
+                    floem_peniko::kurbo::PathSeg::Line(_) => todo!(),
+                    floem_peniko::kurbo::PathSeg::Quad(bez) => {
                         self.vger.stroke_bezier(
                             self.vger_point(bez.p0),
                             self.vger_point(bez.p1),
@@ -333,7 +337,7 @@ impl Renderer for VgerRenderer {
                             paint,
                         );
                     }
-                    peniko::kurbo::PathSeg::Cubic(_) => todo!(),
+                    floem_peniko::kurbo::PathSeg::Cubic(_) => todo!(),
                 }
             }
         }
@@ -368,7 +372,7 @@ impl Renderer for VgerRenderer {
             let mut first = true;
             for segment in path.path_segments(0.1) {
                 match segment {
-                    peniko::kurbo::PathSeg::Line(line) => {
+                    floem_peniko::kurbo::PathSeg::Line(line) => {
                         if first {
                             first = false;
                             self.vger.move_to(self.vger_point(line.p0));
@@ -376,7 +380,7 @@ impl Renderer for VgerRenderer {
                         self.vger
                             .quad_to(self.vger_point(line.p1), self.vger_point(line.p1));
                     }
-                    peniko::kurbo::PathSeg::Quad(quad) => {
+                    floem_peniko::kurbo::PathSeg::Quad(quad) => {
                         if first {
                             first = false;
                             self.vger.move_to(self.vger_point(quad.p0));
@@ -384,7 +388,7 @@ impl Renderer for VgerRenderer {
                         self.vger
                             .quad_to(self.vger_point(quad.p1), self.vger_point(quad.p2));
                     }
-                    peniko::kurbo::PathSeg::Cubic(_) => {}
+                    floem_peniko::kurbo::PathSeg::Cubic(_) => {}
                 }
             }
             self.vger.fill(paint);
@@ -575,8 +579,8 @@ impl Renderer for VgerRenderer {
     }
 }
 
-fn vger_color(color: Color) -> vger::Color {
-    vger::Color {
+fn vger_color(color: Color) -> floem_vger_rs::Color {
+    floem_vger_rs::Color {
         r: color.r as f32 / 255.0,
         g: color.g as f32 / 255.0,
         b: color.b as f32 / 255.0,

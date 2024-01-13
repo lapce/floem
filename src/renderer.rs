@@ -48,12 +48,12 @@
 //! - Only one view can be focused at a time.
 //!
 use crate::cosmic_text::TextLayout;
+use floem_peniko::BrushRef;
 use floem_renderer::Img;
 use floem_tiny_skia::TinySkiaRenderer;
 use floem_vger::VgerRenderer;
 use image::DynamicImage;
 use kurbo::{Affine, Rect, Shape, Size};
-use peniko::BrushRef;
 
 #[allow(clippy::large_enum_variant)]
 pub enum Renderer {
@@ -163,7 +163,7 @@ impl floem_renderer::Renderer for Renderer {
     fn fill<'b>(
         &mut self,
         path: &impl kurbo::Shape,
-        brush: impl Into<peniko::BrushRef<'b>>,
+        brush: impl Into<floem_peniko::BrushRef<'b>>,
         blur_radius: f64,
     ) {
         match self {
