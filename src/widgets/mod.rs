@@ -185,6 +185,26 @@ pub(crate) fn default_theme() -> Theme {
         })
         .apply(focus_style.clone());
 
+    let toggle_button_style = Style::new()
+        .active(|s| {
+            s.background(active_bg_color)
+                .color(Color::WHITE.with_alpha_factor(0.9))
+                .set(Foreground, Color::WHITE.with_alpha_factor(0.9))
+        })
+        .aspect_ratio(2.)
+        .background(Color::rgb8(240, 240, 240))
+        .border_radius(50.pct())
+        .border(1.)
+        .focus(|s| s.hover(|s| s.background(focus_hover_bg_color)))
+        .height(FONT_SIZE * 1.75)
+        .hover(|s| s.background(hover_bg_color))
+        .padding(padding)
+        .set(Foreground, Color::DARK_GRAY)
+        .set(widgets::ToggleButtonCircleRad, 75.pct())
+        .set(widgets::ToggleButtonInset, 10.pct())
+        .apply(border_style.clone())
+        .apply(focus_style.clone());
+
     const FONT_SIZE: f32 = 12.0;
 
     let input_style = Style::new()
@@ -235,16 +255,7 @@ pub(crate) fn default_theme() -> Theme {
         .class(scroll::Track, |s| {
             s.hover(|s| s.background(Color::rgba8(166, 166, 166, 30)))
         })
-        .class(ToggleButtonClass, |s| {
-            s.height(FONT_SIZE * 1.5)
-                .aspect_ratio(2.)
-                .background(Color::DARK_GRAY)
-                .border_radius(50.pct())
-                .set(Foreground, Color::WHITE_SMOKE)
-                .border(1.)
-                .set(widgets::ToggleButtonCircleRad, 75.pct())
-                .set(widgets::ToggleButtonInset, 10.pct())
-        })
+        .class(ToggleButtonClass, |_| toggle_button_style)
         .class(slider::Bar, |s| {
             s.background(Color::BLACK).border_radius(100.pct())
         })
