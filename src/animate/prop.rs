@@ -1,6 +1,6 @@
 use std::{any::Any, rc::Rc};
 
-use peniko::Color;
+use floem_peniko::Color;
 
 use crate::{animate::AnimDirection, style::StylePropRef, unit::Px};
 

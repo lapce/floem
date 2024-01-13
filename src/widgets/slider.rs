@@ -1,10 +1,10 @@
 //! A toggle button widget. An example can be found in widget-gallery/button in the floem examples.
 
+use floem_peniko::Color;
 use floem_reactive::create_effect;
 use floem_renderer::Renderer;
 use floem_winit::keyboard::{Key, NamedKey};
 use kurbo::{Circle, Point, RoundedRect};
-use peniko::Color;
 
 use crate::{
     prop,

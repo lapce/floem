@@ -563,7 +563,7 @@ impl WindowHandle {
                 .theme
                 .as_ref()
                 .map(|theme| theme.background)
-                .unwrap_or(peniko::Color::WHITE);
+                .unwrap_or(floem_peniko::Color::WHITE);
             // fill window with default white background if it's not transparent
             cx.fill(
                 &self
@@ -1252,8 +1252,8 @@ fn context_menu_view(
     context_menu: RwSignal<Option<(Menu, Point)>>,
     window_size: RwSignal<Size>,
 ) -> impl View {
+    use floem_peniko::Color;
     use floem_reactive::{create_effect, create_rw_signal};
-    use peniko::Color;
 
     use crate::{
         app::{add_app_update_event, AppUpdateEvent},
