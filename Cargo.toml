@@ -29,13 +29,12 @@ floem_renderer = { path = "renderer" }
 floem_vger = { path = "vger" }
 floem_tiny_skia = { path = "tiny_skia" }
 floem_reactive = { path = "reactive" }
-winit = { git = "https://github.com/lapce/winit", rev = "a75f4124c5f26990d061a49ae7451f4bbad8bc0e", features = ["rwh_05"] }
-# winit = { path = "../winit", features = ["rwh_05"] }
+floem-winit = { version = "0.29.4", features = ["rwh_05"] }
 image = { version = "0.24", features = ["jpeg", "png"] }
 copypasta = { version = "0.10.0", default-features = false, features = ["wayland", "x11"] }
 
 [features]
-serde = ["winit/serde"]
+serde = ["floem-winit/serde"]
 
 [workspace]
 members = ["renderer", "vger", "tiny_skia", "reactive", "examples/*"]

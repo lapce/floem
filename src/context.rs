@@ -1,4 +1,5 @@
 use floem_renderer::Renderer as FloemRenderer;
+use floem_winit::window::CursorIcon;
 use kurbo::{Affine, Insets, Point, Rect, RoundedRect, Shape, Size, Vec2};
 use std::{
     any::Any,
@@ -11,7 +12,6 @@ use taffy::{
     prelude::{Layout, Node},
     style::{AvailableSpace, Display},
 };
-use winit::window::CursorIcon;
 
 use crate::{
     action::{exec_after, show_context_menu},

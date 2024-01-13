@@ -5,8 +5,8 @@ use std::{
 };
 
 use floem_reactive::Scope;
+use floem_winit::window::ResizeDirection;
 use kurbo::{Point, Size, Vec2};
-use winit::window::ResizeDirection;
 
 use crate::{
     app::{add_app_update_event, AppUpdateEvent},

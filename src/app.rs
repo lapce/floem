@@ -1,13 +1,13 @@
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use floem_reactive::WriteSignal;
-use once_cell::sync::Lazy;
-use parking_lot::Mutex;
-use winit::{
+use floem_winit::{
     event_loop::{ControlFlow, EventLoop, EventLoopBuilder, EventLoopProxy},
     monitor::MonitorHandle,
     window::WindowId,
 };
+use once_cell::sync::Lazy;
+use parking_lot::Mutex;
 
 use crate::{
     action::Timer, app_handle::ApplicationHandle, clipboard::Clipboard, inspector::Capture,
@@ -135,23 +135,23 @@ impl Application {
             handle.handle_timer(event_loop);
 
             match event {
-                winit::event::Event::NewEvents(_) => {}
-                winit::event::Event::WindowEvent { window_id, event } => {
+                floem_winit::event::Event::NewEvents(_) => {}
+                floem_winit::event::Event::WindowEvent { window_id, event } => {
                     handle.handle_window_event(window_id, event, event_loop);
                 }
-                winit::event::Event::DeviceEvent { .. } => {}
-                winit::event::Event::UserEvent(event) => {
+                floem_winit::event::Event::DeviceEvent { .. } => {}
+                floem_winit::event::Event::UserEvent(event) => {
                     handle.handle_user_event(event_loop, event);
                 }
-                winit::event::Event::Suspended => {}
-                winit::event::Event::Resumed => {}
-                winit::event::Event::AboutToWait => {}
-                winit::event::Event::LoopExiting => {
+                floem_winit::event::Event::Suspended => {}
+                floem_winit::event::Event::Resumed => {}
+                floem_winit::event::Event::AboutToWait => {}
+                floem_winit::event::Event::LoopExiting => {
                     if let Some(action) = self.event_listener.as_ref() {
                         action(AppEvent::WillTerminate);
                     }
                 }
-                winit::event::Event::MemoryWarning => {}
+                floem_winit::event::Event::MemoryWarning => {}
             }
         });
     }

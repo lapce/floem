@@ -1,10 +1,10 @@
+pub use floem_winit::window::Fullscreen;
+pub use floem_winit::window::ResizeDirection;
+pub use floem_winit::window::Theme;
+pub use floem_winit::window::WindowButtons;
+pub use floem_winit::window::WindowId;
+pub use floem_winit::window::WindowLevel;
 use kurbo::{Point, Size};
-pub use winit::window::Fullscreen;
-pub use winit::window::ResizeDirection;
-pub use winit::window::Theme;
-pub use winit::window::WindowButtons;
-pub use winit::window::WindowId;
-pub use winit::window::WindowLevel;
 
 use crate::{
     app::{add_app_update_event, AppUpdateEvent},

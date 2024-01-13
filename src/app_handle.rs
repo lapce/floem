@@ -1,12 +1,12 @@
 use std::{collections::HashMap, rc::Rc, time::Instant};
 
-use kurbo::{Point, Size};
-use winit::{
+use floem_winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::WindowEvent,
     event_loop::{ControlFlow, EventLoopWindowTarget},
     window::WindowId,
 };
+use kurbo::{Point, Size};
 
 use crate::{
     action::{Timer, TimerToken},
@@ -20,7 +20,7 @@ use crate::{
 };
 
 pub(crate) struct ApplicationHandle {
-    window_handles: HashMap<winit::window::WindowId, WindowHandle>,
+    window_handles: HashMap<floem_winit::window::WindowId, WindowHandle>,
     timers: HashMap<TimerToken, Timer>,
 }
 
@@ -102,7 +102,7 @@ impl ApplicationHandle {
 
     pub(crate) fn handle_window_event(
         &mut self,
-        window_id: winit::window::WindowId,
+        window_id: floem_winit::window::WindowId,
         event: WindowEvent,
         event_loop: &EventLoopWindowTarget<UserEvent>,
     ) {
@@ -242,7 +242,7 @@ impl ApplicationHandle {
         view_fn: Box<dyn FnOnce(WindowId) -> Box<dyn View>>,
         config: Option<WindowConfig>,
     ) {
-        let mut window_builder = winit::window::WindowBuilder::new();
+        let mut window_builder = floem_winit::window::WindowBuilder::new();
         let transparent = config.as_ref().and_then(|c| c.transparent).unwrap_or(false);
         let apply_default_theme = if let Some(config) = config {
             if let Some(size) = config.size {
@@ -260,7 +260,7 @@ impl ApplicationHandle {
             if let Some(show_titlebar) = config.show_titlebar {
                 #[cfg(target_os = "macos")]
                 if !show_titlebar {
-                    use winit::platform::macos::WindowBuilderExtMacOS;
+                    use floem_winit::platform::macos::WindowBuilderExtMacOS;
                     window_builder = window_builder
                         .with_movable(false)
                         .with_title_hidden(true)

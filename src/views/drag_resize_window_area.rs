@@ -1,4 +1,4 @@
-use winit::window::ResizeDirection;
+use floem_winit::window::ResizeDirection;
 
 use crate::{
     action::drag_resize_window,

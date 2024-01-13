@@ -13,8 +13,8 @@ use floem_reactive::create_rw_signal;
 use taffy::prelude::{Layout, Node};
 
 use floem_renderer::{cosmic_text::Cursor, Renderer};
+use floem_winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
 use unicode_segmentation::UnicodeSegmentation;
-use winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
 
 use crate::{peniko::Color, style::Style, view::View};
 
