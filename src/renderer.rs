@@ -50,8 +50,8 @@
 use crate::cosmic_text::TextLayout;
 use floem_peniko::BrushRef;
 use floem_renderer::Img;
-use floem_tiny_skia::TinySkiaRenderer;
-use floem_vger::VgerRenderer;
+use floem_tiny_skia_renderer::TinySkiaRenderer;
+use floem_vger_renderer::VgerRenderer;
 use image::DynamicImage;
 use kurbo::{Affine, Rect, Shape, Size};
 

@@ -1,7 +1,9 @@
 [package]
-name = "floem_vger"
-version = "0.1.0"
+name = "floem_vger_renderer"
+version.workspace = true
 edition = "2021"
+repository = "https://github.com/lapce/floem"
+description = "A native Rust UI library with fine-grained reactivity"
 license.workspace = true
 
 [dependencies]
@@ -14,4 +16,4 @@ floem-peniko = "0.1.0"
 swash = "0.1.8"
 floem-vger-rs = { package = "floem-vger", version = "0.2.7" }  # Alias library to avoid overlap with subcrate
 image = { version = "0.24", features = ["jpeg", "png"] }
-floem_renderer = { path = "../renderer" }
+floem_renderer = { path = "../renderer", version = "0.1.0" }
