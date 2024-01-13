@@ -62,7 +62,7 @@ To sample Floem's capabilities, check out the repo and run the [widget gallery](
 
 ![Widget gallery](docs/img/widget-gallery.png)
 
-To help you master Floem, we provide [documentation](http://lapce.dev/floem/floem/) and [code examples](examples/).
+To help you master Floem, we provide [documentation](https://docs.rs/floem) and [code examples](examples/).
 
 ## Contributions
 
