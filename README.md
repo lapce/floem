@@ -4,6 +4,10 @@
 
 A native Rust UI library with fine-grained reactivity
 
+[![crates.io](https://img.shields.io/crates/v/floem.svg)](https://crates.io/crates/floem)
+[![docs.rs](https://docs.rs/floem/badge.svg)](https://docs.rs/floem)
+[![Discord](https://img.shields.io/discord/946858761413328946?color=%237289DA&label=discord)](https://discord.gg/RB6cRYerXX)
+
 </div>
 
 _The project is still maturing. We will make occasional breaking changes and add missing features on our way to v1._
