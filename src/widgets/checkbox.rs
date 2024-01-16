@@ -18,17 +18,25 @@ fn checkbox_svg(checked: ReadSignal<bool>) -> impl View {
 
 /// Renders a checkbox the provided checked signal.
 /// Can be combined with a label and a stack with a click event (as in `examples/widget-gallery`).
-pub fn checkbox(checked: ReadSignal<bool>) -> impl View {
-    checkbox_svg(checked).keyboard_navigatable()
+pub fn checkbox(checked: ReadSignal<bool>, on_update: impl Fn(bool) + Copy + 'static) -> impl View {
+    checkbox_svg(checked)
+        .keyboard_navigatable()
+        .on_click_stop(move |_| {
+            on_update(!checked.get());
+        })
 }
 
 /// Renders a checkbox using the provided checked signal.
 pub fn labeled_checkbox<S: Display + 'static>(
     checked: ReadSignal<bool>,
     label: impl Fn() -> S + 'static,
+    on_update: impl Fn(bool) + Copy + 'static,
 ) -> impl View {
     h_stack((checkbox_svg(checked), views::label(label)))
         .class(LabeledCheckboxClass)
         .style(|s| s.items_center().justify_center())
         .keyboard_navigatable()
+        .on_click_stop(move |_| {
+            on_update(!checked.get());
+        })
 }

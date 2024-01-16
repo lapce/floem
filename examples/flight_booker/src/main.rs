@@ -54,10 +54,18 @@ pub fn app_view() -> impl View {
     let did_booking = create_rw_signal(false);
 
     let mode_picker = h_stack((
-        labeled_radio_button(FlightMode::OneWay, flight_mode, || "One way flight")
-            .on_click_stop(move |_| flight_mode_set.set(FlightMode::OneWay)),
-        labeled_radio_button(FlightMode::Return, flight_mode, || "Return flight")
-            .on_click_stop(move |_| flight_mode_set.set(FlightMode::Return)),
+        labeled_radio_button(
+            FlightMode::OneWay,
+            flight_mode,
+            || "One way flight",
+            move |value| flight_mode_set.set(value),
+        ),
+        labeled_radio_button(
+            FlightMode::Return,
+            flight_mode,
+            || "Return flight",
+            move |value| flight_mode_set.set(value),
+        ),
     ));
 
     let start_date_input = text_input(start_text)

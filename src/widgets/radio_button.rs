@@ -24,11 +24,19 @@ where
 
 /// Renders a radio button that appears as selected if the signal equals the given enum value.
 /// Can be combined with a label and a stack with a click event (as in `examples/widget-gallery`).
-pub fn radio_button<T>(represented_value: T, actual_value: ReadSignal<T>) -> impl View
+pub fn radio_button<T>(
+    represented_value: T,
+    actual_value: ReadSignal<T>,
+    on_update: impl Fn(T) + Copy + 'static,
+) -> impl View
 where
     T: Eq + PartialEq + Clone + 'static,
 {
-    radio_button_svg(represented_value, actual_value).keyboard_navigatable()
+    radio_button_svg(represented_value.clone(), actual_value)
+        .keyboard_navigatable()
+        .on_click_stop(move |_| {
+            on_update(represented_value.clone());
+        })
 }
 
 /// Renders a radio button that appears as selected if the signal equals the given enum value.
@@ -36,15 +44,19 @@ pub fn labeled_radio_button<S: std::fmt::Display + 'static, T>(
     represented_value: T,
     actual_value: ReadSignal<T>,
     label: impl Fn() -> S + 'static,
+    on_update: impl Fn(T) + Copy + 'static,
 ) -> impl View
 where
     T: Eq + PartialEq + Clone + 'static,
 {
     h_stack((
-        radio_button_svg(represented_value, actual_value),
+        radio_button_svg(represented_value.clone(), actual_value),
         views::label(label),
     ))
     .class(LabeledRadioButtonClass)
     .style(|s| s.items_center())
     .keyboard_navigatable()
+    .on_click_stop(move |_| {
+        on_update(represented_value.clone());
+    })
 }

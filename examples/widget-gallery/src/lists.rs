@@ -59,8 +59,8 @@ fn enhanced_list() -> impl View {
                 container({
                     stack({
                         (
-                            checkbox(is_checked).on_click_stop(move |_| {
-                                set_is_checked.update(|checked: &mut bool| *checked = !*checked);
+                            checkbox(is_checked, move |value| {
+                                set_is_checked.set(value);
                             }),
                             label(move || item.to_string())
                                 .style(|s| s.height(32.0).font_size(22.0)),
