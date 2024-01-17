@@ -256,16 +256,16 @@ pub(crate) fn default_theme() -> Theme {
             s.hover(|s| s.background(Color::rgba8(166, 166, 166, 30)))
         })
         .class(ToggleButtonClass, |_| toggle_button_style)
-        .class(slider::Bar, |s| {
+        .class(slider::BarClass, |s| {
             s.background(Color::BLACK).border_radius(100.pct())
         })
-        .class(slider::AccentBar, |s| {
+        .class(slider::AccentBarClass, |s| {
             s.background(Color::GREEN).border_radius(100.pct())
         })
         .class(SliderClass, |s| {
             s.set(Foreground, Color::DARK_GRAY)
                 .set(slider::BarExtends, true)
-                .set(slider::CircleRad, PxPct::Pct(100.))
+                .set(slider::HandleRadius, PxPct::Pct(100.))
                 .set(slider::BarExtends, false)
         })
         .class(PlaceholderTextClass, |s| {
