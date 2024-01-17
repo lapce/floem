@@ -703,7 +703,8 @@ impl<'a> EventCx<'a> {
                             Point::new(layout.x0, layout.y1)
                         };
                         if let Some(menu) = &self.app_state.view_state(id).popout_menu {
-                            show_context_menu(menu(), Some(bottom_left))
+                            show_context_menu(menu(), Some(bottom_left));
+                            return EventPropagation::Stop;
                         }
                         if self.app_state.draggable.contains(&id)
                             && self.app_state.drag_start.is_none()
@@ -880,7 +881,8 @@ impl<'a> EventCx<'a> {
                         )
                     };
                     if let Some(menu) = &self.app_state.view_state(id).context_menu {
-                        show_context_menu(menu(), Some(viewport_event_position))
+                        show_context_menu(menu(), Some(viewport_event_position));
+                        return EventPropagation::Stop;
                     }
                 }
             }
