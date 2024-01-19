@@ -137,17 +137,17 @@ impl Id {
         });
     }
 
-    pub fn update_state(&self, state: impl Any, deferred: bool) {
-        if !deferred {
-            self.add_update_message(UpdateMessage::State {
-                id: *self,
-                state: Box::new(state),
-            });
-        } else {
-            CENTRAL_DEFERRED_UPDATE_MESSAGES.with(|msgs| {
-                msgs.borrow_mut().push((*self, Box::new(state)));
-            });
-        }
+    pub fn update_state(&self, state: impl Any) {
+        self.add_update_message(UpdateMessage::State {
+            id: *self,
+            state: Box::new(state),
+        });
+    }
+
+    pub fn update_state_deferred(&self, state: impl Any) {
+        CENTRAL_DEFERRED_UPDATE_MESSAGES.with(|msgs| {
+            msgs.borrow_mut().push((*self, Box::new(state)));
+        });
     }
 
     pub(crate) fn update_style(&self, style: Style, offset: StackOffset<Style>) {

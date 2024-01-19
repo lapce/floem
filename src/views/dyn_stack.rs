@@ -65,7 +65,7 @@ where
             }
             diff
         };
-        id.update_state(diff, false);
+        id.update_state(diff);
         HashRun(hashed_items)
     });
     let view_fn = Box::new(as_child_of_current_scope(view_fn));

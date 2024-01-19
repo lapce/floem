@@ -71,7 +71,7 @@ pub fn label<S: Display + 'static>(label: impl Fn() -> S + 'static) -> Label {
     let id = Id::next();
     let initial_label = create_updater(
         move || label().to_string(),
-        move |new_label| id.update_state(new_label, false),
+        move |new_label| id.update_state(new_label),
     );
     Label::new(id, initial_label)
 }

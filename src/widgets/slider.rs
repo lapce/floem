@@ -112,7 +112,7 @@ pub fn slider(percent: impl Fn() -> f32 + 'static) -> Slider {
     let id = crate::id::Id::next();
     create_effect(move |_| {
         let percent = percent();
-        id.update_state(SliderUpdate::Percent(percent), false);
+        id.update_state(SliderUpdate::Percent(percent));
     });
     Slider {
         data: ViewData::new(id),
@@ -354,7 +354,7 @@ impl Slider {
         let id = self.id();
         create_effect(move |_| {
             let state = state();
-            id.update_state(SliderUpdate::DisableEvents(state), false);
+            id.update_state(SliderUpdate::DisableEvents(state));
         });
         self
     }

@@ -65,7 +65,7 @@ where
     let offsets = create_rw_signal(Vec::new());
     create_effect(move |_| {
         selection.track();
-        id.update_state(ListUpdate::SelectionChanged, false);
+        id.update_state(ListUpdate::SelectionChanged);
     });
 
     let shared = Rc::new((each_fn, item_size));
@@ -152,7 +152,7 @@ where
                 Key::Named(NamedKey::Home) => {
                     if length.get_untracked() > 0 {
                         selection.set(Some(0));
-                        id.update_state(ListUpdate::ScrollToSelected, false);
+                        id.update_state(ListUpdate::ScrollToSelected);
                     }
                     EventPropagation::Stop
                 }
@@ -160,7 +160,7 @@ where
                     let length = length.get_untracked();
                     if length > 0 {
                         selection.set(Some(length - 1));
-                        id.update_state(ListUpdate::ScrollToSelected, false);
+                        id.update_state(ListUpdate::ScrollToSelected);
                     }
                     EventPropagation::Stop
                 }
@@ -170,14 +170,14 @@ where
                         Some(i) => {
                             if i > 0 {
                                 selection.set(Some(i - 1));
-                                id.update_state(ListUpdate::ScrollToSelected, false);
+                                id.update_state(ListUpdate::ScrollToSelected);
                             }
                         }
                         None => {
                             let length = length.get_untracked();
                             if length > 0 {
                                 selection.set(Some(length - 1));
-                                id.update_state(ListUpdate::ScrollToSelected, false);
+                                id.update_state(ListUpdate::ScrollToSelected);
                             }
                         }
                     }
@@ -189,13 +189,13 @@ where
                         Some(i) => {
                             if i < length.get_untracked() - 1 {
                                 selection.set(Some(i + 1));
-                                id.update_state(ListUpdate::ScrollToSelected, false);
+                                id.update_state(ListUpdate::ScrollToSelected);
                             }
                         }
                         None => {
                             if length.get_untracked() > 0 {
                                 selection.set(Some(0));
-                                id.update_state(ListUpdate::ScrollToSelected, false);
+                                id.update_state(ListUpdate::ScrollToSelected);
                             }
                         }
                     }

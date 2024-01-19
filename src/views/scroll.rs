@@ -127,31 +127,31 @@ impl Scroll {
         self
     }
 
-    pub fn on_ensure_visible(self, to: impl Fn() -> Rect + 'static) -> Self {
+    pub fn ensure_visible(self, to: impl Fn() -> Rect + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
             let rect = to();
-            id.update_state(ScrollState::EnsureVisible(rect), true);
+            id.update_state_deferred(ScrollState::EnsureVisible(rect));
         });
 
         self
     }
 
-    pub fn on_scroll_delta(self, delta: impl Fn() -> Vec2 + 'static) -> Self {
+    pub fn scroll_delta(self, delta: impl Fn() -> Vec2 + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
             let delta = delta();
-            id.update_state(ScrollState::ScrollDelta(delta), false);
+            id.update_state(ScrollState::ScrollDelta(delta));
         });
 
         self
     }
 
-    pub fn on_scroll_to(self, origin: impl Fn() -> Option<Point> + 'static) -> Self {
+    pub fn scroll_to(self, origin: impl Fn() -> Option<Point> + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
             if let Some(origin) = origin() {
-                id.update_state(ScrollState::ScrollTo(origin), true);
+                id.update_state_deferred(ScrollState::ScrollTo(origin));
             }
         });
 
@@ -163,7 +163,7 @@ impl Scroll {
         let id = self.id();
         create_effect(move |_| {
             let percent = percent() / 100.;
-            id.update_state(ScrollState::ScrollToPercent(percent), true);
+            id.update_state_deferred(ScrollState::ScrollToPercent(percent));
         });
         self
     }
@@ -172,7 +172,7 @@ impl Scroll {
         let id = self.id();
         create_effect(move |_| {
             if let Some(view) = view() {
-                id.update_state(ScrollState::ScrollToView(view), true);
+                id.update_state_deferred(ScrollState::ScrollToView(view));
             }
         });
 
@@ -182,7 +182,7 @@ impl Scroll {
     pub fn hide_bar(self, hide: impl Fn() -> bool + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
-            id.update_state(ScrollState::HiddenBar(hide()), false);
+            id.update_state(ScrollState::HiddenBar(hide()));
         });
         self
     }
@@ -190,7 +190,7 @@ impl Scroll {
     pub fn propagate_pointer_wheel(self, value: impl Fn() -> bool + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
-            id.update_state(ScrollState::PropagatePointerWheel(value()), false);
+            id.update_state(ScrollState::PropagatePointerWheel(value()));
         });
         self
     }
@@ -198,17 +198,17 @@ impl Scroll {
     pub fn vertical_scroll_as_horizontal(self, value: impl Fn() -> bool + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
-            id.update_state(ScrollState::VerticalScrollAsHorizontal(value()), false);
+            id.update_state(ScrollState::VerticalScrollAsHorizontal(value()));
         });
         self
     }
 
-    fn scroll_delta(&mut self, app_state: &mut AppState, delta: Vec2) {
+    fn do_scroll_delta(&mut self, app_state: &mut AppState, delta: Vec2) {
         let new_origin = self.child_viewport.origin() + delta;
         self.clamp_child_viewport(app_state, self.child_viewport.with_origin(new_origin));
     }
 
-    fn scroll_to(&mut self, app_state: &mut AppState, origin: Point) {
+    fn do_scroll_to(&mut self, app_state: &mut AppState, origin: Point) {
         self.clamp_child_viewport(app_state, self.child_viewport.with_origin(origin));
     }
 
@@ -487,7 +487,7 @@ impl Scroll {
             - self.actual_rect.height() / 2.0;
         let mut new_origin = self.child_viewport.origin();
         new_origin.y = new_y;
-        self.scroll_to(app_state, new_origin);
+        self.do_scroll_to(app_state, new_origin);
     }
 
     fn click_horizontal_bar_area(&mut self, app_state: &mut AppState, pos: Point) {
@@ -495,7 +495,7 @@ impl Scroll {
             - self.actual_rect.width() / 2.0;
         let mut new_origin = self.child_viewport.origin();
         new_origin.x = new_x;
-        self.scroll_to(app_state, new_origin);
+        self.do_scroll_to(app_state, new_origin);
     }
 
     fn point_within_vertical_bar(&self, app_state: &mut AppState, pos: Point) -> bool {
@@ -655,16 +655,16 @@ impl View for Scroll {
                     self.pan_to_visible(cx.app_state, rect);
                 }
                 ScrollState::ScrollDelta(delta) => {
-                    self.scroll_delta(cx.app_state, delta);
+                    self.do_scroll_delta(cx.app_state, delta);
                 }
                 ScrollState::ScrollTo(origin) => {
-                    self.scroll_to(cx.app_state, origin);
+                    self.do_scroll_to(cx.app_state, origin);
                 }
                 ScrollState::ScrollToPercent(percent) => {
                     let mut child_size = self.child_size;
                     child_size *= percent as f64;
                     let point = child_size.to_vec2().to_point();
-                    self.scroll_to(cx.app_state, point);
+                    self.do_scroll_to(cx.app_state, point);
                 }
                 ScrollState::ScrollToView(id) => {
                     self.do_scroll_to_view(cx.app_state, id, None);
