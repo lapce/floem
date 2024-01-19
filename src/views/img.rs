@@ -101,7 +101,7 @@ pub fn img(image: impl Fn() -> Vec<u8> + 'static) -> Img {
 pub(crate) fn img_dynamic(image: impl Fn() -> Option<Rc<DynamicImage>> + 'static) -> Img {
     let id = Id::next();
     create_effect(move |_| {
-        id.update_state(image(), false);
+        id.update_state(image());
     });
     Img {
         data: ViewData::new(id),

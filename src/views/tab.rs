@@ -71,13 +71,13 @@ where
             }
             diff
         };
-        id.update_state(TabState::Diff(Box::new(diff)), false);
+        id.update_state(TabState::Diff(Box::new(diff)));
         HashRun(hashed_items)
     });
 
     create_effect(move |_| {
         let active = active_fn();
-        id.update_state(TabState::Active::<T>(active), false);
+        id.update_state(TabState::Active::<T>(active));
     });
 
     let view_fn = Box::new(as_child_of_current_scope(view_fn));

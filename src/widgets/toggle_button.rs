@@ -82,7 +82,7 @@ pub fn toggle_button(state: impl Fn() -> bool + 'static) -> ToggleButton {
     let id = crate::id::Id::next();
     create_effect(move |_| {
         let state = state();
-        id.update_state(state, false);
+        id.update_state(state);
     });
 
     ToggleButton {

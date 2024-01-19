@@ -173,14 +173,11 @@ where
 
         if !diff.is_empty() || prev_before_size != before_size || prev_content_size != content_size
         {
-            id.update_state(
-                VirtualStackState {
-                    diff,
-                    before_size,
-                    content_size,
-                },
-                false,
-            );
+            id.update_state(VirtualStackState {
+                diff,
+                before_size,
+                content_size,
+            });
         }
         (before_size, content_size, HashRun(hashed_items))
     });

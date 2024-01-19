@@ -73,9 +73,7 @@ pub fn dyn_container<CF: Fn(T) -> Box<dyn View> + 'static, T: 'static>(
 ) -> DynamicContainer<T> {
     let id = Id::next();
 
-    let initial = create_updater(update_view, move |new_state| {
-        id.update_state(new_state, false)
-    });
+    let initial = create_updater(update_view, move |new_state| id.update_state(new_state));
 
     let child_fn = Box::new(as_child_of_current_scope(child_fn));
     let (child, child_scope) = child_fn(initial);

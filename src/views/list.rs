@@ -51,7 +51,7 @@ where
     let selection = create_rw_signal(None);
     create_effect(move |_| {
         selection.track();
-        id.update_state(ListUpdate::SelectionChanged, false);
+        id.update_state(ListUpdate::SelectionChanged);
     });
     let stack = v_stack_from_iter(iterator.into_iter().enumerate().map(move |(index, v)| {
         Item {
@@ -80,14 +80,14 @@ where
                 Key::Named(NamedKey::Home) => {
                     if length > 0 {
                         selection.set(Some(0));
-                        id.update_state(ListUpdate::ScrollToSelected, false);
+                        id.update_state(ListUpdate::ScrollToSelected);
                     }
                     EventPropagation::Stop
                 }
                 Key::Named(NamedKey::End) => {
                     if length > 0 {
                         selection.set(Some(length - 1));
-                        id.update_state(ListUpdate::ScrollToSelected, false);
+                        id.update_state(ListUpdate::ScrollToSelected);
                     }
                     EventPropagation::Stop
                 }
@@ -97,13 +97,13 @@ where
                         Some(i) => {
                             if i > 0 {
                                 selection.set(Some(i - 1));
-                                id.update_state(ListUpdate::ScrollToSelected, false);
+                                id.update_state(ListUpdate::ScrollToSelected);
                             }
                         }
                         None => {
                             if length > 0 {
                                 selection.set(Some(length - 1));
-                                id.update_state(ListUpdate::ScrollToSelected, false);
+                                id.update_state(ListUpdate::ScrollToSelected);
                             }
                         }
                     }
@@ -115,13 +115,13 @@ where
                         Some(i) => {
                             if i < length - 1 {
                                 selection.set(Some(i + 1));
-                                id.update_state(ListUpdate::ScrollToSelected, false);
+                                id.update_state(ListUpdate::ScrollToSelected);
                             }
                         }
                         None => {
                             if length > 0 {
                                 selection.set(Some(0));
-                                id.update_state(ListUpdate::ScrollToSelected, false);
+                                id.update_state(ListUpdate::ScrollToSelected);
                             }
                         }
                     }

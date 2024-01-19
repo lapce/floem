@@ -100,7 +100,7 @@ impl View for Tooltip {
                     let id = self.id();
                     let token =
                         exec_after(Duration::from_secs_f64(self.style.delay()), move |token| {
-                            id.update_state(token, false);
+                            id.update_state(token);
                         });
                     self.hover = Some((e.pos, token));
                 }

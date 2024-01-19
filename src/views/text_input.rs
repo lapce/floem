@@ -117,7 +117,7 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
     {
         create_effect(move |_| {
             let text = buffer.get();
-            id.update_state((text, is_focused.get()), false);
+            id.update_state((text, is_focused.get()));
         });
     }
 
