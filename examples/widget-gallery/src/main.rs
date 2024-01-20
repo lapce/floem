@@ -9,6 +9,7 @@ pub mod labels;
 pub mod lists;
 pub mod radio_buttons;
 pub mod rich_text;
+pub mod slider;
 
 use floem::{
     event::{Event, EventListener},
@@ -38,6 +39,7 @@ fn app_view() -> impl View {
         "RichText",
         "Image",
         "Clipboard",
+        "Slider",
     ]
     .into_iter()
     .collect();
@@ -159,6 +161,7 @@ fn app_view() -> impl View {
             "RichText" => container_box(rich_text::rich_text_view()),
             "Image" => container_box(images::img_view()),
             "Clipboard" => container_box(clipboard::clipboard_view()),
+            "Slider" => container_box(slider::slider_view()),
             _ => container_box(label(|| "Not implemented".to_owned())),
         },
     )
