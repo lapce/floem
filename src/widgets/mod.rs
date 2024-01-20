@@ -264,9 +264,10 @@ pub(crate) fn default_theme() -> Theme {
         })
         .class(SliderClass, |s| {
             s.set(Foreground, Color::DARK_GRAY)
-                .set(slider::BarExtends, true)
+                .height(15)
+                .width(100)
+                .set(slider::EdgeAlign, true)
                 .set(slider::HandleRadius, PxPct::Pct(100.))
-                .set(slider::BarExtends, false)
         })
         .class(PlaceholderTextClass, |s| {
             s.color(Color::rgba8(158, 158, 158, 30))
