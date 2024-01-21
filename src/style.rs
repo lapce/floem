@@ -42,9 +42,12 @@ pub use taffy::style::{
     AlignContent, AlignItems, Dimension, Display, FlexDirection, FlexWrap, JustifyContent, Position,
 };
 use taffy::{
-    geometry::Size,
+    geometry::{MinMax, Size},
     prelude::{GridPlacement, Line, Rect},
-    style::{LengthPercentage, Style as TaffyStyle, TrackSizingFunction},
+    style::{
+        LengthPercentage, MaxTrackSizingFunction, MinTrackSizingFunction, Style as TaffyStyle,
+        TrackSizingFunction,
+    },
 };
 
 use crate::context::InteractionState;
@@ -78,6 +81,9 @@ impl StylePropValue for FlexWrap {}
 impl StylePropValue for AlignItems {}
 impl StylePropValue for AlignContent {}
 impl StylePropValue for TrackSizingFunction {}
+impl StylePropValue for MinTrackSizingFunction {}
+impl StylePropValue for MaxTrackSizingFunction {}
+impl<T: StylePropValue, M: StylePropValue> StylePropValue for MinMax<T, M> {}
 impl<T: StylePropValue> StylePropValue for Line<T> {}
 impl StylePropValue for GridPlacement {}
 impl StylePropValue for CursorStyle {}
@@ -1051,6 +1057,8 @@ define_builtin_props!(
     AlignContentProp align_content: Option<AlignContent> {} = None,
     GridTemplateRows grid_template_rows: Vec<TrackSizingFunction> {} = Vec::new(),
     GridTemplateColumns grid_template_columns: Vec<TrackSizingFunction> {} = Vec::new(),
+    GridAutoRows grid_auto_rows: Vec<MinMax<MinTrackSizingFunction, MaxTrackSizingFunction>> {} = Vec::new(),
+    GridAutoColumns grid_auto_columns: Vec<MinMax<MinTrackSizingFunction, MaxTrackSizingFunction>> {} = Vec::new(),
     GridRow grid_row: Line<GridPlacement> {} = Line::default(),
     GridColumn grid_column: Line<GridPlacement> {} = Line::default(),
     AlignSelf align_self: Option<AlignItems> {} = None,
@@ -1678,6 +1686,8 @@ impl Style {
             grid_template_columns: style.grid_template_columns(),
             grid_row: style.grid_row(),
             grid_column: style.grid_column(),
+            grid_auto_rows: style.grid_auto_rows(),
+            grid_auto_columns: style.grid_auto_columns(),
             ..Default::default()
         }
     }
