@@ -14,17 +14,13 @@ pub fn checkbox_view() -> impl View {
         (
             form_item("Checkbox:".to_string(), width, move || {
                 checkbox(is_checked)
+                    .on_update(move |checked| set_is_checked.set(checked))
                     .style(|s| s.margin(5.0))
-                    .on_click_stop(move |_| {
-                        set_is_checked.update(|checked| *checked = !*checked);
-                    })
             }),
             form_item("Disabled Checkbox:".to_string(), width, move || {
                 checkbox(is_checked)
+                    .on_update(move |checked| set_is_checked.set(checked))
                     .style(|s| s.margin(5.0))
-                    .on_click_stop(move |_| {
-                        set_is_checked.update(|checked| *checked = !*checked);
-                    })
                     .disabled(|| true)
             }),
             form_item("Labelled Checkbox:".to_string(), width, move || {

@@ -705,3 +705,57 @@ impl View for Box<dyn View> {
         (**self).scroll_to(cx, target, rect)
     }
 }
+
+/// `delegate_view!()` can be used to easily implement the [`View`] trait on
+/// structs that wrap another `View` with some additional logic.
+///
+/// Example:
+/// ```
+/// pub struct Container {
+///     data: ViewData,
+///     child: Box<dyn View>,
+/// }
+///
+/// delegate_view!(Container, data, child);
+/// ```
+///
+/// `data` and `child` are the fields on the struct that contain the [`ViewData`]
+/// and the child [`View`].
+#[macro_export]
+macro_rules! delegate_view {
+    ($view:ty, $data:ident, $child:ident) => {
+        impl View for $view {
+            fn view_data(&self) -> &ViewData {
+                &self.$data
+            }
+
+            fn view_data_mut(&mut self) -> &mut ViewData {
+                &mut self.$data
+            }
+
+            fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
+                for_each(&self.$child);
+            }
+
+            fn for_each_child_mut<'a>(
+                &'a mut self,
+                for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
+            ) {
+                for_each(&mut self.$child);
+            }
+
+            fn for_each_child_rev_mut<'a>(
+                &'a mut self,
+                for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
+            ) {
+                for_each(&mut self.$child);
+            }
+
+            fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+                stringify!($view).into()
+            }
+        }
+    };
+}
+
+pub(crate) use delegate_view;
