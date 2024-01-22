@@ -39,7 +39,7 @@ pub struct ContainerBox {
 /// let check = true;
 ///
 /// if check == true {
-///     container_box(checkbox(create_rw_signal(true).read_only()))
+///     container_box(checkbox(|| true))
 /// } else {
 ///     container_box(label(|| "no check".to_string()))
 /// };
