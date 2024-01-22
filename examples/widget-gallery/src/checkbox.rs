@@ -13,34 +13,29 @@ pub fn checkbox_view() -> impl View {
     form({
         (
             form_item("Checkbox:".to_string(), width, move || {
-                checkbox(is_checked)
-                    .style(|s| s.margin(5.0))
-                    .on_click_stop(move |_| {
-                        set_is_checked.update(|checked| *checked = !*checked);
+                checkbox(move || is_checked.get())
+                    .on_update(move |checked| {
+                        set_is_checked.set(checked);
                     })
+                    .style(|s| s.margin(5.0))
             }),
             form_item("Disabled Checkbox:".to_string(), width, move || {
-                checkbox(is_checked)
+                checkbox(move || is_checked.get())
                     .style(|s| s.margin(5.0))
-                    .on_click_stop(move |_| {
-                        set_is_checked.update(|checked| *checked = !*checked);
-                    })
                     .disabled(|| true)
             }),
             form_item("Labelled Checkbox:".to_string(), width, move || {
-                labeled_checkbox(is_checked, || "Check me!").on_click_stop(move |_| {
-                    set_is_checked.update(|checked| *checked = !*checked);
-                })
+                labeled_checkbox(move || is_checked.get(), || "Check me!").on_update(
+                    move |checked| {
+                        set_is_checked.set(checked);
+                    },
+                )
             }),
             form_item(
                 "Disabled Labelled Checkbox:".to_string(),
                 width,
                 move || {
-                    labeled_checkbox(is_checked, || "Check me!")
-                        .on_click_stop(move |_| {
-                            set_is_checked.update(|checked| *checked = !*checked);
-                        })
-                        .disabled(|| true)
+                    labeled_checkbox(move || is_checked.get(), || "Check me!").disabled(|| true)
                 },
             ),
         )

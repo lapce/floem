@@ -27,6 +27,9 @@ pub use container_box::*;
 mod dyn_container;
 pub use dyn_container::*;
 
+mod value_container;
+pub use value_container::*;
+
 mod decorator;
 pub use decorator::*;
 
