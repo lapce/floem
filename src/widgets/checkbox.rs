@@ -1,7 +1,10 @@
 use crate::{
     style_class,
     view::View,
-    views::{self, h_stack, svg, Decorators},
+    views::{
+        self, create_value_container_signals, h_stack, svg, value_container, Decorators,
+        ValueContainer,
+    },
 };
 use floem_reactive::ReadSignal;
 use std::fmt::Display;
@@ -17,18 +20,39 @@ fn checkbox_svg(checked: ReadSignal<bool>) -> impl View {
 }
 
 /// Renders a checkbox the provided checked signal.
-/// Can be combined with a label and a stack with a click event (as in `examples/widget-gallery`).
-pub fn checkbox(checked: ReadSignal<bool>) -> impl View {
-    checkbox_svg(checked).keyboard_navigatable()
+pub fn checkbox(checked: impl Fn() -> bool + 'static) -> ValueContainer<bool> {
+    let (inbound_signal, outbound_signal) = create_value_container_signals(checked);
+
+    value_container(
+        checkbox_svg(inbound_signal.read_only())
+            .keyboard_navigatable()
+            .on_click_stop(move |_| {
+                let checked = inbound_signal.get_untracked();
+                outbound_signal.set(!checked);
+            }),
+        move || outbound_signal.get(),
+    )
 }
 
 /// Renders a checkbox using the provided checked signal.
 pub fn labeled_checkbox<S: Display + 'static>(
-    checked: ReadSignal<bool>,
+    checked: impl Fn() -> bool + 'static,
     label: impl Fn() -> S + 'static,
-) -> impl View {
-    h_stack((checkbox_svg(checked), views::label(label)))
+) -> ValueContainer<bool> {
+    let (inbound_signal, outbound_signal) = create_value_container_signals(checked);
+
+    value_container(
+        h_stack((
+            checkbox_svg(inbound_signal.read_only()),
+            views::label(label),
+        ))
         .class(LabeledCheckboxClass)
-        .style(|s| s.items_center().justify_center())
         .keyboard_navigatable()
+        .on_click_stop(move |_| {
+            let checked = inbound_signal.get_untracked();
+            outbound_signal.set(!checked);
+        })
+        .style(|s| s.items_center().justify_center()),
+        move || outbound_signal.get(),
+    )
 }
