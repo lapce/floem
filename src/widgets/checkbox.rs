@@ -48,7 +48,7 @@ pub fn labeled_checkbox<S: Display + 'static>(
         ))
         .class(LabeledCheckboxClass)
         .style(|s| s.items_center().justify_center()),
-        update_checked_signal.read_only(),
+        move || update_checked_signal.get(),
     )
     .keyboard_navigatable()
     .on_click_stop(move |_| {

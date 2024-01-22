@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use floem_reactive::{create_updater, ReadSignal};
+use floem_reactive::create_updater;
 
 use crate::{
     context::UpdateCx,
@@ -20,15 +20,12 @@ pub struct ValueContainer<T> {
 /// A [`ValueContainer`] is useful for wrapping another [View](crate::view::View).
 /// This is to provide the `on_update` method which can notify when the view's
 /// internal value was get changed
-pub fn value_container<T: Clone + 'static, V: View + 'static>(
+pub fn value_container<T: 'static, V: View + 'static>(
     child: V,
-    value: ReadSignal<T>,
+    value_update: impl Fn() -> T + 'static,
 ) -> ValueContainer<T> {
     let id = Id::next();
-    create_updater(
-        move || value.get(),
-        move |new_value| id.update_state(new_value),
-    );
+    create_updater(value_update, move |new_value| id.update_state(new_value));
     ValueContainer {
         data: ViewData::new(id),
         child: Box::new(child),
