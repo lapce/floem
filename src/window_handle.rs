@@ -40,7 +40,7 @@ use crate::{
         CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES,
         UPDATE_MESSAGES,
     },
-    view::{view_children_set_parent_id, view_tab_navigation, View, ViewData},
+    view::{view_children_set_parent_id, view_tab_navigation, AnyView, View, ViewData, Widget},
     view_data::{update_data, ChangeFlags},
     widgets::{default_theme, Theme},
 };
@@ -78,7 +78,7 @@ pub(crate) struct WindowHandle {
 impl WindowHandle {
     pub(crate) fn new(
         window: floem_winit::window::Window,
-        view_fn: impl FnOnce(floem_winit::window::WindowId) -> Box<dyn View> + 'static,
+        view_fn: impl FnOnce(floem_winit::window::WindowId) -> AnyView + 'static,
         transparent: bool,
         apply_default_theme: bool,
     ) -> Self {
@@ -106,21 +106,22 @@ impl WindowHandle {
 
         #[cfg(target_os = "linux")]
         let view = with_scope(scope, move || {
-            Box::new(
-                stack((
-                    container_box(view_fn(window_id)).style(|s| s.size(100.pct(), 100.pct())),
-                    context_menu_view(scope, window_id, context_menu, size),
-                ))
-                .style(|s| s.size(100.pct(), 100.pct())),
-            )
+            stack((
+                container_box(view_fn(window_id)).style(|s| s.size(100.pct(), 100.pct())),
+                context_menu_view(scope, window_id, context_menu, size),
+            ))
+            .style(|s| s.size(100.pct(), 100.pct()))
+            .any()
         });
 
-        view.id().set_parent(id);
-        view_children_set_parent_id(&*view);
+        let widget = view.build();
+
+        widget.view_data().id().set_parent(id);
+        view_children_set_parent_id(&*widget);
 
         let view = WindowView {
             data: ViewData::new(id),
-            main: view,
+            main: widget,
             overlays: Default::default(),
         };
 
@@ -206,7 +207,8 @@ impl WindowHandle {
                     }
 
                     if let Some(listener) = event.listener() {
-                        if let Some(action) = cx.get_event_listener(self.view.main.id(), &listener)
+                        if let Some(action) =
+                            cx.get_event_listener(self.view.main.view_data().id(), &listener)
                         {
                             processed |= (*action)(&event).is_processed();
                         }
@@ -496,9 +498,9 @@ impl WindowHandle {
     }
 
     fn style(&mut self) {
-        let mut cx = StyleCx::new(&mut self.app_state, self.view.id());
-        if let Some(style) = self.theme.as_ref().map(|theme| theme.style.clone()) {
-            cx.current = style;
+        let mut cx = StyleCx::new(&mut self.app_state, self.view.view_data().id());
+        if let Some(theme) = &self.theme {
+            cx.current = theme.style.clone();
         }
         cx.style_view(&mut self.view);
     }
@@ -588,7 +590,7 @@ impl WindowHandle {
     pub(crate) fn capture(&mut self) -> Capture {
         // Capture the view before we run `style` and `layout` to catch missing `request_style`` or
         // `request_layout` flags.
-        let root_layout = self.app_state.get_layout_rect(self.view.id());
+        let root_layout = self.app_state.get_layout_rect(self.view.view_data().id());
         let root = CapturedView::capture(&self.view, &mut self.app_state, root_layout);
 
         self.app_state.capture = Some(CaptureState::default());
@@ -621,7 +623,7 @@ impl WindowHandle {
         self.style();
         let post_style = Instant::now();
 
-        let taffy_root_node = self.app_state.view_state(self.view.id()).node;
+        let taffy_root_node = self.app_state.view_state(self.view.view_data().id()).node;
         let taffy_duration = self.layout();
         let post_layout = Instant::now();
         let window = self.paint().map(Rc::new);
@@ -901,7 +903,7 @@ impl WindowHandle {
                     }
                     UpdateMessage::WindowScale(scale) => {
                         cx.app_state.scale = scale;
-                        cx.request_layout(self.view.id());
+                        cx.request_layout(self.view.view_data().id());
                         let scale = self.scale * cx.app_state.scale;
                         self.paint_state.set_scale(scale);
                     }
@@ -973,7 +975,7 @@ impl WindowHandle {
                             child: view,
                         };
 
-                        view.id().set_parent(self.id);
+                        view.view_data().id().set_parent(self.id);
                         view_children_set_parent_id(&view);
 
                         self.view.overlays.insert(id, view);
@@ -1075,14 +1077,14 @@ impl WindowHandle {
 
     fn needs_layout(&mut self) -> bool {
         self.app_state
-            .view_state(self.view.id())
+            .view_state(self.view.view_data().id())
             .requested_changes
             .contains(ChangeFlags::LAYOUT)
     }
 
     fn needs_style(&mut self) -> bool {
         self.app_state
-            .view_state(self.view.id())
+            .view_state(self.view.view_data().id())
             .requested_changes
             .contains(ChangeFlags::STYLE)
     }
@@ -1524,10 +1526,10 @@ struct OverlayView {
     data: ViewData,
     scope: Scope,
     position: Point,
-    child: Box<dyn View>,
+    child: Box<dyn Widget>,
 }
 
-impl View for OverlayView {
+impl Widget for OverlayView {
     fn view_data(&self) -> &ViewData {
         &self.data
     }
@@ -1545,17 +1547,17 @@ impl View for OverlayView {
         )
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
         for_each(&self.child);
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
         for_each(&mut self.child);
     }
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
     ) {
         for_each(&mut self.child);
     }
@@ -1568,11 +1570,11 @@ impl View for OverlayView {
 /// A view representing a window which manages the main window view and any overlays.
 struct WindowView {
     data: ViewData,
-    main: Box<dyn View>,
+    main: Box<dyn Widget>,
     overlays: IndexMap<Id, OverlayView>,
 }
 
-impl View for WindowView {
+impl Widget for WindowView {
     fn view_data(&self) -> &ViewData {
         &self.data
     }
@@ -1585,14 +1587,14 @@ impl View for WindowView {
         &mut self.data
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
         for_each(&self.main);
         for overlay in self.overlays.values() {
             for_each(overlay);
         }
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
         for_each(&mut self.main);
         for overlay in self.overlays.values_mut() {
             for_each(overlay);
@@ -1601,7 +1603,7 @@ impl View for WindowView {
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
     ) {
         for overlay in self.overlays.values_mut().rev() {
             for_each(overlay);

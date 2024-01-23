@@ -10,7 +10,7 @@ use crate::{
     id::Id,
     menu::Menu,
     style::{Style, StyleClassRef, StyleSelector},
-    view::View,
+    view::Widget,
     view_data::{ChangeFlags, StackOffset},
 };
 
@@ -116,7 +116,7 @@ pub(crate) enum UpdateMessage {
     AddOverlay {
         id: Id,
         position: Point,
-        view: Box<dyn FnOnce() -> Box<dyn View>>,
+        view: Box<dyn FnOnce() -> Box<dyn Widget>>,
     },
     RemoveOverlay {
         id: Id,

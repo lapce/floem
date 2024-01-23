@@ -4,20 +4,20 @@ use crate::{
     context::UpdateCx,
     id::Id,
     style::Style,
-    view::{View, ViewData},
+    view::{View, ViewData, Widget},
     view_tuple::ViewTuple,
 };
 
 pub struct Stack {
     data: ViewData,
-    pub(crate) children: Vec<Box<dyn View>>,
+    pub(crate) children: Vec<Box<dyn Widget>>,
     direction: Option<FlexDirection>,
 }
 
 pub fn stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
     Stack {
         data: ViewData::new(Id::next()),
-        children: children.into_views(),
+        children: children.into_widgets(),
         direction: None,
     }
 }
@@ -26,7 +26,7 @@ pub fn stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
 pub fn h_stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
     Stack {
         data: ViewData::new(Id::next()),
-        children: children.into_views(),
+        children: children.into_widgets(),
         direction: Some(FlexDirection::Row),
     }
 }
@@ -35,7 +35,7 @@ pub fn h_stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
 pub fn v_stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
     Stack {
         data: ViewData::new(Id::next()),
-        children: children.into_views(),
+        children: children.into_widgets(),
         direction: Some(FlexDirection::Column),
     }
 }
@@ -48,7 +48,7 @@ where
         data: ViewData::new(Id::next()),
         children: iterator
             .into_iter()
-            .map(|v| -> Box<dyn View> { Box::new(v) })
+            .map(|v| -> Box<dyn Widget> { v.build() })
             .collect(),
         direction,
     }
@@ -87,12 +87,26 @@ impl View for Stack {
         &mut self.data
     }
 
+    fn build(self) -> Box<dyn Widget> {
+        Box::new(self)
+    }
+}
+
+impl Widget for Stack {
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
+    }
+
     fn view_style(&self) -> Option<crate::style::Style> {
         self.direction
             .map(|direction| Style::new().flex_direction(direction))
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
         for child in &self.children {
             if for_each(child) {
                 break;
@@ -100,7 +114,7 @@ impl View for Stack {
         }
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
         for child in &mut self.children {
             if for_each(child) {
                 break;
@@ -110,7 +124,7 @@ impl View for Stack {
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
     ) {
         for child in self.children.iter_mut().rev() {
             if for_each(child) {

@@ -53,11 +53,11 @@ use taffy::{
 use crate::context::InteractionState;
 use crate::responsive::{ScreenSize, ScreenSizeBp};
 use crate::unit::{Px, PxPct, PxPctAuto, UnitExt};
-use crate::view::View;
+use crate::view::{AnyView, View};
 use crate::views::{empty, stack, text, Decorators};
 
 pub trait StylePropValue: Clone + PartialEq + Debug {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
+    fn debug_view(&self) -> Option<AnyView> {
         None
     }
 
@@ -96,7 +96,7 @@ impl StylePropValue for LineHeightValue {}
 impl StylePropValue for Size<LengthPercentage> {}
 
 impl<T: StylePropValue> StylePropValue for Option<T> {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
+    fn debug_view(&self) -> Option<AnyView> {
         self.as_ref().and_then(|v| v.debug_view())
     }
 
@@ -109,7 +109,7 @@ impl<T: StylePropValue> StylePropValue for Option<T> {
     }
 }
 impl<T: StylePropValue> StylePropValue for Vec<T> {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
+    fn debug_view(&self) -> Option<AnyView> {
         None
     }
 
@@ -118,34 +118,34 @@ impl<T: StylePropValue> StylePropValue for Vec<T> {
     }
 }
 impl StylePropValue for Px {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        Some(Box::new(text(format!("{} px", self.0))))
+    fn debug_view(&self) -> Option<AnyView> {
+        Some(text(format!("{} px", self.0)).any())
     }
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         self.0.interpolate(&other.0, value).map(Px)
     }
 }
 impl StylePropValue for PxPctAuto {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
+    fn debug_view(&self) -> Option<AnyView> {
         let label = match self {
             Self::Px(v) => format!("{} px", v),
             Self::Pct(v) => format!("{}%", v),
             Self::Auto => "auto".to_string(),
         };
-        Some(Box::new(text(label)))
+        Some(text(label).any())
     }
 }
 impl StylePropValue for PxPct {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
+    fn debug_view(&self) -> Option<AnyView> {
         let label = match self {
             Self::Px(v) => format!("{} px", v),
             Self::Pct(v) => format!("{}%", v),
         };
-        Some(Box::new(text(label)))
+        Some(text(label).any())
     }
 }
 impl StylePropValue for Color {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
+    fn debug_view(&self) -> Option<AnyView> {
         let color = *self;
         let color = empty().style(move |s| {
             s.background(color)
@@ -161,9 +161,11 @@ impl StylePropValue for Color {
                 .border_radius(5.0)
                 .margin_left(6.0)
         });
-        Some(Box::new(
-            stack((text(format!("{self:?}")), color)).style(|s| s.items_center()),
-        ))
+        Some(
+            stack((text(format!("{self:?}")), color))
+                .style(|s| s.items_center())
+                .any(),
+        )
     }
 
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
@@ -247,7 +249,7 @@ pub struct StylePropInfo {
     pub(crate) inherited: bool,
     pub(crate) default_as_any: fn() -> Rc<dyn Any>,
     pub(crate) debug_any: fn(val: &dyn Any) -> String,
-    pub(crate) debug_view: fn(val: &dyn Any) -> Option<Box<dyn View>>,
+    pub(crate) debug_view: fn(val: &dyn Any) -> Option<AnyView>,
 }
 
 impl StylePropInfo {
