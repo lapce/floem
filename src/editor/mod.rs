@@ -12,3 +12,5 @@ pub mod phantom_text;
 pub mod text;
 pub mod view;
 pub mod visual_line;
+
+pub use floem_editor_core as core;
