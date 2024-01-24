@@ -4,7 +4,10 @@ pub mod press;
 use std::{collections::HashMap, rc::Rc, str::FromStr};
 
 use crate::{keyboard::ModifiersState, reactive::RwSignal};
-use floem_editor_core::command::{EditCommand, MoveCommand, MultiSelectionCommand, ScrollCommand};
+use floem_editor_core::{
+    command::{EditCommand, MoveCommand, MultiSelectionCommand, ScrollCommand},
+    mode::Mode,
+};
 
 use crate::editor::{
     command::{Command, CommandExecuted},
@@ -381,7 +384,18 @@ pub fn default_key_handler(
 ) -> impl Fn(&KeyPress, ModifiersState) -> CommandExecuted + 'static {
     let keypress_map = KeypressMap::default();
     move |keypress, modifiers| {
-        let Some(command) = keypress_map.keymaps.get(keypress) else {
+        let command = keypress_map.keymaps.get(keypress).or_else(|| {
+            let mode = editor.get_untracked().cursor.get_untracked().get_mode();
+            if mode == Mode::Insert {
+                let mut keypress = keypress.clone();
+                keypress.mods.set(ModifiersState::SHIFT, false);
+                keypress_map.keymaps.get(&keypress)
+            } else {
+                None
+            }
+        });
+
+        let Some(command) = command else {
             return CommandExecuted::No;
         };
 
