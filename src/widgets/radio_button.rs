@@ -1,7 +1,10 @@
 use crate::{
     style_class,
     view::View,
-    views::{self, container, empty, h_stack, Decorators},
+    views::{
+        self, container, create_value_container_signals, empty, h_stack, value_container,
+        Decorators, ValueContainer,
+    },
 };
 use floem_reactive::ReadSignal;
 
@@ -24,27 +27,55 @@ where
 
 /// Renders a radio button that appears as selected if the signal equals the given enum value.
 /// Can be combined with a label and a stack with a click event (as in `examples/widget-gallery`).
-pub fn radio_button<T>(represented_value: T, actual_value: ReadSignal<T>) -> impl View
+pub fn radio_button<T>(
+    represented_value: T,
+    actual_value: impl Fn() -> T + 'static,
+) -> ValueContainer<T>
 where
     T: Eq + PartialEq + Clone + 'static,
 {
-    radio_button_svg(represented_value, actual_value).keyboard_navigatable()
+    let (inbound_signal, outbound_signal) = create_value_container_signals(actual_value);
+    let cloneable_represented_value = represented_value.clone();
+
+    value_container(
+        radio_button_svg(
+            cloneable_represented_value.clone(),
+            inbound_signal.read_only(),
+        )
+        .keyboard_navigatable()
+        .on_click_stop(move |_| {
+            outbound_signal.set(cloneable_represented_value.clone());
+        }),
+        move || outbound_signal.get(),
+    )
 }
 
 /// Renders a radio button that appears as selected if the signal equals the given enum value.
 pub fn labeled_radio_button<S: std::fmt::Display + 'static, T>(
     represented_value: T,
-    actual_value: ReadSignal<T>,
+    actual_value: impl Fn() -> T + 'static,
     label: impl Fn() -> S + 'static,
-) -> impl View
+) -> ValueContainer<T>
 where
     T: Eq + PartialEq + Clone + 'static,
 {
-    h_stack((
-        radio_button_svg(represented_value, actual_value),
-        views::label(label),
-    ))
-    .class(LabeledRadioButtonClass)
-    .style(|s| s.items_center())
-    .keyboard_navigatable()
+    let (inbound_signal, outbound_signal) = create_value_container_signals(actual_value);
+    let cloneable_represented_value = represented_value.clone();
+
+    value_container(
+        h_stack((
+            radio_button_svg(
+                cloneable_represented_value.clone(),
+                inbound_signal.read_only(),
+            ),
+            views::label(label),
+        ))
+        .class(LabeledRadioButtonClass)
+        .style(|s| s.items_center())
+        .keyboard_navigatable()
+        .on_click_stop(move |_| {
+            outbound_signal.set(cloneable_represented_value.clone());
+        }),
+        move || outbound_signal.get(),
+    )
 }
