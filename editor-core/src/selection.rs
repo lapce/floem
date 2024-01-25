@@ -1,6 +1,7 @@
 use std::cmp::{max, min, Ordering};
 
 use lapce_xi_rope::{RopeDelta, Transformer};
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::cursor::ColPosition;
@@ -17,7 +18,8 @@ pub enum InsertDrift {
     Default,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SelRegion {
     /// Region start offset
     pub start: usize,
@@ -29,7 +31,8 @@ pub struct SelRegion {
 
 /// A selection holding one or more [`SelRegion`].
 /// Regions are kept in order from the leftmost selection to the rightmost selection.
-#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Selection {
     regions: Vec<SelRegion>,
     last_inserted: usize,
@@ -425,9 +428,7 @@ impl Selection {
             }
             end_ix += 1;
         }
-        while end_ix < self.regions.len()
-            && region.should_merge(self.regions[end_ix])
-        {
+        while end_ix < self.regions.len() && region.should_merge(self.regions[end_ix]) {
             region = self.regions[end_ix].merge_with(region);
             end_ix += 1;
         }
@@ -458,8 +459,7 @@ impl Selection {
             // in case of ambiguous regions the region closer to the left wins
             let occ = &self.regions[ix];
             let is_eq = occ.min() == region.min() && occ.max() == region.max();
-            let is_intersect_before =
-                region.min() >= occ.min() && occ.max() > region.min();
+            let is_intersect_before = region.min() >= occ.min() && occ.max() > region.min();
             if is_eq || is_intersect_before {
                 return (occ.min(), occ.max());
             }
@@ -487,24 +487,15 @@ impl Selection {
     /// - `delta`[`xi_rope::RopeDelta`]
     /// - `after` parameter indicate if the delta should be applied before or after the selection
     /// - `drift` see [`InsertDrift`]
-    pub fn apply_delta(
-        &self,
-        delta: &RopeDelta,
-        after: bool,
-        drift: InsertDrift,
-    ) -> Selection {
+    pub fn apply_delta(&self, delta: &RopeDelta, after: bool, drift: InsertDrift) -> Selection {
         let mut result = Selection::new();
         let mut transformer = Transformer::new(delta);
         for region in self.regions() {
             let is_region_forward = region.start < region.end;
 
             let (start_after, end_after) = match (drift, region.is_caret()) {
-                (InsertDrift::Inside, false) => {
-                    (!is_region_forward, is_region_forward)
-                }
-                (InsertDrift::Outside, false) => {
-                    (is_region_forward, !is_region_forward)
-                }
+                (InsertDrift::Inside, false) => (!is_region_forward, is_region_forward),
+                (InsertDrift::Outside, false) => (is_region_forward, !is_region_forward),
                 _ => (after, after),
             };
 

@@ -64,5 +64,7 @@ rev = "c14525e1610db88986f849d46bd3e9795878b012"
 package = "tracing"
 
 [features]
-serde = ["floem-winit/serde"]
-editor = ["floem-editor-core", "dep:serde", "dep:lapce-xi-rope", "dep:strum", "dep:strum_macros", "dep:downcast-rs"]
+# TODO: this is only winit and the editor serde, there are other dependencies that still depend on 
+# serde
+serde = ["floem-winit/serde", "dep:serde"]
+editor = ["floem-editor-core", "dep:lapce-xi-rope", "dep:strum", "dep:strum_macros", "dep:downcast-rs"]

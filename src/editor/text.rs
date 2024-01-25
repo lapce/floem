@@ -21,6 +21,7 @@ use floem_editor_core::{
     word::WordCursor,
 };
 use lapce_xi_rope::Rope;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smallvec::smallvec;
 
@@ -210,8 +211,9 @@ impl WrapMethod {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "kebab-case"))]
 pub enum RenderWhitespace {
     #[default]
     None,

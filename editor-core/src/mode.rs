@@ -1,10 +1,12 @@
 use std::fmt::Write;
 
 use bitflags::bitflags;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum MotionMode {
     Delete { count: usize },
     Yank { count: usize },
@@ -23,19 +25,8 @@ impl MotionMode {
     }
 }
 
-#[derive(
-    Clone,
-    PartialEq,
-    Eq,
-    Hash,
-    Debug,
-    Copy,
-    Deserialize,
-    Serialize,
-    Default,
-    PartialOrd,
-    Ord,
-)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Copy, Default, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum VisualMode {
     #[default]
     Normal,
