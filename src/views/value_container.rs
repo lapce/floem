@@ -24,17 +24,17 @@ pub fn create_value_container_signals<T>(
     producer: impl Fn() -> T + 'static,
 ) -> (RwSignal<T>, RwSignal<T>)
 where
-    T: Copy + 'static,
+    T: Clone + 'static,
 {
     let initial_value = producer();
 
-    let inbound_signal = create_rw_signal(initial_value);
+    let inbound_signal = create_rw_signal(initial_value.clone());
     create_effect(move |_| {
         let checked = producer();
         inbound_signal.set(checked);
     });
 
-    let outbound_signal = create_rw_signal(initial_value);
+    let outbound_signal = create_rw_signal(initial_value.clone());
     create_effect(move |_| {
         let checked = outbound_signal.get();
         inbound_signal.set(checked);
