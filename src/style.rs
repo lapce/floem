@@ -1583,6 +1583,10 @@ impl Style {
         self.display(taffy::style::Display::Flex)
     }
 
+    pub fn grid(self) -> Self {
+        self.display(taffy::style::Display::Grid)
+    }
+
     pub fn flex_row(self) -> Self {
         self.flex_direction(taffy::style::FlexDirection::Row)
     }
