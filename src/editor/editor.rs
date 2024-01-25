@@ -97,7 +97,7 @@ pub struct Editor {
 
     /// Modal mode register
     pub register: RwSignal<Register>,
-
+    /// Cursor rendering information, such as the cursor blinking state.
     pub cursor_info: CursorInfo,
 
     pub last_movement: RwSignal<Movement>,
@@ -108,24 +108,51 @@ pub struct Editor {
     // TODO: this could have the Lapce snippet support built-in
 }
 impl Editor {
-    // TODO: shouldn't this accept an `RwSignal<Rc<dyn Document>>` so that it can listen for
-    // changes in other editors?
-    // TODO: should we really allow callers to arbitrarily specify the Id? That could open up
-    // confusing behavior.
+    /// Create a new editor into the given document, using the styling.  
+    /// `doc`: The backing [`Document`], such as [`TextDocument`]  
+    /// `style`: How the editor should be styled, such as [`SimpleStyling`]  
+    pub fn new(cx: Scope, doc: Rc<dyn Document>, style: Rc<dyn Styling>) -> Editor {
+        let id = EditorId::next();
+        Editor::new_id(cx, id, doc, style)
+    }
+
+    /// Create a new editor into the given document, using the styling.  
     /// `id` should typically be constructed by [`EditorId::next`]  
     /// `doc`: The backing [`Document`], such as [`TextDocument`]  
     /// `style`: How the editor should be styled, such as [`SimpleStyling`]  
-    /// `register` is the modal mode register, which will be created if `None`. You can pass in an
-    /// existing signal for it if you wish to share the state between editors.  
-    /// `cursor_info` is for cursor rendering information, such as the cursor blinking state. You
-    /// can pass in your own signals for this, such as for sharing blinking timing between editors.
-    pub fn new(
+    pub fn new_id(
         cx: Scope,
         id: EditorId,
         doc: Rc<dyn Document>,
         style: Rc<dyn Styling>,
-        register: Option<RwSignal<Register>>,
-        cursor_info: Option<CursorInfo>,
+    ) -> Editor {
+        let editor = Editor::new_direct(cx, id, doc, style);
+        editor.recreate_view_effects();
+
+        editor
+    }
+
+    // TODO: shouldn't this accept an `RwSignal<Rc<dyn Document>>` so that it can listen for
+    // changes in other editors?
+    // TODO: should we really allow callers to arbitrarily specify the Id? That could open up
+    // confusing behavior.
+
+    /// Create a new editor into the given document, using the styling.  
+    /// `id` should typically be constructed by [`EditorId::next`]  
+    /// `doc`: The backing [`Document`], such as [`TextDocument`]  
+    /// `style`: How the editor should be styled, such as [`SimpleStyling`]  
+    /// This does *not* create the view effects. Use this if you're creating an editor and then
+    /// replacing signals. Invoke [`Editor::recreate_view_effects`] when you are done.
+    /// ```rust,ignore
+    /// let shared_scroll_beyond_last_line = /* ... */;
+    /// let editor = Editor::new_direct(cx, id, doc, style);
+    /// editor.scroll_beyond_last_line.set(shared_scroll_beyond_last_line);
+    /// ```
+    pub fn new_direct(
+        cx: Scope,
+        id: EditorId,
+        doc: Rc<dyn Document>,
+        style: Rc<dyn Styling>,
     ) -> Editor {
         let cx = cx.create_child();
 
@@ -149,17 +176,6 @@ impl Editor {
         let lines = Rc::new(Lines::new(cx, font_sizes));
         let screen_lines = cx.create_rw_signal(ScreenLines::new(cx, viewport.get_untracked()));
 
-        let cursor_info = cursor_info.unwrap_or_else(|| CursorInfo::new(cx));
-
-        // Reset cursor blinking whenever the cursor changes
-        {
-            let cursor_info = cursor_info.clone();
-            cx.create_effect(move |_| {
-                cursor.track();
-                cursor_info.reset();
-            });
-        }
-
         let ed = Editor {
             cx: Cell::new(cx),
             effects_cx: Cell::new(cx.create_child()),
@@ -181,8 +197,8 @@ impl Editor {
             scroll_to: cx.create_rw_signal(None),
             lines,
             screen_lines,
-            register: register.unwrap_or_else(|| cx.create_rw_signal(Register::default())),
-            cursor_info,
+            register: cx.create_rw_signal(Register::default()),
+            cursor_info: CursorInfo::new(cx),
             last_movement: cx.create_rw_signal(Movement::Left),
             ime_allowed: cx.create_rw_signal(false),
         };
@@ -243,31 +259,14 @@ impl Editor {
         });
     }
 
-    pub fn duplicate(
-        &self,
-        editor_id: Option<EditorId>,
-        share_register: bool,
-        share_blink_cursor_info: bool,
-    ) -> Editor {
+    pub fn duplicate(&self, editor_id: Option<EditorId>) -> Editor {
         let doc = self.doc();
         let style = self.style();
-        let register = if share_register {
-            Some(self.register)
-        } else {
-            None
-        };
-        let cursor_info = if share_blink_cursor_info {
-            Some(self.cursor_info.clone())
-        } else {
-            None
-        };
-        let editor = Editor::new(
+        let mut editor = Editor::new_direct(
             self.cx.get(),
             editor_id.unwrap_or_else(EditorId::next),
             doc,
             style,
-            register,
-            cursor_info,
         );
 
         batch(|| {
@@ -292,10 +291,13 @@ impl Editor {
             editor.window_origin.set(self.window_origin.get_untracked());
             editor.viewport.set(self.viewport.get_untracked());
             editor.register.set(self.register.get_untracked());
+            editor.cursor_info = self.cursor_info.clone();
             editor.last_movement.set(self.last_movement.get_untracked());
             // ?
             // editor.ime_allowed.set(self.ime_allowed.get_untracked());
         });
+
+        editor.recreate_view_effects();
 
         editor
     }
@@ -1176,6 +1178,16 @@ fn create_view_effects(cx: Scope, ed: &Editor) {
     let ed2 = ed.clone();
     let ed3 = ed.clone();
     let ed4 = ed.clone();
+
+    // Reset cursor blinking whenever the cursor changes
+    {
+        let cursor_info = ed.cursor_info.clone();
+        let cursor = ed.cursor;
+        cx.create_effect(move |_| {
+            cursor.track();
+            cursor_info.reset();
+        });
+    }
 
     let update_screen_lines = |ed: &Editor| {
         // This function should not depend on the viewport signal directly.

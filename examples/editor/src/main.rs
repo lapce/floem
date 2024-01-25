@@ -3,7 +3,6 @@ use std::rc::Rc;
 use floem::{
     editor::{
         editor::Editor,
-        id::EditorId,
         keypress::default_key_handler,
         text::{default_dark_color, SimpleStyling, TextDocument},
         view::editor_container_view,
@@ -44,24 +43,10 @@ fn main() {
     // The style determines how things are styled in the editor itself
     let style = Rc::new(SimpleStyling::new(default_dark_color));
     // The editor is a view into the doc that can be rendered
-    let editor_a = Rc::new(Editor::new(
-        cx,
-        EditorId::next(),
-        doc.clone(),
-        style.clone(),
-        None,
-        None,
-    ));
+    let editor_a = Rc::new(Editor::new(cx, doc.clone(), style.clone()));
     let editor_a = create_rw_signal(editor_a);
 
-    let editor_b = Rc::new(Editor::new(
-        cx,
-        EditorId::next(),
-        doc.clone(),
-        style.clone(),
-        None,
-        None,
-    ));
+    let editor_b = Rc::new(Editor::new(cx, doc.clone(), style.clone()));
     let editor_b = create_rw_signal(editor_b);
 
     floem::launch(move || app_view(editor_a, editor_b));
