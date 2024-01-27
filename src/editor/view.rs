@@ -333,7 +333,7 @@ impl LineInfo {
 pub struct EditorView {
     id: Id,
     data: ViewData,
-    editor: Rc<Editor>,
+    editor: RwSignal<Editor>,
     is_active: Memo<bool>,
     inner_node: Option<Node>,
 }
@@ -831,23 +831,25 @@ impl View for EditorView {
 
     fn layout(&mut self, cx: &mut LayoutCx) -> crate::taffy::prelude::Node {
         cx.layout_node(self.id, true, |cx| {
+            let editor = self.editor.get_untracked();
+
             if self.inner_node.is_none() {
                 self.inner_node = Some(cx.new_node());
             }
 
-            let screen_lines = self.editor.screen_lines.get_untracked();
+            let screen_lines = editor.screen_lines.get_untracked();
             for (line, _) in screen_lines.iter_lines_y() {
                 // fill in text layout cache so that max width is correct.
-                self.editor.text_layout(line);
+                editor.text_layout(line);
             }
 
             let inner_node = self.inner_node.unwrap();
 
             // TODO: don't assume there's a constant line height
-            let line_height = f64::from(self.editor.line_height(0));
+            let line_height = f64::from(editor.line_height(0));
 
-            let width = self.editor.max_line_width() + 20.0;
-            let height = line_height * self.editor.last_vline().get() as f64;
+            let width = editor.max_line_width() + 20.0;
+            let height = line_height * editor.last_vline().get() as f64;
 
             let style = Style::new().width(width).height(height).to_taffy_style();
             cx.set_style(inner_node, style);
@@ -857,15 +859,17 @@ impl View for EditorView {
     }
 
     fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
+        let editor = self.editor.get_untracked();
+
         let viewport = cx.current_viewport();
-        if self.editor.viewport.with_untracked(|v| v != &viewport) {
-            self.editor.viewport.set(viewport);
+        if editor.viewport.with_untracked(|v| v != &viewport) {
+            editor.viewport.set(viewport);
         }
         None
     }
 
     fn paint(&mut self, cx: &mut PaintCx) {
-        let ed = &self.editor;
+        let ed = self.editor.get_untracked();
         let viewport = ed.viewport.get_untracked();
 
         // We repeatedly get the screen lines because we don't currently carefully manage the
@@ -877,41 +881,42 @@ impl View for EditorView {
         // I expect that most/all of the paint functions could restrict themselves to only what is
         // within the active screen lines without issue.
         let screen_lines = ed.screen_lines.get_untracked();
-        EditorView::paint_cursor(cx, ed, self.is_active.get_untracked(), &screen_lines);
+        EditorView::paint_cursor(cx, &ed, self.is_active.get_untracked(), &screen_lines);
         let screen_lines = ed.screen_lines.get_untracked();
-        EditorView::paint_text(cx, ed, viewport, &screen_lines);
-        EditorView::paint_scroll_bar(cx, ed, viewport);
+        EditorView::paint_text(cx, &ed, viewport, &screen_lines);
+        EditorView::paint_scroll_bar(cx, &ed, viewport);
     }
 }
 
 pub fn editor_view(
-    editor: Rc<Editor>,
+    editor: RwSignal<Editor>,
     is_active: impl Fn(bool) -> bool + 'static + Copy,
 ) -> EditorView {
     let id = Id::next();
     let is_active = create_memo(move |_| is_active(true));
 
+    let ed = editor.get_untracked();
+
     let data = ViewData::new(id);
 
-    let doc = editor.doc;
-    let style = editor.style;
+    let doc = ed.doc;
+    let style = ed.style;
     create_effect(move |_| {
         doc.track();
         style.track();
         id.request_layout();
     });
 
-    let hide_cursor = editor.cursor_info.hidden;
+    let hide_cursor = ed.cursor_info.hidden;
     create_effect(move |_| {
         hide_cursor.track();
         id.request_paint();
     });
 
-    let editor_window_origin = editor.window_origin;
-    let cursor = editor.cursor;
-    let ime_allowed = editor.ime_allowed;
-    let editor_viewport = editor.viewport;
-    let ed = editor.clone();
+    let editor_window_origin = ed.window_origin;
+    let cursor = ed.cursor;
+    let ime_allowed = ed.ime_allowed;
+    let editor_viewport = ed.viewport;
     create_effect(move |_| {
         let active = is_active.get();
         if active {
@@ -936,8 +941,6 @@ pub fn editor_view(
         }
     });
 
-    let ed = editor.clone();
-    let ed2 = editor.clone();
     EditorView {
         id,
         data,
@@ -951,12 +954,14 @@ pub fn editor_view(
         }
 
         if let Event::ImePreedit { text, cursor } = event {
-            if text.is_empty() {
-                ed.clear_preedit();
-            } else {
-                let offset = ed.cursor.with_untracked(|c| c.offset());
-                ed.set_preedit(text.clone(), *cursor, offset);
-            }
+            editor.with_untracked(|ed| {
+                if text.is_empty() {
+                    ed.clear_preedit();
+                } else {
+                    let offset = ed.cursor.with_untracked(|c| c.offset());
+                    ed.set_preedit(text.clone(), *cursor, offset);
+                }
+            });
         }
         EventPropagation::Stop
     })
@@ -966,8 +971,10 @@ pub fn editor_view(
         }
 
         if let Event::ImeCommit(text) = event {
-            ed2.clear_preedit();
-            ed2.receive_char(text);
+            editor.with_untracked(|ed| {
+                ed.clear_preedit();
+                ed.receive_char(text);
+            });
         }
         EventPropagation::Stop
     })
@@ -1062,7 +1069,7 @@ pub fn cursor_caret(
 }
 
 pub fn editor_container_view(
-    editor: RwSignal<Rc<Editor>>,
+    editor: RwSignal<Editor>,
     is_active: impl Fn(bool) -> bool + 'static + Copy,
     handle_key_event: impl Fn(&KeyPress, ModifiersState) -> CommandExecuted + 'static,
 ) -> impl View {
@@ -1072,7 +1079,7 @@ pub fn editor_container_view(
         // editor_breadcrumbs(workspace, editor.get_untracked(), config),
         container(
             stack((
-                editor_gutter(editor, is_active),
+                editor_gutter(editor),
                 container(editor_content(editor, is_active, handle_key_event))
                     .style(move |s| s.size_pct(100.0, 100.0)),
                 empty().style(move |s| s.absolute().width_pct(100.0)),
@@ -1099,10 +1106,7 @@ pub fn editor_container_view(
 
 /// Default editor gutter
 /// Simply shows line numbers
-pub fn editor_gutter(
-    editor: RwSignal<Rc<Editor>>,
-    _is_active: impl Fn(bool) -> bool + 'static + Copy,
-) -> impl View {
+pub fn editor_gutter(editor: RwSignal<Editor>) -> impl View {
     // TODO: these are probably tuned for lapce?
     let padding_left = 25.0;
     let padding_right = 30.0;
@@ -1122,7 +1126,7 @@ pub fn editor_gutter(
         ))
         .style(|s| s.height_pct(100.0)),
         clip(
-            stack((editor_gutter_view(editor.get_untracked())
+            stack((editor_gutter_view(editor)
                 .on_resize(move |rect| {
                     gutter_rect.set(rect);
                 })
@@ -1145,7 +1149,7 @@ pub fn editor_gutter(
 }
 
 fn editor_content(
-    editor: RwSignal<Rc<Editor>>,
+    editor: RwSignal<Editor>,
     is_active: impl Fn(bool) -> bool + 'static + Copy,
     handle_key_event: impl Fn(&KeyPress, ModifiersState) -> CommandExecuted + 'static,
 ) -> impl View {
@@ -1158,7 +1162,7 @@ fn editor_content(
     let scroll_beyond_last_line = ed.scroll_beyond_last_line;
 
     scroll({
-        let editor_content_view = editor_view(ed, is_active).style(move |s| {
+        let editor_content_view = editor_view(editor, is_active).style(move |s| {
             let padding_bottom = if scroll_beyond_last_line.get() {
                 // TODO: don't assume line height is constant?
                 // just use the last line's line height maybe, or just make

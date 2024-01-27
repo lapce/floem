@@ -1,7 +1,7 @@
 pub mod key;
 pub mod press;
 
-use std::{collections::HashMap, rc::Rc, str::FromStr};
+use std::{collections::HashMap, str::FromStr};
 
 use crate::{keyboard::ModifiersState, reactive::RwSignal};
 use floem_editor_core::{
@@ -380,7 +380,7 @@ fn add_default_nonmacos(c: &mut HashMap<KeyPress, Command>) {
 }
 
 pub fn default_key_handler(
-    editor: RwSignal<Rc<Editor>>,
+    editor: RwSignal<Editor>,
 ) -> impl Fn(&KeyPress, ModifiersState) -> CommandExecuted + 'static {
     let keypress_map = KeypressMap::default();
     move |keypress, modifiers| {

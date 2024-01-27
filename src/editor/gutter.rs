@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use crate::{
     context::PaintCx,
     cosmic_text::{Attrs, AttrsList, TextLayout},
@@ -9,6 +7,7 @@ use crate::{
     Renderer,
 };
 use floem_editor_core::mode::Mode;
+use floem_reactive::RwSignal;
 use kurbo::Rect;
 
 use crate::editor::{color::EditorColor, editor::Editor};
@@ -16,11 +15,11 @@ use crate::editor::{color::EditorColor, editor::Editor};
 pub struct EditorGutterView {
     id: Id,
     data: ViewData,
-    editor: Rc<Editor>,
+    editor: RwSignal<Editor>,
     width: f64,
 }
 
-pub fn editor_gutter_view(editor: Rc<Editor>) -> EditorGutterView {
+pub fn editor_gutter_view(editor: RwSignal<Editor>) -> EditorGutterView {
     let id = Id::next();
 
     EditorGutterView {
@@ -52,13 +51,15 @@ impl View for EditorGutterView {
     }
 
     fn paint(&mut self, cx: &mut PaintCx) {
-        let viewport = self.editor.viewport.get_untracked();
-        let cursor = self.editor.cursor;
-        let style = self.editor.style.get_untracked();
+        let editor = self.editor.get_untracked();
+
+        let viewport = editor.viewport.get_untracked();
+        let cursor = editor.cursor;
+        let style = editor.style.get_untracked();
 
         let (offset, mode) = cursor.with_untracked(|c| (c.offset(), c.get_mode()));
-        let last_line = self.editor.last_line();
-        let current_line = self.editor.line_of_offset(offset);
+        let last_line = editor.last_line();
+        let current_line = editor.line_of_offset(offset);
 
         // TODO: don't assume font family is constant for each line
         let family = style.font_family(0);
@@ -69,11 +70,11 @@ impl View for EditorGutterView {
         let attrs_list = AttrsList::new(attrs);
         let current_line_attrs_list =
             AttrsList::new(attrs.color(style.color(EditorColor::Foreground)));
-        let show_relative = self.editor.modal.get_untracked()
-            && self.editor.modal_relative_line_numbers.get_untracked()
+        let show_relative = editor.modal.get_untracked()
+            && editor.modal_relative_line_numbers.get_untracked()
             && mode != Mode::Insert;
 
-        self.editor.screen_lines.with_untracked(|screen_lines| {
+        editor.screen_lines.with_untracked(|screen_lines| {
             for (line, y) in screen_lines.iter_lines_y() {
                 // If it ends up outside the bounds of the file, stop trying to display line numbers
                 if line > last_line {
