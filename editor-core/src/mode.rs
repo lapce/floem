@@ -3,7 +3,6 @@ use std::fmt::Write;
 use bitflags::bitflags;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use tracing::warn;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -72,7 +71,7 @@ impl Modes {
                 'n' | 'N' => this.set(Self::NORMAL, true),
                 'v' | 'V' => this.set(Self::VISUAL, true),
                 't' | 'T' => this.set(Self::TERMINAL, true),
-                _ => warn!("Not an editor mode: {c}"),
+                _ => {}
             }
         }
 

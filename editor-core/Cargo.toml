@@ -9,7 +9,6 @@ license.workspace = true
 serde = { workspace = true, optional = true }
 strum.workspace = true
 strum_macros.workspace = true
-tracing.workspace = true
 
 lapce-xi-rope.workspace = true
 

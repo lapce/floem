@@ -58,11 +58,6 @@ floem-editor-core = { path = "editor-core", version = "0.1.0", optional = true }
 image = { version = "0.24", features = ["jpeg", "png"] }
 copypasta = { version = "0.10.0", default-features = false, features = ["wayland", "x11"] }
 
-[workspace.dependencies.tracing]
-git = "https://github.com/tokio-rs/tracing"
-rev = "c14525e1610db88986f849d46bd3e9795878b012"
-package = "tracing"
-
 [features]
 # TODO: this is only winit and the editor serde, there are other dependencies that still depend on 
 # serde
