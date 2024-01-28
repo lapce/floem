@@ -130,18 +130,19 @@ fn profile_view(profile: &Rc<Profile>) -> impl View {
 
     let event_tooltip = dyn_container(
         move || hovered_event.get(),
-        move |event: Option<ProfileEvent>| -> Box<dyn View> {
+        move |event: Option<ProfileEvent>| {
             if let Some(event) = event {
                 let len = event
                     .end
                     .saturating_duration_since(event.start)
                     .as_secs_f64();
-                Box::new(v_stack((
+                v_stack((
                     info("Name", event.name.to_string()),
                     info("Time", format!("{:.4} ms", len * 1000.0)),
-                )))
+                ))
+                .any()
             } else {
-                Box::new(text("No hovered event").style(|s| s.padding(5.0)))
+                text("No hovered event").style(|s| s.padding(5.0)).any()
             }
         },
     )
@@ -204,23 +205,22 @@ fn profile_view(profile: &Rc<Profile>) -> impl View {
                         hovered_event.set(Some(event_.clone()))
                     })
                 });
-                Box::new(
-                    scroll(
-                        v_stack_from_iter(list)
-                            .style(move |s| s.min_width_pct(zoom.get() * 100.0).height_full()),
-                    )
-                    .style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0))
-                    .on_event(EventListener::PointerWheel, move |e| {
-                        if let Event::PointerWheel(e) = e {
-                            zoom.set(zoom.get() * (1.0 - e.delta.y / 400.0));
-                            EventPropagation::Stop
-                        } else {
-                            EventPropagation::Continue
-                        }
-                    }),
+                scroll(
+                    v_stack_from_iter(list)
+                        .style(move |s| s.min_width_pct(zoom.get() * 100.0).height_full()),
                 )
+                .style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0))
+                .on_event(EventListener::PointerWheel, move |e| {
+                    if let Event::PointerWheel(e) = e {
+                        zoom.set(zoom.get() * (1.0 - e.delta.y / 400.0));
+                        EventPropagation::Stop
+                    } else {
+                        EventPropagation::Continue
+                    }
+                })
+                .any()
             } else {
-                Box::new(text("No selected frame").style(|s| s.padding(5.0)))
+                text("No selected frame").style(|s| s.padding(5.0)).any()
             }
         },
     )
@@ -282,9 +282,9 @@ pub fn profiler(window_id: WindowId) -> impl View {
         move || profile.get(),
         |profile| {
             if let Some(profile) = profile {
-                Box::new(profile_view(&profile))
+                profile_view(&profile).any()
             } else {
-                Box::new(text("No profile").style(|s| s.padding(5.0)))
+                text("No profile").style(|s| s.padding(5.0)).any()
             }
         },
     )

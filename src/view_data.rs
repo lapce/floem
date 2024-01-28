@@ -10,7 +10,7 @@ use crate::{
         Background, BorderBottom, BorderColor, BorderLeft, BorderRadius, BorderRight, BorderTop,
         LayoutProps, Outline, OutlineColor, Style, StyleClassRef, StyleSelectors,
     },
-    view::View,
+    view::Widget,
 };
 use bitflags::bitflags;
 use kurbo::Rect;
@@ -88,11 +88,15 @@ impl ViewData {
     }
 }
 
-pub(crate) fn update_data(id: Id, root: &mut dyn View, f: impl FnOnce(&mut ViewData)) {
-    pub(crate) fn update_inner(id_path: &[Id], view: &mut dyn View, f: impl FnOnce(&mut ViewData)) {
+pub(crate) fn update_data(id: Id, root: &mut dyn Widget, f: impl FnOnce(&mut ViewData)) {
+    pub(crate) fn update_inner(
+        id_path: &[Id],
+        view: &mut dyn Widget,
+        f: impl FnOnce(&mut ViewData),
+    ) {
         let id = id_path[0];
         let id_path = &id_path[1..];
-        if id == view.id() {
+        if id == view.view_data().id() {
             if id_path.is_empty() {
                 f(view.view_data_mut());
             } else if let Some(child) = view.child_mut(id_path[0]) {

@@ -10,7 +10,7 @@ use crate::{
     id::Id,
     style::{Style, TextOverflow},
     unit::PxPct,
-    view::{View, ViewData},
+    view::{View, ViewData, Widget},
 };
 
 pub struct RichText {
@@ -38,6 +38,20 @@ pub fn rich_text(text_layout: impl Fn() -> TextLayout + 'static) -> RichText {
 }
 
 impl View for RichText {
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
+    }
+
+    fn build(self) -> Box<dyn Widget> {
+        Box::new(self)
+    }
+}
+
+impl Widget for RichText {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

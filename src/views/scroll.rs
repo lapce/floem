@@ -11,7 +11,7 @@ use crate::{
     style::{Background, BorderColor, BorderRadius, Style, StyleSelector},
     style_class,
     unit::Px,
-    view::{View, ViewData},
+    view::{View, ViewData, Widget},
     EventPropagation,
 };
 
@@ -65,7 +65,7 @@ const HANDLE_COLOR: Color = Color::rgba8(0, 0, 0, 120);
 
 pub struct Scroll {
     data: ViewData,
-    child: Box<dyn View>,
+    child: Box<dyn Widget>,
 
     /// the actual rect of the scroll view excluding padding and borders. The origin is relative to this view.
     actual_rect: Rect,
@@ -99,7 +99,7 @@ pub struct Scroll {
 pub fn scroll<V: View + 'static>(child: V) -> Scroll {
     Scroll {
         data: ViewData::new(Id::next()),
-        child: Box::new(child),
+        child: child.build(),
         actual_rect: Rect::ZERO,
         child_size: Size::ZERO,
         child_viewport: Rect::ZERO,
@@ -304,7 +304,7 @@ impl Scroll {
         child_viewport = child_viewport.with_size(actual_size);
 
         if child_viewport != self.child_viewport {
-            app_state.set_viewport(self.child.id(), child_viewport);
+            app_state.set_viewport(self.child.view_data().id(), child_viewport);
             app_state.request_compute_layout_recursive(self.id());
             app_state.request_paint(self.id());
             self.child_viewport = child_viewport;
@@ -317,7 +317,7 @@ impl Scroll {
 
     fn child_size(&self, app_state: &mut AppState) -> Size {
         app_state
-            .get_layout(self.child.id())
+            .get_layout(self.child.view_data().id())
             .map(|layout| Size::new(layout.size.width as f64, layout.size.height as f64))
             .unwrap()
     }
@@ -625,17 +625,31 @@ impl View for Scroll {
         &mut self.data
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
+    fn build(self) -> Box<dyn Widget> {
+        Box::new(self)
+    }
+}
+
+impl Widget for Scroll {
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
+    }
+
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
         for_each(&self.child);
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
         for_each(&mut self.child);
     }
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
     ) {
         for_each(&mut self.child);
     }

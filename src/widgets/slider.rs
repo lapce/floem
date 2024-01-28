@@ -11,7 +11,7 @@ use crate::{
     style::{Background, BorderRadius, Foreground, Height},
     style_class,
     unit::{PxPct, PxPctAuto},
-    view::{View, ViewData},
+    view::{View, ViewData, Widget},
     views::Decorators,
     EventPropagation,
 };
@@ -136,6 +136,20 @@ pub fn slider(percent: impl Fn() -> f32 + 'static) -> Slider {
 }
 
 impl View for Slider {
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
+    }
+
+    fn build(self) -> Box<dyn Widget> {
+        Box::new(self)
+    }
+}
+
+impl Widget for Slider {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

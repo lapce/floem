@@ -9,7 +9,7 @@ use crate::{
     id::Id,
     style::Style,
     unit::UnitExt,
-    view::{View, ViewData},
+    view::{View, ViewData, Widget},
 };
 
 use taffy::prelude::Node;
@@ -113,6 +113,20 @@ pub(crate) fn img_dynamic(image: impl Fn() -> Option<Rc<DynamicImage>> + 'static
 }
 
 impl View for Img {
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
+    }
+
+    fn build(self) -> Box<dyn Widget> {
+        Box::new(self)
+    }
+}
+
+impl Widget for Img {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

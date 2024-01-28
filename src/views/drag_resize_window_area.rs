@@ -5,17 +5,17 @@ use crate::{
     event::EventListener,
     id::Id,
     style::CursorStyle,
-    view::{View, ViewData},
+    view::{View, ViewData, Widget},
 };
 
 use super::Decorators;
 
 pub struct DragResizeWindowArea {
     data: ViewData,
-    child: Box<dyn View>,
+    child: Box<dyn Widget>,
 }
 
-pub fn drag_resize_window_area<V: View + 'static>(
+pub fn drag_resize_window_area<V: Widget + 'static>(
     direction: ResizeDirection,
     child: V,
 ) -> DragResizeWindowArea {
@@ -50,17 +50,31 @@ impl View for DragResizeWindowArea {
     fn view_data_mut(&mut self) -> &mut ViewData {
         &mut self.data
     }
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
+
+    fn build(self) -> Box<dyn Widget> {
+        Box::new(self)
+    }
+}
+
+impl Widget for DragResizeWindowArea {
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
+    }
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
         for_each(&self.child);
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
         for_each(&mut self.child);
     }
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
     ) {
         for_each(&mut self.child);
     }

@@ -1,25 +1,8 @@
-use crate::context::PaintCx;
-use crate::id::Id;
 use crate::view::View;
+use crate::view::Widget;
 
 pub trait ViewTuple {
-    fn paint(&mut self, cx: &mut PaintCx);
-
-    fn foreach<F: Fn(&dyn View)>(&self, f: F);
-
-    fn foreach_mut<F: FnMut(&mut dyn View) -> bool>(&mut self, f: &mut F);
-
-    fn foreach_rev<F: FnMut(&mut dyn View) -> bool>(&mut self, f: &mut F);
-
-    fn child(&self, id: Id) -> Option<&dyn View>;
-
-    fn child_mut(&mut self, id: Id) -> Option<&mut dyn View>;
-
-    fn children(&self) -> Vec<&dyn View>;
-
-    fn children_mut(&mut self) -> Vec<&mut dyn View>;
-
-    fn into_views(self) -> Vec<Box<dyn View>>
+    fn into_widgets(self) -> Vec<Box<dyn Widget>>
     where
         Self: 'static;
 }
@@ -28,47 +11,11 @@ macro_rules! impl_view_tuple {
     ( $n: tt; $( $t:ident),* ; $( $i:tt ),* ; $( $j:tt ),*) => {
 
         impl< $( $t: View, )* > ViewTuple for ( $( $t, )* ) {
-            fn foreach<F: Fn(&dyn View)>(&self, f: F) {
-                $( f(&self.$i); )*
-            }
-
-            fn foreach_mut<F: FnMut(&mut dyn View) -> bool>(&mut self, f: &mut F) {
-                $( if f(&mut self.$i) { return; } )*
-            }
-
-            fn foreach_rev<F: FnMut(&mut dyn View) -> bool>(&mut self, f: &mut F) {
-                $( if f(&mut self.$j) { return; } )*
-            }
-
-            fn child(&self, id: Id) -> Option<&dyn View> {
-                $( if self.$i.id() == id { return Some(&self.$i) } )*
-                None
-            }
-
-            fn child_mut(&mut self, id: Id) -> Option<&mut dyn View> {
-                $( if self.$i.id() == id { return Some(&mut self.$i) } )*
-                None
-            }
-
-            fn children(&self) -> Vec<&dyn View> {
-                vec![ $( &self.$i ),* ]
-            }
-
-            fn children_mut(&mut self) -> Vec<&mut dyn View> {
-                vec![ $( &mut self.$i ),* ]
-            }
-
-            fn paint(&mut self, cx: &mut PaintCx) {
-                $(
-                    self.$i.paint(cx);
-                )*
-            }
-
-            fn into_views(self) -> Vec<Box<dyn View>>
+            fn into_widgets(self) -> Vec<Box<dyn Widget>>
             where
                 Self: 'static
             {
-                vec![$(Box::new(self.$i),)*]
+                vec![$(self.$i.build(),)*]
             }
         }
     }
