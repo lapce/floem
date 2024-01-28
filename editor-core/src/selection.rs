@@ -65,7 +65,7 @@ impl SelRegion {
     /// **Example:**
     ///
     /// ```rust
-    /// # use lapce_core::selection::SelRegion;
+    /// # use floem_editor_core::selection::SelRegion;
     /// let  region = SelRegion::new(1, 10, None);
     /// assert_eq!(region.min(), region.start);
     /// let  region = SelRegion::new(42, 1, None);
@@ -80,7 +80,7 @@ impl SelRegion {
     /// **Example:**
     ///
     /// ```rust
-    /// # use lapce_core::selection::SelRegion;
+    /// # use floem_editor_core::selection::SelRegion;
     /// let  region = SelRegion::new(1, 10, None);
     /// assert_eq!(region.max(), region.end);
     /// let  region = SelRegion::new(42, 1, None);
@@ -95,7 +95,7 @@ impl SelRegion {
     /// **Example:**
     ///
     /// ```rust
-    /// # use lapce_core::selection::SelRegion;
+    /// # use floem_editor_core::selection::SelRegion;
     /// let  region = SelRegion::new(1, 1, None);
     /// assert!(region.is_caret());
     /// ```
@@ -108,7 +108,7 @@ impl SelRegion {
     /// **Example:**
     ///
     /// ```rust
-    /// # use lapce_core::selection::SelRegion;
+    /// # use floem_editor_core::selection::SelRegion;
     /// let  region = SelRegion::new(1, 2, None);
     /// let  other = SelRegion::new(3, 4, None);
     /// assert_eq!(region.merge_with(other), SelRegion::new(1, 4, None));
@@ -175,7 +175,7 @@ impl Selection {
     /// **Example:**
     ///
     /// ```rust
-    /// # use lapce_core::selection::Selection;
+    /// # use floem_editor_core::selection::Selection;
     /// let  selection = Selection::region(0, 2);
     /// assert!(selection.contains(0));
     /// assert!(selection.contains(1));
@@ -207,7 +207,7 @@ impl Selection {
     /// **Examples:**
     ///
     /// ```rust
-    /// # use lapce_core::selection::{Selection, SelRegion};
+    /// # use floem_editor_core::selection::{Selection, SelRegion};
     /// let mut selection = Selection::new();
     /// selection.add_region(SelRegion::new(1, 3, None));
     /// selection.add_region(SelRegion::new(6, 12, None));
@@ -270,7 +270,7 @@ impl Selection {
     /// **Example:**
     ///
     /// ```rust
-    /// # use lapce_core::selection::{Selection, SelRegion};
+    /// # use floem_editor_core::selection::{Selection, SelRegion};
     /// let mut selection = Selection::new();
     /// selection.add_region(SelRegion::caret(4));
     /// selection.add_region(SelRegion::new(0, 12, None));
@@ -292,7 +292,7 @@ impl Selection {
     /// **Example:**
     ///
     /// ```rust
-    /// # use lapce_core::selection::{Selection, SelRegion};
+    /// # use floem_editor_core::selection::{Selection, SelRegion};
     /// let mut selection = Selection::new();
     /// selection.add_region(SelRegion::caret(4));
     /// selection.add_region(SelRegion::new(0, 12, None));
@@ -313,7 +313,7 @@ impl Selection {
     /// **Example:**
     ///
     /// ```rust
-    /// # use lapce_core::selection::{Selection, SelRegion};
+    /// # use floem_editor_core::selection::{Selection, SelRegion};
     /// let mut selection = Selection::new();
     /// selection.add_region(SelRegion::new(0, 3, None));
     /// selection.add_region(SelRegion::new(3, 6, None));
@@ -340,7 +340,7 @@ impl Selection {
     /// **Example:**
     ///
     /// ```rust
-    /// # use lapce_core::selection::{Selection, SelRegion};
+    /// # use floem_editor_core::selection::{Selection, SelRegion};
     /// let mut selection = Selection::new();
     /// selection.add_region(SelRegion::new(0, 3, None));
     /// selection.add_region(SelRegion::new(3, 6, None));
@@ -366,7 +366,7 @@ impl Selection {
     /// **Example:**
     ///
     /// ```rust
-    /// # use lapce_core::selection::{Selection, SelRegion};
+    /// # use floem_editor_core::selection::{Selection, SelRegion};
     /// let mut selection = Selection::new();
     /// selection.add_region(SelRegion::new(0, 3, None));
     /// selection.add_region(SelRegion::new(3, 6, None));
@@ -396,7 +396,7 @@ impl Selection {
     /// **Example:**
     ///
     /// ```rust
-    /// # use lapce_core::selection::{Selection, SelRegion};
+    /// # use floem_editor_core::selection::{Selection, SelRegion};
     /// let mut selection = Selection::new();
     /// // Overlapping
     /// selection.add_region(SelRegion::new(0, 4, None));
