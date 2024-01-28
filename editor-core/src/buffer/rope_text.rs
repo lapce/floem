@@ -120,12 +120,7 @@ pub trait RopeText {
     }
 
     /// Get the offset of the previous grapheme cluster.
-    fn prev_grapheme_offset(
-        &self,
-        offset: usize,
-        count: usize,
-        limit: usize,
-    ) -> usize {
+    fn prev_grapheme_offset(&self, offset: usize, count: usize, limit: usize) -> usize {
         let offset = offset.min(self.len());
         let mut cursor = Cursor::new(self.text(), offset);
         let mut new_offset = offset;
@@ -143,12 +138,7 @@ pub trait RopeText {
         new_offset
     }
 
-    fn next_grapheme_offset(
-        &self,
-        offset: usize,
-        count: usize,
-        limit: usize,
-    ) -> usize {
+    fn next_grapheme_offset(&self, offset: usize, count: usize, limit: usize) -> usize {
         let offset = if offset > self.len() {
             self.len()
         } else {
@@ -199,8 +189,7 @@ pub trait RopeText {
 
     fn indent_on_line(&self, line: usize) -> String {
         let line_start_offset = self.text().offset_of_line(line);
-        let word_boundary =
-            WordCursor::new(self.text(), line_start_offset).next_non_blank_char();
+        let word_boundary = WordCursor::new(self.text(), line_start_offset).next_non_blank_char();
         let indent = self.text().slice_to_cow(line_start_offset..word_boundary);
         indent.to_string()
     }
@@ -226,10 +215,8 @@ pub trait RopeText {
         std::iter::Map<ChunkIter<'a>, fn(&str) -> std::str::CharIndices<'_>>,
     > {
         let iter: ChunkIter<'a> = self.text().iter_chunks(range);
-        let iter: std::iter::Map<
-            ChunkIter<'a>,
-            fn(&str) -> std::str::CharIndices<'_>,
-        > = iter.map(str::char_indices);
+        let iter: std::iter::Map<ChunkIter<'a>, fn(&str) -> std::str::CharIndices<'_>> =
+            iter.map(str::char_indices);
         CharIndicesJoin::new(iter)
     }
 
@@ -282,12 +269,7 @@ pub trait RopeText {
         self.next_grapheme_offset(offset, count, max_offset)
     }
 
-    fn find_nth_paragraph<F>(
-        &self,
-        offset: usize,
-        mut count: usize,
-        mut find_next: F,
-    ) -> usize
+    fn find_nth_paragraph<F>(&self, offset: usize, mut count: usize, mut find_next: F) -> usize
     where
         F: FnMut(&mut ParagraphCursor) -> Option<usize>,
     {
@@ -320,12 +302,7 @@ pub trait RopeText {
     /// search.  The `find_next` function should return None when there is no
     /// more word found.  Despite the name, `find_next` can search in either
     /// direction.
-    fn find_nth_word<F>(
-        &self,
-        offset: usize,
-        mut count: usize,
-        mut find_next: F,
-    ) -> usize
+    fn find_nth_word<F>(&self, offset: usize, mut count: usize, mut find_next: F) -> usize
     where
         F: FnMut(&mut WordCursor) -> Option<usize>,
     {
@@ -347,26 +324,15 @@ pub trait RopeText {
         self.find_nth_word(offset, count, |cursor| cursor.next_boundary())
     }
 
-    fn move_n_wordends_forward(
-        &self,
-        offset: usize,
-        count: usize,
-        inserting: bool,
-    ) -> usize {
-        let mut new_offset =
-            self.find_nth_word(offset, count, |cursor| cursor.end_boundary());
+    fn move_n_wordends_forward(&self, offset: usize, count: usize, inserting: bool) -> usize {
+        let mut new_offset = self.find_nth_word(offset, count, |cursor| cursor.end_boundary());
         if !inserting && new_offset != self.len() {
             new_offset = self.prev_grapheme_offset(new_offset, 1, 0);
         }
         new_offset
     }
 
-    fn move_n_words_backward(
-        &self,
-        offset: usize,
-        count: usize,
-        mode: Mode,
-    ) -> usize {
+    fn move_n_words_backward(&self, offset: usize, count: usize, mode: Mode) -> usize {
         self.find_nth_word(offset, count, |cursor| cursor.prev_boundary(mode))
     }
 
@@ -418,8 +384,7 @@ impl<'a> From<&'a Rope> for RopeTextRef<'a> {
 /// as if they were from a single long string
 /// Assumes the iterators end after the first `None` value
 #[derive(Clone)]
-pub struct CharIndicesJoin<I: Iterator<Item = (usize, char)>, O: Iterator<Item = I>>
-{
+pub struct CharIndicesJoin<I: Iterator<Item = (usize, char)>, O: Iterator<Item = I>> {
     /// Our iterator of iterators
     main_iter: O,
     /// Our current working iterator of indices
@@ -430,9 +395,7 @@ pub struct CharIndicesJoin<I: Iterator<Item = (usize, char)>, O: Iterator<Item =
     latest_base: usize,
 }
 
-impl<I: Iterator<Item = (usize, char)>, O: Iterator<Item = I>>
-    CharIndicesJoin<I, O>
-{
+impl<I: Iterator<Item = (usize, char)>, O: Iterator<Item = I>> CharIndicesJoin<I, O> {
     pub fn new(main_iter: O) -> CharIndicesJoin<I, O> {
         CharIndicesJoin {
             main_iter,
@@ -443,9 +406,7 @@ impl<I: Iterator<Item = (usize, char)>, O: Iterator<Item = I>>
     }
 }
 
-impl<I: Iterator<Item = (usize, char)>, O: Iterator<Item = I>> Iterator
-    for CharIndicesJoin<I, O>
-{
+impl<I: Iterator<Item = (usize, char)>, O: Iterator<Item = I>> Iterator for CharIndicesJoin<I, O> {
     type Item = (usize, char);
 
     fn next(&mut self) -> Option<Self::Item> {

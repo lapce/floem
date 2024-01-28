@@ -44,9 +44,7 @@ pub fn expand_diff_lines(
 ) {
     for diff_line in diff_lines.iter_mut() {
         if let DiffLines::Both(info) = diff_line {
-            if (is_right && info.right.start == line)
-                || (!is_right && info.left.start == line)
-            {
+            if (is_right && info.right.start == line) || (!is_right && info.left.start == line) {
                 match expand {
                     DiffExpand::All => {
                         info.skip = None;
@@ -227,15 +225,13 @@ pub fn rope_diff(
                     if i == 0 || i == changes_last {
                         if info.right.len() > context_lines {
                             if i == 0 {
-                                info.skip =
-                                    Some(0..info.right.len() - context_lines);
+                                info.skip = Some(0..info.right.len() - context_lines);
                             } else {
                                 info.skip = Some(context_lines..info.right.len());
                             }
                         }
                     } else if info.right.len() > context_lines * 2 {
-                        info.skip =
-                            Some(context_lines..info.right.len() - context_lines);
+                        info.skip = Some(context_lines..info.right.len() - context_lines);
                     }
                 }
             }

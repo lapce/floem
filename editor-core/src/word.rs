@@ -131,16 +131,12 @@ impl<'a> WordCursor<'a> {
                 let prop_prev = get_char_property(prev);
 
                 // Stop if line beginning reached, without any non-whitespace characters
-                if prop_prev == CharClassification::Lf
-                    && prop == CharClassification::Space
-                {
+                if prop_prev == CharClassification::Lf && prop == CharClassification::Space {
                     break;
                 }
 
                 // More than a single whitespace: keep word, remove only whitespaces
-                if prop == CharClassification::Space
-                    && prop_prev == CharClassification::Space
-                {
+                if prop == CharClassification::Space && prop_prev == CharClassification::Space {
                     keep_word = true;
                 }
 
@@ -428,13 +424,8 @@ impl<'a> WordCursor<'a> {
             if matching_pair_direction(c) == Some(true) {
                 let opening_bracket_offset = self.inner.pos();
                 if let Some(closing_bracket_offset) = self.match_pairs() {
-                    if (opening_bracket_offset..=closing_bracket_offset)
-                        .contains(&old_offset)
-                    {
-                        return Some((
-                            opening_bracket_offset,
-                            closing_bracket_offset,
-                        ));
+                    if (opening_bracket_offset..=closing_bracket_offset).contains(&old_offset) {
+                        return Some((opening_bracket_offset, closing_bracket_offset));
                     } else {
                         self.inner.set(opening_bracket_offset);
                     }
@@ -468,10 +459,7 @@ pub fn get_char_property(codepoint: char) -> CharClassification {
     CharClassification::Other
 }
 
-fn classify_boundary(
-    prev: CharClassification,
-    next: CharClassification,
-) -> WordBoundary {
+fn classify_boundary(prev: CharClassification, next: CharClassification) -> WordBoundary {
     use self::{CharClassification::*, WordBoundary::*};
     match (prev, next) {
         (Lf, Lf) => Start,

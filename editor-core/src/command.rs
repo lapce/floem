@@ -3,15 +3,7 @@ use strum_macros::{Display, EnumIter, EnumMessage, EnumString, IntoStaticStr};
 use crate::movement::{LinePosition, Movement};
 
 #[derive(
-    Display,
-    EnumString,
-    EnumIter,
-    Clone,
-    PartialEq,
-    Eq,
-    Debug,
-    EnumMessage,
-    IntoStaticStr,
+    Display, EnumString, EnumIter, Clone, PartialEq, Eq, Debug, EnumMessage, IntoStaticStr,
 )]
 pub enum EditCommand {
     #[strum(serialize = "move_line_up")]
@@ -122,15 +114,7 @@ impl EditCommand {
 }
 
 #[derive(
-    Display,
-    EnumString,
-    EnumIter,
-    Clone,
-    PartialEq,
-    Eq,
-    Debug,
-    EnumMessage,
-    IntoStaticStr,
+    Display, EnumString, EnumIter, Clone, PartialEq, Eq, Debug, EnumMessage, IntoStaticStr,
 )]
 pub enum MoveCommand {
     #[strum(serialize = "down")]
@@ -217,15 +201,7 @@ impl MoveCommand {
 }
 
 #[derive(
-    Display,
-    EnumString,
-    EnumIter,
-    Clone,
-    PartialEq,
-    Eq,
-    Debug,
-    EnumMessage,
-    IntoStaticStr,
+    Display, EnumString, EnumIter, Clone, PartialEq, Eq, Debug, EnumMessage, IntoStaticStr,
 )]
 pub enum ScrollCommand {
     #[strum(serialize = "page_up")]
@@ -245,15 +221,7 @@ pub enum ScrollCommand {
 }
 
 #[derive(
-    Display,
-    EnumString,
-    EnumIter,
-    Clone,
-    PartialEq,
-    Eq,
-    Debug,
-    EnumMessage,
-    IntoStaticStr,
+    Display, EnumString, EnumIter, Clone, PartialEq, Eq, Debug, EnumMessage, IntoStaticStr,
 )]
 pub enum FocusCommand {
     #[strum(serialize = "split_vertical")]
@@ -393,15 +361,7 @@ pub enum FocusCommand {
 }
 
 #[derive(
-    Display,
-    EnumString,
-    EnumIter,
-    Clone,
-    PartialEq,
-    Eq,
-    Debug,
-    EnumMessage,
-    IntoStaticStr,
+    Display, EnumString, EnumIter, Clone, PartialEq, Eq, Debug, EnumMessage, IntoStaticStr,
 )]
 pub enum MotionModeCommand {
     #[strum(serialize = "motion_mode_delete")]
@@ -415,15 +375,7 @@ pub enum MotionModeCommand {
 }
 
 #[derive(
-    Display,
-    EnumString,
-    EnumIter,
-    Clone,
-    PartialEq,
-    Eq,
-    Debug,
-    EnumMessage,
-    IntoStaticStr,
+    Display, EnumString, EnumIter, Clone, PartialEq, Eq, Debug, EnumMessage, IntoStaticStr,
 )]
 pub enum MultiSelectionCommand {
     #[strum(serialize = "select_undo")]

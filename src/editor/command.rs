@@ -1,6 +1,5 @@
 use floem_editor_core::command::{
-    EditCommand, MotionModeCommand, MoveCommand, MultiSelectionCommand,
-    ScrollCommand,
+    EditCommand, MotionModeCommand, MoveCommand, MultiSelectionCommand, ScrollCommand,
 };
 use strum::EnumMessage;
 

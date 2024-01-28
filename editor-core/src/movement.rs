@@ -64,13 +64,7 @@ impl Movement {
         )
     }
 
-    pub fn update_index(
-        &self,
-        index: usize,
-        len: usize,
-        count: usize,
-        wrapping: bool,
-    ) -> usize {
+    pub fn update_index(&self, index: usize, len: usize, count: usize, wrapping: bool) -> usize {
         if len == 0 {
             return 0;
         }

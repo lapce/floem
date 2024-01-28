@@ -25,9 +25,7 @@ impl IndentStyle {
     #[allow(clippy::should_implement_trait)]
     #[inline]
     pub fn from_str(indent: &str) -> Self {
-        debug_assert!(
-            !indent.is_empty() && indent.len() <= Self::LONGEST_INDENT.len()
-        );
+        debug_assert!(!indent.is_empty() && indent.len() <= Self::LONGEST_INDENT.len());
         if indent.starts_with(' ') {
             IndentStyle::Spaces(indent.len() as u8)
         } else {
@@ -52,11 +50,7 @@ impl IndentStyle {
     }
 }
 
-pub fn create_edit<'s>(
-    buffer: &Buffer,
-    offset: usize,
-    indent: &'s str,
-) -> (Selection, &'s str) {
+pub fn create_edit<'s>(buffer: &Buffer, offset: usize, indent: &'s str) -> (Selection, &'s str) {
     let indent = if indent.starts_with('\t') {
         indent
     } else {
@@ -103,9 +97,8 @@ pub fn auto_detect_indent_style(document_text: &Rope) -> Option<IndentStyle> {
 
         // Loop through the lines, checking for and recording indentation
         // increases as we go.
-        let offset = document_text.offset_of_line(
-            document_text.line_of_offset(document_text.len()).min(1000),
-        );
+        let offset = document_text
+            .offset_of_line(document_text.line_of_offset(document_text.len()).min(1000));
         'outer: for line in document_text.lines(..offset) {
             let mut c_iter = line.chars();
 
