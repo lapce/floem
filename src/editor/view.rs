@@ -12,7 +12,7 @@ use crate::{
     reactive::{batch, create_effect, create_memo, create_rw_signal, Memo, RwSignal, Scope},
     style::{CursorStyle, Style},
     taffy::node::Node,
-    view::{View, ViewData},
+    view::{AnyWidget, View, ViewData, Widget},
     views::{clip, container, empty, label, scroll, stack, Decorators},
     EventPropagation, Renderer,
 };
@@ -819,6 +819,19 @@ impl View for EditorView {
         self.id
     }
 
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
+    }
+
+    fn build(self) -> AnyWidget {
+        Box::new(self)
+    }
+}
+impl Widget for EditorView {
     fn view_data(&self) -> &ViewData {
         &self.data
     }
