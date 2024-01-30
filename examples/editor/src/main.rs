@@ -1,17 +1,19 @@
 use std::rc::Rc;
 
 use floem::{
-    editor::{
-        editor::Editor,
-        keypress::default_key_handler,
-        text::{default_dark_color, SimpleStyling, TextDocument},
-        view::editor_container_view,
-    },
     keyboard::{Key, ModifiersState, NamedKey},
     reactive::{create_rw_signal, RwSignal, Scope},
     unit::UnitExt,
     view::View,
-    views::{stack, Decorators},
+    views::{
+        editor::{
+            editor::Editor,
+            keypress::default_key_handler,
+            text::{default_dark_color, SimpleStyling, TextDocument},
+            view::editor_container_view,
+        },
+        stack, Decorators,
+    },
 };
 
 fn app_view(editor_a: RwSignal<Editor>, editor_b: RwSignal<Editor>) -> impl View {

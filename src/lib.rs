@@ -126,8 +126,6 @@ mod app;
 mod app_handle;
 mod clipboard;
 pub mod context;
-#[cfg(feature = "editor")]
-pub mod editor;
 pub mod event;
 pub mod ext_event;
 pub mod file;

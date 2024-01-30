@@ -7,7 +7,7 @@ use floem_editor_core::{
     register::Register,
 };
 
-use crate::editor::{
+use super::{
     command::{Command, CommandExecuted},
     editor::Editor,
     movement,

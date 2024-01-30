@@ -4,7 +4,7 @@ use crate::{
 };
 use floem_editor_core::buffer::rope_text::RopeText;
 
-use crate::editor::visual_line::TextLayoutProvider;
+use super::visual_line::TextLayoutProvider;
 
 #[derive(Clone, Debug)]
 pub struct LineExtraStyle {

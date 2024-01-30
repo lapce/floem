@@ -29,7 +29,7 @@ use floem_editor_core::{
 };
 use lapce_xi_rope::Rope;
 
-use crate::editor::{
+use super::{
     command::Command,
     id::EditorId,
     layout::TextLayoutLine,

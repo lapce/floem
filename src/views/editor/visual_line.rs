@@ -1992,7 +1992,7 @@ mod tests {
     use lapce_xi_rope::Rope;
     use smallvec::smallvec;
 
-    use crate::editor::{
+    use crate::views::editor::{
         layout::TextLayoutLine,
         phantom_text::{PhantomText, PhantomTextKind, PhantomTextLine},
         visual_line::{find_vline_of_line_backwards, find_vline_of_line_forwards},

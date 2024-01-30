@@ -21,7 +21,7 @@ use floem_editor_core::{
     mode::{Mode, VisualMode},
 };
 
-use crate::editor::{
+use crate::views::editor::{
     command::CommandExecuted,
     gutter::editor_gutter_view,
     keypress::{key::KeyInput, press::KeyPress},

@@ -68,3 +68,6 @@ pub use drag_resize_window_area::*;
 
 mod img;
 pub use img::*;
+
+#[cfg(feature = "editor")]
+pub mod editor;

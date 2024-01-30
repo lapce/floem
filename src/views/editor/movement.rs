@@ -11,7 +11,7 @@ use floem_editor_core::{
     soft_tab::{snap_to_soft_tab, SnapDirection},
 };
 
-use crate::editor::{
+use super::{
     actions::CommonAction,
     editor::Editor,
     visual_line::{RVLine, VLineInfo},

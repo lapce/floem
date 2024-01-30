@@ -25,7 +25,7 @@ use lapce_xi_rope::Rope;
 use serde::{Deserialize, Serialize};
 use smallvec::smallvec;
 
-use crate::editor::{
+use super::{
     actions::{handle_command_default, CommonAction},
     command::{Command, CommandExecuted},
     editor::{normal_compute_screen_lines, Editor},

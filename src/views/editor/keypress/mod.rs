@@ -9,7 +9,7 @@ use floem_editor_core::{
     mode::Mode,
 };
 
-use crate::editor::{
+use super::{
     command::{Command, CommandExecuted},
     editor::Editor,
 };
