@@ -8,7 +8,7 @@ use floem::{
 
 fn app_view() -> impl View {
     let view =
-        stack((text("Example: Keyboard event handler").style(|s| s.padding(10.0)))).style(|s| {
+        stack((text("Example: Keyboard event handler").style(|s| s.padding(10.0)),)).style(|s| {
             s.size(100.pct(), 100.pct())
                 .flex_col()
                 .items_center()
