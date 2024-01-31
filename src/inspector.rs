@@ -4,7 +4,7 @@ use crate::event::{Event, EventListener};
 use crate::id::Id;
 use crate::profiler::profiler;
 use crate::style::{Style, StyleMapValue};
-use crate::view::{view_children, View};
+use crate::view::{view_children, AnyView, View, Widget};
 use crate::view_data::ChangeFlags;
 use crate::views::{
     container, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label, tab, text,
@@ -42,8 +42,8 @@ pub struct CapturedView {
 }
 
 impl CapturedView {
-    pub fn capture(view: &dyn View, app_state: &mut AppState, clip: Rect) -> Self {
-        let id = view.id();
+    pub fn capture(view: &dyn Widget, app_state: &mut AppState, clip: Rect) -> Self {
+        let id = view.view_data().id();
         let layout = app_state.get_layout_rect(id);
         let taffy = app_state.get_layout(id).unwrap();
         let computed_style = app_state.get_computed_style(id).clone();
@@ -142,28 +142,32 @@ fn captured_view_name(view: &CapturedView) -> impl View {
             .font_size(12.0)
             .color(Color::BLACK.with_alpha_factor(0.6))
     });
-    let tab: Box<dyn View> = if view.focused {
-        Box::new(text("Focus").style(|s| {
-            s.margin_right(5.0)
-                .background(Color::rgb8(63, 81, 101).with_alpha_factor(0.6))
-                .border_radius(5.0)
-                .padding(1.0)
-                .font_size(10.0)
-                .color(Color::WHITE.with_alpha_factor(0.8))
-        }))
+    let tab = if view.focused {
+        text("Focus")
+            .style(|s| {
+                s.margin_right(5.0)
+                    .background(Color::rgb8(63, 81, 101).with_alpha_factor(0.6))
+                    .border_radius(5.0)
+                    .padding(1.0)
+                    .font_size(10.0)
+                    .color(Color::WHITE.with_alpha_factor(0.8))
+            })
+            .any()
     } else if view.keyboard_navigable {
-        Box::new(text("Tab").style(|s| {
-            s.margin_right(5.0)
-                .background(Color::rgb8(204, 217, 221).with_alpha_factor(0.4))
-                .border(1.0)
-                .border_radius(5.0)
-                .border_color(Color::BLACK.with_alpha_factor(0.07))
-                .padding(1.0)
-                .font_size(10.0)
-                .color(Color::BLACK.with_alpha_factor(0.4))
-        }))
+        text("Tab")
+            .style(|s| {
+                s.margin_right(5.0)
+                    .background(Color::rgb8(204, 217, 221).with_alpha_factor(0.4))
+                    .border(1.0)
+                    .border_radius(5.0)
+                    .border_color(Color::BLACK.with_alpha_factor(0.07))
+                    .padding(1.0)
+                    .font_size(10.0)
+                    .color(Color::BLACK.with_alpha_factor(0.4))
+            })
+            .any()
     } else {
-        Box::new(empty())
+        empty().any()
     };
     h_stack((id, tab, name)).style(|s| s.items_center())
 }
@@ -174,7 +178,7 @@ fn captured_view_no_children(
     view: &CapturedView,
     depth: usize,
     capture_view: &CaptureView,
-) -> Box<dyn View> {
+) -> AnyView {
     let offset = depth as f64 * 14.0;
     let name = captured_view_name(view);
     let name_id = name.id();
@@ -183,33 +187,32 @@ fn captured_view_no_children(
     let selected = capture_view.selected;
     let highlighted = capture_view.highlighted;
 
-    let row = Box::new(
-        container(name)
-            .style(move |s| {
-                s.padding_left(20.0 + offset)
-                    .hover(move |s| {
-                        s.background(Color::rgba8(228, 237, 216, 160))
-                            .apply_if(selected.get() == Some(id), |s| {
-                                s.background(Color::rgb8(186, 180, 216))
-                            })
-                    })
-                    .height(height)
-                    .apply_if(highlighted.get() == Some(id), |s| {
-                        s.background(Color::rgba8(228, 237, 216, 160))
-                    })
-                    .apply_if(selected.get() == Some(id), |s| {
-                        if highlighted.get() == Some(id) {
+    let row = container(name)
+        .style(move |s| {
+            s.padding_left(20.0 + offset)
+                .hover(move |s| {
+                    s.background(Color::rgba8(228, 237, 216, 160))
+                        .apply_if(selected.get() == Some(id), |s| {
                             s.background(Color::rgb8(186, 180, 216))
-                        } else {
-                            s.background(Color::rgb8(213, 208, 216))
-                        }
-                    })
-            })
-            .on_click_stop(move |_| selected.set(Some(id)))
-            .on_event_cont(EventListener::PointerEnter, move |_| {
-                highlighted.set(Some(id))
-            }),
-    );
+                        })
+                })
+                .height(height)
+                .apply_if(highlighted.get() == Some(id), |s| {
+                    s.background(Color::rgba8(228, 237, 216, 160))
+                })
+                .apply_if(selected.get() == Some(id), |s| {
+                    if highlighted.get() == Some(id) {
+                        s.background(Color::rgb8(186, 180, 216))
+                    } else {
+                        s.background(Color::rgb8(213, 208, 216))
+                    }
+                })
+        })
+        .on_click_stop(move |_| selected.set(Some(id)))
+        .on_event_cont(EventListener::PointerEnter, move |_| {
+            highlighted.set(Some(id))
+        })
+        .any();
 
     let row_id = row.id();
     let scroll_to = capture_view.scroll_to;
@@ -233,8 +236,8 @@ fn captured_view_with_children(
     view: &Rc<CapturedView>,
     depth: usize,
     capture_view: &CaptureView,
-    children: Vec<Box<dyn View>>,
-) -> Box<dyn View> {
+    children: Vec<AnyView>,
+) -> AnyView {
     let offset = depth as f64 * 14.0;
     let name = captured_view_name(view);
     let height = 20.0;
@@ -335,14 +338,10 @@ fn captured_view_with_children(
 
     let list = v_stack((line, list));
 
-    Box::new(v_stack((row, list)))
+    v_stack((row, list)).any()
 }
 
-fn captured_view(
-    view: &Rc<CapturedView>,
-    depth: usize,
-    capture_view: &CaptureView,
-) -> Box<dyn View> {
+fn captured_view(view: &Rc<CapturedView>, depth: usize, capture_view: &CaptureView) -> AnyView {
     if view.children.is_empty() {
         captured_view_no_children(view, depth, capture_view)
     } else {
@@ -423,7 +422,7 @@ fn stats(capture: &Capture) -> impl View {
     ))
 }
 
-fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl View {
+fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> AnyView {
     let capture = capture.clone();
     dyn_container(
         move || selected.get(),
@@ -545,10 +544,10 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl 
                 let style_list =
                     v_stack_from_iter(style_list.into_iter().map(|((prop, name), value)| {
                         let name = name.strip_prefix("floem::style::").unwrap_or(&name);
-                        let name: Box<dyn View> = if direct.contains(&prop) {
-                            Box::new(text(name))
+                        let name = if direct.contains(&prop) {
+                            text(name).any()
                         } else {
-                            Box::new(stack((
+                            stack((
                                 text("Inherited").style(|s| {
                                     s.margin_right(5.0)
                                         .background(Color::WHITE_SMOKE.with_alpha_factor(0.6))
@@ -560,16 +559,16 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl 
                                         .color(Color::BLACK.with_alpha_factor(0.4))
                                 }),
                                 text(name),
-                            )))
+                            ))
+                            .any()
                         };
-                        let mut v: Box<dyn View> = match value {
+                        let mut v = match value {
                             StyleMapValue::Val(v) => {
                                 let v = &*v;
-                                (prop.info.debug_view)(v).unwrap_or_else(|| {
-                                    Box::new(static_label((prop.info.debug_any)(v)))
-                                })
+                                (prop.info.debug_view)(v)
+                                    .unwrap_or_else(|| static_label((prop.info.debug_any)(v)).any())
                             }
-                            StyleMapValue::Unset => Box::new(text("Unset")),
+                            StyleMapValue::Unset => text("Unset").any(),
                         };
                         if let Some(transition) = style.transitions.get(&prop).cloned() {
                             let transition = stack((
@@ -587,7 +586,7 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl 
                                 static_label(format!("{transition:?}")),
                             ))
                             .style(|s| s.items_center());
-                            v = Box::new(v_stack((v, transition)));
+                            v = v_stack((v, transition)).any();
                         }
                         stack((
                             stack((name.style(|s| {
@@ -607,30 +606,30 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl 
                     }))
                     .style(|s| s.width_full());
 
-                Box::new(
-                    v_stack((
-                        name,
-                        id,
-                        count,
-                        x,
-                        y,
-                        w,
-                        h,
-                        tx,
-                        ty,
-                        tw,
-                        th,
-                        clear,
-                        style_header,
-                        style_list,
-                    ))
-                    .style(|s| s.width_full()),
-                )
+                v_stack((
+                    name,
+                    id,
+                    count,
+                    x,
+                    y,
+                    w,
+                    h,
+                    tx,
+                    ty,
+                    tw,
+                    th,
+                    clear,
+                    style_header,
+                    style_list,
+                ))
+                .style(|s| s.width_full())
+                .any()
             } else {
-                Box::new(text("No selection").style(|s| s.padding(5.0)))
+                text("No selection").style(|s| s.padding(5.0)).any()
             }
         },
     )
+    .any()
 }
 
 #[derive(Clone, Copy)]
@@ -790,10 +789,10 @@ fn capture_view(capture: &Rc<Capture>) -> impl View {
         .on_click_stop(move |_| capture_view.selected.set(None))
         .scroll_to_view(move || capture_view.scroll_to.get());
 
-    let tree: Box<dyn View> = if capture.root.warnings() {
-        Box::new(v_stack((header("Warnings"), header("View Tree"), tree)))
+    let tree = if capture.root.warnings() {
+        v_stack((header("Warnings"), header("View Tree"), tree)).any()
     } else {
-        Box::new(v_stack((header("View Tree"), tree)))
+        v_stack((header("View Tree"), tree)).any()
     };
 
     let tree = tree.style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0));
@@ -808,10 +807,10 @@ fn capture_view(capture: &Rc<Capture>) -> impl View {
 }
 
 fn inspector_view(capture: &Option<Rc<Capture>>) -> impl View {
-    let view: Box<dyn View> = if let Some(capture) = capture {
-        Box::new(capture_view(capture))
+    let view = if let Some(capture) = capture {
+        capture_view(capture).any()
     } else {
-        Box::new(text("No capture"))
+        text("No capture").any()
     };
 
     stack((view,))
@@ -835,7 +834,7 @@ fn inspector_view(capture: &Option<Rc<Capture>>) -> impl View {
 }
 
 thread_local! {
-    pub(crate) static RUNNING: Cell<bool> = Cell::new(false);
+    pub(crate) static RUNNING: Cell<bool> = const { Cell::new(false) };
     pub(crate) static CAPTURE: RwSignal<Option<Rc<Capture>>> = {
         Scope::new().create_rw_signal(None)
     };
@@ -876,18 +875,15 @@ pub fn capture(window_id: WindowId) {
                     move || selected.get(),
                     move || [0, 1].into_iter(),
                     |it| *it,
-                    move |it| -> Box<dyn View> {
-                        match it {
-                            0 => Box::new(
-                                dyn_container(
-                                    move || capture.get(),
-                                    |capture| Box::new(inspector_view(&capture)),
-                                )
-                                .style(|s| s.width_full().height_full()),
-                            ),
-                            1 => Box::new(profiler(window_id)),
-                            _ => panic!(),
-                        }
+                    move |it| match it {
+                        0 => dyn_container(
+                            move || capture.get(),
+                            |capture| inspector_view(&capture).any(),
+                        )
+                        .style(|s| s.width_full().height_full())
+                        .any(),
+                        1 => profiler(window_id).any(),
+                        _ => panic!(),
                     },
                 )
                 .style(|s| s.flex_basis(0.0).min_height(0.0).flex_grow(1.0));

@@ -10,8 +10,13 @@ use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 
 use crate::{
-    action::Timer, app_handle::ApplicationHandle, clipboard::Clipboard, inspector::Capture,
-    profiler::Profile, view::View, window::WindowConfig,
+    action::Timer,
+    app_handle::ApplicationHandle,
+    clipboard::Clipboard,
+    inspector::Capture,
+    profiler::Profile,
+    view::{AnyView, View},
+    window::WindowConfig,
 };
 
 use raw_window_handle::HasRawDisplayHandle;
@@ -42,7 +47,7 @@ pub(crate) enum UserEvent {
 
 pub(crate) enum AppUpdateEvent {
     NewWindow {
-        view_fn: Box<dyn FnOnce(WindowId) -> Box<dyn View>>,
+        view_fn: Box<dyn FnOnce(WindowId) -> AnyView>,
         config: Option<WindowConfig>,
     },
     CloseWindow {
@@ -121,7 +126,7 @@ impl Application {
     ) -> Self {
         self.handle.as_mut().unwrap().new_window(
             &self.event_loop,
-            Box::new(|window_id| Box::new(app_view(window_id))),
+            Box::new(|window_id| app_view(window_id).any()),
             config,
         );
         self

@@ -85,11 +85,11 @@ pub fn app_view() -> impl View {
     let success_message = dyn_container(
         move || did_booking.get(),
         move |booked| match (booked, flight_mode.get()) {
-            (true, FlightMode::OneWay) => Box::new(text(oneway_message(start_text.get()))),
+            (true, FlightMode::OneWay) => text(oneway_message(start_text.get())).any(),
             (true, FlightMode::Return) => {
-                Box::new(text(return_message(start_text.get(), return_text.get())))
+                text(return_message(start_text.get(), return_text.get())).any()
             }
-            (false, _) => Box::new(empty()),
+            (false, _) => empty().any(),
         },
     );
 

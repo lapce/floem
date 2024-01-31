@@ -8,7 +8,7 @@ use crate::{
     context::{StyleCx, UpdateCx},
     id::Id,
     style::DisplayProp,
-    view::{View, ViewData},
+    view::{AnyWidget, View, ViewData, Widget},
 };
 
 use super::{apply_diff, diff, Diff, DiffOpAdd, FxIndexSet, HashRun};
@@ -18,15 +18,14 @@ enum TabState<V> {
     Active(usize),
 }
 
-pub struct Tab<V, T>
+pub struct Tab<T>
 where
-    V: View,
     T: 'static,
 {
     data: ViewData,
     active: usize,
-    children: Vec<Option<(V, Scope)>>,
-    view_fn: Box<dyn Fn(T) -> (V, Scope)>,
+    children: Vec<Option<(AnyWidget, Scope)>>,
+    view_fn: Box<dyn Fn(T) -> (AnyWidget, Scope)>,
     phatom: PhantomData<T>,
 }
 
@@ -35,7 +34,7 @@ pub fn tab<IF, I, T, KF, K, VF, V>(
     each_fn: IF,
     key_fn: KF,
     view_fn: VF,
-) -> Tab<V, T>
+) -> Tab<T>
 where
     IF: Fn() -> I + 'static,
     I: IntoIterator<Item = T>,
@@ -80,7 +79,7 @@ where
         id.update_state(TabState::Active::<T>(active));
     });
 
-    let view_fn = Box::new(as_child_of_current_scope(view_fn));
+    let view_fn = Box::new(as_child_of_current_scope(move |e| view_fn(e).build()));
 
     Tab {
         data: ViewData::new(id),
@@ -91,7 +90,7 @@ where
     }
 }
 
-impl<V: View + 'static, T> View for Tab<V, T> {
+impl<T> View for Tab<T> {
     fn view_data(&self) -> &ViewData {
         &self.data
     }
@@ -100,7 +99,21 @@ impl<V: View + 'static, T> View for Tab<V, T> {
         &mut self.data
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
+    fn build(self) -> Box<dyn Widget> {
+        Box::new(self)
+    }
+}
+
+impl<T> Widget for Tab<T> {
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
+    }
+
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
         for child in self.children.iter().filter_map(|child| child.as_ref()) {
             if for_each(&child.0) {
                 break;
@@ -108,7 +121,7 @@ impl<V: View + 'static, T> View for Tab<V, T> {
         }
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
         for child in self.children.iter_mut().filter_map(|child| child.as_mut()) {
             if for_each(&mut child.0) {
                 break;
@@ -118,7 +131,7 @@ impl<V: View + 'static, T> View for Tab<V, T> {
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
     ) {
         for child in self
             .children
@@ -154,7 +167,7 @@ impl<V: View + 'static, T> View for Tab<V, T> {
             }
             cx.request_all(self.id());
             for (child, _) in self.children.iter().flatten() {
-                cx.request_all(child.id());
+                cx.request_all(child.view_data().id());
             }
         }
     }
@@ -167,7 +180,7 @@ impl<V: View + 'static, T> View for Tab<V, T> {
             .filter_map(|(i, child)| child.as_mut().map(|child| (i, &mut child.0)))
         {
             cx.style_view(child);
-            let child_view = cx.app_state_mut().view_state(child.id());
+            let child_view = cx.app_state_mut().view_state(child.view_data().id());
             child_view.combined_style = child_view.combined_style.clone().set(
                 DisplayProp,
                 if i != self.active {

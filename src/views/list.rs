@@ -2,12 +2,13 @@ use super::{v_stack_from_iter, Decorators, Stack};
 use crate::context::StyleCx;
 use crate::reactive::create_effect;
 use crate::style::Style;
+use crate::view::View;
 use crate::EventPropagation;
 use crate::{
     event::{Event, EventListener},
     id::Id,
     keyboard::{Key, NamedKey},
-    view::{View, ViewData},
+    view::{ViewData, Widget},
 };
 use floem_reactive::{create_rw_signal, RwSignal};
 
@@ -20,7 +21,7 @@ pub(crate) struct Item {
     pub(crate) data: ViewData,
     pub(crate) index: usize,
     pub(crate) selection: RwSignal<Option<usize>>,
-    pub(crate) child: Box<dyn View>,
+    pub(crate) child: Box<dyn Widget>,
 }
 
 pub struct List {
@@ -45,7 +46,7 @@ impl List {
 
 pub fn list<V>(iterator: impl IntoIterator<Item = V>) -> List
 where
-    V: View + 'static,
+    V: Widget + 'static,
 {
     let id = Id::next();
     let selection = create_rw_signal(None);
@@ -144,17 +145,31 @@ impl View for List {
         &mut self.data
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
+    fn build(self) -> Box<dyn Widget> {
+        Box::new(self)
+    }
+}
+
+impl Widget for List {
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
+    }
+
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
         for_each(&self.child);
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
         for_each(&mut self.child);
     }
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
     ) {
         for_each(&mut self.child);
     }
@@ -171,7 +186,7 @@ impl View for List {
                 }
                 ListUpdate::ScrollToSelected => {
                     if let Some(index) = self.selection.get_untracked() {
-                        self.child.children[index].id().scroll_to(None);
+                        self.child.children[index].view_data().id().scroll_to(None);
                     }
                 }
             }
@@ -188,21 +203,35 @@ impl View for Item {
         &mut self.data
     }
 
+    fn build(self) -> Box<dyn Widget> {
+        Box::new(self)
+    }
+}
+
+impl Widget for Item {
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
+    }
+
     fn view_style(&self) -> Option<crate::style::Style> {
         Some(Style::new().flex_col())
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
         for_each(&self.child);
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
         for_each(&mut self.child);
     }
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
     ) {
         for_each(&mut self.child);
     }

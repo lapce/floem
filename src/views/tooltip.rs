@@ -7,7 +7,7 @@ use crate::{
     event::Event,
     id::Id,
     prop, prop_extracter,
-    view::{default_compute_layout, default_event, View, ViewData},
+    view::{default_compute_layout, default_event, View, ViewData, Widget},
     EventPropagation,
 };
 
@@ -24,20 +24,20 @@ pub struct Tooltip {
     data: ViewData,
     hover: Option<(Point, TimerToken)>,
     overlay: Option<Id>,
-    child: Box<dyn View>,
-    tip: Rc<dyn Fn() -> Box<dyn View>>,
+    child: Box<dyn Widget>,
+    tip: Rc<dyn Fn() -> Box<dyn Widget>>,
     style: TooltipStyle,
     window_origin: Option<Point>,
 }
 
 /// A view that displays a tooltip for its child.
-pub fn tooltip<V: View + 'static, T: View + 'static>(
+pub fn tooltip<V: View + 'static, T: Widget + 'static>(
     child: V,
     tip: impl Fn() -> T + 'static,
 ) -> Tooltip {
     Tooltip {
         data: ViewData::new(Id::next()),
-        child: Box::new(child),
+        child: child.build(),
         tip: Rc::new(move || Box::new(tip())),
         hover: None,
         overlay: None,
@@ -55,17 +55,31 @@ impl View for Tooltip {
         &mut self.data
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
+    fn build(self) -> Box<dyn Widget> {
+        Box::new(self)
+    }
+}
+
+impl Widget for Tooltip {
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
+    }
+
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
         for_each(&self.child);
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
         for_each(&mut self.child);
     }
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
     ) {
         for_each(&mut self.child);
     }

@@ -3,12 +3,13 @@ use super::{
 };
 use crate::context::ComputeLayoutCx;
 use crate::reactive::create_effect;
+use crate::view::View;
 use crate::EventPropagation;
 use crate::{
     event::{Event, EventListener},
     id::Id,
     keyboard::{Key, NamedKey},
-    view::{View, ViewData},
+    view::{ViewData, Widget},
 };
 use floem_reactive::{create_rw_signal, RwSignal};
 use kurbo::{Rect, Size};
@@ -26,7 +27,7 @@ pub struct VirtualList<T: 'static> {
     child_size: Size,
     selection: RwSignal<Option<usize>>,
     offsets: RwSignal<Vec<f64>>,
-    child: VirtualStack<Item, (usize, T)>,
+    child: VirtualStack<(usize, T)>,
 }
 
 impl<T> VirtualList<T> {
@@ -57,7 +58,7 @@ where
     KF: Fn(&T) -> K + 'static,
     K: Eq + Hash + 'static,
     VF: Fn(T) -> V + 'static,
-    V: View + 'static,
+    V: Widget + 'static,
 {
     let id = Id::next();
     let selection = create_rw_signal(None);
@@ -218,17 +219,31 @@ impl<T> View for VirtualList<T> {
         &mut self.data
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
+    fn build(self) -> Box<dyn Widget> {
+        Box::new(self)
+    }
+}
+
+impl<T> Widget for VirtualList<T> {
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
+    }
+
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
         for_each(&self.child);
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
         for_each(&mut self.child);
     }
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
     ) {
         for_each(&mut self.child);
     }

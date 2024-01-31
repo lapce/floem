@@ -10,7 +10,7 @@ use smallvec::SmallVec;
 use crate::{
     context::{AppState, UpdateCx},
     id::Id,
-    view::{view_children_set_parent_id, View, ViewData},
+    view::{view_children_set_parent_id, AnyWidget, View, ViewData, Widget},
 };
 
 pub(crate) type FxIndexSet<T> = indexmap::IndexSet<T, BuildHasherDefault<FxHasher>>;
@@ -19,18 +19,17 @@ pub(crate) type FxIndexSet<T> = indexmap::IndexSet<T, BuildHasherDefault<FxHashe
 #[educe(Debug)]
 pub(crate) struct HashRun<T>(#[educe(Debug(ignore))] pub(crate) T);
 
-pub struct DynStack<V, T>
+pub struct DynStack<T>
 where
-    V: View,
     T: 'static,
 {
     data: ViewData,
-    children: Vec<Option<(V, Scope)>>,
-    view_fn: Box<dyn Fn(T) -> (V, Scope)>,
+    children: Vec<Option<(AnyWidget, Scope)>>,
+    view_fn: Box<dyn Fn(T) -> (AnyWidget, Scope)>,
     phantom: PhantomData<T>,
 }
 
-pub fn dyn_stack<IF, I, T, KF, K, VF, V>(each_fn: IF, key_fn: KF, view_fn: VF) -> DynStack<V, T>
+pub fn dyn_stack<IF, I, T, KF, K, VF, V>(each_fn: IF, key_fn: KF, view_fn: VF) -> DynStack<T>
 where
     IF: Fn() -> I + 'static,
     I: IntoIterator<Item = T>,
@@ -68,7 +67,7 @@ where
         id.update_state(diff);
         HashRun(hashed_items)
     });
-    let view_fn = Box::new(as_child_of_current_scope(view_fn));
+    let view_fn = Box::new(as_child_of_current_scope(move |e| view_fn(e).build()));
     DynStack {
         data: ViewData::new(id),
         children: Vec::new(),
@@ -77,7 +76,7 @@ where
     }
 }
 
-impl<V: View + 'static, T> View for DynStack<V, T> {
+impl<T> View for DynStack<T> {
     fn view_data(&self) -> &ViewData {
         &self.data
     }
@@ -86,7 +85,21 @@ impl<V: View + 'static, T> View for DynStack<V, T> {
         &mut self.data
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
+    fn build(self) -> Box<dyn Widget> {
+        Box::new(self)
+    }
+}
+
+impl<T> Widget for DynStack<T> {
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
+    }
+
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
         for child in self.children.iter().filter_map(|child| child.as_ref()) {
             if for_each(&child.0) {
                 break;
@@ -94,7 +107,7 @@ impl<V: View + 'static, T> View for DynStack<V, T> {
         }
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
         for child in self.children.iter_mut().filter_map(|child| child.as_mut()) {
             if for_each(&mut child.0) {
                 break;
@@ -104,7 +117,7 @@ impl<V: View + 'static, T> View for DynStack<V, T> {
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
     ) {
         for child in self
             .children
@@ -261,7 +274,7 @@ pub(crate) fn diff<K: Eq + Hash, V>(from: &FxIndexSet<K>, to: &FxIndexSet<K>) ->
     diffs
 }
 
-fn remove_index<V: View>(
+fn remove_index<V: Widget>(
     app_state: &mut AppState,
     children: &mut [Option<(V, Scope)>],
     index: usize,
@@ -279,7 +292,7 @@ pub(super) fn apply_diff<T, V, VF>(
     children: &mut Vec<Option<(V, Scope)>>,
     view_fn: &VF,
 ) where
-    V: View,
+    V: Widget,
     VF: Fn(T) -> (V, Scope),
 {
     // Resize children if needed
@@ -319,7 +332,7 @@ pub(super) fn apply_diff<T, V, VF>(
     for DiffOpAdd { at, view } in diff.added {
         children[at] = view.map(view_fn);
         if let Some((child, _)) = children[at].as_ref() {
-            child.id().set_parent(view_id);
+            child.view_data().id().set_parent(view_id);
             view_children_set_parent_id(child);
         }
     }

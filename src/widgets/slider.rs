@@ -11,7 +11,7 @@ use crate::{
     style::{Background, BorderRadius, Foreground, Height},
     style_class,
     unit::{PxPct, PxPctAuto},
-    view::{View, ViewData},
+    view::{View, ViewData, Widget},
     views::Decorators,
     EventPropagation,
 };
@@ -64,16 +64,16 @@ pub struct Slider {
 
 /// **A reactive slider.**
 ///
-/// You can set the slider to a percent value betwen 0 and 100.
+/// You can set the slider to a percent value between 0 and 100.
 ///
 /// The slider is composed of four parts. The main view, the background bar, an accent bar and a handle.
 /// The background bar is separate from the main view because it is shortened when [`EdgeAlign`] is set to false;
 ///
 /// **Responding to events**:
 /// You can respond to events by calling the [`Slider::on_change_pct`], and [`Slider::on_change_px`] methods on [`Slider`] and passing in a callback. Both of these callbacks are called whenever a change is effected by either clicking or by the arrow keys.
-/// These callbacks will not be called on reactive updates, only on a mouse event or by using the arrrow keys.
+/// These callbacks will not be called on reactive updates, only on a mouse event or by using the arrow keys.
 ///
-/// You can also disable event handlidng of mouse clicks and arrow keys using [`Slider::disable_events`]. If you want to use this slider as a progress bar this may be useful.
+/// You can also disable event handling of mouse clicks and arrow keys using [`Slider::disable_events`]. If you want to use this slider as a progress bar this may be useful.
 ///
 /// **Styling**:
 /// You can set three properties on the slider (`SliderClass`): [`Foreground`] color and [`HandleRadius`], which both affect the handle, and [`EdgeAlign`].
@@ -136,6 +136,20 @@ pub fn slider(percent: impl Fn() -> f32 + 'static) -> Slider {
 }
 
 impl View for Slider {
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
+    }
+
+    fn build(self) -> Box<dyn Widget> {
+        Box::new(self)
+    }
+}
+
+impl Widget for Slider {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

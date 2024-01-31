@@ -6,7 +6,7 @@ use crate::reactive::{create_effect, RwSignal};
 use crate::style::{CursorColor, FontProps, PaddingLeft};
 use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
-use crate::view::ViewData;
+use crate::view::{View, ViewData};
 use crate::widgets::PlaceholderTextClass;
 use crate::{prop, prop_extracter, Clipboard, EventPropagation};
 use floem_reactive::create_rw_signal;
@@ -16,7 +16,7 @@ use floem_renderer::{cosmic_text::Cursor, Renderer};
 use floem_winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::{peniko::Color, style::Style, view::View};
+use crate::{peniko::Color, style::Style, view::Widget};
 
 use std::{
     any::Any,
@@ -929,6 +929,20 @@ fn get_dbl_click_selection(glyph_idx: usize, buffer: &String) -> Range<usize> {
 }
 
 impl View for TextInput {
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
+    }
+
+    fn build(self) -> Box<dyn Widget> {
+        Box::new(self)
+    }
+}
+
+impl Widget for TextInput {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

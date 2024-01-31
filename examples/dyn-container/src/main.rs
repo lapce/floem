@@ -44,8 +44,8 @@ fn app_view() -> impl View {
         dyn_container(
             move || view.get(),
             move |value| match value {
-                ViewSwitcher::One => Box::new(view_one()),
-                ViewSwitcher::Two => Box::new(view_two(view)),
+                ViewSwitcher::One => view_one().any(),
+                ViewSwitcher::Two => view_two(view).any(),
             },
         )
         .style(|s| s.padding(10).border(1)),

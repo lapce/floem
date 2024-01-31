@@ -6,10 +6,8 @@ pub use floem_winit::window::WindowId;
 pub use floem_winit::window::WindowLevel;
 use kurbo::{Point, Size};
 
-use crate::{
-    app::{add_app_update_event, AppUpdateEvent},
-    view::View,
-};
+use crate::app::{add_app_update_event, AppUpdateEvent};
+use crate::view::View;
 
 #[derive(Default, Debug)]
 pub struct WindowConfig {
@@ -93,7 +91,7 @@ pub fn new_window<V: View + 'static>(
     config: Option<WindowConfig>,
 ) {
     add_app_update_event(AppUpdateEvent::NewWindow {
-        view_fn: Box::new(|window_id| Box::new(app_view(window_id))),
+        view_fn: Box::new(|window_id| app_view(window_id).any()),
         config,
     });
 }
