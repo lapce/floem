@@ -93,6 +93,8 @@ pub trait Decorators: View + Sized {
     }
 
     /// Add an handler for pressing down a specific key.
+    ///
+    /// NOTE: View should have `.keyboard_navigable()` in order to receive keyboard events
     fn on_key_down(
         mut self,
         key: Key,
@@ -112,6 +114,8 @@ pub trait Decorators: View + Sized {
     }
 
     /// Add an handler for a specific key being released.
+    ///
+    /// NOTE: View should have `.keyboard_navigable()` in order to receive keyboard events
     fn on_key_up(
         mut self,
         key: Key,
