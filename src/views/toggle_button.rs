@@ -60,7 +60,7 @@ pub struct ToggleButton {
 }
 
 /// A reactive toggle button. When the button is toggled by clicking or dragging the widget an update will be
-/// sent to the [`ToggleButton::on_toggle`](crate::widgets::toggle_button::ToggleButton::on_toggle) handler.
+/// sent to the [`ToggleButton::on_toggle`](crate::views::toggle_button::ToggleButton::on_toggle) handler.
 /// See also [ToggleButtonClass], [ToggleButtonSwitch] and the other toggle button styles that can be applied.
 ///
 /// By default this toggle button has a style class of [ToggleButtonClass] applied with a default style provided.

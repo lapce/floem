@@ -22,8 +22,7 @@ pub struct DynamicContainer<T: 'static> {
 /// use floem::{
 ///     reactive::create_rw_signal,
 ///     view::View,
-///     views::{dyn_container, label, v_stack, Decorators},
-///     widgets::toggle_button,
+///     views::{dyn_container, label, v_stack, Decorators, toggle_button},
 /// };
 ///
 /// #[derive(Clone)]

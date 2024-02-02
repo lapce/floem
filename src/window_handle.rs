@@ -114,14 +114,12 @@ impl WindowHandle {
             .any()
         });
 
-        let widget = view;
-
-        widget.view_data().id().set_parent(id);
-        view_children_set_parent_id(&*widget);
+        view.view_data().id().set_parent(id);
+        view_children_set_parent_id(&*view);
 
         let view = WindowView {
             data: ViewData::new(id),
-            main: widget,
+            main: view,
             overlays: Default::default(),
         };
 

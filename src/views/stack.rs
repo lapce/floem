@@ -17,7 +17,7 @@ pub struct Stack {
 pub fn stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
     Stack {
         data: ViewData::new(Id::next()),
-        children: children.into_widgets(),
+        children: children.into_views(),
         direction: None,
     }
 }
@@ -26,7 +26,7 @@ pub fn stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
 pub fn h_stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
     Stack {
         data: ViewData::new(Id::next()),
-        children: children.into_widgets(),
+        children: children.into_views(),
         direction: Some(FlexDirection::Row),
     }
 }
@@ -35,7 +35,7 @@ pub fn h_stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
 pub fn v_stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
     Stack {
         data: ViewData::new(Id::next()),
-        children: children.into_widgets(),
+        children: children.into_views(),
         direction: Some(FlexDirection::Column),
     }
 }

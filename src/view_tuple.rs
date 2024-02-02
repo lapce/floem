@@ -2,7 +2,7 @@ use crate::view::AnyView;
 use crate::view::{IntoAnyView, IntoView, View};
 
 pub trait ViewTuple {
-    fn into_widgets(self) -> Vec<AnyView>
+    fn into_views(self) -> Vec<AnyView>
     where
         Self: 'static;
 }
@@ -11,7 +11,7 @@ macro_rules! impl_view_tuple {
     ( $n: tt; $( $t:ident),* ; $( $i:tt ),* ; $( $j:tt ),*) => {
 
         impl< $( $t: IntoView, )* > ViewTuple for ( $( $t, )* ) {
-            fn into_widgets(self) -> Vec<AnyView>
+            fn into_views(self) -> Vec<AnyView>
             where
                 Self: 'static
             {

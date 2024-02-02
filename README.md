@@ -19,8 +19,7 @@ _The project is still maturing. We will make occasional breaking changes and add
 ```rust
 use floem::reactive::create_signal;
 use floem::view::View;
-use floem::views::{h_stack, label, v_stack, Decorators};
-use floem::widgets::button;
+use floem::views::{button, h_stack, label, v_stack, Decorators};
 
 fn app_view() -> impl View {
     // Create a reactive signal with a counter value, defaulting to 0
