@@ -19,6 +19,8 @@ use kurbo::{Affine, Point, Rect, Size, Vec2};
 #[cfg(target_os = "linux")]
 use crate::unit::UnitExt;
 #[cfg(target_os = "linux")]
+use crate::view::IntoAnyView;
+#[cfg(target_os = "linux")]
 use crate::views::{container_box, stack, Decorators};
 use crate::{
     animate::{AnimPropKind, AnimUpdateMsg, AnimValue, AnimatedProp, SizeUnit},
