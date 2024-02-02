@@ -28,6 +28,7 @@ pub use toggle_button::*;
 mod tooltip;
 pub use tooltip::*;
 
+pub mod dropdown;
 pub mod slider;
 
 mod button;
@@ -285,6 +286,27 @@ pub(crate) fn default_theme() -> Theme {
                 .box_shadow_h_offset(2.0)
                 .box_shadow_v_offset(2.0)
                 .box_shadow_color(Color::BLACK.with_alpha_factor(0.2))
+        })
+        .class(dropdown::DropDownClass, |s| {
+            s.size_full()
+                .width(75)
+                .padding(3)
+                .apply(border_style)
+                .class(ListClass, |s| {
+                    s.width_full()
+                        .margin_top(3)
+                        .padding_vert(3)
+                        .background(Color::LIGHT_GRAY)
+                        .box_shadow_blur(2.0)
+                        .box_shadow_h_offset(2.0)
+                        .box_shadow_v_offset(2.0)
+                        .box_shadow_color(Color::BLACK.with_alpha_factor(0.2))
+                        .border_radius(5.pct())
+                        .items_center()
+                        .class(ListItemClass, |s| {
+                            s.margin_horiz(3).padding(3).items_center()
+                        })
+                })
         })
         .font_size(FONT_SIZE)
         .color(Color::BLACK);
