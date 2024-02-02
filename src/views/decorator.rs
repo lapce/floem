@@ -32,7 +32,7 @@ pub trait Decorators: View + Sized {
     /// }
     /// ```
     fn style(mut self, style: impl Fn(Style) -> Style + 'static) -> Self {
-        let id = self.id();
+        let id = self.view_data().id();
         let offset = self.view_data_mut().style.next_offset();
         let style = create_updater(
             move || style(Style::new()),
@@ -59,14 +59,12 @@ pub trait Decorators: View + Sized {
 
     /// Allows the element to be navigated to with the keyboard. Similar to setting tabindex="0" in html.
     fn keyboard_navigatable(self) -> Self {
-        let id = self.id();
-        id.keyboard_navigatable();
+        self.id().keyboard_navigatable();
         self
     }
 
     fn draggable(self) -> Self {
-        let id = self.id();
-        id.draggable();
+        self.id().draggable();
         self
     }
 
@@ -154,8 +152,8 @@ pub trait Decorators: View + Sized {
 
     /// Add an event handler for [EventListener::Click].
     fn on_click(self, action: impl Fn(&Event) -> EventPropagation + 'static) -> Self {
-        let id = self.id();
-        id.update_event_listener(EventListener::Click, Box::new(action));
+        self.id()
+            .update_event_listener(EventListener::Click, Box::new(action));
         self
     }
 
@@ -179,8 +177,8 @@ pub trait Decorators: View + Sized {
 
     /// Add an event handler for [EventListener::DoubleClick]
     fn on_double_click(self, action: impl Fn(&Event) -> EventPropagation + 'static) -> Self {
-        let id = self.id();
-        id.update_event_listener(EventListener::DoubleClick, Box::new(action));
+        self.id()
+            .update_event_listener(EventListener::DoubleClick, Box::new(action));
         self
     }
 
@@ -204,8 +202,8 @@ pub trait Decorators: View + Sized {
 
     /// Add an event handler for [EventListener::SecondaryClick]. This is most often the "Right" click.
     fn on_secondary_click(self, action: impl Fn(&Event) -> EventPropagation + 'static) -> Self {
-        let id = self.id();
-        id.update_event_listener(EventListener::SecondaryClick, Box::new(action));
+        self.id()
+            .update_event_listener(EventListener::SecondaryClick, Box::new(action));
         self
     }
 
@@ -228,20 +226,17 @@ pub trait Decorators: View + Sized {
     }
 
     fn on_resize(self, action: impl Fn(Rect) + 'static) -> Self {
-        let id = self.id();
-        id.update_resize_listener(Box::new(action));
+        self.id().update_resize_listener(Box::new(action));
         self
     }
 
     fn on_move(self, action: impl Fn(Point) + 'static) -> Self {
-        let id = self.id();
-        id.update_move_listener(Box::new(action));
+        self.id().update_move_listener(Box::new(action));
         self
     }
 
     fn on_cleanup(self, action: impl Fn() + 'static) -> Self {
-        let id = self.id();
-        id.update_cleanup_listener(Box::new(action));
+        self.id().update_cleanup_listener(Box::new(action));
         self
     }
 
@@ -297,15 +292,13 @@ pub trait Decorators: View + Sized {
 
     /// Adds a secondary-click context menu to the view, which opens at the mouse position.
     fn context_menu(self, menu: impl Fn() -> Menu + 'static) -> Self {
-        let id = self.id();
-        id.update_context_menu(Box::new(menu));
+        self.id().update_context_menu(Box::new(menu));
         self
     }
 
     /// Adds a primary-click context menu, which opens below the view.
     fn popout_menu(self, menu: impl Fn() -> Menu + 'static) -> Self {
-        let id = self.id();
-        id.update_popout_menu(Box::new(menu));
+        self.id().update_popout_menu(Box::new(menu));
         self
     }
 }

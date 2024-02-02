@@ -1,8 +1,8 @@
-use crate::view::View;
-use crate::view::Widget;
+use crate::view::AnyView;
+use crate::view::{IntoAnyView, IntoView, View};
 
 pub trait ViewTuple {
-    fn into_widgets(self) -> Vec<Box<dyn Widget>>
+    fn into_widgets(self) -> Vec<AnyView>
     where
         Self: 'static;
 }
@@ -10,12 +10,19 @@ pub trait ViewTuple {
 macro_rules! impl_view_tuple {
     ( $n: tt; $( $t:ident),* ; $( $i:tt ),* ; $( $j:tt ),*) => {
 
-        impl< $( $t: View, )* > ViewTuple for ( $( $t, )* ) {
-            fn into_widgets(self) -> Vec<Box<dyn Widget>>
+        impl< $( $t: IntoView, )* > ViewTuple for ( $( $t, )* ) {
+            fn into_widgets(self) -> Vec<AnyView>
             where
                 Self: 'static
             {
-                vec![$(self.$i.build(),)*]
+                vec![$(self.$i.into_view().any(),)*]
+            }
+        }
+
+        impl< $( $t: IntoView + 'static, )* > IntoView for ( $( $t, )* ) {
+            fn into_view(self) -> impl View
+            {
+                vec![$(self.$i.into_view().any(),)*].into_view()
             }
         }
     }

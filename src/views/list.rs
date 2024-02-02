@@ -1,16 +1,19 @@
-use super::{v_stack_from_iter, Decorators, Stack};
+use super::{container, v_stack_from_iter, Decorators, Stack};
 use crate::context::StyleCx;
 use crate::reactive::create_effect;
 use crate::style::Style;
-use crate::view::View;
-use crate::EventPropagation;
+use crate::view::{AnyView, IntoAnyView, IntoView};
 use crate::{
     event::{Event, EventListener},
     id::Id,
     keyboard::{Key, NamedKey},
-    view::{ViewData, Widget},
+    view::{View, ViewData},
 };
+use crate::{style_class, EventPropagation};
 use floem_reactive::{create_rw_signal, RwSignal};
+
+style_class!(pub ListClass);
+style_class!(pub ListItemClass);
 
 enum ListUpdate {
     SelectionChanged,
@@ -21,7 +24,7 @@ pub(crate) struct Item {
     pub(crate) data: ViewData,
     pub(crate) index: usize,
     pub(crate) selection: RwSignal<Option<usize>>,
-    pub(crate) child: Box<dyn Widget>,
+    pub(crate) child: AnyView,
 }
 
 pub struct List {
@@ -46,7 +49,7 @@ impl List {
 
 pub fn list<V>(iterator: impl IntoIterator<Item = V>) -> List
 where
-    V: Widget + 'static,
+    V: IntoView + 'static,
 {
     let id = Id::next();
     let selection = create_rw_signal(None);
@@ -55,17 +58,20 @@ where
         id.update_state(ListUpdate::SelectionChanged);
     });
     let stack = v_stack_from_iter(iterator.into_iter().enumerate().map(move |(index, v)| {
-        Item {
-            data: ViewData::new(Id::next()),
-            selection,
-            index,
-            child: Box::new(v),
-        }
-        .on_click_stop(move |_| {
-            if selection.get_untracked() != Some(index) {
-                selection.set(Some(index))
+        container(
+            Item {
+                data: ViewData::new(Id::next()),
+                selection,
+                index,
+                child: v.into_view().any(),
             }
-        })
+            .on_click_stop(move |_| {
+                if selection.get_untracked() != Some(index) {
+                    selection.set(Some(index))
+                }
+            }),
+        )
+        .class(ListItemClass)
     }))
     .style(|s| s.width_full().height_full());
     let length = stack.children.len();
@@ -74,6 +80,7 @@ where
         selection,
         child: stack,
     }
+    .class(ListClass)
     .keyboard_navigatable()
     .on_event(EventListener::KeyDown, move |e| {
         if let Event::KeyDown(key_event) = e {
@@ -145,31 +152,17 @@ impl View for List {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
-        Box::new(self)
-    }
-}
-
-impl Widget for List {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
         for_each(&self.child);
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
         for_each(&mut self.child);
     }
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         for_each(&mut self.child);
     }
@@ -203,35 +196,21 @@ impl View for Item {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
-        Box::new(self)
-    }
-}
-
-impl Widget for Item {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
     fn view_style(&self) -> Option<crate::style::Style> {
         Some(Style::new().flex_col())
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
         for_each(&self.child);
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
         for_each(&mut self.child);
     }
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         for_each(&mut self.child);
     }

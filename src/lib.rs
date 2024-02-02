@@ -36,8 +36,7 @@
 //! ```
 //! # use floem::reactive::create_rw_signal;
 //! # use floem::view::View;
-//! # use floem::views::{label, v_stack, Decorators};
-//! # use floem::widgets::text_input;
+//! # use floem::views::{label, v_stack, Decorators, text_input};
 //! #
 //! fn app_view() -> impl View {
 //!     let text = create_rw_signal("Hello world".to_string());
@@ -139,13 +138,13 @@ mod profiler;
 pub mod renderer;
 pub mod responsive;
 pub mod style;
+pub mod theme;
 pub mod unit;
 mod update;
 pub mod view;
 pub(crate) mod view_data;
 pub mod view_tuple;
 pub mod views;
-pub mod widgets;
 pub mod window;
 mod window_handle;
 

@@ -1,8 +1,7 @@
 use floem::{
     reactive::create_rw_signal,
     view::View,
-    views::{h_stack, label, v_stack, Decorators},
-    widgets::{button, text_input},
+    views::{button, h_stack, label, text_input, v_stack, Decorators},
     Clipboard,
 };
 

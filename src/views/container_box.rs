@@ -1,12 +1,12 @@
 use crate::{
     id::Id,
-    view::{View, ViewData, Widget},
+    view::{AnyView, IntoAnyView, IntoView, View, ViewData},
 };
 
 /// A wrapper around any type that implements View. See [`container_box`]
 pub struct ContainerBox {
     data: ViewData,
-    child: Box<dyn Widget>,
+    child: AnyView,
 }
 
 /// A wrapper around any type that implements View.
@@ -34,7 +34,6 @@ pub struct ContainerBox {
 ///
 /// ```
 /// use floem::views::*;
-/// use floem::widgets::*;
 /// use floem_reactive::*;
 /// let check = true;
 ///
@@ -44,10 +43,10 @@ pub struct ContainerBox {
 ///     container_box(label(|| "no check".to_string()))
 /// };
 /// ```
-pub fn container_box(child: impl View + 'static) -> ContainerBox {
+pub fn container_box(child: impl IntoView + 'static) -> ContainerBox {
     ContainerBox {
         data: ViewData::new(Id::next()),
-        child: child.build(),
+        child: child.into_view().any(),
     }
 }
 
@@ -60,31 +59,17 @@ impl View for ContainerBox {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
-        Box::new(self)
-    }
-}
-
-impl Widget for ContainerBox {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
         for_each(&self.child);
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
         for_each(&mut self.child);
     }
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         for_each(&mut self.child);
     }

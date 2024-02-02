@@ -4,9 +4,9 @@ use floem::{
     peniko::Color,
     reactive::create_rw_signal,
     unit::UnitExt,
-    view::View,
+    view::{IntoAnyView, View},
+    views::dropdown::dropdown,
     views::{container, label, stack, svg, Decorators},
-    widgets::dropdown::dropdown,
 };
 
 use crate::{

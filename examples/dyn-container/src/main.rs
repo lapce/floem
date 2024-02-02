@@ -1,8 +1,7 @@
 use floem::{
     reactive::{create_rw_signal, RwSignal},
-    view::View,
-    views::{dyn_container, h_stack, label, v_stack, Decorators},
-    widgets::button,
+    view::{IntoAnyView, View},
+    views::{button, dyn_container, h_stack, label, v_stack, Decorators},
 };
 
 #[derive(Clone, PartialEq)]

@@ -6,9 +6,8 @@ use crate::reactive::{create_effect, RwSignal};
 use crate::style::{CursorColor, FontProps, PaddingLeft};
 use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
-use crate::view::{View, ViewData};
-use crate::widgets::PlaceholderTextClass;
-use crate::{prop, prop_extracter, Clipboard, EventPropagation};
+use crate::view::ViewData;
+use crate::{prop, prop_extracter, style_class, Clipboard, EventPropagation};
 use floem_reactive::create_rw_signal;
 use taffy::prelude::{Layout, Node};
 
@@ -16,7 +15,7 @@ use floem_renderer::{cosmic_text::Cursor, Renderer};
 use floem_winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::{peniko::Color, style::Style, view::Widget};
+use crate::{peniko::Color, style::Style, view::View};
 
 use std::{
     any::Any,
@@ -58,6 +57,9 @@ prop_extracter! {
         pub font_style: FontStyle,
     }
 }
+
+style_class!(pub TextInputClass);
+style_class!(pub PlaceholderTextClass);
 
 /// Text Input View
 pub struct TextInput {
@@ -147,6 +149,7 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         is_focused: false,
         last_cursor_action_on: Instant::now(),
     }
+    .class(TextInputClass)
     .keyboard_navigatable()
     .on_event_stop(EventListener::FocusGained, move |_| {
         is_focused.set(true);
@@ -221,6 +224,11 @@ const CURSOR_BLINK_INTERVAL_MS: u64 = 500;
 const APPROX_VISIBLE_CHARS_TARGET: f32 = 10.0;
 
 impl TextInput {
+    pub fn placeholder(mut self, text: impl Into<String>) -> Self {
+        self.placeholder_text = Some(text.into());
+        self
+    }
+
     fn move_cursor(&mut self, move_kind: Movement, direction: Direction) -> bool {
         match (move_kind, direction) {
             (Movement::Glyph, Direction::Left) => {
@@ -929,20 +937,6 @@ fn get_dbl_click_selection(glyph_idx: usize, buffer: &String) -> Range<usize> {
 }
 
 impl View for TextInput {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn Widget> {
-        Box::new(self)
-    }
-}
-
-impl Widget for TextInput {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

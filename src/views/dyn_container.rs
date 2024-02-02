@@ -2,15 +2,15 @@ use floem_reactive::{as_child_of_current_scope, create_updater, Scope};
 
 use crate::{
     id::Id,
-    view::{view_children_set_parent_id, AnyView, View, ViewData, Widget},
+    view::{view_children_set_parent_id, AnyView, IntoAnyView, IntoView, View, ViewData},
 };
 
-type ChildFn<T> = dyn Fn(T) -> (Box<dyn Widget>, Scope);
+type ChildFn<T> = dyn Fn(T) -> (AnyView, Scope);
 
 /// A container for a dynamically updating View. See [`dyn_container`]
 pub struct DynamicContainer<T: 'static> {
     data: ViewData,
-    child: Box<dyn Widget>,
+    child: AnyView,
     child_scope: Scope,
     child_fn: Box<ChildFn<T>>,
 }
@@ -67,7 +67,7 @@ pub struct DynamicContainer<T: 'static> {
 /// ```
 ///
 /// See [container_box](crate::views::container_box()) for more documentation on a general container
-pub fn dyn_container<CF: Fn(T) -> AnyView + 'static, T: 'static>(
+pub fn dyn_container<CF: Fn(T) -> V + 'static, T: 'static, V: IntoView + 'static>(
     update_view: impl Fn() -> T + 'static,
     child_fn: CF,
 ) -> DynamicContainer<T> {
@@ -75,7 +75,9 @@ pub fn dyn_container<CF: Fn(T) -> AnyView + 'static, T: 'static>(
 
     let initial = create_updater(update_view, move |new_state| id.update_state(new_state));
 
-    let child_fn = Box::new(as_child_of_current_scope(move |e| child_fn(e).build()));
+    let child_fn = Box::new(as_child_of_current_scope(move |e| {
+        child_fn(e).into_view().any()
+    }));
     let (child, child_scope) = child_fn(initial);
     DynamicContainer {
         data: ViewData::new(id),
@@ -94,31 +96,17 @@ impl<T: 'static> View for DynamicContainer<T> {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
-        Box::new(self)
-    }
-}
-
-impl<T: 'static> Widget for DynamicContainer<T> {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
         for_each(&self.child);
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
         for_each(&mut self.child);
     }
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         for_each(&mut self.child);
     }

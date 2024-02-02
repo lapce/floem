@@ -3,16 +3,17 @@ use floem::{
     peniko::Color,
     reactive::create_signal,
     unit::UnitExt,
-    view::View,
-    views::{label, stack, text, Decorators},
+    view::{IntoView, View},
+    views::{label, Decorators},
 };
 
 fn app_view() -> impl View {
     let (counter, set_counter) = create_signal(0);
-    let view = stack((
+    let view = (
         label(move || format!("Value: {}", counter.get())).style(|s| s.padding(10.0)),
-        stack((
-            text("Increment")
+        (
+            "Increment"
+                .into_view()
                 .style(|s| {
                     s.border_radius(10.0)
                         .padding(10.0)
@@ -28,7 +29,8 @@ fn app_view() -> impl View {
                     }
                 })
                 .keyboard_navigatable(),
-            text("Decrement")
+            "Decrement"
+                .into_view()
                 .on_click_stop({
                     move |_| {
                         set_counter.update(|value| *value -= 1);
@@ -45,7 +47,8 @@ fn app_view() -> impl View {
                         .active(|s| s.color(Color::WHITE).background(Color::RED))
                 })
                 .keyboard_navigatable(),
-            text("Reset to 0")
+            "Reset to 0"
+                .into_view()
                 .on_click_stop(move |_| {
                     println!("Reset counter pressed"); // will not fire if button is disabled
                     set_counter.update(|value| *value = 0);
@@ -63,14 +66,15 @@ fn app_view() -> impl View {
                         .active(|s| s.color(Color::WHITE).background(Color::YELLOW_GREEN))
                 })
                 .keyboard_navigatable(),
-        )),
-    ))
-    .style(|s| {
-        s.size(100.pct(), 100.pct())
-            .flex_col()
-            .items_center()
-            .justify_center()
-    });
+        ),
+    )
+        .into_view()
+        .style(|s| {
+            s.size(100.pct(), 100.pct())
+                .flex_col()
+                .items_center()
+                .justify_center()
+        });
 
     let id = view.id();
     view.on_key_up(

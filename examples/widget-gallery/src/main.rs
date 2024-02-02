@@ -24,10 +24,9 @@ use floem::{
     unit::UnitExt,
     view::View,
     views::{
-        container, container_box, h_stack, label, scroll, stack, tab, v_stack, virtual_stack,
-        Decorators, VirtualDirection, VirtualItemSize,
+        button, container, container_box, h_stack, label, scroll, stack, tab, v_stack,
+        virtual_stack, Decorators, VirtualDirection, VirtualItemSize,
     },
-    widgets::button,
     EventPropagation,
 };
 

@@ -35,14 +35,14 @@ use crate::{
     pointer::{PointerButton, PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
     profiler::Profile,
     style::{CursorStyle, Style, StyleSelector},
+    theme::{default_theme, Theme},
     update::{
         UpdateMessage, ANIM_UPDATE_MESSAGES, CENTRAL_DEFERRED_UPDATE_MESSAGES,
         CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES,
         UPDATE_MESSAGES,
     },
-    view::{view_children_set_parent_id, view_tab_navigation, AnyView, View, ViewData, Widget},
+    view::{view_children_set_parent_id, view_tab_navigation, AnyView, View, ViewData},
     view_data::{update_data, ChangeFlags},
-    widgets::{default_theme, Theme},
 };
 
 /// The top-level window handle that owns the winit Window.
@@ -78,7 +78,7 @@ pub(crate) struct WindowHandle {
 impl WindowHandle {
     pub(crate) fn new(
         window: floem_winit::window::Window,
-        view_fn: impl FnOnce(floem_winit::window::WindowId) -> AnyView + 'static,
+        view_fn: impl FnOnce(floem_winit::window::WindowId) -> AnyView,
         transparent: bool,
         apply_default_theme: bool,
     ) -> Self {
@@ -114,7 +114,7 @@ impl WindowHandle {
             .any()
         });
 
-        let widget = view.build();
+        let widget = view;
 
         widget.view_data().id().set_parent(id);
         view_children_set_parent_id(&*widget);
@@ -1526,10 +1526,10 @@ struct OverlayView {
     data: ViewData,
     scope: Scope,
     position: Point,
-    child: Box<dyn Widget>,
+    child: AnyView,
 }
 
-impl Widget for OverlayView {
+impl View for OverlayView {
     fn view_data(&self) -> &ViewData {
         &self.data
     }
@@ -1547,17 +1547,17 @@ impl Widget for OverlayView {
         )
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
         for_each(&self.child);
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
         for_each(&mut self.child);
     }
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         for_each(&mut self.child);
     }
@@ -1570,11 +1570,11 @@ impl Widget for OverlayView {
 /// A view representing a window which manages the main window view and any overlays.
 struct WindowView {
     data: ViewData,
-    main: Box<dyn Widget>,
+    main: AnyView,
     overlays: IndexMap<Id, OverlayView>,
 }
 
-impl Widget for WindowView {
+impl View for WindowView {
     fn view_data(&self) -> &ViewData {
         &self.data
     }
@@ -1587,14 +1587,14 @@ impl Widget for WindowView {
         &mut self.data
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
         for_each(&self.main);
         for overlay in self.overlays.values() {
             for_each(overlay);
         }
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
         for_each(&mut self.main);
         for overlay in self.overlays.values_mut() {
             for_each(overlay);
@@ -1603,7 +1603,7 @@ impl Widget for WindowView {
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         for overlay in self.overlays.values_mut().rev() {
             for_each(overlay);

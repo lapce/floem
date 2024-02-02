@@ -6,8 +6,7 @@ use floem::{
     style::BorderRadius,
     unit::UnitExt,
     view::View,
-    views::{container, label, stack, text, v_stack, Decorators},
-    widgets::{button, slider},
+    views::{button, container, label, slider, stack, text, v_stack, Decorators},
 };
 
 fn main() {

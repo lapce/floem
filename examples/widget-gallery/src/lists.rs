@@ -5,10 +5,10 @@ use floem::{
     style::JustifyContent,
     view::View,
     views::{
-        container, h_stack, h_stack_from_iter, label, scroll, stack, v_stack, v_stack_from_iter,
-        Decorators, VirtualDirection, VirtualItemSize, VirtualVector,
+        button, checkbox, container, h_stack, h_stack_from_iter, label, list, scroll, stack,
+        v_stack, v_stack_from_iter, virtual_list, Decorators, VirtualDirection, VirtualItemSize,
+        VirtualVector,
     },
-    widgets::{button, checkbox, list, virtual_list},
 };
 
 use crate::form::{form, form_item};
