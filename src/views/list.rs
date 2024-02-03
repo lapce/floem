@@ -70,7 +70,8 @@ where
         }
         .on_click_stop(move |_| {
             if selection.get_untracked() != Some(index) {
-                selection.set(Some(index))
+                selection.set(Some(index));
+                id.update_state(ListUpdate::Accept);
             }
         })
     }))
