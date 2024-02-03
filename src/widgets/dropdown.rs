@@ -35,6 +35,7 @@ pub struct DropDown<T: 'static> {
     overlay_id: Option<Id>,
     window_origin: Option<Point>,
     on_accept: Option<Box<dyn Fn(T)>>,
+    on_open: Option<Box<dyn Fn(bool)>>,
 }
 
 enum Message {
@@ -206,6 +207,7 @@ where
         overlay_id: None,
         window_origin: None,
         on_accept: None,
+        on_open: None,
     }
     .class(DropDownClass)
 }
@@ -225,6 +227,11 @@ impl<T> DropDown<T> {
         self
     }
 
+    pub fn on_open(mut self, on_open: impl Fn(bool) + 'static) -> Self {
+        self.on_open = Some(Box::new(on_open));
+        self
+    }
+
     fn swap_state(&self) {
         if self.overlay_id.is_some() {
             self.id().update_state(Message::OpenState(false));
@@ -236,11 +243,17 @@ impl<T> DropDown<T> {
 
     fn open_dropdown(&mut self, cx: &mut crate::context::UpdateCx) {
         if self.overlay_id.is_none() {
+            self.id().request_layout();
+            cx.app_state.compute_layout();
             if let Some(layout) = cx.app_state.get_layout(self.id()) {
                 self.update_list_style(layout.size.width as f64);
                 let point =
                     self.window_origin.unwrap_or_default() + (0., layout.size.height as f64);
                 self.create_overlay(point);
+
+                if let Some(on_open) = &self.on_open {
+                    on_open(true);
+                }
             }
         }
     }
@@ -248,6 +261,9 @@ impl<T> DropDown<T> {
     fn close_dropdown(&mut self) {
         if let Some(id) = self.overlay_id.take() {
             remove_overlay(id);
+            if let Some(on_open) = &self.on_open {
+                on_open(false);
+            }
         }
     }
 
