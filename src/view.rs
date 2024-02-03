@@ -112,36 +112,53 @@ impl<V: View + 'static> IntoAnyView for V {
     }
 }
 
-pub trait IntoView: Sized {
+pub trait IntoView {
+    fn data(&self) -> &ViewData;
+
+    fn data_mut(&mut self) -> &mut ViewData;
+
     fn into_view(self) -> impl View;
 }
 
-impl IntoView for () {
-    fn into_view(self) -> impl View {
-        crate::views::empty()
-    }
-}
-
 impl<V: View> IntoView for V {
+    fn data(&self) -> &ViewData {
+        self.view_data()
+    }
+
+    fn data_mut(&mut self) -> &mut ViewData {
+        self.view_data_mut()
+    }
+
     fn into_view(self) -> impl View {
         self
     }
 }
 
-impl IntoView for &str {
-    fn into_view(self) -> impl View {
+/// ToView is for converting some types to Floem Views
+pub trait ToView {
+    fn to_view(self) -> impl View;
+}
+
+impl ToView for () {
+    fn to_view(self) -> impl View {
+        crate::views::empty()
+    }
+}
+
+impl ToView for &str {
+    fn to_view(self) -> impl View {
         crate::views::text(self)
     }
 }
 
-impl IntoView for String {
-    fn into_view(self) -> impl View {
+impl ToView for String {
+    fn to_view(self) -> impl View {
         crate::views::text(self)
     }
 }
 
-impl<V: IntoView + 'static> IntoView for Vec<V> {
-    fn into_view(self) -> impl View {
+impl<V: IntoView + 'static> ToView for Vec<V> {
+    fn to_view(self) -> impl View {
         stack_from_iter(self)
     }
 }

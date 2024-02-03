@@ -1,5 +1,5 @@
 use crate::view::AnyView;
-use crate::view::{IntoAnyView, IntoView, View};
+use crate::view::{IntoAnyView, IntoView, ToView, View};
 
 pub trait ViewTuple {
     fn into_views(self) -> Vec<AnyView>
@@ -19,10 +19,10 @@ macro_rules! impl_view_tuple {
             }
         }
 
-        impl< $( $t: IntoView + 'static, )* > IntoView for ( $( $t, )* ) {
-            fn into_view(self) -> impl View
+        impl< $( $t: IntoView + 'static, )* > ToView for ( $( $t, )* ) {
+            fn to_view(self) -> impl View
             {
-                vec![$(self.$i.into_view().any(),)*].into_view()
+                vec![$(self.$i.into_view().any(),)*].to_view()
             }
         }
     }

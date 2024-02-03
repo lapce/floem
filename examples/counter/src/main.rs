@@ -3,7 +3,7 @@ use floem::{
     peniko::Color,
     reactive::create_signal,
     unit::UnitExt,
-    view::{IntoView, View},
+    view::{ToView, View},
     views::{label, Decorators},
 };
 
@@ -13,7 +13,7 @@ fn app_view() -> impl View {
         label(move || format!("Value: {}", counter.get())).style(|s| s.padding(10.0)),
         (
             "Increment"
-                .into_view()
+                .to_view()
                 .style(|s| {
                     s.border_radius(10.0)
                         .padding(10.0)
@@ -30,7 +30,7 @@ fn app_view() -> impl View {
                 })
                 .keyboard_navigatable(),
             "Decrement"
-                .into_view()
+                .to_view()
                 .on_click_stop({
                     move |_| {
                         set_counter.update(|value| *value -= 1);
@@ -48,7 +48,7 @@ fn app_view() -> impl View {
                 })
                 .keyboard_navigatable(),
             "Reset to 0"
-                .into_view()
+                .to_view()
                 .on_click_stop(move |_| {
                     println!("Reset counter pressed"); // will not fire if button is disabled
                     set_counter.update(|value| *value = 0);
@@ -66,9 +66,10 @@ fn app_view() -> impl View {
                         .active(|s| s.color(Color::WHITE).background(Color::YELLOW_GREEN))
                 })
                 .keyboard_navigatable(),
-        ),
+        )
+            .to_view(),
     )
-        .into_view()
+        .to_view()
         .style(|s| {
             s.size(100.pct(), 100.pct())
                 .flex_col()
