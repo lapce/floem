@@ -6,13 +6,14 @@ use kurbo::{Point, Rect};
 
 use crate::{
     action::{add_overlay, remove_overlay},
+    event::{Event, EventListener},
     id::Id,
     style::{Style, StyleClass, Width},
     style_class,
     unit::PxPctAuto,
     view::{
-        default_compute_layout, default_event, view_children_set_parent_id, IntoAnyView, IntoView,
-        View, ViewData,
+        default_compute_layout, default_event, view_children_set_parent_id, AnyView, IntoAnyView,
+        IntoView, View, ViewData,
     },
     views::{list, Decorators, ListClass},
     EventPropagation,
@@ -31,11 +32,15 @@ pub struct DropDown<T: 'static> {
     list_style: Style,
     overlay_id: Option<Id>,
     window_origin: Option<Point>,
+    on_accept: Option<Box<dyn Fn(T)>>,
+    on_open: Option<Box<dyn Fn(bool)>>,
 }
 
 enum Message {
     OpenState(bool),
     ActiveElement(Box<dyn Any>),
+    ListFocusLost,
+    ListSelect(Box<dyn Any>),
 }
 
 impl<T: 'static> View for DropDown<T> {
@@ -85,6 +90,14 @@ impl<T: 'static> View for DropDown<T> {
             match *state {
                 Message::OpenState(true) => self.open_dropdown(cx),
                 Message::OpenState(false) => self.close_dropdown(),
+                Message::ListFocusLost => self.close_dropdown(),
+                Message::ListSelect(val) => {
+                    if let Ok(val) = val.downcast::<T>() {
+                        if let Some(on_select) = &self.on_accept {
+                            on_select(*val);
+                        }
+                    }
+                }
                 Message::ActiveElement(val) => {
                     if let Ok(val) = val.downcast::<T>() {
                         let old_child_scope = self.main_view_scope;
@@ -107,15 +120,15 @@ impl<T: 'static> View for DropDown<T> {
         &mut self,
         cx: &mut crate::context::EventCx,
         id_path: Option<&[Id]>,
-        event: crate::event::Event,
+        event: Event,
     ) -> crate::EventPropagation {
         #[allow(clippy::single_match)]
         match event {
-            crate::event::Event::PointerDown(_) => {
+            Event::PointerDown(_) => {
                 self.swap_state();
                 return EventPropagation::Stop;
             }
-            crate::event::Event::KeyUp(ref key_event)
+            Event::KeyUp(ref key_event)
                 if key_event.key.logical_key == Key::Named(NamedKey::Enter) =>
             {
                 self.swap_state()
@@ -126,11 +139,16 @@ impl<T: 'static> View for DropDown<T> {
     }
 }
 
-pub fn dropdown<MF, I, T, V2, AIF>(main_view: MF, iterator: I, active_item: AIF) -> DropDown<T>
+pub fn dropdown<MF, I, T, LF, AIF>(
+    active_item: AIF,
+    main_view: MF,
+    iterator: I,
+    list_item_fn: LF,
+) -> DropDown<T>
 where
-    MF: Fn(T) -> Box<dyn View> + 'static,
-    I: IntoIterator<Item = V2> + Clone + 'static,
-    V2: IntoView + 'static,
+    MF: Fn(T) -> AnyView + 'static,
+    I: IntoIterator<Item = T> + Clone + 'static,
+    LF: Fn(T) -> AnyView + Clone + 'static,
     T: Clone + 'static,
     AIF: Fn() -> T + 'static,
 {
@@ -138,7 +156,21 @@ where
 
     let list_view = Rc::new(move || {
         let iterator = iterator.clone();
-        list(iterator).keyboard_navigatable().any()
+        let iter_clone = iterator.clone();
+        let list_item_fn = list_item_fn.clone();
+        list(iterator.into_iter().map(list_item_fn))
+            .on_accept(move |opt_idx| {
+                if let Some(idx) = opt_idx {
+                    let val = iter_clone.clone().into_iter().nth(idx).unwrap();
+                    dropdown_id.update_state(Message::ActiveElement(Box::new(val.clone())));
+                    dropdown_id.update_state(Message::ListSelect(Box::new(val)));
+                }
+            })
+            .any()
+            .keyboard_navigatable()
+            .on_event_stop(EventListener::FocusLost, move |_| {
+                dropdown_id.update_state(Message::ListFocusLost);
+            })
     });
 
     let initial = create_updater(active_item, move |new_state| {
@@ -158,6 +190,8 @@ where
         list_style: Style::new(),
         overlay_id: None,
         window_origin: None,
+        on_accept: None,
+        on_open: None,
     }
     .class(DropDownClass)
 }
@@ -172,6 +206,16 @@ impl<T> DropDown<T> {
         self
     }
 
+    pub fn on_accept(mut self, on_accept: impl Fn(T) + 'static) -> Self {
+        self.on_accept = Some(Box::new(on_accept));
+        self
+    }
+
+    pub fn on_open(mut self, on_open: impl Fn(bool) + 'static) -> Self {
+        self.on_open = Some(Box::new(on_open));
+        self
+    }
+
     fn swap_state(&self) {
         if self.overlay_id.is_some() {
             self.id().update_state(Message::OpenState(false));
@@ -183,11 +227,17 @@ impl<T> DropDown<T> {
 
     fn open_dropdown(&mut self, cx: &mut crate::context::UpdateCx) {
         if self.overlay_id.is_none() {
+            self.id().request_layout();
+            cx.app_state.compute_layout();
             if let Some(layout) = cx.app_state.get_layout(self.id()) {
                 self.update_list_style(layout.size.width as f64);
                 let point =
                     self.window_origin.unwrap_or_default() + (0., layout.size.height as f64);
                 self.create_overlay(point);
+
+                if let Some(on_open) = &self.on_open {
+                    on_open(true);
+                }
             }
         }
     }
@@ -195,6 +245,9 @@ impl<T> DropDown<T> {
     fn close_dropdown(&mut self) {
         if let Some(id) = self.overlay_id.take() {
             remove_overlay(id);
+            if let Some(on_open) = &self.on_open {
+                on_open(false);
+            }
         }
     }
 

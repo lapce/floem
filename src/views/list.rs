@@ -18,6 +18,7 @@ style_class!(pub ListItemClass);
 enum ListUpdate {
     SelectionChanged,
     ScrollToSelected,
+    Accept,
 }
 
 pub(crate) struct Item {
@@ -30,6 +31,7 @@ pub(crate) struct Item {
 pub struct List {
     data: ViewData,
     selection: RwSignal<Option<usize>>,
+    onaccept: Option<Box<dyn Fn(Option<usize>)>>,
     child: Stack,
 }
 
@@ -43,6 +45,11 @@ impl List {
             let selection = self.selection.get();
             on_select(selection);
         });
+        self
+    }
+
+    pub fn on_accept(mut self, on_accept: impl Fn(Option<usize>) + 'static) -> Self {
+        self.onaccept = Some(Box::new(on_accept));
         self
     }
 }
@@ -67,7 +74,8 @@ where
             }
             .on_click_stop(move |_| {
                 if selection.get_untracked() != Some(index) {
-                    selection.set(Some(index))
+                    selection.set(Some(index));
+                    id.update_state(ListUpdate::Accept);
                 }
             }),
         )
@@ -79,6 +87,7 @@ where
         data: ViewData::new(id),
         selection,
         child: stack,
+        onaccept: None,
     }
     .class(ListClass)
     .keyboard_navigatable()
@@ -115,6 +124,10 @@ where
                             }
                         }
                     }
+                    EventPropagation::Stop
+                }
+                Key::Named(NamedKey::Enter) => {
+                    id.update_state(ListUpdate::Accept);
                     EventPropagation::Stop
                 }
                 Key::Named(NamedKey::ArrowDown) => {
@@ -180,6 +193,11 @@ impl View for List {
                 ListUpdate::ScrollToSelected => {
                     if let Some(index) = self.selection.get_untracked() {
                         self.child.children[index].view_data().id().scroll_to(None);
+                    }
+                }
+                ListUpdate::Accept => {
+                    if let Some(on_accept) = &self.onaccept {
+                        on_accept(self.selection.get_untracked());
                     }
                 }
             }
