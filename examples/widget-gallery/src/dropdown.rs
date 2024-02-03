@@ -49,8 +49,6 @@ pub fn dropdown_view() -> impl View {
         .any()
     };
 
-    let each_item_in_list_view = move |item| label(move || item).style(|s| s.size_full()).any();
-
     form::form({
         (form_item("Dropdown".to_string(), 120.0, move || {
             dropdown(
@@ -61,10 +59,10 @@ pub fn dropdown_view() -> impl View {
                 // iterator to build list in dropdown
                 Values::iter(),
                 // view for each item in the list
-                each_item_in_list_view,
+                |item| label(move || item).any(),
             )
             .show_list(move || show_dropdown.get())
-            .on_select(move |_val| show_dropdown.set(false))
+            .on_accept(move |_val| show_dropdown.set(false))
         }),)
     })
 }

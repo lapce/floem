@@ -34,7 +34,7 @@ pub struct DropDown<T: 'static> {
     list_style: Style,
     overlay_id: Option<Id>,
     window_origin: Option<Point>,
-    on_select: Option<Box<dyn Fn(T)>>,
+    on_accept: Option<Box<dyn Fn(T)>>,
 }
 
 enum Message {
@@ -108,7 +108,7 @@ impl<T: 'static> Widget for DropDown<T> {
                 Message::ListFocusLost => self.close_dropdown(),
                 Message::ListSelect(val) => {
                     if let Ok(val) = val.downcast::<T>() {
-                        if let Some(on_select) = &self.on_select {
+                        if let Some(on_select) = &self.on_accept {
                             on_select(*val);
                         }
                     }
@@ -174,7 +174,7 @@ where
         let iter_clone = iterator.clone();
         let list_item_fn = list_item_fn.clone();
         list(iterator.into_iter().map(list_item_fn))
-            .on_select(move |opt_idx| {
+            .on_accept(move |opt_idx| {
                 if let Some(idx) = opt_idx {
                     let val = iter_clone.clone().into_iter().nth(idx).unwrap();
                     dropdown_id.update_state(Message::ActiveElement(Box::new(val.clone())));
@@ -205,7 +205,7 @@ where
         list_style: Style::new(),
         overlay_id: None,
         window_origin: None,
-        on_select: None,
+        on_accept: None,
     }
     .class(DropDownClass)
 }
@@ -220,8 +220,8 @@ impl<T> DropDown<T> {
         self
     }
 
-    pub fn on_select(mut self, on_select: impl Fn(T) + 'static) -> Self {
-        self.on_select = Some(Box::new(on_select));
+    pub fn on_accept(mut self, on_accept: impl Fn(T) + 'static) -> Self {
+        self.on_accept = Some(Box::new(on_accept));
         self
     }
 
