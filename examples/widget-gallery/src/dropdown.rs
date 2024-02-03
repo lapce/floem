@@ -9,10 +9,7 @@ use floem::{
     widgets::dropdown::dropdown,
 };
 
-use crate::{
-    follow_popover,
-    form::{self, form_item},
-};
+use crate::form::{self, form_item};
 
 #[derive(strum::EnumIter, Debug, PartialEq, Clone, Copy)]
 enum Values {
@@ -33,43 +30,41 @@ const CHEVRON_DOWN: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" xml:space
 </svg>"##;
 
 pub fn dropdown_view() -> impl View {
-    let show_list = create_rw_signal(false);
-    follow_popover(show_list);
-    let driving_signal = create_rw_signal(Values::Three);
+    let show_dropdown = create_rw_signal(false);
+
+    let main_drop_view = move |item| {
+        stack((
+            label(move || item),
+            container(
+                svg(|| String::from(CHEVRON_DOWN)).style(|s| s.size(12, 12).color(Color::BLACK)),
+            )
+            .style(|s| {
+                s.items_center()
+                    .padding(3.)
+                    .border_radius(7.pct())
+                    .hover(move |s| s.background(Color::LIGHT_GRAY))
+            }),
+        ))
+        .style(|s| s.items_center().justify_between().size_full())
+        .any()
+    };
+
+    let each_item_in_list_view = move |item| label(move || item).style(|s| s.size_full()).any();
 
     form::form({
         (form_item("Dropdown".to_string(), 120.0, move || {
             dropdown(
+                // drivign function
+                move || Values::Three,
                 // main view
-                |item| {
-                    stack((
-                        label(move || item),
-                        container(
-                            svg(|| String::from(CHEVRON_DOWN))
-                                .style(|s| s.size(12, 12).color(Color::BLACK)),
-                        )
-                        .style(|s| {
-                            s.items_center()
-                                .padding(3.)
-                                .border_radius(7.pct())
-                                .hover(move |s| s.background(Color::LIGHT_GRAY))
-                        }),
-                    ))
-                    .style(|s| s.items_center().justify_between().size_full())
-                    .any()
-                },
+                main_drop_view,
                 // iterator to build list in dropdown
-                Values::iter().map(move |item| {
-                    label(move || item)
-                        .on_click_stop(move |_| {
-                            driving_signal.set(item);
-                            println!("Selected {item:?}!")
-                        })
-                        .style(|s| s.size_full())
-                }),
-                move || driving_signal.get(),
+                Values::iter(),
+                // view for each item in the list
+                each_item_in_list_view,
             )
-            .show_list(move || show_list.get())
+            .show_list(move || show_dropdown.get())
+            .on_select(move |_val| show_dropdown.set(false))
         }),)
     })
 }

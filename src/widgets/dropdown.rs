@@ -6,6 +6,7 @@ use kurbo::{Point, Rect};
 
 use crate::{
     action::{add_overlay, remove_overlay},
+    event::{Event, EventListener},
     id::Id,
     style::{Style, StyleClass, Width},
     style_class,
@@ -33,11 +34,14 @@ pub struct DropDown<T: 'static> {
     list_style: Style,
     overlay_id: Option<Id>,
     window_origin: Option<Point>,
+    on_select: Option<Box<dyn Fn(T)>>,
 }
 
 enum Message {
     OpenState(bool),
     ActiveElement(Box<dyn Any>),
+    ListFocusLost,
+    ListSelect(Box<dyn Any>),
 }
 
 impl<T: 'static> View for DropDown<T> {
@@ -101,6 +105,14 @@ impl<T: 'static> Widget for DropDown<T> {
             match *state {
                 Message::OpenState(true) => self.open_dropdown(cx),
                 Message::OpenState(false) => self.close_dropdown(),
+                Message::ListFocusLost => self.close_dropdown(),
+                Message::ListSelect(val) => {
+                    if let Ok(val) = val.downcast::<T>() {
+                        if let Some(on_select) = &self.on_select {
+                            on_select(*val);
+                        }
+                    }
+                }
                 Message::ActiveElement(val) => {
                     if let Ok(val) = val.downcast::<T>() {
                         let old_child_scope = self.main_view_scope;
@@ -123,15 +135,15 @@ impl<T: 'static> Widget for DropDown<T> {
         &mut self,
         cx: &mut crate::context::EventCx,
         id_path: Option<&[Id]>,
-        event: crate::event::Event,
+        event: Event,
     ) -> crate::EventPropagation {
         #[allow(clippy::single_match)]
         match event {
-            crate::event::Event::PointerDown(_) => {
+            Event::PointerDown(_) => {
                 self.swap_state();
                 return EventPropagation::Stop;
             }
-            crate::event::Event::KeyUp(ref key_event)
+            Event::KeyUp(ref key_event)
                 if key_event.key.logical_key == Key::Named(NamedKey::Enter) =>
             {
                 self.swap_state()
@@ -142,11 +154,16 @@ impl<T: 'static> Widget for DropDown<T> {
     }
 }
 
-pub fn dropdown<MF, I, T, V2, AIF>(main_view: MF, iterator: I, active_item: AIF) -> DropDown<T>
+pub fn dropdown<MF, I, T, LF, AIF>(
+    active_item: AIF,
+    main_view: MF,
+    iterator: I,
+    list_item_fn: LF,
+) -> DropDown<T>
 where
     MF: Fn(T) -> AnyView + 'static,
-    I: IntoIterator<Item = V2> + Clone + 'static,
-    V2: View + 'static,
+    I: IntoIterator<Item = T> + Clone + 'static,
+    LF: Fn(T) -> AnyView + Clone + 'static,
     T: Clone + 'static,
     AIF: Fn() -> T + 'static,
 {
@@ -154,7 +171,21 @@ where
 
     let list_view = Rc::new(move || {
         let iterator = iterator.clone();
-        list(iterator).any().keyboard_navigatable()
+        let iter_clone = iterator.clone();
+        let list_item_fn = list_item_fn.clone();
+        list(iterator.into_iter().map(list_item_fn))
+            .on_select(move |opt_idx| {
+                if let Some(idx) = opt_idx {
+                    let val = iter_clone.clone().into_iter().nth(idx).unwrap();
+                    dropdown_id.update_state(Message::ActiveElement(Box::new(val.clone())));
+                    dropdown_id.update_state(Message::ListSelect(Box::new(val)));
+                }
+            })
+            .any()
+            .keyboard_navigatable()
+            .on_event_stop(EventListener::FocusLost, move |_| {
+                dropdown_id.update_state(Message::ListFocusLost);
+            })
     });
 
     let initial = create_updater(active_item, move |new_state| {
@@ -174,6 +205,7 @@ where
         list_style: Style::new(),
         overlay_id: None,
         window_origin: None,
+        on_select: None,
     }
     .class(DropDownClass)
 }
@@ -185,6 +217,11 @@ impl<T> DropDown<T> {
             let state = show();
             id.update_state(Message::OpenState(state));
         });
+        self
+    }
+
+    pub fn on_select(mut self, on_select: impl Fn(T) + 'static) -> Self {
+        self.on_select = Some(Box::new(on_select));
         self
     }
 
