@@ -4,8 +4,7 @@ use floem::{
     style::Foreground,
     unit::UnitExt,
     view::View,
-    views::{label, stack, text_input, Decorators},
-    widgets::slider,
+    views::{label, slider, stack, text_input, Decorators},
 };
 
 use crate::form::{self, form_item};

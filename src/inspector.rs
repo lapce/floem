@@ -4,13 +4,12 @@ use crate::event::{Event, EventListener};
 use crate::id::Id;
 use crate::profiler::profiler;
 use crate::style::{Style, StyleMapValue};
-use crate::view::{view_children, AnyView, View, Widget};
+use crate::view::{view_children, AnyView, IntoAnyView, IntoView, View};
 use crate::view_data::ChangeFlags;
 use crate::views::{
-    container, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label, tab, text,
-    v_stack, v_stack_from_iter, Decorators, Label,
+    button, container, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label,
+    tab, text, v_stack, v_stack_from_iter, Decorators,
 };
-use crate::widgets::button;
 use crate::window::WindowConfig;
 use crate::{new_window, style, EventPropagation};
 use floem_peniko::Color;
@@ -42,7 +41,7 @@ pub struct CapturedView {
 }
 
 impl CapturedView {
-    pub fn capture(view: &dyn Widget, app_state: &mut AppState, clip: Rect) -> Self {
+    pub fn capture(view: &dyn View, app_state: &mut AppState, clip: Rect) -> Self {
         let id = view.view_data().id();
         let layout = app_state.get_layout_rect(id);
         let taffy = app_state.get_layout(id).unwrap();
@@ -178,7 +177,7 @@ fn captured_view_no_children(
     view: &CapturedView,
     depth: usize,
     capture_view: &CaptureView,
-) -> AnyView {
+) -> impl View {
     let offset = depth as f64 * 14.0;
     let name = captured_view_name(view);
     let name_id = name.id();
@@ -211,8 +210,7 @@ fn captured_view_no_children(
         .on_click_stop(move |_| selected.set(Some(id)))
         .on_event_cont(EventListener::PointerEnter, move |_| {
             highlighted.set(Some(id))
-        })
-        .any();
+        });
 
     let row_id = row.id();
     let scroll_to = capture_view.scroll_to;
@@ -237,7 +235,7 @@ fn captured_view_with_children(
     depth: usize,
     capture_view: &CaptureView,
     children: Vec<AnyView>,
-) -> AnyView {
+) -> impl View {
     let offset = depth as f64 * 14.0;
     let name = captured_view_name(view);
     let height = 20.0;
@@ -338,23 +336,23 @@ fn captured_view_with_children(
 
     let list = v_stack((line, list));
 
-    v_stack((row, list)).any()
+    v_stack((row, list))
 }
 
-fn captured_view(view: &Rc<CapturedView>, depth: usize, capture_view: &CaptureView) -> AnyView {
+fn captured_view(view: &Rc<CapturedView>, depth: usize, capture_view: &CaptureView) -> impl View {
     if view.children.is_empty() {
-        captured_view_no_children(view, depth, capture_view)
+        captured_view_no_children(view, depth, capture_view).any()
     } else {
         let children: Vec<_> = view
             .children
             .iter()
             .map(|view| captured_view(view, depth + 1, capture_view))
             .collect();
-        captured_view_with_children(view, depth, capture_view, children)
+        captured_view_with_children(view, depth, capture_view, children).any()
     }
 }
 
-pub(crate) fn header(label: impl Display) -> Label {
+pub(crate) fn header(label: impl Display) -> impl View {
     text(label).style(|s| {
         s.padding(5.0)
             .background(Color::WHITE_SMOKE)
@@ -365,11 +363,11 @@ pub(crate) fn header(label: impl Display) -> Label {
     })
 }
 
-fn info(name: impl Display, value: String) -> impl View {
+fn info(name: impl Display, value: String) -> impl IntoView {
     info_row(name.to_string(), static_label(value))
 }
 
-fn info_row(name: String, view: impl View + 'static) -> impl View {
+fn info_row(name: String, view: impl IntoView + 'static) -> impl IntoView {
     stack((
         stack((static_label(name).style(|s| {
             s.margin_right(5.0)
@@ -422,7 +420,7 @@ fn stats(capture: &Capture) -> impl View {
     ))
 }
 
-fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> AnyView {
+fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> impl View {
     let capture = capture.clone();
     dyn_container(
         move || selected.get(),
@@ -629,7 +627,6 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> AnyVi
             }
         },
     )
-    .any()
 }
 
 #[derive(Clone, Copy)]
@@ -776,23 +773,23 @@ fn capture_view(capture: &Rc<Capture>) -> impl View {
     .style(|s| s.max_width_pct(60.0));
 
     let tree = scroll(captured_view(&capture.root, 0, &capture_view).style(|s| s.min_width_full()))
+        .on_event_cont(EventListener::PointerLeave, move |_| {
+            capture_view.highlighted.set(None)
+        })
+        .on_click_stop(move |_| capture_view.selected.set(None))
+        .scroll_to_view(move || capture_view.scroll_to.get())
         .style(|s| {
             s.width_full()
                 .min_height(0)
                 .flex_basis(0)
                 .flex_grow(1.0)
                 .flex_col()
-        })
-        .on_event_cont(EventListener::PointerLeave, move |_| {
-            capture_view.highlighted.set(None)
-        })
-        .on_click_stop(move |_| capture_view.selected.set(None))
-        .scroll_to_view(move || capture_view.scroll_to.get());
+        });
 
     let tree = if capture.root.warnings() {
-        v_stack((header("Warnings"), header("View Tree"), tree)).any()
+        v_stack((header("Warnings"), header("View Tree"), tree)).into_view()
     } else {
-        v_stack((header("View Tree"), tree)).any()
+        v_stack((header("View Tree"), tree)).into_view()
     };
 
     let tree = tree.style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0));
@@ -878,7 +875,7 @@ pub fn capture(window_id: WindowId) {
                     move |it| match it {
                         0 => dyn_container(
                             move || capture.get(),
-                            |capture| inspector_view(&capture).any(),
+                            |capture| inspector_view(&capture).into_view(),
                         )
                         .style(|s| s.width_full().height_full())
                         .any(),

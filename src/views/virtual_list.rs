@@ -1,15 +1,16 @@
 use super::{
-    virtual_stack, Decorators, Item, VirtualDirection, VirtualItemSize, VirtualStack, VirtualVector,
+    container, virtual_stack, Decorators, Item, ListClass, ListItemClass, VirtualDirection,
+    VirtualItemSize, VirtualStack, VirtualVector,
 };
 use crate::context::ComputeLayoutCx;
 use crate::reactive::create_effect;
-use crate::view::View;
+use crate::view::IntoAnyView;
 use crate::EventPropagation;
 use crate::{
     event::{Event, EventListener},
     id::Id,
     keyboard::{Key, NamedKey},
-    view::{ViewData, Widget},
+    view::{View, ViewData},
 };
 use floem_reactive::{create_rw_signal, RwSignal};
 use kurbo::{Rect, Size};
@@ -58,7 +59,7 @@ where
     KF: Fn(&T) -> K + 'static,
     K: Eq + Hash + 'static,
     VF: Fn(T) -> V + 'static,
-    V: Widget + 'static,
+    V: View + 'static,
 {
     let id = Id::next();
     let selection = create_rw_signal(None);
@@ -120,18 +121,25 @@ where
         },
         move |(_, e)| key_fn(e),
         move |(index, e)| {
-            Item {
-                data: ViewData::new(Id::next()),
-                selection,
-                index,
-                child: Box::new(view_fn(e)),
-            }
-            .on_click_stop(move |_| {
-                if selection.get_untracked() != Some(index) {
-                    selection.set(Some(index))
+            container(
+                Item {
+                    data: ViewData::new(Id::next()),
+                    selection,
+                    index,
+                    child: view_fn(e).any(),
                 }
+                .on_click_stop(move |_| {
+                    if selection.get_untracked() != Some(index) {
+                        selection.set(Some(index))
+                    }
+                })
+                .style(|s| s.width_full()),
+            )
+            .class(ListItemClass)
+            .style(move |s| match direction {
+                VirtualDirection::Horizontal => s.flex_row(),
+                VirtualDirection::Vertical => s.flex_col(),
             })
-            .style(|s| s.width_full())
         },
     )
     .style(move |s| match direction {
@@ -146,6 +154,7 @@ where
         child_size: Size::ZERO,
         child: stack,
     }
+    .class(ListClass)
     .keyboard_navigatable()
     .on_event(EventListener::KeyDown, move |e| {
         if let Event::KeyDown(key_event) = e {
@@ -219,31 +228,17 @@ impl<T> View for VirtualList<T> {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
-        Box::new(self)
-    }
-}
-
-impl<T> Widget for VirtualList<T> {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
         for_each(&self.child);
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
         for_each(&mut self.child);
     }
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         for_each(&mut self.child);
     }

@@ -4,8 +4,7 @@ use floem::{
     kurbo::Size,
     style::AlignContent,
     view::View,
-    views::{container, h_stack, label, v_stack, Decorators},
-    widgets::button,
+    views::{button, container, h_stack, label, v_stack, Decorators},
     window::{new_window, WindowConfig},
 };
 

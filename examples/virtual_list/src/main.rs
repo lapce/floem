@@ -3,8 +3,7 @@ use floem::{
     unit::UnitExt,
     view::View,
     views::Decorators,
-    views::{container, label, scroll, VirtualDirection, VirtualItemSize},
-    widgets::virtual_list,
+    views::{container, label, scroll, virtual_list, VirtualDirection, VirtualItemSize},
 };
 
 fn app_view() -> impl View {

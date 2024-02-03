@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     id::Id,
-    view::{View, ViewData, Widget},
+    view::{View, ViewData},
 };
 
 pub struct Svg {
@@ -32,20 +32,6 @@ pub fn svg(svg_str: impl Fn() -> String + 'static) -> Svg {
 }
 
 impl View for Svg {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn Widget> {
-        Box::new(self)
-    }
-}
-
-impl Widget for Svg {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

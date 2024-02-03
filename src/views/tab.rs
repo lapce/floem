@@ -8,7 +8,7 @@ use crate::{
     context::{StyleCx, UpdateCx},
     id::Id,
     style::DisplayProp,
-    view::{AnyWidget, View, ViewData, Widget},
+    view::{AnyView, IntoAnyView, IntoView, View, ViewData},
 };
 
 use super::{apply_diff, diff, Diff, DiffOpAdd, FxIndexSet, HashRun};
@@ -24,8 +24,8 @@ where
 {
     data: ViewData,
     active: usize,
-    children: Vec<Option<(AnyWidget, Scope)>>,
-    view_fn: Box<dyn Fn(T) -> (AnyWidget, Scope)>,
+    children: Vec<Option<(AnyView, Scope)>>,
+    view_fn: Box<dyn Fn(T) -> (AnyView, Scope)>,
     phatom: PhantomData<T>,
 }
 
@@ -41,7 +41,7 @@ where
     KF: Fn(&T) -> K + 'static,
     K: Eq + Hash + 'static,
     VF: Fn(T) -> V + 'static,
-    V: View + 'static,
+    V: IntoView + 'static,
     T: 'static,
 {
     let id = Id::next();
@@ -79,7 +79,9 @@ where
         id.update_state(TabState::Active::<T>(active));
     });
 
-    let view_fn = Box::new(as_child_of_current_scope(move |e| view_fn(e).build()));
+    let view_fn = Box::new(as_child_of_current_scope(move |e| {
+        view_fn(e).into_view().any()
+    }));
 
     Tab {
         data: ViewData::new(id),
@@ -99,21 +101,7 @@ impl<T> View for Tab<T> {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
-        Box::new(self)
-    }
-}
-
-impl<T> Widget for Tab<T> {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
         for child in self.children.iter().filter_map(|child| child.as_ref()) {
             if for_each(&child.0) {
                 break;
@@ -121,7 +109,7 @@ impl<T> Widget for Tab<T> {
         }
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
         for child in self.children.iter_mut().filter_map(|child| child.as_mut()) {
             if for_each(&mut child.0) {
                 break;
@@ -131,7 +119,7 @@ impl<T> Widget for Tab<T> {
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         for child in self
             .children

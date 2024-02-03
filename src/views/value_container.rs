@@ -5,13 +5,13 @@ use floem_reactive::{create_effect, create_rw_signal, create_updater, RwSignal};
 use crate::{
     context::UpdateCx,
     id::Id,
-    view::{View, ViewData, Widget},
+    view::{AnyView, IntoAnyView, IntoView, View, ViewData},
 };
 
 /// A wrapper around another View that has value updates. See [`value_container`]
 pub struct ValueContainer<T> {
     data: ViewData,
-    child: Box<dyn Widget>,
+    child: AnyView,
     on_update: Option<Box<dyn Fn(T)>>,
 }
 
@@ -48,7 +48,7 @@ where
 /// A [`ValueContainer`] is useful for wrapping another [View](crate::view::View).
 /// This is to provide the `on_update` method which can notify when the view's
 /// internal value was get changed
-pub fn value_container<T: 'static, V: View + 'static>(
+pub fn value_container<T: 'static, V: IntoView + 'static>(
     child: V,
     value_update: impl Fn() -> T + 'static,
 ) -> ValueContainer<T> {
@@ -56,7 +56,7 @@ pub fn value_container<T: 'static, V: View + 'static>(
     create_updater(value_update, move |new_value| id.update_state(new_value));
     ValueContainer {
         data: ViewData::new(id),
-        child: child.build(),
+        child: child.into_view().any(),
         on_update: None,
     }
 }
@@ -77,20 +77,6 @@ impl<T: 'static> View for ValueContainer<T> {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
-        Box::new(self)
-    }
-}
-
-impl<T: 'static> Widget for ValueContainer<T> {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
     fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn Any>) {
         if let Ok(state) = state.downcast::<T>() {
             if let Some(on_update) = self.on_update.as_ref() {
@@ -99,17 +85,17 @@ impl<T: 'static> Widget for ValueContainer<T> {
         }
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
         for_each(&self.child);
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
         for_each(&mut self.child);
     }
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         for_each(&mut self.child);
     }

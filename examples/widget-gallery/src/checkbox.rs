@@ -1,8 +1,7 @@
 use floem::{
     reactive::create_signal,
     view::View,
-    views::Decorators,
-    widgets::{checkbox, labeled_checkbox},
+    views::{checkbox, labeled_checkbox, Decorators},
 };
 
 use crate::form::{form, form_item};

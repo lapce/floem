@@ -11,7 +11,7 @@ use crate::{
     style::{Background, BorderRadius, Foreground, Height},
     style_class,
     unit::{PxPct, PxPctAuto},
-    view::{View, ViewData, Widget},
+    view::{View, ViewData},
     views::Decorators,
     EventPropagation,
 };
@@ -81,16 +81,16 @@ pub struct Slider {
 /// If you set [`EdgeAlign`] to `true`, at 0% and 100% the edges of the handle will be within the bar.If you set it to `false` then the bars will be shortened and the handle will appear to have it's center at the ends of the bar.
 ///
 /// You can set properties on the bars as well. The bar (`BarClass`) and accent bar (`AccentBarClass`) both have a [`BorderRadius`] and [`Background`] color. You can also set a height on the accent bar.
-// The height of the main bar will bet set to the height of the main view.
+/// The height of the main bar will bet set to the height of the main view.
 ///
-/// Styling Example:
-/// ```rust
-/// # use floem::unit::UnitExt;
-/// # use floem::peniko::Color;
-/// # use floem::style::Foreground;
-/// # use floem::widgets::slider;
-/// # use floem::views::empty;
-/// # use floem::views::Decorators;
+///
+/// ```
+/// use floem::unit::UnitExt;
+/// use floem::peniko::Color;
+/// use floem::style::Foreground;
+/// use floem::views::slider;
+/// use floem::views::empty;
+/// use floem::views::Decorators;
 /// empty()
 ///     .style(|s|
 ///         s.class(slider::SliderClass, |s| {
@@ -108,7 +108,7 @@ pub struct Slider {
 ///                 .height(100.pct())
 ///         })
 ///  );
-///```
+/// ```
 pub fn slider(percent: impl Fn() -> f32 + 'static) -> Slider {
     let id = crate::id::Id::next();
     create_effect(move |_| {
@@ -136,20 +136,6 @@ pub fn slider(percent: impl Fn() -> f32 + 'static) -> Slider {
 }
 
 impl View for Slider {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn Widget> {
-        Box::new(self)
-    }
-}
-
-impl Widget for Slider {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

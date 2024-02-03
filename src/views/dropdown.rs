@@ -12,25 +12,23 @@ use crate::{
     style_class,
     unit::PxPctAuto,
     view::{
-        default_compute_layout, default_event, view_children_set_parent_id, AnyView, View,
-        ViewData, Widget,
+        default_compute_layout, default_event, view_children_set_parent_id, AnyView, IntoAnyView,
+        IntoView, View, ViewData,
     },
-    views::Decorators,
+    views::{list, Decorators, ListClass},
     EventPropagation,
 };
 
-use super::list;
-
-type ChildFn<T> = dyn Fn(T) -> (AnyView, Scope);
+type ChildFn<T> = dyn Fn(T) -> (Box<dyn View>, Scope);
 
 style_class!(pub DropDownClass);
 
 pub struct DropDown<T: 'static> {
     view_data: ViewData,
-    main_view: Box<dyn Widget>,
+    main_view: Box<dyn View>,
     main_view_scope: Scope,
     main_fn: Box<ChildFn<T>>,
-    list_view: Rc<dyn Fn() -> AnyView>,
+    list_view: Rc<dyn Fn() -> Box<dyn View>>,
     list_style: Style,
     overlay_id: Option<Id>,
     window_origin: Option<Point>,
@@ -54,31 +52,17 @@ impl<T: 'static> View for DropDown<T> {
         &mut self.view_data
     }
 
-    fn build(self) -> crate::view::AnyWidget {
-        Box::new(self.keyboard_navigatable())
-    }
-}
-
-impl<T: 'static> Widget for DropDown<T> {
-    fn view_data(&self) -> &ViewData {
-        &self.view_data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.view_data
-    }
-
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
         for_each(&self.main_view);
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
         for_each(&mut self.main_view);
     }
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         for_each(&mut self.main_view);
     }
@@ -86,7 +70,7 @@ impl<T: 'static> Widget for DropDown<T> {
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         cx.save();
         self.list_style =
-            Style::new().apply_classes_from_context(&[super::ListClass::class_ref()], &cx.current);
+            Style::new().apply_classes_from_context(&[ListClass::class_ref()], &cx.current);
         cx.restore();
 
         self.for_each_child_mut(&mut |child| {
@@ -119,7 +103,7 @@ impl<T: 'static> Widget for DropDown<T> {
                         let old_child_scope = self.main_view_scope;
                         cx.app_state_mut().remove_view(&mut self.main_view);
                         let (main_view, main_view_scope) = (self.main_fn)(*val);
-                        self.main_view = main_view.build();
+                        self.main_view = main_view.into_view().any();
                         self.main_view_scope = main_view_scope;
 
                         old_child_scope.dispose();
@@ -199,7 +183,7 @@ where
 
     DropDown {
         view_data: ViewData::new(dropdown_id),
-        main_view: Box::new(child.build()),
+        main_view: child.any(),
         main_view_scope,
         main_fn,
         list_view,
@@ -278,7 +262,9 @@ impl<T> DropDown<T> {
         let list = self.list_view.clone();
         let list_style = self.list_style.clone();
         self.overlay_id = Some(add_overlay(point, move |_| {
-            let list = list().style(move |s| s.apply(list_style.clone())).build();
+            let list = list()
+                .style(move |s| s.apply(list_style.clone()))
+                .into_view();
             let list_id = list.view_data().id;
             list_id.request_focus();
             list

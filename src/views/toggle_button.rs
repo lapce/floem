@@ -10,7 +10,7 @@ use crate::{
     style::{self, Foreground},
     style_class,
     unit::PxPct,
-    view::{View, ViewData, Widget},
+    view::{View, ViewData},
     views::Decorators,
     EventPropagation,
 };
@@ -60,7 +60,7 @@ pub struct ToggleButton {
 }
 
 /// A reactive toggle button. When the button is toggled by clicking or dragging the widget an update will be
-/// sent to the [`ToggleButton::on_toggle`](crate::widgets::toggle_button::ToggleButton::on_toggle) handler.
+/// sent to the [`ToggleButton::on_toggle`](crate::views::toggle_button::ToggleButton::on_toggle) handler.
 /// See also [ToggleButtonClass], [ToggleButtonSwitch] and the other toggle button styles that can be applied.
 ///
 /// By default this toggle button has a style class of [ToggleButtonClass] applied with a default style provided.
@@ -75,9 +75,9 @@ pub struct ToggleButton {
 /// An example using [`RwSignal`](floem_reactive::RwSignal):
 /// ```rust
 /// let state = floem::reactive::create_rw_signal(true);
-/// floem::widgets::toggle_button(move || state.get())
+/// floem::views::toggle_button(move || state.get())
 ///         .on_toggle(move |new_state| state.set(new_state));
-///```
+/// ```
 pub fn toggle_button(state: impl Fn() -> bool + 'static) -> ToggleButton {
     let id = crate::id::Id::next();
     create_effect(move |_| {
@@ -100,20 +100,6 @@ pub fn toggle_button(state: impl Fn() -> bool + 'static) -> ToggleButton {
 }
 
 impl View for ToggleButton {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn Widget> {
-        Box::new(self)
-    }
-}
-
-impl Widget for ToggleButton {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

@@ -4,10 +4,10 @@ use kurbo::{Point, Rect};
 use crate::{
     context::AppState,
     id::Id,
-    view::{view_tab_navigation, Widget},
+    view::{view_tab_navigation, View},
 };
 
-pub(crate) fn view_arrow_navigation(key: NamedKey, app_state: &mut AppState, view: &dyn Widget) {
+pub(crate) fn view_arrow_navigation(key: NamedKey, app_state: &mut AppState, view: &dyn View) {
     let focused = match app_state.focus {
         Some(id) => id,
         None => {

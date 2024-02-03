@@ -3,8 +3,7 @@ use floem::{
     keyboard::{Key, NamedKey},
     kurbo::Size,
     view::View,
-    views::{label, v_stack, Decorators},
-    widgets::button,
+    views::{button, label, v_stack, Decorators},
     window::{close_window, new_window, WindowConfig, WindowId},
     Application,
 };

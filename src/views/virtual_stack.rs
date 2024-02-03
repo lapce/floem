@@ -12,7 +12,7 @@ use crate::{
     context::ComputeLayoutCx,
     id::Id,
     unit::PxPct,
-    view::{self, AnyWidget, View, ViewData, Widget},
+    view::{self, AnyView, IntoAnyView, IntoView, View, ViewData},
 };
 
 use super::{apply_diff, diff, Diff, DiffOpAdd, FxIndexSet, HashRun};
@@ -54,10 +54,10 @@ where
 {
     data: ViewData,
     direction: VirtualDirection,
-    children: Vec<Option<(AnyWidget, Scope)>>,
+    children: Vec<Option<(AnyView, Scope)>>,
     viewport: Rect,
     set_viewport: WriteSignal<Rect>,
-    view_fn: Box<dyn Fn(T) -> (AnyWidget, Scope)>,
+    view_fn: Box<dyn Fn(T) -> (AnyView, Scope)>,
     phatom: PhantomData<T>,
     before_size: f64,
     content_size: f64,
@@ -85,7 +85,7 @@ where
     KF: Fn(&T) -> K + 'static,
     K: Eq + Hash + 'static,
     VF: Fn(T) -> V + 'static,
-    V: View + 'static,
+    V: IntoView + 'static,
 {
     let id = Id::next();
 
@@ -182,7 +182,9 @@ where
         (before_size, content_size, HashRun(hashed_items))
     });
 
-    let view_fn = Box::new(as_child_of_current_scope(move |e| view_fn(e).build()));
+    let view_fn = Box::new(as_child_of_current_scope(move |e| {
+        view_fn(e).into_view().any()
+    }));
 
     VirtualStack {
         data: ViewData::new(id),
@@ -208,21 +210,7 @@ impl<T> View for VirtualStack<T> {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
-        Box::new(self)
-    }
-}
-
-impl<T> Widget for VirtualStack<T> {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
         for child in self.children.iter().filter_map(|child| child.as_ref()) {
             if for_each(&child.0) {
                 break;
@@ -230,7 +218,7 @@ impl<T> Widget for VirtualStack<T> {
         }
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
         for child in self.children.iter_mut().filter_map(|child| child.as_mut()) {
             if for_each(&mut child.0) {
                 break;
@@ -240,7 +228,7 @@ impl<T> Widget for VirtualStack<T> {
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         for child in self
             .children

@@ -3,8 +3,7 @@ use std::fmt::Display;
 use floem::{
     reactive::create_signal,
     view::View,
-    views::{v_stack, Decorators},
-    widgets::{labeled_radio_button, radio_button},
+    views::{labeled_radio_button, radio_button, v_stack, Decorators},
 };
 
 use crate::form::{form, form_item};

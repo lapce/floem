@@ -1,44 +1,16 @@
-//! # Floem widgets
-//!
-//! This module contains all of the built-in widgets of Floem.
-//!
-
 use crate::{
     style::{Background, CursorStyle, Foreground, Style, Transition},
     unit::{PxPct, UnitExt},
-    views::scroll,
-    widgets::{self, slider::SliderClass},
+    views::{
+        dropdown, scroll, slider, ButtonClass, CheckboxClass, LabeledCheckboxClass,
+        LabeledRadioButtonClass, ListClass, ListItemClass, PlaceholderTextClass, RadioButtonClass,
+        RadioButtonDotClass, TextInputClass, ToggleButtonCircleRad, ToggleButtonClass,
+        ToggleButtonInset, TooltipClass,
+    },
 };
 use floem_peniko::Color;
 use std::rc::Rc;
 use taffy::style::AlignItems;
-
-mod checkbox;
-pub use checkbox::*;
-
-mod list;
-pub use list::*;
-
-mod virtual_list;
-pub use virtual_list::*;
-
-mod toggle_button;
-pub use toggle_button::*;
-
-mod tooltip;
-pub use tooltip::*;
-
-pub mod dropdown;
-pub mod slider;
-
-mod button;
-pub use button::*;
-
-mod radio_button;
-pub use radio_button::*;
-
-mod text_input;
-pub use text_input::*;
 
 pub(crate) struct Theme {
     pub(crate) background: Color,
@@ -201,8 +173,8 @@ pub(crate) fn default_theme() -> Theme {
         .hover(|s| s.background(hover_bg_color))
         .padding(padding)
         .set(Foreground, Color::DARK_GRAY)
-        .set(widgets::ToggleButtonCircleRad, 75.pct())
-        .set(widgets::ToggleButtonInset, 10.pct())
+        .set(ToggleButtonCircleRad, 75.pct())
+        .set(ToggleButtonInset, 10.pct())
         .apply(border_style.clone())
         .apply(focus_style.clone());
 
@@ -263,7 +235,7 @@ pub(crate) fn default_theme() -> Theme {
         .class(slider::AccentBarClass, |s| {
             s.background(Color::GREEN).border_radius(100.pct())
         })
-        .class(SliderClass, |s| {
+        .class(slider::SliderClass, |s| {
             s.set(Foreground, Color::DARK_GRAY)
                 .height(15)
                 .width(100)

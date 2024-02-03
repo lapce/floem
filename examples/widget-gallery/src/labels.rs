@@ -1,9 +1,8 @@
 use floem::{
     cosmic_text::{Style as FontStyle, Weight},
     peniko::Color,
-    view::View,
-    views::{label, static_label, Decorators},
-    widgets::tooltip,
+    view::{IntoView, View},
+    views::{label, static_label, tooltip, Decorators},
 };
 
 use crate::form::{form, form_item};
@@ -15,7 +14,9 @@ pub fn label_view() -> impl View {
                 tooltip(label(move || "This is a simple label".to_owned()), || {
                     static_label("This is a tooltip for the label.")
                 })
-            }),
+                .into_view()
+            })
+            .into_view(),
             form_item("Styled Label:".to_string(), 120.0, || {
                 label(move || "This is a styled label".to_owned()).style(|s| {
                     s.background(Color::YELLOW)

@@ -42,8 +42,8 @@ impl IdPath {
 impl Id {
     /// Allocate a new, unique `Id`.
     pub fn next() -> Id {
-        static WIDGET_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
-        Id(WIDGET_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+        static VIEW_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
+        Id(VIEW_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
     }
 
     pub fn to_raw(self) -> u64 {

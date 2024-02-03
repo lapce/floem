@@ -3,17 +3,28 @@
 //! This module contains all of the built-in Views of Floem.
 //!
 
+mod button;
+pub use button::*;
+
+mod checkbox;
+pub use checkbox::*;
+
 mod label;
 pub use label::*;
 
 mod rich_text;
 pub use rich_text::*;
 
+mod radio_button;
+pub use radio_button::*;
+
 mod dyn_stack;
 pub use dyn_stack::*;
 
 mod svg;
 pub use svg::*;
+
+pub mod slider;
 
 mod clip;
 pub use clip::*;
@@ -26,6 +37,8 @@ pub use container_box::*;
 
 mod dyn_container;
 pub use dyn_container::*;
+
+pub mod dropdown;
 
 mod value_container;
 pub use value_container::*;
@@ -50,6 +63,9 @@ pub use tab::*;
 
 mod tooltip;
 pub use tooltip::*;
+
+mod toggle_button;
+pub use toggle_button::*;
 
 mod stack;
 pub use stack::*;

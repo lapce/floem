@@ -6,10 +6,12 @@ use crate::{
     context::{EventCx, UpdateCx},
     event::Event,
     id::Id,
-    prop, prop_extracter,
-    view::{default_compute_layout, default_event, View, ViewData, Widget},
+    prop, prop_extracter, style_class,
+    view::{default_compute_layout, default_event, AnyView, IntoAnyView, IntoView, View, ViewData},
     EventPropagation,
 };
+
+use super::{container, Decorators};
 
 prop!(pub Delay: f64 {} = 0.6);
 
@@ -19,26 +21,28 @@ prop_extracter! {
     }
 }
 
+style_class!(pub TooltipClass);
+
 /// A view that displays a tooltip for its child.
 pub struct Tooltip {
     data: ViewData,
     hover: Option<(Point, TimerToken)>,
     overlay: Option<Id>,
-    child: Box<dyn Widget>,
-    tip: Rc<dyn Fn() -> Box<dyn Widget>>,
+    child: AnyView,
+    tip: Rc<dyn Fn() -> AnyView>,
     style: TooltipStyle,
     window_origin: Option<Point>,
 }
 
 /// A view that displays a tooltip for its child.
-pub fn tooltip<V: View + 'static, T: Widget + 'static>(
+pub fn tooltip<V: IntoView + 'static, T: View + 'static>(
     child: V,
     tip: impl Fn() -> T + 'static,
 ) -> Tooltip {
     Tooltip {
         data: ViewData::new(Id::next()),
-        child: child.build(),
-        tip: Rc::new(move || Box::new(tip())),
+        child: child.into_view().any(),
+        tip: Rc::new(move || container(tip()).class(TooltipClass).any()),
         hover: None,
         overlay: None,
         style: Default::default(),
@@ -55,31 +59,17 @@ impl View for Tooltip {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
-        Box::new(self)
-    }
-}
-
-impl Widget for Tooltip {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
         for_each(&self.child);
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
         for_each(&mut self.child);
     }
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         for_each(&mut self.child);
     }

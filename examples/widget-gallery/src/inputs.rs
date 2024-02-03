@@ -3,8 +3,7 @@ use floem::{
     peniko::Color,
     reactive::create_rw_signal,
     view::View,
-    views::{Decorators, SelectionCornerRadius},
-    widgets::{text_input, PlaceholderTextClass},
+    views::{text_input, Decorators, PlaceholderTextClass, SelectionCornerRadius},
 };
 
 use crate::form::{form, form_item};
