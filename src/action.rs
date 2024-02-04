@@ -152,6 +152,10 @@ pub fn set_window_title(title: String) {
     add_update_message(UpdateMessage::SetWindowTitle { title });
 }
 
+pub fn set_vibrancy(is_vibrant: bool) {
+    add_update_message(UpdateMessage::SetVibrancy { is_vibrant });
+}
+
 pub fn focus_window() {
     add_update_message(UpdateMessage::FocusWindow);
 }

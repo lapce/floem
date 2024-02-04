@@ -134,4 +134,7 @@ pub(crate) enum UpdateMessage {
         position: Point,
         size: Size,
     },
+    SetVibrancy {
+        is_vibrant: bool,
+    }
 }

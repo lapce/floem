@@ -16,6 +16,9 @@ use image::DynamicImage;
 use indexmap::IndexMap;
 use kurbo::{Affine, Point, Rect, Size, Vec2};
 
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+use floem_window_vibrancy::*;
+
 #[cfg(target_os = "linux")]
 use crate::unit::UnitExt;
 #[cfg(target_os = "linux")]
@@ -378,6 +381,13 @@ impl WindowHandle {
         self.layout();
         self.process_update();
         self.schedule_repaint();
+    }
+
+    #[cfg(target_os = "macos")]
+    pub(crate) fn apply_vibrancy(&mut self) {
+        let window = self.window.as_ref().unwrap();
+        apply_vibrancy(&window, NSVisualEffectMaterial::HudWindow, None, None)
+            .expect("Unsupported platform! 'apply_vibrancy' is only supported on macOS");
     }
 
     pub(crate) fn position(&mut self, point: Point) {
@@ -906,6 +916,14 @@ impl WindowHandle {
                         cx.request_layout(self.view.view_data().id());
                         let scale = self.scale * cx.app_state.scale;
                         self.paint_state.set_scale(scale);
+                    }
+                    UpdateMessage::SetVibrancy { is_vibrant } => {
+                        #[cfg(target_os = "macos")]
+                        {
+                            if is_vibrant {
+                                self.apply_vibrancy();
+                            }
+                        }
                     }
                     UpdateMessage::ContextMenu { id, menu } => {
                         let state = cx.app_state.view_state(id);
