@@ -3,7 +3,7 @@ use floem_winit::keyboard::{Key, ModifiersState};
 use kurbo::{Point, Rect};
 
 use crate::{
-    action::{set_window_menu, set_window_title, update_window_scale, set_vibrancy},
+    action::{set_window_menu, set_window_title, update_window_scale},
     animate::Animation,
     event::{Event, EventListener},
     menu::Menu,
@@ -291,13 +291,6 @@ pub trait Decorators: View + Sized {
         create_effect(move |_| {
             let menu = menu_fn();
             set_window_menu(menu);
-        });
-        self
-    }
-
-    fn apply_vibrancy(self) -> Self {
-        create_effect(move |_| {
-            set_vibrancy(true);
         });
         self
     }
