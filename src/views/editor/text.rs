@@ -783,6 +783,11 @@ pub struct SimpleStyling<C> {
     wrap: WrapMethod,
     color: C,
 }
+impl<C> SimpleStyling<C> {
+    pub fn builder() -> SimpleStylingBuilder {
+        SimpleStylingBuilder::new()
+    }
+}
 impl<C: Fn(EditorColor) -> Color> SimpleStyling<C> {
     pub fn new(color: C) -> SimpleStyling<C> {
         SimpleStyling {
@@ -800,7 +805,17 @@ impl<C: Fn(EditorColor) -> Color> SimpleStyling<C> {
             color,
         }
     }
+}
+impl SimpleStyling<fn(EditorColor) -> Color> {
+    pub fn light() -> SimpleStyling<fn(EditorColor) -> Color> {
+        SimpleStyling::new(default_light_color)
+    }
 
+    pub fn dark() -> SimpleStyling<fn(EditorColor) -> Color> {
+        SimpleStyling::new(default_dark_color)
+    }
+}
+impl<C: Fn(EditorColor) -> Color> SimpleStyling<C> {
     pub fn increment_id(&mut self) {
         self.id += 1;
     }
@@ -923,5 +938,133 @@ impl<C: Fn(EditorColor) -> Color> Styling for SimpleStyling<C> {
 
     fn color(&self, color: EditorColor) -> Color {
         (self.color)(color)
+    }
+}
+
+pub struct SimpleStylingBuilder {
+    font_size: Option<usize>,
+    line_height: Option<f32>,
+    font_family: Option<Vec<FamilyOwned>>,
+    weight: Option<Weight>,
+    italic_style: Option<crate::cosmic_text::Style>,
+    stretch: Option<Stretch>,
+    indent_style: Option<IndentStyle>,
+    tab_width: Option<usize>,
+    atomic_soft_tabs: Option<bool>,
+    wrap: Option<WrapMethod>,
+}
+impl SimpleStylingBuilder {
+    pub fn new() -> SimpleStylingBuilder {
+        SimpleStylingBuilder {
+            font_size: None,
+            line_height: None,
+            font_family: None,
+            weight: None,
+            italic_style: None,
+            stretch: None,
+            indent_style: None,
+            tab_width: None,
+            atomic_soft_tabs: None,
+            wrap: None,
+        }
+    }
+
+    /// Set the font size  
+    /// Default: 16
+    pub fn font_size(&mut self, font_size: usize) -> &mut Self {
+        self.font_size = Some(font_size);
+        self
+    }
+
+    /// Set the line height  
+    /// Default: 1.5
+    pub fn line_height(&mut self, line_height: f32) -> &mut Self {
+        self.line_height = Some(line_height);
+        self
+    }
+
+    /// Set the font families used  
+    /// Default: `[FamilyOwned::SansSerif]`
+    pub fn font_family(&mut self, font_family: Vec<FamilyOwned>) -> &mut Self {
+        self.font_family = Some(font_family);
+        self
+    }
+
+    /// Set the font weight (such as boldness or thinness)  
+    /// Default: `Weight::NORMAL`
+    pub fn weight(&mut self, weight: Weight) -> &mut Self {
+        self.weight = Some(weight);
+        self
+    }
+
+    /// Set the italic style  
+    /// Default: `Style::Normal`
+    pub fn italic_style(&mut self, italic_style: crate::cosmic_text::Style) -> &mut Self {
+        self.italic_style = Some(italic_style);
+        self
+    }
+
+    /// Set the font stretch  
+    /// Default: `Stretch::Normal`
+    pub fn stretch(&mut self, stretch: Stretch) -> &mut Self {
+        self.stretch = Some(stretch);
+        self
+    }
+
+    /// Set the indent style  
+    /// Default: `IndentStyle::Spaces(4)`
+    pub fn indent_style(&mut self, indent_style: IndentStyle) -> &mut Self {
+        self.indent_style = Some(indent_style);
+        self
+    }
+
+    /// Set the tab width  
+    /// Default: 4
+    pub fn tab_width(&mut self, tab_width: usize) -> &mut Self {
+        self.tab_width = Some(tab_width);
+        self
+    }
+
+    /// Set whether the cursor should treat leading soft tabs as if they are hard tabs  
+    /// Default: false
+    pub fn atomic_soft_tabs(&mut self, atomic_soft_tabs: bool) -> &mut Self {
+        self.atomic_soft_tabs = Some(atomic_soft_tabs);
+        self
+    }
+
+    /// Set the wrapping method  
+    /// Default: `WrapMethod::EditorWidth`
+    pub fn wrap(&mut self, wrap: WrapMethod) -> &mut Self {
+        self.wrap = Some(wrap);
+        self
+    }
+
+    /// Build the styling with the given color scheme
+    pub fn build<C: Fn(EditorColor) -> Color>(&self, color: C) -> SimpleStyling<C> {
+        let default = SimpleStyling::new(color);
+        SimpleStyling {
+            id: 0,
+            font_size: self.font_size.unwrap_or(default.font_size),
+            line_height: self.line_height.unwrap_or(default.line_height),
+            font_family: self.font_family.clone().unwrap_or(default.font_family),
+            weight: self.weight.unwrap_or(default.weight),
+            italic_style: self.italic_style.unwrap_or(default.italic_style),
+            stretch: self.stretch.unwrap_or(default.stretch),
+            indent_style: self.indent_style.unwrap_or(default.indent_style),
+            tab_width: self.tab_width.unwrap_or(default.tab_width),
+            atomic_soft_tabs: self.atomic_soft_tabs.unwrap_or(default.atomic_soft_tabs),
+            wrap: self.wrap.unwrap_or(default.wrap),
+            color: default.color,
+        }
+    }
+
+    /// Build with the default light color scheme
+    pub fn build_light(&self) -> SimpleStyling<fn(EditorColor) -> Color> {
+        self.build(default_light_color)
+    }
+
+    /// Build with the default dark color scheme
+    pub fn build_dark(&self) -> SimpleStyling<fn(EditorColor) -> Color> {
+        self.build(default_dark_color)
     }
 }
