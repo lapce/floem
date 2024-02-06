@@ -53,7 +53,7 @@ pub trait Decorators: View + Sized {
     }
 
     fn class<C: StyleClass>(self, _class: C) -> Self {
-        self.id().update_class(C::class_ref());
+        self.id().add_class(C::class_ref());
         self
     }
 

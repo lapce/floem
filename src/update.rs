@@ -53,7 +53,7 @@ pub(crate) enum UpdateMessage {
         style: Style,
         offset: StackOffset<Style>,
     },
-    Class {
+    AddClass {
         id: Id,
         class: StyleClassRef,
     },

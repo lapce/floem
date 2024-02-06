@@ -808,7 +808,7 @@ impl WindowHandle {
                             }
                         })
                     }
-                    UpdateMessage::Class { id, class } => {
+                    UpdateMessage::AddClass { id, class } => {
                         let state = cx.app_state.view_state(id);
                         state.classes.push(class);
                         cx.app_state.request_style_recursive(id);

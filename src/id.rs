@@ -158,8 +158,8 @@ impl Id {
         });
     }
 
-    pub fn update_class(&self, class: StyleClassRef) {
-        self.add_update_message(UpdateMessage::Class { id: *self, class });
+    pub fn add_class(&self, class: StyleClassRef) {
+        self.add_update_message(UpdateMessage::AddClass { id: *self, class });
     }
 
     pub(crate) fn update_style_selector(&self, style: Style, selector: StyleSelector) {
