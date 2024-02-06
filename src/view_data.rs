@@ -65,6 +65,7 @@ impl<T> Stack<T> {
 pub struct ViewData {
     pub(crate) id: Id,
     pub(crate) style: Stack<Style>,
+    pub(crate) event_handlers: Vec<Box<EventCallback>>,
 }
 
 impl ViewData {
@@ -72,6 +73,7 @@ impl ViewData {
         Self {
             id,
             style: Default::default(),
+            event_handlers: Default::default(),
         }
     }
     pub fn id(&self) -> Id {

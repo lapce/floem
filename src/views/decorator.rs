@@ -96,23 +96,20 @@ pub trait Decorators: View + Sized {
     ///
     /// NOTE: View should have `.keyboard_navigable()` in order to receive keyboard events
     fn on_key_down(
-        self,
+        mut self,
         key: Key,
         modifiers: ModifiersState,
         action: impl Fn(&Event) + 'static,
     ) -> Self {
-        self.view_data().id().update_event_listener(
-            EventListener::KeyDown,
-            Box::new(move |e| {
-                if let Event::KeyDown(ke) = e {
-                    if ke.key.logical_key == key && ke.modifiers == modifiers {
-                        action(e);
-                        return EventPropagation::Stop;
-                    }
+        self.view_data_mut().event_handlers.push(Box::new(move |e| {
+            if let Event::KeyDown(ke) = e {
+                if ke.key.logical_key == key && ke.modifiers == modifiers {
+                    action(e);
+                    return EventPropagation::Stop;
                 }
-                EventPropagation::Continue
-            }),
-        );
+            }
+            EventPropagation::Continue
+        }));
         self
     }
 
@@ -120,23 +117,20 @@ pub trait Decorators: View + Sized {
     ///
     /// NOTE: View should have `.keyboard_navigable()` in order to receive keyboard events
     fn on_key_up(
-        self,
+        mut self,
         key: Key,
         modifiers: ModifiersState,
         action: impl Fn(&Event) + 'static,
     ) -> Self {
-        self.view_data().id().update_event_listener(
-            EventListener::KeyUp,
-            Box::new(move |e| {
-                if let Event::KeyUp(ke) = e {
-                    if ke.key.logical_key == key && ke.modifiers == modifiers {
-                        action(e);
-                        return EventPropagation::Stop;
-                    }
+        self.view_data_mut().event_handlers.push(Box::new(move |e| {
+            if let Event::KeyUp(ke) = e {
+                if ke.key.logical_key == key && ke.modifiers == modifiers {
+                    action(e);
+                    return EventPropagation::Stop;
                 }
-                EventPropagation::Continue
-            }),
-        );
+            }
+            EventPropagation::Continue
+        }));
         self
     }
 
