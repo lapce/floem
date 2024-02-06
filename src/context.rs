@@ -499,7 +499,7 @@ impl AppState {
         &self,
         id: Id,
         listener: &EventListener,
-    ) -> Option<&Vec<Box<dyn Fn(&Event) -> EventPropagation>>> {
+    ) -> Option<&Vec<Box<EventCallback>>> {
         self.view_states
             .get(&id)
             .and_then(|s| s.event_listeners.get(listener))
@@ -950,7 +950,7 @@ impl<'a> EventCx<'a> {
         &self,
         id: Id,
         listener: &EventListener,
-    ) -> Option<&Vec<Box<dyn Fn(&Event) -> EventPropagation>>> {
+    ) -> Option<&Vec<Box<EventCallback>>> {
         self.app_state.get_event_listeners(id, listener)
     }
 
