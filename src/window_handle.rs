@@ -810,7 +810,7 @@ impl WindowHandle {
                     }
                     UpdateMessage::Class { id, class } => {
                         let state = cx.app_state.view_state(id);
-                        state.class = Some(class);
+                        state.classes.push(class);
                         cx.app_state.request_style_recursive(id);
                     }
                     UpdateMessage::StyleSelector {
