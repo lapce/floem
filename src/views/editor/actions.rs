@@ -53,7 +53,7 @@ fn handle_edit_command_default(
     // modal + smart-tab (etc) if it wants?
     // That would end up with some duplication of logic, but it would
     // be more flexible.
-    let had_edits = action.do_edit(&mut cursor, cmd, modal, &mut register, smart_tab);
+    let had_edits = action.do_edit(ed, &mut cursor, cmd, modal, &mut register, smart_tab);
 
     if had_edits {
         if let Some(data) = yank_data {
@@ -138,7 +138,7 @@ fn handle_motion_mode_command_default(
     let mut cursor = ed.cursor.get_untracked();
     let mut register = ed.register.get_untracked();
 
-    movement::do_motion_mode(action, &mut cursor, motion_mode, &mut register);
+    movement::do_motion_mode(ed, action, &mut cursor, motion_mode, &mut register);
 
     ed.cursor.set(cursor);
     ed.register.set(register);
@@ -165,6 +165,7 @@ pub trait CommonAction {
 
     fn exec_motion_mode(
         &self,
+        ed: &Editor,
         cursor: &mut Cursor,
         motion_mode: MotionMode,
         start: usize,
@@ -180,6 +181,7 @@ pub trait CommonAction {
     /// Returns `true` if there was any change.
     fn do_edit(
         &self,
+        ed: &Editor,
         cursor: &mut Cursor,
         cmd: &EditCommand,
         modal: bool,

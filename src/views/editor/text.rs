@@ -16,7 +16,7 @@ use downcast_rs::{impl_downcast, Downcast};
 use floem_editor_core::{
     buffer::{
         rope_text::{RopeText, RopeTextVal},
-        Buffer,
+        Buffer, InvalLines,
     },
     command::EditCommand,
     cursor::Cursor,
@@ -26,7 +26,7 @@ use floem_editor_core::{
     register::{Clipboard, Register},
     word::WordCursor,
 };
-use lapce_xi_rope::Rope;
+use lapce_xi_rope::{Rope, RopeDelta};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smallvec::{smallvec, SmallVec};
@@ -373,6 +373,7 @@ pub fn default_dark_color(color: EditorColor) -> Color {
 pub type DocumentRef = Rc<dyn Document>;
 
 type PreCommand = Box<dyn Fn(&Editor, &Command, Option<usize>, ModifiersState) -> CommandExecuted>;
+type OnUpdate = Box<dyn Fn(&Editor, &[(Rope, RopeDelta, InvalLines)])>;
 /// A simple text document that holds content in a rope.  
 /// This can be used as a base structure for common operations.
 #[derive(Clone)]
@@ -390,6 +391,8 @@ pub struct TextDocument {
     /// Ran before a command is executed. If it says that it executed the command, then handlers
     /// after it will not be called.
     pre_command: Rc<RefCell<HashMap<EditorId, SmallVec<[PreCommand; 1]>>>>,
+
+    on_updates: Rc<RefCell<SmallVec<[OnUpdate; 1]>>>,
 }
 impl TextDocument {
     pub fn new(cx: Scope, text: impl Into<Rope>) -> TextDocument {
@@ -406,6 +409,7 @@ impl TextDocument {
             keep_indent: Cell::new(true),
             auto_indent: Cell::new(false),
             pre_command: Rc::new(RefCell::new(HashMap::new())),
+            on_updates: Rc::new(RefCell::new(SmallVec::new())),
         }
     }
 
@@ -413,6 +417,13 @@ impl TextDocument {
         self.cache_rev.try_update(|cache_rev| {
             *cache_rev += 1;
         });
+    }
+
+    fn on_update(&self, ed: &Editor, deltas: &[(Rope, RopeDelta, InvalLines)]) {
+        let on_updates = self.on_updates.borrow();
+        for on_update in on_updates.iter() {
+            on_update(ed, deltas);
+        }
     }
 
     pub fn add_pre_command(
@@ -429,6 +440,17 @@ impl TextDocument {
 
     pub fn clear_pre_commands(&self) {
         self.pre_command.borrow_mut().clear();
+    }
+
+    pub fn add_on_update(
+        &self,
+        on_update: impl Fn(&Editor, &[(Rope, RopeDelta, InvalLines)]) + 'static,
+    ) {
+        self.on_updates.borrow_mut().push(Box::new(on_update));
+    }
+
+    pub fn clear_on_updates(&self) {
+        self.on_updates.borrow_mut().clear();
     }
 }
 impl Document for TextDocument {
@@ -469,7 +491,8 @@ impl Document for TextDocument {
             let mut cursor = ed.cursor.get_untracked();
             {
                 let old_cursor_mode = cursor.mode.clone();
-                self.buffer
+                let deltas = self
+                    .buffer
                     .try_update(|buffer| {
                         Action::insert(
                             &mut cursor,
@@ -490,6 +513,7 @@ impl Document for TextDocument {
                 });
                 // TODO: line specific invalidation
                 self.update_cache_rev();
+                self.on_update(ed, &deltas);
             }
             ed.cursor.set(cursor);
         }
@@ -507,6 +531,7 @@ impl DocumentPhantom for TextDocument {
 impl CommonAction for TextDocument {
     fn exec_motion_mode(
         &self,
+        _ed: &Editor,
         cursor: &mut Cursor,
         motion_mode: MotionMode,
         start: usize,
@@ -529,6 +554,7 @@ impl CommonAction for TextDocument {
 
     fn do_edit(
         &self,
+        ed: &Editor,
         cursor: &mut Cursor,
         cmd: &EditCommand,
         modal: bool,
@@ -566,6 +592,7 @@ impl CommonAction for TextDocument {
         }
 
         self.update_cache_rev();
+        self.on_update(ed, &deltas);
 
         !deltas.is_empty()
     }
@@ -655,6 +682,7 @@ impl DocumentPhantom for PhantomTextDocument {
 impl CommonAction for PhantomTextDocument {
     fn exec_motion_mode(
         &self,
+        ed: &Editor,
         cursor: &mut Cursor,
         motion_mode: MotionMode,
         start: usize,
@@ -663,18 +691,20 @@ impl CommonAction for PhantomTextDocument {
         register: &mut Register,
     ) {
         self.doc
-            .exec_motion_mode(cursor, motion_mode, start, end, is_vertical, register)
+            .exec_motion_mode(ed, cursor, motion_mode, start, end, is_vertical, register)
     }
 
     fn do_edit(
         &self,
+        ed: &Editor,
         cursor: &mut Cursor,
         cmd: &EditCommand,
         modal: bool,
         register: &mut Register,
         smart_tab: bool,
     ) -> bool {
-        self.doc.do_edit(cursor, cmd, modal, register, smart_tab)
+        self.doc
+            .do_edit(ed, cursor, cmd, modal, register, smart_tab)
     }
 }
 
@@ -780,6 +810,7 @@ where
 {
     fn exec_motion_mode(
         &self,
+        ed: &Editor,
         cursor: &mut Cursor,
         motion_mode: MotionMode,
         start: usize,
@@ -788,18 +819,20 @@ where
         register: &mut Register,
     ) {
         self.doc
-            .exec_motion_mode(cursor, motion_mode, start, end, is_vertical, register)
+            .exec_motion_mode(ed, cursor, motion_mode, start, end, is_vertical, register)
     }
 
     fn do_edit(
         &self,
+        ed: &Editor,
         cursor: &mut Cursor,
         cmd: &EditCommand,
         modal: bool,
         register: &mut Register,
         smart_tab: bool,
     ) -> bool {
-        self.doc.do_edit(cursor, cmd, modal, register, smart_tab)
+        self.doc
+            .do_edit(ed, cursor, cmd, modal, register, smart_tab)
     }
 }
 

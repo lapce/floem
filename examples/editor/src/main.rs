@@ -15,13 +15,19 @@ use floem::{
 
 fn app_view() -> impl View {
     let editor_a = text_editor("Hello World!").styling(SimpleStyling::dark());
-    let editor_b = editor_a.shared_editor().pre_command(|_editor, cmd, _, _| {
-        if matches!(cmd, Command::Edit(EditCommand::Undo)) {
-            println!("Undo command executed on editor B, ignoring!");
-            return CommandExecuted::Yes;
-        }
-        CommandExecuted::No
-    });
+    let editor_b = editor_a
+        .shared_editor()
+        .pre_command(|_editor, cmd, _count, _modifiers| {
+            if matches!(cmd, Command::Edit(EditCommand::Undo)) {
+                println!("Undo command executed on editor B, ignoring!");
+                return CommandExecuted::Yes;
+            }
+            CommandExecuted::No
+        })
+        .update(|_editor, _deltas| {
+            // This hooks up to both editors!
+            println!("Editor changed");
+        });
 
     let view = stack((editor_a, editor_b)).style(|s| {
         s.size(100.pct(), 100.pct())

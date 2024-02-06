@@ -548,7 +548,7 @@ fn to_line(
 /// Move the current cursor.  
 /// This will signal-update the document for some motion modes.
 pub fn move_cursor(
-    view: &Editor,
+    ed: &Editor,
     action: &dyn CommonAction,
     cursor: &mut Cursor,
     movement: &Movement,
@@ -564,7 +564,7 @@ pub fn move_cursor(
                 count
             };
             let (new_offset, horiz) = move_offset(
-                view,
+                ed,
                 offset,
                 cursor.horiz.as_ref(),
                 &mut cursor.affinity,
@@ -574,7 +574,7 @@ pub fn move_cursor(
             );
             if let Some(motion_mode) = cursor.motion_mode.clone() {
                 let (moved_new_offset, _) = move_offset(
-                    view,
+                    ed,
                     new_offset,
                     None,
                     &mut cursor.affinity,
@@ -594,6 +594,7 @@ pub fn move_cursor(
                     _ => (offset, new_offset),
                 };
                 action.exec_motion_mode(
+                    ed,
                     cursor,
                     motion_mode,
                     start,
@@ -609,7 +610,7 @@ pub fn move_cursor(
         }
         CursorMode::Visual { start, end, mode } => {
             let (new_offset, horiz) = move_offset(
-                view,
+                ed,
                 end,
                 cursor.horiz.as_ref(),
                 &mut cursor.affinity,
@@ -626,7 +627,7 @@ pub fn move_cursor(
         }
         CursorMode::Insert(ref selection) => {
             let selection = move_selection(
-                view,
+                ed,
                 selection,
                 &mut cursor.affinity,
                 count,
@@ -733,6 +734,7 @@ pub fn do_multi_selection(view: &Editor, cursor: &mut Cursor, cmd: &MultiSelecti
 }
 
 pub fn do_motion_mode(
+    ed: &Editor,
     action: &dyn CommonAction,
     cursor: &mut Cursor,
     motion_mode: MotionMode,
@@ -742,7 +744,15 @@ pub fn do_motion_mode(
         // If it's the same MotionMode discriminant, continue, count is cached in the old motion_mode.
         if core::mem::discriminant(&cached_motion_mode) == core::mem::discriminant(&motion_mode) {
             let offset = cursor.offset();
-            action.exec_motion_mode(cursor, cached_motion_mode, offset, offset, true, register);
+            action.exec_motion_mode(
+                ed,
+                cursor,
+                cached_motion_mode,
+                offset,
+                offset,
+                true,
+                register,
+            );
         }
     } else {
         cursor.motion_mode = Some(motion_mode);

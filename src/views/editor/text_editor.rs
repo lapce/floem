@@ -1,9 +1,9 @@
 use std::rc::Rc;
 
-use floem_editor_core::buffer::rope_text::RopeTextVal;
+use floem_editor_core::buffer::{rope_text::RopeTextVal, InvalLines};
 use floem_reactive::{with_scope, Scope};
 use floem_winit::keyboard::ModifiersState;
-use lapce_xi_rope::Rope;
+use lapce_xi_rope::{Rope, RopeDelta};
 
 use crate::{
     id::Id,
@@ -190,6 +190,14 @@ impl TextEditor {
         let doc: Result<Rc<TextDocument>, _> = self.editor.doc().downcast_rc();
         if let Ok(doc) = doc {
             doc.add_pre_command(self.editor.id(), f);
+        }
+        self
+    }
+
+    pub fn update(self, f: impl Fn(&Editor, &[(Rope, RopeDelta, InvalLines)]) + 'static) -> Self {
+        let doc: Result<Rc<TextDocument>, _> = self.editor.doc().downcast_rc();
+        if let Ok(doc) = doc {
+            doc.add_on_update(f);
         }
         self
     }
