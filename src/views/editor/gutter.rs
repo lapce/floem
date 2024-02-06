@@ -13,7 +13,6 @@ use kurbo::Rect;
 use super::{color::EditorColor, editor::Editor};
 
 pub struct EditorGutterView {
-    id: Id,
     data: ViewData,
     editor: RwSignal<Editor>,
     width: f64,
@@ -23,7 +22,6 @@ pub fn editor_gutter_view(editor: RwSignal<Editor>) -> EditorGutterView {
     let id = Id::next();
 
     EditorGutterView {
-        id,
         data: ViewData::new(id),
         editor,
         width: 0.0,
@@ -31,10 +29,6 @@ pub fn editor_gutter_view(editor: RwSignal<Editor>) -> EditorGutterView {
 }
 
 impl View for EditorGutterView {
-    fn id(&self) -> Id {
-        self.id
-    }
-
     fn view_data(&self) -> &ViewData {
         &self.data
     }
@@ -57,7 +51,7 @@ impl Widget for EditorGutterView {
     }
 
     fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
-        if let Some(width) = cx.get_layout(self.id).map(|l| l.size.width as f64) {
+        if let Some(width) = cx.get_layout(self.data.id()).map(|l| l.size.width as f64) {
             self.width = width;
         }
         None
