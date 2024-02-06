@@ -495,14 +495,25 @@ impl AppState {
         }
     }
 
-    pub(crate) fn get_event_listener(
+    pub(crate) fn get_event_listeners(
         &self,
         id: Id,
         listener: &EventListener,
-    ) -> Option<&impl Fn(&Event) -> EventPropagation> {
+    ) -> Option<&Vec<Box<dyn Fn(&Event) -> EventPropagation>>> {
         self.view_states
             .get(&id)
             .and_then(|s| s.event_listeners.get(listener))
+    }
+
+    pub(crate) fn apply_event(
+        &self,
+        id: Id,
+        listener: &EventListener,
+        event: &crate::event::Event,
+    ) -> Option<EventPropagation> {
+        self.view_states
+            .get(&id)
+            .and_then(|s| s.apply_event(listener, event))
     }
 
     pub(crate) fn focus_changed(&mut self, old: Option<Id>, new: Option<Id>) {
@@ -513,9 +524,9 @@ impl AppState {
             {
                 self.request_style_recursive(id);
             }
-            if let Some(action) = self.get_event_listener(id, &EventListener::FocusGained) {
-                (*action)(&Event::FocusGained);
-            }
+            self.view_states.get(&id).and_then(|state| {
+                state.apply_event(&EventListener::FocusGained, &Event::FocusGained)
+            });
         }
 
         if let Some(old_id) = old {
@@ -525,9 +536,9 @@ impl AppState {
             {
                 self.request_style_recursive(old_id);
             }
-            if let Some(action) = self.get_event_listener(old_id, &EventListener::FocusLost) {
-                (*action)(&Event::FocusLost);
-            }
+            self.view_states
+                .get(&old_id)
+                .and_then(|state| state.apply_event(&EventListener::FocusLost, &Event::FocusLost));
         }
     }
 }
@@ -733,10 +744,7 @@ impl<'a> EventCx<'a> {
                 if rect.contains(pointer_event.pos) {
                     if self.app_state.is_dragging() {
                         self.app_state.dragging_over.insert(id);
-                        if let Some(action) = self.get_event_listener(id, &EventListener::DragOver)
-                        {
-                            (*action)(&event);
-                        }
+                        self.apply_event(id, &EventListener::DragOver, &event);
                     } else {
                         self.app_state.hovered.insert(id);
                         let style = self.app_state.get_builtin_style(id);
@@ -775,18 +783,15 @@ impl<'a> EventCx<'a> {
                                 released_at: None,
                             });
                             id.request_paint();
-                            if let Some(action) =
-                                self.get_event_listener(id, &EventListener::DragStart)
-                            {
-                                (*action)(&event);
-                            }
+                            self.apply_event(id, &EventListener::DragStart, &event);
                         }
                     }
                 }
-                if let Some(action) = self.get_event_listener(id, &EventListener::PointerMove) {
-                    if (*action)(&event).is_processed() {
-                        return EventPropagation::Stop;
-                    }
+                if self
+                    .apply_event(id, &EventListener::PointerMove, &event)
+                    .is_some_and(|prop| prop.is_processed())
+                {
+                    return EventPropagation::Stop;
                 }
             }
             Event::PointerUp(pointer_event) => {
@@ -798,21 +803,15 @@ impl<'a> EventCx<'a> {
                         if on_view {
                             if let Some(dragging) = self.app_state.dragging.as_mut() {
                                 let dragging_id = dragging.id;
-                                if let Some(action) =
-                                    self.get_event_listener(id, &EventListener::Drop)
+                                if self
+                                    .apply_event(id, &EventListener::Drop, &event)
+                                    .is_some_and(|prop| prop.is_processed())
                                 {
-                                    if (*action)(&event).is_processed() {
-                                        // if the drop is processed, we set dragging to none so that the animation
-                                        // for the dragged view back to its original position isn't played.
-                                        self.app_state.dragging = None;
-                                        id.request_paint();
-                                        if let Some(action) = self.get_event_listener(
-                                            dragging_id,
-                                            &EventListener::DragEnd,
-                                        ) {
-                                            (*action)(&event);
-                                        }
-                                    }
+                                    // if the drop is processed, we set dragging to none so that the animation
+                                    // for the dragged view back to its original position isn't played.
+                                    self.app_state.dragging = None;
+                                    id.request_paint();
+                                    self.apply_event(dragging_id, &EventListener::DragEnd, &event);
                                 }
                             }
                         }
@@ -822,52 +821,57 @@ impl<'a> EventCx<'a> {
                         let dragging_id = dragging.id;
                         dragging.released_at = Some(std::time::Instant::now());
                         id.request_paint();
-                        if let Some(action) =
-                            self.get_event_listener(dragging_id, &EventListener::DragEnd)
-                        {
-                            (*action)(&event);
-                        }
+                        self.apply_event(dragging_id, &EventListener::DragEnd, &event);
                     }
 
                     let last_pointer_down = self.app_state.view_state(id).last_pointer_down.take();
-                    if let Some(action) = self.get_event_listener(id, &EventListener::DoubleClick) {
+                    if let Some(handlers) =
+                        self.get_event_listeners(id, &EventListener::DoubleClick)
+                    {
                         if on_view
                             && self.app_state.is_clicking(&id)
                             && last_pointer_down
                                 .as_ref()
                                 .map(|e| e.count == 2)
                                 .unwrap_or(false)
-                            && (*action)(&event).is_processed()
+                            && handlers.iter().fold(false, |handled, handler| {
+                                handled | handler(&event).is_processed()
+                            })
                         {
                             return EventPropagation::Stop;
                         }
                     }
-                    if let Some(action) = self.get_event_listener(id, &EventListener::Click) {
+                    if let Some(handlers) = self.get_event_listeners(id, &EventListener::Click) {
                         if on_view
                             && self.app_state.is_clicking(&id)
                             && last_pointer_down.is_some()
-                            && (*action)(&event).is_processed()
+                            && handlers.iter().fold(false, |handled, handler| {
+                                handled | handler(&event).is_processed()
+                            })
                         {
                             return EventPropagation::Stop;
                         }
                     }
 
-                    if let Some(action) = self.get_event_listener(id, &EventListener::PointerUp) {
-                        if (*action)(&event).is_processed() {
-                            return EventPropagation::Stop;
-                        }
+                    if self
+                        .apply_event(id, &EventListener::PointerUp, &event)
+                        .is_some_and(|prop| prop.is_processed())
+                    {
+                        return EventPropagation::Stop;
                     }
                 } else if pointer_event.button.is_secondary() {
                     let rect = self.get_size(id).unwrap_or_default().to_rect();
                     let on_view = rect.contains(pointer_event.pos);
 
                     let last_pointer_down = self.app_state.view_state(id).last_pointer_down.take();
-                    if let Some(action) =
-                        self.get_event_listener(id, &EventListener::SecondaryClick)
+                    if let Some(handlers) =
+                        self.get_event_listeners(id, &EventListener::SecondaryClick)
                     {
                         if on_view
                             && last_pointer_down.is_some()
-                            && (*action)(&event).is_processed()
+                            && handlers.iter().fold(false, |handled, handler| {
+                                handled | handler(&event).is_processed()
+                            })
                         {
                             return EventPropagation::Stop;
                         }
@@ -888,9 +892,7 @@ impl<'a> EventCx<'a> {
             }
             Event::KeyDown(_) => {
                 if self.app_state.is_focused(&id) && event.is_keyboard_trigger() {
-                    if let Some(action) = self.get_event_listener(id, &EventListener::Click) {
-                        (*action)(&event);
-                    }
+                    self.apply_event(id, &EventListener::Click, &event);
                 }
             }
             Event::WindowResized(_) => {
@@ -903,21 +905,19 @@ impl<'a> EventCx<'a> {
             _ => (),
         }
 
-        for handler in &view.view_data().event_handlers {
-            if (handler)(&event).is_processed() {
-                return EventPropagation::Stop;
-            }
-        }
-
         if let Some(listener) = event.listener() {
-            if let Some(action) = self.get_event_listener(id, &listener) {
+            if let Some(handlers) = self.get_event_listeners(id, &listener) {
                 let should_run = if let Some(pos) = event.point() {
                     let rect = self.get_size(id).unwrap_or_default().to_rect();
                     rect.contains(pos)
                 } else {
                     true
                 };
-                if should_run && (*action)(&event).is_processed() {
+                if should_run
+                    && handlers.iter().fold(false, |handled, handler| {
+                        handled | handler(&event).is_processed()
+                    })
+                {
                     return EventPropagation::Stop;
                 }
             }
@@ -940,12 +940,21 @@ impl<'a> EventCx<'a> {
             .unwrap_or(false)
     }
 
-    pub(crate) fn get_event_listener(
+    pub(crate) fn get_event_listeners(
         &self,
         id: Id,
         listener: &EventListener,
-    ) -> Option<&impl Fn(&Event) -> EventPropagation> {
-        self.app_state.get_event_listener(id, listener)
+    ) -> Option<&Vec<Box<dyn Fn(&Event) -> EventPropagation>>> {
+        self.app_state.get_event_listeners(id, listener)
+    }
+
+    pub(crate) fn apply_event(
+        &self,
+        id: Id,
+        listener: &EventListener,
+        event: &Event,
+    ) -> Option<EventPropagation> {
+        self.app_state.apply_event(id, listener, event)
     }
 
     /// translate a window-positioned event to the local coordinate system of a view

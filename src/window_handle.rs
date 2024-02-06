@@ -199,19 +199,11 @@ impl WindowHandle {
                 }
 
                 if !processed {
-                    for handler in &self.view.main.view_data().event_handlers {
-                        if (handler)(&event).is_processed() {
-                            processed = true;
-                            break;
-                        }
-                    }
-
                     if let Some(listener) = event.listener() {
-                        if let Some(action) =
-                            cx.get_event_listener(self.view.main.view_data().id(), &listener)
-                        {
-                            processed |= (*action)(&event).is_processed();
-                        }
+                        processed |= cx
+                            .app_state
+                            .apply_event(self.view.main.view_data().id(), &listener, &event)
+                            .is_some_and(|prop| prop.is_processed());
                     }
                 }
 
@@ -296,9 +288,7 @@ impl WindowHandle {
                     cx.app_state.request_style_recursive(*id);
                 }
                 if hovered.contains(id) {
-                    if let Some(action) = cx.get_event_listener(*id, &EventListener::PointerEnter) {
-                        (*action)(&event);
-                    }
+                    cx.apply_event(*id, &EventListener::PointerEnter, &event);
                 } else {
                     let id_path = ID_PATHS.with(|paths| paths.borrow().get(id).cloned());
                     if let Some(id_path) = id_path {
@@ -316,11 +306,9 @@ impl WindowHandle {
                 .symmetric_difference(dragging_over)
             {
                 if dragging_over.contains(id) {
-                    if let Some(action) = cx.get_event_listener(*id, &EventListener::DragEnter) {
-                        (*action)(&event);
-                    }
-                } else if let Some(action) = cx.get_event_listener(*id, &EventListener::DragLeave) {
-                    (*action)(&event);
+                    cx.apply_event(*id, &EventListener::DragEnter, &event);
+                } else {
+                    cx.apply_event(*id, &EventListener::DragLeave, &event);
                 }
             }
         }
@@ -876,7 +864,11 @@ impl WindowHandle {
                         action,
                     } => {
                         let state = cx.app_state.view_state(id);
-                        state.event_listeners.insert(listener, action);
+
+                        state
+                            .event_listeners
+                            .entry(listener)
+                            .or_insert(vec![action]);
                     }
                     UpdateMessage::ResizeListener { id, action } => {
                         let state = cx.app_state.view_state(id);
