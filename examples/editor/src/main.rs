@@ -17,14 +17,14 @@ fn app_view() -> impl View {
     let editor_a = text_editor("Hello World!").styling(SimpleStyling::dark());
     let editor_b = editor_a
         .shared_editor()
-        .pre_command(|_editor, cmd, _count, _modifiers| {
-            if matches!(cmd, Command::Edit(EditCommand::Undo)) {
+        .pre_command(|ev| {
+            if matches!(ev.cmd, Command::Edit(EditCommand::Undo)) {
                 println!("Undo command executed on editor B, ignoring!");
                 return CommandExecuted::Yes;
             }
             CommandExecuted::No
         })
-        .update(|_editor, _deltas| {
+        .update(|_| {
             // This hooks up to both editors!
             println!("Editor changed");
         });

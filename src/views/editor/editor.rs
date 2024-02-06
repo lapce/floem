@@ -958,6 +958,12 @@ impl Editor {
     }
 }
 
+impl std::fmt::Debug for Editor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Editor").field(&self.id).finish()
+    }
+}
+
 #[derive(Clone)]
 pub struct EditorTextProv {
     text: Rope,

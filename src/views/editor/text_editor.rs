@@ -1,9 +1,9 @@
 use std::rc::Rc;
 
-use floem_editor_core::buffer::{rope_text::RopeTextVal, InvalLines};
+use floem_editor_core::buffer::rope_text::RopeTextVal;
 use floem_reactive::{with_scope, Scope};
-use floem_winit::keyboard::ModifiersState;
-use lapce_xi_rope::{Rope, RopeDelta};
+
+use lapce_xi_rope::Rope;
 
 use crate::{
     id::Id,
@@ -11,11 +11,11 @@ use crate::{
 };
 
 use super::{
-    command::{Command, CommandExecuted},
+    command::CommandExecuted,
     editor::Editor,
     id::EditorId,
     keypress::default_key_handler,
-    text::{Document, SimpleStyling, Styling, TextDocument},
+    text::{Document, OnUpdate, PreCommand, SimpleStyling, Styling, TextDocument},
     view::editor_container_view,
 };
 
@@ -165,28 +165,25 @@ impl TextEditor {
     /// default handler, are not executed.  
     /// ```rust,ignore
     /// text_editor("Hello")
-    ///     .pre_command(|_editor, cmd, _count, _modifiers| {
-    ///         if matches!(cmd, Command::Edit(EditCommand::Undo)) {
+    ///     .pre_command(|ev| {
+    ///         if matches!(ev.cmd, Command::Edit(EditCommand::Undo)) {
     ///             // Sorry, no undoing allowed   
     ///             CommandExecuted::Yes
     ///         } else {
     ///             CommandExecuted::No
     ///         }
     ///     })
-    ///     .pre_command(|_editor, _cmd, _, _| {
+    ///     .pre_command(|_| {
     ///         // This will never be called if command was an undo
     ///         CommandExecuted::Yes
     ///     }))
-    ///     .pre_command(|_editor, _cmd, _, _| {
+    ///     .pre_command(|_| {
     ///         // This will never be called
     ///         CommandExecuted::No
     ///     })
     /// ```
     /// Note that these are specific to each text editor view.
-    pub fn pre_command(
-        self,
-        f: impl Fn(&Editor, &Command, Option<usize>, ModifiersState) -> CommandExecuted + 'static,
-    ) -> Self {
+    pub fn pre_command(self, f: impl Fn(PreCommand) -> CommandExecuted + 'static) -> Self {
         let doc: Result<Rc<TextDocument>, _> = self.editor.doc().downcast_rc();
         if let Ok(doc) = doc {
             doc.add_pre_command(self.editor.id(), f);
@@ -194,7 +191,7 @@ impl TextEditor {
         self
     }
 
-    pub fn update(self, f: impl Fn(&Editor, &[(Rope, RopeDelta, InvalLines)]) + 'static) -> Self {
+    pub fn update(self, f: impl Fn(OnUpdate) + 'static) -> Self {
         let doc: Result<Rc<TextDocument>, _> = self.editor.doc().downcast_rc();
         if let Ok(doc) = doc {
             doc.add_on_update(f);

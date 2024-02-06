@@ -372,8 +372,27 @@ pub fn default_dark_color(color: EditorColor) -> Color {
 
 pub type DocumentRef = Rc<dyn Document>;
 
-type PreCommand = Box<dyn Fn(&Editor, &Command, Option<usize>, ModifiersState) -> CommandExecuted>;
-type OnUpdate = Box<dyn Fn(&Editor, &[(Rope, RopeDelta, InvalLines)])>;
+type PreCommandFn = Box<dyn Fn(PreCommand) -> CommandExecuted>;
+#[derive(Debug, Clone)]
+pub struct PreCommand<'a> {
+    pub editor: &'a Editor,
+    pub cmd: &'a Command,
+    pub count: Option<usize>,
+    pub mods: ModifiersState,
+}
+
+type OnUpdateFn = Box<dyn Fn(OnUpdate)>;
+#[derive(Debug, Clone)]
+pub struct OnUpdate<'a> {
+    pub editor: &'a Editor,
+    deltas: &'a [(Rope, RopeDelta, InvalLines)],
+}
+impl<'a> OnUpdate<'a> {
+    pub fn deltas(&self) -> impl Iterator<Item = &'a RopeDelta> {
+        self.deltas.iter().map(|(_, delta, _)| delta)
+    }
+}
+
 /// A simple text document that holds content in a rope.  
 /// This can be used as a base structure for common operations.
 #[derive(Clone)]
@@ -390,9 +409,9 @@ pub struct TextDocument {
     /// (cmd: &Command, count: Option<usize>, modifiers: ModifierState)  
     /// Ran before a command is executed. If it says that it executed the command, then handlers
     /// after it will not be called.
-    pre_command: Rc<RefCell<HashMap<EditorId, SmallVec<[PreCommand; 1]>>>>,
+    pre_command: Rc<RefCell<HashMap<EditorId, SmallVec<[PreCommandFn; 1]>>>>,
 
-    on_updates: Rc<RefCell<SmallVec<[OnUpdate; 1]>>>,
+    on_updates: Rc<RefCell<SmallVec<[OnUpdateFn; 1]>>>,
 }
 impl TextDocument {
     pub fn new(cx: Scope, text: impl Into<Rope>) -> TextDocument {
@@ -421,18 +440,18 @@ impl TextDocument {
 
     fn on_update(&self, ed: &Editor, deltas: &[(Rope, RopeDelta, InvalLines)]) {
         let on_updates = self.on_updates.borrow();
+        let data = OnUpdate { editor: ed, deltas };
         for on_update in on_updates.iter() {
-            on_update(ed, deltas);
+            on_update(data.clone());
         }
     }
 
     pub fn add_pre_command(
         &self,
         id: EditorId,
-        pre_command: impl Fn(&Editor, &Command, Option<usize>, ModifiersState) -> CommandExecuted
-            + 'static,
+        pre_command: impl Fn(PreCommand) -> CommandExecuted + 'static,
     ) {
-        let pre_command: PreCommand = Box::new(pre_command);
+        let pre_command: PreCommandFn = Box::new(pre_command);
         self.pre_command
             .borrow_mut()
             .insert(id, smallvec![pre_command]);
@@ -442,10 +461,7 @@ impl TextDocument {
         self.pre_command.borrow_mut().clear();
     }
 
-    pub fn add_on_update(
-        &self,
-        on_update: impl Fn(&Editor, &[(Rope, RopeDelta, InvalLines)]) + 'static,
-    ) {
+    pub fn add_on_update(&self, on_update: impl Fn(OnUpdate) + 'static) {
         self.on_updates.borrow_mut().push(Box::new(on_update));
     }
 
@@ -476,8 +492,15 @@ impl Document for TextDocument {
         let pre_commands = self.pre_command.borrow();
         let pre_commands = pre_commands.get(&ed.id());
         let pre_commands = pre_commands.iter().flat_map(|c| c.iter());
+        let data = PreCommand {
+            editor: ed,
+            cmd,
+            count,
+            mods: modifiers,
+        };
+
         for pre_command in pre_commands {
-            if pre_command(ed, cmd, count, modifiers) == CommandExecuted::Yes {
+            if pre_command(data.clone()) == CommandExecuted::Yes {
                 return CommandExecuted::Yes;
             }
         }
