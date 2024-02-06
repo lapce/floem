@@ -71,3 +71,8 @@ pub use img::*;
 
 #[cfg(feature = "editor")]
 pub mod editor;
+
+#[cfg(feature = "editor")]
+pub mod text_editor;
+#[cfg(feature = "editor")]
+pub use text_editor::*;

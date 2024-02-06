@@ -8,15 +8,15 @@ use lapce_xi_rope::Rope;
 use crate::{
     id::Id,
     view::{View, ViewData, Widget},
-};
-
-use super::{
-    command::CommandExecuted,
-    editor::Editor,
-    id::EditorId,
-    keypress::default_key_handler,
-    text::{Document, OnUpdate, PreCommand, SimpleStyling, Styling, TextDocument},
-    view::editor_container_view,
+    views::editor::{
+        command::CommandExecuted,
+        editor::Editor,
+        id::EditorId,
+        keypress::default_key_handler,
+        text::{Document, SimpleStyling, Styling},
+        text_document::{OnUpdate, PreCommand, TextDocument},
+        view::editor_container_view,
+    },
 };
 
 /// A text editor view.  

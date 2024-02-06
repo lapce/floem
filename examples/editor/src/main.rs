@@ -7,9 +7,8 @@ use floem::{
             command::{Command, CommandExecuted},
             core::command::EditCommand,
             text::SimpleStyling,
-            text_editor::text_editor,
         },
-        stack, Decorators,
+        stack, text_editor, Decorators,
     },
 };
 
