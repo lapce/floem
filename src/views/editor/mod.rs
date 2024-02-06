@@ -10,6 +10,7 @@ pub mod listener;
 pub mod movement;
 pub mod phantom_text;
 pub mod text;
+pub mod text_editor;
 pub mod view;
 pub mod visual_line;
 

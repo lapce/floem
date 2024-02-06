@@ -1,4 +1,10 @@
-use std::{borrow::Cow, cell::Cell, fmt::Debug, rc::Rc};
+use std::{
+    borrow::Cow,
+    cell::{Cell, RefCell},
+    collections::HashMap,
+    fmt::Debug,
+    rc::Rc,
+};
 
 use crate::{
     cosmic_text::{Attrs, AttrsList, FamilyOwned, Stretch, Weight},
@@ -23,12 +29,13 @@ use floem_editor_core::{
 use lapce_xi_rope::Rope;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use smallvec::smallvec;
+use smallvec::{smallvec, SmallVec};
 
 use super::{
     actions::{handle_command_default, CommonAction},
     command::{Command, CommandExecuted},
     editor::{normal_compute_screen_lines, Editor},
+    id::EditorId,
     layout::TextLayoutLine,
     phantom_text::{PhantomText, PhantomTextKind, PhantomTextLine},
     view::{ScreenLines, ScreenLinesBase},
@@ -365,6 +372,7 @@ pub fn default_dark_color(color: EditorColor) -> Color {
 
 pub type DocumentRef = Rc<dyn Document>;
 
+type PreCommand = Box<dyn Fn(&Editor, &Command, Option<usize>, ModifiersState) -> CommandExecuted>;
 /// A simple text document that holds content in a rope.  
 /// This can be used as a base structure for common operations.
 #[derive(Clone)]
@@ -377,6 +385,11 @@ pub struct TextDocument {
     pub keep_indent: Cell<bool>,
     /// Whether to automatically indent the new line via heuristics
     pub auto_indent: Cell<bool>,
+
+    /// (cmd: &Command, count: Option<usize>, modifiers: ModifierState)  
+    /// Ran before a command is executed. If it says that it executed the command, then handlers
+    /// after it will not be called.
+    pre_command: Rc<RefCell<HashMap<EditorId, SmallVec<[PreCommand; 1]>>>>,
 }
 impl TextDocument {
     pub fn new(cx: Scope, text: impl Into<Rope>) -> TextDocument {
@@ -392,6 +405,7 @@ impl TextDocument {
             preedit,
             keep_indent: Cell::new(true),
             auto_indent: Cell::new(false),
+            pre_command: Rc::new(RefCell::new(HashMap::new())),
         }
     }
 
@@ -399,6 +413,22 @@ impl TextDocument {
         self.cache_rev.try_update(|cache_rev| {
             *cache_rev += 1;
         });
+    }
+
+    pub fn add_pre_command(
+        &self,
+        id: EditorId,
+        pre_command: impl Fn(&Editor, &Command, Option<usize>, ModifiersState) -> CommandExecuted
+            + 'static,
+    ) {
+        let pre_command: PreCommand = Box::new(pre_command);
+        self.pre_command
+            .borrow_mut()
+            .insert(id, smallvec![pre_command]);
+    }
+
+    pub fn clear_pre_commands(&self) {
+        self.pre_command.borrow_mut().clear();
     }
 }
 impl Document for TextDocument {
@@ -421,6 +451,15 @@ impl Document for TextDocument {
         count: Option<usize>,
         modifiers: ModifiersState,
     ) -> CommandExecuted {
+        let pre_commands = self.pre_command.borrow();
+        let pre_commands = pre_commands.get(&ed.id());
+        let pre_commands = pre_commands.iter().flat_map(|c| c.iter());
+        for pre_command in pre_commands {
+            if pre_command(ed, cmd, count, modifiers) == CommandExecuted::Yes {
+                return CommandExecuted::Yes;
+            }
+        }
+
         handle_command_default(ed, self, cmd, count, modifiers)
     }
 

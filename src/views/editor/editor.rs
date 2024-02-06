@@ -235,7 +235,7 @@ impl Editor {
     }
 
     /// Swap the underlying document out
-    pub fn update_doc(self: &Rc<Editor>, doc: Rc<dyn Document>, styling: Option<Rc<dyn Styling>>) {
+    pub fn update_doc(&self, doc: Rc<dyn Document>, styling: Option<Rc<dyn Styling>>) {
         batch(|| {
             // Get rid of all the effects
             self.effects_cx.get().dispose();
@@ -249,6 +249,29 @@ impl Editor {
             if let Some(styling) = styling {
                 self.style.set(styling);
             }
+            self.screen_lines.update(|screen_lines| {
+                screen_lines.clear(self.viewport.get_untracked());
+            });
+
+            // Recreate the effects
+            self.effects_cx.set(self.cx.get().create_child());
+            create_view_effects(self.effects_cx.get(), self);
+        });
+    }
+
+    pub fn update_styling(&self, styling: Rc<dyn Styling>) {
+        batch(|| {
+            // Get rid of all the effects
+            self.effects_cx.get().dispose();
+
+            *self.lines.font_sizes.borrow_mut() = Rc::new(EditorFontSizes {
+                style: self.style.read_only(),
+                doc: self.doc.read_only(),
+            });
+            self.lines.clear(0, None);
+
+            self.style.set(styling);
+
             self.screen_lines.update(|screen_lines| {
                 screen_lines.clear(self.viewport.get_untracked());
             });

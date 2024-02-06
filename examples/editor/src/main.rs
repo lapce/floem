@@ -1,29 +1,29 @@
-use std::rc::Rc;
-
 use floem::{
     keyboard::{Key, ModifiersState, NamedKey},
-    reactive::{create_rw_signal, RwSignal, Scope},
     unit::UnitExt,
     view::View,
     views::{
         editor::{
-            editor::Editor,
-            keypress::default_key_handler,
-            text::{default_dark_color, SimpleStyling, TextDocument},
-            view::editor_container_view,
+            command::{Command, CommandExecuted},
+            core::command::EditCommand,
+            text::SimpleStyling,
+            text_editor::text_editor,
         },
         stack, Decorators,
     },
 };
 
-fn app_view(editor_a: RwSignal<Editor>, editor_b: RwSignal<Editor>) -> impl View {
-    let view = stack((
-        editor_container_view(editor_a, |_| true, default_key_handler(editor_a))
-            .style(|s| s.height_pct(50.0)),
-        editor_container_view(editor_b, |_| true, default_key_handler(editor_b))
-            .style(|s| s.height_pct(50.0)),
-    ))
-    .style(|s| {
+fn app_view() -> impl View {
+    let editor_a = text_editor("Hello World!").styling(SimpleStyling::dark());
+    let editor_b = editor_a.shared_editor().pre_command(|_editor, cmd, _, _| {
+        if matches!(cmd, Command::Edit(EditCommand::Undo)) {
+            println!("Undo command executed on editor B, ignoring!");
+            return CommandExecuted::Yes;
+        }
+        CommandExecuted::No
+    });
+
+    let view = stack((editor_a, editor_b)).style(|s| {
         s.size(100.pct(), 100.pct())
             .flex_col()
             .items_center()
@@ -39,17 +39,5 @@ fn app_view(editor_a: RwSignal<Editor>, editor_b: RwSignal<Editor>) -> impl View
 }
 
 fn main() {
-    let cx = Scope::new();
-    // The doc is the underlying content
-    let doc = Rc::new(TextDocument::new(cx, "Hello World!"));
-    // The style determines how things are styled in the editor itself
-    let style = Rc::new(SimpleStyling::new(default_dark_color));
-    // The editor is a view into the doc that can be rendered
-    let editor_a = Editor::new(cx, doc.clone(), style.clone());
-    let editor_a = create_rw_signal(editor_a);
-
-    let editor_b = Editor::new(cx, doc.clone(), style.clone());
-    let editor_b = create_rw_signal(editor_b);
-
-    floem::launch(move || app_view(editor_a, editor_b));
+    floem::launch(app_view)
 }
