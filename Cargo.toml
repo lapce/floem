@@ -59,6 +59,7 @@ image = { version = "0.24", features = ["jpeg", "png"] }
 copypasta = { version = "0.10.0", default-features = false, features = ["wayland", "x11"] }
 
 [features]
+default = ["editor"]
 # TODO: this is only winit and the editor serde, there are other dependencies that still depend on 
 # serde
 serde = ["floem-winit/serde", "dep:serde"]
