@@ -1,15 +1,15 @@
 use floem::{
     keyboard::{Key, ModifiersState, NamedKey},
-    unit::UnitExt,
     view::View,
     views::{
         editor::{
             command::{Command, CommandExecuted},
-            core::command::EditCommand,
+            core::{command::EditCommand, editor::EditType, selection::Selection},
             text::SimpleStyling,
         },
         stack, text_editor, Decorators,
     },
+    widgets::button,
 };
 
 fn app_view() -> impl View {
@@ -27,13 +27,22 @@ fn app_view() -> impl View {
             // This hooks up to both editors!
             println!("Editor changed");
         });
+    let doc = editor_a.doc();
 
-    let view = stack((editor_a, editor_b)).style(|s| {
-        s.size(100.pct(), 100.pct())
-            .flex_col()
-            .items_center()
-            .justify_center()
-    });
+    let view = stack((
+        editor_a,
+        editor_b,
+        button(|| "Clear")
+            .on_click_stop(move |_| {
+                doc.edit_single(
+                    Selection::region(0, doc.text().len()),
+                    "",
+                    EditType::DeleteSelection,
+                );
+            })
+            .style(|s| s.width_full()),
+    ))
+    .style(|s| s.size_full().flex_col().items_center().justify_center());
 
     let id = view.id();
     view.on_key_up(

@@ -11,9 +11,11 @@ use floem_editor_core::{
     buffer::rope_text::{RopeText, RopeTextVal},
     command::EditCommand,
     cursor::Cursor,
+    editor::EditType,
     indent::IndentStyle,
     mode::MotionMode,
     register::{Clipboard, Register},
+    selection::Selection,
     word::WordCursor,
 };
 use lapce_xi_rope::Rope;
@@ -163,7 +165,31 @@ pub trait Document: DocumentPhantom + Downcast {
     ) -> CommandExecuted;
 
     fn receive_char(&self, ed: &Editor, c: &str);
+
+    /// Perform a single edit.  
+    fn edit_single(&self, selection: Selection, content: &str, edit_type: EditType) {
+        let mut iter = std::iter::once((selection, content));
+        self.edit(&mut iter, edit_type);
+    }
+
+    /// Perform the edit(s) on this document.  
+    /// This intentionally does not require an `Editor` as this is primarily intended for use by
+    /// code that wants to modify the document from 'outside' the usual keybinding/command logic.  
+    /// ```rust,ignore
+    /// let editor: TextEditor = text_editor();
+    /// let doc: Rc<dyn Document> = editor.doc();
+    ///
+    /// stack((
+    ///     editor,
+    ///     button(|| "Append 'Hello'").on_click_stop(move |_| {
+    ///         let text = doc.text();
+    ///         doc.edit_single(Selection::caret(text.len()), "Hello", EditType::InsertChars);
+    ///     })
+    /// ))
+    /// ```
+    fn edit(&self, iter: &mut dyn Iterator<Item = (Selection, &str)>, edit_type: EditType);
 }
+
 impl_downcast!(Document);
 
 pub trait DocumentPhantom {
@@ -437,6 +463,14 @@ where
     fn receive_char(&self, ed: &Editor, c: &str) {
         self.doc.receive_char(ed, c)
     }
+
+    fn edit_single(&self, selection: Selection, content: &str, edit_type: EditType) {
+        self.doc.edit_single(selection, content, edit_type)
+    }
+
+    fn edit(&self, iter: &mut dyn Iterator<Item = (Selection, &str)>, edit_type: EditType) {
+        self.doc.edit(iter, edit_type)
+    }
 }
 impl<D, F> DocumentPhantom for ExtCmdDocument<D, F>
 where
@@ -509,7 +543,7 @@ pub struct SimpleStyling<C> {
 }
 impl<C> SimpleStyling<C> {
     pub fn builder() -> SimpleStylingBuilder {
-        SimpleStylingBuilder::new()
+        SimpleStylingBuilder::default()
     }
 }
 impl<C: Fn(EditorColor) -> Color> SimpleStyling<C> {
@@ -665,6 +699,7 @@ impl<C: Fn(EditorColor) -> Color> Styling for SimpleStyling<C> {
     }
 }
 
+#[derive(Default, Clone)]
 pub struct SimpleStylingBuilder {
     font_size: Option<usize>,
     line_height: Option<f32>,
@@ -678,21 +713,6 @@ pub struct SimpleStylingBuilder {
     wrap: Option<WrapMethod>,
 }
 impl SimpleStylingBuilder {
-    pub fn new() -> SimpleStylingBuilder {
-        SimpleStylingBuilder {
-            font_size: None,
-            line_height: None,
-            font_family: None,
-            weight: None,
-            italic_style: None,
-            stretch: None,
-            indent_style: None,
-            tab_width: None,
-            atomic_soft_tabs: None,
-            wrap: None,
-        }
-    }
-
     /// Set the font size  
     /// Default: 16
     pub fn font_size(&mut self, font_size: usize) -> &mut Self {

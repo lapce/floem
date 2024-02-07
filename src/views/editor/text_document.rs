@@ -8,9 +8,10 @@ use floem_editor_core::{
     buffer::{rope_text::RopeText, Buffer, InvalLines},
     command::EditCommand,
     cursor::Cursor,
-    editor::{Action, EditConf},
+    editor::{Action, EditConf, EditType},
     mode::{Mode, MotionMode},
     register::Register,
+    selection::Selection,
     word::WordCursor,
 };
 use floem_reactive::{RwSignal, Scope};
@@ -39,7 +40,8 @@ pub struct PreCommand<'a> {
 type OnUpdateFn = Box<dyn Fn(OnUpdate)>;
 #[derive(Debug, Clone)]
 pub struct OnUpdate<'a> {
-    pub editor: &'a Editor,
+    /// Optional because the document can be edited from outside any editor views
+    pub editor: Option<&'a Editor>,
     deltas: &'a [(Rope, RopeDelta, InvalLines)],
 }
 impl<'a> OnUpdate<'a> {
@@ -93,7 +95,7 @@ impl TextDocument {
         });
     }
 
-    fn on_update(&self, ed: &Editor, deltas: &[(Rope, RopeDelta, InvalLines)]) {
+    fn on_update(&self, ed: Option<&Editor>, deltas: &[(Rope, RopeDelta, InvalLines)]) {
         let on_updates = self.on_updates.borrow();
         let data = OnUpdate { editor: ed, deltas };
         for on_update in on_updates.iter() {
@@ -195,10 +197,21 @@ impl Document for TextDocument {
                 });
                 // TODO: line specific invalidation
                 self.update_cache_rev();
-                self.on_update(ed, &deltas);
+                self.on_update(Some(ed), &deltas);
             }
             ed.cursor.set(cursor);
         }
+    }
+
+    fn edit(&self, iter: &mut dyn Iterator<Item = (Selection, &str)>, edit_type: EditType) {
+        let deltas = self
+            .buffer
+            .try_update(|buffer| buffer.edit(iter, edit_type));
+        let deltas = deltas.map(|x| [x]);
+        let deltas = deltas.as_ref().map(|x| x as &[_]).unwrap_or(&[]);
+
+        self.update_cache_rev();
+        self.on_update(None, deltas);
     }
 }
 impl DocumentPhantom for TextDocument {
@@ -278,7 +291,7 @@ impl CommonAction for TextDocument {
         }
 
         self.update_cache_rev();
-        self.on_update(ed, &deltas);
+        self.on_update(Some(ed), &deltas);
 
         !deltas.is_empty()
     }
