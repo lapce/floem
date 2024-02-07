@@ -84,14 +84,14 @@ impl TextEditor {
         self.editor.id()
     }
 
-    pub fn with_document(self, f: impl FnOnce(&dyn Document)) -> Self {
+    pub fn with_doc(self, f: impl FnOnce(&dyn Document)) -> Self {
         self.editor.doc.with_untracked(|doc| {
             f(doc.as_ref());
         });
         self
     }
 
-    pub fn document(&self) -> Rc<dyn Document> {
+    pub fn doc(&self) -> Rc<dyn Document> {
         self.editor.doc()
     }
 
@@ -101,7 +101,7 @@ impl TextEditor {
     }
 
     /// Use a different document in the text editor  
-    pub fn use_document(self, doc: Rc<dyn Document>) -> Self {
+    pub fn use_doc(self, doc: Rc<dyn Document>) -> Self {
         self.editor.update_doc(doc, None);
         self
     }
@@ -118,8 +118,8 @@ impl TextEditor {
     /// ```  
     /// If you wish for it to also share the styling, consider using [`TextEditor::shared_editor`]
     /// instead.
-    pub fn share_document(self, other: &TextEditor) -> Self {
-        self.use_document(other.editor.doc())
+    pub fn share_doc(self, other: &TextEditor) -> Self {
+        self.use_doc(other.editor.doc())
     }
 
     /// Create a new [`TextEditor`] instance from this instance, sharing the document and styling.
