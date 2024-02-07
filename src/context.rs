@@ -1076,14 +1076,7 @@ impl<'a> StyleCx<'a> {
 
         let view_style = view.view_style();
         let view_class = view.view_class();
-        let class = view_state.class;
-        let class_array;
-        let classes = if let Some(class) = class {
-            class_array = [class];
-            &class_array[..]
-        } else {
-            &[]
-        };
+        let classes = &view_state.classes.clone()[..];
 
         // Propagate style requests to children if needed.
         if view_state.request_style_recursive {
