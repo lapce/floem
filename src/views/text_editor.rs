@@ -10,12 +10,12 @@ use crate::{
     view::{View, ViewData, Widget},
     views::editor::{
         command::CommandExecuted,
-        editor::Editor,
         id::EditorId,
         keypress::default_key_handler,
         text::{Document, SimpleStyling, Styling},
         text_document::{OnUpdate, PreCommand, TextDocument},
         view::editor_container_view,
+        Editor,
     },
 };
 

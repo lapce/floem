@@ -11,7 +11,7 @@ use floem_editor_core::{
 
 use super::{
     command::{Command, CommandExecuted},
-    editor::Editor,
+    Editor,
 };
 
 use self::{key::KeyInput, press::KeyPress};

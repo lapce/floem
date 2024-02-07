@@ -22,10 +22,10 @@ use smallvec::{smallvec, SmallVec};
 use super::{
     actions::{handle_command_default, CommonAction},
     command::{Command, CommandExecuted},
-    editor::Editor,
     id::EditorId,
     phantom_text::PhantomTextLine,
     text::{Document, DocumentPhantom, PreeditData, SystemClipboard},
+    Editor,
 };
 
 type PreCommandFn = Box<dyn Fn(PreCommand) -> CommandExecuted>;

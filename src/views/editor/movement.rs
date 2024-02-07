@@ -13,8 +13,8 @@ use floem_editor_core::{
 
 use super::{
     actions::CommonAction,
-    editor::Editor,
     visual_line::{RVLine, VLineInfo},
+    Editor,
 };
 
 /// Move a selection region by a given movement.  

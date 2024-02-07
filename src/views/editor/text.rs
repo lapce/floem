@@ -25,10 +25,11 @@ use serde::{Deserialize, Serialize};
 use super::{
     actions::CommonAction,
     command::{Command, CommandExecuted},
-    editor::{normal_compute_screen_lines, Editor},
     layout::TextLayoutLine,
+    normal_compute_screen_lines,
     phantom_text::{PhantomText, PhantomTextKind, PhantomTextLine},
     view::{ScreenLines, ScreenLinesBase},
+    Editor,
 };
 
 use super::color::EditorColor;

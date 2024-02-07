@@ -30,10 +30,7 @@ use crate::views::editor::{
     visual_line::{RVLine, VLineInfo},
 };
 
-use super::{
-    color::EditorColor,
-    editor::{Editor, CHAR_WIDTH},
-};
+use super::{color::EditorColor, Editor, CHAR_WIDTH};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum DiffSectionKind {

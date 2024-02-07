@@ -10,7 +10,7 @@ use floem_editor_core::mode::Mode;
 use floem_reactive::RwSignal;
 use kurbo::Rect;
 
-use super::{color::EditorColor, editor::Editor};
+use super::{color::EditorColor, Editor};
 
 pub struct EditorGutterView {
     data: ViewData,
