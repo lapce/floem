@@ -30,7 +30,7 @@ thread_local! {
     pub(crate) static APP_UPDATE_EVENTS: RefCell<Vec<AppUpdateEvent>> = Default::default();
 }
 
-pub fn launch<V: View + 'static>(app_view: impl Fn() -> V + 'static) {
+pub fn launch<V: View + 'static>(app_view: impl FnOnce() -> V + 'static) {
     Application::new().window(move |_| app_view(), None).run()
 }
 
