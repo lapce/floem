@@ -1,4 +1,4 @@
-use std::{collections::HashSet, iter};
+use std::{collections::HashSet, iter, ops::Range};
 
 use itertools::Itertools;
 use lapce_xi_rope::{Rope, RopeDelta};
@@ -19,12 +19,14 @@ use crate::{
 
 fn format_start_end(
     buffer: &Buffer,
-    start: usize,
-    end: usize,
+    range: Range<usize>,
     is_vertical: bool,
     first_non_blank: bool,
     count: usize,
-) -> (usize, usize) {
+) -> Range<usize> {
+    let start = range.start;
+    let end = range.end;
+
     if is_vertical {
         let start_line = buffer.line_of_offset(start.min(end));
         let end_line = buffer.line_of_offset(end.max(start));
@@ -34,11 +36,11 @@ fn format_start_end(
             buffer.offset_of_line(start_line)
         };
         let end = buffer.offset_of_line(end_line + count);
-        (start, end)
+        start..end
     } else {
         let s = start.min(end);
         let e = start.max(end);
-        (s, e)
+        s..e
     }
 }
 
@@ -405,19 +407,18 @@ impl Action {
         cursor: &mut Cursor,
         buffer: &mut Buffer,
         motion_mode: MotionMode,
-        start: usize,
-        end: usize,
+        range: Range<usize>,
         is_vertical: bool,
         register: &mut Register,
     ) -> Vec<(Rope, RopeDelta, InvalLines)> {
         let mut deltas = Vec::new();
         match motion_mode {
             MotionMode::Delete { .. } => {
-                let (start, end) = format_start_end(buffer, start, end, is_vertical, false, 1);
+                let range = format_start_end(buffer, range, is_vertical, false, 1);
                 register.add(
                     RegisterKind::Delete,
                     RegisterData {
-                        content: buffer.slice_to_cow(start..end).to_string(),
+                        content: buffer.slice_to_cow(range.clone()).to_string(),
                         mode: if is_vertical {
                             VisualMode::Linewise
                         } else {
@@ -425,18 +426,18 @@ impl Action {
                         },
                     },
                 );
-                let selection = Selection::region(start, end);
+                let selection = Selection::region(range.start, range.end);
                 let (text, delta, inval_lines) =
                     buffer.edit([(&selection, "")], EditType::MotionDelete);
                 cursor.apply_delta(&delta);
                 deltas.push((text, delta, inval_lines));
             }
             MotionMode::Yank { .. } => {
-                let (start, end) = format_start_end(buffer, start, end, is_vertical, false, 1);
+                let range = format_start_end(buffer, range, is_vertical, false, 1);
                 register.add(
                     RegisterKind::Yank,
                     RegisterData {
-                        content: buffer.slice_to_cow(start..end).to_string(),
+                        content: buffer.slice_to_cow(range).to_string(),
                         mode: if is_vertical {
                             VisualMode::Linewise
                         } else {
@@ -446,12 +447,12 @@ impl Action {
                 );
             }
             MotionMode::Indent => {
-                let selection = Selection::region(start, end);
+                let selection = Selection::region(range.start, range.end);
                 let (text, delta, inval_lines) = Self::do_indent(buffer, selection);
                 deltas.push((text, delta, inval_lines));
             }
             MotionMode::Outdent => {
-                let selection = Selection::region(start, end);
+                let selection = Selection::region(range.start, range.end);
                 let (text, delta, inval_lines) = Self::do_outdent(buffer, selection);
                 deltas.push((text, delta, inval_lines));
             }
@@ -1231,15 +1232,14 @@ impl Action {
             }
             DeleteLine => {
                 let selection = cursor.edit_selection(buffer);
-                let (start, end) = format_start_end(
+                let range = format_start_end(
                     buffer,
-                    selection.min_offset(),
-                    selection.max_offset(),
+                    selection.min_offset()..selection.max_offset(),
                     true,
                     false,
                     1,
                 );
-                let selection = Selection::region(start, end);
+                let selection = Selection::region(range.start, range.end);
                 let (text, delta, inval_lines) = buffer.edit([(&selection, "")], EditType::Delete);
                 let selection = selection.apply_delta(&delta, true, InsertDrift::Default);
                 cursor.mode = CursorMode::Insert(selection);
@@ -1369,15 +1369,14 @@ impl Action {
             }
             DeleteLineAndInsert => {
                 let selection = cursor.edit_selection(buffer);
-                let (start, end) = format_start_end(
+                let range = format_start_end(
                     buffer,
-                    selection.min_offset(),
-                    selection.max_offset(),
+                    selection.min_offset()..selection.max_offset(),
                     true,
                     true,
                     1,
                 );
-                let selection = Selection::region(start, end - 1); // -1 because we want to keep the line itself
+                let selection = Selection::region(range.start, range.end - 1); // -1 because we want to keep the line itself
                 let (text, delta, inval_lines) = buffer.edit([(&selection, "")], EditType::Delete);
                 let selection = selection.apply_delta(&delta, true, InsertDrift::Default);
                 cursor.mode = CursorMode::Insert(selection);

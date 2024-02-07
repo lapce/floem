@@ -1,6 +1,7 @@
 use std::{
     cell::{Cell, RefCell},
     collections::HashMap,
+    ops::Range,
     rc::Rc,
 };
 
@@ -229,21 +230,12 @@ impl CommonAction for TextDocument {
         _ed: &Editor,
         cursor: &mut Cursor,
         motion_mode: MotionMode,
-        start: usize,
-        end: usize,
+        range: Range<usize>,
         is_vertical: bool,
         register: &mut Register,
     ) {
         self.buffer.try_update(move |buffer| {
-            Action::execute_motion_mode(
-                cursor,
-                buffer,
-                motion_mode,
-                start,
-                end,
-                is_vertical,
-                register,
-            )
+            Action::execute_motion_mode(cursor, buffer, motion_mode, range, is_vertical, register)
         });
     }
 

@@ -582,23 +582,22 @@ pub fn move_cursor(
                     &Movement::Right,
                     Mode::Insert,
                 );
-                let (start, end) = match movement {
-                    Movement::EndOfLine | Movement::WordEndForward => (offset, moved_new_offset),
+                let range = match movement {
+                    Movement::EndOfLine | Movement::WordEndForward => offset..moved_new_offset,
                     Movement::MatchPairs => {
                         if new_offset > offset {
-                            (offset, moved_new_offset)
+                            offset..moved_new_offset
                         } else {
-                            (moved_new_offset, new_offset)
+                            moved_new_offset..new_offset
                         }
                     }
-                    _ => (offset, new_offset),
+                    _ => offset..new_offset,
                 };
                 action.exec_motion_mode(
                     ed,
                     cursor,
                     motion_mode,
-                    start,
-                    end,
+                    range,
                     movement.is_vertical(),
                     register,
                 );
@@ -748,8 +747,7 @@ pub fn do_motion_mode(
                 ed,
                 cursor,
                 cached_motion_mode,
-                offset,
-                offset,
+                offset..offset,
                 true,
                 register,
             );

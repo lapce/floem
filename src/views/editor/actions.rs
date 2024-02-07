@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use crate::keyboard::ModifiersState;
 use floem_editor_core::{
     command::{EditCommand, MotionModeCommand, MultiSelectionCommand, ScrollCommand},
@@ -159,16 +161,13 @@ fn handle_multi_selection_command_default(
 /// Trait for common actions needed for the default implementation of the
 /// operations.
 pub trait CommonAction {
-    // TODO: should these just take Register as an RwSignal?
-    // TODO: should these just take Cursor as an RwSignal?
-
+    // TODO: should this use Rope's Interval instead of Range?
     fn exec_motion_mode(
         &self,
         ed: &Editor,
         cursor: &mut Cursor,
         motion_mode: MotionMode,
-        start: usize,
-        end: usize,
+        range: Range<usize>,
         is_vertical: bool,
         register: &mut Register,
     );

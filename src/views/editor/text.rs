@@ -1,4 +1,4 @@
-use std::{borrow::Cow, fmt::Debug, rc::Rc};
+use std::{borrow::Cow, fmt::Debug, ops::Range, rc::Rc};
 
 use crate::{
     cosmic_text::{Attrs, AttrsList, FamilyOwned, Stretch, Weight},
@@ -500,13 +500,12 @@ where
         ed: &Editor,
         cursor: &mut Cursor,
         motion_mode: MotionMode,
-        start: usize,
-        end: usize,
+        range: Range<usize>,
         is_vertical: bool,
         register: &mut Register,
     ) {
         self.doc
-            .exec_motion_mode(ed, cursor, motion_mode, start, end, is_vertical, register)
+            .exec_motion_mode(ed, cursor, motion_mode, range, is_vertical, register)
     }
 
     fn do_edit(
