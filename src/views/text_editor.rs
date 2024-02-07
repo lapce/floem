@@ -33,7 +33,6 @@ pub struct TextEditor {
 pub fn text_editor(text: impl Into<Rope>) -> TextEditor {
     let id = Id::next();
     let cx = Scope::current();
-    // TODO: state update?
 
     let doc = Rc::new(TextDocument::new(cx, text));
     let style = Rc::new(SimpleStyling::light());
@@ -59,7 +58,6 @@ impl View for TextEditor {
         let cx = self.cx;
 
         let editor = cx.create_rw_signal(self.editor);
-        // TODO: better is_active
         let view = with_scope(self.cx, || {
             editor_container_view(editor, |_| true, default_key_handler(editor))
         });
@@ -157,6 +155,38 @@ impl TextEditor {
     /// Use an `Rc<dyn Styling>` to share between different editors.
     pub fn styling_rc(self, styling: Rc<dyn Styling>) -> Self {
         self.editor.update_styling(styling);
+        self
+    }
+
+    /// Set the text editor to read only.  
+    /// Equivalent to setting [`Editor::read_only`]  
+    /// Default: `false`
+    pub fn read_only(self) -> Self {
+        self.editor.read_only.set(true);
+        self
+    }
+
+    /// Allow scrolling beyond the last line of the document.  
+    /// Equivalent to setting [`Editor::scroll_beyond_last_line`]  
+    /// Default: `false`
+    pub fn scroll_beyond_last_line(self) -> Self {
+        self.editor.scroll_beyond_last_line.set(true);
+        self
+    }
+
+    /// Set the number of lines to keep visible above and below the cursor.  
+    /// Equivalent to setting [`Editor::cursor_surrounding_lines`]  
+    /// Default: `1`
+    pub fn cursor_surrounding_lines(self, lines: usize) -> Self {
+        self.editor.cursor_surrounding_lines.set(lines);
+        self
+    }
+
+    /// Insert the indent that is detected fror the file when tab is pressed.  
+    /// Equivalent to setting [`Editor::smart_tab`]  
+    /// Default: `false`
+    pub fn smart_tab(self) -> Self {
+        self.editor.smart_tab.set(true);
         self
     }
 

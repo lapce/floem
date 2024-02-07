@@ -164,6 +164,10 @@ impl Document for TextDocument {
     }
 
     fn receive_char(&self, ed: &Editor, c: &str) {
+        if ed.read_only.get_untracked() {
+            return;
+        }
+
         let mode = ed.cursor.with_untracked(|c| c.get_mode());
         if mode == Mode::Insert {
             let mut cursor = ed.cursor.get_untracked();
@@ -239,6 +243,10 @@ impl CommonAction for TextDocument {
         register: &mut Register,
         smart_tab: bool,
     ) -> bool {
+        if ed.read_only.get_untracked() && !cmd.not_changing_buffer() {
+            return false;
+        }
+
         let mut clipboard = SystemClipboard::new();
         let old_cursor = cursor.mode.clone();
         // TODO: configurable comment token
