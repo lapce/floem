@@ -68,6 +68,12 @@ impl View for TextEditor {
 impl TextEditor {
     /// Note: this requires that the document underlying it is a [`TextDocument`] for the use of
     /// some logic. You should usually not swap this out without good reason.
+    pub fn editor(&self) -> &Editor {
+        &self.editor
+    }
+
+    /// Note: this requires that the document underlying it is a [`TextDocument`] for the use of
+    /// some logic. You should usually not swap this out without good reason.
     pub fn with_editor(self, f: impl FnOnce(&Editor)) -> Self {
         f(&self.editor);
         self
@@ -163,6 +169,14 @@ impl TextEditor {
     /// Default: `false`
     pub fn read_only(self) -> Self {
         self.editor.read_only.set(true);
+        self
+    }
+
+    /// Enable or disable the gutter.  
+    /// Equivalent to setting [`Editor::gutter`]  
+    /// Default: `true`
+    pub fn gutter(self, gutter: bool) -> Self {
+        self.editor.gutter.set(gutter);
         self
     }
 

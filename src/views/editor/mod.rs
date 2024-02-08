@@ -74,6 +74,9 @@ pub struct Editor {
 
     pub active: RwSignal<bool>,
 
+    /// Whether the gutter is enabled
+    pub gutter: RwSignal<bool>,
+
     /// Whether you can edit within this editor.
     pub read_only: RwSignal<bool>,
     /// Whether you can scroll beyond the last line of the document.
@@ -193,6 +196,7 @@ impl Editor {
             effects_cx: Cell::new(cx.create_child()),
             id,
             active: cx.create_rw_signal(false),
+            gutter: cx.create_rw_signal(true),
             read_only: cx.create_rw_signal(false),
             scroll_beyond_last_line: cx.create_rw_signal(false),
             cursor_surrounding_lines: cx.create_rw_signal(1),
