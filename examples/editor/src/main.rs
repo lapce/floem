@@ -23,24 +23,34 @@ fn app_view() -> impl View {
             }
             CommandExecuted::No
         })
+        .gutter(false)
         .update(|_| {
             // This hooks up to both editors!
             println!("Editor changed");
         });
     let doc = editor_a.doc();
+    let gutter_a = editor_a.editor().gutter;
+    let gutter_b = editor_b.editor().gutter;
 
     let view = stack((
         editor_a,
         editor_b,
-        button(|| "Clear")
-            .on_click_stop(move |_| {
+        stack((
+            button(|| "Clear").on_click_stop(move |_| {
                 doc.edit_single(
                     Selection::region(0, doc.text().len()),
                     "",
                     EditType::DeleteSelection,
                 );
-            })
-            .style(|s| s.width_full()),
+            }),
+            button(|| "Flip Gutter").on_click_stop(move |_| {
+                let a = !gutter_a.get_untracked();
+                let b = !gutter_b.get_untracked();
+                gutter_a.set(a);
+                gutter_b.set(b);
+            }),
+        ))
+        .style(|s| s.width_full().flex_row().items_center().justify_center()),
     ))
     .style(|s| s.size_full().flex_col().items_center().justify_center());
 

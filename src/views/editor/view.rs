@@ -1085,22 +1085,21 @@ pub fn editor_container_view(
 ) -> impl View {
     let editor_rect = create_rw_signal(Rect::ZERO);
 
-    stack((
-        // editor_breadcrumbs(workspace, editor.get_untracked(), config),
-        container(
-            stack((
-                editor_gutter(editor),
-                container(editor_content(editor, is_active, handle_key_event))
-                    .style(move |s| s.size_pct(100.0, 100.0)),
-                empty().style(move |s| s.absolute().width_pct(100.0)),
-            ))
-            .on_resize(move |rect| {
-                editor_rect.set(rect);
-            })
-            .style(|s| s.absolute().size_pct(100.0, 100.0)),
-        )
-        .style(|s| s.size_pct(100.0, 100.0)),
-    ))
+    stack((container(
+        stack((
+            editor_gutter(editor).style(move |s| {
+                s.apply_if(editor.with_untracked(|ed| ed.gutter).get(), |s| s.hide())
+            }),
+            container(editor_content(editor, is_active, handle_key_event))
+                .style(move |s| s.size_pct(100.0, 100.0)),
+            empty().style(move |s| s.absolute().width_pct(100.0)),
+        ))
+        .on_resize(move |rect| {
+            editor_rect.set(rect);
+        })
+        .style(|s| s.absolute().size_pct(100.0, 100.0)),
+    )
+    .style(|s| s.size_pct(100.0, 100.0)),))
     .on_cleanup(move || {
         // TODO: should we have some way for doc to tell us if we're allowed to cleanup the editor?
         let editor = editor.get_untracked();
