@@ -11,6 +11,7 @@
 use std::{any::Any, cell::RefCell, collections::HashMap, sync::atomic::AtomicU64};
 
 use kurbo::{Point, Rect};
+use raw_window_handle::RawWindowHandle;
 
 use crate::{
     animate::Animation,
@@ -196,6 +197,10 @@ impl Id {
 
     pub fn update_cleanup_listener(&self, action: Box<dyn Fn()>) {
         self.add_update_message(UpdateMessage::CleanupListener { id: *self, action });
+    }
+
+    pub fn update_raw_window_handle_listener(&self, action: Box<dyn Fn(RawWindowHandle)>) {
+        self.add_update_message(UpdateMessage::RawWindowHandleListener { action });
     }
 
     pub fn update_animation(&self, animation: Animation) {

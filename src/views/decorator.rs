@@ -1,15 +1,10 @@
 use floem_reactive::{create_effect, create_updater};
 use floem_winit::keyboard::{Key, ModifiersState};
 use kurbo::{Point, Rect};
+use raw_window_handle::RawWindowHandle;
 
 use crate::{
-    action::{set_window_menu, set_window_title, update_window_scale},
-    animate::Animation,
-    event::{Event, EventListener},
-    menu::Menu,
-    style::{Style, StyleClass, StyleSelector},
-    view::View,
-    EventPropagation,
+    action::{set_window_menu, set_window_title, update_window_scale}, animate::Animation, event::{Event, EventListener}, menu::Menu, style::{Style, StyleClass, StyleSelector}, view::View, EventPropagation
 };
 
 pub trait Decorators: View + Sized {
@@ -242,6 +237,13 @@ pub trait Decorators: View + Sized {
     fn on_cleanup(self, action: impl Fn() + 'static) -> Self {
         let id = self.id();
         id.update_cleanup_listener(Box::new(action));
+        self
+    }
+
+
+    fn raw_window_handle(self, handle_fn: impl Fn(RawWindowHandle) + 'static) -> Self {
+        let id = self.id();
+        id.update_raw_window_handle_listener(Box::new(handle_fn));
         self
     }
 
