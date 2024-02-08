@@ -11,7 +11,9 @@ use floem_renderer::cosmic_text::{SubpixelBin, SwashCache, TextLayout};
 use floem_renderer::{tiny_skia, Img, Renderer};
 use floem_vger_rs::{Image, PaintIndex, PixelFormat, Vger};
 use image::{DynamicImage, EncodableLayout, RgbaImage};
-use wgpu::{Device, DeviceType, Queue, StoreOp, Surface, SurfaceConfiguration, TextureFormat};
+use wgpu::{
+    Backends, Device, DeviceType, Queue, StoreOp, Surface, SurfaceConfiguration, TextureFormat,
+};
 
 pub struct VgerRenderer {
     device: Arc<Device>,
@@ -43,7 +45,10 @@ impl VgerRenderer {
         height: u32,
         scale: f64,
     ) -> Result<Self> {
-        let instance = wgpu::Instance::default();
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::util::backend_bits_from_env().unwrap_or(Backends::all()),
+            ..Default::default()
+        });
 
         let surface = unsafe { instance.create_surface(window) }?;
 
