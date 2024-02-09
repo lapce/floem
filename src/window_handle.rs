@@ -874,7 +874,7 @@ impl WindowHandle {
                         state
                             .event_listeners
                             .entry(listener)
-                            .or_insert(Vec::new())
+                            .or_default()
                             .push(action);
                     }
                     UpdateMessage::ResizeListener { id, action } => {
