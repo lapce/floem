@@ -874,7 +874,8 @@ impl WindowHandle {
                         state
                             .event_listeners
                             .entry(listener)
-                            .or_insert(vec![action]);
+                            .or_default()
+                            .push(action);
                     }
                     UpdateMessage::ResizeListener { id, action } => {
                         let state = cx.app_state.view_state(id);
