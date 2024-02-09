@@ -10,7 +10,7 @@ use crate::{
     Application,
 };
 
-pub(crate) static EXT_EVENT_HANDLER: Lazy<ExtEventHandler> = Lazy::new(ExtEventHandler::default);
+pub static EXT_EVENT_HANDLER: Lazy<ExtEventHandler> = Lazy::new(ExtEventHandler::default);
 
 #[derive(Clone)]
 pub struct ExtEventHandler {
