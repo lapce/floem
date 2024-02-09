@@ -1085,7 +1085,7 @@ impl TextLayoutProvider for EditorTextProv {
 
         let line_content_original = text.line_content(line);
 
-        let font_size = self.style.font_size(self.style.font_size(line));
+        let font_size = self.style.font_size(line);
 
         // Get the line content with newline characters replaced with spaces
         // and the content without the newline characters
