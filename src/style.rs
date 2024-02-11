@@ -210,6 +210,15 @@ pub struct StyleClassRef {
     pub key: StyleKey,
 }
 
+macro_rules! style_key_selector {
+    ($v:vis $name:ident, $sel:expr) => {
+        fn $name() -> $crate::style::StyleKey {
+            static INFO: $crate::style::StyleKeyInfo = $crate::style::StyleKeyInfo::Selector($sel);
+            $crate::style::StyleKey { info: &INFO }
+        }
+    };
+}
+
 #[macro_export]
 macro_rules! style_class {
     ($v:vis $name:ident) => {
@@ -614,6 +623,7 @@ impl Transition {
 pub enum StyleKeyInfo {
     Transition,
     Prop(StylePropInfo),
+    Selector(StyleSelectors),
     Class(StyleClassInfo),
 }
 
@@ -624,14 +634,14 @@ pub struct StyleKey {
 impl StyleKey {
     pub(crate) fn debug_any(&self, value: &dyn Any) -> String {
         match self.info {
-            StyleKeyInfo::Transition => String::new(),
+            StyleKeyInfo::Selector(..) | StyleKeyInfo::Transition => String::new(),
             StyleKeyInfo::Class(..) => String::new(),
             StyleKeyInfo::Prop(v) => (v.debug_any)(value),
         }
     }
     fn inherited(&self) -> bool {
         match self.info {
-            StyleKeyInfo::Transition => false,
+            StyleKeyInfo::Selector(..) | StyleKeyInfo::Transition => false,
             StyleKeyInfo::Class(..) => true,
             StyleKeyInfo::Prop(v) => v.inherited,
         }
@@ -651,6 +661,7 @@ impl Eq for StyleKey {}
 impl Debug for StyleKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.info {
+            StyleKeyInfo::Selector(..) => write!(f, "selector"),
             StyleKeyInfo::Transition => write!(f, "transition"),
             StyleKeyInfo::Class(v) => write!(f, "{}", (v.name)()),
             StyleKeyInfo::Prop(v) => write!(f, "{}", (v.name)()),
@@ -660,11 +671,28 @@ impl Debug for StyleKey {
 
 type ImHashMap<K, V> = im_rc::HashMap<K, V, BuildHasherDefault<FxHasher>>;
 
+style_key_selector!(selector_xs, StyleSelectors::new().responsive());
+style_key_selector!(selector_sm, StyleSelectors::new().responsive());
+style_key_selector!(selector_md, StyleSelectors::new().responsive());
+style_key_selector!(selector_lg, StyleSelectors::new().responsive());
+style_key_selector!(selector_xl, StyleSelectors::new().responsive());
+style_key_selector!(selector_xxl, StyleSelectors::new().responsive());
+
+fn screen_size_bp_to_key(breakpoint: ScreenSizeBp) -> StyleKey {
+    match breakpoint {
+        ScreenSizeBp::Xs => selector_xs(),
+        ScreenSizeBp::Sm => selector_sm(),
+        ScreenSizeBp::Md => selector_md(),
+        ScreenSizeBp::Lg => selector_lg(),
+        ScreenSizeBp::Xl => selector_xl(),
+        ScreenSizeBp::Xxl => selector_xxl(),
+    }
+}
+
 #[derive(Default, Clone)]
 pub struct Style {
     pub(crate) map: ImHashMap<StyleKey, Rc<dyn Any>>,
     pub(crate) selectors: ImHashMap<StyleSelector, Style>,
-    pub(crate) responsive: ImHashMap<ScreenSizeBp, Style>,
 }
 
 impl Style {
@@ -710,7 +738,14 @@ impl Style {
             .fold(StyleSelectors::default(), |s, (selector, map)| {
                 s.union(map.selectors()).set(*selector, true)
             });
-        result.responsive |= !self.responsive.is_empty();
+
+        for (k, v) in &self.map {
+            if let StyleKeyInfo::Selector(selector) = k.info {
+                result = result
+                    .union(*selector)
+                    .union(v.downcast_ref::<Style>().unwrap().selectors());
+            }
+        }
         result
     }
 
@@ -720,8 +755,8 @@ impl Style {
         context: &Style,
     ) -> Style {
         for class in classes {
-            if let Some(map) = context.map.get(&class.key) {
-                self.apply_mut(map.downcast_ref::<Style>().unwrap().clone());
+            if let Some(map) = context.get_nested_map(class.key) {
+                self.apply_mut(map);
             }
         }
         self
@@ -743,12 +778,18 @@ impl Style {
         self
     }
 
+    fn get_nested_map(&self, key: StyleKey) -> Option<Style> {
+        self.map
+            .get(&key)
+            .map(|map| map.downcast_ref::<Style>().unwrap().clone())
+    }
+
     pub(crate) fn apply_interact_state(
         &mut self,
         interact_state: &InteractionState,
         screen_size_bp: ScreenSizeBp,
     ) {
-        if let Some(mut map) = self.responsive.remove(&screen_size_bp) {
+        if let Some(mut map) = self.get_nested_map(screen_size_bp_to_key(screen_size_bp)) {
             map.apply_interact_state(interact_state, screen_size_bp);
             self.apply_mut(map);
         }
@@ -823,17 +864,8 @@ impl Style {
         }
     }
 
-    fn set_breakpoint(&mut self, breakpoint: ScreenSizeBp, map: Style) {
-        match self.responsive.entry(breakpoint) {
-            Entry::Occupied(mut e) => e.get_mut().apply_mut(map),
-            Entry::Vacant(e) => {
-                e.insert(map);
-            }
-        }
-    }
-
-    fn set_class(&mut self, class: StyleClassRef, map: Style) {
-        match self.map.entry(class.key) {
+    fn set_map_selector(&mut self, key: StyleKey, map: Style) {
+        match self.map.entry(key) {
             Entry::Occupied(mut e) => {
                 let mut current = e.get_mut().downcast_ref::<Style>().unwrap().clone();
                 current.apply_mut(map);
@@ -845,6 +877,14 @@ impl Style {
         }
     }
 
+    fn set_breakpoint(&mut self, breakpoint: ScreenSizeBp, map: Style) {
+        self.set_map_selector(screen_size_bp_to_key(breakpoint), map)
+    }
+
+    fn set_class(&mut self, class: StyleClassRef, map: Style) {
+        self.set_map_selector(class.key, map)
+    }
+
     pub(crate) fn builtin(&self) -> BuiltinStyle<'_> {
         BuiltinStyle { style: self }
     }
@@ -852,7 +892,7 @@ impl Style {
     fn apply_iter(&mut self, iter: impl Iterator<Item = (StyleKey, Rc<dyn Any>)>) {
         for (k, v) in iter {
             match k.info {
-                StyleKeyInfo::Class(..) => match self.map.entry(k) {
+                StyleKeyInfo::Class(..) | StyleKeyInfo::Selector(..) => match self.map.entry(k) {
                     Entry::Occupied(mut e) => {
                         // We need to merge the new map with the existing map.
 
@@ -888,9 +928,6 @@ impl Style {
         for (selector, map) in over.selectors {
             self.set_selector(selector, map);
         }
-        for (breakpoint, map) in over.responsive {
-            self.set_breakpoint(breakpoint, map);
-        }
     }
 
     /// Apply another `Style` to this style, returning a new `Style` with the overrides
@@ -923,7 +960,6 @@ impl Debug for Style {
                     .collect::<HashMap<StyleKey, String>>(),
             )
             .field("selectors", &self.selectors)
-            .field("responsive", &self.responsive)
             .finish()
     }
 }
@@ -940,12 +976,18 @@ pub enum StyleSelector {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default)]
-pub(crate) struct StyleSelectors {
+pub struct StyleSelectors {
     selectors: u8,
     responsive: bool,
 }
 
 impl StyleSelectors {
+    pub(crate) const fn new() -> Self {
+        StyleSelectors {
+            selectors: 0,
+            responsive: false,
+        }
+    }
     pub(crate) fn set(mut self, selector: StyleSelector, value: bool) -> Self {
         let v = (selector as isize).try_into().unwrap();
         let bit = 1_u8.checked_shl(v).unwrap();
@@ -962,6 +1004,10 @@ impl StyleSelectors {
             selectors: self.selectors | other.selectors,
             responsive: self.responsive | other.responsive,
         }
+    }
+    pub(crate) const fn responsive(mut self) -> Self {
+        self.responsive = true;
+        self
     }
     pub(crate) fn has_responsive(self) -> bool {
         self.responsive
