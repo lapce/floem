@@ -3,7 +3,7 @@ use crate::context::{AppState, StyleCx};
 use crate::event::{Event, EventListener};
 use crate::id::Id;
 use crate::profiler::profiler;
-use crate::style::Style;
+use crate::style::{Style, StylePropRef, Transition};
 use crate::view::{view_children, AnyView, View, Widget};
 use crate::view_data::ChangeFlags;
 use crate::views::{
@@ -536,7 +536,11 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> AnyVi
                     .map
                     .clone()
                     .into_iter()
-                    .map(|(p, v)| ((p, format!("{p:?}")), v))
+                    .filter_map(|(p, v)| match p.info {
+                        style::StyleKeyInfo::Prop(..) => Some((StylePropRef { key: p }, v)),
+                        _ => None,
+                    })
+                    .map(|(p, v)| ((p, format!("{:?}", p.key)), v))
                     .collect::<Vec<_>>();
 
                 style_list.sort_unstable_by(|a, b| a.0 .1.cmp(&b.0 .1));
@@ -544,7 +548,7 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> AnyVi
                 let style_list =
                     v_stack_from_iter(style_list.into_iter().map(|((prop, name), value)| {
                         let name = name.strip_prefix("floem::style::").unwrap_or(&name);
-                        let name = if direct.contains(&prop) {
+                        let name = if direct.contains(&prop.key) {
                             text(name).any()
                         } else {
                             stack((
@@ -562,10 +566,14 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> AnyVi
                             ))
                             .any()
                         };
-                        let mut v = prop
-                            .debug_view(&*value)
-                            .unwrap_or_else(|| static_label(prop.debug_any(&*value)).any());
-                        if let Some(transition) = style.transitions.get(&prop).cloned() {
+                        let mut v = (prop.info().debug_view)(&*value).unwrap_or_else(|| {
+                            static_label((prop.info().debug_any)(&*value)).any()
+                        });
+                        if let Some(transition) = style
+                            .map
+                            .get(&prop.info().transition_key)
+                            .map(|v| v.downcast_ref::<Transition>().unwrap().clone())
+                        {
                             let transition = stack((
                                 text("Transition").style(|s| {
                                     s.margin_top(5.0)
