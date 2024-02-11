@@ -186,7 +186,10 @@ impl StylePropValue for Color {
 }
 
 pub trait StyleClass: Default + Copy + 'static {
-    fn class_ref() -> StyleClassRef;
+    fn key() -> StyleKey;
+    fn class_ref() -> StyleClassRef {
+        StyleClassRef { key: Self::key() }
+    }
 }
 
 #[derive(Debug)]
@@ -204,23 +207,7 @@ impl StyleClassInfo {
 
 #[derive(Copy, Clone)]
 pub struct StyleClassRef {
-    pub info: &'static StyleClassInfo,
-}
-impl PartialEq for StyleClassRef {
-    fn eq(&self, other: &Self) -> bool {
-        ptr::eq(self.info, other.info)
-    }
-}
-impl Hash for StyleClassRef {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_usize(self.info as *const _ as usize)
-    }
-}
-impl Eq for StyleClassRef {}
-impl Debug for StyleClassRef {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", (self.info.name)())
-    }
+    pub key: StyleKey,
 }
 
 #[macro_export]
@@ -229,9 +216,11 @@ macro_rules! style_class {
         #[derive(Default, Copy, Clone)]
         $v struct $name;
         impl $crate::style::StyleClass for $name {
-            fn class_ref() -> $crate::style::StyleClassRef {
-                static INFO: $crate::style::StyleClassInfo = $crate::style::StyleClassInfo::new::<$name>();
-                $crate::style::StyleClassRef { info: &INFO }
+            fn key() -> $crate::style::StyleKey {
+                static INFO: $crate::style::StyleKeyInfo = $crate::style::StyleKeyInfo::Class(
+                    $crate::style::StyleClassInfo::new::<$name>()
+                );
+                $crate::style::StyleKey { info: &INFO }
             }
         }
     };
@@ -239,7 +228,10 @@ macro_rules! style_class {
 
 pub trait StyleProp: Default + Copy + 'static {
     type Type: StylePropValue;
-    fn prop_ref() -> StylePropRef;
+    fn key() -> StyleKey;
+    fn prop_ref() -> StylePropRef {
+        StylePropRef { key: Self::key() }
+    }
     fn default_value() -> Self::Type;
 }
 
@@ -294,24 +286,18 @@ impl StylePropInfo {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct StylePropRef {
-    pub info: &'static StylePropInfo,
+    pub key: StyleKey,
 }
-impl PartialEq for StylePropRef {
-    fn eq(&self, other: &Self) -> bool {
-        ptr::eq(self.info, other.info)
-    }
-}
-impl Hash for StylePropRef {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_usize(self.info as *const _ as usize)
-    }
-}
-impl Eq for StylePropRef {}
-impl Debug for StylePropRef {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", (self.info.name)())
+
+impl StylePropRef {
+    pub(crate) fn info(&self) -> &StylePropInfo {
+        if let StyleKeyInfo::Prop(prop) = self.key.info {
+            prop
+        } else {
+            panic!()
+        }
     }
 }
 
@@ -428,12 +414,12 @@ macro_rules! prop {
         $v struct $name;
         impl $crate::style::StyleProp for $name {
             type Type = $ty;
-            fn prop_ref() -> $crate::style::StylePropRef {
-                static INFO: $crate::style::StylePropInfo = $crate::style::StylePropInfo::new::<$name, $ty>(
+            fn key() -> $crate::style::StyleKey {
+                static INFO: $crate::style::StyleKeyInfo = $crate::style::StyleKeyInfo::Prop($crate::style::StylePropInfo::new::<$name, $ty>(
                     prop!([impl inherited][$($options)*]),
                     || std::rc::Rc::new($crate::style::StyleMapValue::Val($name::default_value())),
-                );
-                $crate::style::StylePropRef { info: &INFO }
+                ));
+                $crate::style::StyleKey { info: &INFO }
             }
             fn default_value() -> Self::Type {
                 $default
@@ -619,15 +605,64 @@ impl Transition {
     }
 }
 
+#[derive(Debug)]
+pub enum StyleKeyInfo {
+    Class(StyleClassInfo),
+    Prop(StylePropInfo),
+}
+
+#[derive(Copy, Clone)]
+pub struct StyleKey {
+    pub info: &'static StyleKeyInfo,
+}
+impl StyleKey {
+    pub(crate) fn debug_any(&self, value: &dyn Any) -> String {
+        match self.info {
+            StyleKeyInfo::Class(..) => String::new(),
+            StyleKeyInfo::Prop(v) => (v.debug_any)(value),
+        }
+    }
+    pub(crate) fn debug_view(&self, value: &dyn Any) -> Option<AnyView> {
+        match self.info {
+            StyleKeyInfo::Class(..) => None,
+            StyleKeyInfo::Prop(v) => (v.debug_view)(value),
+        }
+    }
+    fn inherited(&self) -> bool {
+        match self.info {
+            StyleKeyInfo::Class(..) => true,
+            StyleKeyInfo::Prop(v) => v.inherited,
+        }
+    }
+}
+impl PartialEq for StyleKey {
+    fn eq(&self, other: &Self) -> bool {
+        ptr::eq(self.info, other.info)
+    }
+}
+impl Hash for StyleKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_usize(self.info as *const _ as usize)
+    }
+}
+impl Eq for StyleKey {}
+impl Debug for StyleKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.info {
+            StyleKeyInfo::Class(v) => write!(f, "{}", (v.name)()),
+            StyleKeyInfo::Prop(v) => write!(f, "{}", (v.name)()),
+        }
+    }
+}
+
 type ImHashMap<K, V> = im_rc::HashMap<K, V, BuildHasherDefault<FxHasher>>;
 
 #[derive(Default, Clone)]
 pub struct Style {
-    pub(crate) map: ImHashMap<StylePropRef, Rc<dyn Any>>,
+    pub(crate) map: ImHashMap<StyleKey, Rc<dyn Any>>,
     pub(crate) selectors: ImHashMap<StyleSelector, Style>,
     pub(crate) responsive: ImHashMap<ScreenSizeBp, Style>,
-    pub(crate) classes: ImHashMap<StyleClassRef, Style>,
-    pub(crate) transitions: ImHashMap<StylePropRef, Transition>,
+    pub(crate) transitions: ImHashMap<StyleKey, Transition>,
 }
 
 impl Style {
@@ -636,7 +671,7 @@ impl Style {
     }
 
     pub(crate) fn get_transition<P: StyleProp>(&self) -> Option<Transition> {
-        self.transitions.get(&P::prop_ref()).cloned()
+        self.transitions.get(&P::key()).cloned()
     }
 
     pub(crate) fn get_prop_or_default<P: StyleProp>(&self) -> P::Type {
@@ -644,7 +679,7 @@ impl Style {
     }
 
     pub(crate) fn get_prop<P: StyleProp>(&self) -> Option<P::Type> {
-        self.map.get(&P::prop_ref()).and_then(|v| {
+        self.map.get(&P::key()).and_then(|v| {
             v.downcast_ref::<StyleMapValue<P::Type>>()
                 .unwrap()
                 .as_ref()
@@ -654,7 +689,7 @@ impl Style {
 
     pub(crate) fn get_prop_style_value<P: StyleProp>(&self) -> StyleValue<P::Type> {
         self.map
-            .get(&P::prop_ref())
+            .get(&P::key())
             .map(
                 |v| match v.downcast_ref::<StyleMapValue<P::Type>>().unwrap() {
                     StyleMapValue::Val(v) => StyleValue::Val(v.clone()),
@@ -681,16 +716,16 @@ impl Style {
         context: &Style,
     ) -> Style {
         for class in classes {
-            if let Some(map) = context.classes.get(class) {
-                self.apply_mut(map.clone());
+            if let Some(map) = context.map.get(&class.key) {
+                self.apply_mut(map.downcast_ref::<Style>().unwrap().clone());
             }
         }
         self
     }
 
     pub fn apply_class<C: StyleClass>(mut self, _class: C) -> Style {
-        if let Some(map) = self.classes.get(&C::class_ref()) {
-            self.apply_mut(map.clone());
+        if let Some(map) = self.map.get(&C::key()) {
+            self.apply_mut(map.downcast_ref::<Style>().unwrap().clone());
         }
         self
     }
@@ -759,7 +794,7 @@ impl Style {
     }
 
     pub(crate) fn any_inherited(&self) -> bool {
-        !self.classes.is_empty() || self.map.iter().any(|(p, _)| p.info.inherited)
+        self.map.iter().any(|(p, _)| p.inherited())
     }
 
     pub(crate) fn apply_only_inherited(this: &mut Rc<Style>, over: &Style) {
@@ -767,14 +802,11 @@ impl Style {
             let inherited = over
                 .map
                 .iter()
-                .filter(|(p, _)| p.info.inherited)
+                .filter(|(p, _)| p.inherited())
                 .map(|(p, v)| (*p, v.clone()));
 
             let this = Rc::make_mut(this);
-            this.map.extend(inherited);
-            for (class, map) in &over.classes {
-                this.set_class(*class, map.clone());
-            }
+            this.apply_iter(inherited);
         }
     }
 
@@ -797,10 +829,14 @@ impl Style {
     }
 
     fn set_class(&mut self, class: StyleClassRef, map: Style) {
-        match self.classes.entry(class) {
-            Entry::Occupied(mut e) => e.get_mut().apply_mut(map),
+        match self.map.entry(class.key) {
+            Entry::Occupied(mut e) => {
+                let mut current = e.get_mut().downcast_ref::<Style>().unwrap().clone();
+                current.apply_mut(map);
+                *e.get_mut() = Rc::new(current);
+            }
             Entry::Vacant(e) => {
-                e.insert(map);
+                e.insert(Rc::new(map));
             }
         }
     }
@@ -809,17 +845,48 @@ impl Style {
         BuiltinStyle { style: self }
     }
 
+    fn apply_iter(&mut self, iter: impl Iterator<Item = (StyleKey, Rc<dyn Any>)>) {
+        for (k, v) in iter {
+            match k.info {
+                StyleKeyInfo::Class(..) => match self.map.entry(k) {
+                    Entry::Occupied(mut e) => {
+                        // We need to merge the new map with the existing map.
+
+                        let v = v.downcast_ref::<Style>().unwrap();
+                        match Rc::get_mut(e.get_mut()) {
+                            Some(current) => {
+                                current
+                                    .downcast_mut::<Style>()
+                                    .unwrap()
+                                    .apply_mut(v.clone());
+                            }
+                            None => {
+                                let mut current =
+                                    e.get_mut().downcast_ref::<Style>().unwrap().clone();
+                                current.apply_mut(v.clone());
+                                *e.get_mut() = Rc::new(current);
+                            }
+                        }
+                    }
+                    Entry::Vacant(e) => {
+                        e.insert(v);
+                    }
+                },
+                StyleKeyInfo::Prop(..) => {
+                    self.map.insert(k, v);
+                }
+            }
+        }
+    }
+
     pub(crate) fn apply_mut(&mut self, over: Style) {
-        self.map.extend(over.map);
+        self.apply_iter(over.map.into_iter());
         self.transitions.extend(over.transitions);
         for (selector, map) in over.selectors {
             self.set_selector(selector, map);
         }
         for (breakpoint, map) in over.responsive {
             self.set_breakpoint(breakpoint, map);
-        }
-        for (class, map) in over.classes {
-            self.set_class(class, map);
         }
     }
 
@@ -849,11 +916,10 @@ impl Debug for Style {
                 &self
                     .map
                     .iter()
-                    .map(|(p, v)| (*p, (p.info.debug_any)(&**v)))
-                    .collect::<HashMap<StylePropRef, String>>(),
+                    .map(|(p, v)| (*p, (p.debug_any(&**v))))
+                    .collect::<HashMap<StyleKey, String>>(),
             )
             .field("selectors", &self.selectors)
-            .field("classes", &self.classes)
             .field("responsive", &self.responsive)
             .field("transitions", &self.transitions)
             .finish()
@@ -1142,16 +1208,16 @@ impl Style {
             StyleValue::Val(value) => StyleMapValue::Val(value),
             StyleValue::Unset => StyleMapValue::Unset,
             StyleValue::Base => {
-                self.map.remove(&P::prop_ref());
+                self.map.remove(&P::key());
                 return self;
             }
         };
-        self.map.insert(P::prop_ref(), Rc::new(insert));
+        self.map.insert(P::key(), Rc::new(insert));
         self
     }
 
     pub fn transition<P: StyleProp>(mut self, _prop: P, transition: Transition) -> Self {
-        self.transitions.insert(P::prop_ref(), transition);
+        self.transitions.insert(P::key(), transition);
         self
     }
 

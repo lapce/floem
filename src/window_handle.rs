@@ -1054,9 +1054,9 @@ impl WindowHandle {
                 let from = view_state
                     .combined_style
                     .map
-                    .get(&prop)
+                    .get(&prop.key)
                     .cloned()
-                    .unwrap_or_else(|| (prop.info.default_as_any)());
+                    .unwrap_or_else(|| (prop.info().default_as_any)());
                 AnimatedProp::Prop {
                     prop,
                     from,
