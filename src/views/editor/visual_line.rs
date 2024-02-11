@@ -176,13 +176,6 @@ impl TextLayoutCache {
         self.get(font_size, line)
             .and_then(|l| l.layout_cols(text_prov, line).nth(line_index))
     }
-
-    /// Check whether the config id has changed, clearing the cache if it has.
-    pub fn check_attributes(&mut self, config_id: u64) {
-        if self.config_id != config_id {
-            self.clear(self.cache_rev + 1, Some(config_id));
-        }
-    }
 }
 
 // TODO(minor): Should we rename this? It does more than just providing the text layout. It provides the text, text layouts, phantom text, and whether it has multiline phantom text. It is more of an outside state.
@@ -426,12 +419,13 @@ impl Lines {
     /// cache.
     pub fn get_init_text_layout(
         &self,
+        cache_rev: u64,
         config_id: u64,
         text_prov: impl TextLayoutProvider,
         line: usize,
         trigger: bool,
     ) -> Arc<TextLayoutLine> {
-        self.check_config_id(config_id);
+        self.check_cache(cache_rev, config_id);
 
         let font_size = self.font_size(line);
         get_init_text_layout(
@@ -449,8 +443,13 @@ impl Lines {
     ///   
     /// This will check the `config_id`, which decides whether it should clear out the text layout
     /// cache.
-    pub fn try_get_text_layout(&self, config_id: u64, line: usize) -> Option<Arc<TextLayoutLine>> {
-        self.check_config_id(config_id);
+    pub fn try_get_text_layout(
+        &self,
+        cache_rev: u64,
+        config_id: u64,
+        line: usize,
+    ) -> Option<Arc<TextLayoutLine>> {
+        self.check_cache(cache_rev, config_id);
 
         let font_size = self.font_size(line);
 
@@ -468,13 +467,14 @@ impl Lines {
     /// the [`LayoutEvent::CreatedLayout`] event.
     pub fn init_line_interval(
         &self,
+        cache_rev: u64,
         config_id: u64,
         text_prov: &impl TextLayoutProvider,
         lines: impl Iterator<Item = usize>,
         trigger: bool,
     ) {
         for line in lines {
-            self.get_init_text_layout(config_id, text_prov, line, trigger);
+            self.get_init_text_layout(cache_rev, config_id, text_prov, line, trigger);
         }
     }
 
@@ -483,10 +483,16 @@ impl Lines {
     ///   
     /// `trigger` (default to true) decides whether the creation of the text layout should trigger
     /// the [`LayoutEvent::CreatedLayout`] event.
-    pub fn init_all(&self, config_id: u64, text_prov: &impl TextLayoutProvider, trigger: bool) {
+    pub fn init_all(
+        &self,
+        cache_rev: u64,
+        config_id: u64,
+        text_prov: &impl TextLayoutProvider,
+        trigger: bool,
+    ) {
         let text = text_prov.text();
         let last_line = text.line_of_offset(text.len());
-        self.init_line_interval(config_id, text_prov, 0..=last_line, trigger);
+        self.init_line_interval(cache_rev, config_id, text_prov, 0..=last_line, trigger);
     }
 
     /// Iterator over [`VLineInfo`]s, starting at `start_line`.  
@@ -545,16 +551,17 @@ impl Lines {
     pub fn iter_vlines_init(
         &self,
         text_prov: impl TextLayoutProvider + Clone,
+        cache_rev: u64,
         config_id: u64,
         start: VLine,
         trigger: bool,
     ) -> impl Iterator<Item = VLineInfo> {
-        self.check_config_id(config_id);
+        self.check_cache(cache_rev, config_id);
 
         if start <= self.last_vline(&text_prov) {
             // We initialize the text layout for the line that start line is for
             let (_, rvline) = find_vline_init_info(self, &text_prov, start).unwrap();
-            self.get_init_text_layout(config_id, &text_prov, rvline.line, trigger);
+            self.get_init_text_layout(cache_rev, config_id, &text_prov, rvline.line, trigger);
             // If the start line was past the last vline then we don't need to initialize anything
             // since it won't get anything.
         }
@@ -600,12 +607,13 @@ impl Lines {
     pub fn iter_vlines_init_over(
         &self,
         text_prov: impl TextLayoutProvider + Clone,
+        cache_rev: u64,
         config_id: u64,
         start: VLine,
         end: VLine,
         trigger: bool,
     ) -> impl Iterator<Item = VLineInfo> {
-        self.iter_vlines_init(text_prov, config_id, start, trigger)
+        self.iter_vlines_init(text_prov, cache_rev, config_id, start, trigger)
             .take_while(move |info| info.vline < end)
     }
 
@@ -618,15 +626,16 @@ impl Lines {
     pub fn iter_rvlines_init(
         &self,
         text_prov: impl TextLayoutProvider + Clone,
+        cache_rev: u64,
         config_id: u64,
         start: RVLine,
         trigger: bool,
     ) -> impl Iterator<Item = VLineInfo<()>> {
-        self.check_config_id(config_id);
+        self.check_cache(cache_rev, config_id);
 
         if start.line <= text_prov.rope_text().last_line() {
             // Initialize the text layout for the line that start line is for
-            self.get_init_text_layout(config_id, &text_prov, start.line, trigger);
+            self.get_init_text_layout(cache_rev, config_id, &text_prov, start.line, trigger);
         }
 
         let text_layouts = self.text_layouts.clone();
@@ -845,11 +854,14 @@ impl Lines {
             .unwrap_or_else(|| self.last_rvline(text_prov))
     }
 
-    /// Check whether the config id has changed, clearing the cache if it has.
-    pub fn check_config_id(&self, config_id: u64) {
-        // Check if the text layout needs to update due to the config being changed
-        if config_id != self.text_layouts.borrow().config_id {
-            let cache_rev = self.text_layouts.borrow().cache_rev + 1;
+    /// Check whether the cache rev or config id has changed, clearing the cache if it has.
+    pub fn check_cache(&self, cache_rev: u64, config_id: u64) {
+        let (prev_cache_rev, prev_config_id) = {
+            let l = self.text_layouts.borrow();
+            (l.cache_rev, l.config_id)
+        };
+
+        if cache_rev != prev_cache_rev || config_id != prev_config_id {
             self.clear(cache_rev, Some(config_id));
         }
     }
@@ -2166,7 +2178,7 @@ mod tests {
 
         if init {
             let config_id = 0;
-            lines.init_all(config_id, &text, true);
+            lines.init_all(0, config_id, &text, true);
         }
 
         (text, lines)
@@ -2298,7 +2310,7 @@ mod tests {
         assert_eq!(fbvline_info(&lines, &text_prov, VLine(1)), None);
 
         // Test empty buffer with phantom text and wrapping
-        lines.init_all(0, &text_prov, true);
+        lines.init_all(0, 0, &text_prov, true);
 
         assert_eq!(
             ffvline_info(&lines, &text_prov, VLine(0)),
@@ -2357,7 +2369,7 @@ mod tests {
             ["hello", "world toast and jam", "the end", "hi"]
         );
 
-        lines.init_all(0, &text_prov, true);
+        lines.init_all(0, 0, &text_prov, true);
 
         // Assert that even with text layouts, if it has no wrapping applied (because the width is large in this case) and no phantom text then it produces the same offsets as before.
         for line in 0..rope_text.num_lines() {
@@ -2405,7 +2417,7 @@ mod tests {
             assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
         }
 
-        lines.init_all(0, &text_prov, true);
+        lines.init_all(0, 0, &text_prov, true);
 
         // With text layouts, the phantom text is applied.
         // But with a single line of phantom text, it doesn't affect the offsets.
@@ -2441,7 +2453,7 @@ mod tests {
             assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
         }
 
-        lines.init_all(0, &text_prov, true);
+        lines.init_all(0, 0, &text_prov, true);
 
         assert_eq!(
             render_breaks(&text, &mut lines, FONT_SIZE),
@@ -2524,7 +2536,7 @@ mod tests {
             assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
         }
 
-        lines.init_all(0, &text_prov, true);
+        lines.init_all(0, 0, &text_prov, true);
 
         assert_eq!(
             render_breaks(&text, &mut lines, FONT_SIZE),
@@ -2591,7 +2603,7 @@ mod tests {
             ["hello", "world toast and jam", "the end", "hi"]
         );
 
-        lines.init_all(0, &text_prov, true);
+        lines.init_all(0, 0, &text_prov, true);
 
         {
             let layouts = lines.text_layouts.borrow();
@@ -2772,7 +2784,7 @@ mod tests {
             ["hello", "world toast and jam", "the end", "hi"]
         );
 
-        lines.init_all(0, &text_prov, true);
+        lines.init_all(0, 0, &text_prov, true);
 
         {
             let layouts = lines.text_layouts.borrow();
@@ -3147,7 +3159,7 @@ mod tests {
             .collect();
         assert_eq!(r, vec!["bb ", "bb "]);
 
-        let v = lines.get_init_text_layout(0, &text_prov, 2, true);
+        let v = lines.get_init_text_layout(0, 0, &text_prov, 2, true);
         let v = v.layout_cols(&text_prov, 2).collect::<Vec<_>>();
         assert_eq!(v, [(0, 3), (3, 8), (8, 13), (13, 15)]);
         let r: Vec<_> = lines
@@ -3250,21 +3262,21 @@ mod tests {
         let text: Rope = "aaaa\nbb bb cc\ncc dddd eeee ff\nff gggg".into();
         let (text_prov, lines) = make_lines(&text, 2., false);
         let r: Vec<_> = lines
-            .iter_vlines_init(&text_prov, 0, VLine(0), true)
+            .iter_vlines_init(&text_prov, 0, 0, VLine(0), true)
             .take(2)
             .map(|l| text.slice_to_cow(l.interval))
             .collect();
         assert_eq!(r, vec!["aaaa", "bb "]);
 
         let r: Vec<_> = lines
-            .iter_vlines_init(&text_prov, 0, VLine(1), true)
+            .iter_vlines_init(&text_prov, 0, 0, VLine(1), true)
             .take(2)
             .map(|l| text.slice_to_cow(l.interval))
             .collect();
         assert_eq!(r, vec!["bb ", "bb "]);
 
         let r: Vec<_> = lines
-            .iter_vlines_init(&text_prov, 0, VLine(3), true)
+            .iter_vlines_init(&text_prov, 0, 0, VLine(3), true)
             .take(3)
             .map(|l| text.slice_to_cow(l.interval))
             .collect();
@@ -3274,17 +3286,17 @@ mod tests {
         let text: Rope = "".into();
         let (text_prov, lines) = make_lines(&text, 2., false);
         let r: Vec<_> = lines
-            .iter_vlines_init(&text_prov, 0, VLine(0), true)
+            .iter_vlines_init(&text_prov, 0, 0, VLine(0), true)
             .map(|l| text.slice_to_cow(l.interval))
             .collect();
         assert_eq!(r, vec![""]);
         let r: Vec<_> = lines
-            .iter_vlines_init(&text_prov, 0, VLine(1), true)
+            .iter_vlines_init(&text_prov, 0, 0, VLine(1), true)
             .map(|l| text.slice_to_cow(l.interval))
             .collect();
         assert_eq!(r, Vec::<&str>::new());
         let r: Vec<_> = lines
-            .iter_vlines_init(&text_prov, 0, VLine(2), true)
+            .iter_vlines_init(&text_prov, 0, 0, VLine(2), true)
             .map(|l| text.slice_to_cow(l.interval))
             .collect();
         assert_eq!(r, Vec::<&str>::new());
