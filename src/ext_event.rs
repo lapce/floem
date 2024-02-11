@@ -10,7 +10,7 @@ use crate::{
     Application,
 };
 
-pub static EXT_EVENT_HANDLER: Lazy<ExtEventHandler> = Lazy::new(ExtEventHandler::default);
+pub(crate) static EXT_EVENT_HANDLER: Lazy<ExtEventHandler> = Lazy::new(ExtEventHandler::default);
 
 #[derive(Clone)]
 pub struct ExtEventHandler {
@@ -32,6 +32,10 @@ impl ExtEventHandler {
             let _ = proxy.send_event(UserEvent::Idle);
         });
     }
+}
+
+pub fn add_ext_trigger(trigger: Trigger) {
+    EXT_EVENT_HANDLER.add_trigger(trigger);
 }
 
 pub fn create_ext_action<T: Send + 'static>(
