@@ -123,6 +123,11 @@ impl<T> RwSignal<T> {
         }
     }
 }
+impl<T: 'static> RwSignal<T> {
+    pub fn new(value: T) -> Self {
+        create_rw_signal(value)
+    }
+}
 
 impl<T: Clone> RwSignal<T> {
     /// Clones and returns the current value stored in the Signal, and subcribes
