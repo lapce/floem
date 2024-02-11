@@ -21,6 +21,9 @@ impl Trigger {
     pub fn track(&self) {
         self.signal.with(|_| {});
     }
+    pub fn new() -> Self {
+        create_trigger()
+    }
 }
 
 pub fn create_trigger() -> Trigger {
