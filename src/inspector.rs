@@ -3,7 +3,7 @@ use crate::context::{AppState, StyleCx};
 use crate::event::{Event, EventListener};
 use crate::id::Id;
 use crate::profiler::profiler;
-use crate::style::{Style, StyleMapValue};
+use crate::style::Style;
 use crate::view::{view_children, AnyView, View, Widget};
 use crate::view_data::ChangeFlags;
 use crate::views::{
@@ -562,14 +562,8 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> AnyVi
                             ))
                             .any()
                         };
-                        let mut v = match value {
-                            StyleMapValue::Val(v) => {
-                                let v = &*v;
-                                (prop.info.debug_view)(v)
-                                    .unwrap_or_else(|| static_label((prop.info.debug_any)(v)).any())
-                            }
-                            StyleMapValue::Unset => text("Unset").any(),
-                        };
+                        let mut v = (prop.info.debug_view)(&*value)
+                            .unwrap_or_else(|| static_label((prop.info.debug_any)(&*value)).any());
                         if let Some(transition) = style.transitions.get(&prop).cloned() {
                             let transition = stack((
                                 text("Transition").style(|s| {

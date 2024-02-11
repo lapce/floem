@@ -2,6 +2,8 @@ use std::{any::Any, rc::Rc};
 
 use floem_peniko::Color;
 
+use crate::style::StyleMapValue;
+
 #[derive(Debug, Clone)]
 pub enum AnimValue {
     Float(f64),
@@ -18,7 +20,11 @@ impl AnimValue {
         match self {
             AnimValue::Float(v) => v,
             AnimValue::Color(_) => panic!(),
-            AnimValue::Prop(prop) => *prop.downcast_ref::<f64>().unwrap(),
+            AnimValue::Prop(prop) => *prop
+                .downcast_ref::<StyleMapValue<f64>>()
+                .unwrap()
+                .as_ref()
+                .unwrap(),
         }
     }
 
@@ -26,7 +32,11 @@ impl AnimValue {
         match self {
             AnimValue::Color(c) => c,
             AnimValue::Float(_) => panic!(),
-            AnimValue::Prop(prop) => *prop.downcast_ref::<Color>().unwrap(),
+            AnimValue::Prop(prop) => *prop
+                .downcast_ref::<StyleMapValue<Color>>()
+                .unwrap()
+                .as_ref()
+                .unwrap(),
         }
     }
 

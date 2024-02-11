@@ -2,7 +2,11 @@ use std::{any::Any, rc::Rc};
 
 use floem_peniko::Color;
 
-use crate::{animate::AnimDirection, style::StylePropRef, unit::Px};
+use crate::{
+    animate::AnimDirection,
+    style::{StyleMapValue, StylePropRef},
+    unit::Px,
+};
 
 use super::{anim_val::AnimValue, assert_valid_time, SizeUnit};
 
@@ -119,31 +123,39 @@ impl AnimatedProp {
     pub(crate) fn animate(&self, time: f64, direction: AnimDirection) -> AnimValue {
         match self {
             AnimatedProp::Prop { prop, from, to } => {
-                if let Some(from) = from.downcast_ref::<Px>() {
-                    let to = to.downcast_ref::<Px>().unwrap();
-                    return AnimValue::Prop(Rc::new(Px(
+                if let Some(from) = from.downcast_ref::<StyleMapValue<Px>>() {
+                    let from = from.as_ref().unwrap();
+                    let to = to.downcast_ref::<StyleMapValue<Px>>().unwrap();
+                    let to = to.as_ref().unwrap();
+                    return AnimValue::Prop(Rc::new(StyleMapValue::Val(Px(
                         self.animate_float(from.0, to.0, time, direction)
+                    ))));
+                }
+                if let Some(from) = from.downcast_ref::<StyleMapValue<f64>>() {
+                    let from = from.as_ref().unwrap();
+                    let to = to.downcast_ref::<StyleMapValue<f64>>().unwrap();
+                    let to = to.as_ref().unwrap();
+                    return AnimValue::Prop(Rc::new(StyleMapValue::Val(
+                        self.animate_float(*from, *to, time, direction),
                     )));
                 }
-                if let Some(from) = from.downcast_ref::<f64>() {
-                    let to = to.downcast_ref::<f64>().unwrap();
-                    return AnimValue::Prop(Rc::new(
-                        self.animate_float(*from, *to, time, direction),
-                    ));
-                }
-                if let Some(from) = from.downcast_ref::<Color>() {
-                    let to = to.downcast_ref::<Color>().unwrap();
-                    return AnimValue::Prop(Rc::new(
+                if let Some(from) = from.downcast_ref::<StyleMapValue<Color>>() {
+                    let from = from.as_ref().unwrap();
+                    let to = to.downcast_ref::<StyleMapValue<Color>>().unwrap();
+                    let to = to.as_ref().unwrap();
+                    return AnimValue::Prop(Rc::new(StyleMapValue::Val(
                         self.animate_color(*from, *to, time, direction),
-                    ));
+                    )));
                 }
-                if let Some(from) = from.downcast_ref::<Option<Color>>() {
-                    let to = to.downcast_ref::<Option<Color>>().unwrap();
+                if let Some(from) = from.downcast_ref::<StyleMapValue<Option<Color>>>() {
+                    let from = from.as_ref().unwrap();
+                    let to = to.downcast_ref::<StyleMapValue<Option<Color>>>().unwrap();
+                    let to = to.as_ref().unwrap();
                     let from = from.unwrap();
                     let to = to.unwrap();
-                    return AnimValue::Prop(Rc::new(Some(
+                    return AnimValue::Prop(Rc::new(StyleMapValue::Val(Some(
                         self.animate_color(from, to, time, direction),
-                    )));
+                    ))));
                 }
                 panic!("unknown type for {prop:?}")
             }
