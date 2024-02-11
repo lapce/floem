@@ -1,6 +1,9 @@
 use std::{rc::Rc, sync::atomic::AtomicUsize};
 
-use crate::{style::StyleProp, update::ANIM_UPDATE_MESSAGES};
+use crate::{
+    style::{StyleMapValue, StyleProp},
+    update::ANIM_UPDATE_MESSAGES,
+};
 
 use super::{anim_val::AnimValue, AnimPropKind, AnimUpdateMsg};
 
@@ -37,7 +40,7 @@ impl AnimId {
                 kind: AnimPropKind::Prop {
                     prop: P::prop_ref(),
                 },
-                val: AnimValue::Prop(Rc::new(val)),
+                val: AnimValue::Prop(Rc::new(StyleMapValue::Val(val))),
             });
         });
     }

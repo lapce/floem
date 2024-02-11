@@ -262,8 +262,11 @@ impl StylePropInfo {
             inherited,
             default_as_any,
             debug_any: |val| {
-                if let Some(v) = val.downcast_ref::<T>() {
-                    format!("{:?}", v)
+                if let Some(v) = val.downcast_ref::<StyleMapValue<T>>() {
+                    match v {
+                        StyleMapValue::Val(v) => format!("{:?}", v),
+                        StyleMapValue::Unset => "Unset".to_owned(),
+                    }
                 } else {
                     panic!(
                         "expected type {} for property {}",
@@ -273,8 +276,12 @@ impl StylePropInfo {
                 }
             },
             debug_view: |val| {
-                if let Some(v) = val.downcast_ref::<T>() {
-                    v.debug_view()
+                if let Some(v) = val.downcast_ref::<StyleMapValue<T>>() {
+                    match v {
+                        StyleMapValue::Val(v) => v.debug_view(),
+
+                        StyleMapValue::Unset => Some(text("Unset").any()),
+                    }
                 } else {
                     panic!(
                         "expected type {} for property {}",
@@ -424,7 +431,7 @@ macro_rules! prop {
             fn prop_ref() -> $crate::style::StylePropRef {
                 static INFO: $crate::style::StylePropInfo = $crate::style::StylePropInfo::new::<$name, $ty>(
                     prop!([impl inherited][$($options)*]),
-                    || std::rc::Rc::new($name::default_value()),
+                    || std::rc::Rc::new($crate::style::StyleMapValue::Val($name::default_value())),
                 );
                 $crate::style::StylePropRef { info: &INFO }
             }
@@ -616,7 +623,7 @@ type ImHashMap<K, V> = im_rc::HashMap<K, V, BuildHasherDefault<FxHasher>>;
 
 #[derive(Default, Clone)]
 pub struct Style {
-    pub(crate) map: ImHashMap<StylePropRef, StyleMapValue<Rc<dyn Any>>>,
+    pub(crate) map: ImHashMap<StylePropRef, Rc<dyn Any>>,
     pub(crate) selectors: ImHashMap<StyleSelector, Style>,
     pub(crate) responsive: ImHashMap<ScreenSizeBp, Style>,
     pub(crate) classes: ImHashMap<StyleClassRef, Style>,
@@ -637,21 +644,23 @@ impl Style {
     }
 
     pub(crate) fn get_prop<P: StyleProp>(&self) -> Option<P::Type> {
-        self.map
-            .get(&P::prop_ref())
-            .and_then(|v| v.as_ref())
-            .map(|v| v.downcast_ref::<P::Type>().unwrap().clone())
+        self.map.get(&P::prop_ref()).and_then(|v| {
+            v.downcast_ref::<StyleMapValue<P::Type>>()
+                .unwrap()
+                .as_ref()
+                .cloned()
+        })
     }
 
     pub(crate) fn get_prop_style_value<P: StyleProp>(&self) -> StyleValue<P::Type> {
         self.map
             .get(&P::prop_ref())
-            .map(|v| match v {
-                StyleMapValue::Val(v) => {
-                    StyleValue::Val(v.downcast_ref::<P::Type>().unwrap().clone())
-                }
-                StyleMapValue::Unset => StyleValue::Unset,
-            })
+            .map(
+                |v| match v.downcast_ref::<StyleMapValue<P::Type>>().unwrap() {
+                    StyleMapValue::Val(v) => StyleValue::Val(v.clone()),
+                    StyleMapValue::Unset => StyleValue::Unset,
+                },
+            )
             .unwrap_or(StyleValue::Base)
     }
 
@@ -840,15 +849,7 @@ impl Debug for Style {
                 &self
                     .map
                     .iter()
-                    .map(|(p, v)| {
-                        (
-                            *p,
-                            match v {
-                                StyleMapValue::Val(v) => (p.info.debug_any)(&**v),
-                                StyleMapValue::Unset => "Unset".to_owned(),
-                            },
-                        )
-                    })
+                    .map(|(p, v)| (*p, (p.info.debug_any)(&**v)))
                     .collect::<HashMap<StylePropRef, String>>(),
             )
             .field("selectors", &self.selectors)
@@ -1137,15 +1138,15 @@ impl Style {
     }
 
     pub fn set_style_value<P: StyleProp>(mut self, _prop: P, value: StyleValue<P::Type>) -> Self {
-        let insert: StyleMapValue<Rc<dyn Any>> = match value {
-            StyleValue::Val(value) => StyleMapValue::Val(Rc::new(value)),
+        let insert = match value {
+            StyleValue::Val(value) => StyleMapValue::Val(value),
             StyleValue::Unset => StyleMapValue::Unset,
             StyleValue::Base => {
                 self.map.remove(&P::prop_ref());
                 return self;
             }
         };
-        self.map.insert(P::prop_ref(), insert);
+        self.map.insert(P::prop_ref(), Rc::new(insert));
         self
     }
 

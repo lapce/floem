@@ -1055,7 +1055,7 @@ impl WindowHandle {
                     .combined_style
                     .map
                     .get(&prop)
-                    .and_then(|v| v.as_ref().cloned())
+                    .cloned()
                     .unwrap_or_else(|| (prop.info.default_as_any)());
                 AnimatedProp::Prop {
                     prop,
