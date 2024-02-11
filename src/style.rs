@@ -242,12 +242,14 @@ pub struct StylePropInfo {
     pub(crate) default_as_any: fn() -> Rc<dyn Any>,
     pub(crate) debug_any: fn(val: &dyn Any) -> String,
     pub(crate) debug_view: fn(val: &dyn Any) -> Option<AnyView>,
+    pub(crate) transition_key: StyleKey,
 }
 
 impl StylePropInfo {
     pub const fn new<Name, T: StylePropValue + 'static>(
         inherited: bool,
         default_as_any: fn() -> Rc<dyn Any>,
+        transition_key: StyleKey,
     ) -> Self {
         StylePropInfo {
             name: || std::any::type_name::<Name>(),
@@ -282,6 +284,7 @@ impl StylePropInfo {
                     )
                 }
             },
+            transition_key,
         }
     }
 }
@@ -415,9 +418,11 @@ macro_rules! prop {
         impl $crate::style::StyleProp for $name {
             type Type = $ty;
             fn key() -> $crate::style::StyleKey {
+                static TRANSITION_INFO: $crate::style::StyleKeyInfo = $crate::style::StyleKeyInfo::Transition;
                 static INFO: $crate::style::StyleKeyInfo = $crate::style::StyleKeyInfo::Prop($crate::style::StylePropInfo::new::<$name, $ty>(
                     prop!([impl inherited][$($options)*]),
                     || std::rc::Rc::new($crate::style::StyleMapValue::Val($name::default_value())),
+                    $crate::style::StyleKey { info: &TRANSITION_INFO },
                 ));
                 $crate::style::StyleKey { info: &INFO }
             }
@@ -607,8 +612,9 @@ impl Transition {
 
 #[derive(Debug)]
 pub enum StyleKeyInfo {
-    Class(StyleClassInfo),
+    Transition,
     Prop(StylePropInfo),
+    Class(StyleClassInfo),
 }
 
 #[derive(Copy, Clone)]
@@ -618,18 +624,14 @@ pub struct StyleKey {
 impl StyleKey {
     pub(crate) fn debug_any(&self, value: &dyn Any) -> String {
         match self.info {
+            StyleKeyInfo::Transition => String::new(),
             StyleKeyInfo::Class(..) => String::new(),
             StyleKeyInfo::Prop(v) => (v.debug_any)(value),
         }
     }
-    pub(crate) fn debug_view(&self, value: &dyn Any) -> Option<AnyView> {
-        match self.info {
-            StyleKeyInfo::Class(..) => None,
-            StyleKeyInfo::Prop(v) => (v.debug_view)(value),
-        }
-    }
     fn inherited(&self) -> bool {
         match self.info {
+            StyleKeyInfo::Transition => false,
             StyleKeyInfo::Class(..) => true,
             StyleKeyInfo::Prop(v) => v.inherited,
         }
@@ -649,6 +651,7 @@ impl Eq for StyleKey {}
 impl Debug for StyleKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.info {
+            StyleKeyInfo::Transition => write!(f, "transition"),
             StyleKeyInfo::Class(v) => write!(f, "{}", (v.name)()),
             StyleKeyInfo::Prop(v) => write!(f, "{}", (v.name)()),
         }
@@ -662,7 +665,6 @@ pub struct Style {
     pub(crate) map: ImHashMap<StyleKey, Rc<dyn Any>>,
     pub(crate) selectors: ImHashMap<StyleSelector, Style>,
     pub(crate) responsive: ImHashMap<ScreenSizeBp, Style>,
-    pub(crate) transitions: ImHashMap<StyleKey, Transition>,
 }
 
 impl Style {
@@ -671,7 +673,9 @@ impl Style {
     }
 
     pub(crate) fn get_transition<P: StyleProp>(&self) -> Option<Transition> {
-        self.transitions.get(&P::key()).cloned()
+        self.map
+            .get(&P::prop_ref().info().transition_key)
+            .map(|v| v.downcast_ref::<Transition>().unwrap().clone())
     }
 
     pub(crate) fn get_prop_or_default<P: StyleProp>(&self) -> P::Type {
@@ -872,7 +876,7 @@ impl Style {
                         e.insert(v);
                     }
                 },
-                StyleKeyInfo::Prop(..) => {
+                StyleKeyInfo::Transition | StyleKeyInfo::Prop(..) => {
                     self.map.insert(k, v);
                 }
             }
@@ -881,7 +885,6 @@ impl Style {
 
     pub(crate) fn apply_mut(&mut self, over: Style) {
         self.apply_iter(over.map.into_iter());
-        self.transitions.extend(over.transitions);
         for (selector, map) in over.selectors {
             self.set_selector(selector, map);
         }
@@ -921,7 +924,6 @@ impl Debug for Style {
             )
             .field("selectors", &self.selectors)
             .field("responsive", &self.responsive)
-            .field("transitions", &self.transitions)
             .finish()
     }
 }
@@ -1217,7 +1219,8 @@ impl Style {
     }
 
     pub fn transition<P: StyleProp>(mut self, _prop: P, transition: Transition) -> Self {
-        self.transitions.insert(P::key(), transition);
+        self.map
+            .insert(P::prop_ref().info().transition_key, Rc::new(transition));
         self
     }
 
