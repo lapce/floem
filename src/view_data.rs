@@ -252,7 +252,7 @@ impl ViewState {
                             computed_style = computed_style.height(val.get_f32());
                         }
                         AnimPropKind::Prop { prop } => {
-                            computed_style.map.insert(*prop, val.get_any());
+                            computed_style.map.insert(prop.key, val.get_any());
                         }
                         AnimPropKind::Scale => todo!(),
                     }

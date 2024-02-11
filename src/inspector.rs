@@ -562,8 +562,9 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> AnyVi
                             ))
                             .any()
                         };
-                        let mut v = (prop.info.debug_view)(&*value)
-                            .unwrap_or_else(|| static_label((prop.info.debug_any)(&*value)).any());
+                        let mut v = prop
+                            .debug_view(&*value)
+                            .unwrap_or_else(|| static_label(prop.debug_any(&*value)).any());
                         if let Some(transition) = style.transitions.get(&prop).cloned() {
                             let transition = stack((
                                 text("Transition").style(|s| {
