@@ -34,7 +34,7 @@ impl ExtEventHandler {
     }
 }
 
-pub fn add_ext_trigger(trigger: Trigger) {
+pub fn register_ext_trigger(trigger: Trigger) {
     EXT_EVENT_HANDLER.add_trigger(trigger);
 }
 
