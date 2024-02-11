@@ -367,10 +367,11 @@ impl Editor {
     }
 
     pub fn text_layout_trigger(&self, line: usize, trigger: bool) -> Arc<TextLayoutLine> {
+        let cache_rev = self.doc().cache_rev().get_untracked();
         let id = self.style().id();
         let text_prov = self.text_prov();
         self.lines
-            .get_init_text_layout(id, &text_prov, line, trigger)
+            .get_init_text_layout(cache_rev, id, &text_prov, line, trigger)
     }
 
     pub fn text_prov(&self) -> EditorTextProv {
@@ -996,8 +997,10 @@ impl EditorTextProv {
     }
 
     pub fn text_layout_trigger(&self, line: usize, trigger: bool) -> Arc<TextLayoutLine> {
+        let cache_rev = self.doc.cache_rev().get_untracked();
         let id = self.style.id();
-        self.lines.get_init_text_layout(id, self, line, trigger)
+        self.lines
+            .get_init_text_layout(cache_rev, id, self, line, trigger)
     }
 
     /// Create rendable whitespace layout by creating a new text layout
@@ -1357,7 +1360,13 @@ pub fn normal_compute_screen_lines(
     // the iterator is from min_vline..max_vline
     let count = max_vline.get() - min_vline.get();
     let iter = lines
-        .iter_rvlines_init(editor.text_prov(), style.id(), min_info.rvline, false)
+        .iter_rvlines_init(
+            editor.text_prov(),
+            cache_rev,
+            style.id(),
+            min_info.rvline,
+            false,
+        )
         .take(count);
 
     for (i, vline_info) in iter.enumerate() {
