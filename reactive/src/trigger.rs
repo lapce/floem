@@ -21,6 +21,8 @@ impl Trigger {
     pub fn track(&self) {
         self.signal.with(|_| {});
     }
+
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         create_trigger()
     }
