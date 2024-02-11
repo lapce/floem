@@ -692,7 +692,6 @@ fn screen_size_bp_to_key(breakpoint: ScreenSizeBp) -> StyleKey {
 #[derive(Default, Clone)]
 pub struct Style {
     pub(crate) map: ImHashMap<StyleKey, Rc<dyn Any>>,
-    pub(crate) selectors: ImHashMap<StyleSelector, Style>,
 }
 
 impl Style {
@@ -732,13 +731,7 @@ impl Style {
     }
 
     pub(crate) fn selectors(&self) -> StyleSelectors {
-        let mut result = self
-            .selectors
-            .iter()
-            .fold(StyleSelectors::default(), |s, (selector, map)| {
-                s.union(map.selectors()).set(*selector, true)
-            });
-
+        let mut result = StyleSelectors::new();
         for (k, v) in &self.map {
             if let StyleKeyInfo::Selector(selector) = k.info {
                 result = result
@@ -771,7 +764,7 @@ impl Style {
 
     pub fn apply_selectors(mut self, selectors: &[StyleSelector]) -> Style {
         for selector in selectors {
-            if let Some(map) = self.selectors.remove(selector) {
+            if let Some(map) = self.get_nested_map(selector.to_key()) {
                 self.apply_mut(map.apply_selectors(selectors));
             }
         }
@@ -795,25 +788,25 @@ impl Style {
         }
 
         if interact_state.is_hovered && !interact_state.is_disabled {
-            if let Some(mut map) = self.selectors.remove(&StyleSelector::Hover) {
+            if let Some(mut map) = self.get_nested_map(StyleSelector::Hover.to_key()) {
                 map.apply_interact_state(interact_state, screen_size_bp);
                 self.apply_mut(map);
             }
         }
         if interact_state.is_focused {
-            if let Some(mut map) = self.selectors.remove(&StyleSelector::Focus) {
+            if let Some(mut map) = self.get_nested_map(StyleSelector::Focus.to_key()) {
                 map.apply_interact_state(interact_state, screen_size_bp);
                 self.apply_mut(map);
             }
         }
         if interact_state.is_selected {
-            if let Some(mut map) = self.selectors.remove(&StyleSelector::Selected) {
+            if let Some(mut map) = self.get_nested_map(StyleSelector::Selected.to_key()) {
                 map.apply_interact_state(interact_state, screen_size_bp);
                 self.apply_mut(map);
             }
         }
         if interact_state.is_disabled {
-            if let Some(mut map) = self.selectors.remove(&StyleSelector::Disabled) {
+            if let Some(mut map) = self.get_nested_map(StyleSelector::Disabled.to_key()) {
                 map.apply_interact_state(interact_state, screen_size_bp);
                 self.apply_mut(map);
             }
@@ -823,7 +816,7 @@ impl Style {
             interact_state.using_keyboard_navigation && interact_state.is_focused;
 
         if focused_keyboard {
-            if let Some(mut map) = self.selectors.remove(&StyleSelector::FocusVisible) {
+            if let Some(mut map) = self.get_nested_map(StyleSelector::FocusVisible.to_key()) {
                 map.apply_interact_state(interact_state, screen_size_bp);
                 self.apply_mut(map);
             }
@@ -831,7 +824,7 @@ impl Style {
 
         let active_mouse = interact_state.is_hovered && !interact_state.using_keyboard_navigation;
         if interact_state.is_clicking && (active_mouse || focused_keyboard) {
-            if let Some(mut map) = self.selectors.remove(&StyleSelector::Active) {
+            if let Some(mut map) = self.get_nested_map(StyleSelector::Active.to_key()) {
                 map.apply_interact_state(interact_state, screen_size_bp);
                 self.apply_mut(map);
             }
@@ -856,12 +849,7 @@ impl Style {
     }
 
     fn set_selector(&mut self, selector: StyleSelector, map: Style) {
-        match self.selectors.entry(selector) {
-            Entry::Occupied(mut e) => e.get_mut().apply_mut(map),
-            Entry::Vacant(e) => {
-                e.insert(map);
-            }
-        }
+        self.set_map_selector(selector.to_key(), map)
     }
 
     fn set_map_selector(&mut self, key: StyleKey, map: Style) {
@@ -925,9 +913,6 @@ impl Style {
 
     pub(crate) fn apply_mut(&mut self, over: Style) {
         self.apply_iter(over.map.into_iter());
-        for (selector, map) in over.selectors {
-            self.set_selector(selector, map);
-        }
     }
 
     /// Apply another `Style` to this style, returning a new `Style` with the overrides
@@ -959,7 +944,6 @@ impl Debug for Style {
                     .map(|(p, v)| (*p, (p.debug_any(&**v))))
                     .collect::<HashMap<StyleKey, String>>(),
             )
-            .field("selectors", &self.selectors)
             .finish()
     }
 }
@@ -975,6 +959,43 @@ pub enum StyleSelector {
     Selected,
 }
 
+style_key_selector!(hover, StyleSelectors::new().set(StyleSelector::Hover, true));
+style_key_selector!(focus, StyleSelectors::new().set(StyleSelector::Focus, true));
+style_key_selector!(
+    focus_visible,
+    StyleSelectors::new().set(StyleSelector::FocusVisible, true)
+);
+style_key_selector!(
+    disabled,
+    StyleSelectors::new().set(StyleSelector::Disabled, true)
+);
+style_key_selector!(
+    active,
+    StyleSelectors::new().set(StyleSelector::Active, true)
+);
+style_key_selector!(
+    dragging,
+    StyleSelectors::new().set(StyleSelector::Dragging, true)
+);
+style_key_selector!(
+    selected,
+    StyleSelectors::new().set(StyleSelector::Selected, true)
+);
+
+impl StyleSelector {
+    fn to_key(self) -> StyleKey {
+        match self {
+            StyleSelector::Hover => hover(),
+            StyleSelector::Focus => focus(),
+            StyleSelector::FocusVisible => focus_visible(),
+            StyleSelector::Disabled => disabled(),
+            StyleSelector::Active => active(),
+            StyleSelector::Dragging => dragging(),
+            StyleSelector::Selected => selected(),
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Default)]
 pub struct StyleSelectors {
     selectors: u8,
@@ -988,9 +1009,9 @@ impl StyleSelectors {
             responsive: false,
         }
     }
-    pub(crate) fn set(mut self, selector: StyleSelector, value: bool) -> Self {
-        let v = (selector as isize).try_into().unwrap();
-        let bit = 1_u8.checked_shl(v).unwrap();
+    pub(crate) const fn set(mut self, selector: StyleSelector, value: bool) -> Self {
+        let v = selector as isize as u8;
+        let bit = 1 << v;
         self.selectors = (self.selectors & !bit) | ((value as u8) << v);
         self
     }
