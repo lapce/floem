@@ -34,6 +34,10 @@ impl ExtEventHandler {
     }
 }
 
+pub fn register_ext_trigger(trigger: Trigger) {
+    EXT_EVENT_HANDLER.add_trigger(trigger);
+}
+
 pub fn create_ext_action<T: Send + 'static>(
     cx: Scope,
     action: impl FnOnce(T) + 'static,
