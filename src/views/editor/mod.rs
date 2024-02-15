@@ -1003,6 +1003,12 @@ impl EditorTextProv {
             .get_init_text_layout(cache_rev, id, self, line, trigger)
     }
 
+    fn try_get_text_layout(&self, line: usize) -> Option<Arc<TextLayoutLine>> {
+        let cache_rev = self.doc.cache_rev().get_untracked();
+        let id = self.style.id();
+        self.lines.try_get_text_layout(cache_rev, id, line)
+    }
+
     /// Create rendable whitespace layout by creating a new text layout
     /// with invisible spaces and special utf8 characters that display
     /// the different white space characters.
@@ -1165,7 +1171,16 @@ impl TextLayoutProvider for EditorTextProv {
         let indent_line = self.style.indent_line(line, &line_content_original);
 
         let indent = if indent_line != line {
-            self.text_layout(indent_line).indent + 1.0
+            // TODO: This creates the layout if it isn't already cached, but it doesn't cache the
+            // result because the current method of managing the cache is not very smart.
+            let layout = self.try_get_text_layout(indent_line).unwrap_or_else(|| {
+                self.new_text_layout(
+                    indent_line,
+                    self.style.font_size(indent_line),
+                    self.lines.wrap(),
+                )
+            });
+            layout.indent + 1.0
         } else {
             let offset = text.first_non_blank_character_on_line(indent_line);
             let (_, col) = text.offset_to_line_col(offset);
