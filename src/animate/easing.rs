@@ -18,19 +18,12 @@ pub enum EasingMode {
 pub enum EasingFn {
     #[default]
     Linear,
-    /// Retracts the motion of an animation slightly before it begins to animate in the path indicated.
-    Back,
-    /// Creates a bouncing effect.
-    Bounce,
     /// Creates an animation that accelerates and/or decelerates using a circular function.
     Circle,
     /// Creates an animation that resembles a spring oscillating back and forth until it comes to rest.
     Elastic,
     /// Creates an animation that accelerates and/or decelerates using an exponential formula.
     Exponential,
-    /// Creates an animation that accelerates and/or
-    /// decelerates using the formula `f(t) = tp` where p is equal to the Power property.
-    Power,
     /// Creates an animation that accelerates and/or decelerates using the formula `f(t) = t2`.
     Quadratic,
     /// Creates an animation that accelerates and/or decelerates using the formula `f(t) = t3`.
@@ -41,6 +34,14 @@ pub enum EasingFn {
     Quintic,
     /// Creates an animation that accelerates and/or decelerates using a sine formula.
     Sine,
+    //TODO:
+    // /// Retracts the motion of an animation slightly before it begins to animate in the path indicated.
+    // Back,
+    // /// Creates a bouncing effect.
+    // Bounce,
+    // /// Creates an animation that accelerates and/or
+    // /// decelerates using the formula `f(t) = tp` where p is equal to the Power property.
+    // Power,
 }
 
 // See https://easings.net/ and
@@ -76,14 +77,14 @@ impl Easing {
                     2.0f64.powf(10.0 * time - 10.0)
                 }
             }
-            EasingFn::Power => todo!(),
             EasingFn::Quadratic => time.powf(2.0),
             EasingFn::Cubic => time.powf(3.0),
             EasingFn::Quartic => time.powf(4.0),
             EasingFn::Quintic => time.powf(5.0),
             EasingFn::Sine => 1.0 - ((time * PI) / 2.0).cos(),
-            EasingFn::Back => todo!(),
-            EasingFn::Bounce => todo!(),
+            // EasingFn::Power => todo!(),
+            // EasingFn::Back => todo!(),
+            // EasingFn::Bounce => todo!(),
         }
     }
 

@@ -151,7 +151,8 @@ impl AnimatedProp {
                     let from = from.as_ref().unwrap();
                     let to = to.downcast_ref::<StyleMapValue<Option<Color>>>().unwrap();
                     let to = to.as_ref().unwrap();
-                    let from = from.unwrap();
+                    //TODO: get rid of this requirement
+                    let from = from.expect("Color must be set in the styles to be animated");
                     let to = to.unwrap();
                     return AnimValue::Prop(Rc::new(StyleMapValue::Val(Some(
                         self.animate_color(from, to, time, direction),
