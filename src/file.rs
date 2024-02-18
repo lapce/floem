@@ -46,6 +46,7 @@ pub struct FileDialogOptions {
     pub(crate) show_hidden: bool,
     pub(crate) allowed_types: Option<Vec<FileSpec>>,
     pub(crate) default_type: Option<FileSpec>,
+    pub(crate) filter: Option<FileSpec>,
     pub(crate) select_directories: bool,
     pub(crate) packages_as_directories: bool,
     pub(crate) multi_selection: bool,
@@ -130,6 +131,12 @@ impl FileDialogOptions {
     /// [`allowed_types`]: #method.allowed_types
     pub fn default_type(mut self, default_type: FileSpec) -> Self {
         self.default_type = Some(default_type);
+        self
+    }
+
+    /// Set filter for file types
+    pub fn filter(mut self, filter: FileSpec) -> Self {
+        self.filter = Some(filter);
         self
     }
 

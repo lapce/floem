@@ -117,6 +117,12 @@ pub fn open_file(
         if let Some(path) = options.starting_directory.as_ref() {
             dialog = dialog.set_directory(path);
         }
+        if let Some(title) = options.title.as_ref() {
+            dialog = dialog.set_title(title);
+        }
+        if let Some(filter) = options.filter.as_ref() {
+            dialog = dialog.add_filter(filter.name, filter.extensions);
+        }
         let path = if options.select_directories {
             dialog.pick_folder()
         } else {
@@ -134,6 +140,12 @@ pub fn save_as(options: FileDialogOptions, file_info_action: impl Fn(Option<File
         let mut dialog = rfd::FileDialog::new();
         if let Some(path) = options.starting_directory.as_ref() {
             dialog = dialog.set_directory(path);
+        }
+        if let Some(name) = options.default_name.as_ref() {
+            dialog = dialog.set_file_name(name);
+        }
+        if let Some(title) = options.title.as_ref() {
+            dialog = dialog.set_title(title);
         }
         let path = dialog.save_file();
         send(path);
