@@ -911,9 +911,11 @@ pub fn editor_view(
 
     let doc = ed.doc;
     let style = ed.style;
+    let lines = ed.screen_lines;
     create_effect(move |_| {
         doc.track();
         style.track();
+        lines.track();
         id.request_layout();
     });
 
@@ -1181,7 +1183,7 @@ fn editor_content(
                 let line_height = editor.get().line_height(0);
                 viewport.get().height() as f32 - line_height
             } else {
-                0.0
+                editor.get().line_height(0)
             };
 
             s.absolute()
@@ -1260,7 +1262,7 @@ fn editor_content(
         let vline = editor.vline_of_rvline(rvline);
         let rect =
             Rect::from_origin_size((x, vline.get() as f64 * line_height), (width, line_height))
-                .inflate(10.0, 0.0);
+                .inflate(10.0, 1.0);
 
         let viewport = viewport.get_untracked();
         let smallest_distance = (viewport.y0 - rect.y0)
