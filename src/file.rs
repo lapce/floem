@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FileSpec {
@@ -23,7 +23,7 @@ pub struct FileInfo {
     ///
     /// On macOS, this is already rewritten to use the extension that the user selected
     /// with the `file format` property.
-    pub path: PathBuf,
+    pub path: Vec<PathBuf>,
     /// The selected file format.
     ///
     /// If there're multiple different formats available
@@ -36,7 +36,7 @@ pub struct FileInfo {
 
 impl FileInfo {
     /// Returns the underlying path.
-    pub fn path(&self) -> &Path {
+    pub fn path(&self) -> &Vec<PathBuf> {
         &self.path
     }
 }
