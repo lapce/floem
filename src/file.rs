@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FileSpec {
@@ -23,7 +23,7 @@ pub struct FileInfo {
     ///
     /// On macOS, this is already rewritten to use the extension that the user selected
     /// with the `file format` property.
-    pub path: PathBuf,
+    pub path: Vec<PathBuf>,
     /// The selected file format.
     ///
     /// If there're multiple different formats available
@@ -36,7 +36,7 @@ pub struct FileInfo {
 
 impl FileInfo {
     /// Returns the underlying path.
-    pub fn path(&self) -> &Path {
+    pub fn path(&self) -> &Vec<PathBuf> {
         &self.path
     }
 }
@@ -46,7 +46,6 @@ pub struct FileDialogOptions {
     pub(crate) show_hidden: bool,
     pub(crate) allowed_types: Option<Vec<FileSpec>>,
     pub(crate) default_type: Option<FileSpec>,
-    pub(crate) filter: Option<FileSpec>,
     pub(crate) select_directories: bool,
     pub(crate) packages_as_directories: bool,
     pub(crate) multi_selection: bool,
@@ -131,12 +130,6 @@ impl FileDialogOptions {
     /// [`allowed_types`]: #method.allowed_types
     pub fn default_type(mut self, default_type: FileSpec) -> Self {
         self.default_type = Some(default_type);
-        self
-    }
-
-    /// Set filter for file types
-    pub fn filter(mut self, filter: FileSpec) -> Self {
-        self.filter = Some(filter);
         self
     }
 

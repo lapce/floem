@@ -14,10 +14,26 @@ fn app_view() -> impl View {
                 FileDialogOptions::new()
                     .force_starting_directory("/")
                     .title("Select file")
-                    .filter(FileSpec {
+                    .allowed_types(vec![FileSpec {
                         name: "text",
                         extensions: &["txt", "rs", "md"],
-                    }),
+                    }]),
+                move |file_info| {
+                    if let Some(file) = file_info {
+                        println!("Selected file: {:?}", file.path);
+                    }
+                },
+            );
+        }),
+        button(|| "Select multiple files").on_click_cont(|_| {
+            open_file(
+                FileDialogOptions::new()
+                    .multi_selection()
+                    .title("Select file")
+                    .allowed_types(vec![FileSpec {
+                        name: "text",
+                        extensions: &["txt", "rs", "md"],
+                    }]),
                 move |file_info| {
                     if let Some(file) = file_info {
                         println!("Selected file: {:?}", file.path);
@@ -30,6 +46,19 @@ fn app_view() -> impl View {
                 FileDialogOptions::new()
                     .select_directories()
                     .title("Select Folder"),
+                move |file_info| {
+                    if let Some(file) = file_info {
+                        println!("Selected folder: {:?}", file.path);
+                    }
+                },
+            );
+        }),
+        button(|| "Select multiple folder").on_click_cont(|_| {
+            open_file(
+                FileDialogOptions::new()
+                    .select_directories()
+                    .multi_selection()
+                    .title("Select multiple Folder"),
                 move |file_info| {
                     if let Some(file) = file_info {
                         println!("Selected folder: {:?}", file.path);
