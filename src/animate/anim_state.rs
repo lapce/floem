@@ -3,10 +3,18 @@ use std::time::{Duration, Instant};
 #[derive(Debug, Clone)]
 pub(crate) enum AnimState {
     Idle,
+    Paused {
+        elapsed: Option<Duration>,
+    },
+    /// How many passes(loops) there will be is controlled by the [`RepeatMode`] of the animation.
+    /// By default, the animation will only have a single pass,
+    /// but it can be set to [`RepeatMode::LoopForever`] to loop indefinitely.
     PassInProgress {
         started_on: Instant,
         elapsed: Duration,
     },
+    /// Depending on the [`RepeatMode`] of the animation, we either go back to `PassInProgress`
+    /// or advance to `Completed`.
     PassFinished {
         elapsed: Duration,
     },
@@ -19,6 +27,7 @@ pub(crate) enum AnimState {
 #[derive(Debug)]
 pub enum AnimStateKind {
     Idle,
+    Paused,
     PassInProgress,
     PassFinished,
     Completed,

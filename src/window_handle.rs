@@ -897,6 +897,9 @@ impl WindowHandle {
                     }
                     UpdateMessage::Animation { id, animation } => {
                         let view_state = cx.app_state.view_state(id);
+                        if let Some(ref listener) = animation.on_create_listener {
+                            listener(animation.id)
+                        }
                         view_state.animation = Some(animation);
                         cx.request_style(id);
                     }
@@ -1022,6 +1025,20 @@ impl WindowHandle {
                 } => {
                     let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
                     self.process_update_anim_prop(view_id, kind, val);
+                }
+                AnimUpdateMsg::Pause(id) => {
+                    let view_id = self.app_state.get_view_id_by_anim_id(id);
+                    let view_state = self.app_state.view_state(view_id);
+                    if let Some(anim) = view_state.animation.as_mut() {
+                        anim.pause();
+                    }
+                }
+                AnimUpdateMsg::Resume(id) => {
+                    let view_id = self.app_state.get_view_id_by_anim_id(id);
+                    let view_state = self.app_state.view_state(view_id);
+                    if let Some(anim) = view_state.animation.as_mut() {
+                        anim.resume();
+                    }
                 }
             }
         }

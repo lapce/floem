@@ -21,6 +21,20 @@ impl AnimId {
         AnimId(id)
     }
 
+    pub fn pause(&self) {
+        ANIM_UPDATE_MESSAGES.with(|msgs| {
+            let mut msgs = msgs.borrow_mut();
+            msgs.push(AnimUpdateMsg::Pause(*self));
+        });
+    }
+
+    pub fn resume(&self) {
+        ANIM_UPDATE_MESSAGES.with(|msgs| {
+            let mut msgs = msgs.borrow_mut();
+            msgs.push(AnimUpdateMsg::Resume(*self));
+        });
+    }
+
     pub(crate) fn update_prop(&self, kind: AnimPropKind, val: AnimValue) {
         ANIM_UPDATE_MESSAGES.with(|msgs| {
             let mut msgs = msgs.borrow_mut();

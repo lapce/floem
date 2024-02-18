@@ -4,12 +4,12 @@ use super::{
     anim_val::AnimValue, AnimId, AnimPropKind, AnimState, AnimStateKind, AnimatedProp, Easing,
     EasingFn, EasingMode,
 };
-use std::{borrow::BorrowMut, collections::HashMap, time::Duration, time::Instant};
+use std::{borrow::BorrowMut, collections::HashMap, rc::Rc, time::Duration, time::Instant};
 
 use floem_peniko::Color;
 use floem_reactive::create_effect;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Animation {
     pub(crate) id: AnimId,
     pub(crate) state: AnimState,
@@ -18,8 +18,10 @@ pub struct Animation {
     pub(crate) skip: Option<Duration>,
     pub(crate) duration: Duration,
     pub(crate) repeat_mode: RepeatMode,
+    /// How many times the animation has been repeated so far
     pub(crate) repeat_count: usize,
     pub(crate) animated_props: HashMap<AnimPropKind, AnimatedProp>,
+    pub(crate) on_create_listener: Option<Rc<dyn Fn(AnimId) + 'static>>,
 }
 
 pub(crate) fn assert_valid_time(time: f64) {
@@ -51,6 +53,7 @@ pub fn animation() -> Animation {
         repeat_mode: RepeatMode::Times(1),
         repeat_count: 0,
         animated_props: HashMap::new(),
+        on_create_listener: None,
     }
 }
 
@@ -61,6 +64,9 @@ pub enum AnimUpdateMsg {
         kind: AnimPropKind,
         val: AnimValue,
     },
+    Pause(AnimId),
+    Resume(AnimId),
+    //TODO: restart/stop
 }
 
 #[derive(Clone, Debug)]
@@ -99,6 +105,12 @@ impl Animation {
 
     pub fn is_auto_reverse(&self) -> bool {
         self.auto_reverse
+    }
+
+    /// Returns the ID of the animation. Use this when you want to control(pause or resume) the animation
+    pub fn on_create(mut self, on_create_fn: impl Fn(AnimId) + 'static) -> Self {
+        self.on_create_listener = Some(Rc::new(on_create_fn));
+        self
     }
 
     // pub fn scale(self, scale: f64) -> Self {
@@ -211,6 +223,25 @@ impl Animation {
         self.ease_mode(EasingMode::InOut)
     }
 
+    //TODO: Pausing is currently suboptimal because it will keep requesting styling even though the anim
+    // won't change
+    pub fn pause(&mut self) {
+        // TODO: Should we warn/error if the animation is already paused or completed?
+        self.state = AnimState::Paused {
+            elapsed: self.elapsed(),
+        };
+    }
+
+    pub(crate) fn resume(&mut self) {
+        // TODO: Should we warn/error if the user tries to resume an animation that is not paused?
+        if let AnimState::Paused { elapsed } = &self.state {
+            self.state = AnimState::PassInProgress {
+                started_on: Instant::now(),
+                elapsed: elapsed.unwrap_or(Duration::ZERO),
+            }
+        }
+    }
+
     pub fn begin(&mut self) {
         self.repeat_count = 0;
         self.state = AnimState::PassInProgress {
@@ -221,7 +252,10 @@ impl Animation {
 
     pub fn stop(&mut self) {
         match &mut self.state {
-            AnimState::Idle | AnimState::Completed { .. } | AnimState::PassFinished { .. } => {}
+            AnimState::Idle
+            | AnimState::Completed { .. }
+            | AnimState::PassFinished { .. }
+            | AnimState::Paused { .. } => {}
             AnimState::PassInProgress {
                 started_on,
                 elapsed,
@@ -241,6 +275,7 @@ impl Animation {
             AnimState::PassInProgress { .. } => AnimStateKind::PassInProgress,
             AnimState::PassFinished { .. } => AnimStateKind::PassFinished,
             AnimState::Completed { .. } => AnimStateKind::Completed,
+            AnimState::Paused { .. } => AnimStateKind::Paused,
         }
     }
 
@@ -256,6 +291,7 @@ impl Animation {
             }
             AnimState::PassFinished { elapsed } => Some(*elapsed),
             AnimState::Completed { elapsed, .. } => *elapsed,
+            AnimState::Paused { elapsed } => *elapsed,
         }
     }
 
@@ -297,6 +333,7 @@ impl Animation {
                     }
                 }
             },
+            AnimState::Paused { .. } => {}
             AnimState::Completed { .. } => {}
         }
     }
