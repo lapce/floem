@@ -1,7 +1,8 @@
 use crate::{
     action::{drag_window, toggle_window_maximized},
-    event::EventListener,
+    event::{Event, EventListener},
     id::Id,
+    pointer::PointerButton,
     view::{View, ViewData, Widget},
 };
 
@@ -18,7 +19,14 @@ pub fn drag_window_area<V: Widget + 'static>(child: V) -> DragWindowArea {
         data: ViewData::new(id),
         child: Box::new(child),
     }
-    .on_event_stop(EventListener::PointerDown, |_| drag_window())
+    .on_event_stop(EventListener::PointerDown, |e| match e {
+        Event::PointerDown(input_event) => {
+            if input_event.button == PointerButton::Primary {
+                drag_window();
+            }
+        }
+        _ => {}
+    })
     .on_double_click_stop(|_| toggle_window_maximized())
 }
 
