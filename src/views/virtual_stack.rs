@@ -1,7 +1,7 @@
 use std::{hash::Hash, marker::PhantomData, ops::Range};
 
 use floem_reactive::{as_child_of_current_scope, create_effect, create_signal, Scope, WriteSignal};
-use kurbo::{Rect, Size};
+use kurbo::Rect;
 use smallvec::SmallVec;
 use taffy::{
     prelude::Node,
@@ -11,6 +11,7 @@ use taffy::{
 use crate::{
     context::ComputeLayoutCx,
     id::Id,
+    style,
     unit::PxPct,
     view::{self, AnyWidget, View, ViewData, Widget},
 };
@@ -314,24 +315,43 @@ impl<T> Widget for VirtualStack<T> {
             }
             let offset_node = self.offset_node.unwrap();
             let content_node = self.content_node.unwrap();
+
+            // Passing padding values to the offset node
+            let style = cx.get_computed_style(self.id());
+            let padding = match self.direction {
+                VirtualDirection::Vertical => taffy::prelude::Rect {
+                    left: style.get(style::PaddingLeft).into(),
+                    top: match style.get(style::PaddingTop) {
+                        PxPct::Px(padding) => {
+                            LengthPercentage::Points((padding + self.before_size) as f32)
+                        }
+                        PxPct::Pct(pct) => LengthPercentage::Points(
+                            (pct * self.content_size + self.before_size) as f32,
+                        ),
+                    },
+                    right: style.get(style::PaddingRight).into(),
+                    bottom: style.get(style::PaddingBottom).into(),
+                },
+                VirtualDirection::Horizontal => taffy::prelude::Rect {
+                    left: match style.get(style::PaddingLeft) {
+                        PxPct::Px(padding) => {
+                            LengthPercentage::Points((padding + self.before_size) as f32)
+                        }
+                        PxPct::Pct(pct) => LengthPercentage::Points(
+                            (pct * self.content_size + self.before_size) as f32,
+                        ),
+                    },
+                    top: style.get(style::PaddingTop).into(),
+                    right: style.get(style::PaddingRight).into(),
+                    bottom: style.get(style::PaddingBottom).into(),
+                },
+            };
+
             let _ = cx.app_state_mut().taffy.set_style(
                 offset_node,
                 taffy::style::Style {
                     position: taffy::style::Position::Absolute,
-                    padding: match self.direction {
-                        VirtualDirection::Vertical => taffy::prelude::Rect {
-                            left: LengthPercentage::Points(0.0),
-                            top: LengthPercentage::Points(self.before_size as f32),
-                            right: LengthPercentage::Points(0.0),
-                            bottom: LengthPercentage::Points(0.0),
-                        },
-                        VirtualDirection::Horizontal => taffy::prelude::Rect {
-                            left: LengthPercentage::Points(self.before_size as f32),
-                            top: LengthPercentage::Points(0.0),
-                            right: LengthPercentage::Points(0.0),
-                            bottom: LengthPercentage::Points(0.0),
-                        },
-                    },
+                    padding,
                     flex_direction: match self.direction {
                         VirtualDirection::Vertical => FlexDirection::Column,
                         VirtualDirection::Horizontal => FlexDirection::Row,
@@ -363,35 +383,11 @@ impl<T> Widget for VirtualStack<T> {
     fn compute_layout(&mut self, cx: &mut ComputeLayoutCx<'_>) -> Option<Rect> {
         let viewport = cx.current_viewport();
         if self.viewport != viewport {
-            let layout = cx.app_state().get_layout(self.id()).unwrap();
-            let _size = Size::new(layout.size.width as f64, layout.size.height as f64);
-
             self.viewport = viewport;
             self.set_viewport.set(viewport);
         }
 
         view::default_compute_layout(self, cx)
-    }
-
-    fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        cx.save();
-        let layout = cx.get_layout(self.id()).unwrap();
-        let style = cx.get_builtin_style(self.id());
-        let padding_left = match style.padding_left() {
-            PxPct::Px(padding) => padding,
-            PxPct::Pct(pct) => pct * layout.size.width as f64,
-        };
-        let padding_top = match style.padding_top() {
-            PxPct::Px(padding) => padding,
-            PxPct::Pct(pct) => pct * layout.size.width as f64,
-        };
-        cx.offset((padding_left, padding_top));
-        self.for_each_child_mut(&mut |child| {
-            cx.paint_view(child);
-            false
-        });
-
-        cx.restore();
     }
 }
 
