@@ -19,7 +19,7 @@ use kurbo::{Affine, Point, Rect, Size, Vec2};
 #[cfg(target_os = "linux")]
 use crate::unit::UnitExt;
 #[cfg(target_os = "linux")]
-use crate::views::{container_box, stack, Decorators};
+use crate::views::{container, stack, Decorators};
 use crate::{
     animate::{AnimPropKind, AnimUpdateMsg, AnimValue, AnimatedProp, SizeUnit},
     context::{
@@ -107,7 +107,7 @@ impl WindowHandle {
         #[cfg(target_os = "linux")]
         let view = with_scope(scope, move || {
             stack((
-                container_box(view_fn(window_id)).style(|s| s.size(100.pct(), 100.pct())),
+                container(view_fn(window_id)).style(|s| s.size(100.pct(), 100.pct())),
                 context_menu_view(scope, window_id, context_menu, size),
             ))
             .style(|s| s.size(100.pct(), 100.pct()))
@@ -1330,7 +1330,7 @@ fn context_menu_view(
             let on_child_submenu = create_rw_signal(false);
             let has_submenu = menu.children.is_some();
             let submenu_svg = r#"<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M10.072 8.024L5.715 3.667l.618-.62L11 7.716v.618L6.333 13l-.618-.619 4.357-4.357z"/></svg>"#;
-            container_box(
+            container(
                 stack((
                     stack((
                         text(menu.title),
@@ -1454,14 +1454,16 @@ fn context_menu_view(
                 .style(|s| s.min_width(100.pct())),
             )
             .style(|s| s.min_width(100.pct()))
+            .any()
         } else {
-            container_box(empty().style(|s| {
+            container(empty().style(|s| {
                 s.width(100.pct())
                     .height(1.0)
                     .margin_vert(5.0)
                     .background(Color::rgb8(92, 92, 92))
             }))
             .style(|s| s.min_width(100.pct()).padding_horiz(20.0))
+            .any()
         }
     }
 
