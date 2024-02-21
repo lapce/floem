@@ -58,7 +58,7 @@ where
     KF: Fn(&T) -> K + 'static,
     K: Eq + Hash + 'static,
     VF: Fn(T) -> V + 'static,
-    V: Widget + 'static,
+    V: View + 'static,
 {
     let id = Id::next();
     let selection = create_rw_signal(None);
@@ -124,7 +124,7 @@ where
                 data: ViewData::new(Id::next()),
                 selection,
                 index,
-                child: Box::new(view_fn(e)),
+                child: view_fn(e).build(),
             }
             .on_click_stop(move |_| {
                 if selection.get_untracked() != Some(index) {
