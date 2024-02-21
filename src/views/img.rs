@@ -12,7 +12,7 @@ use crate::{
     view::{View, ViewData, Widget},
 };
 
-use taffy::prelude::Node;
+use taffy::tree::NodeId;
 
 pub struct ImageStyle {
     fit: ObjectFit,
@@ -91,7 +91,7 @@ pub struct Img {
     img: Option<Rc<DynamicImage>>,
     img_hash: Option<Vec<u8>>,
     img_dimensions: Option<(u32, u32)>,
-    content_node: Option<Node>,
+    content_node: Option<NodeId>,
 }
 
 pub fn img(image: impl Fn() -> Vec<u8> + 'static) -> Img {
@@ -152,7 +152,7 @@ impl Widget for Img {
         }
     }
 
-    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
+    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::tree::NodeId {
         cx.layout_node(self.id(), true, |cx| {
             if self.content_node.is_none() {
                 self.content_node = Some(

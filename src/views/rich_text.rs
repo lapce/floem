@@ -3,7 +3,7 @@ use std::any::Any;
 use floem_reactive::create_effect;
 use floem_renderer::{cosmic_text::TextLayout, Renderer};
 use kurbo::{Point, Rect};
-use taffy::prelude::Node;
+use taffy::tree::NodeId;
 
 use crate::{
     context::UpdateCx,
@@ -16,7 +16,7 @@ use crate::{
 pub struct RichText {
     data: ViewData,
     text_layout: TextLayout,
-    text_node: Option<Node>,
+    text_node: Option<NodeId>,
     text_overflow: TextOverflow,
     available_width: f32,
 }
@@ -84,7 +84,7 @@ impl Widget for RichText {
         }
     }
 
-    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
+    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::tree::NodeId {
         cx.layout_node(self.id(), true, |cx| {
             let size = self.text_layout.size();
             let width = size.width as f32;

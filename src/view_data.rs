@@ -17,7 +17,7 @@ use bitflags::bitflags;
 use kurbo::Rect;
 use smallvec::SmallVec;
 use std::{collections::HashMap, marker::PhantomData, time::Duration};
-use taffy::node::Node;
+use taffy::tree::NodeId;
 
 /// A stack of view attributes. Each entry is associated with a view decorator call.
 pub(crate) struct Stack<T> {
@@ -138,7 +138,7 @@ bitflags! {
 
 /// View state stores internal state associated with a view which is owned and managed by Floem.
 pub struct ViewState {
-    pub(crate) node: Node,
+    pub(crate) node: NodeId,
     pub(crate) requested_changes: ChangeFlags,
     /// Layout is requested on all direct and indirect children.
     pub(crate) request_style_recursive: bool,
@@ -162,7 +162,7 @@ pub struct ViewState {
 }
 
 impl ViewState {
-    pub(crate) fn new(taffy: &mut taffy::Taffy) -> Self {
+    pub(crate) fn new(taffy: &mut taffy::TaffyTree) -> Self {
         Self {
             node: taffy.new_leaf(taffy::style::Style::DEFAULT).unwrap(),
             viewport: None,

@@ -599,7 +599,7 @@ impl WindowHandle {
             state.requested_changes = ChangeFlags::all();
         });
 
-        fn get_taffy_depth(taffy: &taffy::Taffy, root: taffy::node::Node) -> usize {
+        fn get_taffy_depth(taffy: &taffy::TaffyTree, root: taffy::tree::NodeId) -> usize {
             let children = taffy.children(root).unwrap();
             if children.is_empty() {
                 1

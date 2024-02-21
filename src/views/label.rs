@@ -14,7 +14,7 @@ use floem_peniko::Color;
 use floem_reactive::create_updater;
 use floem_renderer::Renderer;
 use kurbo::{Point, Rect};
-use taffy::prelude::Node;
+use taffy::tree::NodeId;
 
 prop_extracter! {
     Extracter {
@@ -33,7 +33,7 @@ pub struct Label {
     data: ViewData,
     label: String,
     text_layout: Option<TextLayout>,
-    text_node: Option<Node>,
+    text_node: Option<NodeId>,
     available_text: Option<String>,
     available_width: Option<f32>,
     available_text_layout: Option<TextLayout>,
@@ -171,7 +171,7 @@ impl Widget for Label {
         }
     }
 
-    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
+    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::tree::NodeId {
         cx.layout_node(self.id(), true, |cx| {
             let (width, height) = if self.label.is_empty() {
                 (0.0, self.font.size().unwrap_or(14.0))

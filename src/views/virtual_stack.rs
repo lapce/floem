@@ -4,15 +4,13 @@ use floem_reactive::{as_child_of_current_scope, create_effect, create_signal, Sc
 use kurbo::Rect;
 use smallvec::SmallVec;
 use taffy::{
-    prelude::Node,
     style::{Dimension, FlexDirection, LengthPercentage},
+    tree::NodeId,
 };
 
 use crate::{
     context::ComputeLayoutCx,
     id::Id,
-    style,
-    unit::PxPct,
     view::{self, AnyWidget, View, ViewData, Widget},
 };
 
@@ -62,8 +60,8 @@ where
     phatom: PhantomData<T>,
     before_size: f64,
     content_size: f64,
-    offset_node: Option<Node>,
-    content_node: Option<Node>,
+    offset_node: Option<NodeId>,
+    content_node: Option<NodeId>,
 }
 
 struct VirtualStackState<T> {
@@ -280,7 +278,7 @@ impl<T> Widget for VirtualStack<T> {
         }
     }
 
-    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
+    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::tree::NodeId {
         cx.layout_node(self.id(), true, |cx| {
             let nodes = self
                 .children
@@ -290,10 +288,10 @@ impl<T> Widget for VirtualStack<T> {
             let content_size = match self.direction {
                 VirtualDirection::Vertical => taffy::prelude::Size {
                     width: Dimension::Percent(1.0),
-                    height: Dimension::Points(self.content_size as f32),
+                    height: Dimension::Length(self.content_size as f32),
                 },
                 VirtualDirection::Horizontal => taffy::prelude::Size {
-                    width: Dimension::Points(self.content_size as f32),
+                    width: Dimension::Length(self.content_size as f32),
                     height: Dimension::Percent(1.0),
                 },
             };
@@ -315,43 +313,24 @@ impl<T> Widget for VirtualStack<T> {
             }
             let offset_node = self.offset_node.unwrap();
             let content_node = self.content_node.unwrap();
-
-            // Passing padding values to the offset node
-            let style = cx.get_computed_style(self.id());
-            let padding = match self.direction {
-                VirtualDirection::Vertical => taffy::prelude::Rect {
-                    left: style.get(style::PaddingLeft).into(),
-                    top: match style.get(style::PaddingTop) {
-                        PxPct::Px(padding) => {
-                            LengthPercentage::Points((padding + self.before_size) as f32)
-                        }
-                        PxPct::Pct(pct) => LengthPercentage::Points(
-                            (pct * self.content_size + self.before_size) as f32,
-                        ),
-                    },
-                    right: style.get(style::PaddingRight).into(),
-                    bottom: style.get(style::PaddingBottom).into(),
-                },
-                VirtualDirection::Horizontal => taffy::prelude::Rect {
-                    left: match style.get(style::PaddingLeft) {
-                        PxPct::Px(padding) => {
-                            LengthPercentage::Points((padding + self.before_size) as f32)
-                        }
-                        PxPct::Pct(pct) => LengthPercentage::Points(
-                            (pct * self.content_size + self.before_size) as f32,
-                        ),
-                    },
-                    top: style.get(style::PaddingTop).into(),
-                    right: style.get(style::PaddingRight).into(),
-                    bottom: style.get(style::PaddingBottom).into(),
-                },
-            };
-
             let _ = cx.app_state_mut().taffy.set_style(
                 offset_node,
                 taffy::style::Style {
-                    position: taffy::style::Position::Absolute,
-                    padding,
+                    position: taffy::style::Position::Relative,
+                    padding: match self.direction {
+                        VirtualDirection::Vertical => taffy::prelude::Rect {
+                            left: LengthPercentage::Length(0.0),
+                            top: LengthPercentage::Length(self.before_size as f32),
+                            right: LengthPercentage::Length(0.0),
+                            bottom: LengthPercentage::Length(0.0),
+                        },
+                        VirtualDirection::Horizontal => taffy::prelude::Rect {
+                            left: LengthPercentage::Length(self.before_size as f32),
+                            top: LengthPercentage::Length(0.0),
+                            right: LengthPercentage::Length(0.0),
+                            bottom: LengthPercentage::Length(0.0),
+                        },
+                    },
                     flex_direction: match self.direction {
                         VirtualDirection::Vertical => FlexDirection::Column,
                         VirtualDirection::Horizontal => FlexDirection::Row,

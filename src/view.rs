@@ -86,7 +86,7 @@
 use floem_renderer::Renderer;
 use kurbo::{Circle, Insets, Line, Point, Rect, RoundedRect, Size};
 use std::any::Any;
-use taffy::prelude::Node;
+use taffy::tree::NodeId;
 
 use crate::{
     context::{AppState, ComputeLayoutCx, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx},
@@ -252,7 +252,7 @@ pub trait Widget {
     ///
     /// If the layout changes needs other passes to run you're expected to call
     /// `cx.app_state_mut().request_changes`.
-    fn layout(&mut self, cx: &mut LayoutCx) -> Node {
+    fn layout(&mut self, cx: &mut LayoutCx) -> NodeId {
         cx.layout_node(self.view_data().id(), true, |cx| {
             let mut nodes = Vec::new();
             self.for_each_child_mut(&mut |child| {
@@ -752,7 +752,7 @@ impl Widget for Box<dyn Widget> {
         (**self).style(cx)
     }
 
-    fn layout(&mut self, cx: &mut LayoutCx) -> Node {
+    fn layout(&mut self, cx: &mut LayoutCx) -> NodeId {
         (**self).layout(cx)
     }
 
