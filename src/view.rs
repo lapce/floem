@@ -126,6 +126,39 @@ pub trait View: Sized {
 }
 
 /// This is a type which can hold any view.
+///
+/// Views in Floem are strongly typed. [`AnyView`] allows you to escape the strong typing by converting any type implementing [View] into the [AnyView] type.
+///
+/// ## Bad Example
+///```compile_fail
+/// use floem::views::*;
+/// use floem::widgets::*;
+///
+/// let check = true;
+///
+/// container(if check == true {
+///     checkbox(|| true)
+/// } else {
+///     label(|| "no check".to_string())
+/// });
+/// ```
+/// The above example will fail to compile because `container` is expecting a single type implementing `View` so the if and
+/// the else must return the same type. However the branches return different types. The solution to this is to use the [View::any] method
+/// to escape the strongly typed requirement.
+///
+/// ```
+/// use floem::views::*;
+/// use floem::widgets::*;
+/// use floem::view::View;
+///
+/// let check = true;
+///
+/// container(if check == true {
+///     checkbox(|| true).any()
+/// } else {
+///     label(|| "no check".to_string()).any()
+/// });
+/// ```
 pub struct AnyView {
     view: Box<dyn DynView>,
 }
