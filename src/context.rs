@@ -9,7 +9,7 @@ use std::{
     time::Instant,
 };
 use taffy::{
-    prelude::{Layout, Node},
+    prelude::{Layout, NodeId},
     style::{AvailableSpace, Display},
 };
 
@@ -88,10 +88,10 @@ pub struct AppState {
     /// when a view is active, it gets mouse event even when the mouse is
     /// not on it
     pub(crate) active: Option<Id>,
-    pub(crate) root: Option<Node>,
+    pub(crate) root: Option<NodeId>,
     pub(crate) root_size: Size,
     pub(crate) scale: f64,
-    pub taffy: taffy::Taffy,
+    pub taffy: taffy::TaffyTree,
     pub(crate) view_states: HashMap<Id, ViewState>,
     stale_view_state: ViewState,
     pub(crate) scheduled_updates: Vec<FrameUpdate>,
@@ -127,7 +127,7 @@ impl Default for AppState {
 
 impl AppState {
     pub fn new() -> Self {
-        let mut taffy = taffy::Taffy::new();
+        let mut taffy = taffy::TaffyTree::new();
         taffy.disable_rounding();
         Self {
             root: None,
@@ -372,12 +372,28 @@ impl AppState {
         view.viewport = Some(viewport);
     }
 
+    /// This gets the Taffy Layout and adjusts it to be relative to the parent `Widget`.
     pub(crate) fn get_layout(&self, id: Id) -> Option<Layout> {
-        self.view_states
-            .get(&id)
-            .map(|view| view.node)
-            .and_then(|node| self.taffy.layout(node).ok())
-            .copied()
+        let widget_parent = id
+            .parent()
+            .and_then(|id| self.view_states.get(&id).map(|view| view.node));
+
+        let mut node = self.view_states.get(&id).map(|view| view.node)?;
+        let mut layout = *self.taffy.layout(node).ok()?;
+
+        loop {
+            let parent = self.taffy.parent(node);
+
+            if parent == widget_parent {
+                break;
+            }
+
+            node = parent?;
+
+            layout.location = layout.location + self.taffy.layout(node).ok()?.location;
+        }
+
+        Some(layout)
     }
 
     /// Returns the layout rect excluding borders, padding and position.
@@ -1237,7 +1253,7 @@ impl<'a> ComputeLayoutCx<'a> {
         self.app_state.get_layout(id)
     }
 
-    pub fn layout(&self, node: Node) -> Option<Layout> {
+    pub fn layout(&self, node: NodeId) -> Option<Layout> {
         self.app_state.taffy.layout(node).ok().copied()
     }
 
@@ -1255,7 +1271,7 @@ impl<'a> ComputeLayoutCx<'a> {
             .and_then(|s| s.move_listener.as_mut())
     }
 
-    /// Internal method used by Floem. This method derives its calculations based on the [Taffy Node](taffy::prelude::Node) returned by the `View::layout` method.
+    /// Internal method used by Floem. This method derives its calculations based on the [Taffy Node](taffy::tree::NodeId) returned by the `View::layout` method.
     ///
     /// It's responsible for:
     /// - calculating and setting the view's origin (local coordinates and window coordinates)
@@ -1349,11 +1365,11 @@ impl<'a> LayoutCx<'a> {
         self.app_state.get_computed_style(id)
     }
 
-    pub fn set_style(&mut self, node: Node, style: taffy::style::Style) {
+    pub fn set_style(&mut self, node: NodeId, style: taffy::style::Style) {
         let _ = self.app_state.taffy.set_style(node, style);
     }
 
-    pub fn new_node(&mut self) -> Node {
+    pub fn new_node(&mut self) -> NodeId {
         self.app_state
             .taffy
             .new_leaf(taffy::style::Style::DEFAULT)
@@ -1369,8 +1385,8 @@ impl<'a> LayoutCx<'a> {
         &mut self,
         id: Id,
         has_children: bool,
-        mut children: impl FnMut(&mut LayoutCx) -> Vec<Node>,
-    ) -> Node {
+        mut children: impl FnMut(&mut LayoutCx) -> Vec<NodeId>,
+    ) -> NodeId {
         let view_state = self.app_state.view_state(id);
         let node = view_state.node;
         if !view_state.requested_changes.contains(ChangeFlags::LAYOUT) {
@@ -1389,7 +1405,7 @@ impl<'a> LayoutCx<'a> {
     }
 
     /// Internal method used by Floem to invoke the user-defined `View::layout` method.
-    pub fn layout_view(&mut self, view: &mut dyn Widget) -> Node {
+    pub fn layout_view(&mut self, view: &mut dyn Widget) -> NodeId {
         view.layout(self)
     }
 }
@@ -1527,7 +1543,7 @@ impl<'a> PaintCx<'a> {
         self.restore();
     }
 
-    pub fn layout(&self, node: Node) -> Option<Layout> {
+    pub fn layout(&self, node: NodeId) -> Option<Layout> {
         self.app_state.taffy.layout(node).ok().copied()
     }
 

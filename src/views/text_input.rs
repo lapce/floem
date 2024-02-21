@@ -10,7 +10,7 @@ use crate::view::{View, ViewData};
 use crate::widgets::PlaceholderTextClass;
 use crate::{prop, prop_extracter, Clipboard, EventPropagation};
 use floem_reactive::create_rw_signal;
-use taffy::prelude::{Layout, Node};
+use taffy::prelude::{Layout, NodeId};
 
 use floem_renderer::{cosmic_text::Cursor, Renderer};
 use floem_winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
@@ -72,7 +72,7 @@ pub struct TextInput {
     // This can be retrieved from the glyph, but we store it for efficiency
     cursor_x: f64,
     text_buf: Option<TextLayout>,
-    text_node: Option<Node>,
+    text_node: Option<NodeId>,
     // Shown when the width exceeds node width for single line input
     clipped_text: Option<String>,
     // Glyph index from which we started clipping
@@ -1037,7 +1037,7 @@ impl Widget for TextInput {
         self.placeholder_style.read_style(cx, &placeholder_style);
     }
 
-    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::Node {
+    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::tree::NodeId {
         cx.layout_node(self.id(), true, |cx| {
             let was_focused = self.is_focused;
             self.is_focused = cx.app_state().is_focused(&self.id());
@@ -1057,7 +1057,8 @@ impl Widget for TextInput {
 
             let text_node = self.text_node.unwrap();
 
-            let layout = cx.app_state.get_layout(self.id()).unwrap();
+            // FIXME: This layout is undefined.
+            let layout = cx.app_state.get_layout(self.id()).unwrap_or(Layout::new());
             let style = cx.app_state_mut().get_builtin_style(self.id());
             let node_width = layout.size.width;
 

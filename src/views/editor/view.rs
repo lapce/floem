@@ -11,7 +11,7 @@ use crate::{
     peniko::Color,
     reactive::{batch, create_effect, create_memo, create_rw_signal, Memo, RwSignal, Scope},
     style::{CursorStyle, Style},
-    taffy::node::Node,
+    taffy::tree::NodeId,
     view::{AnyWidget, View, ViewData, Widget},
     views::{clip, container, empty, label, scroll, stack, Decorators},
     EventPropagation, Renderer,
@@ -332,7 +332,7 @@ pub struct EditorView {
     data: ViewData,
     editor: RwSignal<Editor>,
     is_active: Memo<bool>,
-    inner_node: Option<Node>,
+    inner_node: Option<NodeId>,
 }
 impl EditorView {
     #[allow(clippy::too_many_arguments)]
@@ -839,7 +839,7 @@ impl Widget for EditorView {
 
     fn update(&mut self, _cx: &mut UpdateCx, _state: Box<dyn std::any::Any>) {}
 
-    fn layout(&mut self, cx: &mut LayoutCx) -> crate::taffy::prelude::Node {
+    fn layout(&mut self, cx: &mut LayoutCx) -> crate::taffy::tree::NodeId {
         cx.layout_node(self.id, true, |cx| {
             let editor = self.editor.get_untracked();
 

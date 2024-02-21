@@ -107,7 +107,7 @@ impl UnitExt for i32 {
 impl From<PxPctAuto> for Dimension {
     fn from(value: PxPctAuto) -> Self {
         match value {
-            PxPctAuto::Px(v) => Dimension::Points(v as f32),
+            PxPctAuto::Px(v) => Dimension::Length(v as f32),
             PxPctAuto::Pct(v) => Dimension::Percent(v as f32 / 100.0),
             PxPctAuto::Auto => Dimension::Auto,
         }
@@ -117,7 +117,7 @@ impl From<PxPctAuto> for Dimension {
 impl From<PxPct> for LengthPercentage {
     fn from(value: PxPct) -> Self {
         match value {
-            PxPct::Px(v) => LengthPercentage::Points(v as f32),
+            PxPct::Px(v) => LengthPercentage::Length(v as f32),
             PxPct::Pct(v) => LengthPercentage::Percent(v as f32 / 100.0),
         }
     }
@@ -126,7 +126,7 @@ impl From<PxPct> for LengthPercentage {
 impl From<PxPctAuto> for LengthPercentageAuto {
     fn from(value: PxPctAuto) -> Self {
         match value {
-            PxPctAuto::Px(v) => LengthPercentageAuto::Points(v as f32),
+            PxPctAuto::Px(v) => LengthPercentageAuto::Length(v as f32),
             PxPctAuto::Pct(v) => LengthPercentageAuto::Percent(v as f32 / 100.0),
             PxPctAuto::Auto => LengthPercentageAuto::Auto,
         }
