@@ -9,14 +9,19 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     id::Id,
+    style_class,
     view::{View, ViewData, Widget},
 };
+
+use super::Decorators;
 
 pub struct Svg {
     data: ViewData,
     svg_tree: Option<Tree>,
     svg_hash: Option<Vec<u8>>,
 }
+
+style_class!(pub SvgClass);
 
 pub fn svg(svg_str: impl Fn() -> String + 'static) -> Svg {
     let id = Id::next();
@@ -29,6 +34,7 @@ pub fn svg(svg_str: impl Fn() -> String + 'static) -> Svg {
         svg_tree: None,
         svg_hash: None,
     }
+    .class(SvgClass)
 }
 
 impl View for Svg {
