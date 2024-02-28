@@ -1090,7 +1090,7 @@ pub fn editor_container_view(
     stack((container(
         stack((
             editor_gutter(editor).style(move |s| {
-                s.apply_if(editor.with_untracked(|ed| ed.gutter).get(), |s| s.hide())
+                s.apply_if(!editor.with_untracked(|ed| ed.gutter).get(), |s| s.hide())
             }),
             container(editor_content(editor, is_active, handle_key_event))
                 .style(move |s| s.size_pct(100.0, 100.0)),
