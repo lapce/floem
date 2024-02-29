@@ -514,7 +514,7 @@ macro_rules! prop_extracter {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum StyleMapValue<T> {
+pub enum StyleMapValue<T> {
     Val(T),
     /// Use the default value for the style, typically from the underlying `ComputedStyle`
     Unset,
