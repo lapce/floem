@@ -1,34 +1,34 @@
-use std::borrow::Cow;
-use std::cell::RefCell;
-use std::rc::Rc;
-use lazy_static::lazy_static;
-use syntect::highlighting::{FontStyle, Highlighter, HighlightState, RangedHighlightIterator, ThemeSet};
-use syntect::parsing::{ParseState, ScopeStack, SyntaxReference, SyntaxSet};
-use floem::{
-    cosmic_text:: {
-        FamilyOwned
-    },
-    keyboard::{Key, ModifiersState, NamedKey},
-    view::View,
-    views::{
-        editor::{
-            core::{editor::EditType, selection::Selection},
-            text::WrapMethod
-        },
-        stack, text_editor, Decorators,
-    },
-    widgets::button,
-};
 use floem::cosmic_text::{Attrs, AttrsList, Stretch, Style, Weight};
 use floem::peniko::Color;
 use floem::views::editor::color::EditorColor;
 use floem::views::editor::core::buffer::rope_text::RopeText;
 use floem::views::editor::core::indent::IndentStyle;
-use floem::views::editor::Editor;
 use floem::views::editor::layout::TextLayoutLine;
 use floem::views::editor::text::{Document, RenderWhitespace, SimpleStylingBuilder, Styling};
+use floem::views::editor::Editor;
+use floem::{
+    cosmic_text::FamilyOwned,
+    keyboard::{Key, ModifiersState, NamedKey},
+    view::View,
+    views::{
+        editor::{
+            core::{editor::EditType, selection::Selection},
+            text::WrapMethod,
+        },
+        stack, text_editor, Decorators,
+    },
+    widgets::button,
+};
+use lazy_static::lazy_static;
+use std::borrow::Cow;
+use std::cell::RefCell;
+use std::rc::Rc;
+use syntect::highlighting::{
+    FontStyle, HighlightState, Highlighter, RangedHighlightIterator, ThemeSet,
+};
+use syntect::parsing::{ParseState, ScopeStack, SyntaxReference, SyntaxSet};
 
-lazy_static!{
+lazy_static! {
     pub static ref SYNTAXSET: SyntaxSet = SyntaxSet::load_defaults_newlines();
     pub static ref THEMES: ThemeSet = ThemeSet::load_defaults();
 }
@@ -38,7 +38,7 @@ struct SyntaxHighlightingStyle<'a> {
     pub highlighter: Highlighter<'a>,
     pub style: Rc<dyn Styling>,
     pub doc: Option<Rc<dyn Document>>,
-    pub states: RefCell<Vec<(ParseState, HighlightState)>>
+    pub states: RefCell<Vec<(ParseState, HighlightState)>>,
 }
 
 impl<'a> SyntaxHighlightingStyle<'a> {
@@ -47,19 +47,18 @@ impl<'a> SyntaxHighlightingStyle<'a> {
         let rust = SYNTAXSET.find_syntax_by_extension("rs").unwrap();
         let highlighter = Highlighter::new(theme);
 
-        SyntaxHighlightingStyle{
+        SyntaxHighlightingStyle {
             syntax: rust,
             highlighter,
             style,
             doc: None,
-            states: RefCell::new(Vec::new())
+            states: RefCell::new(Vec::new()),
         }
     }
 
     pub fn set_doc(&mut self, doc: Rc<dyn Document>) {
         self.doc = Some(doc);
     }
-
 }
 
 impl<'a> Styling for SyntaxHighlightingStyle<'a> {
@@ -125,7 +124,14 @@ impl<'a> Styling for SyntaxHighlightingStyle<'a> {
                 let text = doc.rope_text().line_content(line).to_string();
                 if let Ok(ops) = states.0.parse_line(&text, &SYNTAXSET) {
                     if line_no == line {
-                        for (style, _text, range) in RangedHighlightIterator::new(&mut states.1, &ops, &text, &self.highlighter).into_iter() {
+                        for (style, _text, range) in RangedHighlightIterator::new(
+                            &mut states.1,
+                            &ops,
+                            &text,
+                            &self.highlighter,
+                        )
+                        .into_iter()
+                        {
                             let mut attr = default.clone();
                             if style.font_style.contains(FontStyle::ITALIC) {
                                 attr.style = Style::Italic;
@@ -133,7 +139,12 @@ impl<'a> Styling for SyntaxHighlightingStyle<'a> {
                             if style.font_style.contains(FontStyle::BOLD) {
                                 attr.weight = Weight::BOLD;
                             }
-                            attr.color = Color::rgba8(style.foreground.r, style.foreground.g, style.foreground.b, style.foreground.a);
+                            attr.color = Color::rgba8(
+                                style.foreground.r,
+                                style.foreground.g,
+                                style.foreground.b,
+                                style.foreground.a,
+                            );
 
                             attrs.add_span(range, attr);
                         }
@@ -171,12 +182,17 @@ impl<'a> Styling for SyntaxHighlightingStyle<'a> {
 fn app_view() -> impl View {
     let global_style = SimpleStylingBuilder::default()
         .wrap(WrapMethod::None)
-        .font_family(vec!(FamilyOwned::Name("Fira Code".to_string()), FamilyOwned::Name("Consolas".to_string()), FamilyOwned::Monospace))
+        .font_family(vec![
+            FamilyOwned::Name("Fira Code".to_string()),
+            FamilyOwned::Name("Consolas".to_string()),
+            FamilyOwned::Monospace,
+        ])
         .build_dark();
 
     let mut style = SyntaxHighlightingStyle::new(Rc::new(global_style));
 
-    let editor = text_editor(r#"fn fib(n: i32) -> i32 {
+    let editor = text_editor(
+        r#"fn fib(n: i32) -> i32 {
 	if n == 0 || n == 1 {
 		return n;
 	} else {
@@ -198,7 +214,8 @@ mod tests {
 	    assert_eq!(fib(5), 5);
 	}
 }
-"#);
+"#,
+    );
 
     style.set_doc(editor.doc().clone());
     let editor = editor.styling(style);
@@ -220,8 +237,10 @@ mod tests {
                 let a = !gutter.get_untracked();
                 gutter.set(a);
             }),
-        )).style(|s| s.width_full().flex_row().items_center().justify_center()),
-    )).style(|s| s.size_full().flex_col().items_center().justify_center());
+        ))
+        .style(|s| s.width_full().flex_row().items_center().justify_center()),
+    ))
+    .style(|s| s.size_full().flex_col().items_center().justify_center());
 
     let id = view.id();
     view.on_key_up(
