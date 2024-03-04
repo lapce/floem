@@ -22,6 +22,14 @@ serde = "1.0"
 lapce-xi-rope = { version = "0.3.2", features = ["serde"] }
 strum = "0.21.0"
 strum_macros = "0.21.1"
+resvg = "0.40.0"
+swash = "0.1.8"
+image = { version = "0.24", features = ["jpeg", "png"] }
+raw-window-handle = "0.5.1"
+futures = "0.3.26"
+anyhow = "1.0.69"
+floem-peniko = "0.1.0"
+floem_renderer = { path = "./renderer", version = "0.1.0" }
 
 [dependencies]
 sha2 = "0.10.6"

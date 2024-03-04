@@ -512,11 +512,10 @@ impl Renderer for VgerRenderer {
             height,
             || {
                 let mut img = tiny_skia::Pixmap::new(width, height).unwrap();
-                let rtree = resvg::Tree::from_usvg(svg.tree);
-                let scale = (width as f64 / rtree.size.width())
-                    .min(height as f64 / rtree.size.height()) as f32;
+                let scale = (width as f32 / svg.tree.size().width())
+                    .min(height as f32 / svg.tree.size().height());
                 let transform = tiny_skia::Transform::from_scale(scale, scale);
-                rtree.render(transform, &mut img.as_mut());
+                resvg::render(svg.tree, transform, &mut img.as_mut());
                 img.take()
             },
             paint,

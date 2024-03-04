@@ -67,7 +67,7 @@ impl Widget for Svg {
     fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast::<String>() {
             let text = &*state;
-            self.svg_tree = Tree::from_str(text, &usvg::Options::default()).ok();
+            self.svg_tree = Tree::from_str(text, &usvg::Options::default(), font_db).ok();
 
             let mut hasher = Sha256::new();
             hasher.update(text);
