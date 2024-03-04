@@ -31,7 +31,7 @@ rustc-hash = "1.1.0"
 smallvec = "1.10.0"
 educe = "0.4.20"
 taffy = { version = "0.4", features = ["grid"] }
-rfd = { version = "0.11.4", default-features = false, features = [
+rfd = { version = "0.14.0", default-features = false, features = [
     "xdg-portal",
 ] }
 raw-window-handle = "0.5.1"
@@ -59,8 +59,12 @@ image = { version = "0.24", features = ["jpeg", "png"] }
 copypasta = { version = "0.10.0", default-features = false, features = ["wayland", "x11"] }
 
 [features]
-default = ["editor"]
-# TODO: this is only winit and the editor serde, there are other dependencies that still depend on 
+default = ["editor", "rfd-tokio"]
+# TODO: this is only winit and the editor serde, there are other dependencies that still depend on
 # serde
 serde = ["floem-winit/serde", "dep:serde"]
 editor = ["floem-editor-core", "dep:lapce-xi-rope", "dep:strum", "dep:strum_macros", "dep:downcast-rs"]
+
+# rfd async runtime
+rfd-async-std = ["rfd/async-std"]
+rfd-tokio = ["rfd/tokio"]
