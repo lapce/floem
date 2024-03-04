@@ -25,6 +25,7 @@ pub(crate) struct Item {
     pub(crate) child: Box<dyn Widget>,
 }
 
+/// A list of views that support the selection of items. See [`list`].
 pub struct List {
     data: ViewData,
     selection: RwSignal<Option<usize>>,
@@ -51,6 +52,15 @@ impl List {
     }
 }
 
+/// A list of views built from an iterator which remains static and always contains the same elements in the same order.
+///
+/// A list is like a [stack](super::stack()) but also has built-in support for the selection of items: up and down using arrow keys, top and bottom control using the home and end keys, and for the "acceptance" of an item using the Enter key.
+///
+/// ## Example
+/// ```rust
+/// use floem::views::*;
+/// list(vec![1,1,2,2,3,4,5,6,7,8,9].iter().map(|val| text(val)));
+/// ```
 pub fn list<V>(iterator: impl IntoIterator<Item = V>) -> List
 where
     V: Widget + 'static,

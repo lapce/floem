@@ -300,7 +300,7 @@ impl<'a> WordCursor<'a> {
 
     /// Looks for a matching pair character, either forward for opening chars (ex: `(`) or
     /// backward for closing char (ex: `}`), and return the matched character position if found.
-    /// Will return `None` if the character under cursor is not matchable (see [`crate::syntax::util::matching_char`]).
+    /// Will return `None` if the character under cursor is not matchable (see [`crate::util::matching_char`]).
     ///
     /// **Example:**
     ///

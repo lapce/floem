@@ -29,6 +29,52 @@ where
     phantom: PhantomData<T>,
 }
 
+/// A stack whose items can be reactively updated.
+///
+/// This is useful when you have a list of views that change over time.
+///
+/// The [`dyn_stack`] takes a function that returns an iterator of items.
+/// If the function contains a signal, such as an `RwSignal<Vec<u32>>`, when that signal is updated the views will also update.
+/// The [`dyn_stack`] internally keeps track of changes to the items and ensures that, if an item hash did not change, the associated view is not reloaded.
+///
+/// The [`dyn_stack`] tracks the uniqueness of items by letting you provide a `key function`.
+/// This key function gives you a reference to an item from the list and lets you return a value that can be hashed.
+/// That value is what tells the [`dyn_stack`] how the item is unique from the others.
+/// Often times, the item in the list, such as u32 in this case, already implements hash and you can simply return the same value.
+///
+/// ## Example
+/// ```
+/// use floem::reactive::*;
+/// use floem::views::*;
+///
+/// let items = create_rw_signal(vec![1,2,3,4]);
+///
+/// dyn_stack(
+///    move || items.get(),
+///    move |item| *item,
+///    move |item| label(move || item),
+/// );
+/// ```
+/// This will only work if all of the items in the list are unique.
+/// If all of the items are not unique, you can choose some other value to hash. It is common to use an AtomicU32 to accomplish this.
+///
+/// ## Example
+/// ```
+///
+/// use std::sync::atomic::{AtomicU32, Ordering};
+/// use floem::reactive::*;
+/// use floem::views::*;
+///
+/// let items = create_rw_signal(vec![1,1,2,2,3,3,4,4]);
+/// let unique_atomic = AtomicU32::new(0);
+///
+/// dyn_stack(
+///    move || items.get(),
+///    move |_item| unique_atomic.fetch_add(1, Ordering::Relaxed),
+///    move |item| label(move || item),
+/// );
+/// ```
+///
 pub fn dyn_stack<IF, I, T, KF, K, VF, V>(each_fn: IF, key_fn: KF, view_fn: VF) -> DynStack<T>
 where
     IF: Fn() -> I + 'static,

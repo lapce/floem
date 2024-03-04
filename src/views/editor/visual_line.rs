@@ -186,7 +186,7 @@ impl TextLayoutCache {
 /// Note: `text` does not necessarily include every piece of text. The obvious example is phantom
 /// text, which is not in the underlying buffer.  
 ///  
-/// Using this trait rather than passing around something like [`Document`] allows the backend to
+/// Using this trait rather than passing around something like [Document](super::text::Document) allows the backend to
 /// be swapped out if needed. This would be useful if we ever wanted to reuse it across different
 /// views that did not naturally fit into our 'document' model. As well as when we want to extract
 /// the editor view code int a separate crate for Floem.

@@ -8,7 +8,7 @@ use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
 use crate::view::{View, ViewData};
 use crate::widgets::PlaceholderTextClass;
-use crate::{prop, prop_extracter, Clipboard, EventPropagation};
+use crate::{prop, prop_extractor, Clipboard, EventPropagation};
 use floem_reactive::create_rw_signal;
 use taffy::prelude::{Layout, NodeId};
 
@@ -35,7 +35,7 @@ use crate::{
 
 use super::Decorators;
 
-prop_extracter! {
+prop_extractor! {
     Extracter {
         color: TextColor,
     }
@@ -43,14 +43,14 @@ prop_extracter! {
 
 prop!(pub SelectionCornerRadius: f64 {} = 0.0);
 
-prop_extracter! {
+prop_extractor! {
     SelectionStyle {
         //TODO: background color?
         selection_corner_radius: SelectionCornerRadius,
     }
 }
 
-prop_extracter! {
+prop_extractor! {
     PlaceholderStyle {
         pub color: TextColor,
         //TODO: pub font_size: FontSize,

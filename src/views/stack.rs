@@ -8,12 +8,31 @@ use crate::{
     view_tuple::ViewTuple,
 };
 
+/// A collection of static views. See [`stack`] and [`stack_from_iter`].
+///
+/// The children of a stack can still get reactive updates.
 pub struct Stack {
     data: ViewData,
     pub(crate) children: Vec<Box<dyn Widget>>,
     direction: Option<FlexDirection>,
 }
 
+/// A basic stack that is built from a tuple of views which remains static and always contains the same elements in the same order.
+///
+/// The children of a stack can still get reactive updates.
+/// See also [`v_stack`] and [`h_stack`].
+///
+/// ## Example
+/// ```rust
+/// use floem::views::*;
+/// stack((
+///    text("first element"),
+///     stack((
+///        text("new stack"),
+///        empty(),
+///     )),
+/// ));
+/// ```
 pub fn stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
     Stack {
         data: ViewData::new(Id::next()),
@@ -22,7 +41,7 @@ pub fn stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
     }
 }
 
-/// A stack which defaults to `FlexDirection::Row`.
+/// A stack which defaults to `FlexDirection::Row`. See also [`v_stack`].
 pub fn h_stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
     Stack {
         data: ViewData::new(Id::next()),
@@ -31,7 +50,7 @@ pub fn h_stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
     }
 }
 
-/// A stack which defaults to `FlexDirection::Column`.
+/// A stack which defaults to `FlexDirection::Column`. See also [`h_stack`].
 pub fn v_stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
     Stack {
         data: ViewData::new(Id::next()),
@@ -54,7 +73,13 @@ where
     }
 }
 
-/// Creates a stack from an iterator of views.
+/// Creates a stack from an iterator of views. See also [`v_stack_from_iter`] and [`h_stack_from_iter`].
+///
+/// ## Example
+/// ```rust
+/// use floem::views::*;
+/// stack_from_iter(vec![1,1,2,2,3,4,5,6,7,8,9].iter().map(|val| text(val)));
+/// ```
 pub fn stack_from_iter<V>(iterator: impl IntoIterator<Item = V>) -> Stack
 where
     V: View + 'static,
@@ -62,7 +87,7 @@ where
     from_iter(iterator, None)
 }
 
-/// Creates a stack from an iterator of views. It defaults to `FlexDirection::Row`.
+/// Creates a stack from an iterator of views. It defaults to `FlexDirection::Row`. See also [`v_stack_from_iter`].
 pub fn h_stack_from_iter<V>(iterator: impl IntoIterator<Item = V>) -> Stack
 where
     V: View + 'static,
@@ -70,7 +95,7 @@ where
     from_iter(iterator, Some(FlexDirection::Row))
 }
 
-/// Creates a stack from an iterator of views. It defaults to `FlexDirection::Column`.
+/// Creates a stack from an iterator of views. It defaults to `FlexDirection::Column`.See also [`h_stack_from_iter`].
 pub fn v_stack_from_iter<V>(iterator: impl IntoIterator<Item = V>) -> Stack
 where
     V: View + 'static,

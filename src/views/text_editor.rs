@@ -207,7 +207,10 @@ impl TextEditor {
     /// When commands are run on the document, this function is called.  
     /// If it returns [`CommandExecuted::Yes`] then further handlers after it, including the
     /// default handler, are not executed.  
-    /// ```rust,ignore
+    /// ```rust
+    /// use floem::views::editor::command::{Command, CommandExecuted};
+    /// use floem::views::text_editor::text_editor;
+    /// use floem_editor_core::command::EditCommand;
     /// text_editor("Hello")
     ///     .pre_command(|ev| {
     ///         if matches!(ev.cmd, Command::Edit(EditCommand::Undo)) {
@@ -220,11 +223,11 @@ impl TextEditor {
     ///     .pre_command(|_| {
     ///         // This will never be called if command was an undo
     ///         CommandExecuted::Yes
-    ///     }))
+    ///     })
     ///     .pre_command(|_| {
     ///         // This will never be called
     ///         CommandExecuted::No
-    ///     })
+    ///     });
     /// ```
     /// Note that these are specific to each text editor view.
     pub fn pre_command(self, f: impl Fn(PreCommand) -> CommandExecuted + 'static) -> Self {

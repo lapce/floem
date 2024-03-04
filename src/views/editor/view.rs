@@ -221,7 +221,7 @@ impl ScreenLines {
             .copied()
     }
 
-    /// Ran on [`LayoutEvent::CreatedLayout`] to update  [`ScreenLinesBase`] &
+    /// Ran on [LayoutEvent::CreatedLayout](super::visual_line::LayoutEvent::CreatedLayout) to update  [`ScreenLinesBase`] &
     /// the viewport if necessary.
     ///
     /// Returns `true` if [`ScreenLines`] needs to be completely updated in response

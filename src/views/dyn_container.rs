@@ -18,7 +18,7 @@ pub struct DynamicContainer<T: 'static> {
 /// A container for a dynamically updating View
 ///
 /// ## Example
-/// ```ignore
+/// ```
 /// use floem::{
 ///     reactive::create_rw_signal,
 ///     view::View,
@@ -47,8 +47,8 @@ pub struct DynamicContainer<T: 'static> {
 ///         dyn_container(
 ///             move || view.get(),
 ///             move |value| match value {
-///                 ViewSwitcher::One => Box::new(label(|| "One")),
-///                 ViewSwitcher::Two => Box::new(v_stack((label(|| "Stacked"), label(|| "Two")))),
+///                 ViewSwitcher::One => label(|| "One").any(),
+///                 ViewSwitcher::Two => v_stack((label(|| "Stacked"), label(|| "Two"))).any(),
 ///             },
 ///         ),
 ///     ))
@@ -61,12 +61,8 @@ pub struct DynamicContainer<T: 'static> {
 ///     })
 /// }
 ///
-/// fn main() {
-///     floem::launch(app_view);
-/// }
 /// ```
 ///
-/// See [container_box](crate::views::container_box()) for more documentation on a general container
 pub fn dyn_container<CF: Fn(T) -> AnyView + 'static, T: 'static>(
     update_view: impl Fn() -> T + 'static,
     child_fn: CF,

@@ -27,6 +27,7 @@ pub enum VirtualItemSize<T> {
     Fixed(Box<dyn Fn() -> f64>),
 }
 
+/// A trait that can be implemented on a type so that the type can be used in a [`virtual_stack`] or [`virtual_list`](super::virtual_list()).
 pub trait VirtualVector<T> {
     fn total_len(&self) -> usize;
 
@@ -47,6 +48,7 @@ pub trait VirtualVector<T> {
     }
 }
 
+/// A virtual stack that is like a [`dyn_stack`](super::dyn_stack()) but also lazily loads items for performance. See [`virtual_stack`].
 pub struct VirtualStack<T>
 where
     T: 'static,
@@ -70,6 +72,37 @@ struct VirtualStackState<T> {
     content_size: f64,
 }
 
+/// A View that is like a [`dyn_stack`](super::dyn_stack()) but also lazily loads the items as they appear in a [scroll view](super::scroll()) and does not support the flexbox nor grid layout algorithms.
+/// Instead, the Virtual Stack gives every element a consistent size and uses a basic layout.
+/// This is done for perfomance and allows for lists of millions of items to be used with very high performance.
+///
+/// ## Example
+/// ```
+/// use floem::{reactive::*, views::*, unit::UnitExt};
+///
+/// let long_list: im::Vector<i32> = (0..1000000).collect();
+/// let (long_list, _set_long_list) = create_signal(long_list);
+///
+/// container(
+///     scroll(
+///         virtual_list(
+///             VirtualDirection::Vertical,
+///             VirtualItemSize::Fixed(Box::new(|| 20.0)),
+///             move || long_list.get(),
+///             move |item| *item,
+///             move |item| label(move || item.to_string()).style(|s| s.height(20.0)),
+///         )
+///         .style(|s| s.flex_col().width_full()),
+///     )
+///     .style(|s| s.width(100.0).height(100.pct()).border(1.0)),
+/// )
+/// .style(|s| {
+///     s.size(100.pct(), 100.pct())
+///         .padding_vert(20.0)
+///         .flex_col()
+///         .items_center()
+/// });
+/// ```
 pub fn virtual_stack<T, IF, I, KF, K, VF, V>(
     direction: VirtualDirection,
     item_size: VirtualItemSize<T>,

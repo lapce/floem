@@ -7,7 +7,7 @@ use floem_winit::keyboard::{Key, NamedKey};
 use kurbo::{Circle, Point, RoundedRect};
 
 use crate::{
-    prop, prop_extracter,
+    prop, prop_extractor,
     style::{Background, BorderRadius, Foreground, Height},
     style_class,
     unit::{PxPct, PxPctAuto},
@@ -24,7 +24,7 @@ enum SliderUpdate {
 prop!(pub EdgeAlign: bool {} = false);
 prop!(pub HandleRadius: PxPct {} = PxPct::Pct(98.));
 
-prop_extracter! {
+prop_extractor! {
     SliderStyle {
         foreground: Foreground,
         handle_radius: HandleRadius,
@@ -35,7 +35,7 @@ style_class!(pub SliderClass);
 style_class!(pub BarClass);
 style_class!(pub AccentBarClass);
 
-prop_extracter! {
+prop_extractor! {
     BarStyle {
         border_radius: BorderRadius,
         color: Background,

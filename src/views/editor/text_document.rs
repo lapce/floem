@@ -64,7 +64,7 @@ pub struct TextDocument {
     /// Whether to automatically indent the new line via heuristics
     pub auto_indent: Cell<bool>,
 
-    /// (cmd: &Command, count: Option<usize>, modifiers: ModifierState)  
+    // (cmd: &Command, count: Option<usize>, modifiers: ModifierState)
     /// Ran before a command is executed. If it says that it executed the command, then handlers
     /// after it will not be called.
     pre_command: Rc<RefCell<HashMap<EditorId, SmallVec<[PreCommandFn; 1]>>>>,

@@ -1,86 +1,46 @@
-//! # Views
+//! # View and Widget Traits
 //! Views are self-contained components that can be composed together to create complex UIs.
 //! Views are the main building blocks of Floem.
 //!
-//! Views are structs that implement the View trait. Many of these structs will also contain a child field that is a generic type V where V also implements View. In this way views can be composed together easily to create complex views without the need for creating new structs and manually implementing View. This is the most common way to build UIs in Floem. Creating a struct and manually implementing View is typically only needed for special cases. The rest of this module documentation is for help when manually implementing View on your own types.
+//! Views are structs that implement the View and widget traits. Many of these structs will also contain a child field that also implements View. In this way, views can be composed together easily to create complex UIs. This is the most common way to build UIs in Floem. For more information on how to compose views check out the [Views](crate::views) module.
+//!
+//! Creating a struct and manually implementing the View and Widget traits is typically only needed for building new widgets and for special cases. The rest of this module documentation is for help when manually implementing View and Widget on your own types.
+//!
+//!
+//! ## The View and Widget Traits
+//! The [`View`] trait is the trait that Floem uses to build  and display elements, and it builds on the [`Widget`] trait. The [`Widget`] trait contains the methods for implementing updates, styling, layout, events, and painting.
+//! Eventually, the goal is for Floem to integrate the Widget trait with other rust UI libraries so that the widget layer can be shared among all compatible UI libraries.
 //!
 //! ## State management
 //!
-//! For all reactive state that your type contains either in the form of signals or derived signals you need to process the changes within an effect.
-//! Often times the pattern is to [get](floem_reactive::ReadSignal::get) the data in an effect and pass it in to `id.update_state()` and then handle that data in the `update` method of the View trait.
+//! For all reactive state that your type contains, either in the form of signals or derived signals, you need to process the changes within an effect.
+//! The most common pattern is to [get](floem_reactive::ReadSignal::get) the data in an effect and pass it in to `id.update_state()` and then handle that data in the `update` method of the View trait.
 //!
-//! ### Use state to update your view
+//! For exmaple a minimal slider might look like the following. First, we define the struct with the [`ViewData`] that contains the [`Id`].
+//! Then, we use a function to construct the slider. As part of this function we create an effect that will be re-run every time the signals in the  `percent` closure change.
+//! In the effect we send the change to the associated [`Id`]. This change can then be handled in the [`Widget::update`] method.
+//! ```rust
+//! use floem::view::ViewData;
+//! use floem::reactive::*;
 //!
-//! To affect the layout and rendering of your component, you will need to send a state update to your component with [Id::update_state](crate::id::Id::update_state)
-//! and then call [UpdateCx::request_layout](crate::context::UpdateCx::request_layout) to request a layout which will cause a repaint.
+//! struct Slider {
+//!     data: ViewData,
+//! }
+//! pub fn slider(percent: impl Fn() -> f32 + 'static) -> Slider {
+//!    let id = floem::id::Id::next();
 //!
-//! ### Local and locally-shared state
-//!
-//! Some pre-built `Views` can be passed state in their constructor. You can choose to share this state among components.
-//!
-//! To share state between components child and sibling components, you can simply pass down a signal to your children. Here's are two contrived examples:
-//!
-//! #### No custom component, simply creating state and sharing among the composed views.
-//!
-//! ```ignore
-//! pub fn label_and_input() -> impl View {
-//!     let text = create_rw_signal("Hello world".to_string());
-//!     stack(|| (text_input(text), label(|| text.get())))
-//!         .style(|| Style::new().padding(10.0))
+//!    // If the following effect is not created, and `percent` is accesed directly,
+//!    // `percent` will only be accessed a single time and will not be reactive.
+//!    // Therefore the following `create_effect` is necessary for reactivity.
+//!    create_effect(move |_| {
+//!        let percent = percent();
+//!        id.update_state(percent);
+//!    });
+//!    Slider {
+//!        data: ViewData::new(id),
+//!    }
 //! }
 //! ```
-//!
-//! #### Encapsulating state in a custom component and sharing it with its children.
-//!
-//! Custom [Views](crate::view::View)s may have encapsulated local state that is stored on the implementing struct.
-//!
-//!```ignore
-//!
-//! struct Parent<V> {
-//!     id: Id,
-//!     text: ReadSignal<String>,
-//!     child: V,
-//! }
-//!
-//! // Creates a new parent view with the given child.
-//! fn parent<V>(new_child: impl FnOnce(ReadSignal<String>) -> V) -> Parent<impl View>
-//! where
-//!     V: View + 'static,
-//! {
-//!     let text = create_rw_signal("World!".to_string());
-//!     // share the signal between the two children
-//!     let (id, child) = ViewContext::new_id_with_child(stack(|| (text_input(text)), new_child(text.read_only())));
-//!     Parent { id, text, child }
-//! }
-//!
-//! impl<V> View for Parent<V>
-//! where
-//!     V: View,
-//! {
-//! // implementation omitted for brevity
-//! }
-//!
-//! struct Child {
-//!     id: Id,
-//!     label: Label,
-//! }
-//!
-//! // Creates a new child view with the given state (a read only signal)
-//! fn child(text: ReadSignal<String>) -> Child {
-//!     let (id, label) = ViewContext::new_id_with_child(|| label(move || format!("Hello, {}", text.get())));
-//!     Child { id, label }
-//! }
-//!
-//! impl View for Child {
-//!   // implementation omitted for brevity
-//! }
-//!
-//! // Usage
-//! fn main() {
-//!     floem::launch(parent(child));
-//! }
-//! ```
-//!
 //!
 
 use floem_renderer::Renderer;
@@ -101,6 +61,7 @@ pub use crate::view_data::ViewData;
 
 pub type AnyWidget = Box<dyn Widget>;
 
+/// The View trait provides an interface to access the [`ViewData`] and to build a [`Widget`] into a View.
 pub trait View: Sized {
     fn view_data(&self) -> &ViewData;
     fn view_data_mut(&mut self) -> &mut ViewData;
@@ -125,7 +86,7 @@ pub trait View: Sized {
     }
 }
 
-/// This is a type which can hold any view.
+/// A type that can hold any view.
 ///
 /// Views in Floem are strongly typed. [`AnyView`] allows you to escape the strong typing by converting any type implementing [View] into the [AnyView] type.
 ///
@@ -197,6 +158,10 @@ impl<V: View> DynView for V {
     }
 }
 
+/// The Widget trait contains the methods for implementing updates, styling, layout, events, and painting.
+///
+/// The [view_data](Widget::view_data) and [view_data_mut](Widget::view_data_mut) methods must be implemented. If the widget contains a child then the [for_each_child](Widget::for_each_child), [for_each_child_mut](Widget::for_each_child_mut), and [for_each_child_rev_mut](Widget::for_each_child_rev_mut) methods must also be implemented.
+/// The other methods may be implemented as necessary to implement the Widget.
 pub trait Widget {
     fn view_data(&self) -> &ViewData;
     fn view_data_mut(&mut self) -> &mut ViewData;

@@ -481,10 +481,10 @@ impl Selection {
         (self.regions[ix].min(), self.regions[ix].max())
     }
 
-    /// Apply [`xi_rope::RopeDelta`] to this selection.
+    /// Apply [`lapce_xi_rope::RopeDelta`] to this selection.
     /// Typically used to apply an edit to a buffer and update its selections
     /// **Parameters*:*
-    /// - `delta`[`xi_rope::RopeDelta`]
+    /// - `delta`[`lapce_xi_rope::RopeDelta`]
     /// - `after` parameter indicate if the delta should be applied before or after the selection
     /// - `drift` see [`InsertDrift`]
     pub fn apply_delta(&self, delta: &RopeDelta, after: bool, drift: InsertDrift) -> Selection {

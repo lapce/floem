@@ -3,7 +3,7 @@ use crate::{
     view::{View, ViewData, Widget},
 };
 
-/// A simple wrapper around another View. See [`container`]
+/// A simple wrapper around another View. See [`container`].
 pub struct Container {
     data: ViewData,
     child: Box<dyn Widget>,
@@ -12,7 +12,7 @@ pub struct Container {
 /// A simple wrapper around another View
 ///
 /// A [`Container`] is useful for wrapping another [View](crate::view::View). This is often useful for allowing another
-/// set of styles completely separate from the View that is being wrapped.
+/// set of styles completely separate from the child View that is being wrapped.
 pub fn container<V: View + 'static>(child: V) -> Container {
     Container {
         data: ViewData::new(Id::next()),
