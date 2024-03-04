@@ -6,7 +6,7 @@ use floem_winit::keyboard::{Key, NamedKey};
 use kurbo::{Point, Size};
 
 use crate::{
-    prop, prop_extracter,
+    prop, prop_extractor,
     style::{self, Foreground},
     style_class,
     unit::PxPct,
@@ -30,7 +30,7 @@ prop!(pub ToggleButtonInset: PxPct {} = PxPct::Px(0.));
 prop!(pub ToggleButtonCircleRad: PxPct {} = PxPct::Pct(95.));
 prop!(pub ToggleButtonBehavior: ToggleButtonSwitch {} = ToggleButtonSwitch::Switch);
 
-prop_extracter! {
+prop_extractor! {
     ToggleStyle {
         foreground: Foreground,
         inset: ToggleButtonInset,

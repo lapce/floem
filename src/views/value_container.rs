@@ -15,7 +15,7 @@ pub struct ValueContainer<T> {
     on_update: Option<Box<dyn Fn(T)>>,
 }
 
-/// Creates two signals:
+/// A convenience function that creates two signals for use in a [`value_container`]
 /// - The outbound signal enables a widget's internal input event handlers
 ///   to publish state changes via `ValueContainer::on_update`.
 /// - The inbound signal propagates value changes in the producer function

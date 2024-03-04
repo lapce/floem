@@ -1,28 +1,5 @@
-//! # Style  
-//! Styles are divided into two parts:
-//! [`ComputedStyle`]: A style with definite values for most fields.  
+//! # Style
 //!
-//! [`Style`]: A style with [`StyleValue`]s for the fields, where `Unset` falls back to the relevant
-//! field in the [`ComputedStyle`] and `Base` falls back to the underlying [`Style`] or the
-//! [`ComputedStyle`].
-//!
-//!
-//! A loose analogy with CSS might be:  
-//! [`ComputedStyle`] is like the browser's default style sheet for any given element (view).  
-//!   
-//! [`Style`] is like the styling associated with a *specific* element (view):
-//! ```html
-//! <div style="color: red; font-size: 12px;">
-//! ```
-//!   
-//! An override [`Style`] is perhaps closest to classes that can be applied to an element, like
-//! `div:hover { color: blue; }`.  
-//! However, we do not actually have 'classes' where you can define a separate collection of styles
-//! in the same way. So, the hover styling is still defined with the view as you construct it, so
-//! perhaps a closer pseudocode analogy is:
-//! ```html
-//! <div hover_style="color: blue;" style="color: red; font-size: 12px;">
-//! ```
 //!
 
 use floem_peniko::Color;
@@ -449,7 +426,7 @@ macro_rules! prop {
 }
 
 #[macro_export]
-macro_rules! prop_extracter {
+macro_rules! prop_extractor {
     (
         $vis:vis $name:ident {
             $($prop_vis:vis $prop:ident: $reader:ty),*
@@ -1237,7 +1214,7 @@ define_builtin_props!(
     Gap gap nocb: Size<LengthPercentage> {} = Size::zero(),
 );
 
-prop_extracter! {
+prop_extractor! {
     pub FontProps {
         pub size: FontSize,
         pub family: FontFamily,
@@ -1246,7 +1223,7 @@ prop_extracter! {
     }
 }
 
-prop_extracter! {
+prop_extractor! {
     pub(crate) LayoutProps {
         pub border_left: BorderLeft,
         pub border_top: BorderTop,
@@ -1740,10 +1717,12 @@ impl Style {
 
     /// Allow the application of a function if the option exists.  
     /// This is useful for chaining together a bunch of optional style changes.  
-    /// ```rust,ignore
+    /// ```rust
+    /// use floem::style::Style;
+    /// let maybe_none: Option<i32> = None;
     /// let style = Style::default()
     ///    .apply_opt(Some(5.0), Style::padding) // ran
-    ///    .apply_opt(None, Style::margin) // not ran
+    ///    .apply_opt(maybe_none, Style::margin) // not ran
     ///    .apply_opt(Some(5.0), |s, v| s.border_right(v * 2.0))
     ///    .border_left(5.0); // ran, obviously
     /// ```
@@ -1757,10 +1736,11 @@ impl Style {
 
     /// Allow the application of a function if the condition holds.  
     /// This is useful for chaining together a bunch of optional style changes.
-    /// ```rust,ignore
+    /// ```rust
+    /// use floem::style::Style;
     /// let style = Style::default()
     ///     .apply_if(true, |s| s.padding(5.0)) // ran
-    ///     .apply_if(false, |s| s.margin(5.0)) // not ran
+    ///     .apply_if(false, |s| s.margin(5.0)); // not ran
     /// ```
     pub fn apply_if(self, cond: bool, f: impl FnOnce(Self) -> Self) -> Self {
         if cond {

@@ -8,11 +8,15 @@ use crate::{
 
 use super::Decorators;
 
+/// A view that will move the window when the mouse is dragged. See [`drag_window_area`].
 pub struct DragWindowArea {
     data: ViewData,
     child: Box<dyn Widget>,
 }
 
+/// A view that will move the window when the mouse is dragged.
+///
+/// This can be useful when the window has the title bar turned off and you want to be able to still drag the window.
 pub fn drag_window_area<V: Widget + 'static>(child: V) -> DragWindowArea {
     let id = Id::next();
     DragWindowArea {

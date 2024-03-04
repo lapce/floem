@@ -7,7 +7,7 @@ use crate::{
     context::{AppState, ComputeLayoutCx, PaintCx},
     event::Event,
     id::Id,
-    prop, prop_extracter,
+    prop, prop_extractor,
     style::{Background, BorderColor, BorderRadius, Style, StyleSelector},
     style_class,
     unit::Px,
@@ -50,7 +50,7 @@ prop!(pub Rounded: bool {} = cfg!(target_os = "macos"));
 prop!(pub Thickness: Px {} = Px(10.0));
 prop!(pub Border: Px {} = Px(0.0));
 
-prop_extracter! {
+prop_extractor! {
     ScrollStyle {
         color: Background,
         border_radius: BorderRadius,

@@ -4,7 +4,7 @@ use crate::{
     context::UpdateCx,
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
     id::Id,
-    prop_extracter,
+    prop_extractor,
     style::Style,
     style::{FontProps, LineHeight, TextColor, TextOverflow, TextOverflowProp},
     unit::PxPct,
@@ -16,7 +16,7 @@ use floem_renderer::Renderer;
 use kurbo::{Point, Rect};
 use taffy::tree::NodeId;
 
-prop_extracter! {
+prop_extractor! {
     Extracter {
         color: TextColor,
         text_overflow: TextOverflowProp,
@@ -29,6 +29,7 @@ struct TextOverflowListener {
     on_change_fn: Box<dyn Fn(bool) + 'static>,
 }
 
+/// A View that can display text from a [`String`]. See [`label`], [`text`], and [`static_label`].
 pub struct Label {
     data: ViewData,
     label: String,
@@ -59,14 +60,36 @@ impl Label {
     }
 }
 
+/// A non-reactive view that can display text from an item that implements [`Display`]. See also [`label`].
+///
+/// ## Example
+/// ```rust
+/// use floem::views::*;
+///
+/// stack((
+///    text("non-reactive-text"),
+///    text(505),
+/// ));
+/// ```
 pub fn text<S: Display>(text: S) -> Label {
     static_label(text.to_string())
 }
 
+/// A non-reactive view that can display text from an item that can be turned into a [`String`]. See also [`label`].
 pub fn static_label(label: impl Into<String>) -> Label {
     Label::new(Id::next(), label.into())
 }
 
+/// A view that can reactively display text from an item that implements [`Display`]. See also [`text`] for a non-reactive label.
+///
+/// ## Example
+/// ```rust
+/// use floem::{reactive::*, views::*};
+///
+/// let text = RwSignal::new("Reactive text to be displayed".to_string());
+///
+/// label(move || text.get());
+/// ```
 pub fn label<S: Display + 'static>(label: impl Fn() -> S + 'static) -> Label {
     let id = Id::next();
     let initial_label = create_updater(

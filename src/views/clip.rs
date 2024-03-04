@@ -5,11 +5,15 @@ use crate::{
     view::{View, ViewData, Widget},
 };
 
+/// A wrapper around a child View to clip painting. See [`clip`].
 pub struct Clip {
     data: ViewData,
     child: Box<dyn Widget>,
 }
 
+/// A clip is a wrapper around a child View that will clip the painting of the child so that it does not show outside of the viewport of the [`Clip`].
+///
+/// This can be useful for limiting child painting, including for rounded borders using border radius.
 pub fn clip<V: View + 'static>(child: V) -> Clip {
     Clip {
         data: ViewData::new(Id::next()),

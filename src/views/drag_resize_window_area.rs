@@ -10,11 +10,23 @@ use crate::{
 
 use super::Decorators;
 
+/// A view that will resize the window when the mouse is dragged. See [`drag_resize_window_area`].
+///
+/// ## Platform-specific
+///
+/// - **macOS:** Not supported.
+/// - **iOS / Android / Web / Orbital:** Not supported.
 pub struct DragResizeWindowArea {
     data: ViewData,
     child: Box<dyn Widget>,
 }
 
+/// A view that will resize the window when the mouse is dragged.
+///
+/// ## Platform-specific
+///
+/// - **macOS:** Not supported.
+/// - **iOS / Android / Web / Orbital:** Not supported.
 pub fn drag_resize_window_area<V: Widget + 'static>(
     direction: ResizeDirection,
     child: V,

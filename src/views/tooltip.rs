@@ -6,14 +6,14 @@ use crate::{
     context::{EventCx, UpdateCx},
     event::Event,
     id::Id,
-    prop, prop_extracter,
+    prop, prop_extractor,
     view::{default_compute_layout, default_event, View, ViewData, Widget},
     EventPropagation,
 };
 
 prop!(pub Delay: f64 {} = 0.6);
 
-prop_extracter! {
+prop_extractor! {
     TooltipStyle {
         delay: Delay,
     }

@@ -1,7 +1,7 @@
 extern crate alloc;
 
 use alloc::{borrow::Cow, rc::Rc, sync::Arc};
-use core::{borrow::Borrow, cmp::Ordering, convert::AsRef, fmt, hash, ops::Deref, str};
+use core::{borrow::Borrow, cmp::Ordering, fmt, hash, ops::Deref, str};
 
 /// This is a small memory buffer allocated on the stack to store a
 /// ‘string slice’ of exactly one character in length. That is, this

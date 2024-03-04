@@ -4,7 +4,7 @@ use crate::{
     event::EventListener,
     id::{Id, ID_PATHS},
     pointer::PointerInputEvent,
-    prop_extracter,
+    prop_extractor,
     responsive::ScreenSizeBp,
     style::{
         Background, BorderBottom, BorderColor, BorderLeft, BorderRadius, BorderRight, BorderTop,
@@ -112,7 +112,7 @@ pub(crate) fn update_data(id: Id, root: &mut dyn Widget, f: impl FnOnce(&mut Vie
     }
 }
 
-prop_extracter! {
+prop_extractor! {
     pub(crate) ViewStyleProps {
         pub border_left: BorderLeft,
         pub border_top: BorderTop,

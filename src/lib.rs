@@ -1,15 +1,29 @@
 //! # Floem
-//! Floem is cross-platform GUI framework for Rust 🦀. It aims to be extremely performant while providing world-class developer ergonomics.
+//! Floem is cross-platform GUI library for Rust. It aims to be extremely performant while providing world-class developer ergonomics.
+//!
+//! ## Counter Example
+//! ```rust
+//! use floem::{reactive::*, views::*, widgets::*};
+//!
+//! let (counter, set_counter) = create_signal(0);
+//! v_stack((
+//!     label(move || format!("Value: {}", counter.get())),
+//!     h_stack((
+//!         button(|| "Increment").on_click_stop(move |_| {
+//!             set_counter.update(|value| *value += 1);
+//!         }),
+//!         button(|| "Decrement").on_click_stop(move |_| {
+//!             set_counter.update(|value| *value -= 1);
+//!         }),
+//!     )),
+//! ));
+//! ```
 //!
 //! ## Views
 //! Floem models the UI using a tree of [View](view::View) instances that is constructed once. Views are self-contained
 //! components that can be composed together to create complex UIs, capable of reacting to state changes and events.
 //!
-//! To ensure good UI performance, view composition functions are not rerun in response to changes in the reactive system.
-//! Unnecessary rebuilds of views can be expensive. If you have a use case for which having a view composition
-//! function that responds to reactivity is essential, you may wish to consider [dyn_container](views::dyn_container).
-//!
-//! You can read more about [authoring your own views](crate::view) or see [all built-in views](crate::views).
+//! You can read more about the built-in views and how to compose your UI in the [views module](crate::views) or more about authoring your own views and widgets in the [view module](crate::view). For customizing the appearance of your views and UI see the [Customizing appearance section](#customizing-appearance) of this documentation and the [style module](style).
 //!
 //! ## Widgets
 //! Widgets are specialized high-level views providing certain functionality. Common examples include buttons, labels or
@@ -64,10 +78,10 @@
 //!
 //! ## Customizing appearance
 //!
-//! You can style a View instance by calling its [`style`](view::View::style) method. You'll need to import the
-//! `floem::views::Decorators` trait to use it. The `style` method takes a function exposing a
+//! You can style a View instance by calling its [`style`](views::Decorators::style) method. You'll need to import the
+//! `floem::views::Decorators` trait to use the `style` method. The `style` method takes a function exposing a
 //! [`Style`](crate::style::Style) parameter. Through this parameter, you can access methods that modify a variety
-//! of familiar properties like width, padding and background. Some `Style` properties
+//! of familiar properties like width, padding, and background. Some `Style` properties
 //! such as font size are inherited from parent views and can be overridden.
 //!
 //! Styles can be updated reactively using any signal. Here's how to apply a gray background color while the value
@@ -93,6 +107,21 @@
 //! });
 //! ```
 //!
+//! Floem also has targeted styling through the use of classes.
+//! Any view can be tagged with any number of classes using the [`class`](views::Decorators::class()) method and many of Floem's built-in widgets and views have classes applied to them.
+//! This makes it so that a stylesheet can be applied in the form of a `Style` at the root view, or any parent view, by modifying the style of a class and these class styles will apply to all children of the View.
+//!
+//! ## Trivial Example
+//! ```rust
+//! use floem::{views::*, widgets::*, peniko::Color};
+//!
+//! let root_view = stack((
+//!     button(move || "Button One"),
+//!     button(move || "Button Two"),
+//! )).style(|s| s.class(ButtonClass, |s| s.width(150).height(100).background(Color::GRAY).color(Color::GREEN)));
+//! ```
+//! This makes it so that all `Buttons` in the ui that are children of `root_view` will have the same styling, but still allows for local overrides.
+//!
 //! For additional information about styling, [see here](crate::style::Style).
 //!
 //! ## Themes and widget customizations
@@ -105,13 +134,13 @@
 //! labeled checkbox is an example of this: both the checkbox itself and the label next to it can
 //! be customized using `CheckboxClass` and `LabeledCheckboxClass` respectively.
 //!
-//! To theme a window, call the [`style`](crate::view::View::style) method on your root view and inject
+//! To theme a window, call the [`style`](views::Decorators::style) method on your root view and inject
 //! your stylesheet. In your [`WindowConfig`](crate::window::WindowConfig), you may want to disable the
 //! injection of Floem's default styling. The
 //! [`themes` example](https://github.com/lapce/floem/blob/main/examples/themes/src/main.rs) is available
 //! as a reference.
 //!
-//! Don't have the time or patience to develop your own theme? Check the
+//! You can also check the
 //! [floem-themes](https://github.com/topics/floem-themes) GitHub topic for a list of reusable
 //! themes made by the community. This list is unmoderated.
 //!
