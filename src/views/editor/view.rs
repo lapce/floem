@@ -1203,12 +1203,12 @@ fn editor_content(
                     editor.get_untracked().pointer_down(pointer_event);
                 }
             })
-            .on_event_stop(EventListener::PointerMove, move |event| {
+            .on_event_cont(EventListener::PointerMove, move |event| {
                 if let Event::PointerMove(pointer_event) = event {
                     editor.get_untracked().pointer_move(pointer_event);
                 }
             })
-            .on_event_stop(EventListener::PointerUp, move |event| {
+            .on_event_cont(EventListener::PointerUp, move |event| {
                 if let Event::PointerUp(pointer_event) = event {
                     editor.get_untracked().pointer_up(pointer_event);
                 }
