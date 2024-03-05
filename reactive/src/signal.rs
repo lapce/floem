@@ -6,7 +6,7 @@ use crate::{
     runtime::RUNTIME,
 };
 
-/// A read write Signal which can acts as both a Getter and a Setter
+/// A read write Signal which can act as both a Getter and a Setter
 pub struct RwSignal<T> {
     id: Id,
     ty: PhantomData<T>,
@@ -68,8 +68,8 @@ impl<T> RwSignal<T> {
         signal_update_value(&signal, f)
     }
 
-    /// Applies a clsoure to the current value stored in the Signal, and subcribes
-    /// to the current runnig effect to this Memo.
+    /// Applies a closure to the current value stored in the Signal, and subcribes
+    /// to the current running effect to this Memo.
     pub fn with<O>(&self, f: impl FnOnce(&T) -> O) -> O
     where
         T: 'static,
@@ -78,8 +78,8 @@ impl<T> RwSignal<T> {
         signal_with(&signal, f)
     }
 
-    /// Applies a clsoure to the current value stored in the Signal, but it doesn't subcribe
-    /// to the current runnig effect.
+    /// Applies a closure to the current value stored in the Signal, but it doesn't subcribe
+    /// to the current running effect.
     pub fn with_untracked<O>(&self, f: impl FnOnce(&T) -> O) -> O
     where
         T: 'static,
@@ -88,8 +88,8 @@ impl<T> RwSignal<T> {
         signal_with_untracked(&signal, f)
     }
 
-    /// If the signal isn't disposed, applies a clsoure to the current value stored in the Signal,
-    /// but it doesn't subcribe to the current runnig effect.
+    /// If the signal isn't disposed, applies a closure to the current value stored in the Signal,
+    /// but it doesn't subcribe to the current running effect.
     pub fn try_with_untracked<O>(&self, f: impl FnOnce(Option<&T>) -> O) -> O
     where
         T: 'static,
@@ -101,7 +101,7 @@ impl<T> RwSignal<T> {
         }
     }
 
-    /// Only subcribes to the current runnig effect to this Signal.
+    /// Only subcribes to the current running effect to this Signal.
     pub fn track(&self) {
         let signal = self.id.signal().unwrap();
         signal.subscribe();
@@ -131,7 +131,7 @@ impl<T: 'static> RwSignal<T> {
 
 impl<T: Clone> RwSignal<T> {
     /// Clones and returns the current value stored in the Signal, and subcribes
-    /// to the current runnig effect to this Signal.
+    /// to the current running effect to this Signal.
     pub fn get(&self) -> T
     where
         T: 'static,
@@ -141,7 +141,7 @@ impl<T: Clone> RwSignal<T> {
     }
 
     /// Clones and returns the current value stored in the Signal, but it doesn't subcribe
-    /// to the current runnig effect.
+    /// to the current running effect.
     pub fn get_untracked(&self) -> T
     where
         T: 'static,
@@ -151,7 +151,7 @@ impl<T: Clone> RwSignal<T> {
     }
 
     /// Try to clone and return the current value stored in the Signal, and returns None
-    /// if it's already disposed. It doesn't subcribe to the current runnig effect.
+    /// if it's already disposed. It doesn't subcribe to the current running effect.
     pub fn try_get_untracked(&self) -> Option<T>
     where
         T: 'static,
@@ -161,7 +161,7 @@ impl<T: Clone> RwSignal<T> {
 }
 
 /// Creates a new RwSignal which can act both as a setter and a getter.
-/// Accessing the signal value in an Effect will make the Effect subscribes
+/// Accessing the signal value in an Effect will make the Effect subscribe
 /// to the value change of the Signal. And whenever the signal value changes,
 /// it will trigger an effect run.
 pub fn create_rw_signal<T>(value: T) -> RwSignal<T>
@@ -206,7 +206,7 @@ impl<T> PartialEq for ReadSignal<T> {
 
 impl<T: Clone> ReadSignal<T> {
     /// Clones and returns the current value stored in the Signal, and subcribes
-    /// to the current runnig effect to this Signal.
+    /// to the current running effect to this Signal.
     pub fn get(&self) -> T
     where
         T: 'static,
@@ -216,7 +216,7 @@ impl<T: Clone> ReadSignal<T> {
     }
 
     /// Clones and returns the current value stored in the Signal, but it doesn't subcribe
-    /// to the current runnig effect.
+    /// to the current running effect.
     pub fn get_untracked(&self) -> T
     where
         T: 'static,
@@ -227,8 +227,8 @@ impl<T: Clone> ReadSignal<T> {
 }
 
 impl<T> ReadSignal<T> {
-    /// Applies a clsoure to the current value stored in the Signal, and subcribes
-    /// to the current runnig effect to this Memo.
+    /// Applies a closure to the current value stored in the Signal, and subcribes
+    /// to the current running effect to this Memo.
     pub fn with<O>(&self, f: impl FnOnce(&T) -> O) -> O
     where
         T: 'static,
@@ -237,8 +237,8 @@ impl<T> ReadSignal<T> {
         signal_with(&signal, f)
     }
 
-    /// Applies a clsoure to the current value stored in the Signal, but it doesn't subcribe
-    /// to the current runnig effect.
+    /// Applies a closure to the current value stored in the Signal, but it doesn't subcribe
+    /// to the current running effect.
     pub fn with_untracked<O>(&self, f: impl FnOnce(&T) -> O) -> O
     where
         T: 'static,
@@ -311,7 +311,7 @@ impl<T> WriteSignal<T> {
 }
 
 /// Creates a new setter and getter Signal.
-/// Accessing the signal value in an Effect will make the Effect subscribes
+/// Accessing the signal value in an Effect will make the Effect subscribe
 /// to the value change of the Signal. And whenever the signal value changes,
 /// it will trigger an effect run.
 pub fn create_signal<T>(value: T) -> (ReadSignal<T>, WriteSignal<T>)
