@@ -10,7 +10,7 @@ use crate::{
 };
 
 /// You can manually control Signal's lifetime by using Scope.
-/// Every Signal has a Scope created explictly or implicity,
+/// Every Signal has a Scope created explicitly or implicitly,
 /// and when you Dispose the Scope, it will clean up all the Signals
 /// that belong to the Scope and all the child Scopes
 #[derive(Clone, Copy)]
@@ -37,7 +37,7 @@ impl Scope {
     }
 
     /// The current Scope in the Runtime. Any Signal/Effect/Memo created with
-    /// implicty Scope will be under this Scope
+    /// implicitly Scope will be under this Scope
     pub fn current() -> Scope {
         RUNTIME.with(|runtime| Scope(*runtime.current_scope.borrow()))
     }
@@ -82,7 +82,7 @@ impl Scope {
         with_scope(self, create_trigger)
     }
 
-    /// Create effect udner this Scope
+    /// Create effect under this Scope
     pub fn create_effect<T>(self, f: impl Fn(Option<T>) -> T + 'static)
     where
         T: Any + 'static,
