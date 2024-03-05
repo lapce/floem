@@ -4,6 +4,15 @@ use crate::runtime::RUNTIME;
 
 /// Try to retrieve a stored Context value in the reactive system.
 /// You can store a Context value anywhere, and retrieve it from anywhere afterwards.
+///
+/// # Example
+///
+/// ```
+/// use floem::reactive::use_context;
+///
+/// let foo: Option<i32> = use_context();
+/// let bar: Option<String> = use_context();
+/// ```
 pub fn use_context<T>() -> Option<T>
 where
     T: Clone + 'static,
@@ -19,8 +28,17 @@ where
     })
 }
 
-/// Sets a context value to be stored in the reative system.
+/// Sets a context value to be stored in the reactive system.
 /// The stored context value can be retrieved from anywhere by using [use_context](use_context)
+///
+/// # Example
+///
+/// ```
+/// use floem::reactive::provide_context;
+///
+/// provide_context(42);
+/// provide_context(String::from("Hello world"));
+/// ```
 pub fn provide_context<T>(value: T)
 where
     T: Clone + 'static,
