@@ -24,8 +24,8 @@ impl<T> Clone for Memo<T> {
 }
 
 impl<T: Clone> Memo<T> {
-    /// Clones and returns the current value stored in the Memo, and subcribes
-    /// to the current runnig effect to this Memo.
+    /// Clones and returns the current value stored in the Memo, and subscribes
+    /// to the current running effect to this Memo.
     pub fn get(&self) -> T
     where
         T: 'static,
@@ -33,8 +33,8 @@ impl<T: Clone> Memo<T> {
         self.getter.get().unwrap()
     }
 
-    /// Clones and returns the current value stored in the Memo, but it doesn't subcribe
-    /// to the current runnig effect.
+    /// Clones and returns the current value stored in the Memo, but it doesn't subscribe
+    /// to the current running effect.
     pub fn get_untracked(&self) -> T
     where
         T: 'static,
@@ -44,8 +44,8 @@ impl<T: Clone> Memo<T> {
 }
 
 impl<T> Memo<T> {
-    /// Applies a clsoure to the current value stored in the Memo, and subcribes
-    /// to the current runnig effect to this Memo.
+    /// Applies a closure to the current value stored in the Memo, and subscribes
+    /// to the current running effect to this Memo.
     pub fn with<O>(&self, f: impl FnOnce(&T) -> O) -> O
     where
         T: 'static,
@@ -53,8 +53,8 @@ impl<T> Memo<T> {
         self.getter.with(|value| f(value.as_ref().unwrap()))
     }
 
-    /// Applies a clsoure to the current value stored in the Memo, but it doesn't subcribe
-    /// to the current runnig effect.
+    /// Applies a closure to the current value stored in the Memo, but it doesn't subscribe
+    /// to the current running effect.
     pub fn with_untracked<O>(&self, f: impl FnOnce(&T) -> O) -> O
     where
         T: 'static,
@@ -63,7 +63,7 @@ impl<T> Memo<T> {
             .with_untracked(|value| f(value.as_ref().unwrap()))
     }
 
-    /// Only subcribes to the current runnig effect to this Memo.
+    /// Only subscribes to the current running effect to this Memo.
     pub fn track(&self) {
         let signal = self.getter.id.signal().unwrap();
         signal.subscribe();

@@ -68,7 +68,7 @@ impl<T> RwSignal<T> {
         signal_update_value(&signal, f)
     }
 
-    /// Applies a closure to the current value stored in the Signal, and subcribes
+    /// Applies a closure to the current value stored in the Signal, and subscribes
     /// to the current running effect to this Memo.
     pub fn with<O>(&self, f: impl FnOnce(&T) -> O) -> O
     where
@@ -78,7 +78,7 @@ impl<T> RwSignal<T> {
         signal_with(&signal, f)
     }
 
-    /// Applies a closure to the current value stored in the Signal, but it doesn't subcribe
+    /// Applies a closure to the current value stored in the Signal, but it doesn't subscribe
     /// to the current running effect.
     pub fn with_untracked<O>(&self, f: impl FnOnce(&T) -> O) -> O
     where
@@ -89,7 +89,7 @@ impl<T> RwSignal<T> {
     }
 
     /// If the signal isn't disposed, applies a closure to the current value stored in the Signal,
-    /// but it doesn't subcribe to the current running effect.
+    /// but it doesn't subscribe to the current running effect.
     pub fn try_with_untracked<O>(&self, f: impl FnOnce(Option<&T>) -> O) -> O
     where
         T: 'static,
@@ -101,7 +101,7 @@ impl<T> RwSignal<T> {
         }
     }
 
-    /// Only subcribes to the current running effect to this Signal.
+    /// Only subscribes to the current running effect to this Signal.
     pub fn track(&self) {
         let signal = self.id.signal().unwrap();
         signal.subscribe();
@@ -130,7 +130,7 @@ impl<T: 'static> RwSignal<T> {
 }
 
 impl<T: Clone> RwSignal<T> {
-    /// Clones and returns the current value stored in the Signal, and subcribes
+    /// Clones and returns the current value stored in the Signal, and subscribes
     /// to the current running effect to this Signal.
     pub fn get(&self) -> T
     where
@@ -140,7 +140,7 @@ impl<T: Clone> RwSignal<T> {
         signal_get(&signal)
     }
 
-    /// Clones and returns the current value stored in the Signal, but it doesn't subcribe
+    /// Clones and returns the current value stored in the Signal, but it doesn't subscribe
     /// to the current running effect.
     pub fn get_untracked(&self) -> T
     where
@@ -151,7 +151,7 @@ impl<T: Clone> RwSignal<T> {
     }
 
     /// Try to clone and return the current value stored in the Signal, and returns None
-    /// if it's already disposed. It doesn't subcribe to the current running effect.
+    /// if it's already disposed. It doesn't subscribe to the current running effect.
     pub fn try_get_untracked(&self) -> Option<T>
     where
         T: 'static,
@@ -205,7 +205,7 @@ impl<T> PartialEq for ReadSignal<T> {
 }
 
 impl<T: Clone> ReadSignal<T> {
-    /// Clones and returns the current value stored in the Signal, and subcribes
+    /// Clones and returns the current value stored in the Signal, and subscribes
     /// to the current running effect to this Signal.
     pub fn get(&self) -> T
     where
@@ -215,7 +215,7 @@ impl<T: Clone> ReadSignal<T> {
         signal_get(&signal)
     }
 
-    /// Clones and returns the current value stored in the Signal, but it doesn't subcribe
+    /// Clones and returns the current value stored in the Signal, but it doesn't subscribe
     /// to the current running effect.
     pub fn get_untracked(&self) -> T
     where
@@ -227,7 +227,7 @@ impl<T: Clone> ReadSignal<T> {
 }
 
 impl<T> ReadSignal<T> {
-    /// Applies a closure to the current value stored in the Signal, and subcribes
+    /// Applies a closure to the current value stored in the Signal, and subscribes
     /// to the current running effect to this Memo.
     pub fn with<O>(&self, f: impl FnOnce(&T) -> O) -> O
     where
@@ -237,7 +237,7 @@ impl<T> ReadSignal<T> {
         signal_with(&signal, f)
     }
 
-    /// Applies a closure to the current value stored in the Signal, but it doesn't subcribe
+    /// Applies a closure to the current value stored in the Signal, but it doesn't subscribe
     /// to the current running effect.
     pub fn with_untracked<O>(&self, f: impl FnOnce(&T) -> O) -> O
     where
@@ -338,7 +338,7 @@ where
     )
 }
 
-/// The interal Signal where the value is stored, and effects are stored.
+/// The internal Signal where the value is stored, and effects are stored.
 #[derive(Clone)]
 pub(crate) struct Signal {
     pub(crate) id: Id,
