@@ -59,7 +59,7 @@ pub(crate) struct WindowHandle {
     scope: Scope,
     view: WindowView,
     app_state: AppState,
-    paint_state: PaintState,
+    paint_state: PaintState<'a, floem_winit::window::Window>,
     size: RwSignal<Size>,
     theme: Option<Theme>,
     pub(crate) profile: Option<Profile>,
@@ -75,7 +75,7 @@ pub(crate) struct WindowHandle {
     pub(crate) context_menu: RwSignal<Option<(Menu, Point)>>,
 }
 
-impl WindowHandle {
+impl<'a> WindowHandle<'a> {
     pub(crate) fn new(
         window: floem_winit::window::Window,
         view_fn: impl FnOnce(floem_winit::window::WindowId) -> AnyView + 'static,

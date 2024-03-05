@@ -4,6 +4,7 @@ use kurbo::{Affine, Insets, Point, Rect, RoundedRect, Shape, Size, Vec2};
 use std::{
     any::Any,
     collections::{HashMap, HashSet},
+    marker::PhantomData,
     ops::{Deref, DerefMut},
     rc::Rc,
     time::Instant,
@@ -1412,7 +1413,7 @@ impl<'a> LayoutCx<'a> {
 
 pub struct PaintCx<'a> {
     pub(crate) app_state: &'a mut AppState,
-    pub(crate) paint_state: &'a mut PaintState,
+    pub(crate) paint_state: &'a mut PaintState<'a, floem_winit::window::Window>,
     pub(crate) transform: Affine,
     pub(crate) clip: Option<RoundedRect>,
     pub(crate) z_index: Option<i32>,
@@ -1642,15 +1643,15 @@ impl<'a> PaintCx<'a> {
 }
 
 // TODO: should this be private?
-pub struct PaintState {
-    pub(crate) renderer: crate::renderer::Renderer,
+pub struct PaintState<'a, W> {
+    pub(crate) renderer: crate::renderer::Renderer<'a, W>,
 }
 
-impl PaintState {
-    pub fn new<W>(window: &W, scale: f64, size: Size) -> Self
-    where
-        W: raw_window_handle::HasRawDisplayHandle + raw_window_handle::HasRawWindowHandle,
-    {
+impl<'a, W> PaintState<'a, W>
+where
+    W: raw_window_handle::HasDisplayHandle + raw_window_handle::HasWindowHandle + std::marker::Sync,
+{
+    pub fn new(window: &'a W, scale: f64, size: Size) -> Self {
         Self {
             renderer: crate::renderer::Renderer::new(window, scale, size),
         }
@@ -1711,8 +1712,8 @@ impl<'a> UpdateCx<'a> {
     }
 }
 
-impl Deref for PaintCx<'_> {
-    type Target = crate::renderer::Renderer;
+impl<'a> Deref for PaintCx<'a> {
+    type Target = crate::renderer::Renderer<'a, floem_winit::window::Window>;
 
     fn deref(&self) -> &Self::Target {
         &self.paint_state.renderer

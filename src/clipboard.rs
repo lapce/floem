@@ -1,6 +1,6 @@
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
-use raw_window_handle::RawDisplayHandle;
+use raw_window_handle::{DisplayHandle, RawDisplayHandle};
 
 #[cfg(not(any(target_os = "macos", windows)))]
 use copypasta::{
@@ -45,17 +45,17 @@ impl Clipboard {
             .map_err(|e| ClipboardError::ProviderError(e.to_string()))
     }
 
-    pub(crate) unsafe fn init(display: RawDisplayHandle) {
+    pub(crate) unsafe fn init(display: DisplayHandle) {
         *CLIPBOARD.lock() = Some(Self::new(display));
     }
 
     /// # Safety
     /// The `display` must be valid as long as the returned Clipboard exists.
     unsafe fn new(
-        #[allow(unused_variables)] /* on some platforms */ display: RawDisplayHandle,
+        #[allow(unused_variables)] /* on some platforms */ display: DisplayHandle,
     ) -> Self {
         #[cfg(not(any(target_os = "macos", windows)))]
-        if let RawDisplayHandle::Wayland(display) = display {
+        if let DisplayHandle::Wayland(display) = display {
             let (selection, clipboard) =
                 wayland_clipboard::create_clipboards_from_external(display.display);
             return Self {

@@ -19,7 +19,7 @@ use crate::{
     window::WindowConfig,
 };
 
-use raw_window_handle::HasRawDisplayHandle;
+use raw_window_handle::{HasDisplayHandle, HasRawDisplayHandle};
 
 type AppEventCallback = dyn Fn(AppEvent);
 
@@ -82,19 +82,19 @@ pub(crate) fn add_app_update_event(event: AppUpdateEvent) {
 
 /// Floem top level application
 /// This is the entry point of the application.
-pub struct Application {
-    handle: Option<ApplicationHandle>,
+pub struct Application<'a> {
+    handle: Option<ApplicationHandle<'a>>,
     event_listener: Option<Box<AppEventCallback>>,
     event_loop: EventLoop<UserEvent>,
 }
 
-impl Default for Application {
+impl<'a> Default for Application<'a> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Application {
+impl<'a> Application<'a> {
     pub fn new() -> Self {
         let event_loop = EventLoopBuilder::with_user_event()
             .build()
@@ -102,7 +102,11 @@ impl Application {
         let event_loop_proxy = event_loop.create_proxy();
         *EVENT_LOOP_PROXY.lock() = Some(event_loop_proxy.clone());
         unsafe {
-            Clipboard::init(event_loop.raw_display_handle());
+            Clipboard::init(
+                event_loop
+                    .display_handle()
+                    .expect("raw window handle not present"),
+            );
         }
         let handle = ApplicationHandle::new();
         Self {

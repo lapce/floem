@@ -34,7 +34,7 @@ taffy = { version = "0.4", features = ["grid"] }
 rfd = { version = "0.14.0", default-features = false, features = [
     "xdg-portal",
 ] }
-raw-window-handle = "0.5.1"
+raw-window-handle = "0.6.0"
 kurbo = { version = "0.9.5", features = ["serde"] }
 unicode-segmentation = "1.10.0"
 floem-peniko = "0.1.0"

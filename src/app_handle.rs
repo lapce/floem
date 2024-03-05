@@ -19,12 +19,12 @@ use crate::{
     window_handle::WindowHandle,
 };
 
-pub(crate) struct ApplicationHandle {
-    window_handles: HashMap<floem_winit::window::WindowId, WindowHandle>,
+pub(crate) struct ApplicationHandle<'a> {
+    window_handles: HashMap<floem_winit::window::WindowId, WindowHandle<'a>>,
     timers: HashMap<TimerToken, Timer>,
 }
 
-impl ApplicationHandle {
+impl<'a> ApplicationHandle<'a> {
     pub(crate) fn new() -> Self {
         Self {
             window_handles: HashMap::new(),
