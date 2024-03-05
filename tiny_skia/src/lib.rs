@@ -479,12 +479,11 @@ impl Renderer for TinySkiaRenderer {
         }
 
         let mut pixmap = try_ret!(tiny_skia::Pixmap::new(width, height));
-        let rtree = resvg::Tree::from_usvg(svg.tree);
         let svg_transform = tiny_skia::Transform::from_scale(
-            (width as f64 / rtree.size.width()) as f32,
-            (height as f64 / rtree.size.height()) as f32,
+            width as f32 / svg.tree.size().width(),
+            height as f32 / svg.tree.size().height(),
         );
-        rtree.render(svg_transform, &mut pixmap.as_mut());
+        resvg::render(svg.tree, svg_transform, &mut pixmap.as_mut());
 
         self.render_pixmap_paint(&pixmap, rect, paint);
 
