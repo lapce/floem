@@ -13,7 +13,7 @@ use crate::{
     style::{CursorStyle, Style},
     taffy::tree::NodeId,
     view::{AnyWidget, View, ViewData, Widget},
-    views::{clip, container, empty, label, scroll, stack, Decorators},
+    views::{container, empty, scroll, stack, Decorators},
     EventPropagation, Renderer,
 };
 use floem_editor_core::{
@@ -1118,45 +1118,21 @@ pub fn editor_container_view(
 /// Default editor gutter
 /// Simply shows line numbers
 pub fn editor_gutter(editor: RwSignal<Editor>) -> impl View {
-    // TODO: these are probably tuned for lapce?
-    let padding_left = 25.0;
-    let padding_right = 30.0;
-
     let ed = editor.get_untracked();
 
     let scroll_delta = ed.scroll_delta;
 
     let gutter_rect = create_rw_signal(Rect::ZERO);
 
-    stack((
-        stack((
-            empty().style(move |s| s.width(padding_left)),
-            // TODO(minor): this could just track purely Doc
-            label(move || (editor.get().last_line() + 1).to_string()),
-            empty().style(move |s| s.width(padding_right)),
-        ))
-        .style(|s| s.height_pct(100.0)),
-        clip(
-            stack((editor_gutter_view(editor)
-                .on_resize(move |rect| {
-                    gutter_rect.set(rect);
-                })
-                .on_event_stop(EventListener::PointerWheel, move |event| {
-                    if let Event::PointerWheel(pointer_event) = event {
-                        scroll_delta.set(pointer_event.delta);
-                    }
-                })
-                .style(|s| s.size_pct(100.0, 100.0)),))
-            .style(|s| s.size_pct(100.0, 100.0)),
-        )
-        .style(move |s| {
-            s.absolute()
-                .size_pct(100.0, 100.0)
-                .padding_left(padding_left)
-                .padding_right(padding_right)
-        }),
-    ))
-    .style(|s| s.height_pct(100.0))
+    editor_gutter_view(editor)
+        .on_resize(move |rect| {
+            gutter_rect.set(rect);
+        })
+        .on_event_stop(EventListener::PointerWheel, move |event| {
+            if let Event::PointerWheel(pointer_event) = event {
+                scroll_delta.set(pointer_event.delta);
+            }
+        })
 }
 
 fn editor_content(

@@ -3,6 +3,7 @@ use crate::{
     cosmic_text::{Attrs, AttrsList, TextLayout},
     id::Id,
     peniko::kurbo::Point,
+    style::Style,
     view::{AnyWidget, View, ViewData, Widget},
     Renderer,
 };
@@ -15,7 +16,10 @@ use super::{color::EditorColor, Editor};
 pub struct EditorGutterView {
     data: ViewData,
     editor: RwSignal<Editor>,
-    width: f64,
+    full_width: f64,
+    text_width: f64,
+    padding_left: f64,
+    padding_right: f64,
 }
 
 pub fn editor_gutter_view(editor: RwSignal<Editor>) -> EditorGutterView {
@@ -24,7 +28,11 @@ pub fn editor_gutter_view(editor: RwSignal<Editor>) -> EditorGutterView {
     EditorGutterView {
         data: ViewData::new(id),
         editor,
-        width: 0.0,
+        full_width: 0.0,
+        text_width: 0.0,
+        // TODO: these are probably tuned for lapce?
+        padding_left: 25.0,
+        padding_right: 30.0,
     }
 }
 
@@ -50,9 +58,44 @@ impl Widget for EditorGutterView {
         &mut self.data
     }
 
+    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::NodeId {
+        cx.layout_node(self.id(), true, |cx| {
+            let (width, height) = (self.text_width, 10.0);
+            let layout_node = cx
+                .app_state_mut()
+                .taffy
+                .new_leaf(taffy::style::Style::DEFAULT)
+                .unwrap();
+
+            let style = Style::new()
+                .width(self.padding_left + width + self.padding_right)
+                .height(height)
+                .to_taffy_style();
+            let _ = cx.app_state_mut().taffy.set_style(layout_node, style);
+            vec![layout_node]
+        })
+    }
     fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
         if let Some(width) = cx.get_layout(self.data.id()).map(|l| l.size.width as f64) {
-            self.width = width;
+            self.full_width = width;
+        }
+
+        let style = self.editor.get_untracked().style.get_untracked();
+        // TODO: don't assume font family is constant for each line
+        let family = style.font_family(0);
+        let attrs = Attrs::new()
+            .family(&family)
+            .color(style.color(EditorColor::Dim))
+            .font_size(style.font_size(0) as f32);
+
+        let attrs_list = AttrsList::new(attrs);
+
+        let widest_text_width = self.compute_widest_text_width(&attrs_list);
+        if (self.full_width - widest_text_width - self.padding_left - self.padding_right).abs()
+            > 1e-2
+        {
+            self.text_width = widest_text_width;
+            cx.app_state_mut().request_layout(self.id());
         }
         None
     }
@@ -80,6 +123,8 @@ impl Widget for EditorGutterView {
         let show_relative = editor.modal.get_untracked()
             && editor.modal_relative_line_numbers.get_untracked()
             && mode != Mode::Insert;
+
+        self.text_width = self.compute_widest_text_width(&attrs_list);
 
         editor.screen_lines.with_untracked(|screen_lines| {
             for (line, y) in screen_lines.iter_lines_y() {
@@ -110,14 +155,22 @@ impl Widget for EditorGutterView {
                 let size = text_layout.size();
                 let height = size.height;
 
-                cx.draw_text(
-                    &text_layout,
-                    Point::new(
-                        (self.width - (size.width)).max(0.0),
-                        y + (line_height - height) / 2.0 - viewport.y0,
-                    ),
+                let pos = Point::new(
+                    (self.full_width - (size.width) - self.padding_right).max(0.0),
+                    y + (line_height - height) / 2.0 - viewport.y0,
                 );
+
+                cx.draw_text(&text_layout, pos);
             }
         });
+    }
+}
+
+impl EditorGutterView {
+    fn compute_widest_text_width(&mut self, attrs_list: &AttrsList) -> f64 {
+        let last_line = self.editor.get_untracked().last_line() + 1;
+        let mut text = TextLayout::new();
+        text.set_text(&last_line.to_string(), attrs_list.clone());
+        text.size().width
     }
 }
