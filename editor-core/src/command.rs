@@ -125,6 +125,10 @@ pub enum EditCommand {
     #[strum(message = "Duplicate Line Down")]
     #[strum(serialize = "duplicate_line_down")]
     DuplicateLineDown,
+
+    #[strum(message = "Normalize Line Endings")]
+    #[strum(serialize = "normalize_line_endings")]
+    NormalizeLineEndings,
 }
 
 impl EditCommand {
