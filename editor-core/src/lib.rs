@@ -5,6 +5,7 @@ pub mod command;
 pub mod cursor;
 pub mod editor;
 pub mod indent;
+pub mod line_ending;
 pub mod mode;
 pub mod movement;
 pub mod paragraph;

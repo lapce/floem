@@ -18,6 +18,7 @@ use crate::{
     cursor::CursorMode,
     editor::EditType,
     indent::{auto_detect_indent_style, IndentStyle},
+    line_ending::{LineEnding, LineEndingDetermination},
     mode::Mode,
     selection::Selection,
     word::WordCursor,
@@ -88,6 +89,7 @@ pub struct Buffer {
     last_edit_type: EditType,
 
     indent_style: IndentStyle,
+    line_ending: LineEnding,
 
     max_len: usize,
     max_len_line: usize,
@@ -102,6 +104,14 @@ impl ToString for Buffer {
 impl Buffer {
     pub fn new(text: impl Into<Rope>) -> Self {
         let text = text.into();
+
+        // Determine the line ending of the text and adjust it if necessary
+        let line_ending = LineEndingDetermination::determine(&text);
+        let line_ending = line_ending.unwrap_or(LineEnding::Lf);
+
+        // Get rid of lone Cr's as Rope does not treat them as line endings
+        let text = line_ending.normalize_limited(&text);
+
         let len = text.len();
         Self {
             text,
@@ -131,6 +141,7 @@ impl Buffer {
             this_edit_type: EditType::Other,
             last_edit_type: EditType::Other,
             indent_style: IndentStyle::DEFAULT_INDENT,
+            line_ending,
 
             max_len: 0,
             max_len_line: 0,
@@ -236,6 +247,11 @@ impl Buffer {
 
     pub fn init_content(&mut self, content: Rope) {
         if !content.is_empty() {
+            let line_ending = LineEndingDetermination::determine(&content);
+            self.line_ending = line_ending.unwrap_or(self.line_ending);
+
+            let content = self.line_ending.normalize_limited(&content);
+
             let delta = Delta::simple_edit(Interval::new(0, 0), content, 0);
             let (new_rev, new_text, new_tombstones, new_deletes_from_union) =
                 self.mk_new_rev(0, delta.clone());
@@ -251,6 +267,12 @@ impl Buffer {
     }
 
     pub fn reload(&mut self, content: Rope, set_pristine: bool) -> (Rope, RopeDelta, InvalLines) {
+        // Determine the line ending of the new text
+        let line_ending = LineEndingDetermination::determine(&content);
+        self.line_ending = line_ending.unwrap_or(self.line_ending);
+
+        let content = self.line_ending.normalize_limited(&content);
+
         let len = self.text.len();
         let delta = Delta::simple_edit(Interval::new(0, len), content, len);
         self.this_edit_type = EditType::Other;
@@ -274,11 +296,19 @@ impl Buffer {
         self.indent_style.as_str()
     }
 
+    pub fn line_ending(&self) -> LineEnding {
+        self.line_ending
+    }
+
+    pub fn set_line_ending(&mut self, line_ending: LineEnding) {
+        self.line_ending = line_ending;
+    }
+
     pub fn reset_edit_type(&mut self) {
         self.last_edit_type = EditType::Other;
     }
 
-    /// Apply edits  
+    /// Apply edits, normalizes line endings before applying.
     /// Returns `(Text before delta, delta, invalidated lines)`
     pub fn edit<'a, I, E, S>(
         &mut self,
@@ -309,14 +339,29 @@ impl Buffer {
             }
         });
         for (start, end, rope) in interval_rope.into_iter() {
-            builder.replace(start..end, rope);
+            // TODO(minor): normalizing line endings here technically has an edge-case where it
+            // could be that we put a `\r` at the end of a replacement, then a `\n` at the start of
+            // a replacement right after it, and then it becomes a double newline.
+            // A possible alternative that might be better overall (?) would be to get the range of
+            // the delta and normalize that area after applying the delta.
+            builder.replace(start..end, self.line_ending.normalize(&rope));
         }
         let delta = builder.build();
         self.this_edit_type = edit_type;
         self.add_delta(delta)
     }
 
+    pub fn normalize_line_endings(&mut self) -> Option<(Rope, RopeDelta, InvalLines)> {
+        let Some(delta) = self.line_ending.normalize_delta(&self.text) else {
+            // There were no changes needed
+            return None;
+        };
+        self.this_edit_type = EditType::NormalizeLineEndings;
+        Some(self.add_delta(delta))
+    }
+
     // TODO: don't clone the delta and return it, if the caller needs it then they can clone it
+    /// Note: the delta's line-endings should be normalized.
     fn add_delta(&mut self, delta: RopeDelta) -> (Rope, RopeDelta, InvalLines) {
         let text = self.text.clone();
 
@@ -388,6 +433,7 @@ impl Buffer {
         }
     }
 
+    /// Returns `(Revision, new text, new tombstones, new deletes from union)`
     fn mk_new_rev(&self, undo_group: usize, delta: RopeDelta) -> (Revision, Rope, Rope, Subset) {
         let (ins_delta, deletes) = delta.factor();
 

@@ -62,6 +62,7 @@ pub enum EditType {
     DeleteToEndOfLine,
     DeleteToEndOfLineAndInsert,
     MotionDelete,
+    NormalizeLineEndings,
     Undo,
     Redo,
     Other,
@@ -1493,6 +1494,15 @@ impl Action {
             }
             DuplicateLineUp => Self::duplicate_line(cursor, buffer, DuplicateDirection::Up),
             DuplicateLineDown => Self::duplicate_line(cursor, buffer, DuplicateDirection::Down),
+            NormalizeLineEndings => {
+                let Some((text, delta, inval)) = buffer.normalize_line_endings() else {
+                    return vec![];
+                };
+
+                cursor.apply_delta(&delta);
+
+                vec![(text, delta, inval)]
+            }
         }
     }
 }
