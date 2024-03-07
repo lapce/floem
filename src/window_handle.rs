@@ -1477,6 +1477,7 @@ fn context_menu_view(
         context_menu_size.set(rect.size());
     })
     .on_event_stop(EventListener::PointerDown, move |_| {})
+    .on_event_stop(EventListener::PointerMove, move |_| {})
     .keyboard_navigatable()
     .on_event_stop(EventListener::KeyDown, move |event| {
         if let Event::KeyDown(event) = event {
