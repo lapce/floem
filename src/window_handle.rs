@@ -1279,30 +1279,34 @@ fn context_menu_view(
     };
 
     #[derive(Clone, PartialEq, Eq, Hash)]
-    struct MenuDisplay {
-        id: Option<u64>,
-        enabled: bool,
-        title: String,
-        children: Option<Vec<Option<MenuDisplay>>>,
+    enum MenuDisplay {
+        Separator(usize),
+        Item {
+            id: Option<u64>,
+            enabled: bool,
+            title: String,
+            children: Option<Vec<MenuDisplay>>,
+        },
     }
 
-    fn format_menu(menu: &Menu) -> Vec<Option<MenuDisplay>> {
+    fn format_menu(menu: &Menu) -> Vec<MenuDisplay> {
         menu.children
             .iter()
-            .map(|e| match e {
-                crate::menu::MenuEntry::Separator => None,
-                crate::menu::MenuEntry::Item(i) => Some(MenuDisplay {
+            .enumerate()
+            .map(|(s, e)| match e {
+                crate::menu::MenuEntry::Separator => MenuDisplay::Separator(s),
+                crate::menu::MenuEntry::Item(i) => MenuDisplay::Item {
                     id: Some(i.id),
                     enabled: i.enabled,
                     title: i.title.clone(),
                     children: None,
-                }),
-                crate::menu::MenuEntry::SubMenu(m) => Some(MenuDisplay {
+                },
+                crate::menu::MenuEntry::SubMenu(m) => MenuDisplay::Item {
                     id: None,
                     enabled: m.item.enabled,
                     title: m.item.title.clone(),
                     children: Some(format_menu(m)),
-                }),
+                },
             })
             .collect()
     }
@@ -1318,152 +1322,156 @@ fn context_menu_view(
 
     fn view_fn(
         window_id: WindowId,
-        menu: Option<MenuDisplay>,
+        menu: MenuDisplay,
         context_menu: RwSignal<Option<(Menu, Point)>>,
         focus_count: RwSignal<i32>,
         on_child_submenu_for_parent: RwSignal<bool>,
     ) -> impl View {
-        if let Some(menu) = menu {
-            let menu_width = create_rw_signal(0.0);
-            let show_submenu = create_rw_signal(false);
-            let on_submenu = create_rw_signal(false);
-            let on_child_submenu = create_rw_signal(false);
-            let has_submenu = menu.children.is_some();
-            let submenu_svg = r#"<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M10.072 8.024L5.715 3.667l.618-.62L11 7.716v.618L6.333 13l-.618-.619 4.357-4.357z"/></svg>"#;
-            container(
-                stack((
+        match menu {
+            MenuDisplay::Item { id, enabled, title, children } => {
+                let menu_width = create_rw_signal(0.0);
+                let show_submenu = create_rw_signal(false);
+                let on_submenu = create_rw_signal(false);
+                let on_child_submenu = create_rw_signal(false);
+                let has_submenu = children.is_some();
+                let submenu_svg = r#"<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M10.072 8.024L5.715 3.667l.618-.62L11 7.716v.618L6.333 13l-.618-.619 4.357-4.357z"/></svg>"#;
+                container(
                     stack((
-                        text(menu.title),
-                        svg(|| submenu_svg.to_string()).style(move |s| {
-                            s.size(20.0, 20.0)
-                                .color(Color::rgb8(201, 201, 201))
-                                .margin_right(10.0)
-                                .margin_left(20.0)
-                                .apply_if(!has_submenu, |s| s.hide())
-                        }),
-                    ))
-                    .on_event_stop(EventListener::PointerEnter, move |_| {
-                        if has_submenu {
-                            show_submenu.set(true);
-                        }
-                    })
-                    .on_event_stop(EventListener::PointerLeave, move |_| {
-                        if has_submenu {
-                            show_submenu.set(false);
-                        }
-                    })
-                    .on_resize(move |rect| {
-                        let width = rect.width();
-                        if menu_width.get_untracked() != width {
-                            menu_width.set(width);
-                        }
-                    })
-                    .on_click_stop(move |_| {
-                        context_menu.set(None);
-                        focus_count.set(0);
-                        if let Some(id) = menu.id {
-                            add_app_update_event(AppUpdateEvent::MenuAction {
-                                window_id,
-                                action_id: id as usize,
-                            });
-                        }
-                    })
-                    .on_secondary_click_stop(move |_| {
-                        context_menu.set(None);
-                        focus_count.set(0);
-                        if let Some(id) = menu.id {
-                            add_app_update_event(AppUpdateEvent::MenuAction {
-                                window_id,
-                                action_id: id as usize,
-                            });
-                        }
-                    })
-                    .disabled(move || !menu.enabled)
-                    .style(|s| {
-                        s.width(100.pct())
-                            .min_width(100.pct())
-                            .padding_horiz(20.0)
-                            .justify_between()
-                            .items_center()
-                            .hover(|s| s.border_radius(10.0).background(Color::rgb8(65, 65, 65)))
-                            .active(|s| s.border_radius(10.0).background(Color::rgb8(92, 92, 92)))
-                            .disabled(|s| s.color(Color::rgb8(92, 92, 92)))
-                    }),
-                    dyn_stack(
-                        move || menu.children.clone().unwrap_or_default(),
-                        move |s| s.clone(),
-                        move |menu| {
-                            view_fn(window_id, menu, context_menu, focus_count, on_child_submenu)
-                        },
-                    )
-                    .keyboard_navigatable()
-                    .on_event_stop(EventListener::FocusGained, move |_| {
-                        focus_count.update(|count| {
-                            *count += 1;
-                        });
-                    })
-                    .on_event_stop(EventListener::FocusLost, move |_| {
-                        let count = focus_count
-                            .try_update(|count| {
-                                *count -= 1;
-                                *count
-                            })
-                            .unwrap();
-                        if count < 1 {
+                        stack((
+                            text(title),
+                            svg(|| submenu_svg.to_string()).style(move |s| {
+                                s.size(20.0, 20.0)
+                                    .color(Color::rgb8(201, 201, 201))
+                                    .margin_right(10.0)
+                                    .margin_left(20.0)
+                                    .apply_if(!has_submenu, |s| s.hide())
+                            }),
+                        ))
+                        .on_event_stop(EventListener::PointerEnter, move |_| {
+                            if has_submenu {
+                                show_submenu.set(true);
+                            }
+                        })
+                        .on_event_stop(EventListener::PointerLeave, move |_| {
+                            if has_submenu {
+                                show_submenu.set(false);
+                            }
+                        })
+                        .on_resize(move |rect| {
+                            let width = rect.width();
+                            if menu_width.get_untracked() != width {
+                                menu_width.set(width);
+                            }
+                        })
+                        .on_click_stop(move |_| {
                             context_menu.set(None);
-                        }
-                    })
-                    .on_event_stop(EventListener::KeyDown, move |event| {
-                        if let Event::KeyDown(event) = event {
-                            if event.key.logical_key == Key::Named(NamedKey::Escape) {
+                            focus_count.set(0);
+                            if let Some(id) = id {
+                                add_app_update_event(AppUpdateEvent::MenuAction {
+                                    window_id,
+                                    action_id: id as usize,
+                                });
+                            }
+                        })
+                        .on_secondary_click_stop(move |_| {
+                            context_menu.set(None);
+                            focus_count.set(0);
+                            if let Some(id) = id {
+                                add_app_update_event(AppUpdateEvent::MenuAction {
+                                    window_id,
+                                    action_id: id as usize,
+                                });
+                            }
+                        })
+                        .disabled(move || !enabled)
+                        .style(|s| {
+                            s.width(100.pct())
+                                .min_width(100.pct())
+                                .padding_horiz(20.0)
+                                .justify_between()
+                                .items_center()
+                                .hover(|s| s.border_radius(10.0).background(Color::rgb8(65, 65, 65)))
+                                .active(|s| s.border_radius(10.0).background(Color::rgb8(92, 92, 92)))
+                                .disabled(|s| s.color(Color::rgb8(92, 92, 92)))
+                        }),
+                        dyn_stack(
+                            move || children.clone().unwrap_or_default(),
+                            move |s| s.clone(),
+                            move |menu| {
+                                view_fn(window_id, menu, context_menu, focus_count, on_child_submenu)
+                            },
+                        )
+                        .keyboard_navigatable()
+                        .on_event_stop(EventListener::FocusGained, move |_| {
+                            focus_count.update(|count| {
+                                *count += 1;
+                            });
+                        })
+                        .on_event_stop(EventListener::FocusLost, move |_| {
+                            let count = focus_count
+                                .try_update(|count| {
+                                    *count -= 1;
+                                    *count
+                                })
+                                .unwrap();
+                            if count < 1 {
                                 context_menu.set(None);
                             }
-                        }
-                    })
-                    .on_event_stop(EventListener::PointerDown, move |_| {})
-                    .on_event_stop(EventListener::PointerEnter, move |_| {
-                        if has_submenu {
-                            on_submenu.set(true);
-                            on_child_submenu_for_parent.set(true);
-                        }
-                    })
-                    .on_event_stop(EventListener::PointerLeave, move |_| {
-                        if has_submenu {
-                            on_submenu.set(false);
-                            on_child_submenu_for_parent.set(false);
-                        }
-                    })
-                    .style(move |s| {
-                        s.absolute()
-                            .min_width(200.0)
-                            .margin_top(-5.0)
-                            .margin_left(menu_width.get() as f32)
-                            .flex_col()
-                            .border_radius(10.0)
-                            .background(Color::rgb8(44, 44, 44))
-                            .padding(5.0)
-                            .cursor(CursorStyle::Default)
-                            .box_shadow_blur(5.0)
-                            .box_shadow_color(Color::BLACK)
-                            .apply_if(
-                                !show_submenu.get() && !on_submenu.get() && !on_child_submenu.get(),
-                                |s| s.hide(),
-                            )
-                    }),
-                ))
-                .style(|s| s.min_width(100.pct())),
-            )
-            .style(|s| s.min_width(100.pct()))
-            .any()
-        } else {
-            container(empty().style(|s| {
-                s.width(100.pct())
-                    .height(1.0)
-                    .margin_vert(5.0)
-                    .background(Color::rgb8(92, 92, 92))
-            }))
-            .style(|s| s.min_width(100.pct()).padding_horiz(20.0))
-            .any()
+                        })
+                        .on_event_stop(EventListener::KeyDown, move |event| {
+                            if let Event::KeyDown(event) = event {
+                                if event.key.logical_key == Key::Named(NamedKey::Escape) {
+                                    context_menu.set(None);
+                                }
+                            }
+                        })
+                        .on_event_stop(EventListener::PointerDown, move |_| {})
+                        .on_event_stop(EventListener::PointerEnter, move |_| {
+                            if has_submenu {
+                                on_submenu.set(true);
+                                on_child_submenu_for_parent.set(true);
+                            }
+                        })
+                        .on_event_stop(EventListener::PointerLeave, move |_| {
+                            if has_submenu {
+                                on_submenu.set(false);
+                                on_child_submenu_for_parent.set(false);
+                            }
+                        })
+                        .style(move |s| {
+                            s.absolute()
+                                .min_width(200.0)
+                                .margin_top(-5.0)
+                                .margin_left(menu_width.get() as f32)
+                                .flex_col()
+                                .border_radius(10.0)
+                                .background(Color::rgb8(44, 44, 44))
+                                .padding(5.0)
+                                .cursor(CursorStyle::Default)
+                                .box_shadow_blur(5.0)
+                                .box_shadow_color(Color::BLACK)
+                                .apply_if(
+                                    !show_submenu.get() && !on_submenu.get() && !on_child_submenu.get(),
+                                    |s| s.hide(),
+                                )
+                        }),
+                    ))
+                    .style(|s| s.min_width(100.pct())),
+                )
+                .style(|s| s.min_width(100.pct()))
+                .any()
+            }
+
+            MenuDisplay::Separator(_) => {
+                container(empty().style(|s| {
+                    s.width(100.pct())
+                        .height(1.0)
+                        .margin_vert(5.0)
+                        .background(Color::rgb8(92, 92, 92))
+                }))
+                .style(|s| s.min_width(100.pct()).padding_horiz(20.0))
+                .any()
+            }
         }
     }
 
