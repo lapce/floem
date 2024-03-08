@@ -215,7 +215,7 @@ pub(crate) fn default_theme() -> Theme {
         .apply(border_style.clone())
         .apply(focus_style.clone())
         .cursor(CursorStyle::Text)
-        .padding_vert(8.0)
+        .padding_vert(padding)
         .disabled(|s| {
             s.background(Color::rgb8(180, 188, 175).with_alpha_factor(0.3))
                 .color(Color::GRAY)
