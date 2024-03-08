@@ -216,11 +216,11 @@ impl Document for TextDocument {
     }
 }
 impl DocumentPhantom for TextDocument {
-    fn phantom_text(&self, _line: usize) -> PhantomTextLine {
+    fn phantom_text(&self, _editor: &Editor, _line: usize) -> PhantomTextLine {
         PhantomTextLine::default()
     }
 
-    fn has_multiline_phantom(&self) -> bool {
+    fn has_multiline_phantom(&self, _editor: &Editor) -> bool {
         false
     }
 }

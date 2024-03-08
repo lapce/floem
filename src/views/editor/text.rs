@@ -194,16 +194,16 @@ pub trait Document: DocumentPhantom + Downcast {
 impl_downcast!(Document);
 
 pub trait DocumentPhantom {
-    fn phantom_text(&self, line: usize) -> PhantomTextLine;
+    fn phantom_text(&self, editor: &Editor, line: usize) -> PhantomTextLine;
 
     /// Translate a column position into the position it would be before combining with
     /// the phantom text.
-    fn before_phantom_col(&self, line: usize, col: usize) -> usize {
-        let phantom = self.phantom_text(line);
+    fn before_phantom_col(&self, editor: &Editor, line: usize, col: usize) -> usize {
+        let phantom = self.phantom_text(editor, line);
         phantom.before_col(col)
     }
 
-    fn has_multiline_phantom(&self) -> bool {
+    fn has_multiline_phantom(&self, _editor: &Editor) -> bool {
         true
     }
 }
@@ -478,16 +478,16 @@ where
     D: Document,
     F: Fn(&Editor, &Command, Option<usize>, ModifiersState) -> CommandExecuted,
 {
-    fn phantom_text(&self, line: usize) -> PhantomTextLine {
-        self.doc.phantom_text(line)
+    fn phantom_text(&self, editor: &Editor, line: usize) -> PhantomTextLine {
+        self.doc.phantom_text(editor, line)
     }
 
-    fn has_multiline_phantom(&self) -> bool {
-        self.doc.has_multiline_phantom()
+    fn has_multiline_phantom(&self, editor: &Editor) -> bool {
+        self.doc.has_multiline_phantom(editor)
     }
 
-    fn before_phantom_col(&self, line: usize, col: usize) -> usize {
-        self.doc.before_phantom_col(line, col)
+    fn before_phantom_col(&self, editor: &Editor, line: usize, col: usize) -> usize {
+        self.doc.before_phantom_col(editor, line, col)
     }
 }
 impl<D, F> CommonAction for ExtCmdDocument<D, F>

@@ -64,7 +64,7 @@ use std::{
 };
 
 use floem_editor_core::{
-    buffer::rope_text::{RopeText, RopeTextRef},
+    buffer::rope_text::{RopeText, RopeTextVal},
     cursor::CursorAffinity,
     word::WordCursor,
 };
@@ -191,12 +191,12 @@ impl TextLayoutCache {
 /// views that did not naturally fit into our 'document' model. As well as when we want to extract
 /// the editor view code int a separate crate for Floem.
 pub trait TextLayoutProvider {
-    fn text(&self) -> &Rope;
+    fn text(&self) -> Rope;
 
     /// Shorthand for getting a rope text version of `text`.  
     /// This MUST hold the same rope that `text` would return.
-    fn rope_text(&self) -> RopeTextRef {
-        RopeTextRef::new(self.text())
+    fn rope_text(&self) -> RopeTextVal {
+        RopeTextVal::new(self.text())
     }
 
     // TODO(minor): Do we really need to pass font size to this? The outer-api is providing line
@@ -220,7 +220,7 @@ pub trait TextLayoutProvider {
     fn has_multiline_phantom(&self) -> bool;
 }
 impl<T: TextLayoutProvider> TextLayoutProvider for &T {
-    fn text(&self) -> &Rope {
+    fn text(&self) -> Rope {
         (**self).text()
     }
 
@@ -1525,7 +1525,7 @@ impl<L: std::fmt::Debug> VLineInfo<L> {
     // TODO: we could generalize `RopeText::line_end_offset` to any interval, and then just use it here instead of basically reimplementing it.
     pub fn line_end_offset(&self, text_prov: &impl TextLayoutProvider, caret: bool) -> usize {
         let text = text_prov.text();
-        let rope_text = RopeTextRef::new(text);
+        let rope_text = text_prov.rope_text();
 
         let mut offset = self.interval.end;
         let mut line_content: &str = &text.slice_to_cow(self.interval);
@@ -1544,7 +1544,7 @@ impl<L: std::fmt::Debug> VLineInfo<L> {
 
     /// Returns the offset of the first non-blank character in the line.
     pub fn first_non_blank_character(&self, text_prov: &impl TextLayoutProvider) -> usize {
-        WordCursor::new(text_prov.text(), self.interval.start).next_non_blank_char()
+        WordCursor::new(&text_prov.text(), self.interval.start).next_non_blank_char()
     }
 }
 
@@ -2038,8 +2038,8 @@ mod tests {
         }
     }
     impl<'a> TextLayoutProvider for TestTextLayoutProvider<'a> {
-        fn text(&self) -> &Rope {
-            self.text
+        fn text(&self) -> Rope {
+            self.text.clone()
         }
 
         // An implementation relatively close to the actual new text layout impl but simplified.
