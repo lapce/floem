@@ -27,7 +27,8 @@ fn app_view() -> impl View {
         .update(|_| {
             // This hooks up to both editors!
             println!("Editor changed");
-        });
+        })
+        .placeholder("Some placeholder text");
     let doc = editor_a.doc();
     let gutter_a = editor_a.editor().gutter;
     let gutter_b = editor_b.editor().gutter;

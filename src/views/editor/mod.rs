@@ -975,9 +975,8 @@ impl Editor {
     pub fn text_layout_trigger(&self, line: usize, trigger: bool) -> Arc<TextLayoutLine> {
         let cache_rev = self.doc().cache_rev().get_untracked();
         let id = self.style().id();
-        let text_prov = self.text_prov();
         self.lines
-            .get_init_text_layout(cache_rev, id, &text_prov, line, trigger)
+            .get_init_text_layout(cache_rev, id, self, line, trigger)
     }
 
     fn try_get_text_layout(&self, line: usize) -> Option<Arc<TextLayoutLine>> {
