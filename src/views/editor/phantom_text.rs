@@ -26,6 +26,7 @@ pub struct PhantomText {
 pub enum PhantomTextKind {
     /// Input methods
     Ime,
+    Placeholder,
     /// Completion lens / Inline completion
     Completion,
     /// Inlay hints supplied by an LSP/PSP (like type annotations)

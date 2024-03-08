@@ -15,16 +15,17 @@ use floem_editor_core::{
     selection::Selection,
     word::WordCursor,
 };
-use floem_reactive::{RwSignal, Scope};
+use floem_reactive::{create_effect, RwSignal, Scope};
 use floem_winit::keyboard::ModifiersState;
 use lapce_xi_rope::{Rope, RopeDelta};
 use smallvec::{smallvec, SmallVec};
 
 use super::{
     actions::{handle_command_default, CommonAction},
+    color::EditorColor,
     command::{Command, CommandExecuted},
     id::EditorId,
-    phantom_text::PhantomTextLine,
+    phantom_text::{PhantomText, PhantomTextKind, PhantomTextLine},
     text::{Document, DocumentPhantom, PreeditData, SystemClipboard},
     Editor,
 };
@@ -64,6 +65,8 @@ pub struct TextDocument {
     /// Whether to automatically indent the new line via heuristics
     pub auto_indent: Cell<bool>,
 
+    pub placeholders: RwSignal<HashMap<EditorId, String>>,
+
     // (cmd: &Command, count: Option<usize>, modifiers: ModifierState)
     /// Ran before a command is executed. If it says that it executed the command, then handlers
     /// after it will not be called.
@@ -78,13 +81,25 @@ impl TextDocument {
         let preedit = PreeditData {
             preedit: cx.create_rw_signal(None),
         };
+        let cache_rev = cx.create_rw_signal(0);
+
+        let placeholders = cx.create_rw_signal(HashMap::new());
+
+        // Whenever the placeholders change, update the cache rev
+        create_effect(move |_| {
+            placeholders.track();
+            cache_rev.try_update(|cache_rev| {
+                *cache_rev += 1;
+            });
+        });
 
         TextDocument {
             buffer: cx.create_rw_signal(buffer),
-            cache_rev: cx.create_rw_signal(0),
+            cache_rev,
             preedit,
             keep_indent: Cell::new(true),
             auto_indent: Cell::new(false),
+            placeholders,
             pre_command: Rc::new(RefCell::new(HashMap::new())),
             on_updates: Rc::new(RefCell::new(SmallVec::new())),
         }
@@ -125,6 +140,17 @@ impl TextDocument {
 
     pub fn clear_on_updates(&self) {
         self.on_updates.borrow_mut().clear();
+    }
+
+    pub fn add_placeholder(&self, editor_id: EditorId, placeholder: String) {
+        self.placeholders.update(|placeholders| {
+            placeholders.insert(editor_id, placeholder);
+        });
+    }
+
+    fn placeholder(&self, editor_id: EditorId) -> Option<String> {
+        self.placeholders
+            .with_untracked(|placeholders| placeholders.get(&editor_id).cloned())
     }
 }
 impl Document for TextDocument {
@@ -216,12 +242,38 @@ impl Document for TextDocument {
     }
 }
 impl DocumentPhantom for TextDocument {
-    fn phantom_text(&self, _line: usize) -> PhantomTextLine {
-        PhantomTextLine::default()
+    fn phantom_text(&self, editor: &Editor, _line: usize) -> PhantomTextLine {
+        let mut text = SmallVec::new();
+
+        if self.buffer.with_untracked(Buffer::is_empty) {
+            if let Some(placeholder) = self.placeholder(editor.id()) {
+                text.push(PhantomText {
+                    kind: PhantomTextKind::Placeholder,
+                    col: 0,
+                    text: placeholder,
+                    font_size: None,
+                    fg: Some(editor.color(EditorColor::Dim)),
+                    bg: None,
+                    under_line: None,
+                });
+            }
+        }
+
+        PhantomTextLine { text }
     }
 
-    fn has_multiline_phantom(&self) -> bool {
-        false
+    fn has_multiline_phantom(&self, editor: &Editor) -> bool {
+        if !self.buffer.with_untracked(Buffer::is_empty) {
+            return false;
+        }
+
+        self.placeholders.with_untracked(|placeholder| {
+            let Some(placeholder) = placeholder.get(&editor.id()) else {
+                return false;
+            };
+
+            placeholder.lines().count() > 1
+        })
     }
 }
 impl CommonAction for TextDocument {

@@ -101,6 +101,12 @@ impl TextEditor {
         self.editor.doc()
     }
 
+    /// Try downcasting the document to a [`TextDocument`].  
+    /// Returns `None` if the document is not a [`TextDocument`].
+    fn text_doc(&self) -> Option<Rc<TextDocument>> {
+        self.doc().downcast_rc().ok()
+    }
+
     // TODO(minor): should this be named `text`? Ideally most users should use the rope text version
     pub fn rope_text(&self) -> RopeTextVal {
         self.editor.rope_text()
@@ -204,6 +210,21 @@ impl TextEditor {
         self
     }
 
+    /// Set the placeholder text that is displayed when the document is empty.  
+    /// Can span multiple lines.  
+    /// This is per-editor, not per-document.  
+    /// Equivalent to calling [`TextDocument::add_placeholder`]  
+    /// Default: `None`
+    ///
+    /// Note: only works for the default backing [`TextDocument`] doc
+    pub fn placeholder(self, text: impl Into<String>) -> Self {
+        if let Some(doc) = self.text_doc() {
+            doc.add_placeholder(self.editor_id(), text.into());
+        }
+
+        self
+    }
+
     /// When commands are run on the document, this function is called.  
     /// If it returns [`CommandExecuted::Yes`] then further handlers after it, including the
     /// default handler, are not executed.  
@@ -229,18 +250,22 @@ impl TextEditor {
     ///         CommandExecuted::No
     ///     });
     /// ```
-    /// Note that these are specific to each text editor view.
+    /// Note that these are specific to each text editor view.  
+    ///   
+    /// Note: only works for the default backing [`TextDocument`] doc
     pub fn pre_command(self, f: impl Fn(PreCommand) -> CommandExecuted + 'static) -> Self {
-        let doc: Result<Rc<TextDocument>, _> = self.editor.doc().downcast_rc();
-        if let Ok(doc) = doc {
+        if let Some(doc) = self.text_doc() {
             doc.add_pre_command(self.editor.id(), f);
         }
         self
     }
 
+    /// Listen for deltas applied to the editor.  
+    /// Useful for anything that has positions based in the editor that can be updated after
+    /// typing, such as syntax highlighting.  
+    /// Note: only works for the default backing [`TextDocument`] doc
     pub fn update(self, f: impl Fn(OnUpdate) + 'static) -> Self {
-        let doc: Result<Rc<TextDocument>, _> = self.editor.doc().downcast_rc();
-        if let Ok(doc) = doc {
+        if let Some(doc) = self.text_doc() {
             doc.add_on_update(f);
         }
         self

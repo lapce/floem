@@ -361,28 +361,8 @@ impl Editor {
         &self.lines
     }
 
-    // Get the text layout for a document line, creating it if needed.
-    pub fn text_layout(&self, line: usize) -> Arc<TextLayoutLine> {
-        self.text_layout_trigger(line, true)
-    }
-
-    pub fn text_layout_trigger(&self, line: usize, trigger: bool) -> Arc<TextLayoutLine> {
-        let cache_rev = self.doc().cache_rev().get_untracked();
-        let id = self.style().id();
-        let text_prov = self.text_prov();
-        self.lines
-            .get_init_text_layout(cache_rev, id, &text_prov, line, trigger)
-    }
-
-    pub fn text_prov(&self) -> EditorTextProv {
-        let doc = self.doc.get_untracked();
-        EditorTextProv {
-            text: doc.text(),
-            doc,
-            lines: self.lines.clone(),
-            style: self.style.get_untracked(),
-            viewport: self.viewport.get_untracked(),
-        }
+    pub fn text_prov(&self) -> &Self {
+        self
     }
 
     fn preedit(&self) -> PreeditData {
@@ -589,7 +569,7 @@ impl Editor {
     // === Information ===
 
     pub fn phantom_text(&self, line: usize) -> PhantomTextLine {
-        self.doc().phantom_text(line)
+        self.doc().phantom_text(self, line)
     }
 
     pub fn line_height(&self, line: usize) -> f32 {
@@ -603,7 +583,11 @@ impl Editor {
     // === Line Information ===
 
     /// Iterate over the visual lines in the view, starting at the given line.
-    pub fn iter_vlines(&self, backwards: bool, start: VLine) -> impl Iterator<Item = VLineInfo> {
+    pub fn iter_vlines(
+        &self,
+        backwards: bool,
+        start: VLine,
+    ) -> impl Iterator<Item = VLineInfo> + '_ {
         self.lines.iter_vlines(self.text_prov(), backwards, start)
     }
 
@@ -614,7 +598,7 @@ impl Editor {
         backwards: bool,
         start: VLine,
         end: VLine,
-    ) -> impl Iterator<Item = VLineInfo> {
+    ) -> impl Iterator<Item = VLineInfo> + '_ {
         self.lines
             .iter_vlines_over(self.text_prov(), backwards, start, end)
     }
@@ -626,7 +610,7 @@ impl Editor {
         &self,
         backwards: bool,
         start: RVLine,
-    ) -> impl Iterator<Item = VLineInfo<()>> {
+    ) -> impl Iterator<Item = VLineInfo<()>> + '_ {
         self.lines.iter_rvlines(self.text_prov(), backwards, start)
     }
 
@@ -639,7 +623,7 @@ impl Editor {
         backwards: bool,
         start: RVLine,
         end_line: usize,
-    ) -> impl Iterator<Item = VLineInfo<()>> {
+    ) -> impl Iterator<Item = VLineInfo<()>> + '_ {
         self.lines
             .iter_rvlines_over(self.text_prov(), backwards, start, end_line)
     }
@@ -885,7 +869,7 @@ impl Editor {
         let hit_point = text_layout.text.hit_point(Point::new(point.x, y));
         // We have to unapply the phantom text shifting in order to get back to the column in
         // the actual buffer
-        let phantom_text = self.doc().phantom_text(line);
+        let phantom_text = self.doc().phantom_text(self, line);
         let col = phantom_text.before_col(hit_point.index);
         // Ensure that the column doesn't end up out of bounds, so things like clicking on the far
         // right end will just go to the end of the line.
@@ -981,31 +965,23 @@ impl std::fmt::Debug for Editor {
     }
 }
 
-#[derive(Clone)]
-pub struct EditorTextProv {
-    text: Rope,
-    doc: Rc<dyn Document>,
-    style: Rc<dyn Styling>,
-    lines: Rc<Lines>,
-
-    viewport: Rect,
-}
-impl EditorTextProv {
+// Text layout creation
+impl Editor {
     // Get the text layout for a document line, creating it if needed.
     pub fn text_layout(&self, line: usize) -> Arc<TextLayoutLine> {
         self.text_layout_trigger(line, true)
     }
 
     pub fn text_layout_trigger(&self, line: usize, trigger: bool) -> Arc<TextLayoutLine> {
-        let cache_rev = self.doc.cache_rev().get_untracked();
-        let id = self.style.id();
+        let cache_rev = self.doc().cache_rev().get_untracked();
+        let id = self.style().id();
         self.lines
             .get_init_text_layout(cache_rev, id, self, line, trigger)
     }
 
     fn try_get_text_layout(&self, line: usize) -> Option<Arc<TextLayoutLine>> {
-        let cache_rev = self.doc.cache_rev().get_untracked();
-        let id = self.style.id();
+        let cache_rev = self.doc().cache_rev().get_untracked();
+        let id = self.style().id();
         self.lines.try_get_text_layout(cache_rev, id, line)
     }
 
@@ -1076,10 +1052,10 @@ impl EditorTextProv {
         Some(rendered_whitespaces)
     }
 }
-impl TextLayoutProvider for EditorTextProv {
+impl TextLayoutProvider for Editor {
     // TODO: should this just return a `Rope`?
-    fn text(&self) -> &Rope {
-        &self.text
+    fn text(&self) -> Rope {
+        Editor::text(self)
     }
 
     fn new_text_layout(
@@ -1091,10 +1067,12 @@ impl TextLayoutProvider for EditorTextProv {
         // TODO: we could share text layouts between different editor views given some knowledge of
         // their wrapping
         let text = self.rope_text();
+        let style = self.style();
+        let doc = self.doc();
 
         let line_content_original = text.line_content(line);
 
-        let font_size = self.style.font_size(line);
+        let font_size = style.font_size(line);
 
         // Get the line content with newline characters replaced with spaces
         // and the content without the newline characters
@@ -1108,18 +1086,18 @@ impl TextLayoutProvider for EditorTextProv {
             line_content_original.to_string()
         };
         // Combine the phantom text with the line content
-        let phantom_text = self.doc.phantom_text(line);
+        let phantom_text = doc.phantom_text(self, line);
         let line_content = phantom_text.combine_with_text(&line_content);
 
-        let family = self.style.font_family(line);
+        let family = style.font_family(line);
         let attrs = Attrs::new()
-            .color(self.style.color(EditorColor::Foreground))
+            .color(style.color(EditorColor::Foreground))
             .family(&family)
             .font_size(font_size as f32)
-            .line_height(LineHeightValue::Px(self.style.line_height(line)));
+            .line_height(LineHeightValue::Px(style.line_height(line)));
         let mut attrs_list = AttrsList::new(attrs);
 
-        self.style.apply_attr_styles(line, attrs, &mut attrs_list);
+        style.apply_attr_styles(line, attrs, &mut attrs_list);
 
         // Apply phantom text specific styling
         for (offset, size, col, phantom) in phantom_text.offset_size_iter() {
@@ -1144,14 +1122,15 @@ impl TextLayoutProvider for EditorTextProv {
 
         let mut text_layout = TextLayout::new();
         // TODO: we could move tab width setting to be done by the document
-        text_layout.set_tab_width(self.style.tab_width(line));
+        text_layout.set_tab_width(style.tab_width(line));
         text_layout.set_text(&line_content, attrs_list);
 
-        match self.style.wrap() {
+        match style.wrap() {
             WrapMethod::None => {}
             WrapMethod::EditorWidth => {
+                let width = self.viewport.get_untracked().width();
                 text_layout.set_wrap(Wrap::Word);
-                text_layout.set_size(self.viewport.width() as f32, f32::MAX);
+                text_layout.set_size(width as f32, f32::MAX);
             }
             WrapMethod::WrapWidth { width } => {
                 text_layout.set_wrap(Wrap::Word);
@@ -1165,20 +1144,16 @@ impl TextLayoutProvider for EditorTextProv {
             &line_content_original,
             &text_layout,
             &phantom_text,
-            self.style.render_whitespace(),
+            style.render_whitespace(),
         );
 
-        let indent_line = self.style.indent_line(line, &line_content_original);
+        let indent_line = style.indent_line(line, &line_content_original);
 
         let indent = if indent_line != line {
             // TODO: This creates the layout if it isn't already cached, but it doesn't cache the
             // result because the current method of managing the cache is not very smart.
             let layout = self.try_get_text_layout(indent_line).unwrap_or_else(|| {
-                self.new_text_layout(
-                    indent_line,
-                    self.style.font_size(indent_line),
-                    self.lines.wrap(),
-                )
+                self.new_text_layout(indent_line, style.font_size(indent_line), self.lines.wrap())
             });
             layout.indent + 1.0
         } else {
@@ -1193,17 +1168,17 @@ impl TextLayoutProvider for EditorTextProv {
             whitespaces,
             indent,
         };
-        self.style.apply_layout_styles(line, &mut layout_line);
+        style.apply_layout_styles(line, &mut layout_line);
 
         Arc::new(layout_line)
     }
 
     fn before_phantom_col(&self, line: usize, col: usize) -> usize {
-        self.doc.before_phantom_col(line, col)
+        self.doc().before_phantom_col(self, line, col)
     }
 
     fn has_multiline_phantom(&self) -> bool {
-        self.doc.has_multiline_phantom()
+        self.doc().has_multiline_phantom(self)
     }
 }
 
