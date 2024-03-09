@@ -80,13 +80,15 @@ impl Widget for EditorGutterView {
             self.full_width = width;
         }
 
-        let style = self.editor.get_untracked().style.get_untracked();
+        let editor = self.editor.get_untracked();
+        let edid = editor.id();
+        let style = editor.style();
         // TODO: don't assume font family is constant for each line
-        let family = style.font_family(0);
+        let family = style.font_family(edid, 0);
         let attrs = Attrs::new()
             .family(&family)
-            .color(style.color(EditorColor::Dim))
-            .font_size(style.font_size(0) as f32);
+            .color(style.color(edid, EditorColor::Dim))
+            .font_size(style.font_size(edid, 0) as f32);
 
         let attrs_list = AttrsList::new(attrs);
 
@@ -102,6 +104,7 @@ impl Widget for EditorGutterView {
 
     fn paint(&mut self, cx: &mut PaintCx) {
         let editor = self.editor.get_untracked();
+        let edid = editor.id();
 
         let viewport = editor.viewport.get_untracked();
         let cursor = editor.cursor;
@@ -112,14 +115,14 @@ impl Widget for EditorGutterView {
         let current_line = editor.line_of_offset(offset);
 
         // TODO: don't assume font family is constant for each line
-        let family = style.font_family(0);
+        let family = style.font_family(edid, 0);
         let attrs = Attrs::new()
             .family(&family)
-            .color(style.color(EditorColor::Dim))
-            .font_size(style.font_size(0) as f32);
+            .color(style.color(edid, EditorColor::Dim))
+            .font_size(style.font_size(edid, 0) as f32);
         let attrs_list = AttrsList::new(attrs);
         let current_line_attrs_list =
-            AttrsList::new(attrs.color(style.color(EditorColor::Foreground)));
+            AttrsList::new(attrs.color(style.color(edid, EditorColor::Foreground)));
         let show_relative = editor.modal.get_untracked()
             && editor.modal_relative_line_numbers.get_untracked()
             && mode != Mode::Insert;
@@ -133,7 +136,7 @@ impl Widget for EditorGutterView {
                     break;
                 }
 
-                let line_height = f64::from(style.line_height(line));
+                let line_height = f64::from(style.line_height(edid, line));
 
                 let text = if show_relative {
                     if line == current_line {

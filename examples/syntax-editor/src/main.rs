@@ -3,9 +3,9 @@ use floem::peniko::Color;
 use floem::views::editor::color::EditorColor;
 use floem::views::editor::core::buffer::rope_text::RopeText;
 use floem::views::editor::core::indent::IndentStyle;
+use floem::views::editor::id::EditorId;
 use floem::views::editor::layout::TextLayoutLine;
 use floem::views::editor::text::{Document, RenderWhitespace, SimpleStylingBuilder, Styling};
-use floem::views::editor::Editor;
 use floem::{
     cosmic_text::FamilyOwned,
     keyboard::{Key, ModifiersState, NamedKey},
@@ -66,47 +66,53 @@ impl<'a> Styling for SyntaxHighlightingStyle<'a> {
         self.style.id()
     }
 
-    fn font_size(&self, line: usize) -> usize {
-        self.style.font_size(line)
+    fn font_size(&self, edid: EditorId, line: usize) -> usize {
+        self.style.font_size(edid, line)
     }
 
-    fn line_height(&self, line: usize) -> f32 {
-        self.style.line_height(line)
+    fn line_height(&self, edid: EditorId, line: usize) -> f32 {
+        self.style.line_height(edid, line)
     }
 
-    fn font_family(&self, line: usize) -> Cow<[FamilyOwned]> {
-        self.style.font_family(line)
+    fn font_family(&self, edid: EditorId, line: usize) -> Cow<[FamilyOwned]> {
+        self.style.font_family(edid, line)
     }
 
-    fn weight(&self, line: usize) -> Weight {
-        self.style.weight(line)
+    fn weight(&self, edid: EditorId, line: usize) -> Weight {
+        self.style.weight(edid, line)
     }
 
-    fn italic_style(&self, line: usize) -> Style {
-        self.style.italic_style(line)
+    fn italic_style(&self, edid: EditorId, line: usize) -> Style {
+        self.style.italic_style(edid, line)
     }
 
-    fn stretch(&self, line: usize) -> Stretch {
-        self.style.stretch(line)
+    fn stretch(&self, edid: EditorId, line: usize) -> Stretch {
+        self.style.stretch(edid, line)
     }
 
     fn indent_style(&self) -> IndentStyle {
         self.style.indent_style()
     }
 
-    fn indent_line(&self, line: usize, line_content: &str) -> usize {
-        self.style.indent_line(line, line_content)
+    fn indent_line(&self, edid: EditorId, line: usize, line_content: &str) -> usize {
+        self.style.indent_line(edid, line, line_content)
     }
 
-    fn tab_width(&self, line: usize) -> usize {
-        self.style.tab_width(line)
+    fn tab_width(&self, edid: EditorId, line: usize) -> usize {
+        self.style.tab_width(edid, line)
     }
 
-    fn atomic_soft_tabs(&self, line: usize) -> bool {
-        self.style.atomic_soft_tabs(line)
+    fn atomic_soft_tabs(&self, edid: EditorId, line: usize) -> bool {
+        self.style.atomic_soft_tabs(edid, line)
     }
 
-    fn apply_attr_styles(&self, line: usize, default: Attrs, attrs: &mut AttrsList) {
+    fn apply_attr_styles(
+        &self,
+        _edid: EditorId,
+        line: usize,
+        default: Attrs,
+        attrs: &mut AttrsList,
+    ) {
         attrs.clear_spans();
         if let Some(doc) = &self.doc {
             // states are cached every 16 lines
@@ -158,24 +164,24 @@ impl<'a> Styling for SyntaxHighlightingStyle<'a> {
         }
     }
 
-    fn wrap(&self) -> WrapMethod {
-        self.style.wrap()
+    fn wrap(&self, edid: EditorId) -> WrapMethod {
+        self.style.wrap(edid)
     }
 
-    fn render_whitespace(&self) -> RenderWhitespace {
-        self.style.render_whitespace()
+    fn render_whitespace(&self, edid: EditorId) -> RenderWhitespace {
+        self.style.render_whitespace(edid)
     }
 
-    fn apply_layout_styles(&self, line: usize, layout_line: &mut TextLayoutLine) {
-        self.style.apply_layout_styles(line, layout_line)
+    fn apply_layout_styles(&self, edid: EditorId, line: usize, layout_line: &mut TextLayoutLine) {
+        self.style.apply_layout_styles(edid, line, layout_line)
     }
 
-    fn color(&self, color: EditorColor) -> Color {
-        self.style.color(color)
+    fn color(&self, edid: EditorId, color: EditorColor) -> Color {
+        self.style.color(edid, color)
     }
 
-    fn paint_caret(&self, editor: &Editor, line: usize) -> bool {
-        self.style.paint_caret(editor, line)
+    fn paint_caret(&self, edid: EditorId, line: usize) -> bool {
+        self.style.paint_caret(edid, line)
     }
 }
 

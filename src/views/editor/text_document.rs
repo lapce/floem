@@ -26,7 +26,7 @@ use super::{
     command::{Command, CommandExecuted},
     id::EditorId,
     phantom_text::{PhantomText, PhantomTextKind, PhantomTextLine},
-    text::{Document, DocumentPhantom, PreeditData, SystemClipboard},
+    text::{Document, DocumentPhantom, PreeditData, Styling, SystemClipboard},
     Editor,
 };
 
@@ -242,17 +242,17 @@ impl Document for TextDocument {
     }
 }
 impl DocumentPhantom for TextDocument {
-    fn phantom_text(&self, editor: &Editor, _line: usize) -> PhantomTextLine {
+    fn phantom_text(&self, edid: EditorId, styling: &dyn Styling, _line: usize) -> PhantomTextLine {
         let mut text = SmallVec::new();
 
         if self.buffer.with_untracked(Buffer::is_empty) {
-            if let Some(placeholder) = self.placeholder(editor.id()) {
+            if let Some(placeholder) = self.placeholder(edid) {
                 text.push(PhantomText {
                     kind: PhantomTextKind::Placeholder,
                     col: 0,
                     text: placeholder,
                     font_size: None,
-                    fg: Some(editor.color(EditorColor::Dim)),
+                    fg: Some(styling.color(edid, EditorColor::Dim)),
                     bg: None,
                     under_line: None,
                 });
@@ -262,13 +262,13 @@ impl DocumentPhantom for TextDocument {
         PhantomTextLine { text }
     }
 
-    fn has_multiline_phantom(&self, editor: &Editor) -> bool {
+    fn has_multiline_phantom(&self, edid: EditorId, _styling: &dyn Styling) -> bool {
         if !self.buffer.with_untracked(Buffer::is_empty) {
             return false;
         }
 
         self.placeholders.with_untracked(|placeholder| {
-            let Some(placeholder) = placeholder.get(&editor.id()) else {
+            let Some(placeholder) = placeholder.get(&edid) else {
                 return false;
             };
 
