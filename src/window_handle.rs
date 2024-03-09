@@ -1328,7 +1328,12 @@ fn context_menu_view(
         on_child_submenu_for_parent: RwSignal<bool>,
     ) -> impl View {
         match menu {
-            MenuDisplay::Item { id, enabled, title, children } => {
+            MenuDisplay::Item {
+                id,
+                enabled,
+                title,
+                children,
+            } => {
                 let menu_width = create_rw_signal(0.0);
                 let show_submenu = create_rw_signal(false);
                 let on_submenu = create_rw_signal(false);
@@ -1390,15 +1395,25 @@ fn context_menu_view(
                                 .padding_horiz(20.0)
                                 .justify_between()
                                 .items_center()
-                                .hover(|s| s.border_radius(10.0).background(Color::rgb8(65, 65, 65)))
-                                .active(|s| s.border_radius(10.0).background(Color::rgb8(92, 92, 92)))
+                                .hover(|s| {
+                                    s.border_radius(10.0).background(Color::rgb8(65, 65, 65))
+                                })
+                                .active(|s| {
+                                    s.border_radius(10.0).background(Color::rgb8(92, 92, 92))
+                                })
                                 .disabled(|s| s.color(Color::rgb8(92, 92, 92)))
                         }),
                         dyn_stack(
                             move || children.clone().unwrap_or_default(),
                             move |s| s.clone(),
                             move |menu| {
-                                view_fn(window_id, menu, context_menu, focus_count, on_child_submenu)
+                                view_fn(
+                                    window_id,
+                                    menu,
+                                    context_menu,
+                                    focus_count,
+                                    on_child_submenu,
+                                )
                             },
                         )
                         .keyboard_navigatable()
@@ -1451,7 +1466,9 @@ fn context_menu_view(
                                 .box_shadow_blur(5.0)
                                 .box_shadow_color(Color::BLACK)
                                 .apply_if(
-                                    !show_submenu.get() && !on_submenu.get() && !on_child_submenu.get(),
+                                    !show_submenu.get()
+                                        && !on_submenu.get()
+                                        && !on_child_submenu.get(),
                                     |s| s.hide(),
                                 )
                         }),
@@ -1462,16 +1479,14 @@ fn context_menu_view(
                 .any()
             }
 
-            MenuDisplay::Separator(_) => {
-                container(empty().style(|s| {
-                    s.width(100.pct())
-                        .height(1.0)
-                        .margin_vert(5.0)
-                        .background(Color::rgb8(92, 92, 92))
-                }))
-                .style(|s| s.min_width(100.pct()).padding_horiz(20.0))
-                .any()
-            }
+            MenuDisplay::Separator(_) => container(empty().style(|s| {
+                s.width(100.pct())
+                    .height(1.0)
+                    .margin_vert(5.0)
+                    .background(Color::rgb8(92, 92, 92))
+            }))
+            .style(|s| s.min_width(100.pct()).padding_horiz(20.0))
+            .any(),
         }
     }
 
