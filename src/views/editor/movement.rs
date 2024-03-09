@@ -198,8 +198,8 @@ pub fn move_offset(
 fn atomic_soft_tab_width_for_offset(ed: &Editor, offset: usize) -> Option<usize> {
     let line = ed.line_of_offset(offset);
     let style = ed.style();
-    if style.atomic_soft_tabs(line) {
-        Some(style.tab_width(line))
+    if style.atomic_soft_tabs(ed.id(), line) {
+        Some(style.tab_width(ed.id(), line))
     } else {
         None
     }

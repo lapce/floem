@@ -185,6 +185,7 @@ impl Editor {
         let style = cx.create_rw_signal(style);
 
         let font_sizes = RefCell::new(Rc::new(EditorFontSizes {
+            id,
             style: style.read_only(),
             doc: doc.read_only(),
         }));
@@ -257,6 +258,7 @@ impl Editor {
             self.effects_cx.get().dispose();
 
             *self.lines.font_sizes.borrow_mut() = Rc::new(EditorFontSizes {
+                id: self.id(),
                 style: self.style.read_only(),
                 doc: self.doc.read_only(),
             });
@@ -281,6 +283,7 @@ impl Editor {
             self.effects_cx.get().dispose();
 
             *self.lines.font_sizes.borrow_mut() = Rc::new(EditorFontSizes {
+                id: self.id(),
                 style: self.style.read_only(),
                 doc: self.doc.read_only(),
             });
@@ -569,15 +572,16 @@ impl Editor {
     // === Information ===
 
     pub fn phantom_text(&self, line: usize) -> PhantomTextLine {
-        self.doc().phantom_text(self, line)
+        self.doc()
+            .phantom_text(self.id(), self.style().as_ref(), line)
     }
 
     pub fn line_height(&self, line: usize) -> f32 {
-        self.style().line_height(line)
+        self.style().line_height(self.id(), line)
     }
 
     pub fn color(&self, color: EditorColor) -> Color {
-        self.style().color(color)
+        self.style().color(self.id(), color)
     }
 
     // === Line Information ===
@@ -802,7 +806,7 @@ impl Editor {
     /// Get the (point above, point below) of a particular offset within the editor.
     pub fn points_of_offset(&self, offset: usize, affinity: CursorAffinity) -> (Point, Point) {
         let line = self.line_of_offset(offset);
-        let line_height = f64::from(self.style().line_height(line));
+        let line_height = f64::from(self.style().line_height(self.id(), line));
 
         let info = self.screen_lines.with_untracked(|sl| {
             sl.iter_line_info()
@@ -837,7 +841,7 @@ impl Editor {
     /// Points outside of horizontal bounds will return the last column on the line.
     pub fn line_col_of_point(&self, mode: Mode, point: Point) -> ((usize, usize), bool) {
         // TODO: this assumes that line height is constant!
-        let line_height = f64::from(self.style().line_height(0));
+        let line_height = f64::from(self.style().line_height(self.id(), 0));
         let info = if point.y <= 0.0 {
             Some(self.first_rvline_info())
         } else {
@@ -869,7 +873,9 @@ impl Editor {
         let hit_point = text_layout.text.hit_point(Point::new(point.x, y));
         // We have to unapply the phantom text shifting in order to get back to the column in
         // the actual buffer
-        let phantom_text = self.doc().phantom_text(self, line);
+        let phantom_text = self
+            .doc()
+            .phantom_text(self.id(), self.style().as_ref(), line);
         let col = phantom_text.before_col(hit_point.index);
         // Ensure that the column doesn't end up out of bounds, so things like clicking on the far
         // right end will just go to the end of the line.
@@ -886,8 +892,8 @@ impl Editor {
             col = info.last_col(&self.text_prov(), true);
         }
 
-        let tab_width = self.style().tab_width(line);
-        if self.style().atomic_soft_tabs(line) && tab_width > 1 {
+        let tab_width = self.style().tab_width(self.id(), line);
+        if self.style().atomic_soft_tabs(self.id(), line) && tab_width > 1 {
             col = snap_to_soft_tab_line_col(
                 &self.text(),
                 line,
@@ -1066,13 +1072,14 @@ impl TextLayoutProvider for Editor {
     ) -> Arc<TextLayoutLine> {
         // TODO: we could share text layouts between different editor views given some knowledge of
         // their wrapping
+        let edid = self.id();
         let text = self.rope_text();
         let style = self.style();
         let doc = self.doc();
 
         let line_content_original = text.line_content(line);
 
-        let font_size = style.font_size(line);
+        let font_size = style.font_size(edid, line);
 
         // Get the line content with newline characters replaced with spaces
         // and the content without the newline characters
@@ -1086,18 +1093,18 @@ impl TextLayoutProvider for Editor {
             line_content_original.to_string()
         };
         // Combine the phantom text with the line content
-        let phantom_text = doc.phantom_text(self, line);
+        let phantom_text = doc.phantom_text(edid, style.as_ref(), line);
         let line_content = phantom_text.combine_with_text(&line_content);
 
-        let family = style.font_family(line);
+        let family = style.font_family(edid, line);
         let attrs = Attrs::new()
-            .color(style.color(EditorColor::Foreground))
+            .color(style.color(edid, EditorColor::Foreground))
             .family(&family)
             .font_size(font_size as f32)
-            .line_height(LineHeightValue::Px(style.line_height(line)));
+            .line_height(LineHeightValue::Px(style.line_height(edid, line)));
         let mut attrs_list = AttrsList::new(attrs);
 
-        style.apply_attr_styles(line, attrs, &mut attrs_list);
+        style.apply_attr_styles(edid, line, attrs, &mut attrs_list);
 
         // Apply phantom text specific styling
         for (offset, size, col, phantom) in phantom_text.offset_size_iter() {
@@ -1122,10 +1129,10 @@ impl TextLayoutProvider for Editor {
 
         let mut text_layout = TextLayout::new();
         // TODO: we could move tab width setting to be done by the document
-        text_layout.set_tab_width(style.tab_width(line));
+        text_layout.set_tab_width(style.tab_width(edid, line));
         text_layout.set_text(&line_content, attrs_list);
 
-        match style.wrap() {
+        match style.wrap(edid) {
             WrapMethod::None => {}
             WrapMethod::EditorWidth => {
                 let width = self.viewport.get_untracked().width();
@@ -1144,16 +1151,20 @@ impl TextLayoutProvider for Editor {
             &line_content_original,
             &text_layout,
             &phantom_text,
-            style.render_whitespace(),
+            style.render_whitespace(edid),
         );
 
-        let indent_line = style.indent_line(line, &line_content_original);
+        let indent_line = style.indent_line(edid, line, &line_content_original);
 
         let indent = if indent_line != line {
             // TODO: This creates the layout if it isn't already cached, but it doesn't cache the
             // result because the current method of managing the cache is not very smart.
             let layout = self.try_get_text_layout(indent_line).unwrap_or_else(|| {
-                self.new_text_layout(indent_line, style.font_size(indent_line), self.lines.wrap())
+                self.new_text_layout(
+                    indent_line,
+                    style.font_size(edid, indent_line),
+                    self.lines.wrap(),
+                )
             });
             layout.indent + 1.0
         } else {
@@ -1168,27 +1179,31 @@ impl TextLayoutProvider for Editor {
             whitespaces,
             indent,
         };
-        style.apply_layout_styles(line, &mut layout_line);
+        style.apply_layout_styles(edid, line, &mut layout_line);
 
         Arc::new(layout_line)
     }
 
     fn before_phantom_col(&self, line: usize, col: usize) -> usize {
-        self.doc().before_phantom_col(self, line, col)
+        self.doc()
+            .before_phantom_col(self.id(), self.style().as_ref(), line, col)
     }
 
     fn has_multiline_phantom(&self) -> bool {
-        self.doc().has_multiline_phantom(self)
+        self.doc()
+            .has_multiline_phantom(self.id(), self.style().as_ref())
     }
 }
 
 struct EditorFontSizes {
+    id: EditorId,
     style: ReadSignal<Rc<dyn Styling>>,
     doc: ReadSignal<Rc<dyn Document>>,
 }
 impl LineFontSizeProvider for EditorFontSizes {
     fn font_size(&self, line: usize) -> usize {
-        self.style.with_untracked(|style| style.font_size(line))
+        self.style
+            .with_untracked(|style| style.font_size(self.id, line))
     }
 
     fn cache_id(&self) -> FontSizeCacheId {
@@ -1280,7 +1295,7 @@ fn create_view_effects(cx: Scope, ed: &Editor) {
 
         let viewport = ed.viewport.get();
 
-        let wrap = match ed.style.get().wrap() {
+        let wrap = match ed.style.get().wrap(ed.id()) {
             WrapMethod::None => ResolvedWrap::None,
             WrapMethod::EditorWidth => {
                 ResolvedWrap::Width((viewport.width() as f32).max(MIN_WRAPPED_WIDTH))
@@ -1322,7 +1337,7 @@ pub fn normal_compute_screen_lines(
     let lines = &editor.lines;
     let style = editor.style.get();
     // TODO: don't assume universal line height!
-    let line_height = style.line_height(0);
+    let line_height = style.line_height(editor.id(), 0);
 
     let (y0, y1) = base.with_untracked(|base| (base.active_viewport.y0, base.active_viewport.y1));
     // Get the start and end (visual) lines that are visible in the viewport
@@ -1362,7 +1377,7 @@ pub fn normal_compute_screen_lines(
     for (i, vline_info) in iter.enumerate() {
         rvlines.push(vline_info.rvline);
 
-        let line_height = f64::from(style.line_height(vline_info.rvline.line));
+        let line_height = f64::from(style.line_height(editor.id(), vline_info.rvline.line));
 
         let y_idx = min_vline.get() + i;
         let vline_y = y_idx as f64 * line_height;

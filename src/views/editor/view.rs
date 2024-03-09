@@ -648,7 +648,7 @@ impl EditorView {
                     cursor_caret(ed, end, is_block, cursor.affinity);
 
                 if let Some(info) = screen_lines.info(rvline) {
-                    if !style.paint_caret(ed, rvline.line) {
+                    if !style.paint_caret(ed.id(), rvline.line) {
                         continue;
                     }
 
@@ -732,15 +732,16 @@ impl EditorView {
     }
 
     pub fn paint_text(cx: &mut PaintCx, ed: &Editor, viewport: Rect, screen_lines: &ScreenLines) {
+        let edid = ed.id();
         let style = ed.style();
 
         // TODO: cache indent text layout width
         let indent_unit = style.indent_style().as_str();
         // TODO: don't assume font family is the same for all lines?
-        let family = style.font_family(0);
+        let family = style.font_family(edid, 0);
         let attrs = Attrs::new()
             .family(&family)
-            .font_size(style.font_size(0) as f32);
+            .font_size(style.font_size(edid, 0) as f32);
         let attrs_list = AttrsList::new(attrs);
 
         let mut indent_text = TextLayout::new();
@@ -753,10 +754,10 @@ impl EditorView {
             EditorView::paint_extra_style(cx, &text_layout.extra_style, y, viewport);
 
             if let Some(whitespaces) = &text_layout.whitespaces {
-                let family = style.font_family(line);
-                let font_size = style.font_size(line) as f32;
+                let family = style.font_family(edid, line);
+                let font_size = style.font_size(edid, line) as f32;
                 let attrs = Attrs::new()
-                    .color(style.color(EditorColor::VisibleWhitespace))
+                    .color(style.color(edid, EditorColor::VisibleWhitespace))
                     .family(&family)
                     .font_size(font_size);
                 let attrs_list = AttrsList::new(attrs);
@@ -784,7 +785,7 @@ impl EditorView {
                 while x + 1.0 < text_layout.indent {
                     cx.stroke(
                         &Line::new(Point::new(x, y), Point::new(x, y + line_height)),
-                        style.color(EditorColor::IndentGuide),
+                        style.color(edid, EditorColor::IndentGuide),
                         1.0,
                     );
                     x += indent_text_width;

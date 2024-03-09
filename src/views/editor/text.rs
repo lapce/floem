@@ -25,6 +25,7 @@ use serde::{Deserialize, Serialize};
 use super::{
     actions::CommonAction,
     command::{Command, CommandExecuted},
+    id::EditorId,
     layout::TextLayoutLine,
     normal_compute_screen_lines,
     phantom_text::{PhantomText, PhantomTextKind, PhantomTextLine},
@@ -194,16 +195,22 @@ pub trait Document: DocumentPhantom + Downcast {
 impl_downcast!(Document);
 
 pub trait DocumentPhantom {
-    fn phantom_text(&self, editor: &Editor, line: usize) -> PhantomTextLine;
+    fn phantom_text(&self, edid: EditorId, styling: &dyn Styling, line: usize) -> PhantomTextLine;
 
     /// Translate a column position into the position it would be before combining with
     /// the phantom text.
-    fn before_phantom_col(&self, editor: &Editor, line: usize, col: usize) -> usize {
-        let phantom = self.phantom_text(editor, line);
+    fn before_phantom_col(
+        &self,
+        edid: EditorId,
+        styling: &dyn Styling,
+        line: usize,
+        col: usize,
+    ) -> usize {
+        let phantom = self.phantom_text(edid, styling, line);
         phantom.before_col(col)
     }
 
-    fn has_multiline_phantom(&self, _editor: &Editor) -> bool {
+    fn has_multiline_phantom(&self, _edid: EditorId, _styling: &dyn Styling) -> bool {
         true
     }
 }
@@ -262,29 +269,29 @@ pub trait Styling {
     /// The id for caching the styling.
     fn id(&self) -> u64;
 
-    fn font_size(&self, _line: usize) -> usize {
+    fn font_size(&self, _edid: EditorId, _line: usize) -> usize {
         16
     }
 
-    fn line_height(&self, line: usize) -> f32 {
-        let font_size = self.font_size(line) as f32;
+    fn line_height(&self, edid: EditorId, line: usize) -> f32 {
+        let font_size = self.font_size(edid, line) as f32;
         (1.5 * font_size).round().max(font_size)
     }
 
-    fn font_family(&self, _line: usize) -> Cow<[FamilyOwned]> {
+    fn font_family(&self, _edid: EditorId, _line: usize) -> Cow<[FamilyOwned]> {
         Cow::Borrowed(&[FamilyOwned::SansSerif])
     }
 
-    fn weight(&self, _line: usize) -> Weight {
+    fn weight(&self, _edid: EditorId, _line: usize) -> Weight {
         Weight::NORMAL
     }
 
     // TODO(minor): better name?
-    fn italic_style(&self, _line: usize) -> crate::cosmic_text::Style {
+    fn italic_style(&self, _edid: EditorId, _line: usize) -> crate::cosmic_text::Style {
         crate::cosmic_text::Style::Normal
     }
 
-    fn stretch(&self, _line: usize) -> Stretch {
+    fn stretch(&self, _edid: EditorId, _line: usize) -> Stretch {
         Stretch::Normal
     }
 
@@ -294,16 +301,16 @@ pub trait Styling {
 
     /// Which line the indentation line should be based off of  
     /// This is used for lining it up under a scope.
-    fn indent_line(&self, line: usize, _line_content: &str) -> usize {
+    fn indent_line(&self, _edid: EditorId, line: usize, _line_content: &str) -> usize {
         line
     }
 
-    fn tab_width(&self, _line: usize) -> usize {
+    fn tab_width(&self, _edid: EditorId, _line: usize) -> usize {
         4
     }
 
     /// Whether the cursor should treat leading soft tabs as if they are hard tabs
-    fn atomic_soft_tabs(&self, _line: usize) -> bool {
+    fn atomic_soft_tabs(&self, _edid: EditorId, _line: usize) -> bool {
         false
     }
 
@@ -311,22 +318,35 @@ pub trait Styling {
     // TODO: line_style equivalent?
 
     /// Apply custom attribute styles to the line  
-    fn apply_attr_styles(&self, _line: usize, _default: Attrs, _attrs: &mut AttrsList) {}
+    fn apply_attr_styles(
+        &self,
+        _edid: EditorId,
+        _line: usize,
+        _default: Attrs,
+        _attrs: &mut AttrsList,
+    ) {
+    }
 
     // TODO: we could have line-specific wrapping, but that would need some extra functions for
     // questions that visual lines' [`Lines`] uses
-    fn wrap(&self) -> WrapMethod {
+    fn wrap(&self, _edid: EditorId) -> WrapMethod {
         WrapMethod::EditorWidth
     }
 
-    fn render_whitespace(&self) -> RenderWhitespace {
+    fn render_whitespace(&self, _edid: EditorId) -> RenderWhitespace {
         RenderWhitespace::None
     }
 
-    fn apply_layout_styles(&self, _line: usize, _layout_line: &mut TextLayoutLine) {}
+    fn apply_layout_styles(
+        &self,
+        _edid: EditorId,
+        _line: usize,
+        _layout_line: &mut TextLayoutLine,
+    ) {
+    }
 
     // TODO: should we replace `foreground` with using `editor.foreground` here?
-    fn color(&self, color: EditorColor) -> Color {
+    fn color(&self, _edid: EditorId, color: EditorColor) -> Color {
         default_light_color(color)
     }
 
@@ -334,7 +354,7 @@ pub trait Styling {
     /// Note that these are extra conditions on top of the typical hide cursor &
     /// the editor being active conditions
     /// This is called whenever we paint the line.
-    fn paint_caret(&self, _editor: &Editor, _line: usize) -> bool {
+    fn paint_caret(&self, _edid: EditorId, _line: usize) -> bool {
         true
     }
 }
@@ -478,16 +498,22 @@ where
     D: Document,
     F: Fn(&Editor, &Command, Option<usize>, ModifiersState) -> CommandExecuted,
 {
-    fn phantom_text(&self, editor: &Editor, line: usize) -> PhantomTextLine {
-        self.doc.phantom_text(editor, line)
+    fn phantom_text(&self, edid: EditorId, styling: &dyn Styling, line: usize) -> PhantomTextLine {
+        self.doc.phantom_text(edid, styling, line)
     }
 
-    fn has_multiline_phantom(&self, editor: &Editor) -> bool {
-        self.doc.has_multiline_phantom(editor)
+    fn has_multiline_phantom(&self, edid: EditorId, styling: &dyn Styling) -> bool {
+        self.doc.has_multiline_phantom(edid, styling)
     }
 
-    fn before_phantom_col(&self, editor: &Editor, line: usize, col: usize) -> usize {
-        self.doc.before_phantom_col(editor, line, col)
+    fn before_phantom_col(
+        &self,
+        edid: EditorId,
+        styling: &dyn Styling,
+        line: usize,
+        col: usize,
+    ) -> usize {
+        self.doc.before_phantom_col(edid, styling, line, col)
     }
 }
 impl<D, F> CommonAction for ExtCmdDocument<D, F>
@@ -643,11 +669,11 @@ impl<C: Fn(EditorColor) -> Color> Styling for SimpleStyling<C> {
         0
     }
 
-    fn font_size(&self, _line: usize) -> usize {
+    fn font_size(&self, _edid: EditorId, _line: usize) -> usize {
         self.font_size
     }
 
-    fn line_height(&self, _line: usize) -> f32 {
+    fn line_height(&self, _edid: EditorId, _line: usize) -> f32 {
         let line_height = if self.line_height < SCALE_OR_SIZE_LIMIT {
             self.line_height * self.font_size as f32
         } else {
@@ -658,19 +684,19 @@ impl<C: Fn(EditorColor) -> Color> Styling for SimpleStyling<C> {
         (line_height.round() as usize).max(self.font_size) as f32
     }
 
-    fn font_family(&self, _line: usize) -> Cow<[FamilyOwned]> {
+    fn font_family(&self, _edid: EditorId, _line: usize) -> Cow<[FamilyOwned]> {
         Cow::Borrowed(&self.font_family)
     }
 
-    fn weight(&self, _line: usize) -> Weight {
+    fn weight(&self, _edid: EditorId, _line: usize) -> Weight {
         self.weight
     }
 
-    fn italic_style(&self, _line: usize) -> crate::cosmic_text::Style {
+    fn italic_style(&self, _edid: EditorId, _line: usize) -> crate::cosmic_text::Style {
         self.italic_style
     }
 
-    fn stretch(&self, _line: usize) -> Stretch {
+    fn stretch(&self, _edid: EditorId, _line: usize) -> Stretch {
         self.stretch
     }
 
@@ -678,23 +704,36 @@ impl<C: Fn(EditorColor) -> Color> Styling for SimpleStyling<C> {
         self.indent_style
     }
 
-    fn tab_width(&self, _line: usize) -> usize {
+    fn tab_width(&self, _edid: EditorId, _line: usize) -> usize {
         self.tab_width
     }
 
-    fn atomic_soft_tabs(&self, _line: usize) -> bool {
+    fn atomic_soft_tabs(&self, _edid: EditorId, _line: usize) -> bool {
         self.atomic_soft_tabs
     }
 
-    fn apply_attr_styles(&self, _line: usize, _default: Attrs, _attrs: &mut AttrsList) {}
+    fn apply_attr_styles(
+        &self,
+        _edid: EditorId,
+        _line: usize,
+        _default: Attrs,
+        _attrs: &mut AttrsList,
+    ) {
+    }
 
-    fn wrap(&self) -> WrapMethod {
+    fn wrap(&self, _edid: EditorId) -> WrapMethod {
         self.wrap
     }
 
-    fn apply_layout_styles(&self, _line: usize, _layout_line: &mut TextLayoutLine) {}
+    fn apply_layout_styles(
+        &self,
+        _edid: EditorId,
+        _line: usize,
+        _layout_line: &mut TextLayoutLine,
+    ) {
+    }
 
-    fn color(&self, color: EditorColor) -> Color {
+    fn color(&self, _edid: EditorId, color: EditorColor) -> Color {
         (self.color)(color)
     }
 }
