@@ -11,35 +11,66 @@ use crate::{
 
 #[derive(Debug, Hash, PartialEq, Eq)]
 pub enum EventListener {
+    /// Receives [`Event::KeyDown`]
     KeyDown,
+    /// Receives [`Event::KeyUp`]
     KeyUp,
+    /// Receives [`Event::PointerUp`] or [`Event::KeyDown`]
+    /// `KeyDown` occurs when using enter on a focused element, such as a button.
     Click,
+    /// Receives [`Event::PointerUp`]
     DoubleClick,
+    /// Receives [`Event::PointerUp`]
     SecondaryClick,
+    /// Receives [`Event::PointerMove`]
     DragStart,
+    /// Receives [`Event::PointerUp`]
     DragEnd,
+    /// Receives [`Event::PointerMove`]
     DragOver,
+    /// Receives [`Event::PointerMove`]
     DragEnter,
+    /// Receives [`Event::PointerMove`]
     DragLeave,
+    /// Receives [`Event::PointerUp`]
     Drop,
+    /// Receives [`Event::PointerDown`]
     PointerDown,
+    /// Receives [`Event::PointerMove`]
     PointerMove,
+    /// Receives [`Event::PointerUp`]
     PointerUp,
+    /// Receives [`Event::PointerMove`]
     PointerEnter,
+    /// Receives [`Event::PointerLeave`]
     PointerLeave,
+    /// Receives [`Event::ImeEnabled`]
     ImeEnabled,
+    /// Receives [`Event::ImeDisabled`]
     ImeDisabled,
+    /// Receives [`Event::ImePreedit`]
     ImePreedit,
+    /// Receives [`Event::ImeCommit`]
     ImeCommit,
+    /// Receives [`Event::PointerWheel`]
     PointerWheel,
+    /// Receives [`Event::FocusGained`]
     FocusGained,
+    /// Receives [`Event::FocusLost`]
     FocusLost,
+    /// Receives [`Event::ThemeChanged`]
     ThemeChanged,
+    /// Receives [`Event::WindowClosed`]
     WindowClosed,
+    /// Receives [`Event::WindowResized`]
     WindowResized,
+    /// Receives [`Event::WindowMoved`]
     WindowMoved,
+    /// Receives [`Event::WindowGotFocus`]
     WindowGotFocus,
+    /// Receives [`Event::WindowLostFocus`]
     WindowLostFocus,
+    /// Receives [`Event::WindowMaximizeChanged`]
     WindowMaximizeChanged,
 }
 
