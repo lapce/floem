@@ -643,7 +643,11 @@ struct CaptureView {
     highlighted: RwSignal<Option<Id>>,
 }
 
-fn capture_view(capture: &Rc<Capture>) -> impl View {
+fn capture_view(
+    window_id: WindowId,
+    capture_s: RwSignal<Option<Rc<Capture>>>,
+    capture: &Rc<Capture>,
+) -> impl View {
     let capture_view = CaptureView {
         expanding_selection: create_rw_signal(None),
         scroll_to: create_rw_signal(None),
@@ -753,6 +757,14 @@ fn capture_view(capture: &Rc<Capture>) -> impl View {
             selected_view(capture, capture_view.selected),
             header("Stats"),
             stats(capture),
+            button(|| "Recapture")
+                .style(|s| s.margin(5.0))
+                .on_click_stop(move |_| {
+                    add_app_update_event(AppUpdateEvent::CaptureWindow {
+                        window_id,
+                        capture: capture_s.write_only(),
+                    })
+                }),
         ))
         .style(|s| s.min_width_full()),
     )
@@ -809,9 +821,13 @@ fn capture_view(capture: &Rc<Capture>) -> impl View {
     h_stack((left, seperator, tree)).style(|s| s.height_full().width_full().max_width_full())
 }
 
-fn inspector_view(capture: &Option<Rc<Capture>>) -> impl View {
+fn inspector_view(
+    window_id: WindowId,
+    capture_s: RwSignal<Option<Rc<Capture>>>,
+    capture: &Option<Rc<Capture>>,
+) -> impl View {
     let view = if let Some(capture) = capture {
-        capture_view(capture).any()
+        capture_view(window_id, capture_s, capture).any()
     } else {
         text("No capture").any()
     };
@@ -881,7 +897,7 @@ pub fn capture(window_id: WindowId) {
                     move |it| match it {
                         0 => dyn_container(
                             move || capture.get(),
-                            |capture| inspector_view(&capture).any(),
+                            move |c| inspector_view(window_id, capture, &c).any(),
                         )
                         .style(|s| s.width_full().height_full())
                         .any(),
