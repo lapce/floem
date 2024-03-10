@@ -288,8 +288,7 @@ pub(crate) fn default_theme() -> Theme {
                 .box_shadow_color(Color::BLACK.with_alpha_factor(0.2))
         })
         .class(dropdown::DropDownClass, |s| {
-            s.size_full()
-                .width(75)
+            s.width(75)
                 .padding(3)
                 .apply(border_style)
                 .class(ListClass, |s| {
