@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FileSpec {
-    /// A human readable name, describing this filetype.
+    /// A human readable name, describing this file type.
     ///
     /// This is used in the Windows file dialog, where the user can select
     /// from a dropdown the type of file they would like to choose.
@@ -26,7 +26,7 @@ pub struct FileInfo {
     pub path: Vec<PathBuf>,
     /// The selected file format.
     ///
-    /// If there're multiple different formats available
+    /// If there are multiple different formats available
     /// this allows understanding the kind of format that the user expects the file
     /// to be written in. Examples could be Blender 2.4 vs Blender 2.6 vs Blender 2.8.
     /// The `path` above will already contain the appropriate extension chosen in the
@@ -43,16 +43,11 @@ impl FileInfo {
 
 #[derive(Debug, Clone, Default)]
 pub struct FileDialogOptions {
-    pub(crate) show_hidden: bool,
-    pub(crate) allowed_types: Option<Vec<FileSpec>>,
-    pub(crate) default_type: Option<FileSpec>,
-    pub(crate) select_directories: bool,
-    pub(crate) packages_as_directories: bool,
-    pub(crate) multi_selection: bool,
-    pub(crate) default_name: Option<String>,
-    pub(crate) name_label: Option<String>,
     pub(crate) title: Option<String>,
-    pub(crate) button_text: Option<String>,
+    pub(crate) default_name: Option<String>,
+    pub(crate) allowed_types: Option<Vec<FileSpec>>,
+    pub(crate) select_directories: bool,
+    pub(crate) multi_selection: bool,
     pub(crate) starting_directory: Option<PathBuf>,
 }
 
@@ -62,29 +57,11 @@ impl FileDialogOptions {
         FileDialogOptions::default()
     }
 
-    /// Set hidden files and directories to be visible.
-    pub fn show_hidden(mut self) -> Self {
-        self.show_hidden = true;
-        self
-    }
-
     /// Set directories to be selectable instead of files.
     ///
     /// This is only relevant for open dialogs.
     pub fn select_directories(mut self) -> Self {
         self.select_directories = true;
-        self
-    }
-
-    /// Set [packages] to be treated as directories instead of files.
-    ///
-    /// This allows for writing more universal cross-platform code at the cost of user experience.
-    ///
-    /// This is only relevant on macOS.
-    ///
-    /// [packages]: #packages
-    pub fn packages_as_directories(mut self) -> Self {
-        self.packages_as_directories = true;
         self
     }
 
@@ -119,41 +96,15 @@ impl FileDialogOptions {
         self
     }
 
-    /// Set the default file type.
-    ///
-    /// The provided `default_type` must also be present in [`allowed_types`].
-    ///
-    /// If it's `None` then the first entry in [`allowed_types`] will be used as the default.
-    ///
-    /// This is only relevant in *files mode*.
-    ///
-    /// [`allowed_types`]: #method.allowed_types
-    pub fn default_type(mut self, default_type: FileSpec) -> Self {
-        self.default_type = Some(default_type);
-        self
-    }
-
     /// Set the default filename that appears in the dialog.
     pub fn default_name(mut self, default_name: impl Into<String>) -> Self {
         self.default_name = Some(default_name.into());
         self
     }
 
-    /// Set the text in the label next to the filename editbox.
-    pub fn name_label(mut self, name_label: impl Into<String>) -> Self {
-        self.name_label = Some(name_label.into());
-        self
-    }
-
     /// Set the title text of the dialog.
     pub fn title(mut self, title: impl Into<String>) -> Self {
         self.title = Some(title.into());
-        self
-    }
-
-    /// Set the text of the Open/Save button.
-    pub fn button_text(mut self, text: impl Into<String>) -> Self {
-        self.button_text = Some(text.into());
         self
     }
 
