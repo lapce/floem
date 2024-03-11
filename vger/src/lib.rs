@@ -337,8 +337,8 @@ impl Renderer for VgerRenderer {
                 0.0,
                 std::f32::consts::PI,
                 paint,
-            )
-        }else {
+            );
+        } else {
             for segment in shape.path_segments(0.0) {
                 match segment {
                     floem_peniko::kurbo::PathSeg::Line(_) => todo!(),
@@ -351,6 +351,7 @@ impl Renderer for VgerRenderer {
                             paint,
                         );
                     }
+
                     floem_peniko::kurbo::PathSeg::Cubic(_) => todo!(),
                 }
             }
