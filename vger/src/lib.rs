@@ -338,7 +338,7 @@ impl Renderer for VgerRenderer {
                 0.0,
                 std::f32::consts::PI,
                 paint,
-            )
+            );
         } else {
             for segment in shape.path_segments(0.0) {
                 match segment {
