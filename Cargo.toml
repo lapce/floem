@@ -60,7 +60,7 @@ copypasta = { version = "0.10.0", default-features = false, features = ["wayland
 once_cell.workspace = true
 
 [features]
-default = ["editor", "rfd-tokio"]
+default = ["editor", "rfd-async-std"]
 # TODO: this is only winit and the editor serde, there are other dependencies that still depend on
 # serde
 serde = ["floem-winit/serde", "dep:serde"]
