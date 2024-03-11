@@ -329,6 +329,15 @@ impl Renderer for VgerRenderer {
                 width,
                 paint,
             );
+        } else if let Some(circle) = shape.as_circle() {
+            self.vger.stroke_arc(
+                self.vger_point(circle.center),
+                (circle.radius * self.scale) as f32,
+                width,
+                0.0,
+                std::f32::consts::PI,
+                paint,
+            );
         } else {
             for segment in shape.path_segments(0.0) {
                 match segment {
@@ -342,6 +351,7 @@ impl Renderer for VgerRenderer {
                             paint,
                         );
                     }
+
                     floem_peniko::kurbo::PathSeg::Cubic(_) => todo!(),
                 }
             }
