@@ -242,7 +242,7 @@ impl Document for TextDocument {
     }
 }
 impl DocumentPhantom for TextDocument {
-    fn phantom_text(&self, edid: EditorId, styling: &dyn Styling, _line: usize) -> PhantomTextLine {
+    fn phantom_text(&self, edid: EditorId, styling: &dyn Styling, line: usize) -> PhantomTextLine {
         let mut text = SmallVec::new();
 
         if self.buffer.with_untracked(Buffer::is_empty) {
@@ -259,6 +259,13 @@ impl DocumentPhantom for TextDocument {
             }
         }
 
+        if let Some(preedit) = self.preedit_phantom(
+            Some(styling.color(edid, EditorColor::PreeditUnderline)),
+            line,
+        ) {
+            text.push(preedit);
+        }
+
         PhantomTextLine { text }
     }
 
@@ -267,12 +274,24 @@ impl DocumentPhantom for TextDocument {
             return false;
         }
 
-        self.placeholders.with_untracked(|placeholder| {
+        let placeholder_ml = self.placeholders.with_untracked(|placeholder| {
             let Some(placeholder) = placeholder.get(&edid) else {
                 return false;
             };
 
             placeholder.lines().count() > 1
+        });
+
+        if placeholder_ml {
+            return true;
+        }
+
+        self.preedit.preedit.with_untracked(|preedit| {
+            let Some(preedit) = preedit else {
+                return false;
+            };
+
+            preedit.text.lines().count() > 1
         })
     }
 }
