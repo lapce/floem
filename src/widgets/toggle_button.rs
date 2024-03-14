@@ -306,10 +306,7 @@ impl ToggleButtonCustomStyle {
     /// # Arguments
     /// * `color` - An `Option<Color>` that sets the handle's color. `None` will remove the color.
     pub fn handle_color(mut self, color: impl Into<Option<Color>>) -> Self {
-        self = Self(
-            self.0
-                .class(ToggleButtonClass, |s| s.set(Foreground, color)),
-        );
+        self = Self(self.0.set(Foreground, color));
         self
     }
 
@@ -318,7 +315,7 @@ impl ToggleButtonCustomStyle {
     /// # Arguments
     /// * `color` - A `StyleValue<Color>` that sets the toggle button's accent color. This is the same as the background color.
     pub fn accent_color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
-        self = Self(self.0.class(ToggleButtonClass, |s| s.background(color)));
+        self = Self(self.0.background(color));
         self
     }
 
@@ -327,10 +324,7 @@ impl ToggleButtonCustomStyle {
     /// # Arguments
     /// * `inset` - A `PxPct` value that defines the inset of the handle from the toggle button's edge.
     pub fn handle_inset(mut self, inset: impl Into<PxPct>) -> Self {
-        self = Self(
-            self.0
-                .class(ToggleButtonClass, |s| s.set(ToggleButtonInset, inset)),
-        );
+        self = Self(self.0.set(ToggleButtonInset, inset));
         self
     }
 
