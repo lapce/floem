@@ -1648,7 +1648,10 @@ impl Widget for WindowView {
         for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
     ) {
         for overlay in self.overlays.values_mut().rev() {
-            for_each(overlay);
+            if for_each(overlay) {
+                // if the overlay events are handled we don't need to run the main window events
+                return;
+            };
         }
         for_each(&mut self.main);
     }
