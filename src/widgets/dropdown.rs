@@ -8,6 +8,7 @@ use crate::{
     action::{add_overlay, remove_overlay},
     event::{Event, EventListener},
     id::Id,
+    prop, prop_extractor,
     style::{Style, StyleClass, Width},
     style_class,
     unit::PxPctAuto,
@@ -25,6 +26,11 @@ type ChildFn<T> = dyn Fn(T) -> (AnyView, Scope);
 
 style_class!(pub DropDownClass);
 
+prop!(pub CloseOnAccept: bool {} = true);
+prop_extractor!(DropDownStyle {
+    close_on_accept: CloseOnAccept,
+});
+
 pub struct DropDown<T: 'static> {
     view_data: ViewData,
     main_view: Box<dyn Widget>,
@@ -36,6 +42,7 @@ pub struct DropDown<T: 'static> {
     window_origin: Option<Point>,
     on_accept: Option<Box<dyn Fn(T)>>,
     on_open: Option<Box<dyn Fn(bool)>>,
+    style: DropDownStyle,
 }
 
 enum Message {
@@ -84,6 +91,9 @@ impl<T: 'static> Widget for DropDown<T> {
     }
 
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+        if self.style.read(cx) {
+            cx.app_state_mut().request_paint(self.id());
+        }
         cx.save();
         self.list_style =
             Style::new().apply_classes_from_context(&[super::ListClass::class_ref()], &cx.current);
@@ -109,6 +119,9 @@ impl<T: 'static> Widget for DropDown<T> {
                 Message::ListFocusLost => self.close_dropdown(),
                 Message::ListSelect(val) => {
                     if let Ok(val) = val.downcast::<T>() {
+                        if self.style.close_on_accept() {
+                            self.close_dropdown();
+                        }
                         if let Some(on_select) = &self.on_accept {
                             on_select(*val);
                         }
@@ -155,6 +168,26 @@ impl<T: 'static> Widget for DropDown<T> {
     }
 }
 
+/// A dropdown widget
+///
+/// **Styling**:
+/// You can modify the behavior of the dropdown through the `CloseOnAccept` property.
+/// If the property is set to `true` the dropdown will automatically close when an item is selected.
+/// If the property is set to `false` the dropwown will not automatically close when an item is selected.
+/// The default is `true`.
+/// Styling Example:
+/// ```rust
+/// # use floem::widgets::dropdown;
+/// # use floem::views::empty;
+/// # use floem::views::Decorators;
+/// // root view
+/// empty()
+///     .style(|s|
+///         s.class(dropdown::DropDownClass, |s| {
+///             s.set(dropdown::CloseOnAccept, false)
+///         })
+///  );
+///```
 pub fn dropdown<MF, I, T, LF, AIF>(
     active_item: AIF,
     main_view: MF,
@@ -208,6 +241,7 @@ where
         window_origin: None,
         on_accept: None,
         on_open: None,
+        style: Default::default(),
     }
     .class(DropDownClass)
 }
