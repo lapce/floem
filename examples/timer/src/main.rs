@@ -71,21 +71,19 @@ fn app_view() -> impl View {
 
 /// A slider with a thin bar instead of the default thick bar.
 fn thin_slider(fill_percent: impl Fn() -> f32 + 'static) -> slider::Slider {
-    slider::slider(fill_percent).style(|s| {
-        s.width(200)
-            .class(slider::AccentBarClass, |s| s.height(30.pct()))
-            .class(slider::BarClass, |s| s.height(30.pct()))
-    })
+    slider::slider(fill_percent)
+        .slider_style(|s| s.accent_bar_height(30.pct()).bar_height(30.pct()))
+        .style(|s| s.width(200))
 }
 
 /// A non-interactive slider that has been repurposed into a progress bar.
 fn gauge(fill_percent: impl Fn() -> f32 + 'static) -> slider::Slider {
     slider::slider(fill_percent)
-        .disable_events(|| true)
-        .style(|s| {
-            s.width(200)
-                .set(slider::HandleRadius, 0.pct())
-                .class(slider::BarClass, |s| s.set(BorderRadius, 25.pct()))
-                .class(slider::AccentBarClass, |s| s.set(BorderRadius, 25.pct()))
+        .disabled(|| true)
+        .slider_style(|s| {
+            s.handle_radius(0)
+                .bar_radius(25.pct())
+                .accent_bar_radius(25.pct())
         })
+        .style(|s| s.width(200))
 }

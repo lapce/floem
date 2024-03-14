@@ -1,13 +1,14 @@
 //! A toggle button widget. An example can be found in widget-gallery/button in the floem examples.
 
-use floem_reactive::create_effect;
+use floem_peniko::Color;
+use floem_reactive::{create_effect, create_updater};
 use floem_renderer::Renderer;
 use floem_winit::keyboard::{Key, NamedKey};
 use kurbo::{Point, Size};
 
 use crate::{
     prop, prop_extractor,
-    style::{self, Foreground},
+    style::{self, Foreground, Style, StyleValue},
     style_class,
     unit::PxPct,
     view::{View, ViewData, Widget},
@@ -17,18 +18,18 @@ use crate::{
 
 /// Controls the switching behavior of the switch. The cooresponding style prop is [ToggleButtonBehavior]
 #[derive(Debug, Clone, PartialEq)]
-pub enum ToggleButtonSwitch {
+pub enum ToggleHandleBehavior {
     /// The switch foreground item will follow the position of the cursor. The toggle event happens when the cursor passes teh 50% threshhold.
     Follow,
-    /// The switch foreground item will "jump" from being toggled off/on when the cursor passes the 50% threshhold.
-    Switch,
+    /// The switch foreground item will "snap" from being toggled off/on when the cursor passes the 50% threshhold.
+    Snap,
 }
 
-impl style::StylePropValue for ToggleButtonSwitch {}
+impl style::StylePropValue for ToggleHandleBehavior {}
 
 prop!(pub ToggleButtonInset: PxPct {} = PxPct::Px(0.));
 prop!(pub ToggleButtonCircleRad: PxPct {} = PxPct::Pct(95.));
-prop!(pub ToggleButtonBehavior: ToggleButtonSwitch {} = ToggleButtonSwitch::Switch);
+prop!(pub ToggleButtonBehavior: ToggleHandleBehavior {} = ToggleHandleBehavior::Snap);
 
 prop_extractor! {
     ToggleStyle {
@@ -61,16 +62,16 @@ pub struct ToggleButton {
 
 /// A reactive toggle button. When the button is toggled by clicking or dragging the widget an update will be
 /// sent to the [`ToggleButton::on_toggle`](crate::widgets::toggle_button::ToggleButton::on_toggle) handler.
-/// See also [ToggleButtonClass], [ToggleButtonSwitch] and the other toggle button styles that can be applied.
+/// See also [ToggleButtonClass], [ToggleHandleBehavior] and the other toggle button styles that can be applied.
 ///
 /// By default this toggle button has a style class of [ToggleButtonClass] applied with a default style provided.
 ///
-/// Styles:  
-/// background color: [style::Background]  
-/// foreground color: [style::Foreground]  
-/// inner switch inset: [ToggleButtonInset]  
-/// inner switch (circle) size/radius: [ToggleButtonCircleRad]  
-/// toggle button switch behavior: [ToggleButtonBehavior] / [ToggleButtonSwitch]
+/// Styles:
+/// background color: [style::Background]
+/// foreground color: [style::Foreground]
+/// inner switch inset: [ToggleButtonInset]
+/// inner switch (circle) size/radius: [ToggleButtonCircleRad]
+/// toggle button switch behavior: [ToggleButtonBehavior] / [ToggleHandleBehavior]
 ///
 /// An example using [`RwSignal`](floem_reactive::RwSignal):
 /// ```rust
@@ -174,7 +175,7 @@ impl Widget for ToggleButton {
                 if self.held == ToggleState::Held || self.held == ToggleState::Drag {
                     self.held = ToggleState::Drag;
                     match self.style.switch_behavior() {
-                        ToggleButtonSwitch::Follow => {
+                        ToggleHandleBehavior::Follow => {
                             self.position = event.pos.x as f32;
                             if self.position > self.width / 2. && !self.state {
                                 self.state = true;
@@ -189,7 +190,7 @@ impl Widget for ToggleButton {
                             }
                             cx.app_state_mut().request_layout(self.id());
                         }
-                        ToggleButtonSwitch::Switch => {
+                        ToggleHandleBehavior::Snap => {
                             if event.pos.x as f32 > self.width / 2. && !self.state {
                                 self.position = self.width;
                                 cx.app_state_mut().request_layout(self.id());
@@ -278,6 +279,78 @@ impl ToggleButton {
     /// This handler is only called if this button is clicked or switched
     pub fn on_toggle(mut self, ontoggle: impl Fn(bool) + 'static) -> Self {
         self.ontoggle = Some(Box::new(ontoggle));
+        self
+    }
+
+    pub fn toggle_style(
+        mut self,
+        style: impl Fn(ToggleButtonCustomStyle) -> ToggleButtonCustomStyle + 'static,
+    ) -> Self {
+        let id = self.id();
+        let offset = Widget::view_data_mut(&mut self).style.next_offset();
+        let style = create_updater(
+            move || style(ToggleButtonCustomStyle(Style::new())),
+            move |style| id.update_style(style.0, offset),
+        );
+        Widget::view_data_mut(&mut self).style.push(style.0);
+        self
+    }
+}
+
+/// Represents a custom style for a `ToggleButton`.
+pub struct ToggleButtonCustomStyle(Style);
+
+impl ToggleButtonCustomStyle {
+    /// Sets the color of the toggle handle.
+    ///
+    /// # Arguments
+    /// * `color` - An `Option<Color>` that sets the handle's color. `None` will remove the color.
+    pub fn handle_color(mut self, color: impl Into<Option<Color>>) -> Self {
+        self = Self(
+            self.0
+                .class(ToggleButtonClass, |s| s.set(Foreground, color)),
+        );
+        self
+    }
+
+    /// Sets the accent color of the toggle button.
+    ///
+    /// # Arguments
+    /// * `color` - A `StyleValue<Color>` that sets the toggle button's accent color. This is the same as the background color.
+    pub fn accent_color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
+        self = Self(self.0.class(ToggleButtonClass, |s| s.background(color)));
+        self
+    }
+
+    /// Sets the inset of the toggle handle.
+    ///
+    /// # Arguments
+    /// * `inset` - A `PxPct` value that defines the inset of the handle from the toggle button's edge.
+    pub fn handle_inset(mut self, inset: impl Into<PxPct>) -> Self {
+        self = Self(
+            self.0
+                .class(ToggleButtonClass, |s| s.set(ToggleButtonInset, inset)),
+        );
+        self
+    }
+
+    /// Sets the radius of the toggle circle.
+    ///
+    /// # Arguments
+    /// * `rad` - A `PxPct` value that defines the radius of the toggle button's inner circle.
+    pub fn circle_rad(mut self, rad: impl Into<PxPct>) -> Self {
+        self = Self(self.0.set(ToggleButtonCircleRad, rad));
+        self
+    }
+
+    /// Sets the switch behavior of the toggle button.
+    ///
+    /// # Arguments
+    /// * `switch` - A `ToggleHandleBehavior` that defines how the toggle handle behaves on interaction.
+    /// On `Follow`, the handle will follow the mouse.
+    /// On `Snap`, the handle will snap to the nearest side.
+    pub fn behavior(mut self, switch: ToggleHandleBehavior) -> Self {
+        self = Self(self.0.set(ToggleButtonBehavior, switch));
         self
     }
 }
