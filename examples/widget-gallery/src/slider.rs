@@ -35,8 +35,8 @@ pub fn slider_view() -> impl View {
                             s.accent_bar_height(30.pct())
                                 .bar_height(30.pct())
                                 .edge_align(false)
+                                .style(|s| s.width(200))
                         })
-                        .style(|s| s.width(200))
                         .on_change_pct(move |val| set_slider.set(val)),
                     label(move || format!("{:.1}%", set_slider.get())),
                 ))
@@ -45,8 +45,9 @@ pub fn slider_view() -> impl View {
             form_item("Progress bar:".to_string(), 120.0, move || {
                 stack((
                     slider::slider(move || set_slider.get())
-                        .slider_style(|s| s.handle_radius(0).edge_align(true))
-                        .style(|s| s.width(200))
+                        .slider_style(|s| {
+                            s.handle_radius(0).edge_align(true).style(|s| s.width(200))
+                        })
                         .disabled(|| true)
                         .on_change_pct(move |val| set_slider.set(val)),
                     label(move || format!("{:.1}%", set_slider.get())),

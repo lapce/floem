@@ -348,6 +348,12 @@ impl DropDownCustomStyle {
         self = Self(self.0.set(CloseOnAccept, close));
         self
     }
+
+    /// Apply regular style properties
+    pub fn style(mut self, style: impl Fn(Style) -> Style + 'static) -> Self {
+        self = Self(self.0.apply(style(Style::new())));
+        self
+    }
 }
 
 impl<T> Drop for DropDown<T> {
