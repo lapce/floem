@@ -311,6 +311,8 @@ impl Scroll {
             if let Some(onscroll) = &self.onscroll {
                 onscroll(child_viewport);
             }
+        } else {
+            return None;
         }
         Some(())
     }
@@ -870,15 +872,15 @@ impl Widget for Scroll {
             } else {
                 delta
             };
-            self.clamp_child_viewport(cx.app_state, self.child_viewport + delta);
+            let any_change = self.clamp_child_viewport(cx.app_state, self.child_viewport + delta);
 
             // Check if the scroll bars now hover
             self.update_hover_states(cx.app_state, pointer_event.pos);
 
-            return if !self.propagate_pointer_wheel {
-                EventPropagation::Stop
-            } else {
+            return if self.propagate_pointer_wheel || any_change.is_none() {
                 EventPropagation::Continue
+            } else {
+                EventPropagation::Stop
             };
         }
 
