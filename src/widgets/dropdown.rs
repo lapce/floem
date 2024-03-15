@@ -318,6 +318,42 @@ impl<T> DropDown<T> {
             list
         }));
     }
+
+    /// Sets the custom style properties of the `DropDown`.
+    pub fn dropdown_style(
+        mut self,
+        style: impl Fn(DropDownCustomStyle) -> DropDownCustomStyle + 'static,
+    ) -> Self {
+        let id = self.id();
+        let offset = Widget::view_data_mut(&mut self).style.next_offset();
+        let style = create_updater(
+            move || style(DropDownCustomStyle(Style::new())),
+            move |style| id.update_style(style.0, offset),
+        );
+        Widget::view_data_mut(&mut self).style.push(style.0);
+        self
+    }
+}
+
+pub struct DropDownCustomStyle(Style);
+
+impl DropDownCustomStyle {
+    /// Sets the `CloseOnAccept` property for the dropdown, which determines whether the dropdown
+    /// should automatically close when an item is selected. The default value is `true`.
+    ///
+    /// # Arguments
+    /// * `close`: If set to `true`, the dropdown will close upon item selection. If `false`, it
+    /// will remain open after an item is selected.
+    pub fn close_on_accept(mut self, close: bool) -> Self {
+        self = Self(self.0.set(CloseOnAccept, close));
+        self
+    }
+
+    /// Apply regular style properties
+    pub fn style(mut self, style: impl Fn(Style) -> Style + 'static) -> Self {
+        self = Self(self.0.apply(style(Style::new())));
+        self
+    }
 }
 
 impl<T> Drop for DropDown<T> {

@@ -1,14 +1,14 @@
 //! A toggle button widget. An example can be found in widget-gallery/button in the floem examples.
 
 use floem_peniko::Color;
-use floem_reactive::create_effect;
+use floem_reactive::{create_effect, create_updater};
 use floem_renderer::Renderer;
 use floem_winit::keyboard::{Key, NamedKey};
 use kurbo::{Circle, Point, RoundedRect};
 
 use crate::{
     prop, prop_extractor,
-    style::{Background, BorderRadius, Foreground, Height},
+    style::{Background, BorderRadius, Foreground, Height, Style, StyleValue},
     style_class,
     unit::{PxPct, PxPctAuto},
     view::{View, ViewData, Widget},
@@ -17,7 +17,6 @@ use crate::{
 };
 
 enum SliderUpdate {
-    DisableEvents(bool),
     Percent(f32),
 }
 
@@ -59,7 +58,6 @@ pub struct Slider {
     accent_bar: RoundedRect,
     size: taffy::prelude::Size<f32>,
     style: SliderStyle,
-    disable_events: bool,
 }
 
 /// **A reactive slider.**
@@ -73,7 +71,7 @@ pub struct Slider {
 /// You can respond to events by calling the [`Slider::on_change_pct`], and [`Slider::on_change_px`] methods on [`Slider`] and passing in a callback. Both of these callbacks are called whenever a change is effected by either clicking or by the arrow keys.
 /// These callbacks will not be called on reactive updates, only on a mouse event or by using the arrow keys.
 ///
-/// You can also disable event handling of mouse clicks and arrow keys using [`Slider::disable_events`]. If you want to use this slider as a progress bar this may be useful.
+/// You can also disable event handling [`Decorators::disabled`]. If you want to use this slider as a progress bar this may be useful.
 ///
 /// **Styling**:
 /// You can set three properties on the slider (`SliderClass`): [`Foreground`] color and [`HandleRadius`], which both affect the handle, and [`EdgeAlign`].
@@ -129,7 +127,6 @@ pub fn slider(percent: impl Fn() -> f32 + 'static) -> Slider {
         accent_bar: Default::default(),
         size: Default::default(),
         style: Default::default(),
-        disable_events: false,
     }
     .class(SliderClass)
     .keyboard_navigatable()
@@ -161,7 +158,6 @@ impl Widget for Slider {
     fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(update) = state.downcast::<SliderUpdate>() {
             match *update {
-                SliderUpdate::DisableEvents(disable) => self.disable_events = disable,
                 SliderUpdate::Percent(percent) => self.percent = percent,
             }
             cx.request_layout(self.id());
@@ -174,67 +170,66 @@ impl Widget for Slider {
         _id_path: Option<&[crate::id::Id]>,
         event: crate::event::Event,
     ) -> EventPropagation {
-        if !self.disable_events {
-            let pos_changed = match event {
-                crate::event::Event::PointerDown(event) => {
-                    cx.update_active(self.id());
-                    cx.app_state_mut().request_layout(self.id());
-                    self.held = true;
+        let pos_changed = match event {
+            crate::event::Event::PointerDown(event) => {
+                cx.update_active(self.id());
+                cx.app_state_mut().request_layout(self.id());
+                self.held = true;
+                self.percent = event.pos.x as f32 / self.size.width * 100.;
+                true
+            }
+            crate::event::Event::PointerUp(event) => {
+                cx.app_state_mut().request_layout(self.id());
+
+                // set the state based on the position of the slider
+                let changed = self.held;
+                if self.held {
+                    self.percent = event.pos.x as f32 / self.size.width * 100.;
+                    self.update_restrict_position();
+                }
+                self.held = false;
+                changed
+            }
+            crate::event::Event::PointerMove(event) => {
+                cx.app_state_mut().request_layout(self.id());
+                if self.held {
                     self.percent = event.pos.x as f32 / self.size.width * 100.;
                     true
-                }
-                crate::event::Event::PointerUp(event) => {
-                    cx.app_state_mut().request_layout(self.id());
-
-                    // set the state based on the position of the slider
-                    let changed = self.held;
-                    if self.held {
-                        self.percent = event.pos.x as f32 / self.size.width * 100.;
-                        self.update_restrict_position();
-                    }
-                    self.held = false;
-                    changed
-                }
-                crate::event::Event::PointerMove(event) => {
-                    cx.app_state_mut().request_layout(self.id());
-                    if self.held {
-                        self.percent = event.pos.x as f32 / self.size.width * 100.;
-                        true
-                    } else {
-                        false
-                    }
-                }
-                crate::event::Event::FocusLost => {
-                    self.held = false;
+                } else {
                     false
                 }
-                crate::event::Event::KeyDown(event) => {
-                    if event.key.logical_key == Key::Named(NamedKey::ArrowLeft) {
-                        cx.app_state_mut().request_layout(self.id());
-                        self.percent -= 10.;
-                        true
-                    } else if event.key.logical_key == Key::Named(NamedKey::ArrowRight) {
-                        cx.app_state_mut().request_layout(self.id());
-                        self.percent += 10.;
-                        true
-                    } else {
-                        false
-                    }
-                }
-                _ => false,
-            };
-
-            self.update_restrict_position();
-
-            if pos_changed && self.percent != self.prev_percent {
-                if let Some(onchangepx) = &self.onchangepx {
-                    onchangepx(self.handle_center());
-                }
-                if let Some(onchangepct) = &self.onchangepct {
-                    onchangepct(self.percent)
+            }
+            crate::event::Event::FocusLost => {
+                self.held = false;
+                false
+            }
+            crate::event::Event::KeyDown(event) => {
+                if event.key.logical_key == Key::Named(NamedKey::ArrowLeft) {
+                    cx.app_state_mut().request_layout(self.id());
+                    self.percent -= 10.;
+                    true
+                } else if event.key.logical_key == Key::Named(NamedKey::ArrowRight) {
+                    cx.app_state_mut().request_layout(self.id());
+                    self.percent += 10.;
+                    true
+                } else {
+                    false
                 }
             }
+            _ => false,
+        };
+
+        self.update_restrict_position();
+
+        if pos_changed && self.percent != self.prev_percent {
+            if let Some(onchangepx) = &self.onchangepx {
+                onchangepx(self.handle_center());
+            }
+            if let Some(onchangepct) = &self.onchangepct {
+                onchangepct(self.percent)
+            }
         }
+
         EventPropagation::Continue
     }
 
@@ -329,7 +324,7 @@ impl Widget for Slider {
         cx.clip(&self.base_bar);
         cx.fill(
             &self.accent_bar,
-            self.accent_bar_style.color().unwrap_or(Color::GREEN),
+            self.accent_bar_style.color().unwrap_or(Color::TRANSPARENT),
             0.,
         );
 
@@ -361,12 +356,109 @@ impl Slider {
         self.onchangepx = Some(Box::new(onchangepx));
         self
     }
-    pub fn disable_events(self, state: impl Fn() -> bool + 'static) -> Self {
+    /// Sets the custom style properties of the `Slider`.
+    pub fn slider_style(
+        mut self,
+        style: impl Fn(SliderCustomStyle) -> SliderCustomStyle + 'static,
+    ) -> Self {
         let id = self.id();
-        create_effect(move |_| {
-            let state = state();
-            id.update_state(SliderUpdate::DisableEvents(state));
-        });
+        let offset = Widget::view_data_mut(&mut self).style.next_offset();
+        let style = create_updater(
+            move || style(SliderCustomStyle(Style::new())),
+            move |style| id.update_style(style.0, offset),
+        );
+        Widget::view_data_mut(&mut self).style.push(style.0);
+        self
+    }
+}
+
+pub struct SliderCustomStyle(Style);
+
+impl SliderCustomStyle {
+    /// Sets the color of the slider handle.
+    ///
+    /// # Arguments
+    /// * `color` - An optional `Color` that sets the handle's color. If `None` is provided, the handle color is not set.
+    pub fn handle_color(mut self, color: impl Into<Option<Color>>) -> Self {
+        self = SliderCustomStyle(self.0.set(Foreground, color));
+        self
+    }
+
+    /// Sets the edge alignment of the slider handle.
+    ///
+    /// # Arguments
+    /// * `align` - A boolean value that determines the alignment of the handle. If `true`, the edges of the handle are within the bar at 0% and 100%. If `false`, the bars are shortened and the handle's center appears at the ends of the bar.
+    pub fn edge_align(mut self, align: bool) -> Self {
+        self = SliderCustomStyle(self.0.set(EdgeAlign, align));
+        self
+    }
+
+    /// Sets the radius of the slider handle.
+    ///
+    /// # Arguments
+    /// * `radius` - A `PxPct` value that sets the handle's radius. This can be a pixel value or a percent value relative to the main height of the view.
+    pub fn handle_radius(mut self, radius: impl Into<PxPct>) -> Self {
+        self = SliderCustomStyle(self.0.set(HandleRadius, radius));
+        self
+    }
+
+    /// Sets the color of the slider's bar.
+    ///
+    /// # Arguments
+    /// * `color` - A `StyleValue<Color>` that sets the bar's background color.
+    pub fn bar_color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
+        self = SliderCustomStyle(self.0.class(BarClass, |s| s.background(color)));
+        self
+    }
+
+    /// Sets the border radius of the slider's bar.
+    ///
+    /// # Arguments
+    /// * `radius` - A `PxPct` value that sets the bar's border radius. This can be a pixel value or a percent value relative to the bar's height.
+    pub fn bar_radius(mut self, radius: impl Into<PxPct>) -> Self {
+        self = SliderCustomStyle(self.0.class(BarClass, |s| s.border_radius(radius)));
+        self
+    }
+
+    /// Sets the height of the slider's bar.
+    ///
+    /// # Arguments
+    /// * `height` - A `PxPctAuto` value that sets the bar's height. This can be a pixel value, a percent value relative to the view's height, or `Auto` to use the view's height.
+    pub fn bar_height(mut self, height: impl Into<PxPctAuto>) -> Self {
+        self = SliderCustomStyle(self.0.class(BarClass, |s| s.height(height)));
+        self
+    }
+
+    /// Sets the color of the slider's accent bar.
+    ///
+    /// # Arguments
+    /// * `color` - A `StyleValue<Color>` that sets the accent bar's background color.
+    pub fn accent_bar_color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
+        self = SliderCustomStyle(self.0.class(AccentBarClass, |s| s.background(color)));
+        self
+    }
+
+    /// Sets the border radius of the slider's accent bar.
+    ///
+    /// # Arguments
+    /// * `radius` - A `PxPct` value that sets the accent bar's border radius. This can be a pixel value or a percent value relative to the accent bar's height.
+    pub fn accent_bar_radius(mut self, radius: impl Into<PxPct>) -> Self {
+        self = SliderCustomStyle(self.0.class(AccentBarClass, |s| s.border_radius(radius)));
+        self
+    }
+
+    /// Sets the height of the slider's accent bar.
+    ///
+    /// # Arguments
+    /// * `height` - A `PxPctAuto` value that sets the accent bar's height. This can be a pixel value, a percent value relative to the view's height, or `Auto` to use the view's height.
+    pub fn accent_bar_height(mut self, height: impl Into<PxPctAuto>) -> Self {
+        self = SliderCustomStyle(self.0.class(AccentBarClass, |s| s.height(height)));
+        self
+    }
+
+    /// Apply regular style properties
+    pub fn style(mut self, style: impl Fn(Style) -> Style + 'static) -> Self {
+        self = Self(self.0.apply(style(Style::new())));
         self
     }
 }

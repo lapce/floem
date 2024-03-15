@@ -18,9 +18,9 @@ use crate::{
 
 /// A trait that extends the appearance and functionality of Views through styling and event handling.
 pub trait Decorators: View + Sized {
-    /// Alter the style of the view.  
+    /// Alter the style of the view.
     ///
-    /// Earlier applications of `style` have lower priority than later calls.  
+    /// Earlier applications of `style` have lower priority than later calls.
     /// ```rust
     /// # use floem::{peniko::Color, view::View, views::{Decorators, label, stack}};
     /// fn view() -> impl View {
