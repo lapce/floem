@@ -1454,7 +1454,9 @@ pub struct VLineInfo<L = VLine> {
     pub vline: L,
 }
 impl<L: std::fmt::Debug> VLineInfo<L> {
-    fn new<I: Into<Interval>>(iv: I, rvline: RVLine, line_count: usize, vline: L) -> Self {
+    /// Create a new instance of `VLineInfo`  
+    /// This should rarely be used directly.
+    pub fn new<I: Into<Interval>>(iv: I, rvline: RVLine, line_count: usize, vline: L) -> Self {
         Self {
             interval: iv.into(),
             line_count,

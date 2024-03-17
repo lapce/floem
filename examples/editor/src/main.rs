@@ -13,7 +13,12 @@ use floem::{
 };
 
 fn app_view() -> impl View {
-    let editor_a = text_editor("Hello World!").styling(SimpleStyling::dark());
+    let text = std::env::args()
+        .nth(1)
+        .map(|s| std::fs::read_to_string(s).unwrap());
+    let text = text.as_deref().unwrap_or("Hello world");
+
+    let editor_a = text_editor(text).styling(SimpleStyling::dark());
     let editor_b = editor_a
         .shared_editor()
         .pre_command(|ev| {

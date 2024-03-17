@@ -132,7 +132,7 @@ impl ScreenLines {
 
         let end_idx = self.lines.binary_search(r.end()).ok().or_else(|| {
             if self.lines.last().map(|l| r.end() > l).unwrap_or(false) {
-                Some(self.lines.len())
+                Some(self.lines.len() - 1)
             } else {
                 // The end is before the end of our lines but not available
                 None
@@ -1266,4 +1266,84 @@ fn editor_content(
         }
     })
     .style(|s| s.absolute().size_pct(100.0, 100.0))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashMap, rc::Rc};
+
+    use floem_reactive::create_rw_signal;
+    use kurbo::Rect;
+
+    use crate::views::editor::{
+        view::LineInfo,
+        visual_line::{RVLine, VLineInfo},
+    };
+
+    use super::{ScreenLines, ScreenLinesBase};
+
+    #[test]
+    fn iter_line_info_range() {
+        let lines = vec![
+            RVLine::new(10, 0),
+            RVLine::new(10, 1),
+            RVLine::new(10, 2),
+            RVLine::new(10, 3),
+        ];
+        let mut info = HashMap::new();
+        for rv in lines.iter() {
+            info.insert(
+                *rv,
+                LineInfo {
+                    // The specific values don't really matter
+                    y: 0.0,
+                    vline_y: 0.0,
+                    vline_info: VLineInfo::new(0..0, *rv, 4, ()),
+                },
+            );
+        }
+        let sl = ScreenLines {
+            lines: Rc::new(lines),
+            info: Rc::new(info),
+            diff_sections: None,
+            base: create_rw_signal(ScreenLinesBase {
+                active_viewport: Rect::ZERO,
+            }),
+        };
+
+        // Completely outside range should be empty
+        assert_eq!(
+            sl.iter_line_info_r(RVLine::new(0, 0)..=RVLine::new(1, 5))
+                .collect::<Vec<_>>(),
+            Vec::new()
+        );
+        // Should include itself
+        assert_eq!(
+            sl.iter_line_info_r(RVLine::new(10, 0)..=RVLine::new(10, 0))
+                .count(),
+            1
+        );
+        // Typical case
+        assert_eq!(
+            sl.iter_line_info_r(RVLine::new(10, 0)..=RVLine::new(10, 2))
+                .count(),
+            3
+        );
+        assert_eq!(
+            sl.iter_line_info_r(RVLine::new(10, 0)..=RVLine::new(10, 3))
+                .count(),
+            4
+        );
+        // Should only include what is within the interval
+        assert_eq!(
+            sl.iter_line_info_r(RVLine::new(10, 0)..=RVLine::new(10, 5))
+                .count(),
+            4
+        );
+        assert_eq!(
+            sl.iter_line_info_r(RVLine::new(0, 0)..=RVLine::new(10, 5))
+                .count(),
+            4
+        );
+    }
 }
