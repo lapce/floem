@@ -16,7 +16,7 @@ use crate::{
         default_compute_layout, default_event, view_children_set_parent_id, AnyView, View,
         ViewData, Widget,
     },
-    views::Decorators,
+    views::{scroll, Decorators},
     EventPropagation,
 };
 
@@ -25,6 +25,7 @@ use super::list;
 type ChildFn<T> = dyn Fn(T) -> (AnyView, Scope);
 
 style_class!(pub DropDownClass);
+style_class!(pub DropDownScrollClass);
 
 prop!(pub CloseOnAccept: bool {} = true);
 prop_extractor!(DropDownStyle {
@@ -151,7 +152,6 @@ impl<T: 'static> Widget for DropDown<T> {
         id_path: Option<&[Id]>,
         event: Event,
     ) -> crate::EventPropagation {
-        #[allow(clippy::single_match)]
         match event {
             Event::PointerDown(_) => {
                 self.swap_state();
@@ -164,7 +164,7 @@ impl<T: 'static> Widget for DropDown<T> {
             }
             _ => {}
         }
-        default_event(self, cx, id_path, event.clone())
+        default_event(self, cx, id_path, event)
     }
 }
 
@@ -207,7 +207,7 @@ where
         let iterator = iterator.clone();
         let iter_clone = iterator.clone();
         let list_item_fn = list_item_fn.clone();
-        list(iterator.into_iter().map(list_item_fn))
+        let inner_list = list(iterator.into_iter().map(list_item_fn))
             .on_accept(move |opt_idx| {
                 if let Some(idx) = opt_idx {
                     let val = iter_clone.clone().into_iter().nth(idx).unwrap();
@@ -215,11 +215,18 @@ where
                     dropdown_id.update_state(Message::ListSelect(Box::new(val)));
                 }
             })
-            .any()
+            .style(|s| s.size_full())
             .keyboard_navigatable()
             .on_event_stop(EventListener::FocusLost, move |_| {
                 dropdown_id.update_state(Message::ListFocusLost);
+            });
+        let inner_list_id = View::view_data(&inner_list).id();
+        scroll(inner_list)
+            .on_event_stop(EventListener::FocusGained, move |_| {
+                inner_list_id.request_focus();
             })
+            .class(DropDownScrollClass)
+            .any()
     });
 
     let initial = create_updater(active_item, move |new_state| {
