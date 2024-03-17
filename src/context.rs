@@ -702,6 +702,8 @@ impl<'a> EventCx<'a> {
             return EventPropagation::Stop;
         }
 
+        let mut is_down_and_has_click = false;
+
         match &event {
             Event::PointerDown(event) => {
                 self.app_state.clicking.insert(id);
@@ -723,6 +725,7 @@ impl<'a> EventCx<'a> {
                         if self.has_event_listener(id, EventListener::Click) {
                             let view_state = self.app_state.view_state(id);
                             view_state.last_pointer_down = Some(event.clone());
+                            is_down_and_has_click = true;
                         }
 
                         let bottom_left = {
@@ -943,6 +946,10 @@ impl<'a> EventCx<'a> {
                     return EventPropagation::Stop;
                 }
             }
+        }
+
+        if is_down_and_has_click {
+            return EventPropagation::Stop;
         }
 
         EventPropagation::Continue
