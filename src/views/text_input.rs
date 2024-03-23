@@ -1058,6 +1058,7 @@ impl Widget for TextInput {
             let text_node = self.text_node.unwrap();
 
             // FIXME: This layout is undefined.
+            #[allow(clippy::unwrap_or_default)]
             let layout = cx.app_state.get_layout(self.id()).unwrap_or(Layout::new());
             let style = cx.app_state_mut().get_builtin_style(self.id());
             let node_width = layout.size.width;
