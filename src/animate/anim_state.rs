@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 #[derive(Debug, Clone)]
 pub(crate) enum AnimState {
     Idle,
+    Stopped,
     Paused {
         elapsed: Option<Duration>,
     },
@@ -24,10 +25,11 @@ pub(crate) enum AnimState {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum AnimStateKind {
     Idle,
     Paused,
+    Stopped,
     PassInProgress,
     PassFinished,
     Completed,
