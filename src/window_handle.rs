@@ -1042,18 +1042,31 @@ impl WindowHandle {
                     let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
                     self.process_update_anim_prop(view_id, kind, val);
                 }
-                AnimUpdateMsg::Pause(id) => {
-                    let view_id = self.app_state.get_view_id_by_anim_id(id);
-                    let view_state = self.app_state.view_state(view_id);
-                    if let Some(anim) = view_state.animation.as_mut() {
+                AnimUpdateMsg::Resume(anim_id) => {
+                    let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
+                    if let Some(anim) = self.app_state.view_state(view_id).animation.as_mut() {
+                        anim.resume();
+                        self.app_state.request_style(view_id)
+                    }
+                }
+                AnimUpdateMsg::Pause(anim_id) => {
+                    let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
+                    if let Some(anim) = self.app_state.view_state(view_id).animation.as_mut() {
                         anim.pause();
                     }
                 }
-                AnimUpdateMsg::Resume(id) => {
-                    let view_id = self.app_state.get_view_id_by_anim_id(id);
-                    let view_state = self.app_state.view_state(view_id);
-                    if let Some(anim) = view_state.animation.as_mut() {
-                        anim.resume();
+                AnimUpdateMsg::Start(anim_id) => {
+                    let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
+                    if let Some(anim) = self.app_state.view_state(view_id).animation.as_mut() {
+                        anim.start();
+                        self.app_state.request_style(view_id)
+                    }
+                }
+                AnimUpdateMsg::Stop(anim_id) => {
+                    let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
+                    if let Some(anim) = self.app_state.view_state(view_id).animation.as_mut() {
+                        anim.stop();
+                        self.app_state.request_style(view_id)
                     }
                 }
             }
@@ -1102,7 +1115,7 @@ impl WindowHandle {
         // TODO: logic based on the old val to make the animation smoother when overriding an old
         // animation that was in progress
         anim.props_mut().insert(kind, prop);
-        anim.begin();
+        anim.start();
 
         self.app_state.request_style(view_id);
     }

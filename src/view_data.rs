@@ -233,6 +233,7 @@ impl ViewState {
 
         'anim: {
             if let Some(animation) = self.animation.as_mut() {
+                // Means effectively no changes should be applied - bail out
                 if animation.is_completed() && animation.is_auto_reverse() {
                     break 'anim;
                 }
@@ -258,8 +259,10 @@ impl ViewState {
                     }
                 }
 
-                animation.advance();
-                debug_assert!(!animation.is_idle());
+                if animation.can_advance() {
+                    animation.advance();
+                    debug_assert!(!animation.is_idle());
+                }
             }
         }
 

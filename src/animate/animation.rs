@@ -66,7 +66,8 @@ pub enum AnimUpdateMsg {
     },
     Pause(AnimId),
     Resume(AnimId),
-    //TODO: restart/stop
+    Start(AnimId),
+    Stop(AnimId),
 }
 
 #[derive(Clone, Debug)]
@@ -92,22 +93,35 @@ impl Animation {
     }
 
     pub fn is_idle(&self) -> bool {
-        matches!(self.state_kind(), AnimStateKind::Idle)
+        self.state_kind() == AnimStateKind::Idle
     }
 
     pub fn is_in_progress(&self) -> bool {
-        matches!(self.state_kind(), AnimStateKind::PassInProgress)
+        self.state_kind() == AnimStateKind::PassInProgress
     }
 
     pub fn is_completed(&self) -> bool {
-        matches!(self.state_kind(), AnimStateKind::Completed)
+        self.state_kind() == AnimStateKind::Completed
+    }
+
+    pub fn is_stopped(&self) -> bool {
+        self.state_kind() == AnimStateKind::Stopped
+    }
+
+    pub fn can_advance(&self) -> bool {
+        match self.state_kind() {
+            AnimStateKind::PassFinished | AnimStateKind::PassInProgress | AnimStateKind::Idle => {
+                true
+            }
+            AnimStateKind::Paused | AnimStateKind::Stopped | AnimStateKind::Completed => false,
+        }
     }
 
     pub fn is_auto_reverse(&self) -> bool {
         self.auto_reverse
     }
 
-    /// Returns the ID of the animation. Use this when you want to control(pause or resume) the animation
+    /// Returns the ID of the animation. Use this when you want to control(stop/pause/resume) the animation
     pub fn on_create(mut self, on_create_fn: impl Fn(AnimId) + 'static) -> Self {
         self.on_create_listener = Some(Rc::new(on_create_fn));
         self
@@ -223,17 +237,21 @@ impl Animation {
         self.ease_mode(EasingMode::InOut)
     }
 
-    //TODO: Pausing is currently suboptimal because it will keep requesting styling even though the anim
-    // won't change
     pub fn pause(&mut self) {
-        // TODO: Should we warn/error if the animation is already paused or completed?
+        debug_assert!(
+            self.state_kind() != AnimStateKind::Paused,
+            "Tried to pause an already paused animation"
+        );
         self.state = AnimState::Paused {
             elapsed: self.elapsed(),
         };
     }
 
     pub(crate) fn resume(&mut self) {
-        // TODO: Should we warn/error if the user tries to resume an animation that is not paused?
+        debug_assert!(
+            self.state_kind() == AnimStateKind::Paused,
+            "Tried to resume an animation that is not paused"
+        );
         if let AnimState::Paused { elapsed } = &self.state {
             self.state = AnimState::PassInProgress {
                 started_on: Instant::now(),
@@ -242,7 +260,7 @@ impl Animation {
         }
     }
 
-    pub fn begin(&mut self) {
+    pub fn start(&mut self) {
         self.repeat_count = 0;
         self.state = AnimState::PassInProgress {
             started_on: Instant::now(),
@@ -251,27 +269,14 @@ impl Animation {
     }
 
     pub fn stop(&mut self) {
-        match &mut self.state {
-            AnimState::Idle
-            | AnimState::Completed { .. }
-            | AnimState::PassFinished { .. }
-            | AnimState::Paused { .. } => {}
-            AnimState::PassInProgress {
-                started_on,
-                elapsed,
-            } => {
-                let duration = Instant::now() - *started_on;
-                let elapsed = *elapsed + duration;
-                self.state = AnimState::Completed {
-                    elapsed: Some(elapsed),
-                }
-            }
-        }
+        self.repeat_count = 0;
+        self.state = AnimState::Stopped;
     }
 
     pub fn state_kind(&self) -> AnimStateKind {
         match self.state {
             AnimState::Idle => AnimStateKind::Idle,
+            AnimState::Stopped => AnimStateKind::Stopped,
             AnimState::PassInProgress { .. } => AnimStateKind::PassInProgress,
             AnimState::PassFinished { .. } => AnimStateKind::PassFinished,
             AnimState::Completed { .. } => AnimStateKind::Completed,
@@ -282,6 +287,7 @@ impl Animation {
     pub fn elapsed(&self) -> Option<Duration> {
         match &self.state {
             AnimState::Idle => None,
+            AnimState::Stopped => None,
             AnimState::PassInProgress {
                 started_on,
                 elapsed,
@@ -298,7 +304,7 @@ impl Animation {
     pub fn advance(&mut self) {
         match &mut self.state {
             AnimState::Idle => {
-                self.begin();
+                self.start();
             }
             AnimState::PassInProgress {
                 started_on,
@@ -333,7 +339,12 @@ impl Animation {
                     }
                 }
             },
-            AnimState::Paused { .. } => {}
+            AnimState::Paused { .. } => {
+                debug_assert!(false, "Tried to advance a paused animation")
+            }
+            AnimState::Stopped => {
+                debug_assert!(false, "Tried to advance a stopped animation")
+            }
             AnimState::Completed { .. } => {}
         }
     }
