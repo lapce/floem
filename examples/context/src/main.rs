@@ -34,7 +34,7 @@ fn app_view() -> impl View {
         colored_label(String::from("app_view")),
         context_container(Color::HOT_PINK, String::from("Nested context 1"), || {
             context_container(Color::BLUE, String::from("Nested context 2"), || {
-                context_container(Color::GREEN, String::from("Nested context 3"), || empty())
+                context_container(Color::GREEN, String::from("Nested context 3"), empty)
             })
         }),
     ))
