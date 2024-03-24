@@ -47,6 +47,11 @@ pub trait Decorators: View + Sized {
         self
     }
 
+    fn debug_name(mut self, name: String) -> Self {
+        self.view_data_mut().debug_name = name;
+        self
+    }
+
     /// The visual style to apply when the mouse hovers over the element
     fn dragging_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
         let id = self.id();

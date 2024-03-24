@@ -66,6 +66,7 @@ pub struct ViewData {
     pub(crate) id: Id,
     pub(crate) style: Stack<Style>,
     pub(crate) event_handlers: Vec<Box<EventCallback>>,
+    pub(crate) debug_name: String,
 }
 
 impl ViewData {
@@ -74,6 +75,7 @@ impl ViewData {
             id,
             style: Default::default(),
             event_handlers: Default::default(),
+            debug_name: Default::default(),
         }
     }
     pub fn id(&self) -> Id {
