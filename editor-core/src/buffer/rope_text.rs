@@ -55,14 +55,37 @@ pub trait RopeText {
         (line, col)
     }
 
+    /// Get the offset for a specific line and column.  
+    /// This should be preferred over simply adding the column to the line offset, because it
+    /// validates better and avoids returning newlines.
+    /// ```rust
+    /// # use floem_editor_core::xi_rope::Rope;
+    /// # use floem_editor_core::buffer::rope_text::{RopeText, RopeTextRef};
+    /// let text = Rope::from("hello\nworld");
+    /// let text = RopeTextRef::new(&text);
+    /// assert_eq!(text.offset_of_line_col(0, 0), 0);  // "h"
+    /// assert_eq!(text.offset_of_line_col(0, 4), 4);  // "o"
+    /// assert_eq!(text.offset_of_line_col(0, 5), 5);  // "\n"
+    /// assert_eq!(text.offset_of_line_col(0, 6), 5);  // "\n", avoids newline
+    /// assert_eq!(text.offset_of_line_col(1, 0), 6);  // "w"
+    /// assert_eq!(text.offset_of_line_col(1, 4), 10); // "d"
+    /// let text = Rope::from("hello\r\nworld");
+    /// let text = RopeTextRef::new(&text);
+    /// assert_eq!(text.offset_of_line_col(0, 0), 0);  // "h"
+    /// assert_eq!(text.offset_of_line_col(0, 4), 4);  // "o"
+    /// assert_eq!(text.offset_of_line_col(0, 5), 5);  // "\r"
+    /// assert_eq!(text.offset_of_line_col(0, 6), 5);  // "\r", avoids being in the middle
+    /// assert_eq!(text.offset_of_line_col(1, 0), 7);  // "w"
+    /// assert_eq!(text.offset_of_line_col(1, 4), 11); // "d"
+    /// ````
     fn offset_of_line_col(&self, line: usize, col: usize) -> usize {
         let mut pos = 0;
         let mut offset = self.offset_of_line(line);
-        for c in self
-            .slice_to_cow(offset..self.offset_of_line(line + 1))
-            .chars()
-        {
-            if c == '\n' {
+        let text = self.slice_to_cow(offset..self.offset_of_line(line + 1));
+        let mut iter = text.chars().peekable();
+        while let Some(c) = iter.next() {
+            // Stop at the end of the line
+            if c == '\n' || (c == '\r' && iter.peek() == Some(&'\n')) {
                 return offset;
             }
 
@@ -84,10 +107,12 @@ pub trait RopeText {
 
     /// Get the offset of the end of the line. The caret decides whether it is after the last
     /// character, or before it.
-    /// If the line is out of bounds, then the last offset (the len) is returned.
-    /// ```rust,ignore
+    /// If the line is out of bounds, then the last offset (the len) is returned.  
+    /// ```rust
+    /// # use floem_editor_core::xi_rope::Rope;
+    /// # use floem_editor_core::buffer::rope_text::{RopeText, RopeTextRef};
     /// let text = Rope::from("hello\nworld");
-    /// let text = RopeText::new(&text);
+    /// let text = RopeTextRef::new(&text);
     /// assert_eq!(text.line_end_offset(0, false), 4);  // "hell|o"
     /// assert_eq!(text.line_end_offset(0, true), 5);   // "hello|"
     /// assert_eq!(text.line_end_offset(1, false), 10); // "worl|d"
@@ -510,6 +535,29 @@ mod tests {
     }
 
     #[test]
+    fn test_offset_of_line_col() {
+        let text = Rope::from("abc\ndef\nghi");
+        let text = RopeTextVal::new(text);
+
+        assert_eq!(text.offset_of_line_col(0, 0), 0);
+        assert_eq!(text.offset_of_line_col(0, 1), 1);
+        assert_eq!(text.offset_of_line_col(0, 2), 2);
+        assert_eq!(text.offset_of_line_col(0, 3), 3);
+        assert_eq!(text.offset_of_line_col(0, 4), 3);
+        assert_eq!(text.offset_of_line_col(1, 0), 4);
+
+        let text = Rope::from("abc\r\ndef\r\nghi");
+        let text = RopeTextVal::new(text);
+
+        assert_eq!(text.offset_of_line_col(0, 0), 0);
+        assert_eq!(text.offset_of_line_col(0, 1), 1);
+        assert_eq!(text.offset_of_line_col(0, 2), 2);
+        assert_eq!(text.offset_of_line_col(0, 3), 3);
+        assert_eq!(text.offset_of_line_col(0, 4), 3);
+        assert_eq!(text.offset_of_line_col(1, 0), 5);
+    }
+
+    #[test]
     fn test_line_end_offset() {
         let text = Rope::from("");
         let text = RopeTextVal::new(text);
@@ -534,19 +582,6 @@ mod tests {
         assert_eq!(text.line_end_offset(3, true), text.len());
         assert_eq!(text.line_end_offset(4, false), text.len());
         assert_eq!(text.line_end_offset(4, true), text.len());
-
-        // This is equivalent to the doc test for RopeText::line_end_offset
-        // because you don't seem to be able to do a `use RopeText` in a doc test since it isn't
-        // public..
-        let text = Rope::from("hello\nworld");
-        let text = RopeTextVal::new(text);
-
-        assert_eq!(text.line_end_offset(0, false), 4); // "hell|o"
-        assert_eq!(text.line_end_offset(0, true), 5); // "hello|"
-        assert_eq!(text.line_end_offset(1, false), 10); // "worl|d"
-        assert_eq!(text.line_end_offset(1, true), 11); // "world|"
-                                                       // Out of bounds
-        assert_eq!(text.line_end_offset(2, false), 11); // "world|"
     }
 
     #[test]

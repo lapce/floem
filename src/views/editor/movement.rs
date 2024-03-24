@@ -1,7 +1,7 @@
 //! Movement logic for the editor.
 
 use floem_editor_core::{
-    buffer::rope_text::RopeText,
+    buffer::rope_text::{RopeText, RopeTextVal},
     command::MultiSelectionCommand,
     cursor::{ColPosition, Cursor, CursorAffinity, CursorMode},
     mode::{Mode, MotionMode, VisualMode},
@@ -97,7 +97,7 @@ pub fn move_offset(
     movement: &Movement,
     mode: Mode,
 ) -> (usize, Option<ColPosition>) {
-    match movement {
+    let (new_offset, horiz) = match movement {
         Movement::Left => {
             let new_offset = move_left(view, offset, affinity, mode, count);
 
@@ -192,7 +192,28 @@ pub fn move_offset(
 
             (new_offset, None)
         }
+    };
+
+    let new_offset = correct_crlf(&view.rope_text(), new_offset);
+
+    (new_offset, horiz)
+}
+
+/// If the offset is at `\r|\n` then move it back.
+fn correct_crlf(text: &RopeTextVal, offset: usize) -> usize {
+    if offset == 0 || offset == text.len() {
+        return offset;
     }
+
+    let mut iter = text.char_indices_iter(offset - 1..=offset);
+
+    if let Some((_, '\r')) = iter.next() {
+        if let Some((_, '\n')) = iter.next() {
+            return offset - 1;
+        }
+    }
+
+    offset
 }
 
 fn atomic_soft_tab_width_for_offset(ed: &Editor, offset: usize) -> Option<usize> {
@@ -757,5 +778,87 @@ pub fn do_motion_mode(
     }
 }
 
-// TODO: Write tests for the various functions. We'll need a more easily swappable API than
-// `Editor` for that.
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use floem_editor_core::{
+        buffer::rope_text::{RopeText, RopeTextVal},
+        cursor::CursorAffinity,
+        mode::Mode,
+    };
+    use floem_reactive::Scope;
+    use lapce_xi_rope::Rope;
+
+    use crate::views::editor::{
+        movement::{correct_crlf, end_of_line},
+        text::SimpleStyling,
+        text_document::TextDocument,
+    };
+
+    use super::Editor;
+
+    fn make_ed(text: &str) -> Editor {
+        let cx = Scope::new();
+        let doc = Rc::new(TextDocument::new(cx, text));
+        let style = Rc::new(SimpleStyling::light());
+        Editor::new(cx, doc, style)
+    }
+
+    // Tests for movement logic.
+    // Many of the locations that use affinity are unsure of the specifics, and should only be
+    // assumed to be mostly kinda correct.
+
+    #[test]
+    fn test_correct_crlf() {
+        let text = Rope::from("hello\nworld");
+        let text = RopeTextVal::new(text);
+        assert_eq!(correct_crlf(&text, 0), 0);
+        assert_eq!(correct_crlf(&text, 5), 5);
+        assert_eq!(correct_crlf(&text, 6), 6);
+        assert_eq!(correct_crlf(&text, text.len()), text.len());
+
+        let text = Rope::from("hello\r\nworld");
+        let text = RopeTextVal::new(text);
+        assert_eq!(correct_crlf(&text, 0), 0);
+        assert_eq!(correct_crlf(&text, 5), 5);
+        assert_eq!(correct_crlf(&text, 6), 5);
+        assert_eq!(correct_crlf(&text, 7), 7);
+        assert_eq!(correct_crlf(&text, text.len()), text.len());
+    }
+
+    #[test]
+    fn test_end_of_line() {
+        let ed = make_ed("abc\ndef\nghi");
+        let mut aff = CursorAffinity::Backward;
+        assert_eq!(end_of_line(&ed, &mut aff, 0, Mode::Insert).0, 3);
+        assert_eq!(aff, CursorAffinity::Backward);
+        assert_eq!(end_of_line(&ed, &mut aff, 1, Mode::Insert).0, 3);
+        assert_eq!(aff, CursorAffinity::Backward);
+        assert_eq!(end_of_line(&ed, &mut aff, 3, Mode::Insert).0, 3);
+        assert_eq!(aff, CursorAffinity::Backward);
+
+        assert_eq!(end_of_line(&ed, &mut aff, 4, Mode::Insert).0, 7);
+        assert_eq!(end_of_line(&ed, &mut aff, 5, Mode::Insert).0, 7);
+        assert_eq!(end_of_line(&ed, &mut aff, 7, Mode::Insert).0, 7);
+
+        let ed = make_ed("abc\r\ndef\r\nghi");
+        let mut aff = CursorAffinity::Forward;
+        assert_eq!(end_of_line(&ed, &mut aff, 0, Mode::Insert).0, 3);
+        assert_eq!(aff, CursorAffinity::Backward);
+
+        assert_eq!(end_of_line(&ed, &mut aff, 1, Mode::Insert).0, 3);
+        assert_eq!(aff, CursorAffinity::Backward);
+        assert_eq!(end_of_line(&ed, &mut aff, 3, Mode::Insert).0, 3);
+        assert_eq!(aff, CursorAffinity::Backward);
+
+        assert_eq!(end_of_line(&ed, &mut aff, 5, Mode::Insert).0, 8);
+        assert_eq!(end_of_line(&ed, &mut aff, 6, Mode::Insert).0, 8);
+        assert_eq!(end_of_line(&ed, &mut aff, 7, Mode::Insert).0, 8);
+        assert_eq!(end_of_line(&ed, &mut aff, 8, Mode::Insert).0, 8);
+
+        let ed = make_ed("testing\r\nAbout\r\nblah");
+        let mut aff = CursorAffinity::Backward;
+        assert_eq!(end_of_line(&ed, &mut aff, 0, Mode::Insert).0, 7);
+    }
+}
