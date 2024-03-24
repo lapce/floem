@@ -52,11 +52,12 @@ impl CapturedView {
         let state = app_state.view_state(id);
         let clipped = layout.intersect(clip);
         let custom_name = &view.view_data().debug_name;
-        let name = if custom_name.is_empty() {
-            view.debug_name().to_string()
-        } else {
-            custom_name.clone() + ":  " + &view.debug_name().to_string()
-        };
+        let name = custom_name
+            .iter()
+            .chain(std::iter::once(&view.debug_name().to_string()))
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(" - ");
         Self {
             id,
             name,

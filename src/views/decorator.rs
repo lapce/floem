@@ -48,7 +48,7 @@ pub trait Decorators: View + Sized {
     }
 
     fn debug_name(mut self, name: String) -> Self {
-        self.view_data_mut().debug_name = name;
+        self.view_data_mut().debug_name.push(name);
         self
     }
 

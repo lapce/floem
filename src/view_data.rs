@@ -65,8 +65,8 @@ impl<T> Stack<T> {
 pub struct ViewData {
     pub(crate) id: Id,
     pub(crate) style: Stack<Style>,
-    pub(crate) event_handlers: Vec<Box<EventCallback>>,
-    pub(crate) debug_name: String,
+    pub(crate) event_handlers: SmallVec<[Box<EventCallback>; 1]>,
+    pub(crate) debug_name: SmallVec<[String; 1]>,
 }
 
 impl ViewData {
