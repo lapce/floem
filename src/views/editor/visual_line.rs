@@ -1517,6 +1517,7 @@ impl<L: std::fmt::Debug> VLineInfo<L> {
         // If these subtractions crash, then it is likely due to a bad vline being kept around
         // somewhere
         if !caret && !self.interval.is_empty() {
+            // TODO: is this prev grapheme offset for vline end correct for \r\n lines?
             let vline_pre_end = text_prov.rope_text().prev_grapheme_offset(vline_end, 1, 0);
             vline_pre_end - start_offset
         } else {
@@ -1743,9 +1744,7 @@ fn end_of_rvline(
 
     if let Some((_, end_col)) = layouts.get_layout_col(text_prov, font_size, line, line_index) {
         let end_col = text_prov.before_phantom_col(line, end_col);
-        let base_offset = text_prov.text().offset_of_line(line);
-
-        base_offset + end_col
+        text_prov.rope_text().offset_of_line_col(line, end_col)
     } else {
         let rope_text = text_prov.rope_text();
 
@@ -1998,7 +1997,7 @@ mod tests {
     use std::{borrow::Cow, cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 
     use floem_editor_core::{
-        buffer::rope_text::{RopeText, RopeTextRef},
+        buffer::rope_text::{RopeText, RopeTextRef, RopeTextVal},
         cursor::CursorAffinity,
     };
     use floem_reactive::Scope;
@@ -2009,7 +2008,7 @@ mod tests {
     use crate::views::editor::{
         layout::TextLayoutLine,
         phantom_text::{PhantomText, PhantomTextKind, PhantomTextLine},
-        visual_line::{find_vline_of_line_backwards, find_vline_of_line_forwards},
+        visual_line::{end_of_rvline, find_vline_of_line_backwards, find_vline_of_line_forwards},
     };
 
     use super::{
@@ -3326,11 +3325,11 @@ mod tests {
             (0, 0, true, "aaaa".into()),
             (1, 1, true, "bb ".into()),
             (1, 2, false, "bb ".into()),
-            (1, 3, false, "cc\n".into()), // TODO: why does this have \n but the first line doesn't??
+            (1, 3, false, "cc".into()),
             (2, 4, true, "cc ".into()),
             (2, 5, false, "dddd ".into()),
             (2, 6, false, "eeee ".into()),
-            (2, 7, false, "ff\n".into()),
+            (2, 7, false, "ff".into()),
             (3, 8, true, "ff ".into()),
             (3, 9, false, "gggg".into()),
         ];
@@ -3362,5 +3361,158 @@ mod tests {
         let v = iter.next().unwrap();
         assert_eq!(v.last_col(&text_prov, false), 24);
         assert_eq!(v.last_col(&text_prov, true), 25);
+
+        let text = Rope::from("blah\nthing");
+        let (text_prov, lines) = make_lines(&text, 1000., false);
+        let mut iter = lines.iter_rvlines(&text_prov, false, RVLine::default());
+
+        let rtext = RopeTextVal::new(text.clone());
+
+        // "blah"
+        let v = iter.next().unwrap();
+        assert_eq!(v.last_col(&text_prov, false), 3);
+        assert_eq!(v.last_col(&text_prov, true), 4);
+        assert_eq!(rtext.offset_of_line_col(0, 3), 3);
+        assert_eq!(rtext.offset_of_line_col(0, 4), 4);
+
+        // "text"
+        let v = iter.next().unwrap();
+        assert_eq!(v.last_col(&text_prov, false), 4);
+        assert_eq!(v.last_col(&text_prov, true), 5);
+
+        let text = Rope::from("blah\r\nthing");
+        let (text_prov, lines) = make_lines(&text, 1000., false);
+        let mut iter = lines.iter_rvlines(&text_prov, false, RVLine::default());
+
+        let rtext = RopeTextVal::new(text.clone());
+
+        // "blah"
+        let v = iter.next().unwrap();
+        assert_eq!(v.last_col(&text_prov, false), 3);
+        assert_eq!(v.last_col(&text_prov, true), 4);
+        assert_eq!(rtext.offset_of_line_col(0, 3), 3);
+        assert_eq!(rtext.offset_of_line_col(0, 4), 4);
+
+        // "text"
+        let v = iter.next().unwrap();
+        assert_eq!(v.last_col(&text_prov, false), 4);
+        assert_eq!(v.last_col(&text_prov, true), 5);
+        assert_eq!(rtext.offset_of_line_col(0, 4), 4);
+        assert_eq!(rtext.offset_of_line_col(0, 5), 4);
+    }
+
+    #[test]
+    fn layout_cols() {
+        let text = Rope::from("aaaa\nbb bb cc\ndd");
+        let mut layout = TextLayout::new();
+        layout.set_text("aaaa", AttrsList::new(Attrs::new()));
+        let layout = TextLayoutLine {
+            extra_style: Vec::new(),
+            text: layout,
+            whitespaces: None,
+            indent: 0.,
+        };
+
+        let (text_prov, _) = make_lines(&text, 10000., false);
+        assert_eq!(
+            layout.layout_cols(&text_prov, 0).collect::<Vec<_>>(),
+            vec![(0, 4)]
+        );
+        let (text_prov, _) = make_lines(&text, 10000., true);
+        assert_eq!(
+            layout.layout_cols(&text_prov, 0).collect::<Vec<_>>(),
+            vec![(0, 4)]
+        );
+
+        let text = Rope::from("aaaa\r\nbb bb cc\r\ndd");
+        let mut layout = TextLayout::new();
+        layout.set_text("aaaa", AttrsList::new(Attrs::new()));
+        let layout = TextLayoutLine {
+            extra_style: Vec::new(),
+            text: layout,
+            whitespaces: None,
+            indent: 0.,
+        };
+
+        let (text_prov, _) = make_lines(&text, 10000., false);
+        assert_eq!(
+            layout.layout_cols(&text_prov, 0).collect::<Vec<_>>(),
+            vec![(0, 4)]
+        );
+        let (text_prov, _) = make_lines(&text, 10000., true);
+        assert_eq!(
+            layout.layout_cols(&text_prov, 0).collect::<Vec<_>>(),
+            vec![(0, 4)]
+        );
+    }
+
+    #[test]
+    fn test_end_of_rvline() {
+        fn check_equiv(text: &Rope, expected: usize, from: &str) {
+            let (text_prov, lines) = make_lines(&text, 10000., false);
+            let end1 = end_of_rvline(
+                &lines.text_layouts.borrow(),
+                &text_prov,
+                12,
+                RVLine::new(0, 0),
+            );
+
+            let (text_prov, lines) = make_lines(&text, 10000., true);
+            assert_eq!(
+                end_of_rvline(
+                    &lines.text_layouts.borrow(),
+                    &text_prov,
+                    12,
+                    RVLine::new(0, 0)
+                ),
+                end1,
+                "non-init end_of_rvline not equivalent to init ({from})"
+            );
+            assert_eq!(end1, expected, "end_of_rvline not equivalent ({from})");
+        }
+
+        let text = Rope::from("");
+        check_equiv(&text, 0, "empty");
+
+        let text = Rope::from("aaaa\nbb bb cc\ncc dddd eeee ff\nff gggg");
+        check_equiv(&text, 4, "simple multiline (LF)");
+
+        let text = Rope::from("aaaa\r\nbb bb cc\r\ncc dddd eeee ff\r\nff gggg");
+        check_equiv(&text, 4, "simple multiline (CRLF)");
+    }
+
+    #[test]
+    fn equivalence() {
+        // Extra tests that the visual lines you get when initting are equivalent to the ones you
+        // get if you don't init
+        // TODO: tests for them being equivalent even with wrapping
+
+        fn check_equiv(text: &Rope, from: &str) {
+            let (text_prov, lines) = make_lines(&text, 10000., false);
+            let iter = lines.iter_rvlines(&text_prov, false, RVLine::default());
+
+            let (text_prov, lines) = make_lines(&text, 01000., true);
+            let iter2 = lines.iter_rvlines(&text_prov, false, RVLine::default());
+
+            // Just assume same length
+            for (i, v) in iter.zip(iter2) {
+                assert_eq!(
+                    i, v,
+                    "Line {} is not equivalent when initting ({from})",
+                    i.rvline.line
+                );
+            }
+        }
+
+        check_equiv(&Rope::from(""), "empty");
+        check_equiv(&Rope::from("a"), "a");
+        check_equiv(
+            &Rope::from("aaaa\nbb bb cc\ncc dddd eeee ff\nff gggg"),
+            "simple multiline (LF)",
+        );
+        check_equiv(
+            &Rope::from("aaaa\r\nbb bb cc\r\ncc dddd eeee ff\r\nff gggg"),
+            "simple multiline (CRLF)",
+        );
     }
 }
