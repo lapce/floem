@@ -51,9 +51,16 @@ impl CapturedView {
         let focused = app_state.focus == Some(id);
         let state = app_state.view_state(id);
         let clipped = layout.intersect(clip);
+        let custom_name = &view.view_data().debug_name;
+        let name = custom_name
+            .iter()
+            .chain(std::iter::once(&view.debug_name().to_string()))
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(" - ");
         Self {
             id,
-            name: view.debug_name().to_string(),
+            name,
             layout,
             taffy,
             clipped,
