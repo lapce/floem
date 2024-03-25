@@ -394,7 +394,7 @@ prop_extractor! {
         pub show_indent_guide: ShowIndentGuide,
         pub wrap_method: WrapProp,
         pub cursor_surounding_lines: CursorSurroundingLines,
-        // scroll_beyond_last_line: ScrollBeyondLastLine,
+        scroll_beyond_last_line: ScrollBeyondLastLine,
         pub render_white_space: RenderWhiteSpaceProp,
     }
 }
@@ -1269,12 +1269,15 @@ fn editor_content(
 
     scroll({
         let editor_content_view = editor_view(editor, is_active).style(move |s| {
-            // TODO: don't assume line height is constant?
-            // just use the last line's line height maybe, or just make
-            // scroll beyond last line a f32
-            // TODO: we shouldn't be using `get` on editor here, isn't this more of a 'has the
-            // style cache changed'?
-            let padding_bottom = editor.get().line_height(0);
+            let padding_bottom = if ed.editor_style.with(|s| s.scroll_beyond_last_line()) {
+                // TODO: don't assume line height is constant?
+                // just use the last line's line height maybe, or just make
+                // scroll beyond last line a f32
+                let line_height = ed.line_height(0);
+                viewport.get().height() as f32 - line_height
+            } else {
+                editor.get().line_height(0)
+            };
 
             s.absolute()
                 .padding_bottom(padding_bottom)

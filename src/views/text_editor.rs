@@ -27,7 +27,7 @@ use super::editor::{
     view::{
         Caret, CursorSurroundingLines, EditorViewClass, IndentStyleProp, PhantomColor,
         PreeditUnderlineColor, RenderWhiteSpaceProp, ScrollBeyondLastLine, ScrollbarLine,
-        ShowIndentGuide, VisibleWhitespace,
+        Selection, ShowIndentGuide, VisibleWhitespace,
     },
 };
 
@@ -142,6 +142,11 @@ impl EditorCustomStyle {
         self
     }
 
+    pub fn selection_color(mut self, color: Color) -> Self {
+        self.0 = self.0.class(EditorViewClass, |s| s.set(Selection, color));
+        self
+    }
+
     pub fn gutter_left_padding(mut self, padding: f64) -> Self {
         self.0 = self
             .0
@@ -184,9 +189,9 @@ impl EditorCustomStyle {
     /// Allow scrolling beyond the last line of the document.
     /// Equivalent to setting [`Editor::scroll_beyond_last_line`]
     /// Default: `false`
-    pub fn scroll_beyond_last_line(mut self, scroll_beyong_last_line: bool) -> Self {
+    pub fn scroll_beyond_last_line(mut self, scroll_beyond: bool) -> Self {
         self.0 = self.0.class(EditorViewClass, |s| {
-            s.set(ScrollBeyondLastLine, scroll_beyong_last_line)
+            s.set(ScrollBeyondLastLine, scroll_beyond)
         });
         self
     }
