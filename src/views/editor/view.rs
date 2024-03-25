@@ -11,15 +11,11 @@ use crate::{
     peniko::Color,
     prop, prop_extractor,
     reactive::{batch, create_effect, create_memo, create_rw_signal, Memo, RwSignal, Scope},
-    style::{CursorStyle, Style, StylePropValue, TextColor},
+    style::{CursorStyle, Style, StylePropValue},
     style_class,
     taffy::tree::NodeId,
     view::{AnyView, AnyWidget, View, ViewData, Widget},
-    views::{
-        container,
-        editor::text::{RenderWhitespace, WrapMethod},
-        empty, scroll, stack, text, Decorators,
-    },
+    views::{container, empty, scroll, stack, text, Decorators},
     EventPropagation, Renderer,
 };
 use floem_editor_core::{
@@ -355,7 +351,6 @@ prop!(pub StickyHeaderBackground: Option<Color> {} = None);
 prop_extractor! {
     EditorViewStyle {
         indent_style: IndentStyleProp,
-        scroll_bar: ScrollbarLine,
         // dropdown_shadow: DropdownShadow,
         // focus: Focus,
         caret: Caret,
@@ -368,37 +363,6 @@ prop_extractor! {
     }
 }
 
-prop!(pub WrapProp: WrapMethod {} = WrapMethod::EditorWidth);
-impl StylePropValue for WrapMethod {
-    fn debug_view(&self) -> Option<AnyView> {
-        Some(crate::views::text(self).any())
-    }
-}
-prop!(pub CursorSurroundingLines: usize {} = 1);
-prop!(pub ScrollBeyondLastLine: bool {} = false);
-prop!(pub ShowIndentGuide: bool {} = false);
-prop!(pub PhantomColor: Color {} = Color::DIM_GRAY);
-prop!(pub PreeditUnderlineColor: Color {} = Color::WHITE);
-prop!(pub RenderWhiteSpaceProp: RenderWhitespace {} = RenderWhitespace::None);
-impl StylePropValue for RenderWhitespace {
-    fn debug_view(&self) -> Option<AnyView> {
-        Some(crate::views::text(self).any())
-    }
-}
-
-prop_extractor! {
-    pub EditorStyle {
-        pub text_color: TextColor,
-        pub phantom_color: PhantomColor,
-        pub preedit_underline_color: PreeditUnderlineColor,
-        pub show_indent_guide: ShowIndentGuide,
-        pub wrap_method: WrapProp,
-        pub cursor_surounding_lines: CursorSurroundingLines,
-        scroll_beyond_last_line: ScrollBeyondLastLine,
-        pub render_white_space: RenderWhiteSpaceProp,
-    }
-}
-
 pub struct EditorView {
     id: Id,
     data: ViewData,
@@ -406,7 +370,6 @@ pub struct EditorView {
     is_active: Memo<bool>,
     inner_node: Option<NodeId>,
     editor_view_style: EditorViewStyle,
-    editor_style: EditorStyle,
 }
 impl EditorView {
     #[allow(clippy::too_many_arguments)]
@@ -889,22 +852,6 @@ impl EditorView {
             cx.draw_text(&text_layout.text, Point::new(0.0, y));
         }
     }
-
-    fn paint_scroll_bar(cx: &mut PaintCx, viewport: Rect, editor_style: &EditorViewStyle) {
-        // TODO: let this be customized
-        const BAR_WIDTH: f64 = 10.0;
-        cx.fill(
-            &Rect::ZERO
-                .with_size(Size::new(1.0, viewport.height()))
-                .with_origin(Point::new(
-                    viewport.x0 + viewport.width() - BAR_WIDTH,
-                    viewport.y0,
-                ))
-                .inflate(0.0, 10.0),
-            editor_style.scroll_bar(),
-            0.0,
-        );
-    }
 }
 impl View for EditorView {
     fn id(&self) -> Id {
@@ -937,13 +884,16 @@ impl Widget for EditorView {
             cx.app_state_mut().request_paint(self.id());
         }
 
-        if self.editor_style.read(cx) {
-            self.editor.update(|ed| {
-                ed.editor_style.set(self.editor_style.clone());
+        self.editor.update(|ed| {
+            if ed
+                .editor_style
+                .try_update(|es| es.read(cx))
+                .is_some_and(|val| val)
+            {
                 ed.floem_style_id.update(|val| *val += 1);
-            });
-            cx.app_state_mut().request_paint(self.id());
-        }
+                cx.app_state_mut().request_paint(self.id());
+            }
+        });
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -1013,9 +963,6 @@ impl Widget for EditorView {
         );
         let screen_lines = ed.screen_lines.get_untracked();
         EditorView::paint_text(cx, &ed, viewport, &screen_lines, &self.editor_view_style);
-
-        // TODO: what is going on here? Why is this necessary
-        EditorView::paint_scroll_bar(cx, viewport, &self.editor_view_style);
     }
 }
 
@@ -1083,7 +1030,6 @@ pub fn editor_view(
         is_active,
         inner_node: None,
         editor_view_style: EditorViewStyle::default(),
-        editor_style: EditorStyle::default(),
     }
     .on_event(EventListener::ImePreedit, move |event| {
         if !is_active.get_untracked() {

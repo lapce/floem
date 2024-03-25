@@ -24,11 +24,9 @@ use crate::{
 use super::editor::{
     gutter::{GutterClass, LeftOfCenterPadding, RightOfCenterPadding},
     text::RenderWhitespace,
-    view::{
-        Caret, CursorSurroundingLines, EditorViewClass, IndentStyleProp, PhantomColor,
-        PreeditUnderlineColor, RenderWhiteSpaceProp, ScrollBeyondLastLine, ScrollbarLine,
-        Selection, ShowIndentGuide, VisibleWhitespace,
-    },
+    view::{Caret, EditorViewClass, IndentStyleProp, ScrollbarLine, Selection, VisibleWhitespace},
+    CursorSurroundingLines, PhantomColor, PreeditUnderlineColor, RenderWhiteSpaceProp,
+    ScrollBeyondLastLine, ShowIndentGuide,
 };
 
 /// A text editor view.

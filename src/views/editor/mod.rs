@@ -15,7 +15,10 @@ use crate::{
     kurbo::{Point, Rect, Vec2},
     peniko::Color,
     pointer::{PointerButton, PointerInputEvent, PointerMoveEvent},
+    prop, prop_extractor,
     reactive::{batch, untrack, ReadSignal, RwSignal, Scope},
+    style::{StylePropValue, TextColor},
+    view::{AnyView, View},
 };
 use floem_editor_core::{
     buffer::rope_text::{RopeText, RopeTextVal},
@@ -52,12 +55,43 @@ use self::{
     layout::TextLayoutLine,
     phantom_text::PhantomTextLine,
     text::{Document, Preedit, PreeditData, RenderWhitespace, Styling, WrapMethod},
-    view::{EditorStyle, LineInfo, ScreenLines, ScreenLinesBase},
+    view::{LineInfo, ScreenLines, ScreenLinesBase},
     visual_line::{
         hit_position_aff, FontSizeCacheId, LayoutEvent, LineFontSizeProvider, Lines, RVLine,
         ResolvedWrap, TextLayoutProvider, VLine, VLineInfo,
     },
 };
+
+prop!(pub WrapProp: WrapMethod {} = WrapMethod::EditorWidth);
+impl StylePropValue for WrapMethod {
+    fn debug_view(&self) -> Option<AnyView> {
+        Some(crate::views::text(self).any())
+    }
+}
+prop!(pub CursorSurroundingLines: usize {} = 1);
+prop!(pub ScrollBeyondLastLine: bool {} = false);
+prop!(pub ShowIndentGuide: bool {} = false);
+prop!(pub PhantomColor: Color {} = Color::DIM_GRAY);
+prop!(pub PreeditUnderlineColor: Color {} = Color::WHITE);
+prop!(pub RenderWhiteSpaceProp: RenderWhitespace {} = RenderWhitespace::None);
+impl StylePropValue for RenderWhitespace {
+    fn debug_view(&self) -> Option<AnyView> {
+        Some(crate::views::text(self).any())
+    }
+}
+
+prop_extractor! {
+    pub EditorStyle {
+        pub text_color: TextColor,
+        pub phantom_color: PhantomColor,
+        pub preedit_underline_color: PreeditUnderlineColor,
+        pub show_indent_guide: ShowIndentGuide,
+        pub wrap_method: WrapProp,
+        pub cursor_surounding_lines: CursorSurroundingLines,
+        scroll_beyond_last_line: ScrollBeyondLastLine,
+        pub render_white_space: RenderWhiteSpaceProp,
+    }
+}
 
 pub(crate) const CHAR_WIDTH: f64 = 7.5;
 

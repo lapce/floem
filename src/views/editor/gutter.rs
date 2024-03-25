@@ -19,13 +19,14 @@ use super::Editor;
 
 prop!(pub LeftOfCenterPadding: f64 {} = 25.);
 prop!(pub RightOfCenterPadding: f64 {} = 30.);
+prop!(pub DimColor: Color {} = Color::DIM_GRAY);
 
 prop_extractor! {
     GutterStyle {
-        text_color: TextColor,
+        accent_color: TextColor,
+        dim_color: DimColor,
         left_padding: LeftOfCenterPadding,
         right_padding: RightOfCenterPadding,
-        // foreground: Foreground
     }
 }
 
@@ -144,15 +145,15 @@ impl Widget for EditorGutterView {
         let current_line = editor.line_of_offset(offset);
 
         // TODO: don't assume font family is constant for each line
+        let dim_color = self.gutter_style.dim_color();
         let family = style.font_family(edid, 0);
         let attrs = Attrs::new()
             .family(&family)
-            .color(self.gutter_style.text_color().unwrap_or(Color::BLACK))
+            .color(dim_color)
             .font_size(style.font_size(edid, 0) as f32);
         let attrs_list = AttrsList::new(attrs);
-        // TODO: jrmoulton -> why was this foreground used here? It just overrode the dim color above
-        // let current_line_attrs_list = AttrsList::new(attrs.color(self.gutter_style.foreground()));
-        let current_line_attrs_list = AttrsList::new(attrs);
+        let current_line_attrs_list =
+            AttrsList::new(attrs.color(self.gutter_style.accent_color().unwrap_or(dim_color)));
         let show_relative = editor.modal.get_untracked()
             && editor.modal_relative_line_numbers.get_untracked()
             && mode != Mode::Insert;
