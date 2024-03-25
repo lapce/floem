@@ -374,7 +374,7 @@ impl EditorView {
             let right_col = phantom_text.col_after(right_col, false);
 
             // Skip over empty selections
-            if !info.is_empty() && left_col == right_col {
+            if !info.is_empty_phantom() && left_col == right_col {
                 continue;
             }
 
@@ -392,7 +392,7 @@ impl EditorView {
                 x1
             };
 
-            let (x0, width) = if info.is_empty() {
+            let (x0, width) = if info.is_empty_phantom() {
                 let text_layout = ed.text_layout(line);
                 let width = text_layout
                     .get_layout_x(rvline.line_index)
