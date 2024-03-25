@@ -1475,6 +1475,12 @@ impl<L: std::fmt::Debug> VLineInfo<L> {
         self.interval.is_empty()
     }
 
+    /// Check whether the interval is empty and we're not on the first line,
+    /// thus likely being phantom text (or possibly poor wrapping)
+    pub fn is_empty_phantom(&self) -> bool {
+        self.is_empty() && self.rvline.line_index != 0
+    }
+
     pub fn is_first(&self) -> bool {
         self.rvline.is_first()
     }
@@ -1516,8 +1522,7 @@ impl<L: std::fmt::Debug> VLineInfo<L> {
         let start_offset = text_prov.text().offset_of_line(self.rvline.line);
         // If these subtractions crash, then it is likely due to a bad vline being kept around
         // somewhere
-        if !caret && !self.interval.is_empty() {
-            // TODO: is this prev grapheme offset for vline end correct for \r\n lines?
+        if !caret && !self.is_empty() {
             let vline_pre_end = text_prov.rope_text().prev_grapheme_offset(vline_end, 1, 0);
             vline_pre_end - start_offset
         } else {
