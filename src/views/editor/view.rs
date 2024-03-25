@@ -9,15 +9,22 @@ use crate::{
     keyboard::{Key, ModifiersState, NamedKey},
     kurbo::{BezPath, Line, Point, Rect, Size, Vec2},
     peniko::Color,
+    prop, prop_extractor,
     reactive::{batch, create_effect, create_memo, create_rw_signal, Memo, RwSignal, Scope},
-    style::{CursorStyle, Style},
+    style::{CursorStyle, Style, StylePropValue, TextColor},
+    style_class,
     taffy::tree::NodeId,
-    view::{AnyWidget, View, ViewData, Widget},
-    views::{container, empty, scroll, stack, Decorators},
+    view::{AnyView, AnyWidget, View, ViewData, Widget},
+    views::{
+        container,
+        editor::text::{RenderWhitespace, WrapMethod},
+        empty, scroll, stack, text, Decorators,
+    },
     EventPropagation, Renderer,
 };
 use floem_editor_core::{
     cursor::{ColPosition, CursorAffinity, CursorMode},
+    indent::IndentStyle,
     mode::{Mode, VisualMode},
 };
 
@@ -30,7 +37,7 @@ use crate::views::editor::{
     visual_line::{RVLine, VLineInfo},
 };
 
-use super::{color::EditorColor, Editor, CHAR_WIDTH};
+use super::{Editor, CHAR_WIDTH};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum DiffSectionKind {
@@ -41,8 +48,8 @@ pub enum DiffSectionKind {
 
 #[derive(Clone, PartialEq)]
 pub struct DiffSection {
-    /// The y index that the diff section is at.  
-    /// This is multiplied by the line height to get the y position.  
+    /// The y index that the diff section is at.
+    /// This is multiplied by the line height to get the y position.
     /// So this can roughly be considered as the `VLine of the start of this diff section, but it
     /// isn't necessarily convertable to a `VLine` due to jumping over empty code sections.
     pub y_idx: usize,
@@ -56,11 +63,11 @@ pub struct DiffSection {
 #[derive(Clone, PartialEq)]
 pub struct ScreenLines {
     pub lines: Rc<Vec<RVLine>>,
-    /// Guaranteed to have an entry for each `VLine` in `lines`  
+    /// Guaranteed to have an entry for each `VLine` in `lines`
     /// You should likely use accessor functions rather than this directly.
     pub info: Rc<HashMap<RVLine, LineInfo>>,
     pub diff_sections: Option<Rc<Vec<DiffSection>>>,
-    /// The base y position that all the y positions inside `info` are relative to.  
+    /// The base y position that all the y positions inside `info` are relative to.
     /// This exists so that if a text layout is created outside of the view, we don't have to
     /// completely recompute the screen lines (or do somewhat intricate things to update them)
     /// we simply have to update the `base_y`.
@@ -91,7 +98,7 @@ impl ScreenLines {
         });
     }
 
-    /// Get the line info for the given rvline.  
+    /// Get the line info for the given rvline.
     pub fn info(&self, rvline: RVLine) -> Option<LineInfo> {
         let info = self.info.get(&rvline)?;
         let base = self.base.get();
@@ -107,12 +114,12 @@ impl ScreenLines {
         self.lines.first().copied().zip(self.lines.last().copied())
     }
 
-    /// Iterate over the line info, copying them with the full y positions.  
+    /// Iterate over the line info, copying them with the full y positions.
     pub fn iter_line_info(&self) -> impl Iterator<Item = LineInfo> + '_ {
         self.lines.iter().map(|rvline| self.info(*rvline).unwrap())
     }
 
-    /// Iterate over the line info within the range, copying them with the full y positions.  
+    /// Iterate over the line info within the range, copying them with the full y positions.
     /// If the values are out of range, it is clamped to the valid lines within.
     pub fn iter_line_info_r(
         &self,
@@ -180,8 +187,8 @@ impl ScreenLines {
     }
 
     /// Iterate over the real lines underlying the visual lines on the screen with the y position
-    /// of their layout.  
-    /// (line, y)  
+    /// of their layout.
+    /// (line, y)
     pub fn iter_lines_y(&self) -> impl Iterator<Item = (usize, f64)> + '_ {
         let mut last_line = None;
         self.lines.iter().filter_map(move |vline| {
@@ -301,7 +308,7 @@ impl ScreenLines {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScreenLinesBase {
-    /// The current/previous viewport.  
+    /// The current/previous viewport.
     /// Used for determining whether there were any changes, and the `y0` serves as the
     /// base for positioning the lines.
     pub active_viewport: Rect,
@@ -327,12 +334,79 @@ impl LineInfo {
     }
 }
 
+prop!(pub IndentStyleProp: IndentStyle {} = IndentStyle::Spaces(4));
+impl StylePropValue for IndentStyle {
+    fn debug_view(&self) -> Option<AnyView> {
+        Some(text(self).any())
+    }
+}
+prop!(pub ScrollbarLine: Color {} = Color::TRANSPARENT);
+prop!(pub DropdownShadow: Option<Color> {} = None);
+prop!(pub Foreground: Color { inherited } = Color::rgb8(0x38, 0x3A, 0x42));
+prop!(pub Focus: Option<Color> {} = None);
+prop!(pub Caret: Color {} = Color::BLACK.with_alpha_factor(0.5));
+prop!(pub Selection: Color {} = Color::BLACK.with_alpha_factor(0.5));
+prop!(pub CurrentLine: Option<Color> {} = None);
+prop!(pub Link: Option<Color> {} = None);
+prop!(pub VisibleWhitespace: Color {} = Color::TRANSPARENT);
+prop!(pub IndentGuide: Color {} = Color::TRANSPARENT);
+prop!(pub StickyHeaderBackground: Option<Color> {} = None);
+
+prop_extractor! {
+    EditorViewStyle {
+        indent_style: IndentStyleProp,
+        scroll_bar: ScrollbarLine,
+        // dropdown_shadow: DropdownShadow,
+        // focus: Focus,
+        caret: Caret,
+        selection: Selection,
+        current_line: CurrentLine,
+        // link: Link,
+        visible_whitespace: VisibleWhitespace,
+        indent_guide: IndentGuide,
+        // sticky_header_background: StickyHeaderBackground,
+    }
+}
+
+prop!(pub WrapProp: WrapMethod {} = WrapMethod::EditorWidth);
+impl StylePropValue for WrapMethod {
+    fn debug_view(&self) -> Option<AnyView> {
+        Some(crate::views::text(self).any())
+    }
+}
+prop!(pub CursorSurroundingLines: usize {} = 1);
+prop!(pub ScrollBeyondLastLine: bool {} = false);
+prop!(pub ShowIndentGuide: bool {} = false);
+prop!(pub PhantomColor: Color {} = Color::DIM_GRAY);
+prop!(pub PreeditUnderlineColor: Color {} = Color::WHITE);
+prop!(pub RenderWhiteSpaceProp: RenderWhitespace {} = RenderWhitespace::None);
+impl StylePropValue for RenderWhitespace {
+    fn debug_view(&self) -> Option<AnyView> {
+        Some(crate::views::text(self).any())
+    }
+}
+
+prop_extractor! {
+    pub EditorStyle {
+        pub text_color: TextColor,
+        pub phantom_color: PhantomColor,
+        pub preedit_underline_color: PreeditUnderlineColor,
+        pub show_indent_guide: ShowIndentGuide,
+        pub wrap_method: WrapProp,
+        pub cursor_surounding_lines: CursorSurroundingLines,
+        // scroll_beyond_last_line: ScrollBeyondLastLine,
+        pub render_white_space: RenderWhiteSpaceProp,
+    }
+}
+
 pub struct EditorView {
     id: Id,
     data: ViewData,
     editor: RwSignal<Editor>,
     is_active: Memo<bool>,
     inner_node: Option<NodeId>,
+    editor_view_style: EditorViewStyle,
+    editor_style: EditorStyle,
 }
 impl EditorView {
     #[allow(clippy::too_many_arguments)]
@@ -512,12 +586,18 @@ impl EditorView {
         }
     }
 
-    fn paint_cursor(cx: &mut PaintCx, ed: &Editor, is_active: bool, screen_lines: &ScreenLines) {
+    fn paint_cursor(
+        cx: &mut PaintCx,
+        ed: &Editor,
+        is_active: bool,
+        screen_lines: &ScreenLines,
+        editor_style: &EditorViewStyle,
+    ) {
         let cursor = ed.cursor;
 
         let viewport = ed.viewport.get_untracked();
 
-        let current_line_color = ed.color(EditorColor::CurrentLine);
+        let current_line_color = editor_style.current_line();
 
         cursor.with_untracked(|cursor| {
             let highlight_current_line = match cursor.mode {
@@ -525,34 +605,41 @@ impl EditorView {
                 CursorMode::Visual { .. } => false,
             };
 
-            // Highlight the current line
-            if highlight_current_line {
-                for (_, end) in cursor.regions_iter() {
-                    // TODO: unsure if this is correct for wrapping lines
-                    let rvline = ed.rvline_of_offset(end, cursor.affinity);
+            if let Some(current_line_color) = current_line_color {
+                // Highlight the current line
+                if highlight_current_line {
+                    for (_, end) in cursor.regions_iter() {
+                        // TODO: unsure if this is correct for wrapping lines
+                        let rvline = ed.rvline_of_offset(end, cursor.affinity);
 
-                    if let Some(info) = screen_lines.info(rvline) {
-                        let line_height = ed.line_height(info.vline_info.rvline.line);
-                        let rect = Rect::from_origin_size(
-                            (viewport.x0, info.vline_y),
-                            (viewport.width(), f64::from(line_height)),
-                        );
+                        if let Some(info) = screen_lines.info(rvline) {
+                            let line_height = ed.line_height(info.vline_info.rvline.line);
+                            let rect = Rect::from_origin_size(
+                                (viewport.x0, info.vline_y),
+                                (viewport.width(), f64::from(line_height)),
+                            );
 
-                        cx.fill(&rect, current_line_color, 0.0);
+                            cx.fill(&rect, current_line_color, 0.0);
+                        }
                     }
                 }
             }
 
-            EditorView::paint_selection(cx, ed, screen_lines);
+            EditorView::paint_selection(cx, ed, screen_lines, editor_style);
 
-            EditorView::paint_cursor_caret(cx, ed, is_active, screen_lines);
+            EditorView::paint_cursor_caret(cx, ed, is_active, screen_lines, editor_style);
         });
     }
 
-    pub fn paint_selection(cx: &mut PaintCx, ed: &Editor, screen_lines: &ScreenLines) {
+    fn paint_selection(
+        cx: &mut PaintCx,
+        ed: &Editor,
+        screen_lines: &ScreenLines,
+        editor_style: &EditorViewStyle,
+    ) {
         let cursor = ed.cursor;
 
-        let selection_color = ed.color(EditorColor::Selection);
+        let selection_color = editor_style.selection();
 
         cursor.with_untracked(|cursor| match cursor.mode {
             CursorMode::Normal(_) => {}
@@ -623,15 +710,16 @@ impl EditorView {
         });
     }
 
-    pub fn paint_cursor_caret(
+    fn paint_cursor_caret(
         cx: &mut PaintCx,
         ed: &Editor,
         is_active: bool,
         screen_lines: &ScreenLines,
+        editor_style: &EditorViewStyle,
     ) {
         let cursor = ed.cursor;
         let hide_cursor = ed.cursor_info.hidden;
-        let caret_color = ed.color(EditorColor::Caret);
+        let caret_color = editor_style.caret();
 
         if !is_active || hide_cursor.get_untracked() {
             return;
@@ -731,12 +819,18 @@ impl EditorView {
         }
     }
 
-    pub fn paint_text(cx: &mut PaintCx, ed: &Editor, viewport: Rect, screen_lines: &ScreenLines) {
+    fn paint_text(
+        cx: &mut PaintCx,
+        ed: &Editor,
+        viewport: Rect,
+        screen_lines: &ScreenLines,
+        editor_style: &EditorViewStyle,
+    ) {
         let edid = ed.id();
         let style = ed.style();
 
         // TODO: cache indent text layout width
-        let indent_unit = style.indent_style().as_str();
+        let indent_unit = editor_style.indent_style().as_str();
         // TODO: don't assume font family is the same for all lines?
         let family = style.font_family(edid, 0);
         let attrs = Attrs::new()
@@ -757,7 +851,7 @@ impl EditorView {
                 let family = style.font_family(edid, line);
                 let font_size = style.font_size(edid, line) as f32;
                 let attrs = Attrs::new()
-                    .color(style.color(edid, EditorColor::VisibleWhitespace))
+                    .color(editor_style.visible_whitespace())
                     .family(&family)
                     .font_size(font_size);
                 let attrs_list = AttrsList::new(attrs);
@@ -779,13 +873,13 @@ impl EditorView {
                 }
             }
 
-            if ed.show_indent_guide.get_untracked() {
+            if ed.editor_style.with(|s| s.show_indent_guide()) {
                 let line_height = f64::from(ed.line_height(line));
                 let mut x = 0.0;
                 while x + 1.0 < text_layout.indent {
                     cx.stroke(
                         &Line::new(Point::new(x, y), Point::new(x, y + line_height)),
-                        style.color(edid, EditorColor::IndentGuide),
+                        editor_style.indent_guide(),
                         1.0,
                     );
                     x += indent_text_width;
@@ -796,7 +890,7 @@ impl EditorView {
         }
     }
 
-    pub fn paint_scroll_bar(cx: &mut PaintCx, ed: &Editor, viewport: Rect) {
+    fn paint_scroll_bar(cx: &mut PaintCx, viewport: Rect, editor_style: &EditorViewStyle) {
         // TODO: let this be customized
         const BAR_WIDTH: f64 = 10.0;
         cx.fill(
@@ -807,7 +901,7 @@ impl EditorView {
                     viewport.y0,
                 ))
                 .inflate(0.0, 10.0),
-            ed.color(EditorColor::Scrollbar),
+            editor_style.scroll_bar(),
             0.0,
         );
     }
@@ -836,6 +930,24 @@ impl Widget for EditorView {
 
     fn view_data_mut(&mut self) -> &mut ViewData {
         &mut self.data
+    }
+
+    fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+        if self.editor_view_style.read(cx) {
+            cx.app_state_mut().request_paint(self.id());
+        }
+
+        if self.editor_style.read(cx) {
+            self.editor.update(|ed| {
+                ed.editor_style.set(self.editor_style.clone());
+                ed.floem_style_id.update(|val| *val += 1);
+            });
+            cx.app_state_mut().request_paint(self.id());
+        }
+    }
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "Editor View".into()
     }
 
     fn update(&mut self, _cx: &mut UpdateCx, _state: Box<dyn std::any::Any>) {}
@@ -892,12 +1004,22 @@ impl Widget for EditorView {
         // I expect that most/all of the paint functions could restrict themselves to only what is
         // within the active screen lines without issue.
         let screen_lines = ed.screen_lines.get_untracked();
-        EditorView::paint_cursor(cx, &ed, self.is_active.get_untracked(), &screen_lines);
+        EditorView::paint_cursor(
+            cx,
+            &ed,
+            self.is_active.get_untracked(),
+            &screen_lines,
+            &self.editor_view_style,
+        );
         let screen_lines = ed.screen_lines.get_untracked();
-        EditorView::paint_text(cx, &ed, viewport, &screen_lines);
-        EditorView::paint_scroll_bar(cx, &ed, viewport);
+        EditorView::paint_text(cx, &ed, viewport, &screen_lines, &self.editor_view_style);
+
+        // TODO: what is going on here? Why is this necessary
+        EditorView::paint_scroll_bar(cx, viewport, &self.editor_view_style);
     }
 }
+
+style_class!(pub EditorViewClass);
 
 pub fn editor_view(
     editor: RwSignal<Editor>,
@@ -960,6 +1082,8 @@ pub fn editor_view(
         editor,
         is_active,
         inner_node: None,
+        editor_view_style: EditorViewStyle::default(),
+        editor_style: EditorStyle::default(),
     }
     .on_event(EventListener::ImePreedit, move |event| {
         if !is_active.get_untracked() {
@@ -991,6 +1115,7 @@ pub fn editor_view(
         }
         EventPropagation::Stop
     })
+    .class(EditorViewClass)
 }
 
 #[derive(Clone, Debug)]
@@ -1000,7 +1125,7 @@ pub struct LineRegion {
     pub rvline: RVLine,
 }
 
-/// Get the render information for a caret cursor at the given `offset`.  
+/// Get the render information for a caret cursor at the given `offset`.
 pub fn cursor_caret(
     ed: &Editor,
     offset: usize,
@@ -1090,9 +1215,7 @@ pub fn editor_container_view(
 
     stack((container(
         stack((
-            editor_gutter(editor).style(move |s| {
-                s.apply_if(!editor.with_untracked(|ed| ed.gutter).get(), |s| s.hide())
-            }),
+            editor_gutter(editor),
             container(editor_content(editor, is_active, handle_key_event))
                 .style(move |s| s.size_pct(100.0, 100.0)),
             empty().style(move |s| s.absolute().width_pct(100.0)),
@@ -1109,11 +1232,7 @@ pub fn editor_container_view(
         editor.cx.get().dispose();
     })
     // TODO(minor): only depend on style
-    .style(move |s| {
-        s.flex_col()
-            .size_pct(100.0, 100.0)
-            .background(editor.get().color(EditorColor::Background))
-    })
+    .style(move |s| s.flex_col().size_pct(100.0, 100.0))
 }
 
 /// Default editor gutter
@@ -1147,21 +1266,15 @@ fn editor_content(
     let scroll_to = ed.scroll_to;
     let window_origin = ed.window_origin;
     let viewport = ed.viewport;
-    let scroll_beyond_last_line = ed.scroll_beyond_last_line;
 
     scroll({
         let editor_content_view = editor_view(editor, is_active).style(move |s| {
-            let padding_bottom = if scroll_beyond_last_line.get() {
-                // TODO: don't assume line height is constant?
-                // just use the last line's line height maybe, or just make
-                // scroll beyond last line a f32
-                // TODO: we shouldn't be using `get` on editor here, isn't this more of a 'has the
-                // style cache changed'?
-                let line_height = editor.get().line_height(0);
-                viewport.get().height() as f32 - line_height
-            } else {
-                editor.get().line_height(0)
-            };
+            // TODO: don't assume line height is constant?
+            // just use the last line's line height maybe, or just make
+            // scroll beyond last line a f32
+            // TODO: we shouldn't be using `get` on editor here, isn't this more of a 'has the
+            // style cache changed'?
+            let padding_bottom = editor.get().line_height(0);
 
             s.absolute()
                 .padding_bottom(padding_bottom)
@@ -1259,7 +1372,8 @@ fn editor_content(
             rect.inflate(0.0, viewport.height() / 2.0)
         } else {
             let mut rect = rect;
-            let cursor_surrounding_lines = editor.cursor_surrounding_lines.get_untracked() as f64;
+            let cursor_surrounding_lines =
+                editor.editor_style.with(|s| s.cursor_surounding_lines()) as f64;
             rect.y0 -= cursor_surrounding_lines * line_height;
             rect.y1 += cursor_surrounding_lines * line_height;
             rect

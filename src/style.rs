@@ -46,6 +46,7 @@ pub trait StylePropValue: Clone + PartialEq + Debug {
 impl StylePropValue for i32 {}
 impl StylePropValue for bool {}
 impl StylePropValue for f32 {}
+impl StylePropValue for usize {}
 impl StylePropValue for f64 {
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         Some(*self * (1.0 - value) + *other * value)
@@ -169,7 +170,7 @@ pub trait StyleClass: Default + Copy + 'static {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StyleClassInfo {
     pub(crate) name: fn() -> &'static str,
 }
@@ -182,7 +183,7 @@ impl StyleClassInfo {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct StyleClassRef {
     pub key: StyleKey,
 }
@@ -451,7 +452,7 @@ macro_rules! prop_extractor {
                 changed
             }
 
-            #[allow(dead_code)]
+           #[allow(dead_code)]
             $vis fn read(&mut self, cx: &mut $crate::context::StyleCx) -> bool {
                 let mut transition = false;
                 let changed = self.read_explicit(&cx.direct_style(), &cx.indirect_style(), &cx.now(), &mut transition);
@@ -612,7 +613,7 @@ impl StyleKey {
     pub(crate) fn debug_any(&self, value: &dyn Any) -> String {
         match self.info {
             StyleKeyInfo::Selector(..) | StyleKeyInfo::Transition => String::new(),
-            StyleKeyInfo::Class(..) => String::new(),
+            StyleKeyInfo::Class(info) => (info.name)().to_string(),
             StyleKeyInfo::Prop(v) => (v.debug_any)(value),
         }
     }
@@ -1715,8 +1716,8 @@ impl Style {
         self.set(ZIndex, Some(z_index))
     }
 
-    /// Allow the application of a function if the option exists.  
-    /// This is useful for chaining together a bunch of optional style changes.  
+    /// Allow the application of a function if the option exists.
+    /// This is useful for chaining together a bunch of optional style changes.
     /// ```rust
     /// use floem::style::Style;
     /// let maybe_none: Option<i32> = None;
@@ -1734,7 +1735,7 @@ impl Style {
         }
     }
 
-    /// Allow the application of a function if the condition holds.  
+    /// Allow the application of a function if the condition holds.
     /// This is useful for chaining together a bunch of optional style changes.
     /// ```rust
     /// use floem::style::Style;

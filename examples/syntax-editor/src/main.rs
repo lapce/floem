@@ -1,11 +1,9 @@
 use floem::cosmic_text::{Attrs, AttrsList, Stretch, Style, Weight};
 use floem::peniko::Color;
-use floem::views::editor::color::EditorColor;
 use floem::views::editor::core::buffer::rope_text::RopeText;
-use floem::views::editor::core::indent::IndentStyle;
 use floem::views::editor::id::EditorId;
 use floem::views::editor::layout::TextLayoutLine;
-use floem::views::editor::text::{Document, RenderWhitespace, SimpleStylingBuilder, Styling};
+use floem::views::editor::text::{Document, SimpleStylingBuilder, Styling};
 use floem::{
     cosmic_text::FamilyOwned,
     keyboard::{Key, ModifiersState, NamedKey},
@@ -90,10 +88,6 @@ impl<'a> Styling for SyntaxHighlightingStyle<'a> {
         self.style.stretch(edid, line)
     }
 
-    fn indent_style(&self) -> IndentStyle {
-        self.style.indent_style()
-    }
-
     fn indent_line(&self, edid: EditorId, line: usize, line_content: &str) -> usize {
         self.style.indent_line(edid, line, line_content)
     }
@@ -162,20 +156,8 @@ impl<'a> Styling for SyntaxHighlightingStyle<'a> {
         }
     }
 
-    fn wrap(&self, edid: EditorId) -> WrapMethod {
-        self.style.wrap(edid)
-    }
-
-    fn render_whitespace(&self, edid: EditorId) -> RenderWhitespace {
-        self.style.render_whitespace(edid)
-    }
-
     fn apply_layout_styles(&self, edid: EditorId, line: usize, layout_line: &mut TextLayoutLine) {
         self.style.apply_layout_styles(edid, line, layout_line)
-    }
-
-    fn color(&self, edid: EditorId, color: EditorColor) -> Color {
-        self.style.color(edid, color)
     }
 
     fn paint_caret(&self, edid: EditorId, line: usize) -> bool {
@@ -191,7 +173,7 @@ fn app_view() -> impl View {
             FamilyOwned::Name("Consolas".to_string()),
             FamilyOwned::Monospace,
         ])
-        .build_dark();
+        .build();
 
     let mut style = SyntaxHighlightingStyle::new(Rc::new(global_style));
 
@@ -224,7 +206,6 @@ mod tests {
     style.set_doc(editor.doc().clone());
     let editor = editor.styling(style);
 
-    let gutter = editor.editor().gutter;
     let doc = editor.doc();
 
     let view = stack((
@@ -238,8 +219,8 @@ mod tests {
                 );
             }),
             button(|| "Gutter").on_click_stop(move |_| {
-                let a = !gutter.get_untracked();
-                gutter.set(a);
+                // let a = !gutter.get_untracked();
+                // gutter.set(a);
             }),
         ))
         .style(|s| s.width_full().flex_row().items_center().justify_center()),

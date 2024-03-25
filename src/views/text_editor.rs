@@ -1,13 +1,15 @@
 use std::rc::Rc;
 
-use floem_editor_core::buffer::rope_text::RopeTextVal;
-use floem_reactive::{with_scope, Scope};
+use floem_editor_core::{buffer::rope_text::RopeTextVal, indent::IndentStyle};
+use floem_peniko::Color;
+use floem_reactive::{create_updater, with_scope, Scope};
 
 use lapce_xi_rope::Rope;
 
 use crate::{
     id::Id,
-    view::{View, ViewData, Widget},
+    style::Style,
+    view::{AnyWidget, View, ViewData, Widget},
     views::editor::{
         command::CommandExecuted,
         id::EditorId,
@@ -19,15 +21,25 @@ use crate::{
     },
 };
 
-/// A text editor view.  
+use super::editor::{
+    gutter::{GutterClass, LeftOfCenterPadding, RightOfCenterPadding},
+    text::RenderWhitespace,
+    view::{
+        Caret, CursorSurroundingLines, EditorViewClass, IndentStyleProp, PhantomColor,
+        PreeditUnderlineColor, RenderWhiteSpaceProp, ScrollBeyondLastLine, ScrollbarLine,
+        ShowIndentGuide, VisibleWhitespace,
+    },
+};
+
+/// A text editor view.
 /// Note: this requires that the document underlying it is a [`TextDocument`] for the use of some
 /// logic.
 pub struct TextEditor {
     data: ViewData,
-    /// The scope this view was created in, used for creating the final view
+    // /// The scope this view was created in, used for creating the final view
     cx: Scope,
-
     editor: Editor,
+    child: AnyWidget,
 }
 
 pub fn text_editor(text: impl Into<Rope>) -> TextEditor {
@@ -35,13 +47,20 @@ pub fn text_editor(text: impl Into<Rope>) -> TextEditor {
     let cx = Scope::current();
 
     let doc = Rc::new(TextDocument::new(cx, text));
-    let style = Rc::new(SimpleStyling::light());
+    let style = Rc::new(SimpleStyling::new());
     let editor = Editor::new(cx, doc, style);
+
+    let editor_sig = cx.create_rw_signal(editor.clone());
+    let child = with_scope(cx, || {
+        editor_container_view(editor_sig, |_| true, default_key_handler(editor_sig))
+    })
+    .build();
 
     TextEditor {
         data: ViewData::new(id),
         cx,
         editor,
+        child,
     }
 }
 
@@ -55,17 +74,185 @@ impl View for TextEditor {
     }
 
     fn build(self) -> Box<dyn Widget> {
-        let cx = self.cx;
+        Box::new(self)
+    }
+}
 
-        let editor = cx.create_rw_signal(self.editor);
-        let view = with_scope(self.cx, || {
-            editor_container_view(editor, |_| true, default_key_handler(editor))
+impl Widget for TextEditor {
+    fn view_data(&self) -> &ViewData {
+        &self.data
+    }
+
+    fn view_data_mut(&mut self) -> &mut ViewData {
+        &mut self.data
+    }
+
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
+        for_each(&self.child);
+    }
+
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
+        for_each(&mut self.child);
+    }
+
+    fn for_each_child_rev_mut<'a>(
+        &'a mut self,
+        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
+    ) {
+        for_each(&mut self.child);
+    }
+
+    fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+        if self.editor.editor_style.try_update(|s| s.read(cx)).unwrap() {
+            cx.app_state_mut().request_paint(self.id());
+        }
+        self.for_each_child_mut(&mut |child| {
+            cx.style_view(child);
+            false
         });
-        view.build()
+    }
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "Text Editor".into()
+    }
+}
+
+pub struct EditorCustomStyle(Style);
+
+impl EditorCustomStyle {
+    /// Sets whether the gutter should be hidden.
+    ///
+    /// # Arguments
+    /// * `hide` - A boolean indicating whether the gutter should be hidden. If `true`, the gutter is hidden.
+    /// Default: `true`
+    pub fn hide_gutter(mut self, hide: bool) -> Self {
+        self.0 = self
+            .0
+            .class(GutterClass, |s| s.apply_if(hide, |s| s.hide()));
+        self
+    }
+
+    // pub fn gutter_style(mut self, style: impl Fn(Style) -> Style) -> Self {
+    //     self.0 = self.0.class(GutterClass, |s| style(s));
+    //     self
+    // }
+
+    pub fn gutter_text_color(mut self, color: Color) -> Self {
+        self.0 = self.0.class(GutterClass, |s| s.color(color));
+        self
+    }
+
+    pub fn gutter_left_padding(mut self, padding: f64) -> Self {
+        self.0 = self
+            .0
+            .class(GutterClass, |s| s.set(LeftOfCenterPadding, padding));
+        self
+    }
+    pub fn gutter_right_padding(mut self, padding: f64) -> Self {
+        self.0 = self
+            .0
+            .class(GutterClass, |s| s.set(RightOfCenterPadding, padding));
+        self
+    }
+
+    pub fn indent_style(mut self, indent_style: IndentStyle) -> Self {
+        self.0 = self
+            .0
+            .class(EditorViewClass, |s| s.set(IndentStyleProp, indent_style));
+        self
+    }
+
+    // thin line to the left of the scroll bar
+    pub fn scroll_bar_line_color(mut self, color: Color) -> Self {
+        self.0 = self
+            .0
+            .class(EditorViewClass, |s| s.set(ScrollbarLine, color));
+        self
+    }
+
+    pub fn cursor_color(mut self, cursor: Color) -> Self {
+        self.0 = self.0.class(EditorViewClass, |s| s.set(Caret, cursor));
+        self
+    }
+
+    // what does this do?
+    pub fn foreground_color(mut self, fg: Color) -> Self {
+        self.0 = self.0.set(super::editor::view::Foreground, fg);
+        self
+    }
+
+    /// Allow scrolling beyond the last line of the document.
+    /// Equivalent to setting [`Editor::scroll_beyond_last_line`]
+    /// Default: `false`
+    pub fn scroll_beyond_last_line(mut self, scroll_beyong_last_line: bool) -> Self {
+        self.0 = self.0.class(EditorViewClass, |s| {
+            s.set(ScrollBeyondLastLine, scroll_beyong_last_line)
+        });
+        self
+    }
+
+    /// Set the number of lines to keep visible above and below the cursor.
+    /// Equivalent to setting [`Editor::cursor_surrounding_lines`]
+    /// Default: `1`
+    pub fn cursor_surrounding_lines(mut self, lines: usize) -> Self {
+        self.0 = self
+            .0
+            .class(EditorViewClass, |s| s.set(CursorSurroundingLines, lines));
+        self
+    }
+
+    pub fn render_white_space(mut self, render_white_space: RenderWhitespace) -> Self {
+        self.0 = self.0.class(EditorViewClass, |s| {
+            s.set(RenderWhiteSpaceProp, render_white_space)
+        });
+        self
+    }
+
+    pub fn visible_white_space(mut self, color: Color) -> Self {
+        self.0 = self
+            .0
+            .class(EditorViewClass, |s| s.set(VisibleWhitespace, color));
+        self
+    }
+
+    pub fn show_indent_guide(mut self, show: bool) -> Self {
+        self.0 = self
+            .0
+            .class(EditorViewClass, |s| s.set(ShowIndentGuide, show));
+        self
+    }
+
+    pub fn phantom_color(mut self, color: Color) -> Self {
+        self.0 = self
+            .0
+            .class(EditorViewClass, |s| s.set(PhantomColor, color));
+        self
+    }
+
+    pub fn preedit_underline_color(mut self, color: Color) -> Self {
+        self.0 = self
+            .0
+            .class(EditorViewClass, |s| s.set(PreeditUnderlineColor, color));
+        self
     }
 }
 
 impl TextEditor {
+    /// Sets the custom style properties of the `TextEditor`.
+    pub fn editor_style(
+        mut self,
+        style: impl Fn(EditorCustomStyle) -> EditorCustomStyle + 'static,
+    ) -> Self {
+        let id = self.id();
+        let offset = Widget::view_data_mut(&mut self).style.next_offset();
+        let style = create_updater(
+            move || style(EditorCustomStyle(Style::new())),
+            move |style| id.update_style(style.0, offset),
+        );
+        Widget::view_data_mut(&mut self).style.push(style.0);
+        self
+    }
+
     /// Note: this requires that the document underlying it is a [`TextDocument`] for the use of
     /// some logic. You should usually not swap this out without good reason.
     pub fn editor(&self) -> &Editor {
@@ -101,7 +288,7 @@ impl TextEditor {
         self.editor.doc()
     }
 
-    /// Try downcasting the document to a [`TextDocument`].  
+    /// Try downcasting the document to a [`TextDocument`].
     /// Returns `None` if the document is not a [`TextDocument`].
     fn text_doc(&self) -> Option<Rc<TextDocument>> {
         self.doc().downcast_rc().ok()
@@ -112,13 +299,13 @@ impl TextEditor {
         self.editor.rope_text()
     }
 
-    /// Use a different document in the text editor  
+    /// Use a different document in the text editor
     pub fn use_doc(self, doc: Rc<dyn Document>) -> Self {
         self.editor.update_doc(doc, None);
         self
     }
 
-    /// Use the same document as another text editor view.  
+    /// Use the same document as another text editor view.
     /// ```rust,ignore
     /// let primary = text_editor();
     /// let secondary = text_editor().share_document(&primary);
@@ -127,7 +314,7 @@ impl TextEditor {
     ///     primary,
     ///     secondary,
     /// ))
-    /// ```  
+    /// ```
     /// If you wish for it to also share the styling, consider using [`TextEditor::shared_editor`]
     /// instead.
     pub fn share_doc(self, other: &TextEditor) -> Self {
@@ -146,14 +333,21 @@ impl TextEditor {
         let style = self.editor.style();
         let editor = Editor::new(self.cx, doc, style);
 
+        let editor_sig = self.cx.create_rw_signal(editor.clone());
+        let child = with_scope(self.cx, || {
+            editor_container_view(editor_sig, |_| true, default_key_handler(editor_sig))
+        })
+        .build();
+
         TextEditor {
             data: ViewData::new(id),
             cx: self.cx,
             editor,
+            child,
         }
     }
 
-    /// Change the [`Styling`] used for the editor.  
+    /// Change the [`Styling`] used for the editor.
     /// ```rust,ignore
     /// let styling = SimpleStyling::builder()
     ///     .font_size(12)
@@ -170,50 +364,26 @@ impl TextEditor {
         self
     }
 
-    /// Set the text editor to read only.  
-    /// Equivalent to setting [`Editor::read_only`]  
+    /// Set the text editor to read only.
+    /// Equivalent to setting [`Editor::read_only`]
     /// Default: `false`
     pub fn read_only(self) -> Self {
         self.editor.read_only.set(true);
         self
     }
 
-    /// Enable or disable the gutter.  
-    /// Equivalent to setting [`Editor::gutter`]  
-    /// Default: `true`
-    pub fn gutter(self, gutter: bool) -> Self {
-        self.editor.gutter.set(gutter);
-        self
-    }
-
-    /// Allow scrolling beyond the last line of the document.  
-    /// Equivalent to setting [`Editor::scroll_beyond_last_line`]  
-    /// Default: `false`
-    pub fn scroll_beyond_last_line(self) -> Self {
-        self.editor.scroll_beyond_last_line.set(true);
-        self
-    }
-
-    /// Set the number of lines to keep visible above and below the cursor.  
-    /// Equivalent to setting [`Editor::cursor_surrounding_lines`]  
-    /// Default: `1`
-    pub fn cursor_surrounding_lines(self, lines: usize) -> Self {
-        self.editor.cursor_surrounding_lines.set(lines);
-        self
-    }
-
-    /// Insert the indent that is detected fror the file when tab is pressed.  
-    /// Equivalent to setting [`Editor::smart_tab`]  
+    /// Insert the indent that is detected fror the file when tab is pressed.
+    /// Equivalent to setting [`Editor::smart_tab`]
     /// Default: `false`
     pub fn smart_tab(self) -> Self {
         self.editor.smart_tab.set(true);
         self
     }
 
-    /// Set the placeholder text that is displayed when the document is empty.  
-    /// Can span multiple lines.  
-    /// This is per-editor, not per-document.  
-    /// Equivalent to calling [`TextDocument::add_placeholder`]  
+    /// Set the placeholder text that is displayed when the document is empty.
+    /// Can span multiple lines.
+    /// This is per-editor, not per-document.
+    /// Equivalent to calling [`TextDocument::add_placeholder`]
     /// Default: `None`
     ///
     /// Note: only works for the default backing [`TextDocument`] doc
@@ -225,9 +395,9 @@ impl TextEditor {
         self
     }
 
-    /// When commands are run on the document, this function is called.  
+    /// When commands are run on the document, this function is called.
     /// If it returns [`CommandExecuted::Yes`] then further handlers after it, including the
-    /// default handler, are not executed.  
+    /// default handler, are not executed.
     /// ```rust
     /// use floem::views::editor::command::{Command, CommandExecuted};
     /// use floem::views::text_editor::text_editor;
@@ -235,7 +405,7 @@ impl TextEditor {
     /// text_editor("Hello")
     ///     .pre_command(|ev| {
     ///         if matches!(ev.cmd, Command::Edit(EditCommand::Undo)) {
-    ///             // Sorry, no undoing allowed   
+    ///             // Sorry, no undoing allowed
     ///             CommandExecuted::Yes
     ///         } else {
     ///             CommandExecuted::No
@@ -250,8 +420,8 @@ impl TextEditor {
     ///         CommandExecuted::No
     ///     });
     /// ```
-    /// Note that these are specific to each text editor view.  
-    ///   
+    /// Note that these are specific to each text editor view.
+    ///
     /// Note: only works for the default backing [`TextDocument`] doc
     pub fn pre_command(self, f: impl Fn(PreCommand) -> CommandExecuted + 'static) -> Self {
         if let Some(doc) = self.text_doc() {
@@ -260,9 +430,9 @@ impl TextEditor {
         self
     }
 
-    /// Listen for deltas applied to the editor.  
+    /// Listen for deltas applied to the editor.
     /// Useful for anything that has positions based in the editor that can be updated after
-    /// typing, such as syntax highlighting.  
+    /// typing, such as syntax highlighting.
     /// Note: only works for the default backing [`TextDocument`] doc
     pub fn update(self, f: impl Fn(OnUpdate) + 'static) -> Self {
         if let Some(doc) = self.text_doc() {

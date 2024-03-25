@@ -3,7 +3,7 @@ use crate::context::{AppState, StyleCx};
 use crate::event::{Event, EventListener};
 use crate::id::Id;
 use crate::profiler::profiler;
-use crate::style::{Style, StylePropRef, Transition};
+use crate::style::{Style, StyleClassRef, StylePropRef, Transition};
 use crate::view::{view_children, AnyView, View, Widget};
 use crate::view_data::ChangeFlags;
 use crate::views::{
@@ -38,6 +38,7 @@ pub struct CapturedView {
     direct_style: Style,
     requested_changes: ChangeFlags,
     keyboard_navigable: bool,
+    classes: Vec<StyleClassRef>,
     focused: bool,
 }
 
@@ -52,6 +53,7 @@ impl CapturedView {
         let state = app_state.view_state(id);
         let clipped = layout.intersect(clip);
         let custom_name = &view.view_data().debug_name;
+        let classes = state.classes.clone();
         let name = custom_name
             .iter()
             .chain(std::iter::once(&view.debug_name().to_string()))
@@ -68,6 +70,7 @@ impl CapturedView {
             requested_changes: state.requested_changes,
             keyboard_navigable,
             focused,
+            classes,
             children: view_children(view)
                 .into_iter()
                 .map(|view| Rc::new(CapturedView::capture(view, app_state, clipped)))
@@ -529,6 +532,7 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> AnyVi
                 let clear = stack((clear,));
 
                 let style_header = header("View Style");
+                let class_header = header("Class Header");
 
                 let direct: HashSet<_> = view.direct_style.map.keys().copied().collect();
 
@@ -551,6 +555,16 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> AnyVi
                     .collect::<Vec<_>>();
 
                 style_list.sort_unstable_by(|a, b| a.0 .1.cmp(&b.0 .1));
+
+                let mut class_list = view
+                    .classes
+                    .clone()
+                    .into_iter()
+                    .map(|val| StylePropRef { key: val.key })
+                    .map(|val| format!("{:?}", val.key))
+                    .collect::<Vec<_>>();
+
+                class_list.sort_unstable();
 
                 let style_list =
                     v_stack_from_iter(style_list.into_iter().map(|((prop, name), value)| {
@@ -631,6 +645,9 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> AnyVi
                     clear,
                     style_header,
                     style_list,
+                    class_header,
+                    v_stack_from_iter(class_list.iter().map(|val| text(val)))
+                        .style(|s| s.gap(10, 10)),
                 ))
                 .style(|s| s.width_full())
                 .any()

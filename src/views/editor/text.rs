@@ -30,7 +30,7 @@ use super::{
     normal_compute_screen_lines,
     phantom_text::{PhantomText, PhantomTextKind, PhantomTextLine},
     view::{ScreenLines, ScreenLinesBase},
-    Editor,
+    Editor, EditorStyle,
 };
 
 use super::color::EditorColor;
@@ -67,8 +67,8 @@ pub struct Preedit {
     pub offset: usize,
 }
 
-/// IME Preedit  
-/// This is used for IME input, and must be owned by the `Document`.  
+/// IME Preedit
+/// This is used for IME input, and must be owned by the `Document`.
 #[derive(Debug, Clone)]
 pub struct PreeditData {
     pub preedit: RwSignal<Option<Preedit>>,
@@ -81,9 +81,9 @@ impl PreeditData {
     }
 }
 
-/// A document. This holds text.  
+/// A document. This holds text.
 pub trait Document: DocumentPhantom + Downcast {
-    /// Get the text of the document  
+    /// Get the text of the document
     /// Note: typically you should call [`Document::rope_text`] as that provides more checks and
     /// utility functions.
     fn text(&self) -> Rope;
@@ -94,7 +94,7 @@ pub trait Document: DocumentPhantom + Downcast {
 
     fn cache_rev(&self) -> RwSignal<u64>;
 
-    /// Find the next/previous offset of the match of the given character.  
+    /// Find the next/previous offset of the match of the given character.
     /// This is intended for use by the [Movement::NextUnmatched](floem_editor_core::movement::Movement::NextUnmatched) and
     /// [Movement::PreviousUnmatched](floem_editor_core::movement::Movement::PreviousUnmatched) commands.
     fn find_unmatched(&self, offset: usize, previous: bool, ch: char) -> usize {
@@ -109,7 +109,7 @@ pub trait Document: DocumentPhantom + Downcast {
         new_offset.unwrap_or(offset)
     }
 
-    /// Find the offset of the matching pair character.  
+    /// Find the offset of the matching pair character.
     /// This is intended for use by the [Movement::MatchPairs](floem_editor_core::movement::Movement::MatchPairs) command.
     fn find_matching_pair(&self, offset: usize) -> usize {
         WordCursor::new(&self.text(), offset)
@@ -143,7 +143,7 @@ pub trait Document: DocumentPhantom + Downcast {
         })
     }
 
-    /// Compute the visible screen lines.  
+    /// Compute the visible screen lines.
     /// Note: you should typically *not* need to implement this, unless you have some custom
     /// behavior. Unfortunately this needs an `&self` to be a trait object. So don't call `.update`
     /// on `Self`
@@ -155,7 +155,7 @@ pub trait Document: DocumentPhantom + Downcast {
         normal_compute_screen_lines(editor, base)
     }
 
-    /// Run a command on the document.  
+    /// Run a command on the document.
     /// The `ed` will contain this document (at some level, if it was wrapped then it may not be
     /// directly `Rc<Self>`)
     fn run_command(
@@ -168,15 +168,15 @@ pub trait Document: DocumentPhantom + Downcast {
 
     fn receive_char(&self, ed: &Editor, c: &str);
 
-    /// Perform a single edit.  
+    /// Perform a single edit.
     fn edit_single(&self, selection: Selection, content: &str, edit_type: EditType) {
         let mut iter = std::iter::once((selection, content));
         self.edit(&mut iter, edit_type);
     }
 
-    /// Perform the edit(s) on this document.  
+    /// Perform the edit(s) on this document.
     /// This intentionally does not require an `Editor` as this is primarily intended for use by
-    /// code that wants to modify the document from 'outside' the usual keybinding/command logic.  
+    /// code that wants to modify the document from 'outside' the usual keybinding/command logic.
     /// ```rust,ignore
     /// let editor: TextEditor = text_editor();
     /// let doc: Rc<dyn Document> = editor.doc();
@@ -195,14 +195,14 @@ pub trait Document: DocumentPhantom + Downcast {
 impl_downcast!(Document);
 
 pub trait DocumentPhantom {
-    fn phantom_text(&self, edid: EditorId, styling: &dyn Styling, line: usize) -> PhantomTextLine;
+    fn phantom_text(&self, edid: EditorId, styling: &EditorStyle, line: usize) -> PhantomTextLine;
 
     /// Translate a column position into the position it would be before combining with
     /// the phantom text.
     fn before_phantom_col(
         &self,
         edid: EditorId,
-        styling: &dyn Styling,
+        styling: &EditorStyle,
         line: usize,
         col: usize,
     ) -> usize {
@@ -210,7 +210,7 @@ pub trait DocumentPhantom {
         phantom.before_col(col)
     }
 
-    fn has_multiline_phantom(&self, _edid: EditorId, _styling: &dyn Styling) -> bool {
+    fn has_multiline_phantom(&self, _edid: EditorId, _styling: &EditorStyle) -> bool {
         true
     }
 }
@@ -226,6 +226,16 @@ pub enum WrapMethod {
     WrapWidth {
         width: f32,
     },
+}
+impl std::fmt::Display for WrapMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WrapMethod::None => f.write_str("None"),
+            WrapMethod::EditorWidth => f.write_str("Editor Width"),
+            WrapMethod::WrapColumn { col } => f.write_fmt(format_args!("Wrap at Column {col}")),
+            WrapMethod::WrapWidth { width } => f.write_fmt(format_args!("Wrap Width {width}")),
+        }
+    }
 }
 impl WrapMethod {
     pub fn is_none(&self) -> bool {
@@ -250,8 +260,13 @@ pub enum RenderWhitespace {
     Boundary,
     Trailing,
 }
+impl std::fmt::Display for RenderWhitespace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{self:?}"))
+    }
+}
 
-/// There's currently three stages of styling text:  
+/// There's currently three stages of styling text:
 /// - `Attrs`: This sets the default values for the text
 ///   - Default font size, font family, etc.
 /// - `AttrsList`: This lets you set spans of text to have different styling
@@ -295,11 +310,7 @@ pub trait Styling {
         Stretch::Normal
     }
 
-    fn indent_style(&self) -> IndentStyle {
-        IndentStyle::Spaces(4)
-    }
-
-    /// Which line the indentation line should be based off of  
+    /// Which line the indentation line should be based off of
     /// This is used for lining it up under a scope.
     fn indent_line(&self, _edid: EditorId, line: usize, _line_content: &str) -> usize {
         line
@@ -317,7 +328,7 @@ pub trait Styling {
     // TODO: get other style information based on EditorColor enum?
     // TODO: line_style equivalent?
 
-    /// Apply custom attribute styles to the line  
+    /// Apply custom attribute styles to the line
     fn apply_attr_styles(
         &self,
         _edid: EditorId,
@@ -325,16 +336,6 @@ pub trait Styling {
         _default: Attrs,
         _attrs: &mut AttrsList,
     ) {
-    }
-
-    // TODO: we could have line-specific wrapping, but that would need some extra functions for
-    // questions that visual lines' [`Lines`] uses
-    fn wrap(&self, _edid: EditorId) -> WrapMethod {
-        WrapMethod::EditorWidth
-    }
-
-    fn render_whitespace(&self, _edid: EditorId) -> RenderWhitespace {
-        RenderWhitespace::None
     }
 
     fn apply_layout_styles(
@@ -345,12 +346,7 @@ pub trait Styling {
     ) {
     }
 
-    // TODO: should we replace `foreground` with using `editor.foreground` here?
-    fn color(&self, _edid: EditorId, color: EditorColor) -> Color {
-        default_light_color(color)
-    }
-
-    /// Whether it should draw the cursor caret on the given line.  
+    /// Whether it should draw the cursor caret on the given line.
     /// Note that these are extra conditions on top of the typical hide cursor &
     /// the editor being active conditions
     /// This is called whenever we paint the line.
@@ -407,10 +403,10 @@ pub fn default_dark_color(color: EditorColor) -> Color {
 
 pub type DocumentRef = Rc<dyn Document>;
 
-/// A document-wrapper for handling commands.  
+/// A document-wrapper for handling commands.
 pub struct ExtCmdDocument<D, F> {
     pub doc: D,
-    /// Called whenever [`Document::run_command`] is called.  
+    /// Called whenever [`Document::run_command`] is called.
     /// If `handler` returns [`CommandExecuted::Yes`] then the default handler on `doc: D` will not
     /// be called.
     pub handler: F,
@@ -498,18 +494,18 @@ where
     D: Document,
     F: Fn(&Editor, &Command, Option<usize>, ModifiersState) -> CommandExecuted,
 {
-    fn phantom_text(&self, edid: EditorId, styling: &dyn Styling, line: usize) -> PhantomTextLine {
+    fn phantom_text(&self, edid: EditorId, styling: &EditorStyle, line: usize) -> PhantomTextLine {
         self.doc.phantom_text(edid, styling, line)
     }
 
-    fn has_multiline_phantom(&self, edid: EditorId, styling: &dyn Styling) -> bool {
+    fn has_multiline_phantom(&self, edid: EditorId, styling: &EditorStyle) -> bool {
         self.doc.has_multiline_phantom(edid, styling)
     }
 
     fn before_phantom_col(
         &self,
         edid: EditorId,
-        styling: &dyn Styling,
+        styling: &EditorStyle,
         line: usize,
         col: usize,
     ) -> usize {
@@ -551,7 +547,7 @@ where
 pub const SCALE_OR_SIZE_LIMIT: f32 = 5.0;
 
 #[derive(Debug, Clone)]
-pub struct SimpleStyling<C> {
+pub struct SimpleStyling {
     id: u64,
     font_size: usize,
     // TODO: should we really have this be a float? Shouldn't it just be a LineHeightValue?
@@ -561,45 +557,19 @@ pub struct SimpleStyling<C> {
     weight: Weight,
     italic_style: crate::cosmic_text::Style,
     stretch: Stretch,
-    indent_style: IndentStyle,
     tab_width: usize,
     atomic_soft_tabs: bool,
-    wrap: WrapMethod,
-    color: C,
 }
-impl<C> SimpleStyling<C> {
+impl SimpleStyling {
     pub fn builder() -> SimpleStylingBuilder {
         SimpleStylingBuilder::default()
     }
-}
-impl<C: Fn(EditorColor) -> Color> SimpleStyling<C> {
-    pub fn new(color: C) -> SimpleStyling<C> {
-        SimpleStyling {
-            id: 0,
-            font_size: 16,
-            line_height: 1.5,
-            font_family: vec![FamilyOwned::SansSerif],
-            weight: Weight::NORMAL,
-            italic_style: crate::cosmic_text::Style::Normal,
-            stretch: Stretch::Normal,
-            indent_style: IndentStyle::Spaces(4),
-            tab_width: 4,
-            atomic_soft_tabs: false,
-            wrap: WrapMethod::EditorWidth,
-            color,
-        }
-    }
-}
-impl SimpleStyling<fn(EditorColor) -> Color> {
-    pub fn light() -> SimpleStyling<fn(EditorColor) -> Color> {
-        SimpleStyling::new(default_light_color)
-    }
 
-    pub fn dark() -> SimpleStyling<fn(EditorColor) -> Color> {
-        SimpleStyling::new(default_dark_color)
+    pub fn new() -> Self {
+        Self::default()
     }
 }
-impl<C: Fn(EditorColor) -> Color> SimpleStyling<C> {
+impl SimpleStyling {
     pub fn increment_id(&mut self) {
         self.id += 1;
     }
@@ -634,11 +604,6 @@ impl<C: Fn(EditorColor) -> Color> SimpleStyling<C> {
         self.increment_id();
     }
 
-    pub fn set_indent_style(&mut self, indent_style: IndentStyle) {
-        self.indent_style = indent_style;
-        self.increment_id();
-    }
-
     pub fn set_tab_width(&mut self, tab_width: usize) {
         self.tab_width = tab_width;
         self.increment_id();
@@ -648,23 +613,23 @@ impl<C: Fn(EditorColor) -> Color> SimpleStyling<C> {
         self.atomic_soft_tabs = atomic_soft_tabs;
         self.increment_id();
     }
-
-    pub fn set_wrap(&mut self, wrap: WrapMethod) {
-        self.wrap = wrap;
-        self.increment_id();
-    }
-
-    pub fn set_color(&mut self, color: C) {
-        self.color = color;
-        self.increment_id();
-    }
 }
-impl Default for SimpleStyling<fn(EditorColor) -> Color> {
+impl Default for SimpleStyling {
     fn default() -> Self {
-        SimpleStyling::new(default_light_color)
+        SimpleStyling {
+            id: 0,
+            font_size: 16,
+            line_height: 1.5,
+            font_family: vec![FamilyOwned::SansSerif],
+            weight: Weight::NORMAL,
+            italic_style: crate::cosmic_text::Style::Normal,
+            stretch: Stretch::Normal,
+            tab_width: 4,
+            atomic_soft_tabs: false,
+        }
     }
 }
-impl<C: Fn(EditorColor) -> Color> Styling for SimpleStyling<C> {
+impl Styling for SimpleStyling {
     fn id(&self) -> u64 {
         0
     }
@@ -700,10 +665,6 @@ impl<C: Fn(EditorColor) -> Color> Styling for SimpleStyling<C> {
         self.stretch
     }
 
-    fn indent_style(&self) -> IndentStyle {
-        self.indent_style
-    }
-
     fn tab_width(&self, _edid: EditorId, _line: usize) -> usize {
         self.tab_width
     }
@@ -721,20 +682,12 @@ impl<C: Fn(EditorColor) -> Color> Styling for SimpleStyling<C> {
     ) {
     }
 
-    fn wrap(&self, _edid: EditorId) -> WrapMethod {
-        self.wrap
-    }
-
     fn apply_layout_styles(
         &self,
         _edid: EditorId,
         _line: usize,
         _layout_line: &mut TextLayoutLine,
     ) {
-    }
-
-    fn color(&self, _edid: EditorId, color: EditorColor) -> Color {
-        (self.color)(color)
     }
 }
 
@@ -752,70 +705,70 @@ pub struct SimpleStylingBuilder {
     wrap: Option<WrapMethod>,
 }
 impl SimpleStylingBuilder {
-    /// Set the font size  
+    /// Set the font size
     /// Default: 16
     pub fn font_size(&mut self, font_size: usize) -> &mut Self {
         self.font_size = Some(font_size);
         self
     }
 
-    /// Set the line height  
+    /// Set the line height
     /// Default: 1.5
     pub fn line_height(&mut self, line_height: f32) -> &mut Self {
         self.line_height = Some(line_height);
         self
     }
 
-    /// Set the font families used  
+    /// Set the font families used
     /// Default: `[FamilyOwned::SansSerif]`
     pub fn font_family(&mut self, font_family: Vec<FamilyOwned>) -> &mut Self {
         self.font_family = Some(font_family);
         self
     }
 
-    /// Set the font weight (such as boldness or thinness)  
+    /// Set the font weight (such as boldness or thinness)
     /// Default: `Weight::NORMAL`
     pub fn weight(&mut self, weight: Weight) -> &mut Self {
         self.weight = Some(weight);
         self
     }
 
-    /// Set the italic style  
+    /// Set the italic style
     /// Default: `Style::Normal`
     pub fn italic_style(&mut self, italic_style: crate::cosmic_text::Style) -> &mut Self {
         self.italic_style = Some(italic_style);
         self
     }
 
-    /// Set the font stretch  
+    /// Set the font stretch
     /// Default: `Stretch::Normal`
     pub fn stretch(&mut self, stretch: Stretch) -> &mut Self {
         self.stretch = Some(stretch);
         self
     }
 
-    /// Set the indent style  
+    /// Set the indent style
     /// Default: `IndentStyle::Spaces(4)`
     pub fn indent_style(&mut self, indent_style: IndentStyle) -> &mut Self {
         self.indent_style = Some(indent_style);
         self
     }
 
-    /// Set the tab width  
+    /// Set the tab width
     /// Default: 4
     pub fn tab_width(&mut self, tab_width: usize) -> &mut Self {
         self.tab_width = Some(tab_width);
         self
     }
 
-    /// Set whether the cursor should treat leading soft tabs as if they are hard tabs  
+    /// Set whether the cursor should treat leading soft tabs as if they are hard tabs
     /// Default: false
     pub fn atomic_soft_tabs(&mut self, atomic_soft_tabs: bool) -> &mut Self {
         self.atomic_soft_tabs = Some(atomic_soft_tabs);
         self
     }
 
-    /// Set the wrapping method  
+    /// Set the wrapping method
     /// Default: `WrapMethod::EditorWidth`
     pub fn wrap(&mut self, wrap: WrapMethod) -> &mut Self {
         self.wrap = Some(wrap);
@@ -823,8 +776,8 @@ impl SimpleStylingBuilder {
     }
 
     /// Build the styling with the given color scheme
-    pub fn build<C: Fn(EditorColor) -> Color>(&self, color: C) -> SimpleStyling<C> {
-        let default = SimpleStyling::new(color);
+    pub fn build(&self) -> SimpleStyling {
+        let default = SimpleStyling::new();
         SimpleStyling {
             id: 0,
             font_size: self.font_size.unwrap_or(default.font_size),
@@ -833,21 +786,8 @@ impl SimpleStylingBuilder {
             weight: self.weight.unwrap_or(default.weight),
             italic_style: self.italic_style.unwrap_or(default.italic_style),
             stretch: self.stretch.unwrap_or(default.stretch),
-            indent_style: self.indent_style.unwrap_or(default.indent_style),
             tab_width: self.tab_width.unwrap_or(default.tab_width),
             atomic_soft_tabs: self.atomic_soft_tabs.unwrap_or(default.atomic_soft_tabs),
-            wrap: self.wrap.unwrap_or(default.wrap),
-            color: default.color,
         }
-    }
-
-    /// Build with the default light color scheme
-    pub fn build_light(&self) -> SimpleStyling<fn(EditorColor) -> Color> {
-        self.build(default_light_color)
-    }
-
-    /// Build with the default dark color scheme
-    pub fn build_dark(&self) -> SimpleStyling<fn(EditorColor) -> Color> {
-        self.build(default_dark_color)
     }
 }

@@ -18,7 +18,7 @@ fn app_view() -> impl View {
         .map(|s| std::fs::read_to_string(s).unwrap());
     let text = text.as_deref().unwrap_or("Hello world");
 
-    let editor_a = text_editor(text).styling(SimpleStyling::dark());
+    let editor_a = text_editor(text).styling(SimpleStyling::new());
     let editor_b = editor_a
         .shared_editor()
         .pre_command(|ev| {
@@ -28,15 +28,12 @@ fn app_view() -> impl View {
             }
             CommandExecuted::No
         })
-        .gutter(false)
         .update(|_| {
             // This hooks up to both editors!
             println!("Editor changed");
         })
         .placeholder("Some placeholder text");
     let doc = editor_a.doc();
-    let gutter_a = editor_a.editor().gutter;
-    let gutter_b = editor_b.editor().gutter;
 
     let view = stack((
         editor_a,
@@ -50,10 +47,10 @@ fn app_view() -> impl View {
                 );
             }),
             button(|| "Flip Gutter").on_click_stop(move |_| {
-                let a = !gutter_a.get_untracked();
-                let b = !gutter_b.get_untracked();
-                gutter_a.set(a);
-                gutter_b.set(b);
+                // let a = !gutter_a.get_untracked();
+                // let b = !gutter_b.get_untracked();
+                // gutter_a.set(a);
+                // gutter_b.set(b);
             }),
         ))
         .style(|s| s.width_full().flex_row().items_center().justify_center()),

@@ -155,6 +155,10 @@ impl Widget for Slider {
         &mut self.data
     }
 
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "Slider".into()
+    }
+
     fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(update) = state.downcast::<SliderUpdate>() {
             match *update {
