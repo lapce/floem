@@ -67,8 +67,8 @@ pub struct Preedit {
     pub offset: usize,
 }
 
-/// IME Preedit
-/// This is used for IME input, and must be owned by the `Document`.
+/// IME Preedit  
+/// This is used for IME input, and must be owned by the `Document`.  
 #[derive(Debug, Clone)]
 pub struct PreeditData {
     pub preedit: RwSignal<Option<Preedit>>,
@@ -81,9 +81,9 @@ impl PreeditData {
     }
 }
 
-/// A document. This holds text.
+/// A document. This holds text.  
 pub trait Document: DocumentPhantom + Downcast {
-    /// Get the text of the document
+    /// Get the text of the document  
     /// Note: typically you should call [`Document::rope_text`] as that provides more checks and
     /// utility functions.
     fn text(&self) -> Rope;
@@ -94,7 +94,7 @@ pub trait Document: DocumentPhantom + Downcast {
 
     fn cache_rev(&self) -> RwSignal<u64>;
 
-    /// Find the next/previous offset of the match of the given character.
+    /// Find the next/previous offset of the match of the given character.  
     /// This is intended for use by the [Movement::NextUnmatched](floem_editor_core::movement::Movement::NextUnmatched) and
     /// [Movement::PreviousUnmatched](floem_editor_core::movement::Movement::PreviousUnmatched) commands.
     fn find_unmatched(&self, offset: usize, previous: bool, ch: char) -> usize {
@@ -109,7 +109,7 @@ pub trait Document: DocumentPhantom + Downcast {
         new_offset.unwrap_or(offset)
     }
 
-    /// Find the offset of the matching pair character.
+    /// Find the offset of the matching pair character.  
     /// This is intended for use by the [Movement::MatchPairs](floem_editor_core::movement::Movement::MatchPairs) command.
     fn find_matching_pair(&self, offset: usize) -> usize {
         WordCursor::new(&self.text(), offset)
@@ -143,7 +143,7 @@ pub trait Document: DocumentPhantom + Downcast {
         })
     }
 
-    /// Compute the visible screen lines.
+    /// Compute the visible screen lines.  
     /// Note: you should typically *not* need to implement this, unless you have some custom
     /// behavior. Unfortunately this needs an `&self` to be a trait object. So don't call `.update`
     /// on `Self`
@@ -155,7 +155,7 @@ pub trait Document: DocumentPhantom + Downcast {
         normal_compute_screen_lines(editor, base)
     }
 
-    /// Run a command on the document.
+    /// Run a command on the document.  
     /// The `ed` will contain this document (at some level, if it was wrapped then it may not be
     /// directly `Rc<Self>`)
     fn run_command(
@@ -168,15 +168,15 @@ pub trait Document: DocumentPhantom + Downcast {
 
     fn receive_char(&self, ed: &Editor, c: &str);
 
-    /// Perform a single edit.
+    /// Perform a single edit.  
     fn edit_single(&self, selection: Selection, content: &str, edit_type: EditType) {
         let mut iter = std::iter::once((selection, content));
         self.edit(&mut iter, edit_type);
     }
 
-    /// Perform the edit(s) on this document.
+    /// Perform the edit(s) on this document.  
     /// This intentionally does not require an `Editor` as this is primarily intended for use by
-    /// code that wants to modify the document from 'outside' the usual keybinding/command logic.
+    /// code that wants to modify the document from 'outside' the usual keybinding/command logic.  
     /// ```rust,ignore
     /// let editor: TextEditor = text_editor();
     /// let doc: Rc<dyn Document> = editor.doc();
@@ -266,7 +266,7 @@ impl std::fmt::Display for RenderWhitespace {
     }
 }
 
-/// There's currently three stages of styling text:
+/// There's currently three stages of styling text:  
 /// - `Attrs`: This sets the default values for the text
 ///   - Default font size, font family, etc.
 /// - `AttrsList`: This lets you set spans of text to have different styling
@@ -328,7 +328,7 @@ pub trait Styling {
     // TODO: get other style information based on EditorColor enum?
     // TODO: line_style equivalent?
 
-    /// Apply custom attribute styles to the line
+    /// Apply custom attribute styles to the line  
     fn apply_attr_styles(
         &self,
         _edid: EditorId,
@@ -403,10 +403,10 @@ pub fn default_dark_color(color: EditorColor) -> Color {
 
 pub type DocumentRef = Rc<dyn Document>;
 
-/// A document-wrapper for handling commands.
+/// A document-wrapper for handling commands.  
 pub struct ExtCmdDocument<D, F> {
     pub doc: D,
-    /// Called whenever [`Document::run_command`] is called.
+    /// Called whenever [`Document::run_command`] is called.  
     /// If `handler` returns [`CommandExecuted::Yes`] then the default handler on `doc: D` will not
     /// be called.
     pub handler: F,
@@ -705,70 +705,70 @@ pub struct SimpleStylingBuilder {
     wrap: Option<WrapMethod>,
 }
 impl SimpleStylingBuilder {
-    /// Set the font size
+    /// Set the font size  
     /// Default: 16
     pub fn font_size(&mut self, font_size: usize) -> &mut Self {
         self.font_size = Some(font_size);
         self
     }
 
-    /// Set the line height
+    /// Set the line height  
     /// Default: 1.5
     pub fn line_height(&mut self, line_height: f32) -> &mut Self {
         self.line_height = Some(line_height);
         self
     }
 
-    /// Set the font families used
+    /// Set the font families used  
     /// Default: `[FamilyOwned::SansSerif]`
     pub fn font_family(&mut self, font_family: Vec<FamilyOwned>) -> &mut Self {
         self.font_family = Some(font_family);
         self
     }
 
-    /// Set the font weight (such as boldness or thinness)
+    /// Set the font weight (such as boldness or thinness)  
     /// Default: `Weight::NORMAL`
     pub fn weight(&mut self, weight: Weight) -> &mut Self {
         self.weight = Some(weight);
         self
     }
 
-    /// Set the italic style
+    /// Set the italic style  
     /// Default: `Style::Normal`
     pub fn italic_style(&mut self, italic_style: crate::cosmic_text::Style) -> &mut Self {
         self.italic_style = Some(italic_style);
         self
     }
 
-    /// Set the font stretch
+    /// Set the font stretch  
     /// Default: `Stretch::Normal`
     pub fn stretch(&mut self, stretch: Stretch) -> &mut Self {
         self.stretch = Some(stretch);
         self
     }
 
-    /// Set the indent style
+    /// Set the indent style  
     /// Default: `IndentStyle::Spaces(4)`
     pub fn indent_style(&mut self, indent_style: IndentStyle) -> &mut Self {
         self.indent_style = Some(indent_style);
         self
     }
 
-    /// Set the tab width
+    /// Set the tab width  
     /// Default: 4
     pub fn tab_width(&mut self, tab_width: usize) -> &mut Self {
         self.tab_width = Some(tab_width);
         self
     }
 
-    /// Set whether the cursor should treat leading soft tabs as if they are hard tabs
+    /// Set whether the cursor should treat leading soft tabs as if they are hard tabs  
     /// Default: false
     pub fn atomic_soft_tabs(&mut self, atomic_soft_tabs: bool) -> &mut Self {
         self.atomic_soft_tabs = Some(atomic_soft_tabs);
         self
     }
 
-    /// Set the wrapping method
+    /// Set the wrapping method  
     /// Default: `WrapMethod::EditorWidth`
     pub fn wrap(&mut self, wrap: WrapMethod) -> &mut Self {
         self.wrap = Some(wrap);
