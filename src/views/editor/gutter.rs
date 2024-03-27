@@ -19,7 +19,7 @@ use super::{view::CurrentLineColor, Editor};
 
 prop!(pub LeftOfCenterPadding: f64 {} = 25.);
 prop!(pub RightOfCenterPadding: f64 {} = 30.);
-prop!(pub DimColor: Color {} = Color::DIM_GRAY);
+prop!(pub DimColor: Option<Color> {} = None);
 
 prop_extractor! {
     GutterStyle {
@@ -28,6 +28,15 @@ prop_extractor! {
         left_padding: LeftOfCenterPadding,
         right_padding: RightOfCenterPadding,
         current_line_color: CurrentLineColor,
+    }
+}
+impl GutterStyle {
+    fn gs_accent_color(&self) -> Color {
+        self.accent_color().unwrap_or(Color::BLACK)
+    }
+
+    fn gs_dim_color(&self) -> Color {
+        self.dim_color().unwrap_or(self.gs_accent_color())
     }
 }
 
@@ -146,15 +155,16 @@ impl Widget for EditorGutterView {
         let current_line = editor.line_of_offset(offset);
 
         // TODO: don't assume font family is constant for each line
-        let dim_color = self.gutter_style.dim_color();
         let family = style.font_family(edid, 0);
+        let accent_color = self.gutter_style.gs_accent_color();
+        let dim_color = self.gutter_style.gs_dim_color();
         let attrs = Attrs::new()
             .family(&family)
             .color(dim_color)
             .font_size(style.font_size(edid, 0) as f32);
         let attrs_list = AttrsList::new(attrs);
         let current_line_attrs_list =
-            AttrsList::new(attrs.color(self.gutter_style.accent_color().unwrap_or(dim_color)));
+            AttrsList::new(attrs.color(accent_color));
         let show_relative = editor.es.with_untracked(|es| es.modal())
             && editor.es.with_untracked(|es| es.modal_ralative_line())
             && mode != Mode::Insert;

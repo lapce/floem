@@ -22,7 +22,7 @@ use crate::{
 };
 
 use super::editor::{
-    gutter::{GutterClass, LeftOfCenterPadding, RightOfCenterPadding}, text::{RenderWhitespace, WrapMethod}, view::{
+    gutter::{DimColor, GutterClass, LeftOfCenterPadding, RightOfCenterPadding}, text::{RenderWhitespace, WrapMethod}, view::{
         CaretColor, CurrentLineColor, EditorViewClass, IndentStyleProp,
         SelectionColor, VisibleWhitespaceColor,
     }, CursorSurroundingLines, Modal, ModalRelativeLine, PhantomColor, PlaceholderColor, PreeditUnderlineColor, RenderWhiteSpaceProp, ScrollBeyondLastLine, ShowIndentGuide, SmartTab, WrapProp
@@ -126,10 +126,19 @@ impl EditorCustomStyle {
          self
      }
 
-     // TODO: better naming for gutter text. What is default? Which follows?
-     /// Sets the text color of the gutter.
-     pub fn gutter_text_color(mut self, color: Color) -> Self {
+     /// Sets the text accent color of the gutter.
+     /// This is the color of the line number for the current line.
+     /// It will default to the current Text Color
+     pub fn gutter_accent_color(mut self, color: Color) -> Self {
          self.0 = self.0.class(GutterClass, |s| s.color(color));
+         self
+     }
+
+     /// Sets the text dim color of the gutter.
+     /// This is the color of the line number for all lines except the current line.
+     /// If this is not specified it will default to the gutter accent color.
+     pub fn gutter_dim_color(mut self, color: Color) -> Self {
+         self.0 = self.0.class(GutterClass, |s| s.set(DimColor, color));
          self
      }
 
