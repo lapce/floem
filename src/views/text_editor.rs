@@ -23,7 +23,7 @@ use crate::{
 
 use super::editor::{
     gutter::{GutterClass, LeftOfCenterPadding, RightOfCenterPadding}, text::{RenderWhitespace, WrapMethod}, view::{
-        CaretColor, CurrentLineColor, EditorViewClass, IndentStyleProp, ScrollbarLine,
+        CaretColor, CurrentLineColor, EditorViewClass, IndentStyleProp,
         SelectionColor, VisibleWhitespaceColor,
     }, CursorSurroundingLines, Modal, ModalRelativeLine, PhantomColor, PlaceholderColor, PreeditUnderlineColor, RenderWhiteSpaceProp, ScrollBeyondLastLine, ShowIndentGuide, SmartTab, WrapProp
 };
@@ -119,147 +119,143 @@ pub struct EditorCustomStyle(Style);
 
 impl EditorCustomStyle {
     /// Sets whether the gutter should be hidden.
-    ///
-    /// # Arguments
-    /// * `hide` - A boolean indicating whether the gutter should be hidden. If `true`, the gutter is hidden.
-    /// Default: `true`
-    pub fn hide_gutter(mut self, hide: bool) -> Self {
-        self.0 = self
-            .0
-            .class(GutterClass, |s| s.apply_if(hide, |s| s.hide()));
-        self
-    }
+     pub fn hide_gutter(mut self, hide: bool) -> Self {
+         self.0 = self
+             .0
+             .class(GutterClass, |s| s.apply_if(hide, |s| s.hide()));
+         self
+     }
 
-    // pub fn gutter_style(mut self, style: impl Fn(Style) -> Style) -> Self {
-    //     self.0 = self.0.class(GutterClass, |s| style(s));
-    //     self
-    // }
+     // TODO: better naming for gutter text. What is default? Which follows?
+     /// Sets the text color of the gutter.
+     pub fn gutter_text_color(mut self, color: Color) -> Self {
+         self.0 = self.0.class(GutterClass, |s| s.color(color));
+         self
+     }
 
-    pub fn gutter_text_color(mut self, color: Color) -> Self {
-        self.0 = self.0.class(GutterClass, |s| s.color(color));
-        self
-    }
+     /// Sets the padding to the left of the nubmers in the gutter.
+     pub fn gutter_left_padding(mut self, padding: f64) -> Self {
+         self.0 = self
+             .0
+             .class(GutterClass, |s| s.set(LeftOfCenterPadding, padding));
+         self
+     }
 
-    pub fn gutter_left_padding(mut self, padding: f64) -> Self {
-        self.0 = self
-            .0
-            .class(GutterClass, |s| s.set(LeftOfCenterPadding, padding));
-        self
-    }
-    pub fn gutter_right_padding(mut self, padding: f64) -> Self {
-        self.0 = self
-            .0
-            .class(GutterClass, |s| s.set(RightOfCenterPadding, padding));
-        self
-    }
+     /// Sets the padding to the right of the numbers in the gutter.
+     pub fn gutter_right_padding(mut self, padding: f64) -> Self {
+         self.0 = self
+             .0
+             .class(GutterClass, |s| s.set(RightOfCenterPadding, padding));
+         self
+     }
 
-    pub fn selection_color(mut self, color: Color) -> Self {
-        self.0 = self
-            .0
-            .class(EditorViewClass, |s| s.set(SelectionColor, color));
-        self
-    }
+     /// Sets the background color to be applied around selected text.
+     pub fn selection_color(mut self, color: Color) -> Self {
+         self.0 = self
+             .0
+             .class(EditorViewClass, |s| s.set(SelectionColor, color));
+         self
+     }
 
-    pub fn indent_style(mut self, indent_style: IndentStyle) -> Self {
-        self.0 = self
-            .0
-            .class(EditorViewClass, |s| s.set(IndentStyleProp, indent_style));
-        self
-    }
+     /// Sets the indent style.
+     pub fn indent_style(mut self, indent_style: IndentStyle) -> Self {
+         self.0 = self
+             .0
+             .class(EditorViewClass, |s| s.set(IndentStyleProp, indent_style));
+         self
+     }
 
-    pub fn wrap_method(mut self, wrap: WrapMethod) -> Self {
-        self.0 = self.0.set(WrapProp, wrap);
-        self
-    }
+     /// Sets the method for wrapping lines.
+     pub fn wrap_method(mut self, wrap: WrapMethod) -> Self {
+         self.0 = self.0.set(WrapProp, wrap);
+         self
+     }
 
-    // thin line to the left of the scroll bar
-    pub fn scroll_bar_line_color(mut self, color: Color) -> Self {
-        self.0 = self
-            .0
-            .class(EditorViewClass, |s| s.set(ScrollbarLine, color));
-        self
-    }
+     /// Sets the color of the cursor.
+     pub fn cursor_color(mut self, cursor: Color) -> Self {
+         self.0 = self.0.class(EditorViewClass, |s| s.set(CaretColor, cursor));
+         self
+     }
 
-    pub fn cursor_color(mut self, cursor: Color) -> Self {
-        self.0 = self.0.class(EditorViewClass, |s| s.set(CaretColor, cursor));
-        self
-    }
+     /// Allow scrolling beyond the last line of the document.
+     pub fn scroll_beyond_last_line(mut self, scroll_beyond: bool) -> Self {
+         self.0 = self.0.class(EditorViewClass, |s| {
+             s.set(ScrollBeyondLastLine, scroll_beyond)
+         });
+         self
+     }
 
+     /// Sets the background color of the current line.
+     pub fn current_line_color(mut self, color: Color) -> Self {
+         self.0 = self
+             .0
+             .class(EditorViewClass, |s| s.set(CurrentLineColor, color));
+         self
+     }
 
-    /// Allow scrolling beyond the last line of the document.
-    /// Equivalent to setting [`Editor::scroll_beyond_last_line`]
-    /// Default: `false`
-    pub fn scroll_beyond_last_line(mut self, scroll_beyond: bool) -> Self {
-        self.0 = self.0.class(EditorViewClass, |s| {
-            s.set(ScrollBeyondLastLine, scroll_beyond)
-        });
-        self
-    }
+     /// Sets the color of visible whitespace characters.
+     pub fn visible_white_space(mut self, color: Color) -> Self {
+         self.0 = self
+             .0
+             .class(EditorViewClass, |s| s.set(VisibleWhitespaceColor, color));
+         self
+     }
 
-    pub fn current_line_color(mut self, color: Color) -> Self {
-        self.0 = self
-            .0
-            .class(EditorViewClass, |s| s.set(CurrentLineColor, color));
-        self
-    }
+     /// Sets which white space characters should be rendered.
+     pub fn render_white_space(mut self, render_white_space: RenderWhitespace) -> Self {
+         self.0 = self.0.set(RenderWhiteSpaceProp, render_white_space);
+         self
+     }
 
-    pub fn render_white_space(mut self, render_white_space: RenderWhitespace) -> Self {
-        self.0 = self.0.set(RenderWhiteSpaceProp, render_white_space);
-        self
-    }
+     /// Set the number of lines to keep visible above and below the cursor.
+     /// Default: `1`
+     pub fn cursor_surrounding_lines(mut self, lines: usize) -> Self {
+         self.0 = self.0.set(CursorSurroundingLines, lines);
+         self
+     }
 
-    pub fn visible_white_space(mut self, color: Color) -> Self {
-        self.0 = self
-            .0
-            .class(EditorViewClass, |s| s.set(VisibleWhitespaceColor, color));
-        self
-    }
+     /// Sets whether the indent guides should be displayed.
+     pub fn indent_guide(mut self, show: bool) -> Self {
+         self.0 = self.0.set(ShowIndentGuide, show);
+         self
+     }
 
-    /// Set the number of lines to keep visible above and below the cursor.
-    /// Equivalent to setting [`Editor::cursor_surrounding_lines`]
-    /// Default: `1`
-    pub fn cursor_surrounding_lines(mut self, lines: usize) -> Self {
-        self.0 = self.0.set(CursorSurroundingLines, lines);
-        self
-    }
+     /// Sets the editor's mode to modal or non-modal.
+     pub fn modal(mut self, modal: bool) -> Self {
+         self.0 = self.0.set(Modal, modal);
+         self
+     }
 
-    pub fn indent_guide(mut self, show: bool) -> Self {
-        self.0 = self.0.set(ShowIndentGuide, show);
-        self
-    }
+     /// Determines if line numbers are relative in modal mode.
+     pub fn modal_relative_line(mut self, modal_relative_line: bool) -> Self {
+         self.0 = self.0.set(ModalRelativeLine, modal_relative_line);
+         self
+     }
 
-    pub fn modal(mut self, modal: bool) -> Self {
-        self.0 = self.0.set(Modal, modal);
-        self
-    }
+     /// Enables or disables smart tab behavior, which inserts the indent style detected in the file when the tab key is pressed.
+     pub fn smart_tab(mut self, smart_tab: bool) -> Self {
+         self.0 = self.0.set(SmartTab, smart_tab);
+         self
+     }
 
-    pub fn modal_relative_line(mut self, modal_relative_line: bool) -> Self {
-        self.0 = self.0.set(ModalRelativeLine, modal_relative_line);
-        self
-    }
+     /// Sets the color of phantom text
+     pub fn phantom_color(mut self, color: Color) -> Self {
+         self.0 = self.0.set(PhantomColor, color);
+         self
+     }
 
-    /// Insert the indent that is detected fror the file when tab is pressed.
-    /// Default: `false`
-    pub fn smart_tab(mut self, smart_tab: bool) -> Self {
-        self.0 = self.0.set(SmartTab, smart_tab);
-        self
+     /// Sets the color of the placeholder text.
+     pub fn placeholder_color(mut self, color: Color) -> Self {
+         self.0 = self.0.set(PlaceholderColor, color);
+         self
+     }
 
-    }
+     /// Sets the color of the underline for preedit text.
+     pub fn preedit_underline_color(mut self, color: Color) -> Self {
+         self.0 = self.0.set(PreeditUnderlineColor, color);
+         self
+     }
 
-    pub fn phantom_color(mut self, color: Color) -> Self {
-        self.0 = self.0.set(PhantomColor, color);
-        self
-    }
-
-    pub fn placeholder_color(mut self, color: Color) -> Self {
-        self.0 = self.0.set(PlaceholderColor, color);
-        self
-    }
-
-    pub fn preedit_underline_color(mut self, color: Color) -> Self {
-        self.0 = self.0.set(PreeditUnderlineColor, color);
-        self
-    }
 }
 
 impl TextEditor {

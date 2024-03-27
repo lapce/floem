@@ -336,7 +336,6 @@ impl StylePropValue for IndentStyle {
         Some(text(self).any())
     }
 }
-prop!(pub ScrollbarLine: Color {} = Color::TRANSPARENT);
 prop!(pub DropdownShadow: Option<Color> {} = None);
 prop!(pub Foreground: Color { inherited } = Color::rgb8(0x38, 0x3A, 0x42));
 prop!(pub Focus: Option<Color> {} = None);
