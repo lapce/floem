@@ -894,9 +894,9 @@ impl Editor {
         let hit_point = text_layout.text.hit_point(Point::new(point.x, y));
         // We have to unapply the phantom text shifting in order to get back to the column in
         // the actual buffer
-        let phantom_text =
-            self.doc()
-                .phantom_text(self.id(), &self.es.get_untracked(), line);
+        let phantom_text = self
+            .doc()
+            .phantom_text(self.id(), &self.es.get_untracked(), line);
         let col = phantom_text.before_col(hit_point.index);
         // Ensure that the column doesn't end up out of bounds, so things like clicking on the far
         // right end will just go to the end of the line.
@@ -1130,10 +1130,7 @@ impl TextLayoutProvider for Editor {
 
         let family = style.font_family(edid, line);
         let attrs = Attrs::new()
-            .color(
-                self.es
-                    .with(|s| s.ed_text_color()),
-            )
+            .color(self.es.with(|s| s.ed_text_color()))
             .family(&family)
             .font_size(font_size as f32)
             .line_height(LineHeightValue::Px(style.line_height(edid, line)));

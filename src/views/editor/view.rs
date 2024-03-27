@@ -1312,8 +1312,7 @@ fn editor_content(
             rect.inflate(0.0, viewport.height() / 2.0)
         } else {
             let mut rect = rect;
-            let cursor_surrounding_lines =
-                editor.es.with(|s| s.cursor_surounding_lines()) as f64;
+            let cursor_surrounding_lines = editor.es.with(|s| s.cursor_surounding_lines()) as f64;
             rect.y0 -= cursor_surrounding_lines * line_height;
             rect.y1 += cursor_surrounding_lines * line_height;
             rect
