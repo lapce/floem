@@ -3469,10 +3469,10 @@ mod tests {
         }
 
         fn check_equiv(text: &Rope, expected: usize, from: &str) {
-            let (text_prov, lines) = make_lines(&text, 10000., false);
+            let (text_prov, lines) = make_lines(text, 10000., false);
             let end1 = eor(&lines, &text_prov, RVLine::new(0, 0));
 
-            let (text_prov, lines) = make_lines(&text, 10000., true);
+            let (text_prov, lines) = make_lines(text, 10000., true);
             assert_eq!(
                 eor(&lines, &text_prov, RVLine::new(0, 0)),
                 end1,
@@ -3542,10 +3542,10 @@ mod tests {
         // TODO: tests for them being equivalent even with wrapping
 
         fn check_equiv(text: &Rope, from: &str) {
-            let (text_prov, lines) = make_lines(&text, 10000., false);
+            let (text_prov, lines) = make_lines(text, 10000., false);
             let iter = lines.iter_rvlines(&text_prov, false, RVLine::default());
 
-            let (text_prov, lines) = make_lines(&text, 01000., true);
+            let (text_prov, lines) = make_lines(text, 01000., true);
             let iter2 = lines.iter_rvlines(&text_prov, false, RVLine::default());
 
             // Just assume same length
