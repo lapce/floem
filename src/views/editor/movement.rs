@@ -801,7 +801,7 @@ mod tests {
     fn make_ed(text: &str) -> Editor {
         let cx = Scope::new();
         let doc = Rc::new(TextDocument::new(cx, text));
-        let style = Rc::new(SimpleStyling::light());
+        let style = Rc::new(SimpleStyling::new());
         Editor::new(cx, doc, style)
     }
 
