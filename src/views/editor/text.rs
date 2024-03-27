@@ -5,6 +5,8 @@ use crate::{
     keyboard::ModifiersState,
     peniko::Color,
     reactive::{RwSignal, Scope},
+    style,
+    views::EditorCustomStyle,
 };
 use downcast_rs::{impl_downcast, Downcast};
 use floem_editor_core::{
@@ -25,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use super::{
     actions::CommonAction,
     command::{Command, CommandExecuted},
+    gutter::GutterClass,
     id::EditorId,
     layout::TextLayoutLine,
     normal_compute_screen_lines,
@@ -32,8 +35,6 @@ use super::{
     view::{ScreenLines, ScreenLinesBase},
     Editor, EditorStyle,
 };
-
-use super::color::EditorColor;
 
 // TODO(minor): Should we get rid of this now that this is in floem?
 pub struct SystemClipboard;

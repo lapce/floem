@@ -6,7 +6,7 @@ use floem::{
         editor::{
             command::{Command, CommandExecuted},
             core::{command::EditCommand, editor::EditType, selection::Selection},
-            text::SimpleStyling,
+            text::{default_dark_color, SimpleStyling},
         },
         stack, text_editor, Decorators,
     },
@@ -25,9 +25,11 @@ fn app_view() -> impl View {
     let editor_a = text_editor(text)
         .styling(SimpleStyling::new())
         .style(|s| s.size_full())
+        .editor_style(default_dark_color)
         .editor_style(move |s| s.hide_gutter(hide_gutter_a.get()));
     let editor_b = editor_a
         .shared_editor()
+        .editor_style(default_dark_color)
         .editor_style(move |s| s.hide_gutter(hide_gutter_b.get()))
         .style(|s| s.size_full())
         .pre_command(|ev| {

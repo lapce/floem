@@ -4,7 +4,7 @@ use floem::reactive::RwSignal;
 use floem::views::editor::core::buffer::rope_text::RopeText;
 use floem::views::editor::id::EditorId;
 use floem::views::editor::layout::TextLayoutLine;
-use floem::views::editor::text::{Document, SimpleStylingBuilder, Styling};
+use floem::views::editor::text::{default_dark_color, Document, SimpleStylingBuilder, Styling};
 use floem::{
     cosmic_text::FamilyOwned,
     keyboard::{Key, ModifiersState, NamedKey},
@@ -209,6 +209,7 @@ mod tests {
     style.set_doc(editor.doc().clone());
     let editor = editor
         .styling(style)
+        .editor_style(default_dark_color)
         .editor_style(move |s| s.hide_gutter(hide_gutter.get()))
         .style(|s| s.size_full());
 

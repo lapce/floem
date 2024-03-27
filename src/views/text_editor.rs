@@ -25,8 +25,8 @@ use super::editor::{
     gutter::{DimColor, GutterClass, LeftOfCenterPadding, RightOfCenterPadding},
     text::{RenderWhitespace, WrapMethod},
     view::{
-        CaretColor, CurrentLineColor, EditorViewClass, IndentStyleProp, SelectionColor,
-        VisibleWhitespaceColor,
+        CaretColor, CurrentLineColor, EditorViewClass, IndentGuideColor, IndentStyleProp,
+        SelectionColor, VisibleWhitespaceColor,
     },
     CursorSurroundingLines, Modal, ModalRelativeLine, PhantomColor, PlaceholderColor,
     PreeditUnderlineColor, RenderWhiteSpaceProp, ScrollBeyondLastLine, ShowIndentGuide, SmartTab,
@@ -120,7 +120,7 @@ impl Widget for TextEditor {
     }
 }
 
-pub struct EditorCustomStyle(Style);
+pub struct EditorCustomStyle(pub(crate) Style);
 
 impl EditorCustomStyle {
     /// Sets whether the gutter should be hidden.
@@ -163,6 +163,14 @@ impl EditorCustomStyle {
         self
     }
 
+    /// Sets the background color of the current line in the gutter
+    pub fn gutter_current_color(mut self, color: Color) -> Self {
+        self.0 = self
+            .0
+            .class(GutterClass, |s| s.set(CurrentLineColor, color));
+        self
+    }
+
     /// Sets the background color to be applied around selected text.
     pub fn selection_color(mut self, color: Color) -> Self {
         self.0 = self
@@ -176,6 +184,13 @@ impl EditorCustomStyle {
         self.0 = self
             .0
             .class(EditorViewClass, |s| s.set(IndentStyleProp, indent_style));
+        self
+    }
+
+    pub fn indent_guide_color(mut self, color: Color) -> Self {
+        self.0 = self
+            .0
+            .class(EditorViewClass, |s| s.set(IndentGuideColor, color));
         self
     }
 
