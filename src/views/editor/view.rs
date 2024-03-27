@@ -839,7 +839,7 @@ impl EditorView {
                 }
             }
 
-            if ed.editor_style.with(|s| s.show_indent_guide()) {
+            if ed.es.with(|s| s.show_indent_guide()) {
                 let line_height = f64::from(ed.line_height(line));
                 let mut x = 0.0;
                 while x + 1.0 < text_layout.indent {
@@ -1314,7 +1314,7 @@ fn editor_content(
         } else {
             let mut rect = rect;
             let cursor_surrounding_lines =
-                editor.editor_style.with(|s| s.cursor_surounding_lines()) as f64;
+                editor.es.with(|s| s.cursor_surounding_lines()) as f64;
             rect.y0 -= cursor_surrounding_lines * line_height;
             rect.y1 += cursor_surrounding_lines * line_height;
             rect

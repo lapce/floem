@@ -71,6 +71,9 @@ impl StylePropValue for WrapMethod {
 prop!(pub CursorSurroundingLines: usize {} = 1);
 prop!(pub ScrollBeyondLastLine: bool {} = false);
 prop!(pub ShowIndentGuide: bool {} = false);
+prop!(pub Modal: bool {} = false);
+prop!(pub ModalRelativeLine: bool {} = false);
+prop!(pub SmartTab: bool {} = false);
 prop!(pub PhantomColor: Color {} = Color::DIM_GRAY);
 prop!(pub PlaceholderColor: Color {} = Color::DIM_GRAY);
 prop!(pub PreeditUnderlineColor: Color {} = Color::WHITE);
@@ -88,9 +91,20 @@ prop_extractor! {
         pub placeholder_color: PlaceholderColor,
         pub preedit_underline_color: PreeditUnderlineColor,
         pub show_indent_guide: ShowIndentGuide,
+        pub modal: Modal,
+        // Whether line numbers are relative in modal mode
+        pub modal_ralative_line: Modal,
+        // Whether to insert the indent that is detected for the file when a tab character
+        // is inputted.
+        pub smart_tab: SmartTab,
         pub wrap_method: WrapProp,
         pub cursor_surounding_lines: CursorSurroundingLines,
         pub render_white_space: RenderWhiteSpaceProp,
+    }
+}
+impl EditorStyle {
+    fn ed_text_color(&self) -> Color {
+        self.text_color().unwrap_or(Color::BLACK)
     }
 }
 
@@ -110,15 +124,6 @@ pub struct Editor {
 
     /// Whether you can edit within this editor.
     pub read_only: RwSignal<bool>,
-
-    /// Whether modal mode is enabled
-    pub modal: RwSignal<bool>,
-    /// Whether line numbers are relative in modal mode
-    pub modal_relative_line_numbers: RwSignal<bool>,
-
-    /// Whether to insert the indent that is detected for the file when a tab character
-    /// is inputted.
-    pub smart_tab: RwSignal<bool>,
 
     pub(crate) doc: RwSignal<Rc<dyn Document>>,
     pub(crate) style: RwSignal<Rc<dyn Styling>>,
@@ -148,7 +153,8 @@ pub struct Editor {
     /// Should not be set manually outside of the specific handling for ime.
     pub ime_allowed: RwSignal<bool>,
 
-    pub editor_style: RwSignal<EditorStyle>,
+    /// The Editor Style
+    pub es: RwSignal<EditorStyle>,
 
     pub floem_style_id: RwSignal<u64>,
 }
@@ -230,9 +236,6 @@ impl Editor {
             id,
             active: cx.create_rw_signal(false),
             read_only: cx.create_rw_signal(false),
-            modal: cx.create_rw_signal(modal),
-            modal_relative_line_numbers: cx.create_rw_signal(true),
-            smart_tab: cx.create_rw_signal(true),
             doc,
             style,
             cursor,
@@ -247,7 +250,7 @@ impl Editor {
             cursor_info: CursorInfo::new(cx),
             last_movement: cx.create_rw_signal(Movement::Left),
             ime_allowed: cx.create_rw_signal(false),
-            editor_style,
+            es: editor_style,
             floem_style_id: cx.create_rw_signal(0),
         };
 
@@ -344,15 +347,10 @@ impl Editor {
 
         batch(|| {
             editor.read_only.set(self.read_only.get_untracked());
-            editor.modal.set(self.modal.get_untracked());
-            editor
-                .modal_relative_line_numbers
-                .set(self.modal_relative_line_numbers.get_untracked());
-            editor.editor_style.set(self.editor_style.get_untracked());
+            editor.es.set(self.es.get_untracked());
             editor
                 .floem_style_id
                 .set(self.floem_style_id.get_untracked());
-            editor.smart_tab.set(self.smart_tab.get_untracked());
             editor.cursor.set(self.cursor.get_untracked());
             editor.scroll_delta.set(self.scroll_delta.get_untracked());
             editor.scroll_to.set(self.scroll_to.get_untracked());
@@ -600,7 +598,7 @@ impl Editor {
 
     pub fn phantom_text(&self, line: usize) -> PhantomTextLine {
         self.doc()
-            .phantom_text(self.id(), &self.editor_style.get_untracked(), line)
+            .phantom_text(self.id(), &self.es.get_untracked(), line)
     }
 
     pub fn line_height(&self, line: usize) -> f32 {
@@ -898,7 +896,7 @@ impl Editor {
         // the actual buffer
         let phantom_text =
             self.doc()
-                .phantom_text(self.id(), &self.editor_style.get_untracked(), line);
+                .phantom_text(self.id(), &self.es.get_untracked(), line);
         let col = phantom_text.before_col(hit_point.index);
         // Ensure that the column doesn't end up out of bounds, so things like clicking on the far
         // right end will just go to the end of the line.
@@ -1127,15 +1125,14 @@ impl TextLayoutProvider for Editor {
             line_content_original.to_string()
         };
         // Combine the phantom text with the line content
-        let phantom_text = doc.phantom_text(edid, &self.editor_style.get_untracked(), line);
+        let phantom_text = doc.phantom_text(edid, &self.es.get_untracked(), line);
         let line_content = phantom_text.combine_with_text(&line_content);
 
         let family = style.font_family(edid, line);
         let attrs = Attrs::new()
             .color(
-                self.editor_style
-                    .with(|s| s.text_color())
-                    .unwrap_or(Color::BLACK),
+                self.es
+                    .with(|s| s.ed_text_color()),
             )
             .family(&family)
             .font_size(font_size as f32)
@@ -1153,7 +1150,7 @@ impl TextLayoutProvider for Editor {
             if let Some(fg) = phantom.fg {
                 attrs = attrs.color(fg);
             } else {
-                attrs = attrs.color(self.editor_style.with(|es| es.phantom_color()))
+                attrs = attrs.color(self.es.with(|es| es.phantom_color()))
             }
             if let Some(phantom_font_size) = phantom.font_size {
                 attrs = attrs.font_size(phantom_font_size.min(font_size) as f32);
@@ -1173,7 +1170,7 @@ impl TextLayoutProvider for Editor {
         text_layout.set_text(&line_content, attrs_list);
 
         // dbg!(self.editor_style.with(|s| s.wrap_method()));
-        match self.editor_style.with(|s| s.wrap_method()) {
+        match self.es.with(|s| s.wrap_method()) {
             WrapMethod::None => {}
             WrapMethod::EditorWidth => {
                 let width = self.viewport.get_untracked().width();
@@ -1192,7 +1189,7 @@ impl TextLayoutProvider for Editor {
             &line_content_original,
             &text_layout,
             &phantom_text,
-            self.editor_style.with(|s| s.render_white_space()),
+            self.es.with(|s| s.render_white_space()),
         );
 
         let indent_line = style.indent_line(edid, line, &line_content_original);
@@ -1227,12 +1224,12 @@ impl TextLayoutProvider for Editor {
 
     fn before_phantom_col(&self, line: usize, col: usize) -> usize {
         self.doc()
-            .before_phantom_col(self.id(), &self.editor_style.get_untracked(), line, col)
+            .before_phantom_col(self.id(), &self.es.get_untracked(), line, col)
     }
 
     fn has_multiline_phantom(&self) -> bool {
         self.doc()
-            .has_multiline_phantom(self.id(), &self.editor_style.get_untracked())
+            .has_multiline_phantom(self.id(), &self.es.get_untracked())
     }
 }
 
@@ -1336,7 +1333,7 @@ fn create_view_effects(cx: Scope, ed: &Editor) {
 
         let viewport = ed.viewport.get();
 
-        let wrap = match ed.editor_style.with(|s| s.wrap_method()) {
+        let wrap = match ed.es.with(|s| s.wrap_method()) {
             WrapMethod::None => ResolvedWrap::None,
             WrapMethod::EditorWidth => {
                 ResolvedWrap::Width((viewport.width() as f32).max(MIN_WRAPPED_WIDTH))

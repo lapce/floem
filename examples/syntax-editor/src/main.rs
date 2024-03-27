@@ -1,5 +1,6 @@
 use floem::cosmic_text::{Attrs, AttrsList, Stretch, Style, Weight};
 use floem::peniko::Color;
+use floem::reactive::RwSignal;
 use floem::views::editor::core::buffer::rope_text::RopeText;
 use floem::views::editor::id::EditorId;
 use floem::views::editor::layout::TextLayoutLine;
@@ -203,8 +204,13 @@ mod tests {
 "#,
     );
 
+    let hide_gutter = RwSignal::new(false);
+
     style.set_doc(editor.doc().clone());
-    let editor = editor.styling(style);
+    let editor = editor
+        .styling(style)
+        .editor_style(move |s| s.hide_gutter(hide_gutter.get()))
+        .style(|s| s.size_full());
 
     let doc = editor.doc();
 
@@ -219,8 +225,7 @@ mod tests {
                 );
             }),
             button(|| "Gutter").on_click_stop(move |_| {
-                // let a = !gutter.get_untracked();
-                // gutter.set(a);
+                hide_gutter.update(|hide| *hide = !*hide);
             }),
         ))
         .style(|s| s.width_full().flex_row().items_center().justify_center()),

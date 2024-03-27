@@ -22,14 +22,10 @@ use crate::{
 };
 
 use super::editor::{
-    gutter::{GutterClass, LeftOfCenterPadding, RightOfCenterPadding},
-    text::{RenderWhitespace, WrapMethod},
-    view::{
+    gutter::{GutterClass, LeftOfCenterPadding, RightOfCenterPadding}, text::{RenderWhitespace, WrapMethod}, view::{
         CaretColor, CurrentLineColor, EditorViewClass, IndentStyleProp, ScrollbarLine,
         SelectionColor, VisibleWhitespaceColor,
-    },
-    CursorSurroundingLines, PhantomColor, PlaceholderColor, PreeditUnderlineColor,
-    RenderWhiteSpaceProp, ScrollBeyondLastLine, ShowIndentGuide, WrapProp,
+    }, CursorSurroundingLines, Modal, ModalRelativeLine, PhantomColor, PlaceholderColor, PreeditUnderlineColor, RenderWhiteSpaceProp, ScrollBeyondLastLine, ShowIndentGuide, SmartTab, WrapProp
 };
 
 /// A text editor view.
@@ -104,7 +100,7 @@ impl Widget for TextEditor {
     }
 
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
-        if self.editor.editor_style.try_update(|s| s.read(cx)).unwrap() {
+        if self.editor.es.try_update(|s| s.read(cx)).unwrap() {
             self.editor.floem_style_id.update(|val| *val += 1);
             cx.app_state_mut().request_paint(self.id());
         }
@@ -189,11 +185,6 @@ impl EditorCustomStyle {
         self
     }
 
-    // what does this do?
-    pub fn foreground_color(mut self, fg: Color) -> Self {
-        self.0 = self.0.set(super::editor::view::Foreground, fg);
-        self
-    }
 
     /// Allow scrolling beyond the last line of the document.
     /// Equivalent to setting [`Editor::scroll_beyond_last_line`]
@@ -232,9 +223,27 @@ impl EditorCustomStyle {
         self
     }
 
-    pub fn show_indent_guide(mut self, show: bool) -> Self {
+    pub fn indent_guide(mut self, show: bool) -> Self {
         self.0 = self.0.set(ShowIndentGuide, show);
         self
+    }
+
+    pub fn modal(mut self, modal: bool) -> Self {
+        self.0 = self.0.set(Modal, modal);
+        self
+    }
+
+    pub fn modal_relative_line(mut self, modal_relative_line: bool) -> Self {
+        self.0 = self.0.set(ModalRelativeLine, modal_relative_line);
+        self
+    }
+
+    /// Insert the indent that is detected fror the file when tab is pressed.
+    /// Default: `false`
+    pub fn smart_tab(mut self, smart_tab: bool) -> Self {
+        self.0 = self.0.set(SmartTab, smart_tab);
+        self
+
     }
 
     pub fn phantom_color(mut self, color: Color) -> Self {
@@ -380,26 +389,18 @@ impl TextEditor {
         self
     }
 
-    /// Set the text editor to read only.  
-    /// Equivalent to setting [`Editor::read_only`]  
+    /// Set the text editor to read only.
+    /// Equivalent to setting [`Editor::read_only`]
     /// Default: `false`
     pub fn read_only(self) -> Self {
         self.editor.read_only.set(true);
         self
     }
 
-    /// Insert the indent that is detected fror the file when tab is pressed.
-    /// Equivalent to setting [`Editor::smart_tab`]
-    /// Default: `false`
-    pub fn smart_tab(self) -> Self {
-        self.editor.smart_tab.set(true);
-        self
-    }
-
-    /// Set the placeholder text that is displayed when the document is empty.  
-    /// Can span multiple lines.  
-    /// This is per-editor, not per-document.  
-    /// Equivalent to calling [`TextDocument::add_placeholder`]  
+    /// Set the placeholder text that is displayed when the document is empty.
+    /// Can span multiple lines.
+    /// This is per-editor, not per-document.
+    /// Equivalent to calling [`TextDocument::add_placeholder`]
     /// Default: `None`
     ///
     /// Note: only works for the default backing [`TextDocument`] doc
