@@ -356,50 +356,64 @@ pub trait Styling {
     }
 }
 
-pub fn default_light_color(color: EditorColor) -> Color {
+pub fn default_light_theme(mut style: EditorCustomStyle) -> EditorCustomStyle {
     let fg = Color::rgb8(0x38, 0x3A, 0x42);
     let bg = Color::rgb8(0xFA, 0xFA, 0xFA);
     let blue = Color::rgb8(0x40, 0x78, 0xF2);
     let grey = Color::rgb8(0xE5, 0xE5, 0xE6);
-    match color {
-        EditorColor::Background => bg,
-        EditorColor::Scrollbar => Color::rgba8(0xB4, 0xB4, 0xB4, 0xBB),
-        EditorColor::DropdownShadow => Color::rgb8(0xB4, 0xB4, 0xB4),
-        EditorColor::Foreground => fg,
-        EditorColor::Dim => Color::rgb8(0xA0, 0xA1, 0xA7),
-        EditorColor::Focus => Color::BLACK,
-        EditorColor::Caret => Color::rgb8(0x52, 0x6F, 0xFF),
-        EditorColor::Selection => grey,
-        EditorColor::CurrentLine => Color::rgb8(0xF2, 0xF2, 0xF2),
-        EditorColor::Link => blue,
-        EditorColor::VisibleWhitespace => grey,
-        EditorColor::IndentGuide => grey,
-        EditorColor::StickyHeaderBackground => bg,
-        EditorColor::PreeditUnderline => fg,
-    }
+    let _scroll_bar = Color::rgba8(0xB4, 0xB4, 0xB4, 0xBB);
+    let dim = Color::rgb8(0xA0, 0xA1, 0xA7);
+    let cursor = Color::rgb8(0x52, 0x6F, 0xFF);
+    let current_line = Color::rgb8(0xF2, 0xF2, 0xF2);
+    let _dropdown_shadow = Color::rgb8(0xB4, 0xB4, 0xB4);
+    let _link = blue;
+    let _sticky_header_background = bg;
+
+    style.0 = style
+        .0
+        .color(fg)
+        .set(style::Background, bg)
+        .class(GutterClass, |s| s.background(bg));
+
+    style
+        .gutter_dim_color(dim)
+        .cursor_color(cursor)
+        .selection_color(grey)
+        .current_line_color(current_line)
+        .visible_white_space(grey)
+        .preedit_underline_color(fg)
+        .indent_guide_color(grey)
+        .gutter_current_color(current_line)
 }
 
-pub fn default_dark_color(color: EditorColor) -> Color {
+pub fn default_dark_color(mut style: EditorCustomStyle) -> EditorCustomStyle {
     let fg = Color::rgb8(0xAB, 0xB2, 0xBF);
     let bg = Color::rgb8(0x28, 0x2C, 0x34);
     let blue = Color::rgb8(0x61, 0xAF, 0xEF);
     let grey = Color::rgb8(0x3E, 0x44, 0x51);
-    match color {
-        EditorColor::Background => bg,
-        EditorColor::Scrollbar => Color::rgba8(0x3E, 0x44, 0x51, 0xBB),
-        EditorColor::DropdownShadow => Color::BLACK,
-        EditorColor::Foreground => fg,
-        EditorColor::Dim => Color::rgb8(0x5C, 0x63, 0x70),
-        EditorColor::Focus => Color::rgb8(0xCC, 0xCC, 0xCC),
-        EditorColor::Caret => Color::rgb8(0x52, 0x8B, 0xFF),
-        EditorColor::Selection => grey,
-        EditorColor::CurrentLine => Color::rgb8(0x2C, 0x31, 0x3c),
-        EditorColor::Link => blue,
-        EditorColor::VisibleWhitespace => grey,
-        EditorColor::IndentGuide => grey,
-        EditorColor::StickyHeaderBackground => bg,
-        EditorColor::PreeditUnderline => fg,
-    }
+    let _scroll_bar = Color::rgba8(0x3E, 0x44, 0x51, 0xBB);
+    let dim = Color::rgb8(0x5C, 0x63, 0x70);
+    let cursor = Color::rgb8(0x52, 0x8B, 0xFF);
+    let current_line = Color::rgb8(0x2C, 0x31, 0x3c);
+    let _dropdown_shadow = Color::BLACK;
+    let _link = blue;
+    let _sticky_header_background = bg;
+
+    style.0 = style
+        .0
+        .color(fg)
+        .background(bg)
+        .class(GutterClass, |s| s.background(bg));
+
+    style
+        .gutter_dim_color(dim)
+        .cursor_color(cursor)
+        .selection_color(grey)
+        .current_line_color(current_line)
+        .visible_white_space(grey)
+        .preedit_underline_color(fg)
+        .indent_guide_color(grey)
+        .gutter_current_color(current_line)
 }
 
 pub type DocumentRef = Rc<dyn Document>;
@@ -706,70 +720,70 @@ pub struct SimpleStylingBuilder {
     wrap: Option<WrapMethod>,
 }
 impl SimpleStylingBuilder {
-    /// Set the font size  
+    /// Set the font size
     /// Default: 16
     pub fn font_size(&mut self, font_size: usize) -> &mut Self {
         self.font_size = Some(font_size);
         self
     }
 
-    /// Set the line height  
+    /// Set the line height
     /// Default: 1.5
     pub fn line_height(&mut self, line_height: f32) -> &mut Self {
         self.line_height = Some(line_height);
         self
     }
 
-    /// Set the font families used  
+    /// Set the font families used
     /// Default: `[FamilyOwned::SansSerif]`
     pub fn font_family(&mut self, font_family: Vec<FamilyOwned>) -> &mut Self {
         self.font_family = Some(font_family);
         self
     }
 
-    /// Set the font weight (such as boldness or thinness)  
+    /// Set the font weight (such as boldness or thinness)
     /// Default: `Weight::NORMAL`
     pub fn weight(&mut self, weight: Weight) -> &mut Self {
         self.weight = Some(weight);
         self
     }
 
-    /// Set the italic style  
+    /// Set the italic style
     /// Default: `Style::Normal`
     pub fn italic_style(&mut self, italic_style: crate::cosmic_text::Style) -> &mut Self {
         self.italic_style = Some(italic_style);
         self
     }
 
-    /// Set the font stretch  
+    /// Set the font stretch
     /// Default: `Stretch::Normal`
     pub fn stretch(&mut self, stretch: Stretch) -> &mut Self {
         self.stretch = Some(stretch);
         self
     }
 
-    /// Set the indent style  
+    /// Set the indent style
     /// Default: `IndentStyle::Spaces(4)`
     pub fn indent_style(&mut self, indent_style: IndentStyle) -> &mut Self {
         self.indent_style = Some(indent_style);
         self
     }
 
-    /// Set the tab width  
+    /// Set the tab width
     /// Default: 4
     pub fn tab_width(&mut self, tab_width: usize) -> &mut Self {
         self.tab_width = Some(tab_width);
         self
     }
 
-    /// Set whether the cursor should treat leading soft tabs as if they are hard tabs  
+    /// Set whether the cursor should treat leading soft tabs as if they are hard tabs
     /// Default: false
     pub fn atomic_soft_tabs(&mut self, atomic_soft_tabs: bool) -> &mut Self {
         self.atomic_soft_tabs = Some(atomic_soft_tabs);
         self
     }
 
-    /// Set the wrapping method  
+    /// Set the wrapping method
     /// Default: `WrapMethod::EditorWidth`
     pub fn wrap(&mut self, wrap: WrapMethod) -> &mut Self {
         self.wrap = Some(wrap);
