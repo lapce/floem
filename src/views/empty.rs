@@ -39,4 +39,8 @@ impl Widget for Empty {
     fn view_data_mut(&mut self) -> &mut ViewData {
         &mut self.data
     }
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "Empty".into()
+    }
 }

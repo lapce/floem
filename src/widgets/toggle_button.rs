@@ -123,6 +123,10 @@ impl Widget for ToggleButton {
         &mut self.data
     }
 
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "Toggle Button".into()
+    }
+
     fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast::<bool>() {
             if self.held == ToggleState::Nothing {

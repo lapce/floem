@@ -1,11 +1,12 @@
 use floem::{
     keyboard::{Key, ModifiersState, NamedKey},
+    reactive::RwSignal,
     view::View,
     views::{
         editor::{
             command::{Command, CommandExecuted},
             core::{command::EditCommand, editor::EditType, selection::Selection},
-            text::SimpleStyling,
+            text::{default_dark_color, SimpleStyling},
         },
         stack, text_editor, Decorators,
     },
@@ -18,9 +19,19 @@ fn app_view() -> impl View {
         .map(|s| std::fs::read_to_string(s).unwrap());
     let text = text.as_deref().unwrap_or("Hello world");
 
-    let editor_a = text_editor(text).styling(SimpleStyling::dark());
+    let hide_gutter_a = RwSignal::new(false);
+    let hide_gutter_b = RwSignal::new(true);
+
+    let editor_a = text_editor(text)
+        .styling(SimpleStyling::new())
+        .style(|s| s.size_full())
+        .editor_style(default_dark_color)
+        .editor_style(move |s| s.hide_gutter(hide_gutter_a.get()));
     let editor_b = editor_a
         .shared_editor()
+        .editor_style(default_dark_color)
+        .editor_style(move |s| s.hide_gutter(hide_gutter_b.get()))
+        .style(|s| s.size_full())
         .pre_command(|ev| {
             if matches!(ev.cmd, Command::Edit(EditCommand::Undo)) {
                 println!("Undo command executed on editor B, ignoring!");
@@ -28,15 +39,12 @@ fn app_view() -> impl View {
             }
             CommandExecuted::No
         })
-        .gutter(false)
         .update(|_| {
             // This hooks up to both editors!
             println!("Editor changed");
         })
         .placeholder("Some placeholder text");
     let doc = editor_a.doc();
-    let gutter_a = editor_a.editor().gutter;
-    let gutter_b = editor_b.editor().gutter;
 
     let view = stack((
         editor_a,
@@ -50,10 +58,8 @@ fn app_view() -> impl View {
                 );
             }),
             button(|| "Flip Gutter").on_click_stop(move |_| {
-                let a = !gutter_a.get_untracked();
-                let b = !gutter_b.get_untracked();
-                gutter_a.set(a);
-                gutter_b.set(b);
+                hide_gutter_a.update(|hide| *hide = !*hide);
+                hide_gutter_b.update(|hide| *hide = !*hide);
             }),
         ))
         .style(|s| s.width_full().flex_row().items_center().justify_center()),

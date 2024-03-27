@@ -22,12 +22,11 @@ use smallvec::{smallvec, SmallVec};
 
 use super::{
     actions::{handle_command_default, CommonAction},
-    color::EditorColor,
     command::{Command, CommandExecuted},
     id::EditorId,
     phantom_text::{PhantomText, PhantomTextKind, PhantomTextLine},
-    text::{Document, DocumentPhantom, PreeditData, Styling, SystemClipboard},
-    Editor,
+    text::{Document, DocumentPhantom, PreeditData, SystemClipboard},
+    Editor, EditorStyle,
 };
 
 type PreCommandFn = Box<dyn Fn(PreCommand) -> CommandExecuted>;
@@ -242,7 +241,7 @@ impl Document for TextDocument {
     }
 }
 impl DocumentPhantom for TextDocument {
-    fn phantom_text(&self, edid: EditorId, styling: &dyn Styling, line: usize) -> PhantomTextLine {
+    fn phantom_text(&self, edid: EditorId, styling: &EditorStyle, line: usize) -> PhantomTextLine {
         let mut text = SmallVec::new();
 
         if self.buffer.with_untracked(Buffer::is_empty) {
@@ -252,24 +251,21 @@ impl DocumentPhantom for TextDocument {
                     col: 0,
                     text: placeholder,
                     font_size: None,
-                    fg: Some(styling.color(edid, EditorColor::Dim)),
+                    fg: Some(styling.placeholder_color()),
                     bg: None,
                     under_line: None,
                 });
             }
         }
 
-        if let Some(preedit) = self.preedit_phantom(
-            Some(styling.color(edid, EditorColor::PreeditUnderline)),
-            line,
-        ) {
+        if let Some(preedit) = self.preedit_phantom(Some(styling.preedit_underline_color()), line) {
             text.push(preedit);
         }
 
         PhantomTextLine { text }
     }
 
-    fn has_multiline_phantom(&self, edid: EditorId, _styling: &dyn Styling) -> bool {
+    fn has_multiline_phantom(&self, edid: EditorId, _styling: &EditorStyle) -> bool {
         if !self.buffer.with_untracked(Buffer::is_empty) {
             return false;
         }

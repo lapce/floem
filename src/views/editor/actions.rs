@@ -37,8 +37,8 @@ fn handle_edit_command_default(
     action: &dyn CommonAction,
     cmd: &EditCommand,
 ) -> CommandExecuted {
-    let modal = ed.modal.get_untracked();
-    let smart_tab = ed.smart_tab.get_untracked();
+    let modal = ed.es.with_untracked(|es| es.modal());
+    let smart_tab = ed.es.with_untracked(|es| es.smart_tab());
     let mut cursor = ed.cursor.get_untracked();
     let mut register = ed.register.get_untracked();
 

@@ -91,6 +91,10 @@ impl<T: 'static> Widget for DropDown<T> {
         for_each(&mut self.main_view);
     }
 
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "DropDown".into()
+    }
+
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         if self.style.read(cx) {
             cx.app_state_mut().request_paint(self.id());

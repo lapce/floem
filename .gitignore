@@ -3,3 +3,4 @@
 /.lapce
 /.idea
 .DS_Store
+rustc-ice*

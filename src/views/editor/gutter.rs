@@ -3,24 +3,52 @@ use crate::{
     cosmic_text::{Attrs, AttrsList, TextLayout},
     id::Id,
     peniko::kurbo::Point,
-    style::Style,
+    prop, prop_extractor,
+    style::{Style, TextColor},
+    style_class,
     view::{AnyWidget, View, ViewData, Widget},
+    views::Decorators,
     Renderer,
 };
-use floem_editor_core::mode::Mode;
+use floem_editor_core::{cursor::CursorMode, mode::Mode};
+use floem_peniko::Color;
 use floem_reactive::RwSignal;
 use kurbo::Rect;
 
-use super::{color::EditorColor, Editor};
+use super::{view::CurrentLineColor, Editor};
+
+prop!(pub LeftOfCenterPadding: f64 {} = 25.);
+prop!(pub RightOfCenterPadding: f64 {} = 30.);
+prop!(pub DimColor: Option<Color> {} = None);
+
+prop_extractor! {
+    GutterStyle {
+        accent_color: TextColor,
+        dim_color: DimColor,
+        left_padding: LeftOfCenterPadding,
+        right_padding: RightOfCenterPadding,
+        current_line_color: CurrentLineColor,
+    }
+}
+impl GutterStyle {
+    fn gs_accent_color(&self) -> Color {
+        self.accent_color().unwrap_or(Color::BLACK)
+    }
+
+    fn gs_dim_color(&self) -> Color {
+        self.dim_color().unwrap_or(self.gs_accent_color())
+    }
+}
 
 pub struct EditorGutterView {
     data: ViewData,
     editor: RwSignal<Editor>,
     full_width: f64,
     text_width: f64,
-    padding_left: f64,
-    padding_right: f64,
+    gutter_style: GutterStyle,
 }
+
+style_class!(pub GutterClass);
 
 pub fn editor_gutter_view(editor: RwSignal<Editor>) -> EditorGutterView {
     let id = Id::next();
@@ -30,10 +58,9 @@ pub fn editor_gutter_view(editor: RwSignal<Editor>) -> EditorGutterView {
         editor,
         full_width: 0.0,
         text_width: 0.0,
-        // TODO: these are probably tuned for lapce?
-        padding_left: 25.0,
-        padding_right: 30.0,
+        gutter_style: Default::default(),
     }
+    .class(GutterClass)
 }
 
 impl View for EditorGutterView {
@@ -58,6 +85,16 @@ impl Widget for EditorGutterView {
         &mut self.data
     }
 
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "Editor Gutter View".into()
+    }
+
+    fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+        if self.gutter_style.read(cx) {
+            cx.app_state_mut().request_paint(self.id());
+        }
+    }
+
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::NodeId {
         cx.layout_node(self.id(), true, |cx| {
             let (width, height) = (self.text_width, 10.0);
@@ -68,7 +105,7 @@ impl Widget for EditorGutterView {
                 .unwrap();
 
             let style = Style::new()
-                .width(self.padding_left + width + self.padding_right)
+                .width(self.gutter_style.left_padding() + width + self.gutter_style.right_padding())
                 .height(height)
                 .to_taffy_style();
             let _ = cx.app_state_mut().taffy.set_style(layout_node, style);
@@ -87,13 +124,16 @@ impl Widget for EditorGutterView {
         let family = style.font_family(edid, 0);
         let attrs = Attrs::new()
             .family(&family)
-            .color(style.color(edid, EditorColor::Dim))
             .font_size(style.font_size(edid, 0) as f32);
 
         let attrs_list = AttrsList::new(attrs);
 
         let widest_text_width = self.compute_widest_text_width(&attrs_list);
-        if (self.full_width - widest_text_width - self.padding_left - self.padding_right).abs()
+        if (self.full_width
+            - widest_text_width
+            - self.gutter_style.left_padding()
+            - self.gutter_style.right_padding())
+        .abs()
             > 1e-2
         {
             self.text_width = widest_text_width;
@@ -116,15 +156,16 @@ impl Widget for EditorGutterView {
 
         // TODO: don't assume font family is constant for each line
         let family = style.font_family(edid, 0);
+        let accent_color = self.gutter_style.gs_accent_color();
+        let dim_color = self.gutter_style.gs_dim_color();
         let attrs = Attrs::new()
             .family(&family)
-            .color(style.color(edid, EditorColor::Dim))
+            .color(dim_color)
             .font_size(style.font_size(edid, 0) as f32);
         let attrs_list = AttrsList::new(attrs);
-        let current_line_attrs_list =
-            AttrsList::new(attrs.color(style.color(edid, EditorColor::Foreground)));
-        let show_relative = editor.modal.get_untracked()
-            && editor.modal_relative_line_numbers.get_untracked()
+        let current_line_attrs_list = AttrsList::new(attrs.color(accent_color));
+        let show_relative = editor.es.with_untracked(|es| es.modal())
+            && editor.es.with_untracked(|es| es.modal_ralative_line())
             && mode != Mode::Insert;
 
         self.text_width = self.compute_widest_text_width(&attrs_list);
@@ -152,6 +193,36 @@ impl Widget for EditorGutterView {
                 let mut text_layout = TextLayout::new();
                 if line == current_line {
                     text_layout.set_text(&text, current_line_attrs_list.clone());
+                    if let Some(current_line_color) = self.gutter_style.current_line_color() {
+                        cursor.with_untracked(|cursor| {
+                            let highlight_current_line = match cursor.mode {
+                                // TODO: check if shis should be 0 or 1
+                                CursorMode::Normal(size) => size == 0,
+                                CursorMode::Insert(ref sel) => sel.is_caret(),
+                                CursorMode::Visual { .. } => false,
+                            };
+
+                            // Highlight the current line
+                            if highlight_current_line {
+                                for (_, end) in cursor.regions_iter() {
+                                    // TODO: unsure if this is correct for wrapping lines
+                                    let rvline = editor.rvline_of_offset(end, cursor.affinity);
+
+                                    if let Some(info) = screen_lines.info(rvline) {
+                                        let line_height =
+                                            editor.line_height(info.vline_info.rvline.line);
+                                        // the extra 1px is for a small line that appears between
+                                        let rect = Rect::from_origin_size(
+                                            (viewport.x0, info.vline_y - viewport.y0),
+                                            (self.full_width + 1.1, f64::from(line_height)),
+                                        );
+
+                                        cx.fill(&rect, current_line_color, 0.0);
+                                    }
+                                }
+                            }
+                        })
+                    }
                 } else {
                     text_layout.set_text(&text, attrs_list.clone());
                 }
@@ -159,7 +230,7 @@ impl Widget for EditorGutterView {
                 let height = size.height;
 
                 let pos = Point::new(
-                    (self.full_width - (size.width) - self.padding_right).max(0.0),
+                    (self.full_width - (size.width) - self.gutter_style.right_padding()).max(0.0),
                     y + (line_height - height) / 2.0 - viewport.y0,
                 );
 
