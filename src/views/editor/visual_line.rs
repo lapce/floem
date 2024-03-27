@@ -828,8 +828,6 @@ impl Lines {
         let font_size = self.font_size(line);
         let layouts = self.text_layouts.borrow();
 
-        let base_offset = rope_text.offset_of_line(line);
-
         // We could remove the debug asserts and allow invalid line indices. However I think it is
         // desirable to avoid those since they are probably indicative of bugs.
         if let Some(text_layout) = layouts.get(font_size, line) {
@@ -846,14 +844,14 @@ impl Lines {
                 .unwrap_or(0);
             let col = text_prov.before_phantom_col(line, col);
 
-            base_offset + col
+            rope_text.offset_of_line_col(line, col)
         } else {
             // There was no text layout for this line, so we treat it like if line index is zero
             // even if it is not.
 
             debug_assert_eq!(line_index, 0, "Line index was zero. This likely indicates keeping an rvline past when it was valid.");
 
-            base_offset
+            rope_text.offset_of_line(line)
         }
     }
 
@@ -1289,8 +1287,8 @@ fn find_vline_init_info_forward(
                     .unwrap_or(0);
                 let col = text_prov.before_phantom_col(cur_line, col);
 
-                let base_offset = rope_text.offset_of_line(cur_line);
-                return Some((base_offset + col, RVLine::new(cur_line, line_index)));
+                let offset = rope_text.offset_of_line_col(cur_line, col);
+                return Some((offset, RVLine::new(cur_line, line_index)));
             }
 
             // The visual line is not in this line, so we have to keep looking.
@@ -1449,9 +1447,9 @@ fn vline_init_info_b(
         .unwrap_or(0);
     let col = text_prov.before_phantom_col(rv.line, col);
 
-    let base_offset = rope_text.offset_of_line(rv.line);
+    let offset = rope_text.offset_of_line_col(rv.line, col);
 
-    Some((base_offset + col, rv))
+    Some((offset, rv))
 }
 
 /// Information about the visual line and how it relates to the underlying buffer line.
@@ -1821,10 +1819,9 @@ fn rvline_offset(
 ) -> usize {
     let rope_text = text_prov.rope_text();
     if let Some((line_col, _)) = layouts.get_layout_col(text_prov, font_size, line, line_index) {
-        let line_offset = rope_text.offset_of_line(line);
         let line_col = text_prov.before_phantom_col(line, line_col);
 
-        line_offset + line_col
+        rope_text.offset_of_line_col(line, line_col)
     } else {
         // There was no text layout line so this is a normal line.
         debug_assert_eq!(line_index, 0);
@@ -1844,9 +1841,8 @@ fn next_rvline(
     let rope_text = text_prov.rope_text();
     if let Some(layout_line) = layouts.get(font_size, line) {
         if let Some((line_col, _)) = layout_line.layout_cols(text_prov, line).nth(line_index + 1) {
-            let line_offset = rope_text.offset_of_line(line);
             let line_col = text_prov.before_phantom_col(line, line_col);
-            let offset = line_offset + line_col;
+            let offset = rope_text.offset_of_line_col(line, line_col);
 
             (RVLine::new(line, line_index + 1), offset)
         } else {
@@ -1882,14 +1878,13 @@ fn prev_rvline(
         let prev_line = line - 1;
         let font_size = font_sizes.font_size(prev_line);
         if let Some(layout_line) = layouts.get(font_size, prev_line) {
-            let line_offset = rope_text.offset_of_line(prev_line);
             let (i, line_col) = layout_line
                 .start_layout_cols(text_prov, prev_line)
                 .enumerate()
                 .last()
                 .unwrap_or((0, 0));
             let line_col = text_prov.before_phantom_col(prev_line, line_col);
-            let offset = line_offset + line_col;
+            let offset = rope_text.offset_of_line_col(prev_line, line_col);
 
             Some((RVLine::new(prev_line, i), offset))
         } else {
@@ -1907,9 +1902,8 @@ fn prev_rvline(
                 .layout_cols(text_prov, line)
                 .nth(prev_line_index)
             {
-                let line_offset = rope_text.offset_of_line(line);
                 let line_col = text_prov.before_phantom_col(line, line_col);
-                let offset = line_offset + line_col;
+                let offset = rope_text.offset_of_line_col(line, line_col);
 
                 Some((RVLine::new(line, prev_line_index), offset))
             } else {
@@ -3469,23 +3463,18 @@ mod tests {
 
     #[test]
     fn test_end_of_rvline() {
+        fn eor(lines: &Lines, text_prov: &impl TextLayoutProvider, rvline: RVLine) -> usize {
+            let layouts = lines.text_layouts.borrow();
+            end_of_rvline(&layouts, text_prov, 12, rvline)
+        }
+
         fn check_equiv(text: &Rope, expected: usize, from: &str) {
             let (text_prov, lines) = make_lines(&text, 10000., false);
-            let end1 = end_of_rvline(
-                &lines.text_layouts.borrow(),
-                &text_prov,
-                12,
-                RVLine::new(0, 0),
-            );
+            let end1 = eor(&lines, &text_prov, RVLine::new(0, 0));
 
             let (text_prov, lines) = make_lines(&text, 10000., true);
             assert_eq!(
-                end_of_rvline(
-                    &lines.text_layouts.borrow(),
-                    &text_prov,
-                    12,
-                    RVLine::new(0, 0)
-                ),
+                eor(&lines, &text_prov, RVLine::new(0, 0)),
                 end1,
                 "non-init end_of_rvline not equivalent to init ({from})"
             );
@@ -3500,6 +3489,50 @@ mod tests {
 
         let text = Rope::from("aaaa\r\nbb bb cc\r\ncc dddd eeee ff\r\nff gggg");
         check_equiv(&text, 4, "simple multiline (CRLF)");
+
+        let text = Rope::from("a b c d ");
+        let mut ph = HashMap::new();
+        ph.insert(
+            0,
+            PhantomTextLine {
+                text: smallvec![mph(PhantomTextKind::Completion, 1, "hi")],
+            },
+        );
+
+        let (text_prov, lines) = make_lines_ph(&text, 1., true, ph);
+
+        assert_eq!(eor(&lines, &text_prov, RVLine::new(0, 0)), 2);
+
+        assert_eq!(eor(&lines, &text_prov, RVLine::new(0, 1)), 4);
+
+        let text = Rope::from("        let j = test_test\nlet blah = 5;");
+
+        let mut ph = HashMap::new();
+        ph.insert(
+            0,
+            PhantomTextLine {
+                text: smallvec![
+                    mph(
+                        PhantomTextKind::Diagnostic,
+                        26,
+                        "    Syntax Error: `let` expressions are not supported here"
+                    ),
+                    mph(
+                        PhantomTextKind::Diagnostic,
+                        26,
+                        "    Syntax Error: expected SEMICOLON"
+                    ),
+                ],
+            },
+        );
+
+        let (text_prov, lines) = make_lines_ph(&text, 250., true, ph);
+
+        assert_eq!(eor(&lines, &text_prov, RVLine::new(0, 0)), 25);
+        assert_eq!(eor(&lines, &text_prov, RVLine::new(0, 1)), 25);
+        assert_eq!(eor(&lines, &text_prov, RVLine::new(0, 2)), 25);
+        assert_eq!(eor(&lines, &text_prov, RVLine::new(0, 3)), 25);
+        assert_eq!(eor(&lines, &text_prov, RVLine::new(1, 0)), 39);
     }
 
     #[test]
