@@ -57,8 +57,8 @@ use self::{
     text::{Document, Preedit, PreeditData, RenderWhitespace, Styling, WrapMethod},
     view::{LineInfo, ScreenLines, ScreenLinesBase},
     visual_line::{
-        hit_position_aff, FontSizeCacheId, LayoutEvent, LineFontSizeProvider, Lines, RVLine,
-        ResolvedWrap, TextLayoutProvider, VLine, VLineInfo,
+        hit_position_aff, ConfigId, FontSizeCacheId, LayoutEvent, LineFontSizeProvider, Lines,
+        RVLine, ResolvedWrap, TextLayoutProvider, VLine, VLineInfo,
     },
 };
 
@@ -72,6 +72,7 @@ prop!(pub CursorSurroundingLines: usize {} = 1);
 prop!(pub ScrollBeyondLastLine: bool {} = false);
 prop!(pub ShowIndentGuide: bool {} = false);
 prop!(pub PhantomColor: Color {} = Color::DIM_GRAY);
+prop!(pub PlaceholderColor: Color {} = Color::DIM_GRAY);
 prop!(pub PreeditUnderlineColor: Color {} = Color::WHITE);
 prop!(pub RenderWhiteSpaceProp: RenderWhitespace {} = RenderWhitespace::None);
 impl StylePropValue for RenderWhitespace {
@@ -84,11 +85,11 @@ prop_extractor! {
     pub EditorStyle {
         pub text_color: TextColor,
         pub phantom_color: PhantomColor,
+        pub placeholder_color: PlaceholderColor,
         pub preedit_underline_color: PreeditUnderlineColor,
         pub show_indent_guide: ShowIndentGuide,
         pub wrap_method: WrapProp,
         pub cursor_surounding_lines: CursorSurroundingLines,
-        scroll_beyond_last_line: ScrollBeyondLastLine,
         pub render_white_space: RenderWhiteSpaceProp,
     }
 }
@@ -126,6 +127,7 @@ pub struct Editor {
 
     pub window_origin: RwSignal<Point>,
     pub viewport: RwSignal<Rect>,
+    pub parent_size: RwSignal<Rect>,
 
     /// The current scroll position.
     pub scroll_delta: RwSignal<Vec2>,
@@ -220,6 +222,8 @@ impl Editor {
         let lines = Rc::new(Lines::new(cx, font_sizes));
         let screen_lines = cx.create_rw_signal(ScreenLines::new(cx, viewport.get_untracked()));
 
+        let editor_style = cx.create_rw_signal(EditorStyle::default());
+
         let ed = Editor {
             cx: Cell::new(cx),
             effects_cx: Cell::new(cx.create_child()),
@@ -234,6 +238,7 @@ impl Editor {
             cursor,
             window_origin: cx.create_rw_signal(Point::ZERO),
             viewport,
+            parent_size: cx.create_rw_signal(Rect::ZERO),
             scroll_delta: cx.create_rw_signal(Vec2::ZERO),
             scroll_to: cx.create_rw_signal(None),
             lines,
@@ -242,7 +247,7 @@ impl Editor {
             cursor_info: CursorInfo::new(cx),
             last_movement: cx.create_rw_signal(Movement::Left),
             ime_allowed: cx.create_rw_signal(false),
-            editor_style: cx.create_rw_signal(Default::default()),
+            editor_style,
             floem_style_id: cx.create_rw_signal(0),
         };
 
@@ -343,12 +348,17 @@ impl Editor {
             editor
                 .modal_relative_line_numbers
                 .set(self.modal_relative_line_numbers.get_untracked());
+            editor.editor_style.set(self.editor_style.get_untracked());
+            editor
+                .floem_style_id
+                .set(self.floem_style_id.get_untracked());
             editor.smart_tab.set(self.smart_tab.get_untracked());
             editor.cursor.set(self.cursor.get_untracked());
             editor.scroll_delta.set(self.scroll_delta.get_untracked());
             editor.scroll_to.set(self.scroll_to.get_untracked());
             editor.window_origin.set(self.window_origin.get_untracked());
             editor.viewport.set(self.viewport.get_untracked());
+            editor.parent_size.set(self.parent_size.get_untracked());
             editor.register.set(self.register.get_untracked());
             editor.cursor_info = self.cursor_info.clone();
             editor.last_movement.set(self.last_movement.get_untracked());
@@ -997,7 +1007,7 @@ impl Editor {
         let floem_style_id = self.floem_style_id;
         self.lines.get_init_text_layout(
             cache_rev,
-            (id, floem_style_id.get_untracked()),
+            ConfigId::new(id, floem_style_id.get_untracked()),
             self,
             line,
             trigger,
@@ -1008,8 +1018,11 @@ impl Editor {
         let cache_rev = self.doc().cache_rev().get_untracked();
         let id = self.style().id();
         let floem_style_id = self.floem_style_id;
-        self.lines
-            .try_get_text_layout(cache_rev, (id, floem_style_id.get_untracked()), line)
+        self.lines.try_get_text_layout(
+            cache_rev,
+            ConfigId::new(id, floem_style_id.get_untracked()),
+            line,
+        )
     }
 
     /// Create rendable whitespace layout by creating a new text layout
@@ -1138,9 +1151,9 @@ impl TextLayoutProvider for Editor {
 
             let mut attrs = attrs;
             if let Some(fg) = phantom.fg {
-                //TODO: Phantom text color?
-                // attrs = self.editor_style ;
                 attrs = attrs.color(fg);
+            } else {
+                attrs = attrs.color(self.editor_style.with(|es| es.phantom_color()))
             }
             if let Some(phantom_font_size) = phantom.font_size {
                 attrs = attrs.font_size(phantom_font_size.min(font_size) as f32);
@@ -1159,6 +1172,7 @@ impl TextLayoutProvider for Editor {
         text_layout.set_tab_width(style.tab_width(edid, line));
         text_layout.set_text(&line_content, attrs_list);
 
+        // dbg!(self.editor_style.with(|s| s.wrap_method()));
         match self.editor_style.with(|s| s.wrap_method()) {
             WrapMethod::None => {}
             WrapMethod::EditorWidth => {
@@ -1396,7 +1410,7 @@ pub fn normal_compute_screen_lines(
         .iter_rvlines_init(
             editor.text_prov(),
             cache_rev,
-            (style.id(), floem_style_id.get_untracked()),
+            ConfigId::new(style.id(), floem_style_id.get_untracked()),
             min_info.rvline,
             false,
         )

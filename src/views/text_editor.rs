@@ -23,10 +23,13 @@ use crate::{
 
 use super::editor::{
     gutter::{GutterClass, LeftOfCenterPadding, RightOfCenterPadding},
-    text::RenderWhitespace,
-    view::{Caret, EditorViewClass, IndentStyleProp, ScrollbarLine, Selection, VisibleWhitespace},
-    CursorSurroundingLines, PhantomColor, PreeditUnderlineColor, RenderWhiteSpaceProp,
-    ScrollBeyondLastLine, ShowIndentGuide,
+    text::{RenderWhitespace, WrapMethod},
+    view::{
+        CaretColor, CurrentLineColor, EditorViewClass, IndentStyleProp, ScrollbarLine,
+        SelectionColor, VisibleWhitespaceColor,
+    },
+    CursorSurroundingLines, PhantomColor, PlaceholderColor, PreeditUnderlineColor,
+    RenderWhiteSpaceProp, ScrollBeyondLastLine, ShowIndentGuide, WrapProp,
 };
 
 /// A text editor view.
@@ -102,6 +105,7 @@ impl Widget for TextEditor {
 
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         if self.editor.editor_style.try_update(|s| s.read(cx)).unwrap() {
+            self.editor.floem_style_id.update(|val| *val += 1);
             cx.app_state_mut().request_paint(self.id());
         }
         self.for_each_child_mut(&mut |child| {
@@ -140,11 +144,6 @@ impl EditorCustomStyle {
         self
     }
 
-    pub fn selection_color(mut self, color: Color) -> Self {
-        self.0 = self.0.class(EditorViewClass, |s| s.set(Selection, color));
-        self
-    }
-
     pub fn gutter_left_padding(mut self, padding: f64) -> Self {
         self.0 = self
             .0
@@ -158,10 +157,22 @@ impl EditorCustomStyle {
         self
     }
 
+    pub fn selection_color(mut self, color: Color) -> Self {
+        self.0 = self
+            .0
+            .class(EditorViewClass, |s| s.set(SelectionColor, color));
+        self
+    }
+
     pub fn indent_style(mut self, indent_style: IndentStyle) -> Self {
         self.0 = self
             .0
             .class(EditorViewClass, |s| s.set(IndentStyleProp, indent_style));
+        self
+    }
+
+    pub fn wrap_method(mut self, wrap: WrapMethod) -> Self {
+        self.0 = self.0.set(WrapProp, wrap);
         self
     }
 
@@ -174,7 +185,7 @@ impl EditorCustomStyle {
     }
 
     pub fn cursor_color(mut self, cursor: Color) -> Self {
-        self.0 = self.0.class(EditorViewClass, |s| s.set(Caret, cursor));
+        self.0 = self.0.class(EditorViewClass, |s| s.set(CaretColor, cursor));
         self
     }
 
@@ -194,48 +205,50 @@ impl EditorCustomStyle {
         self
     }
 
-    /// Set the number of lines to keep visible above and below the cursor.
-    /// Equivalent to setting [`Editor::cursor_surrounding_lines`]
-    /// Default: `1`
-    pub fn cursor_surrounding_lines(mut self, lines: usize) -> Self {
+    pub fn current_line_color(mut self, color: Color) -> Self {
         self.0 = self
             .0
-            .class(EditorViewClass, |s| s.set(CursorSurroundingLines, lines));
+            .class(EditorViewClass, |s| s.set(CurrentLineColor, color));
         self
     }
 
     pub fn render_white_space(mut self, render_white_space: RenderWhitespace) -> Self {
-        self.0 = self.0.class(EditorViewClass, |s| {
-            s.set(RenderWhiteSpaceProp, render_white_space)
-        });
+        self.0 = self.0.set(RenderWhiteSpaceProp, render_white_space);
         self
     }
 
     pub fn visible_white_space(mut self, color: Color) -> Self {
         self.0 = self
             .0
-            .class(EditorViewClass, |s| s.set(VisibleWhitespace, color));
+            .class(EditorViewClass, |s| s.set(VisibleWhitespaceColor, color));
+        self
+    }
+
+    /// Set the number of lines to keep visible above and below the cursor.
+    /// Equivalent to setting [`Editor::cursor_surrounding_lines`]
+    /// Default: `1`
+    pub fn cursor_surrounding_lines(mut self, lines: usize) -> Self {
+        self.0 = self.0.set(CursorSurroundingLines, lines);
         self
     }
 
     pub fn show_indent_guide(mut self, show: bool) -> Self {
-        self.0 = self
-            .0
-            .class(EditorViewClass, |s| s.set(ShowIndentGuide, show));
+        self.0 = self.0.set(ShowIndentGuide, show);
         self
     }
 
     pub fn phantom_color(mut self, color: Color) -> Self {
-        self.0 = self
-            .0
-            .class(EditorViewClass, |s| s.set(PhantomColor, color));
+        self.0 = self.0.set(PhantomColor, color);
+        self
+    }
+
+    pub fn placeholder_color(mut self, color: Color) -> Self {
+        self.0 = self.0.set(PlaceholderColor, color);
         self
     }
 
     pub fn preedit_underline_color(mut self, color: Color) -> Self {
-        self.0 = self
-            .0
-            .class(EditorViewClass, |s| s.set(PreeditUnderlineColor, color));
+        self.0 = self.0.set(PreeditUnderlineColor, color);
         self
     }
 }

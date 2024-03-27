@@ -10,12 +10,12 @@ use crate::{
     views::Decorators,
     Renderer,
 };
-use floem_editor_core::mode::Mode;
+use floem_editor_core::{cursor::CursorMode, mode::Mode};
 use floem_peniko::Color;
 use floem_reactive::RwSignal;
 use kurbo::Rect;
 
-use super::Editor;
+use super::{view::CurrentLineColor, Editor};
 
 prop!(pub LeftOfCenterPadding: f64 {} = 25.);
 prop!(pub RightOfCenterPadding: f64 {} = 30.);
@@ -27,6 +27,7 @@ prop_extractor! {
         dim_color: DimColor,
         left_padding: LeftOfCenterPadding,
         right_padding: RightOfCenterPadding,
+        current_line_color: CurrentLineColor,
     }
 }
 
@@ -183,6 +184,36 @@ impl Widget for EditorGutterView {
                 let mut text_layout = TextLayout::new();
                 if line == current_line {
                     text_layout.set_text(&text, current_line_attrs_list.clone());
+                    if let Some(current_line_color) = self.gutter_style.current_line_color() {
+                        cursor.with_untracked(|cursor| {
+                            let highlight_current_line = match cursor.mode {
+                                // TODO: check if shis should be 0 or 1
+                                CursorMode::Normal(size) => size == 0,
+                                CursorMode::Insert(ref sel) => sel.is_caret(),
+                                CursorMode::Visual { .. } => false,
+                            };
+
+                            // Highlight the current line
+                            if highlight_current_line {
+                                for (_, end) in cursor.regions_iter() {
+                                    // TODO: unsure if this is correct for wrapping lines
+                                    let rvline = editor.rvline_of_offset(end, cursor.affinity);
+
+                                    if let Some(info) = screen_lines.info(rvline) {
+                                        let line_height =
+                                            editor.line_height(info.vline_info.rvline.line);
+                                        // the extra 1px is for a small line that appears between
+                                        let rect = Rect::from_origin_size(
+                                            (viewport.x0, info.vline_y - viewport.y0),
+                                            (self.full_width + 1.1, f64::from(line_height)),
+                                        );
+
+                                        cx.fill(&rect, current_line_color, 0.0);
+                                    }
+                                }
+                            }
+                        })
+                    }
                 } else {
                     text_layout.set_text(&text, attrs_list.clone());
                 }

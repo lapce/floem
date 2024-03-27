@@ -646,8 +646,7 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<Id>>) -> AnyVi
                     style_header,
                     style_list,
                     class_header,
-                    v_stack_from_iter(class_list.iter().map(|val| text(val)))
-                        .style(|s| s.gap(10, 10)),
+                    v_stack_from_iter(class_list.iter().map(text)).style(|s| s.gap(10, 10)),
                 ))
                 .style(|s| s.width_full())
                 .any()

@@ -251,7 +251,7 @@ impl DocumentPhantom for TextDocument {
                     col: 0,
                     text: placeholder,
                     font_size: None,
-                    fg: Some(styling.phantom_color()),
+                    fg: Some(styling.placeholder_color()),
                     bg: None,
                     under_line: None,
                 });
