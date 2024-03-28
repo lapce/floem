@@ -56,16 +56,16 @@ use image::DynamicImage;
 use kurbo::{Affine, Rect, Shape, Size};
 
 #[allow(clippy::large_enum_variant)]
-pub enum Renderer {
-    Vger(VgerRenderer),
-    TinySkia(TinySkiaRenderer),
+pub enum Renderer<'a, W> {
+    Vger(VgerRenderer<'a>),
+    TinySkia(TinySkiaRenderer<'a, W>),
 }
 
-impl Renderer {
-    pub fn new<W>(window: &W, scale: f64, size: Size) -> Self
-    where
-        W: raw_window_handle::HasRawDisplayHandle + raw_window_handle::HasRawWindowHandle,
-    {
+impl<'a, W> Renderer<'a, W>
+where
+    W: raw_window_handle::HasDisplayHandle + raw_window_handle::HasWindowHandle + std::marker::Sync,
+{
+    pub fn new(window: &'a W, scale: f64, size: Size) -> Self {
         let size = Size::new(size.width.max(1.0), size.height.max(1.0));
 
         let force_tiny_skia = if let Some(val) = std::env::var("FLOEM_FORCE_TINY_SKIA")
@@ -115,7 +115,10 @@ impl Renderer {
     }
 }
 
-impl floem_renderer::Renderer for Renderer {
+impl<'a, W> floem_renderer::Renderer for Renderer<'a, W>
+where
+    W: raw_window_handle::HasDisplayHandle + raw_window_handle::HasWindowHandle,
+{
     fn begin(&mut self, capture: bool) {
         match self {
             Renderer::Vger(r) => {

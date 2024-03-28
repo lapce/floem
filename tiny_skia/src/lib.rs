@@ -12,6 +12,7 @@ use floem_renderer::tiny_skia::{
 use floem_renderer::Img;
 use floem_renderer::Renderer;
 use image::DynamicImage;
+use raw_window_handle::{DisplayHandle, HasDisplayHandle, HasWindowHandle, WindowHandle};
 use softbuffer::{Context, Surface};
 use std::collections::HashMap;
 use std::num::NonZeroU32;
@@ -36,10 +37,10 @@ struct Glyph {
 #[derive(PartialEq, Clone, Copy)]
 struct CacheColor(bool);
 
-pub struct TinySkiaRenderer {
+pub struct TinySkiaRenderer<'a, W> {
     #[allow(unused)]
-    context: Context,
-    surface: Surface,
+    context: Context<&'a W>,
+    surface: Surface<&'a W, &'a W>,
     pixmap: Pixmap,
     mask: Mask,
     scale: f64,
@@ -54,22 +55,15 @@ pub struct TinySkiaRenderer {
     glyph_cache: HashMap<(CacheKey, Color), (CacheColor, Option<Rc<Glyph>>)>,
 }
 
-impl TinySkiaRenderer {
-    pub fn new<
-        W: raw_window_handle::HasRawDisplayHandle + raw_window_handle::HasRawWindowHandle,
-    >(
-        window: &W,
-        width: u32,
-        height: u32,
-        scale: f64,
-    ) -> Result<Self> {
-        let context = unsafe {
-            Context::new(&window).map_err(|err| anyhow!("unable to create context: {}", err))?
-        };
-        let surface = unsafe {
-            Surface::new(&context, &window)
-                .map_err(|err| anyhow!("unable to create surface: {}", err))?
-        };
+impl<'a, W> TinySkiaRenderer<'a, W>
+where
+    W: raw_window_handle::HasDisplayHandle + raw_window_handle::HasWindowHandle,
+{
+    pub fn new(window: &'a W, width: u32, height: u32, scale: f64) -> Result<Self> {
+        let context =
+            Context::new(window).map_err(|err| anyhow!("unable to create context: {}", err))?;
+        let surface = Surface::new(&context, window)
+            .map_err(|err| anyhow!("unable to create surface: {}", err))?;
 
         let pixmap =
             Pixmap::new(width, height).ok_or_else(|| anyhow!("unable to create pixmap"))?;
@@ -117,7 +111,7 @@ fn to_point(point: Point) -> tiny_skia::Point {
     tiny_skia::Point::from_xy(point.x as f32, point.y as f32)
 }
 
-impl TinySkiaRenderer {
+impl<'a, W> TinySkiaRenderer<'a, W> {
     fn shape_to_path(&self, shape: &impl Shape) -> Option<Path> {
         let mut builder = PathBuilder::new();
         for element in shape.path_elements(0.1) {
@@ -338,7 +332,7 @@ impl TinySkiaRenderer {
     }
 }
 
-impl Renderer for TinySkiaRenderer {
+impl<'a, W: HasDisplayHandle + HasWindowHandle> Renderer for TinySkiaRenderer<'a, W> {
     fn begin(&mut self, _capture: bool) {
         self.transform = Affine::IDENTITY;
         self.pixmap.fill(tiny_skia::Color::WHITE);

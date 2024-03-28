@@ -15,11 +15,11 @@ use wgpu::{
     Backends, Device, DeviceType, Queue, StoreOp, Surface, SurfaceConfiguration, TextureFormat,
 };
 
-pub struct VgerRenderer {
+pub struct VgerRenderer<'a> {
     device: Arc<Device>,
     #[allow(unused)]
     queue: Arc<Queue>,
-    surface: Surface,
+    surface: Surface<'a>,
     vger: Vger,
     alt_vger: Option<Vger>,
     config: SurfaceConfiguration,
@@ -36,11 +36,13 @@ const CLEAR_COLOR: wgpu::Color = wgpu::Color {
     a: 0.0,
 };
 
-impl VgerRenderer {
+impl<'a> VgerRenderer<'a> {
     pub fn new<
-        W: raw_window_handle::HasRawDisplayHandle + raw_window_handle::HasRawWindowHandle,
+        W: raw_window_handle::HasDisplayHandle
+            + raw_window_handle::HasWindowHandle
+            + std::marker::Sync,
     >(
-        window: &W,
+        window: &'a W,
         width: u32,
         height: u32,
         scale: f64,
@@ -50,7 +52,7 @@ impl VgerRenderer {
             ..Default::default()
         });
 
-        let surface = unsafe { instance.create_surface(window) }?;
+        let surface = instance.create_surface(window)?;
 
         let adapter =
             futures::executor::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
@@ -79,8 +81,8 @@ impl VgerRenderer {
 
         let (device, queue) = futures::executor::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
-                features: wgpu::Features::empty(),
-                limits: wgpu::Limits::default(),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
                 label: None,
             },
             None,
@@ -103,6 +105,8 @@ impl VgerRenderer {
             present_mode: wgpu::PresentMode::Fifo,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![],
+            // 2 is the default
+            desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &config);
 
@@ -136,7 +140,7 @@ impl VgerRenderer {
     }
 }
 
-impl VgerRenderer {
+impl<'a> VgerRenderer<'a> {
     fn brush_to_paint<'b>(&mut self, brush: impl Into<BrushRef<'b>>) -> Option<PaintIndex> {
         let paint = match brush.into() {
             BrushRef::Solid(color) => self.vger.color_paint(vger_color(color)),
@@ -252,7 +256,7 @@ impl VgerRenderer {
             if let Ok(r) = rx.try_recv() {
                 break r.ok()?;
             }
-            if self.device.poll(wgpu::MaintainBase::Wait) {
+            if self.device.poll(wgpu::MaintainBase::Wait).is_queue_empty() {
                 rx.recv().ok()?.ok()?;
                 break;
             }
@@ -272,7 +276,7 @@ impl VgerRenderer {
     }
 }
 
-impl Renderer for VgerRenderer {
+impl<'a> Renderer for VgerRenderer<'a> {
     fn begin(&mut self, capture: bool) {
         // Switch to the capture Vger if needed
         if self.capture != capture {
