@@ -9,18 +9,16 @@ use crate::{
     keyboard::{Key, ModifiersState, NamedKey},
     kurbo::{BezPath, Line, Point, Rect, Size, Vec2},
     peniko::Color,
-    prop, prop_extractor,
     reactive::{batch, create_effect, create_memo, create_rw_signal, Memo, RwSignal, Scope},
-    style::{CursorColor, CursorStyle, Style, StylePropValue},
+    style::{CursorStyle, Style},
     style_class,
     taffy::tree::NodeId,
-    view::{AnyView, AnyWidget, View, ViewData, Widget},
-    views::{scroll, stack, text, Decorators},
+    view::{AnyWidget, View, ViewData, Widget},
+    views::{scroll, stack, Decorators},
     EventPropagation, Renderer,
 };
 use floem_editor_core::{
     cursor::{ColPosition, CursorAffinity, CursorMode},
-    indent::IndentStyle,
     mode::{Mode, VisualMode},
 };
 
@@ -33,7 +31,7 @@ use crate::views::editor::{
     visual_line::{RVLine, VLineInfo},
 };
 
-use super::{Editor, ScrollBeyondLastLine, CHAR_WIDTH};
+use super::{Editor, CHAR_WIDTH};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum DiffSectionKind {
@@ -330,50 +328,12 @@ impl LineInfo {
     }
 }
 
-prop!(pub IndentStyleProp: IndentStyle {} = IndentStyle::Spaces(4));
-impl StylePropValue for IndentStyle {
-    fn debug_view(&self) -> Option<AnyView> {
-        Some(text(self).any())
-    }
-}
-prop!(pub DropdownShadow: Option<Color> {} = None);
-prop!(pub Foreground: Color { inherited } = Color::rgb8(0x38, 0x3A, 0x42));
-prop!(pub Focus: Option<Color> {} = None);
-prop!(pub SelectionColor: Color {} = Color::BLACK.with_alpha_factor(0.5));
-prop!(pub CurrentLineColor: Option<Color> {  } = None);
-prop!(pub Link: Option<Color> {} = None);
-prop!(pub VisibleWhitespaceColor: Color {} = Color::TRANSPARENT);
-prop!(pub IndentGuideColor: Color {} = Color::TRANSPARENT);
-prop!(pub StickyHeaderBackground: Option<Color> {} = None);
-
-prop_extractor! {
-    pub EditorViewStyle {
-        pub indent_style: IndentStyleProp,
-        // dropdown_shadow: DropdownShadow,
-        // focus: Focus,
-        pub caret: CursorColor,
-        pub selection: SelectionColor,
-        pub current_line: CurrentLineColor,
-        // link: Link,
-        pub visible_whitespace: VisibleWhitespaceColor,
-        pub indent_guide: IndentGuideColor,
-        pub scroll_beyond_last_line: ScrollBeyondLastLine,
-        // sticky_header_background: StickyHeaderBackground,
-    }
-}
-impl EditorViewStyle {
-    pub fn ed_caret(&self) -> Color {
-        self.caret().unwrap_or(Color::BLACK.with_alpha_factor(0.5))
-    }
-}
-
 pub struct EditorView {
     id: Id,
     data: ViewData,
     editor: RwSignal<Editor>,
     is_active: Memo<bool>,
     inner_node: Option<NodeId>,
-    editor_view_style: EditorViewStyle,
 }
 impl EditorView {
     #[allow(clippy::too_many_arguments)]
@@ -553,18 +513,12 @@ impl EditorView {
         }
     }
 
-    fn paint_cursor(
-        cx: &mut PaintCx,
-        ed: &Editor,
-        is_active: bool,
-        screen_lines: &ScreenLines,
-        editor_style: &EditorViewStyle,
-    ) {
+    fn paint_cursor(cx: &mut PaintCx, ed: &Editor, is_active: bool, screen_lines: &ScreenLines) {
         let cursor = ed.cursor;
 
         let viewport = ed.viewport.get_untracked();
 
-        let current_line_color = editor_style.current_line();
+        let current_line_color = ed.es.with_untracked(|es| es.current_line());
 
         cursor.with_untracked(|cursor| {
             let highlight_current_line = match cursor.mode {
@@ -594,21 +548,16 @@ impl EditorView {
                 }
             }
 
-            EditorView::paint_selection(cx, ed, screen_lines, editor_style);
+            EditorView::paint_selection(cx, ed, screen_lines);
 
-            EditorView::paint_cursor_caret(cx, ed, is_active, screen_lines, editor_style);
+            EditorView::paint_cursor_caret(cx, ed, is_active, screen_lines);
         });
     }
 
-    pub fn paint_selection(
-        cx: &mut PaintCx,
-        ed: &Editor,
-        screen_lines: &ScreenLines,
-        editor_style: &EditorViewStyle,
-    ) {
+    pub fn paint_selection(cx: &mut PaintCx, ed: &Editor, screen_lines: &ScreenLines) {
         let cursor = ed.cursor;
 
-        let selection_color = editor_style.selection();
+        let selection_color = ed.es.with_untracked(|es| es.selection());
 
         cursor.with_untracked(|cursor| match cursor.mode {
             CursorMode::Normal(_) => {}
@@ -684,11 +633,10 @@ impl EditorView {
         ed: &Editor,
         is_active: bool,
         screen_lines: &ScreenLines,
-        editor_style: &EditorViewStyle,
     ) {
         let cursor = ed.cursor;
         let hide_cursor = ed.cursor_info.hidden;
-        let caret_color = editor_style.ed_caret();
+        let caret_color = ed.es.with_untracked(|es| es.ed_caret());
 
         if !is_active || hide_cursor.get_untracked() {
             return;
@@ -788,18 +736,12 @@ impl EditorView {
         }
     }
 
-    pub fn paint_text(
-        cx: &mut PaintCx,
-        ed: &Editor,
-        viewport: Rect,
-        screen_lines: &ScreenLines,
-        editor_style: &EditorViewStyle,
-    ) {
+    pub fn paint_text(cx: &mut PaintCx, ed: &Editor, viewport: Rect, screen_lines: &ScreenLines) {
         let edid = ed.id();
         let style = ed.style();
 
         // TODO: cache indent text layout width
-        let indent_unit = editor_style.indent_style().as_str();
+        let indent_unit = ed.es.with_untracked(|es| es.indent_style()).as_str();
         // TODO: don't assume font family is the same for all lines?
         let family = style.font_family(edid, 0);
         let attrs = Attrs::new()
@@ -820,7 +762,7 @@ impl EditorView {
                 let family = style.font_family(edid, line);
                 let font_size = style.font_size(edid, line) as f32;
                 let attrs = Attrs::new()
-                    .color(editor_style.visible_whitespace())
+                    .color(ed.es.with_untracked(|es| es.visible_whitespace()))
                     .family(&family)
                     .font_size(font_size);
                 let attrs_list = AttrsList::new(attrs);
@@ -848,7 +790,7 @@ impl EditorView {
                 while x + 1.0 < text_layout.indent {
                     cx.stroke(
                         &Line::new(Point::new(x, y), Point::new(x, y + line_height)),
-                        editor_style.indent_guide(),
+                        ed.es.with(|es| es.indent_guide()),
                         1.0,
                     );
                     x += indent_text_width;
@@ -895,15 +837,6 @@ impl Widget for EditorView {
                 }
             })
         });
-        if self.editor_view_style.read(cx) {
-            cx.app_state_mut().request_paint(self.id());
-        }
-
-        let editor = self.editor.get_untracked();
-        if editor.es.try_update(|s| s.read(cx)).unwrap() {
-            editor.floem_style_id.update(|val| *val += 1);
-            cx.app_state_mut().request_paint(self.id());
-        }
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -937,7 +870,7 @@ impl Widget for EditorView {
             let last_line_height = line_height * (editor.last_vline().get() + 1) as f64;
             let height = last_line_height.max(parent_size.height());
 
-            let margin_bottom = if self.editor_view_style.scroll_beyond_last_line() {
+            let margin_bottom = if editor.es.with_untracked(|es| es.scroll_beyond_last_line()) {
                 parent_size.height().min(last_line_height) - line_height
             } else {
                 0.0
@@ -981,15 +914,9 @@ impl Widget for EditorView {
         // I expect that most/all of the paint functions could restrict themselves to only what is
         // within the active screen lines without issue.
         let screen_lines = ed.screen_lines.get_untracked();
-        EditorView::paint_cursor(
-            cx,
-            &ed,
-            self.is_active.get_untracked(),
-            &screen_lines,
-            &self.editor_view_style,
-        );
+        EditorView::paint_cursor(cx, &ed, self.is_active.get_untracked(), &screen_lines);
         let screen_lines = ed.screen_lines.get_untracked();
-        EditorView::paint_text(cx, &ed, viewport, &screen_lines, &self.editor_view_style);
+        EditorView::paint_text(cx, &ed, viewport, &screen_lines);
     }
 }
 
@@ -1056,7 +983,6 @@ pub fn editor_view(
         editor,
         is_active,
         inner_node: None,
-        editor_view_style: Default::default(),
     }
     .on_event(EventListener::ImePreedit, move |event| {
         if !is_active.get_untracked() {

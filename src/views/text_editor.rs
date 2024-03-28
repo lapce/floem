@@ -26,12 +26,10 @@ use super::editor::{
     gutter::{DimColor, GutterClass, LeftOfCenterPadding, RightOfCenterPadding},
     keypress::press::KeyPress,
     text::{RenderWhitespace, WrapMethod},
-    view::{
-        CurrentLineColor, EditorViewClass, IndentGuideColor, IndentStyleProp, SelectionColor,
-        VisibleWhitespaceColor,
-    },
-    CursorSurroundingLines, Modal, ModalRelativeLine, PhantomColor, PlaceholderColor,
-    PreeditUnderlineColor, RenderWhitespaceProp, ScrollBeyondLastLine, ShowIndentGuide, SmartTab,
+    view::EditorViewClass,
+    CurrentLineColor, CursorSurroundingLines, IndentGuideColor, IndentStyleProp, Modal,
+    ModalRelativeLine, PhantomColor, PlaceholderColor, PreeditUnderlineColor, RenderWhitespaceProp,
+    ScrollBeyondLastLine, SelectionColor, ShowIndentGuide, SmartTab, VisibleWhitespaceColor,
     WrapProp,
 };
 

@@ -15,7 +15,7 @@ use floem_peniko::Color;
 use floem_reactive::RwSignal;
 use kurbo::Rect;
 
-use super::{view::CurrentLineColor, Editor};
+use super::{CurrentLineColor, Editor};
 
 prop!(pub LeftOfCenterPadding: f64 {} = 25.);
 prop!(pub RightOfCenterPadding: f64 {} = 30.);
