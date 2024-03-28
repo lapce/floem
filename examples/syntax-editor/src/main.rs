@@ -5,6 +5,7 @@ use floem::views::editor::core::buffer::rope_text::RopeText;
 use floem::views::editor::id::EditorId;
 use floem::views::editor::layout::TextLayoutLine;
 use floem::views::editor::text::{default_dark_color, Document, SimpleStylingBuilder, Styling};
+use floem::views::editor::EditorStyle;
 use floem::{
     cosmic_text::FamilyOwned,
     keyboard::{Key, ModifiersState, NamedKey},
@@ -104,6 +105,7 @@ impl<'a> Styling for SyntaxHighlightingStyle<'a> {
     fn apply_attr_styles(
         &self,
         _edid: EditorId,
+        _style: &EditorStyle,
         line: usize,
         default: Attrs,
         attrs: &mut AttrsList,
@@ -157,8 +159,15 @@ impl<'a> Styling for SyntaxHighlightingStyle<'a> {
         }
     }
 
-    fn apply_layout_styles(&self, edid: EditorId, line: usize, layout_line: &mut TextLayoutLine) {
-        self.style.apply_layout_styles(edid, line, layout_line)
+    fn apply_layout_styles(
+        &self,
+        edid: EditorId,
+        style: &EditorStyle,
+        line: usize,
+        layout_line: &mut TextLayoutLine,
+    ) {
+        self.style
+            .apply_layout_styles(edid, style, line, layout_line)
     }
 
     fn paint_caret(&self, edid: EditorId, line: usize) -> bool {
