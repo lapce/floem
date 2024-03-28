@@ -409,7 +409,7 @@ impl TextEditor {
         self.editor.doc()
     }
 
-    /// Try downcasting the document to a [`TextDocument`].
+    /// Try downcasting the document to a [`TextDocument`].  
     /// Returns `None` if the document is not a [`TextDocument`].
     fn text_doc(&self) -> Option<Rc<TextDocument>> {
         self.doc().downcast_rc().ok()
@@ -420,13 +420,13 @@ impl TextEditor {
         self.editor.rope_text()
     }
 
-    /// Use a different document in the text editor
+    /// Use a different document in the text editor  
     pub fn use_doc(self, doc: Rc<dyn Document>) -> Self {
         self.editor.update_doc(doc, None);
         self
     }
 
-    /// Use the same document as another text editor view.
+    /// Use the same document as another text editor view.  
     /// ```rust,ignore
     /// let primary = text_editor();
     /// let secondary = text_editor().share_document(&primary);
@@ -435,7 +435,7 @@ impl TextEditor {
     ///     primary,
     ///     secondary,
     /// ))
-    /// ```
+    /// ```  
     /// If you wish for it to also share the styling, consider using [`TextEditor::shared_editor`]
     /// instead.
     pub fn share_doc(self, other: &TextEditor) -> Self {
@@ -468,7 +468,7 @@ impl TextEditor {
         }
     }
 
-    /// Change the [`Styling`] used for the editor.
+    /// Change the [`Styling`] used for the editor.  
     /// ```rust,ignore
     /// let styling = SimpleStyling::builder()
     ///     .font_size(12)
@@ -508,9 +508,9 @@ impl TextEditor {
         self
     }
 
-    /// When commands are run on the document, this function is called.
+    /// When commands are run on the document, this function is called.  
     /// If it returns [`CommandExecuted::Yes`] then further handlers after it, including the
-    /// default handler, are not executed.
+    /// default handler, are not executed.  
     /// ```rust
     /// use floem::views::editor::command::{Command, CommandExecuted};
     /// use floem::views::text_editor::text_editor;
@@ -518,7 +518,7 @@ impl TextEditor {
     /// text_editor("Hello")
     ///     .pre_command(|ev| {
     ///         if matches!(ev.cmd, Command::Edit(EditCommand::Undo)) {
-    ///             // Sorry, no undoing allowed
+    ///             // Sorry, no undoing allowed   
     ///             CommandExecuted::Yes
     ///         } else {
     ///             CommandExecuted::No
@@ -533,8 +533,8 @@ impl TextEditor {
     ///         CommandExecuted::No
     ///     });
     /// ```
-    /// Note that these are specific to each text editor view.
-    ///
+    /// Note that these are specific to each text editor view.  
+    ///   
     /// Note: only works for the default backing [`TextDocument`] doc
     pub fn pre_command(self, f: impl Fn(PreCommand) -> CommandExecuted + 'static) -> Self {
         if let Some(doc) = self.text_doc() {
@@ -543,9 +543,9 @@ impl TextEditor {
         self
     }
 
-    /// Listen for deltas applied to the editor.
+    /// Listen for deltas applied to the editor.  
     /// Useful for anything that has positions based in the editor that can be updated after
-    /// typing, such as syntax highlighting.
+    /// typing, such as syntax highlighting.  
     /// Note: only works for the default backing [`TextDocument`] doc
     pub fn update(self, f: impl Fn(OnUpdate) + 'static) -> Self {
         if let Some(doc) = self.text_doc() {
