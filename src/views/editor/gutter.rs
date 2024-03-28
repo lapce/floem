@@ -165,7 +165,7 @@ impl Widget for EditorGutterView {
         let attrs_list = AttrsList::new(attrs);
         let current_line_attrs_list = AttrsList::new(attrs.color(accent_color));
         let show_relative = editor.es.with_untracked(|es| es.modal())
-            && editor.es.with_untracked(|es| es.modal_ralative_line())
+            && editor.es.with_untracked(|es| es.modal_relative_line())
             && mode != Mode::Insert;
 
         self.text_width = self.compute_widest_text_width(&attrs_list);

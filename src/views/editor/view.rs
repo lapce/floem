@@ -348,17 +348,17 @@ prop!(pub IndentGuideColor: Color {} = Color::TRANSPARENT);
 prop!(pub StickyHeaderBackground: Option<Color> {} = None);
 
 prop_extractor! {
-    EditorViewStyle {
-        indent_style: IndentStyleProp,
+    pub EditorViewStyle {
+        pub indent_style: IndentStyleProp,
         // dropdown_shadow: DropdownShadow,
         // focus: Focus,
-        caret: CaretColor,
-        selection: SelectionColor,
-        current_line: CurrentLineColor,
+        pub caret: CaretColor,
+        pub selection: SelectionColor,
+        pub current_line: CurrentLineColor,
         // link: Link,
-        visible_whitespace: VisibleWhitespaceColor,
-        indent_guide: IndentGuideColor,
-        scroll_beyond_last_line: ScrollBeyondLastLine,
+        pub visible_whitespace: VisibleWhitespaceColor,
+        pub indent_guide: IndentGuideColor,
+        pub scroll_beyond_last_line: ScrollBeyondLastLine,
         // sticky_header_background: StickyHeaderBackground,
     }
 }
@@ -596,7 +596,7 @@ impl EditorView {
         });
     }
 
-    fn paint_selection(
+    pub fn paint_selection(
         cx: &mut PaintCx,
         ed: &Editor,
         screen_lines: &ScreenLines,
@@ -675,7 +675,7 @@ impl EditorView {
         });
     }
 
-    fn paint_cursor_caret(
+    pub fn paint_cursor_caret(
         cx: &mut PaintCx,
         ed: &Editor,
         is_active: bool,
@@ -784,7 +784,7 @@ impl EditorView {
         }
     }
 
-    fn paint_text(
+    pub fn paint_text(
         cx: &mut PaintCx,
         ed: &Editor,
         viewport: Rect,
@@ -883,6 +883,12 @@ impl Widget for EditorView {
 
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         if self.editor_view_style.read(cx) {
+            cx.app_state_mut().request_paint(self.id());
+        }
+
+        let editor = self.editor.get_untracked();
+        if editor.es.try_update(|s| s.read(cx)).unwrap() {
+            editor.floem_style_id.update(|val| *val += 1);
             cx.app_state_mut().request_paint(self.id());
         }
     }
@@ -1312,7 +1318,7 @@ fn editor_content(
             rect.inflate(0.0, viewport.height() / 2.0)
         } else {
             let mut rect = rect;
-            let cursor_surrounding_lines = editor.es.with(|s| s.cursor_surounding_lines()) as f64;
+            let cursor_surrounding_lines = editor.es.with(|s| s.cursor_surrounding_lines()) as f64;
             rect.y0 -= cursor_surrounding_lines * line_height;
             rect.y1 += cursor_surrounding_lines * line_height;
             rect

@@ -29,7 +29,7 @@ use super::editor::{
         SelectionColor, VisibleWhitespaceColor,
     },
     CursorSurroundingLines, Modal, ModalRelativeLine, PhantomColor, PlaceholderColor,
-    PreeditUnderlineColor, RenderWhiteSpaceProp, ScrollBeyondLastLine, ShowIndentGuide, SmartTab,
+    PreeditUnderlineColor, RenderWhitespaceProp, ScrollBeyondLastLine, ShowIndentGuide, SmartTab,
     WrapProp,
 };
 
@@ -223,7 +223,7 @@ impl EditorCustomStyle {
     }
 
     /// Sets the color of visible whitespace characters.
-    pub fn visible_white_space(mut self, color: Color) -> Self {
+    pub fn visible_whitespace(mut self, color: Color) -> Self {
         self.0 = self
             .0
             .class(EditorViewClass, |s| s.set(VisibleWhitespaceColor, color));
@@ -231,8 +231,8 @@ impl EditorCustomStyle {
     }
 
     /// Sets which white space characters should be rendered.
-    pub fn render_white_space(mut self, render_white_space: RenderWhitespace) -> Self {
-        self.0 = self.0.set(RenderWhiteSpaceProp, render_white_space);
+    pub fn render_whitespace(mut self, render_whitespace: RenderWhitespace) -> Self {
+        self.0 = self.0.set(RenderWhitespaceProp, render_whitespace);
         self
     }
 

@@ -418,7 +418,7 @@ impl AppState {
         })
     }
 
-    pub(crate) fn get_layout_rect(&mut self, id: Id) -> Rect {
+    pub fn get_layout_rect(&mut self, id: Id) -> Rect {
         self.view_state(id).layout_rect
     }
 

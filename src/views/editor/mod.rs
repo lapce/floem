@@ -77,7 +77,7 @@ prop!(pub SmartTab: bool {} = false);
 prop!(pub PhantomColor: Color {} = Color::DIM_GRAY);
 prop!(pub PlaceholderColor: Color {} = Color::DIM_GRAY);
 prop!(pub PreeditUnderlineColor: Color {} = Color::WHITE);
-prop!(pub RenderWhiteSpaceProp: RenderWhitespace {} = RenderWhitespace::None);
+prop!(pub RenderWhitespaceProp: RenderWhitespace {} = RenderWhitespace::None);
 impl StylePropValue for RenderWhitespace {
     fn debug_view(&self) -> Option<AnyView> {
         Some(crate::views::text(self).any())
@@ -93,13 +93,13 @@ prop_extractor! {
         pub show_indent_guide: ShowIndentGuide,
         pub modal: Modal,
         // Whether line numbers are relative in modal mode
-        pub modal_ralative_line: Modal,
+        pub modal_relative_line: ModalRelativeLine,
         // Whether to insert the indent that is detected for the file when a tab character
         // is inputted.
         pub smart_tab: SmartTab,
         pub wrap_method: WrapProp,
-        pub cursor_surounding_lines: CursorSurroundingLines,
-        pub render_white_space: RenderWhiteSpaceProp,
+        pub cursor_surrounding_lines: CursorSurroundingLines,
+        pub render_whitespace: RenderWhitespaceProp,
     }
 }
 impl EditorStyle {
@@ -275,6 +275,12 @@ impl Editor {
     // TODO: should this be `ReadSignal`? but read signal doesn't have .track
     pub fn doc_signal(&self) -> RwSignal<Rc<dyn Document>> {
         self.doc
+    }
+
+    pub fn config_id(&self) -> ConfigId {
+        let style_id = self.style.with(|s| s.id());
+        let floem_style_id = self.floem_style_id;
+        ConfigId::new(style_id, floem_style_id.get_untracked())
     }
 
     pub fn recreate_view_effects(&self) {
@@ -1001,26 +1007,14 @@ impl Editor {
 
     pub fn text_layout_trigger(&self, line: usize, trigger: bool) -> Arc<TextLayoutLine> {
         let cache_rev = self.doc().cache_rev().get_untracked();
-        let id = self.style().id();
-        let floem_style_id = self.floem_style_id;
-        self.lines.get_init_text_layout(
-            cache_rev,
-            ConfigId::new(id, floem_style_id.get_untracked()),
-            self,
-            line,
-            trigger,
-        )
+        self.lines
+            .get_init_text_layout(cache_rev, self.config_id(), self, line, trigger)
     }
 
     fn try_get_text_layout(&self, line: usize) -> Option<Arc<TextLayoutLine>> {
         let cache_rev = self.doc().cache_rev().get_untracked();
-        let id = self.style().id();
-        let floem_style_id = self.floem_style_id;
-        self.lines.try_get_text_layout(
-            cache_rev,
-            ConfigId::new(id, floem_style_id.get_untracked()),
-            line,
-        )
+        self.lines
+            .try_get_text_layout(cache_rev, self.config_id(), line)
     }
 
     /// Create rendable whitespace layout by creating a new text layout
@@ -1136,7 +1130,9 @@ impl TextLayoutProvider for Editor {
             .line_height(LineHeightValue::Px(style.line_height(edid, line)));
         let mut attrs_list = AttrsList::new(attrs);
 
-        style.apply_attr_styles(edid, line, attrs, &mut attrs_list);
+        self.es.with_untracked(|es| {
+            style.apply_attr_styles(edid, es, line, attrs, &mut attrs_list);
+        });
 
         // Apply phantom text specific styling
         for (offset, size, col, phantom) in phantom_text.offset_size_iter() {
@@ -1186,7 +1182,7 @@ impl TextLayoutProvider for Editor {
             &line_content_original,
             &text_layout,
             &phantom_text,
-            self.es.with(|s| s.render_white_space()),
+            self.es.with(|s| s.render_whitespace()),
         );
 
         let indent_line = style.indent_line(edid, line, &line_content_original);
@@ -1214,7 +1210,9 @@ impl TextLayoutProvider for Editor {
             whitespaces,
             indent,
         };
-        style.apply_layout_styles(edid, line, &mut layout_line);
+        self.es.with_untracked(|es| {
+            style.apply_layout_styles(edid, es, line, &mut layout_line);
+        });
 
         Arc::new(layout_line)
     }
@@ -1371,7 +1369,6 @@ pub fn normal_compute_screen_lines(
 ) -> ScreenLines {
     let lines = &editor.lines;
     let style = editor.style.get();
-    let floem_style_id = editor.floem_style_id;
     // TODO: don't assume universal line height!
     let line_height = style.line_height(editor.id(), 0);
 
@@ -1404,7 +1401,7 @@ pub fn normal_compute_screen_lines(
         .iter_rvlines_init(
             editor.text_prov(),
             cache_rev,
-            ConfigId::new(style.id(), floem_style_id.get_untracked()),
+            editor.config_id(),
             min_info.rvline,
             false,
         )

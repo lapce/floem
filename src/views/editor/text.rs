@@ -333,6 +333,7 @@ pub trait Styling {
     fn apply_attr_styles(
         &self,
         _edid: EditorId,
+        _style: &EditorStyle,
         _line: usize,
         _default: Attrs,
         _attrs: &mut AttrsList,
@@ -342,6 +343,7 @@ pub trait Styling {
     fn apply_layout_styles(
         &self,
         _edid: EditorId,
+        _style: &EditorStyle,
         _line: usize,
         _layout_line: &mut TextLayoutLine,
     ) {
@@ -380,7 +382,7 @@ pub fn default_light_theme(mut style: EditorCustomStyle) -> EditorCustomStyle {
         .cursor_color(cursor)
         .selection_color(grey)
         .current_line_color(current_line)
-        .visible_white_space(grey)
+        .visible_whitespace(grey)
         .preedit_underline_color(fg)
         .indent_guide_color(grey)
         .gutter_current_color(current_line)
@@ -410,7 +412,7 @@ pub fn default_dark_color(mut style: EditorCustomStyle) -> EditorCustomStyle {
         .cursor_color(cursor)
         .selection_color(grey)
         .current_line_color(current_line)
-        .visible_white_space(grey)
+        .visible_whitespace(grey)
         .preedit_underline_color(fg)
         .indent_guide_color(grey)
         .gutter_current_color(current_line)
@@ -691,6 +693,7 @@ impl Styling for SimpleStyling {
     fn apply_attr_styles(
         &self,
         _edid: EditorId,
+        _style: &EditorStyle,
         _line: usize,
         _default: Attrs,
         _attrs: &mut AttrsList,
@@ -700,6 +703,7 @@ impl Styling for SimpleStyling {
     fn apply_layout_styles(
         &self,
         _edid: EditorId,
+        _style: &EditorStyle,
         _line: usize,
         _layout_line: &mut TextLayoutLine,
     ) {
