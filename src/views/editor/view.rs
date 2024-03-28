@@ -11,11 +11,11 @@ use crate::{
     peniko::Color,
     prop, prop_extractor,
     reactive::{batch, create_effect, create_memo, create_rw_signal, Memo, RwSignal, Scope},
-    style::{CursorStyle, Style, StylePropValue},
+    style::{CursorColor, CursorStyle, Style, StylePropValue},
     style_class,
     taffy::tree::NodeId,
     view::{AnyView, AnyWidget, View, ViewData, Widget},
-    views::{clip, container, empty, scroll, stack, text, Decorators},
+    views::{scroll, stack, text, Decorators},
     EventPropagation, Renderer,
 };
 use floem_editor_core::{
@@ -44,8 +44,8 @@ pub enum DiffSectionKind {
 
 #[derive(Clone, PartialEq)]
 pub struct DiffSection {
-    /// The y index that the diff section is at.  
-    /// This is multiplied by the line height to get the y position.  
+    /// The y index that the diff section is at.
+    /// This is multiplied by the line height to get the y position.
     /// So this can roughly be considered as the `VLine of the start of this diff section, but it
     /// isn't necessarily convertable to a `VLine` due to jumping over empty code sections.
     pub y_idx: usize,
@@ -59,11 +59,11 @@ pub struct DiffSection {
 #[derive(Clone, PartialEq)]
 pub struct ScreenLines {
     pub lines: Rc<Vec<RVLine>>,
-    /// Guaranteed to have an entry for each `VLine` in `lines`  
+    /// Guaranteed to have an entry for each `VLine` in `lines`
     /// You should likely use accessor functions rather than this directly.
     pub info: Rc<HashMap<RVLine, LineInfo>>,
     pub diff_sections: Option<Rc<Vec<DiffSection>>>,
-    /// The base y position that all the y positions inside `info` are relative to.  
+    /// The base y position that all the y positions inside `info` are relative to.
     /// This exists so that if a text layout is created outside of the view, we don't have to
     /// completely recompute the screen lines (or do somewhat intricate things to update them)
     /// we simply have to update the `base_y`.
@@ -94,7 +94,7 @@ impl ScreenLines {
         });
     }
 
-    /// Get the line info for the given rvline.  
+    /// Get the line info for the given rvline.
     pub fn info(&self, rvline: RVLine) -> Option<LineInfo> {
         let info = self.info.get(&rvline)?;
         let base = self.base.get();
@@ -110,12 +110,12 @@ impl ScreenLines {
         self.lines.first().copied().zip(self.lines.last().copied())
     }
 
-    /// Iterate over the line info, copying them with the full y positions.  
+    /// Iterate over the line info, copying them with the full y positions.
     pub fn iter_line_info(&self) -> impl Iterator<Item = LineInfo> + '_ {
         self.lines.iter().map(|rvline| self.info(*rvline).unwrap())
     }
 
-    /// Iterate over the line info within the range, copying them with the full y positions.  
+    /// Iterate over the line info within the range, copying them with the full y positions.
     /// If the values are out of range, it is clamped to the valid lines within.
     pub fn iter_line_info_r(
         &self,
@@ -183,8 +183,8 @@ impl ScreenLines {
     }
 
     /// Iterate over the real lines underlying the visual lines on the screen with the y position
-    /// of their layout.  
-    /// (line, y)  
+    /// of their layout.
+    /// (line, y)
     pub fn iter_lines_y(&self) -> impl Iterator<Item = (usize, f64)> + '_ {
         let mut last_line = None;
         self.lines.iter().filter_map(move |vline| {
@@ -304,7 +304,7 @@ impl ScreenLines {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScreenLinesBase {
-    /// The current/previous viewport.  
+    /// The current/previous viewport.
     /// Used for determining whether there were any changes, and the `y0` serves as the
     /// base for positioning the lines.
     pub active_viewport: Rect,
@@ -339,7 +339,6 @@ impl StylePropValue for IndentStyle {
 prop!(pub DropdownShadow: Option<Color> {} = None);
 prop!(pub Foreground: Color { inherited } = Color::rgb8(0x38, 0x3A, 0x42));
 prop!(pub Focus: Option<Color> {} = None);
-prop!(pub CaretColor: Color {} = Color::BLACK.with_alpha_factor(0.5));
 prop!(pub SelectionColor: Color {} = Color::BLACK.with_alpha_factor(0.5));
 prop!(pub CurrentLineColor: Option<Color> {  } = None);
 prop!(pub Link: Option<Color> {} = None);
@@ -352,7 +351,7 @@ prop_extractor! {
         pub indent_style: IndentStyleProp,
         // dropdown_shadow: DropdownShadow,
         // focus: Focus,
-        pub caret: CaretColor,
+        pub caret: CursorColor,
         pub selection: SelectionColor,
         pub current_line: CurrentLineColor,
         // link: Link,
@@ -360,6 +359,11 @@ prop_extractor! {
         pub indent_guide: IndentGuideColor,
         pub scroll_beyond_last_line: ScrollBeyondLastLine,
         // sticky_header_background: StickyHeaderBackground,
+    }
+}
+impl EditorViewStyle {
+    pub fn ed_caret(&self) -> Color {
+        self.caret().unwrap_or(Color::BLACK.with_alpha_factor(0.5))
     }
 }
 
@@ -684,7 +688,7 @@ impl EditorView {
     ) {
         let cursor = ed.cursor;
         let hide_cursor = ed.cursor_info.hidden;
-        let caret_color = editor_style.caret();
+        let caret_color = editor_style.ed_caret();
 
         if !is_active || hide_cursor.get_untracked() {
             return;
@@ -882,6 +886,15 @@ impl Widget for EditorView {
     }
 
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+        let id = self.id();
+        self.editor.with_untracked(|ed| {
+            ed.es.update(|s| {
+                if s.read(cx) {
+                    ed.floem_style_id.update(|val| *val += 1);
+                    cx.app_state_mut().request_paint(id);
+                }
+            })
+        });
         if self.editor_view_style.read(cx) {
             cx.app_state_mut().request_paint(self.id());
         }
@@ -1085,7 +1098,7 @@ pub struct LineRegion {
     pub rvline: RVLine,
 }
 
-/// Get the render information for a caret cursor at the given `offset`.  
+/// Get the render information for a caret cursor at the given `offset`.
 pub fn cursor_caret(
     ed: &Editor,
     offset: usize,
@@ -1171,23 +1184,16 @@ pub fn editor_container_view(
     is_active: impl Fn(bool) -> bool + 'static + Copy,
     handle_key_event: impl Fn(&KeyPress, ModifiersState) -> CommandExecuted + 'static,
 ) -> impl View {
-    stack((clip(
-        stack((
-            editor_gutter(editor),
-            container(editor_content(editor, is_active, handle_key_event))
-                .style(move |s| s.size_pct(100.0, 100.0)),
-            empty().style(move |s| s.absolute().width_pct(100.0)),
-        ))
-        .style(|s| s.absolute().size_pct(100.0, 100.0)),
-    )
-    .style(|s| s.size_pct(100.0, 100.0)),))
+    stack((
+        editor_gutter(editor),
+        editor_content(editor, is_active, handle_key_event),
+    ))
+    .style(|s| s.absolute().size_pct(100.0, 100.0))
     .on_cleanup(move || {
         // TODO: should we have some way for doc to tell us if we're allowed to cleanup the editor?
         let editor = editor.get_untracked();
         editor.cx.get().dispose();
     })
-    // TODO(minor): only depend on style
-    .style(move |s| s.flex_col().size_pct(100.0, 100.0))
 }
 
 /// Default editor gutter
@@ -1223,14 +1229,19 @@ fn editor_content(
     let viewport = ed.viewport;
 
     scroll({
-        let editor_content_view = editor_view(editor, is_active).style(move |s| {
-            s.absolute().cursor(CursorStyle::Text)
-            // .min_size_pct(100.0, 100.0)
-        });
+        let editor_content_view =
+            editor_view(editor, is_active).style(move |s| s.absolute().cursor(CursorStyle::Text));
 
         let id = editor_content_view.id();
+        ed.editor_view_id.set(Some(id));
 
         editor_content_view
+            .on_event_cont(EventListener::FocusGained, move |_| {
+                editor.with_untracked(|ed| ed.editor_view_focused.notify())
+            })
+            .on_event_cont(EventListener::FocusLost, move |_| {
+                editor.with_untracked(|ed| ed.editor_view_focus_lost.notify())
+            })
             .on_event_cont(EventListener::PointerDown, move |event| {
                 // TODO:
                 if let Event::PointerDown(pointer_event) = event {
@@ -1324,7 +1335,7 @@ fn editor_content(
             rect
         }
     })
-    .style(|s| s.absolute().size_pct(100.0, 100.0))
+    .style(|s| s.size_pct(100.0, 100.0))
 }
 
 #[cfg(test)]

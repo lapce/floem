@@ -2,13 +2,14 @@ use std::rc::Rc;
 
 use floem_editor_core::{buffer::rope_text::RopeTextVal, indent::IndentStyle};
 use floem_peniko::Color;
-use floem_reactive::{create_updater, with_scope, Scope};
+use floem_reactive::{create_updater, with_scope, RwSignal, Scope};
 
+use floem_winit::keyboard::ModifiersState;
 use lapce_xi_rope::Rope;
 
 use crate::{
     id::Id,
-    style::Style,
+    style::{CursorColor, Style},
     view::{AnyWidget, View, ViewData, Widget},
     views::editor::{
         command::CommandExecuted,
@@ -23,10 +24,11 @@ use crate::{
 
 use super::editor::{
     gutter::{DimColor, GutterClass, LeftOfCenterPadding, RightOfCenterPadding},
+    keypress::press::KeyPress,
     text::{RenderWhitespace, WrapMethod},
     view::{
-        CaretColor, CurrentLineColor, EditorViewClass, IndentGuideColor, IndentStyleProp,
-        SelectionColor, VisibleWhitespaceColor,
+        CurrentLineColor, EditorViewClass, IndentGuideColor, IndentStyleProp, SelectionColor,
+        VisibleWhitespaceColor,
     },
     CursorSurroundingLines, Modal, ModalRelativeLine, PhantomColor, PlaceholderColor,
     PreeditUnderlineColor, RenderWhitespaceProp, ScrollBeyondLastLine, ShowIndentGuide, SmartTab,
@@ -66,6 +68,35 @@ pub fn text_editor(text: impl Into<Rope>) -> TextEditor {
     }
 }
 
+pub fn text_editor_keys(
+    text: impl Into<Rope>,
+    handle_key_event: impl Fn(RwSignal<Editor>, &KeyPress, ModifiersState) -> CommandExecuted + 'static,
+) -> TextEditor {
+    let id = Id::next();
+    let cx = Scope::current();
+
+    let doc = Rc::new(TextDocument::new(cx, text));
+    let style = Rc::new(SimpleStyling::new());
+    let editor = Editor::new(cx, doc, style);
+
+    let editor_sig = cx.create_rw_signal(editor.clone());
+    let child = with_scope(cx, || {
+        editor_container_view(
+            editor_sig,
+            |_| true,
+            move |kp, ms| handle_key_event(editor_sig, kp, ms),
+        )
+    })
+    .build();
+
+    TextEditor {
+        data: ViewData::new(id),
+        cx,
+        editor,
+        child,
+    }
+}
+
 impl View for TextEditor {
     fn view_data(&self) -> &ViewData {
         &self.data
@@ -89,6 +120,10 @@ impl Widget for TextEditor {
         &mut self.data
     }
 
+    fn view_style(&self) -> Option<Style> {
+        Some(Style::new().min_width(25).min_height(10))
+    }
+
     fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
         for_each(&self.child);
     }
@@ -105,10 +140,6 @@ impl Widget for TextEditor {
     }
 
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
-        if self.editor.es.try_update(|s| s.read(cx)).unwrap() {
-            self.editor.floem_style_id.update(|val| *val += 1);
-            cx.app_state_mut().request_paint(self.id());
-        }
         self.for_each_child_mut(&mut |child| {
             cx.style_view(child);
             false
@@ -117,6 +148,29 @@ impl Widget for TextEditor {
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         "Text Editor".into()
+    }
+
+    fn paint(&mut self, cx: &mut crate::context::PaintCx) {
+        cx.save();
+        let style = cx.get_builtin_style(self.id());
+        let border_radius = style.border_radius();
+        let size = cx
+            .get_layout(self.id())
+            .map(|layout| kurbo::Size::new(layout.size.width as f64, layout.size.height as f64))
+            .unwrap_or_default();
+
+        let radius = match border_radius {
+            crate::unit::PxPct::Px(px) => px,
+            crate::unit::PxPct::Pct(pct) => size.min_side() * (pct / 100.),
+        };
+        if radius > 0.0 {
+            let rect = size.to_rect().to_rounded_rect(radius);
+            cx.clip(&rect);
+        } else {
+            cx.clip(&size.to_rect());
+        }
+        cx.paint_view(&mut self.child);
+        cx.restore();
     }
 }
 
@@ -196,13 +250,15 @@ impl EditorCustomStyle {
 
     /// Sets the method for wrapping lines.
     pub fn wrap_method(mut self, wrap: WrapMethod) -> Self {
-        self.0 = self.0.set(WrapProp, wrap);
+        self.0 = self.0.class(EditorViewClass, |s| s.set(WrapProp, wrap));
         self
     }
 
     /// Sets the color of the cursor.
     pub fn cursor_color(mut self, cursor: Color) -> Self {
-        self.0 = self.0.class(EditorViewClass, |s| s.set(CaretColor, cursor));
+        self.0 = self
+            .0
+            .class(EditorViewClass, |s| s.set(CursorColor, cursor));
         self
     }
 
@@ -231,57 +287,73 @@ impl EditorCustomStyle {
     }
 
     /// Sets which white space characters should be rendered.
-    pub fn render_whitespace(mut self, render_whitespace: RenderWhitespace) -> Self {
-        self.0 = self.0.set(RenderWhitespaceProp, render_whitespace);
+    pub fn render_white_space(mut self, render_white_space: RenderWhitespace) -> Self {
+        self.0 = self.0.class(EditorViewClass, |s| {
+            s.set(RenderWhitespaceProp, render_white_space)
+        });
         self
     }
 
     /// Set the number of lines to keep visible above and below the cursor.
     /// Default: `1`
     pub fn cursor_surrounding_lines(mut self, lines: usize) -> Self {
-        self.0 = self.0.set(CursorSurroundingLines, lines);
+        self.0 = self
+            .0
+            .class(EditorViewClass, |s| s.set(CursorSurroundingLines, lines));
         self
     }
 
     /// Sets whether the indent guides should be displayed.
     pub fn indent_guide(mut self, show: bool) -> Self {
-        self.0 = self.0.set(ShowIndentGuide, show);
+        self.0 = self
+            .0
+            .class(EditorViewClass, |s| s.set(ShowIndentGuide, show));
         self
     }
 
     /// Sets the editor's mode to modal or non-modal.
     pub fn modal(mut self, modal: bool) -> Self {
-        self.0 = self.0.set(Modal, modal);
+        self.0 = self.0.class(EditorViewClass, |s| s.set(Modal, modal));
         self
     }
 
     /// Determines if line numbers are relative in modal mode.
     pub fn modal_relative_line(mut self, modal_relative_line: bool) -> Self {
-        self.0 = self.0.set(ModalRelativeLine, modal_relative_line);
+        self.0 = self.0.class(EditorViewClass, |s| {
+            s.set(ModalRelativeLine, modal_relative_line)
+        });
         self
     }
 
     /// Enables or disables smart tab behavior, which inserts the indent style detected in the file when the tab key is pressed.
     pub fn smart_tab(mut self, smart_tab: bool) -> Self {
-        self.0 = self.0.set(SmartTab, smart_tab);
+        self.0 = self
+            .0
+            .class(EditorViewClass, |s| s.set(SmartTab, smart_tab));
         self
     }
 
     /// Sets the color of phantom text
     pub fn phantom_color(mut self, color: Color) -> Self {
-        self.0 = self.0.set(PhantomColor, color);
+        self.0 = self
+            .0
+            .class(EditorViewClass, |s| s.set(PhantomColor, color));
         self
     }
 
     /// Sets the color of the placeholder text.
     pub fn placeholder_color(mut self, color: Color) -> Self {
-        self.0 = self.0.set(PlaceholderColor, color);
+        self.0 = self
+            .0
+            .class(EditorViewClass, |s| s.set(PlaceholderColor, color));
         self
     }
 
     /// Sets the color of the underline for preedit text.
     pub fn preedit_underline_color(mut self, color: Color) -> Self {
-        self.0 = self.0.set(PreeditUnderlineColor, color);
+        self.0 = self
+            .0
+            .class(EditorViewClass, |s| s.set(PreeditUnderlineColor, color));
         self
     }
 }
@@ -337,7 +409,7 @@ impl TextEditor {
         self.editor.doc()
     }
 
-    /// Try downcasting the document to a [`TextDocument`].  
+    /// Try downcasting the document to a [`TextDocument`].
     /// Returns `None` if the document is not a [`TextDocument`].
     fn text_doc(&self) -> Option<Rc<TextDocument>> {
         self.doc().downcast_rc().ok()
@@ -348,13 +420,13 @@ impl TextEditor {
         self.editor.rope_text()
     }
 
-    /// Use a different document in the text editor  
+    /// Use a different document in the text editor
     pub fn use_doc(self, doc: Rc<dyn Document>) -> Self {
         self.editor.update_doc(doc, None);
         self
     }
 
-    /// Use the same document as another text editor view.  
+    /// Use the same document as another text editor view.
     /// ```rust,ignore
     /// let primary = text_editor();
     /// let secondary = text_editor().share_document(&primary);
@@ -363,7 +435,7 @@ impl TextEditor {
     ///     primary,
     ///     secondary,
     /// ))
-    /// ```  
+    /// ```
     /// If you wish for it to also share the styling, consider using [`TextEditor::shared_editor`]
     /// instead.
     pub fn share_doc(self, other: &TextEditor) -> Self {
@@ -396,7 +468,7 @@ impl TextEditor {
         }
     }
 
-    /// Change the [`Styling`] used for the editor.  
+    /// Change the [`Styling`] used for the editor.
     /// ```rust,ignore
     /// let styling = SimpleStyling::builder()
     ///     .font_size(12)
@@ -436,9 +508,9 @@ impl TextEditor {
         self
     }
 
-    /// When commands are run on the document, this function is called.  
+    /// When commands are run on the document, this function is called.
     /// If it returns [`CommandExecuted::Yes`] then further handlers after it, including the
-    /// default handler, are not executed.  
+    /// default handler, are not executed.
     /// ```rust
     /// use floem::views::editor::command::{Command, CommandExecuted};
     /// use floem::views::text_editor::text_editor;
@@ -446,7 +518,7 @@ impl TextEditor {
     /// text_editor("Hello")
     ///     .pre_command(|ev| {
     ///         if matches!(ev.cmd, Command::Edit(EditCommand::Undo)) {
-    ///             // Sorry, no undoing allowed   
+    ///             // Sorry, no undoing allowed
     ///             CommandExecuted::Yes
     ///         } else {
     ///             CommandExecuted::No
@@ -461,8 +533,8 @@ impl TextEditor {
     ///         CommandExecuted::No
     ///     });
     /// ```
-    /// Note that these are specific to each text editor view.  
-    ///   
+    /// Note that these are specific to each text editor view.
+    ///
     /// Note: only works for the default backing [`TextDocument`] doc
     pub fn pre_command(self, f: impl Fn(PreCommand) -> CommandExecuted + 'static) -> Self {
         if let Some(doc) = self.text_doc() {
@@ -471,9 +543,9 @@ impl TextEditor {
         self
     }
 
-    /// Listen for deltas applied to the editor.  
+    /// Listen for deltas applied to the editor.
     /// Useful for anything that has positions based in the editor that can be updated after
-    /// typing, such as syntax highlighting.  
+    /// typing, such as syntax highlighting.
     /// Note: only works for the default backing [`TextDocument`] doc
     pub fn update(self, f: impl Fn(OnUpdate) + 'static) -> Self {
         if let Some(doc) = self.text_doc() {

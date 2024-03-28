@@ -30,6 +30,7 @@ use floem_editor_core::{
     selection::Selection,
     soft_tab::{snap_to_soft_tab_line_col, SnapDirection},
 };
+use floem_reactive::Trigger;
 use lapce_xi_rope::Rope;
 
 pub mod actions;
@@ -133,6 +134,10 @@ pub struct Editor {
     pub window_origin: RwSignal<Point>,
     pub viewport: RwSignal<Rect>,
     pub parent_size: RwSignal<Rect>,
+
+    pub editor_view_focused: Trigger,
+    pub editor_view_focus_lost: Trigger,
+    pub editor_view_id: RwSignal<Option<crate::id::Id>>,
 
     /// The current scroll position.
     pub scroll_delta: RwSignal<Vec2>,
@@ -244,6 +249,9 @@ impl Editor {
             parent_size: cx.create_rw_signal(Rect::ZERO),
             scroll_delta: cx.create_rw_signal(Vec2::ZERO),
             scroll_to: cx.create_rw_signal(None),
+            editor_view_focused: cx.create_trigger(),
+            editor_view_focus_lost: cx.create_trigger(),
+            editor_view_id: cx.create_rw_signal(None),
             lines,
             screen_lines,
             register: cx.create_rw_signal(Register::default()),
