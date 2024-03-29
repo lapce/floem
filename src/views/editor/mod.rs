@@ -1,3 +1,4 @@
+use core::indent::IndentStyle;
 use std::{
     cell::{Cell, RefCell},
     cmp::Ordering,
@@ -17,8 +18,9 @@ use crate::{
     pointer::{PointerButton, PointerInputEvent, PointerMoveEvent},
     prop, prop_extractor,
     reactive::{batch, untrack, ReadSignal, RwSignal, Scope},
-    style::{StylePropValue, TextColor},
+    style::{CursorColor, StylePropValue, TextColor},
     view::{AnyView, View},
+    views::text,
 };
 use floem_editor_core::{
     buffer::rope_text::{RopeText, RopeTextVal},
@@ -30,6 +32,7 @@ use floem_editor_core::{
     selection::Selection,
     soft_tab::{snap_to_soft_tab_line_col, SnapDirection},
 };
+use floem_reactive::Trigger;
 use lapce_xi_rope::Rope;
 
 pub mod actions;
@@ -83,6 +86,21 @@ impl StylePropValue for RenderWhitespace {
         Some(crate::views::text(self).any())
     }
 }
+prop!(pub IndentStyleProp: IndentStyle {} = IndentStyle::Spaces(4));
+impl StylePropValue for IndentStyle {
+    fn debug_view(&self) -> Option<AnyView> {
+        Some(text(self).any())
+    }
+}
+prop!(pub DropdownShadow: Option<Color> {} = None);
+prop!(pub Foreground: Color { inherited } = Color::rgb8(0x38, 0x3A, 0x42));
+prop!(pub Focus: Option<Color> {} = None);
+prop!(pub SelectionColor: Color {} = Color::BLACK.with_alpha_factor(0.5));
+prop!(pub CurrentLineColor: Option<Color> {  } = None);
+prop!(pub Link: Option<Color> {} = None);
+prop!(pub VisibleWhitespaceColor: Color {} = Color::TRANSPARENT);
+prop!(pub IndentGuideColor: Color {} = Color::TRANSPARENT);
+prop!(pub StickyHeaderBackground: Option<Color> {} = None);
 
 prop_extractor! {
     pub EditorStyle {
@@ -100,11 +118,23 @@ prop_extractor! {
         pub wrap_method: WrapProp,
         pub cursor_surrounding_lines: CursorSurroundingLines,
         pub render_whitespace: RenderWhitespaceProp,
+        pub indent_style: IndentStyleProp,
+        pub caret: CursorColor,
+        pub selection: SelectionColor,
+        pub current_line: CurrentLineColor,
+        pub visible_whitespace: VisibleWhitespaceColor,
+        pub indent_guide: IndentGuideColor,
+        pub scroll_beyond_last_line: ScrollBeyondLastLine,
     }
 }
 impl EditorStyle {
     fn ed_text_color(&self) -> Color {
         self.text_color().unwrap_or(Color::BLACK)
+    }
+}
+impl EditorStyle {
+    pub fn ed_caret(&self) -> Color {
+        self.caret().unwrap_or(Color::BLACK.with_alpha_factor(0.5))
     }
 }
 
@@ -133,6 +163,10 @@ pub struct Editor {
     pub window_origin: RwSignal<Point>,
     pub viewport: RwSignal<Rect>,
     pub parent_size: RwSignal<Rect>,
+
+    pub editor_view_focused: Trigger,
+    pub editor_view_focus_lost: Trigger,
+    pub editor_view_id: RwSignal<Option<crate::id::Id>>,
 
     /// The current scroll position.
     pub scroll_delta: RwSignal<Vec2>,
@@ -244,6 +278,9 @@ impl Editor {
             parent_size: cx.create_rw_signal(Rect::ZERO),
             scroll_delta: cx.create_rw_signal(Vec2::ZERO),
             scroll_to: cx.create_rw_signal(None),
+            editor_view_focused: cx.create_trigger(),
+            editor_view_focus_lost: cx.create_trigger(),
+            editor_view_id: cx.create_rw_signal(None),
             lines,
             screen_lines,
             register: cx.create_rw_signal(Register::default()),
