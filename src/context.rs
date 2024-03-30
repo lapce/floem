@@ -6,6 +6,7 @@ use std::{
     collections::{HashMap, HashSet},
     ops::{Deref, DerefMut},
     rc::Rc,
+    sync::Arc,
     time::Instant,
 };
 use taffy::{
@@ -1650,16 +1651,13 @@ impl<'a> PaintCx<'a> {
 
 // TODO: should this be private?
 pub struct PaintState {
-    pub(crate) renderer: crate::renderer::Renderer,
+    pub(crate) renderer: crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>>,
 }
 
 impl PaintState {
-    pub fn new<W>(window: &W, scale: f64, size: Size) -> Self
-    where
-        W: raw_window_handle::HasRawDisplayHandle + raw_window_handle::HasRawWindowHandle,
-    {
+    pub fn new(window: Arc<dyn wgpu::WindowHandle>, scale: f64, size: Size) -> Self {
         Self {
-            renderer: crate::renderer::Renderer::new(window, scale, size),
+            renderer: crate::renderer::Renderer::new(Arc::new(window), scale, size),
         }
     }
 
@@ -1719,7 +1717,7 @@ impl<'a> UpdateCx<'a> {
 }
 
 impl Deref for PaintCx<'_> {
-    type Target = crate::renderer::Renderer;
+    type Target = crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>>;
 
     fn deref(&self) -> &Self::Target {
         &self.paint_state.renderer

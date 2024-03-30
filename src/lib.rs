@@ -158,6 +158,8 @@ pub mod context;
 pub mod event;
 pub mod ext_event;
 pub mod file;
+#[cfg(any(feature = "rfd-async-std", feature = "rfd-tokio"))]
+pub mod file_action;
 pub mod id;
 mod inspector;
 pub mod keyboard;

@@ -1,6 +1,7 @@
 use std::{
     mem,
     rc::Rc,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -52,7 +53,7 @@ use crate::{
 /// - processing all requests to update the animation state from the reactive system
 /// - requesting a new animation frame from the backend
 pub(crate) struct WindowHandle {
-    pub(crate) window: Option<floem_winit::window::Window>,
+    pub(crate) window: Option<Arc<floem_winit::window::Window>>,
     window_id: WindowId,
     id: Id,
     /// Reactive Scope for this WindowHandle
@@ -125,7 +126,8 @@ impl WindowHandle {
             overlays: Default::default(),
         };
 
-        let paint_state = PaintState::new(&window, scale, size.get_untracked() * scale);
+        let window = Arc::new(window);
+        let paint_state = PaintState::new(window.clone(), scale, size.get_untracked() * scale);
         let mut window_handle = Self {
             window: Some(window),
             window_id,
