@@ -7,6 +7,8 @@ description = "A native Rust UI library with fine-grained reactivity"
 license.workspace = true
 
 [dependencies]
+image.workspace = true
+
 resvg = "0.33.0"
 wgpu = "0.18.0"
 raw-window-handle = "0.5.1"
@@ -15,5 +17,4 @@ anyhow = "1.0.69"
 floem-peniko = "0.1.0"
 swash = "0.1.8"
 floem-vger-rs = { package = "floem-vger", version = "0.2.7" }  # Alias library to avoid overlap with subcrate
-image = { version = "0.24", features = ["jpeg", "png"] }
 floem_renderer = { path = "../renderer", version = "0.1.0" }
