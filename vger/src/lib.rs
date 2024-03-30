@@ -19,7 +19,7 @@ pub struct VgerRenderer {
     device: Arc<Device>,
     #[allow(unused)]
     queue: Arc<Queue>,
-    surface: Surface,
+    surface: Surface<'static>,
     vger: Vger,
     alt_vger: Option<Vger>,
     config: SurfaceConfiguration,
@@ -37,10 +37,8 @@ const CLEAR_COLOR: wgpu::Color = wgpu::Color {
 };
 
 impl VgerRenderer {
-    pub fn new<
-        W: raw_window_handle::HasRawDisplayHandle + raw_window_handle::HasRawWindowHandle,
-    >(
-        window: &W,
+    pub fn new<W: wgpu::WindowHandle + 'static>(
+        window: W,
         width: u32,
         height: u32,
         scale: f64,
@@ -50,7 +48,7 @@ impl VgerRenderer {
             ..Default::default()
         });
 
-        let surface = unsafe { instance.create_surface(window) }?;
+        let surface = instance.create_surface(window)?;
 
         let adapter =
             futures::executor::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
@@ -79,9 +77,8 @@ impl VgerRenderer {
 
         let (device, queue) = futures::executor::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
-                features: wgpu::Features::empty(),
-                limits: wgpu::Limits::default(),
                 label: None,
+                ..Default::default()
             },
             None,
         ))?;
@@ -103,6 +100,7 @@ impl VgerRenderer {
             present_mode: wgpu::PresentMode::Fifo,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![],
+            desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &config);
 
@@ -252,7 +250,7 @@ impl VgerRenderer {
             if let Ok(r) = rx.try_recv() {
                 break r.ok()?;
             }
-            if self.device.poll(wgpu::MaintainBase::Wait) {
+            if let wgpu::MaintainResult::Ok = self.device.poll(wgpu::MaintainBase::Wait) {
                 rx.recv().ok()?.ok()?;
                 break;
             }
@@ -522,11 +520,10 @@ impl Renderer for VgerRenderer {
             height,
             || {
                 let mut img = tiny_skia::Pixmap::new(width, height).unwrap();
-                let rtree = resvg::Tree::from_usvg(svg.tree);
-                let scale = (width as f64 / rtree.size.width())
-                    .min(height as f64 / rtree.size.height()) as f32;
+                let scale = (width as f32 / svg.tree.size().width())
+                    .min(height as f32 / svg.tree.size().height());
                 let transform = tiny_skia::Transform::from_scale(scale, scale);
-                rtree.render(transform, &mut img.as_mut());
+                resvg::render(svg.tree, transform, &mut img.as_mut());
                 img.take()
             },
             paint,

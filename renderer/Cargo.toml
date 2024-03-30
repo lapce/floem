@@ -8,7 +8,8 @@ license.workspace = true
 
 [dependencies]
 image.workspace = true
+resvg.workspace = true
 
-resvg = "0.33.0"
 floem-peniko = "0.1.0"
-floem-cosmic-text = "0.7.0"
+# floem-cosmic-text = "0.7.0"
+floem-cosmic-text = { path = "../../floem-cosmic-text/" }
