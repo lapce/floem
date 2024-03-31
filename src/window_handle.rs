@@ -16,6 +16,7 @@ use floem_winit::{
 use image::DynamicImage;
 use indexmap::IndexMap;
 use kurbo::{Affine, Point, Rect, Size, Vec2};
+use raw_window_handle::HasRawWindowHandle;
 
 #[cfg(target_os = "linux")]
 use crate::unit::UnitExt;
@@ -907,6 +908,12 @@ impl WindowHandle {
                         state.move_listener = Some(MoveListener {
                             window_origin: Point::ZERO,
                             callback: action,
+                        });
+                    }
+                    UpdateMessage::RawWindowHandleListener { action, .. } => {
+                        self.window.as_ref().map(|window| {
+                            let handle = window.raw_window_handle();
+                            action(handle);
                         });
                     }
                     UpdateMessage::CleanupListener { id, action } => {

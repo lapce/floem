@@ -2,6 +2,7 @@ use std::{any::Any, cell::RefCell, collections::HashMap};
 
 use floem_winit::window::ResizeDirection;
 use kurbo::{Point, Rect, Size, Vec2};
+use raw_window_handle::RawWindowHandle;
 
 use crate::{
     animate::{AnimUpdateMsg, Animation},
@@ -76,6 +77,9 @@ pub(crate) enum UpdateMessage {
     ResizeListener {
         id: Id,
         action: Box<ResizeCallback>,
+    },
+    RawWindowHandleListener {
+        action: Box<dyn Fn(RawWindowHandle)>,
     },
     MoveListener {
         id: Id,
