@@ -1,4 +1,5 @@
 use floem::cosmic_text::{Attrs, AttrsList, Stretch, Style, Weight};
+use floem::keyboard::Modifiers;
 use floem::peniko::Color;
 use floem::reactive::RwSignal;
 use floem::views::editor::core::buffer::rope_text::RopeText;
@@ -8,7 +9,7 @@ use floem::views::editor::text::{default_dark_color, Document, SimpleStylingBuil
 use floem::views::editor::EditorStyle;
 use floem::{
     cosmic_text::FamilyOwned,
-    keyboard::{Key, ModifiersState, NamedKey},
+    keyboard::{Key, NamedKey},
     view::View,
     views::{
         editor::{
@@ -243,11 +244,9 @@ mod tests {
     .style(|s| s.size_full().flex_col().items_center().justify_center());
 
     let id = view.id();
-    view.on_key_up(
-        Key::Named(NamedKey::F11),
-        ModifiersState::empty(),
-        move |_| id.inspect(),
-    )
+    view.on_key_up(Key::Named(NamedKey::F11), Modifiers::empty(), move |_| {
+        id.inspect()
+    })
 }
 
 fn main() {

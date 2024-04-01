@@ -1,17 +1,17 @@
 use std::fmt::Display;
 
-use crate::keyboard::{Key, KeyCode, KeyEvent, ModifiersState, NamedKey, PhysicalKey};
+use crate::keyboard::{Key, KeyCode, KeyEvent, Modifiers, NamedKey, PhysicalKey};
 
 use super::key::KeyInput;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct KeyPress {
     pub key: KeyInput,
-    pub mods: ModifiersState,
+    pub mods: Modifiers,
 }
 
 impl KeyPress {
-    pub fn new(key: KeyInput, mods: ModifiersState) -> Self {
+    pub fn new(key: KeyInput, mods: Modifiers) -> Self {
         Self { key, mods }
     }
 
@@ -30,7 +30,7 @@ impl KeyPress {
 
     pub fn is_char(&self) -> bool {
         let mut mods = self.mods;
-        mods.set(ModifiersState::SHIFT, false);
+        mods.set(Modifiers::SHIFT, false);
         if mods.is_empty() {
             if let KeyInput::Keyboard(Key::Character(_c), _) = &self.key {
                 return true;
@@ -60,13 +60,13 @@ impl KeyPress {
 
     pub fn label(&self) -> String {
         let mut keys = String::from("");
-        if self.mods.control_key() {
+        if self.mods.control() {
             keys.push_str("Ctrl+");
         }
-        if self.mods.alt_key() {
+        if self.mods.alt() {
             keys.push_str("Alt+");
         }
-        if self.mods.super_key() {
+        if self.mods.meta() {
             let keyname = match std::env::consts::OS {
                 "macos" => "Cmd+",
                 "windows" => "Win+",
@@ -74,7 +74,7 @@ impl KeyPress {
             };
             keys.push_str(keyname);
         }
-        if self.mods.shift_key() {
+        if self.mods.shift() {
             keys.push_str("Shift+");
         }
         keys.push_str(&self.key.to_string());
@@ -98,13 +98,14 @@ impl KeyPress {
                     }
                 };
 
-                let mut mods = ModifiersState::empty();
+                let mut mods = Modifiers::empty();
                 for part in modifiers.to_lowercase().split('+') {
                     match part {
-                        "ctrl" => mods.set(ModifiersState::CONTROL, true),
-                        "meta" => mods.set(ModifiersState::SUPER, true),
-                        "shift" => mods.set(ModifiersState::SHIFT, true),
-                        "alt" => mods.set(ModifiersState::ALT, true),
+                        "ctrl" => mods.set(Modifiers::CONTROL, true),
+                        "meta" => mods.set(Modifiers::META, true),
+                        "shift" => mods.set(Modifiers::SHIFT, true),
+                        "alt" => mods.set(Modifiers::ALT, true),
+                        "altgr" => mods.set(Modifiers::ALT, true),
                         "" => (),
                         // other => warn!("Invalid key modifier: {}", other),
                         _ => {}
@@ -119,17 +120,20 @@ impl KeyPress {
 
 impl Display for KeyPress {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.mods.contains(ModifiersState::CONTROL) {
+        if self.mods.contains(Modifiers::CONTROL) {
             let _ = f.write_str("Ctrl+");
         }
-        if self.mods.contains(ModifiersState::ALT) {
+        if self.mods.contains(Modifiers::ALT) {
             let _ = f.write_str("Alt+");
         }
-        if self.mods.contains(ModifiersState::SUPER) {
+        if self.mods.contains(Modifiers::META) {
             let _ = f.write_str("Meta+");
         }
-        if self.mods.contains(ModifiersState::SHIFT) {
+        if self.mods.contains(Modifiers::SHIFT) {
             let _ = f.write_str("Shift+");
+        }
+        if self.mods.contains(Modifiers::ALTGR) {
+            let _ = f.write_str("Altgr+");
         }
         f.write_str(&self.key.to_string())
     }
@@ -145,14 +149,14 @@ impl TryFrom<&KeyEvent> for KeyPress {
     }
 }
 
-pub fn get_key_modifiers(key_event: &KeyEvent) -> ModifiersState {
+pub fn get_key_modifiers(key_event: &KeyEvent) -> Modifiers {
     let mut mods = key_event.modifiers;
 
     match &key_event.key.logical_key {
-        Key::Named(NamedKey::Shift) => mods.set(ModifiersState::SHIFT, false),
-        Key::Named(NamedKey::Alt) => mods.set(ModifiersState::ALT, false),
-        Key::Named(NamedKey::Meta) => mods.set(ModifiersState::SUPER, false),
-        Key::Named(NamedKey::Control) => mods.set(ModifiersState::CONTROL, false),
+        Key::Named(NamedKey::Shift) => mods.set(Modifiers::SHIFT, false),
+        Key::Named(NamedKey::Alt) => mods.set(Modifiers::ALT, false),
+        Key::Named(NamedKey::Meta) => mods.set(Modifiers::META, false),
+        Key::Named(NamedKey::Control) => mods.set(Modifiers::CONTROL, false),
         _ => (),
     }
 

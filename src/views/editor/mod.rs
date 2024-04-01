@@ -12,7 +12,7 @@ use std::{
 use crate::{
     action::{exec_after, TimerToken},
     cosmic_text::{Attrs, AttrsList, LineHeightValue, TextLayout, Wrap},
-    keyboard::ModifiersState,
+    keyboard::Modifiers,
     kurbo::{Point, Rect, Vec2},
     peniko::Color,
     pointer::{PointerButton, PointerInputEvent, PointerMoveEvent},
@@ -514,8 +514,8 @@ impl Editor {
         self.cursor.update(|cursor| {
             cursor.set_offset(
                 new_offset,
-                pointer_event.modifiers.shift_key(),
-                pointer_event.modifiers.alt_key(),
+                pointer_event.modifiers.shift(),
+                pointer_event.modifiers.alt(),
             )
         });
     }
@@ -529,8 +529,8 @@ impl Editor {
             cursor.add_region(
                 start,
                 end,
-                pointer_event.modifiers.shift_key(),
-                pointer_event.modifiers.alt_key(),
+                pointer_event.modifiers.shift(),
+                pointer_event.modifiers.alt(),
             )
         });
     }
@@ -546,8 +546,8 @@ impl Editor {
             cursor.add_region(
                 start,
                 end,
-                pointer_event.modifiers.shift_key(),
-                pointer_event.modifiers.alt_key(),
+                pointer_event.modifiers.shift(),
+                pointer_event.modifiers.alt(),
             )
         });
     }
@@ -556,9 +556,8 @@ impl Editor {
         let mode = self.cursor.with_untracked(|c| c.get_mode());
         let (offset, _is_inside) = self.offset_of_point(mode, pointer_event.pos);
         if self.active.get_untracked() && self.cursor.with_untracked(|c| c.offset()) != offset {
-            self.cursor.update(|cursor| {
-                cursor.set_offset(offset, true, pointer_event.modifiers.alt_key())
-            });
+            self.cursor
+                .update(|cursor| cursor.set_offset(offset, true, pointer_event.modifiers.alt()));
         }
     }
 
@@ -580,7 +579,7 @@ impl Editor {
     }
 
     // TODO: should this have modifiers state in its api
-    pub fn page_move(&self, down: bool, mods: ModifiersState) {
+    pub fn page_move(&self, down: bool, mods: Modifiers) {
         let viewport = self.viewport.get_untracked();
         // TODO: don't assume line height is constant
         let line_height = f64::from(self.line_height(0));
@@ -597,7 +596,7 @@ impl Editor {
         self.doc().run_command(self, &cmd, Some(lines), mods);
     }
 
-    pub fn scroll(&self, top_shift: f64, down: bool, count: usize, mods: ModifiersState) {
+    pub fn scroll(&self, top_shift: f64, down: bool, count: usize, mods: Modifiers) {
         let viewport = self.viewport.get_untracked();
         // TODO: don't assume line height is constant
         let line_height = f64::from(self.line_height(0));

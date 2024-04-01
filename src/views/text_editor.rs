@@ -4,11 +4,11 @@ use floem_editor_core::{buffer::rope_text::RopeTextVal, indent::IndentStyle};
 use floem_peniko::Color;
 use floem_reactive::{create_updater, with_scope, RwSignal, Scope};
 
-use floem_winit::keyboard::ModifiersState;
 use lapce_xi_rope::Rope;
 
 use crate::{
     id::Id,
+    keyboard::Modifiers,
     style::{CursorColor, Style},
     view::{AnyWidget, View, ViewData, Widget},
     views::editor::{
@@ -68,7 +68,7 @@ pub fn text_editor(text: impl Into<Rope>) -> TextEditor {
 
 pub fn text_editor_keys(
     text: impl Into<Rope>,
-    handle_key_event: impl Fn(RwSignal<Editor>, &KeyPress, ModifiersState) -> CommandExecuted + 'static,
+    handle_key_event: impl Fn(RwSignal<Editor>, &KeyPress, Modifiers) -> CommandExecuted + 'static,
 ) -> TextEditor {
     let id = Id::next();
     let cx = Scope::current();

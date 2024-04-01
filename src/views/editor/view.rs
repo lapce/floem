@@ -6,7 +6,7 @@ use crate::{
     cosmic_text::{Attrs, AttrsList, TextLayout},
     event::{Event, EventListener},
     id::Id,
-    keyboard::{Key, ModifiersState, NamedKey},
+    keyboard::{Key, Modifiers, NamedKey},
     kurbo::{BezPath, Line, Point, Rect, Size, Vec2},
     peniko::Color,
     reactive::{batch, create_effect, create_memo, create_rw_signal, Memo, RwSignal, Scope},
@@ -1108,7 +1108,7 @@ pub fn cursor_caret(
 pub fn editor_container_view(
     editor: RwSignal<Editor>,
     is_active: impl Fn(bool) -> bool + 'static + Copy,
-    handle_key_event: impl Fn(&KeyPress, ModifiersState) -> CommandExecuted + 'static,
+    handle_key_event: impl Fn(&KeyPress, Modifiers) -> CommandExecuted + 'static,
 ) -> impl View {
     stack((
         editor_gutter(editor),
@@ -1145,7 +1145,7 @@ pub fn editor_gutter(editor: RwSignal<Editor>) -> impl View {
 fn editor_content(
     editor: RwSignal<Editor>,
     is_active: impl Fn(bool) -> bool + 'static + Copy,
-    handle_key_event: impl Fn(&KeyPress, ModifiersState) -> CommandExecuted + 'static,
+    handle_key_event: impl Fn(&KeyPress, Modifiers) -> CommandExecuted + 'static,
 ) -> impl View {
     let ed = editor.get_untracked();
     let cursor = ed.cursor;
@@ -1198,9 +1198,9 @@ fn editor_content(
                 handle_key_event(&keypress, key_event.modifiers);
 
                 let mut mods = key_event.modifiers;
-                mods.set(ModifiersState::SHIFT, false);
+                mods.set(Modifiers::SHIFT, false);
                 #[cfg(target_os = "macos")]
-                mods.set(ModifiersState::ALT, false);
+                mods.set(Modifiers::ALT, false);
 
                 if mods.is_empty() {
                     if let KeyInput::Keyboard(Key::Character(c), _) = keypress.key {

@@ -30,7 +30,7 @@ use crate::{
     event::{Event, EventListener},
     id::{Id, IdPath, ID_PATHS},
     inspector::{self, Capture, CaptureState, CapturedView},
-    keyboard::KeyEvent,
+    keyboard::{KeyEvent, Modifiers},
     menu::Menu,
     nav::view_arrow_navigation,
     pointer::{PointerButton, PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
@@ -68,7 +68,7 @@ pub(crate) struct WindowHandle {
     is_maximized: bool,
     transparent: bool,
     pub(crate) scale: f64,
-    pub(crate) modifiers: ModifiersState,
+    pub(crate) modifiers: Modifiers,
     pub(crate) cursor_position: Point,
     pub(crate) window_position: Point,
     pub(crate) last_pointer_down: Option<(u8, Point, Instant)>,
@@ -143,7 +143,7 @@ impl WindowHandle {
             transparent,
             profile: None,
             scale,
-            modifiers: ModifiersState::default(),
+            modifiers: Modifiers::default(),
             cursor_position: Point::ZERO,
             window_position: Point::ZERO,
             #[cfg(target_os = "linux")]
@@ -218,9 +218,9 @@ impl WindowHandle {
                 if !processed {
                     if let Event::KeyDown(KeyEvent { key, modifiers }) = &event {
                         if key.logical_key == Key::Named(NamedKey::Tab)
-                            && (modifiers.is_empty() || *modifiers == ModifiersState::SHIFT)
+                            && (modifiers.is_empty() || *modifiers == Modifiers::SHIFT)
                         {
-                            let backwards = modifiers.contains(ModifiersState::SHIFT);
+                            let backwards = modifiers.contains(Modifiers::SHIFT);
                             view_tab_navigation(&self.view, cx.app_state, backwards);
                             // view_debug_tree(&self.view);
                         } else if let Key::Character(character) = &key.logical_key {
@@ -228,7 +228,7 @@ impl WindowHandle {
                             if character.eq_ignore_ascii_case("i") {
                                 // view_debug_tree(&self.view);
                             }
-                        } else if *modifiers == ModifiersState::ALT {
+                        } else if *modifiers == Modifiers::ALT {
                             if let Key::Named(
                                 name @ (NamedKey::ArrowUp
                                 | NamedKey::ArrowDown
@@ -402,10 +402,17 @@ impl WindowHandle {
             key: key_event,
             modifiers: self.modifiers,
         };
+        let is_altgr = matches!(event.key.logical_key, Key::Named(NamedKey::AltGraph));
         if event.key.state.is_pressed() {
             self.event(Event::KeyDown(event));
+            if is_altgr {
+                self.modifiers.set(Modifiers::ALTGR, true);
+            }
         } else {
             self.event(Event::KeyUp(event));
+            if is_altgr {
+                self.modifiers.set(Modifiers::ALTGR, false);
+            }
         }
     }
 
@@ -1281,6 +1288,15 @@ impl WindowHandle {
                 self.event(Event::ImeDisabled);
             }
         }
+    }
+
+    pub(crate) fn modifiers_changed(&mut self, modifiers: ModifiersState) {
+        let is_altgr = self.modifiers.altgr();
+        let mut modifiers: Modifiers = modifiers.into();
+        if is_altgr {
+            modifiers.set(Modifiers::ALTGR, true);
+        }
+        self.modifiers = modifiers;
     }
 }
 
