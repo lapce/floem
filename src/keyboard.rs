@@ -52,6 +52,19 @@ impl Modifiers {
 
 impl From<ModifiersState> for Modifiers {
     fn from(value: ModifiersState) -> Self {
-        Modifiers::from_bits(value.bits()).unwrap_or_else(Modifiers::empty)
+        let mut modifiers = Modifiers::empty();
+        if value.shift_key() {
+            modifiers.set(Modifiers::SHIFT, true);
+        }
+        if value.alt_key() {
+            modifiers.set(Modifiers::ALT, true);
+        }
+        if value.control_key() {
+            modifiers.set(Modifiers::CONTROL, true);
+        }
+        if value.super_key() {
+            modifiers.set(Modifiers::META, true);
+        }
+        modifiers
     }
 }
