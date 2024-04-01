@@ -1,11 +1,13 @@
-use floem_winit::{event::MouseButton, keyboard::ModifiersState};
+use floem_winit::event::MouseButton;
 use kurbo::{Point, Vec2};
+
+use crate::keyboard::Modifiers;
 
 #[derive(Debug, Clone)]
 pub struct PointerWheelEvent {
     pub pos: Point,
     pub delta: Vec2,
-    pub modifiers: ModifiersState,
+    pub modifiers: Modifiers,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy, Hash)]
@@ -57,12 +59,12 @@ impl PointerButton {
 pub struct PointerInputEvent {
     pub pos: Point,
     pub button: PointerButton,
-    pub modifiers: ModifiersState,
+    pub modifiers: Modifiers,
     pub count: u8,
 }
 
 #[derive(Debug, Clone)]
 pub struct PointerMoveEvent {
     pub pos: Point,
-    pub modifiers: ModifiersState,
+    pub modifiers: Modifiers,
 }

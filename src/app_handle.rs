@@ -183,7 +183,7 @@ impl ApplicationHandle {
                 }
             }
             WindowEvent::ModifiersChanged(modifiers) => {
-                window_handle.modifiers = modifiers.state();
+                window_handle.modifiers_changed(modifiers.state());
             }
             WindowEvent::Ime(ime) => {
                 window_handle.ime(ime);

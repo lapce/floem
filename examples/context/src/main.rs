@@ -1,5 +1,5 @@
 use floem::{
-    keyboard::{Key, ModifiersState, NamedKey},
+    keyboard::{Key, Modifiers, NamedKey},
     peniko::Color,
     reactive::{provide_context, use_context},
     view::View,
@@ -47,11 +47,9 @@ fn app_view() -> impl View {
     });
 
     let id = view.id();
-    view.on_key_up(
-        Key::Named(NamedKey::F11),
-        ModifiersState::empty(),
-        move |_| id.inspect(),
-    )
+    view.on_key_up(Key::Named(NamedKey::F11), Modifiers::empty(), move |_| {
+        id.inspect()
+    })
 }
 
 fn main() {

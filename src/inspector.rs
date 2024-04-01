@@ -942,8 +942,7 @@ pub fn capture(window_id: WindowId) {
                     .style(|s| s.width_full().height_full())
                     .on_event(EventListener::KeyUp, move |e| {
                         if let Event::KeyUp(e) = e {
-                            if e.key.logical_key == Key::Named(NamedKey::F11)
-                                && e.modifiers.shift_key()
+                            if e.key.logical_key == Key::Named(NamedKey::F11) && e.modifiers.shift()
                             {
                                 id.inspect();
                                 return EventPropagation::Stop;
