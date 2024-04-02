@@ -802,7 +802,7 @@ mod tests {
         let cx = Scope::new();
         let doc = Rc::new(TextDocument::new(cx, text));
         let style = Rc::new(SimpleStyling::new());
-        Editor::new(cx, doc, style)
+        Editor::new(cx, doc, style, false)
     }
 
     // Tests for movement logic.
