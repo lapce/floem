@@ -50,7 +50,7 @@ pub fn text_editor(text: impl Into<Rope>) -> TextEditor {
 
     let doc = Rc::new(TextDocument::new(cx, text));
     let style = Rc::new(SimpleStyling::new());
-    let editor = Editor::new(cx, doc, style);
+    let editor = Editor::new(cx, doc, style, false);
 
     let editor_sig = cx.create_rw_signal(editor.clone());
     let child = with_scope(cx, || {
@@ -75,7 +75,7 @@ pub fn text_editor_keys(
 
     let doc = Rc::new(TextDocument::new(cx, text));
     let style = Rc::new(SimpleStyling::new());
-    let editor = Editor::new(cx, doc, style);
+    let editor = Editor::new(cx, doc, style, false);
 
     let editor_sig = cx.create_rw_signal(editor.clone());
     let child = with_scope(cx, || {
@@ -450,7 +450,7 @@ impl TextEditor {
 
         let doc = self.editor.doc();
         let style = self.editor.style();
-        let editor = Editor::new(self.cx, doc, style);
+        let editor = Editor::new(self.cx, doc, style, false);
 
         let editor_sig = self.cx.create_rw_signal(editor.clone());
         let child = with_scope(self.cx, || {

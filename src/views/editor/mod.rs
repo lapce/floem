@@ -196,9 +196,9 @@ impl Editor {
     /// Create a new editor into the given document, using the styling.  
     /// `doc`: The backing [`Document`], such as [TextDocument](self::text_document::TextDocument)
     /// `style`: How the editor should be styled, such as [SimpleStyling](self::text::SimpleStyling)
-    pub fn new(cx: Scope, doc: Rc<dyn Document>, style: Rc<dyn Styling>) -> Editor {
+    pub fn new(cx: Scope, doc: Rc<dyn Document>, style: Rc<dyn Styling>, modal: bool) -> Editor {
         let id = EditorId::next();
-        Editor::new_id(cx, id, doc, style)
+        Editor::new_id(cx, id, doc, style, modal)
     }
 
     /// Create a new editor into the given document, using the styling.  
@@ -210,8 +210,9 @@ impl Editor {
         id: EditorId,
         doc: Rc<dyn Document>,
         style: Rc<dyn Styling>,
+        modal: bool,
     ) -> Editor {
-        let editor = Editor::new_direct(cx, id, doc, style);
+        let editor = Editor::new_direct(cx, id, doc, style, modal);
         editor.recreate_view_effects();
 
         editor
@@ -238,11 +239,11 @@ impl Editor {
         id: EditorId,
         doc: Rc<dyn Document>,
         style: Rc<dyn Styling>,
+        modal: bool,
     ) -> Editor {
         let cx = cx.create_child();
 
         let viewport = cx.create_rw_signal(Rect::ZERO);
-        let modal = false;
         let cursor_mode = if modal {
             CursorMode::Normal(0)
         } else {
@@ -386,6 +387,7 @@ impl Editor {
             editor_id.unwrap_or_else(EditorId::next),
             doc,
             style,
+            false,
         );
 
         batch(|| {
