@@ -94,7 +94,7 @@ impl Widget for Tooltip {
                 if self.hover.map(|(_, t)| t) == Some(*token) {
                     let tip = self.tip.clone();
                     self.overlay = Some(add_overlay(
-                        window_origin + self.hover.unwrap().0.to_vec2(),
+                        window_origin + self.hover.unwrap().0.to_vec2() + (10., 10.),
                         move |_| tip(),
                     ));
                 }
