@@ -457,6 +457,7 @@ pub(crate) fn paint_border(cx: &mut PaintCx, style: &ViewStyleProps, size: Size)
             crate::unit::PxPct::Pct(pct) => size.min_side() * (pct / 100.),
         };
         if radius > 0.0 {
+            let radius = (radius - half).max(0.0);
             cx.stroke(&rect.to_rounded_rect(radius), border_color, left);
         } else {
             cx.stroke(&rect, border_color, left);
