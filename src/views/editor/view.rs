@@ -6,14 +6,15 @@ use crate::{
     cosmic_text::{Attrs, AttrsList, TextLayout},
     event::{Event, EventListener},
     id::Id,
-    keyboard::{Key, ModifiersState, NamedKey},
+    keyboard::{Key, Modifiers, NamedKey},
     kurbo::{BezPath, Line, Point, Rect, Size, Vec2},
     peniko::Color,
     reactive::{batch, create_effect, create_memo, create_rw_signal, Memo, RwSignal, Scope},
     style::{CursorStyle, Style},
+    style_class,
     taffy::tree::NodeId,
     view::{AnyWidget, View, ViewData, Widget},
-    views::{container, empty, scroll, stack, Decorators},
+    views::{scroll, stack, Decorators},
     EventPropagation, Renderer,
 };
 use floem_editor_core::{
@@ -30,7 +31,7 @@ use crate::views::editor::{
     visual_line::{RVLine, VLineInfo},
 };
 
-use super::{color::EditorColor, Editor, CHAR_WIDTH};
+use super::{Editor, CHAR_WIDTH};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum DiffSectionKind {
@@ -132,7 +133,7 @@ impl ScreenLines {
 
         let end_idx = self.lines.binary_search(r.end()).ok().or_else(|| {
             if self.lines.last().map(|l| r.end() > l).unwrap_or(false) {
-                Some(self.lines.len())
+                Some(self.lines.len() - 1)
             } else {
                 // The end is before the end of our lines but not available
                 None
@@ -374,7 +375,7 @@ impl EditorView {
             let right_col = phantom_text.col_after(right_col, false);
 
             // Skip over empty selections
-            if !info.is_empty() && left_col == right_col {
+            if !info.is_empty_phantom() && left_col == right_col {
                 continue;
             }
 
@@ -392,7 +393,7 @@ impl EditorView {
                 x1
             };
 
-            let (x0, width) = if info.is_empty() {
+            let (x0, width) = if info.is_empty_phantom() {
                 let text_layout = ed.text_layout(line);
                 let width = text_layout
                     .get_layout_x(rvline.line_index)
@@ -517,28 +518,32 @@ impl EditorView {
 
         let viewport = ed.viewport.get_untracked();
 
-        let current_line_color = ed.color(EditorColor::CurrentLine);
+        let current_line_color = ed.es.with_untracked(|es| es.current_line());
 
         cursor.with_untracked(|cursor| {
             let highlight_current_line = match cursor.mode {
-                CursorMode::Normal(_) | CursorMode::Insert(_) => true,
+                // TODO: check if shis should be 0 or 1
+                CursorMode::Normal(size) => size == 0,
+                CursorMode::Insert(ref sel) => sel.is_caret(),
                 CursorMode::Visual { .. } => false,
             };
 
-            // Highlight the current line
-            if highlight_current_line {
-                for (_, end) in cursor.regions_iter() {
-                    // TODO: unsure if this is correct for wrapping lines
-                    let rvline = ed.rvline_of_offset(end, cursor.affinity);
+            if let Some(current_line_color) = current_line_color {
+                // Highlight the current line
+                if highlight_current_line {
+                    for (_, end) in cursor.regions_iter() {
+                        // TODO: unsure if this is correct for wrapping lines
+                        let rvline = ed.rvline_of_offset(end, cursor.affinity);
 
-                    if let Some(info) = screen_lines.info(rvline) {
-                        let line_height = ed.line_height(info.vline_info.rvline.line);
-                        let rect = Rect::from_origin_size(
-                            (viewport.x0, info.vline_y),
-                            (viewport.width(), f64::from(line_height)),
-                        );
+                        if let Some(info) = screen_lines.info(rvline) {
+                            let line_height = ed.line_height(info.vline_info.rvline.line);
+                            let rect = Rect::from_origin_size(
+                                (viewport.x0, info.vline_y),
+                                (viewport.width(), f64::from(line_height)),
+                            );
 
-                        cx.fill(&rect, current_line_color, 0.0);
+                            cx.fill(&rect, current_line_color, 0.0);
+                        }
                     }
                 }
             }
@@ -552,7 +557,7 @@ impl EditorView {
     pub fn paint_selection(cx: &mut PaintCx, ed: &Editor, screen_lines: &ScreenLines) {
         let cursor = ed.cursor;
 
-        let selection_color = ed.color(EditorColor::Selection);
+        let selection_color = ed.es.with_untracked(|es| es.selection());
 
         cursor.with_untracked(|cursor| match cursor.mode {
             CursorMode::Normal(_) => {}
@@ -631,7 +636,7 @@ impl EditorView {
     ) {
         let cursor = ed.cursor;
         let hide_cursor = ed.cursor_info.hidden;
-        let caret_color = ed.color(EditorColor::Caret);
+        let caret_color = ed.es.with_untracked(|es| es.ed_caret());
 
         if !is_active || hide_cursor.get_untracked() {
             return;
@@ -736,7 +741,7 @@ impl EditorView {
         let style = ed.style();
 
         // TODO: cache indent text layout width
-        let indent_unit = style.indent_style().as_str();
+        let indent_unit = ed.es.with_untracked(|es| es.indent_style()).as_str();
         // TODO: don't assume font family is the same for all lines?
         let family = style.font_family(edid, 0);
         let attrs = Attrs::new()
@@ -757,7 +762,7 @@ impl EditorView {
                 let family = style.font_family(edid, line);
                 let font_size = style.font_size(edid, line) as f32;
                 let attrs = Attrs::new()
-                    .color(style.color(edid, EditorColor::VisibleWhitespace))
+                    .color(ed.es.with_untracked(|es| es.visible_whitespace()))
                     .family(&family)
                     .font_size(font_size);
                 let attrs_list = AttrsList::new(attrs);
@@ -779,13 +784,13 @@ impl EditorView {
                 }
             }
 
-            if ed.show_indent_guide.get_untracked() {
+            if ed.es.with(|s| s.show_indent_guide()) {
                 let line_height = f64::from(ed.line_height(line));
                 let mut x = 0.0;
                 while x + 1.0 < text_layout.indent {
                     cx.stroke(
                         &Line::new(Point::new(x, y), Point::new(x, y + line_height)),
-                        style.color(edid, EditorColor::IndentGuide),
+                        ed.es.with(|es| es.indent_guide()),
                         1.0,
                     );
                     x += indent_text_width;
@@ -794,22 +799,6 @@ impl EditorView {
 
             cx.draw_text(&text_layout.text, Point::new(0.0, y));
         }
-    }
-
-    pub fn paint_scroll_bar(cx: &mut PaintCx, ed: &Editor, viewport: Rect) {
-        // TODO: let this be customized
-        const BAR_WIDTH: f64 = 10.0;
-        cx.fill(
-            &Rect::ZERO
-                .with_size(Size::new(1.0, viewport.height()))
-                .with_origin(Point::new(
-                    viewport.x0 + viewport.width() - BAR_WIDTH,
-                    viewport.y0,
-                ))
-                .inflate(0.0, 10.0),
-            ed.color(EditorColor::Scrollbar),
-            0.0,
-        );
     }
 }
 impl View for EditorView {
@@ -838,11 +827,29 @@ impl Widget for EditorView {
         &mut self.data
     }
 
+    fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+        let id = self.id();
+        self.editor.with_untracked(|ed| {
+            ed.es.update(|s| {
+                if s.read(cx) {
+                    ed.floem_style_id.update(|val| *val += 1);
+                    cx.app_state_mut().request_paint(id);
+                }
+            })
+        });
+    }
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "Editor View".into()
+    }
+
     fn update(&mut self, _cx: &mut UpdateCx, _state: Box<dyn std::any::Any>) {}
 
     fn layout(&mut self, cx: &mut LayoutCx) -> crate::taffy::tree::NodeId {
         cx.layout_node(self.id, true, |cx| {
             let editor = self.editor.get_untracked();
+
+            let parent_size = editor.parent_size.get_untracked();
 
             if self.inner_node.is_none() {
                 self.inner_node = Some(cx.new_node());
@@ -859,10 +866,21 @@ impl Widget for EditorView {
             // TODO: don't assume there's a constant line height
             let line_height = f64::from(editor.line_height(0));
 
-            let width = editor.max_line_width() + 20.0;
-            let height = line_height * editor.last_vline().get() as f64;
+            let width = editor.max_line_width().max(parent_size.width());
+            let last_line_height = line_height * (editor.last_vline().get() + 1) as f64;
+            let height = last_line_height.max(parent_size.height());
 
-            let style = Style::new().width(width).height(height).to_taffy_style();
+            let margin_bottom = if editor.es.with_untracked(|es| es.scroll_beyond_last_line()) {
+                parent_size.height().min(last_line_height) - line_height
+            } else {
+                0.0
+            };
+
+            let style = Style::new()
+                .width(width)
+                .height(height)
+                .margin_bottom(margin_bottom)
+                .to_taffy_style();
             cx.set_style(inner_node, style);
 
             vec![inner_node]
@@ -875,6 +893,10 @@ impl Widget for EditorView {
         let viewport = cx.current_viewport();
         if editor.viewport.with_untracked(|v| v != &viewport) {
             editor.viewport.set(viewport);
+        }
+        let parent_size = cx.app_state.get_layout_rect(self.id.parent().unwrap());
+        if editor.parent_size.with_untracked(|ps| ps != &parent_size) {
+            editor.parent_size.set(parent_size);
         }
         None
     }
@@ -895,9 +917,10 @@ impl Widget for EditorView {
         EditorView::paint_cursor(cx, &ed, self.is_active.get_untracked(), &screen_lines);
         let screen_lines = ed.screen_lines.get_untracked();
         EditorView::paint_text(cx, &ed, viewport, &screen_lines);
-        EditorView::paint_scroll_bar(cx, &ed, viewport);
     }
 }
+
+style_class!(pub EditorViewClass);
 
 pub fn editor_view(
     editor: RwSignal<Editor>,
@@ -991,6 +1014,7 @@ pub fn editor_view(
         }
         EventPropagation::Stop
     })
+    .class(EditorViewClass)
 }
 
 #[derive(Clone, Debug)]
@@ -1084,35 +1108,17 @@ pub fn cursor_caret(
 pub fn editor_container_view(
     editor: RwSignal<Editor>,
     is_active: impl Fn(bool) -> bool + 'static + Copy,
-    handle_key_event: impl Fn(&KeyPress, ModifiersState) -> CommandExecuted + 'static,
+    handle_key_event: impl Fn(&KeyPress, Modifiers) -> CommandExecuted + 'static,
 ) -> impl View {
-    let editor_rect = create_rw_signal(Rect::ZERO);
-
-    stack((container(
-        stack((
-            editor_gutter(editor).style(move |s| {
-                s.apply_if(!editor.with_untracked(|ed| ed.gutter).get(), |s| s.hide())
-            }),
-            container(editor_content(editor, is_active, handle_key_event))
-                .style(move |s| s.size_pct(100.0, 100.0)),
-            empty().style(move |s| s.absolute().width_pct(100.0)),
-        ))
-        .on_resize(move |rect| {
-            editor_rect.set(rect);
-        })
-        .style(|s| s.absolute().size_pct(100.0, 100.0)),
-    )
-    .style(|s| s.size_pct(100.0, 100.0)),))
+    stack((
+        editor_gutter(editor),
+        editor_content(editor, is_active, handle_key_event),
+    ))
+    .style(|s| s.absolute().size_pct(100.0, 100.0))
     .on_cleanup(move || {
         // TODO: should we have some way for doc to tell us if we're allowed to cleanup the editor?
         let editor = editor.get_untracked();
         editor.cx.get().dispose();
-    })
-    // TODO(minor): only depend on style
-    .style(move |s| {
-        s.flex_col()
-            .size_pct(100.0, 100.0)
-            .background(editor.get().color(EditorColor::Background))
     })
 }
 
@@ -1139,7 +1145,7 @@ pub fn editor_gutter(editor: RwSignal<Editor>) -> impl View {
 fn editor_content(
     editor: RwSignal<Editor>,
     is_active: impl Fn(bool) -> bool + 'static + Copy,
-    handle_key_event: impl Fn(&KeyPress, ModifiersState) -> CommandExecuted + 'static,
+    handle_key_event: impl Fn(&KeyPress, Modifiers) -> CommandExecuted + 'static,
 ) -> impl View {
     let ed = editor.get_untracked();
     let cursor = ed.cursor;
@@ -1147,31 +1153,21 @@ fn editor_content(
     let scroll_to = ed.scroll_to;
     let window_origin = ed.window_origin;
     let viewport = ed.viewport;
-    let scroll_beyond_last_line = ed.scroll_beyond_last_line;
 
     scroll({
-        let editor_content_view = editor_view(editor, is_active).style(move |s| {
-            let padding_bottom = if scroll_beyond_last_line.get() {
-                // TODO: don't assume line height is constant?
-                // just use the last line's line height maybe, or just make
-                // scroll beyond last line a f32
-                // TODO: we shouldn't be using `get` on editor here, isn't this more of a 'has the
-                // style cache changed'?
-                let line_height = editor.get().line_height(0);
-                viewport.get().height() as f32 - line_height
-            } else {
-                editor.get().line_height(0)
-            };
-
-            s.absolute()
-                .padding_bottom(padding_bottom)
-                .cursor(CursorStyle::Text)
-                .min_size_pct(100.0, 100.0)
-        });
+        let editor_content_view =
+            editor_view(editor, is_active).style(move |s| s.absolute().cursor(CursorStyle::Text));
 
         let id = editor_content_view.id();
+        ed.editor_view_id.set(Some(id));
 
         editor_content_view
+            .on_event_cont(EventListener::FocusGained, move |_| {
+                editor.with_untracked(|ed| ed.editor_view_focused.notify())
+            })
+            .on_event_cont(EventListener::FocusLost, move |_| {
+                editor.with_untracked(|ed| ed.editor_view_focus_lost.notify())
+            })
             .on_event_cont(EventListener::PointerDown, move |event| {
                 // TODO:
                 if let Event::PointerDown(pointer_event) = event {
@@ -1202,9 +1198,9 @@ fn editor_content(
                 handle_key_event(&keypress, key_event.modifiers);
 
                 let mut mods = key_event.modifiers;
-                mods.set(ModifiersState::SHIFT, false);
+                mods.set(Modifiers::SHIFT, false);
                 #[cfg(target_os = "macos")]
-                mods.set(ModifiersState::ALT, false);
+                mods.set(Modifiers::ALT, false);
 
                 if mods.is_empty() {
                     if let KeyInput::Keyboard(Key::Character(c), _) = keypress.key {
@@ -1259,11 +1255,91 @@ fn editor_content(
             rect.inflate(0.0, viewport.height() / 2.0)
         } else {
             let mut rect = rect;
-            let cursor_surrounding_lines = editor.cursor_surrounding_lines.get_untracked() as f64;
+            let cursor_surrounding_lines = editor.es.with(|s| s.cursor_surrounding_lines()) as f64;
             rect.y0 -= cursor_surrounding_lines * line_height;
             rect.y1 += cursor_surrounding_lines * line_height;
             rect
         }
     })
-    .style(|s| s.absolute().size_pct(100.0, 100.0))
+    .style(|s| s.size_pct(100.0, 100.0))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashMap, rc::Rc};
+
+    use floem_reactive::create_rw_signal;
+    use kurbo::Rect;
+
+    use crate::views::editor::{
+        view::LineInfo,
+        visual_line::{RVLine, VLineInfo},
+    };
+
+    use super::{ScreenLines, ScreenLinesBase};
+
+    #[test]
+    fn iter_line_info_range() {
+        let lines = vec![
+            RVLine::new(10, 0),
+            RVLine::new(10, 1),
+            RVLine::new(10, 2),
+            RVLine::new(10, 3),
+        ];
+        let mut info = HashMap::new();
+        for rv in lines.iter() {
+            info.insert(
+                *rv,
+                LineInfo {
+                    // The specific values don't really matter
+                    y: 0.0,
+                    vline_y: 0.0,
+                    vline_info: VLineInfo::new(0..0, *rv, 4, ()),
+                },
+            );
+        }
+        let sl = ScreenLines {
+            lines: Rc::new(lines),
+            info: Rc::new(info),
+            diff_sections: None,
+            base: create_rw_signal(ScreenLinesBase {
+                active_viewport: Rect::ZERO,
+            }),
+        };
+
+        // Completely outside range should be empty
+        assert_eq!(
+            sl.iter_line_info_r(RVLine::new(0, 0)..=RVLine::new(1, 5))
+                .collect::<Vec<_>>(),
+            Vec::new()
+        );
+        // Should include itself
+        assert_eq!(
+            sl.iter_line_info_r(RVLine::new(10, 0)..=RVLine::new(10, 0))
+                .count(),
+            1
+        );
+        // Typical case
+        assert_eq!(
+            sl.iter_line_info_r(RVLine::new(10, 0)..=RVLine::new(10, 2))
+                .count(),
+            3
+        );
+        assert_eq!(
+            sl.iter_line_info_r(RVLine::new(10, 0)..=RVLine::new(10, 3))
+                .count(),
+            4
+        );
+        // Should only include what is within the interval
+        assert_eq!(
+            sl.iter_line_info_r(RVLine::new(10, 0)..=RVLine::new(10, 5))
+                .count(),
+            4
+        );
+        assert_eq!(
+            sl.iter_line_info_r(RVLine::new(0, 0)..=RVLine::new(10, 5))
+                .count(),
+            4
+        );
+    }
 }

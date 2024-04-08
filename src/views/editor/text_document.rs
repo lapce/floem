@@ -16,18 +16,18 @@ use floem_editor_core::{
     word::WordCursor,
 };
 use floem_reactive::{create_effect, RwSignal, Scope};
-use floem_winit::keyboard::ModifiersState;
 use lapce_xi_rope::{Rope, RopeDelta};
 use smallvec::{smallvec, SmallVec};
 
+use crate::keyboard::Modifiers;
+
 use super::{
     actions::{handle_command_default, CommonAction},
-    color::EditorColor,
     command::{Command, CommandExecuted},
     id::EditorId,
     phantom_text::{PhantomText, PhantomTextKind, PhantomTextLine},
-    text::{Document, DocumentPhantom, PreeditData, Styling, SystemClipboard},
-    Editor,
+    text::{Document, DocumentPhantom, PreeditData, SystemClipboard},
+    Editor, EditorStyle,
 };
 
 type PreCommandFn = Box<dyn Fn(PreCommand) -> CommandExecuted>;
@@ -36,7 +36,7 @@ pub struct PreCommand<'a> {
     pub editor: &'a Editor,
     pub cmd: &'a Command,
     pub count: Option<usize>,
-    pub mods: ModifiersState,
+    pub mods: Modifiers,
 }
 
 type OnUpdateFn = Box<dyn Fn(OnUpdate)>;
@@ -171,7 +171,7 @@ impl Document for TextDocument {
         ed: &Editor,
         cmd: &Command,
         count: Option<usize>,
-        modifiers: ModifiersState,
+        modifiers: Modifiers,
     ) -> CommandExecuted {
         let pre_commands = self.pre_command.borrow();
         let pre_commands = pre_commands.get(&ed.id());
@@ -242,7 +242,7 @@ impl Document for TextDocument {
     }
 }
 impl DocumentPhantom for TextDocument {
-    fn phantom_text(&self, edid: EditorId, styling: &dyn Styling, _line: usize) -> PhantomTextLine {
+    fn phantom_text(&self, edid: EditorId, styling: &EditorStyle, line: usize) -> PhantomTextLine {
         let mut text = SmallVec::new();
 
         if self.buffer.with_untracked(Buffer::is_empty) {
@@ -252,27 +252,43 @@ impl DocumentPhantom for TextDocument {
                     col: 0,
                     text: placeholder,
                     font_size: None,
-                    fg: Some(styling.color(edid, EditorColor::Dim)),
+                    fg: Some(styling.placeholder_color()),
                     bg: None,
                     under_line: None,
                 });
             }
         }
 
+        if let Some(preedit) = self.preedit_phantom(Some(styling.preedit_underline_color()), line) {
+            text.push(preedit);
+        }
+
         PhantomTextLine { text }
     }
 
-    fn has_multiline_phantom(&self, edid: EditorId, _styling: &dyn Styling) -> bool {
+    fn has_multiline_phantom(&self, edid: EditorId, _styling: &EditorStyle) -> bool {
         if !self.buffer.with_untracked(Buffer::is_empty) {
             return false;
         }
 
-        self.placeholders.with_untracked(|placeholder| {
+        let placeholder_ml = self.placeholders.with_untracked(|placeholder| {
             let Some(placeholder) = placeholder.get(&edid) else {
                 return false;
             };
 
             placeholder.lines().count() > 1
+        });
+
+        if placeholder_ml {
+            return true;
+        }
+
+        self.preedit.preedit.with_untracked(|preedit| {
+            let Some(preedit) = preedit else {
+                return false;
+            };
+
+            preedit.text.lines().count() > 1
         })
     }
 }

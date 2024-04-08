@@ -14,3 +14,5 @@ pub mod selection;
 pub mod soft_tab;
 pub mod util;
 pub mod word;
+
+pub use lapce_xi_rope as xi_rope;

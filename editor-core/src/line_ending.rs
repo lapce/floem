@@ -85,6 +85,7 @@ impl LineEnding {
         }
     }
 
+    /// Get the name of the line ending
     pub fn as_str(&self) -> &'static str {
         match self {
             LineEnding::CrLf => "CRLF",
@@ -218,17 +219,18 @@ impl<'a, I: Iterator<Item = &'a str>> Iterator for FullLeChunkSearch<'a, I> {
             }
             Some(x) => {
                 // Typically this only occurs for a lone `\r`.
-                // However, we need to handl the case where the `\r` is the last character in the
+                // However, we need to handle the case where the `\r` is the last character in the
                 // chunk whilst the next chunk starts with a `\n`.
-                assert!(bytes[x] == b'\r');
+                assert_eq!(bytes[x], b'\r');
 
                 let start = self.offset + self.chunk_pos + x;
                 self.chunk_pos += x + 1;
 
                 let v = if self.chunk_pos == chunk.len() {
                     if let Some(next_chunk) = self.get_chunk() {
-                        if next_chunk.starts_with('\n') {
-                            self.chunk_pos = 1;
+                        let next_chunk = &next_chunk.as_bytes()[self.chunk_pos..];
+                        if next_chunk.starts_with(b"\n") {
+                            self.chunk_pos += 1;
                             Some((start..start + 2, LeChunkKind::CrLf))
                         } else {
                             None
@@ -257,6 +259,7 @@ impl<'a, I: Iterator<Item = &'a str>> Iterator for FullLeChunkSearch<'a, I> {
 
 /// Iterator that searches for lone carriage returns ('\r') in chunks of text.
 struct LoneCrChunkSearch<'a, I: Iterator<Item = &'a str>> {
+    /// Offset of the start of the current chunk
     offset: usize,
     chunk_pos: usize,
     chunks: Peekable<I>,
@@ -271,6 +274,8 @@ impl<'a, I: Iterator<Item = &'a str>> LoneCrChunkSearch<'a, I> {
         }
     }
 
+    /// Get the current chunk, or if chunk pos is past the end of the chunk, then
+    /// advance to the next chunk and get it.
     fn get_chunk(&mut self) -> Option<&'a str> {
         let chunk = self.chunks.peek()?;
         if self.chunk_pos >= chunk.len() {
@@ -309,10 +314,11 @@ impl<'a, I: Iterator<Item = &'a str>> Iterator for LoneCrChunkSearch<'a, I> {
                     // Skip \r\n sequences
                     self.chunk_pos += 1;
                     self.next()
-                } else if let Some(next_chunk) = self.get_chunk() {
-                    if next_chunk.starts_with('\n') {
+                } else if let Some(chunk_b) = self.get_chunk() {
+                    let chunk_b = &chunk_b.as_bytes()[self.chunk_pos..];
+                    if chunk_b.starts_with(b"\n") {
                         // Skip \r\n sequences across chunks
-                        self.chunk_pos = 1;
+                        self.chunk_pos += 1;
                         self.next()
                     } else {
                         // Lone \r
@@ -407,5 +413,16 @@ mod tests {
 
         let multi_chunk = LoneCrChunkSearch::new(text.into_iter());
         assert_eq!(multi_chunk.collect::<Vec<_>>(), vec![13, 14]);
+
+        let text = ["\n\rb"];
+        let chunks = FullLeChunkSearch::new(text.into_iter());
+        assert_eq!(
+            chunks.collect::<Vec<_>>(),
+            vec![(0..1, LeChunkKind::Lf), (1..2, LeChunkKind::Cr)]
+        );
+
+        let text = ["\n\rb"];
+        let chunks = LoneCrChunkSearch::new(text.into_iter());
+        assert_eq!(chunks.collect::<Vec<_>>(), vec![1]);
     }
 }

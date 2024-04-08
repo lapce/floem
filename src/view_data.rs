@@ -65,7 +65,8 @@ impl<T> Stack<T> {
 pub struct ViewData {
     pub(crate) id: Id,
     pub(crate) style: Stack<Style>,
-    pub(crate) event_handlers: Vec<Box<EventCallback>>,
+    pub(crate) event_handlers: SmallVec<[Box<EventCallback>; 1]>,
+    pub(crate) debug_name: SmallVec<[String; 1]>,
 }
 
 impl ViewData {
@@ -74,6 +75,7 @@ impl ViewData {
             id,
             style: Default::default(),
             event_handlers: Default::default(),
+            debug_name: Default::default(),
         }
     }
     pub fn id(&self) -> Id {
@@ -233,6 +235,7 @@ impl ViewState {
 
         'anim: {
             if let Some(animation) = self.animation.as_mut() {
+                // Means effectively no changes should be applied - bail out
                 if animation.is_completed() && animation.is_auto_reverse() {
                     break 'anim;
                 }
@@ -258,8 +261,10 @@ impl ViewState {
                     }
                 }
 
-                animation.advance();
-                debug_assert!(!animation.is_idle());
+                if animation.can_advance() {
+                    animation.advance();
+                    debug_assert!(!animation.is_idle());
+                }
             }
         }
 

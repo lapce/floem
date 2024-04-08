@@ -42,6 +42,7 @@ pub enum Mode {
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct Modes: u32 {
         const NORMAL = 0x1;
         const INSERT = 0x2;

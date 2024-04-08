@@ -79,6 +79,15 @@ where
     }
 }
 
+impl From<PxPct> for PxPctAuto {
+    fn from(value: PxPct) -> Self {
+        match value {
+            PxPct::Pct(pct) => PxPctAuto::Pct(pct),
+            PxPct::Px(px) => PxPctAuto::Px(px),
+        }
+    }
+}
+
 pub trait UnitExt {
     fn pct(self) -> Pct;
     fn px(self) -> Px;

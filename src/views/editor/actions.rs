@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use crate::keyboard::ModifiersState;
+use crate::keyboard::Modifiers;
 use floem_editor_core::{
     command::{EditCommand, MotionModeCommand, MultiSelectionCommand, ScrollCommand},
     cursor::Cursor,
@@ -19,7 +19,7 @@ pub fn handle_command_default(
     action: &dyn CommonAction,
     cmd: &Command,
     count: Option<usize>,
-    modifiers: ModifiersState,
+    modifiers: Modifiers,
 ) -> CommandExecuted {
     match cmd {
         Command::Edit(cmd) => handle_edit_command_default(ed, action, cmd),
@@ -37,8 +37,8 @@ fn handle_edit_command_default(
     action: &dyn CommonAction,
     cmd: &EditCommand,
 ) -> CommandExecuted {
-    let modal = ed.modal.get_untracked();
-    let smart_tab = ed.smart_tab.get_untracked();
+    let modal = ed.es.with_untracked(|es| es.modal());
+    let smart_tab = ed.es.with_untracked(|es| es.smart_tab());
     let mut cursor = ed.cursor.get_untracked();
     let mut register = ed.register.get_untracked();
 
@@ -72,14 +72,14 @@ fn handle_move_command_default(
     action: &dyn CommonAction,
     movement: Movement,
     count: Option<usize>,
-    modifiers: ModifiersState,
+    modifiers: Modifiers,
 ) -> CommandExecuted {
     // TODO: should we track jump locations?
 
     ed.last_movement.set(movement.clone());
 
     let mut cursor = ed.cursor.get_untracked();
-    let modify = modifiers.shift_key();
+    let modify = modifiers.shift();
     ed.register.update(|register| {
         movement::move_cursor(
             ed,
@@ -101,7 +101,7 @@ fn handle_scroll_command_default(
     ed: &Editor,
     cmd: &ScrollCommand,
     count: Option<usize>,
-    mods: ModifiersState,
+    mods: Modifiers,
 ) -> CommandExecuted {
     match cmd {
         ScrollCommand::PageUp => {

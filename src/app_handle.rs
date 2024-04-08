@@ -173,11 +173,17 @@ impl ApplicationHandle {
             WindowEvent::Focused(focused) => {
                 window_handle.focused(focused);
             }
-            WindowEvent::KeyboardInput { event, .. } => {
-                window_handle.key_event(event);
+            WindowEvent::KeyboardInput {
+                event,
+                is_synthetic,
+                ..
+            } => {
+                if !is_synthetic {
+                    window_handle.key_event(event);
+                }
             }
             WindowEvent::ModifiersChanged(modifiers) => {
-                window_handle.modifiers = modifiers.state();
+                window_handle.modifiers_changed(modifiers.state());
             }
             WindowEvent::Ime(ime) => {
                 window_handle.ime(ime);

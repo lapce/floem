@@ -1,14 +1,15 @@
 use floem::cosmic_text::{Attrs, AttrsList, Stretch, Style, Weight};
+use floem::keyboard::Modifiers;
 use floem::peniko::Color;
-use floem::views::editor::color::EditorColor;
+use floem::reactive::RwSignal;
 use floem::views::editor::core::buffer::rope_text::RopeText;
-use floem::views::editor::core::indent::IndentStyle;
 use floem::views::editor::id::EditorId;
 use floem::views::editor::layout::TextLayoutLine;
-use floem::views::editor::text::{Document, RenderWhitespace, SimpleStylingBuilder, Styling};
+use floem::views::editor::text::{default_dark_color, Document, SimpleStylingBuilder, Styling};
+use floem::views::editor::EditorStyle;
 use floem::{
     cosmic_text::FamilyOwned,
-    keyboard::{Key, ModifiersState, NamedKey},
+    keyboard::{Key, NamedKey},
     view::View,
     views::{
         editor::{
@@ -90,10 +91,6 @@ impl<'a> Styling for SyntaxHighlightingStyle<'a> {
         self.style.stretch(edid, line)
     }
 
-    fn indent_style(&self) -> IndentStyle {
-        self.style.indent_style()
-    }
-
     fn indent_line(&self, edid: EditorId, line: usize, line_content: &str) -> usize {
         self.style.indent_line(edid, line, line_content)
     }
@@ -109,6 +106,7 @@ impl<'a> Styling for SyntaxHighlightingStyle<'a> {
     fn apply_attr_styles(
         &self,
         _edid: EditorId,
+        _style: &EditorStyle,
         line: usize,
         default: Attrs,
         attrs: &mut AttrsList,
@@ -135,10 +133,8 @@ impl<'a> Styling for SyntaxHighlightingStyle<'a> {
                             &ops,
                             &text,
                             &self.highlighter,
-                        )
-                        .into_iter()
-                        {
-                            let mut attr = default.clone();
+                        ) {
+                            let mut attr = default;
                             if style.font_style.contains(FontStyle::ITALIC) {
                                 attr.style = Style::Italic;
                             }
@@ -164,20 +160,15 @@ impl<'a> Styling for SyntaxHighlightingStyle<'a> {
         }
     }
 
-    fn wrap(&self, edid: EditorId) -> WrapMethod {
-        self.style.wrap(edid)
-    }
-
-    fn render_whitespace(&self, edid: EditorId) -> RenderWhitespace {
-        self.style.render_whitespace(edid)
-    }
-
-    fn apply_layout_styles(&self, edid: EditorId, line: usize, layout_line: &mut TextLayoutLine) {
-        self.style.apply_layout_styles(edid, line, layout_line)
-    }
-
-    fn color(&self, edid: EditorId, color: EditorColor) -> Color {
-        self.style.color(edid, color)
+    fn apply_layout_styles(
+        &self,
+        edid: EditorId,
+        style: &EditorStyle,
+        line: usize,
+        layout_line: &mut TextLayoutLine,
+    ) {
+        self.style
+            .apply_layout_styles(edid, style, line, layout_line)
     }
 
     fn paint_caret(&self, edid: EditorId, line: usize) -> bool {
@@ -193,7 +184,7 @@ fn app_view() -> impl View {
             FamilyOwned::Name("Consolas".to_string()),
             FamilyOwned::Monospace,
         ])
-        .build_dark();
+        .build();
 
     let mut style = SyntaxHighlightingStyle::new(Rc::new(global_style));
 
@@ -223,10 +214,15 @@ mod tests {
 "#,
     );
 
-    style.set_doc(editor.doc().clone());
-    let editor = editor.styling(style);
+    let hide_gutter = RwSignal::new(false);
 
-    let gutter = editor.editor().gutter;
+    style.set_doc(editor.doc().clone());
+    let editor = editor
+        .styling(style)
+        .editor_style(default_dark_color)
+        .editor_style(move |s| s.hide_gutter(hide_gutter.get()))
+        .style(|s| s.size_full());
+
     let doc = editor.doc();
 
     let view = stack((
@@ -240,8 +236,7 @@ mod tests {
                 );
             }),
             button(|| "Gutter").on_click_stop(move |_| {
-                let a = !gutter.get_untracked();
-                gutter.set(a);
+                hide_gutter.update(|hide| *hide = !*hide);
             }),
         ))
         .style(|s| s.width_full().flex_row().items_center().justify_center()),
@@ -249,11 +244,9 @@ mod tests {
     .style(|s| s.size_full().flex_col().items_center().justify_center());
 
     let id = view.id();
-    view.on_key_up(
-        Key::Named(NamedKey::F11),
-        ModifiersState::empty(),
-        move |_| id.inspect(),
-    )
+    view.on_key_up(Key::Named(NamedKey::F11), Modifiers::empty(), move |_| {
+        id.inspect()
+    })
 }
 
 fn main() {

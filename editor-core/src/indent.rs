@@ -15,6 +15,15 @@ pub enum IndentStyle {
     Spaces(u8),
 }
 
+impl std::fmt::Display for IndentStyle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            IndentStyle::Tabs => f.write_str("Tabs"),
+            IndentStyle::Spaces(spaces) => f.write_fmt(format_args!("{spaces} spaces")),
+        }
+    }
+}
+
 impl IndentStyle {
     pub const LONGEST_INDENT: &'static str = "        "; // 8 spaces
     pub const DEFAULT_INDENT: IndentStyle = IndentStyle::Spaces(4);

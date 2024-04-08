@@ -57,7 +57,7 @@ impl Clipboard {
         #[cfg(not(any(target_os = "macos", windows)))]
         if let RawDisplayHandle::Wayland(display) = display {
             let (selection, clipboard) =
-                wayland_clipboard::create_clipboards_from_external(display.display);
+                wayland_clipboard::create_clipboards_from_external(display.display.as_ptr());
             return Self {
                 clipboard: Box::new(clipboard),
                 selection: Some(Box::new(selection)),

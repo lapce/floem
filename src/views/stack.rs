@@ -3,7 +3,7 @@ use taffy::style::FlexDirection;
 use crate::{
     context::UpdateCx,
     id::Id,
-    style::Style,
+    style::{Style, StyleClassRef},
     view::{View, ViewData, Widget},
     view_tuple::ViewTuple,
 };
@@ -171,5 +171,15 @@ impl Widget for Stack {
             self.children = *state;
             cx.request_all(self.id());
         }
+    }
+}
+
+impl Stack {
+    pub fn add_class_by_idx(self, class: impl Fn(usize) -> StyleClassRef) -> Self {
+        for (index, child) in self.children.iter().enumerate() {
+            let style_class = class(index);
+            child.view_data().id().add_class(style_class);
+        }
+        self
     }
 }

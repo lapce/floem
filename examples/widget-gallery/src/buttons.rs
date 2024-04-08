@@ -44,29 +44,19 @@ pub fn button_view() -> impl View {
                     println!("Secondary mouse button click.");
                 })
             }),
-            form_item("Toggle button - Switch:".to_string(), 120.0, || {
+            form_item("Toggle button - Snap:".to_string(), 120.0, || {
                 toggle_button(|| true)
                     .on_toggle(|_| {
                         println!("Button Toggled");
                     })
-                    .style(|s| {
-                        s.set(
-                            widgets::ToggleButtonBehavior,
-                            widgets::ToggleButtonSwitch::Switch,
-                        )
-                    })
+                    .toggle_style(|s| s.behavior(widgets::ToggleHandleBehavior::Snap))
             }),
             form_item("Toggle button - Follow:".to_string(), 120.0, || {
                 toggle_button(|| true)
                     .on_toggle(|_| {
                         println!("Button Toggled");
                     })
-                    .style(|s| {
-                        s.set(
-                            widgets::ToggleButtonBehavior,
-                            widgets::ToggleButtonSwitch::Follow,
-                        )
-                    })
+                    .toggle_style(|s| s.behavior(widgets::ToggleHandleBehavior::Follow))
             }),
         )
     })

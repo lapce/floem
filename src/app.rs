@@ -8,6 +8,8 @@ use floem_winit::{
 };
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
+#[allow(deprecated)]
+use raw_window_handle::HasRawDisplayHandle;
 
 use crate::{
     action::Timer,
@@ -18,8 +20,6 @@ use crate::{
     view::{AnyView, View},
     window::WindowConfig,
 };
-
-use raw_window_handle::HasRawDisplayHandle;
 
 type AppEventCallback = dyn Fn(AppEvent);
 
@@ -102,7 +102,8 @@ impl Application {
         let event_loop_proxy = event_loop.create_proxy();
         *EVENT_LOOP_PROXY.lock() = Some(event_loop_proxy.clone());
         unsafe {
-            Clipboard::init(event_loop.raw_display_handle());
+            #[allow(deprecated)]
+            Clipboard::init(event_loop.raw_display_handle().unwrap());
         }
         let handle = ApplicationHandle::new();
         Self {

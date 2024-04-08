@@ -15,15 +15,14 @@ use crate::{
     EventPropagation,
 };
 
+use super::Decorators;
+
 enum ScrollState {
     EnsureVisible(Rect),
     ScrollDelta(Vec2),
     ScrollTo(Point),
     ScrollToPercent(f32),
     ScrollToView(Id),
-    HiddenBar(bool),
-    PropagatePointerWheel(bool),
-    VerticalScrollAsHorizontal(bool),
 }
 
 /// Minimum length for any scrollbar to be when measured on that
@@ -51,7 +50,7 @@ prop!(pub Thickness: Px {} = Px(10.0));
 prop!(pub Border: Px {} = Px(0.0));
 
 prop_extractor! {
-    ScrollStyle {
+    ScrollTrackStyle {
         color: Background,
         border_radius: BorderRadius,
         border_color: BorderColor,
@@ -61,7 +60,23 @@ prop_extractor! {
     }
 }
 
+prop!(pub VerticalInset: Px {} = Px(0.0));
+prop!(pub HorizontalInset: Px {} = Px(0.0));
+prop!(pub HideBar: bool {} = false);
+prop!(pub PropagatePointerWheel: bool {} = false);
+prop!(pub VerticalScrollAsHorizontal: bool {} = false);
+
+prop_extractor!(ScrollStyle {
+    vertical_bar_inset: VerticalInset,
+    horizontal_bar_inset: HorizontalInset,
+    hide_bar: HideBar,
+    propagate_pointer_wheel: PropagatePointerWheel,
+    vertical_scroll_as_horizontal: VerticalScrollAsHorizontal,
+});
+
 const HANDLE_COLOR: Color = Color::rgba8(0, 0, 0, 120);
+
+style_class!(pub ScrollClass);
 
 pub struct Scroll {
     data: ViewData,
@@ -86,14 +101,12 @@ pub struct Scroll {
     h_handle_hover: bool,
     v_track_hover: bool,
     h_track_hover: bool,
-    propagate_pointer_wheel: bool,
-    vertical_scroll_as_horizontal: bool,
-    handle_style: ScrollStyle,
-    handle_active_style: ScrollStyle,
-    handle_hover_style: ScrollStyle,
-    track_style: ScrollStyle,
-    track_hover_style: ScrollStyle,
-    hide: bool,
+    handle_style: ScrollTrackStyle,
+    handle_active_style: ScrollTrackStyle,
+    handle_hover_style: ScrollTrackStyle,
+    track_style: ScrollTrackStyle,
+    track_hover_style: ScrollTrackStyle,
+    scroll_style: ScrollStyle,
 }
 
 pub fn scroll<V: View + 'static>(child: V) -> Scroll {
@@ -110,15 +123,14 @@ pub fn scroll<V: View + 'static>(child: V) -> Scroll {
         h_handle_hover: false,
         v_track_hover: false,
         h_track_hover: false,
-        propagate_pointer_wheel: false,
-        vertical_scroll_as_horizontal: false,
-        hide: false,
         handle_style: Default::default(),
         handle_active_style: Default::default(),
         handle_hover_style: Default::default(),
         track_style: Default::default(),
         track_hover_style: Default::default(),
+        scroll_style: Default::default(),
     }
+    .class(ScrollClass)
 }
 
 impl Scroll {
@@ -176,30 +188,6 @@ impl Scroll {
             }
         });
 
-        self
-    }
-
-    pub fn hide_bar(self, hide: impl Fn() -> bool + 'static) -> Self {
-        let id = self.id();
-        create_effect(move |_| {
-            id.update_state(ScrollState::HiddenBar(hide()));
-        });
-        self
-    }
-
-    pub fn propagate_pointer_wheel(self, value: impl Fn() -> bool + 'static) -> Self {
-        let id = self.id();
-        create_effect(move |_| {
-            id.update_state(ScrollState::PropagatePointerWheel(value()));
-        });
-        self
-    }
-
-    pub fn vertical_scroll_as_horizontal(self, value: impl Fn() -> bool + 'static) -> Self {
-        let id = self.id();
-        create_effect(move |_| {
-            id.update_state(ScrollState::VerticalScrollAsHorizontal(value()));
-        });
         self
     }
 
@@ -311,6 +299,8 @@ impl Scroll {
             if let Some(onscroll) = &self.onscroll {
                 onscroll(child_viewport);
             }
+        } else {
+            return None;
         }
         Some(())
     }
@@ -322,7 +312,7 @@ impl Scroll {
             .unwrap()
     }
 
-    fn v_handle_style(&self) -> &ScrollStyle {
+    fn v_handle_style(&self) -> &ScrollTrackStyle {
         if let BarHeldState::Vertical(..) = self.held {
             &self.handle_active_style
         } else if self.v_handle_hover {
@@ -332,7 +322,7 @@ impl Scroll {
         }
     }
 
-    fn h_handle_style(&self) -> &ScrollStyle {
+    fn h_handle_style(&self) -> &ScrollTrackStyle {
         if let BarHeldState::Horizontal(..) = self.held {
             &self.handle_active_style
         } else if self.h_handle_hover {
@@ -344,7 +334,7 @@ impl Scroll {
 
     fn draw_bars(&self, cx: &mut PaintCx) {
         let scroll_offset = self.child_viewport.origin().to_vec2();
-        let radius = |style: &ScrollStyle, rect: Rect, vertical| {
+        let radius = |style: &ScrollTrackStyle, rect: Rect, vertical| {
             if style.rounded() {
                 if vertical {
                     (rect.x1 - rect.x0) / 2.
@@ -422,7 +412,7 @@ impl Scroll {
         let style = self.v_handle_style();
 
         let bar_width = style.thickness().0;
-        let bar_pad = 0.0;
+        let bar_pad = self.scroll_style.vertical_bar_inset().0;
 
         let percent_visible = viewport_size.height / content_size.height;
         let percent_scrolled = scroll_offset.y / (content_size.height - viewport_size.height);
@@ -455,7 +445,7 @@ impl Scroll {
         let style = self.h_handle_style();
 
         let bar_width = style.thickness().0;
-        let bar_pad = 0.0;
+        let bar_pad = self.scroll_style.horizontal_bar_inset().0;
 
         let percent_visible = viewport_size.width / content_size.width;
         let percent_scrolled = scroll_offset.x / (content_size.width - viewport_size.width);
@@ -683,15 +673,6 @@ impl Widget for Scroll {
                 ScrollState::ScrollToView(id) => {
                     self.do_scroll_to_view(cx.app_state, id, None);
                 }
-                ScrollState::HiddenBar(hide) => {
-                    self.hide = hide;
-                }
-                ScrollState::PropagatePointerWheel(value) => {
-                    self.propagate_pointer_wheel = value;
-                }
-                ScrollState::VerticalScrollAsHorizontal(value) => {
-                    self.vertical_scroll_as_horizontal = value;
-                }
             }
             cx.request_layout(self.id());
         }
@@ -707,6 +688,8 @@ impl Widget for Scroll {
 
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         let style = cx.style();
+
+        self.scroll_style.read(cx);
 
         let handle_style = style.clone().apply_class(Handle);
         self.handle_style.read_style(cx, &handle_style);
@@ -747,7 +730,7 @@ impl Widget for Scroll {
 
         match &event {
             Event::PointerDown(event) => {
-                if !self.hide && event.button.is_primary() {
+                if !self.scroll_style.hide_bar() && event.button.is_primary() {
                     self.held = BarHeldState::None;
 
                     let pos = event.pos + scroll_offset;
@@ -805,7 +788,7 @@ impl Widget for Scroll {
                 }
             }
             Event::PointerMove(event) => {
-                if !self.hide {
+                if !self.scroll_style.hide_bar() {
                     let pos = event.pos + scroll_offset;
                     self.update_hover_states(cx.app_state, event.pos);
 
@@ -865,20 +848,23 @@ impl Widget for Scroll {
                 }
             }
             let delta = pointer_event.delta;
-            let delta = if self.vertical_scroll_as_horizontal && delta.x == 0.0 && delta.y != 0.0 {
+            let delta = if self.scroll_style.vertical_scroll_as_horizontal()
+                && delta.x == 0.0
+                && delta.y != 0.0
+            {
                 Vec2::new(delta.y, delta.x)
             } else {
                 delta
             };
-            self.clamp_child_viewport(cx.app_state, self.child_viewport + delta);
+            let any_change = self.clamp_child_viewport(cx.app_state, self.child_viewport + delta);
 
             // Check if the scroll bars now hover
             self.update_hover_states(cx.app_state, pointer_event.pos);
 
-            return if !self.propagate_pointer_wheel {
-                EventPropagation::Stop
-            } else {
+            return if self.scroll_style.propagate_pointer_wheel() || any_change.is_none() {
                 EventPropagation::Continue
+            } else {
+                EventPropagation::Stop
             };
         }
 
@@ -902,7 +888,7 @@ impl Widget for Scroll {
         cx.paint_view(&mut self.child);
         cx.restore();
 
-        if !self.hide {
+        if !self.scroll_style.hide_bar() {
             self.draw_bars(cx);
         }
     }

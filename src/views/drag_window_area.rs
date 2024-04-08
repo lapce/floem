@@ -56,6 +56,10 @@ impl Widget for DragWindowArea {
         &mut self.data
     }
 
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "Drag Window Area".into()
+    }
+
     fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
         for_each(&self.child);
     }

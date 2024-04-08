@@ -1,5 +1,5 @@
 use floem::{
-    keyboard::{Key, ModifiersState, NamedKey},
+    keyboard::{Key, Modifiers, NamedKey},
     peniko::Color,
     reactive::{provide_context, use_context},
     view::View,
@@ -34,7 +34,7 @@ fn app_view() -> impl View {
         colored_label(String::from("app_view")),
         context_container(Color::HOT_PINK, String::from("Nested context 1"), || {
             context_container(Color::BLUE, String::from("Nested context 2"), || {
-                context_container(Color::GREEN, String::from("Nested context 3"), || empty())
+                context_container(Color::GREEN, String::from("Nested context 3"), empty)
             })
         }),
     ))
@@ -47,11 +47,9 @@ fn app_view() -> impl View {
     });
 
     let id = view.id();
-    view.on_key_up(
-        Key::Named(NamedKey::F11),
-        ModifiersState::empty(),
-        move |_| id.inspect(),
-    )
+    view.on_key_up(Key::Named(NamedKey::F11), Modifiers::empty(), move |_| {
+        id.inspect()
+    })
 }
 
 fn main() {

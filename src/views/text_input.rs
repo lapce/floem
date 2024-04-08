@@ -1,6 +1,6 @@
 use crate::action::exec_after;
 use crate::event::EventListener;
-use crate::keyboard::{self, KeyEvent};
+use crate::keyboard::{self, KeyEvent, Modifiers};
 use crate::pointer::{PointerButton, PointerInputEvent};
 use crate::reactive::{create_effect, RwSignal};
 use crate::style::{CursorColor, FontProps, PaddingLeft};
@@ -13,7 +13,7 @@ use floem_reactive::create_rw_signal;
 use taffy::prelude::{Layout, NodeId};
 
 use floem_renderer::{cosmic_text::Cursor, Renderer};
-use floem_winit::keyboard::{Key, ModifiersState, NamedKey, SmolStr};
+use floem_winit::keyboard::{Key, NamedKey, SmolStr};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{peniko::Color, style::Style, view::Widget};
@@ -176,18 +176,18 @@ impl From<(&KeyEvent, &SmolStr)> for TextCommand {
         let (event, ch) = val;
         #[cfg(target_os = "macos")]
         match (event.modifiers, ch.as_str()) {
-            (ModifiersState::SUPER, "a") => Self::SelectAll,
-            (ModifiersState::SUPER, "c") => Self::Copy,
-            (ModifiersState::SUPER, "x") => Self::Cut,
-            (ModifiersState::SUPER, "v") => Self::Paste,
+            (Modifiers::META, "a") => Self::SelectAll,
+            (Modifiers::META, "c") => Self::Copy,
+            (Modifiers::META, "x") => Self::Cut,
+            (Modifiers::META, "v") => Self::Paste,
             _ => Self::None,
         }
         #[cfg(not(target_os = "macos"))]
         match (event.modifiers, ch.as_str()) {
-            (ModifiersState::CONTROL, "a") => Self::SelectAll,
-            (ModifiersState::CONTROL, "c") => Self::Copy,
-            (ModifiersState::CONTROL, "x") => Self::Cut,
-            (ModifiersState::CONTROL, "v") => Self::Paste,
+            (Modifiers::CONTROL, "a") => Self::SelectAll,
+            (Modifiers::CONTROL, "c") => Self::Copy,
+            (Modifiers::CONTROL, "x") => Self::Cut,
+            (Modifiers::CONTROL, "v") => Self::Paste,
             _ => Self::None,
         }
     }
@@ -197,17 +197,17 @@ fn get_word_based_motion(event: &KeyEvent) -> Option<Movement> {
     #[cfg(not(target_os = "macos"))]
     return event
         .modifiers
-        .contains(ModifiersState::CONTROL)
+        .contains(Modifiers::CONTROL)
         .then_some(Movement::Word);
 
     #[cfg(target_os = "macos")]
     return event
         .modifiers
-        .contains(ModifiersState::ALT)
+        .contains(Modifiers::ALT)
         .then_some(Movement::Word)
         .or(event
             .modifiers
-            .contains(ModifiersState::SUPER)
+            .contains(Modifiers::META)
             .then_some(Movement::Line));
 }
 
@@ -706,7 +706,7 @@ impl TextInput {
                 true
             }
             Key::Named(NamedKey::End) => {
-                if event.modifiers.contains(ModifiersState::SHIFT) {
+                if event.modifiers.contains(Modifiers::SHIFT) {
                     match &self.selection {
                         Some(selection_value) => self.update_selection(
                             selection_value.start,
@@ -723,7 +723,7 @@ impl TextInput {
                 self.move_cursor(Movement::Line, Direction::Right)
             }
             Key::Named(NamedKey::Home) => {
-                if event.modifiers.contains(ModifiersState::SHIFT) {
+                if event.modifiers.contains(Modifiers::SHIFT) {
                     match &self.selection {
                         Some(selection_value) => self.update_selection(0, selection_value.end),
                         None => self.update_selection(0, self.cursor_glyph_idx),
@@ -748,9 +748,7 @@ impl TextInput {
                         event.modifiers,
                         Direction::Left,
                     );
-                } else if !event.modifiers.contains(ModifiersState::SHIFT)
-                    && self.selection.is_some()
-                {
+                } else if !event.modifiers.contains(Modifiers::SHIFT) && self.selection.is_some() {
                     self.selection = None;
                 }
 
@@ -771,9 +769,7 @@ impl TextInput {
                         event.modifiers,
                         Direction::Right,
                     );
-                } else if !event.modifiers.contains(ModifiersState::SHIFT)
-                    && self.selection.is_some()
-                {
+                } else if !event.modifiers.contains(Modifiers::SHIFT) && self.selection.is_some() {
                     self.selection = None;
                 }
 
@@ -787,10 +783,10 @@ impl TextInput {
         &mut self,
         old_glyph_idx: usize,
         curr_glyph_idx: usize,
-        modifiers: ModifiersState,
+        modifiers: Modifiers,
         direction: Direction,
     ) {
-        if !modifiers.contains(ModifiersState::SHIFT) {
+        if !modifiers.contains(Modifiers::SHIFT) {
             if self.selection.is_some() {
                 self.selection = None;
             }
@@ -1058,6 +1054,7 @@ impl Widget for TextInput {
             let text_node = self.text_node.unwrap();
 
             // FIXME: This layout is undefined.
+            #[allow(clippy::unwrap_or_default)]
             let layout = cx.app_state.get_layout(self.id()).unwrap_or(Layout::new());
             let style = cx.app_state_mut().get_builtin_style(self.id());
             let node_width = layout.size.width;
