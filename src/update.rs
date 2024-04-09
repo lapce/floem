@@ -121,6 +121,14 @@ pub(crate) enum UpdateMessage {
     RemoveOverlay {
         id: Id,
     },
+    AddTooltip {
+        id: Id,
+        position: Point,
+        view: Box<dyn FnOnce() -> Box<dyn Widget>>,
+    },
+    RemoveTooltip {
+        id: Id
+    },
     Inspect,
     ScrollTo {
         id: Id,

@@ -2,7 +2,7 @@ use kurbo::Point;
 use std::{rc::Rc, time::Duration};
 
 use crate::{
-    action::{add_overlay, exec_after, remove_overlay, TimerToken},
+    action::{add_tooltip, exec_after, remove_tooltip, TimerToken},
     context::{EventCx, UpdateCx},
     event::Event,
     id::Id,
@@ -93,7 +93,7 @@ impl Widget for Tooltip {
             if let Some(window_origin) = self.window_origin {
                 if self.hover.map(|(_, t)| t) == Some(*token) {
                     let tip = self.tip.clone();
-                    self.overlay = Some(add_overlay(
+                    self.overlay = Some(add_tooltip(
                         window_origin + self.hover.unwrap().0.to_vec2() + (10., 10.),
                         move |_| tip(),
                     ));
@@ -119,10 +119,10 @@ impl Widget for Tooltip {
                     self.hover = Some((e.pos, token));
                 }
             }
-            Event::PointerLeave => {
+            Event::PointerLeave | Event::PointerDown(_) | Event::PointerUp(_) => {
                 self.hover = None;
                 if let Some(id) = self.overlay {
-                    remove_overlay(id);
+                    remove_tooltip(id);
                     self.overlay = None;
                 }
             }
@@ -141,7 +141,7 @@ impl Widget for Tooltip {
 impl Drop for Tooltip {
     fn drop(&mut self) {
         if let Some(id) = self.overlay {
-            remove_overlay(id)
+            remove_tooltip(id);
         }
     }
 }

@@ -44,6 +44,7 @@ use crate::{
     view::{view_children_set_parent_id, view_tab_navigation, AnyView, View, ViewData, Widget},
     view_data::{update_data, ChangeFlags},
     widgets::{default_theme, Theme},
+    action::remove_tooltip
 };
 
 /// The top-level window handle that owns the winit Window.
@@ -124,6 +125,7 @@ impl WindowHandle {
             data: ViewData::new(id),
             main: widget,
             overlays: Default::default(),
+            tooltip: None
         };
 
         let window = Arc::new(window);
@@ -238,6 +240,11 @@ impl WindowHandle {
                             {
                                 view_arrow_navigation(name, cx.app_state, &self.view);
                             }
+                        }
+                        
+                        if self.view.tooltip.is_some() {
+                            let tooltip_overview = self.view.tooltip.as_mut().unwrap();
+                            remove_tooltip(tooltip_overview.data.id);
                         }
                     }
 
@@ -1014,6 +1021,31 @@ impl WindowHandle {
                         overlay.scope.dispose();
                         cx.app_state.request_all(self.id);
                     }
+                    UpdateMessage::AddTooltip { id, position, view } => {
+                        let scope = self.scope.create_child();
+                        let view = OverlayView {
+                            data: ViewData::new(id),
+                            position,
+                            scope,
+                            child: with_scope(scope, view),
+                        };
+                        view.view_data().id().set_parent(self.id);
+                        view_children_set_parent_id(&view);
+
+                        self.view.tooltip = Some(view);
+                        cx.app_state.request_all(self.id);
+                    }
+                    UpdateMessage::RemoveTooltip { id } => {
+                        if self.view.tooltip.is_some() {
+                            let tooltip = self.view.tooltip.as_mut().unwrap();
+                            if tooltip.view_data().id.eq(&id) {
+                                cx.app_state.remove_view(tooltip);
+                                tooltip.scope.dispose();
+                                cx.app_state.request_all(self.id);
+                                self.view.tooltip = None;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1661,6 +1693,7 @@ struct WindowView {
     data: ViewData,
     main: Box<dyn Widget>,
     overlays: IndexMap<Id, OverlayView>,
+    tooltip: Option<OverlayView>
 }
 
 impl Widget for WindowView {
@@ -1681,12 +1714,18 @@ impl Widget for WindowView {
         for overlay in self.overlays.values() {
             for_each(overlay);
         }
+        if self.tooltip.is_some() {
+            for_each(self.tooltip.as_ref().unwrap());
+        }
     }
 
     fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
         for_each(&mut self.main);
         for overlay in self.overlays.values_mut() {
             for_each(overlay);
+        }
+        if self.tooltip.is_some() {
+            for_each(self.tooltip.as_mut().unwrap());
         }
     }
 
@@ -1699,6 +1738,9 @@ impl Widget for WindowView {
                 // if the overlay events are handled we don't need to run the main window events
                 return;
             };
+        }
+        if self.tooltip.is_some() {
+            for_each(self.tooltip.as_mut().unwrap());
         }
         for_each(&mut self.main);
     }
