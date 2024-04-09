@@ -22,6 +22,7 @@ use crate::unit::UnitExt;
 #[cfg(target_os = "linux")]
 use crate::views::{container, stack, Decorators};
 use crate::{
+    action::remove_tooltip,
     animate::{AnimPropKind, AnimUpdateMsg, AnimValue, AnimatedProp, SizeUnit},
     context::{
         AppState, ComputeLayoutCx, EventCx, FrameUpdate, LayoutCx, MoveListener, PaintCx,
@@ -44,7 +45,6 @@ use crate::{
     view::{view_children_set_parent_id, view_tab_navigation, AnyView, View, ViewData, Widget},
     view_data::{update_data, ChangeFlags},
     widgets::{default_theme, Theme},
-    action::remove_tooltip
 };
 
 /// The top-level window handle that owns the winit Window.
@@ -125,7 +125,7 @@ impl WindowHandle {
             data: ViewData::new(id),
             main: widget,
             overlays: Default::default(),
-            tooltip: None
+            tooltip: None,
         };
 
         let window = Arc::new(window);
@@ -241,7 +241,7 @@ impl WindowHandle {
                                 view_arrow_navigation(name, cx.app_state, &self.view);
                             }
                         }
-                        
+
                         if self.view.tooltip.is_some() {
                             let tooltip_overview = self.view.tooltip.as_mut().unwrap();
                             remove_tooltip(tooltip_overview.data.id);
@@ -1693,7 +1693,7 @@ struct WindowView {
     data: ViewData,
     main: Box<dyn Widget>,
     overlays: IndexMap<Id, OverlayView>,
-    tooltip: Option<OverlayView>
+    tooltip: Option<OverlayView>,
 }
 
 impl Widget for WindowView {

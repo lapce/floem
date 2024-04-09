@@ -127,7 +127,7 @@ pub(crate) enum UpdateMessage {
         view: Box<dyn FnOnce() -> Box<dyn Widget>>,
     },
     RemoveTooltip {
-        id: Id
+        id: Id,
     },
     Inspect,
     ScrollTo {
