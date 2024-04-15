@@ -401,10 +401,20 @@ impl Renderer for VgerRenderer {
 
     fn draw_text(&mut self, layout: &TextLayout, pos: impl Into<Point>) {
         let mut swash_cache = SwashCache::new();
+
+        let angle: f32 = 90.0;
+        let theta: f32 = std::f32::consts::TAU * angle / 360.0;
         let transform = self.transform.as_coeffs();
-        let offset = Vec2::new(transform[4], transform[5]);
+        let p = Point::new(transform[4], transform[5]);
+        let p = Affine::rotate((-theta).into()) * p;
+        
+        self.vger.rotate(theta);
+
+        let offset = Vec2::new(p.x, p.y);
+
         let pos: Point = pos.into();
         let clip = self.clip;
+
         for line in layout.layout_runs() {
             if let Some(rect) = clip {
                 let y = pos.y + offset.y + line.line_y as f64;
@@ -415,10 +425,10 @@ impl Renderer for VgerRenderer {
                     break;
                 }
             }
+
             'line_loop: for glyph_run in line.glyphs {
                 let x = glyph_run.x + pos.x as f32 + offset.x as f32;
                 let y = line.line_y + pos.y as f32 + offset.y as f32;
-
                 if let Some(rect) = clip {
                     if ((x + glyph_run.w) as f64) < rect.x0 {
                         continue;
@@ -441,6 +451,7 @@ impl Renderer for VgerRenderer {
                     let glyph_y = new_y as f32;
 
                     let font_size = (glyph_run.font_size * self.scale as f32).round() as u32;
+
                     self.vger.render_glyph(
                         glyph_x,
                         glyph_y,
@@ -461,6 +472,7 @@ impl Renderer for VgerRenderer {
                 }
             }
         }
+        self.vger.rotate(-theta);
     }
 
     fn draw_img(&mut self, img: Img<'_>, rect: Rect) {

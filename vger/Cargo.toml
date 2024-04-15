@@ -16,5 +16,6 @@ futures = "0.3.26"
 anyhow = "1.0.69"
 floem-peniko = "0.1.0"
 swash = "0.1.8"
-floem-vger-rs = { package = "floem-vger", version = "0.2.8" }  # Alias library to avoid overlap with subcrate
+# floem-vger-rs = { package = "floem-vger", version = "0.2.8" }  # Alias library to avoid overlap with subcrate
+floem-vger-rs = {package = "floem-vger", git = "https://github.com/15artis/vger-rs",branch = "floem"}
 floem_renderer = { path = "../renderer", version = "0.1.0" }
