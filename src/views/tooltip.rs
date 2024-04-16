@@ -119,7 +119,10 @@ impl Widget for Tooltip {
                     self.hover = Some((e.pos, token));
                 }
             }
-            Event::PointerLeave | Event::PointerDown(_) | Event::PointerUp(_) => {
+            Event::PointerLeave
+            | Event::PointerDown(_)
+            | Event::PointerUp(_)
+            | Event::PointerWheel(_) => {
                 self.hover = None;
                 if let Some(id) = self.overlay {
                     remove_tooltip(id);
