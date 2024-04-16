@@ -110,7 +110,7 @@ impl Widget for Tooltip {
     ) -> EventPropagation {
         match &event {
             Event::PointerMove(e) => {
-                if self.overlay.is_none() && !cx.app_state.dragging.is_some() {
+                if self.overlay.is_none() && cx.app_state.dragging.is_none() {
                     let id = self.id();
                     let token =
                         exec_after(Duration::from_secs_f64(self.style.delay()), move |token| {
