@@ -874,8 +874,9 @@ impl Editor {
         let line_height = f64::from(self.style().line_height(self.id(), line));
 
         let info = self.screen_lines.with_untracked(|sl| {
-            sl.iter_line_info()
-                .find(|info| info.vline_info.interval.contains(offset))
+            sl.iter_line_info().find(|info| {
+                info.vline_info.interval.start <= offset && offset <= info.vline_info.interval.end
+            })
         });
         let Some(info) = info else {
             // TODO: We could do a smarter method where we get the approximate y position
