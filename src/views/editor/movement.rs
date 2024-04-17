@@ -278,9 +278,9 @@ fn move_right(
     let info = view.rvline_info(rvline);
 
     *affinity = if col == info.last_col(&view.text_prov(), false) {
-        CursorAffinity::Backward
-    } else {
         CursorAffinity::Forward
+    } else {
+        CursorAffinity::Backward
     };
 
     new_offset
