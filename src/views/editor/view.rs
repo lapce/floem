@@ -1082,11 +1082,13 @@ pub fn cursor_caret(
 
     let x0 = point.x;
     if block {
+        let new_offset = ed.move_right(offset, Mode::Insert, 1);
+        let (_, new_col) = ed.offset_to_line_col(new_offset);
         let width = if after_last_char {
             CHAR_WIDTH
         } else {
             let x1 = ed
-                .line_point_of_line_col(info.rvline.line, col + 1, affinity)
+                .line_point_of_line_col(info.rvline.line, new_col, affinity)
                 .x;
             x1 - x0
         };
