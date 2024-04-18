@@ -721,7 +721,6 @@ pub struct SimpleStylingBuilder {
     indent_style: Option<IndentStyle>,
     tab_width: Option<usize>,
     atomic_soft_tabs: Option<bool>,
-    wrap: Option<WrapMethod>,
 }
 impl SimpleStylingBuilder {
     /// Set the font size
@@ -784,13 +783,6 @@ impl SimpleStylingBuilder {
     /// Default: false
     pub fn atomic_soft_tabs(&mut self, atomic_soft_tabs: bool) -> &mut Self {
         self.atomic_soft_tabs = Some(atomic_soft_tabs);
-        self
-    }
-
-    /// Set the wrapping method
-    /// Default: `WrapMethod::EditorWidth`
-    pub fn wrap(&mut self, wrap: WrapMethod) -> &mut Self {
-        self.wrap = Some(wrap);
         self
     }
 

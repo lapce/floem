@@ -271,7 +271,7 @@ pub(crate) fn default_theme() -> Theme {
                 .set(slider::HandleRadius, PxPct::Pct(100.))
         })
         .class(PlaceholderTextClass, |s| {
-            s.color(Color::rgba8(158, 158, 158, 30))
+            s.color(Color::rgba8(158, 158, 158, 150))
                 .font_size(FONT_SIZE)
         })
         .class(TooltipClass, |s| {

@@ -21,7 +21,9 @@ pub fn clipboard_view() -> impl View {
             }),
             form_item("Copy from input".to_string(), 120.0, move || {
                 h_stack((
-                    text_input(text1).keyboard_navigatable(),
+                    text_input(move || text1.get()).on_update(move |val| {
+                        text1.set(val);
+                    }),
                     button(|| "Copy").on_click_stop(move |_| {
                         let _ = Clipboard::set_contents(text1.get());
                     }),

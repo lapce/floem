@@ -2,8 +2,8 @@ use floem::{
     reactive::{create_effect, create_rw_signal},
     unit::UnitExt,
     view::View,
-    views::{label, stack, text_input, Decorators},
-    widgets::slider,
+    views::{label, stack, Decorators},
+    widgets::{slider, text_input},
 };
 
 use crate::form::{self, form_item};
@@ -17,7 +17,9 @@ pub fn slider_view() -> impl View {
     form::form({
         (
             form_item("Input Control:".to_string(), 120.0, move || {
-                text_input(input)
+                text_input(move || input.get()).on_update(move |val| {
+                    input.set(val);
+                })
             }),
             form_item("Default Slider:".to_string(), 120.0, move || {
                 stack((

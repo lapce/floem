@@ -1,52 +1,60 @@
-use crate::action::exec_after;
-use crate::event::EventListener;
-use crate::keyboard::{self, KeyEvent, Modifiers};
-use crate::pointer::{PointerButton, PointerInputEvent};
-use crate::reactive::{create_effect, RwSignal};
-use crate::style::{CursorColor, FontProps, PaddingLeft};
-use crate::style::{FontStyle, FontWeight, TextColor};
-use crate::unit::{PxPct, PxPctAuto};
-use crate::view::{View, ViewData};
-use crate::widgets::PlaceholderTextClass;
-use crate::{prop, prop_extractor, Clipboard, EventPropagation};
-use floem_reactive::create_rw_signal;
-use taffy::prelude::{Layout, NodeId};
-
-use floem_renderer::{cosmic_text::Cursor, Renderer};
-use floem_winit::keyboard::{Key, NamedKey, SmolStr};
-use unicode_segmentation::UnicodeSegmentation;
-
-use crate::{peniko::Color, style::Style, view::Widget};
-
-use std::{
-    any::Any,
-    ops::Range,
-    time::{Duration, Instant},
-};
-
-use crate::cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout};
-use kurbo::{Point, Rect, Size};
+use std::rc::Rc;
 
 use crate::{
-    context::{EventCx, UpdateCx},
-    event::Event,
+    action::{set_ime_allowed, set_ime_cursor_area},
+    context::EventCx,
+    cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
+    event::{Event, EventListener},
     id::Id,
+    keyboard::Modifiers,
+    peniko::{
+        kurbo::{Line, Point, Rect, Size, Vec2},
+        Color,
+    },
+    prop, prop_extractor,
+    reactive::{create_effect, create_rw_signal, RwSignal},
+    style::{
+        CursorColor, CursorStyle, FontFamily, FontSize, FontStyle, FontWeight, LineHeight,
+        PaddingLeft, Style, TextColor,
+    },
+    taffy::prelude::NodeId,
+    unit::PxPct,
+    view::{AnyWidget, View, ViewData, Widget},
+    views::Decorators,
+    widgets::{PlaceholderTextClass, TextInputClass},
+    EventPropagation, Renderer,
+};
+use floem_editor_core::{
+    buffer::rope_text::RopeText,
+    cursor::{Cursor, CursorMode},
+    editor::EditType,
+    selection::Selection,
+};
+use floem_winit::keyboard::{Key, NamedKey};
+
+use super::{
+    editor::{
+        command::CommandExecuted,
+        keypress::{default_key_handler, key::KeyInput, press::KeyPress},
+        text::{Document, WrapMethod},
+        Editor, WrapProp,
+    },
+    text_editor,
 };
 
-use super::Decorators;
-
-prop_extractor! {
-    Extracter {
-        color: TextColor,
-    }
-}
-
 prop!(pub SelectionCornerRadius: f64 {} = 0.0);
+prop!(pub SelectionColor: Color {} = Color::rgba8(0, 0, 0, 150));
 
 prop_extractor! {
-    SelectionStyle {
-        //TODO: background color?
+    InputStyle {
+        color: TextColor,
+        font_size: FontSize,
+        font_family: FontFamily,
+        font_weight: FontWeight,
+        font_style: FontStyle,
+        line_height: LineHeight,
         selection_corner_radius: SelectionCornerRadius,
+        selection_color: SelectionColor,
     }
 }
 
@@ -59,872 +67,545 @@ prop_extractor! {
     }
 }
 
-/// Text Input View
-pub struct TextInput {
-    data: ViewData,
-    buffer: RwSignal<String>,
-    pub(crate) placeholder_text: Option<String>,
-    placeholder_buff: Option<TextLayout>,
-    placeholder_style: PlaceholderStyle,
-    selection_style: SelectionStyle,
-    // Where are we in the main buffer
-    cursor_glyph_idx: usize,
-    // This can be retrieved from the glyph, but we store it for efficiency
-    cursor_x: f64,
-    text_buf: Option<TextLayout>,
-    text_node: Option<NodeId>,
-    // Shown when the width exceeds node width for single line input
-    clipped_text: Option<String>,
-    // Glyph index from which we started clipping
-    clip_start_idx: usize,
-    // This can be retrieved from the clip start glyph, but we store it for efficiency
-    clip_start_x: f64,
-    clip_txt_buf: Option<TextLayout>,
-    // When the visible range changes, we also may need to have a small offset depending on the direction we moved.
-    // This makes sure character under the cursor is always fully visible and correctly aligned,
-    // and may cause the last character in the opposite direction to be "cut"
-    clip_offset_x: f64,
-    selection: Option<Range<usize>>,
-    width: f32,
-    height: f32,
-    // Approx max size of a glyph, given the current font weight & size.
-    glyph_max_size: Size,
-    style: Extracter,
-    font: FontProps,
-    cursor_width: f64, // TODO: make this configurable
-    is_focused: bool,
-    last_cursor_action_on: Instant,
-}
+//TODO add to styles
+static IME_FOREGROUND: Color = Color::BLACK;
 
-#[derive(Clone, Copy, Debug)]
-pub enum Movement {
-    Glyph,
-    Word,
-    Line,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum Direction {
-    Left,
-    Right,
-}
-
-/// Text Input View
-pub fn text_input(buffer: RwSignal<String>) -> TextInput {
+pub fn text_input(text: impl Fn() -> String + 'static) -> TextInput {
     let id = Id::next();
+
+    let text_editor = text_editor(text());
+    let editor = create_rw_signal(text_editor.editor().to_owned());
+
+    let doc = editor.with_untracked(|e| e.doc_signal());
+    let cursor = editor.with_untracked(|e| e.cursor);
+    let window_origin = create_rw_signal(Point::ZERO);
+    let cursor_line = create_rw_signal(Line::new(Point::ZERO, Point::ZERO));
     let is_focused = create_rw_signal(false);
+    let hide_cursor = editor.with_untracked(|e| e.cursor_info.hidden);
+    let skip_content_sync = create_rw_signal(true);
+    let pointer_focus = create_rw_signal(false);
+
+    // Syncs with external changes to the text. This should *only* happen if the closure
+    // re-runs due to an external update.
+    // For example the closure is subscribed to a signal and the signal is updated by another view.
+    // NOTE: The updates are dispatched in the same order they occur, so this is safe to do
+    create_effect(move |_| {
+        let text = text();
+        // The update came from this instance itself(or this is the initial run), so we are already up to date
+        if skip_content_sync.get_untracked() {
+            skip_content_sync.set(false);
+            return;
+        }
+
+        // External update
+        doc.with_untracked(|d| {
+            d.edit_single(
+                Selection::region(0, d.text().len()),
+                &text,
+                EditType::InsertChars,
+            );
+        });
+
+        id.update_state(TextInputState::ContentExternal(text));
+    });
 
     {
         create_effect(move |_| {
-            let text = buffer.get();
-            id.update_state((text, is_focused.get()));
+            let doc = doc.get();
+            let offset = cursor.with(|c| c.offset());
+            let (content, offset, preedit_range) = {
+                let content = String::from(doc.rope_text().text());
+                if let Some(preedit) = doc.preedit().preedit.get().as_ref() {
+                    let mut new_content = String::new();
+                    new_content.push_str(&content[..offset]);
+                    new_content.push_str(&preedit.text);
+                    new_content.push_str(&content[offset..]);
+                    let range = (offset, offset + preedit.text.len());
+                    let offset = preedit
+                        .cursor
+                        .as_ref()
+                        .map(|(_, end)| offset + *end)
+                        .unwrap_or(offset);
+                    (new_content, offset, Some(range))
+                } else {
+                    (content, offset, None)
+                }
+            };
+            id.update_state(TextInputState::Content {
+                text: content.clone(),
+                offset,
+                preedit_range,
+            });
+        });
+    }
+
+    {
+        create_effect(move |_| {
+            let focus = is_focused.get();
+
+            if focus {
+                // Reset blink interval every time we gain focus
+                editor.with_untracked(|e| e.cursor_info.reset());
+            }
+            id.update_state(TextInputState::Focus(focus));
+        });
+
+        // Syncs with the blinking state of the cursor.
+        // This runs every 500 milliseconds when the input is focused
+        create_effect(move |_| {
+            let focus = is_focused.get();
+            if focus {
+                let hidden = editor.with_untracked(|e| e.cursor_info.hidden);
+                hidden.track();
+                id.request_paint();
+            }
+        });
+
+        let editor = editor.get();
+        let ime_allowed = editor.ime_allowed;
+        create_effect(move |_| {
+            let focus = is_focused.get();
+            if focus {
+                if !ime_allowed.get_untracked() {
+                    ime_allowed.set(true);
+                    set_ime_allowed(true);
+                }
+                let cursor_line = cursor_line.get();
+
+                let window_origin = window_origin.get();
+                let viewport = editor.viewport.get();
+                let origin = window_origin
+                    + Vec2::new(
+                        cursor_line.p1.x - viewport.x0,
+                        cursor_line.p1.y - viewport.y0,
+                    );
+                set_ime_cursor_area(origin, Size::new(800.0, 600.0));
+            }
         });
     }
 
     TextInput {
+        id,
         data: ViewData::new(id),
-        cursor_glyph_idx: 0,
-        placeholder_text: None,
-        placeholder_buff: None,
-        placeholder_style: Default::default(),
-        selection_style: Default::default(),
-        buffer,
-        text_buf: None,
+        editor,
+        offset: 0,
+        preedit_range: None,
+        layout_rect: Rect::ZERO,
+        content: "".to_string(),
+        focused: false,
         text_node: None,
-        clipped_text: None,
-        clip_txt_buf: None,
+        text_layout: create_rw_signal(None),
+        text_rect: Rect::ZERO,
+        text_viewport: Rect::ZERO,
+        placeholder: "".to_string(),
+        placeholder_style: Default::default(),
+        placeholder_text_layout: None,
+        cursor,
+        doc,
+        cursor_pos: Point::ZERO,
+        pointer_focus,
+        hide_cursor,
         style: Default::default(),
-        font: FontProps::default(),
-        cursor_x: 0.0,
-        selection: None,
-        glyph_max_size: Size::ZERO,
-        clip_start_idx: 0,
-        clip_offset_x: 0.0,
-        clip_start_x: 0.0,
-        cursor_width: 1.0,
-        width: 0.0,
-        height: 0.0,
-        is_focused: false,
-        last_cursor_action_on: Instant::now(),
+        on_update_fn: None,
     }
-    .keyboard_navigatable()
+    .style(|s| {
+        s.cursor(CursorStyle::Text)
+            .padding_horiz(10.0)
+            .padding_vert(6.0)
+            .disabled(|s| s.cursor(CursorStyle::Default))
+            .min_width(100.0)
+            // Otherwise moving to buff start/end will not work properly.
+            .set(WrapProp, WrapMethod::None)
+    })
+    .on_move(move |pos| {
+        window_origin.set(pos);
+    })
     .on_event_stop(EventListener::FocusGained, move |_| {
         is_focused.set(true);
     })
     .on_event_stop(EventListener::FocusLost, move |_| {
         is_focused.set(false);
+        pointer_focus.set(false);
     })
-}
-
-#[derive(Copy, Clone, Debug)]
-enum ClipDirection {
-    None,
-    Forward,
-    Backward,
-}
-
-enum TextCommand {
-    SelectAll,
-    Copy,
-    Paste,
-    Cut,
-    None,
-}
-
-impl From<(&KeyEvent, &SmolStr)> for TextCommand {
-    fn from(val: (&keyboard::KeyEvent, &SmolStr)) -> Self {
-        let (event, ch) = val;
-        #[cfg(target_os = "macos")]
-        match (event.modifiers, ch.as_str()) {
-            (Modifiers::META, "a") => Self::SelectAll,
-            (Modifiers::META, "c") => Self::Copy,
-            (Modifiers::META, "x") => Self::Cut,
-            (Modifiers::META, "v") => Self::Paste,
-            _ => Self::None,
+    .on_event(EventListener::KeyDown, move |event| {
+        on_keydown(event, editor, cursor, doc, id, skip_content_sync)
+    })
+    .on_event(EventListener::ImePreedit, move |event| {
+        if !is_focused.get_untracked() {
+            return EventPropagation::Continue;
         }
-        #[cfg(not(target_os = "macos"))]
-        match (event.modifiers, ch.as_str()) {
-            (Modifiers::CONTROL, "a") => Self::SelectAll,
-            (Modifiers::CONTROL, "c") => Self::Copy,
-            (Modifiers::CONTROL, "x") => Self::Cut,
-            (Modifiers::CONTROL, "v") => Self::Paste,
-            _ => Self::None,
+
+        if let Event::ImePreedit {
+            text,
+            cursor: ime_cursor,
+        } = event
+        {
+            if text.is_empty() {
+                editor.get().clear_preedit();
+            } else {
+                let offset = cursor.with_untracked(|c| c.offset());
+                editor
+                    .get()
+                    .set_preedit(text.clone(), ime_cursor.to_owned(), offset);
+            }
+        }
+        EventPropagation::Stop
+    })
+    .on_event(EventListener::ImeCommit, move |event| {
+        if !is_focused.get_untracked() {
+            return EventPropagation::Continue;
+        }
+
+        if let Event::ImeCommit(text) = event {
+            editor.get().clear_preedit();
+            editor.get().receive_char(text.as_str());
+            skip_content_sync.set(true);
+        }
+        EventPropagation::Stop
+    })
+    .class(TextInputClass)
+}
+
+fn on_keydown(
+    event: &Event,
+    editor: RwSignal<Editor>,
+    cursor: RwSignal<Cursor>,
+    doc: RwSignal<Rc<dyn Document>>,
+    id: Id,
+    skip_content_sync: RwSignal<bool>,
+) -> EventPropagation {
+    let Event::KeyDown(key_event) = event else {
+        debug_assert!(false, "Expected keydown event");
+        return EventPropagation::Stop;
+    };
+    let Ok(keypress) = KeyPress::try_from(key_event) else {
+        return EventPropagation::Stop;
+    };
+    if let KeyInput::Keyboard(Key::Named(NamedKey::Enter), _) = keypress.key {
+        return EventPropagation::Continue;
+    }
+    if let KeyInput::Keyboard(Key::Named(NamedKey::Tab), _) = keypress.key {
+        cursor.update(|cursor| {
+            let len = doc.with_untracked(|d| d.text().len());
+            cursor.set_insert(Selection::caret(len));
+        });
+        return EventPropagation::Continue;
+    }
+    let old_revision = doc.with_untracked(|d| d.cache_rev().get_untracked());
+    let event_handler_fn = default_key_handler(editor);
+    let cmd_executed = event_handler_fn(&keypress, key_event.modifiers);
+
+    if cmd_executed == CommandExecuted::Yes {
+        // Reset blink interval
+        editor.with_untracked(|e| e.cursor_info.reset());
+    }
+
+    let mut mods = key_event.modifiers;
+    mods.set(Modifiers::SHIFT, false);
+    #[cfg(target_os = "macos")]
+    mods.set(Modifiers::ALT, false);
+
+    if mods.is_empty() {
+        if let KeyInput::Keyboard(Key::Character(c), _) = keypress.key {
+            editor.with_untracked(|e| e.receive_char(&c));
+        } else if let KeyInput::Keyboard(Key::Named(NamedKey::Space), _) = keypress.key {
+            editor.with_untracked(|e| e.receive_char(" "));
         }
     }
+
+    if old_revision != doc.with_untracked(|e| e.cache_rev().get_untracked()) {
+        skip_content_sync.set(true);
+        id.update_state(TextInputState::DocumentUpdated)
+    }
+    EventPropagation::Stop
 }
 
-fn get_word_based_motion(event: &KeyEvent) -> Option<Movement> {
-    #[cfg(not(target_os = "macos"))]
-    return event
-        .modifiers
-        .contains(Modifiers::CONTROL)
-        .then_some(Movement::Word);
-
-    #[cfg(target_os = "macos")]
-    return event
-        .modifiers
-        .contains(Modifiers::ALT)
-        .then_some(Movement::Word)
-        .or(event
-            .modifiers
-            .contains(Modifiers::META)
-            .then_some(Movement::Line));
+#[derive(Debug)]
+enum TextInputState {
+    Content {
+        text: String,
+        offset: usize,
+        preedit_range: Option<(usize, usize)>,
+    },
+    /// The closure we depend on was updated externally
+    ContentExternal(String),
+    DocumentUpdated,
+    Focus(bool),
+    Placeholder(String),
 }
 
-const DEFAULT_FONT_SIZE: f32 = 14.0;
-const CURSOR_BLINK_INTERVAL_MS: u64 = 500;
-/// Specifies approximately how many characters wide the input field should be
-/// (i.e., how many characters can be seen at a time), when the width is not set in the styles.
-/// Since character widths vary(depending on the font), may not be exact and should not be relied upon to be so.
-/// See https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/text#size
-// TODO: allow this to be set in the styles
-const APPROX_VISIBLE_CHARS_TARGET: f32 = 10.0;
+pub struct TextInput {
+    id: Id,
+    data: ViewData,
+    editor: RwSignal<Editor>,
+    content: String,
+    offset: usize,
+    preedit_range: Option<(usize, usize)>,
+    doc: RwSignal<Rc<dyn Document>>,
+    cursor: RwSignal<Cursor>,
+    focused: bool,
+    text_node: Option<NodeId>,
+    text_layout: RwSignal<Option<TextLayout>>,
+    text_rect: Rect,
+    text_viewport: Rect,
+    layout_rect: Rect,
+    placeholder: String,
+    placeholder_text_layout: Option<TextLayout>,
+    cursor_pos: Point,
+    hide_cursor: RwSignal<bool>,
+    /// Pointer moves cursor to the clicked position, while keyboard(or programatic) focus moves it to the end.
+    pointer_focus: RwSignal<bool>,
+    on_update_fn: Option<Box<dyn Fn(String)>>,
+    style: InputStyle,
+    placeholder_style: PlaceholderStyle,
+}
 
 impl TextInput {
-    fn move_cursor(&mut self, move_kind: Movement, direction: Direction) -> bool {
-        match (move_kind, direction) {
-            (Movement::Glyph, Direction::Left) => {
-                let untracked_buffer = self.buffer.get_untracked();
-                let mut grapheme_iter = untracked_buffer[..self.cursor_glyph_idx].graphemes(true);
-                match grapheme_iter.next_back() {
-                    None => false,
-                    Some(prev_character) => {
-                        self.cursor_glyph_idx -= prev_character.len();
-                        true
-                    }
-                }
-            }
-            (Movement::Glyph, Direction::Right) => {
-                let untracked_buffer = self.buffer.get_untracked();
-                let mut grapheme_iter = untracked_buffer[self.cursor_glyph_idx..].graphemes(true);
-                match grapheme_iter.next() {
-                    None => false,
-                    Some(next_character) => {
-                        self.cursor_glyph_idx += next_character.len();
-                        true
-                    }
-                }
-            }
-            (Movement::Line, Direction::Right) => {
-                if self.cursor_glyph_idx < self.buffer.with_untracked(|buff| buff.len()) {
-                    self.cursor_glyph_idx = self.buffer.with_untracked(|buff| buff.len());
-                    return true;
-                }
-                false
-            }
-            (Movement::Line, Direction::Left) => {
-                if self.cursor_glyph_idx > 0 {
-                    self.cursor_glyph_idx = 0;
-                    return true;
-                }
-                false
-            }
-            (Movement::Word, Direction::Right) => self.buffer.with_untracked(|buff| {
-                for (idx, word) in buff.unicode_word_indices() {
-                    let word_end_idx = idx + word.len();
-                    if word_end_idx > self.cursor_glyph_idx {
-                        self.cursor_glyph_idx = word_end_idx;
-                        return true;
-                    }
-                }
-                false
-            }),
-            (Movement::Word, Direction::Left) if self.cursor_glyph_idx > 0 => {
-                self.buffer.with(|buff| {
-                    let mut prev_word_idx = 0;
-                    for (idx, _) in buff.unicode_word_indices() {
-                        if idx < self.cursor_glyph_idx {
-                            prev_word_idx = idx;
-                        } else {
-                            break;
-                        }
-                    }
-                    self.cursor_glyph_idx = prev_word_idx;
-                    true
-                })
-            }
-            (_movement, _dir) => false,
-        }
+    pub fn placeholder(self, placeholder: impl Fn() -> String + 'static) -> Self {
+        let id = self.id;
+        create_effect(move |_| {
+            let placeholder = placeholder();
+            id.update_state(TextInputState::Placeholder(placeholder));
+        });
+        self
     }
 
-    fn clip_text(&mut self, node_layout: &Layout) {
-        let virt_text = self.text_buf.as_ref().unwrap();
-        let node_width = node_layout.size.width as f64;
-        let cursor_text_loc = Cursor::new(0, self.cursor_glyph_idx);
-        let layout_cursor = virt_text.layout_cursor(&cursor_text_loc);
-        let cursor_glyph_pos = virt_text.hit_position(layout_cursor.glyph);
-        let cursor_x = cursor_glyph_pos.point.x;
-
-        let mut clip_start_x = self.clip_start_x;
-
-        let visible_range = clip_start_x..=clip_start_x + node_width;
-
-        let mut clip_dir = ClipDirection::None;
-        if !visible_range.contains(&cursor_glyph_pos.point.x) {
-            if cursor_x < *visible_range.start() {
-                clip_start_x = cursor_x;
-                clip_dir = ClipDirection::Backward;
-            } else {
-                clip_dir = ClipDirection::Forward;
-                clip_start_x = cursor_x - node_width;
-            }
-        }
-        self.cursor_x = cursor_x;
-
-        let clip_start = virt_text.hit_point(Point::new(clip_start_x, 0.0)).index;
-        let clip_end = virt_text
-            .hit_point(Point::new(clip_start_x + node_width, 0.0))
-            .index;
-
-        let new_text = self
-            .buffer
-            .get()
-            .chars()
-            .skip(clip_start)
-            .take(clip_end - clip_start)
-            .collect();
-
-        self.cursor_x -= clip_start_x;
-        self.clip_start_idx = clip_start;
-        self.clip_start_x = clip_start_x;
-        self.clipped_text = Some(new_text);
-
-        self.update_text_layout();
-        match clip_dir {
-            ClipDirection::None => {}
-            ClipDirection::Forward => {
-                self.clip_offset_x = self.clip_txt_buf.as_ref().unwrap().size().width - node_width
-            }
-            ClipDirection::Backward => self.clip_offset_x = 0.0,
-        }
+    pub fn static_placeholder(self, text: impl Into<String>) -> Self {
+        self.id
+            .update_state(TextInputState::Placeholder(text.into()));
+        self
     }
 
-    fn get_cursor_rect(&self, node_layout: &Layout) -> Rect {
-        let node_location = node_layout.location;
-
-        let text_height = self.height;
-
-        let cursor_start = Point::new(
-            self.cursor_x + node_location.x as f64,
-            node_location.y as f64,
-        );
-
-        Rect::from_points(
-            cursor_start,
-            Point::new(
-                cursor_start.x + self.cursor_width,
-                cursor_start.y + text_height as f64,
-            ),
-        )
+    pub fn on_update(mut self, action: impl Fn(String) + 'static) -> Self {
+        self.on_update_fn = Some(Box::new(action));
+        self
     }
 
-    fn handle_double_click(&mut self, pos_x: f64, pos_y: f64, cx: &mut EventCx) {
-        let clicked_glyph_idx = self.get_box_position(pos_x, pos_y, cx);
-
-        self.buffer.with_untracked(|buff| {
-            let selection = get_dbl_click_selection(clicked_glyph_idx, buff);
-            self.cursor_glyph_idx = selection.end;
-            self.selection = Some(selection);
-        })
-    }
-
-    fn get_box_position(&self, pos_x: f64, pos_y: f64, cx: &mut EventCx) -> usize {
-        let layout = cx.get_layout(self.id()).unwrap();
-        let style = cx.app_state.get_builtin_style(self.id());
-
-        let padding_left = match style.padding_left() {
-            PxPct::Px(padding) => padding as f32,
-            PxPct::Pct(pct) => pct as f32 * layout.size.width,
-        };
-        let padding_top = match style.padding_top() {
-            PxPct::Px(padding) => padding as f32,
-            PxPct::Pct(pct) => pct as f32 * layout.size.width,
-        };
-        self.text_buf
-            .as_ref()
-            .unwrap()
-            .hit_point(Point::new(
-                pos_x + self.clip_start_x - padding_left as f64,
-                // TODO: prevent cursor incorrectly going to end of buffer when clicking
-                // slightly below the text
-                pos_y - padding_top as f64,
-            ))
-            .index
-    }
-
-    fn get_selection_rect(&self, node_layout: &Layout, left_padding: f64) -> Rect {
-        let selection = if let Some(curr_selection) = &self.selection {
-            curr_selection
-        } else {
-            return Rect::ZERO;
-        };
-
-        let virtual_text = self.text_buf.as_ref().unwrap();
-        let text_height = virtual_text.size().height;
-
-        let selection_start_x =
-            virtual_text.hit_position(selection.start).point.x - self.clip_start_x;
-        let selection_start_x = selection_start_x.max(node_layout.location.x as f64 - left_padding);
-
-        let selection_end_x =
-            virtual_text.hit_position(selection.end).point.x + left_padding - self.clip_start_x;
-        let selection_end_x =
-            selection_end_x.min(selection_start_x + self.width as f64 + left_padding);
-
-        let node_location = node_layout.location;
-
-        let selection_start = Point::new(
-            selection_start_x + node_location.x as f64,
-            node_location.y as f64,
-        );
-
-        Rect::from_points(
-            selection_start,
-            Point::new(selection_end_x, selection_start.y + text_height),
-        )
-    }
-
-    /// Determine approximate max size of a single glyph, given the current font weight & size
-    fn get_font_glyph_max_size(&self) -> Size {
-        let mut tmp = TextLayout::new();
-        let attrs_list = self.get_text_attrs();
-        tmp.set_text("W", attrs_list);
-        tmp.size()
-    }
-
-    fn update_selection(&mut self, selection_start: usize, selection_stop: usize) {
-        if selection_stop < selection_start {
-            self.selection = Some(Range {
-                start: selection_stop,
-                end: selection_start,
-            });
-        } else {
-            self.selection = Some(Range {
-                start: selection_start,
-                end: selection_stop,
-            });
-        }
-    }
-
-    fn update_text_layout(&mut self) {
+    fn set_text_layout(&mut self) {
         let mut text_layout = TextLayout::new();
-        let attrs_list = self.get_text_attrs();
-
-        self.buffer
-            .with_untracked(|buff| text_layout.set_text(buff, attrs_list.clone()));
-
-        let glyph_max_size = self.get_font_glyph_max_size();
-        self.height = glyph_max_size.height as f32;
-        self.glyph_max_size = glyph_max_size;
-
-        // main buff should always get updated
-        self.text_buf = Some(text_layout.clone());
-
-        if let Some(cr_text) = self.clipped_text.clone().as_ref() {
-            let mut clp_txt_lay = text_layout;
-            clp_txt_lay.set_text(cr_text, attrs_list);
-
-            self.clip_txt_buf = Some(clp_txt_lay);
-        }
-    }
-
-    fn font_size(&self) -> f32 {
-        self.font.size().unwrap_or(DEFAULT_FONT_SIZE)
-    }
-
-    pub fn get_placeholder_text_attrs(&self) -> AttrsList {
-        let mut attrs = Attrs::new().color(self.placeholder_style.color().unwrap_or(Color::BLACK));
-
-        //TODO:
-        // self.placeholder_style
-        //     .font_size()
-        //     .unwrap_or(self.font_size())
-        attrs = attrs.font_size(self.font_size());
-
-        if let Some(font_style) = self.placeholder_style.font_style() {
-            attrs = attrs.style(font_style);
-        } else if let Some(font_style) = self.font.style() {
-            attrs = attrs.style(font_style);
-        }
-
-        if let Some(font_weight) = self.placeholder_style.font_weight() {
-            attrs = attrs.weight(font_weight);
-        } else if let Some(font_weight) = self.font.weight() {
-            attrs = attrs.weight(font_weight);
-        }
-        AttrsList::new(attrs)
-    }
-
-    pub fn get_text_attrs(&self) -> AttrsList {
         let mut attrs = Attrs::new().color(self.style.color().unwrap_or(Color::BLACK));
-
-        attrs = attrs.font_size(self.font_size());
-
-        if let Some(font_style) = self.font.style() {
+        if let Some(font_size) = self.style.font_size() {
+            attrs = attrs.font_size(font_size);
+        }
+        if let Some(font_style) = self.style.font_style() {
             attrs = attrs.style(font_style);
         }
-        let font_family = self.font.family().as_ref().map(|font_family| {
+        let font_family = self.style.font_family().as_ref().map(|font_family| {
             let family: Vec<FamilyOwned> = FamilyOwned::parse_list(font_family).collect();
             family
         });
         if let Some(font_family) = font_family.as_ref() {
             attrs = attrs.family(font_family);
         }
-        if let Some(font_weight) = self.font.weight() {
+        if let Some(font_weight) = self.style.font_weight() {
             attrs = attrs.weight(font_weight);
         }
-        AttrsList::new(attrs)
+        if let Some(line_height) = self.style.line_height() {
+            attrs = attrs.line_height(line_height);
+        }
+        text_layout.set_text(
+            if self.content.is_empty() {
+                " "
+            } else {
+                self.content.as_str()
+            },
+            AttrsList::new(attrs),
+        );
+        self.text_layout.set(Some(text_layout));
+
+        let mut placeholder_text_layout = TextLayout::new();
+        attrs = attrs.color(
+            self.placeholder_style
+                .color()
+                .unwrap_or(Color::BLACK.with_alpha_factor(0.5)),
+        );
+
+        if let Some(font_style) = self.placeholder_style.font_style() {
+            attrs = attrs.style(font_style);
+        }
+        if let Some(font_weight) = self.placeholder_style.font_weight() {
+            attrs = attrs.weight(font_weight);
+        }
+        placeholder_text_layout.set_text(&self.placeholder, AttrsList::new(attrs));
+        self.placeholder_text_layout = Some(placeholder_text_layout);
     }
 
-    fn select_all(&mut self, cx: &mut EventCx) {
-        let text_node = self.text_node.unwrap();
-        let node_layout = *cx.app_state.taffy.layout(text_node).unwrap();
-        let len = self.buffer.with(|val| val.len());
-        self.cursor_glyph_idx = len;
-
-        let text_buf = self.text_buf.as_ref().unwrap();
-        let buf_width = text_buf.size().width;
-        let node_width = node_layout.size.width as f64;
-
-        if buf_width > node_width {
-            self.clip_text(&node_layout);
-        }
-
-        self.selection = Some(0..len);
+    fn hit_index(&self, cx: &mut EventCx, point: Point) -> usize {
+        self.text_layout.with_untracked(|text_layout| {
+            if let Some(text_layout) = text_layout.as_ref() {
+                let padding_left = cx
+                    .get_computed_style(self.id)
+                    .map(|s| match s.get(PaddingLeft) {
+                        PxPct::Px(v) => v,
+                        PxPct::Pct(pct) => {
+                            let layout = cx.get_layout(self.id()).unwrap();
+                            pct * layout.size.width as f64
+                        }
+                    })
+                    .unwrap_or(0.0);
+                let hit = text_layout.hit_point(Point::new(point.x - padding_left, 0.0));
+                hit.index.min(self.content.len())
+            } else {
+                0
+            }
+        })
     }
 
-    fn handle_modifier_cmd(
-        &mut self,
-        event: &KeyEvent,
-        cx: &mut EventCx<'_>,
-        character: &SmolStr,
-    ) -> bool {
-        if event.modifiers.is_empty() {
-            return false;
+    fn clamp_text_viewport(&mut self, text_viewport: Rect) {
+        let text_rect = self.text_rect;
+        let actual_size = text_rect.size();
+        let width = text_rect.width();
+        let height = text_rect.height();
+        let child_size = self
+            .text_layout
+            .with_untracked(|text_layout| text_layout.as_ref().unwrap().size());
+
+        let mut text_viewport = text_viewport;
+        if width >= child_size.width {
+            text_viewport.x0 = 0.0;
+        } else if text_viewport.x0 > child_size.width - width {
+            text_viewport.x0 = child_size.width - width;
+        } else if text_viewport.x0 < 0.0 {
+            text_viewport.x0 = 0.0;
         }
 
-        let command = (event, character).into();
+        if height >= child_size.height {
+            text_viewport.y0 = 0.0;
+        } else if text_viewport.y0 > child_size.height - height {
+            text_viewport.y0 = child_size.height - height;
+        } else if text_viewport.y0 < 0.0 {
+            text_viewport.y0 = 0.0;
+        }
 
-        match command {
-            TextCommand::SelectAll => {
-                self.select_all(cx);
-                true
-            }
-            TextCommand::Copy => {
-                if let Some(selection) = &self.selection {
-                    let selection_txt = self
-                        .buffer
-                        .get()
-                        .chars()
-                        .skip(selection.start)
-                        .take(selection.end - selection.start)
-                        .collect();
-                    let _ = Clipboard::set_contents(selection_txt);
-                }
-                true
-            }
-            TextCommand::Cut => {
-                if let Some(selection) = &self.selection {
-                    let selection_txt = self
-                        .buffer
-                        .get()
-                        .chars()
-                        .skip(selection.start)
-                        .take(selection.end - selection.start)
-                        .collect();
-                    let _ = Clipboard::set_contents(selection_txt);
-
-                    self.buffer
-                        .update(|buf| replace_range(buf, selection.clone(), None));
-
-                    self.cursor_glyph_idx = selection.start;
-                    self.selection = None;
-                }
-
-                true
-            }
-            TextCommand::Paste => {
-                let clipboard_content = match Clipboard::get_contents() {
-                    Ok(content) => content,
-                    Err(_) => return false,
-                };
-                if clipboard_content.is_empty() {
-                    return false;
-                }
-
-                if let Some(selection) = &self.selection {
-                    self.buffer.update(|buf| {
-                        replace_range(buf, selection.clone(), Some(&clipboard_content))
-                    });
-
-                    self.cursor_glyph_idx +=
-                        clipboard_content.len() - selection.len().min(clipboard_content.len());
-                    self.selection = None;
-                } else {
-                    self.buffer
-                        .update(|buf| buf.insert_str(self.cursor_glyph_idx, &clipboard_content));
-                    self.cursor_glyph_idx += clipboard_content.len();
-                }
-
-                true
-            }
-            TextCommand::None => {
-                self.selection = None;
-                false
-            }
+        let text_viewport = text_viewport.with_size(actual_size);
+        if text_viewport != self.text_viewport {
+            self.text_viewport = text_viewport;
+            self.id.request_paint();
         }
     }
 
-    fn handle_key_down(&mut self, cx: &mut EventCx, event: &KeyEvent) -> bool {
-        match event.key.logical_key {
-            Key::Character(ref ch) => {
-                let handled_modifier_cmd = self.handle_modifier_cmd(event, cx, ch);
-                if handled_modifier_cmd {
-                    return true;
-                }
-
-                let selection = self.selection.clone();
-                if let Some(selection) = selection {
-                    self.buffer
-                        .update(|buf| replace_range(buf, selection.clone(), None));
-                    self.cursor_glyph_idx = selection.start;
-                    self.selection = None;
-                }
-
-                self.buffer
-                    .update(|buf| buf.insert_str(self.cursor_glyph_idx, &ch.clone()));
-                self.move_cursor(Movement::Glyph, Direction::Right)
+    fn ensure_cursor_visible(&mut self) {
+        fn closest_on_axis(val: f64, min: f64, max: f64) -> f64 {
+            assert!(min <= max);
+            if val > min && val < max {
+                0.0
+            } else if val <= min {
+                val - min
+            } else {
+                val - max
             }
-            Key::Named(NamedKey::Space) => {
-                if let Some(selection) = &self.selection {
-                    self.buffer
-                        .update(|buf| replace_range(buf, selection.clone(), None));
-                    self.cursor_glyph_idx = selection.start;
-                    self.selection = None;
-                } else {
-                    self.buffer
-                        .update(|buf| buf.insert(self.cursor_glyph_idx, ' '));
-                }
-                self.move_cursor(Movement::Glyph, Direction::Right)
-            }
-            Key::Named(NamedKey::Backspace) => {
-                let selection = self.selection.clone();
-                if let Some(selection) = selection {
-                    self.cursor_glyph_idx = selection.start;
-                    self.buffer
-                        .update(|buf| replace_range(buf, selection, None));
-                    self.selection = None;
-                    true
-                } else {
-                    let prev_cursor_idx = self.cursor_glyph_idx;
+        }
 
-                    self.move_cursor(
-                        get_word_based_motion(event).unwrap_or(Movement::Glyph),
-                        Direction::Left,
-                    );
+        let rect = Rect::ZERO.with_origin(self.cursor_pos).inflate(10.0, 0.0);
+        // Clamp the target region size to our own size.
+        // This means we will show the portion of the target region that includes the origin.
+        let target_size = Size::new(
+            rect.width().min(self.text_viewport.width()),
+            rect.height().min(self.text_viewport.height()),
+        );
+        let rect = rect.with_size(target_size);
 
-                    if self.cursor_glyph_idx == prev_cursor_idx {
-                        return false;
-                    }
+        let x0 = closest_on_axis(
+            rect.min_x(),
+            self.text_viewport.min_x(),
+            self.text_viewport.max_x(),
+        );
+        let x1 = closest_on_axis(
+            rect.max_x(),
+            self.text_viewport.min_x(),
+            self.text_viewport.max_x(),
+        );
+        let y0 = closest_on_axis(
+            rect.min_y(),
+            self.text_viewport.min_y(),
+            self.text_viewport.max_y(),
+        );
+        let y1 = closest_on_axis(
+            rect.max_y(),
+            self.text_viewport.min_y(),
+            self.text_viewport.max_y(),
+        );
 
-                    self.buffer.update(|buf| {
-                        replace_range(buf, self.cursor_glyph_idx..prev_cursor_idx, None);
-                    });
-                    true
-                }
-            }
-            Key::Named(NamedKey::Delete) => {
-                let selection = self.selection.clone();
-                if let Some(selection) = selection {
-                    self.cursor_glyph_idx = selection.start;
-                    self.buffer
-                        .update(|buf| replace_range(buf, selection, None));
-                    self.selection = None;
-                    return true;
-                }
+        let delta_x = if x0.abs() > x1.abs() { x0 } else { x1 };
+        let delta_y = if y0.abs() > y1.abs() { y0 } else { y1 };
+        let new_origin = self.text_viewport.origin() + Vec2::new(delta_x, delta_y);
+        self.clamp_text_viewport(self.text_viewport.with_origin(new_origin));
+    }
 
-                let prev_cursor_idx = self.cursor_glyph_idx;
+    fn paint_cursor(&self, cx: &mut crate::context::PaintCx<'_>, text_layout: &TextLayout) {
+        if !self.hide_cursor.get_untracked() && (self.focused || cx.is_focused(self.id)) {
+            cx.clip(&self.text_rect.inflate(2.0, 2.0));
 
-                self.move_cursor(
-                    get_word_based_motion(event).unwrap_or(Movement::Glyph),
-                    Direction::Right,
-                );
+            let hit_position = text_layout.hit_position(self.offset);
+            let cursor_point = hit_position.point + self.layout_rect.origin().to_vec2()
+                - self.text_viewport.origin().to_vec2();
 
-                if self.cursor_glyph_idx == prev_cursor_idx {
-                    return false;
-                }
-
-                self.buffer.update(|buf| {
-                    replace_range(buf, prev_cursor_idx..self.cursor_glyph_idx, None);
-                });
-
-                self.cursor_glyph_idx = prev_cursor_idx;
-                true
-            }
-            Key::Named(NamedKey::Escape) => {
-                cx.app_state.clear_focus();
-                true
-            }
-            Key::Named(NamedKey::End) => {
-                if event.modifiers.contains(Modifiers::SHIFT) {
-                    match &self.selection {
-                        Some(selection_value) => self.update_selection(
-                            selection_value.start,
-                            self.buffer.get_untracked().len(),
-                        ),
-                        None => self.update_selection(
-                            self.cursor_glyph_idx,
-                            self.buffer.get_untracked().len(),
-                        ),
-                    }
-                } else {
-                    self.selection = None;
-                }
-                self.move_cursor(Movement::Line, Direction::Right)
-            }
-            Key::Named(NamedKey::Home) => {
-                if event.modifiers.contains(Modifiers::SHIFT) {
-                    match &self.selection {
-                        Some(selection_value) => self.update_selection(0, selection_value.end),
-                        None => self.update_selection(0, self.cursor_glyph_idx),
-                    }
-                } else {
-                    self.selection = None;
-                }
-                self.move_cursor(Movement::Line, Direction::Left)
-            }
-            Key::Named(NamedKey::ArrowLeft) => {
-                let old_glyph_idx = self.cursor_glyph_idx;
-
-                let cursor_moved = self.move_cursor(
-                    get_word_based_motion(event).unwrap_or(Movement::Glyph),
-                    Direction::Left,
-                );
-
-                if cursor_moved {
-                    self.move_selection(
-                        old_glyph_idx,
-                        self.cursor_glyph_idx,
-                        event.modifiers,
-                        Direction::Left,
-                    );
-                } else if !event.modifiers.contains(Modifiers::SHIFT) && self.selection.is_some() {
-                    self.selection = None;
-                }
-
-                cursor_moved
-            }
-            Key::Named(NamedKey::ArrowRight) => {
-                let old_glyph_idx = self.cursor_glyph_idx;
-
-                let cursor_moved = self.move_cursor(
-                    get_word_based_motion(event).unwrap_or(Movement::Glyph),
-                    Direction::Right,
-                );
-
-                if cursor_moved {
-                    self.move_selection(
-                        old_glyph_idx,
-                        self.cursor_glyph_idx,
-                        event.modifiers,
-                        Direction::Right,
-                    );
-                } else if !event.modifiers.contains(Modifiers::SHIFT) && self.selection.is_some() {
-                    self.selection = None;
-                }
-
-                cursor_moved
-            }
-            _ => false,
+            let line = Line::new(
+                Point::new(cursor_point.x, cursor_point.y - hit_position.glyph_ascent),
+                Point::new(cursor_point.x, cursor_point.y + hit_position.glyph_descent),
+            );
+            let style = cx.app_state.get_computed_style(self.id());
+            let cursor_color = style.get(CursorColor).unwrap_or(Color::BLACK);
+            cx.stroke(&line, cursor_color, 2.0);
         }
     }
 
-    fn move_selection(
-        &mut self,
-        old_glyph_idx: usize,
-        curr_glyph_idx: usize,
-        modifiers: Modifiers,
-        direction: Direction,
+    fn paint_selection(
+        &self,
+        cx: &mut crate::context::PaintCx<'_>,
+        text_layout: &TextLayout,
+        point: Point,
     ) {
-        if !modifiers.contains(Modifiers::SHIFT) {
-            if self.selection.is_some() {
-                self.selection = None;
-            }
+        if !cx.is_focused(self.id) {
             return;
         }
+        let selection_color = self.style.selection_color();
+        let sel_corner_radius = self.style.selection_corner_radius();
 
-        let new_selection = if let Some(selection) = &self.selection {
-            match (direction, selection.contains(&curr_glyph_idx)) {
-                (Direction::Left, true) | (Direction::Right, false) => {
-                    selection.start..curr_glyph_idx
+        let height = text_layout.size().height;
+        let cursor = self.cursor.get_untracked();
+
+        if let CursorMode::Insert(selection) = &cursor.mode {
+            for region in selection.regions() {
+                if !region.is_caret() {
+                    let min = text_layout.hit_position(region.min()).point.x;
+                    let max = text_layout.hit_position(region.max()).point.x;
+                    cx.fill(
+                        &Rect::ZERO
+                            .with_size(Size::new(max - min, height))
+                            .with_origin(Point::new(min + point.x, point.y))
+                            .to_rounded_rect(sel_corner_radius),
+                        selection_color,
+                        0.0,
+                    );
                 }
-                (Direction::Right, true) | (Direction::Left, false) => {
-                    curr_glyph_idx..selection.end
-                }
             }
-        } else {
-            match direction {
-                Direction::Left => curr_glyph_idx..old_glyph_idx,
-                Direction::Right => old_glyph_idx..curr_glyph_idx,
-            }
-        };
-        // when we move in the opposite direction and end up in the same selection range,
-        // the selection should be cancelled out
-        if self
-            .selection
-            .as_ref()
-            .is_some_and(|sel| sel == &new_selection)
-        {
-            self.selection = None;
-        } else {
-            self.selection = Some(new_selection);
         }
     }
 
-    fn paint_placeholder_text(
-        &self,
-        placeholder_buff: &TextLayout,
-        cx: &mut crate::context::PaintCx,
-    ) {
-        let text_node = self.text_node.unwrap();
-        let layout = *cx.app_state.taffy.layout(text_node).unwrap();
-        let node_location = layout.location;
-        let text_start_point = Point::new(node_location.x as f64, node_location.y as f64);
-        cx.draw_text(placeholder_buff, text_start_point);
-    }
+    fn paint_preedit(&self, cx: &mut crate::context::PaintCx<'_>, text_layout: &TextLayout) {
+        if let Some((start, end)) = self.preedit_range {
+            let start_position = text_layout.hit_position(start);
+            let start_point = start_position.point + self.layout_rect.origin().to_vec2()
+                - self.text_viewport.origin().to_vec2();
+            let end_position = text_layout.hit_position(end);
+            let end_point = end_position.point + self.layout_rect.origin().to_vec2()
+                - self.text_viewport.origin().to_vec2();
 
-    fn paint_selection_rect(&self, &node_layout: &Layout, cx: &mut crate::context::PaintCx<'_>) {
-        let style = cx.app_state.get_computed_style(self.id());
-        let cursor_color = style.get(CursorColor);
-
-        let padding_left = match style.get(PaddingLeft) {
-            PxPct::Px(padding) => padding,
-            PxPct::Pct(pct) => pct / 100.0 * node_layout.size.width as f64,
-        };
-
-        let horiz_pad = 1.0;
-        let border_radius = self.selection_style.selection_corner_radius();
-        let selection_rect = self
-            .get_selection_rect(&node_layout, padding_left)
-            .inflate(horiz_pad, 0.0)
-            .to_rounded_rect(border_radius);
-        cx.fill(
-            &selection_rect,
-            cursor_color.unwrap_or(Color::rgba8(0, 0, 0, 150)),
-            0.0,
-        );
-    }
-}
-
-fn replace_range(buff: &mut String, del_range: Range<usize>, replacement: Option<&str>) {
-    assert!(del_range.start <= del_range.end);
-    if !buff.is_char_boundary(del_range.end) {
-        eprintln!(
-            "[Floem] Tried to delete range with invalid end: {:?}",
-            del_range
-        );
-        return;
-    }
-
-    if !buff.is_char_boundary(del_range.start) {
-        eprintln!(
-            "[Floem] Tried to delete range with invalid start: {:?}",
-            del_range
-        );
-        return;
-    }
-
-    // Get text after range to delete
-    let after_del_range = buff.split_off(del_range.end);
-
-    // Truncate up to range's start to delete it
-    buff.truncate(del_range.start);
-
-    if let Some(repl) = replacement {
-        buff.push_str(repl);
-    }
-
-    buff.push_str(&after_del_range);
-}
-
-fn get_dbl_click_selection(glyph_idx: usize, buffer: &String) -> Range<usize> {
-    let mut selectable_ranges: Vec<Range<usize>> = Vec::new();
-    let glyph_idx = usize::min(glyph_idx, buffer.len().saturating_sub(1));
-
-    for (idx, word) in buffer.unicode_word_indices() {
-        let word_range = idx..idx + word.len();
-
-        if let Some(prev) = selectable_ranges.last() {
-            if prev.end != idx {
-                // non-alphanumeric char sequence between previous word and current word
-                selectable_ranges.push(prev.end..idx);
-            }
-        } else if idx > 0 {
-            // non-alphanumeric char sequence at the beginning of the buffer(before the first word)
-            selectable_ranges.push(0..idx);
-        }
-
-        selectable_ranges.push(word_range);
-    }
-
-    // left-over non-alphanumeric char sequence at the end of the buffer(after the last word)
-    if let Some(last) = selectable_ranges.last() {
-        if last.end != buffer.len() {
-            selectable_ranges.push(last.end..buffer.len());
+            let line = Line::new(
+                Point::new(start_point.x, start_point.y + start_position.glyph_descent),
+                Point::new(end_point.x, end_point.y + end_position.glyph_descent),
+            );
+            cx.stroke(&line, IME_FOREGROUND, 1.0);
         }
     }
-
-    for range in selectable_ranges {
-        if range.contains(&glyph_idx) {
-            return range;
-        }
-    }
-
-    // should reach here only if buffer does not contain any words(only non-alphanumeric characters)
-    0..buffer.len()
 }
 
 impl View for TextInput {
+    fn id(&self) -> Id {
+        self.id
+    }
+
     fn view_data(&self) -> &ViewData {
         &self.data
     }
@@ -933,11 +614,10 @@ impl View for TextInput {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
+    fn build(self) -> AnyWidget {
         Box::new(self)
     }
 }
-
 impl Widget for TextInput {
     fn view_data(&self) -> &ViewData {
         &self.data
@@ -947,426 +627,221 @@ impl Widget for TextInput {
         &mut self.data
     }
 
-    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        format!("TextInput: {:?}", self.buffer.get_untracked()).into()
-    }
-
-    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {
-        if let Ok(state) = state.downcast::<(String, bool)>() {
-            let (_, is_focused) = *state;
-            if is_focused {
-                self.cursor_glyph_idx = self.buffer.with_untracked(|buff| buff.len());
-            }
-
-            self.is_focused = is_focused;
-            cx.request_layout(self.id());
-        } else {
-            eprintln!("downcast failed");
-        }
-    }
-
-    fn event(
-        &mut self,
-        cx: &mut EventCx,
-        _id_path: Option<&[Id]>,
-        event: Event,
-    ) -> EventPropagation {
-        let buff_len = self.buffer.with_untracked(|buff| buff.len());
-        // Workaround for cursor going out of bounds when text buffer is modified externally
-        // TODO: find a better way to handle this
-        if self.cursor_glyph_idx > buff_len {
-            self.cursor_glyph_idx = buff_len;
-        }
-
-        let is_handled = match &event {
-            // match on pointer primary button press
-            Event::PointerDown(
-                event @ PointerInputEvent {
-                    button: PointerButton::Primary,
-                    ..
-                },
-            ) => {
-                cx.update_active(self.id());
-                cx.app_state_mut().request_layout(self.id());
-
-                if event.count == 2 {
-                    self.handle_double_click(event.pos.x, event.pos.y, cx);
-                } else {
-                    self.cursor_glyph_idx = self.get_box_position(event.pos.x, event.pos.y, cx);
-                    self.selection = None;
+    fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
+        if let Ok(state) = state.downcast() {
+            match *state {
+                TextInputState::Content {
+                    text,
+                    offset,
+                    preedit_range,
+                } => {
+                    self.content = text;
+                    self.offset = offset;
+                    self.preedit_range = preedit_range;
+                    self.text_layout.set(None);
                 }
-                true
-            }
-            Event::PointerMove(event) => {
-                cx.app_state_mut().request_layout(self.id());
-                if cx.is_active(self.id()) {
-                    let selection_stop = self.get_box_position(event.pos.x, event.pos.y, cx);
-                    self.update_selection(self.cursor_glyph_idx, selection_stop);
+                TextInputState::ContentExternal(text) => {
+                    self.content = text;
+                    self.text_layout.set(None);
                 }
-                false
+                TextInputState::Focus(focus) => {
+                    self.focused = focus;
+                    // NOTE: Moving cursor for pointer focus is handled in the event method, since we need to know
+                    // the click pos
+                    if !self.pointer_focus.get_untracked() {
+                        self.cursor.update(|cursor| {
+                            cursor.set_insert(Selection::caret(self.content.len()));
+                        });
+                    }
+                }
+                TextInputState::DocumentUpdated => {
+                    if let Some(func) = self.on_update_fn.as_ref() {
+                        func(self.content.clone())
+                    }
+                }
+                TextInputState::Placeholder(placeholder) => {
+                    self.placeholder = placeholder;
+                    self.placeholder_text_layout = None;
+                }
             }
-            Event::KeyDown(event) => self.handle_key_down(cx, event),
-            _ => false,
-        };
-
-        if is_handled {
-            cx.app_state.request_layout(self.id());
-            self.last_cursor_action_on = Instant::now();
+            cx.request_layout(self.id);
         }
-
-        EventPropagation::Continue
     }
 
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         let style = cx.style();
-        if self.font.read(cx) || self.text_buf.is_none() {
-            self.update_text_layout();
-            cx.app_state_mut().request_layout(self.id());
-        }
-        if self.style.read(cx) {
-            cx.app_state_mut().request_paint(self.id());
-        }
-
-        self.selection_style.read_style(cx, &style);
-
+        let id = self.id();
         let placeholder_style = style.clone().apply_class(PlaceholderTextClass);
-        self.placeholder_style.read_style(cx, &placeholder_style);
+        if self.placeholder_style.read_style(cx, &placeholder_style) {
+            cx.app_state_mut().request_paint(id);
+        }
+
+        if self.style.read(cx) {
+            self.set_text_layout();
+            cx.app_state_mut().request_layout(id);
+        }
+
+        // To set wrap method to `None`
+        self.editor.with_untracked(|ed| {
+            ed.es.update(|s| {
+                if s.read(cx) {
+                    ed.floem_style_id.update(|val| *val += 1);
+                    cx.app_state_mut().request_paint(id);
+                }
+            })
+        });
     }
 
-    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::tree::NodeId {
-        cx.layout_node(self.id(), true, |cx| {
-            let was_focused = self.is_focused;
-            self.is_focused = cx.app_state().is_focused(&self.id());
-
-            if was_focused && !self.is_focused {
-                self.selection = None;
+    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> crate::taffy::prelude::NodeId {
+        cx.layout_node(self.id, true, |cx| {
+            if self
+                .text_layout
+                .with_untracked(|text_layout| text_layout.is_none())
+                || self.placeholder_text_layout.is_none()
+            {
+                self.set_text_layout();
             }
 
-            if self.text_node.is_none() {
-                self.text_node = Some(
-                    cx.app_state_mut()
-                        .taffy
-                        .new_leaf(taffy::style::Style::DEFAULT)
-                        .unwrap(),
-                );
-            }
+            let text_layout = self.text_layout;
+            text_layout.with_untracked(|text_layout| {
+                let text_layout = text_layout.as_ref().unwrap();
 
-            let text_node = self.text_node.unwrap();
-
-            // FIXME: This layout is undefined.
-            #[allow(clippy::unwrap_or_default)]
-            let layout = cx.app_state.get_layout(self.id()).unwrap_or(Layout::new());
-            let style = cx.app_state_mut().get_builtin_style(self.id());
-            let node_width = layout.size.width;
-
-            if self.placeholder_buff.is_none() {
-                if let Some(placeholder_text) = &self.placeholder_text {
-                    let mut placeholder_buff = TextLayout::new();
-                    let attrs_list = self.get_placeholder_text_attrs();
-                    placeholder_buff.set_text(placeholder_text, attrs_list);
-                    self.placeholder_buff = Some(placeholder_buff);
+                let offset = self.cursor.get_untracked().offset();
+                let cursor_point = text_layout.hit_position(offset).point;
+                if cursor_point != self.cursor_pos {
+                    self.cursor_pos = cursor_point;
+                    self.ensure_cursor_visible();
                 }
-            }
 
-            let style_width = style.width();
-            let width_px = match style_width {
-                crate::unit::PxPctAuto::Px(px) => px as f32,
-                // the percent is already applied to the view, so we don't need to
-                // apply it to the inner text node as well
-                crate::unit::PxPctAuto::Pct(_) => node_width,
-                crate::unit::PxPctAuto::Auto => {
-                    APPROX_VISIBLE_CHARS_TARGET * self.glyph_max_size.width as f32
+                let size = text_layout.size();
+                let height = size.height as f32;
+
+                if self.text_node.is_none() {
+                    self.text_node = Some(cx.new_node());
                 }
-            };
 
-            let is_auto_width = matches!(style_width, PxPctAuto::Auto);
-            self.width = if is_auto_width {
-                width_px
-            } else {
-                let padding_left = match style.padding_left() {
-                    PxPct::Px(padding) => padding as f32,
-                    PxPct::Pct(pct) => pct as f32 / 100.0 * node_width,
-                };
-                let padding_right = match style.padding_right() {
-                    PxPct::Px(padding) => padding as f32,
-                    PxPct::Pct(pct) => pct as f32 / 100.0 * node_width,
-                };
-                let padding = padding_left + padding_right;
-                f32::max(width_px - padding, 1.0)
-            };
+                let text_node = self.text_node.unwrap();
 
-            let taffy_node_width = match style_width {
-                PxPctAuto::Px(_) | PxPctAuto::Auto => PxPctAuto::Px(self.width as f64),
-                // the pct is already applied to the text input view, so text node should be 100% of parent
-                PxPctAuto::Pct(_) => PxPctAuto::Pct(100.),
-            };
+                let style = Style::new().height(height).to_taffy_style();
+                cx.set_style(text_node, style);
+            });
 
-            let style = Style::new()
-                .width(taffy_node_width)
-                .height(self.height)
-                .to_taffy_style();
-            let _ = cx.app_state_mut().taffy.set_style(text_node, style);
-
-            vec![text_node]
+            vec![self.text_node.unwrap()]
         })
     }
 
     fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
-        self.update_text_layout();
+        let layout = cx.get_layout(self.id).unwrap();
 
-        let text_buf = self.text_buf.as_ref().unwrap();
-        let buf_width = text_buf.size().width;
+        let style = cx.app_state_mut().get_builtin_style(self.id);
+        let padding_left = match style.padding_left() {
+            PxPct::Px(padding) => padding,
+            PxPct::Pct(pct) => pct * layout.size.width as f64,
+        };
+        let padding_right = match style.padding_right() {
+            PxPct::Px(padding) => padding,
+            PxPct::Pct(pct) => pct * layout.size.width as f64,
+        };
+
+        let size = Size::new(layout.size.width as f64, layout.size.height as f64);
+        let mut text_rect = size.to_rect();
+        text_rect.x0 += padding_left;
+        text_rect.x1 -= padding_right;
+        self.text_rect = text_rect;
+
+        self.clamp_text_viewport(self.text_viewport);
+
         let text_node = self.text_node.unwrap();
-        let node_layout = *cx.app_state.taffy.layout(text_node).unwrap();
-        let node_width = node_layout.size.width as f64;
-
-        if buf_width > node_width {
-            self.clip_text(&node_layout);
-        } else {
-            self.clip_txt_buf = None;
-            self.clip_start_idx = 0;
-            self.clip_start_x = 0.0;
-            let hit_pos = self
-                .text_buf
-                .as_ref()
-                .unwrap()
-                .hit_position(self.cursor_glyph_idx);
-            self.cursor_x = hit_pos.point.x;
-        }
+        let location = cx.layout(text_node).unwrap().location;
+        self.layout_rect = size
+            .to_rect()
+            .with_origin(Point::new(location.x as f64, location.y as f64));
 
         None
     }
 
-    fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        if !cx.app_state.is_focused(&self.id())
-            && self.buffer.with_untracked(|buff| buff.is_empty())
-        {
-            if let Some(placeholder_buff) = &self.placeholder_buff {
-                self.paint_placeholder_text(placeholder_buff, cx);
+    fn event(
+        &mut self,
+        cx: &mut crate::context::EventCx,
+        _id_path: Option<&[Id]>,
+        event: crate::event::Event,
+    ) -> EventPropagation {
+        let text_offset = self.text_viewport.origin();
+        let event = event.offset((-text_offset.x, -text_offset.y));
+        match event {
+            Event::PointerDown(pointer) => {
+                let offset = self.hit_index(cx, pointer.pos);
+
+                if !self.focused {
+                    self.pointer_focus.set(true);
+                }
+
+                self.cursor.update(|cursor| {
+                    cursor.set_insert(Selection::caret(offset));
+                });
+                if pointer.button.is_primary() && pointer.count == 2 {
+                    let offset = self.hit_index(cx, pointer.pos);
+                    let rope = self.doc.with_untracked(|d| d.rope_text());
+
+                    let (start, end) = rope.select_word(offset);
+                    self.cursor.update(|cursor| {
+                        cursor.set_insert(Selection::region(start, end));
+                    });
+                } else if pointer.button.is_primary() && pointer.count == 3 {
+                    self.cursor.update(|cursor| {
+                        cursor.set_insert(Selection::region(0, self.content.len()));
+                    });
+                }
+                cx.update_active(self.id);
             }
-            return;
+            Event::PointerMove(pointer) => {
+                if cx.is_active(self.id) {
+                    let offset = self.hit_index(cx, pointer.pos);
+                    self.cursor.update(|cursor| {
+                        cursor.set_offset(offset, true, false);
+                    });
+                }
+            }
+            Event::PointerWheel(pointer_event) => {
+                let delta = pointer_event.delta;
+                let delta = if delta.x == 0.0 && delta.y != 0.0 {
+                    Vec2::new(delta.y, delta.x)
+                } else {
+                    delta
+                };
+                self.clamp_text_viewport(self.text_viewport + delta);
+                return EventPropagation::Continue;
+            }
+            _ => {}
         }
+        EventPropagation::Continue
+    }
+
+    fn paint(&mut self, cx: &mut crate::context::PaintCx) {
+        cx.save();
+        cx.clip(&self.text_rect.inflate(1.0, 0.0));
 
         let text_node = self.text_node.unwrap();
-        let node_layout = *cx.app_state.taffy.layout(text_node).unwrap();
+        let location = cx.layout(text_node).unwrap().location;
+        let point = Point::new(location.x as f64, location.y as f64)
+            - self.text_viewport.origin().to_vec2();
 
-        let location = node_layout.location;
-        let text_start_point = Point::new(location.x as f64, location.y as f64);
+        self.text_layout.with_untracked(|text_layout| {
+            let text_layout = text_layout.as_ref().unwrap();
 
-        if let Some(clip_txt) = self.clip_txt_buf.as_mut() {
-            cx.draw_text(
-                clip_txt,
-                Point::new(text_start_point.x - self.clip_offset_x, text_start_point.y),
-            );
-        } else {
-            cx.draw_text(self.text_buf.as_ref().unwrap(), text_start_point);
-        }
+            self.paint_selection(cx, text_layout, point);
 
-        let is_cursor_visible = cx.app_state.is_focused(&self.id())
-            && self.selection.is_none()
-            && (self.last_cursor_action_on.elapsed().as_millis()
-                / CURSOR_BLINK_INTERVAL_MS as u128)
-                % 2
-                == 0;
+            if !self.content.is_empty() {
+                cx.draw_text(text_layout, point);
+            } else if !self.placeholder.is_empty() {
+                cx.draw_text(self.placeholder_text_layout.as_ref().unwrap(), point);
+            }
 
-        if is_cursor_visible {
-            let cursor_color = cx
-                .app_state
-                .get_computed_style(self.id())
-                .builtin()
-                .cursor_color();
-            let cursor_rect = self.get_cursor_rect(&node_layout);
-            cx.fill(&cursor_rect, cursor_color.unwrap_or(Color::BLACK), 0.0);
-        }
+            self.paint_preedit(cx, text_layout);
 
-        if cx.app_state.is_focused(&self.id()) && self.selection.is_some() {
-            self.paint_selection_rect(&node_layout, cx);
-        }
+            self.paint_cursor(cx, text_layout);
 
-        let id = self.id();
-        exec_after(
-            Duration::from_millis(CURSOR_BLINK_INTERVAL_MS),
-            Box::new(move |_| {
-                id.request_paint();
-            }),
-        );
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::views::text_input::get_dbl_click_selection;
-
-    use super::replace_range;
-
-    #[test]
-    fn replace_range_start() {
-        let mut s = "Sample text".to_owned();
-        replace_range(&mut s, 0..7, Some("Replaced___"));
-        assert_eq!("Replaced___text", s);
-    }
-
-    #[test]
-    fn delete_range_start() {
-        let mut s = "Sample text".to_owned();
-        replace_range(&mut s, 0..7, None);
-        assert_eq!("text", s);
-    }
-
-    #[test]
-    fn replace_range_end() {
-        let mut s = "Sample text".to_owned();
-        let len = s.len();
-        replace_range(&mut s, 6..len, Some("++Replaced"));
-        assert_eq!("Sample++Replaced", s);
-    }
-
-    #[test]
-    fn delete_range_full() {
-        let mut s = "Sample text".to_owned();
-        let len = s.len();
-        replace_range(&mut s, 0..len, None);
-        assert_eq!("", s);
-    }
-
-    #[test]
-    fn replace_range_full() {
-        let mut s = "Sample text".to_owned();
-        let len = s.len();
-        replace_range(&mut s, 0..len, Some("Hello world"));
-        assert_eq!("Hello world", s);
-    }
-
-    #[test]
-    fn delete_range_end() {
-        let mut s = "Sample text".to_owned();
-        let len = s.len();
-        replace_range(&mut s, 6..len, None);
-        assert_eq!("Sample", s);
-    }
-
-    #[test]
-    fn dbl_click_whitespace_before_word() {
-        let s = "  select  ".to_owned();
-
-        let range = get_dbl_click_selection(0, &s);
-        assert_eq!(range, 0..2);
-
-        let range = get_dbl_click_selection(1, &s);
-        assert_eq!(range, 0..2);
-    }
-
-    #[test]
-    fn dbl_click_word_surrounded_by_whitespace() {
-        let s = "  select  ".to_owned();
-
-        let range = get_dbl_click_selection(2, &s);
-        assert_eq!(range, 2..8);
-
-        let range = get_dbl_click_selection(6, &s);
-        assert_eq!(range, 2..8);
-    }
-
-    #[test]
-    fn dbl_click_whitespace_bween_words() {
-        let s = "select   select".to_owned();
-
-        let range = get_dbl_click_selection(6, &s);
-        assert_eq!(range, 6..9);
-
-        let range = get_dbl_click_selection(7, &s);
-        assert_eq!(range, 6..9);
-
-        let range = get_dbl_click_selection(8, &s);
-        assert_eq!(range, 6..9);
-    }
-
-    #[test]
-    fn dbl_click_whitespace_after_word() {
-        let s = "  select  ".to_owned();
-
-        let range = get_dbl_click_selection(8, &s);
-        assert_eq!(range, 8..10);
-
-        let range = get_dbl_click_selection(9, &s);
-        assert_eq!(range, 8..10);
-    }
-
-    #[test]
-    fn dbl_click_letter_after_whitespace() {
-        let s = "     s".to_owned();
-        let range = get_dbl_click_selection(5, &s);
-
-        assert_eq!(range, 5..6);
-    }
-
-    #[test]
-    fn dbl_click_single_letter() {
-        let s = "s".to_owned();
-        let range = get_dbl_click_selection(0, &s);
-
-        assert_eq!(range, 0..1);
-    }
-
-    #[test]
-    fn dbl_click_outside_boundaries_selects_all() {
-        let s = "     ".to_owned();
-        let range = get_dbl_click_selection(100, &s);
-
-        assert_eq!(range, 0..5);
-    }
-
-    #[test]
-    fn dbl_click_letters_with_whitespace() {
-        let s = " s  s  ".to_owned();
-        let range = get_dbl_click_selection(1, &s);
-        assert_eq!(range, 1..2);
-
-        let range = get_dbl_click_selection(4, &s);
-        assert_eq!(range, 4..5);
-    }
-
-    #[test]
-    fn dbl_click_single_word() {
-        let s = "123testttttttttttttttttttt123".to_owned();
-        let range = get_dbl_click_selection(1, &s);
-        let len = s.len();
-        assert_eq!(range, 0..len);
-
-        let range = get_dbl_click_selection(5, &s);
-        assert_eq!(range, 0..len);
-
-        let range = get_dbl_click_selection(len - 1, &s);
-        assert_eq!(range, 0..len);
-    }
-
-    #[test]
-    fn dbl_click_two_words_and_whitespace() {
-        let s = "  word1  word2 ".to_owned();
-
-        let range = get_dbl_click_selection(2, &s);
-        assert_eq!(range, 2..7);
-
-        let range = get_dbl_click_selection(6, &s);
-        assert_eq!(range, 2..7);
-    }
-
-    #[test]
-    fn dbl_click_empty_string() {
-        let s = "".to_owned();
-
-        let range = get_dbl_click_selection(0, &s);
-        assert_eq!(range, 0..0);
-
-        let range = get_dbl_click_selection(1, &s);
-        assert_eq!(range, 0..0);
-    }
-
-    #[test]
-    fn dbl_click_whitespace_only() {
-        let s = "       ".to_owned();
-        let range = get_dbl_click_selection(2, &s);
-
-        assert_eq!(range, 0..s.len());
+            cx.restore();
+        });
     }
 }

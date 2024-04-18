@@ -68,11 +68,13 @@ pub fn app_view() -> impl View {
         .on_click_stop(move |_| flight_mode_set.set(FlightMode::Return)),
     ));
 
-    let start_date_input = text_input(start_text)
-        .placeholder("Start date")
+    let start_date_input = text_input(move || start_text.get())
+        .on_update(move |val| start_text.set(val))
+        .static_placeholder("Start date")
         .style(move |s| s.apply_if(!start_date_is_valid(), |s| s.background(Color::RED)));
-    let return_date_input = text_input(return_text)
-        .placeholder("Return date")
+    let return_date_input = text_input(move || return_text.get())
+        .on_update(move |val| return_text.set(val))
+        .static_placeholder("Return date")
         .style(move |s| s.apply_if(!return_date_is_valid(), |s| s.background(Color::RED)))
         .disabled(move || !return_text_is_enabled());
 

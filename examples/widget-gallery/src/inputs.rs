@@ -3,7 +3,7 @@ use floem::{
     peniko::Color,
     reactive::create_rw_signal,
     view::View,
-    views::{Decorators, SelectionCornerRadius},
+    views::{Decorators, SelectionColor, SelectionCornerRadius},
     widgets::{text_input, PlaceholderTextClass},
 };
 
@@ -15,13 +15,19 @@ pub fn text_input_view() -> impl View {
     form({
         (
             form_item("Simple Input:".to_string(), 120.0, move || {
-                text_input(text)
-                    .placeholder("Placeholder text")
-                    .keyboard_navigatable()
+                text_input(move || text.get())
+                    .on_update(move |val| {
+                        text.set(val);
+                    })
+                    .style(|s| s.width(250.0))
+                    .static_placeholder("Placeholder text")
             }),
             form_item("Styled Input:".to_string(), 120.0, move || {
-                text_input(text)
-                    .placeholder("Placeholder text")
+                text_input(move || text.get())
+                    .on_update(move |val| {
+                        text.set(val);
+                    })
+                    .static_placeholder("Placeholder text")
                     .style(|s| {
                         s.border(1.5)
                             .width(250.0)
@@ -33,6 +39,7 @@ pub fn text_input_view() -> impl View {
                                 s.background(Color::rgb8(224, 224, 224).with_alpha_factor(0.2))
                                     .border_color(Color::rgb8(66, 66, 66))
                             })
+                            .set(SelectionColor, Color::LIGHT_SKY_BLUE)
                             .set(SelectionCornerRadius, 4.0)
                             .focus(|s| {
                                 s.border_color(Color::LIGHT_SKY_BLUE.with_alpha_factor(0.8))
@@ -44,10 +51,11 @@ pub fn text_input_view() -> impl View {
                                     .font_weight(Weight::BOLD)
                             })
                     })
-                    .keyboard_navigatable()
             }),
             form_item("Disabled Input:".to_string(), 120.0, move || {
-                text_input(text).disabled(|| true)
+                text_input(move || text.get())
+                    .style(|s| s.width(250.0))
+                    .disabled(|| true)
             }),
         )
     })

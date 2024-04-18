@@ -12,10 +12,7 @@ use floem::{
     keyboard::{Key, NamedKey},
     view::View,
     views::{
-        editor::{
-            core::{editor::EditType, selection::Selection},
-            text::WrapMethod,
-        },
+        editor::core::{editor::EditType, selection::Selection},
         stack, text_editor, Decorators,
     },
     widgets::button,
@@ -178,7 +175,6 @@ impl<'a> Styling for SyntaxHighlightingStyle<'a> {
 
 fn app_view() -> impl View {
     let global_style = SimpleStylingBuilder::default()
-        .wrap(WrapMethod::None)
         .font_family(vec![
             FamilyOwned::Name("Fira Code".to_string()),
             FamilyOwned::Name("Consolas".to_string()),
