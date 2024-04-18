@@ -12,6 +12,7 @@ use crate::form::{form, form_item};
 pub fn text_input_view() -> impl View {
     let text = create_rw_signal("".to_string());
 
+
     form({
         (
             form_item("Simple Input:".to_string(), 120.0, move || {

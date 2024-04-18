@@ -55,15 +55,19 @@
 //! #
 //! fn app_view() -> impl View {
 //!     let text = create_rw_signal("Hello world".to_string());
-//!     v_stack((text_input(text), label(move || text.get()))).style(|s| s.padding(10.0))
+//!     v_stack((
+//!         text_input(move || text.get()).on_update(move |val| text.set(val)),
+//!         label(move || text.get()),
+//!     ))
+//!     .style(|s| s.padding(10.0))
 //! }
 //! ```
 //!
 //! In this example, `text` is a signal containing a `String` that can both be read from and written to.
 //! The signal is used in two different places in the [vertical stack](crate::views::v_stack).
-//! The [text input](crate::views::text_input) has direct access to the [`RwSignal`](floem_reactive::RwSignal)
-//! and will mutate the underlying `String` when the user types in the input box. The reactivity will then
-//! trigger a rerender of the [label](crate::views::label) with the updated text value.
+//! When the user types in the input box, the [text input](crate::views::text_input) will mutate 
+//! the underlying `String` by writing to the signal in the `on_update` callback. The reactivity will then trigger 
+//! a rerender of the [label](crate::views::label) with the updated text value.
 //!
 //! [`create_signal`](floem_reactive::create_signal) returns a separated
 //! [`ReadSignal`](floem_reactive::ReadSignal) and [`WriteSignal`](floem_reactive::WriteSignal) for a variable.
