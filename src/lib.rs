@@ -65,8 +65,8 @@
 //!
 //! In this example, `text` is a signal containing a `String` that can both be read from and written to.
 //! The signal is used in two different places in the [vertical stack](crate::views::v_stack).
-//! When the user types in the input box, the [text input](crate::views::text_input) will mutate 
-//! the underlying `String` by writing to the signal in the `on_update` callback. The reactivity will then trigger 
+//! When the user types in the input box, the [text input](crate::views::text_input) will mutate
+//! the underlying `String` by writing to the signal in the `on_update` callback. The reactivity will then trigger
 //! a rerender of the [label](crate::views::label) with the updated text value.
 //!
 //! [`create_signal`](floem_reactive::create_signal) returns a separated
