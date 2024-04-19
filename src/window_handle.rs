@@ -41,7 +41,10 @@ use crate::{
         CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES,
         UPDATE_MESSAGES,
     },
-    view::{view_children_set_parent_id, view_tab_navigation, AnyView, View, ViewData, Widget},
+    view::{
+        default_compute_layout, view_children_set_parent_id, view_tab_navigation, AnyView, View,
+        ViewData, Widget,
+    },
     view_data::{update_data, ChangeFlags},
     widgets::{default_theme, Theme},
 };
@@ -1000,6 +1003,9 @@ impl WindowHandle {
                             position,
                             scope,
                             child: view,
+                            size: Size::ZERO,
+                            parent_size: Size::ZERO,
+                            window_origin: Point::ZERO,
                         };
 
                         view.view_data().id().set_parent(self.id);
@@ -1616,6 +1622,9 @@ struct OverlayView {
     scope: Scope,
     position: Point,
     child: Box<dyn Widget>,
+    window_origin: Point,
+    parent_size: Size,
+    size: Size,
 }
 
 impl Widget for OverlayView {
@@ -1653,6 +1662,34 @@ impl Widget for OverlayView {
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         "Overlay".into()
+    }
+
+    fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
+        self.window_origin = cx.window_origin;
+        if let Some(parent_size) = cx.parent_size(self.view_data().id) {
+            self.parent_size = parent_size;
+        }
+        if let Some(layout) = cx.get_layout(self.view_data().id) {
+            self.size = Size::new(layout.size.width as f64, layout.size.height as f64);
+        }
+        default_compute_layout(self, cx)
+    }
+
+    fn paint(&mut self, cx: &mut PaintCx) {
+        cx.save();
+        let x = if (self.window_origin.x + self.size.width) > self.parent_size.width - 5.0 {
+            (self.window_origin.x + self.size.width) - (self.parent_size.width - 5.0)
+        } else {
+            0.0
+        };
+        let y = if (self.window_origin.y + self.size.height) > self.parent_size.height - 5.0 {
+            (self.window_origin.y + self.size.height) - (self.parent_size.height - 5.0)
+        } else {
+            0.0
+        };
+        cx.offset((-x, -y));
+        cx.paint_view(&mut self.child);
+        cx.restore();
     }
 }
 

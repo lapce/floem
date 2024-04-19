@@ -1243,6 +1243,13 @@ impl<'a> ComputeLayoutCx<'a> {
         self.app_state
     }
 
+    pub fn parent_size(&self, id: Id) -> Option<Size> {
+        let parent_id = id.parent()?;
+        let layout = self.app_state.get_layout(parent_id)?;
+        let size = Size::new(layout.size.width as f64, layout.size.height as f64);
+        Some(size)
+    }
+
     pub fn save(&mut self) {
         self.saved_viewports.push(self.viewport);
         self.saved_window_origins.push(self.window_origin);
