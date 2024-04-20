@@ -1201,6 +1201,7 @@ fn editor_content(
 
                 let mut mods = key_event.modifiers;
                 mods.set(Modifiers::SHIFT, false);
+                mods.set(Modifiers::ALTGR, false);
                 #[cfg(target_os = "macos")]
                 mods.set(Modifiers::ALT, false);
 
