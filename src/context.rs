@@ -6,6 +6,7 @@ use std::{
     collections::{HashMap, HashSet},
     ops::{Deref, DerefMut},
     rc::Rc,
+    sync::Arc,
     time::Instant,
 };
 use taffy::{
@@ -418,7 +419,7 @@ impl AppState {
         })
     }
 
-    pub(crate) fn get_layout_rect(&mut self, id: Id) -> Rect {
+    pub fn get_layout_rect(&mut self, id: Id) -> Rect {
         self.view_state(id).layout_rect
     }
 
@@ -702,6 +703,8 @@ impl<'a> EventCx<'a> {
             return EventPropagation::Stop;
         }
 
+        let mut is_down_and_has_click = false;
+
         match &event {
             Event::PointerDown(event) => {
                 self.app_state.clicking.insert(id);
@@ -723,6 +726,7 @@ impl<'a> EventCx<'a> {
                         if self.has_event_listener(id, EventListener::Click) {
                             let view_state = self.app_state.view_state(id);
                             view_state.last_pointer_down = Some(event.clone());
+                            is_down_and_has_click = true;
                         }
 
                         let bottom_left = {
@@ -943,6 +947,10 @@ impl<'a> EventCx<'a> {
                     return EventPropagation::Stop;
                 }
             }
+        }
+
+        if is_down_and_has_click {
+            return EventPropagation::Stop;
         }
 
         EventPropagation::Continue
@@ -1233,6 +1241,13 @@ impl<'a> ComputeLayoutCx<'a> {
 
     pub fn app_state(&self) -> &AppState {
         self.app_state
+    }
+
+    pub fn parent_size(&self, id: Id) -> Option<Size> {
+        let parent_id = id.parent()?;
+        let layout = self.app_state.get_layout(parent_id)?;
+        let size = Size::new(layout.size.width as f64, layout.size.height as f64);
+        Some(size)
     }
 
     pub fn save(&mut self) {
@@ -1643,16 +1658,13 @@ impl<'a> PaintCx<'a> {
 
 // TODO: should this be private?
 pub struct PaintState {
-    pub(crate) renderer: crate::renderer::Renderer,
+    pub(crate) renderer: crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>>,
 }
 
 impl PaintState {
-    pub fn new<W>(window: &W, scale: f64, size: Size) -> Self
-    where
-        W: raw_window_handle::HasRawDisplayHandle + raw_window_handle::HasRawWindowHandle,
-    {
+    pub fn new(window: Arc<dyn wgpu::WindowHandle>, scale: f64, size: Size) -> Self {
         Self {
-            renderer: crate::renderer::Renderer::new(window, scale, size),
+            renderer: crate::renderer::Renderer::new(Arc::new(window), scale, size),
         }
     }
 
@@ -1712,7 +1724,7 @@ impl<'a> UpdateCx<'a> {
 }
 
 impl Deref for PaintCx<'_> {
-    type Target = crate::renderer::Renderer;
+    type Target = crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>>;
 
     fn deref(&self) -> &Self::Target {
         &self.paint_state.renderer

@@ -3,13 +3,14 @@
 //! The decorator trait is the primary interface for extending the appereance and functionality of ['View']s.
 
 use floem_reactive::{create_effect, create_updater};
-use floem_winit::keyboard::{Key, ModifiersState};
+use floem_winit::keyboard::Key;
 use kurbo::{Point, Rect};
 
 use crate::{
     action::{set_window_menu, set_window_title, update_window_scale},
     animate::Animation,
     event::{Event, EventListener},
+    keyboard::Modifiers,
     menu::Menu,
     style::{Style, StyleClass, StyleSelector},
     view::View,
@@ -18,9 +19,9 @@ use crate::{
 
 /// A trait that extends the appearance and functionality of Views through styling and event handling.
 pub trait Decorators: View + Sized {
-    /// Alter the style of the view.  
+    /// Alter the style of the view.
     ///
-    /// Earlier applications of `style` have lower priority than later calls.  
+    /// Earlier applications of `style` have lower priority than later calls.
     /// ```rust
     /// # use floem::{peniko::Color, view::View, views::{Decorators, label, stack}};
     /// fn view() -> impl View {
@@ -44,6 +45,11 @@ pub trait Decorators: View + Sized {
             move |style| id.update_style(style, offset),
         );
         self.view_data_mut().style.push(style);
+        self
+    }
+
+    fn debug_name(mut self, name: impl Into<String>) -> Self {
+        self.view_data_mut().debug_name.push(name.into());
         self
     }
 
@@ -103,7 +109,7 @@ pub trait Decorators: View + Sized {
     fn on_key_down(
         mut self,
         key: Key,
-        modifiers: ModifiersState,
+        modifiers: Modifiers,
         action: impl Fn(&Event) + 'static,
     ) -> Self {
         self.view_data_mut().event_handlers.push(Box::new(move |e| {
@@ -124,7 +130,7 @@ pub trait Decorators: View + Sized {
     fn on_key_up(
         mut self,
         key: Key,
-        modifiers: ModifiersState,
+        modifiers: Modifiers,
         action: impl Fn(&Event) + 'static,
     ) -> Self {
         self.view_data_mut().event_handlers.push(Box::new(move |e| {

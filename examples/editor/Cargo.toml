@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-im = "15.1.0"
+im.workspace = true
 floem = { path = "../..", features = ["editor"] }

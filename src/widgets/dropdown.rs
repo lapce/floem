@@ -8,6 +8,7 @@ use crate::{
     action::{add_overlay, remove_overlay},
     event::{Event, EventListener},
     id::Id,
+    prop, prop_extractor,
     style::{Style, StyleClass, Width},
     style_class,
     unit::PxPctAuto,
@@ -15,7 +16,7 @@ use crate::{
         default_compute_layout, default_event, view_children_set_parent_id, AnyView, View,
         ViewData, Widget,
     },
-    views::Decorators,
+    views::{scroll, Decorators},
     EventPropagation,
 };
 
@@ -24,6 +25,12 @@ use super::list;
 type ChildFn<T> = dyn Fn(T) -> (AnyView, Scope);
 
 style_class!(pub DropDownClass);
+style_class!(pub DropDownScrollClass);
+
+prop!(pub CloseOnAccept: bool {} = true);
+prop_extractor!(DropDownStyle {
+    close_on_accept: CloseOnAccept,
+});
 
 pub struct DropDown<T: 'static> {
     view_data: ViewData,
@@ -36,6 +43,7 @@ pub struct DropDown<T: 'static> {
     window_origin: Option<Point>,
     on_accept: Option<Box<dyn Fn(T)>>,
     on_open: Option<Box<dyn Fn(bool)>>,
+    style: DropDownStyle,
 }
 
 enum Message {
@@ -83,7 +91,14 @@ impl<T: 'static> Widget for DropDown<T> {
         for_each(&mut self.main_view);
     }
 
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        "DropDown".into()
+    }
+
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+        if self.style.read(cx) {
+            cx.app_state_mut().request_paint(self.id());
+        }
         cx.save();
         self.list_style =
             Style::new().apply_classes_from_context(&[super::ListClass::class_ref()], &cx.current);
@@ -109,6 +124,9 @@ impl<T: 'static> Widget for DropDown<T> {
                 Message::ListFocusLost => self.close_dropdown(),
                 Message::ListSelect(val) => {
                     if let Ok(val) = val.downcast::<T>() {
+                        if self.style.close_on_accept() {
+                            self.close_dropdown();
+                        }
                         if let Some(on_select) = &self.on_accept {
                             on_select(*val);
                         }
@@ -138,7 +156,6 @@ impl<T: 'static> Widget for DropDown<T> {
         id_path: Option<&[Id]>,
         event: Event,
     ) -> crate::EventPropagation {
-        #[allow(clippy::single_match)]
         match event {
             Event::PointerDown(_) => {
                 self.swap_state();
@@ -151,10 +168,30 @@ impl<T: 'static> Widget for DropDown<T> {
             }
             _ => {}
         }
-        default_event(self, cx, id_path, event.clone())
+        default_event(self, cx, id_path, event)
     }
 }
 
+/// A dropdown widget
+///
+/// **Styling**:
+/// You can modify the behavior of the dropdown through the `CloseOnAccept` property.
+/// If the property is set to `true` the dropdown will automatically close when an item is selected.
+/// If the property is set to `false` the dropwown will not automatically close when an item is selected.
+/// The default is `true`.
+/// Styling Example:
+/// ```rust
+/// # use floem::widgets::dropdown;
+/// # use floem::views::empty;
+/// # use floem::views::Decorators;
+/// // root view
+/// empty()
+///     .style(|s|
+///         s.class(dropdown::DropDownClass, |s| {
+///             s.set(dropdown::CloseOnAccept, false)
+///         })
+///  );
+///```
 pub fn dropdown<MF, I, T, LF, AIF>(
     active_item: AIF,
     main_view: MF,
@@ -174,7 +211,7 @@ where
         let iterator = iterator.clone();
         let iter_clone = iterator.clone();
         let list_item_fn = list_item_fn.clone();
-        list(iterator.into_iter().map(list_item_fn))
+        let inner_list = list(iterator.into_iter().map(list_item_fn))
             .on_accept(move |opt_idx| {
                 if let Some(idx) = opt_idx {
                     let val = iter_clone.clone().into_iter().nth(idx).unwrap();
@@ -182,11 +219,18 @@ where
                     dropdown_id.update_state(Message::ListSelect(Box::new(val)));
                 }
             })
-            .any()
+            .style(|s| s.size_full())
             .keyboard_navigatable()
             .on_event_stop(EventListener::FocusLost, move |_| {
                 dropdown_id.update_state(Message::ListFocusLost);
+            });
+        let inner_list_id = View::view_data(&inner_list).id();
+        scroll(inner_list)
+            .on_event_stop(EventListener::FocusGained, move |_| {
+                inner_list_id.request_focus();
             })
+            .class(DropDownScrollClass)
+            .any()
     });
 
     let initial = create_updater(active_item, move |new_state| {
@@ -208,6 +252,7 @@ where
         window_origin: None,
         on_accept: None,
         on_open: None,
+        style: Default::default(),
     }
     .class(DropDownClass)
 }
@@ -283,6 +328,42 @@ impl<T> DropDown<T> {
             list_id.request_focus();
             list
         }));
+    }
+
+    /// Sets the custom style properties of the `DropDown`.
+    pub fn dropdown_style(
+        mut self,
+        style: impl Fn(DropDownCustomStyle) -> DropDownCustomStyle + 'static,
+    ) -> Self {
+        let id = self.id();
+        let offset = Widget::view_data_mut(&mut self).style.next_offset();
+        let style = create_updater(
+            move || style(DropDownCustomStyle(Style::new())),
+            move |style| id.update_style(style.0, offset),
+        );
+        Widget::view_data_mut(&mut self).style.push(style.0);
+        self
+    }
+}
+
+pub struct DropDownCustomStyle(Style);
+
+impl DropDownCustomStyle {
+    /// Sets the `CloseOnAccept` property for the dropdown, which determines whether the dropdown
+    /// should automatically close when an item is selected. The default value is `true`.
+    ///
+    /// # Arguments
+    /// * `close`: If set to `true`, the dropdown will close upon item selection. If `false`, it
+    /// will remain open after an item is selected.
+    pub fn close_on_accept(mut self, close: bool) -> Self {
+        self = Self(self.0.set(CloseOnAccept, close));
+        self
+    }
+
+    /// Apply regular style properties
+    pub fn style(mut self, style: impl Fn(Style) -> Style + 'static) -> Self {
+        self = Self(self.0.apply(style(Style::new())));
+        self
     }
 }
 

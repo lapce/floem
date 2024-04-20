@@ -56,15 +56,15 @@ use image::DynamicImage;
 use kurbo::{Affine, Rect, Shape, Size};
 
 #[allow(clippy::large_enum_variant)]
-pub enum Renderer {
+pub enum Renderer<W> {
     Vger(VgerRenderer),
-    TinySkia(TinySkiaRenderer),
+    TinySkia(TinySkiaRenderer<W>),
 }
 
-impl Renderer {
-    pub fn new<W>(window: &W, scale: f64, size: Size) -> Self
+impl<W: wgpu::WindowHandle> Renderer<W> {
+    pub fn new(window: W, scale: f64, size: Size) -> Self
     where
-        W: raw_window_handle::HasRawDisplayHandle + raw_window_handle::HasRawWindowHandle,
+        W: Clone + 'static,
     {
         let size = Size::new(size.width.max(1.0), size.height.max(1.0));
 
@@ -78,7 +78,7 @@ impl Renderer {
         };
 
         let vger_err = if !force_tiny_skia {
-            match VgerRenderer::new(window, size.width as u32, size.height as u32, scale) {
+            match VgerRenderer::new(window.clone(), size.width as u32, size.height as u32, scale) {
                 Ok(vger) => return Self::Vger(vger),
                 Err(err) => Some(err),
             }
@@ -115,7 +115,7 @@ impl Renderer {
     }
 }
 
-impl floem_renderer::Renderer for Renderer {
+impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
     fn begin(&mut self, capture: bool) {
         match self {
             Renderer::Vger(r) => {

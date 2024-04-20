@@ -1,7 +1,7 @@
 use floem_reactive::create_effect;
 use floem_renderer::{
-    usvg::Tree,
-    usvg::{self, TreeParsing},
+    cosmic_text::FONT_SYSTEM,
+    usvg::{self, Tree},
     Renderer,
 };
 use kurbo::Size;
@@ -67,7 +67,8 @@ impl Widget for Svg {
     fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast::<String>() {
             let text = &*state;
-            self.svg_tree = Tree::from_str(text, &usvg::Options::default()).ok();
+            let font_db = FONT_SYSTEM.db().read();
+            self.svg_tree = Tree::from_str(text, &usvg::Options::default(), &font_db).ok();
 
             let mut hasher = Sha256::new();
             hasher.update(text);

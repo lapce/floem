@@ -1,7 +1,7 @@
 //! Movement logic for the editor.
 
 use floem_editor_core::{
-    buffer::rope_text::RopeText,
+    buffer::rope_text::{RopeText, RopeTextVal},
     command::MultiSelectionCommand,
     cursor::{ColPosition, Cursor, CursorAffinity, CursorMode},
     mode::{Mode, MotionMode, VisualMode},
@@ -97,7 +97,7 @@ pub fn move_offset(
     movement: &Movement,
     mode: Mode,
 ) -> (usize, Option<ColPosition>) {
-    match movement {
+    let (new_offset, horiz) = match movement {
         Movement::Left => {
             let new_offset = move_left(view, offset, affinity, mode, count);
 
@@ -192,7 +192,25 @@ pub fn move_offset(
 
             (new_offset, None)
         }
+    };
+
+    let new_offset = correct_crlf(&view.rope_text(), new_offset);
+
+    (new_offset, horiz)
+}
+
+/// If the offset is at `\r|\n` then move it back.
+fn correct_crlf(text: &RopeTextVal, offset: usize) -> usize {
+    if offset == 0 || offset == text.len() {
+        return offset;
     }
+
+    let mut cursor = lapce_xi_rope::Cursor::new(text.text(), offset);
+    if cursor.peek_next_codepoint() == Some('\n') && cursor.prev_codepoint() == Some('\r') {
+        return offset - 1;
+    }
+
+    offset
 }
 
 fn atomic_soft_tab_width_for_offset(ed: &Editor, offset: usize) -> Option<usize> {
@@ -260,9 +278,9 @@ fn move_right(
     let info = view.rvline_info(rvline);
 
     *affinity = if col == info.last_col(&view.text_prov(), false) {
-        CursorAffinity::Backward
-    } else {
         CursorAffinity::Forward
+    } else {
+        CursorAffinity::Backward
     };
 
     new_offset
@@ -279,7 +297,7 @@ fn find_prev_rvline(view: &Editor, start: RVLine, count: usize) -> Option<RVLine
     let mut info = None;
     let mut found_count = 0;
     for prev_info in view.iter_rvlines(true, start).skip(1) {
-        if prev_info.is_empty() {
+        if prev_info.is_empty_phantom() {
             // We skip any phantom text lines in our consideration
             continue;
         }
@@ -384,7 +402,7 @@ fn find_next_rvline_info(
             return Some(next_info);
         }
 
-        if next_info.is_empty() {
+        if next_info.is_empty_phantom() {
             // We skip any phantom text lines in our consideration
             // TODO: Would this skip over an empty line?
             continue;
@@ -757,5 +775,127 @@ pub fn do_motion_mode(
     }
 }
 
-// TODO: Write tests for the various functions. We'll need a more easily swappable API than
-// `Editor` for that.
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use floem_editor_core::{
+        buffer::rope_text::{RopeText, RopeTextVal},
+        cursor::{ColPosition, CursorAffinity},
+        mode::Mode,
+    };
+    use floem_reactive::Scope;
+    use lapce_xi_rope::Rope;
+
+    use crate::views::editor::{
+        movement::{correct_crlf, end_of_line, move_down, move_up},
+        text::SimpleStyling,
+        text_document::TextDocument,
+    };
+
+    use super::Editor;
+
+    fn make_ed(text: &str) -> Editor {
+        let cx = Scope::new();
+        let doc = Rc::new(TextDocument::new(cx, text));
+        let style = Rc::new(SimpleStyling::new());
+        Editor::new(cx, doc, style, false)
+    }
+
+    // Tests for movement logic.
+    // Many of the locations that use affinity are unsure of the specifics, and should only be
+    // assumed to be mostly kinda correct.
+
+    #[test]
+    fn test_correct_crlf() {
+        let text = Rope::from("hello\nworld");
+        let text = RopeTextVal::new(text);
+        assert_eq!(correct_crlf(&text, 0), 0);
+        assert_eq!(correct_crlf(&text, 5), 5);
+        assert_eq!(correct_crlf(&text, 6), 6);
+        assert_eq!(correct_crlf(&text, text.len()), text.len());
+
+        let text = Rope::from("hello\r\nworld");
+        let text = RopeTextVal::new(text);
+        assert_eq!(correct_crlf(&text, 0), 0);
+        assert_eq!(correct_crlf(&text, 5), 5);
+        assert_eq!(correct_crlf(&text, 6), 5);
+        assert_eq!(correct_crlf(&text, 7), 7);
+        assert_eq!(correct_crlf(&text, text.len()), text.len());
+    }
+
+    #[test]
+    fn test_end_of_line() {
+        let ed = make_ed("abc\ndef\nghi");
+        let mut aff = CursorAffinity::Backward;
+        assert_eq!(end_of_line(&ed, &mut aff, 0, Mode::Insert).0, 3);
+        assert_eq!(aff, CursorAffinity::Backward);
+        assert_eq!(end_of_line(&ed, &mut aff, 1, Mode::Insert).0, 3);
+        assert_eq!(aff, CursorAffinity::Backward);
+        assert_eq!(end_of_line(&ed, &mut aff, 3, Mode::Insert).0, 3);
+        assert_eq!(aff, CursorAffinity::Backward);
+
+        assert_eq!(end_of_line(&ed, &mut aff, 4, Mode::Insert).0, 7);
+        assert_eq!(end_of_line(&ed, &mut aff, 5, Mode::Insert).0, 7);
+        assert_eq!(end_of_line(&ed, &mut aff, 7, Mode::Insert).0, 7);
+
+        let ed = make_ed("abc\r\ndef\r\nghi");
+        let mut aff = CursorAffinity::Forward;
+        assert_eq!(end_of_line(&ed, &mut aff, 0, Mode::Insert).0, 3);
+        assert_eq!(aff, CursorAffinity::Backward);
+
+        assert_eq!(end_of_line(&ed, &mut aff, 1, Mode::Insert).0, 3);
+        assert_eq!(aff, CursorAffinity::Backward);
+        assert_eq!(end_of_line(&ed, &mut aff, 3, Mode::Insert).0, 3);
+        assert_eq!(aff, CursorAffinity::Backward);
+
+        assert_eq!(end_of_line(&ed, &mut aff, 5, Mode::Insert).0, 8);
+        assert_eq!(end_of_line(&ed, &mut aff, 6, Mode::Insert).0, 8);
+        assert_eq!(end_of_line(&ed, &mut aff, 7, Mode::Insert).0, 8);
+        assert_eq!(end_of_line(&ed, &mut aff, 8, Mode::Insert).0, 8);
+
+        let ed = make_ed("testing\r\nAbout\r\nblah");
+        let mut aff = CursorAffinity::Backward;
+        assert_eq!(end_of_line(&ed, &mut aff, 0, Mode::Insert).0, 7);
+    }
+
+    #[test]
+    fn test_move_down() {
+        let ed = make_ed("abc\n\n\ndef\n\nghi");
+
+        let mut aff = CursorAffinity::Forward;
+
+        assert_eq!(move_down(&ed, 0, &mut aff, None, Mode::Insert, 1).0, 4);
+
+        let (offset, horiz) = move_down(&ed, 1, &mut aff, None, Mode::Insert, 1);
+        assert_eq!(offset, 4);
+        assert!(matches!(horiz, ColPosition::Col(_)));
+        let (offset, horiz) = move_down(&ed, 4, &mut aff, Some(horiz), Mode::Insert, 1);
+        assert_eq!(offset, 5);
+        assert!(matches!(horiz, ColPosition::Col(_)));
+        let (offset, _) = move_down(&ed, 5, &mut aff, Some(horiz), Mode::Insert, 1);
+        // Moving down with a horiz starting from position 1 on first line will put cursor at
+        // (approximately) position 1 on the next line with content they arrive at
+        assert_eq!(offset, 7);
+    }
+
+    #[test]
+    fn test_move_up() {
+        let ed = make_ed("abc\n\n\ndef\n\nghi");
+
+        let mut aff = CursorAffinity::Forward;
+
+        assert_eq!(move_up(&ed, 0, &mut aff, None, Mode::Insert, 1).0, 0);
+
+        let (offset, horiz) = move_up(&ed, 7, &mut aff, None, Mode::Insert, 1);
+        assert_eq!(offset, 5);
+        assert!(matches!(horiz, ColPosition::Col(_)));
+        let (offset, horiz) = move_up(&ed, 5, &mut aff, Some(horiz), Mode::Insert, 1);
+        assert_eq!(offset, 4);
+        assert!(matches!(horiz, ColPosition::Col(_)));
+        let (offset, _) = move_up(&ed, 4, &mut aff, Some(horiz), Mode::Insert, 1);
+        // Moving up with a horiz starting from position 1 on first line will put cursor at
+        // (approximately) position 1 on the next line with content they arrive at
+        assert_eq!(offset, 1);
+    }
+}

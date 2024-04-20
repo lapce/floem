@@ -1,7 +1,7 @@
 use super::{v_stack_from_iter, Decorators, Stack};
 use crate::context::StyleCx;
 use crate::reactive::create_effect;
-use crate::style::Style;
+use crate::style::{Style, StyleClassRef};
 use crate::view::View;
 use crate::EventPropagation;
 use crate::{
@@ -48,6 +48,10 @@ impl List {
 
     pub fn on_accept(mut self, on_accept: impl Fn(Option<usize>) + 'static) -> Self {
         self.onaccept = Some(Box::new(on_accept));
+        self
+    }
+    pub fn add_class_by_idx(mut self, class: impl Fn(usize) -> StyleClassRef) -> Self {
+        self.child = self.child.add_class_by_idx(class);
         self
     }
 }

@@ -1,6 +1,7 @@
 use std::{
     mem,
     rc::Rc,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -29,7 +30,7 @@ use crate::{
     event::{Event, EventListener},
     id::{Id, IdPath, ID_PATHS},
     inspector::{self, Capture, CaptureState, CapturedView},
-    keyboard::KeyEvent,
+    keyboard::{KeyEvent, Modifiers},
     menu::Menu,
     nav::view_arrow_navigation,
     pointer::{PointerButton, PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
@@ -40,7 +41,10 @@ use crate::{
         CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES,
         UPDATE_MESSAGES,
     },
-    view::{view_children_set_parent_id, view_tab_navigation, AnyView, View, ViewData, Widget},
+    view::{
+        default_compute_layout, view_children_set_parent_id, view_tab_navigation, AnyView, View,
+        ViewData, Widget,
+    },
     view_data::{update_data, ChangeFlags},
     widgets::{default_theme, Theme},
 };
@@ -52,7 +56,7 @@ use crate::{
 /// - processing all requests to update the animation state from the reactive system
 /// - requesting a new animation frame from the backend
 pub(crate) struct WindowHandle {
-    pub(crate) window: Option<floem_winit::window::Window>,
+    pub(crate) window: Option<Arc<floem_winit::window::Window>>,
     window_id: WindowId,
     id: Id,
     /// Reactive Scope for this WindowHandle
@@ -67,7 +71,7 @@ pub(crate) struct WindowHandle {
     is_maximized: bool,
     transparent: bool,
     pub(crate) scale: f64,
-    pub(crate) modifiers: ModifiersState,
+    pub(crate) modifiers: Modifiers,
     pub(crate) cursor_position: Point,
     pub(crate) window_position: Point,
     pub(crate) last_pointer_down: Option<(u8, Point, Instant)>,
@@ -125,7 +129,8 @@ impl WindowHandle {
             overlays: Default::default(),
         };
 
-        let paint_state = PaintState::new(&window, scale, size.get_untracked() * scale);
+        let window = Arc::new(window);
+        let paint_state = PaintState::new(window.clone(), scale, size.get_untracked() * scale);
         let mut window_handle = Self {
             window: Some(window),
             window_id,
@@ -141,7 +146,7 @@ impl WindowHandle {
             transparent,
             profile: None,
             scale,
-            modifiers: ModifiersState::default(),
+            modifiers: Modifiers::default(),
             cursor_position: Point::ZERO,
             window_position: Point::ZERO,
             #[cfg(target_os = "linux")]
@@ -216,9 +221,9 @@ impl WindowHandle {
                 if !processed {
                     if let Event::KeyDown(KeyEvent { key, modifiers }) = &event {
                         if key.logical_key == Key::Named(NamedKey::Tab)
-                            && (modifiers.is_empty() || *modifiers == ModifiersState::SHIFT)
+                            && (modifiers.is_empty() || *modifiers == Modifiers::SHIFT)
                         {
-                            let backwards = modifiers.contains(ModifiersState::SHIFT);
+                            let backwards = modifiers.contains(Modifiers::SHIFT);
                             view_tab_navigation(&self.view, cx.app_state, backwards);
                             // view_debug_tree(&self.view);
                         } else if let Key::Character(character) = &key.logical_key {
@@ -226,7 +231,7 @@ impl WindowHandle {
                             if character.eq_ignore_ascii_case("i") {
                                 // view_debug_tree(&self.view);
                             }
-                        } else if *modifiers == ModifiersState::ALT {
+                        } else if *modifiers == Modifiers::ALT {
                             if let Key::Named(
                                 name @ (NamedKey::ArrowUp
                                 | NamedKey::ArrowDown
@@ -318,6 +323,22 @@ impl WindowHandle {
                 }
             }
         }
+
+        if let Event::PointerDown(event) = &event {
+            if cx.app_state.focus.is_none() {
+                if let Some(id) = was_focused {
+                    let layout = cx.app_state.get_layout_rect(id);
+                    if layout.contains(event.pos) {
+                        // if the event is pointer down
+                        // and the focus hasn't been set to anything new
+                        // and the pointer down event is inside the previously focusd view
+                        // we then set the focus back to that view
+                        cx.app_state.focus = Some(id);
+                    }
+                }
+            }
+        }
+
         if was_focused != cx.app_state.focus {
             cx.app_state.focus_changed(was_focused, cx.app_state.focus);
         }
@@ -384,10 +405,17 @@ impl WindowHandle {
             key: key_event,
             modifiers: self.modifiers,
         };
+        let is_altgr = matches!(event.key.logical_key, Key::Named(NamedKey::AltGraph));
         if event.key.state.is_pressed() {
             self.event(Event::KeyDown(event));
+            if is_altgr {
+                self.modifiers.set(Modifiers::ALTGR, true);
+            }
         } else {
             self.event(Event::KeyUp(event));
+            if is_altgr {
+                self.modifiers.set(Modifiers::ALTGR, false);
+            }
         }
     }
 
@@ -975,6 +1003,9 @@ impl WindowHandle {
                             position,
                             scope,
                             child: view,
+                            size: Size::ZERO,
+                            parent_size: Size::ZERO,
+                            window_origin: Point::ZERO,
                         };
 
                         view.view_data().id().set_parent(self.id);
@@ -1026,18 +1057,31 @@ impl WindowHandle {
                     let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
                     self.process_update_anim_prop(view_id, kind, val);
                 }
-                AnimUpdateMsg::Pause(id) => {
-                    let view_id = self.app_state.get_view_id_by_anim_id(id);
-                    let view_state = self.app_state.view_state(view_id);
-                    if let Some(anim) = view_state.animation.as_mut() {
+                AnimUpdateMsg::Resume(anim_id) => {
+                    let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
+                    if let Some(anim) = self.app_state.view_state(view_id).animation.as_mut() {
+                        anim.resume();
+                        self.app_state.request_style(view_id)
+                    }
+                }
+                AnimUpdateMsg::Pause(anim_id) => {
+                    let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
+                    if let Some(anim) = self.app_state.view_state(view_id).animation.as_mut() {
                         anim.pause();
                     }
                 }
-                AnimUpdateMsg::Resume(id) => {
-                    let view_id = self.app_state.get_view_id_by_anim_id(id);
-                    let view_state = self.app_state.view_state(view_id);
-                    if let Some(anim) = view_state.animation.as_mut() {
-                        anim.resume();
+                AnimUpdateMsg::Start(anim_id) => {
+                    let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
+                    if let Some(anim) = self.app_state.view_state(view_id).animation.as_mut() {
+                        anim.start();
+                        self.app_state.request_style(view_id)
+                    }
+                }
+                AnimUpdateMsg::Stop(anim_id) => {
+                    let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
+                    if let Some(anim) = self.app_state.view_state(view_id).animation.as_mut() {
+                        anim.stop();
+                        self.app_state.request_style(view_id)
                     }
                 }
             }
@@ -1086,7 +1130,7 @@ impl WindowHandle {
         // TODO: logic based on the old val to make the animation smoother when overriding an old
         // animation that was in progress
         anim.props_mut().insert(kind, prop);
-        anim.begin();
+        anim.start();
 
         self.app_state.request_style(view_id);
     }
@@ -1250,6 +1294,15 @@ impl WindowHandle {
                 self.event(Event::ImeDisabled);
             }
         }
+    }
+
+    pub(crate) fn modifiers_changed(&mut self, modifiers: ModifiersState) {
+        let is_altgr = self.modifiers.altgr();
+        let mut modifiers: Modifiers = modifiers.into();
+        if is_altgr {
+            modifiers.set(Modifiers::ALTGR, true);
+        }
+        self.modifiers = modifiers;
     }
 }
 
@@ -1569,6 +1622,9 @@ struct OverlayView {
     scope: Scope,
     position: Point,
     child: Box<dyn Widget>,
+    window_origin: Point,
+    parent_size: Size,
+    size: Size,
 }
 
 impl Widget for OverlayView {
@@ -1606,6 +1662,34 @@ impl Widget for OverlayView {
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         "Overlay".into()
+    }
+
+    fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
+        self.window_origin = cx.window_origin;
+        if let Some(parent_size) = cx.parent_size(self.view_data().id) {
+            self.parent_size = parent_size;
+        }
+        if let Some(layout) = cx.get_layout(self.view_data().id) {
+            self.size = Size::new(layout.size.width as f64, layout.size.height as f64);
+        }
+        default_compute_layout(self, cx)
+    }
+
+    fn paint(&mut self, cx: &mut PaintCx) {
+        cx.save();
+        let x = if (self.window_origin.x + self.size.width) > self.parent_size.width - 5.0 {
+            (self.window_origin.x + self.size.width) - (self.parent_size.width - 5.0)
+        } else {
+            0.0
+        };
+        let y = if (self.window_origin.y + self.size.height) > self.parent_size.height - 5.0 {
+            (self.window_origin.y + self.size.height) - (self.parent_size.height - 5.0)
+        } else {
+            0.0
+        };
+        cx.offset((-x, -y));
+        cx.paint_view(&mut self.child);
+        cx.restore();
     }
 }
 
@@ -1648,7 +1732,10 @@ impl Widget for WindowView {
         for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
     ) {
         for overlay in self.overlays.values_mut().rev() {
-            for_each(overlay);
+            if for_each(overlay) {
+                // if the overlay events are handled we don't need to run the main window events
+                return;
+            };
         }
         for_each(&mut self.main);
     }

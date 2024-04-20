@@ -3,7 +3,7 @@ pub mod press;
 
 use std::{collections::HashMap, str::FromStr};
 
-use crate::{keyboard::ModifiersState, reactive::RwSignal};
+use crate::{keyboard::Modifiers, reactive::RwSignal};
 use floem_editor_core::{
     command::{EditCommand, MoveCommand, MultiSelectionCommand, ScrollCommand},
     mode::Mode,
@@ -54,12 +54,12 @@ impl Default for KeypressMap {
     }
 }
 
-fn key(s: &str, m: ModifiersState) -> KeyPress {
+fn key(s: &str, m: Modifiers) -> KeyPress {
     KeyPress::new(KeyInput::from_str(s).unwrap(), m)
 }
 
 fn key_d(s: &str) -> KeyPress {
-    key(s, ModifiersState::default())
+    key(s, Modifiers::default())
 }
 
 fn add_default_common(c: &mut HashMap<KeyPress, Command>) {
@@ -69,11 +69,11 @@ fn add_default_common(c: &mut HashMap<KeyPress, Command>) {
     // --- Basic editing ---
 
     c.insert(
-        key("up", ModifiersState::ALT),
+        key("up", Modifiers::ALT),
         Command::Edit(EditCommand::MoveLineUp),
     );
     c.insert(
-        key("down", ModifiersState::ALT),
+        key("down", Modifiers::ALT),
         Command::Edit(EditCommand::MoveLineDown),
     );
 
@@ -83,7 +83,7 @@ fn add_default_common(c: &mut HashMap<KeyPress, Command>) {
         Command::Edit(EditCommand::DeleteBackward),
     );
     c.insert(
-        key("backspace", ModifiersState::SHIFT),
+        key("backspace", Modifiers::SHIFT),
         Command::Edit(EditCommand::DeleteForward),
     );
 
@@ -93,18 +93,18 @@ fn add_default_common(c: &mut HashMap<KeyPress, Command>) {
     c.insert(key_d("pageup"), Command::Scroll(ScrollCommand::PageUp));
     c.insert(key_d("pagedown"), Command::Scroll(ScrollCommand::PageDown));
     c.insert(
-        key("pageup", ModifiersState::CONTROL),
+        key("pageup", Modifiers::CONTROL),
         Command::Scroll(ScrollCommand::ScrollUp),
     );
     c.insert(
-        key("pagedown", ModifiersState::CONTROL),
+        key("pagedown", Modifiers::CONTROL),
         Command::Scroll(ScrollCommand::ScrollDown),
     );
 
     // --- Multi cursor ---
 
     c.insert(
-        key("i", ModifiersState::ALT | ModifiersState::SHIFT),
+        key("i", Modifiers::ALT | Modifiers::SHIFT),
         Command::MultiSelection(MultiSelectionCommand::InsertCursorEndOfLine),
     );
 
@@ -123,11 +123,11 @@ fn add_default_common(c: &mut HashMap<KeyPress, Command>) {
     c.insert(key_d("tab"), Command::Edit(EditCommand::InsertTab));
 
     c.insert(
-        key("up", ModifiersState::ALT | ModifiersState::SHIFT),
+        key("up", Modifiers::ALT | Modifiers::SHIFT),
         Command::Edit(EditCommand::DuplicateLineUp),
     );
     c.insert(
-        key("down", ModifiersState::ALT | ModifiersState::SHIFT),
+        key("down", Modifiers::ALT | Modifiers::SHIFT),
         Command::Edit(EditCommand::DuplicateLineDown),
     );
 }
@@ -141,76 +141,70 @@ fn add_default_macos(c: &mut HashMap<KeyPress, Command>) {
     // `defaults/keymaps-macos.toml`
 
     // --- Basic editing ---
+    c.insert(key("z", Modifiers::META), Command::Edit(EditCommand::Undo));
     c.insert(
-        key("z", ModifiersState::SUPER),
-        Command::Edit(EditCommand::Undo),
-    );
-    c.insert(
-        key("z", ModifiersState::SUPER | ModifiersState::SHIFT),
+        key("z", Modifiers::META | Modifiers::SHIFT),
         Command::Edit(EditCommand::Redo),
     );
+    c.insert(key("y", Modifiers::META), Command::Edit(EditCommand::Redo));
     c.insert(
-        key("y", ModifiersState::SUPER),
-        Command::Edit(EditCommand::Redo),
-    );
-    c.insert(
-        key("x", ModifiersState::SUPER),
+        key("x", Modifiers::META),
         Command::Edit(EditCommand::ClipboardCut),
     );
     c.insert(
-        key("c", ModifiersState::SUPER),
+        key("c", Modifiers::META),
         Command::Edit(EditCommand::ClipboardCopy),
     );
     c.insert(
-        key("v", ModifiersState::SUPER),
+        key("v", Modifiers::META),
         Command::Edit(EditCommand::ClipboardPaste),
     );
 
     c.insert(
-        key("right", ModifiersState::ALT),
+        key("right", Modifiers::ALT),
         Command::Move(MoveCommand::WordEndForward),
     );
     c.insert(
-        key("left", ModifiersState::ALT),
+        key("left", Modifiers::ALT),
         Command::Move(MoveCommand::WordBackward),
     );
     c.insert(
-        key("left", ModifiersState::SUPER),
+        key("left", Modifiers::META),
         Command::Move(MoveCommand::LineStartNonBlank),
     );
     c.insert(
-        key("right", ModifiersState::SUPER),
+        key("right", Modifiers::META),
         Command::Move(MoveCommand::LineEnd),
     );
 
     c.insert(
-        key("a", ModifiersState::CONTROL),
+        key("a", Modifiers::CONTROL),
         Command::Move(MoveCommand::LineStartNonBlank),
     );
     c.insert(
-        key("e", ModifiersState::CONTROL),
+        key("e", Modifiers::CONTROL),
         Command::Move(MoveCommand::LineEnd),
     );
 
     c.insert(
-        key("k", ModifiersState::SUPER | ModifiersState::SHIFT),
+        key("k", Modifiers::META | Modifiers::SHIFT),
         Command::Edit(EditCommand::DeleteLine),
     );
 
     c.insert(
-        key("backspace", ModifiersState::ALT),
+        key("backspace", Modifiers::ALT),
         Command::Edit(EditCommand::DeleteWordBackward),
     );
     c.insert(
-        key("backspace", ModifiersState::SUPER),
+        key("backspace", Modifiers::META),
         Command::Edit(EditCommand::DeleteToBeginningOfLine),
     );
     c.insert(
-        key("k", ModifiersState::CONTROL),
+        key("k", Modifiers::CONTROL),
         Command::Edit(EditCommand::DeleteToEndOfLine),
     );
     c.insert(
-        key("delete", ModifiersState::ALT),
+        key("delete", Modifiers::ALT),
         Command::Edit(EditCommand::DeleteWordForward),
     );
 
@@ -218,50 +212,50 @@ fn add_default_macos(c: &mut HashMap<KeyPress, Command>) {
     // TODO: indent/outdent line?
 
     c.insert(
-        key("a", ModifiersState::SUPER),
+        key("a", Modifiers::META),
         Command::MultiSelection(MultiSelectionCommand::SelectAll),
     );
 
     c.insert(
-        key("enter", ModifiersState::SUPER),
+        key("enter", Modifiers::META),
         Command::Edit(EditCommand::NewLineBelow),
     );
     c.insert(
-        key("enter", ModifiersState::SUPER | ModifiersState::SHIFT),
+        key("enter", Modifiers::META | Modifiers::SHIFT),
         Command::Edit(EditCommand::NewLineAbove),
     );
 
     // --- Multi cursor ---
     c.insert(
-        key("up", ModifiersState::ALT | ModifiersState::SUPER),
+        key("up", Modifiers::ALT | Modifiers::META),
         Command::MultiSelection(MultiSelectionCommand::InsertCursorAbove),
     );
     c.insert(
-        key("down", ModifiersState::ALT | ModifiersState::SUPER),
+        key("down", Modifiers::ALT | Modifiers::META),
         Command::MultiSelection(MultiSelectionCommand::InsertCursorBelow),
     );
 
     c.insert(
-        key("l", ModifiersState::SUPER),
+        key("l", Modifiers::META),
         Command::MultiSelection(MultiSelectionCommand::SelectCurrentLine),
     );
     c.insert(
-        key("l", ModifiersState::SUPER | ModifiersState::SHIFT),
+        key("l", Modifiers::META | Modifiers::SHIFT),
         Command::MultiSelection(MultiSelectionCommand::SelectAllCurrent),
     );
 
     c.insert(
-        key("u", ModifiersState::SUPER),
+        key("u", Modifiers::META),
         Command::MultiSelection(MultiSelectionCommand::SelectUndo),
     );
 
     // --- ---- ---
     c.insert(
-        key("up", ModifiersState::SUPER),
+        key("up", Modifiers::META),
         Command::Move(MoveCommand::DocumentStart),
     );
     c.insert(
-        key("down", ModifiersState::SUPER),
+        key("down", Modifiers::META),
         Command::Move(MoveCommand::DocumentEnd),
     );
 }
@@ -276,57 +270,57 @@ fn add_default_nonmacos(c: &mut HashMap<KeyPress, Command>) {
 
     // --- Basic editing ---
     c.insert(
-        key("z", ModifiersState::CONTROL),
+        key("z", Modifiers::CONTROL),
         Command::Edit(EditCommand::Undo),
     );
     c.insert(
-        key("z", ModifiersState::CONTROL | ModifiersState::SHIFT),
+        key("z", Modifiers::CONTROL | Modifiers::SHIFT),
         Command::Edit(EditCommand::Redo),
     );
     c.insert(
-        key("y", ModifiersState::CONTROL),
+        key("y", Modifiers::CONTROL),
         Command::Edit(EditCommand::Redo),
     );
     c.insert(
-        key("x", ModifiersState::CONTROL),
+        key("x", Modifiers::CONTROL),
         Command::Edit(EditCommand::ClipboardCut),
     );
     c.insert(
-        key("delete", ModifiersState::SHIFT),
+        key("delete", Modifiers::SHIFT),
         Command::Edit(EditCommand::ClipboardCut),
     );
     c.insert(
-        key("c", ModifiersState::CONTROL),
+        key("c", Modifiers::CONTROL),
         Command::Edit(EditCommand::ClipboardCopy),
     );
     c.insert(
-        key("insert", ModifiersState::CONTROL),
+        key("insert", Modifiers::CONTROL),
         Command::Edit(EditCommand::ClipboardCopy),
     );
     c.insert(
-        key("v", ModifiersState::CONTROL),
+        key("v", Modifiers::CONTROL),
         Command::Edit(EditCommand::ClipboardPaste),
     );
     c.insert(
-        key("insert", ModifiersState::SHIFT),
+        key("insert", Modifiers::SHIFT),
         Command::Edit(EditCommand::ClipboardPaste),
     );
 
     c.insert(
-        key("right", ModifiersState::CONTROL),
+        key("right", Modifiers::CONTROL),
         Command::Move(MoveCommand::WordEndForward),
     );
     c.insert(
-        key("left", ModifiersState::CONTROL),
+        key("left", Modifiers::CONTROL),
         Command::Move(MoveCommand::WordBackward),
     );
 
     c.insert(
-        key("backspace", ModifiersState::CONTROL),
+        key("backspace", Modifiers::CONTROL),
         Command::Edit(EditCommand::DeleteWordBackward),
     );
     c.insert(
-        key("delete", ModifiersState::CONTROL),
+        key("delete", Modifiers::CONTROL),
         Command::Edit(EditCommand::DeleteWordForward),
     );
 
@@ -335,60 +329,60 @@ fn add_default_nonmacos(c: &mut HashMap<KeyPress, Command>) {
     // TODO: indent/outdent line?
 
     c.insert(
-        key("a", ModifiersState::CONTROL),
+        key("a", Modifiers::CONTROL),
         Command::MultiSelection(MultiSelectionCommand::SelectAll),
     );
 
     c.insert(
-        key("enter", ModifiersState::CONTROL),
+        key("enter", Modifiers::CONTROL),
         Command::Edit(EditCommand::NewLineAbove),
     );
 
     // --- Multi cursor ---
     c.insert(
-        key("up", ModifiersState::CONTROL | ModifiersState::ALT),
+        key("up", Modifiers::CONTROL | Modifiers::ALT),
         Command::MultiSelection(MultiSelectionCommand::InsertCursorAbove),
     );
     c.insert(
-        key("down", ModifiersState::CONTROL | ModifiersState::ALT),
+        key("down", Modifiers::CONTROL | Modifiers::ALT),
         Command::MultiSelection(MultiSelectionCommand::InsertCursorBelow),
     );
 
     c.insert(
-        key("l", ModifiersState::CONTROL),
+        key("l", Modifiers::CONTROL),
         Command::MultiSelection(MultiSelectionCommand::SelectCurrentLine),
     );
     c.insert(
-        key("l", ModifiersState::CONTROL | ModifiersState::SHIFT),
+        key("l", Modifiers::CONTROL | Modifiers::SHIFT),
         Command::MultiSelection(MultiSelectionCommand::SelectAllCurrent),
     );
 
     c.insert(
-        key("u", ModifiersState::CONTROL),
+        key("u", Modifiers::CONTROL),
         Command::MultiSelection(MultiSelectionCommand::SelectUndo),
     );
 
     // --- Navigation ---
     c.insert(
-        key("home", ModifiersState::CONTROL),
+        key("home", Modifiers::CONTROL),
         Command::Move(MoveCommand::DocumentStart),
     );
     c.insert(
-        key("end", ModifiersState::CONTROL),
+        key("end", Modifiers::CONTROL),
         Command::Move(MoveCommand::DocumentEnd),
     );
 }
 
 pub fn default_key_handler(
     editor: RwSignal<Editor>,
-) -> impl Fn(&KeyPress, ModifiersState) -> CommandExecuted + 'static {
+) -> impl Fn(&KeyPress, Modifiers) -> CommandExecuted + 'static {
     let keypress_map = KeypressMap::default();
     move |keypress, modifiers| {
         let command = keypress_map.keymaps.get(keypress).or_else(|| {
             let mode = editor.get_untracked().cursor.get_untracked().get_mode();
             if mode == Mode::Insert {
                 let mut keypress = keypress.clone();
-                keypress.mods.set(ModifiersState::SHIFT, false);
+                keypress.mods.set(Modifiers::SHIFT, false);
                 keypress_map.keymaps.get(&keypress)
             } else {
                 None
