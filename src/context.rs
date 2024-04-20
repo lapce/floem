@@ -689,6 +689,23 @@ impl<'a> EventCx<'a> {
             }
         }
 
+        if let Event::PointerDown(event) = &event {
+            // we check keyboard focus first before sending to children
+            // so that when the children handle the event
+            // they can override the focus
+            if event.button.is_primary()
+                && self.app_state.keyboard_navigable.contains(&id)
+                && self
+                    .get_size(id)
+                    .unwrap_or_default()
+                    .to_rect()
+                    .contains(event.pos)
+            {
+                // if the view can be focused, we update the focus
+                self.app_state.update_focus(id, false);
+            }
+        }
+
         // if the event was dispatched to an id_path, the event is supposed to be only
         // handled by this view only, so we pass an empty id_path
         // and the event propagation would be stopped at this view
@@ -703,8 +720,6 @@ impl<'a> EventCx<'a> {
             return EventPropagation::Stop;
         }
 
-        let mut is_down_and_has_click = false;
-
         match &event {
             Event::PointerDown(event) => {
                 self.app_state.clicking.insert(id);
@@ -713,10 +728,6 @@ impl<'a> EventCx<'a> {
                     let now_focused = rect.contains(event.pos);
 
                     if now_focused {
-                        if self.app_state.keyboard_navigable.contains(&id) {
-                            // if the view can be focused, we update the focus
-                            self.app_state.update_focus(id, false);
-                        }
                         if event.count == 2
                             && self.has_event_listener(id, EventListener::DoubleClick)
                         {
@@ -726,7 +737,6 @@ impl<'a> EventCx<'a> {
                         if self.has_event_listener(id, EventListener::Click) {
                             let view_state = self.app_state.view_state(id);
                             view_state.last_pointer_down = Some(event.clone());
-                            is_down_and_has_click = true;
                         }
 
                         let bottom_left = {
@@ -947,10 +957,6 @@ impl<'a> EventCx<'a> {
                     return EventPropagation::Stop;
                 }
             }
-        }
-
-        if is_down_and_has_click {
-            return EventPropagation::Stop;
         }
 
         EventPropagation::Continue

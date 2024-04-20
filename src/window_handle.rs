@@ -324,21 +324,6 @@ impl WindowHandle {
             }
         }
 
-        if let Event::PointerDown(event) = &event {
-            if cx.app_state.focus.is_none() {
-                if let Some(id) = was_focused {
-                    let layout = cx.app_state.get_layout_rect(id);
-                    if layout.contains(event.pos) {
-                        // if the event is pointer down
-                        // and the focus hasn't been set to anything new
-                        // and the pointer down event is inside the previously focusd view
-                        // we then set the focus back to that view
-                        cx.app_state.focus = Some(id);
-                    }
-                }
-            }
-        }
-
         if was_focused != cx.app_state.focus {
             cx.app_state.focus_changed(was_focused, cx.app_state.focus);
         }
