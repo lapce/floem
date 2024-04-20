@@ -149,7 +149,7 @@ fn app_view() -> impl View {
         .justify_center()
     })
     .window_title(|| "Themes Example".to_string());
-
+    //
     let id = view.id();
     view.on_event_stop(EventListener::KeyUp, move |e| {
         if let Event::KeyUp(e) = e {
