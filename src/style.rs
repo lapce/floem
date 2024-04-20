@@ -72,6 +72,7 @@ impl StylePropValue for cosmic_text::Style {}
 impl StylePropValue for TextOverflow {}
 impl StylePropValue for LineHeightValue {}
 impl StylePropValue for Size<LengthPercentage> {}
+impl StylePropValue for Rotation {}
 
 impl<T: StylePropValue> StylePropValue for Option<T> {
     fn debug_view(&self) -> Option<AnyView> {
@@ -1020,6 +1021,14 @@ pub enum TextOverflow {
     Ellipsis,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Rotation {
+    Rotation0,
+    Rotation90,
+    Rotation180,
+    Rotation270,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CursorStyle {
     Default,
@@ -1115,6 +1124,16 @@ impl<T> Default for StyleValue<T> {
 impl<T> From<T> for StyleValue<T> {
     fn from(x: T) -> Self {
         Self::Val(x)
+    }
+}
+impl Rotation {
+    pub fn Angle(self) -> f64 {
+        match self {
+            Rotation::Rotation0 => 0.0,
+            Rotation::Rotation90 => 90.0,
+            Rotation::Rotation180 => 180.0,
+            Rotation::Rotation270 => 270.0,
+        }
     }
 }
 
@@ -1213,6 +1232,7 @@ define_builtin_props!(
     LineHeight line_height nocb: Option<LineHeightValue> { inherited } = None,
     AspectRatio aspect_ratio: Option<f32> {} = None,
     Gap gap nocb: Size<LengthPercentage> {} = Size::zero(),
+    RotationProp rotation: Rotation {} = Rotation::Rotation0,
 );
 
 prop_extractor! {
@@ -1714,6 +1734,19 @@ impl Style {
 
     pub fn z_index(self, z_index: i32) -> Self {
         self.set(ZIndex, Some(z_index))
+    }
+
+    pub fn rotation_0(self) -> Self {
+        self.rotation(Rotation::Rotation0)
+    }
+    pub fn rotation_90(self) -> Self {
+        self.rotation(Rotation::Rotation90)
+    }
+    pub fn rotation_180(self) -> Self {
+        self.rotation(Rotation::Rotation180)
+    }
+    pub fn rotation_270(self) -> Self {
+        self.rotation(Rotation::Rotation270)
     }
 
     /// Allow the application of a function if the option exists.  

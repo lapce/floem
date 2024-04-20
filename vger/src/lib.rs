@@ -404,12 +404,19 @@ impl Renderer for VgerRenderer {
     fn draw_text(&mut self, layout: &TextLayout, pos: impl Into<Point>) {
         let mut swash_cache = SwashCache::new();
         let transform = self.transform.as_coeffs();
-        let offset = Vec2::new(transform[4], transform[5]);
+
         let pos: Point = pos.into();
+        let pos = Point::new(pos.x + transform[4], pos.y + transform[5]);
+        // transform[0] : Angle
+        let theta = std::f32::consts::TAU * transform[0] as f32 / 360.0;
+        let pos = Affine::rotate(-theta as f64) * pos;
+        // Absolute coordinate rotation
+        self.vger.rotate(theta);
+
         let clip = self.clip;
         for line in layout.layout_runs() {
             if let Some(rect) = clip {
-                let y = pos.y + offset.y + line.line_y as f64;
+                let y = pos.y + line.line_y as f64;
                 if y + (line.line_height as f64) < rect.y0 {
                     continue;
                 }
@@ -418,8 +425,8 @@ impl Renderer for VgerRenderer {
                 }
             }
             'line_loop: for glyph_run in line.glyphs {
-                let x = glyph_run.x + pos.x as f32 + offset.x as f32;
-                let y = line.line_y + pos.y as f32 + offset.y as f32;
+                let x = glyph_run.x + pos.x as f32;
+                let y = line.line_y + pos.y as f32;
 
                 if let Some(rect) = clip {
                     if ((x + glyph_run.w) as f64) < rect.x0 {
@@ -463,6 +470,7 @@ impl Renderer for VgerRenderer {
                 }
             }
         }
+        self.vger.rotate(-theta);
     }
 
     fn draw_img(&mut self, img: Img<'_>, rect: Rect) {

@@ -5,15 +5,15 @@ use crate::{
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
     id::Id,
     prop_extractor,
-    style::Style,
     style::{FontProps, LineHeight, TextColor, TextOverflow, TextOverflowProp},
+    style::{Rotation, RotationProp, Style},
     unit::PxPct,
     view::{View, ViewData, Widget},
 };
 use floem_peniko::Color;
 use floem_reactive::create_updater;
 use floem_renderer::Renderer;
-use kurbo::{Point, Rect};
+use kurbo::{Affine, Point, Rect};
 use taffy::tree::NodeId;
 
 prop_extractor! {
@@ -21,6 +21,7 @@ prop_extractor! {
         color: TextColor,
         text_overflow: TextOverflowProp,
         line_height: LineHeight,
+        rotation: RotationProp,
     }
 }
 
@@ -226,6 +227,13 @@ impl Widget for Label {
             }
             let text_node = self.text_node.unwrap();
 
+            let (width, height) = match self.style.rotation() {
+                Rotation::Rotation0 => (width, height),
+                Rotation::Rotation90 => (height, width),
+                Rotation::Rotation180 => (width, height),
+                Rotation::Rotation270 => (height, width),
+            };
+
             let style = Style::new().width(width).height(height).to_taffy_style();
             let _ = cx.app_state_mut().taffy.set_style(text_node, style);
 
@@ -283,7 +291,13 @@ impl Widget for Label {
             if width > available_width {
                 if self.available_width != Some(available_width) {
                     let mut text_layout = text_layout.clone();
-                    text_layout.set_size(available_width, f32::MAX);
+                    let (width, height) = match self.style.rotation() {
+                        Rotation::Rotation0 => (available_width, f32::MAX),
+                        Rotation::Rotation90 => (f32::MAX, available_width),
+                        Rotation::Rotation180 => (available_width, f32::MAX),
+                        Rotation::Rotation270 => (f32::MAX, available_width),
+                    };
+                    text_layout.set_size(width, height);
                     self.available_text_layout = Some(text_layout);
                     self.available_width = Some(available_width);
                     cx.app_state_mut().request_layout(self.id());
@@ -315,13 +329,30 @@ impl Widget for Label {
             return;
         }
 
+        let text_layout = self.text_layout.as_ref().unwrap();
+        let higth = text_layout.size().height as f32;
+        let width = text_layout.size().width as f32;
         let text_node = self.text_node.unwrap();
         let location = cx.app_state.taffy.layout(text_node).unwrap().location;
-        let point = Point::new(location.x as f64, location.y as f64);
+
+        let (x, y) = match self.style.rotation() {
+            Rotation::Rotation0 => (location.x, location.y),
+            Rotation::Rotation90 => ((location.x + higth), location.y),
+            Rotation::Rotation180 => ((location.x + width), (location.y + higth)),
+            Rotation::Rotation270 => (location.x, (location.y + width)),
+        };
+        let point = Point::new(x as f64, y as f64);
+
+        let mut affine = cx.transform.as_coeffs();
+        affine[0] = self.style.rotation().Angle();
+        cx.paint_state.renderer.transform(Affine::new(affine));
+
         if let Some(text_layout) = self.available_text_layout.as_ref() {
             cx.draw_text(text_layout, point);
         } else {
             cx.draw_text(self.text_layout.as_ref().unwrap(), point);
         }
+
+        cx.paint_state.renderer.transform(cx.transform);
     }
 }
