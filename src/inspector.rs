@@ -18,7 +18,6 @@ use floem_reactive::{
 };
 use floem_winit::keyboard::{self, NamedKey};
 use floem_winit::window::WindowId;
-use image::DynamicImage;
 use peniko::kurbo::{Point, Rect, Size};
 use peniko::Color;
 use slotmap::Key;
@@ -152,7 +151,7 @@ pub struct Capture {
     pub taffy_duration: Duration,
     pub taffy_node_count: usize,
     pub taffy_depth: usize,
-    pub window: Option<Rc<DynamicImage>>,
+    pub window: Option<peniko::Image>,
     pub window_size: Size,
     pub scale: f64,
     pub state: CaptureState,
@@ -431,7 +430,6 @@ fn add_event(
             let name = name.clone();
             move |_| {
                 if !name.is_empty() {
-                    // TODO: Log error
                     let _ = Clipboard::set_contents(name.clone());
                 }
                 EventPropagation::Stop
@@ -796,15 +794,15 @@ fn capture_view(
         .as_ref()
         .map(|img| {
             (
-                img.width() as f64 / capture.scale,
-                img.height() as f64 / capture.scale,
+                img.width as f64 / capture.scale,
+                img.height as f64 / capture.scale,
             )
         })
         .unwrap_or_default();
 
     let contain_ids = create_rw_signal((0, Vec::<ViewId>::new()));
 
-    let image = img_dynamic(move || window.clone())
+    let image = img_dynamic(move || window.clone().unwrap())
         .style(move |s| {
             s.margin(5.0)
                 .border(1.0)

@@ -1,36 +1,48 @@
-use std::mem;
+use std::collections::HashMap;
 use std::sync::mpsc::sync_channel;
 use std::sync::Arc;
+use std::{mem, num::NonZeroUsize};
 
 use anyhow::Result;
 use floem_renderer::gpu_resources::GpuResources;
-use floem_renderer::swash::SwashScaler;
-use floem_renderer::text::{CacheKey, TextLayout};
-use floem_renderer::{tiny_skia, Img, Renderer};
-use floem_vger_rs::{Image, PaintIndex, PixelFormat, Vger};
-use image::{DynamicImage, EncodableLayout, RgbaImage};
-use peniko::{
-    kurbo::{Affine, Point, Rect, Shape, Vec2},
-    BrushRef, Color, GradientKind,
-};
-use wgpu::{Device, DeviceType, Queue, StoreOp, Surface, SurfaceConfiguration, TextureFormat};
+use floem_renderer::text::{TextLayout, FONT_SYSTEM};
+use floem_renderer::{Img, Renderer};
 
-pub struct VgerRenderer {
+use peniko::{Compose, Mix};
+use vello::glyph::Glyph;
+use vello::kurbo::{Size, Stroke};
+use vello::peniko::{
+    kurbo::{Affine, Point, Rect, Shape},
+    BrushRef, Color,
+};
+use vello::peniko::{Blob, Fill};
+pub use vello::Scene;
+use vello::{
+    wgpu::{self, *},
+    AaConfig, DebugLayers, RendererOptions,
+};
+// use wgpu::{
+//     Backends, Device, DeviceType, Queue, Surface, SurfaceConfiguration, TextureAspect,
+//     TextureFormat,
+// };
+
+pub struct VelloRenderer {
     device: Arc<Device>,
     #[allow(unused)]
     queue: Arc<Queue>,
     surface: Surface<'static>,
-    vger: Vger,
-    alt_vger: Option<Vger>,
+    scene: vello::Scene,
+    clip_open: bool,
+    renderer: vello::Renderer,
+    alt_scene: Option<vello::Scene>,
     config: SurfaceConfiguration,
     scale: f64,
     transform: Affine,
-    clip: Option<Rect>,
     capture: bool,
-    swash_scaler: SwashScaler,
+    font_cache: HashMap<floem_renderer::text::fontdb::ID, vello::peniko::Font>,
 }
 
-impl VgerRenderer {
+impl VelloRenderer {
     pub fn new(gpu_resources: GpuResources, width: u32, height: u32, scale: f64) -> Result<Self> {
         let GpuResources {
             surface,
@@ -78,20 +90,31 @@ impl VgerRenderer {
         };
         surface.configure(&device, &config);
 
-        let vger = floem_vger_rs::Vger::new(device.clone(), queue.clone(), texture_format);
+        let scene = vello::Scene::new();
+        let renderer = vello::Renderer::new(
+            &device.clone(),
+            RendererOptions {
+                surface_format: Some(texture_format),
+                use_cpu: false,
+                antialiasing_support: vello::AaSupport::all(),
+                num_init_threads: NonZeroUsize::new(1),
+            },
+        )
+        .unwrap();
 
         Ok(Self {
             device,
             queue,
             surface,
-            vger,
-            alt_vger: None,
+            scene,
+            renderer,
+            alt_scene: None,
             scale,
             config,
+            clip_open: false,
             transform: Affine::IDENTITY,
-            clip: None,
             capture: false,
-            swash_scaler: SwashScaler::new(),
+            font_cache: HashMap::new(),
         })
     }
 
@@ -113,57 +136,294 @@ impl VgerRenderer {
     }
 }
 
-impl VgerRenderer {
-    fn brush_to_paint<'b>(&mut self, brush: impl Into<BrushRef<'b>>) -> Option<PaintIndex> {
-        let paint = match brush.into() {
-            BrushRef::Solid(color) => self.vger.color_paint(vger_color(color)),
-            BrushRef::Gradient(g) => match g.kind {
-                GradientKind::Linear { start, end } => {
-                    let mut stops = g.stops.iter();
-                    let first_stop = stops.next()?;
-                    let second_stop = stops.next()?;
-                    let inner_color = vger_color(first_stop.color);
-                    let outer_color = vger_color(second_stop.color);
-                    let start = floem_vger_rs::defs::LocalPoint::new(
-                        start.x as f32 * first_stop.offset,
-                        start.y as f32 * first_stop.offset,
-                    );
-                    let end = floem_vger_rs::defs::LocalPoint::new(
-                        end.x as f32 * second_stop.offset,
-                        end.y as f32 * second_stop.offset,
-                    );
-                    self.vger
-                        .linear_gradient(start, end, inner_color, outer_color, 0.0)
-                }
-                GradientKind::Radial { .. } => return None,
-                GradientKind::Sweep { .. } => return None,
-            },
-            BrushRef::Image(_) => return None,
+impl Renderer for VelloRenderer {
+    fn begin(&mut self, capture: bool) {
+        // Switch to the capture Vger if needed
+        if self.capture != capture {
+            self.capture = capture;
+            if self.alt_scene.is_none() {
+                self.alt_scene = Some(Scene::new());
+            }
+            if let Some(scene) = self.alt_scene.as_mut() {
+                scene.reset()
+            }
+            self.scene.reset();
+            mem::swap(&mut self.scene, self.alt_scene.as_mut().unwrap())
+        } else {
+            self.scene.reset();
         };
-        Some(paint)
+        self.transform = Affine::IDENTITY;
     }
 
-    fn vger_point(&self, point: Point) -> floem_vger_rs::defs::LocalPoint {
-        let coeffs = self.transform.as_coeffs();
-        let point = point + Vec2::new(coeffs[4], coeffs[5]);
-        floem_vger_rs::defs::LocalPoint::new(
-            (point.x * self.scale) as f32,
-            (point.y * self.scale) as f32,
-        )
+    fn stroke<'b, 's>(
+        &mut self,
+        shape: &impl Shape,
+        brush: impl Into<BrushRef<'b>>,
+        stroke: &'s Stroke,
+    ) {
+        if stroke.width * self.scale < 2. {
+            let brush: BrushRef = brush.into();
+            match &brush {
+                BrushRef::Solid(color) => {
+                    let mut stroke = stroke.clone();
+                    stroke.width *= 1.5;
+                    let color = color.with_alpha_factor(0.5);
+                    self.scene.stroke(
+                        &stroke,
+                        self.transform.then_scale(self.scale),
+                        BrushRef::Solid(color),
+                        None,
+                        shape,
+                    );
+                }
+
+                _ => {
+                    self.scene.stroke(
+                        stroke,
+                        self.transform.then_scale(self.scale),
+                        brush,
+                        None,
+                        shape,
+                    );
+                }
+            }
+        } else {
+            self.scene.stroke(
+                stroke,
+                self.transform.then_scale(self.scale),
+                brush,
+                None,
+                shape,
+            );
+        }
     }
 
-    fn vger_rect(&self, rect: Rect) -> floem_vger_rs::defs::LocalRect {
-        let origin = rect.origin();
-        let origin = self.vger_point(origin);
+    fn fill<'b>(&mut self, path: &impl Shape, brush: impl Into<BrushRef<'b>>, blur_radius: f64) {
+        let brush: BrushRef<'b> = brush.into();
+        if blur_radius > 0. {
+            let color = match brush {
+                BrushRef::Solid(c) => c,
+                _ => return,
+            };
+            let rect = path.as_rounded_rect().unwrap_or_default().rect();
 
-        let end = Point::new(rect.x1, rect.y1);
-        let end = self.vger_point(end);
-
-        let size = (end - origin).to_size();
-        floem_vger_rs::defs::LocalRect::new(origin, size)
+            self.scene.draw_blurred_rounded_rect(
+                self.transform.then_scale(self.scale),
+                rect,
+                color,
+                blur_radius,
+                2.5,
+            );
+        } else {
+            self.scene.fill(
+                vello::peniko::Fill::NonZero,
+                self.transform.then_scale(self.scale),
+                brush,
+                None,
+                path,
+            );
+        }
     }
 
-    fn render_image(&mut self) -> Option<DynamicImage> {
+    fn draw_text(&mut self, layout: &TextLayout, pos: impl Into<Point>) {
+        let offset = self.transform.translation();
+        let pos: Point = pos.into();
+        let mut glyphs_to_draw = Vec::new();
+
+        for line in layout.layout_runs() {
+            let mut glyph_runs = line.glyphs.iter().peekable();
+
+            while glyph_runs.peek().is_some() {
+                // Start processing the first glyph
+                if let Some(start_glyph) = glyph_runs.next() {
+                    let start_color = match start_glyph.color_opt {
+                        Some(c) => Color::rgba8(c.r(), c.g(), c.b(), c.a()),
+                        None => Color::BLACK,
+                    };
+                    let start_font_size = start_glyph.font_size;
+                    let start_font_id = start_glyph.font_id;
+
+                    let font = self
+                        .font_cache
+                        .get(&start_font_id)
+                        .cloned()
+                        .unwrap_or_else(|| {
+                            let font = FONT_SYSTEM.lock().get_font(start_font_id).unwrap();
+                            let font = vello::peniko::Font::new(
+                                Blob::new(Arc::new(font.data().to_vec())),
+                                0,
+                            );
+                            self.font_cache.insert(start_font_id, font.clone());
+                            font
+                        });
+
+                    // Clear the vector instead of creating a new one
+                    glyphs_to_draw.clear();
+                    glyphs_to_draw.push(start_glyph);
+
+                    // Collect all glyphs with the same properties
+                    while let Some(peeked_glyph) = glyph_runs.peek() {
+                        if peeked_glyph.color_opt == start_glyph.color_opt
+                            && peeked_glyph.font_size == start_font_size
+                            && peeked_glyph.font_id == start_font_id
+                        {
+                            glyphs_to_draw.push(glyph_runs.next().unwrap());
+                        } else {
+                            break;
+                        }
+                    }
+
+                    // Draw the collected glyphs
+                    self.scene
+                        .draw_glyphs(&font)
+                        .font_size(start_font_size)
+                        .brush(start_color)
+                        .hint(false)
+                        .glyph_transform(Some(Affine::IDENTITY.then_scale(self.scale)))
+                        .draw(
+                            Fill::NonZero,
+                            glyphs_to_draw.iter().map(|glyph| {
+                                let x = glyph.x + pos.x as f32 + offset.x as f32;
+                                let y = line.line_y + pos.y as f32 + offset.y as f32;
+                                let glyph_x = x * self.scale as f32;
+                                let glyph_y = (y * self.scale as f32).round();
+                                Glyph {
+                                    id: glyph.glyph_id as u32,
+                                    x: glyph_x,
+                                    y: glyph_y,
+                                }
+                            }),
+                        );
+                }
+            }
+        }
+    }
+
+    fn draw_img(&mut self, img: Img<'_>, rect: Rect) {
+        let rect_width = rect.width().max(1.);
+        let rect_height = rect.height().max(1.);
+
+        let scale_x = rect_width / img.img.width as f64;
+        let scale_y = rect_height / img.img.height as f64;
+
+        let translate_x = rect.min_x();
+        let translate_y = rect.min_y();
+
+        self.scene.draw_image(
+            &img.img,
+            self.transform
+                .pre_scale_non_uniform(scale_x, scale_y)
+                .then_translate((translate_x, translate_y).into())
+                .then_scale(self.scale),
+        );
+    }
+
+    fn draw_svg<'b>(
+        &mut self,
+        svg: floem_renderer::Svg<'b>,
+        rect: Rect,
+        brush: Option<impl Into<BrushRef<'b>>>,
+    ) {
+        let rect_width = rect.width().max(1.);
+        let rect_height = rect.height().max(1.);
+
+        let svg_size = svg.tree.size();
+        // dbg!(svg_size);
+
+        let scale_x = rect_width / svg_size.width() as f64;
+        let scale_y = rect_height / svg_size.height() as f64;
+
+        let translate_x = rect.min_x();
+        let translate_y = rect.min_y();
+
+        let new = if let Some(brush) = brush {
+            let brush = brush.into();
+            alpha_mask_scene(
+                rect.size(),
+                |scene| {
+                    scene.append(&vello_svg::render_tree(svg.tree), None);
+                },
+                move |scene| {
+                    scene.fill(Fill::NonZero, Affine::IDENTITY, brush, None, &rect);
+                },
+            )
+        } else {
+            vello_svg::render_tree(svg.tree)
+        };
+
+        // Apply transformations to fit the SVG within the provided rectangle
+        self.scene.append(
+            &new,
+            Some(
+                self.transform
+                    .pre_scale_non_uniform(scale_x, scale_y)
+                    .pre_translate((translate_x, translate_y).into())
+                    .then_scale(self.scale),
+            ),
+        );
+    }
+
+    fn transform(&mut self, transform: Affine) {
+        self.transform = transform;
+    }
+
+    fn set_z_index(&mut self, _z_index: i32) {}
+
+    fn clip(&mut self, shape: &impl Shape) {
+        if shape.bounding_box().is_empty() {
+            return;
+        }
+        if self.clip_open {
+            self.scene.pop_layer();
+        }
+        self.scene.push_layer(
+            vello::peniko::BlendMode::default(),
+            1.,
+            // Affine::IDENTITY,
+            self.transform.then_scale(self.scale),
+            shape,
+        );
+        self.clip_open = true;
+    }
+
+    fn clear_clip(&mut self) {
+        if self.clip_open {
+            self.scene.pop_layer();
+            self.clip_open = false;
+        }
+    }
+
+    fn finish(&mut self) -> Option<vello::peniko::Image> {
+        if self.capture {
+            self.render_capture_image()
+        } else {
+            if let Ok(frame) = self.surface.get_current_texture() {
+                // Render the scene using Vello's `render_to_surface` function
+                self.renderer
+                    .render_to_surface(
+                        &self.device,
+                        &self.queue,
+                        &self.scene,
+                        &frame,
+                        &vello::RenderParams {
+                            base_color: Color::BLACK, // Background color
+                            width: self.config.width,
+                            height: self.config.height,
+                            antialiasing_method: vello::AaConfig::Area,
+                            debug: DebugLayers::none(),
+                        },
+                    )
+                    .unwrap();
+
+                frame.present();
+            }
+            None
+        }
+    }
+}
+
+impl VelloRenderer {
+    fn render_capture_image(&mut self) -> Option<peniko::Image> {
         let width_align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT - 1;
         let width = (self.config.width + width_align) & !width_align;
         let height = self.config.height;
@@ -177,25 +437,39 @@ impl VgerRenderer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::STORAGE_BINDING,
             label: Some("render_texture"),
             view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
         };
         let texture = self.device.create_texture(&texture_desc);
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let desc = wgpu::RenderPassDescriptor {
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                    store: StoreOp::Store,
-                },
-            })],
-            ..Default::default()
-        };
+        let view = texture.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("Floem Inspector Preview"),
+            format: Some(TextureFormat::Rgba8Unorm),
+            dimension: Some(wgpu::TextureViewDimension::D2),
+            aspect: TextureAspect::default(),
+            base_mip_level: 0,
+            mip_level_count: None,
+            base_array_layer: 0,
+            array_layer_count: None,
+        });
 
-        self.vger.encode(&desc);
+        self.renderer
+            .render_to_texture(
+                &self.device,
+                &self.queue,
+                &self.scene,
+                &view,
+                &vello::RenderParams {
+                    base_color: Color::BLACK, // Background color
+                    width: self.config.width * self.scale as u32,
+                    height: self.config.height * self.scale as u32,
+                    antialiasing_method: AaConfig::Area,
+                    debug: DebugLayers::none(),
+                },
+            )
+            .unwrap();
 
         let bytes_per_pixel = 4;
         let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -250,344 +524,60 @@ impl VgerRenderer {
             cursor += bytes_per_row as usize;
         }
 
-        RgbaImage::from_raw(self.config.width, height, cropped_buffer).map(DynamicImage::ImageRgba8)
-    }
-}
-
-impl Renderer for VgerRenderer {
-    fn begin(&mut self, capture: bool) {
-        // Switch to the capture Vger if needed
-        if self.capture != capture {
-            self.capture = capture;
-            if self.alt_vger.is_none() {
-                self.alt_vger = Some(floem_vger_rs::Vger::new(
-                    self.device.clone(),
-                    self.queue.clone(),
-                    TextureFormat::Rgba8Unorm,
-                ));
-            }
-            mem::swap(&mut self.vger, self.alt_vger.as_mut().unwrap())
-        }
-
-        self.transform = Affine::IDENTITY;
-        self.vger.begin(
-            self.config.width as f32,
-            self.config.height as f32,
-            self.scale as f32,
-        );
-    }
-
-    fn stroke<'b>(&mut self, shape: &impl Shape, brush: impl Into<BrushRef<'b>>, width: f64) {
-        let paint = match self.brush_to_paint(brush) {
-            Some(paint) => paint,
-            None => return,
-        };
-        let width = (width * self.scale).round() as f32;
-        if let Some(rect) = shape.as_rect() {
-            let min = rect.origin();
-            let max = min + rect.size().to_vec2();
-            self.vger.stroke_rect(
-                self.vger_point(min),
-                self.vger_point(max),
-                0.0,
-                width,
-                paint,
-            );
-        } else if let Some(rect) = shape.as_rounded_rect() {
-            let min = rect.origin();
-            let max = min + rect.rect().size().to_vec2();
-            let radius = (rect.radii().top_left * self.scale) as f32;
-            self.vger.stroke_rect(
-                self.vger_point(min),
-                self.vger_point(max),
-                radius,
-                width,
-                paint,
-            );
-        } else if let Some(line) = shape.as_line() {
-            self.vger.stroke_segment(
-                self.vger_point(line.p0),
-                self.vger_point(line.p1),
-                width,
-                paint,
-            );
-        } else if let Some(circle) = shape.as_circle() {
-            self.vger.stroke_arc(
-                self.vger_point(circle.center),
-                (circle.radius * self.scale) as f32,
-                width,
-                0.0,
-                std::f32::consts::PI,
-                paint,
-            );
-        } else {
-            for segment in shape.path_segments(0.0) {
-                match segment {
-                    peniko::kurbo::PathSeg::Line(ln) => self.vger.stroke_segment(
-                        self.vger_point(ln.p0),
-                        self.vger_point(ln.p1),
-                        width,
-                        paint,
-                    ),
-                    peniko::kurbo::PathSeg::Quad(bez) => {
-                        self.vger.stroke_bezier(
-                            self.vger_point(bez.p0),
-                            self.vger_point(bez.p1),
-                            self.vger_point(bez.p2),
-                            width,
-                            paint,
-                        );
-                    }
-
-                    peniko::kurbo::PathSeg::Cubic(_) => todo!(),
-                }
-            }
-        }
-    }
-
-    fn fill<'b>(&mut self, path: &impl Shape, brush: impl Into<BrushRef<'b>>, blur_radius: f64) {
-        let paint = match self.brush_to_paint(brush) {
-            Some(paint) => paint,
-            None => return,
-        };
-        if let Some(rect) = path.as_rect() {
-            self.vger.fill_rect(
-                self.vger_rect(rect),
-                0.0,
-                paint,
-                (blur_radius * self.scale) as f32,
-            );
-        } else if let Some(rect) = path.as_rounded_rect() {
-            self.vger.fill_rect(
-                self.vger_rect(rect.rect()),
-                (rect.radii().top_left * self.scale) as f32,
-                paint,
-                (blur_radius * self.scale) as f32,
-            );
-        } else if let Some(circle) = path.as_circle() {
-            self.vger.fill_circle(
-                self.vger_point(circle.center),
-                (circle.radius * self.scale) as f32,
-                paint,
-            )
-        } else {
-            let mut first = true;
-            for segment in path.path_segments(0.1) {
-                match segment {
-                    peniko::kurbo::PathSeg::Line(line) => {
-                        if first {
-                            first = false;
-                            self.vger.move_to(self.vger_point(line.p0));
-                        }
-                        self.vger
-                            .quad_to(self.vger_point(line.p1), self.vger_point(line.p1));
-                    }
-                    peniko::kurbo::PathSeg::Quad(quad) => {
-                        if first {
-                            first = false;
-                            self.vger.move_to(self.vger_point(quad.p0));
-                        }
-                        self.vger
-                            .quad_to(self.vger_point(quad.p1), self.vger_point(quad.p2));
-                    }
-                    peniko::kurbo::PathSeg::Cubic(_) => {}
-                }
-            }
-            self.vger.fill(paint);
-        }
-    }
-
-    fn draw_text(&mut self, layout: &TextLayout, pos: impl Into<Point>) {
-        let transform = self.transform.as_coeffs();
-        let offset = Vec2::new(transform[4], transform[5]);
-        let pos: Point = pos.into();
-        let clip = self.clip;
-        for line in layout.layout_runs() {
-            if let Some(rect) = clip {
-                let y = pos.y + offset.y + line.line_y as f64;
-                if y + (line.line_height as f64) < rect.y0 {
-                    continue;
-                }
-                if y - (line.line_height as f64) > rect.y1 {
-                    break;
-                }
-            }
-            'line_loop: for glyph_run in line.glyphs {
-                let x = glyph_run.x + pos.x as f32 + offset.x as f32;
-                let y = line.line_y + pos.y as f32 + offset.y as f32;
-
-                if let Some(rect) = clip {
-                    if ((x + glyph_run.w) as f64) < rect.x0 {
-                        continue;
-                    } else if x as f64 > rect.x1 {
-                        break 'line_loop;
-                    }
-                }
-
-                // if glyph_run.is_tab {
-                //     continue;
-                // }
-
-                let color = match glyph_run.color_opt {
-                    Some(c) => Color::rgba8(c.r(), c.g(), c.b(), c.a()),
-                    None => Color::BLACK,
-                };
-                if let Some(paint) = self.brush_to_paint(color) {
-                    let glyph_x = x * self.scale as f32;
-                    let glyph_y = (y * self.scale as f32).round();
-                    let font_size = (glyph_run.font_size * self.scale as f32).round() as u32;
-                    let (cache_key, new_x, new_y) = CacheKey::new(
-                        glyph_run.font_id,
-                        glyph_run.glyph_id,
-                        font_size as f32,
-                        (glyph_x, glyph_y),
-                        glyph_run.cache_key_flags,
-                    );
-
-                    let glyph_x = new_x as f32;
-                    let glyph_y = new_y as f32;
-                    self.vger.render_glyph(
-                        glyph_x,
-                        glyph_y,
-                        glyph_run.font_id,
-                        glyph_run.glyph_id,
-                        font_size,
-                        (cache_key.x_bin, cache_key.y_bin),
-                        || {
-                            let image = self.swash_scaler.get_image(cache_key);
-                            image.unwrap_or_default()
-                        },
-                        paint,
-                    );
-                }
-            }
-        }
-    }
-
-    fn draw_img(&mut self, img: Img<'_>, rect: Rect) {
-        let transform = self.transform.as_coeffs();
-        let width = (rect.width() * self.scale).round() as u32;
-        let height = (rect.height() * self.scale).round() as u32;
-        let width = width.max(1);
-        let height = height.max(1);
-        let origin = rect.origin();
-        let x = ((origin.x + transform[4]) * self.scale).round() as f32;
-        let y = ((origin.y + transform[5]) * self.scale).round() as f32;
-
-        self.vger.render_image(x, y, img.hash, width, height, || {
-            let rgba = img.img.clone().into_rgba8();
-            let data = rgba.as_bytes().to_vec();
-
-            let (width, height) = rgba.dimensions();
-            Image {
-                width,
-                height,
-                data,
-                pixel_format: PixelFormat::Rgba,
-            }
-        });
-    }
-
-    fn draw_svg<'b>(
-        &mut self,
-        svg: floem_renderer::Svg<'b>,
-        rect: Rect,
-        brush: Option<impl Into<BrushRef<'b>>>,
-    ) {
-        let transform = self.transform.as_coeffs();
-        let width = (rect.width() * self.scale).round() as u32;
-        let height = (rect.height() * self.scale).round() as u32;
-        let width = width.max(1);
-        let height = height.max(1);
-        let origin = rect.origin();
-        let x = ((origin.x + transform[4]) * self.scale).round() as f32;
-        let y = ((origin.y + transform[5]) * self.scale).round() as f32;
-
-        let paint = brush.and_then(|brush| self.brush_to_paint(brush));
-        self.vger.render_svg(
-            x,
-            y,
-            svg.hash,
-            width,
+        Some(vello::peniko::Image::new(
+            Blob::new(Arc::new(cropped_buffer)),
+            vello::peniko::Format::Rgba8,
+            self.config.width,
             height,
-            || {
-                let mut img = tiny_skia::Pixmap::new(width, height).unwrap();
-                let scale = (width as f32 / svg.tree.size().width())
-                    .min(height as f32 / svg.tree.size().height());
-                let transform = tiny_skia::Transform::from_scale(scale, scale);
-                resvg::render(svg.tree, transform, &mut img.as_mut());
-                img.take()
-            },
-            paint,
-        );
-    }
-
-    fn transform(&mut self, transform: Affine) {
-        self.transform = transform;
-    }
-
-    fn set_z_index(&mut self, z_index: i32) {
-        self.vger.set_z_index(z_index);
-    }
-
-    fn clip(&mut self, shape: &impl Shape) {
-        let (rect, radius) = if let Some(rect) = shape.as_rect() {
-            (rect, 0.0)
-        } else if let Some(rect) = shape.as_rounded_rect() {
-            (rect.rect(), rect.radii().top_left)
-        } else {
-            (shape.bounding_box(), 0.0)
-        };
-
-        self.vger
-            .scissor(self.vger_rect(rect), (radius * self.scale) as f32);
-
-        let transform = self.transform.as_coeffs();
-        let offset = Vec2::new(transform[4], transform[5]);
-        self.clip = Some(rect + offset);
-    }
-
-    fn clear_clip(&mut self) {
-        self.vger.reset_scissor();
-        self.clip = None;
-    }
-
-    fn finish(&mut self) -> Option<DynamicImage> {
-        if self.capture {
-            self.render_image()
-        } else {
-            if let Ok(frame) = self.surface.get_current_texture() {
-                let texture_view = frame
-                    .texture
-                    .create_view(&wgpu::TextureViewDescriptor::default());
-                let desc = wgpu::RenderPassDescriptor {
-                    label: None,
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &texture_view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                            store: StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                };
-
-                self.vger.encode(&desc);
-                frame.present();
-            }
-            None
-        }
+        ))
     }
 }
 
-fn vger_color(color: Color) -> floem_vger_rs::Color {
-    floem_vger_rs::Color {
-        r: color.r as f32 / 255.0,
-        g: color.g as f32 / 255.0,
-        b: color.b as f32 / 255.0,
-        a: color.a as f32 / 255.0,
-    }
+fn common_alpha_mask_scene(
+    size: Size,
+    alpha_mask: impl FnOnce(&mut Scene),
+    item: impl FnOnce(&mut Scene),
+    compose_mode: Compose,
+) -> Scene {
+    let mut scene = Scene::new();
+    scene.push_layer(
+        Mix::Normal,
+        1.0,
+        Affine::IDENTITY,
+        &Rect::from_origin_size((0., 0.), size),
+    );
+
+    alpha_mask(&mut scene);
+
+    scene.push_layer(
+        vello::peniko::BlendMode {
+            mix: Mix::Clip,
+            compose: compose_mode,
+        },
+        1.,
+        Affine::IDENTITY,
+        &Rect::from_origin_size((0., 0.), size),
+    );
+
+    item(&mut scene);
+
+    scene.pop_layer();
+    scene.pop_layer();
+    scene
+}
+
+fn alpha_mask_scene(
+    size: Size,
+    alpha_mask: impl FnOnce(&mut Scene),
+    item: impl FnOnce(&mut Scene),
+) -> Scene {
+    common_alpha_mask_scene(size, alpha_mask, item, Compose::SrcIn)
+}
+#[allow(unused)]
+fn invert_alpha_mask_scene(
+    size: Size,
+    alpha_mask: impl FnOnce(&mut Scene),
+    item: impl FnOnce(&mut Scene),
+) -> Scene {
+    common_alpha_mask_scene(size, alpha_mask, item, Compose::SrcOut)
 }

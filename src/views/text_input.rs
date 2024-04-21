@@ -501,7 +501,8 @@ impl TextInput {
     }
 
     pub fn get_placeholder_text_attrs(&self) -> AttrsList {
-        let mut attrs = Attrs::new().color(self.placeholder_style.color().unwrap_or(Color::BLACK));
+        let color = self.placeholder_style.color().unwrap_or(Color::BLACK);
+        let mut attrs = Attrs::new().color(color);
 
         //TODO:
         // self.placeholder_style
@@ -524,7 +525,8 @@ impl TextInput {
     }
 
     pub fn get_text_attrs(&self) -> AttrsList {
-        let mut attrs = Attrs::new().color(self.style.color().unwrap_or(Color::BLACK));
+        let color = self.style.color().unwrap_or(Color::BLACK);
+        let mut attrs = Attrs::new().color(color);
 
         attrs = attrs.font_size(self.font_size());
 

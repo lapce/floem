@@ -1,6 +1,6 @@
 use floem_reactive::create_effect;
 use floem_renderer::Renderer;
-use peniko::kurbo::{Point, Rect, Size, Vec2};
+use peniko::kurbo::{Point, Rect, Size, Stroke, Vec2};
 use peniko::{Brush, Color};
 
 use crate::style::CustomStylable;
@@ -376,7 +376,7 @@ impl Scroll {
             let rect = rect.to_rounded_rect(radius(style, rect, true));
             cx.fill(&rect, &style.color().unwrap_or(HANDLE_COLOR), 0.0);
             if edge_width > 0.0 {
-                cx.stroke(&rect, &style.border_color(), edge_width);
+                cx.stroke(&rect, &style.border_color(), &Stroke::new(edge_width));
             }
         }
 
@@ -401,7 +401,7 @@ impl Scroll {
             let rect = rect.to_rounded_rect(radius(style, rect, false));
             cx.fill(&rect, &style.color().unwrap_or(HANDLE_COLOR), 0.0);
             if edge_width > 0.0 {
-                cx.stroke(&rect, &style.border_color(), edge_width);
+                cx.stroke(&rect, &style.border_color(), &Stroke::new(edge_width));
             }
         }
     }

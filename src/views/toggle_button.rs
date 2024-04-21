@@ -305,8 +305,8 @@ impl ToggleButtonCustomStyle {
     ///
     /// # Arguments
     /// * `color` - An `Option<Color>` that sets the handle's color. `None` will remove the color.
-    pub fn handle_color(mut self, color: impl Into<Brush>) -> Self {
-        self = Self(self.0.set(Foreground, Some(color.into())));
+    pub fn handle_color(mut self, color: impl Into<Option<Brush>>) -> Self {
+        self = Self(self.0.set(Foreground, color.into()));
         self
     }
 

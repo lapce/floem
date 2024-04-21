@@ -3,10 +3,12 @@
 //!
 
 use floem_reactive::create_updater;
+use floem_renderer::text;
 use floem_renderer::text::{LineHeightValue, Weight};
 use im_rc::hashmap::Entry;
 use peniko::kurbo::Point;
-use peniko::{Brush, Color, ColorStop, ColorStops, Gradient, GradientKind};
+use peniko::{Brush, ColorStop, ColorStops, GradientKind};
+use peniko::{Color, Gradient};
 use rustc_hash::FxHasher;
 use std::any::{type_name, Any};
 use std::collections::HashMap;
@@ -76,6 +78,14 @@ impl StylePropValue for f64 {
         Some(*self * (1.0 - value) + *other * value)
     }
 }
+impl StylePropValue for Point {
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some(Point {
+            x: self.x * (1.0 - value) + other.x * value,
+            y: self.y * (1.0 - value) + other.y * value,
+        })
+    }
+}
 impl StylePropValue for Display {}
 impl StylePropValue for Position {}
 impl StylePropValue for FlexDirection {}
@@ -104,12 +114,8 @@ impl StylePropValue for BoxShadow {
     }
 }
 impl StylePropValue for String {}
-impl StylePropValue for Weight {
-    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        self.0.interpolate(&other.0, value).map(Weight)
-    }
-}
-impl StylePropValue for crate::text::Style {}
+impl StylePropValue for Weight {}
+impl StylePropValue for text::Style {}
 impl StylePropValue for TextOverflow {}
 impl StylePropValue for LineHeightValue {
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
@@ -717,7 +723,7 @@ macro_rules! prop {
                 static TRANSITION_INFO: $crate::style::StyleKeyInfo = $crate::style::StyleKeyInfo::Transition;
                 static INFO: $crate::style::StyleKeyInfo = $crate::style::StyleKeyInfo::Prop($crate::style::StylePropInfo::new::<$name, $ty>(
                     prop!([impl inherited][$($options)*]),
-                    || std::rc::Rc::new($crate::style::StyleMapValue::Val($name::default_value())),
+                    || std::rc::Rc::new($crate::style::StyleMapValue::Val(<$name as $crate::style::StyleProp>::default_value())),
                     $crate::style::StyleKey { info: &TRANSITION_INFO },
                 ));
                 $crate::style::StyleKey { info: &INFO }
@@ -1535,7 +1541,7 @@ define_builtin_props!(
     FontSize font_size nocb: Option<f32> { inherited } = None,
     FontFamily font_family nocb: Option<String> { inherited } = None,
     FontWeight font_weight nocb: Option<Weight> { inherited } = None,
-    FontStyle font_style nocb: Option<crate::text::Style> { inherited } = None,
+    FontStyle font_style nocb: Option<text::Style> { inherited } = None,
     CursorColor cursor_color nocb: Brush {} = Brush::Solid(Color::BLACK.with_alpha_factor(0.3)),
     SelectionCornerRadius selection_corer_radius nocb: f64 {} = 1.,
     Selectable selectable: bool {} = true,
@@ -1986,8 +1992,9 @@ impl Style {
         self.set_style_value(Cursor, cursor.into().map(Some))
     }
 
-    pub fn color(self, color: impl Into<StyleValue<Color>>) -> Self {
-        self.set_style_value(TextColor, color.into().map(Some))
+    pub fn color(self, color: impl Into<Color>) -> Self {
+        let color = StyleValue::Val(Some(color.into()));
+        self.set_style_value(TextColor, color)
     }
 
     pub fn background(self, color: impl Into<Brush>) -> Self {
@@ -2041,7 +2048,7 @@ impl Style {
         self.font_weight(Weight::BOLD)
     }
 
-    pub fn font_style(self, style: impl Into<StyleValue<crate::text::Style>>) -> Self {
+    pub fn font_style(self, style: impl Into<StyleValue<text::Style>>) -> Self {
         self.set_style_value(FontStyle, style.into().map(Some))
     }
 

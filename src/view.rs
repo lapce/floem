@@ -45,7 +45,7 @@
 
 use floem_reactive::{ReadSignal, RwSignal, SignalGet};
 use floem_renderer::Renderer;
-use peniko::kurbo::{Circle, Insets, Line, Point, Rect, RoundedRect, Size};
+use peniko::kurbo::{Circle, Insets, Line, Point, Rect, RoundedRect, Size, Stroke};
 use std::any::Any;
 use taffy::tree::NodeId;
 
@@ -457,7 +457,7 @@ pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, size: Size
     cx.stroke(
         &rect.to_rounded_rect(border_radius + half),
         &style.outline_color(),
-        outline,
+        &Stroke::new(outline),
     );
 }
 
@@ -482,9 +482,13 @@ pub(crate) fn paint_border(
         };
         if radius > 0.0 {
             let radius = (radius - half).max(0.0);
-            cx.stroke(&rect.to_rounded_rect(radius), &border_color, left);
+            cx.stroke(
+                &rect.to_rounded_rect(radius),
+                &border_color,
+                &Stroke::new(left),
+            );
         } else {
-            cx.stroke(&rect, &border_color, left);
+            cx.stroke(&rect, &border_color, &Stroke::new(left));
         }
     } else {
         if left > 0.0 {
@@ -492,7 +496,7 @@ pub(crate) fn paint_border(
             cx.stroke(
                 &Line::new(Point::new(half, 0.0), Point::new(half, size.height)),
                 &border_color,
-                left,
+                &Stroke::new(left),
             );
         }
         if right > 0.0 {
@@ -503,7 +507,7 @@ pub(crate) fn paint_border(
                     Point::new(size.width - half, size.height),
                 ),
                 &border_color,
-                right,
+                &Stroke::new(right),
             );
         }
         if top > 0.0 {
@@ -511,7 +515,7 @@ pub(crate) fn paint_border(
             cx.stroke(
                 &Line::new(Point::new(0.0, half), Point::new(size.width, half)),
                 &border_color,
-                top,
+                &Stroke::new(top),
             );
         }
         if bottom > 0.0 {
@@ -522,7 +526,7 @@ pub(crate) fn paint_border(
                     Point::new(size.width, size.height - half),
                 ),
                 &border_color,
-                bottom,
+                &Stroke::new(bottom),
             );
         }
     }
