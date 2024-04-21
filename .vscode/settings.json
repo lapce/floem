@@ -1,6 +1,0 @@
-{
-    "rust-analyzer.linkedProjects": [
-        ".\\examples\\rotation\\Cargo.toml"
-    ],
-    "rust-analyzer.showUnlinkedFileNotification": false
-}
