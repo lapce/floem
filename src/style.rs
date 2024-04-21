@@ -1023,10 +1023,10 @@ pub enum TextOverflow {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Rotation {
-    Rotation0,
-    Rotation90,
-    Rotation180,
-    Rotation270,
+    NoRotation,
+    RotateRight,
+    RotateUpsideDown,
+    RotateLeft,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1129,10 +1129,10 @@ impl<T> From<T> for StyleValue<T> {
 impl Rotation {
     pub fn angle(self) -> f64 {
         match self {
-            Rotation::Rotation0 => 0.0,
-            Rotation::Rotation90 => 90.0,
-            Rotation::Rotation180 => 180.0,
-            Rotation::Rotation270 => 270.0,
+            Rotation::NoRotation => 0.0,
+            Rotation::RotateRight => 90.0,
+            Rotation::RotateUpsideDown => 180.0,
+            Rotation::RotateLeft => 270.0,
         }
     }
 }
@@ -1232,7 +1232,7 @@ define_builtin_props!(
     LineHeight line_height nocb: Option<LineHeightValue> { inherited } = None,
     AspectRatio aspect_ratio: Option<f32> {} = None,
     Gap gap nocb: Size<LengthPercentage> {} = Size::zero(),
-    RotationProp rotation: Rotation {} = Rotation::Rotation0,
+    RotationProp rotation: Rotation {} = Rotation::NoRotation,
 );
 
 prop_extractor! {
@@ -1736,17 +1736,24 @@ impl Style {
         self.set(ZIndex, Some(z_index))
     }
 
-    pub fn rotation_0(self) -> Self {
-        self.rotation(Rotation::Rotation0)
+    ///rotation 0
+    pub fn no_rotation(self) -> Self {
+        self.rotation(Rotation::NoRotation)
     }
-    pub fn rotation_90(self) -> Self {
-        self.rotation(Rotation::Rotation90)
+
+    ///rotation 90
+    pub fn rotate_right(self) -> Self {
+        self.rotation(Rotation::RotateRight)
     }
-    pub fn rotation_180(self) -> Self {
-        self.rotation(Rotation::Rotation180)
+
+    ///rotation 180
+    pub fn rotate_invert(self) -> Self {
+        self.rotation(Rotation::RotateUpsideDown)
     }
-    pub fn rotation_270(self) -> Self {
-        self.rotation(Rotation::Rotation270)
+
+    ///rotation 270
+    pub fn rotate_left(self) -> Self {
+        self.rotation(Rotation::RotateLeft)
     }
 
     /// Allow the application of a function if the option exists.  

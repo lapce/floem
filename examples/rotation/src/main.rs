@@ -99,7 +99,7 @@ fn app_view() -> impl View {
                     set_theme.update(|theme| *theme = !*theme);
                 }
             })
-            .style(|s| s.rotation_90())
+            .style(|s| s.rotate_right())
             .keyboard_navigatable(),
         stack((
             label(move || format!("Value: {}", counter.get())).class(Label),
@@ -110,7 +110,7 @@ fn app_view() -> impl View {
                         set_counter.update(|value| *value += 1);
                     }
                 })
-                .style(|s| s.rotation_90())
+                .style(|s| s.rotate_right())
                 .keyboard_navigatable(),
             text("Decrement")
                 .class(Button)
@@ -119,7 +119,7 @@ fn app_view() -> impl View {
                         set_counter.update(|value| *value -= 1);
                     }
                 })
-                .style(|s| s.rotation_180())
+                .style(|s| s.rotate_invert())
                 .keyboard_navigatable(),
             text("Reset to 0")
                 .class(Button)
@@ -128,7 +128,7 @@ fn app_view() -> impl View {
                     set_counter.update(|value| *value = 0);
                 })
                 .disabled(move || counter.get() == 0)
-                .style(|s| s.rotation_270())
+                .style(|s| s.rotate_left())
                 .keyboard_navigatable(),
         ))
         .class(Frame)

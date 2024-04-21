@@ -228,10 +228,10 @@ impl Widget for Label {
             let text_node = self.text_node.unwrap();
 
             let (width, height) = match self.style.rotation() {
-                Rotation::Rotation0 => (width, height),
-                Rotation::Rotation90 => (height, width),
-                Rotation::Rotation180 => (width, height),
-                Rotation::Rotation270 => (height, width),
+                Rotation::NoRotation => (width, height),
+                Rotation::RotateRight => (height, width),
+                Rotation::RotateUpsideDown => (width, height),
+                Rotation::RotateLeft => (height, width),
             };
 
             let style = Style::new().width(width).height(height).to_taffy_style();
@@ -292,10 +292,10 @@ impl Widget for Label {
                 if self.available_width != Some(available_width) {
                     let mut text_layout = text_layout.clone();
                     let (width, height) = match self.style.rotation() {
-                        Rotation::Rotation0 => (available_width, f32::MAX),
-                        Rotation::Rotation90 => (f32::MAX, available_width),
-                        Rotation::Rotation180 => (available_width, f32::MAX),
-                        Rotation::Rotation270 => (f32::MAX, available_width),
+                        Rotation::NoRotation => (available_width, f32::MAX),
+                        Rotation::RotateRight => (f32::MAX, available_width),
+                        Rotation::RotateUpsideDown => (available_width, f32::MAX),
+                        Rotation::RotateLeft => (f32::MAX, available_width),
                     };
                     text_layout.set_size(width, height);
                     self.available_text_layout = Some(text_layout);
@@ -336,10 +336,10 @@ impl Widget for Label {
         let location = cx.app_state.taffy.layout(text_node).unwrap().location;
 
         let (x, y) = match self.style.rotation() {
-            Rotation::Rotation0 => (location.x, location.y),
-            Rotation::Rotation90 => ((location.x + higth), location.y),
-            Rotation::Rotation180 => ((location.x + width), (location.y + higth)),
-            Rotation::Rotation270 => (location.x, (location.y + width)),
+            Rotation::NoRotation => (location.x, location.y),
+            Rotation::RotateRight => ((location.x + higth), location.y),
+            Rotation::RotateUpsideDown => ((location.x + width), (location.y + higth)),
+            Rotation::RotateLeft => (location.x, (location.y + width)),
         };
         let point = Point::new(x as f64, y as f64);
 
