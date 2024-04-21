@@ -344,7 +344,7 @@ impl Widget for Label {
         let point = Point::new(x as f64, y as f64);
 
         let mut affine = cx.transform.as_coeffs();
-        affine[0] = self.style.rotation().Angle();
+        affine[0] = self.style.rotation().angle();
         cx.paint_state.renderer.transform(Affine::new(affine));
 
         if let Some(text_layout) = self.available_text_layout.as_ref() {

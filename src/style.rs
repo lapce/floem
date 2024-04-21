@@ -1127,7 +1127,7 @@ impl<T> From<T> for StyleValue<T> {
     }
 }
 impl Rotation {
-    pub fn Angle(self) -> f64 {
+    pub fn angle(self) -> f64 {
         match self {
             Rotation::Rotation0 => 0.0,
             Rotation::Rotation90 => 90.0,
