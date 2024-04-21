@@ -158,7 +158,6 @@ fn app_view() -> impl View {
     })
 }
 
-
 fn main() {
     floem::launch(app_view);
 }
