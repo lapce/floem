@@ -1,7 +1,7 @@
 use std::{collections::HashSet, iter, ops::Range};
 
 use itertools::Itertools;
-use lapce_xi_rope::{Rope, RopeDelta};
+use lapce_xi_rope::{DeltaElement, Rope, RopeDelta};
 
 use crate::{
     buffer::{rope_text::RopeText, Buffer, InvalLines},
@@ -965,44 +965,14 @@ impl Action {
             }
             Undo => {
                 if let Some((text, delta, inval_lines, cursor_mode)) = buffer.do_undo() {
-                    if let Some(cursor_mode) = cursor_mode {
-                        cursor.mode = if modal {
-                            CursorMode::Normal(cursor_mode.offset())
-                        } else if cursor.is_insert() {
-                            cursor_mode
-                        } else {
-                            CursorMode::Insert(Selection::caret(cursor_mode.offset()))
-                        };
-                    } else if let Some(new_cursor) =
-                        get_first_selection_after(cursor, buffer, &delta)
-                    {
-                        *cursor = new_cursor
-                    } else {
-                        cursor.apply_delta(&delta);
-                    }
-                    vec![(text, delta, inval_lines)]
+                    apply_undo_redo(cursor, buffer, modal, text, delta, inval_lines, cursor_mode)
                 } else {
                     vec![]
                 }
             }
             Redo => {
                 if let Some((text, delta, inval_lines, cursor_mode)) = buffer.do_redo() {
-                    if let Some(cursor_mode) = cursor_mode {
-                        cursor.mode = if modal {
-                            CursorMode::Normal(cursor_mode.offset())
-                        } else if cursor.is_insert() {
-                            cursor_mode
-                        } else {
-                            CursorMode::Insert(Selection::caret(cursor_mode.offset()))
-                        };
-                    } else if let Some(new_cursor) =
-                        get_first_selection_after(cursor, buffer, &delta)
-                    {
-                        *cursor = new_cursor
-                    } else {
-                        cursor.apply_delta(&delta);
-                    }
-                    vec![(text, delta, inval_lines)]
+                    apply_undo_redo(cursor, buffer, modal, text, delta, inval_lines, cursor_mode)
                 } else {
                     vec![]
                 }
@@ -1505,6 +1475,38 @@ impl Action {
             }
         }
     }
+}
+
+fn apply_undo_redo(
+    cursor: &mut Cursor,
+    buffer: &mut Buffer,
+    modal: bool,
+    text: Rope,
+    delta: RopeDelta,
+    inval_lines: InvalLines,
+    cursor_mode: Option<CursorMode>,
+) -> Vec<(Rope, RopeDelta, InvalLines)> {
+    if let Some(cursor_mode) = cursor_mode {
+        cursor.mode = if modal {
+            CursorMode::Normal(cursor_mode.offset())
+        } else if cursor.is_insert() {
+            cursor_mode
+        } else {
+            CursorMode::Insert(Selection::caret(cursor_mode.offset()))
+        };
+    } else if let Some(new_cursor) = get_first_selection_after(cursor, buffer, &delta) {
+        *cursor = new_cursor
+    } else if !delta
+        .els
+        .iter()
+        .any(|el| matches!(el, DeltaElement::Copy(_, _)))
+    {
+        // if there's no copy that means the whole document was swapped
+        // we'd better not moving the cursor
+    } else {
+        cursor.apply_delta(&delta);
+    }
+    vec![(text, delta, inval_lines)]
 }
 
 enum DuplicateDirection {

@@ -27,7 +27,6 @@ use crate::views::editor::{
     gutter::editor_gutter_view,
     keypress::{key::KeyInput, press::KeyPress},
     layout::LineExtraStyle,
-    phantom_text::PhantomTextKind,
     visual_line::{RVLine, VLineInfo},
 };
 
@@ -360,7 +359,6 @@ impl EditorView {
             let rvline = info.rvline;
             let line = rvline.line;
 
-            let phantom_text = ed.phantom_text(line);
             let left_col = if rvline == start_rvline {
                 start_col
             } else {
@@ -371,8 +369,6 @@ impl EditorView {
             } else {
                 ed.last_col(info, true)
             };
-            let left_col = phantom_text.col_after(left_col, is_block_cursor);
-            let right_col = phantom_text.col_after(right_col, false);
 
             // Skip over empty selections
             if !info.is_empty_phantom() && left_col == right_col {
@@ -442,12 +438,8 @@ impl EditorView {
             let rvline = info.rvline;
             let line = rvline.line;
 
-            // TODO: give ed a phantom_col_after
-            let phantom_text = ed.phantom_text(line);
-
             // The left column is always 0 for linewise selections.
             let right_col = ed.last_col(info, true);
-            let right_col = phantom_text.col_after(right_col, false);
 
             // TODO: what affinity to use?
             let x1 = ed
@@ -494,9 +486,6 @@ impl EditorView {
             } else {
                 right_col.min(max_col)
             };
-            let phantom_text = ed.phantom_text(line);
-            let left_col = phantom_text.col_after(left_col, true);
-            let right_col = phantom_text.col_after(right_col, false);
 
             // TODO: what affinity to use?
             let x0 = ed
@@ -1048,23 +1037,9 @@ pub fn cursor_caret(
         .filter(|(preedit_line, _)| *preedit_line == info.rvline.line)
         .map(|(_, (start, _))| start);
 
-    let phantom_text = ed.phantom_text(info.rvline.line);
-
     let (_, col) = ed.offset_to_line_col(offset);
-    let ime_kind = preedit_start.map(|_| PhantomTextKind::Ime);
-    // The cursor should be after phantom text if the affinity is forward, or it is a block cursor.
-    // - if we have a relevant preedit we skip over IMEs
-    // - we skip over completion lens, as the text should be after the cursor
-    let col = phantom_text.col_after_ignore(
-        col,
-        affinity == CursorAffinity::Forward || (block && !after_last_char),
-        |p| p.kind == PhantomTextKind::Completion || Some(p.kind) == ime_kind,
-    );
-    // We shift forward by the IME's start. This is due to the cursor potentially being in the
-    // middle of IME phantom text while editing it.
-    let col = col + preedit_start.unwrap_or(0);
 
-    let point = ed.line_point_of_line_col(info.rvline.line, col, affinity);
+    let point = ed.line_point_of_line_col(info.rvline.line, col, CursorAffinity::Forward);
 
     let rvline = if preedit_start.is_some() {
         // If there's an IME edit, then we need to use the point's y to get the actual y position
@@ -1083,12 +1058,12 @@ pub fn cursor_caret(
     let x0 = point.x;
     if block {
         let new_offset = ed.move_right(offset, Mode::Insert, 1);
-        let new_col = col + new_offset.saturating_sub(offset);
+        let (_, new_col) = ed.offset_to_line_col(new_offset);
         let width = if after_last_char {
             CHAR_WIDTH
         } else {
             let x1 = ed
-                .line_point_of_line_col(info.rvline.line, new_col, affinity)
+                .line_point_of_line_col(info.rvline.line, new_col, CursorAffinity::Backward)
                 .x;
             x1 - x0
         };

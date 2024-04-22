@@ -221,6 +221,7 @@ where
             })
             .style(|s| s.size_full())
             .keyboard_navigatable()
+            .on_event_stop(EventListener::PointerDown, move |_| {})
             .on_event_stop(EventListener::FocusLost, move |_| {
                 dropdown_id.update_state(Message::ListFocusLost);
             });

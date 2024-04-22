@@ -865,7 +865,15 @@ impl Editor {
         affinity: CursorAffinity,
     ) -> Point {
         let text_layout = self.text_layout(line);
-        hit_position_aff(&text_layout.text, col, affinity == CursorAffinity::Backward).point
+        let index = text_layout
+            .phantom_text
+            .col_after(col, affinity == CursorAffinity::Forward);
+        hit_position_aff(
+            &text_layout.text,
+            index,
+            affinity == CursorAffinity::Backward,
+        )
+        .point
     }
 
     /// Get the (point above, point below) of a particular offset within the editor.
@@ -939,10 +947,7 @@ impl Editor {
         let hit_point = text_layout.text.hit_point(Point::new(point.x, y));
         // We have to unapply the phantom text shifting in order to get back to the column in
         // the actual buffer
-        let phantom_text = self
-            .doc()
-            .phantom_text(self.id(), &self.es.get_untracked(), line);
-        let col = phantom_text.before_col(hit_point.index);
+        let col = text_layout.phantom_text.before_col(hit_point.index);
         // Ensure that the column doesn't end up out of bounds, so things like clicking on the far
         // right end will just go to the end of the line.
         let max_col = self.line_end_col(line, mode != Mode::Normal);
@@ -981,8 +986,9 @@ impl Editor {
                 let text_layout = self.text_layout(line);
                 let hit_point = text_layout.text.hit_point(Point::new(x, 0.0));
                 let n = hit_point.index;
+                let col = text_layout.phantom_text.before_col(n);
 
-                n.min(self.line_end_col(line, caret))
+                col.min(self.line_end_col(line, caret))
             }
             ColPosition::End => self.line_end_col(line, caret),
             ColPosition::Start => 0,
@@ -1010,8 +1016,9 @@ impl Editor {
                     .sum();
                 let hit_point = text_layout.text.hit_point(Point::new(x, y_pos));
                 let n = hit_point.index;
+                let col = text_layout.phantom_text.before_col(n);
 
-                n.min(self.line_end_col(line, caret))
+                col.min(self.line_end_col(line, caret))
             }
             // Otherwise it is the same as the other function
             _ => self.line_horiz_col(line, horiz, caret),
@@ -1248,6 +1255,7 @@ impl TextLayoutProvider for Editor {
             extra_style: Vec::new(),
             whitespaces,
             indent,
+            phantom_text,
         };
         self.es.with_untracked(|es| {
             style.apply_layout_styles(edid, es, line, &mut layout_line);
