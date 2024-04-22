@@ -344,7 +344,6 @@ impl EditorView {
         start_offset: usize,
         end_offset: usize,
         affinity: CursorAffinity,
-        is_block_cursor: bool,
     ) {
         // TODO: selections should have separate start/end affinity
         let (start_rvline, start_col) = ed.rvline_col_of_offset(start_offset, affinity);
@@ -566,7 +565,6 @@ impl EditorView {
                     start_offset,
                     end_offset,
                     cursor.affinity,
-                    true,
                 );
             }
             CursorMode::Visual {
@@ -610,7 +608,6 @@ impl EditorView {
                         start.min(end),
                         start.max(end),
                         cursor.affinity,
-                        false,
                     );
                 }
             }
