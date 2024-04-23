@@ -853,7 +853,7 @@ impl Editor {
     /// `x` being the leading edge of the character, and `y` being the baseline.
     pub fn line_point_of_offset(&self, offset: usize, affinity: CursorAffinity) -> Point {
         let (line, col) = self.offset_to_line_col(offset);
-        self.line_point_of_line_col(line, col, affinity)
+        self.line_point_of_line_col(line, col, affinity, false)
     }
 
     /// Returns the point into the text layout of the line at the given line and col.
@@ -863,11 +863,18 @@ impl Editor {
         line: usize,
         col: usize,
         affinity: CursorAffinity,
+        force_affinity: bool,
     ) -> Point {
         let text_layout = self.text_layout(line);
-        let index = text_layout
-            .phantom_text
-            .col_after(col, affinity == CursorAffinity::Forward);
+        let index = if force_affinity {
+            text_layout
+                .phantom_text
+                .col_after_force(col, affinity == CursorAffinity::Forward)
+        } else {
+            text_layout
+                .phantom_text
+                .col_after(col, affinity == CursorAffinity::Forward)
+        };
         hit_position_aff(
             &text_layout.text,
             index,

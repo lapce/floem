@@ -376,10 +376,10 @@ impl EditorView {
 
             // TODO: What affinity should these use?
             let x0 = ed
-                .line_point_of_line_col(line, left_col, CursorAffinity::Forward)
+                .line_point_of_line_col(line, left_col, CursorAffinity::Forward, true)
                 .x;
             let x1 = ed
-                .line_point_of_line_col(line, right_col, CursorAffinity::Backward)
+                .line_point_of_line_col(line, right_col, CursorAffinity::Backward, true)
                 .x;
             // TODO(minor): Should this be line != end_line?
             let x1 = if rvline != end_rvline {
@@ -442,7 +442,7 @@ impl EditorView {
 
             // TODO: what affinity to use?
             let x1 = ed
-                .line_point_of_line_col(line, right_col, CursorAffinity::Backward)
+                .line_point_of_line_col(line, right_col, CursorAffinity::Backward, true)
                 .x
                 + CHAR_WIDTH;
 
@@ -488,10 +488,10 @@ impl EditorView {
 
             // TODO: what affinity to use?
             let x0 = ed
-                .line_point_of_line_col(line, left_col, CursorAffinity::Forward)
+                .line_point_of_line_col(line, left_col, CursorAffinity::Forward, true)
                 .x;
             let x1 = ed
-                .line_point_of_line_col(line, right_col, CursorAffinity::Backward)
+                .line_point_of_line_col(line, right_col, CursorAffinity::Backward, true)
                 .x;
 
             let line_height = ed.line_height(line);
@@ -1036,7 +1036,7 @@ pub fn cursor_caret(
 
     let (_, col) = ed.offset_to_line_col(offset);
 
-    let point = ed.line_point_of_line_col(info.rvline.line, col, CursorAffinity::Forward);
+    let point = ed.line_point_of_line_col(info.rvline.line, col, CursorAffinity::Forward, false);
 
     let rvline = if preedit_start.is_some() {
         // If there's an IME edit, then we need to use the point's y to get the actual y position
@@ -1054,13 +1054,16 @@ pub fn cursor_caret(
 
     let x0 = point.x;
     if block {
+        let x0 = ed
+            .line_point_of_line_col(info.rvline.line, col, CursorAffinity::Forward, true)
+            .x;
         let new_offset = ed.move_right(offset, Mode::Insert, 1);
         let (_, new_col) = ed.offset_to_line_col(new_offset);
         let width = if after_last_char {
             CHAR_WIDTH
         } else {
             let x1 = ed
-                .line_point_of_line_col(info.rvline.line, new_col, CursorAffinity::Backward)
+                .line_point_of_line_col(info.rvline.line, new_col, CursorAffinity::Backward, true)
                 .x;
             x1 - x0
         };

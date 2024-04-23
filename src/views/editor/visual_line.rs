@@ -2269,6 +2269,7 @@ mod tests {
         PhantomText {
             kind,
             col,
+            affinity: None,
             text: text.to_string(),
             font_size: None,
             fg: None,

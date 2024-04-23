@@ -136,6 +136,7 @@ pub trait Document: DocumentPhantom + Downcast {
         Some(PhantomText {
             kind: PhantomTextKind::Ime,
             text: preedit.text,
+            affinity: None,
             col,
             font_size: None,
             fg: None,

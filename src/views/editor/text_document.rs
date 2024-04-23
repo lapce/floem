@@ -250,6 +250,7 @@ impl DocumentPhantom for TextDocument {
                 text.push(PhantomText {
                     kind: PhantomTextKind::Placeholder,
                     col: 0,
+                    affinity: None,
                     text: placeholder,
                     font_size: None,
                     fg: Some(styling.placeholder_color()),
