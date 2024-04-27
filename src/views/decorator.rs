@@ -75,6 +75,7 @@ pub trait Decorators: View + Sized {
         self
     }
 
+    /// Allows the elements to receive keyboard events without being navigable and without being focused.
     fn keyboard_listenable(self) -> Self {
         let id = self.id();
         id.keyboard_listenable();
