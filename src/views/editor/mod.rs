@@ -173,7 +173,7 @@ pub struct Editor {
     pub scroll_to: RwSignal<Option<Vec2>>,
 
     /// Holds the cache of the lines and provides many utility functions for them.
-    lines: Rc<Lines>,
+    pub lines: Rc<Lines>,
     pub screen_lines: RwSignal<ScreenLines>,
 
     /// Modal mode register
@@ -474,7 +474,7 @@ impl Editor {
         self.doc().receive_char(self, c)
     }
 
-    fn compute_screen_lines(&self, base: RwSignal<ScreenLinesBase>) -> ScreenLines {
+    pub fn compute_screen_lines(&self, base: RwSignal<ScreenLinesBase>) -> ScreenLines {
         // This function *cannot* access `ScreenLines` with how it is currently implemented.
         // This is being called from within an update to screen lines.
 
@@ -1479,6 +1479,8 @@ pub fn normal_compute_screen_lines(
 
     let cache_rev = editor.doc.get().cache_rev().get();
     editor.lines.check_cache_rev(cache_rev);
+
+    // println!("Computing screen lines {min_vline:?}..{max_vline:?}; cache rev: {cache_rev}");
 
     let min_info = editor.iter_vlines(false, min_vline).next();
 

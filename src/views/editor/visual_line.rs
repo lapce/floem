@@ -64,7 +64,10 @@ use std::{
 };
 
 use floem_editor_core::{
-    buffer::rope_text::{RopeText, RopeTextVal},
+    buffer::{
+        rope_text::{RopeText, RopeTextVal},
+        InvalLines,
+    },
     cursor::CursorAffinity,
     word::WordCursor,
 };
@@ -121,8 +124,113 @@ impl RVLine {
     }
 }
 
-/// (Font Size -> (Buffer Line Number -> Text Layout))  
-pub type Layouts = HashMap<usize, HashMap<usize, Arc<TextLayoutLine>>>;
+/// The cached text layouts.  
+/// Starts at a specific `base_line`, and then grows from there.  
+/// This is internally an array, so that newlines and moving the viewport up can be easily handled.
+#[derive(Default)]
+pub struct Layouts {
+    base_line: usize,
+    layouts: Vec<Option<Arc<TextLayoutLine>>>,
+}
+impl Layouts {
+    fn idx(&self, line: usize) -> Option<usize> {
+        line.checked_sub(self.base_line)
+    }
+
+    pub fn min_line(&self) -> usize {
+        self.base_line
+    }
+
+    pub fn max_line(&self) -> Option<usize> {
+        if self.layouts.is_empty() {
+            None
+        } else {
+            Some(self.min_line() + self.layouts.len() - 1)
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.layouts.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.layouts.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.base_line = 0;
+        self.layouts.clear();
+    }
+
+    pub fn get(&self, line: usize) -> Option<&Arc<TextLayoutLine>> {
+        let idx = self.idx(line)?;
+        self.layouts.get(idx).map(|x| x.as_ref()).flatten()
+    }
+
+    pub fn get_mut(&mut self, line: usize) -> Option<&mut Arc<TextLayoutLine>> {
+        let idx = self.idx(line)?;
+        self.layouts.get_mut(idx).map(|x| x.as_mut()).flatten()
+    }
+
+    pub fn insert(&mut self, line: usize, layout: Arc<TextLayoutLine>) {
+        if line < self.base_line {
+            let old_base = self.base_line;
+            self.base_line = line;
+            // Resize the layouts at the start to fit the new count
+            let new_count = old_base - line;
+            self.layouts
+                .splice(0..0, std::iter::repeat(None).take(new_count));
+        } else if self.layouts.is_empty() {
+            self.base_line = line;
+            self.layouts.push(None);
+        } else if line >= self.base_line + self.layouts.len() {
+            let new_len = line - self.base_line + 1;
+            self.layouts.resize(new_len, None);
+        }
+        let idx = self.idx(line).unwrap();
+        let res = self.layouts.get_mut(idx).unwrap();
+        *res = Some(layout);
+    }
+
+    /// Invalidates the layouts at the given `start_line` for `inval_count` lines.  
+    /// `new_count` is used to know whether to insert new line entries or to remove them, such as
+    /// for a newline.
+    pub fn invalidate(&mut self, start_line: usize, inval_count: usize, new_count: usize) {
+        let ib_start_line = start_line.max(self.base_line);
+        let start_idx = self.idx(ib_start_line).unwrap();
+        if start_idx >= self.layouts.len() {
+            return;
+        }
+
+        let end_idx = start_idx + inval_count;
+        let ib_end_idx = end_idx.min(self.layouts.len());
+
+        for i in start_idx..ib_end_idx {
+            self.layouts[i] = None;
+        }
+
+        if new_count == inval_count {
+            return;
+        }
+
+        if new_count > inval_count {
+            let extra = new_count - inval_count;
+            self.layouts
+                .splice(ib_end_idx..ib_end_idx, std::iter::repeat(None).take(extra));
+        } else {
+            let remove = inval_count - new_count;
+            // But remove is not just the difference between inval count and and new count
+            // As we cut off the end of the interval if it went past the end of the layouts,
+            let oob_remove = (ib_start_line - start_line) + (ib_end_idx - end_idx);
+
+            let remove = remove - oob_remove;
+
+            // Since we set all the layouts in the interval to None, we can just do the simpler
+            // task of removing from the start.
+            self.layouts.drain(start_idx..start_idx + remove);
+        }
+    }
+}
 
 #[derive(Debug, Default, PartialEq, Clone, Copy)]
 pub struct ConfigId {
@@ -149,7 +257,7 @@ pub struct TextLayoutCache {
     /// Different font-sizes are cached separately, which is useful for features like code lens
     /// where the font-size can rapidly change.  
     /// It would also be useful for a prospective minimap feature.  
-    pub layouts: Layouts,
+    pub layouts: HashMap<usize, Layouts>,
     /// The maximum width seen so far, used to determine if we need to show horizontal scrollbar
     pub max_width: f64,
 }
@@ -171,13 +279,13 @@ impl TextLayoutCache {
     }
 
     pub fn get(&self, font_size: usize, line: usize) -> Option<&Arc<TextLayoutLine>> {
-        self.layouts.get(&font_size).and_then(|c| c.get(&line))
+        self.layouts.get(&font_size).and_then(|c| c.get(line))
     }
 
     pub fn get_mut(&mut self, font_size: usize, line: usize) -> Option<&mut Arc<TextLayoutLine>> {
         self.layouts
             .get_mut(&font_size)
-            .and_then(|c| c.get_mut(&line))
+            .and_then(|c| c.get_mut(line))
     }
 
     /// Get the (start, end) columns of the (line, line_index)
@@ -190,6 +298,12 @@ impl TextLayoutCache {
     ) -> Option<(usize, usize)> {
         self.get(font_size, line)
             .and_then(|l| l.layout_cols(text_prov, line).nth(line_index))
+    }
+
+    pub fn invalidate(&mut self, start_line: usize, inval_count: usize, new_count: usize) {
+        for layouts in self.layouts.values_mut() {
+            layouts.invalidate(start_line, inval_count, new_count);
+        }
     }
 }
 
@@ -288,7 +402,8 @@ pub struct Lines {
     /// if you were to assign. So this allows us to swap out the `Arc`, though it does mean that
     /// the other holders of the `Arc` don't get the new version. That is fine currently.
     pub font_sizes: RefCell<Rc<dyn LineFontSizeProvider>>,
-    text_layouts: Rc<RefCell<TextLayoutCache>>,
+    #[doc(hidden)]
+    pub text_layouts: Rc<RefCell<TextLayoutCache>>,
     wrap: Cell<ResolvedWrap>,
     font_size_cache_id: Cell<FontSizeCacheId>,
     last_vline: Rc<Cell<Option<VLine>>>,
@@ -472,7 +587,7 @@ impl Lines {
             .borrow()
             .layouts
             .get(&font_size)
-            .and_then(|f| f.get(&line))
+            .and_then(|f| f.get(line))
             .cloned()
     }
 
@@ -874,7 +989,10 @@ impl Lines {
             (l.cache_rev, l.config_id)
         };
 
-        if cache_rev != prev_cache_rev || config_id != prev_config_id {
+        // if cache_rev != prev_cache_rev || config_id != prev_config_id {
+        //     self.clear(cache_rev, Some(config_id));
+        // }
+        if config_id != prev_config_id {
             self.clear(cache_rev, Some(config_id));
         }
     }
@@ -882,9 +1000,9 @@ impl Lines {
     /// Check whether the text layout cache revision is different.  
     /// Clears the layouts and updates the cache rev if it was different.
     pub fn check_cache_rev(&self, cache_rev: u64) {
-        if cache_rev != self.text_layouts.borrow().cache_rev {
-            self.clear(cache_rev, None);
-        }
+        // if cache_rev != self.text_layouts.borrow().cache_rev {
+        //     self.clear(cache_rev, None);
+        // }
     }
 
     /// Clear the text layouts with a given cache revision
@@ -897,6 +1015,23 @@ impl Lines {
     pub fn clear_unchanged(&self) {
         self.text_layouts.borrow_mut().clear_unchanged();
         self.last_vline.set(None);
+    }
+
+    pub fn invalidate(&self, inval_lines: &InvalLines) {
+        let InvalLines {
+            start_line,
+            inval_count,
+            new_count,
+            ..
+        } = *inval_lines;
+
+        if inval_count == 0 {
+            return;
+        }
+
+        self.text_layouts
+            .borrow_mut()
+            .invalidate(start_line, inval_count, new_count);
     }
 }
 
@@ -920,7 +1055,7 @@ fn get_init_text_layout(
     // do it now
     if !text_layouts.borrow().layouts.contains_key(&font_size) {
         let mut cache = text_layouts.borrow_mut();
-        cache.layouts.insert(font_size, HashMap::new());
+        cache.layouts.insert(font_size, Layouts::default());
     }
 
     // Get whether there's an entry for this specific font size and line
@@ -929,7 +1064,7 @@ fn get_init_text_layout(
         .layouts
         .get(&font_size)
         .unwrap()
-        .get(&line)
+        .get(line)
         .is_some();
     // If there isn't an entry then we actually have to create it
     if !cache_exists {
@@ -976,7 +1111,7 @@ fn get_init_text_layout(
         .layouts
         .get(&font_size)
         .unwrap()
-        .get(&line)
+        .get(line)
         .cloned()
         .unwrap()
 }
@@ -1749,8 +1884,9 @@ impl<T: TextLayoutProvider> Iterator for VisualLinesRelative<T> {
 }
 
 // TODO: This might skip spaces at the end of lines, which we probably don't want?
+#[doc(hidden)]
 /// Get the end offset of the visual line from the file's line and the line index.  
-fn end_of_rvline(
+pub fn end_of_rvline(
     layouts: &TextLayoutCache,
     text_prov: &impl TextLayoutProvider,
     font_size: usize,

@@ -105,6 +105,10 @@ impl TextDocument {
         }
     }
 
+    pub fn buffer(&self) -> RwSignal<Buffer> {
+        self.buffer
+    }
+
     fn update_cache_rev(&self) {
         self.cache_rev.try_update(|cache_rev| {
             *cache_rev += 1;
@@ -116,6 +120,13 @@ impl TextDocument {
         let data = OnUpdate { editor: ed, deltas };
         for on_update in on_updates.iter() {
             on_update(data.clone());
+        }
+
+        // TODO: check what cases the editor might be `None`...
+        if let Some(ed) = ed {
+            for (_, _, inval_lines) in deltas {
+                ed.lines.invalidate(inval_lines);
+            }
         }
     }
 
@@ -230,7 +241,12 @@ impl Document for TextDocument {
         }
     }
 
-    fn edit(&self, iter: &mut dyn Iterator<Item = (Selection, &str)>, edit_type: EditType) {
+    fn edit(
+        &self,
+        ed: &Editor,
+        iter: &mut dyn Iterator<Item = (Selection, &str)>,
+        edit_type: EditType,
+    ) {
         let deltas = self
             .buffer
             .try_update(|buffer| buffer.edit(iter, edit_type));
@@ -238,7 +254,7 @@ impl Document for TextDocument {
         let deltas = deltas.as_ref().map(|x| x as &[_]).unwrap_or(&[]);
 
         self.update_cache_rev();
-        self.on_update(None, deltas);
+        self.on_update(Some(ed), deltas);
     }
 }
 impl DocumentPhantom for TextDocument {

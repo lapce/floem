@@ -171,9 +171,9 @@ pub trait Document: DocumentPhantom + Downcast {
     fn receive_char(&self, ed: &Editor, c: &str);
 
     /// Perform a single edit.  
-    fn edit_single(&self, selection: Selection, content: &str, edit_type: EditType) {
+    fn edit_single(&self, ed: &Editor, selection: Selection, content: &str, edit_type: EditType) {
         let mut iter = std::iter::once((selection, content));
-        self.edit(&mut iter, edit_type);
+        self.edit(ed, &mut iter, edit_type);
     }
 
     /// Perform the edit(s) on this document.  
@@ -191,7 +191,12 @@ pub trait Document: DocumentPhantom + Downcast {
     ///     })
     /// ))
     /// ```
-    fn edit(&self, iter: &mut dyn Iterator<Item = (Selection, &str)>, edit_type: EditType);
+    fn edit(
+        &self,
+        ed: &Editor,
+        iter: &mut dyn Iterator<Item = (Selection, &str)>,
+        edit_type: EditType,
+    );
 }
 
 impl_downcast!(Document);
@@ -499,12 +504,17 @@ where
         self.doc.receive_char(ed, c)
     }
 
-    fn edit_single(&self, selection: Selection, content: &str, edit_type: EditType) {
-        self.doc.edit_single(selection, content, edit_type)
+    fn edit_single(&self, ed: &Editor, selection: Selection, content: &str, edit_type: EditType) {
+        self.doc.edit_single(ed, selection, content, edit_type)
     }
 
-    fn edit(&self, iter: &mut dyn Iterator<Item = (Selection, &str)>, edit_type: EditType) {
-        self.doc.edit(iter, edit_type)
+    fn edit(
+        &self,
+        ed: &Editor,
+        iter: &mut dyn Iterator<Item = (Selection, &str)>,
+        edit_type: EditType,
+    ) {
+        self.doc.edit(ed, iter, edit_type)
     }
 }
 impl<D, F> DocumentPhantom for ExtCmdDocument<D, F>
