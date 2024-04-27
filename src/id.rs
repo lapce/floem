@@ -170,6 +170,10 @@ impl Id {
         self.add_update_message(UpdateMessage::KeyboardNavigable { id: *self });
     }
 
+    pub fn keyboard_listenable(&self) {
+        self.add_update_message(UpdateMessage::KeyboardListenable { id: *self });
+    }
+
     pub fn draggable(&self) {
         self.add_update_message(UpdateMessage::Draggable { id: *self });
     }

@@ -65,6 +65,9 @@ pub(crate) enum UpdateMessage {
     KeyboardNavigable {
         id: Id,
     },
+    KeyboardListenable {
+        id: Id,
+    },
     Draggable {
         id: Id,
     },
@@ -119,14 +122,6 @@ pub(crate) enum UpdateMessage {
         view: Box<dyn FnOnce() -> Box<dyn Widget>>,
     },
     RemoveOverlay {
-        id: Id,
-    },
-    AddTooltip {
-        id: Id,
-        position: Point,
-        view: Box<dyn FnOnce() -> Box<dyn Widget>>,
-    },
-    RemoveTooltip {
         id: Id,
     },
     Inspect,

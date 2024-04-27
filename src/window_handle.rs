@@ -22,7 +22,6 @@ use crate::unit::UnitExt;
 #[cfg(target_os = "linux")]
 use crate::views::{container, stack, Decorators};
 use crate::{
-    action::remove_tooltip,
     animate::{AnimPropKind, AnimUpdateMsg, AnimValue, AnimatedProp, SizeUnit},
     context::{
         AppState, ComputeLayoutCx, EventCx, FrameUpdate, LayoutCx, MoveListener, PaintCx,
@@ -183,6 +182,21 @@ impl WindowHandle {
             cx.app_state.focus
         };
 
+        if matches!(event, Event::KeyUp(_)) || matches!(event, Event::KeyDown(_)) {
+            for id in cx.app_state.keyboard_listenable.clone().iter() {
+                let id_path = ID_PATHS.with(|paths| paths.borrow().get(id).cloned());
+                if let Some(id_path) = id_path {
+                    cx.unconditional_view_event(
+                        &mut self.view,
+                        Some(id_path.dispatch()),
+                        event.clone(),
+                    );
+                } else {
+                    cx.app_state.focus = None;
+                }
+            }
+        }
+
         if event.needs_focus() {
             let mut processed = false;
 
@@ -240,11 +254,6 @@ impl WindowHandle {
                             {
                                 view_arrow_navigation(name, cx.app_state, &self.view);
                             }
-                        }
-
-                        if self.view.tooltip.is_some() {
-                            let tooltip_overview = self.view.tooltip.as_mut().unwrap();
-                            remove_tooltip(tooltip_overview.data.id);
                         }
                     }
 
@@ -855,6 +864,9 @@ impl WindowHandle {
                     UpdateMessage::KeyboardNavigable { id } => {
                         cx.app_state.keyboard_navigable.insert(id);
                     }
+                    UpdateMessage::KeyboardListenable { id } => {
+                        cx.app_state.keyboard_listenable.insert(id);
+                    }
                     UpdateMessage::Draggable { id } => {
                         cx.app_state.draggable.insert(id);
                     }
@@ -1020,31 +1032,6 @@ impl WindowHandle {
                         cx.app_state.remove_view(&mut overlay);
                         overlay.scope.dispose();
                         cx.app_state.request_all(self.id);
-                    }
-                    UpdateMessage::AddTooltip { id, position, view } => {
-                        let scope = self.scope.create_child();
-                        let view = OverlayView {
-                            data: ViewData::new(id),
-                            position,
-                            scope,
-                            child: with_scope(scope, view),
-                        };
-                        view.view_data().id().set_parent(self.id);
-                        view_children_set_parent_id(&view);
-
-                        self.view.tooltip = Some(view);
-                        cx.app_state.request_all(self.id);
-                    }
-                    UpdateMessage::RemoveTooltip { id } => {
-                        if self.view.tooltip.is_some() {
-                            let tooltip = self.view.tooltip.as_mut().unwrap();
-                            if tooltip.view_data().id.eq(&id) {
-                                cx.app_state.remove_view(tooltip);
-                                tooltip.scope.dispose();
-                                cx.app_state.request_all(self.id);
-                                self.view.tooltip = None;
-                            }
-                        }
                     }
                 }
             }

@@ -1,8 +1,9 @@
 use kurbo::Point;
 use std::{rc::Rc, time::Duration};
 
+use crate::views::Decorators;
 use crate::{
-    action::{add_tooltip, exec_after, remove_tooltip, TimerToken},
+    action::{add_overlay, exec_after, remove_overlay, TimerToken},
     context::{EventCx, UpdateCx},
     event::Event,
     id::Id,
@@ -44,6 +45,7 @@ pub fn tooltip<V: View + 'static, T: Widget + 'static>(
         style: Default::default(),
         window_origin: None,
     }
+    .keyboard_listenable()
 }
 
 impl View for Tooltip {
@@ -93,7 +95,7 @@ impl Widget for Tooltip {
             if let Some(window_origin) = self.window_origin {
                 if self.hover.map(|(_, t)| t) == Some(*token) {
                     let tip = self.tip.clone();
-                    self.overlay = Some(add_tooltip(
+                    self.overlay = Some(add_overlay(
                         window_origin + self.hover.unwrap().0.to_vec2() + (10., 10.),
                         move |_| tip(),
                     ));
@@ -122,10 +124,12 @@ impl Widget for Tooltip {
             Event::PointerLeave
             | Event::PointerDown(_)
             | Event::PointerUp(_)
-            | Event::PointerWheel(_) => {
+            | Event::PointerWheel(_)
+            | Event::KeyUp(_)
+            | Event::KeyDown(_) => {
                 self.hover = None;
                 if let Some(id) = self.overlay {
-                    remove_tooltip(id);
+                    remove_overlay(id);
                     self.overlay = None;
                 }
             }
@@ -144,7 +148,7 @@ impl Widget for Tooltip {
 impl Drop for Tooltip {
     fn drop(&mut self) {
         if let Some(id) = self.overlay {
-            remove_tooltip(id);
+            remove_overlay(id);
         }
     }
 }

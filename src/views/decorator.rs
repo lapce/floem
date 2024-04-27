@@ -75,6 +75,12 @@ pub trait Decorators: View + Sized {
         self
     }
 
+    fn keyboard_listenable(self) -> Self {
+        let id = self.id();
+        id.keyboard_listenable();
+        self
+    }
+
     fn draggable(self) -> Self {
         let id = self.id();
         id.draggable();

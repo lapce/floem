@@ -146,22 +146,3 @@ pub fn add_overlay<V: Widget + 'static>(
 pub fn remove_overlay(id: Id) {
     add_update_message(UpdateMessage::RemoveOverlay { id });
 }
-
-/// Creates a new tooltip on the current window.
-pub fn add_tooltip<V: Widget + 'static>(
-    position: Point,
-    view: impl FnOnce(Id) -> V + 'static,
-) -> Id {
-    let id = Id::next();
-    add_update_message(UpdateMessage::AddTooltip {
-        id,
-        position,
-        view: Box::new(move || Box::new(view(id))),
-    });
-    id
-}
-
-/// Removes the tooltip from the current window.
-pub fn remove_tooltip(id: Id) {
-    add_update_message(UpdateMessage::RemoveTooltip { id });
-}
