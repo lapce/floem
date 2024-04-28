@@ -13,8 +13,8 @@ use crate::{
     style_class,
     unit::PxPctAuto,
     view::{
-        default_compute_layout, default_event, view_children_set_parent_id, AnyView, ViewBuilder,
-        ViewData, Widget,
+        default_compute_layout, default_event, view_children_set_parent_id, AnyView, View,
+        ViewBuilder, ViewData,
     },
     views::{scroll, Decorators},
     EventPropagation,
@@ -34,7 +34,7 @@ prop_extractor!(DropDownStyle {
 
 pub struct DropDown<T: 'static> {
     view_data: ViewData,
-    main_view: Box<dyn Widget>,
+    main_view: Box<dyn View>,
     main_view_scope: Scope,
     main_fn: Box<ChildFn<T>>,
     list_view: Rc<dyn Fn() -> AnyView>,
@@ -67,7 +67,7 @@ impl<T: 'static> ViewBuilder for DropDown<T> {
     }
 }
 
-impl<T: 'static> Widget for DropDown<T> {
+impl<T: 'static> View for DropDown<T> {
     fn view_data(&self) -> &ViewData {
         &self.view_data
     }
@@ -76,17 +76,17 @@ impl<T: 'static> Widget for DropDown<T> {
         &mut self.view_data
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
         for_each(&self.main_view);
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
         for_each(&mut self.main_view);
     }
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         for_each(&mut self.main_view);
     }
@@ -337,12 +337,12 @@ impl<T> DropDown<T> {
         style: impl Fn(DropDownCustomStyle) -> DropDownCustomStyle + 'static,
     ) -> Self {
         let id = self.id();
-        let offset = Widget::view_data_mut(&mut self).style.next_offset();
+        let offset = View::view_data_mut(&mut self).style.next_offset();
         let style = create_updater(
             move || style(DropDownCustomStyle(Style::new())),
             move |style| id.update_style(style.0, offset),
         );
-        Widget::view_data_mut(&mut self).style.push(style.0);
+        View::view_data_mut(&mut self).style.push(style.0);
         self
     }
 }

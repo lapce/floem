@@ -2,13 +2,13 @@ use kurbo::Size;
 
 use crate::{
     id::Id,
-    view::{ViewBuilder, ViewData, Widget},
+    view::{View, ViewBuilder, ViewData},
 };
 
 /// A wrapper around a child View to clip painting. See [`clip`].
 pub struct Clip {
     data: ViewData,
-    child: Box<dyn Widget>,
+    child: Box<dyn View>,
 }
 
 /// A clip is a wrapper around a child View that will clip the painting of the child so that it does not show outside of the viewport of the [`Clip`].
@@ -30,12 +30,12 @@ impl ViewBuilder for Clip {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
+    fn build(self) -> Box<dyn View> {
         Box::new(self)
     }
 }
 
-impl Widget for Clip {
+impl View for Clip {
     fn view_data(&self) -> &ViewData {
         &self.data
     }
@@ -44,17 +44,17 @@ impl Widget for Clip {
         &mut self.data
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
         for_each(&self.child);
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
         for_each(&mut self.child);
     }
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         for_each(&mut self.child);
     }

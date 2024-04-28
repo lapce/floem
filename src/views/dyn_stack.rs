@@ -10,7 +10,7 @@ use smallvec::SmallVec;
 use crate::{
     context::{AppState, UpdateCx},
     id::Id,
-    view::{view_children_set_parent_id, AnyWidget, ViewBuilder, ViewData, Widget},
+    view::{view_children_set_parent_id, AnyWidget, View, ViewBuilder, ViewData},
 };
 
 pub(crate) type FxIndexSet<T> = indexmap::IndexSet<T, BuildHasherDefault<FxHasher>>;
@@ -131,12 +131,12 @@ impl<T> ViewBuilder for DynStack<T> {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
+    fn build(self) -> Box<dyn View> {
         Box::new(self)
     }
 }
 
-impl<T> Widget for DynStack<T> {
+impl<T> View for DynStack<T> {
     fn view_data(&self) -> &ViewData {
         &self.data
     }
@@ -145,7 +145,7 @@ impl<T> Widget for DynStack<T> {
         &mut self.data
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
         for child in self.children.iter().filter_map(|child| child.as_ref()) {
             if for_each(&child.0) {
                 break;
@@ -153,7 +153,7 @@ impl<T> Widget for DynStack<T> {
         }
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
         for child in self.children.iter_mut().filter_map(|child| child.as_mut()) {
             if for_each(&mut child.0) {
                 break;
@@ -163,7 +163,7 @@ impl<T> Widget for DynStack<T> {
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         for child in self
             .children
@@ -320,7 +320,7 @@ pub(crate) fn diff<K: Eq + Hash, V>(from: &FxIndexSet<K>, to: &FxIndexSet<K>) ->
     diffs
 }
 
-fn remove_index<V: Widget>(
+fn remove_index<V: View>(
     app_state: &mut AppState,
     children: &mut [Option<(V, Scope)>],
     index: usize,
@@ -338,7 +338,7 @@ pub(super) fn apply_diff<T, V, VF>(
     children: &mut Vec<Option<(V, Scope)>>,
     view_fn: &VF,
 ) where
-    V: Widget,
+    V: View,
     VF: Fn(T) -> (V, Scope),
 {
     // Resize children if needed

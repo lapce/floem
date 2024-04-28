@@ -8,7 +8,7 @@ use crate::{
     style::Style,
     style::{FontProps, LineHeight, TextColor, TextOverflow, TextOverflowProp},
     unit::PxPct,
-    view::{ViewBuilder, ViewData, Widget},
+    view::{View, ViewBuilder, ViewData},
 };
 use floem_peniko::Color;
 use floem_reactive::create_updater;
@@ -155,12 +155,12 @@ impl ViewBuilder for Label {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
+    fn build(self) -> Box<dyn View> {
         Box::new(self)
     }
 }
 
-impl Widget for Label {
+impl View for Label {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

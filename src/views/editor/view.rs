@@ -13,7 +13,7 @@ use crate::{
     style::{CursorStyle, Style},
     style_class,
     taffy::tree::NodeId,
-    view::{AnyWidget, ViewBuilder, ViewData, Widget},
+    view::{AnyWidget, View, ViewBuilder, ViewData},
     views::{scroll, stack, Decorators},
     EventPropagation, Renderer,
 };
@@ -804,7 +804,7 @@ impl ViewBuilder for EditorView {
         Box::new(self)
     }
 }
-impl Widget for EditorView {
+impl View for EditorView {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

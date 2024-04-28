@@ -3,7 +3,7 @@ use crate::{
     event::{Event, EventListener},
     id::Id,
     pointer::PointerButton,
-    view::{ViewBuilder, ViewData, Widget},
+    view::{View, ViewBuilder, ViewData},
 };
 
 use super::Decorators;
@@ -11,13 +11,13 @@ use super::Decorators;
 /// A view that will move the window when the mouse is dragged. See [`drag_window_area`].
 pub struct DragWindowArea {
     data: ViewData,
-    child: Box<dyn Widget>,
+    child: Box<dyn View>,
 }
 
 /// A view that will move the window when the mouse is dragged.
 ///
 /// This can be useful when the window has the title bar turned off and you want to be able to still drag the window.
-pub fn drag_window_area<V: Widget + 'static>(child: V) -> DragWindowArea {
+pub fn drag_window_area<V: View + 'static>(child: V) -> DragWindowArea {
     let id = Id::next();
     DragWindowArea {
         data: ViewData::new(id),
@@ -42,12 +42,12 @@ impl ViewBuilder for DragWindowArea {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
+    fn build(self) -> Box<dyn View> {
         Box::new(self)
     }
 }
 
-impl Widget for DragWindowArea {
+impl View for DragWindowArea {
     fn view_data(&self) -> &ViewData {
         &self.data
     }
@@ -60,17 +60,17 @@ impl Widget for DragWindowArea {
         "Drag Window Area".into()
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
         for_each(&self.child);
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
         for_each(&mut self.child);
     }
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         for_each(&mut self.child);
     }

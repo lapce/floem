@@ -5,7 +5,7 @@ use crate::{
     event::EventListener,
     id::Id,
     style::CursorStyle,
-    view::{ViewBuilder, ViewData, Widget},
+    view::{View, ViewBuilder, ViewData},
 };
 
 use super::Decorators;
@@ -18,7 +18,7 @@ use super::Decorators;
 /// - **iOS / Android / Web / Orbital:** Not supported.
 pub struct DragResizeWindowArea {
     data: ViewData,
-    child: Box<dyn Widget>,
+    child: Box<dyn View>,
 }
 
 /// A view that will resize the window when the mouse is dragged.
@@ -27,7 +27,7 @@ pub struct DragResizeWindowArea {
 ///
 /// - **macOS:** Not supported.
 /// - **iOS / Android / Web / Orbital:** Not supported.
-pub fn drag_resize_window_area<V: Widget + 'static>(
+pub fn drag_resize_window_area<V: View + 'static>(
     direction: ResizeDirection,
     child: V,
 ) -> DragResizeWindowArea {
@@ -63,12 +63,12 @@ impl ViewBuilder for DragResizeWindowArea {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
+    fn build(self) -> Box<dyn View> {
         Box::new(self)
     }
 }
 
-impl Widget for DragResizeWindowArea {
+impl View for DragResizeWindowArea {
     fn view_data(&self) -> &ViewData {
         &self.data
     }
@@ -81,17 +81,17 @@ impl Widget for DragResizeWindowArea {
         "Drag-Resize Window Area".into()
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
         for_each(&self.child);
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
         for_each(&mut self.child);
     }
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         for_each(&mut self.child);
     }

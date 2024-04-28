@@ -11,7 +11,7 @@ use taffy::{
 use crate::{
     context::ComputeLayoutCx,
     id::Id,
-    view::{self, AnyWidget, ViewBuilder, ViewData, Widget},
+    view::{self, AnyWidget, View, ViewBuilder, ViewData},
 };
 
 use super::{apply_diff, diff, Diff, DiffOpAdd, FxIndexSet, HashRun};
@@ -240,12 +240,12 @@ impl<T> ViewBuilder for VirtualStack<T> {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
+    fn build(self) -> Box<dyn View> {
         Box::new(self)
     }
 }
 
-impl<T> Widget for VirtualStack<T> {
+impl<T> View for VirtualStack<T> {
     fn view_data(&self) -> &ViewData {
         &self.data
     }
@@ -254,7 +254,7 @@ impl<T> Widget for VirtualStack<T> {
         &mut self.data
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
         for child in self.children.iter().filter_map(|child| child.as_ref()) {
             if for_each(&child.0) {
                 break;
@@ -262,7 +262,7 @@ impl<T> Widget for VirtualStack<T> {
         }
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
         for child in self.children.iter_mut().filter_map(|child| child.as_mut()) {
             if for_each(&mut child.0) {
                 break;
@@ -272,7 +272,7 @@ impl<T> Widget for VirtualStack<T> {
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         for child in self
             .children

@@ -4,7 +4,7 @@ use crate::{
     context::UpdateCx,
     id::Id,
     style::{Style, StyleClassRef},
-    view::{ViewBuilder, ViewData, Widget},
+    view::{View, ViewBuilder, ViewData},
     view_tuple::ViewTuple,
 };
 
@@ -13,7 +13,7 @@ use crate::{
 /// The children of a stack can still get reactive updates.
 pub struct Stack {
     data: ViewData,
-    pub(crate) children: Vec<Box<dyn Widget>>,
+    pub(crate) children: Vec<Box<dyn View>>,
     direction: Option<FlexDirection>,
 }
 
@@ -67,7 +67,7 @@ where
         data: ViewData::new(Id::next()),
         children: iterator
             .into_iter()
-            .map(|v| -> Box<dyn Widget> { v.build() })
+            .map(|v| -> Box<dyn View> { v.build() })
             .collect(),
         direction,
     }
@@ -112,12 +112,12 @@ impl ViewBuilder for Stack {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
+    fn build(self) -> Box<dyn View> {
         Box::new(self)
     }
 }
 
-impl Widget for Stack {
+impl View for Stack {
     fn view_data(&self) -> &ViewData {
         &self.data
     }
@@ -131,7 +131,7 @@ impl Widget for Stack {
             .map(|direction| Style::new().flex_direction(direction))
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
         for child in &self.children {
             if for_each(child) {
                 break;
@@ -139,7 +139,7 @@ impl Widget for Stack {
         }
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
         for child in &mut self.children {
             if for_each(child) {
                 break;
@@ -149,7 +149,7 @@ impl Widget for Stack {
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         for child in self.children.iter_mut().rev() {
             if for_each(child) {

@@ -9,7 +9,7 @@ use crate::{
     event::{Event, EventListener},
     id::Id,
     keyboard::{Key, NamedKey},
-    view::{ViewData, Widget},
+    view::{View, ViewData},
 };
 use floem_reactive::{create_rw_signal, RwSignal};
 use kurbo::{Rect, Size};
@@ -225,12 +225,12 @@ impl<T> ViewBuilder for VirtualList<T> {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
+    fn build(self) -> Box<dyn View> {
         Box::new(self)
     }
 }
 
-impl<T> Widget for VirtualList<T> {
+impl<T> View for VirtualList<T> {
     fn view_data(&self) -> &ViewData {
         &self.data
     }
@@ -239,17 +239,17 @@ impl<T> Widget for VirtualList<T> {
         &mut self.data
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
         for_each(&self.child);
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
         for_each(&mut self.child);
     }
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         for_each(&mut self.child);
     }

@@ -1,6 +1,6 @@
 use crate::{
     id::Id,
-    view::{ViewBuilder, ViewData, Widget},
+    view::{View, ViewBuilder, ViewData},
 };
 
 /// An empty View. See [`empty`].
@@ -26,12 +26,12 @@ impl ViewBuilder for Empty {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
+    fn build(self) -> Box<dyn View> {
         Box::new(self)
     }
 }
 
-impl Widget for Empty {
+impl View for Empty {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

@@ -7,7 +7,7 @@ use crate::{
     event::Event,
     id::Id,
     prop, prop_extractor,
-    view::{default_compute_layout, default_event, ViewBuilder, ViewData, Widget},
+    view::{default_compute_layout, default_event, View, ViewBuilder, ViewData},
     EventPropagation,
 };
 
@@ -24,14 +24,14 @@ pub struct Tooltip {
     data: ViewData,
     hover: Option<(Point, TimerToken)>,
     overlay: Option<Id>,
-    child: Box<dyn Widget>,
-    tip: Rc<dyn Fn() -> Box<dyn Widget>>,
+    child: Box<dyn View>,
+    tip: Rc<dyn Fn() -> Box<dyn View>>,
     style: TooltipStyle,
     window_origin: Option<Point>,
 }
 
 /// A view that displays a tooltip for its child.
-pub fn tooltip<V: ViewBuilder + 'static, T: Widget + 'static>(
+pub fn tooltip<V: ViewBuilder + 'static, T: View + 'static>(
     child: V,
     tip: impl Fn() -> T + 'static,
 ) -> Tooltip {
@@ -55,12 +55,12 @@ impl ViewBuilder for Tooltip {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
+    fn build(self) -> Box<dyn View> {
         Box::new(self)
     }
 }
 
-impl Widget for Tooltip {
+impl View for Tooltip {
     fn view_data(&self) -> &ViewData {
         &self.data
     }
@@ -69,17 +69,17 @@ impl Widget for Tooltip {
         &mut self.data
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
         for_each(&self.child);
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
         for_each(&mut self.child);
     }
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         for_each(&mut self.child);
     }

@@ -8,7 +8,7 @@ use crate::{
     event::{Event, EventListener},
     id::Id,
     keyboard::{Key, NamedKey},
-    view::{ViewData, Widget},
+    view::{View, ViewData},
 };
 use floem_reactive::{create_rw_signal, RwSignal};
 
@@ -22,7 +22,7 @@ pub(crate) struct Item {
     pub(crate) data: ViewData,
     pub(crate) index: usize,
     pub(crate) selection: RwSignal<Option<usize>>,
-    pub(crate) child: Box<dyn Widget>,
+    pub(crate) child: Box<dyn View>,
 }
 
 /// A list of views that support the selection of items. See [`list`].
@@ -67,7 +67,7 @@ impl List {
 /// ```
 pub fn list<V>(iterator: impl IntoIterator<Item = V>) -> List
 where
-    V: Widget + 'static,
+    V: View + 'static,
 {
     let id = Id::next();
     let selection = create_rw_signal(None);
@@ -172,12 +172,12 @@ impl ViewBuilder for List {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
+    fn build(self) -> Box<dyn View> {
         Box::new(self)
     }
 }
 
-impl Widget for List {
+impl View for List {
     fn view_data(&self) -> &ViewData {
         &self.data
     }
@@ -186,17 +186,17 @@ impl Widget for List {
         &mut self.data
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
         for_each(&self.child);
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
         for_each(&mut self.child);
     }
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         for_each(&mut self.child);
     }
@@ -235,12 +235,12 @@ impl ViewBuilder for Item {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
+    fn build(self) -> Box<dyn View> {
         Box::new(self)
     }
 }
 
-impl Widget for Item {
+impl View for Item {
     fn view_data(&self) -> &ViewData {
         &self.data
     }
@@ -253,17 +253,17 @@ impl Widget for Item {
         Some(Style::new().flex_col())
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
         for_each(&self.child);
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
         for_each(&mut self.child);
     }
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         for_each(&mut self.child);
     }

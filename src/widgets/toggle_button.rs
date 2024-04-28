@@ -11,7 +11,7 @@ use crate::{
     style::{self, Foreground, Style, StyleValue},
     style_class,
     unit::PxPct,
-    view::{ViewBuilder, ViewData, Widget},
+    view::{View, ViewBuilder, ViewData},
     views::Decorators,
     EventPropagation,
 };
@@ -109,12 +109,12 @@ impl ViewBuilder for ToggleButton {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
+    fn build(self) -> Box<dyn View> {
         Box::new(self)
     }
 }
 
-impl Widget for ToggleButton {
+impl View for ToggleButton {
     fn view_data(&self) -> &ViewData {
         &self.data
     }
@@ -291,12 +291,12 @@ impl ToggleButton {
         style: impl Fn(ToggleButtonCustomStyle) -> ToggleButtonCustomStyle + 'static,
     ) -> Self {
         let id = self.id();
-        let offset = Widget::view_data_mut(&mut self).style.next_offset();
+        let offset = View::view_data_mut(&mut self).style.next_offset();
         let style = create_updater(
             move || style(ToggleButtonCustomStyle(Style::new())),
             move |style| id.update_style(style.0, offset),
         );
-        Widget::view_data_mut(&mut self).style.push(style.0);
+        View::view_data_mut(&mut self).style.push(style.0);
         self
     }
 }

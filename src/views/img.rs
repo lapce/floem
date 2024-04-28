@@ -9,7 +9,7 @@ use crate::{
     id::Id,
     style::Style,
     unit::UnitExt,
-    view::{ViewBuilder, ViewData, Widget},
+    view::{View, ViewBuilder, ViewData},
 };
 
 use taffy::tree::NodeId;
@@ -121,12 +121,12 @@ impl ViewBuilder for Img {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
+    fn build(self) -> Box<dyn View> {
         Box::new(self)
     }
 }
 
-impl Widget for Img {
+impl View for Img {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

@@ -27,7 +27,7 @@ use crate::{
         ZIndex,
     },
     unit::PxPct,
-    view::{paint_bg, paint_border, paint_outline, ViewData, Widget},
+    view::{paint_bg, paint_border, paint_outline, View, ViewData},
     view_data::ChangeFlags,
     view_storage::ViewId,
 };
@@ -174,7 +174,7 @@ impl AppState {
     }
 
     /// This removes a view from the app state.
-    pub fn remove_view(&mut self, view: &mut dyn Widget) {
+    pub fn remove_view(&mut self, view: &mut dyn View) {
         view.for_each_child_mut(&mut |child| {
             self.remove_view(child);
             false
@@ -623,7 +623,7 @@ impl<'a> EventCx<'a> {
     /// Internal method used by Floem. This can be called from parent `View`s to propagate an event to the child `View`.
     pub fn view_event(
         &mut self,
-        view: &mut dyn Widget,
+        view: &mut dyn View,
         id_path: Option<&[Id]>,
         event: Event,
     ) -> EventPropagation {
@@ -637,7 +637,7 @@ impl<'a> EventCx<'a> {
     /// Internal method used by Floem. This can be called from parent `View`s to propagate an event to the child `View`.
     pub(crate) fn unconditional_view_event(
         &mut self,
-        view: &mut dyn Widget,
+        view: &mut dyn View,
         id_path: Option<&[Id]>,
         event: Event,
     ) -> EventPropagation {
@@ -1080,7 +1080,7 @@ impl<'a> StyleCx<'a> {
     }
 
     /// Internal method used by Floem to compute the styles for the view.
-    pub fn style_view(&mut self, view: &mut dyn Widget) {
+    pub fn style_view(&mut self, view: &mut dyn View) {
         self.save();
         let id = view.view_data().id();
         let view_id = view.view_data().view_id;
@@ -1287,7 +1287,7 @@ impl<'a> ComputeLayoutCx<'a> {
     /// - invoking any attached context::ResizeListeners
     ///
     /// Returns the bounding rect that encompasses this view and its children
-    pub fn compute_view_layout(&mut self, view: &mut dyn Widget) -> Option<Rect> {
+    pub fn compute_view_layout(&mut self, view: &mut dyn View) -> Option<Rect> {
         let id = view.view_data().id();
         if self.app_state().is_hidden(id) {
             self.app_state_mut().view_state(id).layout_rect = Rect::ZERO;
@@ -1413,7 +1413,7 @@ impl<'a> LayoutCx<'a> {
     }
 
     /// Internal method used by Floem to invoke the user-defined `View::layout` method.
-    pub fn layout_view(&mut self, view: &mut dyn Widget) -> NodeId {
+    pub fn layout_view(&mut self, view: &mut dyn View) -> NodeId {
         view.layout(self)
     }
 }
@@ -1459,7 +1459,7 @@ impl<'a> PaintCx<'a> {
     /// - managing hidden status
     /// - clipping
     /// - painting computed styles like background color, border, font-styles, and z-index and handling painting requirements of drag and drop
-    pub fn paint_view(&mut self, view: &mut dyn Widget) {
+    pub fn paint_view(&mut self, view: &mut dyn View) {
         let id = view.view_data().id();
         if self.app_state.is_hidden(id) {
             return;
@@ -1703,7 +1703,7 @@ impl<'a> UpdateCx<'a> {
 
     /// Used internally by Floem to send an update to the correct view based on the `Id` path.
     /// It will invoke only once `update` when the correct view is located.
-    pub fn update_view(&mut self, view: &mut dyn Widget, id_path: &[Id], state: Box<dyn Any>) {
+    pub fn update_view(&mut self, view: &mut dyn View, id_path: &[Id], state: Box<dyn Any>) {
         let id = id_path[0];
         let id_path = &id_path[1..];
         if id == view.view_data().id() {

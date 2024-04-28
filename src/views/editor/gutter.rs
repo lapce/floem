@@ -6,7 +6,7 @@ use crate::{
     prop, prop_extractor,
     style::{Style, TextColor},
     style_class,
-    view::{AnyWidget, ViewBuilder, ViewData, Widget},
+    view::{AnyWidget, View, ViewBuilder, ViewData},
     views::Decorators,
     Renderer,
 };
@@ -76,7 +76,7 @@ impl ViewBuilder for EditorGutterView {
         Box::new(self)
     }
 }
-impl Widget for EditorGutterView {
+impl View for EditorGutterView {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

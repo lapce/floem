@@ -4,7 +4,7 @@ use crate::event::{Event, EventListener};
 use crate::id::Id;
 use crate::profiler::profiler;
 use crate::style::{Style, StyleClassRef, StylePropRef, Transition};
-use crate::view::{view_children, AnyView, ViewBuilder, Widget};
+use crate::view::{view_children, AnyView, View, ViewBuilder};
 use crate::view_data::ChangeFlags;
 use crate::views::{
     container, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label, tab, text,
@@ -43,7 +43,7 @@ pub struct CapturedView {
 }
 
 impl CapturedView {
-    pub fn capture(view: &dyn Widget, app_state: &mut AppState, clip: Rect) -> Self {
+    pub fn capture(view: &dyn View, app_state: &mut AppState, clip: Rect) -> Self {
         let id = view.view_data().id();
         let layout = app_state.get_layout_rect(id);
         let taffy = app_state.get_layout(id).unwrap();

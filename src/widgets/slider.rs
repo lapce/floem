@@ -11,7 +11,7 @@ use crate::{
     style::{Background, BorderRadius, Foreground, Height, Style, StyleValue},
     style_class,
     unit::{PxPct, PxPctAuto},
-    view::{ViewBuilder, ViewData, Widget},
+    view::{View, ViewBuilder, ViewData},
     views::Decorators,
     EventPropagation,
 };
@@ -141,12 +141,12 @@ impl ViewBuilder for Slider {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
+    fn build(self) -> Box<dyn View> {
         Box::new(self)
     }
 }
 
-impl Widget for Slider {
+impl View for Slider {
     fn view_data(&self) -> &ViewData {
         &self.data
     }
@@ -368,12 +368,12 @@ impl Slider {
         style: impl Fn(SliderCustomStyle) -> SliderCustomStyle + 'static,
     ) -> Self {
         let id = self.id();
-        let offset = Widget::view_data_mut(&mut self).style.next_offset();
+        let offset = View::view_data_mut(&mut self).style.next_offset();
         let style = create_updater(
             move || style(SliderCustomStyle(Style::new())),
             move |style| id.update_style(style.0, offset),
         );
-        Widget::view_data_mut(&mut self).style.push(style.0);
+        View::view_data_mut(&mut self).style.push(style.0);
         self
     }
 }

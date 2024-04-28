@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use slotmap::{new_key_type, SecondaryMap, SlotMap};
 
-use crate::{context::ViewState, view::Widget};
+use crate::{context::ViewState, view::View};
 
 thread_local! {
     pub(crate) static VIEW_STORAGE: RefCell<ViewStorage> = Default::default();
@@ -12,7 +12,7 @@ thread_local! {
 pub struct ViewStorage {
     taffy: taffy::TaffyTree,
     view_ids: SlotMap<ViewId, ()>,
-    views: SecondaryMap<ViewId, Rc<RefCell<Box<dyn Widget>>>>,
+    views: SecondaryMap<ViewId, Rc<RefCell<Box<dyn View>>>>,
     states: SecondaryMap<ViewId, Rc<RefCell<ViewState>>>,
 }
 

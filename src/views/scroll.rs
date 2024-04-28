@@ -11,7 +11,7 @@ use crate::{
     style::{Background, BorderColor, BorderRadius, Style, StyleSelector},
     style_class,
     unit::Px,
-    view::{ViewBuilder, ViewData, Widget},
+    view::{View, ViewBuilder, ViewData},
     EventPropagation,
 };
 
@@ -80,7 +80,7 @@ style_class!(pub ScrollClass);
 
 pub struct Scroll {
     data: ViewData,
-    child: Box<dyn Widget>,
+    child: Box<dyn View>,
 
     /// the actual rect of the scroll view excluding padding and borders. The origin is relative to this view.
     actual_rect: Rect,
@@ -615,12 +615,12 @@ impl ViewBuilder for Scroll {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
+    fn build(self) -> Box<dyn View> {
         Box::new(self)
     }
 }
 
-impl Widget for Scroll {
+impl View for Scroll {
     fn view_data(&self) -> &ViewData {
         &self.data
     }
@@ -629,17 +629,17 @@ impl Widget for Scroll {
         &mut self.data
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
         for_each(&self.child);
     }
 
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
         for_each(&mut self.child);
     }
 
     fn for_each_child_rev_mut<'a>(
         &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
     ) {
         for_each(&mut self.child);
     }

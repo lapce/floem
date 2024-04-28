@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use crate::{
     id::Id,
     style_class,
-    view::{ViewBuilder, ViewData, Widget},
+    view::{View, ViewBuilder, ViewData},
 };
 
 use super::Decorators;
@@ -46,12 +46,12 @@ impl ViewBuilder for Svg {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
+    fn build(self) -> Box<dyn View> {
         Box::new(self)
     }
 }
 
-impl Widget for Svg {
+impl View for Svg {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

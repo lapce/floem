@@ -16,7 +16,7 @@ use floem_renderer::{cosmic_text::Cursor, Renderer};
 use floem_winit::keyboard::{Key, NamedKey, SmolStr};
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::{peniko::Color, style::Style, view::Widget};
+use crate::{peniko::Color, style::Style, view::View};
 
 use std::{
     any::Any,
@@ -933,12 +933,12 @@ impl ViewBuilder for TextInput {
         &mut self.data
     }
 
-    fn build(self) -> Box<dyn Widget> {
+    fn build(self) -> Box<dyn View> {
         Box::new(self)
     }
 }
 
-impl Widget for TextInput {
+impl View for TextInput {
     fn view_data(&self) -> &ViewData {
         &self.data
     }
