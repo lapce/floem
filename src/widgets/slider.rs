@@ -262,7 +262,9 @@ impl Widget for Slider {
             PxPct::Px(px) => px as f32,
             PxPct::Pct(pct) => self.size.width.min(self.size.height) / 2. * (pct as f32 / 100.),
         };
-        let circle_point = Point::new(self.handle_center() as f64, (self.size.height / 2.) as f64);
+        let width = self.size.width - circle_radius * 2.;
+        let center = width * (self.percent / 100.) + circle_radius;
+        let circle_point = Point::new(center as f64, (self.size.height / 2.) as f64);
         self.handle = crate::kurbo::Circle::new(circle_point, circle_radius as f64);
 
         let base_bar_height = match self.base_bar_style.height() {

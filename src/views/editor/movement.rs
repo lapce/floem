@@ -205,12 +205,9 @@ fn correct_crlf(text: &RopeTextVal, offset: usize) -> usize {
         return offset;
     }
 
-    let mut iter = text.char_indices_iter(offset - 1..=offset);
-
-    if let Some((_, '\r')) = iter.next() {
-        if let Some((_, '\n')) = iter.next() {
-            return offset - 1;
-        }
+    let mut cursor = lapce_xi_rope::Cursor::new(text.text(), offset);
+    if cursor.peek_next_codepoint() == Some('\n') && cursor.prev_codepoint() == Some('\r') {
+        return offset - 1;
     }
 
     offset
@@ -281,9 +278,9 @@ fn move_right(
     let info = view.rvline_info(rvline);
 
     *affinity = if col == info.last_col(&view.text_prov(), false) {
-        CursorAffinity::Backward
-    } else {
         CursorAffinity::Forward
+    } else {
+        CursorAffinity::Backward
     };
 
     new_offset

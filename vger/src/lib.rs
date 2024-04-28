@@ -29,13 +29,6 @@ pub struct VgerRenderer {
     capture: bool,
 }
 
-const CLEAR_COLOR: wgpu::Color = wgpu::Color {
-    r: 0.0,
-    g: 0.0,
-    b: 0.0,
-    a: 0.0,
-};
-
 impl VgerRenderer {
     pub fn new<W: wgpu::WindowHandle + 'static>(
         window: W,
@@ -204,7 +197,7 @@ impl VgerRenderer {
                 view: &view,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(CLEAR_COLOR),
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                     store: StoreOp::Store,
                 },
             })],
@@ -574,7 +567,7 @@ impl Renderer for VgerRenderer {
                         view: &texture_view,
                         resolve_target: None,
                         ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(CLEAR_COLOR),
+                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                             store: StoreOp::Store,
                         },
                     })],
