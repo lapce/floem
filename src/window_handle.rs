@@ -124,7 +124,6 @@ impl WindowHandle {
             data: ViewData::new(id),
             main: widget,
             overlays: Default::default(),
-            tooltip: None,
         };
 
         let window = Arc::new(window);
@@ -1680,7 +1679,6 @@ struct WindowView {
     data: ViewData,
     main: Box<dyn Widget>,
     overlays: IndexMap<Id, OverlayView>,
-    tooltip: Option<OverlayView>,
 }
 
 impl Widget for WindowView {
@@ -1701,18 +1699,12 @@ impl Widget for WindowView {
         for overlay in self.overlays.values() {
             for_each(overlay);
         }
-        if self.tooltip.is_some() {
-            for_each(self.tooltip.as_ref().unwrap());
-        }
     }
 
     fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
         for_each(&mut self.main);
         for overlay in self.overlays.values_mut() {
             for_each(overlay);
-        }
-        if self.tooltip.is_some() {
-            for_each(self.tooltip.as_mut().unwrap());
         }
     }
 
@@ -1725,9 +1717,6 @@ impl Widget for WindowView {
                 // if the overlay events are handled we don't need to run the main window events
                 return;
             };
-        }
-        if self.tooltip.is_some() {
-            for_each(self.tooltip.as_mut().unwrap());
         }
         for_each(&mut self.main);
     }
