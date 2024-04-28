@@ -1,7 +1,7 @@
 use floem::{
     keyboard::{Key, Modifiers, NamedKey},
     reactive::RwSignal,
-    view::View,
+    view::ViewBuilder,
     views::{
         editor::{
             command::{Command, CommandExecuted},
@@ -13,7 +13,7 @@ use floem::{
     widgets::button,
 };
 
-fn app_view() -> impl View {
+fn app_view() -> impl ViewBuilder {
     let text = std::env::args()
         .nth(1)
         .map(|s| std::fs::read_to_string(s).unwrap());

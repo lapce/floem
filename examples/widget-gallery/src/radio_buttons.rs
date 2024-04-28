@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use floem::{
     reactive::create_signal,
-    view::View,
+    view::ViewBuilder,
     views::{v_stack, Decorators},
     widgets::{labeled_radio_button, radio_button},
 };
@@ -26,7 +26,7 @@ impl Display for OperatingSystem {
     }
 }
 
-pub fn radio_buttons_view() -> impl View {
+pub fn radio_buttons_view() -> impl ViewBuilder {
     let width = 160.0;
     let (operating_system, set_operating_system) = create_signal(OperatingSystem::Windows);
     form({

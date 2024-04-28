@@ -6,7 +6,7 @@ use crate::{
     prop, prop_extractor,
     style::{Style, TextColor},
     style_class,
-    view::{AnyWidget, View, ViewData, Widget},
+    view::{AnyWidget, ViewBuilder, ViewData, Widget},
     views::Decorators,
     Renderer,
 };
@@ -63,7 +63,7 @@ pub fn editor_gutter_view(editor: RwSignal<Editor>) -> EditorGutterView {
     .class(GutterClass)
 }
 
-impl View for EditorGutterView {
+impl ViewBuilder for EditorGutterView {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

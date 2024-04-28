@@ -1,6 +1,6 @@
 use floem::{
     reactive::{create_rw_signal, RwSignal},
-    view::View,
+    view::ViewBuilder,
     views::{dyn_container, h_stack, label, v_stack, Decorators},
     widgets::button,
 };
@@ -11,11 +11,11 @@ enum ViewSwitcher {
     Two,
 }
 
-fn view_one() -> impl View {
+fn view_one() -> impl ViewBuilder {
     label(|| "A view")
 }
 
-fn view_two(view: RwSignal<ViewSwitcher>) -> impl View {
+fn view_two(view: RwSignal<ViewSwitcher>) -> impl ViewBuilder {
     v_stack((
         label(|| "Another view"),
         button(|| "Switch back").on_click_stop(move |_| {
@@ -25,7 +25,7 @@ fn view_two(view: RwSignal<ViewSwitcher>) -> impl View {
     .style(|s| s.gap(0.0, 10.0))
 }
 
-fn app_view() -> impl View {
+fn app_view() -> impl ViewBuilder {
     let view = create_rw_signal(ViewSwitcher::One);
 
     v_stack((

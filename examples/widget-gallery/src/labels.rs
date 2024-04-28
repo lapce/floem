@@ -1,14 +1,14 @@
 use floem::{
     cosmic_text::{Style as FontStyle, Weight},
     peniko::Color,
-    view::View,
+    view::ViewBuilder,
     views::{label, static_label, Decorators},
     widgets::tooltip,
 };
 
 use crate::form::{form, form_item};
 
-pub fn label_view() -> impl View {
+pub fn label_view() -> impl ViewBuilder {
     form({
         (
             form_item("Simple Label:".to_string(), 120.0, || {

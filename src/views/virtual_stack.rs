@@ -11,7 +11,7 @@ use taffy::{
 use crate::{
     context::ComputeLayoutCx,
     id::Id,
-    view::{self, AnyWidget, View, ViewData, Widget},
+    view::{self, AnyWidget, ViewBuilder, ViewData, Widget},
 };
 
 use super::{apply_diff, diff, Diff, DiffOpAdd, FxIndexSet, HashRun};
@@ -117,7 +117,7 @@ where
     KF: Fn(&T) -> K + 'static,
     K: Eq + Hash + 'static,
     VF: Fn(T) -> V + 'static,
-    V: View + 'static,
+    V: ViewBuilder + 'static,
 {
     let id = Id::next();
 
@@ -231,7 +231,7 @@ where
     }
 }
 
-impl<T> View for VirtualStack<T> {
+impl<T> ViewBuilder for VirtualStack<T> {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

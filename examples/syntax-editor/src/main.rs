@@ -10,7 +10,7 @@ use floem::views::editor::EditorStyle;
 use floem::{
     cosmic_text::FamilyOwned,
     keyboard::{Key, NamedKey},
-    view::View,
+    view::ViewBuilder,
     views::{
         editor::{
             core::{editor::EditType, selection::Selection},
@@ -176,7 +176,7 @@ impl<'a> Styling for SyntaxHighlightingStyle<'a> {
     }
 }
 
-fn app_view() -> impl View {
+fn app_view() -> impl ViewBuilder {
     let global_style = SimpleStylingBuilder::default()
         .wrap(WrapMethod::None)
         .font_family(vec![

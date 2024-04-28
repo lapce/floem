@@ -13,12 +13,12 @@ use crate::{
     keyboard::Modifiers,
     menu::Menu,
     style::{Style, StyleClass, StyleSelector},
-    view::View,
+    view::ViewBuilder,
     EventPropagation,
 };
 
 /// A trait that extends the appearance and functionality of Views through styling and event handling.
-pub trait Decorators: View + Sized {
+pub trait Decorators: ViewBuilder + Sized {
     /// Alter the style of the view.
     ///
     /// Earlier applications of `style` have lower priority than later calls.
@@ -330,4 +330,4 @@ pub trait Decorators: View + Sized {
     }
 }
 
-impl<V: View> Decorators for V {}
+impl<V: ViewBuilder> Decorators for V {}

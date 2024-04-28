@@ -3,11 +3,11 @@ use floem::{
     peniko::Color,
     reactive::create_signal,
     unit::UnitExt,
-    view::View,
+    view::ViewBuilder,
     views::{label, stack, text, Decorators},
 };
 
-fn app_view() -> impl View {
+fn app_view() -> impl ViewBuilder {
     let (counter, set_counter) = create_signal(0);
     let view = stack((
         label(move || format!("Value: {}", counter.get())).style(|s| s.padding(10.0)),

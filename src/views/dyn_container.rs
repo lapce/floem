@@ -2,7 +2,7 @@ use floem_reactive::{as_child_of_current_scope, create_updater, Scope};
 
 use crate::{
     id::Id,
-    view::{view_children_set_parent_id, AnyView, View, ViewData, Widget},
+    view::{view_children_set_parent_id, AnyView, ViewBuilder, ViewData, Widget},
 };
 
 type ChildFn<T> = dyn Fn(T) -> (Box<dyn Widget>, Scope);
@@ -81,7 +81,7 @@ pub fn dyn_container<CF: Fn(T) -> AnyView + 'static, T: 'static>(
     }
 }
 
-impl<T: 'static> View for DynamicContainer<T> {
+impl<T: 'static> ViewBuilder for DynamicContainer<T> {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

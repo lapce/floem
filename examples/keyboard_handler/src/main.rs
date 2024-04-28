@@ -2,11 +2,11 @@ use floem::{
     event::{Event, EventListener},
     keyboard::Key,
     unit::UnitExt,
-    view::View,
+    view::ViewBuilder,
     views::{stack, text, Decorators},
 };
 
-fn app_view() -> impl View {
+fn app_view() -> impl ViewBuilder {
     let view =
         stack((text("Example: Keyboard event handler").style(|s| s.padding(10.0)),)).style(|s| {
             s.size(100.pct(), 100.pct())

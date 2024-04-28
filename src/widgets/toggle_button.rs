@@ -11,7 +11,7 @@ use crate::{
     style::{self, Foreground, Style, StyleValue},
     style_class,
     unit::PxPct,
-    view::{View, ViewData, Widget},
+    view::{ViewBuilder, ViewData, Widget},
     views::Decorators,
     EventPropagation,
 };
@@ -100,7 +100,7 @@ pub fn toggle_button(state: impl Fn() -> bool + 'static) -> ToggleButton {
     .keyboard_navigatable()
 }
 
-impl View for ToggleButton {
+impl ViewBuilder for ToggleButton {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

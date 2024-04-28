@@ -1,13 +1,13 @@
 use floem::{
     reactive::create_signal,
     unit::UnitExt,
-    view::View,
+    view::ViewBuilder,
     views::Decorators,
     views::{container, label, scroll, VirtualDirection, VirtualItemSize},
     widgets::virtual_list,
 };
 
-fn app_view() -> impl View {
+fn app_view() -> impl ViewBuilder {
     let long_list: im::Vector<i32> = (0..1000000).collect();
     let (long_list, _set_long_list) = create_signal(long_list);
 

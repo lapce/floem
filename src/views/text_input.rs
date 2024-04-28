@@ -6,7 +6,7 @@ use crate::reactive::{create_effect, RwSignal};
 use crate::style::{CursorColor, FontProps, PaddingLeft};
 use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
-use crate::view::{View, ViewData};
+use crate::view::{ViewBuilder, ViewData};
 use crate::widgets::PlaceholderTextClass;
 use crate::{prop, prop_extractor, Clipboard, EventPropagation};
 use floem_reactive::create_rw_signal;
@@ -924,7 +924,7 @@ fn get_dbl_click_selection(glyph_idx: usize, buffer: &String) -> Range<usize> {
     0..buffer.len()
 }
 
-impl View for TextInput {
+impl ViewBuilder for TextInput {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

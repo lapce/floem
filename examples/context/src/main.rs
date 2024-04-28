@@ -2,20 +2,20 @@ use floem::{
     keyboard::{Key, Modifiers, NamedKey},
     peniko::Color,
     reactive::{provide_context, use_context},
-    view::View,
+    view::ViewBuilder,
     views::{empty, label, v_stack, Decorators},
 };
 
-fn colored_label(text: String) -> impl View {
+fn colored_label(text: String) -> impl ViewBuilder {
     let color: Color = use_context().unwrap();
     label(move || text.clone()).style(move |s| s.color(color))
 }
 
-fn context_container<V: View + 'static>(
+fn context_container<V: ViewBuilder + 'static>(
     color: Color,
     name: String,
     view_fn: impl Fn() -> V,
-) -> impl View {
+) -> impl ViewBuilder {
     provide_context(color);
 
     v_stack((colored_label(name), view_fn())).style(move |s| {
@@ -27,7 +27,7 @@ fn context_container<V: View + 'static>(
     })
 }
 
-fn app_view() -> impl View {
+fn app_view() -> impl ViewBuilder {
     provide_context(Color::BLACK);
 
     let view = v_stack((

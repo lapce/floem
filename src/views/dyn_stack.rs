@@ -10,7 +10,7 @@ use smallvec::SmallVec;
 use crate::{
     context::{AppState, UpdateCx},
     id::Id,
-    view::{view_children_set_parent_id, AnyWidget, View, ViewData, Widget},
+    view::{view_children_set_parent_id, AnyWidget, ViewBuilder, ViewData, Widget},
 };
 
 pub(crate) type FxIndexSet<T> = indexmap::IndexSet<T, BuildHasherDefault<FxHasher>>;
@@ -82,7 +82,7 @@ where
     KF: Fn(&T) -> K + 'static,
     K: Eq + Hash + 'static,
     VF: Fn(T) -> V + 'static,
-    V: View + 'static,
+    V: ViewBuilder + 'static,
     T: 'static,
 {
     let id = Id::next();
@@ -122,7 +122,7 @@ where
     }
 }
 
-impl<T> View for DynStack<T> {
+impl<T> ViewBuilder for DynStack<T> {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

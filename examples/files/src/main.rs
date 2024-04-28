@@ -2,12 +2,12 @@ use floem::{
     action::{open_file, save_as},
     file::{FileDialogOptions, FileSpec},
     keyboard::{Key, Modifiers, NamedKey},
-    view::View,
+    view::ViewBuilder,
     views::{h_stack, Decorators},
     widgets::button,
 };
 
-fn app_view() -> impl View {
+fn app_view() -> impl ViewBuilder {
     let view = h_stack((
         button(|| "Select file").on_click_cont(|_| {
             open_file(

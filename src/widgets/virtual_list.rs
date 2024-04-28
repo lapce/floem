@@ -1,6 +1,6 @@
 use super::{ListClass, ListItemClass};
 use crate::{
-    view::View,
+    view::ViewBuilder,
     views::{
         self, container, Decorators, VirtualDirection, VirtualItemSize, VirtualList, VirtualVector,
     },
@@ -21,7 +21,7 @@ where
     KF: Fn(&T) -> K + 'static,
     K: Eq + Hash + 'static,
     VF: Fn(T) -> V + 'static,
-    V: View + 'static,
+    V: ViewBuilder + 'static,
 {
     views::virtual_list(direction, item_size, each_fn, key_fn, move |e| {
         container(view_fn(e))

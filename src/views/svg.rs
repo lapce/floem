@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use crate::{
     id::Id,
     style_class,
-    view::{View, ViewData, Widget},
+    view::{ViewBuilder, ViewData, Widget},
 };
 
 use super::Decorators;
@@ -37,7 +37,7 @@ pub fn svg(svg_str: impl Fn() -> String + 'static) -> Svg {
     .class(SvgClass)
 }
 
-impl View for Svg {
+impl ViewBuilder for Svg {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

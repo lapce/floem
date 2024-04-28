@@ -7,7 +7,7 @@ pub use floem_winit::window::WindowLevel;
 use kurbo::{Point, Size};
 
 use crate::app::{add_app_update_event, AppUpdateEvent};
-use crate::view::View;
+use crate::view::ViewBuilder;
 
 #[derive(Default, Debug)]
 pub struct WindowConfig {
@@ -86,7 +86,7 @@ impl WindowConfig {
 
 /// create a new window. You'll need to create Application first, otherwise it
 /// will panic
-pub fn new_window<V: View + 'static>(
+pub fn new_window<V: ViewBuilder + 'static>(
     app_view: impl FnOnce(WindowId) -> V + 'static,
     config: Option<WindowConfig>,
 ) {

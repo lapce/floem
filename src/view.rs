@@ -63,7 +63,7 @@ pub use crate::view_data::ViewData;
 pub type AnyWidget = Box<dyn Widget>;
 
 /// The View trait provides an interface to access the [`ViewData`] and to build a [`Widget`] into a View.
-pub trait View: Sized {
+pub trait ViewBuilder: Sized {
     fn view_data(&self) -> &ViewData;
     fn view_data_mut(&mut self) -> &mut ViewData;
 
@@ -129,7 +129,7 @@ pub struct AnyView {
     view: Box<dyn DynView>,
 }
 
-impl View for AnyView {
+impl ViewBuilder for AnyView {
     fn view_data(&self) -> &ViewData {
         self.view.view_data()
     }
@@ -149,7 +149,7 @@ trait DynView {
     fn build(self: Box<Self>) -> Box<dyn Widget>;
 }
 
-impl<V: View> DynView for V {
+impl<V: ViewBuilder> DynView for V {
     fn view_data(&self) -> &ViewData {
         self.view_data()
     }
@@ -159,7 +159,7 @@ impl<V: View> DynView for V {
     }
 
     fn build(self: Box<Self>) -> Box<dyn Widget> {
-        View::build(*self)
+        ViewBuilder::build(*self)
     }
 }
 

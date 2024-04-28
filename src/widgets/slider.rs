@@ -11,7 +11,7 @@ use crate::{
     style::{Background, BorderRadius, Foreground, Height, Style, StyleValue},
     style_class,
     unit::{PxPct, PxPctAuto},
-    view::{View, ViewData, Widget},
+    view::{ViewBuilder, ViewData, Widget},
     views::Decorators,
     EventPropagation,
 };
@@ -132,7 +132,7 @@ pub fn slider(percent: impl Fn() -> f32 + 'static) -> Slider {
     .keyboard_navigatable()
 }
 
-impl View for Slider {
+impl ViewBuilder for Slider {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

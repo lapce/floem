@@ -5,7 +5,7 @@ use crate::{
     event::EventListener,
     id::Id,
     style::CursorStyle,
-    view::{View, ViewData, Widget},
+    view::{ViewBuilder, ViewData, Widget},
 };
 
 use super::Decorators;
@@ -54,7 +54,7 @@ pub fn drag_resize_window_area<V: Widget + 'static>(
     })
 }
 
-impl View for DragResizeWindowArea {
+impl ViewBuilder for DragResizeWindowArea {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

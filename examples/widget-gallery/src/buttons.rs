@@ -1,14 +1,14 @@
 use floem::{
     peniko::Color,
     style::CursorStyle,
-    view::View,
+    view::ViewBuilder,
     views::Decorators,
     widgets::{self, button, toggle_button},
 };
 
 use crate::form::{form, form_item};
 
-pub fn button_view() -> impl View {
+pub fn button_view() -> impl ViewBuilder {
     form({
         (
             form_item("Basic Button:".to_string(), 120.0, || {

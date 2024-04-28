@@ -3,7 +3,7 @@ use crate::{
     event::{Event, EventListener},
     id::Id,
     pointer::PointerButton,
-    view::{View, ViewData, Widget},
+    view::{ViewBuilder, ViewData, Widget},
 };
 
 use super::Decorators;
@@ -33,7 +33,7 @@ pub fn drag_window_area<V: Widget + 'static>(child: V) -> DragWindowArea {
     .on_double_click_stop(|_| toggle_window_maximized())
 }
 
-impl View for DragWindowArea {
+impl ViewBuilder for DragWindowArea {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

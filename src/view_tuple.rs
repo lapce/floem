@@ -1,11 +1,11 @@
-use crate::view::View;
+use crate::view::ViewBuilder;
 use crate::view::Widget;
 
 pub trait ViewTuple {
     fn into_widgets(self) -> Vec<Box<dyn Widget>>;
 }
 
-impl<T: View + 'static> ViewTuple for T {
+impl<T: ViewBuilder + 'static> ViewTuple for T {
     fn into_widgets(self) -> Vec<Box<dyn Widget>> {
         vec![self.build()]
     }

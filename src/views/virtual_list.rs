@@ -3,7 +3,7 @@ use super::{
 };
 use crate::context::ComputeLayoutCx;
 use crate::reactive::create_effect;
-use crate::view::View;
+use crate::view::ViewBuilder;
 use crate::EventPropagation;
 use crate::{
     event::{Event, EventListener},
@@ -64,7 +64,7 @@ where
     KF: Fn(&T) -> K + 'static,
     K: Eq + Hash + 'static,
     VF: Fn(T) -> V + 'static,
-    V: View + 'static,
+    V: ViewBuilder + 'static,
 {
     let id = Id::next();
     let selection = create_rw_signal(None);
@@ -216,7 +216,7 @@ where
     })
 }
 
-impl<T> View for VirtualList<T> {
+impl<T> ViewBuilder for VirtualList<T> {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

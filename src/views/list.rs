@@ -2,7 +2,7 @@ use super::{v_stack_from_iter, Decorators, Stack};
 use crate::context::StyleCx;
 use crate::reactive::create_effect;
 use crate::style::{Style, StyleClassRef};
-use crate::view::View;
+use crate::view::ViewBuilder;
 use crate::EventPropagation;
 use crate::{
     event::{Event, EventListener},
@@ -163,7 +163,7 @@ where
     })
 }
 
-impl View for List {
+impl ViewBuilder for List {
     fn view_data(&self) -> &ViewData {
         &self.data
     }
@@ -226,7 +226,7 @@ impl Widget for List {
     }
 }
 
-impl View for Item {
+impl ViewBuilder for Item {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

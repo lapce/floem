@@ -17,7 +17,7 @@ use crate::{
     clipboard::Clipboard,
     inspector::Capture,
     profiler::Profile,
-    view::{AnyView, View},
+    view::{AnyView, ViewBuilder},
     window::WindowConfig,
 };
 
@@ -30,7 +30,7 @@ thread_local! {
     pub(crate) static APP_UPDATE_EVENTS: RefCell<Vec<AppUpdateEvent>> = Default::default();
 }
 
-pub fn launch<V: View + 'static>(app_view: impl FnOnce() -> V + 'static) {
+pub fn launch<V: ViewBuilder + 'static>(app_view: impl FnOnce() -> V + 'static) {
     Application::new().window(move |_| app_view(), None).run()
 }
 
@@ -120,7 +120,7 @@ impl Application {
 
     /// create a new window for the application, if you want multiple windows,
     /// just chain more window method to the builder
-    pub fn window<V: View + 'static>(
+    pub fn window<V: ViewBuilder + 'static>(
         mut self,
         app_view: impl FnOnce(WindowId) -> V + 'static,
         config: Option<WindowConfig>,

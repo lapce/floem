@@ -4,11 +4,11 @@ use floem::{
     responsive::{range, ScreenSize},
     style::TextOverflow,
     unit::UnitExt,
-    view::View,
+    view::ViewBuilder,
     views::{h_stack, label, stack, text, Decorators},
 };
 
-fn app_view() -> impl View {
+fn app_view() -> impl ViewBuilder {
     let (is_text_overflown, set_is_text_overflown) = create_signal(false);
 
     stack({

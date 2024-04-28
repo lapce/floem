@@ -30,7 +30,7 @@ use taffy::{
 use crate::context::InteractionState;
 use crate::responsive::{ScreenSize, ScreenSizeBp};
 use crate::unit::{Px, PxPct, PxPctAuto, UnitExt};
-use crate::view::{AnyView, View};
+use crate::view::{AnyView, ViewBuilder};
 use crate::views::{empty, stack, text, Decorators};
 
 pub trait StylePropValue: Clone + PartialEq + Debug {

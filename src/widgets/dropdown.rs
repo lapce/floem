@@ -13,7 +13,7 @@ use crate::{
     style_class,
     unit::PxPctAuto,
     view::{
-        default_compute_layout, default_event, view_children_set_parent_id, AnyView, View,
+        default_compute_layout, default_event, view_children_set_parent_id, AnyView, ViewBuilder,
         ViewData, Widget,
     },
     views::{scroll, Decorators},
@@ -53,7 +53,7 @@ enum Message {
     ListSelect(Box<dyn Any>),
 }
 
-impl<T: 'static> View for DropDown<T> {
+impl<T: 'static> ViewBuilder for DropDown<T> {
     fn view_data(&self) -> &ViewData {
         &self.view_data
     }
@@ -225,7 +225,7 @@ where
             .on_event_stop(EventListener::FocusLost, move |_| {
                 dropdown_id.update_state(Message::ListFocusLost);
             });
-        let inner_list_id = View::view_data(&inner_list).id();
+        let inner_list_id = ViewBuilder::view_data(&inner_list).id();
         scroll(inner_list)
             .on_event_stop(EventListener::FocusGained, move |_| {
                 inner_list_id.request_focus();

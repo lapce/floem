@@ -9,7 +9,7 @@ use crate::{
     id::Id,
     style::Style,
     unit::UnitExt,
-    view::{View, ViewData, Widget},
+    view::{ViewBuilder, ViewData, Widget},
 };
 
 use taffy::tree::NodeId;
@@ -112,7 +112,7 @@ pub(crate) fn img_dynamic(image: impl Fn() -> Option<Rc<DynamicImage>> + 'static
     }
 }
 
-impl View for Img {
+impl ViewBuilder for Img {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

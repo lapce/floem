@@ -5,7 +5,7 @@ use floem_reactive::{create_effect, create_rw_signal, create_updater, RwSignal};
 use crate::{
     context::UpdateCx,
     id::Id,
-    view::{View, ViewData, Widget},
+    view::{ViewBuilder, ViewData, Widget},
 };
 
 /// A wrapper around another View that has value updates. See [`value_container`]
@@ -48,7 +48,7 @@ where
 /// A [`ValueContainer`] is useful for wrapping another [View](crate::view::View).
 /// This is to provide the `on_update` method which can notify when the view's
 /// internal value was get changed
-pub fn value_container<T: 'static, V: View + 'static>(
+pub fn value_container<T: 'static, V: ViewBuilder + 'static>(
     child: V,
     value_update: impl Fn() -> T + 'static,
 ) -> ValueContainer<T> {
@@ -68,7 +68,7 @@ impl<T> ValueContainer<T> {
     }
 }
 
-impl<T: 'static> View for ValueContainer<T> {
+impl<T: 'static> ViewBuilder for ValueContainer<T> {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

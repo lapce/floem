@@ -1,7 +1,7 @@
 use crate::app::{add_app_update_event, AppUpdateEvent};
 use crate::event::{Event, EventListener};
 use crate::inspector::header;
-use crate::view::View;
+use crate::view::ViewBuilder;
 use crate::views::{
     clip, container, dyn_container, empty, h_stack, label, scroll, stack, static_label, text,
     v_stack, v_stack_from_iter, Decorators,
@@ -48,11 +48,11 @@ struct ProfileFrameData {
     events: Vec<ProfileEvent>,
 }
 
-fn info(name: impl Display, value: String) -> impl View {
+fn info(name: impl Display, value: String) -> impl ViewBuilder {
     info_row(name.to_string(), static_label(value))
 }
 
-fn info_row(name: String, view: impl View + 'static) -> impl View {
+fn info_row(name: String, view: impl ViewBuilder + 'static) -> impl ViewBuilder {
     stack((
         stack((static_label(name).style(|s| {
             s.margin_right(5.0)
@@ -67,7 +67,7 @@ fn info_row(name: String, view: impl View + 'static) -> impl View {
     })
 }
 
-fn profile_view(profile: &Rc<Profile>) -> impl View {
+fn profile_view(profile: &Rc<Profile>) -> impl ViewBuilder {
     let mut frames: Vec<_> = profile
         .frames
         .iter()
@@ -244,7 +244,7 @@ thread_local! {
     };
 }
 
-pub fn profiler(window_id: WindowId) -> impl View {
+pub fn profiler(window_id: WindowId) -> impl ViewBuilder {
     let profiling = create_rw_signal(false);
     let profile = PROFILE.with(|c| *c);
 

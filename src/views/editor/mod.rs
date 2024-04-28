@@ -19,7 +19,7 @@ use crate::{
     prop, prop_extractor,
     reactive::{batch, untrack, ReadSignal, RwSignal, Scope},
     style::{CursorColor, StylePropValue, TextColor},
-    view::{AnyView, View},
+    view::{AnyView, ViewBuilder},
     views::text,
 };
 use floem_editor_core::{

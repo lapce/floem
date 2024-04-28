@@ -11,7 +11,7 @@ use crate::{
     style::{Background, BorderColor, BorderRadius, Style, StyleSelector},
     style_class,
     unit::Px,
-    view::{View, ViewData, Widget},
+    view::{ViewBuilder, ViewData, Widget},
     EventPropagation,
 };
 
@@ -109,7 +109,7 @@ pub struct Scroll {
     scroll_style: ScrollStyle,
 }
 
-pub fn scroll<V: View + 'static>(child: V) -> Scroll {
+pub fn scroll<V: ViewBuilder + 'static>(child: V) -> Scroll {
     Scroll {
         data: ViewData::new(Id::next()),
         child: child.build(),
@@ -606,7 +606,7 @@ impl Scroll {
     }
 }
 
-impl View for Scroll {
+impl ViewBuilder for Scroll {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

@@ -42,8 +42,8 @@ use crate::{
         UPDATE_MESSAGES,
     },
     view::{
-        default_compute_layout, view_children_set_parent_id, view_tab_navigation, AnyView, View,
-        ViewData, Widget,
+        default_compute_layout, view_children_set_parent_id, view_tab_navigation, AnyView,
+        ViewBuilder, ViewData, Widget,
     },
     view_data::{update_data, ChangeFlags},
     widgets::{default_theme, Theme},
@@ -1306,7 +1306,7 @@ fn context_menu_view(
     window_id: WindowId,
     context_menu: RwSignal<Option<(Menu, Point)>>,
     window_size: RwSignal<Size>,
-) -> impl View {
+) -> impl ViewBuilder {
     use floem_peniko::Color;
     use floem_reactive::{create_effect, create_rw_signal};
 
@@ -1363,7 +1363,7 @@ fn context_menu_view(
         context_menu: RwSignal<Option<(Menu, Point)>>,
         focus_count: RwSignal<i32>,
         on_child_submenu_for_parent: RwSignal<bool>,
-    ) -> impl View {
+    ) -> impl ViewBuilder {
         match menu {
             MenuDisplay::Item {
                 id,

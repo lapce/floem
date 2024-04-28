@@ -8,7 +8,7 @@ use crate::{
     context::{StyleCx, UpdateCx},
     id::Id,
     style::DisplayProp,
-    view::{AnyWidget, View, ViewData, Widget},
+    view::{AnyWidget, ViewBuilder, ViewData, Widget},
 };
 
 use super::{apply_diff, diff, Diff, DiffOpAdd, FxIndexSet, HashRun};
@@ -41,7 +41,7 @@ where
     KF: Fn(&T) -> K + 'static,
     K: Eq + Hash + 'static,
     VF: Fn(T) -> V + 'static,
-    V: View + 'static,
+    V: ViewBuilder + 'static,
     T: 'static,
 {
     let id = Id::next();
@@ -90,7 +90,7 @@ where
     }
 }
 
-impl<T> View for Tab<T> {
+impl<T> ViewBuilder for Tab<T> {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

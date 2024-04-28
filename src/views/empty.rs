@@ -1,6 +1,6 @@
 use crate::{
     id::Id,
-    view::{View, ViewData, Widget},
+    view::{ViewBuilder, ViewData, Widget},
 };
 
 /// An empty View. See [`empty`].
@@ -17,7 +17,7 @@ pub fn empty() -> Empty {
     }
 }
 
-impl View for Empty {
+impl ViewBuilder for Empty {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

@@ -7,7 +7,7 @@ use crate::{
     event::Event,
     id::Id,
     prop, prop_extractor,
-    view::{default_compute_layout, default_event, View, ViewData, Widget},
+    view::{default_compute_layout, default_event, ViewBuilder, ViewData, Widget},
     EventPropagation,
 };
 
@@ -31,7 +31,7 @@ pub struct Tooltip {
 }
 
 /// A view that displays a tooltip for its child.
-pub fn tooltip<V: View + 'static, T: Widget + 'static>(
+pub fn tooltip<V: ViewBuilder + 'static, T: Widget + 'static>(
     child: V,
     tip: impl Fn() -> T + 'static,
 ) -> Tooltip {
@@ -46,7 +46,7 @@ pub fn tooltip<V: View + 'static, T: Widget + 'static>(
     }
 }
 
-impl View for Tooltip {
+impl ViewBuilder for Tooltip {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

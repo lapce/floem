@@ -2,7 +2,7 @@ use kurbo::Size;
 
 use crate::{
     id::Id,
-    view::{View, ViewData, Widget},
+    view::{ViewBuilder, ViewData, Widget},
 };
 
 /// A wrapper around a child View to clip painting. See [`clip`].
@@ -14,14 +14,14 @@ pub struct Clip {
 /// A clip is a wrapper around a child View that will clip the painting of the child so that it does not show outside of the viewport of the [`Clip`].
 ///
 /// This can be useful for limiting child painting, including for rounded borders using border radius.
-pub fn clip<V: View + 'static>(child: V) -> Clip {
+pub fn clip<V: ViewBuilder + 'static>(child: V) -> Clip {
     Clip {
         data: ViewData::new(Id::next()),
         child: child.build(),
     }
 }
 
-impl View for Clip {
+impl ViewBuilder for Clip {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

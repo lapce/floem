@@ -3,7 +3,7 @@ use floem::{
     keyboard::{Key, NamedKey},
     kurbo::Size,
     style::AlignContent,
-    view::View,
+    view::ViewBuilder,
     views::{container, h_stack, label, v_stack, Decorators},
     widgets::button,
     window::{new_window, WindowConfig},
@@ -15,7 +15,7 @@ pub mod left_sidebar;
 pub mod right_sidebar;
 pub mod tab_navigation;
 
-fn list_item<V: View + 'static>(name: String, view_fn: impl Fn() -> V) -> impl View {
+fn list_item<V: ViewBuilder + 'static>(name: String, view_fn: impl Fn() -> V) -> impl ViewBuilder {
     h_stack((
         label(move || name.clone()).style(|s| s),
         container(view_fn()).style(|s| s.width_full().justify_content(AlignContent::End)),
@@ -23,7 +23,7 @@ fn list_item<V: View + 'static>(name: String, view_fn: impl Fn() -> V) -> impl V
     .style(|s| s.width(200))
 }
 
-fn app_view() -> impl View {
+fn app_view() -> impl ViewBuilder {
     let view = v_stack((
         label(move || String::from("Static layouts"))
             .style(|s| s.font_size(30.0).margin_bottom(15.0)),

@@ -4,7 +4,7 @@ use crate::event::{Event, EventListener};
 use crate::id::Id;
 use crate::profiler::profiler;
 use crate::style::{Style, StyleClassRef, StylePropRef, Transition};
-use crate::view::{view_children, AnyView, View, Widget};
+use crate::view::{view_children, AnyView, ViewBuilder, Widget};
 use crate::view_data::ChangeFlags;
 use crate::views::{
     container, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label, tab, text,
@@ -138,7 +138,7 @@ impl CaptureState {
     }
 }
 
-fn captured_view_name(view: &CapturedView) -> impl View {
+fn captured_view_name(view: &CapturedView) -> impl ViewBuilder {
     let name = static_label(view.name.clone());
     let id = text(view.id.to_raw()).style(|s| {
         s.margin_right(5.0)
@@ -375,11 +375,11 @@ pub(crate) fn header(label: impl Display) -> Label {
     })
 }
 
-fn info(name: impl Display, value: String) -> impl View {
+fn info(name: impl Display, value: String) -> impl ViewBuilder {
     info_row(name.to_string(), static_label(value))
 }
 
-fn info_row(name: String, view: impl View + 'static) -> impl View {
+fn info_row(name: String, view: impl ViewBuilder + 'static) -> impl ViewBuilder {
     stack((
         stack((static_label(name).style(|s| {
             s.margin_right(5.0)
@@ -394,7 +394,7 @@ fn info_row(name: String, view: impl View + 'static) -> impl View {
     })
 }
 
-fn stats(capture: &Capture) -> impl View {
+fn stats(capture: &Capture) -> impl ViewBuilder {
     let style_time = capture.post_style.saturating_duration_since(capture.start);
     let layout_time = capture
         .post_layout
@@ -670,7 +670,7 @@ fn capture_view(
     window_id: WindowId,
     capture_s: RwSignal<Option<Rc<Capture>>>,
     capture: &Rc<Capture>,
-) -> impl View {
+) -> impl ViewBuilder {
     let capture_view = CaptureView {
         expanding_selection: create_rw_signal(None),
         scroll_to: create_rw_signal(None),
@@ -848,7 +848,7 @@ fn inspector_view(
     window_id: WindowId,
     capture_s: RwSignal<Option<Rc<Capture>>>,
     capture: &Option<Rc<Capture>>,
-) -> impl View {
+) -> impl ViewBuilder {
     let view = if let Some(capture) = capture {
         capture_view(window_id, capture_s, capture).any()
     } else {

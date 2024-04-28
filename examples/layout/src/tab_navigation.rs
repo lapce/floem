@@ -4,7 +4,7 @@ use floem::{
     peniko::Color,
     reactive::{create_signal, ReadSignal, WriteSignal},
     style::{CursorStyle, Position},
-    view::View,
+    view::ViewBuilder,
     views::{container, h_stack, label, scroll, tab, v_stack, Decorators},
 };
 
@@ -30,7 +30,7 @@ fn tab_button(
     tabs: ReadSignal<im::Vector<Tabs>>,
     set_active_tab: WriteSignal<usize>,
     active_tab: ReadSignal<usize>,
-) -> impl View {
+) -> impl ViewBuilder {
     label(move || this_tab)
         .style(|s| s.justify_center())
         .keyboard_navigatable()
@@ -62,7 +62,7 @@ fn tab_button(
 const TABBAR_HEIGHT: f64 = 37.0;
 const CONTENT_PADDING: f64 = 10.0;
 
-pub fn tab_navigation_view() -> impl View {
+pub fn tab_navigation_view() -> impl ViewBuilder {
     let tabs = vec![Tabs::General, Tabs::Settings, Tabs::Feedback]
         .into_iter()
         .collect::<im::Vector<Tabs>>();

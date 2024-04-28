@@ -19,7 +19,7 @@ use floem::{
     reactive::create_signal,
     style::{Background, CursorStyle, Transition},
     unit::UnitExt,
-    view::View,
+    view::ViewBuilder,
     views::{
         container, h_stack, label, scroll, stack, tab, v_stack, virtual_stack, Decorators,
         VirtualDirection, VirtualItemSize,
@@ -28,7 +28,7 @@ use floem::{
     EventPropagation,
 };
 
-fn app_view() -> impl View {
+fn app_view() -> impl ViewBuilder {
     let tabs: im::Vector<&str> = vec![
         "Label",
         "Button",

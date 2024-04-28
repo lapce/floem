@@ -4,7 +4,7 @@ use crate::{
     context::UpdateCx,
     id::Id,
     style::{Style, StyleClassRef},
-    view::{View, ViewData, Widget},
+    view::{ViewBuilder, ViewData, Widget},
     view_tuple::ViewTuple,
 };
 
@@ -61,7 +61,7 @@ pub fn v_stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
 
 fn from_iter<V>(iterator: impl IntoIterator<Item = V>, direction: Option<FlexDirection>) -> Stack
 where
-    V: View + 'static,
+    V: ViewBuilder + 'static,
 {
     Stack {
         data: ViewData::new(Id::next()),
@@ -82,7 +82,7 @@ where
 /// ```
 pub fn stack_from_iter<V>(iterator: impl IntoIterator<Item = V>) -> Stack
 where
-    V: View + 'static,
+    V: ViewBuilder + 'static,
 {
     from_iter(iterator, None)
 }
@@ -90,7 +90,7 @@ where
 /// Creates a stack from an iterator of views. It defaults to `FlexDirection::Row`. See also [`v_stack_from_iter`].
 pub fn h_stack_from_iter<V>(iterator: impl IntoIterator<Item = V>) -> Stack
 where
-    V: View + 'static,
+    V: ViewBuilder + 'static,
 {
     from_iter(iterator, Some(FlexDirection::Row))
 }
@@ -98,12 +98,12 @@ where
 /// Creates a stack from an iterator of views. It defaults to `FlexDirection::Column`.See also [`h_stack_from_iter`].
 pub fn v_stack_from_iter<V>(iterator: impl IntoIterator<Item = V>) -> Stack
 where
-    V: View + 'static,
+    V: ViewBuilder + 'static,
 {
     from_iter(iterator, Some(FlexDirection::Column))
 }
 
-impl View for Stack {
+impl ViewBuilder for Stack {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

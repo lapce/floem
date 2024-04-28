@@ -10,7 +10,7 @@ use crate::{
     id::Id,
     keyboard::Modifiers,
     style::{CursorColor, Style},
-    view::{AnyWidget, View, ViewData, Widget},
+    view::{AnyWidget, ViewBuilder, ViewData, Widget},
     views::editor::{
         command::CommandExecuted,
         id::EditorId,
@@ -95,7 +95,7 @@ pub fn text_editor_keys(
     }
 }
 
-impl View for TextEditor {
+impl ViewBuilder for TextEditor {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

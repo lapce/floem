@@ -1,6 +1,6 @@
 use crate::{
     id::Id,
-    view::{View, ViewData, Widget},
+    view::{ViewBuilder, ViewData, Widget},
 };
 
 /// A simple wrapper around another View. See [`container`].
@@ -13,14 +13,14 @@ pub struct Container {
 ///
 /// A [`Container`] is useful for wrapping another [View](crate::view::View). This is often useful for allowing another
 /// set of styles completely separate from the child View that is being wrapped.
-pub fn container<V: View + 'static>(child: V) -> Container {
+pub fn container<V: ViewBuilder + 'static>(child: V) -> Container {
     Container {
         data: ViewData::new(Id::next()),
         child: child.build(),
     }
 }
 
-impl View for Container {
+impl ViewBuilder for Container {
     fn view_data(&self) -> &ViewData {
         &self.data
     }

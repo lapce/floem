@@ -13,7 +13,7 @@ use crate::{
     style::{CursorStyle, Style},
     style_class,
     taffy::tree::NodeId,
-    view::{AnyWidget, View, ViewData, Widget},
+    view::{AnyWidget, ViewBuilder, ViewData, Widget},
     views::{scroll, stack, Decorators},
     EventPropagation, Renderer,
 };
@@ -787,7 +787,7 @@ impl EditorView {
         }
     }
 }
-impl View for EditorView {
+impl ViewBuilder for EditorView {
     fn id(&self) -> Id {
         self.id
     }
@@ -1086,7 +1086,7 @@ pub fn editor_container_view(
     editor: RwSignal<Editor>,
     is_active: impl Fn(bool) -> bool + 'static + Copy,
     handle_key_event: impl Fn(&KeyPress, Modifiers) -> CommandExecuted + 'static,
-) -> impl View {
+) -> impl ViewBuilder {
     stack((
         editor_gutter(editor),
         editor_content(editor, is_active, handle_key_event),
@@ -1101,7 +1101,7 @@ pub fn editor_container_view(
 
 /// Default editor gutter
 /// Simply shows line numbers
-pub fn editor_gutter(editor: RwSignal<Editor>) -> impl View {
+pub fn editor_gutter(editor: RwSignal<Editor>) -> impl ViewBuilder {
     let ed = editor.get_untracked();
 
     let scroll_delta = ed.scroll_delta;
@@ -1123,7 +1123,7 @@ fn editor_content(
     editor: RwSignal<Editor>,
     is_active: impl Fn(bool) -> bool + 'static + Copy,
     handle_key_event: impl Fn(&KeyPress, Modifiers) -> CommandExecuted + 'static,
-) -> impl View {
+) -> impl ViewBuilder {
     let ed = editor.get_untracked();
     let cursor = ed.cursor;
     let scroll_delta = ed.scroll_delta;

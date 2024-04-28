@@ -3,7 +3,7 @@ use floem::{
     peniko::Color,
     reactive::create_signal,
     style::Position,
-    view::View,
+    view::ViewBuilder,
     views::{
         container, h_stack, label, scroll, v_stack, virtual_stack, Decorators, VirtualDirection,
         VirtualItemSize,
@@ -13,7 +13,7 @@ use floem::{
 const SIDEBAR_WIDTH: f64 = 140.0;
 const TOPBAR_HEIGHT: f64 = 30.0;
 
-pub fn left_sidebar_view() -> impl View {
+pub fn left_sidebar_view() -> impl ViewBuilder {
     let long_list: im::Vector<i32> = (0..100).collect();
     let (long_list, _set_long_list) = create_signal(long_list);
 
