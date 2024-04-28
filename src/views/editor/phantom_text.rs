@@ -4,6 +4,7 @@ use crate::{
     cosmic_text::{Attrs, AttrsList},
     peniko::Color,
 };
+use floem_editor_core::cursor::CursorAffinity;
 use smallvec::SmallVec;
 
 /// `PhantomText` is for text that is not in the actual document, but should be rendered with it.  
@@ -14,6 +15,9 @@ pub struct PhantomText {
     pub kind: PhantomTextKind,
     /// Column on the line that the phantom text should be displayed at
     pub col: usize,
+    /// the affinity of cursor, e.g. for completion phantom text,
+    /// we want the cursor always before the phantom text
+    pub affinity: Option<CursorAffinity>,
     pub text: String,
     pub font_size: Option<usize>,
     // font_family: Option<FontFamily>,
@@ -61,6 +65,26 @@ impl PhantomTextLine {
     /// If `before_cursor` is false and the cursor is right at the start then it will stay there  
     /// (Think 'is the phantom text before the cursor')
     pub fn col_after(&self, pre_col: usize, before_cursor: bool) -> usize {
+        let mut last = pre_col;
+        for (col_shift, size, col, text) in self.offset_size_iter() {
+            let before_cursor = match text.affinity {
+                Some(CursorAffinity::Forward) => true,
+                Some(CursorAffinity::Backward) => false,
+                None => before_cursor,
+            };
+
+            if pre_col > col || (pre_col == col && before_cursor) {
+                last = pre_col + col_shift + size;
+            }
+        }
+
+        last
+    }
+
+    /// Translate a column position into the text into what it would be after combining  
+    /// it only takes `before_cursor` in the params without considering the
+    /// cursor affinity in phantom text
+    pub fn col_after_force(&self, pre_col: usize, before_cursor: bool) -> usize {
         let mut last = pre_col;
         for (col_shift, size, col, _) in self.offset_size_iter() {
             if pre_col > col || (pre_col == col && before_cursor) {

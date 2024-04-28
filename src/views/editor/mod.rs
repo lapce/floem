@@ -853,7 +853,7 @@ impl Editor {
     /// `x` being the leading edge of the character, and `y` being the baseline.
     pub fn line_point_of_offset(&self, offset: usize, affinity: CursorAffinity) -> Point {
         let (line, col) = self.offset_to_line_col(offset);
-        self.line_point_of_line_col(line, col, affinity)
+        self.line_point_of_line_col(line, col, affinity, false)
     }
 
     /// Returns the point into the text layout of the line at the given line and col.
@@ -863,9 +863,24 @@ impl Editor {
         line: usize,
         col: usize,
         affinity: CursorAffinity,
+        force_affinity: bool,
     ) -> Point {
         let text_layout = self.text_layout(line);
-        hit_position_aff(&text_layout.text, col, affinity == CursorAffinity::Backward).point
+        let index = if force_affinity {
+            text_layout
+                .phantom_text
+                .col_after_force(col, affinity == CursorAffinity::Forward)
+        } else {
+            text_layout
+                .phantom_text
+                .col_after(col, affinity == CursorAffinity::Forward)
+        };
+        hit_position_aff(
+            &text_layout.text,
+            index,
+            affinity == CursorAffinity::Backward,
+        )
+        .point
     }
 
     /// Get the (point above, point below) of a particular offset within the editor.
@@ -874,8 +889,9 @@ impl Editor {
         let line_height = f64::from(self.style().line_height(self.id(), line));
 
         let info = self.screen_lines.with_untracked(|sl| {
-            sl.iter_line_info()
-                .find(|info| info.vline_info.interval.contains(offset))
+            sl.iter_line_info().find(|info| {
+                info.vline_info.interval.start <= offset && offset <= info.vline_info.interval.end
+            })
         });
         let Some(info) = info else {
             // TODO: We could do a smarter method where we get the approximate y position
@@ -938,10 +954,7 @@ impl Editor {
         let hit_point = text_layout.text.hit_point(Point::new(point.x, y));
         // We have to unapply the phantom text shifting in order to get back to the column in
         // the actual buffer
-        let phantom_text = self
-            .doc()
-            .phantom_text(self.id(), &self.es.get_untracked(), line);
-        let col = phantom_text.before_col(hit_point.index);
+        let col = text_layout.phantom_text.before_col(hit_point.index);
         // Ensure that the column doesn't end up out of bounds, so things like clicking on the far
         // right end will just go to the end of the line.
         let max_col = self.line_end_col(line, mode != Mode::Normal);
@@ -980,8 +993,9 @@ impl Editor {
                 let text_layout = self.text_layout(line);
                 let hit_point = text_layout.text.hit_point(Point::new(x, 0.0));
                 let n = hit_point.index;
+                let col = text_layout.phantom_text.before_col(n);
 
-                n.min(self.line_end_col(line, caret))
+                col.min(self.line_end_col(line, caret))
             }
             ColPosition::End => self.line_end_col(line, caret),
             ColPosition::Start => 0,
@@ -1009,8 +1023,9 @@ impl Editor {
                     .sum();
                 let hit_point = text_layout.text.hit_point(Point::new(x, y_pos));
                 let n = hit_point.index;
+                let col = text_layout.phantom_text.before_col(n);
 
-                n.min(self.line_end_col(line, caret))
+                col.min(self.line_end_col(line, caret))
             }
             // Otherwise it is the same as the other function
             _ => self.line_horiz_col(line, horiz, caret),
@@ -1247,6 +1262,7 @@ impl TextLayoutProvider for Editor {
             extra_style: Vec::new(),
             whitespaces,
             indent,
+            phantom_text,
         };
         self.es.with_untracked(|es| {
             style.apply_layout_styles(edid, es, line, &mut layout_line);

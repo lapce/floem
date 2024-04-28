@@ -250,6 +250,7 @@ impl DocumentPhantom for TextDocument {
                 text.push(PhantomText {
                     kind: PhantomTextKind::Placeholder,
                     col: 0,
+                    affinity: None,
                     text: placeholder,
                     font_size: None,
                     fg: Some(styling.placeholder_color()),
@@ -348,10 +349,10 @@ impl CommonAction for TextDocument {
                 buffer.set_cursor_before(old_cursor);
                 buffer.set_cursor_after(cursor.mode.clone());
             });
-        }
 
-        self.update_cache_rev();
-        self.on_update(Some(ed), &deltas);
+            self.update_cache_rev();
+            self.on_update(Some(ed), &deltas);
+        }
 
         !deltas.is_empty()
     }

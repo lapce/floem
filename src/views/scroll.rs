@@ -63,7 +63,7 @@ prop_extractor! {
 prop!(pub VerticalInset: Px {} = Px(0.0));
 prop!(pub HorizontalInset: Px {} = Px(0.0));
 prop!(pub HideBar: bool {} = false);
-prop!(pub PropagatePointerWheel: bool {} = false);
+prop!(pub PropagatePointerWheel: bool {} = true);
 prop!(pub VerticalScrollAsHorizontal: bool {} = false);
 
 prop_extractor!(ScrollStyle {
@@ -861,7 +861,7 @@ impl Widget for Scroll {
             // Check if the scroll bars now hover
             self.update_hover_states(cx.app_state, pointer_event.pos);
 
-            return if self.scroll_style.propagate_pointer_wheel() || any_change.is_none() {
+            return if self.scroll_style.propagate_pointer_wheel() && any_change.is_none() {
                 EventPropagation::Continue
             } else {
                 EventPropagation::Stop
