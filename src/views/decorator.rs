@@ -37,14 +37,29 @@ pub trait Decorators: View + Sized {
     ///     ))
     /// }
     /// ```
-    fn style(mut self, style: impl Fn(Style) -> Style + 'static) -> Self {
-        let id = self.id();
-        let offset = self.view_data_mut().style.next_offset();
+    fn style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
+        let view_id = self.view_id();
+        let state = view_id.state();
+
+        let offset = state.borrow_mut().style.next_offset();
         let style = create_updater(
             move || style(Style::new()),
-            move |style| id.update_style(style, offset),
+            move |style| {
+                let state = view_id.state();
+                let mut state = state.borrow_mut();
+
+                let old_any_inherited = true;
+                state.style.set(offset, style);
+
+                if old_any_inherited {
+                    state.request_style_recursive();
+                } else {
+                    state.request_style();
+                }
+            },
         );
-        self.view_data_mut().style.push(style);
+        state.borrow_mut().style.push(style);
+
         self
     }
 

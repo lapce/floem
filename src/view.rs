@@ -54,6 +54,7 @@ use crate::{
     id::Id,
     style::{BoxShadowProp, Style, StyleClassRef},
     view_data::ViewStyleProps,
+    view_storage::ViewId,
     EventPropagation,
 };
 
@@ -65,6 +66,10 @@ pub type AnyWidget = Box<dyn Widget>;
 pub trait View: Sized {
     fn view_data(&self) -> &ViewData;
     fn view_data_mut(&mut self) -> &mut ViewData;
+
+    fn view_id(&self) -> ViewId {
+        self.view_data().view_id
+    }
 
     fn id(&self) -> Id {
         self.view_data().id()

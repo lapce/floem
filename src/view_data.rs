@@ -11,6 +11,7 @@ use crate::{
         LayoutProps, Outline, OutlineColor, Style, StyleClassRef, StyleSelectors,
     },
     view::Widget,
+    view_storage::ViewId,
     EventPropagation,
 };
 use bitflags::bitflags;
@@ -63,6 +64,7 @@ impl<T> Stack<T> {
 /// View data stores internal state associated with a view.
 /// Each view is expected to own and give access to this data.
 pub struct ViewData {
+    pub(crate) view_id: ViewId,
     pub(crate) id: Id,
     pub(crate) style: Stack<Style>,
     pub(crate) event_handlers: SmallVec<[Box<EventCallback>; 1]>,
@@ -72,6 +74,7 @@ pub struct ViewData {
 impl ViewData {
     pub fn new(id: Id) -> Self {
         Self {
+            view_id: ViewId::new(),
             id,
             style: Default::default(),
             event_handlers: Default::default(),
@@ -142,6 +145,7 @@ bitflags! {
 pub struct ViewState {
     pub(crate) node: NodeId,
     pub(crate) requested_changes: ChangeFlags,
+    pub(crate) style: Stack<Style>,
     /// Layout is requested on all direct and indirect children.
     pub(crate) request_style_recursive: bool,
     pub(crate) has_style_selectors: StyleSelectors,
@@ -168,6 +172,7 @@ impl ViewState {
         Self {
             node: taffy.new_leaf(taffy::style::Style::DEFAULT).unwrap(),
             viewport: None,
+            style: Default::default(),
             layout_rect: Rect::ZERO,
             layout_props: Default::default(),
             view_style_props: Default::default(),
@@ -275,5 +280,25 @@ impl ViewState {
         self.combined_style = computed_style;
 
         new_frame
+    }
+
+    pub(crate) fn request_changes(&mut self, flags: ChangeFlags) {
+        if self.requested_changes.contains(flags) {
+            return;
+        }
+        self.requested_changes.insert(flags);
+        // if let Some(parent) = id.parent() {
+        //     self.request_changes(parent, flags);
+        // }
+    }
+
+    pub fn request_style(&mut self) {
+        self.request_changes(ChangeFlags::STYLE)
+    }
+
+    /// Requests style for this view and all direct and indirect children.
+    pub fn request_style_recursive(&mut self) {
+        self.request_style_recursive = true;
+        self.request_style();
     }
 }
