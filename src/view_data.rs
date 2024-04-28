@@ -320,4 +320,15 @@ impl ViewState {
         }
         self.request_style();
     }
+
+    pub(crate) fn add_event_listener(
+        &mut self,
+        listener: EventListener,
+        action: Box<EventCallback>,
+    ) {
+        self.event_listeners
+            .entry(listener)
+            .or_default()
+            .push(action);
+    }
 }

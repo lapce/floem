@@ -107,8 +107,11 @@ pub trait Decorators: ViewBuilder + Sized {
         listener: EventListener,
         action: impl Fn(&Event) -> EventPropagation + 'static,
     ) -> Self {
-        let id = self.id();
-        id.update_event_listener(listener, Box::new(action));
+        let view_id = self.view_id();
+        let state = view_id.state();
+        state
+            .borrow_mut()
+            .add_event_listener(listener, Box::new(action));
         self
     }
 
@@ -174,9 +177,7 @@ pub trait Decorators: ViewBuilder + Sized {
 
     /// Add an event handler for [EventListener::Click].
     fn on_click(self, action: impl Fn(&Event) -> EventPropagation + 'static) -> Self {
-        let id = self.id();
-        id.update_event_listener(EventListener::Click, Box::new(action));
-        self
+        self.on_event(EventListener::Click, action)
     }
 
     /// Add an event handler for [EventListener::Click]. This event will be handled with
@@ -199,9 +200,7 @@ pub trait Decorators: ViewBuilder + Sized {
 
     /// Add an event handler for [EventListener::DoubleClick]
     fn on_double_click(self, action: impl Fn(&Event) -> EventPropagation + 'static) -> Self {
-        let id = self.id();
-        id.update_event_listener(EventListener::DoubleClick, Box::new(action));
-        self
+        self.on_event(EventListener::DoubleClick, action)
     }
 
     /// Add an event handler for [EventListener::DoubleClick]. This event will be handled with
@@ -224,9 +223,7 @@ pub trait Decorators: ViewBuilder + Sized {
 
     /// Add an event handler for [EventListener::SecondaryClick]. This is most often the "Right" click.
     fn on_secondary_click(self, action: impl Fn(&Event) -> EventPropagation + 'static) -> Self {
-        let id = self.id();
-        id.update_event_listener(EventListener::SecondaryClick, Box::new(action));
-        self
+        self.on_event(EventListener::SecondaryClick, action)
     }
 
     /// Add an event handler for [EventListener::SecondaryClick]. This is most often the "Right" click.
