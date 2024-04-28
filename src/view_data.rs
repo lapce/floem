@@ -8,7 +8,7 @@ use crate::{
     responsive::ScreenSizeBp,
     style::{
         Background, BorderBottom, BorderColor, BorderLeft, BorderRadius, BorderRight, BorderTop,
-        LayoutProps, Outline, OutlineColor, Style, StyleClassRef, StyleSelectors,
+        LayoutProps, Outline, OutlineColor, Style, StyleClassRef, StyleSelector, StyleSelectors,
     },
     view::Widget,
     view_storage::ViewId,
@@ -218,12 +218,10 @@ impl ViewState {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn compute_style(
         &mut self,
-        view_data: &mut ViewData,
         view_style: Option<Style>,
         interact_state: InteractionState,
         screen_size_bp: ScreenSizeBp,
         view_class: Option<StyleClassRef>,
-        classes: &[StyleClassRef],
         context: &Style,
     ) -> bool {
         let mut new_frame = false;
@@ -235,8 +233,8 @@ impl ViewState {
             computed_style = computed_style.apply_classes_from_context(&[view_class], context);
         }
         computed_style = computed_style
-            .apply_classes_from_context(classes, context)
-            .apply(view_data.style());
+            .apply_classes_from_context(&self.classes, context)
+            .apply(self.style());
 
         'anim: {
             if let Some(animation) = self.animation.as_mut() {
@@ -292,13 +290,38 @@ impl ViewState {
         // }
     }
 
-    pub fn request_style(&mut self) {
+    pub(crate) fn style(&self) -> Style {
+        let mut result = Style::new();
+        for entry in self.style.stack.iter() {
+            result.apply_mut(entry.clone());
+        }
+        result
+    }
+
+    pub(crate) fn update_style(&mut self, offset: StackOffset<Style>, style: Style) {
+        let old_any_inherited = self.style().any_inherited();
+        self.style.set(offset, style);
+        if self.style().any_inherited() || old_any_inherited {
+            self.request_style_recursive();
+        } else {
+            self.request_style();
+        }
+    }
+
+    pub(crate) fn request_style(&mut self) {
         self.request_changes(ChangeFlags::STYLE)
     }
 
     /// Requests style for this view and all direct and indirect children.
-    pub fn request_style_recursive(&mut self) {
+    pub(crate) fn request_style_recursive(&mut self) {
         self.request_style_recursive = true;
+        self.request_style();
+    }
+
+    pub(crate) fn update_style_selector(&mut self, selector: StyleSelector, style: Style) {
+        if let StyleSelector::Dragging = selector {
+            self.dragging_style = Some(style);
+        }
         self.request_style();
     }
 }

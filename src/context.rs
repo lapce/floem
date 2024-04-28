@@ -29,6 +29,7 @@ use crate::{
     unit::PxPct,
     view::{paint_bg, paint_border, paint_outline, ViewData, Widget},
     view_data::ChangeFlags,
+    view_storage::ViewId,
 };
 
 pub use crate::view_data::ViewState;
@@ -264,25 +265,22 @@ impl AppState {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn compute_style(
         &mut self,
-        id: Id,
-        view_data: &mut ViewData,
+        view_id: ViewId,
         view_style: Option<Style>,
         view_interact_state: InteractionState,
         view_class: Option<StyleClassRef>,
-        classes: &[StyleClassRef],
         context: &Style,
     ) -> bool {
         let screen_size_bp = self.screen_size_bp;
-        let view_state = self.view_state(id);
-        view_state.compute_style(
-            view_data,
+        let view_state = view_id.state();
+        let request_new_frame = view_state.borrow_mut().compute_style(
             view_style,
             view_interact_state,
             screen_size_bp,
             view_class,
-            classes,
             context,
-        )
+        );
+        request_new_frame
     }
 
     pub(crate) fn get_computed_style(&mut self, id: Id) -> &Style {
@@ -1085,37 +1083,41 @@ impl<'a> StyleCx<'a> {
     pub fn style_view(&mut self, view: &mut dyn Widget) {
         self.save();
         let id = view.view_data().id();
-        let view_state = self.app_state_mut().view_state(id);
-        if !view_state.requested_changes.contains(ChangeFlags::STYLE) {
-            return;
+        let view_id = view.view_data().view_id;
+        let view_state = view_id.state();
+        {
+            let mut view_state = view_state.borrow_mut();
+            if !view_state.requested_changes.contains(ChangeFlags::STYLE) {
+                return;
+            }
+            view_state.requested_changes.remove(ChangeFlags::STYLE);
         }
-        view_state.requested_changes.remove(ChangeFlags::STYLE);
 
         let view_style = view.view_style();
         let view_class = view.view_class();
-        let classes = &view_state.classes.clone()[..];
+        {
+            let mut view_state = view_state.borrow_mut();
 
-        // Propagate style requests to children if needed.
-        if view_state.request_style_recursive {
-            view_state.request_style_recursive = false;
-            view.for_each_child(&mut |child| {
-                let state = self.app_state_mut().view_state(child.view_data().id());
-                state.request_style_recursive = true;
-                state.requested_changes.insert(ChangeFlags::STYLE);
-                false
-            });
+            // Propagate style requests to children if needed.
+            if view_state.request_style_recursive {
+                view_state.request_style_recursive = false;
+                view.for_each_child(&mut |child| {
+                    let state = self.app_state_mut().view_state(child.view_data().id());
+                    state.request_style_recursive = true;
+                    state.requested_changes.insert(ChangeFlags::STYLE);
+                    false
+                });
+            }
         }
 
         let mut view_interact_state = self.get_interact_state(&id);
         view_interact_state.is_disabled |= self.disabled;
         self.disabled = view_interact_state.is_disabled;
         let mut new_frame = self.app_state.compute_style(
-            id,
-            view.view_data_mut(),
+            view_id,
             view_style,
             view_interact_state,
             view_class,
-            classes,
             &self.current,
         );
 
@@ -1124,9 +1126,9 @@ impl<'a> StyleCx<'a> {
         Style::apply_only_inherited(&mut self.current, &self.direct);
         CaptureState::capture_style(id, self);
 
+        let mut view_state = view_state.borrow_mut();
         // If there's any changes to the Taffy style, request layout.
         let taffy_style = self.direct.to_taffy_style();
-        let view_state = self.app_state_mut().view_state(id);
         if taffy_style != view_state.taffy_style {
             view_state.taffy_style = taffy_style;
             self.app_state_mut().request_layout(id);
@@ -1134,8 +1136,6 @@ impl<'a> StyleCx<'a> {
 
         // This is used by the `request_transition` and `style` methods below.
         self.current_view = id;
-
-        let view_state = self.app_state.view_state(id);
 
         // Extract the relevant layout properties so the content rect can be calculated
         // when painting.

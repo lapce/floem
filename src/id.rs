@@ -158,14 +158,6 @@ impl Id {
         self.add_update_message(UpdateMessage::AddClass { id: *self, class });
     }
 
-    pub(crate) fn update_style_selector(&self, style: Style, selector: StyleSelector) {
-        self.add_update_message(UpdateMessage::StyleSelector {
-            id: *self,
-            style,
-            selector,
-        });
-    }
-
     pub fn keyboard_navigatable(&self) {
         self.add_update_message(UpdateMessage::KeyboardNavigable { id: *self });
     }

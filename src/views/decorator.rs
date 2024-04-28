@@ -46,16 +46,7 @@ pub trait Decorators: View + Sized {
             move || style(Style::new()),
             move |style| {
                 let state = view_id.state();
-                let mut state = state.borrow_mut();
-
-                let old_any_inherited = true;
-                state.style.set(offset, style);
-
-                if old_any_inherited {
-                    state.request_style_recursive();
-                } else {
-                    state.request_style();
-                }
+                state.borrow_mut().update_style(offset, style);
             },
         );
         state.borrow_mut().style.push(style);
@@ -70,10 +61,13 @@ pub trait Decorators: View + Sized {
 
     /// The visual style to apply when the mouse hovers over the element
     fn dragging_style(self, style: impl Fn(Style) -> Style + 'static) -> Self {
-        let id = self.id();
+        let view_id = self.view_id();
         create_effect(move |_| {
             let style = style(Style::new());
-            id.update_style_selector(style, StyleSelector::Dragging);
+            let state = view_id.state();
+            state
+                .borrow_mut()
+                .update_style_selector(StyleSelector::Dragging, style);
         });
         self
     }
