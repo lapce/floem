@@ -300,6 +300,22 @@ impl TextLayoutCache {
             .and_then(|l| l.layout_cols(text_prov, line).nth(line_index))
     }
 
+    fn get_layout_col_offsets(
+        &self,
+        text_prov: &impl TextLayoutProvider,
+        font_size: usize,
+        line: usize,
+        line_index: usize,
+        line_offset: usize,
+        line_end_offset: usize,
+    ) -> Option<(usize, usize)> {
+        self.get(font_size, line).and_then(|l| {
+            let text = text_prov.rope_text();
+            l.layout_cols_offsets(text_prov, text, line, line_offset, line_end_offset)
+                .nth(line_index)
+        })
+    }
+
     pub fn invalidate(&mut self, start_line: usize, inval_count: usize, new_count: usize) {
         for layouts in self.layouts.values_mut() {
             layouts.invalidate(start_line, inval_count, new_count);
@@ -1199,7 +1215,8 @@ fn find_rvline_of_offset(
                     // We have to get rvline info for that rvline, so we can get the last line index
                     // This should aways have at least one rvline in it.
                     let font_sizes = lines.font_sizes.borrow();
-                    let (prev, _) = prev_rvline(&layouts, text_prov, &**font_sizes, rv)?;
+                    let (prev, _) =
+                        prev_rvline(&layouts, text_prov, &rope_text, &**font_sizes, rv)?;
                     return Some(prev);
                 }
             }
@@ -1836,6 +1853,7 @@ impl<T: TextLayoutProvider> Iterator for VisualLinesRelative<T> {
         }
 
         let layouts = self.text_layouts.borrow();
+        let rope_text = self.text_prov.rope_text();
         if self.is_first_iter {
             // This skips the next line call on the first line.
             self.is_first_iter = false;
@@ -1843,6 +1861,7 @@ impl<T: TextLayoutProvider> Iterator for VisualLinesRelative<T> {
             let v = shift_rvline(
                 &layouts,
                 &self.text_prov,
+                &rope_text,
                 &*self.font_sizes,
                 self.rvline,
                 self.backwards,
@@ -1896,13 +1915,22 @@ pub fn end_of_rvline(
         return text_prov.text().len();
     }
 
-    if let Some((_, end_col)) = layouts.get_layout_col(text_prov, font_size, line, line_index) {
+    let rope_text = text_prov.rope_text();
+    let line_offset = rope_text.offset_of_line(line);
+    let line_end_offset = rope_text.line_end_offset(line, true);
+    if let Some((_, end_col)) = layouts.get_layout_col_offsets(
+        text_prov,
+        font_size,
+        line,
+        line_index,
+        line_offset,
+        line_end_offset,
+    ) {
         let end_col = text_prov.before_phantom_col(line, end_col);
-        text_prov.rope_text().offset_of_line_col(line, end_col)
+        let next_line_offset = rope_text.offset_of_line(line + 1);
+        rope_text.offset_of_offset_col(line_offset, next_line_offset, end_col)
     } else {
-        let rope_text = text_prov.rope_text();
-
-        rope_text.line_end_offset(line, true)
+        line_end_offset
     }
 }
 
@@ -1910,13 +1938,13 @@ pub fn end_of_rvline(
 fn shift_rvline(
     layouts: &TextLayoutCache,
     text_prov: &impl TextLayoutProvider,
+    rope_text: &RopeTextVal,
     font_sizes: &dyn LineFontSizeProvider,
     vline: RVLine,
     backwards: bool,
     linear: bool,
 ) -> Option<(RVLine, usize)> {
     if linear {
-        let rope_text = text_prov.rope_text();
         debug_assert_eq!(
             vline.line_index, 0,
             "Line index should be zero if we're linearly working with lines"
@@ -1940,10 +1968,10 @@ fn shift_rvline(
             Some((RVLine::new(next_line, 0), offset))
         }
     } else if backwards {
-        prev_rvline(layouts, text_prov, font_sizes, vline)
+        prev_rvline(layouts, text_prov, rope_text, font_sizes, vline)
     } else {
         let font_size = font_sizes.font_size(vline.line);
-        Some(next_rvline(layouts, text_prov, font_size, vline))
+        Some(next_rvline(layouts, text_prov, rope_text, font_size, vline))
     }
 }
 
@@ -1971,10 +1999,10 @@ fn rvline_offset(
 fn next_rvline(
     layouts: &TextLayoutCache,
     text_prov: &impl TextLayoutProvider,
+    rope_text: &RopeTextVal,
     font_size: usize,
     RVLine { line, line_index }: RVLine,
 ) -> (RVLine, usize) {
-    let rope_text = text_prov.rope_text();
     if let Some(layout_line) = layouts.get(font_size, line) {
         if let Some((line_col, _)) = layout_line.layout_cols(text_prov, line).nth(line_index + 1) {
             let line_col = text_prov.before_phantom_col(line, line_col);
@@ -2001,10 +2029,10 @@ fn next_rvline(
 fn prev_rvline(
     layouts: &TextLayoutCache,
     text_prov: &impl TextLayoutProvider,
+    rope_text: &RopeTextVal,
     font_sizes: &dyn LineFontSizeProvider,
     RVLine { line, line_index }: RVLine,
 ) -> Option<(RVLine, usize)> {
-    let rope_text = text_prov.rope_text();
     if line_index == 0 {
         // Line index was zero so we must be moving back a buffer line
         if line == 0 {
@@ -2015,7 +2043,7 @@ fn prev_rvline(
         let font_size = font_sizes.font_size(prev_line);
         if let Some(layout_line) = layouts.get(font_size, prev_line) {
             let (i, line_col) = layout_line
-                .start_layout_cols(text_prov, prev_line)
+                .start_layout_cols_rope(text_prov, rope_text, prev_line)
                 .enumerate()
                 .last()
                 .unwrap_or((0, 0));

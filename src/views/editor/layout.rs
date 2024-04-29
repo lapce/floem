@@ -2,7 +2,7 @@ use crate::{
     cosmic_text::{LayoutLine, TextLayout},
     peniko::Color,
 };
-use floem_editor_core::buffer::rope_text::RopeText;
+use floem_editor_core::buffer::rope_text::{RopeText, RopeTextVal};
 
 use super::{phantom_text::PhantomTextLine, visual_line::TextLayoutProvider};
 
@@ -54,6 +54,31 @@ impl TextLayoutLine {
         text_prov: impl TextLayoutProvider + 'a,
         line: usize,
     ) -> impl Iterator<Item = (usize, usize)> + 'a {
+        let text = text_prov.rope_text();
+        self.layout_cols_rope(text_prov, text, line)
+    }
+
+    pub(crate) fn layout_cols_rope<'a>(
+        &'a self,
+        text_prov: impl TextLayoutProvider + 'a,
+        text: RopeTextVal,
+        line: usize,
+    ) -> impl Iterator<Item = (usize, usize)> + 'a {
+        let line_offset = text.offset_of_line(line);
+        // let line_end = text.line_end_col(line, true);
+        let line_end_offset = text.line_end_offset(line, true);
+
+        self.layout_cols_offsets(text_prov, text, line, line_offset, line_end_offset)
+    }
+
+    pub(crate) fn layout_cols_offsets<'a>(
+        &'a self,
+        text_prov: impl TextLayoutProvider + 'a,
+        text: RopeTextVal,
+        line: usize,
+        line_offset: usize,
+        line_end_offset: usize,
+    ) -> impl Iterator<Item = (usize, usize)> + 'a {
         let mut prefix = None;
         // Include an entry if there is nothing
         if self.text.lines.len() == 1 {
@@ -81,18 +106,16 @@ impl TextLayoutLine {
                 let start = line_start + l.glyphs[0].start;
                 let end = line_start + l.glyphs.last().unwrap().end;
 
-                let text = text_prov.rope_text();
                 // We can't just use the original end, because the *true* last glyph on the line
                 // may be a space, but it isn't included in the layout! Though this only happens
                 // for single spaces, for some reason.
                 let pre_end = text_prov.before_phantom_col(line_v, end);
-                let line_offset = text.offset_of_line(line);
 
-                // TODO(minor): We don't really need the entire line, just the two characters after
-                let line_end = text.line_end_col(line, true);
+                // TODO: We don't really need the entire line, just the two characters after. This
+                // could be expensive for large lines.
 
-                let end = if pre_end <= line_end {
-                    let after = text.slice_to_cow(line_offset + pre_end..line_offset + line_end);
+                let end = if pre_end <= line_end_offset - line_offset {
+                    let after = text.slice_to_cow(line_offset + pre_end..line_end_offset);
                     if after.starts_with(' ') && !after.starts_with("  ") {
                         end + 1
                     } else {
@@ -115,6 +138,16 @@ impl TextLayoutLine {
         line: usize,
     ) -> impl Iterator<Item = usize> + 'a {
         self.layout_cols(text_prov, line).map(|(start, _)| start)
+    }
+
+    pub(crate) fn start_layout_cols_rope<'a>(
+        &'a self,
+        text_prov: impl TextLayoutProvider + 'a,
+        text: &RopeTextVal,
+        line: usize,
+    ) -> impl Iterator<Item = usize> + 'a {
+        self.layout_cols_rope(text_prov, text.clone(), line)
+            .map(|(start, _)| start)
     }
 
     /// Get the top y position of the given line index

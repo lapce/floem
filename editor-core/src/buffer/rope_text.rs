@@ -1,4 +1,4 @@
-use std::{borrow::Cow, ops::Range};
+use std::{borrow::Cow, cell::Cell, ops::Range};
 
 use lapce_xi_rope::{interval::IntervalBounds, rope::ChunkIter, Cursor, Rope};
 
@@ -79,9 +79,14 @@ pub trait RopeText {
     /// assert_eq!(text.offset_of_line_col(1, 4), 11); // "d"
     /// ````
     fn offset_of_line_col(&self, line: usize, col: usize) -> usize {
+        let offset = self.offset_of_line(line);
+        let last_offset = self.offset_of_line(line + 1);
+        self.offset_of_offset_col(offset, last_offset, col)
+    }
+
+    fn offset_of_offset_col(&self, mut offset: usize, last_offset: usize, col: usize) -> usize {
         let mut pos = 0;
-        let mut offset = self.offset_of_line(line);
-        let text = self.slice_to_cow(offset..self.offset_of_line(line + 1));
+        let text = self.slice_to_cow(offset..last_offset);
         let mut iter = text.chars().peekable();
         while let Some(c) = iter.next() {
             // Stop at the end of the line
@@ -97,6 +102,12 @@ pub trait RopeText {
             offset += char_len;
         }
         offset
+    }
+
+    fn line_offsets(&self, line: usize) -> (usize, usize) {
+        let line_start = self.offset_of_line(line);
+        let line_end = self.line_end_offset(line, true);
+        (line_start, line_end)
     }
 
     fn line_end_col(&self, line: usize, caret: bool) -> usize {
@@ -366,18 +377,33 @@ pub trait RopeText {
     }
 }
 
+// We cache the last line. This is cheap to calculate, but is used many times.
 #[derive(Clone)]
 pub struct RopeTextVal {
-    pub text: Rope,
+    text: Rope,
+    last_line: Cell<Option<usize>>,
 }
 impl RopeTextVal {
     pub fn new(text: Rope) -> Self {
-        Self { text }
+        Self {
+            text,
+            last_line: Cell::new(None),
+        }
     }
 }
 impl RopeText for RopeTextVal {
     fn text(&self) -> &Rope {
         &self.text
+    }
+
+    fn last_line(&self) -> usize {
+        if let Some(last_line) = self.last_line.get() {
+            last_line
+        } else {
+            let last_line = self.line_of_offset(self.len());
+            self.last_line.set(Some(last_line));
+            last_line
+        }
     }
 }
 impl From<Rope> for RopeTextVal {
@@ -385,18 +411,32 @@ impl From<Rope> for RopeTextVal {
         Self::new(text)
     }
 }
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct RopeTextRef<'a> {
-    pub text: &'a Rope,
+    text: &'a Rope,
+    last_line: Cell<Option<usize>>,
 }
 impl<'a> RopeTextRef<'a> {
     pub fn new(text: &'a Rope) -> Self {
-        Self { text }
+        Self {
+            text,
+            last_line: Cell::new(None),
+        }
     }
 }
 impl<'a> RopeText for RopeTextRef<'a> {
     fn text(&self) -> &Rope {
         self.text
+    }
+
+    fn last_line(&self) -> usize {
+        if let Some(last_line) = self.last_line.get() {
+            last_line
+        } else {
+            let last_line = self.line_of_offset(self.len());
+            self.last_line.set(Some(last_line));
+            last_line
+        }
     }
 }
 impl<'a> From<&'a Rope> for RopeTextRef<'a> {
