@@ -240,7 +240,7 @@ pub trait Decorators: IntoView + Sized {
     fn on_resize(self, action: impl Fn(Rect) + 'static) -> Self {
         let id = self.view_id();
         let state = id.state();
-        state.borrow().update_resize_listener(Box::new(action));
+        state.borrow_mut().update_resize_listener(Box::new(action));
         self
     }
 

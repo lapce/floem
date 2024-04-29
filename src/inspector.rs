@@ -3,7 +3,7 @@ use crate::context::{AppState, StyleCx};
 use crate::event::{Event, EventListener};
 use crate::profiler::profiler;
 use crate::style::{Style, StyleClassRef, StylePropRef, Transition};
-use crate::view::{view_children, IntoView, View};
+use crate::view::{IntoView, View};
 use crate::view_data::ChangeFlags;
 use crate::view_storage::ViewId;
 use crate::views::{
@@ -44,20 +44,19 @@ pub struct CapturedView {
 }
 
 impl CapturedView {
-    pub fn capture(view: &dyn View, app_state: &mut AppState, clip: Rect) -> Self {
-        let id = view.id();
+    pub fn capture(id: ViewId, app_state: &mut AppState, clip: Rect) -> Self {
         let layout = id.layout_rect();
-        let taffy = id.get_layout().unwrap();
+        let taffy = id.get_layout().unwrap_or_default();
         let view_state = id.state();
         let computed_style = view_state.borrow().combined_style.clone();
         let keyboard_navigable = app_state.keyboard_navigable.contains(&id);
         let focused = app_state.focus == Some(id);
         let clipped = layout.intersect(clip);
-        let custom_name = vec![];
+        let custom_name: Vec<String> = vec![];
         let classes = view_state.borrow().classes.clone();
         let name = custom_name
             .iter()
-            .chain(std::iter::once(&view.debug_name().to_string()))
+            // .chain(std::iter::once(&view.debug_name().to_string()))
             .cloned()
             .collect::<Vec<_>>()
             .join(" - ");
@@ -72,7 +71,8 @@ impl CapturedView {
             keyboard_navigable,
             focused,
             classes,
-            children: view_children(view)
+            children: id
+                .children()
                 .into_iter()
                 .map(|view| Rc::new(CapturedView::capture(view, app_state, clipped)))
                 .collect(),

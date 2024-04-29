@@ -116,7 +116,7 @@ impl View for ToggleButton {
                 self.update_restrict_position(true);
             }
             self.state = *state;
-            cx.request_layout(self.view_id());
+            self.id.request_layout();
         }
     }
 
@@ -127,11 +127,11 @@ impl View for ToggleButton {
     ) -> EventPropagation {
         match event {
             crate::event::Event::PointerDown(_event) => {
-                cx.update_active(self.view_id());
+                cx.update_active(self.id);
                 self.held = ToggleState::Held;
             }
             crate::event::Event::PointerUp(_event) => {
-                cx.app_state_mut().request_layout(self.view_id());
+                self.id.request_layout();
 
                 // if held and pointer up. toggle the position (toggle state drag alrady changed the position)
                 if self.held == ToggleState::Held {
@@ -174,12 +174,12 @@ impl View for ToggleButton {
                                     ontoggle(false);
                                 }
                             }
-                            cx.app_state_mut().request_layout(self.view_id());
+                            self.id.request_layout();
                         }
                         ToggleHandleBehavior::Snap => {
                             if event.pos.x as f32 > self.width / 2. && !self.state {
                                 self.position = self.width;
-                                cx.app_state_mut().request_layout(self.view_id());
+                                self.id.request_layout();
                                 self.state = true;
                                 if let Some(ontoggle) = &self.ontoggle {
                                     ontoggle(true);
@@ -187,7 +187,7 @@ impl View for ToggleButton {
                             } else if (event.pos.x as f32) < self.width / 2. && self.state {
                                 self.position = 0.;
                                 // self.held = ToggleState::Nothing;
-                                cx.app_state_mut().request_layout(self.view_id());
+                                self.id.request_layout();
                                 self.state = false;
                                 if let Some(ontoggle) = &self.ontoggle {
                                     ontoggle(false);
@@ -213,7 +213,7 @@ impl View for ToggleButton {
     }
 
     fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<kurbo::Rect> {
-        let layout = cx.get_layout(self.id()).unwrap();
+        let layout = self.id.get_layout().unwrap_or_default();
         let size = layout.size;
         self.width = size.width;
         let circle_radius = match self.style.circle_rad() {
@@ -228,12 +228,12 @@ impl View for ToggleButton {
 
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         if self.style.read(cx) {
-            cx.app_state_mut().request_paint(self.view_id());
+            cx.app_state_mut().request_paint(self.id);
         }
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        let layout = cx.get_layout(self.id()).unwrap();
+        let layout = self.id.get_layout().unwrap_or_default();
         let size = Size::new(layout.size.width as f64, layout.size.height as f64);
         let circle_point = Point::new(self.position as f64, size.to_rect().center().y);
         let circle = crate::kurbo::Circle::new(circle_point, self.radius as f64);
@@ -272,13 +272,14 @@ impl ToggleButton {
         mut self,
         style: impl Fn(ToggleButtonCustomStyle) -> ToggleButtonCustomStyle + 'static,
     ) -> Self {
-        let id = self.view_id();
-        let offset = View::view_data_mut(&mut self).style.next_offset();
+        let id = self.id();
+        let view_state = id.state();
+        let offset = view_state.borrow_mut().style.next_offset();
         let style = create_updater(
             move || style(ToggleButtonCustomStyle(Style::new())),
             move |style| id.update_style(offset, style.0),
         );
-        View::view_data_mut(&mut self).style.push(style.0);
+        view_state.borrow_mut().style.push(style.0);
         self
     }
 }

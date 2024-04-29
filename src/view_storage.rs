@@ -150,6 +150,11 @@ impl ViewId {
             .map(|l| Size::new(l.size.width as f64, l.size.height as f64))
     }
 
+    pub fn parent_size(&self) -> Option<Size> {
+        let parent_id = self.parent()?;
+        parent_id.get_size()
+    }
+
     /// Returns the layout rect excluding borders, padding and position.
     /// This is relative to the view.
     pub fn get_content_rect(&mut self) -> Rect {
@@ -250,7 +255,7 @@ impl ViewId {
     }
 
     /// Requests style for this view and all direct and indirect children.
-    pub(crate) fn request_style_recursive(&mut self) {
+    pub(crate) fn request_style_recursive(&self) {
         let state = self.state();
         state.borrow_mut().request_style_recursive = true;
         self.request_style();
@@ -265,11 +270,11 @@ impl ViewId {
     }
 
     pub fn update_context_menu(&self, menu: Box<MenuCallback>) {
-        self.add_update_message(UpdateMessage::ContextMenu { id: *self, menu });
+        self.state().borrow_mut().context_menu = Some(menu);
     }
 
     pub fn update_popout_menu(&self, menu: Box<MenuCallback>) {
-        self.add_update_message(UpdateMessage::PopoutMenu { id: *self, menu });
+        self.state().borrow_mut().popout_menu = Some(menu);
     }
 
     pub fn request_active(&self) {
@@ -324,13 +329,13 @@ impl ViewId {
         state.borrow_mut().update_cleanup_listener(action);
     }
 
-    pub(crate) fn add_class(&mut self, class: StyleClassRef) {
+    pub(crate) fn add_class(&self, class: StyleClassRef) {
         let state = self.state();
         state.borrow_mut().classes.push(class);
         self.request_style_recursive();
     }
 
-    pub(crate) fn update_style_selector(&mut self, selector: StyleSelector, style: Style) {
+    pub(crate) fn update_style_selector(&self, selector: StyleSelector, style: Style) {
         if let StyleSelector::Dragging = selector {
             let state = self.state();
             state.borrow_mut().dragging_style = Some(style);
@@ -338,7 +343,7 @@ impl ViewId {
         self.request_style();
     }
 
-    pub(crate) fn update_style(&mut self, offset: StackOffset<Style>, style: Style) {
+    pub(crate) fn update_style(&self, offset: StackOffset<Style>, style: Style) {
         let state = self.state();
         let old_any_inherited = state.borrow().style().any_inherited();
         state.borrow_mut().style.set(offset, style);

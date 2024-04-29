@@ -127,11 +127,15 @@ where
         },
         move |(_, e)| key_fn(e),
         move |(index, e)| {
+            let id = ViewId::new();
+            let child = view_fn(e).into_view();
+            let child_id = child.id();
+            id.set_children(vec![child]);
             Item {
-                id: ViewId::new(),
+                id,
                 selection,
                 index,
-                child: view_fn(e).into_view(),
+                child: child_id,
             }
             .on_click_stop(move |_| {
                 if selection.get_untracked() != Some(index) {
@@ -230,7 +234,7 @@ impl<T> View for VirtualList<T> {
         if let Ok(change) = state.downcast::<ListUpdate>() {
             match *change {
                 ListUpdate::SelectionChanged => {
-                    cx.app_state_mut().request_style_recursive(self.view_id())
+                    self.id.request_style_recursive();
                 }
                 ListUpdate::ScrollToSelected => {
                     if let Some(index) = self.selection.get_untracked() {
@@ -254,12 +258,13 @@ impl<T> View for VirtualList<T> {
     }
 
     fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
-        self.child_size = cx
-            .app_state
-            .get_layout(self.child.id())
+        self.child_size = self
+            .child
+            .id()
+            .get_layout()
             .map(|layout| Size::new(layout.size.width as f64, layout.size.height as f64))
             .unwrap();
 
-        cx.compute_view_layout(&mut self.child)
+        cx.compute_view_layout(self.child.id())
     }
 }

@@ -147,7 +147,7 @@ pub trait IntoView {
     fn into_view(self) -> Box<dyn View>;
 }
 
-impl<V: View> IntoView for V {
+impl<V: View + 'static> IntoView for V {
     fn view_id(&self) -> ViewId {
         self.id()
     }
@@ -261,10 +261,10 @@ pub trait View {
             return true;
         }
         let mut found = false;
-        self.for_each_child_mut(&mut |child| {
-            found |= child.scroll_to(cx, target, rect);
-            found
-        });
+
+        for child in self.id().children() {
+            found |= child.view().borrow_mut().scroll_to(cx, target, rect);
+        }
         found
     }
 }
@@ -274,35 +274,12 @@ impl View for Box<dyn View> {
         (**self).id()
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
-        (**self).for_each_child(for_each)
-    }
-
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
-        (**self).for_each_child_mut(for_each)
-    }
-
-    fn for_each_child_rev_mut<'a>(
-        &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
-    ) {
-        (**self).for_each_child_rev_mut(for_each)
-    }
-
     fn view_style(&self) -> Option<Style> {
         (**self).view_style()
     }
 
     fn view_class(&self) -> Option<StyleClassRef> {
         (**self).view_class()
-    }
-
-    fn child(&self, id: ViewId) -> Option<&dyn View> {
-        (**self).child(id)
-    }
-
-    fn child_mut(&mut self, id: ViewId) -> Option<&mut dyn View> {
-        (**self).child_mut(id)
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -324,15 +301,6 @@ impl View for Box<dyn View> {
     fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
         (**self).compute_layout(cx)
     }
-
-    // fn event(
-    //     &mut self,
-    //     cx: &mut EventCx,
-    //     id_path: Option<&[Id]>,
-    //     event: Event,
-    // ) -> EventPropagation {
-    //     (**self).event(cx, id_path, event)
-    // }
 
     fn paint(&mut self, cx: &mut PaintCx) {
         (**self).paint(cx)
@@ -534,34 +502,25 @@ pub(crate) fn paint_border(cx: &mut PaintCx, style: &ViewStyleProps, size: Size)
     }
 }
 
-pub(crate) fn view_children(view: &dyn View) -> Vec<&dyn View> {
-    let mut result = Vec::new();
-    view.for_each_child(&mut |view| {
-        result.push(view);
-        false
-    });
-    result
+pub(crate) fn view_children(view: ViewId) -> Vec<ViewId> {
+    view.children()
 }
 
 /// Tab navigation finds the next or previous view with the `keyboard_navigatable` status in the tree.
 #[allow(dead_code)]
-pub(crate) fn view_tab_navigation(root_view: &dyn View, app_state: &mut AppState, backwards: bool) {
-    let start = app_state
-        .focus
-        .filter(|id| id.id_path().is_some())
-        .unwrap_or(root_view.view_data().id());
+pub(crate) fn view_tab_navigation(root_view: ViewId, app_state: &mut AppState, backwards: bool) {
+    let start = app_state.focus.unwrap_or(root_view);
 
     assert!(
-        view_filtered_children(root_view, start.id_path().unwrap().dispatch()).is_some(),
+        view_filtered_children(root_view, start).is_some(),
         "The focused view is missing from the tree"
     );
 
-    let tree_iter = |id: Id| {
+    let tree_iter = |id: ViewId| {
         if backwards {
-            view_tree_previous(root_view, &id)
-                .unwrap_or_else(|| view_nested_last_child(root_view).view_data().id())
+            view_tree_previous(root_view, id).unwrap_or_else(|| view_nested_last_child(root_view))
         } else {
-            view_tree_next(root_view, &id).unwrap_or(root_view.view_data().id())
+            view_tree_next(root_view, id).unwrap_or(root_view)
         }
     };
 
@@ -574,17 +533,18 @@ pub(crate) fn view_tab_navigation(root_view: &dyn View, app_state: &mut AppState
     app_state.update_focus(new_focus, true);
 }
 
-fn view_filtered_children<'a>(view: &'a dyn View, id_path: &[Id]) -> Option<Vec<&'a dyn View>> {
-    let id = id_path[0];
-    let id_path = &id_path[1..];
+fn view_filtered_children<'a>(view: ViewId, id: ViewId) -> Option<Vec<ViewId>> {
+    let parent = id.parent();
 
-    if id == view.id() {
-        if id_path.is_empty() {
-            Some(view_children(view))
-        } else if let Some(child) = view.child(id_path[0]) {
-            view_filtered_children(child, id_path)
+    if id == view {
+        if let Some(parent) = parent {
+            if view.children().contains(&parent) {
+                view_filtered_children(parent, parent)
+            } else {
+                None
+            }
         } else {
-            None
+            Some(view.children())
         }
     } else {
         None
@@ -592,45 +552,35 @@ fn view_filtered_children<'a>(view: &'a dyn View, id_path: &[Id]) -> Option<Vec<
 }
 
 /// Get the next item in the tree, either the first child or the next sibling of this view or of the first parent view
-fn view_tree_next(root_view: &dyn View, id: &Id) -> Option<Id> {
-    let id_path = id.id_path().unwrap();
-
-    if let Some(child) = view_filtered_children(root_view, id_path.dispatch())
+fn view_tree_next(root_view: ViewId, id: ViewId) -> Option<ViewId> {
+    if let Some(child) = view_filtered_children(root_view, id)
         .unwrap()
         .into_iter()
         .next()
     {
-        return Some(child.view_data().id());
+        return Some(child);
     }
 
-    let mut ancestor = *id;
+    let mut ancestor = id;
     loop {
-        let id_path = ancestor.id_path().unwrap();
-        if id_path.dispatch().is_empty() {
-            return None;
-        }
-        if let Some(next_sibling) = view_next_sibling(root_view, id_path.dispatch()) {
-            return Some(next_sibling.view_data().id());
+        if let Some(next_sibling) = view_next_sibling(root_view, ancestor) {
+            return Some(next_sibling);
         }
         ancestor = ancestor.parent()?;
     }
 }
 
 /// Get the id of the view after this one (but with the same parent and level of nesting)
-fn view_next_sibling<'a>(root_view: &'a dyn View, id_path: &[Id]) -> Option<&'a dyn View> {
-    let id = *id_path.last().unwrap();
-    let parent = &id_path[0..(id_path.len() - 1)];
+fn view_next_sibling(root_view: ViewId, id: ViewId) -> Option<ViewId> {
+    let parent = id.parent();
 
-    if parent.is_empty() {
+    let Some(parent) = parent else {
         // We're the root, which has no sibling
         return None;
-    }
+    };
 
     let children = view_filtered_children(root_view, parent).unwrap();
-    let pos = children
-        .iter()
-        .position(|v| v.view_data().id() == id)
-        .unwrap();
+    let pos = children.iter().position(|v| v == &id).unwrap();
 
     if pos + 1 < children.len() {
         Some(children[pos + 1])
@@ -640,31 +590,28 @@ fn view_next_sibling<'a>(root_view: &'a dyn View, id_path: &[Id]) -> Option<&'a 
 }
 
 /// Get the next item in the tree, the deepest last child of the previous sibling of this view or the parent
-fn view_tree_previous(root_view: &dyn View, id: &Id) -> Option<Id> {
-    let id_path = id.id_path().unwrap();
-
-    view_previous_sibling(root_view, id_path.dispatch())
-        .map(|view| view_nested_last_child(view).view_data().id())
+fn view_tree_previous(root_view: ViewId, id: ViewId) -> Option<ViewId> {
+    view_previous_sibling(root_view, id)
+        .map(|view| view_nested_last_child(view))
         .or_else(|| {
-            (root_view.view_data().id() != *id).then_some(
+            (root_view != id).then_some(
                 id.parent()
-                    .unwrap_or_else(|| view_nested_last_child(root_view).view_data().id()),
+                    .unwrap_or_else(|| view_nested_last_child(root_view)),
             )
         })
 }
 
 /// Get the id of the view before this one (but with the same parent and level of nesting)
-fn view_previous_sibling<'a>(root_view: &'a dyn View, id_path: &[Id]) -> Option<&'a dyn View> {
-    let id = *id_path.last().unwrap();
-    let parent = &id_path[0..(id_path.len() - 1)];
+fn view_previous_sibling(root_view: ViewId, id: ViewId) -> Option<ViewId> {
+    let parent = id.parent();
 
-    if parent.is_empty() {
+    let Some(parent) = parent else {
         // We're the root, which has no sibling
         return None;
-    }
+    };
 
     let children = view_filtered_children(root_view, parent).unwrap();
-    let pos = children.iter().position(|v| v.id() == id).unwrap();
+    let pos = children.iter().position(|v| v == &id).unwrap();
 
     if pos > 0 {
         Some(children[pos - 1])
@@ -673,9 +620,9 @@ fn view_previous_sibling<'a>(root_view: &'a dyn View, id_path: &[Id]) -> Option<
     }
 }
 
-fn view_nested_last_child(view: &dyn View) -> &dyn View {
+fn view_nested_last_child(view: ViewId) -> ViewId {
     let mut last_child = view;
-    while let Some(new_last_child) = view_children(last_child).pop() {
+    while let Some(new_last_child) = last_child.children().pop() {
         last_child = new_last_child;
     }
     last_child
@@ -683,7 +630,7 @@ fn view_nested_last_child(view: &dyn View) -> &dyn View {
 
 /// Produces an ascii art debug display of all of the views.
 #[allow(dead_code)]
-pub(crate) fn view_debug_tree(root_view: &dyn View) {
+pub(crate) fn view_debug_tree(root_view: ViewId) {
     let mut views = vec![(root_view, Vec::new())];
     while let Some((current_view, active_lines)) = views.pop() {
         // Ascii art for the tree view
@@ -693,9 +640,13 @@ pub(crate) fn view_debug_tree(root_view: &dyn View) {
             }
             print!("{}", if *leaf { "├── " } else { "└── " });
         }
-        println!("{:?} {}", current_view.id(), &current_view.debug_name());
+        println!(
+            "{:?} {}",
+            current_view,
+            current_view.view().borrow().debug_name()
+        );
 
-        let mut children = view_children(current_view);
+        let mut children = current_view.children();
         if let Some(last_child) = children.pop() {
             views.push((last_child, [active_lines.as_slice(), &[false]].concat()));
         }

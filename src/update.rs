@@ -65,14 +65,6 @@ pub(crate) enum UpdateMessage {
         id: ViewId,
         animation: Animation,
     },
-    ContextMenu {
-        id: ViewId,
-        menu: Box<dyn Fn() -> Menu>,
-    },
-    PopoutMenu {
-        id: ViewId,
-        menu: Box<dyn Fn() -> Menu>,
-    },
     ShowContextMenu {
         menu: Menu,
         pos: Option<Point>,

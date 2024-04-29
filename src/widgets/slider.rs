@@ -147,7 +147,7 @@ impl View for Slider {
             match *update {
                 SliderUpdate::Percent(percent) => self.percent = percent,
             }
-            cx.request_layout(self.view_id());
+            self.id.request_layout();
         }
     }
 
@@ -158,14 +158,14 @@ impl View for Slider {
     ) -> EventPropagation {
         let pos_changed = match event {
             crate::event::Event::PointerDown(event) => {
-                cx.update_active(self.view_id());
-                cx.app_state_mut().request_layout(self.view_id());
+                cx.update_active(self.id());
+                self.id.request_layout();
                 self.held = true;
                 self.percent = event.pos.x as f32 / self.size.width * 100.;
                 true
             }
             crate::event::Event::PointerUp(event) => {
-                cx.app_state_mut().request_layout(self.view_id());
+                self.id.request_layout();
 
                 // set the state based on the position of the slider
                 let changed = self.held;
@@ -177,7 +177,7 @@ impl View for Slider {
                 changed
             }
             crate::event::Event::PointerMove(event) => {
-                cx.app_state_mut().request_layout(self.view_id());
+                self.id.request_layout();
                 if self.held {
                     self.percent = event.pos.x as f32 / self.size.width * 100.;
                     true
@@ -191,11 +191,11 @@ impl View for Slider {
             }
             crate::event::Event::KeyDown(event) => {
                 if event.key.logical_key == Key::Named(NamedKey::ArrowLeft) {
-                    cx.app_state_mut().request_layout(self.view_id());
+                    self.id.request_layout();
                     self.percent -= 10.;
                     true
                 } else if event.key.logical_key == Key::Named(NamedKey::ArrowRight) {
-                    cx.app_state_mut().request_layout(self.view_id());
+                    self.id.request_layout();
                     self.percent += 10.;
                     true
                 } else {
@@ -230,13 +230,13 @@ impl View for Slider {
         paint |= self.accent_bar_style.read_style(cx, &accent_bar_style);
         paint |= self.style.read(cx);
         if paint {
-            cx.app_state_mut().request_paint(self.data.view_id);
+            cx.app_state_mut().request_paint(self.id);
         }
     }
 
     fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<kurbo::Rect> {
         self.update_restrict_position();
-        let layout = cx.get_layout(self.id()).unwrap();
+        let layout = self.id.get_layout().unwrap_or_default();
 
         self.size = layout.size;
 
@@ -344,18 +344,20 @@ impl Slider {
         self.onchangepx = Some(Box::new(onchangepx));
         self
     }
+
     /// Sets the custom style properties of the `Slider`.
     pub fn slider_style(
         mut self,
         style: impl Fn(SliderCustomStyle) -> SliderCustomStyle + 'static,
     ) -> Self {
-        let id = self.view_id();
-        let offset = View::view_data_mut(&mut self).style.next_offset();
+        let id = self.id();
+        let view_state = id.state();
+        let offset = view_state.borrow_mut().style.next_offset();
         let style = create_updater(
             move || style(SliderCustomStyle(Style::new())),
             move |style| id.update_style(offset, style.0),
         );
-        View::view_data_mut(&mut self).style.push(style.0);
+        view_state.borrow_mut().style.push(style.0);
         self
     }
 }

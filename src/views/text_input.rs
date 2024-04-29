@@ -1114,7 +1114,7 @@ impl View for TextInput {
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        if !cx.app_state.is_focused(&self.view_id())
+        if !cx.app_state.is_focused(&self.id())
             && self.buffer.with_untracked(|buff| buff.is_empty())
         {
             if let Some(placeholder_buff) = &self.placeholder_buff {
@@ -1138,7 +1138,7 @@ impl View for TextInput {
             cx.draw_text(self.text_buf.as_ref().unwrap(), text_start_point);
         }
 
-        let is_cursor_visible = cx.app_state.is_focused(&self.view_id())
+        let is_cursor_visible = cx.app_state.is_focused(&self.id())
             && self.selection.is_none()
             && (self.last_cursor_action_on.elapsed().as_millis()
                 / CURSOR_BLINK_INTERVAL_MS as u128)
@@ -1146,16 +1146,18 @@ impl View for TextInput {
                 == 0;
 
         if is_cursor_visible {
-            let cursor_color = cx
-                .app_state
-                .get_computed_style(self.id())
+            let cursor_color = self
+                .id
+                .state()
+                .borrow()
+                .combined_style
                 .builtin()
                 .cursor_color();
             let cursor_rect = self.get_cursor_rect(&node_layout);
             cx.fill(&cursor_rect, cursor_color.unwrap_or(Color::BLACK), 0.0);
         }
 
-        if cx.app_state.is_focused(&self.view_id()) && self.selection.is_some() {
+        if cx.app_state.is_focused(&self.id()) && self.selection.is_some() {
             self.paint_selection_rect(&node_layout, cx);
         }
 

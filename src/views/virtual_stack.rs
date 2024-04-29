@@ -258,16 +258,17 @@ impl<T> View for VirtualStack<T> {
                 &mut self.children,
                 &self.view_fn,
             );
-            cx.request_all(self.view_id());
+            self.id.request_all();
         }
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::tree::NodeId {
         cx.layout_node(self.id(), true, |cx| {
             let nodes = self
-                .children
-                .iter_mut()
-                .filter_map(|child| Some(cx.layout_view(&mut child.as_mut()?.0)))
+                .id
+                .children()
+                .into_iter()
+                .map(|id| id.view().borrow_mut().layout(cx))
                 .collect::<Vec<_>>();
             let content_size = match self.direction {
                 VirtualDirection::Vertical => taffy::prelude::Size {
@@ -350,7 +351,7 @@ impl<T> View for VirtualStack<T> {
             self.set_viewport.set(viewport);
         }
 
-        view::default_compute_layout(self, cx)
+        view::default_compute_layout(self.id, cx)
     }
 }
 

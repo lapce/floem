@@ -113,11 +113,12 @@ impl WindowHandle {
         });
 
         let widget = view;
+        let main_id = widget.id();
         id.set_children(vec![widget]);
 
         let view = WindowView {
             id,
-            main: widget,
+            main: main_id,
             overlays: Default::default(),
         };
 
@@ -190,7 +191,7 @@ impl WindowHandle {
                     if let Some(listener) = event.listener() {
                         processed |= cx
                             .app_state
-                            .apply_event(self.view.main.id(), &listener, &event)
+                            .apply_event(self.view.main, &listener, &event)
                             .is_some_and(|prop| prop.is_processed());
                     }
                 }
@@ -201,7 +202,7 @@ impl WindowHandle {
                             && (modifiers.is_empty() || *modifiers == Modifiers::SHIFT)
                         {
                             let backwards = modifiers.contains(Modifiers::SHIFT);
-                            view_tab_navigation(&self.view, cx.app_state, backwards);
+                            view_tab_navigation(self.view.id, cx.app_state, backwards);
                             // view_debug_tree(&self.view);
                         } else if let Key::Character(character) = &key.logical_key {
                             // 'I' displays some debug information
@@ -216,7 +217,7 @@ impl WindowHandle {
                                 | NamedKey::ArrowRight),
                             ) = key.logical_key
                             {
-                                view_arrow_navigation(name, cx.app_state, &self.view);
+                                view_arrow_navigation(name, cx.app_state, self.view.id);
                             }
                         }
                     }
@@ -471,7 +472,7 @@ impl WindowHandle {
         if let Some(theme) = &self.theme {
             cx.current = theme.style.clone();
         }
-        cx.style_view(&mut self.view);
+        cx.style_view(self.view.id);
     }
 
     fn layout(&mut self) -> Duration {
@@ -492,7 +493,7 @@ impl WindowHandle {
         self.app_state.request_compute_layout = false;
         let viewport = (self.app_state.root_size / self.app_state.scale).to_rect();
         let mut cx = ComputeLayoutCx::new(&mut self.app_state, viewport);
-        cx.compute_view_layout(&mut self.view);
+        cx.compute_view_layout(self.view.id);
     }
 
     pub fn render_frame(&mut self) {
@@ -547,7 +548,7 @@ impl WindowHandle {
                 0.0,
             );
         }
-        cx.paint_view(&mut self.view);
+        cx.paint_view(self.view.id);
         if let Some(window) = self.window.as_ref() {
             if cx.app_state.capture.is_none() {
                 window.pre_present_notify();
@@ -559,8 +560,8 @@ impl WindowHandle {
     pub(crate) fn capture(&mut self) -> Capture {
         // Capture the view before we run `style` and `layout` to catch missing `request_style`` or
         // `request_layout` flags.
-        let root_layout = self.app_state.get_layout_rect(self.view.view_data().id());
-        let root = CapturedView::capture(&self.view, &mut self.app_state, root_layout);
+        let root_layout = self.view.id.layout_rect();
+        let root = CapturedView::capture(self.view.id, &mut self.app_state, root_layout);
 
         self.app_state.capture = Some(CaptureState::default());
 
@@ -592,7 +593,7 @@ impl WindowHandle {
         self.style();
         let post_style = Instant::now();
 
-        let taffy_root_node = self.app_state.view_state(self.view.view_data().id()).node;
+        let taffy_root_node = self.view.id.state().borrow().node;
         let taffy_duration = self.layout();
         let post_layout = Instant::now();
         let window = self.paint().map(Rc::new);
@@ -822,14 +823,6 @@ impl WindowHandle {
                         let scale = self.scale * cx.app_state.scale;
                         self.paint_state.set_scale(scale);
                     }
-                    UpdateMessage::ContextMenu { id, menu } => {
-                        let state = cx.app_state.view_state(id);
-                        state.context_menu = Some(menu);
-                    }
-                    UpdateMessage::PopoutMenu { id, menu } => {
-                        let state = cx.app_state.view_state(id);
-                        state.popout_menu = Some(menu);
-                    }
                     UpdateMessage::ShowContextMenu { menu, pos } => {
                         let mut menu = menu.popup();
                         let platform_menu = menu.platform_menu();
@@ -882,12 +875,14 @@ impl WindowHandle {
                         let scope = self.scope.create_child();
 
                         let view = with_scope(scope, view);
+                        let child = view.id();
+                        id.set_children(vec![view]);
 
                         let view = OverlayView {
                             id,
                             position,
                             scope,
-                            child: view,
+                            child,
                             size: Size::ZERO,
                             parent_size: Size::ZERO,
                             window_origin: Point::ZERO,
@@ -941,27 +936,27 @@ impl WindowHandle {
                 }
                 AnimUpdateMsg::Resume(anim_id) => {
                     let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
-                    if let Some(anim) = self.app_state.view_state(view_id).animation.as_mut() {
+                    if let Some(anim) = view_id.state().borrow_mut().animation.as_mut() {
                         anim.resume();
                         self.app_state.request_style(view_id)
                     }
                 }
                 AnimUpdateMsg::Pause(anim_id) => {
                     let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
-                    if let Some(anim) = self.app_state.view_state(view_id).animation.as_mut() {
+                    if let Some(anim) = view_id.state().borrow_mut().animation.as_mut() {
                         anim.pause();
                     }
                 }
                 AnimUpdateMsg::Start(anim_id) => {
                     let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
-                    if let Some(anim) = self.app_state.view_state(view_id).animation.as_mut() {
+                    if let Some(anim) = view_id.state().borrow_mut().animation.as_mut() {
                         anim.start();
                         view_id.request_style();
                     }
                 }
                 AnimUpdateMsg::Stop(anim_id) => {
                     let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
-                    if let Some(anim) = self.app_state.view_state(view_id).animation.as_mut() {
+                    if let Some(anim) = view_id.state().borrow_mut().animation.as_mut() {
                         anim.stop();
                         self.app_state.request_style(view_id)
                     }
@@ -970,10 +965,9 @@ impl WindowHandle {
         }
     }
 
-    fn process_update_anim_prop(&mut self, view_id: Id, kind: AnimPropKind, val: AnimValue) {
-        let layout = self.app_state.get_layout(view_id).unwrap();
-        let view_state = self.app_state.view_state(view_id);
-        let anim = view_state.animation.as_mut().unwrap();
+    fn process_update_anim_prop(&mut self, view_id: ViewId, kind: AnimPropKind, val: AnimValue) {
+        let layout = view_id.get_layout().unwrap_or_default();
+        let view_state = view_id.state();
         let prop = match kind {
             AnimPropKind::Scale => todo!(),
             AnimPropKind::Width => {
@@ -995,6 +989,7 @@ impl WindowHandle {
             AnimPropKind::Prop { prop } => {
                 //TODO:  get from cx
                 let from = view_state
+                    .borrow()
                     .combined_style
                     .map
                     .get(&prop.key)
@@ -1011,22 +1006,28 @@ impl WindowHandle {
         // Overrides the old value
         // TODO: logic based on the old val to make the animation smoother when overriding an old
         // animation that was in progress
-        anim.props_mut().insert(kind, prop);
-        anim.start();
+        if let Some(anim) = view_state.borrow_mut().animation.as_mut() {
+            anim.props_mut().insert(kind, prop);
+            anim.start();
+        }
 
         self.app_state.request_style(view_id);
     }
 
     fn needs_layout(&mut self) -> bool {
-        self.app_state
-            .view_state(self.view.view_data().id())
+        self.view
+            .id
+            .state()
+            .borrow()
             .requested_changes
             .contains(ChangeFlags::LAYOUT)
     }
 
     fn needs_style(&mut self) -> bool {
-        self.app_state
-            .view_state(self.view.view_data().id())
+        self.view
+            .id
+            .state()
+            .borrow()
             .requested_changes
             .contains(ChangeFlags::STYLE)
     }
@@ -1501,9 +1502,9 @@ fn context_menu_view(
 
 struct OverlayView {
     id: ViewId,
+    child: ViewId,
     scope: Scope,
     position: Point,
-    child: Box<dyn View>,
     window_origin: Point,
     parent_size: Size,
     size: Size,
@@ -1523,34 +1524,19 @@ impl View for OverlayView {
         )
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
-        for_each(&self.child);
-    }
-
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
-        for_each(&mut self.child);
-    }
-
-    fn for_each_child_rev_mut<'a>(
-        &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
-    ) {
-        for_each(&mut self.child);
-    }
-
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         "Overlay".into()
     }
 
     fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
         self.window_origin = cx.window_origin;
-        if let Some(parent_size) = cx.parent_size(self.view_data().id) {
+        if let Some(parent_size) = self.id.parent_size() {
             self.parent_size = parent_size;
         }
-        if let Some(layout) = cx.get_layout(self.view_data().id) {
+        if let Some(layout) = self.id.get_layout() {
             self.size = Size::new(layout.size.width as f64, layout.size.height as f64);
         }
-        default_compute_layout(self, cx)
+        default_compute_layout(self.id, cx)
     }
 
     fn paint(&mut self, cx: &mut PaintCx) {
@@ -1566,7 +1552,7 @@ impl View for OverlayView {
             0.0
         };
         cx.offset((-x, -y));
-        cx.paint_view(&mut self.child);
+        cx.paint_view(self.child);
         cx.restore();
     }
 }
@@ -1574,7 +1560,7 @@ impl View for OverlayView {
 /// A view representing a window which manages the main window view and any overlays.
 struct WindowView {
     id: ViewId,
-    main: Box<dyn View>,
+    main: ViewId,
     overlays: IndexMap<ViewId, OverlayView>,
 }
 
@@ -1585,33 +1571,6 @@ impl View for WindowView {
 
     fn view_style(&self) -> Option<crate::style::Style> {
         Some(Style::new().width_full().height_full())
-    }
-
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
-        for_each(&self.main);
-        for overlay in self.overlays.values() {
-            for_each(overlay);
-        }
-    }
-
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
-        for_each(&mut self.main);
-        for overlay in self.overlays.values_mut() {
-            for_each(overlay);
-        }
-    }
-
-    fn for_each_child_rev_mut<'a>(
-        &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
-    ) {
-        for overlay in self.overlays.values_mut().rev() {
-            if for_each(overlay) {
-                // if the overlay events are handled we don't need to run the main window events
-                return;
-            };
-        }
-        for_each(&mut self.main);
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {

@@ -114,33 +114,6 @@ impl View for Stack {
             .map(|direction| Style::new().flex_direction(direction))
     }
 
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
-        for child in &self.children {
-            if for_each(child) {
-                break;
-            }
-        }
-    }
-
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
-        for child in &mut self.children {
-            if for_each(child) {
-                break;
-            }
-        }
-    }
-
-    fn for_each_child_rev_mut<'a>(
-        &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
-    ) {
-        for child in self.children.iter_mut().rev() {
-            if for_each(child) {
-                break;
-            }
-        }
-    }
-
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         match self.direction {
             Some(FlexDirection::Column) => "Vertical Stack".into(),

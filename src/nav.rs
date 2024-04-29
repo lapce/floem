@@ -8,7 +8,7 @@ use crate::{
     view_storage::ViewId,
 };
 
-pub(crate) fn view_arrow_navigation(key: NamedKey, app_state: &mut AppState, view: &dyn View) {
+pub(crate) fn view_arrow_navigation(key: NamedKey, app_state: &mut AppState, view: ViewId) {
     let focused = match app_state.focus {
         Some(id) => id,
         None => {

@@ -12,7 +12,7 @@ use crate::{
     style::{Style, StyleClass, Width},
     style_class,
     unit::PxPctAuto,
-    view::{default_compute_layout, View},
+    view::{default_compute_layout, IntoView, View},
     view_storage::ViewId,
     views::{scroll, Decorators},
     EventPropagation,
@@ -32,12 +32,12 @@ prop_extractor!(DropDownStyle {
 
 pub struct DropDown<T: 'static> {
     id: ViewId,
-    main_view: Box<dyn View>,
+    main_view: ViewId,
     main_view_scope: Scope,
     main_fn: Box<ChildFn<T>>,
     list_view: Rc<dyn Fn() -> Box<dyn View>>,
     list_style: Style,
-    overlay_id: Option<Id>,
+    overlay_id: Option<ViewId>,
     window_origin: Option<Point>,
     on_accept: Option<Box<dyn Fn(T)>>,
     on_open: Option<Box<dyn Fn(bool)>>,
@@ -99,14 +99,14 @@ impl<T: 'static> View for DropDown<T> {
                 Message::ActiveElement(val) => {
                     if let Ok(val) = val.downcast::<T>() {
                         let old_child_scope = self.main_view_scope;
-                        cx.app_state_mut().remove_view(&mut self.main_view);
+                        cx.app_state_mut().remove_view(self.main_view);
                         let (main_view, main_view_scope) = (self.main_fn)(*val);
-                        self.main_view = main_view.build();
+                        let main_view_id = main_view.id();
+                        self.id.set_children(vec![main_view]);
+                        self.main_view = main_view_id;
                         self.main_view_scope = main_view_scope;
 
                         old_child_scope.dispose();
-                        self.main_view.view_data().id.set_parent(self.id());
-                        view_children_set_parent_id(&*self.main_view);
                         cx.request_all(self.view_id());
                     }
                 }
@@ -169,7 +169,7 @@ where
     T: Clone + 'static,
     AIF: Fn() -> T + 'static,
 {
-    let dropdown_id = Id::next();
+    let dropdown_id = ViewId::new();
 
     let list_view = Rc::new(move || {
         let iterator = iterator.clone();
@@ -195,7 +195,7 @@ where
                 inner_list_id.request_focus();
             })
             .class(DropDownScrollClass)
-            .any()
+            .into_view()
     });
 
     let initial = create_updater(active_item, move |new_state| {
@@ -205,10 +205,13 @@ where
     let main_fn = Box::new(as_child_of_current_scope(main_view));
 
     let (child, main_view_scope) = main_fn(initial);
+    let main_view = child.id();
+
+    dropdown_id.set_children(vec![child]);
 
     DropDown {
-        view_data: ViewData::new(dropdown_id),
-        main_view: Box::new(child.build()),
+        id: dropdown_id,
+        main_view,
         main_view_scope,
         main_fn,
         list_view,
@@ -255,7 +258,7 @@ impl<T> DropDown<T> {
         if self.overlay_id.is_none() {
             self.view_id().request_layout();
             cx.app_state.compute_layout();
-            if let Some(layout) = cx.app_state.get_layout(self.id()) {
+            if let Some(layout) = self.id.get_layout() {
                 self.update_list_style(layout.size.width as f64);
                 let point =
                     self.window_origin.unwrap_or_default() + (0., layout.size.height as f64);
@@ -288,8 +291,10 @@ impl<T> DropDown<T> {
         let list = self.list_view.clone();
         let list_style = self.list_style.clone();
         self.overlay_id = Some(add_overlay(point, move |_| {
-            let list = list().style(move |s| s.apply(list_style.clone())).build();
-            let list_id = list.view_data().view_id;
+            let list = list()
+                .style(move |s| s.apply(list_style.clone()))
+                .into_view();
+            let list_id = list.id();
             list_id.request_focus();
             list
         }));
@@ -301,12 +306,13 @@ impl<T> DropDown<T> {
         style: impl Fn(DropDownCustomStyle) -> DropDownCustomStyle + 'static,
     ) -> Self {
         let id = self.view_id();
-        let offset = View::view_data_mut(&mut self).style.next_offset();
+        let view_state = id.state();
+        let offset = view_state.borrow_mut().style.next_offset();
         let style = create_updater(
             move || style(DropDownCustomStyle(Style::new())),
             move |style| id.update_style(offset, style.0),
         );
-        View::view_data_mut(&mut self).style.push(style.0);
+        view_state.borrow_mut().style.push(style.0);
         self
     }
 }
