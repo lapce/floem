@@ -13,12 +13,12 @@ use crate::{
     keyboard::Modifiers,
     menu::Menu,
     style::{Style, StyleClass, StyleSelector},
-    view::ViewBuilder,
+    view::IntoView,
     EventPropagation,
 };
 
 /// A trait that extends the appearance and functionality of Views through styling and event handling.
-pub trait Decorators: ViewBuilder + Sized {
+pub trait Decorators: IntoView + Sized {
     /// Alter the style of the view.
     ///
     /// Earlier applications of `style` have lower priority than later calls.
@@ -45,8 +45,7 @@ pub trait Decorators: ViewBuilder + Sized {
         let style = create_updater(
             move || style(Style::new()),
             move |style| {
-                let state = view_id.state();
-                state.borrow_mut().update_style(offset, style);
+                view_id.update_style(offset, style);
             },
         );
         state.borrow_mut().style.push(style);
@@ -55,7 +54,9 @@ pub trait Decorators: ViewBuilder + Sized {
     }
 
     fn debug_name(mut self, name: impl Into<String>) -> Self {
-        self.view_data_mut().debug_name.push(name.into());
+        let view_id = self.view_id();
+        let state = view_id.state();
+        state.borrow_mut().debug_name.push(name.into());
         self
     }
 
@@ -64,34 +65,31 @@ pub trait Decorators: ViewBuilder + Sized {
         let view_id = self.view_id();
         create_effect(move |_| {
             let style = style(Style::new());
-            let state = view_id.state();
-            state
-                .borrow_mut()
-                .update_style_selector(StyleSelector::Dragging, style);
+            view_id.update_style_selector(StyleSelector::Dragging, style);
         });
         self
     }
 
     fn class<C: StyleClass>(self, _class: C) -> Self {
-        self.id().add_class(C::class_ref());
+        self.view_id().add_class(C::class_ref());
         self
     }
 
     /// Allows the element to be navigated to with the keyboard. Similar to setting tabindex="0" in html.
     fn keyboard_navigatable(self) -> Self {
-        let id = self.id();
+        let id = self.view_id();
         id.keyboard_navigatable();
         self
     }
 
     fn draggable(self) -> Self {
-        let id = self.id();
+        let id = self.view_id();
         id.draggable();
         self
     }
 
     fn disabled(self, disabled_fn: impl Fn() -> bool + 'static) -> Self {
-        let id = self.id();
+        let id = self.view_id();
 
         create_effect(move |_| {
             let is_disabled = disabled_fn();
@@ -107,10 +105,7 @@ pub trait Decorators: ViewBuilder + Sized {
         listener: EventListener,
         action: impl Fn(&Event) -> EventPropagation + 'static,
     ) -> Self {
-        let view_id = self.view_id();
-        let state = view_id.state();
-        state
-            .borrow_mut()
+        self.view_id()
             .add_event_listener(listener, Box::new(action));
         self
     }
@@ -124,7 +119,7 @@ pub trait Decorators: ViewBuilder + Sized {
         modifiers: Modifiers,
         action: impl Fn(&Event) + 'static,
     ) -> Self {
-        self.view_data_mut().event_handlers.push(Box::new(move |e| {
+        self.on_event(EventListener::KeyDown, move |e| {
             if let Event::KeyDown(ke) = e {
                 if ke.key.logical_key == key && ke.modifiers == modifiers {
                     action(e);
@@ -132,8 +127,7 @@ pub trait Decorators: ViewBuilder + Sized {
                 }
             }
             EventPropagation::Continue
-        }));
-        self
+        })
     }
 
     /// Add an handler for a specific key being released.
@@ -145,7 +139,7 @@ pub trait Decorators: ViewBuilder + Sized {
         modifiers: Modifiers,
         action: impl Fn(&Event) + 'static,
     ) -> Self {
-        self.view_data_mut().event_handlers.push(Box::new(move |e| {
+        self.on_event(EventListener::KeyDown, move |e| {
             if let Event::KeyUp(ke) = e {
                 if ke.key.logical_key == key && ke.modifiers == modifiers {
                     action(e);
@@ -153,8 +147,7 @@ pub trait Decorators: ViewBuilder + Sized {
                 }
             }
             EventPropagation::Continue
-        }));
-        self
+        })
     }
 
     /// Add an event handler for the given [EventListener]. This event will be handled with
@@ -245,25 +238,28 @@ pub trait Decorators: ViewBuilder + Sized {
     }
 
     fn on_resize(self, action: impl Fn(Rect) + 'static) -> Self {
-        let id = self.id();
-        id.update_resize_listener(Box::new(action));
+        let id = self.view_id();
+        let state = id.state();
+        state.borrow().update_resize_listener(Box::new(action));
         self
     }
 
     fn on_move(self, action: impl Fn(Point) + 'static) -> Self {
-        let id = self.id();
-        id.update_move_listener(Box::new(action));
+        let id = self.view_id();
+        let state = id.state();
+        state.borrow_mut().update_move_listener(Box::new(action));
         self
     }
 
     fn on_cleanup(self, action: impl Fn() + 'static) -> Self {
-        let id = self.id();
-        id.update_cleanup_listener(Box::new(action));
+        let id = self.view_id();
+        let state = id.state();
+        state.borrow_mut().update_cleanup_listener(Box::new(action));
         self
     }
 
     fn animation(self, anim: Animation) -> Self {
-        let id = self.id();
+        let id = self.view_id();
         create_effect(move |_| {
             id.update_animation(anim.clone());
         });
@@ -271,7 +267,7 @@ pub trait Decorators: ViewBuilder + Sized {
     }
 
     fn clear_focus(self, when: impl Fn() + 'static) -> Self {
-        let id = self.id();
+        let id = self.view_id();
         create_effect(move |_| {
             when();
             id.clear_focus();
@@ -280,7 +276,7 @@ pub trait Decorators: ViewBuilder + Sized {
     }
 
     fn request_focus(self, when: impl Fn() + 'static) -> Self {
-        let id = self.id();
+        let id = self.view_id();
         create_effect(move |_| {
             when();
             id.request_focus();
@@ -314,17 +310,17 @@ pub trait Decorators: ViewBuilder + Sized {
 
     /// Adds a secondary-click context menu to the view, which opens at the mouse position.
     fn context_menu(self, menu: impl Fn() -> Menu + 'static) -> Self {
-        let id = self.id();
+        let id = self.view_id();
         id.update_context_menu(Box::new(menu));
         self
     }
 
     /// Adds a primary-click context menu, which opens below the view.
     fn popout_menu(self, menu: impl Fn() -> Menu + 'static) -> Self {
-        let id = self.id();
+        let id = self.view_id();
         id.update_popout_menu(Box::new(menu));
         self
     }
 }
 
-impl<V: ViewBuilder> Decorators for V {}
+impl<V: IntoView> Decorators for V {}

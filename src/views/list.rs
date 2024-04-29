@@ -2,13 +2,13 @@ use super::{v_stack_from_iter, Decorators, Stack};
 use crate::context::StyleCx;
 use crate::reactive::create_effect;
 use crate::style::{Style, StyleClassRef};
-use crate::view::ViewBuilder;
+use crate::view_storage::ViewId;
 use crate::EventPropagation;
 use crate::{
     event::{Event, EventListener},
     id::Id,
     keyboard::{Key, NamedKey},
-    view::{View, ViewData},
+    view::View,
 };
 use floem_reactive::{create_rw_signal, RwSignal};
 
@@ -19,15 +19,15 @@ enum ListUpdate {
 }
 
 pub(crate) struct Item {
-    pub(crate) data: ViewData,
+    pub(crate) id: ViewId,
     pub(crate) index: usize,
     pub(crate) selection: RwSignal<Option<usize>>,
-    pub(crate) child: Box<dyn View>,
+    pub(crate) child: ViewId,
 }
 
 /// A list of views that support the selection of items. See [`list`].
 pub struct List {
-    data: ViewData,
+    id: ViewId,
     selection: RwSignal<Option<usize>>,
     onaccept: Option<Box<dyn Fn(Option<usize>)>>,
     child: Stack,
@@ -69,18 +69,21 @@ pub fn list<V>(iterator: impl IntoIterator<Item = V>) -> List
 where
     V: View + 'static,
 {
-    let id = Id::next();
+    let id = ViewId::new();
     let selection = create_rw_signal(None);
     create_effect(move |_| {
         selection.track();
         id.update_state(ListUpdate::SelectionChanged);
     });
     let stack = v_stack_from_iter(iterator.into_iter().enumerate().map(move |(index, v)| {
+        let id = ViewId::new();
+        let child = v.id();
+        id.set_children(vec![Box::new(v)]);
         Item {
-            data: ViewData::new(Id::next()),
+            id,
             selection,
             index,
-            child: Box::new(v),
+            child,
         }
         .on_click_stop(move |_| {
             if selection.get_untracked() != Some(index) {
@@ -92,7 +95,7 @@ where
     .style(|s| s.width_full().height_full());
     let length = stack.children.len();
     List {
-        data: ViewData::new(id),
+        id,
         selection,
         child: stack,
         onaccept: None,
@@ -163,27 +166,9 @@ where
     })
 }
 
-impl ViewBuilder for List {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn View> {
-        Box::new(self)
-    }
-}
-
 impl View for List {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
+    fn id(&self) -> ViewId {
+        self.id
     }
 
     fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
@@ -209,11 +194,11 @@ impl View for List {
         if let Ok(change) = state.downcast::<ListUpdate>() {
             match *change {
                 ListUpdate::SelectionChanged => {
-                    cx.app_state_mut().request_style_recursive(self.id())
+                    self.id.request_style_recursive();
                 }
                 ListUpdate::ScrollToSelected => {
                     if let Some(index) = self.selection.get_untracked() {
-                        self.child.children[index].view_data().id().scroll_to(None);
+                        self.child.children[index].id().scroll_to(None);
                     }
                 }
                 ListUpdate::Accept => {
@@ -226,46 +211,13 @@ impl View for List {
     }
 }
 
-impl ViewBuilder for Item {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn View> {
-        Box::new(self)
-    }
-}
-
 impl View for Item {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
+    fn id(&self) -> ViewId {
+        self.id
     }
 
     fn view_style(&self) -> Option<crate::style::Style> {
         Some(Style::new().flex_col())
-    }
-
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
-        for_each(&self.child);
-    }
-
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
-        for_each(&mut self.child);
-    }
-
-    fn for_each_child_rev_mut<'a>(
-        &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
-    ) {
-        for_each(&mut self.child);
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -277,10 +229,10 @@ impl View for Item {
         if Some(self.index) == selected {
             cx.save();
             cx.selected();
-            cx.style_view(&mut self.child);
+            cx.style_view(self.child);
             cx.restore();
         } else {
-            cx.style_view(&mut self.child);
+            cx.style_view(self.child);
         }
     }
 }

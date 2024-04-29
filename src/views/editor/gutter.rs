@@ -6,7 +6,8 @@ use crate::{
     prop, prop_extractor,
     style::{Style, TextColor},
     style_class,
-    view::{AnyWidget, View, ViewBuilder, ViewData},
+    view::View,
+    view_storage::ViewId,
     views::Decorators,
     Renderer,
 };
@@ -41,7 +42,7 @@ impl GutterStyle {
 }
 
 pub struct EditorGutterView {
-    data: ViewData,
+    id: ViewId,
     editor: RwSignal<Editor>,
     full_width: f64,
     text_width: f64,
@@ -51,10 +52,10 @@ pub struct EditorGutterView {
 style_class!(pub GutterClass);
 
 pub fn editor_gutter_view(editor: RwSignal<Editor>) -> EditorGutterView {
-    let id = Id::next();
+    let id = ViewId::new();
 
     EditorGutterView {
-        data: ViewData::new(id),
+        id,
         editor,
         full_width: 0.0,
         text_width: 0.0,
@@ -63,26 +64,9 @@ pub fn editor_gutter_view(editor: RwSignal<Editor>) -> EditorGutterView {
     .class(GutterClass)
 }
 
-impl ViewBuilder for EditorGutterView {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> AnyWidget {
-        Box::new(self)
-    }
-}
 impl View for EditorGutterView {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
+    fn id(&self) -> ViewId {
+        self.id
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -113,7 +97,7 @@ impl View for EditorGutterView {
         })
     }
     fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
-        if let Some(width) = cx.get_layout(self.data.id()).map(|l| l.size.width as f64) {
+        if let Some(width) = self.id.get_layout().map(|l| l.size.width as f64) {
             self.full_width = width;
         }
 
@@ -137,7 +121,7 @@ impl View for EditorGutterView {
             > 1e-2
         {
             self.text_width = widest_text_width;
-            cx.app_state_mut().request_layout(self.id());
+            self.id.request_layout();
         }
         None
     }

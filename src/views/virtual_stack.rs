@@ -11,7 +11,8 @@ use taffy::{
 use crate::{
     context::ComputeLayoutCx,
     id::Id,
-    view::{self, AnyWidget, View, ViewBuilder, ViewData},
+    view::{self, IntoView, View},
+    view_storage::ViewId,
 };
 
 use super::{apply_diff, diff, Diff, DiffOpAdd, FxIndexSet, HashRun};
@@ -53,12 +54,12 @@ pub struct VirtualStack<T>
 where
     T: 'static,
 {
-    data: ViewData,
+    id: ViewId,
     direction: VirtualDirection,
-    children: Vec<Option<(AnyWidget, Scope)>>,
+    children: Vec<Option<(ViewId, Scope)>>,
     viewport: Rect,
     set_viewport: WriteSignal<Rect>,
-    view_fn: Box<dyn Fn(T) -> (AnyWidget, Scope)>,
+    view_fn: Box<dyn Fn(T) -> (Box<dyn View>, Scope)>,
     phatom: PhantomData<T>,
     before_size: f64,
     content_size: f64,
@@ -117,9 +118,9 @@ where
     KF: Fn(&T) -> K + 'static,
     K: Eq + Hash + 'static,
     VF: Fn(T) -> V + 'static,
-    V: ViewBuilder + 'static,
+    V: IntoView + 'static,
 {
-    let id = Id::next();
+    let id = ViewId::new();
 
     let (viewport, set_viewport) = create_signal(Rect::ZERO);
 
@@ -214,10 +215,10 @@ where
         (before_size, content_size, HashRun(hashed_items))
     });
 
-    let view_fn = Box::new(as_child_of_current_scope(move |e| view_fn(e).build()));
+    let view_fn = Box::new(as_child_of_current_scope(move |e| view_fn(e).into_view()));
 
     VirtualStack {
-        data: ViewData::new(id),
+        id,
         direction,
         children: Vec::new(),
         viewport: Rect::ZERO,
@@ -231,59 +232,9 @@ where
     }
 }
 
-impl<T> ViewBuilder for VirtualStack<T> {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn View> {
-        Box::new(self)
-    }
-}
-
 impl<T> View for VirtualStack<T> {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
-        for child in self.children.iter().filter_map(|child| child.as_ref()) {
-            if for_each(&child.0) {
-                break;
-            }
-        }
-    }
-
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
-        for child in self.children.iter_mut().filter_map(|child| child.as_mut()) {
-            if for_each(&mut child.0) {
-                break;
-            }
-        }
-    }
-
-    fn for_each_child_rev_mut<'a>(
-        &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
-    ) {
-        for child in self
-            .children
-            .iter_mut()
-            .rev()
-            .filter_map(|child| child.as_mut())
-        {
-            if for_each(&mut child.0) {
-                break;
-            }
-        }
+    fn id(&self) -> ViewId {
+        self.id
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -307,7 +258,7 @@ impl<T> View for VirtualStack<T> {
                 &mut self.children,
                 &self.view_fn,
             );
-            cx.request_all(self.id());
+            cx.request_all(self.view_id());
         }
     }
 

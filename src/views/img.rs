@@ -5,12 +5,7 @@ use floem_renderer::Renderer;
 use image::{DynamicImage, GenericImageView};
 use sha2::{Digest, Sha256};
 
-use crate::{
-    id::Id,
-    style::Style,
-    unit::UnitExt,
-    view::{View, ViewBuilder, ViewData},
-};
+use crate::{id::Id, style::Style, unit::UnitExt, view::View, view_storage::ViewId};
 
 use taffy::tree::NodeId;
 
@@ -86,7 +81,7 @@ impl ImageStyle {
 }
 
 pub struct Img {
-    data: ViewData,
+    id: ViewId,
     //FIXME: store the pixel format(once its added to vger), for now we only store RGBA(RGB is converted to RGBA)
     img: Option<Rc<DynamicImage>>,
     img_hash: Option<Vec<u8>>,
@@ -99,12 +94,12 @@ pub fn img(image: impl Fn() -> Vec<u8> + 'static) -> Img {
 }
 
 pub(crate) fn img_dynamic(image: impl Fn() -> Option<Rc<DynamicImage>> + 'static) -> Img {
-    let id = Id::next();
+    let id = ViewId::new();
     create_effect(move |_| {
         id.update_state(image());
     });
     Img {
-        data: ViewData::new(id),
+        id,
         img: None,
         img_hash: None,
         img_dimensions: None,
@@ -112,27 +107,9 @@ pub(crate) fn img_dynamic(image: impl Fn() -> Option<Rc<DynamicImage>> + 'static
     }
 }
 
-impl ViewBuilder for Img {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn View> {
-        Box::new(self)
-    }
-}
-
 impl View for Img {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
+    fn id(&self) -> ViewId {
+        self.id
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -148,7 +125,7 @@ impl View for Img {
             });
             self.img = *img;
             self.img_dimensions = self.img.as_ref().map(|img| img.dimensions());
-            cx.request_layout(self.id());
+            self.id.request_layout();
         }
     }
 
@@ -178,7 +155,7 @@ impl View for Img {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         if let Some(img) = self.img.as_ref() {
-            let rect = cx.get_content_rect(self.id());
+            let rect = self.id.get_content_rect();
             cx.draw_img(
                 floem_renderer::Img {
                     img,

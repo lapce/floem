@@ -6,7 +6,7 @@ use crate::reactive::{create_effect, RwSignal};
 use crate::style::{CursorColor, FontProps, PaddingLeft};
 use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
-use crate::view::{ViewBuilder, ViewData};
+use crate::view_storage::ViewId;
 use crate::widgets::PlaceholderTextClass;
 use crate::{prop, prop_extractor, Clipboard, EventPropagation};
 use floem_reactive::create_rw_signal;
@@ -61,7 +61,7 @@ prop_extractor! {
 
 /// Text Input View
 pub struct TextInput {
-    data: ViewData,
+    id: ViewId,
     buffer: RwSignal<String>,
     pub(crate) placeholder_text: Option<String>,
     placeholder_buff: Option<TextLayout>,
@@ -111,7 +111,7 @@ pub enum Direction {
 
 /// Text Input View
 pub fn text_input(buffer: RwSignal<String>) -> TextInput {
-    let id = Id::next();
+    let id = ViewId::new();
     let is_focused = create_rw_signal(false);
 
     {
@@ -122,7 +122,7 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
     }
 
     TextInput {
-        data: ViewData::new(id),
+        id,
         cursor_glyph_idx: 0,
         placeholder_text: None,
         placeholder_buff: None,
@@ -369,8 +369,8 @@ impl TextInput {
     }
 
     fn get_box_position(&self, pos_x: f64, pos_y: f64, cx: &mut EventCx) -> usize {
-        let layout = cx.get_layout(self.id()).unwrap();
-        let style = cx.app_state.get_builtin_style(self.id());
+        let layout = self.id.get_layout().unwrap_or_default();
+        let style = self.id.state().borrow().combined_style.builtin();
 
         let padding_left = match style.padding_left() {
             PxPct::Px(padding) => padding as f32,
@@ -834,7 +834,7 @@ impl TextInput {
     }
 
     fn paint_selection_rect(&self, &node_layout: &Layout, cx: &mut crate::context::PaintCx<'_>) {
-        let style = cx.app_state.get_computed_style(self.id());
+        let style = &self.id.state().borrow().combined_style;
         let cursor_color = style.get(CursorColor);
 
         let padding_left = match style.get(PaddingLeft) {
@@ -924,27 +924,9 @@ fn get_dbl_click_selection(glyph_idx: usize, buffer: &String) -> Range<usize> {
     0..buffer.len()
 }
 
-impl ViewBuilder for TextInput {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn View> {
-        Box::new(self)
-    }
-}
-
 impl View for TextInput {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
+    fn id(&self) -> ViewId {
+        self.id
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -959,18 +941,13 @@ impl View for TextInput {
             }
 
             self.is_focused = is_focused;
-            cx.request_layout(self.id());
+            self.id.request_layout();
         } else {
             eprintln!("downcast failed");
         }
     }
 
-    fn event(
-        &mut self,
-        cx: &mut EventCx,
-        _id_path: Option<&[Id]>,
-        event: Event,
-    ) -> EventPropagation {
+    fn event_before_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
         let buff_len = self.buffer.with_untracked(|buff| buff.len());
         // Workaround for cursor going out of bounds when text buffer is modified externally
         // TODO: find a better way to handle this
@@ -986,8 +963,8 @@ impl View for TextInput {
                     ..
                 },
             ) => {
-                cx.update_active(self.id());
-                cx.app_state_mut().request_layout(self.id());
+                cx.update_active(self.id);
+                self.id.request_layout();
 
                 if event.count == 2 {
                     self.handle_double_click(event.pos.x, event.pos.y, cx);
@@ -998,8 +975,8 @@ impl View for TextInput {
                 true
             }
             Event::PointerMove(event) => {
-                cx.app_state_mut().request_layout(self.id());
-                if cx.is_active(self.id()) {
+                self.id.request_layout();
+                if cx.is_active(self.id) {
                     let selection_stop = self.get_box_position(event.pos.x, event.pos.y, cx);
                     self.update_selection(self.cursor_glyph_idx, selection_stop);
                 }
@@ -1010,7 +987,7 @@ impl View for TextInput {
         };
 
         if is_handled {
-            cx.app_state.request_layout(self.id());
+            self.id.request_layout();
             self.last_cursor_action_on = Instant::now();
         }
 
@@ -1021,10 +998,10 @@ impl View for TextInput {
         let style = cx.style();
         if self.font.read(cx) || self.text_buf.is_none() {
             self.update_text_layout();
-            cx.app_state_mut().request_layout(self.id());
+            self.id.request_layout();
         }
         if self.style.read(cx) {
-            cx.app_state_mut().request_paint(self.id());
+            cx.app_state_mut().request_paint(self.id);
         }
 
         self.selection_style.read_style(cx, &style);
@@ -1036,7 +1013,7 @@ impl View for TextInput {
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::tree::NodeId {
         cx.layout_node(self.id(), true, |cx| {
             let was_focused = self.is_focused;
-            self.is_focused = cx.app_state().is_focused(&self.id());
+            self.is_focused = cx.app_state().is_focused(&self.id);
 
             if was_focused && !self.is_focused {
                 self.selection = None;
@@ -1054,9 +1031,8 @@ impl View for TextInput {
             let text_node = self.text_node.unwrap();
 
             // FIXME: This layout is undefined.
-            #[allow(clippy::unwrap_or_default)]
-            let layout = cx.app_state.get_layout(self.id()).unwrap_or(Layout::new());
-            let style = cx.app_state_mut().get_builtin_style(self.id());
+            let layout = self.id.get_layout().unwrap_or_default();
+            let style = self.id.state().borrow().combined_style.builtin();
             let node_width = layout.size.width;
 
             if self.placeholder_buff.is_none() {
@@ -1138,7 +1114,7 @@ impl View for TextInput {
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        if !cx.app_state.is_focused(&self.id())
+        if !cx.app_state.is_focused(&self.view_id())
             && self.buffer.with_untracked(|buff| buff.is_empty())
         {
             if let Some(placeholder_buff) = &self.placeholder_buff {
@@ -1162,7 +1138,7 @@ impl View for TextInput {
             cx.draw_text(self.text_buf.as_ref().unwrap(), text_start_point);
         }
 
-        let is_cursor_visible = cx.app_state.is_focused(&self.id())
+        let is_cursor_visible = cx.app_state.is_focused(&self.view_id())
             && self.selection.is_none()
             && (self.last_cursor_action_on.elapsed().as_millis()
                 / CURSOR_BLINK_INTERVAL_MS as u128)
@@ -1179,7 +1155,7 @@ impl View for TextInput {
             cx.fill(&cursor_rect, cursor_color.unwrap_or(Color::BLACK), 0.0);
         }
 
-        if cx.app_state.is_focused(&self.id()) && self.selection.is_some() {
+        if cx.app_state.is_focused(&self.view_id()) && self.selection.is_some() {
             self.paint_selection_rect(&node_layout, cx);
         }
 

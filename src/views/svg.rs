@@ -7,16 +7,12 @@ use floem_renderer::{
 use kurbo::Size;
 use sha2::{Digest, Sha256};
 
-use crate::{
-    id::Id,
-    style_class,
-    view::{View, ViewBuilder, ViewData},
-};
+use crate::{style_class, view::View, view_storage::ViewId};
 
 use super::Decorators;
 
 pub struct Svg {
-    data: ViewData,
+    id: ViewId,
     svg_tree: Option<Tree>,
     svg_hash: Option<Vec<u8>>,
 }
@@ -24,40 +20,22 @@ pub struct Svg {
 style_class!(pub SvgClass);
 
 pub fn svg(svg_str: impl Fn() -> String + 'static) -> Svg {
-    let id = Id::next();
+    let id = ViewId::new();
     create_effect(move |_| {
         let new_svg_str = svg_str();
         id.update_state(new_svg_str);
     });
     Svg {
-        data: ViewData::new(id),
+        id,
         svg_tree: None,
         svg_hash: None,
     }
     .class(SvgClass)
 }
 
-impl ViewBuilder for Svg {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn View> {
-        Box::new(self)
-    }
-}
-
 impl View for Svg {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
+    fn id(&self) -> ViewId {
+        self.id
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -75,16 +53,16 @@ impl View for Svg {
             let hash = hasher.finalize().to_vec();
             self.svg_hash = Some(hash);
 
-            cx.request_layout(self.id());
+            self.id.request_layout();
         }
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         if let Some(tree) = self.svg_tree.as_ref() {
             let hash = self.svg_hash.as_ref().unwrap();
-            let layout = cx.get_layout(self.id()).unwrap();
+            let layout = self.id.get_layout().unwrap_or_default();
             let rect = Size::new(layout.size.width as f64, layout.size.height as f64).to_rect();
-            let color = cx.app_state.get_builtin_style(self.id()).color();
+            let color = self.id.state().borrow().combined_style.builtin().color();
             cx.draw_svg(floem_renderer::Svg { tree, hash }, rect, color);
         }
     }

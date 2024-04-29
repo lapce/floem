@@ -13,7 +13,8 @@ use crate::{
     style::{CursorStyle, Style},
     style_class,
     taffy::tree::NodeId,
-    view::{AnyWidget, View, ViewBuilder, ViewData},
+    view::{IntoView, View},
+    view_storage::ViewId,
     views::{scroll, stack, Decorators},
     EventPropagation, Renderer,
 };
@@ -319,6 +320,7 @@ pub struct LineInfo {
     pub vline_y: f64,
     pub vline_info: VLineInfo<()>,
 }
+
 impl LineInfo {
     pub fn with_base(mut self, base: ScreenLinesBase) -> Self {
         self.y += base.active_viewport.y0;
@@ -328,12 +330,12 @@ impl LineInfo {
 }
 
 pub struct EditorView {
-    id: Id,
-    data: ViewData,
+    id: ViewId,
     editor: RwSignal<Editor>,
     is_active: Memo<bool>,
     inner_node: Option<NodeId>,
 }
+
 impl EditorView {
     #[allow(clippy::too_many_arguments)]
     fn paint_normal_selection(
@@ -787,30 +789,10 @@ impl EditorView {
         }
     }
 }
-impl ViewBuilder for EditorView {
-    fn id(&self) -> Id {
-        self.id
-    }
 
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> AnyWidget {
-        Box::new(self)
-    }
-}
 impl View for EditorView {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
+    fn id(&self) -> ViewId {
+        self.id
     }
 
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
@@ -819,7 +801,7 @@ impl View for EditorView {
             ed.es.update(|s| {
                 if s.read(cx) {
                     ed.floem_style_id.update(|val| *val += 1);
-                    cx.app_state_mut().request_paint(id);
+                    cx.app_state_mut().request_paint(self.view_id());
                 }
             })
         });
@@ -880,9 +862,12 @@ impl View for EditorView {
         if editor.viewport.with_untracked(|v| v != &viewport) {
             editor.viewport.set(viewport);
         }
-        let parent_size = cx.app_state.get_layout_rect(self.id.parent().unwrap());
-        if editor.parent_size.with_untracked(|ps| ps != &parent_size) {
-            editor.parent_size.set(parent_size);
+
+        if let Some(parent) = self.id.parent() {
+            let parent_size = parent.layout_rect();
+            if editor.parent_size.with_untracked(|ps| ps != &parent_size) {
+                editor.parent_size.set(parent_size);
+            }
         }
         None
     }
@@ -912,12 +897,10 @@ pub fn editor_view(
     editor: RwSignal<Editor>,
     is_active: impl Fn(bool) -> bool + 'static + Copy,
 ) -> EditorView {
-    let id = Id::next();
+    let id = ViewId::new();
     let is_active = create_memo(move |_| is_active(true));
 
     let ed = editor.get_untracked();
-
-    let data = ViewData::new(id);
 
     let doc = ed.doc;
     let style = ed.style;
@@ -965,7 +948,6 @@ pub fn editor_view(
 
     EditorView {
         id,
-        data,
         editor,
         is_active,
         inner_node: None,
@@ -1086,7 +1068,7 @@ pub fn editor_container_view(
     editor: RwSignal<Editor>,
     is_active: impl Fn(bool) -> bool + 'static + Copy,
     handle_key_event: impl Fn(&KeyPress, Modifiers) -> CommandExecuted + 'static,
-) -> impl ViewBuilder {
+) -> impl IntoView {
     stack((
         editor_gutter(editor),
         editor_content(editor, is_active, handle_key_event),
@@ -1101,7 +1083,7 @@ pub fn editor_container_view(
 
 /// Default editor gutter
 /// Simply shows line numbers
-pub fn editor_gutter(editor: RwSignal<Editor>) -> impl ViewBuilder {
+pub fn editor_gutter(editor: RwSignal<Editor>) -> impl IntoView {
     let ed = editor.get_untracked();
 
     let scroll_delta = ed.scroll_delta;
@@ -1123,7 +1105,7 @@ fn editor_content(
     editor: RwSignal<Editor>,
     is_active: impl Fn(bool) -> bool + 'static + Copy,
     handle_key_event: impl Fn(&KeyPress, Modifiers) -> CommandExecuted + 'static,
-) -> impl ViewBuilder {
+) -> impl IntoView {
     let ed = editor.get_untracked();
     let cursor = ed.cursor;
     let scroll_delta = ed.scroll_delta;
@@ -1135,7 +1117,7 @@ fn editor_content(
         let editor_content_view =
             editor_view(editor, is_active).style(move |s| s.absolute().cursor(CursorStyle::Text));
 
-        let id = editor_content_view.id();
+        let id = editor_content_view.view_id();
         ed.editor_view_id.set(Some(id));
 
         editor_content_view

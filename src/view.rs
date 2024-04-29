@@ -58,38 +58,36 @@ use crate::{
     EventPropagation,
 };
 
-pub use crate::view_data::ViewData;
-
-pub type AnyWidget = Box<dyn View>;
+// pub type AnyWidget = Box<dyn View>;
 
 /// The View trait provides an interface to access the [`ViewData`] and to build a [`Widget`] into a View.
-pub trait ViewBuilder: Sized {
-    fn view_data(&self) -> &ViewData;
-    fn view_data_mut(&mut self) -> &mut ViewData;
+// pub trait ViewBuilder: Sized {
+//     fn view_data(&self) -> &ViewData;
+//     fn view_data_mut(&mut self) -> &mut ViewData;
 
-    fn view_id(&self) -> ViewId {
-        self.view_data().view_id
-    }
+//     fn view_id(&self) -> ViewId {
+//         self.view_data().view_id
+//     }
 
-    fn id(&self) -> Id {
-        self.view_data().id()
-    }
+//     fn id(&self) -> Id {
+//         self.view_data().id()
+//     }
 
-    /// This method builds the widget described by the view. Implementations may not assume that an
-    /// implicit scope is available. It may differ from the scope the view was created in or may not
-    /// be available at all.
-    fn build(self) -> AnyWidget;
+//     /// This method builds the widget described by the view. Implementations may not assume that an
+//     /// implicit scope is available. It may differ from the scope the view was created in or may not
+//     /// be available at all.
+//     fn build(self) -> AnyWidget;
 
-    /// Converts this view into the `AnyView` type.
-    fn any(self) -> AnyView
-    where
-        Self: 'static,
-    {
-        AnyView {
-            view: Box::new(self),
-        }
-    }
-}
+//     /// Converts this view into the `AnyView` type.
+//     fn any(self) -> AnyView
+//     where
+//         Self: 'static,
+//     {
+//         AnyView {
+//             view: Box::new(self),
+//         }
+//     }
+// }
 
 /// A type that can hold any view.
 ///
@@ -125,41 +123,37 @@ pub trait ViewBuilder: Sized {
 ///     label(|| "no check".to_string()).any()
 /// });
 /// ```
-pub struct AnyView {
-    view: Box<dyn DynView>,
+// pub struct AnyView {
+//     view: Box<dyn DynView>,
+// }
+
+// impl ViewBuilder for AnyView {
+//     fn view_data(&self) -> &ViewData {
+//         self.view.view_data()
+//     }
+
+//     fn view_data_mut(&mut self) -> &mut ViewData {
+//         self.view.view_data_mut()
+//     }
+
+//     fn build(self) -> AnyWidget {
+//         self.view.build()
+//     }
+// }
+
+pub trait IntoView {
+    fn view_id(&self) -> ViewId;
+
+    fn into_view(self) -> Box<dyn View>;
 }
 
-impl ViewBuilder for AnyView {
-    fn view_data(&self) -> &ViewData {
-        self.view.view_data()
+impl<V: View> IntoView for V {
+    fn view_id(&self) -> ViewId {
+        self.id()
     }
 
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        self.view.view_data_mut()
-    }
-
-    fn build(self) -> AnyWidget {
-        self.view.build()
-    }
-}
-
-trait DynView {
-    fn view_data(&self) -> &ViewData;
-    fn view_data_mut(&mut self) -> &mut ViewData;
-    fn build(self: Box<Self>) -> Box<dyn View>;
-}
-
-impl<V: ViewBuilder> DynView for V {
-    fn view_data(&self) -> &ViewData {
-        self.view_data()
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        self.view_data_mut()
-    }
-
-    fn build(self: Box<Self>) -> Box<dyn View> {
-        ViewBuilder::build(*self)
+    fn into_view(self) -> Box<dyn View> {
+        Box::new(self)
     }
 }
 
@@ -168,24 +162,7 @@ impl<V: ViewBuilder> DynView for V {
 /// The [view_data](Widget::view_data) and [view_data_mut](Widget::view_data_mut) methods must be implemented. If the widget contains a child then the [for_each_child](Widget::for_each_child), [for_each_child_mut](Widget::for_each_child_mut), and [for_each_child_rev_mut](Widget::for_each_child_rev_mut) methods must also be implemented.
 /// The other methods may be implemented as necessary to implement the Widget.
 pub trait View {
-    fn view_data(&self) -> &ViewData;
-    fn view_data_mut(&mut self) -> &mut ViewData;
-
-    /// This method walks over children and must be implemented if the view has any children.
-    /// It should return children back to front and should stop if `_for_each` returns `true`.
-    fn for_each_child<'a>(&'a self, _for_each: &mut dyn FnMut(&'a dyn View) -> bool) {}
-
-    /// This method walks over children and must be implemented if the view has any children.
-    /// It should return children back to front and should stop if `_for_each` returns `true`.
-    fn for_each_child_mut<'a>(&'a mut self, _for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {}
-
-    /// This method walks over children and must be implemented if the view has any children.
-    /// It should return children front to back and should stop if `_for_each` returns `true`.
-    fn for_each_child_rev_mut<'a>(
-        &'a mut self,
-        _for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
-    ) {
-    }
+    fn id(&self) -> ViewId;
 
     fn view_style(&self) -> Option<Style> {
         None
@@ -193,32 +170,6 @@ pub trait View {
 
     fn view_class(&self) -> Option<StyleClassRef> {
         None
-    }
-
-    fn child(&self, id: Id) -> Option<&dyn View> {
-        let mut result = None;
-        self.for_each_child(&mut |view| {
-            if view.view_data().id() == id {
-                result = Some(view);
-                true
-            } else {
-                false
-            }
-        });
-        result
-    }
-
-    fn child_mut(&mut self, id: Id) -> Option<&mut dyn View> {
-        let mut result = None;
-        self.for_each_child_mut(&mut |view| {
-            if view.view_data().id() == id {
-                result = Some(view);
-                true
-            } else {
-                false
-            }
-        });
-        result
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -243,10 +194,9 @@ pub trait View {
     /// If the style changes needs other passes to run you're expected to call
     /// `cx.app_state_mut().request_changes`.
     fn style(&mut self, cx: &mut StyleCx<'_>) {
-        self.for_each_child_mut(&mut |child| {
+        for child in self.id().children() {
             cx.style_view(child);
-            false
-        });
+        }
     }
 
     /// Use this method to layout the view's children.
@@ -255,12 +205,13 @@ pub trait View {
     /// If the layout changes needs other passes to run you're expected to call
     /// `cx.app_state_mut().request_changes`.
     fn layout(&mut self, cx: &mut LayoutCx) -> NodeId {
-        cx.layout_node(self.view_data().id(), true, |cx| {
+        cx.layout_node(self.id(), true, |cx| {
             let mut nodes = Vec::new();
-            self.for_each_child_mut(&mut |child| {
-                nodes.push(cx.layout_view(child));
-                false
-            });
+            for child in self.id().children() {
+                let view = child.view();
+                let mut view = view.borrow_mut();
+                nodes.push(view.layout(cx));
+            }
             nodes
         })
     }
@@ -270,7 +221,7 @@ pub trait View {
     /// If the layout changes needs other passes to run you're expected to call
     /// `cx.app_state_mut().request_changes`.
     fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
-        default_compute_layout(self, cx)
+        default_compute_layout(self.id(), cx)
     }
 
     /// Implement this to handle events and to pass them down to children
@@ -279,29 +230,34 @@ pub trait View {
     ///
     /// If the event needs other passes to run you're expected to call
     /// `cx.app_state_mut().request_changes`.
-    fn event(
-        &mut self,
-        cx: &mut EventCx,
-        id_path: Option<&[Id]>,
-        event: Event,
-    ) -> EventPropagation {
-        default_event(self, cx, id_path, event)
+    // fn event(
+    //     &mut self,
+    //     cx: &mut EventCx,
+    //     id_path: Option<&[Id]>,
+    //     event: Event,
+    // ) -> EventPropagation {
+    //     default_event(self, cx, id_path, event)
+    // }
+
+    fn event_before_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
+        EventPropagation::Continue
+    }
+
+    fn event_after_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
+        EventPropagation::Continue
     }
 
     /// `View`-specific implementation. Will be called in [`PaintCx::paint_view`](crate::context::PaintCx::paint_view).
     /// Usually you'll call `paint_view` for every child view. But you might also draw text, adjust the offset, clip
     /// or draw text.
     fn paint(&mut self, cx: &mut PaintCx) {
-        self.for_each_child_mut(&mut |child| {
-            cx.paint_view(child);
-            false
-        });
+        cx.paint_children(self.id());
     }
 
     /// Scrolls the view and all direct and indirect children to bring the `target` view to be
     /// visible. Returns true if this view contains or is the target.
-    fn scroll_to(&mut self, cx: &mut AppState, target: Id, rect: Option<Rect>) -> bool {
-        if self.view_data().id() == target {
+    fn scroll_to(&mut self, cx: &mut AppState, target: ViewId, rect: Option<Rect>) -> bool {
+        if self.id() == target {
             return true;
         }
         let mut found = false;
@@ -313,13 +269,84 @@ pub trait View {
     }
 }
 
+impl View for Box<dyn View> {
+    fn id(&self) -> ViewId {
+        (**self).id()
+    }
+
+    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
+        (**self).for_each_child(for_each)
+    }
+
+    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
+        (**self).for_each_child_mut(for_each)
+    }
+
+    fn for_each_child_rev_mut<'a>(
+        &'a mut self,
+        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
+    ) {
+        (**self).for_each_child_rev_mut(for_each)
+    }
+
+    fn view_style(&self) -> Option<Style> {
+        (**self).view_style()
+    }
+
+    fn view_class(&self) -> Option<StyleClassRef> {
+        (**self).view_class()
+    }
+
+    fn child(&self, id: ViewId) -> Option<&dyn View> {
+        (**self).child(id)
+    }
+
+    fn child_mut(&mut self, id: ViewId) -> Option<&mut dyn View> {
+        (**self).child_mut(id)
+    }
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        (**self).debug_name()
+    }
+
+    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {
+        (**self).update(cx, state)
+    }
+
+    fn style(&mut self, cx: &mut StyleCx) {
+        (**self).style(cx)
+    }
+
+    fn layout(&mut self, cx: &mut LayoutCx) -> NodeId {
+        (**self).layout(cx)
+    }
+
+    fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
+        (**self).compute_layout(cx)
+    }
+
+    // fn event(
+    //     &mut self,
+    //     cx: &mut EventCx,
+    //     id_path: Option<&[Id]>,
+    //     event: Event,
+    // ) -> EventPropagation {
+    //     (**self).event(cx, id_path, event)
+    // }
+
+    fn paint(&mut self, cx: &mut PaintCx) {
+        (**self).paint(cx)
+    }
+
+    fn scroll_to(&mut self, cx: &mut AppState, target: ViewId, rect: Option<Rect>) -> bool {
+        (**self).scroll_to(cx, target, rect)
+    }
+}
+
 /// Computes the layout of the view's children, if any.
-pub fn default_compute_layout<V: View + ?Sized>(
-    view: &mut V,
-    cx: &mut ComputeLayoutCx,
-) -> Option<Rect> {
+pub fn default_compute_layout(id: ViewId, cx: &mut ComputeLayoutCx) -> Option<Rect> {
     let mut layout_rect: Option<Rect> = None;
-    view.for_each_child_mut(&mut |child| {
+    for child in id.children() {
         let child_layout = cx.compute_view_layout(child);
         if let Some(child_layout) = child_layout {
             if let Some(rect) = layout_rect {
@@ -328,28 +355,27 @@ pub fn default_compute_layout<V: View + ?Sized>(
                 layout_rect = Some(child_layout);
             }
         }
-        false
-    });
+    }
     layout_rect
 }
 
-pub fn default_event<V: View + ?Sized>(
-    view: &mut V,
-    cx: &mut EventCx,
-    id_path: Option<&[Id]>,
-    event: Event,
-) -> EventPropagation {
-    let mut handled = false;
-    view.for_each_child_rev_mut(&mut |child| {
-        handled |= cx.view_event(child, id_path, event.clone()).is_processed();
-        handled
-    });
-    if handled {
-        EventPropagation::Stop
-    } else {
-        EventPropagation::Continue
-    }
-}
+// pub fn default_event<V: View + ?Sized>(
+//     view: &mut V,
+//     cx: &mut EventCx,
+//     id_path: Option<&[Id]>,
+//     event: Event,
+// ) -> EventPropagation {
+//     let mut handled = false;
+//     view.for_each_child_rev_mut(&mut |child| {
+//         handled |= cx.view_event(child, id_path, event.clone()).is_processed();
+//         handled
+//     });
+//     if handled {
+//         EventPropagation::Stop
+//     } else {
+//         EventPropagation::Continue
+//     }
+// }
 
 pub(crate) fn paint_bg(
     cx: &mut PaintCx,
@@ -552,7 +578,7 @@ fn view_filtered_children<'a>(view: &'a dyn View, id_path: &[Id]) -> Option<Vec<
     let id = id_path[0];
     let id_path = &id_path[1..];
 
-    if id == view.view_data().id() {
+    if id == view.id() {
         if id_path.is_empty() {
             Some(view_children(view))
         } else if let Some(child) = view.child(id_path[0]) {
@@ -638,25 +664,13 @@ fn view_previous_sibling<'a>(root_view: &'a dyn View, id_path: &[Id]) -> Option<
     }
 
     let children = view_filtered_children(root_view, parent).unwrap();
-    let pos = children
-        .iter()
-        .position(|v| v.view_data().id() == id)
-        .unwrap();
+    let pos = children.iter().position(|v| v.id() == id).unwrap();
 
     if pos > 0 {
         Some(children[pos - 1])
     } else {
         None
     }
-}
-
-pub(crate) fn view_children_set_parent_id(view: &dyn View) {
-    let parent_id = view.view_data().id();
-    view.for_each_child(&mut |child| {
-        child.view_data().id().set_parent(parent_id);
-        view_children_set_parent_id(child);
-        false
-    });
 }
 
 fn view_nested_last_child(view: &dyn View) -> &dyn View {
@@ -679,11 +693,7 @@ pub(crate) fn view_debug_tree(root_view: &dyn View) {
             }
             print!("{}", if *leaf { "├── " } else { "└── " });
         }
-        println!(
-            "{:?} {}",
-            current_view.view_data().id(),
-            &current_view.debug_name()
-        );
+        println!("{:?} {}", current_view.id(), &current_view.debug_name());
 
         let mut children = view_children(current_view);
         if let Some(last_child) = children.pop() {
@@ -696,83 +706,5 @@ pub(crate) fn view_debug_tree(root_view: &dyn View) {
                 .rev()
                 .map(|child| (child, [active_lines.as_slice(), &[true]].concat())),
         );
-    }
-}
-
-impl View for Box<dyn View> {
-    fn view_data(&self) -> &ViewData {
-        (**self).view_data()
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        (**self).view_data_mut()
-    }
-
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
-        (**self).for_each_child(for_each)
-    }
-
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
-        (**self).for_each_child_mut(for_each)
-    }
-
-    fn for_each_child_rev_mut<'a>(
-        &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
-    ) {
-        (**self).for_each_child_rev_mut(for_each)
-    }
-
-    fn view_style(&self) -> Option<Style> {
-        (**self).view_style()
-    }
-
-    fn view_class(&self) -> Option<StyleClassRef> {
-        (**self).view_class()
-    }
-
-    fn child(&self, id: Id) -> Option<&dyn View> {
-        (**self).child(id)
-    }
-
-    fn child_mut(&mut self, id: Id) -> Option<&mut dyn View> {
-        (**self).child_mut(id)
-    }
-
-    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        (**self).debug_name()
-    }
-
-    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {
-        (**self).update(cx, state)
-    }
-
-    fn style(&mut self, cx: &mut StyleCx) {
-        (**self).style(cx)
-    }
-
-    fn layout(&mut self, cx: &mut LayoutCx) -> NodeId {
-        (**self).layout(cx)
-    }
-
-    fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
-        (**self).compute_layout(cx)
-    }
-
-    fn event(
-        &mut self,
-        cx: &mut EventCx,
-        id_path: Option<&[Id]>,
-        event: Event,
-    ) -> EventPropagation {
-        (**self).event(cx, id_path, event)
-    }
-
-    fn paint(&mut self, cx: &mut PaintCx) {
-        (**self).paint(cx)
-    }
-
-    fn scroll_to(&mut self, cx: &mut AppState, target: Id, rect: Option<Rect>) -> bool {
-        (**self).scroll_to(cx, target, rect)
     }
 }

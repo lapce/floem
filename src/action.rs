@@ -12,6 +12,7 @@ use crate::{
     menu::Menu,
     update::{UpdateMessage, CENTRAL_UPDATE_MESSAGES},
     view::View,
+    view_storage::ViewId,
     window_handle::{get_current_view, set_current_view},
 };
 
@@ -129,8 +130,11 @@ pub fn set_ime_cursor_area(position: Point, size: Size) {
 }
 
 /// Creates a new overlay on the current window.
-pub fn add_overlay<V: View + 'static>(position: Point, view: impl FnOnce(Id) -> V + 'static) -> Id {
-    let id = Id::next();
+pub fn add_overlay<V: View + 'static>(
+    position: Point,
+    view: impl FnOnce(ViewId) -> V + 'static,
+) -> ViewId {
+    let id = ViewId::new();
     add_update_message(UpdateMessage::AddOverlay {
         id,
         position,
@@ -140,6 +144,6 @@ pub fn add_overlay<V: View + 'static>(position: Point, view: impl FnOnce(Id) -> 
 }
 
 /// Removes an overlay from the current window.
-pub fn remove_overlay(id: Id) {
+pub fn remove_overlay(id: ViewId) {
     add_update_message(UpdateMessage::RemoveOverlay { id });
 }

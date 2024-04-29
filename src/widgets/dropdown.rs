@@ -12,17 +12,15 @@ use crate::{
     style::{Style, StyleClass, Width},
     style_class,
     unit::PxPctAuto,
-    view::{
-        default_compute_layout, default_event, view_children_set_parent_id, AnyView, View,
-        ViewBuilder, ViewData,
-    },
+    view::{default_compute_layout, View},
+    view_storage::ViewId,
     views::{scroll, Decorators},
     EventPropagation,
 };
 
 use super::list;
 
-type ChildFn<T> = dyn Fn(T) -> (AnyView, Scope);
+type ChildFn<T> = dyn Fn(T) -> (Box<dyn View>, Scope);
 
 style_class!(pub DropDownClass);
 style_class!(pub DropDownScrollClass);
@@ -33,11 +31,11 @@ prop_extractor!(DropDownStyle {
 });
 
 pub struct DropDown<T: 'static> {
-    view_data: ViewData,
+    id: ViewId,
     main_view: Box<dyn View>,
     main_view_scope: Scope,
     main_fn: Box<ChildFn<T>>,
-    list_view: Rc<dyn Fn() -> AnyView>,
+    list_view: Rc<dyn Fn() -> Box<dyn View>>,
     list_style: Style,
     overlay_id: Option<Id>,
     window_origin: Option<Point>,
@@ -53,42 +51,9 @@ enum Message {
     ListSelect(Box<dyn Any>),
 }
 
-impl<T: 'static> ViewBuilder for DropDown<T> {
-    fn view_data(&self) -> &ViewData {
-        &self.view_data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.view_data
-    }
-
-    fn build(self) -> crate::view::AnyWidget {
-        Box::new(self.keyboard_navigatable())
-    }
-}
-
 impl<T: 'static> View for DropDown<T> {
-    fn view_data(&self) -> &ViewData {
-        &self.view_data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.view_data
-    }
-
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
-        for_each(&self.main_view);
-    }
-
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
-        for_each(&mut self.main_view);
-    }
-
-    fn for_each_child_rev_mut<'a>(
-        &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
-    ) {
-        for_each(&mut self.main_view);
+    fn id(&self) -> ViewId {
+        self.id
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -97,23 +62,22 @@ impl<T: 'static> View for DropDown<T> {
 
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         if self.style.read(cx) {
-            cx.app_state_mut().request_paint(self.id());
+            cx.app_state_mut().request_paint(self.id);
         }
         cx.save();
         self.list_style =
             Style::new().apply_classes_from_context(&[super::ListClass::class_ref()], &cx.current);
         cx.restore();
 
-        self.for_each_child_mut(&mut |child| {
+        for child in self.id.children() {
             cx.style_view(child);
-            false
-        });
+        }
     }
 
     fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
         self.window_origin = Some(cx.window_origin);
 
-        default_compute_layout(self, cx)
+        default_compute_layout(self.id, cx)
     }
 
     fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
@@ -143,19 +107,18 @@ impl<T: 'static> View for DropDown<T> {
                         old_child_scope.dispose();
                         self.main_view.view_data().id.set_parent(self.id());
                         view_children_set_parent_id(&*self.main_view);
-                        cx.request_all(self.id());
+                        cx.request_all(self.view_id());
                     }
                 }
             }
         }
     }
 
-    fn event(
+    fn event_before_children(
         &mut self,
         cx: &mut crate::context::EventCx,
-        id_path: Option<&[Id]>,
-        event: Event,
-    ) -> crate::EventPropagation {
+        event: &Event,
+    ) -> EventPropagation {
         match event {
             Event::PointerDown(_) => {
                 self.swap_state();
@@ -168,7 +131,8 @@ impl<T: 'static> View for DropDown<T> {
             }
             _ => {}
         }
-        default_event(self, cx, id_path, event)
+
+        EventPropagation::Continue
     }
 }
 
@@ -199,9 +163,9 @@ pub fn dropdown<MF, I, T, LF, AIF>(
     list_item_fn: LF,
 ) -> DropDown<T>
 where
-    MF: Fn(T) -> AnyView + 'static,
+    MF: Fn(T) -> Box<dyn View> + 'static,
     I: IntoIterator<Item = T> + Clone + 'static,
-    LF: Fn(T) -> AnyView + Clone + 'static,
+    LF: Fn(T) -> Box<dyn View> + Clone + 'static,
     T: Clone + 'static,
     AIF: Fn() -> T + 'static,
 {
@@ -225,7 +189,7 @@ where
             .on_event_stop(EventListener::FocusLost, move |_| {
                 dropdown_id.update_state(Message::ListFocusLost);
             });
-        let inner_list_id = ViewBuilder::view_data(&inner_list).id();
+        let inner_list_id = inner_list.id();
         scroll(inner_list)
             .on_event_stop(EventListener::FocusGained, move |_| {
                 inner_list_id.request_focus();
@@ -282,14 +246,14 @@ impl<T> DropDown<T> {
         if self.overlay_id.is_some() {
             self.id().update_state(Message::OpenState(false));
         } else {
-            self.id().request_layout();
+            self.view_id().request_layout();
             self.id().update_state(Message::OpenState(true));
         }
     }
 
     fn open_dropdown(&mut self, cx: &mut crate::context::UpdateCx) {
         if self.overlay_id.is_none() {
-            self.id().request_layout();
+            self.view_id().request_layout();
             cx.app_state.compute_layout();
             if let Some(layout) = cx.app_state.get_layout(self.id()) {
                 self.update_list_style(layout.size.width as f64);
@@ -325,7 +289,7 @@ impl<T> DropDown<T> {
         let list_style = self.list_style.clone();
         self.overlay_id = Some(add_overlay(point, move |_| {
             let list = list().style(move |s| s.apply(list_style.clone())).build();
-            let list_id = list.view_data().id;
+            let list_id = list.view_data().view_id;
             list_id.request_focus();
             list
         }));
@@ -336,11 +300,11 @@ impl<T> DropDown<T> {
         mut self,
         style: impl Fn(DropDownCustomStyle) -> DropDownCustomStyle + 'static,
     ) -> Self {
-        let id = self.id();
+        let id = self.view_id();
         let offset = View::view_data_mut(&mut self).style.next_offset();
         let style = create_updater(
             move || style(DropDownCustomStyle(Style::new())),
-            move |style| id.update_style(style.0, offset),
+            move |style| id.update_style(offset, style.0),
         );
         View::view_data_mut(&mut self).style.push(style.0);
         self

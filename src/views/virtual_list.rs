@@ -3,13 +3,14 @@ use super::{
 };
 use crate::context::ComputeLayoutCx;
 use crate::reactive::create_effect;
-use crate::view::ViewBuilder;
+use crate::view::IntoView;
+use crate::view_storage::ViewId;
 use crate::EventPropagation;
 use crate::{
     event::{Event, EventListener},
     id::Id,
     keyboard::{Key, NamedKey},
-    view::{View, ViewData},
+    view::View,
 };
 use floem_reactive::{create_rw_signal, RwSignal};
 use kurbo::{Rect, Size};
@@ -24,7 +25,7 @@ enum ListUpdate {
 /// A view that is like a [`virtual_stack`](super::virtual_stack()) but also supports item selection.
 /// See [`virtual_list`] and [`virtual_stack`](super::virtual_stack()).
 pub struct VirtualList<T: 'static> {
-    data: ViewData,
+    id: ViewId,
     direction: VirtualDirection,
     child_size: Size,
     selection: RwSignal<Option<usize>>,
@@ -64,9 +65,9 @@ where
     KF: Fn(&T) -> K + 'static,
     K: Eq + Hash + 'static,
     VF: Fn(T) -> V + 'static,
-    V: ViewBuilder + 'static,
+    V: IntoView + 'static,
 {
-    let id = Id::next();
+    let id = ViewId::new();
     let selection = create_rw_signal(None);
     let length = create_rw_signal(0);
     let offsets = create_rw_signal(Vec::new());
@@ -127,10 +128,10 @@ where
         move |(_, e)| key_fn(e),
         move |(index, e)| {
             Item {
-                data: ViewData::new(Id::next()),
+                id: ViewId::new(),
                 selection,
                 index,
-                child: view_fn(e).build(),
+                child: view_fn(e).into_view(),
             }
             .on_click_stop(move |_| {
                 if selection.get_untracked() != Some(index) {
@@ -145,7 +146,7 @@ where
         VirtualDirection::Vertical => s.flex_col(),
     });
     VirtualList {
-        data: ViewData::new(id),
+        id,
         selection,
         direction,
         offsets,
@@ -216,42 +217,9 @@ where
     })
 }
 
-impl<T> ViewBuilder for VirtualList<T> {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn View> {
-        Box::new(self)
-    }
-}
-
 impl<T> View for VirtualList<T> {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
-        for_each(&self.child);
-    }
-
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
-        for_each(&mut self.child);
-    }
-
-    fn for_each_child_rev_mut<'a>(
-        &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
-    ) {
-        for_each(&mut self.child);
+    fn id(&self) -> ViewId {
+        self.id
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -262,7 +230,7 @@ impl<T> View for VirtualList<T> {
         if let Ok(change) = state.downcast::<ListUpdate>() {
             match *change {
                 ListUpdate::SelectionChanged => {
-                    cx.app_state_mut().request_style_recursive(self.id())
+                    cx.app_state_mut().request_style_recursive(self.view_id())
                 }
                 ListUpdate::ScrollToSelected => {
                     if let Some(index) = self.selection.get_untracked() {

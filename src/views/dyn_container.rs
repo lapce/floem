@@ -1,16 +1,15 @@
 use floem_reactive::{as_child_of_current_scope, create_updater, Scope};
 
 use crate::{
-    id::Id,
-    view::{view_children_set_parent_id, AnyView, View, ViewBuilder, ViewData},
+    view::{IntoView, View},
+    view_storage::ViewId,
 };
 
 type ChildFn<T> = dyn Fn(T) -> (Box<dyn View>, Scope);
 
 /// A container for a dynamically updating View. See [`dyn_container`]
 pub struct DynamicContainer<T: 'static> {
-    data: ViewData,
-    child: Box<dyn View>,
+    id: ViewId,
     child_scope: Scope,
     child_fn: Box<ChildFn<T>>,
 }
@@ -63,60 +62,27 @@ pub struct DynamicContainer<T: 'static> {
 ///
 /// ```
 ///
-pub fn dyn_container<CF: Fn(T) -> AnyView + 'static, T: 'static>(
+pub fn dyn_container<CF: Fn(T) -> Box<dyn View>, T: 'static>(
     update_view: impl Fn() -> T + 'static,
     child_fn: CF,
 ) -> DynamicContainer<T> {
-    let id = Id::next();
+    let id = ViewId::new();
 
     let initial = create_updater(update_view, move |new_state| id.update_state(new_state));
 
-    let child_fn = Box::new(as_child_of_current_scope(move |e| child_fn(e).build()));
+    let child_fn = Box::new(as_child_of_current_scope(move |e| child_fn(e).into_view()));
     let (child, child_scope) = child_fn(initial);
+    id.set_children(vec![child]);
     DynamicContainer {
-        data: ViewData::new(id),
-        child,
+        id,
         child_scope,
         child_fn,
     }
 }
 
-impl<T: 'static> ViewBuilder for DynamicContainer<T> {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn View> {
-        Box::new(self)
-    }
-}
-
 impl<T: 'static> View for DynamicContainer<T> {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
-        for_each(&self.child);
-    }
-
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
-        for_each(&mut self.child);
-    }
-
-    fn for_each_child_rev_mut<'a>(
-        &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
-    ) {
-        for_each(&mut self.child);
+    fn id(&self) -> ViewId {
+        self.id
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -126,12 +92,14 @@ impl<T: 'static> View for DynamicContainer<T> {
     fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(val) = state.downcast::<T>() {
             let old_child_scope = self.child_scope;
-            cx.app_state_mut().remove_view(&mut self.child);
-            (self.child, self.child_scope) = (self.child_fn)(*val);
+            for child in self.id.children() {
+                cx.app_state_mut().remove_view(child);
+            }
+            let (child, child_scope) = (self.child_fn)(*val);
+            self.child_scope = child_scope;
+            self.id.set_children(vec![child]);
             old_child_scope.dispose();
-            self.child.view_data().id().set_parent(self.id());
-            view_children_set_parent_id(&*self.child);
-            cx.request_all(self.id());
+            cx.request_all(self.view_id());
         }
     }
 }

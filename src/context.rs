@@ -27,9 +27,9 @@ use crate::{
         ZIndex,
     },
     unit::PxPct,
-    view::{paint_bg, paint_border, paint_outline, View, ViewData},
+    view::{paint_bg, paint_border, paint_outline, View},
     view_data::ChangeFlags,
-    view_storage::ViewId,
+    view_storage::{ViewId, VIEW_STORAGE},
 };
 
 pub use crate::view_data::ViewState;
@@ -71,25 +71,25 @@ pub(crate) struct MoveListener {
 }
 
 pub struct DragState {
-    pub(crate) id: Id,
+    pub(crate) id: ViewId,
     pub(crate) offset: Vec2,
     pub(crate) released_at: Option<std::time::Instant>,
 }
 
 pub(crate) enum FrameUpdate {
-    Style(Id),
-    Layout(Id),
-    Paint(Id),
+    Style(ViewId),
+    Layout(ViewId),
+    Paint(ViewId),
 }
 
 /// Encapsulates and owns the global state of the application,
 /// including the `ViewState` of each view.
 pub struct AppState {
     /// keyboard focus
-    pub(crate) focus: Option<Id>,
+    pub(crate) focus: Option<ViewId>,
     /// when a view is active, it gets mouse event even when the mouse is
     /// not on it
-    pub(crate) active: Option<Id>,
+    pub(crate) active: Option<ViewId>,
     pub(crate) root: Option<NodeId>,
     pub(crate) root_size: Size,
     pub(crate) scale: f64,
@@ -99,16 +99,16 @@ pub struct AppState {
     pub(crate) scheduled_updates: Vec<FrameUpdate>,
     pub(crate) request_compute_layout: bool,
     pub(crate) request_paint: bool,
-    pub(crate) disabled: HashSet<Id>,
-    pub(crate) keyboard_navigable: HashSet<Id>,
-    pub(crate) draggable: HashSet<Id>,
+    pub(crate) disabled: HashSet<ViewId>,
+    pub(crate) keyboard_navigable: HashSet<ViewId>,
+    pub(crate) draggable: HashSet<ViewId>,
     pub(crate) dragging: Option<DragState>,
-    pub(crate) drag_start: Option<(Id, Point)>,
-    pub(crate) dragging_over: HashSet<Id>,
+    pub(crate) drag_start: Option<(ViewId, Point)>,
+    pub(crate) dragging_over: HashSet<ViewId>,
     pub(crate) screen_size_bp: ScreenSizeBp,
     pub(crate) grid_bps: GridBreakpoints,
-    pub(crate) clicking: HashSet<Id>,
-    pub(crate) hovered: HashSet<Id>,
+    pub(crate) clicking: HashSet<ViewId>,
+    pub(crate) hovered: HashSet<ViewId>,
     /// This keeps track of all views that have an animation,
     /// regardless of the status of the animation
     pub(crate) cursor: Option<CursorStyle>,
@@ -174,25 +174,26 @@ impl AppState {
     }
 
     /// This removes a view from the app state.
-    pub fn remove_view(&mut self, view: &mut dyn View) {
-        view.for_each_child_mut(&mut |child| {
+    pub fn remove_view(&mut self, id: ViewId) {
+        let children = id.children();
+        for child in children {
             self.remove_view(child);
-            false
-        });
-        let id = view.view_data().id();
-        let view_state = self.view_state(id);
-        if let Some(action) = view_state.cleanup_listener.as_ref() {
+        }
+        let view_state = id.state();
+        if let Some(action) = view_state.borrow().cleanup_listener.as_ref() {
             action();
         }
-        let node = view_state.node;
-        if let Ok(children) = self.taffy.children(node) {
-            for child in children {
-                let _ = self.taffy.remove(child);
+        let node = view_state.borrow().node;
+
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            if let Ok(children) = s.taffy.children(node) {
+                for child in children {
+                    let _ = s.taffy.remove(child);
+                }
             }
-        }
-        let _ = self.taffy.remove(node);
-        id.remove_id_path();
-        self.view_states.remove(&id);
+            let _ = s.taffy.remove(node);
+        });
+        // self.view_states.remove(&id);
         self.disabled.remove(&id);
         self.keyboard_navigable.remove(&id);
         self.draggable.remove(&id);
@@ -208,45 +209,27 @@ impl AppState {
         }
     }
 
-    pub fn is_hidden(&self, id: Id) -> bool {
-        self.view_states
-            .get(&id)
-            .map(|s| s.combined_style.get(DisplayProp) == Display::None)
-            .unwrap_or(false)
+    pub(crate) fn can_focus(&self, id: ViewId) -> bool {
+        self.keyboard_navigable.contains(&id) && !self.is_disabled(&id) && !id.is_hidden_recursive()
     }
 
-    /// Is this view, or any parent view, marked as hidden
-    pub fn is_hidden_recursive(&self, id: Id) -> bool {
-        id.id_path()
-            .unwrap()
-            .dispatch()
-            .iter()
-            .any(|id| self.is_hidden(*id))
-    }
-
-    pub(crate) fn can_focus(&self, id: Id) -> bool {
-        self.keyboard_navigable.contains(&id)
-            && !self.is_disabled(&id)
-            && !self.is_hidden_recursive(id)
-    }
-
-    pub fn is_hovered(&self, id: &Id) -> bool {
+    pub fn is_hovered(&self, id: &ViewId) -> bool {
         self.hovered.contains(id)
     }
 
-    pub fn is_disabled(&self, id: &Id) -> bool {
+    pub fn is_disabled(&self, id: &ViewId) -> bool {
         self.disabled.contains(id)
     }
 
-    pub fn is_focused(&self, id: &Id) -> bool {
+    pub fn is_focused(&self, id: &ViewId) -> bool {
         self.focus.map(|f| &f == id).unwrap_or(false)
     }
 
-    pub fn is_active(&self, id: &Id) -> bool {
+    pub fn is_active(&self, id: &ViewId) -> bool {
         self.active.map(|a| &a == id).unwrap_or(false)
     }
 
-    pub fn is_clicking(&self, id: &Id) -> bool {
+    pub fn is_clicking(&self, id: &ViewId) -> bool {
         self.clicking.contains(id)
     }
 
@@ -305,25 +288,25 @@ impl AppState {
     }
 
     /// Requests style for a view and all direct and indirect children.
-    pub fn request_style_recursive(&mut self, id: Id) {
-        let view = self.view_state(id);
-        view.request_style_recursive = true;
+    pub fn request_style_recursive(&mut self, id: ViewId) {
+        let state = id.state();
+        state.borrow_mut().request_style_recursive = true;
         self.request_style(id);
     }
 
     /// Request that this the `id` view be styled, laid out and painted again.
     /// This will recursively request this for all parents.
-    pub fn request_all(&mut self, id: Id) {
+    pub fn request_all(&mut self, id: ViewId) {
         self.request_changes(id, ChangeFlags::all());
         self.request_paint(id);
     }
 
-    pub(crate) fn request_changes(&mut self, id: Id, flags: ChangeFlags) {
-        let view = self.view_state(id);
-        if view.requested_changes.contains(flags) {
+    pub(crate) fn request_changes(&mut self, id: ViewId, flags: ChangeFlags) {
+        let state = id.state();
+        if state.borrow().requested_changes.contains(flags) {
             return;
         }
-        view.requested_changes.insert(flags);
+        state.borrow_mut().requested_changes.insert(flags);
         if let Some(parent) = id.parent() {
             self.request_changes(parent, flags);
         }
@@ -331,37 +314,37 @@ impl AppState {
 
     /// Requests that the style pass will run for `id` on the next frame, and ensures new frame is
     /// scheduled to happen.
-    pub fn schedule_style(&mut self, id: Id) {
+    pub fn schedule_style(&mut self, id: ViewId) {
         self.scheduled_updates.push(FrameUpdate::Style(id));
     }
 
     /// Requests that the layout pass will run for `id` on the next frame, and ensures new frame is
     /// scheduled to happen.
-    pub fn schedule_layout(&mut self, id: Id) {
+    pub fn schedule_layout(&mut self, id: ViewId) {
         self.scheduled_updates.push(FrameUpdate::Layout(id));
     }
 
     /// Requests that the paint pass will run for `id` on the next frame, and ensures new frame is
     /// scheduled to happen.
-    pub fn schedule_paint(&mut self, id: Id) {
+    pub fn schedule_paint(&mut self, id: ViewId) {
         self.scheduled_updates.push(FrameUpdate::Paint(id));
     }
 
-    pub fn request_style(&mut self, id: Id) {
+    pub fn request_style(&mut self, id: ViewId) {
         self.request_changes(id, ChangeFlags::STYLE)
     }
 
-    pub fn request_layout(&mut self, id: Id) {
+    pub fn request_layout(&mut self, id: ViewId) {
         self.request_changes(id, ChangeFlags::LAYOUT)
     }
 
     /// Requests that `compute_layout` will run for `_id` and all direct and indirect children.
-    pub fn request_compute_layout_recursive(&mut self, _id: Id) {
+    pub fn request_compute_layout_recursive(&mut self, _id: ViewId) {
         self.request_compute_layout = true;
     }
 
     // `Id` is unused currently, but could be used to calculate damage regions.
-    pub fn request_paint(&mut self, _id: Id) {
+    pub fn request_paint(&mut self, _id: ViewId) {
         self.request_paint = true;
     }
 
@@ -421,7 +404,7 @@ impl AppState {
         self.view_state(id).layout_rect
     }
 
-    pub(crate) fn update_active(&mut self, id: Id) {
+    pub(crate) fn update_active(&mut self, id: ViewId) {
         if self.active.is_some() {
             // the first update_active wins, so if there's active set,
             // don't do anything.
@@ -453,7 +436,7 @@ impl AppState {
         self.focus = None;
     }
 
-    pub(crate) fn update_focus(&mut self, id: Id, keyboard_navigation: bool) {
+    pub(crate) fn update_focus(&mut self, id: ViewId, keyboard_navigation: bool) {
         if self.focus.is_some() {
             return;
         }
@@ -468,8 +451,8 @@ impl AppState {
         }
     }
 
-    pub(crate) fn has_style_for_sel(&mut self, id: Id, selector_kind: StyleSelector) -> bool {
-        let view_state = self.view_state(id);
+    pub(crate) fn has_style_for_sel(&mut self, id: ViewId, selector_kind: StyleSelector) -> bool {
+        let view_state = id.state().borrow();
 
         view_state.has_style_selectors.has(selector_kind)
             || (selector_kind == StyleSelector::Dragging && view_state.dragging_style.is_some())
@@ -477,18 +460,20 @@ impl AppState {
 
     // TODO: animated should be a HashMap<Id, AnimId>
     // so we don't have to loop through all view states
-    pub(crate) fn get_view_id_by_anim_id(&self, anim_id: AnimId) -> Id {
-        *self
-            .view_states
-            .iter()
-            .find(|(_, vs)| {
-                vs.animation
-                    .as_ref()
-                    .map(|a| a.id() == anim_id)
-                    .unwrap_or(false)
-            })
-            .unwrap()
-            .0
+    pub(crate) fn get_view_id_by_anim_id(&self, anim_id: AnimId) -> ViewId {
+        VIEW_STORAGE.with_borrow(|s| {
+            s.states
+                .iter()
+                .find(|(_, vs)| {
+                    vs.borrow()
+                        .animation
+                        .as_ref()
+                        .map(|a| a.id() == anim_id)
+                        .unwrap_or(false)
+                })
+                .unwrap()
+                .0
+        })
     }
 
     pub(crate) fn update_context_menu(&mut self, menu: &mut Menu) {
@@ -522,16 +507,14 @@ impl AppState {
 
     pub(crate) fn apply_event(
         &self,
-        id: Id,
+        id: ViewId,
         listener: &EventListener,
         event: &crate::event::Event,
     ) -> Option<EventPropagation> {
-        self.view_states
-            .get(&id)
-            .and_then(|s| s.apply_event(listener, event))
+        id.state().borrow_mut().apply_event(listener, event)
     }
 
-    pub(crate) fn focus_changed(&mut self, old: Option<Id>, new: Option<Id>) {
+    pub(crate) fn focus_changed(&mut self, old: Option<ViewId>, new: Option<ViewId>) {
         if let Some(id) = new {
             // To apply the styles of the Focus selector
             if self.has_style_for_sel(id, StyleSelector::Focus)
@@ -539,9 +522,10 @@ impl AppState {
             {
                 self.request_style_recursive(id);
             }
-            self.view_states.get(&id).and_then(|state| {
-                state.apply_event(&EventListener::FocusGained, &Event::FocusGained)
-            });
+            let state = id.state();
+            state
+                .borrow()
+                .apply_event(&EventListener::FocusGained, &Event::FocusGained);
         }
 
         if let Some(old_id) = old {
@@ -551,9 +535,10 @@ impl AppState {
             {
                 self.request_style_recursive(old_id);
             }
-            self.view_states
-                .get(&old_id)
-                .and_then(|state| state.apply_event(&EventListener::FocusLost, &Event::FocusLost));
+            let state = old_id.state();
+            state
+                .borrow()
+                .apply_event(&EventListener::FocusLost, &Event::FocusLost);
         }
     }
 }
@@ -566,25 +551,25 @@ pub struct EventCx<'a> {
 impl<'a> EventCx<'a> {
     /// request that this node be styled, laid out and painted again
     /// This will recursively request this for all parents.
-    pub fn request_all(&mut self, id: Id) {
+    pub fn request_all(&mut self, id: ViewId) {
         self.app_state.request_style(id);
         self.app_state.request_layout(id);
     }
 
     /// request that this node be styled again
     /// This will recursively request style for all parents.
-    pub fn request_style(&mut self, id: Id) {
+    pub fn request_style(&mut self, id: ViewId) {
         self.app_state.request_style(id);
     }
 
     /// request that this node be laid out again
     /// This will recursively request layout for all parents and set the `ChangeFlag::LAYOUT` at root
-    pub fn request_layout(&mut self, id: Id) {
+    pub fn request_layout(&mut self, id: ViewId) {
         self.app_state.request_layout(id);
     }
 
     /// request that this node be painted again
-    pub fn request_paint(&mut self, id: Id) {
+    pub fn request_paint(&mut self, id: ViewId) {
         self.app_state.request_paint(id);
     }
 
@@ -596,16 +581,16 @@ impl<'a> EventCx<'a> {
         self.app_state
     }
 
-    pub fn update_active(&mut self, id: Id) {
+    pub fn update_active(&mut self, id: ViewId) {
         self.app_state.update_active(id);
     }
 
-    pub fn is_active(&self, id: Id) -> bool {
+    pub fn is_active(&self, id: ViewId) -> bool {
         self.app_state.is_active(&id)
     }
 
     #[allow(unused)]
-    pub(crate) fn update_focus(&mut self, id: Id, keyboard_navigation: bool) {
+    pub(crate) fn update_focus(&mut self, id: ViewId, keyboard_navigation: bool) {
         self.app_state.update_focus(id, keyboard_navigation);
     }
 
@@ -621,32 +606,31 @@ impl<'a> EventCx<'a> {
     }
 
     /// Internal method used by Floem. This can be called from parent `View`s to propagate an event to the child `View`.
-    pub fn view_event(
-        &mut self,
-        view: &mut dyn View,
-        id_path: Option<&[Id]>,
-        event: Event,
-    ) -> EventPropagation {
-        if self.should_send(view.view_data().id(), &event) {
-            self.unconditional_view_event(view, id_path, event)
-        } else {
-            EventPropagation::Continue
-        }
-    }
+    // pub fn view_event(
+    //     &mut self,
+    //     view: &mut dyn View,
+    //     id_path: Option<&[Id]>,
+    //     event: Event,
+    // ) -> EventPropagation {
+    //     if self.should_send(view.view_data().id(), &event) {
+    //         self.unconditional_view_event(view, id_path, event)
+    //     } else {
+    //         EventPropagation::Continue
+    //     }
+    // }
 
     /// Internal method used by Floem. This can be called from parent `View`s to propagate an event to the child `View`.
     pub(crate) fn unconditional_view_event(
         &mut self,
-        view: &mut dyn View,
-        id_path: Option<&[Id]>,
+        view_id: ViewId,
         event: Event,
+        directed: bool,
     ) -> EventPropagation {
-        let id = view.view_data().id();
-        if self.app_state.is_hidden(id) {
+        if view_id.is_hidden() {
             // we don't process events for hidden view
             return EventPropagation::Continue;
         }
-        if self.app_state.is_disabled(&id) && !event.allow_disabled() {
+        if self.app_state.is_disabled(&view_id) && !event.allow_disabled() {
             // if the view is disabled and the event is not processed
             // for disabled views
             return EventPropagation::Continue;
@@ -656,33 +640,56 @@ impl<'a> EventCx<'a> {
         // e.g. pointer events, so that the position is relative
         // to the view, taking into account of the layout location
         // of the view and the viewport of the view if it's in a scroll.
-        let event = self.offset_event(id, event);
+        let event = self.offset_event(view_id, event);
 
         // if there's id_path, it's an event only for a view.
-        if let Some(id_path) = id_path {
-            if id_path.is_empty() {
-                // this happens when the parent is the destination,
-                // but the parent just passed the event on,
-                // so it's not really for this view and we stop
-                // the event propagation.
-                return EventPropagation::Continue;
-            }
+        // if let Some(id_path) = id_path {
+        //     if id_path.is_empty() {
+        //         // this happens when the parent is the destination,
+        //         // but the parent just passed the event on,
+        //         // so it's not really for this view and we stop
+        //         // the event propagation.
+        //         return EventPropagation::Continue;
+        //     }
 
-            let id = id_path[0];
-            let id_path = &id_path[1..];
+        //     let id = id_path[0];
+        //     let id_path = &id_path[1..];
 
-            if id != view.view_data().id() {
-                // This shouldn't happen
-                return EventPropagation::Continue;
-            }
+        //     if id != view.view_data().id() {
+        //         // This shouldn't happen
+        //         return EventPropagation::Continue;
+        //     }
 
-            // we're the parent of the event destination, so pass it on to the child
-            if !id_path.is_empty() {
-                if let Some(child) = view.child_mut(id_path[0]) {
-                    return self.unconditional_view_event(child, Some(id_path), event.clone());
-                } else {
-                    // we don't have the child, stop the event propagation
-                    return EventPropagation::Continue;
+        //     // we're the parent of the event destination, so pass it on to the child
+        //     if !id_path.is_empty() {
+        //         if let Some(child) = view.child_mut(id_path[0]) {
+        //             return self.unconditional_view_event(child, Some(id_path), event.clone());
+        //         } else {
+        //             // we don't have the child, stop the event propagation
+        //             return EventPropagation::Continue;
+        //         }
+        //     }
+        // }
+
+        let view = view_id.view();
+        if view
+            .borrow_mut()
+            .event_before_children(self, &event)
+            .is_processed()
+        {
+            return EventPropagation::Stop;
+        }
+
+        if !directed {
+            let children = view_id.children();
+            for child in children.into_iter().rev() {
+                let child_view = child.view();
+                if self.should_send(child, &event)
+                    && self
+                        .unconditional_view_event(child, event.clone(), false)
+                        .is_processed()
+                {
+                    return EventPropagation::Stop;
                 }
             }
         }
@@ -690,79 +697,97 @@ impl<'a> EventCx<'a> {
         // if the event was dispatched to an id_path, the event is supposed to be only
         // handled by this view only, so we pass an empty id_path
         // and the event propagation would be stopped at this view
+        // if view
+        //     .event(
+        //         self,
+        //         if id_path.is_some() { Some(&[]) } else { None },
+        //         event.clone(),
+        //     )
+        //     .is_processed()
+        // {
+        //     return EventPropagation::Stop;
+        // }
+
         if view
-            .event(
-                self,
-                if id_path.is_some() { Some(&[]) } else { None },
-                event.clone(),
-            )
+            .borrow_mut()
+            .event_after_children(self, &event)
             .is_processed()
         {
             return EventPropagation::Stop;
         }
 
+        let view_state = view_id.state();
+
         match &event {
             Event::PointerDown(event) => {
-                self.app_state.clicking.insert(id);
+                self.app_state.clicking.insert(view_id);
                 if event.button.is_primary() {
-                    let rect = self.get_size(id).unwrap_or_default().to_rect();
+                    let rect = view_id.get_size().unwrap_or_default().to_rect();
                     let now_focused = rect.contains(event.pos);
 
                     if now_focused {
-                        if self.app_state.keyboard_navigable.contains(&id) {
+                        if self.app_state.keyboard_navigable.contains(&view_id) {
                             // if the view can be focused, we update the focus
-                            self.app_state.update_focus(id, false);
+                            self.app_state.update_focus(view_id, false);
                         }
                         if event.count == 2
-                            && self.has_event_listener(id, EventListener::DoubleClick)
+                            && view_state
+                                .borrow()
+                                .event_listeners
+                                .contains_key(&EventListener::DoubleClick)
                         {
-                            let view_state = self.app_state.view_state(id);
-                            view_state.last_pointer_down = Some(event.clone());
+                            view_state.borrow_mut().last_pointer_down = Some(event.clone());
                         }
-                        if self.has_event_listener(id, EventListener::Click) {
-                            let view_state = self.app_state.view_state(id);
-                            view_state.last_pointer_down = Some(event.clone());
+                        if view_state
+                            .borrow()
+                            .event_listeners
+                            .contains_key(&EventListener::Click)
+                        {
+                            view_state.borrow_mut().last_pointer_down = Some(event.clone());
                         }
 
                         let bottom_left = {
-                            let layout = self.app_state.view_state(id).layout_rect;
+                            let layout = view_state.borrow().layout_rect;
                             Point::new(layout.x0, layout.y1)
                         };
-                        if let Some(menu) = &self.app_state.view_state(id).popout_menu {
+                        if let Some(menu) = view_state.borrow().popout_menu.as_ref() {
                             show_context_menu(menu(), Some(bottom_left));
                             return EventPropagation::Stop;
                         }
-                        if self.app_state.draggable.contains(&id)
+                        if self.app_state.draggable.contains(&view_id)
                             && self.app_state.drag_start.is_none()
                         {
-                            self.app_state.drag_start = Some((id, event.pos));
+                            self.app_state.drag_start = Some((view_id, event.pos));
                         }
                     }
                 } else if event.button.is_secondary() {
-                    let rect = self.get_size(id).unwrap_or_default().to_rect();
+                    let rect = view_id.get_size().unwrap_or_default().to_rect();
                     let now_focused = rect.contains(event.pos);
 
                     if now_focused {
-                        if self.app_state.keyboard_navigable.contains(&id) {
+                        if self.app_state.keyboard_navigable.contains(&view_id) {
                             // if the view can be focused, we update the focus
-                            self.app_state.update_focus(id, false);
+                            self.app_state.update_focus(view_id, false);
                         }
-                        if self.has_event_listener(id, EventListener::SecondaryClick) {
-                            let view_state = self.app_state.view_state(id);
-                            view_state.last_pointer_down = Some(event.clone());
+                        if view_state
+                            .borrow()
+                            .event_listeners
+                            .contains_key(&EventListener::SecondaryClick)
+                        {
+                            view_state.borrow_mut().last_pointer_down = Some(event.clone());
                         }
                     }
                 }
             }
             Event::PointerMove(pointer_event) => {
-                let rect = self.get_size(id).unwrap_or_default().to_rect();
+                let rect = view_id.get_size().unwrap_or_default().to_rect();
                 if rect.contains(pointer_event.pos) {
                     if self.app_state.is_dragging() {
-                        self.app_state.dragging_over.insert(id);
-                        self.apply_event(id, &EventListener::DragOver, &event);
+                        self.app_state.dragging_over.insert(view_id);
+                        self.apply_event(view_id, &EventListener::DragOver, &event);
                     } else {
-                        self.app_state.hovered.insert(id);
-                        let style = self.app_state.get_builtin_style(id);
+                        self.app_state.hovered.insert(view_id);
+                        let style = view_state.borrow().combined_style.builtin();
                         if let Some(cursor) = style.cursor() {
                             if self.app_state.cursor.is_none() {
                                 self.app_state.cursor = Some(cursor);
@@ -770,12 +795,12 @@ impl<'a> EventCx<'a> {
                         }
                     }
                 }
-                if self.app_state.draggable.contains(&id) {
+                if self.app_state.draggable.contains(&view_id) {
                     if let Some((_, drag_start)) = self
                         .app_state
                         .drag_start
                         .as_ref()
-                        .filter(|(drag_id, _)| drag_id == &id)
+                        .filter(|(drag_id, _)| drag_id == &view_id)
                     {
                         let vec2 = pointer_event.pos - *drag_start;
 
@@ -783,27 +808,27 @@ impl<'a> EventCx<'a> {
                             .app_state
                             .dragging
                             .as_mut()
-                            .filter(|d| d.id == id && d.released_at.is_none())
+                            .filter(|d| d.id == view_id && d.released_at.is_none())
                         {
                             // update the dragging offset if the view is dragging and not released
                             dragging.offset = vec2;
-                            id.request_paint();
+                            self.request_paint(view_id);
                         } else if vec2.x.abs() + vec2.y.abs() > 1.0 {
                             // start dragging when moved 1 px
                             self.app_state.active = None;
-                            self.update_active(id);
+                            self.update_active(view_id);
                             self.app_state.dragging = Some(DragState {
-                                id,
+                                id: view_id,
                                 offset: vec2,
                                 released_at: None,
                             });
-                            id.request_paint();
-                            self.apply_event(id, &EventListener::DragStart, &event);
+                            self.request_paint(view_id);
+                            self.apply_event(view_id, &EventListener::DragStart, &event);
                         }
                     }
                 }
                 if self
-                    .apply_event(id, &EventListener::PointerMove, &event)
+                    .apply_event(view_id, &EventListener::PointerMove, &event)
                     .is_some_and(|prop| prop.is_processed())
                 {
                     return EventPropagation::Stop;
@@ -811,40 +836,43 @@ impl<'a> EventCx<'a> {
             }
             Event::PointerUp(pointer_event) => {
                 if pointer_event.button.is_primary() {
-                    let rect = self.get_size(id).unwrap_or_default().to_rect();
+                    let rect = view_id.get_size().unwrap_or_default().to_rect();
                     let on_view = rect.contains(pointer_event.pos);
 
-                    if id_path.is_none() {
+                    // if id_path.is_none() {
+                    if !directed {
                         if on_view {
                             if let Some(dragging) = self.app_state.dragging.as_mut() {
                                 let dragging_id = dragging.id;
                                 if self
-                                    .apply_event(id, &EventListener::Drop, &event)
+                                    .apply_event(view_id, &EventListener::Drop, &event)
                                     .is_some_and(|prop| prop.is_processed())
                                 {
                                     // if the drop is processed, we set dragging to none so that the animation
                                     // for the dragged view back to its original position isn't played.
                                     self.app_state.dragging = None;
-                                    id.request_paint();
+                                    self.request_paint(view_id);
                                     self.apply_event(dragging_id, &EventListener::DragEnd, &event);
                                 }
                             }
                         }
                     } else if let Some(dragging) =
-                        self.app_state.dragging.as_mut().filter(|d| d.id == id)
+                        self.app_state.dragging.as_mut().filter(|d| d.id == view_id)
                     {
                         let dragging_id = dragging.id;
                         dragging.released_at = Some(std::time::Instant::now());
-                        id.request_paint();
+                        self.request_paint(view_id);
                         self.apply_event(dragging_id, &EventListener::DragEnd, &event);
                     }
 
-                    let last_pointer_down = self.app_state.view_state(id).last_pointer_down.take();
-                    if let Some(handlers) =
-                        self.get_event_listeners(id, &EventListener::DoubleClick)
+                    let last_pointer_down = view_state.borrow_mut().last_pointer_down.take();
+                    if let Some(handlers) = view_state
+                        .borrow()
+                        .event_listeners
+                        .get(&EventListener::DoubleClick)
                     {
                         if on_view
-                            && self.app_state.is_clicking(&id)
+                            && self.app_state.is_clicking(&view_id)
                             && last_pointer_down
                                 .as_ref()
                                 .map(|e| e.count == 2)
@@ -856,9 +884,13 @@ impl<'a> EventCx<'a> {
                             return EventPropagation::Stop;
                         }
                     }
-                    if let Some(handlers) = self.get_event_listeners(id, &EventListener::Click) {
+                    if let Some(handlers) = view_state
+                        .borrow()
+                        .event_listeners
+                        .get(&EventListener::Click)
+                    {
                         if on_view
-                            && self.app_state.is_clicking(&id)
+                            && self.app_state.is_clicking(&view_id)
                             && last_pointer_down.is_some()
                             && handlers.iter().fold(false, |handled, handler| {
                                 handled | handler(&event).is_processed()
@@ -869,18 +901,20 @@ impl<'a> EventCx<'a> {
                     }
 
                     if self
-                        .apply_event(id, &EventListener::PointerUp, &event)
+                        .apply_event(view_id, &EventListener::PointerUp, &event)
                         .is_some_and(|prop| prop.is_processed())
                     {
                         return EventPropagation::Stop;
                     }
                 } else if pointer_event.button.is_secondary() {
-                    let rect = self.get_size(id).unwrap_or_default().to_rect();
+                    let rect = view_id.get_size().unwrap_or_default().to_rect();
                     let on_view = rect.contains(pointer_event.pos);
 
-                    let last_pointer_down = self.app_state.view_state(id).last_pointer_down.take();
-                    if let Some(handlers) =
-                        self.get_event_listeners(id, &EventListener::SecondaryClick)
+                    let last_pointer_down = view_state.borrow_mut().last_pointer_down.take();
+                    if let Some(handlers) = view_state
+                        .borrow()
+                        .event_listeners
+                        .get(&EventListener::SecondaryClick)
                     {
                         if on_view
                             && last_pointer_down.is_some()
@@ -893,43 +927,35 @@ impl<'a> EventCx<'a> {
                     }
 
                     let viewport_event_position = {
-                        let layout = self.app_state.view_state(id).layout_rect;
+                        let layout = view_state.borrow().layout_rect;
                         Point::new(
                             layout.x0 + pointer_event.pos.x,
                             layout.y0 + pointer_event.pos.y,
                         )
                     };
-                    if let Some(menu) = &self.app_state.view_state(id).context_menu {
+                    if let Some(menu) = view_state.borrow().context_menu.as_ref() {
                         show_context_menu(menu(), Some(viewport_event_position));
                         return EventPropagation::Stop;
                     }
                 }
             }
             Event::KeyDown(_) => {
-                if self.app_state.is_focused(&id) && event.is_keyboard_trigger() {
-                    self.apply_event(id, &EventListener::Click, &event);
+                if self.app_state.is_focused(&view_id) && event.is_keyboard_trigger() {
+                    self.apply_event(view_id, &EventListener::Click, &event);
                 }
             }
             Event::WindowResized(_) => {
-                if let Some(view_state) = self.app_state.view_states.get(&id) {
-                    if view_state.has_style_selectors.has_responsive() {
-                        self.app_state.request_style(id);
-                    }
+                if view_state.borrow().has_style_selectors.has_responsive() {
+                    view_id.request_style();
                 }
             }
             _ => (),
         }
 
-        for handler in &view.view_data().event_handlers {
-            if (handler)(&event).is_processed() {
-                return EventPropagation::Stop;
-            }
-        }
-
         if let Some(listener) = event.listener() {
-            if let Some(handlers) = self.get_event_listeners(id, &listener) {
+            if let Some(handlers) = view_state.borrow().event_listeners.get(&listener) {
                 let should_run = if let Some(pos) = event.point() {
-                    let rect = self.get_size(id).unwrap_or_default().to_rect();
+                    let rect = view_id.get_size().unwrap_or_default().to_rect();
                     rect.contains(pos)
                 } else {
                     true
@@ -971,7 +997,7 @@ impl<'a> EventCx<'a> {
 
     pub(crate) fn apply_event(
         &self,
-        id: Id,
+        id: ViewId,
         listener: &EventListener,
         event: &Event,
     ) -> Option<EventPropagation> {
@@ -979,14 +1005,11 @@ impl<'a> EventCx<'a> {
     }
 
     /// translate a window-positioned event to the local coordinate system of a view
-    pub(crate) fn offset_event(&self, id: Id, event: Event) -> Event {
-        let viewport = self
-            .app_state
-            .view_states
-            .get(&id)
-            .and_then(|view| view.viewport);
+    pub(crate) fn offset_event(&self, id: ViewId, event: Event) -> Event {
+        let state = id.state();
+        let viewport = state.borrow().viewport;
 
-        if let Some(layout) = self.get_layout(id) {
+        if let Some(layout) = id.get_layout() {
             event.offset((
                 layout.location.x as f64 - viewport.map(|rect| rect.x0).unwrap_or(0.0),
                 layout.location.y as f64 - viewport.map(|rect| rect.y0).unwrap_or(0.0),
@@ -998,15 +1021,13 @@ impl<'a> EventCx<'a> {
 
     /// Used to determine if you should send an event to another view. This is basically a check for pointer events to see if the pointer is inside a child view and to make sure the current view isn't hidden or disabled.
     /// Usually this is used if you want to propagate an event to a child view
-    pub fn should_send(&mut self, id: Id, event: &Event) -> bool {
-        if self.app_state.is_hidden(id)
-            || (self.app_state.is_disabled(&id) && !event.allow_disabled())
-        {
+    pub fn should_send(&mut self, id: ViewId, event: &Event) -> bool {
+        if id.is_hidden() || (self.app_state.is_disabled(&id) && !event.allow_disabled()) {
             return false;
         }
         if let Some(point) = event.point() {
-            let layout_rect = self.app_state.get_layout_rect(id);
-            if let Some(layout) = self.get_layout(id) {
+            let layout_rect = id.layout_rect();
+            if let Some(layout) = id.get_layout() {
                 if layout_rect
                     .with_origin(Point::new(
                         layout.location.x as f64,
@@ -1036,7 +1057,7 @@ pub struct InteractionState {
 
 pub struct StyleCx<'a> {
     pub(crate) app_state: &'a mut AppState,
-    pub(crate) current_view: Id,
+    pub(crate) current_view: ViewId,
     pub(crate) current: Rc<Style>,
     pub(crate) direct: Style,
     saved: Vec<Rc<Style>>,
@@ -1048,7 +1069,7 @@ pub struct StyleCx<'a> {
 }
 
 impl<'a> StyleCx<'a> {
-    pub(crate) fn new(app_state: &'a mut AppState, root: Id) -> Self {
+    pub(crate) fn new(app_state: &'a mut AppState, root: ViewId) -> Self {
         Self {
             app_state,
             current_view: root,
@@ -1068,7 +1089,7 @@ impl<'a> StyleCx<'a> {
         self.selected = true;
     }
 
-    fn get_interact_state(&self, id: &Id) -> InteractionState {
+    fn get_interact_state(&self, id: &ViewId) -> InteractionState {
         InteractionState {
             is_selected: self.selected,
             is_hovered: self.app_state.is_hovered(id),
@@ -1080,10 +1101,9 @@ impl<'a> StyleCx<'a> {
     }
 
     /// Internal method used by Floem to compute the styles for the view.
-    pub fn style_view(&mut self, view: &mut dyn View) {
+    pub fn style_view(&mut self, view_id: ViewId) {
         self.save();
-        let id = view.view_data().id();
-        let view_id = view.view_data().view_id;
+        let view = view_id.view();
         let view_state = view_id.state();
         {
             let mut view_state = view_state.borrow_mut();
@@ -1093,24 +1113,24 @@ impl<'a> StyleCx<'a> {
             view_state.requested_changes.remove(ChangeFlags::STYLE);
         }
 
-        let view_style = view.view_style();
-        let view_class = view.view_class();
+        let view_style = view.borrow().view_style();
+        let view_class = view.borrow().view_class();
         {
             let mut view_state = view_state.borrow_mut();
 
             // Propagate style requests to children if needed.
             if view_state.request_style_recursive {
                 view_state.request_style_recursive = false;
-                view.for_each_child(&mut |child| {
-                    let state = self.app_state_mut().view_state(child.view_data().id());
+                let children = view_id.children();
+                for child in children {
+                    let mut state = child.state().borrow_mut();
                     state.request_style_recursive = true;
                     state.requested_changes.insert(ChangeFlags::STYLE);
-                    false
-                });
+                }
             }
         }
 
-        let mut view_interact_state = self.get_interact_state(&id);
+        let mut view_interact_state = self.get_interact_state(&view_id);
         view_interact_state.is_disabled |= self.disabled;
         self.disabled = view_interact_state.is_disabled;
         let mut new_frame = self.app_state.compute_style(
@@ -1121,21 +1141,21 @@ impl<'a> StyleCx<'a> {
             &self.current,
         );
 
-        let style = self.app_state_mut().get_computed_style(id).clone();
+        let style = view_state.borrow().combined_style.clone();
         self.direct = style;
         Style::apply_only_inherited(&mut self.current, &self.direct);
-        CaptureState::capture_style(id, self);
+        CaptureState::capture_style(view_id, self);
 
         let mut view_state = view_state.borrow_mut();
         // If there's any changes to the Taffy style, request layout.
         let taffy_style = self.direct.to_taffy_style();
         if taffy_style != view_state.taffy_style {
             view_state.taffy_style = taffy_style;
-            self.app_state_mut().request_layout(id);
+            self.app_state_mut().request_layout(view_id);
         }
 
         // This is used by the `request_transition` and `style` methods below.
-        self.current_view = id;
+        self.current_view = view_id;
 
         // Extract the relevant layout properties so the content rect can be calculated
         // when painting.
@@ -1153,10 +1173,10 @@ impl<'a> StyleCx<'a> {
             &mut new_frame,
         );
         if new_frame {
-            self.app_state.schedule_style(id);
+            self.app_state.schedule_style(view_id);
         }
 
-        view.style(self);
+        view.borrow_mut().style(self);
 
         self.restore();
     }
@@ -1287,22 +1307,18 @@ impl<'a> ComputeLayoutCx<'a> {
     /// - invoking any attached context::ResizeListeners
     ///
     /// Returns the bounding rect that encompasses this view and its children
-    pub fn compute_view_layout(&mut self, view: &mut dyn View) -> Option<Rect> {
-        let id = view.view_data().id();
-        if self.app_state().is_hidden(id) {
-            self.app_state_mut().view_state(id).layout_rect = Rect::ZERO;
+    pub fn compute_view_layout(&mut self, id: ViewId) -> Option<Rect> {
+        let view_state = id.state();
+        if id.is_hidden() {
+            view_state.borrow_mut().layout_rect = Rect::ZERO;
             return None;
         }
 
         self.save();
 
-        let layout = self.app_state().get_layout(id).unwrap();
+        let layout = id.get_layout().unwrap_or_default();
         let origin = Point::new(layout.location.x as f64, layout.location.y as f64);
-        let this_viewport = self
-            .app_state()
-            .view_states
-            .get(&id)
-            .and_then(|view| view.viewport);
+        let this_viewport = view_state.borrow().viewport;
         let this_viewport_origin = this_viewport.unwrap_or_default().origin().to_vec2();
         let size = Size::new(layout.size.width as f64, layout.size.height as f64);
         let parent_viewport = self.viewport.with_origin(
@@ -1319,7 +1335,7 @@ impl<'a> ComputeLayoutCx<'a> {
         let window_origin = origin + self.window_origin.to_vec2() - this_viewport_origin;
         self.window_origin = window_origin;
 
-        if let Some(resize) = self.get_resize_listener(id) {
+        if let Some(resize) = view_state.borrow_mut().resize_listener.as_mut() {
             let new_rect = size.to_rect().with_origin(origin);
             if new_rect != resize.rect {
                 resize.rect = new_rect;
@@ -1327,14 +1343,15 @@ impl<'a> ComputeLayoutCx<'a> {
             }
         }
 
-        if let Some(listener) = self.get_move_listener(id) {
+        if let Some(listener) = view_state.borrow_mut().move_listener.as_mut() {
             if window_origin != listener.window_origin {
                 listener.window_origin = window_origin;
                 (*listener.callback)(window_origin);
             }
         }
 
-        let child_layout_rect = view.compute_layout(self);
+        let view = id.view();
+        let child_layout_rect = view.borrow_mut().compute_layout(self);
 
         let layout_rect = size.to_rect().with_origin(self.window_origin);
         let layout_rect = if let Some(child_layout_rect) = child_layout_rect {
@@ -1342,7 +1359,7 @@ impl<'a> ComputeLayoutCx<'a> {
         } else {
             layout_rect
         };
-        self.app_state_mut().view_state(id).layout_rect = layout_rect;
+        view_state.borrow_mut().layout_rect = layout_rect;
 
         self.restore();
 
@@ -1391,17 +1408,24 @@ impl<'a> LayoutCx<'a> {
     /// other work you need to do to ensure that the layout for the returned nodes is correct.
     pub fn layout_node(
         &mut self,
-        id: Id,
+        id: ViewId,
         has_children: bool,
         mut children: impl FnMut(&mut LayoutCx) -> Vec<NodeId>,
     ) -> NodeId {
-        let view_state = self.app_state.view_state(id);
-        let node = view_state.node;
-        if !view_state.requested_changes.contains(ChangeFlags::LAYOUT) {
+        let view_state = id.state();
+        let node = view_state.borrow().node;
+        if !view_state
+            .borrow()
+            .requested_changes
+            .contains(ChangeFlags::LAYOUT)
+        {
             return node;
         }
-        view_state.requested_changes.remove(ChangeFlags::LAYOUT);
-        let style = view_state.combined_style.to_taffy_style();
+        view_state
+            .borrow_mut()
+            .requested_changes
+            .remove(ChangeFlags::LAYOUT);
+        let style = view_state.borrow().combined_style.to_taffy_style();
         let _ = self.app_state.taffy.set_style(node, style);
 
         if has_children {
@@ -1453,17 +1477,26 @@ impl<'a> PaintCx<'a> {
         }
     }
 
+    /// paint the children of this view
+    pub fn paint_children(&mut self, id: ViewId) {
+        let children = id.children();
+        for child in children {
+            self.paint_view(child);
+        }
+    }
+
     /// The entry point for painting a view. You shouldn't need to implement this yourself. Instead, implement [`Widget::paint`].
     /// It handles the internal work before and after painting [`Widget::paint`] implementations.
     /// It is responsible for
     /// - managing hidden status
     /// - clipping
     /// - painting computed styles like background color, border, font-styles, and z-index and handling painting requirements of drag and drop
-    pub fn paint_view(&mut self, view: &mut dyn View) {
-        let id = view.view_data().id();
-        if self.app_state.is_hidden(id) {
+    pub fn paint_view(&mut self, id: ViewId) {
+        if id.is_hidden() {
             return;
         }
+        let view = id.view();
+        let view_state = id.state();
 
         self.save();
         let size = self.transform(id);
@@ -1472,8 +1505,8 @@ impl<'a> PaintCx<'a> {
             .map(|rect| rect.rect().intersect(size.to_rect()).is_empty())
             .unwrap_or(false);
         if !is_empty {
-            let style = self.app_state.get_computed_style(id).clone();
-            let view_style_props = self.app_state.view_state(id).view_style_props.clone();
+            let style = view_state.borrow().combined_style.clone();
+            let view_style_props = view_state.borrow().view_style_props.clone();
 
             if let Some(z_index) = style.get(ZIndex) {
                 self.set_z_index(z_index);
@@ -1481,7 +1514,7 @@ impl<'a> PaintCx<'a> {
 
             paint_bg(self, &style, &view_style_props, size);
 
-            view.paint(self);
+            view.borrow_mut().paint(self);
             paint_border(self, &view_style_props, size);
             paint_outline(self, &view_style_props, size)
         }
@@ -1518,25 +1551,25 @@ impl<'a> PaintCx<'a> {
                     self.set_z_index(1000);
                     self.clear_clip();
 
-                    let style = self.app_state.get_computed_style(id).clone();
-                    let view_state = self.app_state.view_state(id);
-                    let mut view_style_props = view_state.view_style_props.clone();
-                    let style = if let Some(dragging_style) = view_state.dragging_style.clone() {
-                        let style = style.apply(dragging_style);
-                        let mut _new_frame = false;
-                        view_style_props.read_explicit(
-                            &style,
-                            &style,
-                            &Instant::now(),
-                            &mut _new_frame,
-                        );
-                        style
-                    } else {
-                        style
-                    };
+                    let style = view_state.borrow().combined_style.clone();
+                    let mut view_style_props = view_state.borrow().view_style_props.clone();
+                    let style =
+                        if let Some(dragging_style) = view_state.borrow().dragging_style.clone() {
+                            let style = style.apply(dragging_style);
+                            let mut _new_frame = false;
+                            view_style_props.read_explicit(
+                                &style,
+                                &style,
+                                &Instant::now(),
+                                &mut _new_frame,
+                            );
+                            style
+                        } else {
+                            style
+                        };
                     paint_bg(self, &style, &view_style_props, size);
 
-                    view.paint(self);
+                    view.borrow_mut().paint(self);
                     paint_border(self, &view_style_props, size);
                     paint_outline(self, &view_style_props, size);
 
@@ -1616,8 +1649,8 @@ impl<'a> PaintCx<'a> {
         }
     }
 
-    pub fn transform(&mut self, id: Id) -> Size {
-        if let Some(layout) = self.get_layout(id) {
+    pub fn transform(&mut self, id: ViewId) -> Size {
+        if let Some(layout) = id.get_layout() {
             let offset = layout.location;
             let mut new = self.transform.as_coeffs();
             new[4] += offset.x as f64;
@@ -1644,7 +1677,7 @@ impl<'a> PaintCx<'a> {
         self.paint_state.renderer.set_z_index(z_index);
     }
 
-    pub fn is_focused(&self, id: Id) -> bool {
+    pub fn is_focused(&self, id: ViewId) -> bool {
         self.app_state.is_focused(&id)
     }
 }
@@ -1677,19 +1710,19 @@ pub struct UpdateCx<'a> {
 impl<'a> UpdateCx<'a> {
     /// request that this node be styled, laid out and painted again
     /// This will recursively request this for all parents.
-    pub fn request_all(&mut self, id: Id) {
+    pub fn request_all(&mut self, id: ViewId) {
         self.app_state.request_all(id);
     }
 
     /// request that this node be styled again
     /// This will recursively request style for all parents.
-    pub fn request_style(&mut self, id: Id) {
+    pub fn request_style(&mut self, id: ViewId) {
         self.app_state.request_style(id);
     }
 
     /// request that this node be laid out again
     /// This will recursively request layout for all parents and set the `ChangeFlag::LAYOUT` at root
-    pub fn request_layout(&mut self, id: Id) {
+    pub fn request_layout(&mut self, id: ViewId) {
         self.app_state.request_layout(id);
     }
 
@@ -1699,20 +1732,6 @@ impl<'a> UpdateCx<'a> {
 
     pub fn app_state(&self) -> &AppState {
         self.app_state
-    }
-
-    /// Used internally by Floem to send an update to the correct view based on the `Id` path.
-    /// It will invoke only once `update` when the correct view is located.
-    pub fn update_view(&mut self, view: &mut dyn View, id_path: &[Id], state: Box<dyn Any>) {
-        let id = id_path[0];
-        let id_path = &id_path[1..];
-        if id == view.view_data().id() {
-            if id_path.is_empty() {
-                view.update(self, state);
-            } else if let Some(child) = view.child_mut(id_path[0]) {
-                self.update_view(child, id_path, state);
-            }
-        }
     }
 }
 

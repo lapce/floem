@@ -1,6 +1,6 @@
 use crate::{
     style_class,
-    view::ViewBuilder,
+    view::IntoView,
     views::{self, container, Decorators, List},
 };
 
@@ -9,7 +9,7 @@ style_class!(pub ListItemClass);
 
 pub fn list<V>(iterator: impl IntoIterator<Item = V>) -> List
 where
-    V: ViewBuilder + 'static,
+    V: IntoView + 'static,
 {
     views::list(
         iterator

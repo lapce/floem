@@ -11,7 +11,8 @@ use crate::{
     style::{Background, BorderRadius, Foreground, Height, Style, StyleValue},
     style_class,
     unit::{PxPct, PxPctAuto},
-    view::{View, ViewBuilder, ViewData},
+    view::View,
+    view_storage::ViewId,
     views::Decorators,
     EventPropagation,
 };
@@ -45,7 +46,7 @@ prop_extractor! {
 
 /// A slider. See [`slider`]
 pub struct Slider {
-    data: ViewData,
+    id: ViewId,
     onchangepx: Option<Box<dyn Fn(f32)>>,
     onchangepct: Option<Box<dyn Fn(f32)>>,
     held: bool,
@@ -108,13 +109,13 @@ pub struct Slider {
 ///  );
 ///```
 pub fn slider(percent: impl Fn() -> f32 + 'static) -> Slider {
-    let id = crate::id::Id::next();
+    let id = ViewId::new();
     create_effect(move |_| {
         let percent = percent();
         id.update_state(SliderUpdate::Percent(percent));
     });
     Slider {
-        data: ViewData::new(id),
+        id,
         onchangepx: None,
         onchangepct: None,
         held: false,
@@ -132,27 +133,9 @@ pub fn slider(percent: impl Fn() -> f32 + 'static) -> Slider {
     .keyboard_navigatable()
 }
 
-impl ViewBuilder for Slider {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn View> {
-        Box::new(self)
-    }
-}
-
 impl View for Slider {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
+    fn id(&self) -> ViewId {
+        self.id
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -164,26 +147,25 @@ impl View for Slider {
             match *update {
                 SliderUpdate::Percent(percent) => self.percent = percent,
             }
-            cx.request_layout(self.id());
+            cx.request_layout(self.view_id());
         }
     }
 
-    fn event(
+    fn event_before_children(
         &mut self,
         cx: &mut crate::context::EventCx,
-        _id_path: Option<&[crate::id::Id]>,
-        event: crate::event::Event,
+        event: &crate::event::Event,
     ) -> EventPropagation {
         let pos_changed = match event {
             crate::event::Event::PointerDown(event) => {
-                cx.update_active(self.id());
-                cx.app_state_mut().request_layout(self.id());
+                cx.update_active(self.view_id());
+                cx.app_state_mut().request_layout(self.view_id());
                 self.held = true;
                 self.percent = event.pos.x as f32 / self.size.width * 100.;
                 true
             }
             crate::event::Event::PointerUp(event) => {
-                cx.app_state_mut().request_layout(self.id());
+                cx.app_state_mut().request_layout(self.view_id());
 
                 // set the state based on the position of the slider
                 let changed = self.held;
@@ -195,7 +177,7 @@ impl View for Slider {
                 changed
             }
             crate::event::Event::PointerMove(event) => {
-                cx.app_state_mut().request_layout(self.id());
+                cx.app_state_mut().request_layout(self.view_id());
                 if self.held {
                     self.percent = event.pos.x as f32 / self.size.width * 100.;
                     true
@@ -209,11 +191,11 @@ impl View for Slider {
             }
             crate::event::Event::KeyDown(event) => {
                 if event.key.logical_key == Key::Named(NamedKey::ArrowLeft) {
-                    cx.app_state_mut().request_layout(self.id());
+                    cx.app_state_mut().request_layout(self.view_id());
                     self.percent -= 10.;
                     true
                 } else if event.key.logical_key == Key::Named(NamedKey::ArrowRight) {
-                    cx.app_state_mut().request_layout(self.id());
+                    cx.app_state_mut().request_layout(self.view_id());
                     self.percent += 10.;
                     true
                 } else {
@@ -248,7 +230,7 @@ impl View for Slider {
         paint |= self.accent_bar_style.read_style(cx, &accent_bar_style);
         paint |= self.style.read(cx);
         if paint {
-            cx.app_state_mut().request_paint(self.data.id());
+            cx.app_state_mut().request_paint(self.data.view_id);
         }
     }
 
@@ -367,11 +349,11 @@ impl Slider {
         mut self,
         style: impl Fn(SliderCustomStyle) -> SliderCustomStyle + 'static,
     ) -> Self {
-        let id = self.id();
+        let id = self.view_id();
         let offset = View::view_data_mut(&mut self).style.next_offset();
         let style = create_updater(
             move || style(SliderCustomStyle(Style::new())),
-            move |style| id.update_style(style.0, offset),
+            move |style| id.update_style(offset, style.0),
         );
         View::view_data_mut(&mut self).style.push(style.0);
         self

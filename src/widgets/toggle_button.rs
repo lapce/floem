@@ -11,7 +11,8 @@ use crate::{
     style::{self, Foreground, Style, StyleValue},
     style_class,
     unit::PxPct,
-    view::{View, ViewBuilder, ViewData},
+    view::View,
+    view_storage::ViewId,
     views::Decorators,
     EventPropagation,
 };
@@ -50,7 +51,7 @@ enum ToggleState {
 
 /// A toggle button
 pub struct ToggleButton {
-    data: ViewData,
+    id: ViewId,
     state: bool,
     ontoggle: Option<Box<dyn Fn(bool)>>,
     position: f32,
@@ -80,14 +81,14 @@ pub struct ToggleButton {
 ///         .on_toggle(move |new_state| state.set(new_state));
 ///```
 pub fn toggle_button(state: impl Fn() -> bool + 'static) -> ToggleButton {
-    let id = crate::id::Id::next();
+    let id = ViewId::new();
     create_effect(move |_| {
         let state = state();
         id.update_state(state);
     });
 
     ToggleButton {
-        data: ViewData::new(id),
+        id,
         state: false,
         ontoggle: None,
         position: 0.0,
@@ -100,27 +101,9 @@ pub fn toggle_button(state: impl Fn() -> bool + 'static) -> ToggleButton {
     .keyboard_navigatable()
 }
 
-impl ViewBuilder for ToggleButton {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn View> {
-        Box::new(self)
-    }
-}
-
 impl View for ToggleButton {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
+    fn id(&self) -> ViewId {
+        self.id
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -133,23 +116,22 @@ impl View for ToggleButton {
                 self.update_restrict_position(true);
             }
             self.state = *state;
-            cx.request_layout(self.id());
+            cx.request_layout(self.view_id());
         }
     }
 
-    fn event(
+    fn event_before_children(
         &mut self,
         cx: &mut crate::context::EventCx,
-        _id_path: Option<&[crate::id::Id]>,
-        event: crate::event::Event,
+        event: &crate::event::Event,
     ) -> EventPropagation {
         match event {
             crate::event::Event::PointerDown(_event) => {
-                cx.update_active(self.id());
+                cx.update_active(self.view_id());
                 self.held = ToggleState::Held;
             }
             crate::event::Event::PointerUp(_event) => {
-                cx.app_state_mut().request_layout(self.id());
+                cx.app_state_mut().request_layout(self.view_id());
 
                 // if held and pointer up. toggle the position (toggle state drag alrady changed the position)
                 if self.held == ToggleState::Held {
@@ -192,12 +174,12 @@ impl View for ToggleButton {
                                     ontoggle(false);
                                 }
                             }
-                            cx.app_state_mut().request_layout(self.id());
+                            cx.app_state_mut().request_layout(self.view_id());
                         }
                         ToggleHandleBehavior::Snap => {
                             if event.pos.x as f32 > self.width / 2. && !self.state {
                                 self.position = self.width;
-                                cx.app_state_mut().request_layout(self.id());
+                                cx.app_state_mut().request_layout(self.view_id());
                                 self.state = true;
                                 if let Some(ontoggle) = &self.ontoggle {
                                     ontoggle(true);
@@ -205,7 +187,7 @@ impl View for ToggleButton {
                             } else if (event.pos.x as f32) < self.width / 2. && self.state {
                                 self.position = 0.;
                                 // self.held = ToggleState::Nothing;
-                                cx.app_state_mut().request_layout(self.id());
+                                cx.app_state_mut().request_layout(self.view_id());
                                 self.state = false;
                                 if let Some(ontoggle) = &self.ontoggle {
                                     ontoggle(false);
@@ -246,7 +228,7 @@ impl View for ToggleButton {
 
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         if self.style.read(cx) {
-            cx.app_state_mut().request_paint(self.id());
+            cx.app_state_mut().request_paint(self.view_id());
         }
     }
 
@@ -290,11 +272,11 @@ impl ToggleButton {
         mut self,
         style: impl Fn(ToggleButtonCustomStyle) -> ToggleButtonCustomStyle + 'static,
     ) -> Self {
-        let id = self.id();
+        let id = self.view_id();
         let offset = View::view_data_mut(&mut self).style.next_offset();
         let style = create_updater(
             move || style(ToggleButtonCustomStyle(Style::new())),
-            move |style| id.update_style(style.0, offset),
+            move |style| id.update_style(offset, style.0),
         );
         View::view_data_mut(&mut self).style.push(style.0);
         self

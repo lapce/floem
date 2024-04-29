@@ -7,10 +7,10 @@ use floem_reactive::{create_updater, with_scope, RwSignal, Scope};
 use lapce_xi_rope::Rope;
 
 use crate::{
-    id::Id,
     keyboard::Modifiers,
     style::{CursorColor, Style},
-    view::{AnyWidget, View, ViewBuilder, ViewData},
+    view::{IntoView, View},
+    view_storage::ViewId,
     views::editor::{
         command::CommandExecuted,
         id::EditorId,
@@ -37,15 +37,15 @@ use super::editor::{
 /// Note: this requires that the document underlying it is a [`TextDocument`] for the use of some
 /// logic.
 pub struct TextEditor {
-    data: ViewData,
+    id: ViewId,
+    child: ViewId,
     // /// The scope this view was created in, used for creating the final view
     cx: Scope,
     editor: Editor,
-    child: AnyWidget,
 }
 
 pub fn text_editor(text: impl Into<Rope>) -> TextEditor {
-    let id = Id::next();
+    let id = ViewId::new();
     let cx = Scope::current();
 
     let doc = Rc::new(TextDocument::new(cx, text));
@@ -56,13 +56,16 @@ pub fn text_editor(text: impl Into<Rope>) -> TextEditor {
     let child = with_scope(cx, || {
         editor_container_view(editor_sig, |_| true, default_key_handler(editor_sig))
     })
-    .build();
+    .into_view();
+
+    let child_id = child.id();
+    id.set_children(vec![child]);
 
     TextEditor {
-        data: ViewData::new(id),
+        id,
+        child: child_id,
         cx,
         editor,
-        child,
     }
 }
 
@@ -70,7 +73,7 @@ pub fn text_editor_keys(
     text: impl Into<Rope>,
     handle_key_event: impl Fn(RwSignal<Editor>, &KeyPress, Modifiers) -> CommandExecuted + 'static,
 ) -> TextEditor {
-    let id = Id::next();
+    let id = ViewId::new();
     let cx = Scope::current();
 
     let doc = Rc::new(TextDocument::new(cx, text));
@@ -85,63 +88,26 @@ pub fn text_editor_keys(
             move |kp, ms| handle_key_event(editor_sig, kp, ms),
         )
     })
-    .build();
+    .into_view();
+
+    let child_id = child.id();
+    id.set_children(vec![child]);
 
     TextEditor {
-        data: ViewData::new(id),
+        id,
         cx,
         editor,
-        child,
-    }
-}
-
-impl ViewBuilder for TextEditor {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn View> {
-        Box::new(self)
+        child: child_id,
     }
 }
 
 impl View for TextEditor {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
+    fn id(&self) -> ViewId {
+        self.id
     }
 
     fn view_style(&self) -> Option<Style> {
         Some(Style::new().min_width(25).min_height(10))
-    }
-
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
-        for_each(&self.child);
-    }
-
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
-        for_each(&mut self.child);
-    }
-
-    fn for_each_child_rev_mut<'a>(
-        &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
-    ) {
-        for_each(&mut self.child);
-    }
-
-    fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
-        self.for_each_child_mut(&mut |child| {
-            cx.style_view(child);
-            false
-        });
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -150,10 +116,16 @@ impl View for TextEditor {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         cx.save();
-        let style = cx.get_builtin_style(self.id());
-        let border_radius = style.border_radius();
-        let size = cx
-            .get_layout(self.id())
+        let border_radius = self
+            .id
+            .state()
+            .borrow()
+            .combined_style
+            .builtin()
+            .border_radius();
+        let size = self
+            .id
+            .get_layout()
             .map(|layout| kurbo::Size::new(layout.size.width as f64, layout.size.height as f64))
             .unwrap_or_default();
 
@@ -167,7 +139,7 @@ impl View for TextEditor {
         } else {
             cx.clip(&size.to_rect());
         }
-        cx.paint_view(&mut self.child);
+        cx.paint_view(self.child);
         cx.restore();
     }
 }
@@ -362,13 +334,14 @@ impl TextEditor {
         mut self,
         style: impl Fn(EditorCustomStyle) -> EditorCustomStyle + 'static,
     ) -> Self {
-        let id = self.id();
-        let offset = View::view_data_mut(&mut self).style.next_offset();
+        let id = self.view_id();
+        let view_state = id.state();
+        let offset = view_state.borrow_mut().style.next_offset();
         let style = create_updater(
             move || style(EditorCustomStyle(Style::new())),
-            move |style| id.update_style(style.0, offset),
+            move |style| id.update_style(offset, style.0),
         );
-        View::view_data_mut(&mut self).style.push(style.0);
+        view_state.borrow_mut().style.push(style.0);
         self
     }
 
@@ -446,7 +419,7 @@ impl TextEditor {
     /// let secondary = primary.shared_editor();
     /// ```
     pub fn shared_editor(&self) -> TextEditor {
-        let id = Id::next();
+        let id = ViewId::new();
 
         let doc = self.editor.doc();
         let style = self.editor.style();
@@ -456,13 +429,16 @@ impl TextEditor {
         let child = with_scope(self.cx, || {
             editor_container_view(editor_sig, |_| true, default_key_handler(editor_sig))
         })
-        .build();
+        .into_view();
+
+        let child_id = child.id();
+        id.set_children(vec![child]);
 
         TextEditor {
-            data: ViewData::new(id),
+            id,
             cx: self.cx,
             editor,
-            child,
+            child: child_id,
         }
     }
 

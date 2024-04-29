@@ -7,7 +7,8 @@ use crate::{
     event::Event,
     id::Id,
     prop, prop_extractor,
-    view::{default_compute_layout, default_event, View, ViewBuilder, ViewData},
+    view::{default_compute_layout, IntoView, View},
+    view_storage::ViewId,
     EventPropagation,
 };
 
@@ -21,9 +22,9 @@ prop_extractor! {
 
 /// A view that displays a tooltip for its child.
 pub struct Tooltip {
-    data: ViewData,
+    id: ViewId,
     hover: Option<(Point, TimerToken)>,
-    overlay: Option<Id>,
+    overlay: Option<ViewId>,
     child: Box<dyn View>,
     tip: Rc<dyn Fn() -> Box<dyn View>>,
     style: TooltipStyle,
@@ -31,13 +32,14 @@ pub struct Tooltip {
 }
 
 /// A view that displays a tooltip for its child.
-pub fn tooltip<V: ViewBuilder + 'static, T: View + 'static>(
+pub fn tooltip<V: IntoView + 'static, T: View + 'static>(
     child: V,
     tip: impl Fn() -> T + 'static,
 ) -> Tooltip {
+    let id = ViewId::new();
     Tooltip {
-        data: ViewData::new(Id::next()),
-        child: child.build(),
+        id,
+        child: child.into_view(),
         tip: Rc::new(move || Box::new(tip())),
         hover: None,
         overlay: None,
@@ -46,42 +48,9 @@ pub fn tooltip<V: ViewBuilder + 'static, T: View + 'static>(
     }
 }
 
-impl ViewBuilder for Tooltip {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn View> {
-        Box::new(self)
-    }
-}
-
 impl View for Tooltip {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
-        for_each(&self.child);
-    }
-
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
-        for_each(&mut self.child);
-    }
-
-    fn for_each_child_rev_mut<'a>(
-        &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
-    ) {
-        for_each(&mut self.child);
+    fn id(&self) -> ViewId {
+        self.id
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -102,12 +71,7 @@ impl View for Tooltip {
         }
     }
 
-    fn event(
-        &mut self,
-        cx: &mut EventCx,
-        id_path: Option<&[Id]>,
-        event: Event,
-    ) -> EventPropagation {
+    fn event_before_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
         match &event {
             Event::PointerMove(e) => {
                 if self.overlay.is_none() {
@@ -128,13 +92,12 @@ impl View for Tooltip {
             }
             _ => {}
         }
-
-        default_event(self, cx, id_path, event)
+        EventPropagation::Continue
     }
 
     fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<kurbo::Rect> {
         self.window_origin = Some(cx.window_origin);
-        default_compute_layout(self, cx)
+        default_compute_layout(self.id, cx)
     }
 }
 

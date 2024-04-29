@@ -5,6 +5,7 @@ use crate::{
     context::AppState,
     id::Id,
     view::{view_tab_navigation, View},
+    view_storage::ViewId,
 };
 
 pub(crate) fn view_arrow_navigation(key: NamedKey, app_state: &mut AppState, view: &dyn View) {
@@ -19,7 +20,7 @@ pub(crate) fn view_arrow_navigation(key: NamedKey, app_state: &mut AppState, vie
             return;
         }
     };
-    let rect = app_state.get_layout_rect(focused).inflate(10.0, 10.0);
+    let rect = focused.layout_rect().inflate(10.0, 10.0);
     let center = rect.center();
     let intersect_target = match key {
         NamedKey::ArrowUp => Rect::new(rect.x0, f64::NEG_INFINITY, rect.x1, center.y),
@@ -39,9 +40,10 @@ pub(crate) fn view_arrow_navigation(key: NamedKey, app_state: &mut AppState, vie
         NamedKey::ArrowRight => Rect::new(rect.x1, f64::NEG_INFINITY, f64::INFINITY, f64::INFINITY),
         _ => panic!(),
     };
-    let mut keyboard_navigable: Vec<Id> = app_state.keyboard_navigable.iter().copied().collect();
+    let mut keyboard_navigable: Vec<ViewId> =
+        app_state.keyboard_navigable.iter().copied().collect();
     keyboard_navigable.retain(|id| {
-        let layout = app_state.get_layout_rect(*id);
+        let layout = id.layout_rect();
 
         !layout.intersect(intersect_target).is_empty()
             && center_target.contains(layout.center())
@@ -51,7 +53,7 @@ pub(crate) fn view_arrow_navigation(key: NamedKey, app_state: &mut AppState, vie
 
     let mut new_focus = None;
     for id in keyboard_navigable {
-        let id_rect = app_state.get_layout_rect(id);
+        let id_rect = id.layout_rect();
         let id_center = id_rect.center();
         let id_edge = match key {
             NamedKey::ArrowUp => Point::new(id_center.x, id_rect.y1),

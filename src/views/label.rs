@@ -5,10 +5,10 @@ use crate::{
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
     id::Id,
     prop_extractor,
-    style::Style,
-    style::{FontProps, LineHeight, TextColor, TextOverflow, TextOverflowProp},
+    style::{FontProps, LineHeight, Style, TextColor, TextOverflow, TextOverflowProp},
     unit::PxPct,
-    view::{View, ViewBuilder, ViewData},
+    view::View,
+    view_storage::ViewId,
 };
 use floem_peniko::Color;
 use floem_reactive::create_updater;
@@ -31,7 +31,7 @@ struct TextOverflowListener {
 
 /// A View that can display text from a [`String`]. See [`label`], [`text`], and [`static_label`].
 pub struct Label {
-    data: ViewData,
+    id: ViewId,
     label: String,
     text_layout: Option<TextLayout>,
     text_node: Option<NodeId>,
@@ -44,9 +44,9 @@ pub struct Label {
 }
 
 impl Label {
-    fn new(id: Id, label: String) -> Self {
+    fn new(id: ViewId, label: String) -> Self {
         Label {
-            data: ViewData::new(id),
+            id,
             label,
             text_layout: None,
             text_node: None,
@@ -77,7 +77,7 @@ pub fn text<S: Display>(text: S) -> Label {
 
 /// A non-reactive view that can display text from an item that can be turned into a [`String`]. See also [`label`].
 pub fn static_label(label: impl Into<String>) -> Label {
-    Label::new(Id::next(), label.into())
+    Label::new(ViewId::new(), label.into())
 }
 
 /// A view that can reactively display text from an item that implements [`Display`]. See also [`text`] for a non-reactive label.
@@ -91,7 +91,7 @@ pub fn static_label(label: impl Into<String>) -> Label {
 /// label(move || text.get());
 /// ```
 pub fn label<S: Display + 'static>(label: impl Fn() -> S + 'static) -> Label {
-    let id = Id::next();
+    let id = ViewId::new();
     let initial_label = create_updater(
         move || label().to_string(),
         move |new_label| id.update_state(new_label),
@@ -146,27 +146,9 @@ impl Label {
     }
 }
 
-impl ViewBuilder for Label {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn View> {
-        Box::new(self)
-    }
-}
-
 impl View for Label {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
+    fn id(&self) -> ViewId {
+        self.id
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -180,7 +162,7 @@ impl View for Label {
             self.available_text = None;
             self.available_width = None;
             self.available_text_layout = None;
-            cx.request_layout(self.id());
+            self.id.request_layout();
         }
     }
 
@@ -190,7 +172,7 @@ impl View for Label {
             self.available_text = None;
             self.available_width = None;
             self.available_text_layout = None;
-            cx.app_state_mut().request_layout(self.id());
+            self.id.request_layout();
         }
     }
 
@@ -238,8 +220,9 @@ impl View for Label {
             return None;
         }
 
-        let layout = cx.get_layout(self.id()).unwrap();
-        let style = cx.app_state_mut().get_builtin_style(self.id());
+        let view_state = self.id.state();
+        let layout = self.id.get_layout().unwrap_or_default();
+        let style = view_state.borrow().combined_style.builtin();
         let text_overflow = style.text_overflow();
         let padding_left = match style.padding_left() {
             PxPct::Px(padding) => padding as f32,
@@ -286,11 +269,11 @@ impl View for Label {
                     text_layout.set_size(available_width, f32::MAX);
                     self.available_text_layout = Some(text_layout);
                     self.available_width = Some(available_width);
-                    cx.app_state_mut().request_layout(self.id());
+                    self.id.request_layout();
                 }
             } else {
                 if self.available_text_layout.is_some() {
-                    cx.app_state_mut().request_layout(self.id());
+                    self.id.request_layout();
                 }
                 self.available_text = None;
                 self.available_width = None;

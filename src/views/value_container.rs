@@ -5,12 +5,13 @@ use floem_reactive::{create_effect, create_rw_signal, create_updater, RwSignal};
 use crate::{
     context::UpdateCx,
     id::Id,
-    view::{View, ViewBuilder, ViewData},
+    view::{IntoView, View},
+    view_storage::ViewId,
 };
 
 /// A wrapper around another View that has value updates. See [`value_container`]
 pub struct ValueContainer<T> {
-    data: ViewData,
+    id: ViewId,
     child: Box<dyn View>,
     on_update: Option<Box<dyn Fn(T)>>,
 }
@@ -48,15 +49,15 @@ where
 /// A [`ValueContainer`] is useful for wrapping another [View](crate::view::View).
 /// This is to provide the `on_update` method which can notify when the view's
 /// internal value was get changed
-pub fn value_container<T: 'static, V: ViewBuilder + 'static>(
+pub fn value_container<T: 'static, V: IntoView + 'static>(
     child: V,
     value_update: impl Fn() -> T + 'static,
 ) -> ValueContainer<T> {
-    let id = Id::next();
+    let id = ViewId::new();
     create_updater(value_update, move |new_value| id.update_state(new_value));
     ValueContainer {
-        data: ViewData::new(id),
-        child: child.build(),
+        id,
+        child: child.into_view(),
         on_update: None,
     }
 }
@@ -68,27 +69,9 @@ impl<T> ValueContainer<T> {
     }
 }
 
-impl<T: 'static> ViewBuilder for ValueContainer<T> {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn View> {
-        Box::new(self)
-    }
-}
-
 impl<T: 'static> View for ValueContainer<T> {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
+    fn id(&self) -> ViewId {
+        self.id
     }
 
     fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn Any>) {
@@ -97,21 +80,6 @@ impl<T: 'static> View for ValueContainer<T> {
                 on_update(*state);
             }
         }
-    }
-
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
-        for_each(&self.child);
-    }
-
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
-        for_each(&mut self.child);
-    }
-
-    fn for_each_child_rev_mut<'a>(
-        &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
-    ) {
-        for_each(&mut self.child);
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {

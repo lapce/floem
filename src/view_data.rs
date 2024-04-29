@@ -1,6 +1,8 @@
 use crate::{
     animate::{AnimPropKind, Animation},
-    context::{EventCallback, InteractionState, MenuCallback, MoveListener, ResizeListener},
+    context::{
+        EventCallback, InteractionState, MenuCallback, MoveListener, ResizeCallback, ResizeListener,
+    },
     event::EventListener,
     id::{Id, ID_PATHS},
     pointer::PointerInputEvent,
@@ -15,7 +17,7 @@ use crate::{
     EventPropagation,
 };
 use bitflags::bitflags;
-use kurbo::Rect;
+use kurbo::{Point, Rect};
 use smallvec::SmallVec;
 use std::{collections::HashMap, marker::PhantomData, time::Duration};
 use taffy::tree::NodeId;
@@ -58,58 +60,6 @@ impl<T> Stack<T> {
     }
     pub fn set(&mut self, offset: StackOffset<T>, value: T) {
         self.stack[offset.offset] = value;
-    }
-}
-
-/// View data stores internal state associated with a view.
-/// Each view is expected to own and give access to this data.
-pub struct ViewData {
-    pub(crate) view_id: ViewId,
-    pub(crate) id: Id,
-    pub(crate) style: Stack<Style>,
-    pub(crate) event_handlers: SmallVec<[Box<EventCallback>; 1]>,
-    pub(crate) debug_name: SmallVec<[String; 1]>,
-}
-
-impl ViewData {
-    pub fn new(id: Id) -> Self {
-        Self {
-            view_id: ViewId::new(),
-            id,
-            style: Default::default(),
-            event_handlers: Default::default(),
-            debug_name: Default::default(),
-        }
-    }
-    pub fn id(&self) -> Id {
-        self.id
-    }
-
-    pub(crate) fn style(&self) -> Style {
-        let mut result = Style::new();
-        for entry in self.style.stack.iter() {
-            result.apply_mut(entry.clone());
-        }
-        result
-    }
-}
-
-pub(crate) fn update_data(id: Id, root: &mut dyn View, f: impl FnOnce(&mut ViewData)) {
-    pub(crate) fn update_inner(id_path: &[Id], view: &mut dyn View, f: impl FnOnce(&mut ViewData)) {
-        let id = id_path[0];
-        let id_path = &id_path[1..];
-        if id == view.view_data().id() {
-            if id_path.is_empty() {
-                f(view.view_data_mut());
-            } else if let Some(child) = view.child_mut(id_path[0]) {
-                update_inner(id_path, child, f);
-            }
-        }
-    }
-
-    let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
-    if let Some(id_path) = id_path {
-        update_inner(id_path.dispatch(), root, f)
     }
 }
 
@@ -161,6 +111,7 @@ pub struct ViewState {
     pub(crate) move_listener: Option<MoveListener>,
     pub(crate) cleanup_listener: Option<Box<dyn Fn()>>,
     pub(crate) last_pointer_down: Option<PointerInputEvent>,
+    pub(crate) debug_name: SmallVec<[String; 1]>,
 }
 
 impl ViewState {
@@ -187,6 +138,7 @@ impl ViewState {
             move_listener: None,
             cleanup_listener: None,
             last_pointer_down: None,
+            debug_name: Default::default(),
         }
     }
 
@@ -276,49 +228,12 @@ impl ViewState {
         new_frame
     }
 
-    pub(crate) fn request_changes(&mut self, flags: ChangeFlags) {
-        if self.requested_changes.contains(flags) {
-            return;
-        }
-        self.requested_changes.insert(flags);
-        // if let Some(parent) = id.parent() {
-        //     self.request_changes(parent, flags);
-        // }
-    }
-
     pub(crate) fn style(&self) -> Style {
         let mut result = Style::new();
         for entry in self.style.stack.iter() {
             result.apply_mut(entry.clone());
         }
         result
-    }
-
-    pub(crate) fn update_style(&mut self, offset: StackOffset<Style>, style: Style) {
-        let old_any_inherited = self.style().any_inherited();
-        self.style.set(offset, style);
-        if self.style().any_inherited() || old_any_inherited {
-            self.request_style_recursive();
-        } else {
-            self.request_style();
-        }
-    }
-
-    pub(crate) fn request_style(&mut self) {
-        self.request_changes(ChangeFlags::STYLE)
-    }
-
-    /// Requests style for this view and all direct and indirect children.
-    pub(crate) fn request_style_recursive(&mut self) {
-        self.request_style_recursive = true;
-        self.request_style();
-    }
-
-    pub(crate) fn update_style_selector(&mut self, selector: StyleSelector, style: Style) {
-        if let StyleSelector::Dragging = selector {
-            self.dragging_style = Some(style);
-        }
-        self.request_style();
     }
 
     pub(crate) fn add_event_listener(
@@ -330,5 +245,23 @@ impl ViewState {
             .entry(listener)
             .or_default()
             .push(action);
+    }
+
+    pub(crate) fn update_resize_listener(&mut self, action: Box<ResizeCallback>) {
+        self.resize_listener = Some(ResizeListener {
+            rect: Rect::ZERO,
+            callback: action,
+        });
+    }
+
+    pub(crate) fn update_move_listener(&mut self, action: Box<dyn Fn(Point)>) {
+        self.move_listener = Some(MoveListener {
+            window_origin: Point::ZERO,
+            callback: action,
+        });
+    }
+
+    pub(crate) fn update_cleanup_listener(&mut self, action: Box<dyn Fn()>) {
+        self.cleanup_listener = Some(action);
     }
 }

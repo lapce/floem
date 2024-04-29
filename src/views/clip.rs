@@ -1,62 +1,28 @@
 use kurbo::Size;
 
 use crate::{
-    id::Id,
-    view::{View, ViewBuilder, ViewData},
+    view::{IntoView, View},
+    view_storage::ViewId,
 };
 
 /// A wrapper around a child View to clip painting. See [`clip`].
 pub struct Clip {
-    data: ViewData,
-    child: Box<dyn View>,
+    id: ViewId,
 }
 
 /// A clip is a wrapper around a child View that will clip the painting of the child so that it does not show outside of the viewport of the [`Clip`].
 ///
 /// This can be useful for limiting child painting, including for rounded borders using border radius.
-pub fn clip<V: ViewBuilder + 'static>(child: V) -> Clip {
-    Clip {
-        data: ViewData::new(Id::next()),
-        child: child.build(),
-    }
-}
-
-impl ViewBuilder for Clip {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn View> {
-        Box::new(self)
-    }
+pub fn clip<V: IntoView + 'static>(child: V) -> Clip {
+    let child = child.into_view();
+    let id = ViewId::new();
+    id.set_children(vec![child]);
+    Clip { id }
 }
 
 impl View for Clip {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn View) -> bool) {
-        for_each(&self.child);
-    }
-
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn View) -> bool) {
-        for_each(&mut self.child);
-    }
-
-    fn for_each_child_rev_mut<'a>(
-        &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn View) -> bool,
-    ) {
-        for_each(&mut self.child);
+    fn id(&self) -> ViewId {
+        self.id
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -65,10 +31,11 @@ impl View for Clip {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         cx.save();
-        let style = cx.get_builtin_style(self.id());
-        let border_radius = style.border_radius();
-        let size = cx
-            .get_layout(self.id())
+        let view_state = self.id.state();
+        let border_radius = view_state.borrow().combined_style.builtin().border_radius();
+        let size = self
+            .id
+            .get_layout()
             .map(|layout| Size::new(layout.size.width as f64, layout.size.height as f64))
             .unwrap_or_default();
 
@@ -82,7 +49,7 @@ impl View for Clip {
         } else {
             cx.clip(&size.to_rect());
         }
-        cx.paint_view(&mut self.child);
+        cx.paint_children(self.id);
         cx.restore();
     }
 }

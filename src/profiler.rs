@@ -1,7 +1,7 @@
 use crate::app::{add_app_update_event, AppUpdateEvent};
 use crate::event::{Event, EventListener};
 use crate::inspector::header;
-use crate::view::ViewBuilder;
+use crate::view::IntoView;
 use crate::views::{
     clip, container, dyn_container, empty, h_stack, label, scroll, stack, static_label, text,
     v_stack, v_stack_from_iter, Decorators,
@@ -48,11 +48,11 @@ struct ProfileFrameData {
     events: Vec<ProfileEvent>,
 }
 
-fn info(name: impl Display, value: String) -> impl ViewBuilder {
+fn info(name: impl Display, value: String) -> impl IntoView {
     info_row(name.to_string(), static_label(value))
 }
 
-fn info_row(name: String, view: impl ViewBuilder + 'static) -> impl ViewBuilder {
+fn info_row(name: String, view: impl IntoView + 'static) -> impl IntoView {
     stack((
         stack((static_label(name).style(|s| {
             s.margin_right(5.0)
@@ -67,7 +67,7 @@ fn info_row(name: String, view: impl ViewBuilder + 'static) -> impl ViewBuilder 
     })
 }
 
-fn profile_view(profile: &Rc<Profile>) -> impl ViewBuilder {
+fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
     let mut frames: Vec<_> = profile
         .frames
         .iter()
@@ -140,9 +140,11 @@ fn profile_view(profile: &Rc<Profile>) -> impl ViewBuilder {
                     info("Name", event.name.to_string()),
                     info("Time", format!("{:.4} ms", len * 1000.0)),
                 ))
-                .any()
+                .into_view()
             } else {
-                text("No hovered event").style(|s| s.padding(5.0)).any()
+                text("No hovered event")
+                    .style(|s| s.padding(5.0))
+                    .into_view()
             }
         },
     )
@@ -218,9 +220,11 @@ fn profile_view(profile: &Rc<Profile>) -> impl ViewBuilder {
                         EventPropagation::Continue
                     }
                 })
-                .any()
+                .into_view()
             } else {
-                text("No selected frame").style(|s| s.padding(5.0)).any()
+                text("No selected frame")
+                    .style(|s| s.padding(5.0))
+                    .into_view()
             }
         },
     )
@@ -244,7 +248,7 @@ thread_local! {
     };
 }
 
-pub fn profiler(window_id: WindowId) -> impl ViewBuilder {
+pub fn profiler(window_id: WindowId) -> impl IntoView {
     let profiling = create_rw_signal(false);
     let profile = PROFILE.with(|c| *c);
 
@@ -282,9 +286,9 @@ pub fn profiler(window_id: WindowId) -> impl ViewBuilder {
         move || profile.get(),
         |profile| {
             if let Some(profile) = profile {
-                profile_view(&profile).any()
+                profile_view(&profile).into_view()
             } else {
-                text("No profile").style(|s| s.padding(5.0)).any()
+                text("No profile").style(|s| s.padding(5.0)).into_view()
             }
         },
     )
