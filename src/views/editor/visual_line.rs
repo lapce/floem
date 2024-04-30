@@ -265,7 +265,6 @@ pub struct TextLayoutCache {
 }
 impl TextLayoutCache {
     pub fn clear(&mut self, cache_rev: u64, config_id: Option<ConfigId>) {
-        println!("clear {cache_rev}; {config_id:?}");
         self.layouts.clear();
         if let Some(config_id) = config_id {
             self.config_id = config_id;
@@ -277,7 +276,6 @@ impl TextLayoutCache {
     /// Clear the layouts without changing the document cache revision.  
     /// Ex: Wrapping width changed, which does not change what the document holds.
     pub fn clear_unchanged(&mut self) {
-        println!("clear_unchanged");
         self.layouts.clear();
         self.max_width = 0.0;
     }
@@ -1413,10 +1411,10 @@ fn find_vline_init_info(
     }
 
     if vline.get() < last_vline.get() / 2 {
+        find_vline_init_info_forward(lines, text_prov, (VLine(0), 0), vline)
+    } else {
         let last_rvline = lines.last_rvline(text_prov);
         find_vline_init_info_rv_backward(lines, text_prov, (last_vline, last_rvline), vline)
-    } else {
-        find_vline_init_info_forward(lines, text_prov, (VLine(0), 0), vline)
     }
 }
 
