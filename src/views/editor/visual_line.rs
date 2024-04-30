@@ -497,34 +497,52 @@ impl Lines {
         if let Some(last_vline) = self.last_vline.get() {
             last_vline
         } else {
-            // For most files this should easily be fast enough.
-            // Though it could still be improved.
-            let rope_text = text_prov.rope_text();
-            let hard_line_count = rope_text.num_lines();
-
-            let line_count = if self.is_linear(text_prov) {
-                hard_line_count
-            } else {
-                let mut soft_line_count = 0;
-
-                let layouts = self.text_layouts.borrow();
-                for i in 0..hard_line_count {
-                    let font_size = self.font_size(i);
-                    if let Some(text_layout) = layouts.get(font_size, i) {
-                        let line_count = text_layout.line_count();
-                        soft_line_count += line_count;
-                    } else {
-                        soft_line_count += 1;
-                    }
-                }
-
-                soft_line_count
-            };
+            let line_count = self.count_lines(text_prov);
 
             let last_vline = line_count.saturating_sub(1);
             self.last_vline.set(Some(VLine(last_vline)));
             VLine(last_vline)
         }
+    }
+
+    fn count_lines(&self, text_prov: impl TextLayoutProvider) -> usize {
+        let rope_text = text_prov.rope_text();
+        let hard_line_count = rope_text.num_lines();
+
+        if self.is_linear(text_prov) {
+            return hard_line_count;
+        }
+
+        let mut soft_line_count = 0;
+
+        // TODO: don't assume font size is constant
+        // This makes the calculation significantly cheaper for large files...
+        // Possibly we should have an alternate mode that lets us assume constant font size
+        let font_size = self.font_size(0);
+
+        let layouts = self.text_layouts.borrow();
+        let Some(layouts) = layouts.layouts.get(&font_size) else {
+            return hard_line_count;
+        };
+
+        let base_line = layouts.base_line;
+
+        // Before the layouts baseline, there is #base_line non-wrapped lines
+        soft_line_count += base_line;
+
+        // Add all the potentially wrapped line counts
+        for entry in layouts.layouts.iter() {
+            let line_count = entry.as_ref().map(|l| l.line_count()).unwrap_or(1);
+
+            soft_line_count += line_count;
+        }
+
+        // Add all the lines after the layouts
+        let after = base_line + layouts.layouts.len();
+        let diff = hard_line_count - after;
+        soft_line_count += diff;
+
+        soft_line_count
     }
 
     /// Clear the cache for the last vline
