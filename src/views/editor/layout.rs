@@ -111,12 +111,9 @@ impl TextLayoutLine {
                 // for single spaces, for some reason.
                 let pre_end = text_prov.before_phantom_col(line_v, end);
 
-                // TODO: We don't really need the entire line, just the two characters after. This
-                // could be expensive for large lines.
-
                 let end = if pre_end <= line_end_offset - line_offset {
-                    let after = text.slice_to_cow(line_offset + pre_end..line_end_offset);
-                    if after.starts_with(' ') && !after.starts_with("  ") {
+                    let mut after = text.chars(line_offset + pre_end..line_end_offset);
+                    if after.next() == Some(' ') && after.next() != Some(' ') {
                         end + 1
                     } else {
                         end

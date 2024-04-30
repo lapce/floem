@@ -239,6 +239,11 @@ pub trait RopeText {
             .slice_to_cow(range.start.min(self.len())..range.end.min(self.len()))
     }
 
+    fn chars(&self, range: Range<usize>) -> impl Iterator<Item = char> + '_ {
+        let iter = self.text().iter_chunks(range);
+        iter.flat_map(str::chars)
+    }
+
     // TODO(minor): Once you can have an `impl Trait` return type in a trait, this could use that.
     /// Iterate over (utf8_offset, char) values in the given range
     #[allow(clippy::type_complexity)]
