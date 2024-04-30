@@ -103,10 +103,33 @@ pub trait RopeText {
         offset
     }
 
-    fn line_offsets(&self, line: usize) -> (usize, usize) {
-        let line_start = self.offset_of_line(line);
-        let line_end = self.line_end_offset(line, true);
-        (line_start, line_end)
+    /// (start_line_offset, line_end_offset(caret), line+1 offset)  
+    /// Which we can provide as we need the first and last to compute the second.
+    fn line_offsets(&self, line: usize, caret: bool) -> (usize, usize, usize) {
+        // let line_start = self.offset_of_line(line);
+        // let line_end = self.line_end_offset(line, true);
+        // (line_start, line_end)
+
+        let start_offset = self.offset_of_line(line);
+        let end_offset = self.offset_of_line(line + 1);
+
+        let mut offset = end_offset;
+
+        let start = end_offset.saturating_sub(2).max(start_offset);
+        let mut chars = self.chars(start..end_offset);
+        let fst = chars.next();
+        let snd = chars.next();
+
+        if fst == Some('\r') && snd == Some('\n') {
+            offset -= 2;
+        } else if (fst == Some('\n') && snd == None) || snd == Some('\n') {
+            offset -= 1;
+        }
+
+        if !caret && start_offset != offset {
+            offset = self.prev_grapheme_offset(offset, 1, 0);
+        }
+        (start_offset, offset, end_offset)
     }
 
     fn line_end_col(&self, line: usize, caret: bool) -> usize {
@@ -131,26 +154,7 @@ pub trait RopeText {
     /// assert_eq!(text.line_end_offset(2, false), 11); // "world|"
     /// ```
     fn line_end_offset(&self, line: usize, caret: bool) -> usize {
-        let start_offset = self.offset_of_line(line);
-        let end_offset = self.offset_of_line(line + 1);
-
-        let mut offset = end_offset;
-
-        let start = end_offset.saturating_sub(2).max(start_offset);
-        let mut chars = self.chars(start..end_offset);
-        let fst = chars.next();
-        let snd = chars.next();
-
-        if fst == Some('\r') && snd == Some('\n') {
-            offset -= 2;
-        } else if (fst == Some('\n') && snd == None) || snd == Some('\n') {
-            offset -= 1;
-        }
-
-        if !caret && start_offset != offset {
-            offset = self.prev_grapheme_offset(offset, 1, 0);
-        }
-        offset
+        self.line_offsets(line, caret).1
     }
 
     /// Whether the line is completely empty  

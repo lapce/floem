@@ -64,9 +64,7 @@ impl TextLayoutLine {
         text: RopeTextVal,
         line: usize,
     ) -> impl Iterator<Item = (usize, usize)> + 'a {
-        let line_offset = text.offset_of_line(line);
-        // let line_end = text.line_end_col(line, true);
-        let line_end_offset = text.line_end_offset(line, true);
+        let (line_offset, line_end_offset, _) = text.line_offsets(line, true);
 
         self.layout_cols_offsets(text_prov, text, line, line_offset, line_end_offset)
     }

@@ -1813,13 +1813,11 @@ pub fn end_of_rvline(
     }
 
     let rope_text = text_prov.rope_text();
-    let line_offset = rope_text.offset_of_line(line);
-    let line_end_offset = rope_text.line_end_offset(line, true);
+    let (line_offset, line_end_offset, next_line_offset) = rope_text.line_offsets(line, true);
     if let Some((_, end_col)) =
         layouts.get_layout_col_offsets(text_prov, line, line_index, line_offset, line_end_offset)
     {
         let end_col = text_prov.before_phantom_col(line, end_col);
-        let next_line_offset = rope_text.offset_of_line(line + 1);
         rope_text.offset_of_offset_col(line_offset, next_line_offset, end_col)
     } else {
         line_end_offset
