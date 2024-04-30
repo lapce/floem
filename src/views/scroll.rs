@@ -6,7 +6,6 @@ use kurbo::{Point, Rect, Size, Vec2};
 use crate::{
     context::{AppState, ComputeLayoutCx, PaintCx},
     event::Event,
-    id::Id,
     prop, prop_extractor,
     style::{Background, BorderColor, BorderRadius, Style, StyleSelector},
     style_class,
@@ -263,8 +262,8 @@ impl Scroll {
         self.clamp_child_viewport(app_state, self.child_viewport.with_origin(new_origin));
     }
 
-    fn update_size(&mut self, app_state: &mut AppState) {
-        self.child_size = self.child_size(app_state);
+    fn update_size(&mut self) {
+        self.child_size = self.child_size();
         self.actual_rect = self.id.get_content_rect();
     }
 
@@ -311,7 +310,7 @@ impl Scroll {
         Some(())
     }
 
-    fn child_size(&self, app_state: &mut AppState) -> Size {
+    fn child_size(&self) -> Size {
         self.child
             .get_layout()
             .map(|layout| Size::new(layout.size.width as f64, layout.size.height as f64))
@@ -647,7 +646,7 @@ impl View for Scroll {
                     self.do_scroll_to_view(cx.app_state, id, None);
                 }
             }
-            cx.request_layout(self.view_id());
+            self.id.request_layout();
         }
     }
 
@@ -684,7 +683,7 @@ impl View for Scroll {
     }
 
     fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
-        self.update_size(cx.app_state_mut());
+        self.update_size();
         self.clamp_child_viewport(cx.app_state_mut(), self.child_viewport);
         self.computed_child_viewport = self.child_viewport;
         cx.compute_view_layout(self.child);
@@ -812,8 +811,9 @@ impl View for Scroll {
     ) -> EventPropagation {
         if let Event::PointerWheel(pointer_event) = &event {
             if let Some(listener) = event.listener() {
-                if cx
-                    .apply_event(self.view_id(), &listener, &event)
+                if self
+                    .id
+                    .apply_event(&listener, event)
                     .is_some_and(|prop| prop.is_processed())
                 {
                     return EventPropagation::Stop;

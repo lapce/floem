@@ -4,7 +4,7 @@ use floem::{
     peniko::Color,
     reactive::{create_signal, ReadSignal, WriteSignal},
     style::{CursorStyle, Position},
-    view::ViewBuilder,
+    view::IntoView,
     views::{container, h_stack, label, scroll, tab, v_stack, Decorators},
 };
 
@@ -30,7 +30,7 @@ fn tab_button(
     tabs: ReadSignal<im::Vector<Tabs>>,
     set_active_tab: WriteSignal<usize>,
     active_tab: ReadSignal<usize>,
-) -> impl ViewBuilder {
+) -> impl IntoView {
     label(move || this_tab)
         .style(|s| s.justify_center())
         .keyboard_navigatable()
@@ -62,7 +62,7 @@ fn tab_button(
 const TABBAR_HEIGHT: f64 = 37.0;
 const CONTENT_PADDING: f64 = 10.0;
 
-pub fn tab_navigation_view() -> impl ViewBuilder {
+pub fn tab_navigation_view() -> impl IntoView {
     let tabs = vec![Tabs::General, Tabs::Settings, Tabs::Feedback]
         .into_iter()
         .collect::<im::Vector<Tabs>>();
@@ -105,7 +105,7 @@ pub fn tab_navigation_view() -> impl ViewBuilder {
 
     let settings_view = v_stack((tabs_bar, main_content)).style(|s| s.width_full().height_full());
 
-    let id = settings_view.id();
+    let id = settings_view.view_id();
     settings_view.on_event_stop(EventListener::KeyUp, move |e| {
         if let floem::event::Event::KeyUp(e) = e {
             if e.key.logical_key == floem::keyboard::Key::Named(floem::keyboard::NamedKey::F11) {

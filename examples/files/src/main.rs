@@ -2,12 +2,12 @@ use floem::{
     action::{open_file, save_as},
     file::{FileDialogOptions, FileSpec},
     keyboard::{Key, Modifiers, NamedKey},
-    view::ViewBuilder,
+    view::IntoView,
     views::{h_stack, Decorators},
     widgets::button,
 };
 
-fn app_view() -> impl ViewBuilder {
+fn app_view() -> impl IntoView {
     let view = h_stack((
         button(|| "Select file").on_click_cont(|_| {
             open_file(
@@ -87,7 +87,7 @@ fn app_view() -> impl ViewBuilder {
             .justify_center()
     });
 
-    let id = view.id();
+    let id = view.view_id();
     view.on_key_up(Key::Named(NamedKey::F11), Modifiers::empty(), move |_| {
         id.inspect()
     })

@@ -56,7 +56,7 @@ impl View for RichText {
         .into()
     }
 
-    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {
+    fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn Any>) {
         if let Ok(state) = state.downcast() {
             self.text_layout = *state;
             self.available_width = None;
@@ -66,7 +66,7 @@ impl View for RichText {
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::tree::NodeId {
-        cx.layout_node(self.id(), true, |cx| {
+        cx.layout_node(self.id(), true, |_cx| {
             let size = self.text_layout.size();
             let width = size.width as f32;
             let mut height = size.height as f32;
@@ -77,8 +77,9 @@ impl View for RichText {
 
             if self.text_node.is_none() {
                 self.text_node = Some(
-                    cx.app_state_mut()
-                        .taffy
+                    self.id
+                        .taffy()
+                        .borrow_mut()
                         .new_leaf(taffy::style::Style::DEFAULT)
                         .unwrap(),
                 );
@@ -86,15 +87,16 @@ impl View for RichText {
             let text_node = self.text_node.unwrap();
 
             let style = Style::new().width(width).height(height).to_taffy_style();
-            let _ = cx.app_state_mut().taffy.set_style(text_node, style);
+            let _ = self.id.taffy().borrow_mut().set_style(text_node, style);
             vec![text_node]
         })
     }
 
-    fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
+    fn compute_layout(&mut self, _cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
         let layout = self.id.get_layout().unwrap_or_default();
         let view_state = self.id.state();
-        let style = view_state.borrow().combined_style.builtin();
+        let view_state = view_state.borrow();
+        let style = view_state.combined_style.builtin();
         let padding_left = match style.padding_left() {
             PxPct::Px(padding) => padding as f32,
             PxPct::Pct(pct) => pct as f32 * layout.size.width,
@@ -132,7 +134,14 @@ impl View for RichText {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         let text_node = self.text_node.unwrap();
-        let location = cx.app_state.taffy.layout(text_node).unwrap().location;
+        let location = self
+            .id
+            .taffy()
+            .borrow_mut()
+            .layout(text_node)
+            .cloned()
+            .unwrap_or_default()
+            .location;
         let point = Point::new(location.x as f64, location.y as f64);
         if let Some(text_layout) = self.available_text_layout.as_ref() {
             cx.draw_text(text_layout, point);

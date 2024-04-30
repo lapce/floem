@@ -4,22 +4,18 @@ use crate::{
         EventCallback, InteractionState, MenuCallback, MoveListener, ResizeCallback, ResizeListener,
     },
     event::EventListener,
-    id::{Id, ID_PATHS},
     pointer::PointerInputEvent,
     prop_extractor,
     responsive::ScreenSizeBp,
     style::{
         Background, BorderBottom, BorderColor, BorderLeft, BorderRadius, BorderRight, BorderTop,
-        LayoutProps, Outline, OutlineColor, Style, StyleClassRef, StyleSelector, StyleSelectors,
+        LayoutProps, Outline, OutlineColor, Style, StyleClassRef, StyleSelectors,
     },
-    view::View,
-    view_storage::ViewId,
-    EventPropagation,
 };
 use bitflags::bitflags;
 use kurbo::{Point, Rect};
 use smallvec::SmallVec;
-use std::{collections::HashMap, marker::PhantomData, time::Duration};
+use std::{collections::HashMap, marker::PhantomData, rc::Rc, time::Duration};
 use taffy::tree::NodeId;
 
 /// A stack of view attributes. Each entry is associated with a view decorator call.
@@ -104,7 +100,7 @@ pub struct ViewState {
     pub(crate) dragging_style: Option<Style>,
     pub(crate) combined_style: Style,
     pub(crate) taffy_style: taffy::style::Style,
-    pub(crate) event_listeners: HashMap<EventListener, Vec<Box<EventCallback>>>,
+    pub(crate) event_listeners: HashMap<EventListener, Vec<Rc<Box<EventCallback>>>>,
     pub(crate) context_menu: Option<Box<MenuCallback>>,
     pub(crate) popout_menu: Option<Box<MenuCallback>>,
     pub(crate) resize_listener: Option<ResizeListener>,
@@ -139,26 +135,6 @@ impl ViewState {
             cleanup_listener: None,
             last_pointer_down: None,
             debug_name: Default::default(),
-        }
-    }
-
-    pub(crate) fn apply_event(
-        &self,
-        listener: &EventListener,
-        event: &crate::event::Event,
-    ) -> Option<EventPropagation> {
-        let mut handled = false;
-        if let Some(handlers) = self.event_listeners.get(listener) {
-            for handler in handlers {
-                handled |= handler(event).is_processed();
-            }
-        } else {
-            return None;
-        }
-        if handled {
-            Some(EventPropagation::Stop)
-        } else {
-            Some(EventPropagation::Continue)
         }
     }
 
@@ -244,7 +220,7 @@ impl ViewState {
         self.event_listeners
             .entry(listener)
             .or_default()
-            .push(action);
+            .push(Rc::new(action));
     }
 
     pub(crate) fn update_resize_listener(&mut self, action: Box<ResizeCallback>) {

@@ -1,10 +1,10 @@
 use floem::{
     menu::{Menu, MenuItem},
-    view::ViewBuilder,
+    view::IntoView,
     views::{label, stack, Decorators},
 };
 
-pub fn menu_view() -> impl ViewBuilder {
+pub fn menu_view() -> impl IntoView {
     stack({
         (
             label(|| "Click me (Popout menu)")

@@ -5,13 +5,8 @@ use kurbo::{Point, Rect, Size, Vec2};
 
 use crate::{
     animate::{AnimUpdateMsg, Animation},
-    context::{EventCallback, ResizeCallback},
-    event::EventListener,
-    id::Id,
     menu::Menu,
-    style::{Style, StyleClassRef, StyleSelector},
     view::View,
-    view_data::{ChangeFlags, StackOffset},
     view_storage::ViewId,
 };
 
@@ -39,10 +34,6 @@ pub(crate) enum UpdateMessage {
     Disabled {
         id: ViewId,
         is_disabled: bool,
-    },
-    RequestChange {
-        id: ViewId,
-        flags: ChangeFlags,
     },
     RequestPaint,
     State {

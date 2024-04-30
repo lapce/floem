@@ -5,13 +5,13 @@ use floem::{
     reactive::{create_rw_signal, create_signal},
     style_class,
     unit::UnitExt,
-    view::ViewBuilder,
+    view::IntoView,
     views::{label, stack, Decorators},
 };
 
 style_class!(pub Button);
 
-fn app_view() -> impl ViewBuilder {
+fn app_view() -> impl IntoView {
     let (counter, set_counter) = create_signal(0);
     let window_scale = create_rw_signal(1.0);
     let view = stack((
@@ -98,7 +98,7 @@ fn app_view() -> impl ViewBuilder {
             })
     });
 
-    let id = view.id();
+    let id = view.view_id();
     view.on_event_stop(EventListener::KeyUp, move |e| {
         if let Event::KeyUp(e) = e {
             if e.key.logical_key == Key::Named(NamedKey::F11) {

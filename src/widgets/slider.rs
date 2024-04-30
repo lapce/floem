@@ -138,11 +138,7 @@ impl View for Slider {
         self.id
     }
 
-    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        "Slider".into()
-    }
-
-    fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
+    fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(update) = state.downcast::<SliderUpdate>() {
             match *update {
                 SliderUpdate::Percent(percent) => self.percent = percent,
@@ -234,7 +230,7 @@ impl View for Slider {
         }
     }
 
-    fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<kurbo::Rect> {
+    fn compute_layout(&mut self, _cx: &mut crate::context::ComputeLayoutCx) -> Option<kurbo::Rect> {
         self.update_restrict_position();
         let layout = self.id.get_layout().unwrap_or_default();
 
@@ -347,7 +343,7 @@ impl Slider {
 
     /// Sets the custom style properties of the `Slider`.
     pub fn slider_style(
-        mut self,
+        self,
         style: impl Fn(SliderCustomStyle) -> SliderCustomStyle + 'static,
     ) -> Self {
         let id = self.id();

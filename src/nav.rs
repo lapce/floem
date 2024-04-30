@@ -1,12 +1,7 @@
 use floem_winit::keyboard::NamedKey;
 use kurbo::{Point, Rect};
 
-use crate::{
-    context::AppState,
-    id::Id,
-    view::{view_tab_navigation, View},
-    view_storage::ViewId,
-};
+use crate::{context::AppState, view::view_tab_navigation, view_storage::ViewId};
 
 pub(crate) fn view_arrow_navigation(key: NamedKey, app_state: &mut AppState, view: ViewId) {
     let focused = match app_state.focus {

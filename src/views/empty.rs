@@ -1,4 +1,4 @@
-use crate::{id::Id, view::View, view_storage::ViewId};
+use crate::{view::View, view_storage::ViewId};
 
 /// An empty View. See [`empty`].
 pub struct Empty {
@@ -15,9 +15,5 @@ pub fn empty() -> Empty {
 impl View for Empty {
     fn id(&self) -> ViewId {
         self.id
-    }
-
-    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        "Empty".into()
     }
 }

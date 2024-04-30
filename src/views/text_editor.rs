@@ -331,7 +331,7 @@ impl EditorCustomStyle {
 impl TextEditor {
     /// Sets the custom style properties of the `TextEditor`.
     pub fn editor_style(
-        mut self,
+        self,
         style: impl Fn(EditorCustomStyle) -> EditorCustomStyle + 'static,
     ) -> Self {
         let id = self.view_id();

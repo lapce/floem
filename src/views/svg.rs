@@ -38,11 +38,7 @@ impl View for Svg {
         self.id
     }
 
-    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        "Svg".into()
-    }
-
-    fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
+    fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast::<String>() {
             let text = &*state;
             let font_db = FONT_SYSTEM.db().read();

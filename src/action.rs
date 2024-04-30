@@ -8,7 +8,6 @@ use kurbo::{Point, Size, Vec2};
 
 use crate::{
     app::{add_app_update_event, AppUpdateEvent},
-    id::Id,
     menu::Menu,
     update::{UpdateMessage, CENTRAL_UPDATE_MESSAGES},
     view::View,

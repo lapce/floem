@@ -2,6 +2,7 @@ use floem::cosmic_text::{Attrs, AttrsList, Stretch, Style, Weight};
 use floem::keyboard::Modifiers;
 use floem::peniko::Color;
 use floem::reactive::RwSignal;
+use floem::view::IntoView;
 use floem::views::editor::core::buffer::rope_text::RopeText;
 use floem::views::editor::id::EditorId;
 use floem::views::editor::layout::TextLayoutLine;
@@ -10,7 +11,6 @@ use floem::views::editor::EditorStyle;
 use floem::{
     cosmic_text::FamilyOwned,
     keyboard::{Key, NamedKey},
-    view::ViewBuilder,
     views::{
         editor::{
             core::{editor::EditType, selection::Selection},
@@ -176,7 +176,7 @@ impl<'a> Styling for SyntaxHighlightingStyle<'a> {
     }
 }
 
-fn app_view() -> impl ViewBuilder {
+fn app_view() -> impl IntoView {
     let global_style = SimpleStylingBuilder::default()
         .wrap(WrapMethod::None)
         .font_family(vec![
@@ -243,7 +243,7 @@ mod tests {
     ))
     .style(|s| s.size_full().flex_col().items_center().justify_center());
 
-    let id = view.id();
+    let id = view.view_id();
     view.on_key_up(Key::Named(NamedKey::F11), Modifiers::empty(), move |_| {
         id.inspect()
     })

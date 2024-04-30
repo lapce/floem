@@ -4,7 +4,6 @@ use floem_reactive::{create_effect, create_rw_signal, create_updater, RwSignal};
 
 use crate::{
     context::UpdateCx,
-    id::Id,
     view::{IntoView, View},
     view_storage::ViewId,
 };
@@ -12,7 +11,6 @@ use crate::{
 /// A wrapper around another View that has value updates. See [`value_container`]
 pub struct ValueContainer<T> {
     id: ViewId,
-    child: Box<dyn View>,
     on_update: Option<Box<dyn Fn(T)>>,
 }
 
@@ -54,10 +52,11 @@ pub fn value_container<T: 'static, V: IntoView + 'static>(
     value_update: impl Fn() -> T + 'static,
 ) -> ValueContainer<T> {
     let id = ViewId::new();
+    let child = child.into_view();
+    id.set_children(vec![child]);
     create_updater(value_update, move |new_value| id.update_state(new_value));
     ValueContainer {
         id,
-        child: child.into_view(),
         on_update: None,
     }
 }
@@ -80,9 +79,5 @@ impl<T: 'static> View for ValueContainer<T> {
                 on_update(*state);
             }
         }
-    }
-
-    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        "ValueContainer".into()
     }
 }

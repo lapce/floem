@@ -1,7 +1,6 @@
 use crate::{
     context::PaintCx,
     cosmic_text::{Attrs, AttrsList, TextLayout},
-    id::Id,
     peniko::kurbo::Point,
     prop, prop_extractor,
     style::{Style, TextColor},
@@ -80,11 +79,12 @@ impl View for EditorGutterView {
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::NodeId {
-        cx.layout_node(self.id(), true, |cx| {
+        cx.layout_node(self.id(), true, |_cx| {
             let (width, height) = (self.text_width, 10.0);
-            let layout_node = cx
-                .app_state_mut()
-                .taffy
+            let layout_node = self
+                .id
+                .taffy()
+                .borrow_mut()
                 .new_leaf(taffy::style::Style::DEFAULT)
                 .unwrap();
 
@@ -92,11 +92,12 @@ impl View for EditorGutterView {
                 .width(self.gutter_style.left_padding() + width + self.gutter_style.right_padding())
                 .height(height)
                 .to_taffy_style();
-            let _ = cx.app_state_mut().taffy.set_style(layout_node, style);
+            let _ = self.id.taffy().borrow_mut().set_style(layout_node, style);
             vec![layout_node]
         })
     }
-    fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
+
+    fn compute_layout(&mut self, _cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
         if let Some(width) = self.id.get_layout().map(|l| l.size.width as f64) {
             self.full_width = width;
         }

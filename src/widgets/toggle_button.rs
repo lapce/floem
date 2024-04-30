@@ -110,7 +110,7 @@ impl View for ToggleButton {
         "Toggle Button".into()
     }
 
-    fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
+    fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast::<bool>() {
             if self.held == ToggleState::Nothing {
                 self.update_restrict_position(true);
@@ -212,7 +212,7 @@ impl View for ToggleButton {
         EventPropagation::Continue
     }
 
-    fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<kurbo::Rect> {
+    fn compute_layout(&mut self, _cx: &mut crate::context::ComputeLayoutCx) -> Option<kurbo::Rect> {
         let layout = self.id.get_layout().unwrap_or_default();
         let size = layout.size;
         self.width = size.width;
@@ -269,7 +269,7 @@ impl ToggleButton {
     }
 
     pub fn toggle_style(
-        mut self,
+        self,
         style: impl Fn(ToggleButtonCustomStyle) -> ToggleButtonCustomStyle + 'static,
     ) -> Self {
         let id = self.id();

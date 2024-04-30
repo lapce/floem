@@ -1,4 +1,5 @@
 use std::{
+    cell::RefCell,
     mem,
     rc::Rc,
     sync::Arc,
@@ -14,7 +15,6 @@ use floem_winit::{
     window::{CursorIcon, WindowId},
 };
 use image::DynamicImage;
-use indexmap::IndexMap;
 use kurbo::{Affine, Point, Rect, Size, Vec2};
 
 #[cfg(target_os = "linux")]
@@ -24,11 +24,10 @@ use crate::views::{container, stack, Decorators};
 use crate::{
     animate::{AnimPropKind, AnimUpdateMsg, AnimValue, AnimatedProp, SizeUnit},
     context::{
-        AppState, ComputeLayoutCx, EventCx, FrameUpdate, LayoutCx, MoveListener, PaintCx,
-        PaintState, ResizeListener, StyleCx, UpdateCx,
+        AppState, ComputeLayoutCx, EventCx, FrameUpdate, LayoutCx, PaintCx, PaintState, StyleCx,
+        UpdateCx,
     },
     event::{Event, EventListener},
-    id::{Id, IdPath, ID_PATHS},
     inspector::{self, Capture, CaptureState, CapturedView},
     keyboard::{KeyEvent, Modifiers},
     menu::Menu,
@@ -41,9 +40,10 @@ use crate::{
         CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES,
         UPDATE_MESSAGES,
     },
-    view::{default_compute_layout, view_tab_navigation, View},
+    view::{default_compute_layout, view_tab_navigation, IntoView, View},
     view_data::ChangeFlags,
     view_storage::ViewId,
+    views::Decorators,
     widgets::{default_theme, Theme},
 };
 
@@ -57,9 +57,9 @@ pub(crate) struct WindowHandle {
     pub(crate) window: Option<Arc<floem_winit::window::Window>>,
     window_id: WindowId,
     id: ViewId,
+    main_view: ViewId,
     /// Reactive Scope for this WindowHandle
     scope: Scope,
-    view: WindowView,
     app_state: AppState,
     paint_state: PaintState,
     size: RwSignal<Size>,
@@ -116,11 +116,8 @@ impl WindowHandle {
         let main_id = widget.id();
         id.set_children(vec![widget]);
 
-        let view = WindowView {
-            id,
-            main: main_id,
-            overlays: Default::default(),
-        };
+        let view = WindowView { id };
+        id.set_view(view.into_view());
 
         let window = Arc::new(window);
         let paint_state = PaintState::new(window.clone(), scale, size.get_untracked() * scale);
@@ -128,9 +125,9 @@ impl WindowHandle {
             window: Some(window),
             window_id,
             id,
+            main_view: main_id,
             scope,
-            view,
-            app_state: AppState::new(),
+            app_state: AppState::new(id),
             paint_state,
             size,
             theme: apply_default_theme.then(default_theme),
@@ -189,9 +186,9 @@ impl WindowHandle {
 
                 if !processed {
                     if let Some(listener) = event.listener() {
-                        processed |= cx
-                            .app_state
-                            .apply_event(self.view.main, &listener, &event)
+                        processed |= self
+                            .main_view
+                            .apply_event(&listener, &event)
                             .is_some_and(|prop| prop.is_processed());
                     }
                 }
@@ -202,7 +199,7 @@ impl WindowHandle {
                             && (modifiers.is_empty() || *modifiers == Modifiers::SHIFT)
                         {
                             let backwards = modifiers.contains(Modifiers::SHIFT);
-                            view_tab_navigation(self.view.id, cx.app_state, backwards);
+                            view_tab_navigation(self.id, cx.app_state, backwards);
                             // view_debug_tree(&self.view);
                         } else if let Key::Character(character) = &key.logical_key {
                             // 'I' displays some debug information
@@ -217,7 +214,7 @@ impl WindowHandle {
                                 | NamedKey::ArrowRight),
                             ) = key.logical_key
                             {
-                                view_arrow_navigation(name, cx.app_state, self.view.id);
+                                view_arrow_navigation(name, cx.app_state, self.id);
                             }
                         }
                     }
@@ -229,7 +226,7 @@ impl WindowHandle {
                         if let Some(id) = cx.app_state.active {
                             // To remove the styles applied by the Active selector
                             if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
-                                cx.app_state.request_style_recursive(id);
+                                id.request_style_recursive();
                             }
 
                             cx.app_state.active = None;
@@ -239,7 +236,7 @@ impl WindowHandle {
             }
         } else if cx.app_state.active.is_some() && event.is_pointer() {
             if cx.app_state.is_dragging() {
-                cx.unconditional_view_event(self.view.id, event.clone(), false);
+                cx.unconditional_view_event(self.id, event.clone(), false);
             }
 
             let id = cx.app_state.active.unwrap();
@@ -247,13 +244,13 @@ impl WindowHandle {
             if let Event::PointerUp(_) = &event {
                 // To remove the styles applied by the Active selector
                 if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
-                    cx.app_state.request_style_recursive(id);
+                    id.request_style_recursive();
                 }
 
                 cx.app_state.active = None;
             }
         } else {
-            cx.unconditional_view_event(self.view.id, event.clone(), false);
+            cx.unconditional_view_event(self.id, event.clone(), false);
         }
 
         if let Event::PointerUp(_) = &event {
@@ -263,15 +260,20 @@ impl WindowHandle {
             let hovered = &cx.app_state.hovered.clone();
             for id in was_hovered.unwrap().symmetric_difference(hovered) {
                 let view_state = id.state();
-                let view_state = view_state.borrow();
-                if view_state.animation.is_some()
-                    || view_state.has_style_selectors.has(StyleSelector::Hover)
-                    || view_state.has_style_selectors.has(StyleSelector::Active)
+                if view_state.borrow().animation.is_some()
+                    || view_state
+                        .borrow()
+                        .has_style_selectors
+                        .has(StyleSelector::Hover)
+                    || view_state
+                        .borrow()
+                        .has_style_selectors
+                        .has(StyleSelector::Active)
                 {
-                    cx.app_state.request_style_recursive(*id);
+                    id.request_style_recursive();
                 }
                 if hovered.contains(id) {
-                    cx.apply_event(*id, &EventListener::PointerEnter, &event);
+                    id.apply_event(&EventListener::PointerEnter, &event);
                 } else {
                     cx.unconditional_view_event(*id, Event::PointerLeave, true);
                 }
@@ -282,9 +284,9 @@ impl WindowHandle {
                 .symmetric_difference(dragging_over)
             {
                 if dragging_over.contains(id) {
-                    cx.apply_event(*id, &EventListener::DragEnter, &event);
+                    id.apply_event(&EventListener::DragEnter, &event);
                 } else {
-                    cx.apply_event(*id, &EventListener::DragLeave, &event);
+                    id.apply_event(&EventListener::DragLeave, &event);
                 }
             }
         }
@@ -295,14 +297,14 @@ impl WindowHandle {
         if is_pointer_down {
             for id in cx.app_state.clicking.clone() {
                 if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
-                    cx.app_state.request_style_recursive(id);
+                    id.request_style_recursive();
                 }
             }
         }
         if matches!(&event, Event::PointerUp(_)) {
             for id in cx.app_state.clicking.clone() {
                 if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
-                    cx.app_state.request_style_recursive(id);
+                    id.request_style_recursive();
                 }
             }
             cx.app_state.clicking.clear();
@@ -468,17 +470,21 @@ impl WindowHandle {
     }
 
     fn style(&mut self) {
-        let mut cx = StyleCx::new(&mut self.app_state, self.view.id);
+        let mut cx = StyleCx::new(&mut self.app_state, self.id);
         if let Some(theme) = &self.theme {
             cx.current = theme.style.clone();
         }
-        cx.style_view(self.view.id);
+        cx.style_view(self.id);
     }
 
     fn layout(&mut self) -> Duration {
         let mut cx = LayoutCx::new(&mut self.app_state);
 
-        cx.app_state_mut().root = Some(cx.layout_view(&mut self.view));
+        cx.app_state_mut().root = {
+            let view = self.id.view();
+            let mut view = view.borrow_mut();
+            Some(cx.layout_view(view.as_mut()))
+        };
 
         let start = Instant::now();
         cx.app_state_mut().compute_layout();
@@ -493,15 +499,15 @@ impl WindowHandle {
         self.app_state.request_compute_layout = false;
         let viewport = (self.app_state.root_size / self.app_state.scale).to_rect();
         let mut cx = ComputeLayoutCx::new(&mut self.app_state, viewport);
-        cx.compute_view_layout(self.view.id);
+        cx.compute_view_layout(self.id);
     }
 
     pub fn render_frame(&mut self) {
         // Processes updates scheduled on this frame.
         for update in mem::take(&mut self.app_state.scheduled_updates) {
             match update {
-                FrameUpdate::Style(id) => self.app_state.request_style(id),
-                FrameUpdate::Layout(id) => self.app_state.request_layout(id),
+                FrameUpdate::Style(id) => id.request_style(),
+                FrameUpdate::Layout(id) => id.request_layout(),
                 FrameUpdate::Paint(id) => self.app_state.request_paint(id),
             }
         }
@@ -548,7 +554,7 @@ impl WindowHandle {
                 0.0,
             );
         }
-        cx.paint_view(self.view.id);
+        cx.paint_view(self.id);
         if let Some(window) = self.window.as_ref() {
             if cx.app_state.capture.is_none() {
                 window.pre_present_notify();
@@ -560,8 +566,8 @@ impl WindowHandle {
     pub(crate) fn capture(&mut self) -> Capture {
         // Capture the view before we run `style` and `layout` to catch missing `request_style`` or
         // `request_layout` flags.
-        let root_layout = self.view.id.layout_rect();
-        let root = CapturedView::capture(self.view.id, &mut self.app_state, root_layout);
+        let root_layout = self.id.layout_rect();
+        let root = CapturedView::capture(self.id, &mut self.app_state, root_layout);
 
         self.app_state.capture = Some(CaptureState::default());
 
@@ -571,18 +577,25 @@ impl WindowHandle {
 
         // Ensure we run layout and styling again for accurate timing. We also need to ensure
         // styles are recomputed to capture them.
-        self.app_state.view_states.values_mut().for_each(|state| {
-            state.requested_changes = ChangeFlags::all();
-        });
+        fn request_changes(id: ViewId) {
+            id.state().borrow_mut().requested_changes = ChangeFlags::all();
+            for child in id.children() {
+                request_changes(child);
+            }
+        }
+        request_changes(self.id);
 
-        fn get_taffy_depth(taffy: &taffy::TaffyTree, root: taffy::tree::NodeId) -> usize {
-            let children = taffy.children(root).unwrap();
+        fn get_taffy_depth(
+            taffy: Rc<RefCell<taffy::TaffyTree>>,
+            root: taffy::tree::NodeId,
+        ) -> usize {
+            let children = taffy.borrow().children(root).unwrap();
             if children.is_empty() {
                 1
             } else {
                 children
                     .iter()
-                    .map(|child| get_taffy_depth(taffy, *child))
+                    .map(|child| get_taffy_depth(taffy.clone(), *child))
                     .max()
                     .unwrap()
                     + 1
@@ -593,7 +606,7 @@ impl WindowHandle {
         self.style();
         let post_style = Instant::now();
 
-        let taffy_root_node = self.view.id.state().borrow().node;
+        let taffy_root_node = self.id.state().borrow().node;
         let taffy_duration = self.layout();
         let post_layout = Instant::now();
         let window = self.paint().map(Rc::new);
@@ -605,8 +618,8 @@ impl WindowHandle {
             post_layout,
             end,
             taffy_duration,
-            taffy_node_count: self.app_state.taffy.total_node_count(),
-            taffy_depth: get_taffy_depth(&self.app_state.taffy, taffy_root_node),
+            taffy_node_count: self.id.taffy().borrow().total_node_count(),
+            taffy_depth: get_taffy_depth(self.id.taffy(), taffy_root_node),
             window,
             window_size: self.size.get_untracked() / self.app_state.scale,
             scale: self.scale * self.app_state.scale,
@@ -665,16 +678,13 @@ impl WindowHandle {
     }
 
     fn process_central_messages(&self) {
-        CENTRAL_UPDATE_MESSAGES.with(|central_msgs| {
-            if !central_msgs.borrow().is_empty() {
-                UPDATE_MESSAGES.with(|msgs| {
-                    let mut msgs = msgs.borrow_mut();
-                    let central_msgs = std::mem::take(&mut *central_msgs.borrow_mut());
+        CENTRAL_UPDATE_MESSAGES.with_borrow_mut(|central_msgs| {
+            if !central_msgs.is_empty() {
+                UPDATE_MESSAGES.with_borrow_mut(|msgs| {
+                    let central_msgs = std::mem::take(&mut *central_msgs);
                     for (id, msg) in central_msgs {
-                        if let Some(root) = id.root() {
-                            let msgs = msgs.entry(root).or_default();
-                            msgs.push(msg);
-                        }
+                        let msgs = msgs.entry(id.root()).or_default();
+                        msgs.push(msg);
                     }
                 });
             }
@@ -686,10 +696,8 @@ impl WindowHandle {
                     let mut msgs = msgs.borrow_mut();
                     let central_msgs = std::mem::take(&mut *central_msgs.borrow_mut());
                     for (id, msg) in central_msgs {
-                        if let Some(root) = id.root() {
-                            let msgs = msgs.entry(root).or_default();
-                            msgs.push((id, msg));
-                        }
+                        let msgs = msgs.entry(id.root()).or_default();
+                        msgs.push((id, msg));
                     }
                 });
             }
@@ -709,14 +717,6 @@ impl WindowHandle {
                     app_state: &mut self.app_state,
                 };
                 match msg {
-                    UpdateMessage::RequestChange { id, flags: changes } => {
-                        if changes.contains(ChangeFlags::STYLE) {
-                            cx.app_state.request_style(id);
-                        }
-                        if changes.contains(ChangeFlags::LAYOUT) {
-                            cx.app_state.request_layout(id);
-                        }
-                    }
                     UpdateMessage::RequestPaint => {
                         cx.app_state.request_paint = true;
                     }
@@ -741,16 +741,19 @@ impl WindowHandle {
                                 .app_state
                                 .has_style_for_sel(old_id, StyleSelector::Active)
                             {
-                                cx.app_state.request_style_recursive(old_id);
+                                old_id.request_style_recursive();
                             }
                         }
 
                         if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
-                            cx.app_state.request_style_recursive(id);
+                            id.request_style_recursive();
                         }
                     }
                     UpdateMessage::ScrollTo { id, rect } => {
-                        self.view.scroll_to(cx.app_state, id, rect);
+                        self.id
+                            .view()
+                            .borrow_mut()
+                            .scroll_to(cx.app_state, id, rect);
                     }
                     UpdateMessage::Disabled { id, is_disabled } => {
                         if is_disabled {
@@ -759,7 +762,7 @@ impl WindowHandle {
                         } else {
                             cx.app_state.disabled.remove(&id);
                         }
-                        cx.app_state.request_style_recursive(id);
+                        id.request_style_recursive();
                     }
                     UpdateMessage::State { id, state } => {
                         let view = id.view();
@@ -819,7 +822,7 @@ impl WindowHandle {
                     }
                     UpdateMessage::WindowScale(scale) => {
                         cx.app_state.scale = scale;
-                        self.view.id().request_layout();
+                        self.id.request_layout();
                         let scale = self.scale * cx.app_state.scale;
                         self.paint_state.set_scale(scale);
                     }
@@ -881,23 +884,22 @@ impl WindowHandle {
                         let view = OverlayView {
                             id,
                             position,
-                            scope,
                             child,
                             size: Size::ZERO,
                             parent_size: Size::ZERO,
                             window_origin: Point::ZERO,
                         };
-
-                        id.set_parent(self.id);
-
-                        self.view.overlays.insert(id, view);
-                        cx.app_state.request_all(self.id);
+                        self.id.add_child(
+                            view.on_cleanup(move || {
+                                scope.dispose();
+                            })
+                            .into_view(),
+                        );
+                        self.id.request_all();
                     }
                     UpdateMessage::RemoveOverlay { id } => {
-                        let mut overlay = self.view.overlays.shift_remove(&id).unwrap();
                         cx.app_state.remove_view(id);
-                        overlay.scope.dispose();
-                        cx.app_state.request_all(self.id);
+                        self.id.request_all();
                     }
                 }
             }
@@ -938,7 +940,7 @@ impl WindowHandle {
                     let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
                     if let Some(anim) = view_id.state().borrow_mut().animation.as_mut() {
                         anim.resume();
-                        self.app_state.request_style(view_id)
+                        view_id.request_style();
                     }
                 }
                 AnimUpdateMsg::Pause(anim_id) => {
@@ -958,7 +960,7 @@ impl WindowHandle {
                     let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
                     if let Some(anim) = view_id.state().borrow_mut().animation.as_mut() {
                         anim.stop();
-                        self.app_state.request_style(view_id)
+                        view_id.request_style();
                     }
                 }
             }
@@ -1011,12 +1013,11 @@ impl WindowHandle {
             anim.start();
         }
 
-        self.app_state.request_style(view_id);
+        view_id.request_style();
     }
 
     fn needs_layout(&mut self) -> bool {
-        self.view
-            .id
+        self.id
             .state()
             .borrow()
             .requested_changes
@@ -1024,8 +1025,7 @@ impl WindowHandle {
     }
 
     fn needs_style(&mut self) -> bool {
-        self.view
-            .id
+        self.id
             .state()
             .borrow()
             .requested_changes
@@ -1503,7 +1503,6 @@ fn context_menu_view(
 struct OverlayView {
     id: ViewId,
     child: ViewId,
-    scope: Scope,
     position: Point,
     window_origin: Point,
     parent_size: Size,
@@ -1560,8 +1559,6 @@ impl View for OverlayView {
 /// A view representing a window which manages the main window view and any overlays.
 struct WindowView {
     id: ViewId,
-    main: ViewId,
-    overlays: IndexMap<ViewId, OverlayView>,
 }
 
 impl View for WindowView {

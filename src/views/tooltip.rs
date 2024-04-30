@@ -5,7 +5,6 @@ use crate::{
     action::{add_overlay, exec_after, remove_overlay, TimerToken},
     context::{EventCx, UpdateCx},
     event::Event,
-    id::Id,
     prop, prop_extractor,
     view::{default_compute_layout, IntoView, View},
     view_storage::ViewId,
@@ -25,7 +24,6 @@ pub struct Tooltip {
     id: ViewId,
     hover: Option<(Point, TimerToken)>,
     overlay: Option<ViewId>,
-    child: Box<dyn View>,
     tip: Rc<dyn Fn() -> Box<dyn View>>,
     style: TooltipStyle,
     window_origin: Option<Point>,
@@ -37,9 +35,10 @@ pub fn tooltip<V: IntoView + 'static, T: View + 'static>(
     tip: impl Fn() -> T + 'static,
 ) -> Tooltip {
     let id = ViewId::new();
+    let child = child.into_view();
+    id.set_children(vec![child]);
     Tooltip {
         id,
-        child: child.into_view(),
         tip: Rc::new(move || Box::new(tip())),
         hover: None,
         overlay: None,
@@ -51,10 +50,6 @@ pub fn tooltip<V: IntoView + 'static, T: View + 'static>(
 impl View for Tooltip {
     fn id(&self) -> ViewId {
         self.id
-    }
-
-    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        "Tooltip".into()
     }
 
     fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn std::any::Any>) {
@@ -71,7 +66,7 @@ impl View for Tooltip {
         }
     }
 
-    fn event_before_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
+    fn event_before_children(&mut self, _cx: &mut EventCx, event: &Event) -> EventPropagation {
         match &event {
             Event::PointerMove(e) => {
                 if self.overlay.is_none() {

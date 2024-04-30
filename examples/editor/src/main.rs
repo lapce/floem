@@ -1,7 +1,7 @@
 use floem::{
     keyboard::{Key, Modifiers, NamedKey},
     reactive::RwSignal,
-    view::ViewBuilder,
+    view::IntoView,
     views::{
         editor::{
             command::{Command, CommandExecuted},
@@ -13,7 +13,7 @@ use floem::{
     widgets::button,
 };
 
-fn app_view() -> impl ViewBuilder {
+fn app_view() -> impl IntoView {
     let text = std::env::args()
         .nth(1)
         .map(|s| std::fs::read_to_string(s).unwrap());
@@ -66,7 +66,7 @@ fn app_view() -> impl ViewBuilder {
     ))
     .style(|s| s.size_full().flex_col().items_center().justify_center());
 
-    let id = view.id();
+    let id = view.view_id();
     view.on_key_up(Key::Named(NamedKey::F11), Modifiers::empty(), move |_| {
         id.inspect()
     })

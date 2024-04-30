@@ -2,7 +2,6 @@ use taffy::style::FlexDirection;
 
 use crate::{
     context::UpdateCx,
-    id::Id,
     style::{Style, StyleClassRef},
     view::{IntoView, View},
     view_storage::ViewId,
@@ -14,8 +13,14 @@ use crate::{
 /// The children of a stack can still get reactive updates.
 pub struct Stack {
     id: ViewId,
-    pub(crate) children: Vec<Box<dyn View>>,
     direction: Option<FlexDirection>,
+}
+
+fn create_stack(children: Vec<Box<dyn View>>, direction: Option<FlexDirection>) -> Stack {
+    let id = ViewId::new();
+    id.set_children(children);
+
+    Stack { id, direction }
 }
 
 /// A basic stack that is built from a tuple of views which remains static and always contains the same elements in the same order.
@@ -35,43 +40,30 @@ pub struct Stack {
 /// ));
 /// ```
 pub fn stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
-    Stack {
-        id: ViewId::new(),
-        children: children.into_views(),
-        direction: None,
-    }
+    create_stack(children.into_views(), None)
 }
 
 /// A stack which defaults to `FlexDirection::Row`. See also [`v_stack`].
 pub fn h_stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
-    Stack {
-        id: ViewId::new(),
-        children: children.into_views(),
-        direction: Some(FlexDirection::Row),
-    }
+    create_stack(children.into_views(), Some(FlexDirection::Row))
 }
 
 /// A stack which defaults to `FlexDirection::Column`. See also [`h_stack`].
 pub fn v_stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
-    Stack {
-        id: ViewId::new(),
-        children: children.into_views(),
-        direction: Some(FlexDirection::Column),
-    }
+    create_stack(children.into_views(), Some(FlexDirection::Column))
 }
 
 fn from_iter<V>(iterator: impl IntoIterator<Item = V>, direction: Option<FlexDirection>) -> Stack
 where
     V: IntoView + 'static,
 {
-    Stack {
-        id: ViewId::new(),
-        children: iterator
+    create_stack(
+        iterator
             .into_iter()
             .map(|v| -> Box<dyn View> { v.into_view() })
             .collect(),
         direction,
-    }
+    )
 }
 
 /// Creates a stack from an iterator of views. See also [`v_stack_from_iter`] and [`h_stack_from_iter`].
@@ -122,10 +114,10 @@ impl View for Stack {
         }
     }
 
-    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn std::any::Any>) {
-        if let Ok(state) = state.downcast() {
-            self.children = *state;
-            cx.request_all(self.view_id());
+    fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn std::any::Any>) {
+        if let Ok(state) = state.downcast::<Vec<Box<dyn View>>>() {
+            self.id.set_children(*state);
+            self.id.request_all();
         }
     }
 }

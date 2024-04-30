@@ -13,7 +13,7 @@ pub fn virtual_list<T, IF, I, KF, K, VF, V>(
     each_fn: IF,
     key_fn: KF,
     view_fn: VF,
-) -> VirtualList<T>
+) -> VirtualList
 where
     T: 'static,
     IF: Fn() -> I + 'static,

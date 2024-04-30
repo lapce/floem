@@ -15,6 +15,8 @@ use crate::{
 
 pub(crate) type FxIndexSet<T> = indexmap::IndexSet<T, BuildHasherDefault<FxHasher>>;
 
+type ViewFn<T> = Box<dyn Fn(T) -> (Box<dyn View>, Scope)>;
+
 #[derive(educe::Educe)]
 #[educe(Debug)]
 pub(crate) struct HashRun<T>(#[educe(Debug(ignore))] pub(crate) T);
@@ -25,7 +27,7 @@ where
 {
     id: ViewId,
     children: Vec<Option<(ViewId, Scope)>>,
-    view_fn: Box<dyn Fn(T) -> (Box<dyn View>, Scope)>,
+    view_fn: ViewFn<T>,
     phantom: PhantomData<T>,
 }
 
@@ -140,7 +142,7 @@ impl<T> View for DynStack<T> {
                 &mut self.children,
                 &self.view_fn,
             );
-            cx.request_all(self.view_id());
+            self.id.request_all();
         }
     }
 }

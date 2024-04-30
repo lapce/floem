@@ -53,7 +53,7 @@ pub trait Decorators: IntoView + Sized {
         self
     }
 
-    fn debug_name(mut self, name: impl Into<String>) -> Self {
+    fn debug_name(self, name: impl Into<String>) -> Self {
         let view_id = self.view_id();
         let state = view_id.state();
         state.borrow_mut().debug_name.push(name.into());
@@ -114,7 +114,7 @@ pub trait Decorators: IntoView + Sized {
     ///
     /// NOTE: View should have `.keyboard_navigable()` in order to receive keyboard events
     fn on_key_down(
-        mut self,
+        self,
         key: Key,
         modifiers: Modifiers,
         action: impl Fn(&Event) + 'static,
@@ -133,12 +133,7 @@ pub trait Decorators: IntoView + Sized {
     /// Add an handler for a specific key being released.
     ///
     /// NOTE: View should have `.keyboard_navigable()` in order to receive keyboard events
-    fn on_key_up(
-        mut self,
-        key: Key,
-        modifiers: Modifiers,
-        action: impl Fn(&Event) + 'static,
-    ) -> Self {
+    fn on_key_up(self, key: Key, modifiers: Modifiers, action: impl Fn(&Event) + 'static) -> Self {
         self.on_event(EventListener::KeyDown, move |e| {
             if let Event::KeyUp(ke) = e {
                 if ke.key.logical_key == key && ke.modifiers == modifiers {

@@ -10,12 +10,13 @@ use taffy::{
 
 use crate::{
     context::ComputeLayoutCx,
-    id::Id,
     view::{self, IntoView, View},
     view_storage::ViewId,
 };
 
 use super::{apply_diff, diff, Diff, DiffOpAdd, FxIndexSet, HashRun};
+
+type ViewFn<T> = Box<dyn Fn(T) -> (Box<dyn View>, Scope)>;
 
 #[derive(Clone, Copy)]
 pub enum VirtualDirection {
@@ -59,7 +60,7 @@ where
     children: Vec<Option<(ViewId, Scope)>>,
     viewport: Rect,
     set_viewport: WriteSignal<Rect>,
-    view_fn: Box<dyn Fn(T) -> (Box<dyn View>, Scope)>,
+    view_fn: ViewFn<T>,
     phatom: PhantomData<T>,
     before_size: f64,
     content_size: f64,
@@ -282,23 +283,25 @@ impl<T> View for VirtualStack<T> {
             };
             if self.offset_node.is_none() {
                 self.offset_node = Some(
-                    cx.app_state_mut()
-                        .taffy
+                    self.id
+                        .taffy()
+                        .borrow_mut()
                         .new_leaf(taffy::style::Style::DEFAULT)
                         .unwrap(),
                 );
             }
             if self.content_node.is_none() {
                 self.content_node = Some(
-                    cx.app_state_mut()
-                        .taffy
+                    self.id
+                        .taffy()
+                        .borrow_mut()
                         .new_leaf(taffy::style::Style::DEFAULT)
                         .unwrap(),
                 );
             }
             let offset_node = self.offset_node.unwrap();
             let content_node = self.content_node.unwrap();
-            let _ = cx.app_state_mut().taffy.set_style(
+            let _ = self.id.taffy().borrow_mut().set_style(
                 offset_node,
                 taffy::style::Style {
                     position: taffy::style::Position::Relative,
@@ -327,7 +330,7 @@ impl<T> View for VirtualStack<T> {
                     ..Default::default()
                 },
             );
-            let _ = cx.app_state_mut().taffy.set_style(
+            let _ = self.id.taffy().borrow_mut().set_style(
                 content_node,
                 taffy::style::Style {
                     min_size: content_size,
@@ -335,10 +338,15 @@ impl<T> View for VirtualStack<T> {
                     ..Default::default()
                 },
             );
-            let _ = cx.app_state_mut().taffy.set_children(offset_node, &nodes);
-            let _ = cx
-                .app_state_mut()
-                .taffy
+            let _ = self
+                .id
+                .taffy()
+                .borrow_mut()
+                .set_children(offset_node, &nodes);
+            let _ = self
+                .id
+                .taffy()
+                .borrow_mut()
                 .set_children(content_node, &[offset_node]);
             vec![content_node]
         })

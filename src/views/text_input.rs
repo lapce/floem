@@ -30,7 +30,6 @@ use kurbo::{Point, Rect, Size};
 use crate::{
     context::{EventCx, UpdateCx},
     event::Event,
-    id::Id,
 };
 
 use super::Decorators;
@@ -358,8 +357,8 @@ impl TextInput {
         )
     }
 
-    fn handle_double_click(&mut self, pos_x: f64, pos_y: f64, cx: &mut EventCx) {
-        let clicked_glyph_idx = self.get_box_position(pos_x, pos_y, cx);
+    fn handle_double_click(&mut self, pos_x: f64, pos_y: f64) {
+        let clicked_glyph_idx = self.get_box_position(pos_x, pos_y);
 
         self.buffer.with_untracked(|buff| {
             let selection = get_dbl_click_selection(clicked_glyph_idx, buff);
@@ -368,9 +367,11 @@ impl TextInput {
         })
     }
 
-    fn get_box_position(&self, pos_x: f64, pos_y: f64, cx: &mut EventCx) -> usize {
+    fn get_box_position(&self, pos_x: f64, pos_y: f64) -> usize {
         let layout = self.id.get_layout().unwrap_or_default();
-        let style = self.id.state().borrow().combined_style.builtin();
+        let view_state = self.id.state();
+        let view_state = view_state.borrow();
+        let style = view_state.combined_style.builtin();
 
         let padding_left = match style.padding_left() {
             PxPct::Px(padding) => padding as f32,
@@ -516,9 +517,15 @@ impl TextInput {
         AttrsList::new(attrs)
     }
 
-    fn select_all(&mut self, cx: &mut EventCx) {
+    fn select_all(&mut self) {
         let text_node = self.text_node.unwrap();
-        let node_layout = *cx.app_state.taffy.layout(text_node).unwrap();
+        let node_layout = self
+            .id
+            .taffy()
+            .borrow()
+            .layout(text_node)
+            .cloned()
+            .unwrap_or_default();
         let len = self.buffer.with(|val| val.len());
         self.cursor_glyph_idx = len;
 
@@ -533,12 +540,7 @@ impl TextInput {
         self.selection = Some(0..len);
     }
 
-    fn handle_modifier_cmd(
-        &mut self,
-        event: &KeyEvent,
-        cx: &mut EventCx<'_>,
-        character: &SmolStr,
-    ) -> bool {
+    fn handle_modifier_cmd(&mut self, event: &KeyEvent, character: &SmolStr) -> bool {
         if event.modifiers.is_empty() {
             return false;
         }
@@ -547,7 +549,7 @@ impl TextInput {
 
         match command {
             TextCommand::SelectAll => {
-                self.select_all(cx);
+                self.select_all();
                 true
             }
             TextCommand::Copy => {
@@ -618,7 +620,7 @@ impl TextInput {
     fn handle_key_down(&mut self, cx: &mut EventCx, event: &KeyEvent) -> bool {
         match event.key.logical_key {
             Key::Character(ref ch) => {
-                let handled_modifier_cmd = self.handle_modifier_cmd(event, cx, ch);
+                let handled_modifier_cmd = self.handle_modifier_cmd(event, ch);
                 if handled_modifier_cmd {
                     return true;
                 }
@@ -827,14 +829,22 @@ impl TextInput {
         cx: &mut crate::context::PaintCx,
     ) {
         let text_node = self.text_node.unwrap();
-        let layout = *cx.app_state.taffy.layout(text_node).unwrap();
+        let layout = self
+            .id
+            .taffy()
+            .borrow()
+            .layout(text_node)
+            .cloned()
+            .unwrap_or_default();
         let node_location = layout.location;
         let text_start_point = Point::new(node_location.x as f64, node_location.y as f64);
         cx.draw_text(placeholder_buff, text_start_point);
     }
 
     fn paint_selection_rect(&self, &node_layout: &Layout, cx: &mut crate::context::PaintCx<'_>) {
-        let style = &self.id.state().borrow().combined_style;
+        let view_state = self.id.state();
+        let view_state = view_state.borrow();
+        let style = &view_state.combined_style;
         let cursor_color = style.get(CursorColor);
 
         let padding_left = match style.get(PaddingLeft) {
@@ -933,7 +943,7 @@ impl View for TextInput {
         format!("TextInput: {:?}", self.buffer.get_untracked()).into()
     }
 
-    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {
+    fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn Any>) {
         if let Ok(state) = state.downcast::<(String, bool)>() {
             let (_, is_focused) = *state;
             if is_focused {
@@ -967,9 +977,9 @@ impl View for TextInput {
                 self.id.request_layout();
 
                 if event.count == 2 {
-                    self.handle_double_click(event.pos.x, event.pos.y, cx);
+                    self.handle_double_click(event.pos.x, event.pos.y);
                 } else {
-                    self.cursor_glyph_idx = self.get_box_position(event.pos.x, event.pos.y, cx);
+                    self.cursor_glyph_idx = self.get_box_position(event.pos.x, event.pos.y);
                     self.selection = None;
                 }
                 true
@@ -977,7 +987,7 @@ impl View for TextInput {
             Event::PointerMove(event) => {
                 self.id.request_layout();
                 if cx.is_active(self.id) {
-                    let selection_stop = self.get_box_position(event.pos.x, event.pos.y, cx);
+                    let selection_stop = self.get_box_position(event.pos.x, event.pos.y);
                     self.update_selection(self.cursor_glyph_idx, selection_stop);
                 }
                 false
@@ -1021,8 +1031,9 @@ impl View for TextInput {
 
             if self.text_node.is_none() {
                 self.text_node = Some(
-                    cx.app_state_mut()
-                        .taffy
+                    self.id
+                        .taffy()
+                        .borrow_mut()
                         .new_leaf(taffy::style::Style::DEFAULT)
                         .unwrap(),
                 );
@@ -1032,7 +1043,9 @@ impl View for TextInput {
 
             // FIXME: This layout is undefined.
             let layout = self.id.get_layout().unwrap_or_default();
-            let style = self.id.state().borrow().combined_style.builtin();
+            let view_state = self.id.state();
+            let view_state = view_state.borrow();
+            let style = view_state.combined_style.builtin();
             let node_width = layout.size.width;
 
             if self.placeholder_buff.is_none() {
@@ -1081,19 +1094,25 @@ impl View for TextInput {
                 .width(taffy_node_width)
                 .height(self.height)
                 .to_taffy_style();
-            let _ = cx.app_state_mut().taffy.set_style(text_node, style);
+            let _ = self.id.taffy().borrow_mut().set_style(text_node, style);
 
             vec![text_node]
         })
     }
 
-    fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
+    fn compute_layout(&mut self, _cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
         self.update_text_layout();
 
         let text_buf = self.text_buf.as_ref().unwrap();
         let buf_width = text_buf.size().width;
         let text_node = self.text_node.unwrap();
-        let node_layout = *cx.app_state.taffy.layout(text_node).unwrap();
+        let node_layout = self
+            .id
+            .taffy()
+            .borrow()
+            .layout(text_node)
+            .cloned()
+            .unwrap_or_default();
         let node_width = node_layout.size.width as f64;
 
         if buf_width > node_width {
@@ -1124,7 +1143,13 @@ impl View for TextInput {
         }
 
         let text_node = self.text_node.unwrap();
-        let node_layout = *cx.app_state.taffy.layout(text_node).unwrap();
+        let node_layout = self
+            .id
+            .taffy()
+            .borrow()
+            .layout(text_node)
+            .cloned()
+            .unwrap_or_default();
 
         let location = node_layout.location;
         let text_start_point = Point::new(location.x as f64, location.y as f64);

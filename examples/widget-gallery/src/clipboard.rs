@@ -1,6 +1,6 @@
 use floem::{
     reactive::create_rw_signal,
-    view::ViewBuilder,
+    view::IntoView,
     views::{h_stack, label, v_stack, Decorators},
     widgets::{button, text_input},
     Clipboard,
@@ -8,7 +8,7 @@ use floem::{
 
 use crate::form::{form, form_item};
 
-pub fn clipboard_view() -> impl ViewBuilder {
+pub fn clipboard_view() -> impl IntoView {
     let text1 = create_rw_signal("".to_string());
     let text2 = create_rw_signal("-".to_string());
 

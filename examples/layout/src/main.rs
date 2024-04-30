@@ -3,7 +3,7 @@ use floem::{
     keyboard::{Key, NamedKey},
     kurbo::Size,
     style::AlignContent,
-    view::ViewBuilder,
+    view::IntoView,
     views::{container, h_stack, label, v_stack, Decorators},
     widgets::button,
     window::{new_window, WindowConfig},
@@ -15,7 +15,7 @@ pub mod left_sidebar;
 pub mod right_sidebar;
 pub mod tab_navigation;
 
-fn list_item<V: ViewBuilder + 'static>(name: String, view_fn: impl Fn() -> V) -> impl ViewBuilder {
+fn list_item<V: IntoView + 'static>(name: String, view_fn: impl Fn() -> V) -> impl IntoView {
     h_stack((
         label(move || name.clone()).style(|s| s),
         container(view_fn()).style(|s| s.width_full().justify_content(AlignContent::End)),
@@ -23,7 +23,7 @@ fn list_item<V: ViewBuilder + 'static>(name: String, view_fn: impl Fn() -> V) ->
     .style(|s| s.width(200))
 }
 
-fn app_view() -> impl ViewBuilder {
+fn app_view() -> impl IntoView {
     let view = v_stack((
         label(move || String::from("Static layouts"))
             .style(|s| s.font_size(30.0).margin_bottom(15.0)),
@@ -98,7 +98,7 @@ fn app_view() -> impl ViewBuilder {
             .gap(0.0, 10.0)
     });
 
-    let id = view.id();
+    let id = view.view_id();
     view.on_event_stop(EventListener::KeyUp, move |e| {
         if let Event::KeyUp(e) = e {
             if e.key.logical_key == Key::Named(NamedKey::F11) {

@@ -5,7 +5,6 @@ use crate::{
     context::{LayoutCx, PaintCx, UpdateCx},
     cosmic_text::{Attrs, AttrsList, TextLayout},
     event::{Event, EventListener},
-    id::Id,
     keyboard::{Key, Modifiers, NamedKey},
     kurbo::{BezPath, Line, Point, Rect, Size, Vec2},
     peniko::Color,
@@ -796,12 +795,11 @@ impl View for EditorView {
     }
 
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
-        let id = self.id();
         self.editor.with_untracked(|ed| {
             ed.es.update(|s| {
                 if s.read(cx) {
                     ed.floem_style_id.update(|val| *val += 1);
-                    cx.app_state_mut().request_paint(self.view_id());
+                    cx.app_state_mut().request_paint(self.id());
                 }
             })
         });
@@ -814,13 +812,13 @@ impl View for EditorView {
     fn update(&mut self, _cx: &mut UpdateCx, _state: Box<dyn std::any::Any>) {}
 
     fn layout(&mut self, cx: &mut LayoutCx) -> crate::taffy::tree::NodeId {
-        cx.layout_node(self.id, true, |cx| {
+        cx.layout_node(self.id, true, |_cx| {
             let editor = self.editor.get_untracked();
 
             let parent_size = editor.parent_size.get_untracked();
 
             if self.inner_node.is_none() {
-                self.inner_node = Some(cx.new_node());
+                self.inner_node = Some(self.id.new_taffy_node());
             }
 
             let screen_lines = editor.screen_lines.get_untracked();
@@ -849,7 +847,7 @@ impl View for EditorView {
                 .height(height)
                 .margin_bottom(margin_bottom)
                 .to_taffy_style();
-            cx.set_style(inner_node, style);
+            let _ = self.id.taffy().borrow_mut().set_style(inner_node, style);
 
             vec![inner_node]
         })

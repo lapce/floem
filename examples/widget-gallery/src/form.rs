@@ -1,12 +1,12 @@
 use floem::{
     cosmic_text::Weight,
     unit::UnitExt,
-    view::ViewBuilder,
+    view::IntoView,
     view_tuple::ViewTuple,
     views::{container, label, stack, Decorators},
 };
 
-pub fn form<VT: ViewTuple + 'static>(children: VT) -> impl ViewBuilder {
+pub fn form<VT: ViewTuple + 'static>(children: VT) -> impl IntoView {
     stack(children).style(|s| {
         s.flex_col()
             .items_start()
@@ -16,11 +16,11 @@ pub fn form<VT: ViewTuple + 'static>(children: VT) -> impl ViewBuilder {
     })
 }
 
-pub fn form_item<V: ViewBuilder + 'static>(
+pub fn form_item<V: IntoView + 'static>(
     item_label: String,
     label_width: f32,
     view_fn: impl Fn() -> V,
-) -> impl ViewBuilder {
+) -> impl IntoView {
     container(
         stack((
             container(label(move || item_label.clone()).style(|s| s.font_weight(Weight::BOLD)))

@@ -2,7 +2,7 @@ use std::{any::Any, cell::RefCell, rc::Rc};
 
 use kurbo::{Insets, Point, Rect, Size};
 use slotmap::{new_key_type, SecondaryMap, SlotMap};
-use taffy::{Display, Layout};
+use taffy::{Display, Layout, NodeId, TaffyTree};
 
 use crate::{
     animate::Animation,
@@ -13,6 +13,7 @@ use crate::{
     update::{UpdateMessage, CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES},
     view::View,
     view_data::{ChangeFlags, StackOffset},
+    EventPropagation,
 };
 
 thread_local! {
@@ -23,8 +24,8 @@ new_key_type! {
    pub struct ViewId;
 }
 
-pub struct ViewStorage {
-    pub(crate) taffy: taffy::TaffyTree,
+pub(crate) struct ViewStorage {
+    pub(crate) taffy: Rc<RefCell<taffy::TaffyTree>>,
     view_ids: SlotMap<ViewId, ()>,
     views: SecondaryMap<ViewId, Rc<RefCell<Box<dyn View>>>>,
     children: SecondaryMap<ViewId, Vec<ViewId>>,
@@ -43,10 +44,11 @@ impl Default for ViewStorage {
 impl ViewStorage {
     pub fn new() -> Self {
         let mut taffy = taffy::TaffyTree::default();
+        taffy.disable_rounding();
         let state_view_state = ViewState::new(&mut taffy);
 
         Self {
-            taffy,
+            taffy: Rc::new(RefCell::new(taffy)),
             view_ids: Default::default(),
             views: Default::default(),
             children: Default::default(),
@@ -62,7 +64,29 @@ impl ViewId {
         VIEW_STORAGE.with_borrow_mut(|s| s.view_ids.insert(()))
     }
 
-    pub fn state(&self) -> Rc<RefCell<ViewState>> {
+    pub fn remove(&self) {
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            if let Some(Some(parent)) = s.parent.get(*self) {
+                if let Some(children) = s.children.get_mut(*parent) {
+                    children.retain(|c| c != self);
+                }
+            }
+            s.view_ids.remove(*self);
+        });
+    }
+
+    pub(crate) fn taffy(&self) -> Rc<RefCell<TaffyTree>> {
+        VIEW_STORAGE.with_borrow(|s| s.taffy.clone())
+    }
+
+    pub fn new_taffy_node(&self) -> NodeId {
+        self.taffy()
+            .borrow_mut()
+            .new_leaf(taffy::style::Style::DEFAULT)
+            .unwrap()
+    }
+
+    pub(crate) fn state(&self) -> Rc<RefCell<ViewState>> {
         VIEW_STORAGE.with_borrow_mut(|s| {
             if !s.view_ids.contains_key(*self) {
                 // if view_ids doens't have this view id, that means it's been cleaned up,
@@ -72,14 +96,25 @@ impl ViewId {
                 s.states
                     .entry(*self)
                     .unwrap()
-                    .or_insert_with(|| Rc::new(RefCell::new(ViewState::new(&mut s.taffy))))
+                    .or_insert_with(|| {
+                        Rc::new(RefCell::new(ViewState::new(&mut s.taffy.borrow_mut())))
+                    })
                     .clone()
             }
         })
     }
 
-    pub fn view(&self) -> Rc<RefCell<Box<dyn View>>> {
+    pub(crate) fn view(&self) -> Rc<RefCell<Box<dyn View>>> {
         VIEW_STORAGE.with_borrow_mut(|s| s.views.get(*self).unwrap().clone())
+    }
+
+    pub fn add_child(&self, child: Box<dyn View>) {
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            let child_id = child.id();
+            s.children.entry(*self).unwrap().or_default().push(child_id);
+            s.parent.insert(child_id, Some(*self));
+            s.views.insert(child_id, Rc::new(RefCell::new(child)));
+        });
     }
 
     pub fn set_children(&self, children: Vec<Box<dyn View>>) {
@@ -127,17 +162,17 @@ impl ViewId {
         VIEW_STORAGE.with_borrow(|s| s.parent.get(*self).cloned().flatten())
     }
 
-    pub fn root(&self) -> Option<ViewId> {
+    pub fn root(&self) -> ViewId {
         VIEW_STORAGE.with_borrow(|s| {
             let mut parent = s.parent.get(*self).cloned().flatten();
             while let Some(id) = parent {
                 if let Some(id) = s.parent.get(id).cloned().flatten() {
                     parent = Some(id)
                 } else {
-                    return parent;
+                    return parent.unwrap_or(*self);
                 }
             }
-            parent
+            parent.unwrap_or(*self)
         })
     }
 
@@ -181,29 +216,29 @@ impl ViewId {
     pub(crate) fn get_layout(&self) -> Option<Layout> {
         let widget_parent = self.parent().map(|id| id.state().borrow().node);
 
+        let taffy = self.taffy();
         let mut node = self.state().borrow().node;
-        VIEW_STORAGE.with_borrow_mut(|s| {
-            let mut layout = *s.taffy.layout(node).ok()?;
+        let mut layout = *taffy.borrow().layout(node).ok()?;
 
-            loop {
-                let parent = s.taffy.parent(node);
+        loop {
+            let parent = taffy.borrow().parent(node);
 
-                if parent == widget_parent {
-                    break;
-                }
-
-                node = parent?;
-
-                layout.location = layout.location + s.taffy.layout(node).ok()?.location;
+            if parent == widget_parent {
+                break;
             }
 
-            Some(layout)
-        })
+            node = parent?;
+
+            layout.location = layout.location + taffy.borrow().layout(node).ok()?.location;
+        }
+
+        Some(layout)
     }
 
     pub fn is_hidden(&self) -> bool {
         let state = self.state();
-        state.borrow().combined_style.get(DisplayProp) == Display::None
+        let state = state.borrow();
+        state.combined_style.get(DisplayProp) == Display::None
     }
 
     /// Is this view, or any parent view, marked as hidden
@@ -239,7 +274,7 @@ impl ViewId {
 
     /// request that this node be styled again
     /// This will recursively request style for all parents.
-    pub(crate) fn request_style(&self) {
+    pub fn request_style(&self) {
         self.request_changes(ChangeFlags::STYLE)
     }
 
@@ -351,6 +386,27 @@ impl ViewId {
             self.request_style_recursive();
         } else {
             self.request_style();
+        }
+    }
+
+    pub(crate) fn apply_event(
+        &self,
+        listener: &EventListener,
+        event: &crate::event::Event,
+    ) -> Option<EventPropagation> {
+        let mut handled = false;
+        let event_listeners = self.state().borrow().event_listeners.clone();
+        if let Some(handlers) = event_listeners.get(listener) {
+            for handler in handlers {
+                handled |= handler(event).is_processed();
+            }
+        } else {
+            return None;
+        }
+        if handled {
+            Some(EventPropagation::Stop)
+        } else {
+            Some(EventPropagation::Continue)
         }
     }
 

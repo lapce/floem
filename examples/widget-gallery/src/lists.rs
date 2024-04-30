@@ -3,7 +3,7 @@ use floem::{
     peniko::Color,
     reactive::create_signal,
     style::JustifyContent,
-    view::ViewBuilder,
+    view::IntoView,
     views::{
         container, h_stack, h_stack_from_iter, label, scroll, stack, v_stack, v_stack_from_iter,
         Decorators, VirtualDirection, VirtualItemSize, VirtualVector,
@@ -13,7 +13,7 @@ use floem::{
 
 use crate::form::{form, form_item};
 
-pub fn virt_list_view() -> impl ViewBuilder {
+pub fn virt_list_view() -> impl IntoView {
     v_stack((
         h_stack({
             (
@@ -34,7 +34,7 @@ pub fn virt_list_view() -> impl ViewBuilder {
     ))
 }
 
-fn simple_list() -> impl ViewBuilder {
+fn simple_list() -> impl IntoView {
     scroll(
         list((0..100).map(|i| label(move || i.to_string()).style(|s| s.height(24.0))))
             .style(|s| s.width_full()),
@@ -42,7 +42,7 @@ fn simple_list() -> impl ViewBuilder {
     .style(|s| s.width(100.0).height(200.0).border(1.0))
 }
 
-fn enhanced_list() -> impl ViewBuilder {
+fn enhanced_list() -> impl IntoView {
     let long_list: im::Vector<i32> = (0..100).collect();
     let (long_list, set_long_list) = create_signal(long_list);
 
@@ -104,12 +104,12 @@ fn enhanced_list() -> impl ViewBuilder {
     .style(move |s| s.width(list_width).height(200.0).border(1.0))
 }
 
-fn h_buttons_from_iter() -> impl ViewBuilder {
+fn h_buttons_from_iter() -> impl IntoView {
     let button_iter = (0..3).map(|i| button(move || format!("Button {}", i)));
     h_stack_from_iter(button_iter)
 }
 
-fn v_buttons_from_iter() -> impl ViewBuilder {
+fn v_buttons_from_iter() -> impl IntoView {
     let button_iter = (0..3).map(|i| button(move || format!("Button {}", i)));
     v_stack_from_iter(button_iter)
 }

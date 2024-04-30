@@ -5,7 +5,7 @@ use floem_renderer::Renderer;
 use image::{DynamicImage, GenericImageView};
 use sha2::{Digest, Sha256};
 
-use crate::{id::Id, style::Style, unit::UnitExt, view::View, view_storage::ViewId};
+use crate::{style::Style, unit::UnitExt, view::View, view_storage::ViewId};
 
 use taffy::tree::NodeId;
 
@@ -116,7 +116,7 @@ impl View for Img {
         "Img".into()
     }
 
-    fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
+    fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(img) = state.downcast::<Option<Rc<DynamicImage>>>() {
             self.img_hash = (*img).as_ref().map(|img| {
                 let mut hasher = Sha256::new();
@@ -130,11 +130,12 @@ impl View for Img {
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::tree::NodeId {
-        cx.layout_node(self.id(), true, |cx| {
+        cx.layout_node(self.id(), true, |_cx| {
             if self.content_node.is_none() {
                 self.content_node = Some(
-                    cx.app_state_mut()
-                        .taffy
+                    self.id
+                        .taffy()
+                        .borrow_mut()
                         .new_leaf(taffy::style::Style::DEFAULT)
                         .unwrap(),
                 );
@@ -147,7 +148,7 @@ impl View for Img {
                 .width((width as f64).px())
                 .height((height as f64).px())
                 .to_taffy_style();
-            let _ = cx.app_state_mut().taffy.set_style(content_node, style);
+            let _ = self.id.taffy().borrow_mut().set_style(content_node, style);
 
             vec![content_node]
         })

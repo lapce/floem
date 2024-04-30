@@ -48,15 +48,20 @@ impl CapturedView {
         let layout = id.layout_rect();
         let taffy = id.get_layout().unwrap_or_default();
         let view_state = id.state();
-        let computed_style = view_state.borrow().combined_style.clone();
+        let view_state = view_state.borrow();
+        let computed_style = view_state.combined_style.clone();
         let keyboard_navigable = app_state.keyboard_navigable.contains(&id);
         let focused = app_state.focus == Some(id);
         let clipped = layout.intersect(clip);
-        let custom_name: Vec<String> = vec![];
-        let classes = view_state.borrow().classes.clone();
+        let custom_name = &view_state.debug_name;
+        let classes = view_state.classes.clone();
+        let view = id.view();
+        let view = view.borrow();
         let name = custom_name
             .iter()
-            // .chain(std::iter::once(&view.debug_name().to_string()))
+            .chain(std::iter::once(
+                &View::debug_name(view.as_ref()).to_string(),
+            ))
             .cloned()
             .collect::<Vec<_>>()
             .join(" - ");
@@ -67,7 +72,7 @@ impl CapturedView {
             taffy,
             clipped,
             direct_style: computed_style,
-            requested_changes: view_state.borrow().requested_changes,
+            requested_changes: view_state.requested_changes,
             keyboard_navigable,
             focused,
             classes,

@@ -1,12 +1,12 @@
-use super::{v_stack_from_iter, Decorators, Stack};
+use super::{v_stack_from_iter, Decorators};
 use crate::context::StyleCx;
 use crate::reactive::create_effect;
-use crate::style::{Style, StyleClassRef};
+use crate::style::Style;
+use crate::view::IntoView;
 use crate::view_storage::ViewId;
 use crate::EventPropagation;
 use crate::{
     event::{Event, EventListener},
-    id::Id,
     keyboard::{Key, NamedKey},
     view::View,
 };
@@ -30,7 +30,7 @@ pub struct List {
     id: ViewId,
     selection: RwSignal<Option<usize>>,
     onaccept: Option<Box<dyn Fn(Option<usize>)>>,
-    child: Stack,
+    child: ViewId,
 }
 
 impl List {
@@ -48,10 +48,6 @@ impl List {
 
     pub fn on_accept(mut self, on_accept: impl Fn(Option<usize>) + 'static) -> Self {
         self.onaccept = Some(Box::new(on_accept));
-        self
-    }
-    pub fn add_class_by_idx(mut self, class: impl Fn(usize) -> StyleClassRef) -> Self {
-        self.child = self.child.add_class_by_idx(class);
         self
     }
 }
@@ -93,11 +89,13 @@ where
         })
     }))
     .style(|s| s.width_full().height_full());
-    let length = stack.children.len();
+    let length = stack.id().children().len();
+    let child = stack.id();
+    id.set_children(vec![stack.into_view()]);
     List {
         id,
         selection,
-        child: stack,
+        child,
         onaccept: None,
     }
     .keyboard_navigatable()
@@ -171,11 +169,7 @@ impl View for List {
         self.id
     }
 
-    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        "List".into()
-    }
-
-    fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
+    fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(change) = state.downcast::<ListUpdate>() {
             match *change {
                 ListUpdate::SelectionChanged => {
@@ -183,7 +177,7 @@ impl View for List {
                 }
                 ListUpdate::ScrollToSelected => {
                     if let Some(index) = self.selection.get_untracked() {
-                        self.child.children[index].id().scroll_to(None);
+                        self.child.children()[index].scroll_to(None);
                     }
                 }
                 ListUpdate::Accept => {

@@ -3,7 +3,7 @@ use floem::{
     peniko::Color,
     reactive::create_signal,
     style::Position,
-    view::ViewBuilder,
+    view::IntoView,
     views::{
         container, h_stack, label, scroll, v_stack, virtual_stack, Decorators, VirtualDirection,
         VirtualItemSize,
@@ -13,7 +13,7 @@ use floem::{
 const SIDEBAR_WIDTH: f64 = 140.0;
 const TOPBAR_HEIGHT: f64 = 30.0;
 
-pub fn left_sidebar_view() -> impl ViewBuilder {
+pub fn left_sidebar_view() -> impl IntoView {
     let long_list: im::Vector<i32> = (0..100).collect();
     let (long_list, _set_long_list) = create_signal(long_list);
 
@@ -69,7 +69,7 @@ pub fn left_sidebar_view() -> impl ViewBuilder {
 
     let view = v_stack((top_bar, content)).style(|s| s.width_full().height_full());
 
-    let id = view.id();
+    let id = view.view_id();
     view.on_event_stop(EventListener::KeyUp, move |e| {
         if let floem::event::Event::KeyUp(e) = e {
             if e.key.logical_key == floem::keyboard::Key::Named(floem::keyboard::NamedKey::F11) {

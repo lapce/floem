@@ -2,7 +2,7 @@ use floem::{
     peniko::Color,
     reactive::{create_rw_signal, create_signal},
     unit::UnitExt,
-    view::ViewBuilder,
+    view::IntoView,
     views::{dyn_container, empty, h_stack, text, v_stack, Decorators},
     widgets::{button, labeled_radio_button, text_input},
 };
@@ -25,7 +25,7 @@ enum FlightMode {
 static DATE_FORMAT: &[time::format_description::FormatItem<'_>] =
     time::macros::format_description!("[day]-[month]-[year]");
 
-pub fn app_view() -> impl ViewBuilder {
+pub fn app_view() -> impl IntoView {
     let (flight_mode, flight_mode_set) = create_signal(FlightMode::OneWay);
 
     let start_text = create_rw_signal("24-02-2024".to_string());
@@ -85,11 +85,11 @@ pub fn app_view() -> impl ViewBuilder {
     let success_message = dyn_container(
         move || did_booking.get(),
         move |booked| match (booked, flight_mode.get()) {
-            (true, FlightMode::OneWay) => text(oneway_message(start_text.get())).any(),
+            (true, FlightMode::OneWay) => text(oneway_message(start_text.get())).into_view(),
             (true, FlightMode::Return) => {
-                text(return_message(start_text.get(), return_text.get())).any()
+                text(return_message(start_text.get(), return_text.get())).into_view()
             }
-            (false, _) => empty().any(),
+            (false, _) => empty().into_view(),
         },
     );
 

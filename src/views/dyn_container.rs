@@ -62,7 +62,7 @@ pub struct DynamicContainer<T: 'static> {
 ///
 /// ```
 ///
-pub fn dyn_container<CF: Fn(T) -> Box<dyn View>, T: 'static>(
+pub fn dyn_container<CF: Fn(T) -> Box<dyn View> + 'static, T: 'static>(
     update_view: impl Fn() -> T + 'static,
     child_fn: CF,
 ) -> DynamicContainer<T> {
@@ -85,10 +85,6 @@ impl<T: 'static> View for DynamicContainer<T> {
         self.id
     }
 
-    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        "DynamicContainer".into()
-    }
-
     fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(val) = state.downcast::<T>() {
             let old_child_scope = self.child_scope;
@@ -99,7 +95,7 @@ impl<T: 'static> View for DynamicContainer<T> {
             self.child_scope = child_scope;
             self.id.set_children(vec![child]);
             old_child_scope.dispose();
-            cx.request_all(self.view_id());
+            self.id.request_all();
         }
     }
 }

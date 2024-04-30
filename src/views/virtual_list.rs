@@ -1,6 +1,4 @@
-use super::{
-    virtual_stack, Decorators, Item, VirtualDirection, VirtualItemSize, VirtualStack, VirtualVector,
-};
+use super::{virtual_stack, Decorators, Item, VirtualDirection, VirtualItemSize, VirtualVector};
 use crate::context::ComputeLayoutCx;
 use crate::reactive::create_effect;
 use crate::view::IntoView;
@@ -8,7 +6,6 @@ use crate::view_storage::ViewId;
 use crate::EventPropagation;
 use crate::{
     event::{Event, EventListener},
-    id::Id,
     keyboard::{Key, NamedKey},
     view::View,
 };
@@ -24,16 +21,16 @@ enum ListUpdate {
 
 /// A view that is like a [`virtual_stack`](super::virtual_stack()) but also supports item selection.
 /// See [`virtual_list`] and [`virtual_stack`](super::virtual_stack()).
-pub struct VirtualList<T: 'static> {
+pub struct VirtualList {
     id: ViewId,
     direction: VirtualDirection,
     child_size: Size,
     selection: RwSignal<Option<usize>>,
     offsets: RwSignal<Vec<f64>>,
-    child: VirtualStack<(usize, T)>,
+    child: ViewId,
 }
 
-impl<T> VirtualList<T> {
+impl VirtualList {
     pub fn selection(&self) -> RwSignal<Option<usize>> {
         self.selection
     }
@@ -57,7 +54,7 @@ pub fn virtual_list<T, IF, I, KF, K, VF, V>(
     each_fn: IF,
     key_fn: KF,
     view_fn: VF,
-) -> VirtualList<T>
+) -> VirtualList
 where
     T: 'static,
     IF: Fn() -> I + 'static,
@@ -149,13 +146,15 @@ where
         VirtualDirection::Horizontal => s.flex_row(),
         VirtualDirection::Vertical => s.flex_col(),
     });
+    let child = stack.id();
+    id.set_children(vec![stack.into_view()]);
     VirtualList {
         id,
         selection,
         direction,
         offsets,
         child_size: Size::ZERO,
-        child: stack,
+        child,
     }
     .keyboard_navigatable()
     .on_event(EventListener::KeyDown, move |e| {
@@ -221,16 +220,12 @@ where
     })
 }
 
-impl<T> View for VirtualList<T> {
+impl View for VirtualList {
     fn id(&self) -> ViewId {
         self.id
     }
 
-    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        "VirtualList".into()
-    }
-
-    fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
+    fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(change) = state.downcast::<ListUpdate>() {
             match *change {
                 ListUpdate::SelectionChanged => {
@@ -248,7 +243,7 @@ impl<T> View for VirtualList<T> {
                                         Rect::new(*before, 0.0, *after, self.child_size.height)
                                     }
                                 };
-                                self.child.id().scroll_to(Some(rect));
+                                self.child.scroll_to(Some(rect));
                             }
                         });
                     }
@@ -260,11 +255,10 @@ impl<T> View for VirtualList<T> {
     fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
         self.child_size = self
             .child
-            .id()
             .get_layout()
             .map(|layout| Size::new(layout.size.width as f64, layout.size.height as f64))
             .unwrap();
 
-        cx.compute_view_layout(self.child.id())
+        cx.compute_view_layout(self.child)
     }
 }

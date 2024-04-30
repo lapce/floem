@@ -3,11 +3,11 @@ use std::ops::Range;
 use floem::{
     cosmic_text::{Attrs, AttrsList, Style, TextLayout},
     peniko::Color,
-    view::ViewBuilder,
+    view::IntoView,
     views::{rich_text, scroll},
 };
 
-pub fn rich_text_view() -> impl ViewBuilder {
+pub fn rich_text_view() -> impl IntoView {
     let text = "
     // floem is a ui lib, homepage https://github.com/lapce/floem
     fn main() {

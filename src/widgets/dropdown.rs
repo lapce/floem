@@ -7,7 +7,6 @@ use kurbo::{Point, Rect};
 use crate::{
     action::{add_overlay, remove_overlay},
     event::{Event, EventListener},
-    id::Id,
     prop, prop_extractor,
     style::{Style, StyleClass, Width},
     style_class,
@@ -99,15 +98,16 @@ impl<T: 'static> View for DropDown<T> {
                 Message::ActiveElement(val) => {
                     if let Ok(val) = val.downcast::<T>() {
                         let old_child_scope = self.main_view_scope;
-                        cx.app_state_mut().remove_view(self.main_view);
+                        let old_main_view = self.main_view;
                         let (main_view, main_view_scope) = (self.main_fn)(*val);
                         let main_view_id = main_view.id();
                         self.id.set_children(vec![main_view]);
                         self.main_view = main_view_id;
                         self.main_view_scope = main_view_scope;
 
+                        cx.app_state_mut().remove_view(old_main_view);
                         old_child_scope.dispose();
-                        cx.request_all(self.view_id());
+                        self.id.request_all();
                     }
                 }
             }
@@ -116,7 +116,7 @@ impl<T: 'static> View for DropDown<T> {
 
     fn event_before_children(
         &mut self,
-        cx: &mut crate::context::EventCx,
+        _cx: &mut crate::context::EventCx,
         event: &Event,
     ) -> EventPropagation {
         match event {
@@ -302,7 +302,7 @@ impl<T> DropDown<T> {
 
     /// Sets the custom style properties of the `DropDown`.
     pub fn dropdown_style(
-        mut self,
+        self,
         style: impl Fn(DropDownCustomStyle) -> DropDownCustomStyle + 'static,
     ) -> Self {
         let id = self.view_id();

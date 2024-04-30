@@ -6,13 +6,14 @@ use taffy::style::Display;
 
 use crate::{
     context::{StyleCx, UpdateCx},
-    id::Id,
     style::DisplayProp,
     view::{IntoView, View},
     view_storage::ViewId,
 };
 
 use super::{apply_diff, diff, Diff, DiffOpAdd, FxIndexSet, HashRun};
+
+type ViewFn<T> = Box<dyn Fn(T) -> (Box<dyn View>, Scope)>;
 
 enum TabState<V> {
     Diff(Box<Diff<V>>),
@@ -26,7 +27,7 @@ where
     id: ViewId,
     active: usize,
     children: Vec<Option<(ViewId, Scope)>>,
-    view_fn: Box<dyn Fn(T) -> (Box<dyn View>, Scope)>,
+    view_fn: ViewFn<T>,
     phatom: PhantomData<T>,
 }
 
@@ -137,6 +138,16 @@ impl<T> View for Tab<T> {
                     Display::Flex
                 },
             );
+        }
+    }
+
+    fn paint(&mut self, cx: &mut crate::context::PaintCx) {
+        if let Some(Some((active, _))) = self
+            .children
+            .get(self.active)
+            .or_else(|| self.children.first())
+        {
+            cx.paint_view(*active);
         }
     }
 }

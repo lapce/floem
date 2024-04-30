@@ -4,18 +4,7 @@
 //! They're used to identify views in the view tree.
 //!
 
-use std::{any::Any, cell::RefCell, collections::HashMap, sync::atomic::AtomicU64};
-
-use kurbo::{Point, Rect};
-
-use crate::{
-    animate::Animation,
-    context::{EventCallback, MenuCallback, ResizeCallback},
-    event::EventListener,
-    style::{Style, StyleClassRef, StyleSelector},
-    update::{UpdateMessage, CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES},
-    view_data::{ChangeFlags, StackOffset},
-};
+use std::{cell::RefCell, collections::HashMap, sync::atomic::AtomicU64};
 
 thread_local! {
     pub(crate) static ID_PATHS: RefCell<HashMap<Id,IdPath>> = Default::default();
@@ -28,12 +17,7 @@ pub struct Id(u64);
 #[derive(Clone, Default, Debug)]
 pub struct IdPath(pub(crate) Vec<Id>);
 
-impl IdPath {
-    /// Returns the slice of the ids including the first id identifying the window.
-    pub(crate) fn dispatch(&self) -> &[Id] {
-        &self.0[..]
-    }
-}
+impl IdPath {}
 
 impl Id {
     /// Allocate a new, unique `Id`.
@@ -61,15 +45,6 @@ impl Id {
             id_paths.borrow_mut().insert(new_id, id_path);
         });
         new_id
-    }
-
-    pub(crate) fn set_parent(&self, parent: Id) {
-        ID_PATHS.with(|id_paths| {
-            let mut id_paths = id_paths.borrow_mut();
-            let mut id_path = id_paths.get(&parent).cloned().unwrap();
-            id_path.0.push(*self);
-            id_paths.insert(*self, id_path);
-        });
     }
 
     pub fn parent(&self) -> Option<Id> {

@@ -51,7 +51,6 @@ use taffy::tree::NodeId;
 use crate::{
     context::{AppState, ComputeLayoutCx, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx},
     event::Event,
-    id::Id,
     style::{BoxShadowProp, Style, StyleClassRef},
     view_data::ViewStyleProps,
     view_storage::ViewId,
@@ -239,11 +238,11 @@ pub trait View {
     //     default_event(self, cx, id_path, event)
     // }
 
-    fn event_before_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
+    fn event_before_children(&mut self, _cx: &mut EventCx, _event: &Event) -> EventPropagation {
         EventPropagation::Continue
     }
 
-    fn event_after_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
+    fn event_after_children(&mut self, _cx: &mut EventCx, _event: &Event) -> EventPropagation {
         EventPropagation::Continue
     }
 
@@ -296,6 +295,14 @@ impl View for Box<dyn View> {
 
     fn layout(&mut self, cx: &mut LayoutCx) -> NodeId {
         (**self).layout(cx)
+    }
+
+    fn event_before_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
+        (**self).event_before_children(cx, event)
+    }
+
+    fn event_after_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
+        (**self).event_after_children(cx, event)
     }
 
     fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
@@ -502,10 +509,6 @@ pub(crate) fn paint_border(cx: &mut PaintCx, style: &ViewStyleProps, size: Size)
     }
 }
 
-pub(crate) fn view_children(view: ViewId) -> Vec<ViewId> {
-    view.children()
-}
-
 /// Tab navigation finds the next or previous view with the `keyboard_navigatable` status in the tree.
 #[allow(dead_code)]
 pub(crate) fn view_tab_navigation(root_view: ViewId, app_state: &mut AppState, backwards: bool) {
@@ -533,7 +536,7 @@ pub(crate) fn view_tab_navigation(root_view: ViewId, app_state: &mut AppState, b
     app_state.update_focus(new_focus, true);
 }
 
-fn view_filtered_children<'a>(view: ViewId, id: ViewId) -> Option<Vec<ViewId>> {
+fn view_filtered_children(view: ViewId, id: ViewId) -> Option<Vec<ViewId>> {
     let parent = id.parent();
 
     if id == view {
@@ -592,7 +595,7 @@ fn view_next_sibling(root_view: ViewId, id: ViewId) -> Option<ViewId> {
 /// Get the next item in the tree, the deepest last child of the previous sibling of this view or the parent
 fn view_tree_previous(root_view: ViewId, id: ViewId) -> Option<ViewId> {
     view_previous_sibling(root_view, id)
-        .map(|view| view_nested_last_child(view))
+        .map(view_nested_last_child)
         .or_else(|| {
             (root_view != id).then_some(
                 id.parent()

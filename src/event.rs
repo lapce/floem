@@ -9,7 +9,7 @@ use crate::{
     pointer::{PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
 };
 
-#[derive(Debug, Hash, PartialEq, Eq)]
+#[derive(Debug, Hash, PartialEq, Eq, Copy, Clone)]
 pub enum EventListener {
     /// Receives [`Event::KeyDown`]
     KeyDown,

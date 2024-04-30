@@ -5,7 +5,7 @@ use floem::{
     reactive::create_signal,
     style::{Background, BorderColor, Outline, OutlineColor, Style, TextColor, Transition},
     style_class,
-    view::ViewBuilder,
+    view::IntoView,
     views::{label, stack, text, Decorators},
 };
 
@@ -13,7 +13,7 @@ style_class!(pub Button);
 style_class!(pub Label);
 style_class!(pub Frame);
 
-fn app_view() -> impl ViewBuilder {
+fn app_view() -> impl IntoView {
     let blue_button = Style::new()
         .background(Color::rgb8(137, 145, 160))
         .color(Color::WHITE)
@@ -145,7 +145,7 @@ fn app_view() -> impl ViewBuilder {
     })
     .window_title(|| "Themes Example".to_string());
 
-    let id = view.id();
+    let id = view.view_id();
     view.on_event_stop(EventListener::KeyUp, move |e| {
         if let Event::KeyUp(e) = e {
             if e.key.logical_key == Key::Named(NamedKey::F11) {

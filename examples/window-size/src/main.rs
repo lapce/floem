@@ -2,14 +2,14 @@ use floem::{
     event::{Event, EventListener},
     keyboard::{Key, NamedKey},
     kurbo::Size,
-    view::ViewBuilder,
+    view::IntoView,
     views::{label, v_stack, Decorators},
     widgets::button,
     window::{close_window, new_window, WindowConfig, WindowId},
     Application,
 };
 
-fn sub_window_view(id: WindowId) -> impl ViewBuilder {
+fn sub_window_view(id: WindowId) -> impl IntoView {
     v_stack((
         label(move || String::from("Hello world")).style(|s| s.font_size(30.0)),
         button(|| "Close this window").on_click_stop(move |_| {
@@ -26,7 +26,7 @@ fn sub_window_view(id: WindowId) -> impl ViewBuilder {
     })
 }
 
-fn app_view() -> impl ViewBuilder {
+fn app_view() -> impl IntoView {
     let view = v_stack((
         label(move || String::from("Hello world")).style(|s| s.font_size(30.0)),
         button(|| "Open another window").on_click_stop(|_| {
@@ -49,7 +49,7 @@ fn app_view() -> impl ViewBuilder {
             .gap(0.0, 10.0)
     });
 
-    let id = view.id();
+    let id = view.view_id();
     view.on_event_stop(EventListener::KeyUp, move |e| {
         if let Event::KeyUp(e) = e {
             if e.key.logical_key == Key::Named(NamedKey::F11) {

@@ -3,7 +3,6 @@ use std::{any::Any, fmt::Display};
 use crate::{
     context::UpdateCx,
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
-    id::Id,
     prop_extractor,
     style::{FontProps, LineHeight, Style, TextColor, TextOverflow, TextOverflowProp},
     unit::PxPct,
@@ -155,7 +154,7 @@ impl View for Label {
         format!("Label: {:?}", self.label).into()
     }
 
-    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {
+    fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn Any>) {
         if let Ok(state) = state.downcast() {
             self.label = *state;
             self.text_layout = None;
@@ -177,7 +176,7 @@ impl View for Label {
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::tree::NodeId {
-        cx.layout_node(self.id(), true, |cx| {
+        cx.layout_node(self.id(), true, |_cx| {
             let (width, height) = if self.label.is_empty() {
                 (0.0, self.font.size().unwrap_or(14.0))
             } else {
@@ -200,8 +199,9 @@ impl View for Label {
 
             if self.text_node.is_none() {
                 self.text_node = Some(
-                    cx.app_state_mut()
-                        .taffy
+                    self.id
+                        .taffy()
+                        .borrow_mut()
                         .new_leaf(taffy::style::Style::DEFAULT)
                         .unwrap(),
                 );
@@ -209,31 +209,33 @@ impl View for Label {
             let text_node = self.text_node.unwrap();
 
             let style = Style::new().width(width).height(height).to_taffy_style();
-            let _ = cx.app_state_mut().taffy.set_style(text_node, style);
+            let _ = self.id.taffy().borrow_mut().set_style(text_node, style);
 
             vec![text_node]
         })
     }
 
-    fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
+    fn compute_layout(&mut self, _cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
         if self.label.is_empty() {
             return None;
         }
 
-        let view_state = self.id.state();
         let layout = self.id.get_layout().unwrap_or_default();
-        let style = view_state.borrow().combined_style.builtin();
-        let text_overflow = style.text_overflow();
-        let padding_left = match style.padding_left() {
-            PxPct::Px(padding) => padding as f32,
-            PxPct::Pct(pct) => pct as f32 * layout.size.width,
+        let (text_overflow, padding) = {
+            let view_state = self.id.state();
+            let view_state = view_state.borrow();
+            let style = view_state.combined_style.builtin();
+            let padding_left = match style.padding_left() {
+                PxPct::Px(padding) => padding as f32,
+                PxPct::Pct(pct) => pct as f32 * layout.size.width,
+            };
+            let padding_right = match style.padding_right() {
+                PxPct::Px(padding) => padding as f32,
+                PxPct::Pct(pct) => pct as f32 * layout.size.width,
+            };
+            let text_overflow = style.text_overflow();
+            (text_overflow, padding_left + padding_right)
         };
-        let padding_right = match style.padding_right() {
-            PxPct::Px(padding) => padding as f32,
-            PxPct::Pct(pct) => pct as f32 * layout.size.width,
-        };
-        let padding = padding_left + padding_right;
-
         let text_layout = self.text_layout.as_ref().unwrap();
         let width = text_layout.size().width as f32;
         let available_width = layout.size.width - padding;
@@ -299,7 +301,14 @@ impl View for Label {
         }
 
         let text_node = self.text_node.unwrap();
-        let location = cx.app_state.taffy.layout(text_node).unwrap().location;
+        let location = self
+            .id
+            .taffy()
+            .borrow()
+            .layout(text_node)
+            .cloned()
+            .unwrap_or_default()
+            .location;
         let point = Point::new(location.x as f64, location.y as f64);
         if let Some(text_layout) = self.available_text_layout.as_ref() {
             cx.draw_text(text_layout, point);

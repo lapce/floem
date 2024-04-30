@@ -1,12 +1,12 @@
 use floem::{
     unit::UnitExt,
-    view::ViewBuilder,
+    view::IntoView,
     views::{img, svg, Decorators},
 };
 
 use crate::form::{form, form_item};
 
-pub fn img_view() -> impl ViewBuilder {
+pub fn img_view() -> impl IntoView {
     let ferris_png = include_bytes!("./../assets/ferris.png");
     let ferris_svg = include_str!("./../assets/ferris.svg");
     let svg_str = r##"<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="#000">
