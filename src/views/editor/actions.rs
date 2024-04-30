@@ -40,7 +40,6 @@ fn handle_edit_command_default(
     let modal = ed.es.with_untracked(|es| es.modal());
     let smart_tab = ed.es.with_untracked(|es| es.smart_tab());
     let mut cursor = ed.cursor.get_untracked();
-    let mut register = ed.register.get_untracked();
 
     let text = ed.rope_text();
 
@@ -54,16 +53,18 @@ fn handle_edit_command_default(
     // modal + smart-tab (etc) if it wants?
     // That would end up with some duplication of logic, but it would
     // be more flexible.
-    let had_edits = action.do_edit(ed, &mut cursor, cmd, modal, &mut register, smart_tab);
 
-    if had_edits {
-        if let Some(data) = yank_data {
-            register.add_delete(data);
+    // Avoid cloning register as it may have large data
+    ed.register.update(|register| {
+        let had_edits = action.do_edit(ed, &mut cursor, cmd, modal, register, smart_tab);
+        if had_edits {
+            if let Some(data) = yank_data {
+                register.add_delete(data);
+            }
         }
-    }
+    });
 
     ed.cursor.set(cursor);
-    ed.register.set(register);
 
     CommandExecuted::Yes
 }
@@ -137,12 +138,12 @@ fn handle_motion_mode_command_default(
         MotionModeCommand::MotionModeYank => MotionMode::Yank { count },
     };
     let mut cursor = ed.cursor.get_untracked();
-    let mut register = ed.register.get_untracked();
 
-    movement::do_motion_mode(ed, action, &mut cursor, motion_mode, &mut register);
+    ed.register.update(|register| {
+        movement::do_motion_mode(ed, action, &mut cursor, motion_mode, register);
+    });
 
     ed.cursor.set(cursor);
-    ed.register.set(register);
 
     CommandExecuted::Yes
 }
