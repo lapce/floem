@@ -654,8 +654,7 @@ impl Action {
             }
             for line in start_line..=end_line {
                 if lines.insert(line) {
-                    let line_content = buffer.line_content(line);
-                    if line_content == "\n" || line_content == "\r\n" {
+                    if buffer.is_line_empty(line) {
                         continue;
                     }
                     let nonblank = buffer.first_non_blank_character_on_line(line);
@@ -684,8 +683,7 @@ impl Action {
             }
             for line in start_line..=end_line {
                 if lines.insert(line) {
-                    let line_content = buffer.line_content(line);
-                    if line_content == "\n" || line_content == "\r\n" {
+                    if buffer.is_line_empty(line) {
                         continue;
                     }
                     let nonblank = buffer.first_non_blank_character_on_line(line);

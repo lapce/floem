@@ -132,19 +132,63 @@ pub trait RopeText {
     /// assert_eq!(text.line_end_offset(2, false), 11); // "world|"
     /// ```
     fn line_end_offset(&self, line: usize, caret: bool) -> usize {
-        let mut offset = self.offset_of_line(line + 1);
-        let mut line_content: &str = &self.line_content(line);
-        if line_content.ends_with("\r\n") {
+        let start_offset = self.offset_of_line(line);
+        let end_offset = self.offset_of_line(line + 1);
+
+        let mut offset = end_offset;
+
+        let start = end_offset.saturating_sub(2).max(start_offset);
+        let mut chars = self.chars(start..end_offset);
+        let fst = chars.next();
+        let snd = chars.next();
+
+        if fst == Some('\r') && snd == Some('\n') {
             offset -= 2;
-            line_content = &line_content[..line_content.len() - 2];
-        } else if line_content.ends_with('\n') {
+        } else if (fst == Some('\n') && snd == None) || snd == Some('\n') {
             offset -= 1;
-            line_content = &line_content[..line_content.len() - 1];
         }
-        if !caret && !line_content.is_empty() {
+
+        if !caret && start_offset != offset {
             offset = self.prev_grapheme_offset(offset, 1, 0);
         }
         offset
+    }
+
+    /// Whether the line is completely empty  
+    /// This counts both 'empty' and 'only has newline'
+    /// ```rust
+    /// # use floem_editor_core::xi_rope::Rope;
+    /// # use floem_editor_core::buffer::rope_text::{RopeText, RopeTextRef};
+    /// let text = Rope::from("hello\nworld toast and jam\n\nhi");
+    /// let text = RopeTextRef::new(&text);
+    /// assert_eq!(text.is_line_empty(0), false);
+    /// assert_eq!(text.is_line_empty(1), false);
+    /// assert_eq!(text.is_line_empty(2), true);
+    /// assert_eq!(text.is_line_empty(3), false);
+    ///
+    /// let text = Rope::from("");
+    /// let text = RopeTextRef::new(&text);
+    /// assert_eq!(text.is_line_empty(0), true);
+    /// ```
+    fn is_line_empty(&self, line: usize) -> bool {
+        let start_offset = self.offset_of_line(line);
+        let end_offset = self.offset_of_line(line + 1);
+
+        if start_offset == end_offset {
+            return true;
+        }
+
+        let mut chars = self.chars(start_offset..end_offset);
+        let fst = chars.next();
+        let snd = chars.next();
+
+        if fst == Some('\r') && snd == Some('\n') {
+            true
+        } else if (fst == Some('\n') && snd == None) || snd == Some('\n') {
+            true
+        } else {
+            false
+        }
     }
 
     /// Returns the content of the given line.
