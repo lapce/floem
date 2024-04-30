@@ -36,8 +36,10 @@ pub fn virt_list_view() -> impl IntoView {
 
 fn simple_list() -> impl IntoView {
     scroll(
-        list((0..100).map(|i| label(move || i.to_string()).style(|s| s.height(24.0))))
-            .style(|s| s.width_full()),
+        list(
+            (0..100).map(|i| label(move || i.to_string()).style(|s| s.height(24.0).items_center())),
+        )
+        .style(|s| s.width_full()),
     )
     .style(|s| s.width(100.0).height(200.0).border(1.0))
 }
@@ -59,11 +61,15 @@ fn enhanced_list() -> impl IntoView {
                 container({
                     stack({
                         (
-                            checkbox(move || is_checked.get()).on_click_stop(move |_| {
-                                set_is_checked.update(|checked: &mut bool| *checked = !*checked);
+                            checkbox(move || is_checked.get())
+                                .style(|s| s.margin_left(6))
+                                .on_click_stop(move |_| {
+                                    set_is_checked
+                                        .update(|checked: &mut bool| *checked = !*checked);
+                                }),
+                            label(move || item.to_string()).style(|s| {
+                                s.margin_left(6).height(32.0).font_size(22.0).items_center()
                             }),
-                            label(move || item.to_string())
-                                .style(|s| s.height(32.0).font_size(22.0)),
                             container({
                                 label(move || " X ")
                                     .on_click_stop(move |_| {
@@ -93,9 +99,12 @@ fn enhanced_list() -> impl IntoView {
                     .style(move |s| s.height_full().width_full().items_center())
                 })
                 .style(move |s| {
-                    s.flex_row().height(item_height).apply_if(index != 0, |s| {
-                        s.border_top(1.0).border_color(Color::LIGHT_GRAY)
-                    })
+                    s.flex_row()
+                        .items_center()
+                        .height(item_height)
+                        .apply_if(index != 0, |s| {
+                            s.border_top(1.0).border_color(Color::LIGHT_GRAY)
+                        })
                 })
             },
         )

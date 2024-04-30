@@ -65,11 +65,11 @@ pub fn list<V>(iterator: impl IntoIterator<Item = V>) -> List
 where
     V: View + 'static,
 {
-    let id = ViewId::new();
+    let list_id = ViewId::new();
     let selection = create_rw_signal(None);
     create_effect(move |_| {
         selection.track();
-        id.update_state(ListUpdate::SelectionChanged);
+        list_id.update_state(ListUpdate::SelectionChanged);
     });
     let stack = v_stack_from_iter(iterator.into_iter().enumerate().map(move |(index, v)| {
         let id = ViewId::new();
@@ -84,16 +84,16 @@ where
         .on_click_stop(move |_| {
             if selection.get_untracked() != Some(index) {
                 selection.set(Some(index));
-                id.update_state(ListUpdate::Accept);
+                list_id.update_state(ListUpdate::Accept);
             }
         })
     }))
     .style(|s| s.width_full().height_full());
     let length = stack.id().children().len();
     let child = stack.id();
-    id.set_children(vec![stack.into_view()]);
+    list_id.set_children(vec![stack.into_view()]);
     List {
-        id,
+        id: list_id,
         selection,
         child,
         onaccept: None,
@@ -105,14 +105,14 @@ where
                 Key::Named(NamedKey::Home) => {
                     if length > 0 {
                         selection.set(Some(0));
-                        id.update_state(ListUpdate::ScrollToSelected);
+                        list_id.update_state(ListUpdate::ScrollToSelected);
                     }
                     EventPropagation::Stop
                 }
                 Key::Named(NamedKey::End) => {
                     if length > 0 {
                         selection.set(Some(length - 1));
-                        id.update_state(ListUpdate::ScrollToSelected);
+                        list_id.update_state(ListUpdate::ScrollToSelected);
                     }
                     EventPropagation::Stop
                 }
@@ -122,20 +122,20 @@ where
                         Some(i) => {
                             if i > 0 {
                                 selection.set(Some(i - 1));
-                                id.update_state(ListUpdate::ScrollToSelected);
+                                list_id.update_state(ListUpdate::ScrollToSelected);
                             }
                         }
                         None => {
                             if length > 0 {
                                 selection.set(Some(length - 1));
-                                id.update_state(ListUpdate::ScrollToSelected);
+                                list_id.update_state(ListUpdate::ScrollToSelected);
                             }
                         }
                     }
                     EventPropagation::Stop
                 }
                 Key::Named(NamedKey::Enter) => {
-                    id.update_state(ListUpdate::Accept);
+                    list_id.update_state(ListUpdate::Accept);
                     EventPropagation::Stop
                 }
                 Key::Named(NamedKey::ArrowDown) => {
@@ -144,13 +144,13 @@ where
                         Some(i) => {
                             if i < length - 1 {
                                 selection.set(Some(i + 1));
-                                id.update_state(ListUpdate::ScrollToSelected);
+                                list_id.update_state(ListUpdate::ScrollToSelected);
                             }
                         }
                         None => {
                             if length > 0 {
                                 selection.set(Some(0));
-                                id.update_state(ListUpdate::ScrollToSelected);
+                                list_id.update_state(ListUpdate::ScrollToSelected);
                             }
                         }
                     }
