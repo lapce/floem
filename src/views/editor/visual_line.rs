@@ -368,19 +368,6 @@ impl<T: TextLayoutProvider> TextLayoutProvider for &T {
     }
 }
 
-pub type FontSizeCacheId = u64;
-pub trait LineFontSizeProvider {
-    /// Get the 'general' font size for a specific buffer line.  
-    /// This is typically the editor font size.  
-    /// There might be alternate font-sizes within the line, like for phantom text, but those are
-    /// not considered here.
-    fn font_size(&self, line: usize) -> usize;
-
-    /// An identifier used to mark when the font size info has changed.  
-    /// This lets us update information.
-    fn cache_id(&self) -> FontSizeCacheId;
-}
-
 /// Layout events. This is primarily needed for logic which tracks visual lines intelligently, like
 /// `ScreenLines` in Lapce.  
 /// This is currently limited to only a `CreatedLayout` event, as changed to the cache rev would
@@ -393,27 +380,17 @@ pub enum LayoutEvent {
 
 /// The main structure for tracking visual line information.  
 pub struct Lines {
-    /// This is inside out from the usual way of writing Arc-RefCells due to sometimes wanting to
-    /// swap out font sizes, while also grabbing an `Arc` to hold.  
-    /// An `Arc<RefCell<_>>` has the issue that with a `dyn` it can't know they're the same size
-    /// if you were to assign. So this allows us to swap out the `Arc`, though it does mean that
-    /// the other holders of the `Arc` don't get the new version. That is fine currently.
-    pub font_sizes: RefCell<Rc<dyn LineFontSizeProvider>>,
     #[doc(hidden)]
     pub text_layouts: Rc<RefCell<TextLayoutCache>>,
     wrap: Cell<ResolvedWrap>,
-    font_size_cache_id: Cell<FontSizeCacheId>,
     last_vline: Rc<Cell<Option<VLine>>>,
     pub layout_event: Listener<LayoutEvent>,
 }
 impl Lines {
-    pub fn new(cx: Scope, font_sizes: RefCell<Rc<dyn LineFontSizeProvider>>) -> Lines {
-        let id = font_sizes.borrow().cache_id();
+    pub fn new(cx: Scope) -> Lines {
         Lines {
-            font_sizes,
             text_layouts: Rc::new(RefCell::new(TextLayoutCache::default())),
             wrap: Cell::new(ResolvedWrap::None),
-            font_size_cache_id: Cell::new(id),
             last_vline: Rc::new(Cell::new(None)),
             layout_event: Listener::new_empty(cx),
         }
@@ -461,20 +438,9 @@ impl Lines {
         self.wrap.get() == ResolvedWrap::None && !text_prov.has_multiline_phantom()
     }
 
-    /// Get the font size that [`Self::font_sizes`] provides
-    pub fn font_size(&self, line: usize) -> usize {
-        self.font_sizes.borrow().font_size(line)
-    }
-
     /// Get the last visual line of the file.  
     /// Cached.
     pub fn last_vline(&self, text_prov: impl TextLayoutProvider) -> VLine {
-        let current_id = self.font_sizes.borrow().cache_id();
-        if current_id != self.font_size_cache_id.get() {
-            self.last_vline.set(None);
-            self.font_size_cache_id.set(current_id);
-        }
-
         if let Some(last_vline) = self.last_vline.get() {
             last_vline
         } else {
@@ -2099,7 +2065,7 @@ pub fn hit_position_aff(this: &TextLayout, idx: usize, before: bool) -> HitPosit
 
 #[cfg(test)]
 mod tests {
-    use std::{borrow::Cow, cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
+    use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
     use floem_editor_core::{
         buffer::rope_text::{RopeText, RopeTextRef, RopeTextVal},
@@ -2117,8 +2083,8 @@ mod tests {
     };
 
     use super::{
-        find_vline_init_info_forward, find_vline_init_info_rv_backward, ConfigId, FontSizeCacheId,
-        LineFontSizeProvider, Lines, RVLine, ResolvedWrap, TextLayoutProvider, VLine,
+        find_vline_init_info_forward, find_vline_init_info_rv_backward, ConfigId, Lines, RVLine,
+        ResolvedWrap, TextLayoutProvider, VLine,
     };
 
     /// For most of the logic we standardize on a specific font size.
@@ -2245,19 +2211,6 @@ mod tests {
         }
     }
 
-    struct TestFontSize {
-        font_size: usize,
-    }
-    impl LineFontSizeProvider for TestFontSize {
-        fn font_size(&self, _line: usize) -> usize {
-            self.font_size
-        }
-
-        fn cache_id(&self) -> FontSizeCacheId {
-            0
-        }
-    }
-
     fn make_lines(text: &Rope, width: f32, init: bool) -> (TestTextLayoutProvider<'_>, Lines) {
         make_lines_ph(text, width, init, HashMap::new())
     }
@@ -2270,12 +2223,10 @@ mod tests {
     ) -> (TestTextLayoutProvider<'_>, Lines) {
         let wrap = Wrap::Word;
         let r_wrap = ResolvedWrap::Width(width);
-        let font_sizes = TestFontSize {
-            font_size: FONT_SIZE,
-        };
+
         let text = TestTextLayoutProvider::new(text, ph, wrap);
         let cx = Scope::new();
-        let lines = Lines::new(cx, RefCell::new(Rc::new(font_sizes)));
+        let lines = Lines::new(cx);
         lines.set_wrap(r_wrap);
 
         if init {
