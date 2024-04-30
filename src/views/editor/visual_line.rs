@@ -221,7 +221,9 @@ impl Layouts {
             let remove = inval_count - new_count;
             // But remove is not just the difference between inval count and and new count
             // As we cut off the end of the interval if it went past the end of the layouts,
-            let oob_remove = (ib_start_line - start_line) + (ib_end_idx - end_idx);
+            let oob_start = ib_start_line - start_line;
+            let oob_end = ib_end_idx - end_idx.min(self.layouts.len());
+            let oob_remove = oob_start + oob_end;
 
             let remove = remove - oob_remove;
 
@@ -263,6 +265,7 @@ pub struct TextLayoutCache {
 }
 impl TextLayoutCache {
     pub fn clear(&mut self, cache_rev: u64, config_id: Option<ConfigId>) {
+        println!("clear {cache_rev}; {config_id:?}");
         self.layouts.clear();
         if let Some(config_id) = config_id {
             self.config_id = config_id;
@@ -274,6 +277,7 @@ impl TextLayoutCache {
     /// Clear the layouts without changing the document cache revision.  
     /// Ex: Wrapping width changed, which does not change what the document holds.
     pub fn clear_unchanged(&mut self) {
+        println!("clear_unchanged");
         self.layouts.clear();
         self.max_width = 0.0;
     }
