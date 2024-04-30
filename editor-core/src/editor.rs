@@ -1047,10 +1047,7 @@ impl Action {
                 }
                 vec![]
             }
-            Paste => {
-                let data = register.unnamed.clone();
-                Self::do_paste(cursor, buffer, &data)
-            }
+            Paste => Self::do_paste(cursor, buffer, &register.unnamed),
             PasteBefore => {
                 let offset = cursor.offset();
                 let data = register.unnamed.clone();
