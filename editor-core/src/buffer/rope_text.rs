@@ -86,8 +86,7 @@ pub trait RopeText {
 
     fn offset_of_offset_col(&self, mut offset: usize, last_offset: usize, col: usize) -> usize {
         let mut pos = 0;
-        let text = self.slice_to_cow(offset..last_offset);
-        let mut iter = text.chars().peekable();
+        let mut iter = self.chars(offset..last_offset).peekable();
         while let Some(c) = iter.next() {
             // Stop at the end of the line
             if c == '\n' || (c == '\r' && iter.peek() == Some(&'\n')) {
