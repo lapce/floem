@@ -1,7 +1,7 @@
 use floem::{
     event::EventListener,
     peniko::Color,
-    reactive::create_signal,
+    reactive::create_rw_signal,
     style::Position,
     view::IntoView,
     views::{
@@ -12,10 +12,11 @@ use floem::{
 
 const SIDEBAR_WIDTH: f64 = 140.0;
 const TOPBAR_HEIGHT: f64 = 30.0;
+const SIDEBAR_ITEM_HEIGHT: f64 = 21.0;
 
 pub fn left_sidebar_view() -> impl IntoView {
-    let long_list: im::Vector<i32> = (0..100).collect();
-    let (long_list, _set_long_list) = create_signal(long_list);
+    let long_list: im::Vector<u8> = (0..100).collect();
+    let long_list = create_rw_signal(long_list);
 
     let top_bar = label(|| String::from("Top bar"))
         .style(|s| s.padding(10.0).width_full().height(TOPBAR_HEIGHT));
@@ -23,7 +24,7 @@ pub fn left_sidebar_view() -> impl IntoView {
     let side_bar = scroll({
         virtual_stack(
             VirtualDirection::Vertical,
-            VirtualItemSize::Fixed(Box::new(|| 22.0)),
+            VirtualItemSize::Fixed(Box::new(|| SIDEBAR_ITEM_HEIGHT)),
             move || long_list.get(),
             move |item| *item,
             move |item| {
@@ -32,6 +33,7 @@ pub fn left_sidebar_view() -> impl IntoView {
                         .padding_top(3.0)
                         .padding_bottom(3.0)
                         .width(SIDEBAR_WIDTH)
+                        .height(SIDEBAR_ITEM_HEIGHT)
                         .items_start()
                         .border_bottom(1.0)
                         .border_color(Color::rgb8(205, 205, 205))
