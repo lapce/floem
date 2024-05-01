@@ -17,29 +17,31 @@ _The project is still maturing. We will make occasional breaking changes and add
 ![Quickstart](docs/img/quickstart.png)
 
 ```rust
-use floem::reactive::create_signal;
-use floem::view::View;
-use floem::views::{h_stack, label, v_stack, Decorators};
-use floem::widgets::button;
+use floem::{
+    reactive::create_signal,
+    views::{label, Decorators},
+    widgets::ButtonClass,
+    IntoView,
+};
 
-fn app_view() -> impl View {
+fn app_view() -> impl IntoView {
     // Create a reactive signal with a counter value, defaulting to 0
     let (counter, set_counter) = create_signal(0);
 
     // Create a vertical layout
-    v_stack((
+    (
         // The counter value updates automatically, thanks to reactivity
         label(move || format!("Value: {}", counter.get())),
         // Create a horizontal layout
-        h_stack((
-            button(|| "Increment").on_click_stop(move |_| {
+        (
+            "Increment".class(ButtonClass).on_click_stop(move |_| {
                 set_counter.update(|value| *value += 1);
             }),
-            button(|| "Decrement").on_click_stop(move |_| {
+            "Decrement".class(ButtonClass).on_click_stop(move |_| {
                 set_counter.update(|value| *value -= 1);
             }),
-        )),
-    ))
+        ),
+    ).style(|s| s.flex_col())
 }
 
 fn main() {
