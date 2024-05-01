@@ -8,10 +8,9 @@ use crate::style::{Style, StyleClassRef, StylePropRef, Transition};
 use crate::view::{IntoView, View};
 use crate::view_state::ChangeFlags;
 use crate::views::{
-    container, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label, tab, text,
-    v_stack, v_stack_from_iter, Decorators, Label,
+    button, container, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label,
+    tab, text, v_stack, v_stack_from_iter, Decorators, Label,
 };
-use crate::widgets::button;
 use crate::window::WindowConfig;
 use crate::{new_window, style};
 use floem_reactive::{create_effect, create_rw_signal, create_signal, RwSignal, Scope};

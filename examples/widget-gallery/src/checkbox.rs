@@ -1,7 +1,6 @@
 use floem::{
     reactive::create_signal,
-    views::Decorators,
-    widgets::{checkbox, labeled_checkbox},
+    views::{checkbox, labeled_checkbox, Decorators},
     IntoView,
 };
 

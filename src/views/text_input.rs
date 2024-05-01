@@ -7,8 +7,7 @@ use crate::reactive::{create_effect, RwSignal};
 use crate::style::{CursorColor, FontProps, PaddingLeft};
 use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
-use crate::widgets::PlaceholderTextClass;
-use crate::{prop, prop_extractor, Clipboard};
+use crate::{prop, prop_extractor, style_class, Clipboard};
 use floem_reactive::create_rw_signal;
 use taffy::prelude::{Layout, NodeId};
 
@@ -33,6 +32,9 @@ use crate::{
 };
 
 use super::Decorators;
+
+style_class!(pub TextInputClass);
+style_class!(pub PlaceholderTextClass);
 
 prop_extractor! {
     Extracter {
@@ -153,6 +155,7 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
     .on_event_stop(EventListener::FocusLost, move |_| {
         is_focused.set(false);
     })
+    .class(TextInputClass)
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -218,6 +221,13 @@ const CURSOR_BLINK_INTERVAL_MS: u64 = 500;
 /// See https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/text#size
 // TODO: allow this to be set in the styles
 const APPROX_VISIBLE_CHARS_TARGET: f32 = 10.0;
+
+impl TextInput {
+    pub fn placeholder(mut self, text: impl Into<String>) -> Self {
+        self.placeholder_text = Some(text.into());
+        self
+    }
+}
 
 impl TextInput {
     fn move_cursor(&mut self, move_kind: Movement, direction: Direction) -> bool {

@@ -3,10 +3,9 @@ use crate::event::{Event, EventListener, EventPropagation};
 use crate::inspector::header;
 use crate::view::IntoView;
 use crate::views::{
-    clip, container, dyn_container, empty, h_stack, label, scroll, stack, static_label, text,
-    v_stack, v_stack_from_iter, Decorators,
+    button, clip, container, dyn_container, empty, h_stack, label, scroll, stack, static_label,
+    text, v_stack, v_stack_from_iter, Decorators,
 };
-use crate::widgets::button;
 use floem_reactive::{create_rw_signal, RwSignal, Scope};
 use floem_winit::window::WindowId;
 use peniko::Color;

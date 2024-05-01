@@ -36,6 +36,7 @@ use crate::{
     pointer::{PointerButton, PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
     profiler::Profile,
     style::{CursorStyle, Style, StyleSelector},
+    theme::{default_theme, Theme},
     update::{
         UpdateMessage, ANIM_UPDATE_MESSAGES, CENTRAL_DEFERRED_UPDATE_MESSAGES,
         CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES,
@@ -44,7 +45,6 @@ use crate::{
     view::{default_compute_layout, view_tab_navigation, IntoView, View},
     view_state::ChangeFlags,
     views::Decorators,
-    widgets::{default_theme, Theme},
 };
 
 /// The top-level window handle that owns the winit Window.

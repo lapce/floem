@@ -16,7 +16,7 @@ use crate::{
     views::{scroll, Decorators},
 };
 
-use super::list;
+use super::{list, ListClass};
 
 type ChildFn<T> = dyn Fn(T) -> (Box<dyn View>, Scope);
 
@@ -64,7 +64,7 @@ impl<T: 'static> View for DropDown<T> {
         }
         cx.save();
         self.list_style =
-            Style::new().apply_classes_from_context(&[super::ListClass::class_ref()], &cx.current);
+            Style::new().apply_classes_from_context(&[ListClass::class_ref()], &cx.current);
         cx.restore();
 
         for child in self.id.children() {

@@ -4,8 +4,7 @@ use floem::{
     peniko::Color,
     reactive::create_rw_signal,
     unit::UnitExt,
-    views::{container, label, stack, svg, Decorators},
-    widgets::dropdown::dropdown,
+    views::{container, dropdown::dropdown, label, stack, svg, Decorators},
     IntoView,
 };
 

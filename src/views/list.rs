@@ -1,9 +1,10 @@
-use super::{v_stack_from_iter, Decorators};
+use super::{container, v_stack_from_iter, Decorators};
 use crate::context::StyleCx;
 use crate::event::EventPropagation;
 use crate::id::ViewId;
 use crate::reactive::create_effect;
 use crate::style::Style;
+use crate::style_class;
 use crate::view::IntoView;
 use crate::{
     event::{Event, EventListener},
@@ -11,6 +12,9 @@ use crate::{
     view::View,
 };
 use floem_reactive::{create_rw_signal, RwSignal};
+
+style_class!(pub ListClass);
+style_class!(pub ListItemClass);
 
 enum ListUpdate {
     SelectionChanged,
@@ -63,7 +67,7 @@ impl List {
 /// ```
 pub fn list<V>(iterator: impl IntoIterator<Item = V>) -> List
 where
-    V: View + 'static,
+    V: IntoView + 'static,
 {
     let list_id = ViewId::new();
     let selection = create_rw_signal(None);
@@ -73,8 +77,9 @@ where
     });
     let stack = v_stack_from_iter(iterator.into_iter().enumerate().map(move |(index, v)| {
         let id = ViewId::new();
+        let v = container(v).class(ListItemClass);
         let child = v.id();
-        id.set_children(vec![v.into_any_view()]);
+        id.set_children(vec![v]);
         Item {
             id,
             selection,
@@ -91,7 +96,7 @@ where
     .style(|s| s.width_full().height_full());
     let length = stack.id().children().len();
     let child = stack.id();
-    list_id.set_children(vec![stack.into_view()]);
+    list_id.set_children(vec![stack]);
     List {
         id: list_id,
         selection,
@@ -162,6 +167,7 @@ where
             EventPropagation::Continue
         }
     })
+    .class(ListClass)
 }
 
 impl View for List {

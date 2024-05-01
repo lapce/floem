@@ -1,8 +1,9 @@
 use floem::{
     reactive::create_signal,
     unit::UnitExt,
-    views::{container, label, scroll, Decorators, VirtualDirection, VirtualItemSize},
-    widgets::virtual_list,
+    views::{
+        container, label, scroll, virtual_list, Decorators, VirtualDirection, VirtualItemSize,
+    },
     IntoView,
 };
 

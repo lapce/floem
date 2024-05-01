@@ -2,6 +2,7 @@ use floem::{
     keyboard::{Key, Modifiers, NamedKey},
     reactive::RwSignal,
     views::{
+        button,
         editor::{
             command::{Command, CommandExecuted},
             core::{command::EditCommand, editor::EditType, selection::Selection},
@@ -9,7 +10,6 @@ use floem::{
         },
         stack, text_editor, Decorators,
     },
-    widgets::button,
     IntoView, View,
 };
 

@@ -20,11 +20,10 @@ use floem::{
     style::{Background, CursorStyle, Transition},
     unit::UnitExt,
     views::{
-        container, h_stack, label, scroll, stack, tab, v_stack, virtual_stack, Decorators,
+        button, container, h_stack, label, scroll, stack, tab, v_stack, virtual_stack, Decorators,
         VirtualDirection, VirtualItemSize,
     },
-    widgets::button,
-    {IntoView, View},
+    IntoView, View,
 };
 
 fn app_view() -> impl IntoView {

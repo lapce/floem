@@ -2,8 +2,7 @@ use floem::{
     event::{Event, EventListener},
     keyboard::{Key, NamedKey},
     kurbo::Size,
-    views::{label, v_stack, Decorators},
-    widgets::button,
+    views::{button, label, v_stack, Decorators},
     window::{close_window, new_window, WindowConfig, WindowId},
     Application, IntoView, View,
 };

@@ -1,8 +1,7 @@
 use floem::{
     cosmic_text::{Style as FontStyle, Weight},
     peniko::Color,
-    views::{label, static_label, Decorators},
-    widgets::tooltip,
+    views::{label, static_label, tooltip, Decorators},
     IntoView,
 };
 

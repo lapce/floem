@@ -1,8 +1,7 @@
 use floem::{
     peniko::Color,
     style::CursorStyle,
-    views::Decorators,
-    widgets::{self, button, toggle_button},
+    views::{button, toggle_button, Decorators, ToggleHandleBehavior},
     IntoView,
 };
 
@@ -49,14 +48,14 @@ pub fn button_view() -> impl IntoView {
                     .on_toggle(|_| {
                         println!("Button Toggled");
                     })
-                    .toggle_style(|s| s.behavior(widgets::ToggleHandleBehavior::Snap))
+                    .toggle_style(|s| s.behavior(ToggleHandleBehavior::Snap))
             }),
             form_item("Toggle button - Follow:".to_string(), 120.0, || {
                 toggle_button(|| true)
                     .on_toggle(|_| {
                         println!("Button Toggled");
                     })
-                    .toggle_style(|s| s.behavior(widgets::ToggleHandleBehavior::Follow))
+                    .toggle_style(|s| s.behavior(ToggleHandleBehavior::Follow))
             }),
         )
     })

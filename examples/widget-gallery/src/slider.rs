@@ -1,8 +1,7 @@
 use floem::{
     reactive::{create_effect, create_rw_signal},
     unit::UnitExt,
-    views::{label, stack, text_input, Decorators},
-    widgets::slider,
+    views::{label, slider, stack, text_input, Decorators},
     IntoView,
 };
 

@@ -6,9 +6,13 @@ use crate::{
     context::{EventCx, UpdateCx},
     event::{Event, EventPropagation},
     id::ViewId,
-    prop, prop_extractor,
+    prop, prop_extractor, style_class,
     view::{default_compute_layout, IntoView, View},
 };
+
+use super::{container, Decorators};
+
+style_class!(pub TooltipClass);
 
 prop!(pub Delay: f64 {} = 0.6);
 
@@ -38,7 +42,7 @@ pub fn tooltip<V: IntoView + 'static, T: IntoView + 'static>(
     id.set_children(vec![child]);
     Tooltip {
         id,
-        tip: Rc::new(move || tip().into_any_view()),
+        tip: Rc::new(move || container(tip()).class(TooltipClass).into_any_view()),
         hover: None,
         overlay: None,
         style: Default::default(),

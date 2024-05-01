@@ -2,8 +2,7 @@ use floem::{
     action::{open_file, save_as},
     file::{FileDialogOptions, FileSpec},
     keyboard::{Key, Modifiers, NamedKey},
-    views::{h_stack, Decorators},
-    widgets::button,
+    views::{button, h_stack, Decorators},
     IntoView, View,
 };
 

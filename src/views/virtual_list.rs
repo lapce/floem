@@ -1,4 +1,7 @@
-use super::{virtual_stack, Decorators, Item, VirtualDirection, VirtualItemSize, VirtualVector};
+use super::{
+    container, virtual_stack, Decorators, Item, ListClass, ListItemClass, VirtualDirection,
+    VirtualItemSize, VirtualVector,
+};
 use crate::context::ComputeLayoutCx;
 use crate::event::EventPropagation;
 use crate::id::ViewId;
@@ -125,7 +128,13 @@ where
         move |(_, e)| key_fn(e),
         move |(index, e)| {
             let id = ViewId::new();
-            let child = view_fn(e).into_view();
+            let child =
+                container(view_fn(e))
+                    .class(ListItemClass)
+                    .style(move |s| match direction {
+                        VirtualDirection::Horizontal => s.flex_row(),
+                        VirtualDirection::Vertical => s.flex_col(),
+                    });
             let child_id = child.id();
             id.set_children(vec![child]);
             Item {
@@ -156,6 +165,7 @@ where
         child_size: Size::ZERO,
         child,
     }
+    .class(ListClass)
     .keyboard_navigatable()
     .on_event(EventListener::KeyDown, move |e| {
         if let Event::KeyDown(key_event) = e {

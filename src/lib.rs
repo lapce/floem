@@ -171,6 +171,7 @@ mod profiler;
 pub mod renderer;
 pub mod responsive;
 pub mod style;
+pub(crate) mod theme;
 pub mod unit;
 mod update;
 pub(crate) mod view;
@@ -178,7 +179,6 @@ pub(crate) mod view_state;
 pub(crate) mod view_storage;
 pub mod view_tuple;
 pub mod views;
-pub mod widgets;
 pub mod window;
 mod window_handle;
 

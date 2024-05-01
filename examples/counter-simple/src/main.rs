@@ -1,7 +1,6 @@
 use floem::{
     reactive::create_signal,
-    views::{label, Decorators},
-    widgets::ButtonClass,
+    views::{label, ButtonClass, Decorators},
     IntoView,
 };
 
