@@ -1883,16 +1883,26 @@ fn rvline_offset(
 
 /// Move to the next visual line, giving the new information.  
 /// Returns `(new rel vline, offset)`
-fn next_rvline(
+pub fn next_rvline(
     layouts: &TextLayoutCache,
     text_prov: &impl TextLayoutProvider,
     rope_text: &RopeTextVal,
     RVLine { line, line_index }: RVLine,
 ) -> (RVLine, usize) {
     if let Some(layout_line) = layouts.get(line) {
-        if let Some((line_col, _)) = layout_line.layout_cols(text_prov, line).nth(line_index + 1) {
+        let (line_offset, line_end_offset, next_line_offset) = rope_text.line_offsets(line, true);
+        if let Some((line_col, _)) = layout_line
+            .layout_cols_offsets(
+                text_prov,
+                rope_text.clone(),
+                line,
+                line_offset,
+                line_end_offset,
+            )
+            .nth(line_index + 1)
+        {
             let line_col = text_prov.before_phantom_col(line, line_col);
-            let offset = rope_text.offset_of_line_col(line, line_col);
+            let offset = rope_text.offset_of_offset_col(line_offset, next_line_offset, line_col);
 
             (RVLine::new(line, line_index + 1), offset)
         } else {
