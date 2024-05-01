@@ -2,8 +2,8 @@ use floem::{
     event::{Event, EventListener},
     keyboard::Key,
     unit::UnitExt,
-    view::IntoView,
     views::{stack, text, Decorators},
+    IntoView,
 };
 
 fn app_view() -> impl IntoView {

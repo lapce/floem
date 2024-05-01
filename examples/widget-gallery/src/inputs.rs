@@ -2,9 +2,9 @@ use floem::{
     cosmic_text::{self, Weight},
     peniko::Color,
     reactive::create_rw_signal,
-    view::IntoView,
     views::{Decorators, SelectionCornerRadius},
     widgets::{text_input, PlaceholderTextClass},
+    IntoView,
 };
 
 use crate::form::{form, form_item};

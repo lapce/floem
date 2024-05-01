@@ -7,8 +7,8 @@ description = "A native Rust UI library with fine-grained reactivity"
 license.workspace = true
 
 [dependencies]
+peniko = { workspace = true }
 image = { workspace = true }
 resvg = { workspace = true }
 
-floem-peniko = "0.1.0"
-floem-cosmic-text = "0.7.1"
+floem-cosmic-text = "0.7.2"

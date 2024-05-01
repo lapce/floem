@@ -1,7 +1,7 @@
 use std::{hash::Hash, marker::PhantomData, ops::Range};
 
 use floem_reactive::{as_child_of_current_scope, create_effect, create_signal, Scope, WriteSignal};
-use kurbo::Rect;
+use peniko::kurbo::Rect;
 use smallvec::SmallVec;
 use taffy::{
     style::{Dimension, FlexDirection, LengthPercentage},
@@ -10,8 +10,8 @@ use taffy::{
 
 use crate::{
     context::ComputeLayoutCx,
+    id::ViewId,
     view::{self, IntoView, View},
-    view_storage::ViewId,
 };
 
 use super::{apply_diff, diff, Diff, DiffOpAdd, FxIndexSet, HashRun};
@@ -216,7 +216,9 @@ where
         (before_size, content_size, HashRun(hashed_items))
     });
 
-    let view_fn = Box::new(as_child_of_current_scope(move |e| view_fn(e).into_view()));
+    let view_fn = Box::new(as_child_of_current_scope(move |e| {
+        view_fn(e).into_any_view()
+    }));
 
     VirtualStack {
         id,

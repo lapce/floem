@@ -1,9 +1,9 @@
 use floem::{
     cosmic_text::Weight,
     unit::UnitExt,
-    view::IntoView,
     view_tuple::ViewTuple,
     views::{container, label, stack, Decorators},
+    IntoView,
 };
 
 pub fn form<VT: ViewTuple + 'static>(children: VT) -> impl IntoView {

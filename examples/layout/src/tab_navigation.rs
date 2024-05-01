@@ -4,8 +4,8 @@ use floem::{
     peniko::Color,
     reactive::{create_signal, ReadSignal, WriteSignal},
     style::{CursorStyle, Position},
-    view::IntoView,
     views::{container, h_stack, label, scroll, tab, v_stack, Decorators},
+    IntoView, View,
 };
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
@@ -105,7 +105,7 @@ pub fn tab_navigation_view() -> impl IntoView {
 
     let settings_view = v_stack((tabs_bar, main_content)).style(|s| s.width_full().height_full());
 
-    let id = settings_view.view_id();
+    let id = settings_view.id();
     settings_view.on_event_stop(EventListener::KeyUp, move |e| {
         if let floem::event::Event::KeyUp(e) = e {
             if e.key.logical_key == floem::keyboard::Key::Named(floem::keyboard::NamedKey::F11) {

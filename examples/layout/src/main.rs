@@ -3,10 +3,10 @@ use floem::{
     keyboard::{Key, NamedKey},
     kurbo::Size,
     style::AlignContent,
-    view::IntoView,
     views::{container, h_stack, label, v_stack, Decorators},
     widgets::button,
     window::{new_window, WindowConfig},
+    IntoView, View,
 };
 
 pub mod draggable_sidebar;
@@ -98,7 +98,7 @@ fn app_view() -> impl IntoView {
             .gap(0.0, 10.0)
     });
 
-    let id = view.view_id();
+    let id = view.id();
     view.on_event_stop(EventListener::KeyUp, move |e| {
         if let Event::KeyUp(e) = e {
             if e.key.logical_key == Key::Named(NamedKey::F11) {

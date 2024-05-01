@@ -2,10 +2,10 @@
 //!
 //!
 
-use floem_peniko::Color;
 use floem_renderer::cosmic_text;
 use floem_renderer::cosmic_text::{LineHeightValue, Weight};
 use im_rc::hashmap::Entry;
+use peniko::Color;
 use rustc_hash::FxHasher;
 use std::any::{type_name, Any};
 use std::collections::HashMap;
@@ -97,7 +97,7 @@ impl<T: StylePropValue> StylePropValue for Vec<T> {
 }
 impl StylePropValue for Px {
     fn debug_view(&self) -> Option<Box<dyn View>> {
-        Some(text(format!("{} px", self.0)).into_view())
+        Some(text(format!("{} px", self.0)).into_any_view())
     }
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         self.0.interpolate(&other.0, value).map(Px)
@@ -110,7 +110,7 @@ impl StylePropValue for PxPctAuto {
             Self::Pct(v) => format!("{}%", v),
             Self::Auto => "auto".to_string(),
         };
-        Some(text(label).into_view())
+        Some(text(label).into_any_view())
     }
 }
 impl StylePropValue for PxPct {
@@ -119,7 +119,7 @@ impl StylePropValue for PxPct {
             Self::Px(v) => format!("{} px", v),
             Self::Pct(v) => format!("{}%", v),
         };
-        Some(text(label).into_view())
+        Some(text(label).into_any_view())
     }
 }
 impl StylePropValue for Color {
@@ -142,7 +142,7 @@ impl StylePropValue for Color {
         Some(
             stack((text(format!("{self:?}")), color))
                 .style(|s| s.items_center())
-                .into_view(),
+                .into_any_view(),
         )
     }
 
@@ -261,7 +261,7 @@ impl StylePropInfo {
                     match v {
                         StyleMapValue::Val(v) => v.debug_view(),
 
-                        StyleMapValue::Unset => Some(text("Unset").into_view()),
+                        StyleMapValue::Unset => Some(text("Unset").into_any_view()),
                     }
                 } else {
                     panic!(
@@ -851,7 +851,7 @@ impl Style {
         self.set_map_selector(class.key, map)
     }
 
-    pub(crate) fn builtin(&self) -> BuiltinStyle<'_> {
+    pub fn builtin(&self) -> BuiltinStyle<'_> {
         BuiltinStyle { style: self }
     }
 

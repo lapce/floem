@@ -1,6 +1,6 @@
 use std::{any::Any, rc::Rc};
 
-use floem_peniko::Color;
+use peniko::Color;
 
 use crate::style::StyleMapValue;
 

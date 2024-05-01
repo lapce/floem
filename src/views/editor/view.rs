@@ -4,7 +4,8 @@ use crate::{
     action::{set_ime_allowed, set_ime_cursor_area},
     context::{LayoutCx, PaintCx, UpdateCx},
     cosmic_text::{Attrs, AttrsList, TextLayout},
-    event::{Event, EventListener},
+    event::{Event, EventListener, EventPropagation},
+    id::ViewId,
     keyboard::{Key, Modifiers, NamedKey},
     kurbo::{BezPath, Line, Point, Rect, Size, Vec2},
     peniko::Color,
@@ -13,9 +14,8 @@ use crate::{
     style_class,
     taffy::tree::NodeId,
     view::{IntoView, View},
-    view_storage::ViewId,
     views::{scroll, stack, Decorators},
-    EventPropagation, Renderer,
+    Renderer,
 };
 use floem_editor_core::{
     cursor::{ColPosition, CursorAffinity, CursorMode},
@@ -1115,7 +1115,7 @@ fn editor_content(
         let editor_content_view =
             editor_view(editor, is_active).style(move |s| s.absolute().cursor(CursorStyle::Text));
 
-        let id = editor_content_view.view_id();
+        let id = editor_content_view.id();
         ed.editor_view_id.set(Some(id));
 
         editor_content_view
@@ -1227,7 +1227,7 @@ mod tests {
     use std::{collections::HashMap, rc::Rc};
 
     use floem_reactive::create_rw_signal;
-    use kurbo::Rect;
+    use peniko::kurbo::Rect;
 
     use crate::views::editor::{
         view::LineInfo,

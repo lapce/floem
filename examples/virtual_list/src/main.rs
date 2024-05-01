@@ -1,9 +1,9 @@
 use floem::{
     reactive::create_signal,
     unit::UnitExt,
-    view::IntoView,
     views::{container, label, scroll, Decorators, VirtualDirection, VirtualItemSize},
     widgets::virtual_list,
+    IntoView,
 };
 
 fn app_view() -> impl IntoView {

@@ -1,7 +1,7 @@
 use floem::{
     peniko::Color,
-    view::IntoView,
     views::{label, Decorators},
+    IntoView,
 };
 
 fn app_view() -> impl IntoView {

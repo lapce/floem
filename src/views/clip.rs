@@ -1,8 +1,8 @@
-use kurbo::Size;
+use peniko::kurbo::Size;
 
 use crate::{
+    id::ViewId,
     view::{IntoView, View},
-    view_storage::ViewId,
 };
 
 /// A wrapper around a child View to clip painting. See [`clip`].

@@ -1,6 +1,6 @@
 use crate::{
+    id::ViewId,
     view::{IntoView, View},
-    view_storage::ViewId,
 };
 
 /// A simple wrapper around another View. See [`container`].

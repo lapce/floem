@@ -7,13 +7,13 @@ description = "A native Rust UI library with fine-grained reactivity"
 license.workspace = true
 
 [dependencies]
+peniko = { workspace = true }
 image = { workspace = true }
 resvg = { workspace = true }
 raw-window-handle = { workspace = true }
 
 futures = "0.3.26"
 anyhow = "1.0.69"
-floem-peniko = "0.1.0"
 swash = "0.1.8"
 floem_renderer = { path = "../renderer", version = "0.1.0" }
 softbuffer = "0.4.1"

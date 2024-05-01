@@ -2,9 +2,9 @@ use std::fmt::Display;
 
 use floem::{
     reactive::create_signal,
-    view::IntoView,
     views::{v_stack, Decorators},
     widgets::{labeled_radio_button, radio_button},
+    IntoView,
 };
 
 use crate::form::{form, form_item};

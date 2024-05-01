@@ -5,8 +5,8 @@ use floem::{
     reactive::{create_rw_signal, create_signal},
     style_class,
     unit::UnitExt,
-    view::IntoView,
     views::{label, stack, Decorators},
+    IntoView, View,
 };
 
 style_class!(pub Button);
@@ -98,7 +98,7 @@ fn app_view() -> impl IntoView {
             })
     });
 
-    let id = view.view_id();
+    let id = view.id();
     view.on_event_stop(EventListener::KeyUp, move |e| {
         if let Event::KeyUp(e) = e {
             if e.key.logical_key == Key::Named(NamedKey::F11) {

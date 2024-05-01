@@ -1,9 +1,9 @@
 use floem::{
     peniko::Color,
     style::CursorStyle,
-    view::IntoView,
     views::Decorators,
     widgets::{self, button, toggle_button},
+    IntoView,
 };
 
 use crate::form::{form, form_item};

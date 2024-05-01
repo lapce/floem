@@ -2,8 +2,8 @@ use floem::{
     keyboard::{Key, Modifiers, NamedKey},
     peniko::Color,
     reactive::{provide_context, use_context},
-    view::IntoView,
     views::{empty, label, v_stack, Decorators},
+    IntoView, View,
 };
 
 fn colored_label(text: String) -> impl IntoView {
@@ -46,7 +46,7 @@ fn app_view() -> impl IntoView {
             .gap(0, 5)
     });
 
-    let id = view.view_id();
+    let id = view.id();
     view.on_key_up(Key::Named(NamedKey::F11), Modifiers::empty(), move |_| {
         id.inspect()
     })

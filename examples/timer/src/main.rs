@@ -4,9 +4,9 @@ use floem::{
     action::exec_after,
     reactive::{create_effect, create_rw_signal},
     unit::UnitExt,
-    view::IntoView,
     views::{container, label, stack, text, v_stack, Decorators},
     widgets::{button, slider},
+    IntoView,
 };
 
 fn main() {

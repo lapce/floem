@@ -18,6 +18,8 @@ rust-version = "1.75"
 license.workspace = true
 
 [workspace.dependencies]
+peniko = "0.1.0"
+kurbo = { version = "0.11", features = ["serde"] }
 serde = "1.0"
 lapce-xi-rope = { version = "0.3.2", features = ["serde"] }
 strum = { version = "0.26.2" }
@@ -43,9 +45,9 @@ rfd = { version = "0.14.0", default-features = false, features = [
     "xdg-portal",
 ], optional = true }
 raw-window-handle = { workspace = true }
-kurbo = { version = "0.9.5", features = ["serde"] }
 unicode-segmentation = "1.10.0"
-floem-peniko = "0.1.0"
+peniko = { workspace = true }
+kurbo = { workspace = true }
 crossbeam-channel = "0.5.6"
 im-rc = "15.1.0"
 serde = { workspace = true, optional = true }

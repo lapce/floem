@@ -5,8 +5,8 @@ use floem::{
     reactive::create_signal,
     style::{Background, BorderColor, Outline, OutlineColor, Style, TextColor, Transition},
     style_class,
-    view::IntoView,
     views::{label, stack, text, Decorators},
+    {IntoView, View},
 };
 
 style_class!(pub Button);
@@ -145,7 +145,7 @@ fn app_view() -> impl IntoView {
     })
     .window_title(|| "Themes Example".to_string());
 
-    let id = view.view_id();
+    let id = view.id();
     view.on_event_stop(EventListener::KeyUp, move |e| {
         if let Event::KeyUp(e) = e {
             if e.key.logical_key == Key::Named(NamedKey::F11) {

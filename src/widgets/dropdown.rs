@@ -2,19 +2,18 @@ use std::{any::Any, rc::Rc};
 
 use floem_reactive::{as_child_of_current_scope, create_effect, create_updater, Scope};
 use floem_winit::keyboard::{Key, NamedKey};
-use kurbo::{Point, Rect};
+use peniko::kurbo::{Point, Rect};
 
 use crate::{
     action::{add_overlay, remove_overlay},
-    event::{Event, EventListener},
+    event::{Event, EventListener, EventPropagation},
+    id::ViewId,
     prop, prop_extractor,
     style::{Style, StyleClass, Width},
     style_class,
     unit::PxPctAuto,
     view::{default_compute_layout, IntoView, View},
-    view_storage::ViewId,
     views::{scroll, Decorators},
-    EventPropagation,
 };
 
 use super::list;
@@ -195,7 +194,7 @@ where
                 inner_list_id.request_focus();
             })
             .class(DropDownScrollClass)
-            .into_view()
+            .into_any_view()
     });
 
     let initial = create_updater(active_item, move |new_state| {
@@ -247,16 +246,16 @@ impl<T> DropDown<T> {
 
     fn swap_state(&self) {
         if self.overlay_id.is_some() {
-            self.id().update_state(Message::OpenState(false));
+            self.id.update_state(Message::OpenState(false));
         } else {
-            self.view_id().request_layout();
-            self.id().update_state(Message::OpenState(true));
+            self.id.request_layout();
+            self.id.update_state(Message::OpenState(true));
         }
     }
 
     fn open_dropdown(&mut self, cx: &mut crate::context::UpdateCx) {
         if self.overlay_id.is_none() {
-            self.view_id().request_layout();
+            self.id.request_layout();
             cx.app_state.compute_layout();
             if let Some(layout) = self.id.get_layout() {
                 self.update_list_style(layout.size.width as f64);
@@ -305,7 +304,7 @@ impl<T> DropDown<T> {
         self,
         style: impl Fn(DropDownCustomStyle) -> DropDownCustomStyle + 'static,
     ) -> Self {
-        let id = self.view_id();
+        let id = self.id();
         let view_state = id.state();
         let offset = view_state.borrow_mut().style.next_offset();
         let style = create_updater(

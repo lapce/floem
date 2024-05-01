@@ -15,7 +15,7 @@ use floem_winit::{
     window::{CursorIcon, WindowId},
 };
 use image::DynamicImage;
-use kurbo::{Affine, Point, Rect, Size, Vec2};
+use peniko::kurbo::{Affine, Point, Rect, Size, Vec2};
 
 #[cfg(target_os = "linux")]
 use crate::unit::UnitExt;
@@ -23,11 +23,12 @@ use crate::unit::UnitExt;
 use crate::views::{container, stack, Decorators};
 use crate::{
     animate::{AnimPropKind, AnimUpdateMsg, AnimValue, AnimatedProp, SizeUnit},
+    app_state::AppState,
     context::{
-        AppState, ComputeLayoutCx, EventCx, FrameUpdate, LayoutCx, PaintCx, PaintState, StyleCx,
-        UpdateCx,
+        ComputeLayoutCx, EventCx, FrameUpdate, LayoutCx, PaintCx, PaintState, StyleCx, UpdateCx,
     },
     event::{Event, EventListener},
+    id::ViewId,
     inspector::{self, Capture, CaptureState, CapturedView},
     keyboard::{KeyEvent, Modifiers},
     menu::Menu,
@@ -41,8 +42,7 @@ use crate::{
         UPDATE_MESSAGES,
     },
     view::{default_compute_layout, view_tab_navigation, IntoView, View},
-    view_data::ChangeFlags,
-    view_storage::ViewId,
+    view_state::ChangeFlags,
     views::Decorators,
     widgets::{default_theme, Theme},
 };
@@ -117,7 +117,7 @@ impl WindowHandle {
         id.set_children(vec![widget]);
 
         let view = WindowView { id };
-        id.set_view(view.into_view());
+        id.set_view(view.into_any_view());
 
         let window = Arc::new(window);
         let paint_state = PaintState::new(window.clone(), scale, size.get_untracked() * scale);
@@ -502,7 +502,7 @@ impl WindowHandle {
         cx.compute_view_layout(self.id);
     }
 
-    pub fn render_frame(&mut self) {
+    pub(crate) fn render_frame(&mut self) {
         // Processes updates scheduled on this frame.
         for update in mem::take(&mut self.app_state.scheduled_updates) {
             match update {
@@ -541,7 +541,7 @@ impl WindowHandle {
                 .theme
                 .as_ref()
                 .map(|theme| theme.background)
-                .unwrap_or(floem_peniko::Color::WHITE);
+                .unwrap_or(peniko::Color::WHITE);
             // fill window with default white background if it's not transparent
             cx.fill(
                 &self
@@ -893,7 +893,7 @@ impl WindowHandle {
                             view.on_cleanup(move || {
                                 scope.dispose();
                             })
-                            .into_view(),
+                            .into_any_view(),
                         );
                         self.id.request_all();
                     }

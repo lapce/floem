@@ -2,9 +2,9 @@ use taffy::style::FlexDirection;
 
 use crate::{
     context::UpdateCx,
+    id::ViewId,
     style::{Style, StyleClassRef},
     view::{IntoView, View},
-    view_storage::ViewId,
     view_tuple::ViewTuple,
 };
 
@@ -16,7 +16,10 @@ pub struct Stack {
     direction: Option<FlexDirection>,
 }
 
-fn create_stack(children: Vec<Box<dyn View>>, direction: Option<FlexDirection>) -> Stack {
+pub(crate) fn create_stack(
+    children: Vec<Box<dyn View>>,
+    direction: Option<FlexDirection>,
+) -> Stack {
     let id = ViewId::new();
     id.set_children(children);
 
@@ -60,7 +63,7 @@ where
     create_stack(
         iterator
             .into_iter()
-            .map(|v| -> Box<dyn View> { v.into_view() })
+            .map(|v| -> Box<dyn View> { v.into_any_view() })
             .collect(),
         direction,
     )

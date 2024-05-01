@@ -6,8 +6,8 @@ use floem::{
     peniko::Color,
     reactive::{create_rw_signal, create_signal},
     style_class,
-    view::IntoView,
     views::{container, empty, h_stack, label, stack, static_label, text, v_stack, Decorators},
+    IntoView,
 };
 
 fn app_view() -> impl IntoView {

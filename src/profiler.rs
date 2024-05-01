@@ -1,5 +1,5 @@
 use crate::app::{add_app_update_event, AppUpdateEvent};
-use crate::event::{Event, EventListener};
+use crate::event::{Event, EventListener, EventPropagation};
 use crate::inspector::header;
 use crate::view::IntoView;
 use crate::views::{
@@ -7,10 +7,9 @@ use crate::views::{
     v_stack, v_stack_from_iter, Decorators,
 };
 use crate::widgets::button;
-use crate::EventPropagation;
-use floem_peniko::Color;
 use floem_reactive::{create_rw_signal, RwSignal, Scope};
 use floem_winit::window::WindowId;
+use peniko::Color;
 use std::fmt::Display;
 use std::mem;
 use std::rc::Rc;
@@ -140,11 +139,11 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                     info("Name", event.name.to_string()),
                     info("Time", format!("{:.4} ms", len * 1000.0)),
                 ))
-                .into_view()
+                .into_any_view()
             } else {
                 text("No hovered event")
                     .style(|s| s.padding(5.0))
-                    .into_view()
+                    .into_any_view()
             }
         },
     )
@@ -220,11 +219,11 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                         EventPropagation::Continue
                     }
                 })
-                .into_view()
+                .into_any_view()
             } else {
                 text("No selected frame")
                     .style(|s| s.padding(5.0))
-                    .into_view()
+                    .into_any_view()
             }
         },
     )
@@ -286,9 +285,9 @@ pub fn profiler(window_id: WindowId) -> impl IntoView {
         move || profile.get(),
         |profile| {
             if let Some(profile) = profile {
-                profile_view(&profile).into_view()
+                profile_view(&profile).into_any_view()
             } else {
-                text("No profile").style(|s| s.padding(5.0)).into_view()
+                text("No profile").style(|s| s.padding(5.0)).into_any_view()
             }
         },
     )

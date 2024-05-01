@@ -13,19 +13,18 @@ pub mod rich_text;
 pub mod slider;
 
 use floem::{
-    event::{Event, EventListener},
+    event::{Event, EventListener, EventPropagation},
     keyboard::{Key, NamedKey},
     peniko::Color,
     reactive::create_signal,
     style::{Background, CursorStyle, Transition},
     unit::UnitExt,
-    view::IntoView,
     views::{
         container, h_stack, label, scroll, stack, tab, v_stack, virtual_stack, Decorators,
         VirtualDirection, VirtualItemSize,
     },
     widgets::button,
-    EventPropagation,
+    {IntoView, View},
 };
 
 fn app_view() -> impl IntoView {
@@ -139,7 +138,7 @@ fn app_view() -> impl IntoView {
             .min_height(0)
     });
 
-    let id = list.view_id();
+    let id = list.id();
     let inspector = button(|| "Open Inspector")
         .on_click_stop(move |_| {
             id.inspect();
@@ -153,19 +152,19 @@ fn app_view() -> impl IntoView {
         move || tabs.get(),
         |it| *it,
         |it| match it {
-            "Label" => labels::label_view().into_view(),
-            "Button" => buttons::button_view().into_view(),
-            "Checkbox" => checkbox::checkbox_view().into_view(),
-            "Radio" => radio_buttons::radio_buttons_view().into_view(),
-            "Input" => inputs::text_input_view().into_view(),
-            "List" => lists::virt_list_view().into_view(),
-            "Menu" => context_menu::menu_view().into_view(),
-            "RichText" => rich_text::rich_text_view().into_view(),
-            "Image" => images::img_view().into_view(),
-            "Clipboard" => clipboard::clipboard_view().into_view(),
-            "Slider" => slider::slider_view().into_view(),
-            "Dropdown" => dropdown::dropdown_view().into_view(),
-            _ => label(|| "Not implemented".to_owned()).into_view(),
+            "Label" => labels::label_view().into_any_view(),
+            "Button" => buttons::button_view().into_any_view(),
+            "Checkbox" => checkbox::checkbox_view().into_any_view(),
+            "Radio" => radio_buttons::radio_buttons_view().into_any_view(),
+            "Input" => inputs::text_input_view().into_any_view(),
+            "List" => lists::virt_list_view().into_any_view(),
+            "Menu" => context_menu::menu_view().into_any_view(),
+            "RichText" => rich_text::rich_text_view().into_any_view(),
+            "Image" => images::img_view().into_any_view(),
+            "Clipboard" => clipboard::clipboard_view().into_any_view(),
+            "Slider" => slider::slider_view().into_any_view(),
+            "Dropdown" => dropdown::dropdown_view().into_any_view(),
+            _ => label(|| "Not implemented".to_owned()).into_any_view(),
         },
     )
     .style(|s| s.flex_col().items_start());
@@ -176,7 +175,7 @@ fn app_view() -> impl IntoView {
         .style(|s| s.padding(5.0).width_full().height_full().gap(5.0, 0.0))
         .window_title(|| "Widget Gallery".to_owned());
 
-    let id = view.view_id();
+    let id = view.id();
     view.on_event_stop(EventListener::KeyUp, move |e| {
         if let Event::KeyUp(e) = e {
             if e.key.logical_key == Key::Named(NamedKey::F11) {

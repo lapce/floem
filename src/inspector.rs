@@ -1,24 +1,25 @@
 use crate::app::{add_app_update_event, AppUpdateEvent};
-use crate::context::{AppState, StyleCx};
-use crate::event::{Event, EventListener};
+use crate::app_state::AppState;
+use crate::context::StyleCx;
+use crate::event::{Event, EventListener, EventPropagation};
+use crate::id::ViewId;
 use crate::profiler::profiler;
 use crate::style::{Style, StyleClassRef, StylePropRef, Transition};
 use crate::view::{IntoView, View};
-use crate::view_data::ChangeFlags;
-use crate::view_storage::ViewId;
+use crate::view_state::ChangeFlags;
 use crate::views::{
     container, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label, tab, text,
     v_stack, v_stack_from_iter, Decorators, Label,
 };
 use crate::widgets::button;
 use crate::window::WindowConfig;
-use crate::{new_window, style, EventPropagation};
-use floem_peniko::Color;
+use crate::{new_window, style};
 use floem_reactive::{create_effect, create_rw_signal, create_signal, RwSignal, Scope};
 use floem_winit::keyboard::{self, NamedKey};
 use floem_winit::window::WindowId;
 use image::DynamicImage;
-use kurbo::{Point, Rect, Size};
+use peniko::kurbo::{Point, Rect, Size};
+use peniko::Color;
 use slotmap::Key;
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
@@ -168,7 +169,7 @@ fn captured_view_name(view: &CapturedView) -> impl IntoView {
                     .font_size(10.0)
                     .color(Color::WHITE.with_alpha_factor(0.8))
             })
-            .into_view()
+            .into_any_view()
     } else if view.keyboard_navigable {
         text("Tab")
             .style(|s| {
@@ -181,9 +182,9 @@ fn captured_view_name(view: &CapturedView) -> impl IntoView {
                     .font_size(10.0)
                     .color(Color::BLACK.with_alpha_factor(0.4))
             })
-            .into_view()
+            .into_any_view()
     } else {
-        empty().into_view()
+        empty().into_any_view()
     };
     h_stack((id, tab, name)).style(|s| s.items_center())
 }
@@ -196,8 +197,8 @@ fn captured_view_no_children(
     capture_view: &CaptureView,
 ) -> impl IntoView {
     let offset = depth as f64 * 14.0;
-    let name = captured_view_name(view);
-    let name_id = name.view_id();
+    let name = captured_view_name(view).into_view();
+    let name_id = name.id();
     let height = 20.0;
     let id = view.id;
     let selected = capture_view.selected;
@@ -229,7 +230,7 @@ fn captured_view_no_children(
             highlighted.set(Some(id))
         });
 
-    let row_id = row.view_id();
+    let row_id = row.id();
     let scroll_to = capture_view.scroll_to;
     let expanding_selection = capture_view.expanding_selection;
     create_effect(move |_| {
@@ -254,7 +255,7 @@ fn captured_view_with_children(
     children: Vec<Box<dyn View>>,
 ) -> impl IntoView {
     let offset = depth as f64 * 14.0;
-    let name = captured_view_name(view);
+    let name = captured_view_name(view).into_view();
     let height = 20.0;
     let id = view.id;
     let selected = capture_view.selected;
@@ -264,7 +265,7 @@ fn captured_view_with_children(
 
     let expanded = create_rw_signal(true);
 
-    let name_id = name.view_id();
+    let name_id = name.id();
     let row = stack((
         empty()
             .style(move |s| {
@@ -320,7 +321,7 @@ fn captured_view_with_children(
         highlighted.set(Some(id))
     });
 
-    let row_id = row.view_id();
+    let row_id = row.id();
     let scroll_to = capture_view.scroll_to;
     create_effect(move |_| {
         if let Some(selection) = expanding_selection.get() {
@@ -362,14 +363,14 @@ fn captured_view(
     capture_view: &CaptureView,
 ) -> impl IntoView {
     if view.children.is_empty() {
-        captured_view_no_children(view, depth, capture_view).into_view()
+        captured_view_no_children(view, depth, capture_view).into_any_view()
     } else {
         let children: Vec<_> = view
             .children
             .iter()
             .map(|view| captured_view(view, depth + 1, capture_view))
             .collect();
-        captured_view_with_children(view, depth, capture_view, children).into_view()
+        captured_view_with_children(view, depth, capture_view, children).into_any_view()
     }
 }
 
@@ -388,7 +389,7 @@ fn info(name: impl Display, value: String) -> impl IntoView {
     info_row(name.to_string(), static_label(value))
 }
 
-fn info_row(name: String, view: impl IntoView + 'static) -> impl IntoView {
+fn info_row(name: String, view: impl View + 'static) -> impl View {
     stack((
         stack((static_label(name).style(|s| {
             s.margin_right(5.0)
@@ -579,7 +580,7 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<ViewId>>) -> i
                     v_stack_from_iter(style_list.into_iter().map(|((prop, name), value)| {
                         let name = name.strip_prefix("floem::style::").unwrap_or(&name);
                         let name = if direct.contains(&prop.key) {
-                            text(name).into_view()
+                            text(name).into_any_view()
                         } else {
                             stack((
                                 text("Inherited").style(|s| {
@@ -594,10 +595,10 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<ViewId>>) -> i
                                 }),
                                 text(name),
                             ))
-                            .into_view()
+                            .into_any_view()
                         };
                         let mut v = (prop.info().debug_view)(&*value).unwrap_or_else(|| {
-                            static_label((prop.info().debug_any)(&*value)).into_view()
+                            static_label((prop.info().debug_any)(&*value)).into_any_view()
                         });
                         if let Some(transition) = style
                             .map
@@ -619,7 +620,7 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<ViewId>>) -> i
                                 static_label(format!("{transition:?}")),
                             ))
                             .style(|s| s.items_center());
-                            v = v_stack((v, transition)).into_view();
+                            v = v_stack((v, transition)).into_any_view();
                         }
                         stack((
                             stack((name.style(|s| {
@@ -658,9 +659,11 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<ViewId>>) -> i
                     v_stack_from_iter(class_list.iter().map(text)).style(|s| s.gap(10, 10)),
                 ))
                 .style(|s| s.width_full())
-                .into_view()
+                .into_any_view()
             } else {
-                text("No selection").style(|s| s.padding(5.0)).into_view()
+                text("No selection")
+                    .style(|s| s.padding(5.0))
+                    .into_any_view()
             }
         },
     )
@@ -859,9 +862,9 @@ fn inspector_view(
     capture: &Option<Rc<Capture>>,
 ) -> impl IntoView {
     let view = if let Some(capture) = capture {
-        capture_view(window_id, capture_s, capture).into_view()
+        capture_view(window_id, capture_s, capture).into_any_view()
     } else {
-        text("No capture").into_view()
+        text("No capture").into_any_view()
     };
 
     stack((view,))
@@ -929,11 +932,11 @@ pub fn capture(window_id: WindowId) {
                     move |it| match it {
                         0 => dyn_container(
                             move || capture.get(),
-                            move |c| inspector_view(window_id, capture, &c).into_view(),
+                            move |c| inspector_view(window_id, capture, &c).into_any_view(),
                         )
                         .style(|s| s.width_full().height_full())
-                        .into_view(),
-                        1 => profiler(window_id).into_view(),
+                        .into_any_view(),
+                        1 => profiler(window_id).into_any_view(),
                         _ => panic!(),
                     },
                 )
@@ -946,7 +949,7 @@ pub fn capture(window_id: WindowId) {
                 });
 
                 let stack = v_stack((tabs, seperator, tab));
-                let id = stack.view_id();
+                let id = stack.id();
                 stack
                     .style(|s| s.width_full().height_full())
                     .on_event(EventListener::KeyUp, move |e| {

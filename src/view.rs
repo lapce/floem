@@ -44,49 +44,18 @@
 //!
 
 use floem_renderer::Renderer;
-use kurbo::{Circle, Insets, Line, Point, Rect, RoundedRect, Size};
+use peniko::kurbo::{Circle, Insets, Line, Point, Rect, RoundedRect, Size};
 use std::any::Any;
 use taffy::tree::NodeId;
 
 use crate::{
-    context::{AppState, ComputeLayoutCx, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx},
-    event::Event,
+    app_state::AppState,
+    context::{ComputeLayoutCx, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx},
+    event::{Event, EventPropagation},
+    id::ViewId,
     style::{BoxShadowProp, Style, StyleClassRef},
-    view_data::ViewStyleProps,
-    view_storage::ViewId,
-    EventPropagation,
+    view_state::ViewStyleProps,
 };
-
-// pub type AnyWidget = Box<dyn View>;
-
-/// The View trait provides an interface to access the [`ViewData`] and to build a [`Widget`] into a View.
-// pub trait ViewBuilder: Sized {
-//     fn view_data(&self) -> &ViewData;
-//     fn view_data_mut(&mut self) -> &mut ViewData;
-
-//     fn view_id(&self) -> ViewId {
-//         self.view_data().view_id
-//     }
-
-//     fn id(&self) -> Id {
-//         self.view_data().id()
-//     }
-
-//     /// This method builds the widget described by the view. Implementations may not assume that an
-//     /// implicit scope is available. It may differ from the scope the view was created in or may not
-//     /// be available at all.
-//     fn build(self) -> AnyWidget;
-
-//     /// Converts this view into the `AnyView` type.
-//     fn any(self) -> AnyView
-//     where
-//         Self: 'static,
-//     {
-//         AnyView {
-//             view: Box::new(self),
-//         }
-//     }
-// }
 
 /// A type that can hold any view.
 ///
@@ -122,37 +91,56 @@ use crate::{
 ///     label(|| "no check".to_string()).any()
 /// });
 /// ```
-// pub struct AnyView {
-//     view: Box<dyn DynView>,
-// }
 
-// impl ViewBuilder for AnyView {
-//     fn view_data(&self) -> &ViewData {
-//         self.view.view_data()
-//     }
+pub type AnyView = Box<dyn View>;
 
-//     fn view_data_mut(&mut self) -> &mut ViewData {
-//         self.view.view_data_mut()
-//     }
+pub trait IntoView: Sized {
+    type V: View + 'static;
 
-//     fn build(self) -> AnyWidget {
-//         self.view.build()
-//     }
-// }
+    fn into_view(self) -> Self::V;
 
-pub trait IntoView {
-    fn view_id(&self) -> ViewId;
-
-    fn into_view(self) -> Box<dyn View>;
+    fn into_any_view(self) -> AnyView {
+        Box::new(self.into_view())
+    }
 }
 
-impl<V: View + 'static> IntoView for V {
-    fn view_id(&self) -> ViewId {
-        self.id()
-    }
+impl<VW: View + 'static> IntoView for VW {
+    type V = VW;
 
-    fn into_view(self) -> Box<dyn View> {
-        Box::new(self)
+    fn into_view(self) -> Self::V {
+        self
+    }
+}
+
+impl IntoView for () {
+    type V = crate::views::Empty;
+
+    fn into_view(self) -> Self::V {
+        crate::views::empty()
+    }
+}
+
+impl IntoView for &str {
+    type V = crate::views::Label;
+
+    fn into_view(self) -> Self::V {
+        crate::views::text(self)
+    }
+}
+
+impl IntoView for String {
+    type V = crate::views::Label;
+
+    fn into_view(self) -> Self::V {
+        crate::views::text(self)
+    }
+}
+
+impl<IV: IntoView + 'static> IntoView for Vec<IV> {
+    type V = crate::views::Stack;
+
+    fn into_view(self) -> Self::V {
+        crate::views::stack_from_iter(self)
     }
 }
 
@@ -333,24 +321,6 @@ pub fn default_compute_layout(id: ViewId, cx: &mut ComputeLayoutCx) -> Option<Re
     }
     layout_rect
 }
-
-// pub fn default_event<V: View + ?Sized>(
-//     view: &mut V,
-//     cx: &mut EventCx,
-//     id_path: Option<&[Id]>,
-//     event: Event,
-// ) -> EventPropagation {
-//     let mut handled = false;
-//     view.for_each_child_rev_mut(&mut |child| {
-//         handled |= cx.view_event(child, id_path, event.clone()).is_processed();
-//         handled
-//     });
-//     if handled {
-//         EventPropagation::Stop
-//     } else {
-//         EventPropagation::Continue
-//     }
-// }
 
 pub(crate) fn paint_bg(
     cx: &mut PaintCx,

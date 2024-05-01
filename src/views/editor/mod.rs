@@ -68,7 +68,7 @@ use self::{
 prop!(pub WrapProp: WrapMethod {} = WrapMethod::EditorWidth);
 impl StylePropValue for WrapMethod {
     fn debug_view(&self) -> Option<Box<dyn View>> {
-        Some(crate::views::text(self).into_view())
+        Some(crate::views::text(self).into_any_view())
     }
 }
 prop!(pub CursorSurroundingLines: usize {} = 1);
@@ -83,13 +83,13 @@ prop!(pub PreeditUnderlineColor: Color {} = Color::WHITE);
 prop!(pub RenderWhitespaceProp: RenderWhitespace {} = RenderWhitespace::None);
 impl StylePropValue for RenderWhitespace {
     fn debug_view(&self) -> Option<Box<dyn View>> {
-        Some(crate::views::text(self).into_view())
+        Some(crate::views::text(self).into_any_view())
     }
 }
 prop!(pub IndentStyleProp: IndentStyle {} = IndentStyle::Spaces(4));
 impl StylePropValue for IndentStyle {
     fn debug_view(&self) -> Option<Box<dyn View>> {
-        Some(text(self).into_view())
+        Some(text(self).into_any_view())
     }
 }
 prop!(pub DropdownShadow: Option<Color> {} = None);
@@ -166,7 +166,7 @@ pub struct Editor {
 
     pub editor_view_focused: Trigger,
     pub editor_view_focus_lost: Trigger,
-    pub editor_view_id: RwSignal<Option<crate::view_storage::ViewId>>,
+    pub editor_view_id: RwSignal<Option<crate::id::ViewId>>,
 
     /// The current scroll position.
     pub scroll_delta: RwSignal<Vec2>,

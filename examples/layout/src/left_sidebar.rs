@@ -3,11 +3,11 @@ use floem::{
     peniko::Color,
     reactive::create_rw_signal,
     style::Position,
-    view::IntoView,
     views::{
         container, h_stack, label, scroll, v_stack, virtual_stack, Decorators, VirtualDirection,
         VirtualItemSize,
     },
+    IntoView, View,
 };
 
 const SIDEBAR_WIDTH: f64 = 140.0;
@@ -71,7 +71,7 @@ pub fn left_sidebar_view() -> impl IntoView {
 
     let view = v_stack((top_bar, content)).style(|s| s.width_full().height_full());
 
-    let id = view.view_id();
+    let id = view.id();
     view.on_event_stop(EventListener::KeyUp, move |e| {
         if let floem::event::Event::KeyUp(e) = e {
             if e.key.logical_key == floem::keyboard::Key::Named(floem::keyboard::NamedKey::F11) {

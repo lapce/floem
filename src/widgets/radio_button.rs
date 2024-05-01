@@ -1,6 +1,6 @@
 use crate::{
     style_class,
-    view::IntoView,
+    view::View,
     views::{
         self, container, create_value_container_signals, empty, h_stack, value_container,
         Decorators, ValueContainer,
@@ -13,7 +13,7 @@ style_class!(pub RadioButtonDotClass);
 style_class!(pub RadioButtonDotSelectedClass);
 style_class!(pub LabeledRadioButtonClass);
 
-fn radio_button_svg<T>(represented_value: T, actual_value: ReadSignal<T>) -> impl IntoView
+fn radio_button_svg<T>(represented_value: T, actual_value: ReadSignal<T>) -> impl View
 where
     T: Eq + PartialEq + Clone + 'static,
 {

@@ -1,9 +1,9 @@
 use crate::{
     action::{drag_window, toggle_window_maximized},
     event::{Event, EventListener},
+    id::ViewId,
     pointer::PointerButton,
     view::{IntoView, View},
-    view_storage::ViewId,
 };
 
 use super::Decorators;

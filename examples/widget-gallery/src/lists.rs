@@ -3,12 +3,12 @@ use floem::{
     peniko::Color,
     reactive::create_signal,
     style::JustifyContent,
-    view::IntoView,
     views::{
         container, h_stack, h_stack_from_iter, label, scroll, stack, v_stack, v_stack_from_iter,
         Decorators, VirtualDirection, VirtualItemSize, VirtualVector,
     },
     widgets::{button, checkbox, list, virtual_list},
+    IntoView,
 };
 
 use crate::form::{form, form_item};

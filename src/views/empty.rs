@@ -1,4 +1,4 @@
-use crate::{view::View, view_storage::ViewId};
+use crate::{id::ViewId, view::View};
 
 /// An empty View. See [`empty`].
 pub struct Empty {

@@ -3,8 +3,8 @@ use floem::{
     peniko::Color,
     reactive::create_signal,
     unit::UnitExt,
-    view::IntoView,
-    views::{label, stack, text, Decorators},
+    views::{label, stack, Decorators},
+    {IntoView, View},
 };
 
 fn app_view() -> impl IntoView {
@@ -12,7 +12,7 @@ fn app_view() -> impl IntoView {
     let view = stack((
         label(move || format!("Value: {}", counter.get())).style(|s| s.padding(10.0)),
         stack((
-            text("Increment")
+            "Increment"
                 .style(|s| {
                     s.border_radius(10.0)
                         .padding(10.0)
@@ -28,7 +28,7 @@ fn app_view() -> impl IntoView {
                     }
                 })
                 .keyboard_navigatable(),
-            text("Decrement")
+            "Decrement"
                 .on_click_stop({
                     move |_| {
                         set_counter.update(|value| *value -= 1);
@@ -45,7 +45,7 @@ fn app_view() -> impl IntoView {
                         .active(|s| s.color(Color::WHITE).background(Color::RED))
                 })
                 .keyboard_navigatable(),
-            text("Reset to 0")
+            "Reset to 0"
                 .on_click_stop(move |_| {
                     println!("Reset counter pressed"); // will not fire if button is disabled
                     set_counter.update(|value| *value = 0);
@@ -72,7 +72,7 @@ fn app_view() -> impl IntoView {
             .justify_center()
     });
 
-    let id = view.view_id();
+    let id = view.id();
     view.on_key_up(Key::Named(NamedKey::F11), Modifiers::empty(), move |_| {
         id.inspect()
     })

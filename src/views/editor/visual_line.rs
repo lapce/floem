@@ -70,8 +70,8 @@ use floem_editor_core::{
 };
 use floem_reactive::Scope;
 use floem_renderer::cosmic_text::{HitPosition, LayoutGlyph, TextLayout};
-use kurbo::Point;
 use lapce_xi_rope::{Interval, Rope};
+use peniko::kurbo::Point;
 
 use super::{layout::TextLayoutLine, listener::Listener};
 

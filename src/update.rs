@@ -1,13 +1,13 @@
 use std::{any::Any, cell::RefCell, collections::HashMap};
 
 use floem_winit::window::ResizeDirection;
-use kurbo::{Point, Rect, Size, Vec2};
+use peniko::kurbo::{Point, Rect, Size, Vec2};
 
 use crate::{
     animate::{AnimUpdateMsg, Animation},
+    id::ViewId,
     menu::Menu,
     view::View,
-    view_storage::ViewId,
 };
 
 thread_local! {

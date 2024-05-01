@@ -2,9 +2,9 @@ use floem::{
     peniko::Color,
     reactive::{create_rw_signal, create_signal},
     unit::UnitExt,
-    view::IntoView,
     views::{dyn_container, empty, h_stack, text, v_stack, Decorators},
     widgets::{button, labeled_radio_button, text_input},
+    IntoView,
 };
 use time::Date;
 
@@ -85,11 +85,11 @@ pub fn app_view() -> impl IntoView {
     let success_message = dyn_container(
         move || did_booking.get(),
         move |booked| match (booked, flight_mode.get()) {
-            (true, FlightMode::OneWay) => text(oneway_message(start_text.get())).into_view(),
+            (true, FlightMode::OneWay) => text(oneway_message(start_text.get())).into_any_view(),
             (true, FlightMode::Return) => {
-                text(return_message(start_text.get(), return_text.get())).into_view()
+                text(return_message(start_text.get(), return_text.get())).into_any_view()
             }
-            (false, _) => empty().into_view(),
+            (false, _) => empty().into_any_view(),
         },
     );
 

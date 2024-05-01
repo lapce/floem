@@ -2,11 +2,10 @@ use floem::{
     event::{Event, EventListener},
     keyboard::{Key, NamedKey},
     kurbo::Size,
-    view::IntoView,
     views::{label, v_stack, Decorators},
     widgets::button,
     window::{close_window, new_window, WindowConfig, WindowId},
-    Application,
+    Application, IntoView, View,
 };
 
 fn sub_window_view(id: WindowId) -> impl IntoView {
@@ -49,7 +48,7 @@ fn app_view() -> impl IntoView {
             .gap(0.0, 10.0)
     });
 
-    let id = view.view_id();
+    let id = view.id();
     view.on_event_stop(EventListener::KeyUp, move |e| {
         if let Event::KeyUp(e) = e {
             if e.key.logical_key == Key::Named(NamedKey::F11) {

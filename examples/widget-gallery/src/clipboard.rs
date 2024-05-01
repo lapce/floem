@@ -1,9 +1,8 @@
 use floem::{
     reactive::create_rw_signal,
-    view::IntoView,
     views::{h_stack, label, v_stack, Decorators},
     widgets::{button, text_input},
-    Clipboard,
+    Clipboard, IntoView,
 };
 
 use crate::form::{form, form_item};

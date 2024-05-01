@@ -1,8 +1,8 @@
 use floem_reactive::{as_child_of_current_scope, create_updater, Scope};
 
 use crate::{
+    id::ViewId,
     view::{IntoView, View},
-    view_storage::ViewId,
 };
 
 type ChildFn<T> = dyn Fn(T) -> (Box<dyn View>, Scope);
@@ -70,7 +70,9 @@ pub fn dyn_container<CF: Fn(T) -> Box<dyn View> + 'static, T: 'static>(
 
     let initial = create_updater(update_view, move |new_state| id.update_state(new_state));
 
-    let child_fn = Box::new(as_child_of_current_scope(move |e| child_fn(e).into_view()));
+    let child_fn = Box::new(as_child_of_current_scope(move |e| {
+        child_fn(e).into_any_view()
+    }));
     let (child, child_scope) = child_fn(initial);
     id.set_children(vec![child]);
     DynamicContainer {

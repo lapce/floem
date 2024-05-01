@@ -4,8 +4,8 @@ use floem_reactive::{create_effect, create_rw_signal, create_updater, RwSignal};
 
 use crate::{
     context::UpdateCx,
+    id::ViewId,
     view::{IntoView, View},
-    view_storage::ViewId,
 };
 
 /// A wrapper around another View that has value updates. See [`value_container`]

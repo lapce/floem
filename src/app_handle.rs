@@ -6,7 +6,7 @@ use floem_winit::{
     event_loop::{ControlFlow, EventLoopWindowTarget},
     window::WindowId,
 };
-use kurbo::{Point, Size};
+use peniko::kurbo::{Point, Size};
 
 use crate::{
     action::{Timer, TimerToken},

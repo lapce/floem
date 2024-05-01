@@ -1,16 +1,16 @@
 use super::{virtual_stack, Decorators, Item, VirtualDirection, VirtualItemSize, VirtualVector};
 use crate::context::ComputeLayoutCx;
+use crate::event::EventPropagation;
+use crate::id::ViewId;
 use crate::reactive::create_effect;
 use crate::view::IntoView;
-use crate::view_storage::ViewId;
-use crate::EventPropagation;
 use crate::{
     event::{Event, EventListener},
     keyboard::{Key, NamedKey},
     view::View,
 };
 use floem_reactive::{create_rw_signal, RwSignal};
-use kurbo::{Rect, Size};
+use peniko::kurbo::{Rect, Size};
 use std::hash::Hash;
 use std::rc::Rc;
 

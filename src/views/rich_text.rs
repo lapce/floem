@@ -2,15 +2,15 @@ use std::any::Any;
 
 use floem_reactive::create_effect;
 use floem_renderer::{cosmic_text::TextLayout, Renderer};
-use kurbo::{Point, Rect};
+use peniko::kurbo::{Point, Rect};
 use taffy::tree::NodeId;
 
 use crate::{
     context::UpdateCx,
+    id::ViewId,
     style::{Style, TextOverflow},
     unit::PxPct,
     view::View,
-    view_storage::ViewId,
 };
 
 pub struct RichText {

@@ -127,7 +127,7 @@ impl Application {
     ) -> Self {
         self.handle.as_mut().unwrap().new_window(
             &self.event_loop,
-            Box::new(|window_id| app_view(window_id).into_view()),
+            Box::new(|window_id| app_view(window_id).into_any_view()),
             config,
         );
         self

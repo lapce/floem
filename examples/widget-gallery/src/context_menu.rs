@@ -1,7 +1,7 @@
 use floem::{
     menu::{Menu, MenuItem},
-    view::IntoView,
     views::{label, stack, Decorators},
+    IntoView,
 };
 
 pub fn menu_view() -> impl IntoView {

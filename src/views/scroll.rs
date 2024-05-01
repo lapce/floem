@@ -1,18 +1,18 @@
-use floem_peniko::Color;
 use floem_reactive::create_effect;
 use floem_renderer::Renderer;
-use kurbo::{Point, Rect, Size, Vec2};
+use peniko::kurbo::{Point, Rect, Size, Vec2};
+use peniko::Color;
 
 use crate::{
-    context::{AppState, ComputeLayoutCx, PaintCx},
-    event::Event,
+    app_state::AppState,
+    context::{ComputeLayoutCx, PaintCx},
+    event::{Event, EventPropagation},
+    id::ViewId,
     prop, prop_extractor,
     style::{Background, BorderColor, BorderRadius, Style, StyleSelector},
     style_class,
     unit::Px,
     view::{IntoView, View},
-    view_storage::ViewId,
-    EventPropagation,
 };
 
 use super::Decorators;
@@ -145,7 +145,7 @@ impl Scroll {
     }
 
     pub fn ensure_visible(self, to: impl Fn() -> Rect + 'static) -> Self {
-        let id = self.view_id();
+        let id = self.id();
         create_effect(move |_| {
             let rect = to();
             id.update_state_deferred(ScrollState::EnsureVisible(rect));
@@ -155,7 +155,7 @@ impl Scroll {
     }
 
     pub fn scroll_delta(self, delta: impl Fn() -> Vec2 + 'static) -> Self {
-        let id = self.view_id();
+        let id = self.id();
         create_effect(move |_| {
             let delta = delta();
             id.update_state(ScrollState::ScrollDelta(delta));
@@ -165,7 +165,7 @@ impl Scroll {
     }
 
     pub fn scroll_to(self, origin: impl Fn() -> Option<Point> + 'static) -> Self {
-        let id = self.view_id();
+        let id = self.id();
         create_effect(move |_| {
             if let Some(origin) = origin() {
                 id.update_state_deferred(ScrollState::ScrollTo(origin));
@@ -177,7 +177,7 @@ impl Scroll {
 
     /// Scroll the scroll view to a percent (0-100)
     pub fn scroll_to_percent(self, percent: impl Fn() -> f32 + 'static) -> Self {
-        let id = self.view_id();
+        let id = self.id();
         create_effect(move |_| {
             let percent = percent() / 100.;
             id.update_state_deferred(ScrollState::ScrollToPercent(percent));
@@ -186,7 +186,7 @@ impl Scroll {
     }
 
     pub fn scroll_to_view(self, view: impl Fn() -> Option<ViewId> + 'static) -> Self {
-        let id = self.view_id();
+        let id = self.id();
         create_effect(move |_| {
             if let Some(view) = view() {
                 id.update_state_deferred(ScrollState::ScrollToView(view));
@@ -299,7 +299,7 @@ impl Scroll {
         if child_viewport != self.child_viewport {
             self.child.set_viewport(child_viewport);
             app_state.request_compute_layout_recursive(self.id());
-            app_state.request_paint(self.view_id());
+            app_state.request_paint(self.id());
             self.child_viewport = child_viewport;
             if let Some(onscroll) = &self.onscroll {
                 onscroll(child_viewport);
@@ -556,22 +556,22 @@ impl Scroll {
         let hover = self.point_hits_vertical_bar(app_state, pos);
         if self.v_handle_hover != hover {
             self.v_handle_hover = hover;
-            app_state.request_paint(self.view_id());
+            app_state.request_paint(self.id());
         }
         let hover = self.point_hits_horizontal_bar(app_state, pos);
         if self.h_handle_hover != hover {
             self.h_handle_hover = hover;
-            app_state.request_paint(self.view_id());
+            app_state.request_paint(self.id());
         }
         let hover = self.point_within_vertical_bar(app_state, pos);
         if self.v_track_hover != hover {
             self.v_track_hover = hover;
-            app_state.request_paint(self.view_id());
+            app_state.request_paint(self.id());
         }
         let hover = self.point_within_horizontal_bar(app_state, pos);
         if self.h_track_hover != hover {
             self.h_track_hover = hover;
-            app_state.request_paint(self.view_id());
+            app_state.request_paint(self.id());
         }
     }
 
@@ -713,9 +713,9 @@ impl View for Scroll {
                                 event.pos.y,
                                 scroll_offset,
                             );
-                            cx.update_active(self.view_id());
+                            cx.update_active(self.id());
                             // Force a repaint.
-                            cx.request_paint(self.view_id());
+                            self.id.request_paint();
                             return EventPropagation::Stop;
                         }
                         self.click_vertical_bar_area(cx.app_state, event.pos);
@@ -725,7 +725,7 @@ impl View for Scroll {
                             event.pos.y,
                             scroll_offset,
                         );
-                        cx.update_active(self.view_id());
+                        cx.update_active(self.id());
                         return EventPropagation::Stop;
                     } else if self.point_within_horizontal_bar(cx.app_state, pos) {
                         if self.point_hits_horizontal_bar(cx.app_state, pos) {
@@ -734,9 +734,9 @@ impl View for Scroll {
                                 event.pos.x,
                                 scroll_offset,
                             );
-                            cx.update_active(self.view_id());
+                            cx.update_active(self.id());
                             // Force a repaint.
-                            cx.request_paint(self.view_id());
+                            cx.app_state.request_paint(self.id());
                             return EventPropagation::Stop;
                         }
                         self.click_horizontal_bar_area(cx.app_state, event.pos);
@@ -746,7 +746,7 @@ impl View for Scroll {
                             event.pos.x,
                             scroll_offset,
                         );
-                        cx.update_active(self.view_id());
+                        cx.update_active(self.id());
                         return EventPropagation::Stop;
                     }
                 }
@@ -755,7 +755,7 @@ impl View for Scroll {
                 if self.are_bars_held() {
                     self.held = BarHeldState::None;
                     // Force a repaint.
-                    cx.request_paint(self.view_id());
+                    cx.app_state.request_paint(self.id());
                 }
             }
             Event::PointerMove(event) => {
@@ -797,7 +797,7 @@ impl View for Scroll {
                 self.h_handle_hover = false;
                 self.v_track_hover = false;
                 self.h_track_hover = false;
-                cx.request_paint(self.view_id());
+                cx.app_state.request_paint(self.id());
             }
             _ => {}
         }

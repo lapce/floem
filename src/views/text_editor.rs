@@ -1,16 +1,16 @@
 use std::rc::Rc;
 
 use floem_editor_core::{buffer::rope_text::RopeTextVal, indent::IndentStyle};
-use floem_peniko::Color;
 use floem_reactive::{create_updater, with_scope, RwSignal, Scope};
+use peniko::Color;
 
 use lapce_xi_rope::Rope;
 
 use crate::{
+    id::ViewId,
     keyboard::Modifiers,
     style::{CursorColor, Style},
     view::{IntoView, View},
-    view_storage::ViewId,
     views::editor::{
         command::CommandExecuted,
         id::EditorId,
@@ -126,7 +126,9 @@ impl View for TextEditor {
         let size = self
             .id
             .get_layout()
-            .map(|layout| kurbo::Size::new(layout.size.width as f64, layout.size.height as f64))
+            .map(|layout| {
+                peniko::kurbo::Size::new(layout.size.width as f64, layout.size.height as f64)
+            })
             .unwrap_or_default();
 
         let radius = match border_radius {
@@ -334,7 +336,7 @@ impl TextEditor {
         self,
         style: impl Fn(EditorCustomStyle) -> EditorCustomStyle + 'static,
     ) -> Self {
-        let id = self.view_id();
+        let id = self.id();
         let view_state = id.state();
         let offset = view_state.borrow_mut().style.next_offset();
         let style = create_updater(

@@ -3,14 +3,14 @@ use std::sync::mpsc::sync_channel;
 use std::sync::Arc;
 
 use anyhow::Result;
-use floem_peniko::{
-    kurbo::{Affine, Point, Rect, Shape, Vec2},
-    BrushRef, Color, GradientKind,
-};
 use floem_renderer::cosmic_text::{SubpixelBin, SwashCache, TextLayout};
 use floem_renderer::{tiny_skia, Img, Renderer};
 use floem_vger_rs::{Image, PaintIndex, PixelFormat, Vger};
 use image::{DynamicImage, EncodableLayout, RgbaImage};
+use peniko::{
+    kurbo::{Affine, Point, Rect, Shape, Vec2},
+    BrushRef, Color, GradientKind,
+};
 use wgpu::{
     Backends, Device, DeviceType, Queue, StoreOp, Surface, SurfaceConfiguration, TextureFormat,
 };
@@ -332,8 +332,8 @@ impl Renderer for VgerRenderer {
         } else {
             for segment in shape.path_segments(0.0) {
                 match segment {
-                    floem_peniko::kurbo::PathSeg::Line(_) => todo!(),
-                    floem_peniko::kurbo::PathSeg::Quad(bez) => {
+                    peniko::kurbo::PathSeg::Line(_) => todo!(),
+                    peniko::kurbo::PathSeg::Quad(bez) => {
                         self.vger.stroke_bezier(
                             self.vger_point(bez.p0),
                             self.vger_point(bez.p1),
@@ -343,7 +343,7 @@ impl Renderer for VgerRenderer {
                         );
                     }
 
-                    floem_peniko::kurbo::PathSeg::Cubic(_) => todo!(),
+                    peniko::kurbo::PathSeg::Cubic(_) => todo!(),
                 }
             }
         }
@@ -378,7 +378,7 @@ impl Renderer for VgerRenderer {
             let mut first = true;
             for segment in path.path_segments(0.1) {
                 match segment {
-                    floem_peniko::kurbo::PathSeg::Line(line) => {
+                    peniko::kurbo::PathSeg::Line(line) => {
                         if first {
                             first = false;
                             self.vger.move_to(self.vger_point(line.p0));
@@ -386,7 +386,7 @@ impl Renderer for VgerRenderer {
                         self.vger
                             .quad_to(self.vger_point(line.p1), self.vger_point(line.p1));
                     }
-                    floem_peniko::kurbo::PathSeg::Quad(quad) => {
+                    peniko::kurbo::PathSeg::Quad(quad) => {
                         if first {
                             first = false;
                             self.vger.move_to(self.vger_point(quad.p0));
@@ -394,7 +394,7 @@ impl Renderer for VgerRenderer {
                         self.vger
                             .quad_to(self.vger_point(quad.p1), self.vger_point(quad.p2));
                     }
-                    floem_peniko::kurbo::PathSeg::Cubic(_) => {}
+                    peniko::kurbo::PathSeg::Cubic(_) => {}
                 }
             }
             self.vger.fill(paint);

@@ -2,7 +2,6 @@ use floem::cosmic_text::{Attrs, AttrsList, Stretch, Style, Weight};
 use floem::keyboard::Modifiers;
 use floem::peniko::Color;
 use floem::reactive::RwSignal;
-use floem::view::IntoView;
 use floem::views::editor::core::buffer::rope_text::RopeText;
 use floem::views::editor::id::EditorId;
 use floem::views::editor::layout::TextLayoutLine;
@@ -20,6 +19,7 @@ use floem::{
     },
     widgets::button,
 };
+use floem::{IntoView, View};
 use lazy_static::lazy_static;
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -243,7 +243,7 @@ mod tests {
     ))
     .style(|s| s.size_full().flex_col().items_center().justify_center());
 
-    let id = view.view_id();
+    let id = view.id();
     view.on_key_up(Key::Named(NamedKey::F11), Modifiers::empty(), move |_| {
         id.inspect()
     })

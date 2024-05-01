@@ -4,10 +4,10 @@ use floem_renderer::{
     usvg::{self, Tree},
     Renderer,
 };
-use kurbo::Size;
+use peniko::kurbo::Size;
 use sha2::{Digest, Sha256};
 
-use crate::{style_class, view::View, view_storage::ViewId};
+use crate::{id::ViewId, style_class, view::View};
 
 use super::Decorators;
 

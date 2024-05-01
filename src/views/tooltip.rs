@@ -1,14 +1,13 @@
-use kurbo::Point;
+use peniko::kurbo::Point;
 use std::{rc::Rc, time::Duration};
 
 use crate::{
     action::{add_overlay, exec_after, remove_overlay, TimerToken},
     context::{EventCx, UpdateCx},
-    event::Event,
+    event::{Event, EventPropagation},
+    id::ViewId,
     prop, prop_extractor,
     view::{default_compute_layout, IntoView, View},
-    view_storage::ViewId,
-    EventPropagation,
 };
 
 prop!(pub Delay: f64 {} = 0.6);
@@ -30,7 +29,7 @@ pub struct Tooltip {
 }
 
 /// A view that displays a tooltip for its child.
-pub fn tooltip<V: IntoView + 'static, T: View + 'static>(
+pub fn tooltip<V: IntoView + 'static, T: IntoView + 'static>(
     child: V,
     tip: impl Fn() -> T + 'static,
 ) -> Tooltip {
@@ -39,7 +38,7 @@ pub fn tooltip<V: IntoView + 'static, T: View + 'static>(
     id.set_children(vec![child]);
     Tooltip {
         id,
-        tip: Rc::new(move || Box::new(tip())),
+        tip: Rc::new(move || tip().into_any_view()),
         hover: None,
         overlay: None,
         style: Default::default(),
@@ -90,7 +89,10 @@ impl View for Tooltip {
         EventPropagation::Continue
     }
 
-    fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<kurbo::Rect> {
+    fn compute_layout(
+        &mut self,
+        cx: &mut crate::context::ComputeLayoutCx,
+    ) -> Option<peniko::kurbo::Rect> {
         self.window_origin = Some(cx.window_origin);
         default_compute_layout(self.id, cx)
     }

@@ -1,7 +1,6 @@
 use floem::{
     keyboard::{Key, Modifiers, NamedKey},
     reactive::RwSignal,
-    view::IntoView,
     views::{
         editor::{
             command::{Command, CommandExecuted},
@@ -11,6 +10,7 @@ use floem::{
         stack, text_editor, Decorators,
     },
     widgets::button,
+    IntoView, View,
 };
 
 fn app_view() -> impl IntoView {
@@ -66,7 +66,7 @@ fn app_view() -> impl IntoView {
     ))
     .style(|s| s.size_full().flex_col().items_center().justify_center());
 
-    let id = view.view_id();
+    let id = view.id();
     view.on_key_up(Key::Named(NamedKey::F11), Modifiers::empty(), move |_| {
         id.inspect()
     })

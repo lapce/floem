@@ -1,20 +1,20 @@
 //! A toggle button widget. An example can be found in widget-gallery/button in the floem examples.
 
-use floem_peniko::Color;
 use floem_reactive::{create_effect, create_updater};
 use floem_renderer::Renderer;
 use floem_winit::keyboard::{Key, NamedKey};
-use kurbo::{Circle, Point, RoundedRect};
+use peniko::kurbo::{Circle, Point, RoundedRect};
+use peniko::Color;
 
 use crate::{
+    event::EventPropagation,
+    id::ViewId,
     prop, prop_extractor,
     style::{Background, BorderRadius, Foreground, Height, Style, StyleValue},
     style_class,
     unit::{PxPct, PxPctAuto},
     view::View,
-    view_storage::ViewId,
     views::Decorators,
-    EventPropagation,
 };
 
 enum SliderUpdate {
@@ -230,7 +230,10 @@ impl View for Slider {
         }
     }
 
-    fn compute_layout(&mut self, _cx: &mut crate::context::ComputeLayoutCx) -> Option<kurbo::Rect> {
+    fn compute_layout(
+        &mut self,
+        _cx: &mut crate::context::ComputeLayoutCx,
+    ) -> Option<peniko::kurbo::Rect> {
         self.update_restrict_position();
         let layout = self.id.get_layout().unwrap_or_default();
 
@@ -279,14 +282,14 @@ impl View for Slider {
             self.handle.radius
         };
 
-        self.base_bar = kurbo::Rect::new(
+        self.base_bar = peniko::kurbo::Rect::new(
             bar_x_start,
             base_bar_y_start,
             bar_x_start + base_bar_length,
             base_bar_y_start + base_bar_height,
         )
         .to_rounded_rect(base_bar_radius);
-        self.accent_bar = kurbo::Rect::new(
+        self.accent_bar = peniko::kurbo::Rect::new(
             bar_x_start,
             accent_bar_y_start,
             self.handle_center() as f64,

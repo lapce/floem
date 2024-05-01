@@ -6,9 +6,9 @@ use taffy::style::Display;
 
 use crate::{
     context::{StyleCx, UpdateCx},
+    id::ViewId,
     style::DisplayProp,
     view::{IntoView, View},
-    view_storage::ViewId,
 };
 
 use super::{apply_diff, diff, Diff, DiffOpAdd, FxIndexSet, HashRun};
@@ -81,7 +81,9 @@ where
         id.update_state(TabState::Active::<T>(active));
     });
 
-    let view_fn = Box::new(as_child_of_current_scope(move |e| view_fn(e).into_view()));
+    let view_fn = Box::new(as_child_of_current_scope(move |e| {
+        view_fn(e).into_any_view()
+    }));
 
     Tab {
         id,

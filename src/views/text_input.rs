@@ -1,14 +1,14 @@
 use crate::action::exec_after;
-use crate::event::EventListener;
+use crate::event::{EventListener, EventPropagation};
+use crate::id::ViewId;
 use crate::keyboard::{self, KeyEvent, Modifiers};
 use crate::pointer::{PointerButton, PointerInputEvent};
 use crate::reactive::{create_effect, RwSignal};
 use crate::style::{CursorColor, FontProps, PaddingLeft};
 use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
-use crate::view_storage::ViewId;
 use crate::widgets::PlaceholderTextClass;
-use crate::{prop, prop_extractor, Clipboard, EventPropagation};
+use crate::{prop, prop_extractor, Clipboard};
 use floem_reactive::create_rw_signal;
 use taffy::prelude::{Layout, NodeId};
 
@@ -25,7 +25,7 @@ use std::{
 };
 
 use crate::cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout};
-use kurbo::{Point, Rect, Size};
+use peniko::kurbo::{Point, Rect, Size};
 
 use crate::{
     context::{EventCx, UpdateCx},

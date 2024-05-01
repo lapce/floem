@@ -1,9 +1,9 @@
 use floem::{
     reactive::{create_effect, create_rw_signal},
     unit::UnitExt,
-    view::IntoView,
     views::{label, stack, text_input, Decorators},
     widgets::slider,
+    IntoView,
 };
 
 use crate::form::{self, form_item};

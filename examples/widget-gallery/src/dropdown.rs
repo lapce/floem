@@ -4,9 +4,9 @@ use floem::{
     peniko::Color,
     reactive::create_rw_signal,
     unit::UnitExt,
-    view::IntoView,
     views::{container, label, stack, svg, Decorators},
     widgets::dropdown::dropdown,
+    IntoView,
 };
 
 use crate::form::{self, form_item};
@@ -46,7 +46,7 @@ pub fn dropdown_view() -> impl IntoView {
             }),
         ))
         .style(|s| s.items_center().justify_between().size_full())
-        .into_view()
+        .into_any_view()
     };
 
     form::form({
@@ -59,7 +59,7 @@ pub fn dropdown_view() -> impl IntoView {
                 // iterator to build list in dropdown
                 Values::iter(),
                 // view for each item in the list
-                |item| label(move || item).into_view(),
+                |item| label(move || item).into_any_view(),
             )
             .show_list(move || show_dropdown.get())
             .on_accept(move |_val| show_dropdown.set(false))

@@ -1,9 +1,9 @@
 use floem::{
     cosmic_text::{Style as FontStyle, Weight},
     peniko::Color,
-    view::IntoView,
     views::{label, static_label, Decorators},
     widgets::tooltip,
+    IntoView,
 };
 
 use crate::form::{form, form_item};

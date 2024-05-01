@@ -5,7 +5,7 @@ use floem_renderer::Renderer;
 use image::{DynamicImage, GenericImageView};
 use sha2::{Digest, Sha256};
 
-use crate::{style::Style, unit::UnitExt, view::View, view_storage::ViewId};
+use crate::{id::ViewId, style::Style, unit::UnitExt, view::View};
 
 use taffy::tree::NodeId;
 

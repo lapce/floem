@@ -4,8 +4,8 @@ use floem::{
     responsive::{range, ScreenSize},
     style::TextOverflow,
     unit::UnitExt,
-    view::IntoView,
     views::{h_stack, label, stack, text, Decorators},
+    IntoView,
 };
 
 fn app_view() -> impl IntoView {

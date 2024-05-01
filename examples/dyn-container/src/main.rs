@@ -1,8 +1,8 @@
 use floem::{
     reactive::{create_rw_signal, RwSignal},
-    view::IntoView,
     views::{dyn_container, h_stack, label, v_stack, Decorators},
     widgets::button,
+    IntoView,
 };
 
 #[derive(Clone, PartialEq)]
@@ -44,8 +44,8 @@ fn app_view() -> impl IntoView {
         dyn_container(
             move || view.get(),
             move |value| match value {
-                ViewSwitcher::One => view_one().into_view(),
-                ViewSwitcher::Two => view_two(view).into_view(),
+                ViewSwitcher::One => view_one().into_any_view(),
+                ViewSwitcher::Two => view_two(view).into_any_view(),
             },
         )
         .style(|s| s.padding(10).border(1)),

@@ -8,9 +8,10 @@ use rustc_hash::FxHasher;
 use smallvec::SmallVec;
 
 use crate::{
-    context::{AppState, UpdateCx},
+    app_state::AppState,
+    context::UpdateCx,
+    id::ViewId,
     view::{IntoView, View},
-    view_storage::ViewId,
 };
 
 pub(crate) type FxIndexSet<T> = indexmap::IndexSet<T, BuildHasherDefault<FxHasher>>;
@@ -115,7 +116,9 @@ where
         id.update_state(diff);
         HashRun(hashed_items)
     });
-    let view_fn = Box::new(as_child_of_current_scope(move |e| view_fn(e).into_view()));
+    let view_fn = Box::new(as_child_of_current_scope(move |e| {
+        view_fn(e).into_any_view()
+    }));
     DynStack {
         id,
         children: Vec::new(),

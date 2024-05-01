@@ -1,19 +1,19 @@
 use crate::{
     context::PaintCx,
     cosmic_text::{Attrs, AttrsList, TextLayout},
+    id::ViewId,
     peniko::kurbo::Point,
     prop, prop_extractor,
     style::{Style, TextColor},
     style_class,
     view::View,
-    view_storage::ViewId,
     views::Decorators,
     Renderer,
 };
 use floem_editor_core::{cursor::CursorMode, mode::Mode};
-use floem_peniko::Color;
 use floem_reactive::RwSignal;
-use kurbo::Rect;
+use peniko::kurbo::Rect;
+use peniko::Color;
 
 use super::{CurrentLineColor, Editor};
 

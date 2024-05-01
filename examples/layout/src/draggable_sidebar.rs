@@ -1,14 +1,13 @@
 use floem::{
-    event::{Event, EventListener},
+    event::{Event, EventListener, EventPropagation},
     peniko::Color,
     reactive::{create_rw_signal, create_signal},
     style::{CursorStyle, Position},
-    view::IntoView,
     views::{
         container, h_stack, label, scroll, virtual_stack, Decorators, VirtualDirection,
         VirtualItemSize,
     },
-    EventPropagation,
+    IntoView, View,
 };
 
 const SIDEBAR_WIDTH: f64 = 100.0;
@@ -111,7 +110,7 @@ pub fn draggable_sidebar_view() -> impl IntoView {
         })
         .style(|s| s.width_full().height_full());
 
-    let id = view.view_id();
+    let id = view.id();
     view.on_event_stop(EventListener::KeyUp, move |e| {
         if let floem::event::Event::KeyUp(e) = e {
             if e.key.logical_key == floem::keyboard::Key::Named(floem::keyboard::NamedKey::F11) {

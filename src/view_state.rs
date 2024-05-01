@@ -13,9 +13,9 @@ use crate::{
     },
 };
 use bitflags::bitflags;
-use kurbo::{Point, Rect};
+use peniko::kurbo::{Point, Rect};
 use smallvec::SmallVec;
-use std::{collections::HashMap, marker::PhantomData, rc::Rc, time::Duration};
+use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::Rc, time::Duration};
 use taffy::tree::NodeId;
 
 /// A stack of view attributes. Each entry is associated with a view decorator call.
@@ -103,7 +103,7 @@ pub struct ViewState {
     pub(crate) event_listeners: HashMap<EventListener, Vec<Rc<Box<EventCallback>>>>,
     pub(crate) context_menu: Option<Box<MenuCallback>>,
     pub(crate) popout_menu: Option<Box<MenuCallback>>,
-    pub(crate) resize_listener: Option<ResizeListener>,
+    pub(crate) resize_listener: Option<Rc<RefCell<ResizeListener>>>,
     pub(crate) move_listener: Option<MoveListener>,
     pub(crate) cleanup_listener: Option<Box<dyn Fn()>>,
     pub(crate) last_pointer_down: Option<PointerInputEvent>,
@@ -224,10 +224,10 @@ impl ViewState {
     }
 
     pub(crate) fn update_resize_listener(&mut self, action: Box<ResizeCallback>) {
-        self.resize_listener = Some(ResizeListener {
+        self.resize_listener = Some(Rc::new(RefCell::new(ResizeListener {
             rect: Rect::ZERO,
             callback: action,
-        });
+        })));
     }
 
     pub(crate) fn update_move_listener(&mut self, action: Box<dyn Fn(Point)>) {

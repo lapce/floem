@@ -3,8 +3,8 @@ use std::ops::Range;
 use floem::{
     cosmic_text::{Attrs, AttrsList, Style, TextLayout},
     peniko::Color,
-    view::IntoView,
     views::{rich_text, scroll},
+    IntoView,
 };
 
 pub fn rich_text_view() -> impl IntoView {

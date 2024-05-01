@@ -3,16 +3,16 @@ use std::{any::Any, fmt::Display};
 use crate::{
     context::UpdateCx,
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
+    id::ViewId,
     prop_extractor,
     style::{FontProps, LineHeight, Style, TextColor, TextOverflow, TextOverflowProp},
     unit::PxPct,
     view::View,
-    view_storage::ViewId,
 };
-use floem_peniko::Color;
 use floem_reactive::create_updater;
 use floem_renderer::Renderer;
-use kurbo::{Point, Rect};
+use peniko::kurbo::{Point, Rect};
+use peniko::Color;
 use taffy::tree::NodeId;
 
 prop_extractor! {

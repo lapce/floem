@@ -1,10 +1,10 @@
 use super::{v_stack_from_iter, Decorators};
 use crate::context::StyleCx;
+use crate::event::EventPropagation;
+use crate::id::ViewId;
 use crate::reactive::create_effect;
 use crate::style::Style;
 use crate::view::IntoView;
-use crate::view_storage::ViewId;
-use crate::EventPropagation;
 use crate::{
     event::{Event, EventListener},
     keyboard::{Key, NamedKey},
@@ -74,7 +74,7 @@ where
     let stack = v_stack_from_iter(iterator.into_iter().enumerate().map(move |(index, v)| {
         let id = ViewId::new();
         let child = v.id();
-        id.set_children(vec![Box::new(v)]);
+        id.set_children(vec![v.into_any_view()]);
         Item {
             id,
             selection,

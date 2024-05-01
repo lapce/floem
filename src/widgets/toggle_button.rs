@@ -1,20 +1,20 @@
 //! A toggle button widget. An example can be found in widget-gallery/button in the floem examples.
 
-use floem_peniko::Color;
 use floem_reactive::{create_effect, create_updater};
 use floem_renderer::Renderer;
 use floem_winit::keyboard::{Key, NamedKey};
-use kurbo::{Point, Size};
+use peniko::kurbo::{Point, Size};
+use peniko::Color;
 
 use crate::{
+    event::EventPropagation,
+    id::ViewId,
     prop, prop_extractor,
     style::{self, Foreground, Style, StyleValue},
     style_class,
     unit::PxPct,
     view::View,
-    view_storage::ViewId,
     views::Decorators,
-    EventPropagation,
 };
 
 /// Controls the switching behavior of the switch. The cooresponding style prop is [ToggleButtonBehavior]
@@ -212,7 +212,10 @@ impl View for ToggleButton {
         EventPropagation::Continue
     }
 
-    fn compute_layout(&mut self, _cx: &mut crate::context::ComputeLayoutCx) -> Option<kurbo::Rect> {
+    fn compute_layout(
+        &mut self,
+        _cx: &mut crate::context::ComputeLayoutCx,
+    ) -> Option<peniko::kurbo::Rect> {
         let layout = self.id.get_layout().unwrap_or_default();
         let size = layout.size;
         self.width = size.width;

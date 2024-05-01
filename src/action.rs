@@ -4,14 +4,14 @@ use std::{
 };
 
 use floem_winit::window::ResizeDirection;
-use kurbo::{Point, Size, Vec2};
+use peniko::kurbo::{Point, Size, Vec2};
 
 use crate::{
     app::{add_app_update_event, AppUpdateEvent},
+    id::ViewId,
     menu::Menu,
     update::{UpdateMessage, CENTRAL_UPDATE_MESSAGES},
     view::View,
-    view_storage::ViewId,
     window_handle::{get_current_view, set_current_view},
 };
 

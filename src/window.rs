@@ -4,7 +4,7 @@ pub use floem_winit::window::Theme;
 pub use floem_winit::window::WindowButtons;
 pub use floem_winit::window::WindowId;
 pub use floem_winit::window::WindowLevel;
-use kurbo::{Point, Size};
+use peniko::kurbo::{Point, Size};
 
 use crate::app::{add_app_update_event, AppUpdateEvent};
 use crate::view::IntoView;
@@ -91,7 +91,7 @@ pub fn new_window<V: IntoView + 'static>(
     config: Option<WindowConfig>,
 ) {
     add_app_update_event(AppUpdateEvent::NewWindow {
-        view_fn: Box::new(|window_id| app_view(window_id).into_view()),
+        view_fn: Box::new(|window_id| app_view(window_id).into_any_view()),
         config,
     });
 }
