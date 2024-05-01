@@ -1271,7 +1271,7 @@ fn find_vline_of_line_forwards(
 /// phantom text.
 ///
 /// Returns `None` if the visual line is out of bounds.
-fn find_vline_init_info(
+pub fn find_vline_init_info(
     lines: &Lines,
     text_prov: &impl TextLayoutProvider,
     vline: VLine,
@@ -1298,214 +1298,58 @@ fn find_vline_init_info(
         return None;
     }
 
-    if vline.get() < last_vline.get() / 2 {
-        find_vline_init_info_forward(lines, text_prov, (VLine(0), 0), vline)
-    } else {
-        let last_rvline = lines.last_rvline(text_prov);
-        find_vline_init_info_rv_backward(lines, text_prov, (last_vline, last_rvline), vline)
-    }
-}
-
-// TODO(minor): should we package (VLine, buffer line) into a struct since we use it for these
-// pseudo relative calculations often?
-/// Find the `(start offset, rvline)` of a given [`VLine`]  
-///   
-/// start offset is into the file, rather than text layout's string, so it does not include
-/// phantom text.  
-///
-/// Returns `None` if the visual line is out of bounds, or if the start is past our target.
-fn find_vline_init_info_forward(
-    lines: &Lines,
-    text_prov: &impl TextLayoutProvider,
-    (start, start_line): (VLine, usize),
-    vline: VLine,
-) -> Option<(usize, RVLine)> {
-    if start > vline {
-        return None;
-    }
-
-    let rope_text = text_prov.rope_text();
-
-    let mut cur_line = start_line;
-    let mut cur_vline = start.get();
-
     let layouts = lines.text_layouts.borrow();
-    while cur_vline < vline.get() {
-        let line_count = if let Some(text_layout) = layouts.get(cur_line) {
-            let line_count = text_layout.line_count();
+    let layouts = &layouts.layouts;
+    let base_line = layouts.base_line;
 
-            // We can then check if the visual line is in this intervening range.
-            if cur_vline + line_count > vline.get() {
-                // We found the line that contains the visual line.
-                // We can now find the offset of the visual line within the line.
-                let line_index = vline.get() - cur_vline;
-                // TODO: is it fine to unwrap here?
-                let col = text_layout
+    if base_line > vline.get() {
+        // The vline is not within the rendered, thus it is linear
+        let line = vline.get();
+        return Some((rope_text.offset_of_line(line), RVLine::new(line, 0)));
+    }
+
+    let mut cur_vline = base_line;
+    for (i, entry) in layouts.layouts.iter().enumerate() {
+        let cur_line = base_line + i;
+
+        let line_count = entry.as_ref().map(|l| l.line_count()).unwrap_or(1);
+
+        if cur_vline + line_count > vline.get() {
+            let line_index = vline.get() - cur_vline;
+            let col = if let Some(entry) = &entry {
+                let col = entry
                     .start_layout_cols(text_prov, cur_line)
                     .nth(line_index)
                     .unwrap_or(0);
-                let col = text_prov.before_phantom_col(cur_line, col);
+                text_prov.before_phantom_col(cur_line, col)
+            } else {
+                0
+            };
 
-                let offset = rope_text.offset_of_line_col(cur_line, col);
-                return Some((offset, RVLine::new(cur_line, line_index)));
-            }
+            let offset = rope_text.offset_of_line_col(cur_line, col);
+            return Some((offset, RVLine::new(cur_line, line_index)));
+        }
 
-            // The visual line is not in this line, so we have to keep looking.
-            line_count
-        } else {
-            // There was no text layout so we only have to consider the line breaks in this line.
-            // Which, since we don't handle phantom text, is just one.
-
-            1
-        };
-
-        cur_line += 1;
         cur_vline += line_count;
     }
 
-    // We've reached the visual line we're looking for, we can return the offset.
-    // This also handles the case where the vline is past the end of the text.
+    let cur_line = base_line + layouts.layouts.len();
+
+    let linear_diff = vline.get() - cur_vline;
+
+    let cur_vline = cur_line + linear_diff;
+    let cur_line = cur_line + linear_diff;
+
     if cur_vline == vline.get() {
         if cur_line > rope_text.last_line() {
             return None;
         }
 
-        // We use cur_line because if our target vline is out of bounds
-        // then the result should be len
         Some((rope_text.offset_of_line(cur_line), RVLine::new(cur_line, 0)))
     } else {
-        // We've gone past the visual line we're looking for, so it is out of bounds.
+        // We've gone past the visual line we are looking for, so it is out of bounds.
         None
     }
-}
-
-/// Find the `(start offset, rvline)` of a given [`VLine`]
-///
-/// `start offset` is into the file, rather than the text layout's content, so it does not
-/// include phantom text.  
-///
-/// Returns `None` if the visual line is out of bounds or if the start is before our target.  
-/// This iterates backwards.
-fn find_vline_init_info_rv_backward(
-    lines: &Lines,
-    text_prov: &impl TextLayoutProvider,
-    (start, start_rvline): (VLine, RVLine),
-    vline: VLine,
-) -> Option<(usize, RVLine)> {
-    if start < vline {
-        // The start was before the target.
-        return None;
-    }
-
-    // This would the vline at the very start of the buffer line
-    let shifted_start = VLine(start.get() - start_rvline.line_index);
-    match shifted_start.cmp(&vline) {
-        // The shifted start was equivalent to the vline, which makes it easy to compute
-        Ordering::Equal => {
-            let offset = text_prov.rope_text().offset_of_line(start_rvline.line);
-            Some((offset, RVLine::new(start_rvline.line, 0)))
-        }
-        // The new start is before the vline, that means the vline is on the same line.
-        Ordering::Less => {
-            let line_index = vline.get() - shifted_start.get();
-            let layouts = lines.text_layouts.borrow();
-            if let Some(text_layout) = layouts.get(start_rvline.line) {
-                vline_init_info_b(
-                    text_prov,
-                    text_layout,
-                    RVLine::new(start_rvline.line, line_index),
-                )
-            } else {
-                // There was no text layout so we only have to consider the line breaks in this line.
-
-                let base_offset = text_prov.rope_text().offset_of_line(start_rvline.line);
-                Some((base_offset, RVLine::new(start_rvline.line, 0)))
-            }
-        }
-        Ordering::Greater => find_vline_init_info_backward(
-            lines,
-            text_prov,
-            (shifted_start, start_rvline.line),
-            vline,
-        ),
-    }
-}
-
-fn find_vline_init_info_backward(
-    lines: &Lines,
-    text_prov: &impl TextLayoutProvider,
-    (mut start, mut start_line): (VLine, usize),
-    vline: VLine,
-) -> Option<(usize, RVLine)> {
-    loop {
-        let (prev_vline, prev_line) = prev_line_start(lines, start, start_line)?;
-
-        match prev_vline.cmp(&vline) {
-            // We found the target, and it was at the start
-            Ordering::Equal => {
-                let offset = text_prov.rope_text().offset_of_line(prev_line);
-                return Some((offset, RVLine::new(prev_line, 0)));
-            }
-            // The target is on this line, so we can just search for it
-            Ordering::Less => {
-                let layouts = lines.text_layouts.borrow();
-                if let Some(text_layout) = layouts.get(prev_line) {
-                    return vline_init_info_b(
-                        text_prov,
-                        text_layout,
-                        RVLine::new(prev_line, vline.get() - prev_vline.get()),
-                    );
-                } else {
-                    // There was no text layout so we only have to consider the line breaks in this line.
-                    // Which, since we don't handle phantom text, is just one.
-
-                    let base_offset = text_prov.rope_text().offset_of_line(prev_line);
-                    return Some((base_offset, RVLine::new(prev_line, 0)));
-                }
-            }
-            // The target is before this line, so we have to keep searching
-            Ordering::Greater => {
-                start = prev_vline;
-                start_line = prev_line;
-            }
-        }
-    }
-}
-
-/// Get the previous (line, start visual line) from a (line, start visual line).
-fn prev_line_start(lines: &Lines, vline: VLine, line: usize) -> Option<(VLine, usize)> {
-    if line == 0 {
-        return None;
-    }
-
-    let layouts = lines.text_layouts.borrow();
-
-    let prev_line = line - 1;
-    if let Some(layout) = layouts.get(prev_line) {
-        let line_count = layout.line_count();
-        let prev_vline = vline.get() - line_count;
-        Some((VLine(prev_vline), prev_line))
-    } else {
-        // There's no layout for the previous line which makes this easy
-        Some((VLine(vline.get() - 1), prev_line))
-    }
-}
-
-fn vline_init_info_b(
-    text_prov: &impl TextLayoutProvider,
-    text_layout: &TextLayoutLine,
-    rv: RVLine,
-) -> Option<(usize, RVLine)> {
-    let rope_text = text_prov.rope_text();
-    let col = text_layout
-        .start_layout_cols(text_prov, rv.line)
-        .nth(rv.line_index)
-        .unwrap_or(0);
-    let col = text_prov.before_phantom_col(rv.line, col);
-
-    let offset = rope_text.offset_of_line_col(rv.line, col);
-
-    Some((offset, rv))
 }
 
 /// Information about the visual line and how it relates to the underlying buffer line.
@@ -2091,8 +1935,7 @@ mod tests {
     };
 
     use super::{
-        find_vline_init_info_forward, find_vline_init_info_rv_backward, ConfigId, Lines, RVLine,
-        ResolvedWrap, TextLayoutProvider, VLine,
+        find_vline_init_info, ConfigId, Lines, RVLine, ResolvedWrap, TextLayoutProvider, VLine,
     };
 
     /// For most of the logic we standardize on a specific font size.
@@ -2315,22 +2158,12 @@ mod tests {
         }
     }
 
-    fn ffvline_info(
+    fn fvline_info(
         lines: &Lines,
         text_prov: impl TextLayoutProvider,
         vline: VLine,
     ) -> Option<(usize, RVLine)> {
-        find_vline_init_info_forward(lines, &text_prov, (VLine(0), 0), vline)
-    }
-
-    fn fbvline_info(
-        lines: &Lines,
-        text_prov: impl TextLayoutProvider,
-        vline: VLine,
-    ) -> Option<(usize, RVLine)> {
-        let last_vline = lines.last_vline(&text_prov);
-        let last_rvline = lines.last_rvline(&text_prov);
-        find_vline_init_info_rv_backward(lines, &text_prov, (last_vline, last_rvline), vline)
+        find_vline_init_info(lines, &text_prov, vline)
     }
 
     #[test]
@@ -2340,15 +2173,10 @@ mod tests {
         let (text_prov, lines) = make_lines(&text, 50.0, false);
 
         assert_eq!(
-            ffvline_info(&lines, &text_prov, VLine(0)),
+            fvline_info(&lines, &text_prov, VLine(0)),
             Some((0, RVLine::new(0, 0)))
         );
-        assert_eq!(
-            fbvline_info(&lines, &text_prov, VLine(0)),
-            Some((0, RVLine::new(0, 0)))
-        );
-        assert_eq!(ffvline_info(&lines, &text_prov, VLine(1)), None);
-        assert_eq!(fbvline_info(&lines, &text_prov, VLine(1)), None);
+        assert_eq!(fvline_info(&lines, &text_prov, VLine(1)), None);
 
         // Test empty buffer with phantom text and no wrapping
         let text = Rope::from("");
@@ -2362,46 +2190,28 @@ mod tests {
         let (text_prov, lines) = make_lines_ph(&text, 20.0, false, ph);
 
         assert_eq!(
-            ffvline_info(&lines, &text_prov, VLine(0)),
+            fvline_info(&lines, &text_prov, VLine(0)),
             Some((0, RVLine::new(0, 0)))
         );
-        assert_eq!(
-            fbvline_info(&lines, &text_prov, VLine(0)),
-            Some((0, RVLine::new(0, 0)))
-        );
-        assert_eq!(ffvline_info(&lines, &text_prov, VLine(1)), None);
-        assert_eq!(fbvline_info(&lines, &text_prov, VLine(1)), None);
+        assert_eq!(fvline_info(&lines, &text_prov, VLine(1)), None);
 
         // Test empty buffer with phantom text and wrapping
         lines.init_all(0, ConfigId::new(0, 0), &text_prov, true);
 
         assert_eq!(
-            ffvline_info(&lines, &text_prov, VLine(0)),
+            fvline_info(&lines, &text_prov, VLine(0)),
             Some((0, RVLine::new(0, 0)))
         );
         assert_eq!(
-            fbvline_info(&lines, &text_prov, VLine(0)),
-            Some((0, RVLine::new(0, 0)))
-        );
-        assert_eq!(
-            ffvline_info(&lines, &text_prov, VLine(1)),
+            fvline_info(&lines, &text_prov, VLine(1)),
             Some((0, RVLine::new(0, 1)))
         );
         assert_eq!(
-            fbvline_info(&lines, &text_prov, VLine(1)),
-            Some((0, RVLine::new(0, 1)))
-        );
-        assert_eq!(
-            ffvline_info(&lines, &text_prov, VLine(2)),
-            Some((0, RVLine::new(0, 2)))
-        );
-        assert_eq!(
-            fbvline_info(&lines, &text_prov, VLine(2)),
+            fvline_info(&lines, &text_prov, VLine(2)),
             Some((0, RVLine::new(0, 2)))
         );
         // Going outside bounds only ends up with None
-        assert_eq!(ffvline_info(&lines, &text_prov, VLine(3)), None);
-        assert_eq!(fbvline_info(&lines, &text_prov, VLine(3)), None);
+        assert_eq!(fvline_info(&lines, &text_prov, VLine(3)), None);
         // The affinity would shift from the front/end of the phantom line
         // TODO: test affinity of logic behind clicking past the last vline?
     }
@@ -2418,14 +2228,11 @@ mod tests {
         for line in 0..rope_text.num_lines() {
             let line_offset = rope_text.offset_of_line(line);
 
-            let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
-
-            let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
+            let info = fvline_info(&lines, &text_prov, VLine(line)).unwrap();
             assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
         }
 
-        assert_eq!(ffvline_info(&lines, &text_prov, VLine(20)), None);
+        assert_eq!(fvline_info(&lines, &text_prov, VLine(20)), None);
 
         assert_eq!(
             render_breaks(&text, &mut lines),
@@ -2438,14 +2245,11 @@ mod tests {
         for line in 0..rope_text.num_lines() {
             let line_offset = rope_text.offset_of_line(line);
 
-            let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
-            let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
+            let info = fvline_info(&lines, &text_prov, VLine(line)).unwrap();
             assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
         }
 
-        assert_eq!(ffvline_info(&lines, &text_prov, VLine(20)), None);
-        assert_eq!(fbvline_info(&lines, &text_prov, VLine(20)), None);
+        assert_eq!(fvline_info(&lines, &text_prov, VLine(20)), None);
 
         assert_eq!(
             render_breaks(&text, &mut lines),
@@ -2473,10 +2277,7 @@ mod tests {
         for line in 0..rope_text.num_lines() {
             let line_offset = rope_text.offset_of_line(line);
 
-            let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
-
-            let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
+            let info = fvline_info(&lines, &text_prov, VLine(line)).unwrap();
             assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
         }
 
@@ -2487,10 +2288,7 @@ mod tests {
         for line in 0..rope_text.num_lines() {
             let line_offset = rope_text.offset_of_line(line);
 
-            let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
-
-            let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
+            let info = fvline_info(&lines, &text_prov, VLine(line)).unwrap();
             assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
         }
 
@@ -2509,10 +2307,7 @@ mod tests {
         for line in 0..rope_text.num_lines() {
             let line_offset = rope_text.offset_of_line(line);
 
-            let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
-
-            let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
+            let info = fvline_info(&lines, &text_prov, VLine(line)).unwrap();
             assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
         }
 
@@ -2532,26 +2327,15 @@ mod tests {
         // With text layouts, the phantom text is applied.
         // With a phantom text that takes up multiple lines, it does not affect the offsets
         // but it does affect the valid visual lines.
-        let info = ffvline_info(&lines, &text_prov, VLine(0));
+        let info = fvline_info(&lines, &text_prov, VLine(0));
         assert_eq!(info, Some((0, RVLine::new(0, 0))));
-        let info = fbvline_info(&lines, &text_prov, VLine(0));
-        assert_eq!(info, Some((0, RVLine::new(0, 0))));
-        let info = ffvline_info(&lines, &text_prov, VLine(1));
-        assert_eq!(info, Some((0, RVLine::new(0, 1))));
-        let info = fbvline_info(&lines, &text_prov, VLine(1));
+        let info = fvline_info(&lines, &text_prov, VLine(1));
         assert_eq!(info, Some((0, RVLine::new(0, 1))));
 
         for line in 2..rope_text.num_lines() {
             let line_offset = rope_text.offset_of_line(line - 1);
 
-            let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(
-                info,
-                (line_offset, RVLine::new(line - 1, 0)),
-                "vline {}",
-                line
-            );
-            let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
+            let info = fvline_info(&lines, &text_prov, VLine(line)).unwrap();
             assert_eq!(
                 info,
                 (line_offset, RVLine::new(line - 1, 0)),
@@ -2563,14 +2347,7 @@ mod tests {
         // Then there's one extra vline due to the phantom text wrapping
         let line_offset = rope_text.offset_of_line(rope_text.last_line());
 
-        let info = ffvline_info(&lines, &text_prov, VLine(rope_text.last_line() + 1));
-        assert_eq!(
-            info,
-            Some((line_offset, RVLine::new(rope_text.last_line(), 0))),
-            "line {}",
-            rope_text.last_line() + 1,
-        );
-        let info = fbvline_info(&lines, &text_prov, VLine(rope_text.last_line() + 1));
+        let info = fvline_info(&lines, &text_prov, VLine(rope_text.last_line() + 1));
         assert_eq!(
             info,
             Some((line_offset, RVLine::new(rope_text.last_line(), 0))),
@@ -2592,7 +2369,7 @@ mod tests {
 
         // With no text layouts, phantom text isn't initialized so it has no affect.
         for line in 0..rope_text.num_lines() {
-            let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
+            let info = fvline_info(&lines, &text_prov, VLine(line)).unwrap();
 
             let line_offset = rope_text.offset_of_line(line);
 
@@ -2618,22 +2395,15 @@ mod tests {
         for line in 0..3 {
             let line_offset = rope_text.offset_of_line(line);
 
-            let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
-
-            let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
+            let info = fvline_info(&lines, &text_prov, VLine(line)).unwrap();
             assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
         }
 
         // ' end'
-        let info = ffvline_info(&lines, &text_prov, VLine(3));
-        assert_eq!(info, Some((29, RVLine::new(2, 1))));
-        let info = fbvline_info(&lines, &text_prov, VLine(3));
+        let info = fvline_info(&lines, &text_prov, VLine(3));
         assert_eq!(info, Some((29, RVLine::new(2, 1))));
 
-        let info = ffvline_info(&lines, &text_prov, VLine(4));
-        assert_eq!(info, Some((34, RVLine::new(3, 0))));
-        let info = fbvline_info(&lines, &text_prov, VLine(4));
+        let info = fvline_info(&lines, &text_prov, VLine(4));
         assert_eq!(info, Some((34, RVLine::new(3, 0))));
     }
 
@@ -2651,15 +2421,11 @@ mod tests {
         for line in 0..rope_text.num_lines() {
             let line_offset = rope_text.offset_of_line(line);
 
-            let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "line {}", line);
-
-            let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
+            let info = fvline_info(&lines, &text_prov, VLine(line)).unwrap();
             assert_eq!(info, (line_offset, RVLine::new(line, 0)), "line {}", line);
         }
 
-        assert_eq!(ffvline_info(&lines, &text_prov, VLine(20)), None);
-        assert_eq!(fbvline_info(&lines, &text_prov, VLine(20)), None);
+        assert_eq!(fvline_info(&lines, &text_prov, VLine(20)), None);
 
         assert_eq!(
             render_breaks(&text, &mut lines),
@@ -2693,14 +2459,7 @@ mod tests {
         assert_eq!(lines.last_rvline(&text_prov), RVLine::new(3, 0));
         #[allow(clippy::needless_range_loop)]
         for line in 0..8 {
-            let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(
-                (info.0, info.1.line, info.1.line_index),
-                line_data[line],
-                "vline {}",
-                line
-            );
-            let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
+            let info = fvline_info(&lines, &text_prov, VLine(line)).unwrap();
             assert_eq!(
                 (info.0, info.1.line, info.1.line_index),
                 line_data[line],
@@ -2710,11 +2469,9 @@ mod tests {
         }
 
         // Directly out of bounds
-        assert_eq!(ffvline_info(&lines, &text_prov, VLine(9)), None,);
-        assert_eq!(fbvline_info(&lines, &text_prov, VLine(9)), None,);
+        assert_eq!(fvline_info(&lines, &text_prov, VLine(9)), None);
 
-        assert_eq!(ffvline_info(&lines, &text_prov, VLine(20)), None);
-        assert_eq!(fbvline_info(&lines, &text_prov, VLine(20)), None);
+        assert_eq!(fvline_info(&lines, &text_prov, VLine(20)), None);
 
         assert_eq!(
             render_breaks(&text, &mut lines),
@@ -2763,14 +2520,7 @@ mod tests {
         ];
         #[allow(clippy::needless_range_loop)]
         for vline in 0..10 {
-            let info = ffvline_info(&lines, &text_prov, VLine(vline)).unwrap();
-            assert_eq!(
-                (info.0, info.1.line, info.1.line_index),
-                line_data[vline],
-                "vline {}",
-                vline
-            );
-            let info = fbvline_info(&lines, &text_prov, VLine(vline)).unwrap();
+            let info = fvline_info(&lines, &text_prov, VLine(vline)).unwrap();
             assert_eq!(
                 (info.0, info.1.line, info.1.line_index),
                 line_data[vline],
@@ -2822,15 +2572,7 @@ mod tests {
         for line in 0..rope_text.num_lines() {
             let line_offset = rope_text.offset_of_line(line);
 
-            let info = ffvline_info(&lines, &text_prov, VLine(line));
-            assert_eq!(
-                info,
-                Some((line_offset, RVLine::new(line, 0))),
-                "line {}",
-                line
-            );
-
-            let info = fbvline_info(&lines, &text_prov, VLine(line));
+            let info = fvline_info(&lines, &text_prov, VLine(line));
             assert_eq!(
                 info,
                 Some((line_offset, RVLine::new(line, 0))),
@@ -2839,8 +2581,7 @@ mod tests {
             );
         }
 
-        assert_eq!(ffvline_info(&lines, &text_prov, VLine(20)), None);
-        assert_eq!(fbvline_info(&lines, &text_prov, VLine(20)), None);
+        assert_eq!(fvline_info(&lines, &text_prov, VLine(20)), None);
 
         assert_eq!(
             render_breaks(&text, &mut lines),
@@ -2874,15 +2615,7 @@ mod tests {
 
         #[allow(clippy::needless_range_loop)]
         for line in 0..9 {
-            let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(
-                (info.0, info.1.line, info.1.line_index),
-                line_data[line],
-                "vline {}",
-                line
-            );
-
-            let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
+            let info = fvline_info(&lines, &text_prov, VLine(line)).unwrap();
             assert_eq!(
                 (info.0, info.1.line, info.1.line_index),
                 line_data[line],
@@ -2892,11 +2625,9 @@ mod tests {
         }
 
         // Directly out of bounds
-        assert_eq!(ffvline_info(&lines, &text_prov, VLine(9)), None);
-        assert_eq!(fbvline_info(&lines, &text_prov, VLine(9)), None);
+        assert_eq!(fvline_info(&lines, &text_prov, VLine(9)), None);
 
-        assert_eq!(ffvline_info(&lines, &text_prov, VLine(20)), None);
-        assert_eq!(fbvline_info(&lines, &text_prov, VLine(20)), None);
+        assert_eq!(fvline_info(&lines, &text_prov, VLine(20)), None);
 
         // TODO: Currently the way we join phantom text and how cosmic wraps lines,
         // the phantom text will be joined with whatever the word next to it is - if there is no
