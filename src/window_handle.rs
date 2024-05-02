@@ -44,7 +44,6 @@ use crate::{
     },
     view::{default_compute_layout, view_tab_navigation, IntoView, View},
     view_state::ChangeFlags,
-    views::Decorators,
 };
 
 /// The top-level window handle that owns the winit Window.
@@ -109,7 +108,7 @@ impl WindowHandle {
                 context_menu_view(scope, window_id, context_menu, size),
             ))
             .style(|s| s.size(100.pct(), 100.pct()))
-            .any()
+            .into_any_view()
         });
 
         let widget = view;
@@ -1205,9 +1204,9 @@ fn context_menu_view(
     window_id: WindowId,
     context_menu: RwSignal<Option<(Menu, Point)>>,
     window_size: RwSignal<Size>,
-) -> impl ViewBuilder {
-    use floem_peniko::Color;
+) -> impl IntoView {
     use floem_reactive::{create_effect, create_rw_signal};
+    use peniko::Color;
 
     use crate::{
         app::{add_app_update_event, AppUpdateEvent},
@@ -1262,7 +1261,7 @@ fn context_menu_view(
         context_menu: RwSignal<Option<(Menu, Point)>>,
         focus_count: RwSignal<i32>,
         on_child_submenu_for_parent: RwSignal<bool>,
-    ) -> impl ViewBuilder {
+    ) -> impl IntoView {
         match menu {
             MenuDisplay::Item {
                 id,
@@ -1412,7 +1411,7 @@ fn context_menu_view(
                     .style(|s| s.min_width(100.pct())),
                 )
                 .style(|s| s.min_width(100.pct()))
-                .any()
+                .into_any_view()
             }
 
             MenuDisplay::Separator(_) => container(empty().style(|s| {
@@ -1422,7 +1421,7 @@ fn context_menu_view(
                     .background(Color::rgb8(92, 92, 92))
             }))
             .style(|s| s.min_width(100.pct()).padding_horiz(20.0))
-            .any(),
+            .into_any_view(),
         }
     }
 
