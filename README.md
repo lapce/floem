@@ -19,8 +19,7 @@ _The project is still maturing. We will make occasional breaking changes and add
 ```rust
 use floem::{
     reactive::create_signal,
-    views::{label, Decorators},
-    widgets::ButtonClass,
+    views::{label, ButtonClass, Decorators},
     IntoView,
 };
 

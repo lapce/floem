@@ -112,14 +112,6 @@ impl<VW: View + 'static> IntoView for VW {
     }
 }
 
-impl IntoView for () {
-    type V = crate::views::Empty;
-
-    fn into_view(self) -> Self::V {
-        crate::views::empty()
-    }
-}
-
 impl IntoView for &str {
     type V = crate::views::Label;
 
