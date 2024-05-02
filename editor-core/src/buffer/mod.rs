@@ -2,6 +2,7 @@ use std::{
     borrow::{Borrow, Cow},
     cmp::Ordering,
     collections::BTreeSet,
+    fmt::Display,
     sync::{
         atomic::{self, AtomicU64},
         Arc,
@@ -92,9 +93,9 @@ pub struct Buffer {
     line_ending: LineEnding,
 }
 
-impl ToString for Buffer {
-    fn to_string(&self) -> String {
-        self.text().to_string()
+impl Display for Buffer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.text().to_string())
     }
 }
 
