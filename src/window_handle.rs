@@ -20,7 +20,7 @@ use peniko::kurbo::{Affine, Point, Rect, Size, Vec2};
 #[cfg(target_os = "linux")]
 use crate::unit::UnitExt;
 #[cfg(target_os = "linux")]
-use crate::views::{container, stack, Decorators};
+use crate::views::{container, stack};
 use crate::{
     animate::{AnimPropKind, AnimUpdateMsg, AnimValue, AnimatedProp, SizeUnit},
     app_state::AppState,
