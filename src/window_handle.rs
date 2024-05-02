@@ -44,6 +44,7 @@ use crate::{
     },
     view::{default_compute_layout, view_tab_navigation, IntoView, View},
     view_state::ChangeFlags,
+    views::Decorators,
 };
 
 /// The top-level window handle that owns the winit Window.
