@@ -10,7 +10,7 @@
 //!
 //! ## The counter example to show composing views
 //! ```rust
-//! use floem::{reactive::*, views::*, widgets::*};
+//! use floem::{reactive::*, views::*};
 //!
 //! let (counter, set_counter) = create_signal(0);
 //! v_stack((

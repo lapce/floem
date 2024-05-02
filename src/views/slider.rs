@@ -87,7 +87,7 @@ pub struct Slider {
 /// # use floem::unit::UnitExt;
 /// # use floem::peniko::Color;
 /// # use floem::style::Foreground;
-/// # use floem::widgets::slider;
+/// # use floem::views::slider;
 /// # use floem::views::empty;
 /// # use floem::views::Decorators;
 /// empty()

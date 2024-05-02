@@ -144,7 +144,7 @@ impl<T: 'static> View for DropDown<T> {
 /// The default is `true`.
 /// Styling Example:
 /// ```rust
-/// # use floem::widgets::dropdown;
+/// # use floem::views::dropdown;
 /// # use floem::views::empty;
 /// # use floem::views::Decorators;
 /// // root view

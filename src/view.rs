@@ -20,14 +20,14 @@
 //! Then, we use a function to construct the slider. As part of this function we create an effect that will be re-run every time the signals in the  `percent` closure change.
 //! In the effect we send the change to the associated [`Id`]. This change can then be handled in the [`Widget::update`] method.
 //! ```rust
-//! use floem::view::ViewData;
+//! use floem::ViewId;
 //! use floem::reactive::*;
 //!
 //! struct Slider {
-//!     data: ViewData,
+//!     id: ViewId,
 //! }
 //! pub fn slider(percent: impl Fn() -> f32 + 'static) -> Slider {
-//!    let id = floem::id::Id::next();
+//!    let id = ViewId::new();
 //!
 //!    // If the following effect is not created, and `percent` is accesed directly,
 //!    // `percent` will only be accessed a single time and will not be reactive.
@@ -37,7 +37,7 @@
 //!        id.update_state(percent);
 //!    });
 //!    Slider {
-//!        data: ViewData::new(id),
+//!        id,
 //!    }
 //! }
 //! ```
@@ -80,8 +80,7 @@ use crate::{
 ///
 /// ```
 /// use floem::views::*;
-/// use floem::widgets::*;
-/// use floem::view::View;
+/// use floem::View;
 ///
 /// let check = true;
 ///
