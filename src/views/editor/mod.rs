@@ -1,4 +1,4 @@
-use core::indent::IndentStyle;
+use core::{buffer::InvalLines, indent::IndentStyle};
 use std::{cell::Cell, cmp::Ordering, collections::HashMap, rc::Rc, sync::Arc, time::Duration};
 
 use crate::{
@@ -322,7 +322,7 @@ impl Editor {
             // Get rid of all the effects
             self.effects_cx.get().dispose();
 
-            self.lines.clear(0, None);
+            self.lines.clear(None);
             self.doc.set(doc);
             if let Some(styling) = styling {
                 self.style.set(styling);
@@ -342,7 +342,7 @@ impl Editor {
             // Get rid of all the effects
             self.effects_cx.get().dispose();
 
-            self.lines.clear(0, None);
+            self.lines.clear(None);
 
             self.style.set(styling);
 
@@ -426,10 +426,10 @@ impl Editor {
                 cursor,
                 offset,
             }));
-
-            self.doc().cache_rev().update(|cache_rev| {
-                *cache_rev += 1;
-            });
+            let line = self.rope_text().line_of_offset(offset);
+            self.doc()
+                .inval_lines_listener()
+                .send(InvalLines::single(line));
         });
     }
 
@@ -440,10 +440,17 @@ impl Editor {
         }
 
         batch(|| {
+            let offset = preedit
+                .preedit
+                .with_untracked(|p| p.as_ref().map(|p| p.offset));
             preedit.preedit.set(None);
-            self.doc().cache_rev().update(|cache_rev| {
-                *cache_rev += 1;
-            });
+
+            if let Some(offset) = offset {
+                let line = self.rope_text().line_of_offset(offset);
+                self.doc()
+                    .inval_lines_listener()
+                    .send(InvalLines::single(line));
+            }
         });
     }
 
@@ -1082,15 +1089,12 @@ impl Editor {
     }
 
     pub fn text_layout_trigger(&self, line: usize, trigger: bool) -> Arc<TextLayoutLine> {
-        let cache_rev = self.doc().cache_rev().get_untracked();
         self.lines
-            .get_init_text_layout(cache_rev, self.config_id(), self, line, trigger)
+            .get_init_text_layout(self.config_id(), self, line, trigger)
     }
 
     fn try_get_text_layout(&self, line: usize) -> Option<Arc<TextLayoutLine>> {
-        let cache_rev = self.doc().cache_rev().get_untracked();
-        self.lines
-            .try_get_text_layout(cache_rev, self.config_id(), line)
+        self.lines.try_get_text_layout(self.config_id(), line)
     }
 
     /// Create rendable whitespace layout by creating a new text layout
@@ -1426,9 +1430,6 @@ pub fn normal_compute_screen_lines(
     let min_vline = VLine((y0 / line_height as f64).floor() as usize);
     let max_vline = VLine((y1 / line_height as f64).ceil() as usize);
 
-    let cache_rev = editor.doc.get().cache_rev().get();
-    editor.lines.check_cache_rev(cache_rev);
-
     let min_info = editor.iter_vlines(false, min_vline).next();
 
     let mut rvlines = Vec::new();
@@ -1449,7 +1450,6 @@ pub fn normal_compute_screen_lines(
     let iter = lines
         .iter_rvlines_init(
             editor.text_prov(),
-            cache_rev,
             editor.config_id(),
             min_info.rvline,
             false,

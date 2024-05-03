@@ -97,8 +97,6 @@ pub trait Document: DocumentPhantom + Downcast {
         RopeTextVal::new(self.text())
     }
 
-    fn cache_rev(&self) -> RwSignal<u64>;
-
     // TODO(minor): visual line doesn't really need to know the old rope that `InvalLines` passes
     // around, should we just have a separate structure that doesn't have that field?
     fn inval_lines_listener(&self) -> Listener<InvalLines>;
@@ -179,7 +177,13 @@ pub trait Document: DocumentPhantom + Downcast {
     fn receive_char(&self, ed: &Editor, c: &str);
 
     /// Perform a single edit.  
-    fn edit_single(&self, ed: &Editor, selection: Selection, content: &str, edit_type: EditType) {
+    fn edit_single(
+        &self,
+        ed: Option<&Editor>,
+        selection: Selection,
+        content: &str,
+        edit_type: EditType,
+    ) {
         let mut iter = std::iter::once((selection, content));
         self.edit(ed, &mut iter, edit_type);
     }
@@ -195,13 +199,13 @@ pub trait Document: DocumentPhantom + Downcast {
     ///     editor,
     ///     button(|| "Append 'Hello'").on_click_stop(move |_| {
     ///         let text = doc.text();
-    ///         doc.edit_single(Selection::caret(text.len()), "Hello", EditType::InsertChars);
+    ///         doc.edit_single(None, Selection::caret(text.len()), "Hello", EditType::InsertChars);
     ///     })
     /// ))
     /// ```
     fn edit(
         &self,
-        ed: &Editor,
+        ed: Option<&Editor>,
         iter: &mut dyn Iterator<Item = (Selection, &str)>,
         edit_type: EditType,
     );
@@ -466,10 +470,6 @@ where
         self.doc.rope_text()
     }
 
-    fn cache_rev(&self) -> RwSignal<u64> {
-        self.doc.cache_rev()
-    }
-
     fn inval_lines_listener(&self) -> Listener<InvalLines> {
         self.doc.inval_lines_listener()
     }
@@ -516,13 +516,19 @@ where
         self.doc.receive_char(ed, c)
     }
 
-    fn edit_single(&self, ed: &Editor, selection: Selection, content: &str, edit_type: EditType) {
+    fn edit_single(
+        &self,
+        ed: Option<&Editor>,
+        selection: Selection,
+        content: &str,
+        edit_type: EditType,
+    ) {
         self.doc.edit_single(ed, selection, content, edit_type)
     }
 
     fn edit(
         &self,
-        ed: &Editor,
+        ed: Option<&Editor>,
         iter: &mut dyn Iterator<Item = (Selection, &str)>,
         edit_type: EditType,
     ) {

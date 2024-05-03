@@ -77,6 +77,14 @@ impl InvalLines {
             new_count,
         }
     }
+
+    pub fn single(start_line: usize) -> Self {
+        Self {
+            start_line,
+            inval_count: 1,
+            new_count: 1,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
