@@ -1307,6 +1307,7 @@ fn create_view_effects(cx: Scope, ed: &Editor) {
     let ed2 = ed.clone();
     let ed3 = ed.clone();
     let ed4 = ed.clone();
+    let ed5 = ed.clone();
 
     // Reset cursor blinking whenever the cursor changes
     {
@@ -1329,6 +1330,11 @@ fn create_view_effects(cx: Scope, ed: &Editor) {
             *screen_lines = new_screen_lines;
         });
     };
+
+    let inval_lines_listener = ed.doc().inval_lines_listener();
+    inval_lines_listener.listen_with(cx, move |inval_lines| {
+        ed5.lines.invalidate(&inval_lines);
+    });
 
     // Listen for layout events, currently only when a layout is created, and update screen
     // lines based on that

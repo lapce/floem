@@ -25,6 +25,7 @@ use super::{
     actions::{handle_command_default, CommonAction},
     command::{Command, CommandExecuted},
     id::EditorId,
+    listener::Listener,
     phantom_text::{PhantomText, PhantomTextKind, PhantomTextLine},
     text::{Document, DocumentPhantom, PreeditData, SystemClipboard},
     Editor, EditorStyle,
@@ -67,6 +68,8 @@ pub struct TextDocument {
 
     pub placeholders: RwSignal<HashMap<EditorId, String>>,
 
+    inval_lines_listener: Listener<InvalLines>,
+
     // (cmd: &Command, count: Option<usize>, modifiers: ModifierState)
     /// Ran before a command is executed. If it says that it executed the command, then handlers
     /// after it will not be called.
@@ -99,6 +102,7 @@ impl TextDocument {
             preedit,
             keep_indent: Cell::new(true),
             auto_indent: Cell::new(false),
+            inval_lines_listener: Listener::new_empty(cx),
             placeholders,
             pre_command: Rc::new(RefCell::new(HashMap::new())),
             on_updates: Rc::new(RefCell::new(SmallVec::new())),
@@ -109,24 +113,21 @@ impl TextDocument {
         self.buffer
     }
 
-    fn update_cache_rev(&self) {
+    pub fn update_cache_rev(&self) {
         self.cache_rev.try_update(|cache_rev| {
             *cache_rev += 1;
         });
     }
 
-    fn on_update(&self, ed: Option<&Editor>, deltas: &[(Rope, RopeDelta, InvalLines)]) {
+    pub fn on_update(&self, ed: Option<&Editor>, deltas: &[(Rope, RopeDelta, InvalLines)]) {
         let on_updates = self.on_updates.borrow();
         let data = OnUpdate { editor: ed, deltas };
         for on_update in on_updates.iter() {
             on_update(data.clone());
         }
 
-        // TODO: check what cases the editor might be `None`...
-        if let Some(ed) = ed {
-            for (_, _, inval_lines) in deltas {
-                ed.lines.invalidate(inval_lines);
-            }
+        for (_, _, inval_lines) in deltas {
+            self.inval_lines_listener().send(inval_lines.clone());
         }
     }
 
@@ -171,6 +172,10 @@ impl Document for TextDocument {
 
     fn cache_rev(&self) -> RwSignal<u64> {
         self.cache_rev
+    }
+
+    fn inval_lines_listener(&self) -> Listener<InvalLines> {
+        self.inval_lines_listener
     }
 
     fn preedit(&self) -> PreeditData {

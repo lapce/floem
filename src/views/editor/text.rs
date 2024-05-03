@@ -10,7 +10,10 @@ use crate::{
 };
 use downcast_rs::{impl_downcast, Downcast};
 use floem_editor_core::{
-    buffer::rope_text::{RopeText, RopeTextVal},
+    buffer::{
+        rope_text::{RopeText, RopeTextVal},
+        InvalLines,
+    },
     command::EditCommand,
     cursor::Cursor,
     editor::EditType,
@@ -30,6 +33,7 @@ use super::{
     gutter::GutterClass,
     id::EditorId,
     layout::TextLayoutLine,
+    listener::Listener,
     normal_compute_screen_lines,
     phantom_text::{PhantomText, PhantomTextKind, PhantomTextLine},
     view::{ScreenLines, ScreenLinesBase},
@@ -94,6 +98,10 @@ pub trait Document: DocumentPhantom + Downcast {
     }
 
     fn cache_rev(&self) -> RwSignal<u64>;
+
+    // TODO(minor): visual line doesn't really need to know the old rope that `InvalLines` passes
+    // around, should we just have a separate structure that doesn't have that field?
+    fn inval_lines_listener(&self) -> Listener<InvalLines>;
 
     /// Find the next/previous offset of the match of the given character.  
     /// This is intended for use by the [Movement::NextUnmatched](floem_editor_core::movement::Movement::NextUnmatched) and
@@ -460,6 +468,10 @@ where
 
     fn cache_rev(&self) -> RwSignal<u64> {
         self.doc.cache_rev()
+    }
+
+    fn inval_lines_listener(&self) -> Listener<InvalLines> {
+        self.doc.inval_lines_listener()
     }
 
     fn find_unmatched(&self, offset: usize, previous: bool, ch: char) -> usize {

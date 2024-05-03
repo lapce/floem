@@ -126,7 +126,7 @@ impl RVLine {
 /// The cached text layouts.  
 /// Starts at a specific `base_line`, and then grows from there.  
 /// This is internally an array, so that newlines and moving the viewport up can be easily handled.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Layouts {
     base_line: usize,
     layouts: Vec<Option<Arc<TextLayoutLine>>>,
@@ -197,11 +197,18 @@ impl Layouts {
     pub fn invalidate(&mut self, start_line: usize, inval_count: usize, new_count: usize) {
         let ib_start_line = start_line.max(self.base_line);
         let start_idx = self.idx(ib_start_line).unwrap();
+
         if start_idx >= self.layouts.len() {
             return;
         }
 
-        let end_idx = start_idx + inval_count;
+        let end_idx = if start_line >= self.base_line {
+            start_idx + inval_count
+        } else {
+            // If start_line + inval_count isn't within the range of the layouts then it'd just be 0
+            let within_count = inval_count.saturating_sub(self.base_line - start_line);
+            start_idx + within_count
+        };
         let ib_end_idx = end_idx.min(self.layouts.len());
 
         for i in start_idx..ib_end_idx {
@@ -217,18 +224,33 @@ impl Layouts {
             self.layouts
                 .splice(ib_end_idx..ib_end_idx, std::iter::repeat(None).take(extra));
         } else {
-            let remove = inval_count - new_count;
-            // But remove is not just the difference between inval count and and new count
-            // As we cut off the end of the interval if it went past the end of the layouts,
+            // How many (invalidated) line entries should be removed.
+            // (Since all of the lines in the inval lines area are `None` now, it doesn't matter if
+            // they were some other line number originally if we're draining them out)
+            let mut to_remove = inval_count;
+            let mut to_keep = new_count;
+
             let oob_start = ib_start_line - start_line;
-            let oob_end = ib_end_idx - end_idx.min(self.layouts.len());
-            let oob_remove = oob_start + oob_end;
 
-            let remove = remove - oob_remove;
+            // Shift the base line backwards by the amount outside the start
+            // This allows us to not bother with removing entries from the array in some cases
+            {
+                let oob_start_remove = oob_start.min(to_remove);
 
-            // Since we set all the layouts in the interval to None, we can just do the simpler
-            // task of removing from the start.
-            self.layouts.drain(start_idx..start_idx + remove);
+                self.base_line -= oob_start_remove;
+                to_remove = to_remove.saturating_sub(oob_start_remove);
+                to_keep = to_keep.saturating_sub(oob_start_remove);
+            }
+
+            if to_remove == 0 {
+                // There is nothing more to remove
+                return;
+            }
+
+            let remove_start_idx = start_idx + to_keep;
+            let remove_end_idx = (start_idx + to_remove).min(self.layouts.len());
+
+            drop(self.layouts.drain(remove_start_idx..remove_end_idx));
         }
     }
 }
@@ -1935,7 +1957,8 @@ mod tests {
     };
 
     use super::{
-        find_vline_init_info, ConfigId, Lines, RVLine, ResolvedWrap, TextLayoutProvider, VLine,
+        find_vline_init_info, ConfigId, Layouts, Lines, RVLine, ResolvedWrap, TextLayoutProvider,
+        VLine,
     };
 
     /// For most of the logic we standardize on a specific font size.
@@ -3342,5 +3365,132 @@ mod tests {
             &Rope::from("aaaa\r\nbb bb cc\r\ncc dddd eeee ff\r\nff gggg"),
             "simple multiline (CRLF)",
         );
+    }
+
+    #[test]
+    fn layout_cache() {
+        let random_layout = |text: &str| {
+            let mut text_layout = TextLayout::new();
+            text_layout.set_text(text, AttrsList::new(Attrs::new()));
+
+            Arc::new(TextLayoutLine {
+                extra_style: Vec::new(),
+                text: text_layout,
+                whitespaces: None,
+                indent: 0.,
+                phantom_text: PhantomTextLine::default(),
+            })
+        };
+        let mut layouts = Layouts::default();
+
+        assert_eq!(layouts.base_line, 0);
+        assert!(layouts.layouts.is_empty());
+
+        layouts.insert(0, random_layout("abc"));
+        assert_eq!(layouts.base_line, 0);
+        assert_eq!(layouts.layouts.len(), 1);
+
+        layouts.insert(1, random_layout("def"));
+        assert_eq!(layouts.base_line, 0);
+        assert_eq!(layouts.layouts.len(), 2);
+
+        layouts.insert(10, random_layout("ghi"));
+        assert_eq!(layouts.base_line, 0);
+        assert_eq!(layouts.layouts.len(), 11);
+
+        let mut layouts = Layouts::default();
+        layouts.insert(10, random_layout("ghi"));
+        assert_eq!(layouts.base_line, 10);
+        assert_eq!(layouts.layouts.len(), 1);
+
+        layouts.insert(8, random_layout("jkl"));
+        assert_eq!(layouts.base_line, 8);
+        assert_eq!(layouts.layouts.len(), 3);
+
+        layouts.insert(5, random_layout("mno"));
+        assert_eq!(layouts.base_line, 5);
+        assert_eq!(layouts.layouts.len(), 6);
+
+        assert!(layouts.get(0).is_none());
+        assert!(layouts.get(5).is_some());
+        assert!(layouts.get(8).is_some());
+        assert!(layouts.get(10).is_some());
+        assert!(layouts.get(11).is_none());
+
+        let mut layouts2 = layouts.clone();
+        layouts2.invalidate(0, 1, 1);
+        assert!(layouts2.get(0).is_none());
+        assert!(layouts2.get(5).is_some());
+        assert!(layouts2.get(8).is_some());
+        assert!(layouts2.get(10).is_some());
+        assert!(layouts2.get(11).is_none());
+
+        let mut layouts2 = layouts.clone();
+        layouts2.invalidate(5, 1, 1);
+        assert!(layouts2.get(0).is_none());
+        assert!(layouts2.get(5).is_none());
+        assert!(layouts2.get(8).is_some());
+        assert!(layouts2.get(10).is_some());
+        assert!(layouts2.get(11).is_none());
+
+        layouts.invalidate(0, 6, 6);
+        assert!(layouts.get(5).is_none());
+        assert!(layouts.get(8).is_some());
+        assert!(layouts.get(10).is_some());
+        assert!(layouts.get(11).is_none());
+
+        let mut layouts = Layouts::default();
+        for i in 0..10 {
+            let text = format!("{}", i);
+            layouts.insert(i, random_layout(&text));
+        }
+
+        assert_eq!(layouts.base_line, 0);
+        assert_eq!(layouts.layouts.len(), 10);
+
+        layouts.invalidate(0, 10, 1);
+        assert!(layouts.get(0).is_none());
+        assert_eq!(layouts.len(), 1);
+
+        let mut layouts = Layouts::default();
+        for i in 0..10 {
+            let text = format!("{}", i);
+            layouts.insert(i, random_layout(&text));
+        }
+
+        layouts.invalidate(5, 800, 1);
+        assert!(layouts.get(0).is_some());
+        assert!(layouts.get(1).is_some());
+        assert!(layouts.get(2).is_some());
+        assert!(layouts.get(3).is_some());
+        assert!(layouts.get(4).is_some());
+        assert_eq!(layouts.len(), 6);
+
+        let mut layouts = Layouts::default();
+        for i in 5..10 {
+            let text = format!("{}", i);
+            layouts.insert(i, random_layout(&text));
+        }
+
+        assert_eq!(layouts.base_line, 5);
+
+        layouts.invalidate(0, 7, 1);
+        assert_eq!(layouts.base_line, 0);
+        assert!(layouts.get(0).is_some()); // was line 7
+        assert!(layouts.get(1).is_some()); // was line 8
+        assert!(layouts.get(2).is_some()); // was line 9
+        assert!(layouts.get(3).is_none());
+        assert!(layouts.get(4).is_none());
+        assert_eq!(layouts.len(), 3);
+
+        let mut layouts = Layouts::default();
+        for i in 0..10 {
+            let text = format!("{}", i);
+            layouts.insert(i, random_layout(&text));
+        }
+
+        layouts.invalidate(0, 800, 1);
+        assert!(layouts.get(0).is_none());
+        assert_eq!(layouts.len(), 1);
     }
 }
