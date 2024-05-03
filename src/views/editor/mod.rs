@@ -34,6 +34,7 @@ pub mod gutter;
 pub mod id;
 pub mod keypress;
 pub mod layout;
+pub mod line_render_cache;
 pub mod listener;
 pub mod movement;
 pub mod phantom_text;

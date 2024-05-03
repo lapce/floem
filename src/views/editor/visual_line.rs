@@ -75,7 +75,7 @@ use floem_renderer::cosmic_text::{HitPosition, LayoutGlyph, TextLayout};
 use lapce_xi_rope::{Interval, Rope};
 use peniko::kurbo::Point;
 
-use super::{layout::TextLayoutLine, listener::Listener};
+use super::{layout::TextLayoutLine, line_render_cache::LineRenderCache, listener::Listener};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ResolvedWrap {
@@ -123,145 +123,6 @@ impl RVLine {
     }
 }
 
-/// The cached text layouts.  
-/// Starts at a specific `base_line`, and then grows from there.  
-/// This is internally an array, so that newlines and moving the viewport up can be easily handled.
-#[derive(Default, Clone)]
-pub struct Layouts {
-    base_line: usize,
-    layouts: Vec<Option<Arc<TextLayoutLine>>>,
-}
-impl Layouts {
-    fn idx(&self, line: usize) -> Option<usize> {
-        line.checked_sub(self.base_line)
-    }
-
-    pub fn min_line(&self) -> usize {
-        self.base_line
-    }
-
-    pub fn max_line(&self) -> Option<usize> {
-        if self.layouts.is_empty() {
-            None
-        } else {
-            Some(self.min_line() + self.layouts.len() - 1)
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        self.layouts.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.layouts.is_empty()
-    }
-
-    pub fn clear(&mut self) {
-        self.base_line = 0;
-        self.layouts.clear();
-    }
-
-    pub fn get(&self, line: usize) -> Option<&Arc<TextLayoutLine>> {
-        let idx = self.idx(line)?;
-        self.layouts.get(idx).map(|x| x.as_ref()).flatten()
-    }
-
-    pub fn get_mut(&mut self, line: usize) -> Option<&mut Arc<TextLayoutLine>> {
-        let idx = self.idx(line)?;
-        self.layouts.get_mut(idx).map(|x| x.as_mut()).flatten()
-    }
-
-    pub fn insert(&mut self, line: usize, layout: Arc<TextLayoutLine>) {
-        if line < self.base_line {
-            let old_base = self.base_line;
-            self.base_line = line;
-            // Resize the layouts at the start to fit the new count
-            let new_count = old_base - line;
-            self.layouts
-                .splice(0..0, std::iter::repeat(None).take(new_count));
-        } else if self.layouts.is_empty() {
-            self.base_line = line;
-            self.layouts.push(None);
-        } else if line >= self.base_line + self.layouts.len() {
-            let new_len = line - self.base_line + 1;
-            self.layouts.resize(new_len, None);
-        }
-        let idx = self.idx(line).unwrap();
-        let res = self.layouts.get_mut(idx).unwrap();
-        *res = Some(layout);
-    }
-
-    /// Invalidates the layouts at the given `start_line` for `inval_count` lines.  
-    /// `new_count` is used to know whether to insert new line entries or to remove them, such as
-    /// for a newline.
-    pub fn invalidate(
-        &mut self,
-        InvalLines {
-            start_line,
-            inval_count,
-            new_count,
-        }: InvalLines,
-    ) {
-        let ib_start_line = start_line.max(self.base_line);
-        let start_idx = self.idx(ib_start_line).unwrap();
-
-        if start_idx >= self.layouts.len() {
-            return;
-        }
-
-        let end_idx = if start_line >= self.base_line {
-            start_idx + inval_count
-        } else {
-            // If start_line + inval_count isn't within the range of the layouts then it'd just be 0
-            let within_count = inval_count.saturating_sub(self.base_line - start_line);
-            start_idx + within_count
-        };
-        let ib_end_idx = end_idx.min(self.layouts.len());
-
-        for i in start_idx..ib_end_idx {
-            self.layouts[i] = None;
-        }
-
-        if new_count == inval_count {
-            return;
-        }
-
-        if new_count > inval_count {
-            let extra = new_count - inval_count;
-            self.layouts
-                .splice(ib_end_idx..ib_end_idx, std::iter::repeat(None).take(extra));
-        } else {
-            // How many (invalidated) line entries should be removed.
-            // (Since all of the lines in the inval lines area are `None` now, it doesn't matter if
-            // they were some other line number originally if we're draining them out)
-            let mut to_remove = inval_count;
-            let mut to_keep = new_count;
-
-            let oob_start = ib_start_line - start_line;
-
-            // Shift the base line backwards by the amount outside the start
-            // This allows us to not bother with removing entries from the array in some cases
-            {
-                let oob_start_remove = oob_start.min(to_remove);
-
-                self.base_line -= oob_start_remove;
-                to_remove = to_remove.saturating_sub(oob_start_remove);
-                to_keep = to_keep.saturating_sub(oob_start_remove);
-            }
-
-            if to_remove == 0 {
-                // There is nothing more to remove
-                return;
-            }
-
-            let remove_start_idx = start_idx + to_keep;
-            let remove_end_idx = (start_idx + to_remove).min(self.layouts.len());
-
-            drop(self.layouts.drain(remove_start_idx..remove_end_idx));
-        }
-    }
-}
-
 #[derive(Debug, Default, PartialEq, Clone, Copy)]
 pub struct ConfigId {
     editor_style_id: u64,
@@ -281,7 +142,7 @@ pub struct TextLayoutCache {
     /// The id of the last config so that we can clear when the config changes
     /// the first is the styling id and the second is an id for changes from Floem style
     config_id: ConfigId,
-    pub layouts: Layouts,
+    pub layouts: LineRenderCache<Arc<TextLayoutLine>>,
     /// The maximum width seen so far, used to determine if we need to show horizontal scrollbar
     pub max_width: f64,
 }
@@ -491,20 +352,20 @@ impl Lines {
         let layouts = self.text_layouts.borrow();
         let layouts = &layouts.layouts;
 
-        let base_line = layouts.base_line;
+        let base_line = layouts.base_line();
 
         // Before the layouts baseline, there is #base_line non-wrapped lines
         soft_line_count += base_line;
 
         // Add all the potentially wrapped line counts
-        for entry in layouts.layouts.iter() {
+        for entry in layouts.iter() {
             let line_count = entry.as_ref().map(|l| l.line_count()).unwrap_or(1);
 
             soft_line_count += line_count;
         }
 
         // Add all the lines after the layouts
-        let after = base_line + layouts.layouts.len();
+        let after = base_line + layouts.len();
         let diff = hard_line_count - after;
         soft_line_count += diff;
 
@@ -1299,7 +1160,7 @@ pub fn find_vline_init_info(
 
     let layouts = lines.text_layouts.borrow();
     let layouts = &layouts.layouts;
-    let base_line = layouts.base_line;
+    let base_line = layouts.base_line();
 
     if base_line > vline.get() {
         // The vline is not within the rendered, thus it is linear
@@ -1308,9 +1169,7 @@ pub fn find_vline_init_info(
     }
 
     let mut cur_vline = base_line;
-    for (i, entry) in layouts.layouts.iter().enumerate() {
-        let cur_line = base_line + i;
-
+    for (cur_line, entry) in layouts.iter_with_line() {
         let line_count = entry.as_ref().map(|l| l.line_count()).unwrap_or(1);
 
         if cur_vline + line_count > vline.get() {
@@ -1332,7 +1191,7 @@ pub fn find_vline_init_info(
         cur_vline += line_count;
     }
 
-    let cur_line = base_line + layouts.layouts.len();
+    let cur_line = base_line + layouts.len();
 
     let linear_diff = vline.get() - cur_vline;
 
@@ -1919,10 +1778,7 @@ mod tests {
     use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
     use floem_editor_core::{
-        buffer::{
-            rope_text::{RopeText, RopeTextRef, RopeTextVal},
-            InvalLines,
-        },
+        buffer::rope_text::{RopeText, RopeTextRef, RopeTextVal},
         cursor::CursorAffinity,
     };
     use floem_reactive::Scope;
@@ -1937,8 +1793,7 @@ mod tests {
     };
 
     use super::{
-        find_vline_init_info, ConfigId, Layouts, Lines, RVLine, ResolvedWrap, TextLayoutProvider,
-        VLine,
+        find_vline_init_info, ConfigId, Lines, RVLine, ResolvedWrap, TextLayoutProvider, VLine,
     };
 
     /// For most of the logic we standardize on a specific font size.
@@ -3345,132 +3200,5 @@ mod tests {
             &Rope::from("aaaa\r\nbb bb cc\r\ncc dddd eeee ff\r\nff gggg"),
             "simple multiline (CRLF)",
         );
-    }
-
-    #[test]
-    fn layout_cache() {
-        let random_layout = |text: &str| {
-            let mut text_layout = TextLayout::new();
-            text_layout.set_text(text, AttrsList::new(Attrs::new()));
-
-            Arc::new(TextLayoutLine {
-                extra_style: Vec::new(),
-                text: text_layout,
-                whitespaces: None,
-                indent: 0.,
-                phantom_text: PhantomTextLine::default(),
-            })
-        };
-        let mut layouts = Layouts::default();
-
-        assert_eq!(layouts.base_line, 0);
-        assert!(layouts.layouts.is_empty());
-
-        layouts.insert(0, random_layout("abc"));
-        assert_eq!(layouts.base_line, 0);
-        assert_eq!(layouts.layouts.len(), 1);
-
-        layouts.insert(1, random_layout("def"));
-        assert_eq!(layouts.base_line, 0);
-        assert_eq!(layouts.layouts.len(), 2);
-
-        layouts.insert(10, random_layout("ghi"));
-        assert_eq!(layouts.base_line, 0);
-        assert_eq!(layouts.layouts.len(), 11);
-
-        let mut layouts = Layouts::default();
-        layouts.insert(10, random_layout("ghi"));
-        assert_eq!(layouts.base_line, 10);
-        assert_eq!(layouts.layouts.len(), 1);
-
-        layouts.insert(8, random_layout("jkl"));
-        assert_eq!(layouts.base_line, 8);
-        assert_eq!(layouts.layouts.len(), 3);
-
-        layouts.insert(5, random_layout("mno"));
-        assert_eq!(layouts.base_line, 5);
-        assert_eq!(layouts.layouts.len(), 6);
-
-        assert!(layouts.get(0).is_none());
-        assert!(layouts.get(5).is_some());
-        assert!(layouts.get(8).is_some());
-        assert!(layouts.get(10).is_some());
-        assert!(layouts.get(11).is_none());
-
-        let mut layouts2 = layouts.clone();
-        layouts2.invalidate(InvalLines::new(0, 1, 1));
-        assert!(layouts2.get(0).is_none());
-        assert!(layouts2.get(5).is_some());
-        assert!(layouts2.get(8).is_some());
-        assert!(layouts2.get(10).is_some());
-        assert!(layouts2.get(11).is_none());
-
-        let mut layouts2 = layouts.clone();
-        layouts2.invalidate(InvalLines::new(5, 1, 1));
-        assert!(layouts2.get(0).is_none());
-        assert!(layouts2.get(5).is_none());
-        assert!(layouts2.get(8).is_some());
-        assert!(layouts2.get(10).is_some());
-        assert!(layouts2.get(11).is_none());
-
-        layouts.invalidate(InvalLines::new(0, 6, 6));
-        assert!(layouts.get(5).is_none());
-        assert!(layouts.get(8).is_some());
-        assert!(layouts.get(10).is_some());
-        assert!(layouts.get(11).is_none());
-
-        let mut layouts = Layouts::default();
-        for i in 0..10 {
-            let text = format!("{}", i);
-            layouts.insert(i, random_layout(&text));
-        }
-
-        assert_eq!(layouts.base_line, 0);
-        assert_eq!(layouts.layouts.len(), 10);
-
-        layouts.invalidate(InvalLines::new(0, 10, 1));
-        assert!(layouts.get(0).is_none());
-        assert_eq!(layouts.len(), 1);
-
-        let mut layouts = Layouts::default();
-        for i in 0..10 {
-            let text = format!("{}", i);
-            layouts.insert(i, random_layout(&text));
-        }
-
-        layouts.invalidate(InvalLines::new(5, 800, 1));
-        assert!(layouts.get(0).is_some());
-        assert!(layouts.get(1).is_some());
-        assert!(layouts.get(2).is_some());
-        assert!(layouts.get(3).is_some());
-        assert!(layouts.get(4).is_some());
-        assert_eq!(layouts.len(), 6);
-
-        let mut layouts = Layouts::default();
-        for i in 5..10 {
-            let text = format!("{}", i);
-            layouts.insert(i, random_layout(&text));
-        }
-
-        assert_eq!(layouts.base_line, 5);
-
-        layouts.invalidate(InvalLines::new(0, 7, 1));
-        assert_eq!(layouts.base_line, 0);
-        assert!(layouts.get(0).is_some()); // was line 7
-        assert!(layouts.get(1).is_some()); // was line 8
-        assert!(layouts.get(2).is_some()); // was line 9
-        assert!(layouts.get(3).is_none());
-        assert!(layouts.get(4).is_none());
-        assert_eq!(layouts.len(), 3);
-
-        let mut layouts = Layouts::default();
-        for i in 0..10 {
-            let text = format!("{}", i);
-            layouts.insert(i, random_layout(&text));
-        }
-
-        layouts.invalidate(InvalLines::new(0, 800, 1));
-        assert!(layouts.get(0).is_none());
-        assert_eq!(layouts.len(), 1);
     }
 }

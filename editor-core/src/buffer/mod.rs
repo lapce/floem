@@ -85,6 +85,14 @@ impl InvalLines {
             new_count: 1,
         }
     }
+
+    pub fn all(line_count: usize) -> Self {
+        Self {
+            start_line: 0,
+            inval_count: line_count,
+            new_count: line_count,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
