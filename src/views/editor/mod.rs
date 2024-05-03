@@ -1333,7 +1333,7 @@ fn create_view_effects(cx: Scope, ed: &Editor) {
 
     let inval_lines_listener = ed.doc().inval_lines_listener();
     inval_lines_listener.listen_with(cx, move |inval_lines| {
-        ed5.lines.invalidate(&inval_lines);
+        ed5.lines.invalidate(inval_lines);
     });
 
     // Listen for layout events, currently only when a layout is created, and update screen

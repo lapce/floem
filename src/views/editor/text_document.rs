@@ -6,7 +6,7 @@ use std::{
 };
 
 use floem_editor_core::{
-    buffer::{rope_text::RopeText, Buffer, InvalLines},
+    buffer::{rope_text::RopeText, Buffer, InvalLines, InvalLinesR},
     command::EditCommand,
     cursor::Cursor,
     editor::{Action, EditConf, EditType},
@@ -45,7 +45,7 @@ type OnUpdateFn = Box<dyn Fn(OnUpdate)>;
 pub struct OnUpdate<'a> {
     /// Optional because the document can be edited from outside any editor views
     pub editor: Option<&'a Editor>,
-    deltas: &'a [(Rope, RopeDelta, InvalLines)],
+    deltas: &'a [(Rope, RopeDelta, InvalLinesR)],
 }
 impl<'a> OnUpdate<'a> {
     pub fn deltas(&self) -> impl Iterator<Item = &'a RopeDelta> {
@@ -119,7 +119,7 @@ impl TextDocument {
         });
     }
 
-    pub fn on_update(&self, ed: Option<&Editor>, deltas: &[(Rope, RopeDelta, InvalLines)]) {
+    pub fn on_update(&self, ed: Option<&Editor>, deltas: &[(Rope, RopeDelta, InvalLinesR)]) {
         let on_updates = self.on_updates.borrow();
         let data = OnUpdate { editor: ed, deltas };
         for on_update in on_updates.iter() {
@@ -127,7 +127,7 @@ impl TextDocument {
         }
 
         for (_, _, inval_lines) in deltas {
-            self.inval_lines_listener().send(inval_lines.clone());
+            self.inval_lines_listener().send(inval_lines.clone().into());
         }
     }
 

@@ -194,7 +194,14 @@ impl Layouts {
     /// Invalidates the layouts at the given `start_line` for `inval_count` lines.  
     /// `new_count` is used to know whether to insert new line entries or to remove them, such as
     /// for a newline.
-    pub fn invalidate(&mut self, start_line: usize, inval_count: usize, new_count: usize) {
+    pub fn invalidate(
+        &mut self,
+        InvalLines {
+            start_line,
+            inval_count,
+            new_count,
+        }: InvalLines,
+    ) {
         let ib_start_line = start_line.max(self.base_line);
         let start_idx = self.idx(ib_start_line).unwrap();
 
@@ -331,8 +338,8 @@ impl TextLayoutCache {
         })
     }
 
-    pub fn invalidate(&mut self, start_line: usize, inval_count: usize, new_count: usize) {
-        self.layouts.invalidate(start_line, inval_count, new_count);
+    pub fn invalidate(&mut self, inval: InvalLines) {
+        self.layouts.invalidate(inval);
     }
 }
 
@@ -996,21 +1003,12 @@ impl Lines {
         self.last_vline.set(None);
     }
 
-    pub fn invalidate(&self, inval_lines: &InvalLines) {
-        let InvalLines {
-            start_line,
-            inval_count,
-            new_count,
-            ..
-        } = *inval_lines;
-
-        if inval_count == 0 {
+    pub fn invalidate(&self, inval: InvalLines) {
+        if inval.inval_count == 0 {
             return;
         }
 
-        self.text_layouts
-            .borrow_mut()
-            .invalidate(start_line, inval_count, new_count);
+        self.text_layouts.borrow_mut().invalidate(inval);
     }
 }
 
@@ -1942,7 +1940,10 @@ mod tests {
     use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
     use floem_editor_core::{
-        buffer::rope_text::{RopeText, RopeTextRef, RopeTextVal},
+        buffer::{
+            rope_text::{RopeText, RopeTextRef, RopeTextVal},
+            InvalLines,
+        },
         cursor::CursorAffinity,
     };
     use floem_reactive::Scope;
@@ -3418,7 +3419,7 @@ mod tests {
         assert!(layouts.get(11).is_none());
 
         let mut layouts2 = layouts.clone();
-        layouts2.invalidate(0, 1, 1);
+        layouts2.invalidate(InvalLines::new(0, 1, 1));
         assert!(layouts2.get(0).is_none());
         assert!(layouts2.get(5).is_some());
         assert!(layouts2.get(8).is_some());
@@ -3426,14 +3427,14 @@ mod tests {
         assert!(layouts2.get(11).is_none());
 
         let mut layouts2 = layouts.clone();
-        layouts2.invalidate(5, 1, 1);
+        layouts2.invalidate(InvalLines::new(5, 1, 1));
         assert!(layouts2.get(0).is_none());
         assert!(layouts2.get(5).is_none());
         assert!(layouts2.get(8).is_some());
         assert!(layouts2.get(10).is_some());
         assert!(layouts2.get(11).is_none());
 
-        layouts.invalidate(0, 6, 6);
+        layouts.invalidate(InvalLines::new(0, 6, 6));
         assert!(layouts.get(5).is_none());
         assert!(layouts.get(8).is_some());
         assert!(layouts.get(10).is_some());
@@ -3448,7 +3449,7 @@ mod tests {
         assert_eq!(layouts.base_line, 0);
         assert_eq!(layouts.layouts.len(), 10);
 
-        layouts.invalidate(0, 10, 1);
+        layouts.invalidate(InvalLines::new(0, 10, 1));
         assert!(layouts.get(0).is_none());
         assert_eq!(layouts.len(), 1);
 
@@ -3458,7 +3459,7 @@ mod tests {
             layouts.insert(i, random_layout(&text));
         }
 
-        layouts.invalidate(5, 800, 1);
+        layouts.invalidate(InvalLines::new(5, 800, 1));
         assert!(layouts.get(0).is_some());
         assert!(layouts.get(1).is_some());
         assert!(layouts.get(2).is_some());
@@ -3474,7 +3475,7 @@ mod tests {
 
         assert_eq!(layouts.base_line, 5);
 
-        layouts.invalidate(0, 7, 1);
+        layouts.invalidate(InvalLines::new(0, 7, 1));
         assert_eq!(layouts.base_line, 0);
         assert!(layouts.get(0).is_some()); // was line 7
         assert!(layouts.get(1).is_some()); // was line 8
@@ -3489,7 +3490,7 @@ mod tests {
             layouts.insert(i, random_layout(&text));
         }
 
-        layouts.invalidate(0, 800, 1);
+        layouts.invalidate(InvalLines::new(0, 800, 1));
         assert!(layouts.get(0).is_none());
         assert_eq!(layouts.len(), 1);
     }

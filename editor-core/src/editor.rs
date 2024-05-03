@@ -4,7 +4,7 @@ use itertools::Itertools;
 use lapce_xi_rope::{DeltaElement, Rope, RopeDelta};
 
 use crate::{
-    buffer::{rope_text::RopeText, Buffer, InvalLines},
+    buffer::{rope_text::RopeText, Buffer, InvalLinesR},
     command::EditCommand,
     cursor::{get_first_selection_after, Cursor, CursorMode},
     mode::{Mode, MotionMode, VisualMode},
@@ -93,7 +93,7 @@ impl Action {
         prev_unmatched: &dyn Fn(&Buffer, char, usize) -> Option<usize>,
         auto_closing_matching_pairs: bool,
         auto_surround: bool,
-    ) -> Vec<(Rope, RopeDelta, InvalLines)> {
+    ) -> Vec<(Rope, RopeDelta, InvalLinesR)> {
         let mut deltas = Vec::new();
         if let CursorMode::Insert(selection) = &cursor.mode {
             if s.chars().count() != 1 {
@@ -323,7 +323,7 @@ impl Action {
         selection: Selection,
         keep_indent: bool,
         auto_indent: bool,
-    ) -> Vec<(Rope, RopeDelta, InvalLines)> {
+    ) -> Vec<(Rope, RopeDelta, InvalLinesR)> {
         let mut edits = Vec::with_capacity(selection.regions().len());
         let mut extra_edits = Vec::new();
         let mut shift = 0i32;
@@ -411,7 +411,7 @@ impl Action {
         range: Range<usize>,
         is_vertical: bool,
         register: &mut Register,
-    ) -> Vec<(Rope, RopeDelta, InvalLines)> {
+    ) -> Vec<(Rope, RopeDelta, InvalLinesR)> {
         let mut deltas = Vec::new();
         match motion_mode {
             MotionMode::Delete { .. } => {
@@ -471,7 +471,7 @@ impl Action {
         selection: &Selection,
         content: &str,
         mode: VisualMode,
-    ) -> (Rope, RopeDelta, InvalLines) {
+    ) -> (Rope, RopeDelta, InvalLinesR) {
         if selection.len() > 1 {
             let line_ends: Vec<_> = content.match_indices('\n').map(|(idx, _)| idx).collect();
 
@@ -551,7 +551,7 @@ impl Action {
         cursor: &mut Cursor,
         buffer: &mut Buffer,
         data: &RegisterData,
-    ) -> Vec<(Rope, RopeDelta, InvalLines)> {
+    ) -> Vec<(Rope, RopeDelta, InvalLinesR)> {
         let mut deltas = Vec::new();
         match data.mode {
             VisualMode::Normal => {
@@ -638,7 +638,7 @@ impl Action {
         deltas
     }
 
-    fn do_indent(buffer: &mut Buffer, selection: Selection) -> (Rope, RopeDelta, InvalLines) {
+    fn do_indent(buffer: &mut Buffer, selection: Selection) -> (Rope, RopeDelta, InvalLinesR) {
         let indent = buffer.indent_unit();
         let mut edits = Vec::new();
 
@@ -667,7 +667,7 @@ impl Action {
         buffer.edit(&edits, EditType::Indent)
     }
 
-    fn do_outdent(buffer: &mut Buffer, selection: Selection) -> (Rope, RopeDelta, InvalLines) {
+    fn do_outdent(buffer: &mut Buffer, selection: Selection) -> (Rope, RopeDelta, InvalLinesR) {
         let indent = buffer.indent_unit();
         let mut edits = Vec::new();
 
@@ -701,7 +701,7 @@ impl Action {
         cursor: &mut Cursor,
         buffer: &mut Buffer,
         direction: DuplicateDirection,
-    ) -> Vec<(Rope, RopeDelta, InvalLines)> {
+    ) -> Vec<(Rope, RopeDelta, InvalLinesR)> {
         // TODO other modes
         let selection = match cursor.mode {
             CursorMode::Insert(ref mut sel) => sel,
@@ -757,7 +757,7 @@ impl Action {
             keep_indent,
             auto_indent,
         }: EditConf,
-    ) -> Vec<(Rope, RopeDelta, InvalLines)> {
+    ) -> Vec<(Rope, RopeDelta, InvalLinesR)> {
         use crate::command::EditCommand::*;
         match cmd {
             MoveLineUp => {
@@ -1478,9 +1478,9 @@ fn apply_undo_redo(
     modal: bool,
     text: Rope,
     delta: RopeDelta,
-    inval_lines: InvalLines,
+    inval_lines: InvalLinesR,
     cursor_mode: Option<CursorMode>,
-) -> Vec<(Rope, RopeDelta, InvalLines)> {
+) -> Vec<(Rope, RopeDelta, InvalLinesR)> {
     if let Some(cursor_mode) = cursor_mode {
         cursor.mode = if modal {
             CursorMode::Normal(cursor_mode.offset())
