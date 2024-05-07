@@ -109,7 +109,7 @@ impl WindowHandle {
                 context_menu_view(scope, window_id, context_menu, size),
             ))
             .style(|s| s.size(100.pct(), 100.pct()))
-            .into_any_view()
+            .into_any()
         });
 
         let widget = view;
@@ -1412,7 +1412,7 @@ fn context_menu_view(
                     .style(|s| s.min_width(100.pct())),
                 )
                 .style(|s| s.min_width(100.pct()))
-                .into_any_view()
+                .into_any()
             }
 
             MenuDisplay::Separator(_) => container(empty().style(|s| {
@@ -1422,7 +1422,7 @@ fn context_menu_view(
                     .background(Color::rgb8(92, 92, 92))
             }))
             .style(|s| s.min_width(100.pct()).padding_horiz(20.0))
-            .into_any_view(),
+            .into_any(),
         }
     }
 
