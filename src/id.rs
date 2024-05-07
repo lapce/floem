@@ -100,10 +100,8 @@ impl ViewId {
                 let child_view_id = child_view.id();
                 children_ids.push(child_view_id);
                 s.parent.insert(child_view_id, Some(*self));
-                s.views.insert(
-                    child_view_id,
-                    Rc::new(RefCell::new(child_view.into_any_view())),
-                );
+                s.views
+                    .insert(child_view_id, Rc::new(RefCell::new(child_view.into_any())));
             }
             s.children.insert(*self, children_ids);
         });

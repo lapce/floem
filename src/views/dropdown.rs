@@ -194,7 +194,7 @@ where
                 inner_list_id.request_focus();
             })
             .class(DropDownScrollClass)
-            .into_any_view()
+            .into_any()
     });
 
     let initial = create_updater(active_item, move |new_state| {

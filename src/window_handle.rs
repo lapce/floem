@@ -117,7 +117,7 @@ impl WindowHandle {
         id.set_children(vec![widget]);
 
         let view = WindowView { id };
-        id.set_view(view.into_any_view());
+        id.set_view(view.into_any());
 
         let window = Arc::new(window);
         let paint_state = PaintState::new(window.clone(), scale, size.get_untracked() * scale);
@@ -893,7 +893,7 @@ impl WindowHandle {
                             view.on_cleanup(move || {
                                 scope.dispose();
                             })
-                            .into_any_view(),
+                            .into_any(),
                         );
                         self.id.request_all();
                     }

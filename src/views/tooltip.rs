@@ -42,7 +42,7 @@ pub fn tooltip<V: IntoView + 'static, T: IntoView + 'static>(
     id.set_children(vec![child]);
     Tooltip {
         id,
-        tip: Rc::new(move || container(tip()).class(TooltipClass).into_any_view()),
+        tip: Rc::new(move || container(tip()).class(TooltipClass).into_any()),
         hover: None,
         overlay: None,
         style: Default::default(),

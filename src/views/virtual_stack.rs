@@ -216,9 +216,7 @@ where
         (before_size, content_size, HashRun(hashed_items))
     });
 
-    let view_fn = Box::new(as_child_of_current_scope(move |e| {
-        view_fn(e).into_any_view()
-    }));
+    let view_fn = Box::new(as_child_of_current_scope(move |e| view_fn(e).into_any()));
 
     VirtualStack {
         id,

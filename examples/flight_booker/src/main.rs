@@ -84,16 +84,13 @@ pub fn app_view() -> impl IntoView {
         })
         .on_click_stop(move |_| did_booking.set(true));
 
-    let success_message = dyn_container(
-        move || did_booking.get(),
-        move |booked| match (booked, flight_mode.get()) {
-            (true, FlightMode::OneWay) => text(oneway_message(start_text.get())).into_any_view(),
-            (true, FlightMode::Return) => {
-                text(return_message(start_text.get(), return_text.get())).into_any_view()
-            }
-            (false, _) => empty().into_any_view(),
-        },
-    );
+    let success_message = dyn_container(move || match (did_booking.get(), flight_mode.get()) {
+        (true, FlightMode::OneWay) => text(oneway_message(start_text.get())).into_any(),
+        (true, FlightMode::Return) => {
+            text(return_message(start_text.get(), return_text.get())).into_any()
+        }
+        (false, _) => empty().into_any(),
+    });
 
     v_stack((
         mode_picker,

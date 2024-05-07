@@ -45,7 +45,7 @@ pub fn dropdown_view() -> impl IntoView {
             }),
         ))
         .style(|s| s.items_center().justify_between().size_full())
-        .into_any_view()
+        .into_any()
     };
 
     form::form({
@@ -58,7 +58,7 @@ pub fn dropdown_view() -> impl IntoView {
                 // iterator to build list in dropdown
                 Values::iter(),
                 // view for each item in the list
-                |item| label(move || item).into_any_view(),
+                |item| label(move || item).into_any(),
             )
             .show_list(move || show_dropdown.get())
             .on_accept(move |_val| show_dropdown.set(false))

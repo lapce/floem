@@ -63,7 +63,7 @@ where
     create_stack(
         iterator
             .into_iter()
-            .map(|v| -> Box<dyn View> { v.into_any_view() })
+            .map(|v| -> Box<dyn View> { v.into_any() })
             .collect(),
         direction,
     )

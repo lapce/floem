@@ -68,7 +68,7 @@ use self::{
 prop!(pub WrapProp: WrapMethod {} = WrapMethod::EditorWidth);
 impl StylePropValue for WrapMethod {
     fn debug_view(&self) -> Option<Box<dyn View>> {
-        Some(crate::views::text(self).into_any_view())
+        Some(crate::views::text(self).into_any())
     }
 }
 prop!(pub CursorSurroundingLines: usize {} = 1);
@@ -83,13 +83,13 @@ prop!(pub PreeditUnderlineColor: Color {} = Color::WHITE);
 prop!(pub RenderWhitespaceProp: RenderWhitespace {} = RenderWhitespace::None);
 impl StylePropValue for RenderWhitespace {
     fn debug_view(&self) -> Option<Box<dyn View>> {
-        Some(crate::views::text(self).into_any_view())
+        Some(crate::views::text(self).into_any())
     }
 }
 prop!(pub IndentStyleProp: IndentStyle {} = IndentStyle::Spaces(4));
 impl StylePropValue for IndentStyle {
     fn debug_view(&self) -> Option<Box<dyn View>> {
-        Some(text(self).into_any_view())
+        Some(text(self).into_any())
     }
 }
 prop!(pub DropdownShadow: Option<Color> {} = None);

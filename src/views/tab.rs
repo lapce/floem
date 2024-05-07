@@ -81,9 +81,7 @@ where
         id.update_state(TabState::Active::<T>(active));
     });
 
-    let view_fn = Box::new(as_child_of_current_scope(move |e| {
-        view_fn(e).into_any_view()
-    }));
+    let view_fn = Box::new(as_child_of_current_scope(move |e| view_fn(e).into_any()));
 
     Tab {
         id,

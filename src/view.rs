@@ -43,6 +43,7 @@
 //! ```
 //!
 
+use floem_reactive::{ReadSignal, RwSignal};
 use floem_renderer::Renderer;
 use peniko::kurbo::{Circle, Insets, Line, Point, Rect, RoundedRect, Size};
 use std::any::Any;
@@ -55,9 +56,10 @@ use crate::{
     id::ViewId,
     style::{BoxShadowProp, Style, StyleClassRef},
     view_state::ViewStyleProps,
+    views::{dyn_container, DynamicContainer},
 };
 
-/// A type that can hold any view.
+/// type erased [`View`]
 ///
 /// Views in Floem are strongly typed. [`AnyView`] allows you to escape the strong typing by converting any type implementing [View] into the [AnyView] type.
 ///
@@ -80,26 +82,52 @@ use crate::{
 ///
 /// ```
 /// use floem::views::*;
-/// use floem::View;
+/// use floem::{View, IntoView};
 ///
 /// let check = true;
 ///
 /// container(if check == true {
-///     checkbox(|| true).any()
+///     checkbox(|| true).into_any()
 /// } else {
-///     label(|| "no check".to_string()).any()
+///     label(|| "no check".to_string()).into_any()
 /// });
 /// ```
-
 pub type AnyView = Box<dyn View>;
 
+/// Converts the value into a [`View`].
 pub trait IntoView: Sized {
     type V: View + 'static;
 
+    /// Converts the value into a [`View`].
     fn into_view(self) -> Self::V;
 
-    fn into_any_view(self) -> AnyView {
+    /// Converts the value into a [`AnyView`].
+    fn into_any(self) -> AnyView {
         Box::new(self.into_view())
+    }
+}
+
+impl<IV: IntoView + 'static> IntoView for Box<dyn Fn() -> IV> {
+    type V = DynamicContainer;
+
+    fn into_view(self) -> Self::V {
+        dyn_container(self)
+    }
+}
+
+impl<T: IntoView + Clone + 'static> IntoView for RwSignal<T> {
+    type V = DynamicContainer;
+
+    fn into_view(self) -> Self::V {
+        dyn_container(move || self.get())
+    }
+}
+
+impl<T: IntoView + Clone + 'static> IntoView for ReadSignal<T> {
+    type V = DynamicContainer;
+
+    fn into_view(self) -> Self::V {
+        dyn_container(move || self.get())
     }
 }
 
@@ -108,6 +136,22 @@ impl<VW: View + 'static> IntoView for VW {
 
     fn into_view(self) -> Self::V {
         self
+    }
+}
+
+impl IntoView for i32 {
+    type V = crate::views::Label;
+
+    fn into_view(self) -> Self::V {
+        crate::views::text(self)
+    }
+}
+
+impl IntoView for usize {
+    type V = crate::views::Label;
+
+    fn into_view(self) -> Self::V {
+        crate::views::text(self)
     }
 }
 

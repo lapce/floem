@@ -12,7 +12,7 @@ macro_rules! impl_view_tuple {
                 #[allow(non_snake_case)]
                 let ($($t,)+) = self;
                 vec![
-                    $($t.into_any_view(),)+
+                    $($t.into_any(),)+
                 ]
             }
         }
@@ -23,7 +23,7 @@ macro_rules! impl_view_tuple {
             fn into_view(self) -> Self::V {
                 #[allow(non_snake_case)]
                 let ($($t,)+) = self;
-                let views = vec![ $($t.into_any_view(),)+ ];
+                let views = vec![ $($t.into_any(),)+ ];
                 crate::views::create_stack(views, None)
             }
         }
