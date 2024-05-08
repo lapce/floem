@@ -100,7 +100,7 @@ pub struct ViewState {
     pub(crate) dragging_style: Option<Style>,
     pub(crate) combined_style: Style,
     pub(crate) taffy_style: taffy::style::Style,
-    pub(crate) event_listeners: HashMap<EventListener, Vec<Rc<Box<EventCallback>>>>,
+    pub(crate) event_listeners: HashMap<EventListener, Vec<Rc<EventCallback>>>,
     pub(crate) context_menu: Option<Box<MenuCallback>>,
     pub(crate) popout_menu: Option<Box<MenuCallback>>,
     pub(crate) resize_listener: Option<Rc<RefCell<ResizeListener>>>,
