@@ -1,6 +1,7 @@
 use peniko::kurbo::Point;
 use std::{rc::Rc, time::Duration};
 
+use crate::views::Decorators;
 use crate::{
     action::{add_overlay, exec_after, remove_overlay, TimerToken},
     context::{EventCx, UpdateCx},
@@ -48,6 +49,7 @@ pub fn tooltip<V: IntoView + 'static, T: IntoView + 'static>(
         style: Default::default(),
         window_origin: None,
     }
+    .keyboard_listenable()
 }
 
 impl View for Tooltip {
@@ -72,7 +74,7 @@ impl View for Tooltip {
     fn event_before_children(&mut self, _cx: &mut EventCx, event: &Event) -> EventPropagation {
         match &event {
             Event::PointerMove(e) => {
-                if self.overlay.is_none() {
+                if self.overlay.is_none() && cx.app_state.dragging.is_none() {
                     let id = self.id();
                     let token =
                         exec_after(Duration::from_secs_f64(self.style.delay()), move |token| {
@@ -81,7 +83,12 @@ impl View for Tooltip {
                     self.hover = Some((e.pos, token));
                 }
             }
-            Event::PointerLeave => {
+            Event::PointerLeave
+            | Event::PointerDown(_)
+            | Event::PointerUp(_)
+            | Event::PointerWheel(_)
+            | Event::KeyUp(_)
+            | Event::KeyDown(_) => {
                 self.hover = None;
                 if let Some(id) = self.overlay {
                     remove_overlay(id);
@@ -105,7 +112,7 @@ impl View for Tooltip {
 impl Drop for Tooltip {
     fn drop(&mut self) {
         if let Some(id) = self.overlay {
-            remove_overlay(id)
+            remove_overlay(id);
         }
     }
 }

@@ -174,6 +174,21 @@ impl WindowHandle {
             cx.app_state.focus
         };
 
+        if matches!(event, Event::KeyUp(_)) || matches!(event, Event::KeyDown(_)) {
+            for id in cx.app_state.keyboard_listenable.clone().iter() {
+                let id_path = ID_PATHS.with(|paths| paths.borrow().get(id).cloned());
+                if let Some(id_path) = id_path {
+                    cx.unconditional_view_event(
+                        &mut self.view,
+                        Some(id_path.dispatch()),
+                        event.clone(),
+                    );
+                } else {
+                    cx.app_state.focus = None;
+                }
+            }
+        }
+
         if event.needs_focus() {
             let mut processed = false;
 
@@ -770,6 +785,9 @@ impl WindowHandle {
                     }
                     UpdateMessage::KeyboardNavigable { id } => {
                         cx.app_state.keyboard_navigable.insert(id);
+                    }
+                    UpdateMessage::KeyboardListenable { id } => {
+                        cx.app_state.keyboard_listenable.insert(id);
                     }
                     UpdateMessage::Draggable { id } => {
                         cx.app_state.draggable.insert(id);
