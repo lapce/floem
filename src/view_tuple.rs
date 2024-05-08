@@ -1,28 +1,30 @@
-use crate::view::View;
-use crate::view::Widget;
+use crate::view::{IntoView, View};
 
 pub trait ViewTuple {
-    fn into_widgets(self) -> Vec<Box<dyn Widget>>;
+    fn into_views(self) -> Vec<Box<dyn View>>;
 }
 
-impl<T: View + 'static> ViewTuple for T {
-    fn into_widgets(self) -> Vec<Box<dyn Widget>> {
-        vec![self.build()]
-    }
-}
-
-// Macro to implement ViewTuple for tuples of Views and Vec<Box<dyn Widget>>
+// Macro to implement ViewTuple for tuples of Views and Vec<Box<dyn View>>
 macro_rules! impl_view_tuple {
     ($capacity:expr, $($t:ident),+) => {
-        impl<$($t: ViewTuple + 'static),+> ViewTuple for ($($t,)+) {
-            fn into_widgets(self) -> Vec<Box<dyn Widget>> {
+        impl<$($t: IntoView + 'static),+> ViewTuple for ($($t,)+) {
+            fn into_views(self) -> Vec<Box<dyn View>> {
                 #[allow(non_snake_case)]
                 let ($($t,)+) = self;
-                let mut widgets = Vec::with_capacity($capacity);
-                $(
-                    widgets.extend($t.into_widgets());
-                )+
-                widgets
+                vec![
+                    $($t.into_any(),)+
+                ]
+            }
+        }
+
+        impl<$($t: IntoView + 'static),+> IntoView for ($($t,)+) {
+            type V = crate::views::Stack;
+
+            fn into_view(self) -> Self::V {
+                #[allow(non_snake_case)]
+                let ($($t,)+) = self;
+                let views = vec![ $($t.into_any(),)+ ];
+                crate::views::create_stack(views, None)
             }
         }
     };

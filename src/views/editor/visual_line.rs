@@ -70,8 +70,8 @@ use floem_editor_core::{
 };
 use floem_reactive::Scope;
 use floem_renderer::cosmic_text::{HitPosition, LayoutGlyph, TextLayout};
-use kurbo::Point;
 use lapce_xi_rope::{Interval, Rope};
+use peniko::kurbo::Point;
 
 use super::{layout::TextLayoutLine, listener::Listener};
 
@@ -918,7 +918,7 @@ fn get_init_text_layout(
 ) -> Arc<TextLayoutLine> {
     // If we don't have a second layer of the hashmap initialized for this specific font size,
     // do it now
-    if text_layouts.borrow().layouts.get(&font_size).is_none() {
+    if !text_layouts.borrow().layouts.contains_key(&font_size) {
         let mut cache = text_layouts.borrow_mut();
         cache.layouts.insert(font_size, HashMap::new());
     }

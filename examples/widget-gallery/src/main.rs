@@ -13,22 +13,20 @@ pub mod rich_text;
 pub mod slider;
 
 use floem::{
-    event::{Event, EventListener},
+    event::{Event, EventListener, EventPropagation},
     keyboard::{Key, NamedKey},
     peniko::Color,
     reactive::create_signal,
     style::{Background, CursorStyle, Transition},
     unit::UnitExt,
-    view::View,
     views::{
-        container, h_stack, label, scroll, stack, tab, v_stack, virtual_stack, Decorators,
+        button, container, h_stack, label, scroll, stack, tab, v_stack, virtual_stack, Decorators,
         VirtualDirection, VirtualItemSize,
     },
-    widgets::button,
-    EventPropagation,
+    IntoView, View,
 };
 
-fn app_view() -> impl View {
+fn app_view() -> impl IntoView {
     let tabs: im::Vector<&str> = vec![
         "Label",
         "Button",
@@ -153,19 +151,19 @@ fn app_view() -> impl View {
         move || tabs.get(),
         |it| *it,
         |it| match it {
-            "Label" => labels::label_view().any(),
-            "Button" => buttons::button_view().any(),
-            "Checkbox" => checkbox::checkbox_view().any(),
-            "Radio" => radio_buttons::radio_buttons_view().any(),
-            "Input" => inputs::text_input_view().any(),
-            "List" => lists::virt_list_view().any(),
-            "Menu" => context_menu::menu_view().any(),
-            "RichText" => rich_text::rich_text_view().any(),
-            "Image" => images::img_view().any(),
-            "Clipboard" => clipboard::clipboard_view().any(),
-            "Slider" => slider::slider_view().any(),
-            "Dropdown" => dropdown::dropdown_view().any(),
-            _ => label(|| "Not implemented".to_owned()).any(),
+            "Label" => labels::label_view().into_any(),
+            "Button" => buttons::button_view().into_any(),
+            "Checkbox" => checkbox::checkbox_view().into_any(),
+            "Radio" => radio_buttons::radio_buttons_view().into_any(),
+            "Input" => inputs::text_input_view().into_any(),
+            "List" => lists::virt_list_view().into_any(),
+            "Menu" => context_menu::menu_view().into_any(),
+            "RichText" => rich_text::rich_text_view().into_any(),
+            "Image" => images::img_view().into_any(),
+            "Clipboard" => clipboard::clipboard_view().into_any(),
+            "Slider" => slider::slider_view().into_any(),
+            "Dropdown" => dropdown::dropdown_view().into_any(),
+            _ => label(|| "Not implemented".to_owned()).into_any(),
         },
     )
     .style(|s| s.flex_col().items_start());

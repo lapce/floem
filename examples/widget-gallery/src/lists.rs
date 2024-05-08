@@ -3,17 +3,17 @@ use floem::{
     peniko::Color,
     reactive::create_signal,
     style::JustifyContent,
-    view::View,
     views::{
-        container, h_stack, h_stack_from_iter, label, scroll, stack, v_stack, v_stack_from_iter,
-        Decorators, VirtualDirection, VirtualItemSize, VirtualVector,
+        button, checkbox, container, h_stack, h_stack_from_iter, label, list, scroll, stack,
+        v_stack, v_stack_from_iter, virtual_list, Decorators, VirtualDirection, VirtualItemSize,
+        VirtualVector,
     },
-    widgets::{button, checkbox, list, virtual_list},
+    IntoView,
 };
 
 use crate::form::{form, form_item};
 
-pub fn virt_list_view() -> impl View {
+pub fn virt_list_view() -> impl IntoView {
     v_stack((
         h_stack({
             (
@@ -34,15 +34,17 @@ pub fn virt_list_view() -> impl View {
     ))
 }
 
-fn simple_list() -> impl View {
+fn simple_list() -> impl IntoView {
     scroll(
-        list((0..100).map(|i| label(move || i.to_string()).style(|s| s.height(24.0))))
-            .style(|s| s.width_full()),
+        list(
+            (0..100).map(|i| label(move || i.to_string()).style(|s| s.height(24.0).items_center())),
+        )
+        .style(|s| s.width_full()),
     )
     .style(|s| s.width(100.0).height(200.0).border(1.0))
 }
 
-fn enhanced_list() -> impl View {
+fn enhanced_list() -> impl IntoView {
     let long_list: im::Vector<i32> = (0..100).collect();
     let (long_list, set_long_list) = create_signal(long_list);
 
@@ -59,11 +61,15 @@ fn enhanced_list() -> impl View {
                 container({
                     stack({
                         (
-                            checkbox(move || is_checked.get()).on_click_stop(move |_| {
-                                set_is_checked.update(|checked: &mut bool| *checked = !*checked);
+                            checkbox(move || is_checked.get())
+                                .style(|s| s.margin_left(6))
+                                .on_click_stop(move |_| {
+                                    set_is_checked
+                                        .update(|checked: &mut bool| *checked = !*checked);
+                                }),
+                            label(move || item.to_string()).style(|s| {
+                                s.margin_left(6).height(32.0).font_size(22.0).items_center()
                             }),
-                            label(move || item.to_string())
-                                .style(|s| s.height(32.0).font_size(22.0)),
                             container({
                                 label(move || " X ")
                                     .on_click_stop(move |_| {
@@ -93,9 +99,12 @@ fn enhanced_list() -> impl View {
                     .style(move |s| s.height_full().width_full().items_center())
                 })
                 .style(move |s| {
-                    s.flex_row().height(item_height).apply_if(index != 0, |s| {
-                        s.border_top(1.0).border_color(Color::LIGHT_GRAY)
-                    })
+                    s.flex_row()
+                        .items_center()
+                        .height(item_height)
+                        .apply_if(index != 0, |s| {
+                            s.border_top(1.0).border_color(Color::LIGHT_GRAY)
+                        })
                 })
             },
         )
@@ -104,12 +113,12 @@ fn enhanced_list() -> impl View {
     .style(move |s| s.width(list_width).height(200.0).border(1.0))
 }
 
-fn h_buttons_from_iter() -> impl View {
+fn h_buttons_from_iter() -> impl IntoView {
     let button_iter = (0..3).map(|i| button(move || format!("Button {}", i)));
     h_stack_from_iter(button_iter)
 }
 
-fn v_buttons_from_iter() -> impl View {
+fn v_buttons_from_iter() -> impl IntoView {
     let button_iter = (0..3).map(|i| button(move || format!("Button {}", i)));
     v_stack_from_iter(button_iter)
 }

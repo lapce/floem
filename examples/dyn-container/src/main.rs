@@ -1,8 +1,7 @@
 use floem::{
     reactive::{create_rw_signal, RwSignal},
-    view::View,
-    views::{dyn_container, h_stack, label, v_stack, Decorators},
-    widgets::button,
+    views::{button, dyn_container, h_stack, label, v_stack, Decorators},
+    IntoView,
 };
 
 #[derive(Clone, PartialEq)]
@@ -11,11 +10,11 @@ enum ViewSwitcher {
     Two,
 }
 
-fn view_one() -> impl View {
+fn view_one() -> impl IntoView {
     label(|| "A view")
 }
 
-fn view_two(view: RwSignal<ViewSwitcher>) -> impl View {
+fn view_two(view: RwSignal<ViewSwitcher>) -> impl IntoView {
     v_stack((
         label(|| "Another view"),
         button(|| "Switch back").on_click_stop(move |_| {
@@ -25,7 +24,7 @@ fn view_two(view: RwSignal<ViewSwitcher>) -> impl View {
     .style(|s| s.gap(0.0, 10.0))
 }
 
-fn app_view() -> impl View {
+fn app_view() -> impl IntoView {
     let view = create_rw_signal(ViewSwitcher::One);
 
     v_stack((
@@ -41,13 +40,10 @@ fn app_view() -> impl View {
                 })
                 .style(|s| s.margin_bottom(20)),
         )),
-        dyn_container(
-            move || view.get(),
-            move |value| match value {
-                ViewSwitcher::One => view_one().any(),
-                ViewSwitcher::Two => view_two(view).any(),
-            },
-        )
+        dyn_container(move || match view.get() {
+            ViewSwitcher::One => view_one().into_any(),
+            ViewSwitcher::Two => view_two(view).into_any(),
+        })
         .style(|s| s.padding(10).border(1)),
     ))
     .style(|s| {

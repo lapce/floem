@@ -1,19 +1,20 @@
 //! A toggle button widget. An example can be found in widget-gallery/button in the floem examples.
 
-use floem_peniko::Color;
 use floem_reactive::{create_effect, create_updater};
 use floem_renderer::Renderer;
 use floem_winit::keyboard::{Key, NamedKey};
-use kurbo::{Point, Size};
+use peniko::kurbo::{Point, Size};
+use peniko::Color;
 
 use crate::{
+    event::EventPropagation,
+    id::ViewId,
     prop, prop_extractor,
     style::{self, Foreground, Style, StyleValue},
     style_class,
     unit::PxPct,
-    view::{View, ViewData, Widget},
+    view::View,
     views::Decorators,
-    EventPropagation,
 };
 
 /// Controls the switching behavior of the switch. The cooresponding style prop is [ToggleButtonBehavior]
@@ -50,7 +51,7 @@ enum ToggleState {
 
 /// A toggle button
 pub struct ToggleButton {
-    data: ViewData,
+    id: ViewId,
     state: bool,
     ontoggle: Option<Box<dyn Fn(bool)>>,
     position: f32,
@@ -76,18 +77,18 @@ pub struct ToggleButton {
 /// An example using [`RwSignal`](floem_reactive::RwSignal):
 /// ```rust
 /// let state = floem::reactive::create_rw_signal(true);
-/// floem::widgets::toggle_button(move || state.get())
+/// floem::views::toggle_button(move || state.get())
 ///         .on_toggle(move |new_state| state.set(new_state));
 ///```
 pub fn toggle_button(state: impl Fn() -> bool + 'static) -> ToggleButton {
-    let id = crate::id::Id::next();
+    let id = ViewId::new();
     create_effect(move |_| {
         let state = state();
         id.update_state(state);
     });
 
     ToggleButton {
-        data: ViewData::new(id),
+        id,
         state: false,
         ontoggle: None,
         position: 0.0,
@@ -101,55 +102,36 @@ pub fn toggle_button(state: impl Fn() -> bool + 'static) -> ToggleButton {
 }
 
 impl View for ToggleButton {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn Widget> {
-        Box::new(self)
-    }
-}
-
-impl Widget for ToggleButton {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
+    fn id(&self) -> ViewId {
+        self.id
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         "Toggle Button".into()
     }
 
-    fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
+    fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast::<bool>() {
             if self.held == ToggleState::Nothing {
                 self.update_restrict_position(true);
             }
             self.state = *state;
-            cx.request_layout(self.id());
+            self.id.request_layout();
         }
     }
 
-    fn event(
+    fn event_before_children(
         &mut self,
         cx: &mut crate::context::EventCx,
-        _id_path: Option<&[crate::id::Id]>,
-        event: crate::event::Event,
+        event: &crate::event::Event,
     ) -> EventPropagation {
         match event {
             crate::event::Event::PointerDown(_event) => {
-                cx.update_active(self.id());
+                cx.update_active(self.id);
                 self.held = ToggleState::Held;
             }
             crate::event::Event::PointerUp(_event) => {
-                cx.app_state_mut().request_layout(self.id());
+                self.id.request_layout();
 
                 // if held and pointer up. toggle the position (toggle state drag alrady changed the position)
                 if self.held == ToggleState::Held {
@@ -192,12 +174,12 @@ impl Widget for ToggleButton {
                                     ontoggle(false);
                                 }
                             }
-                            cx.app_state_mut().request_layout(self.id());
+                            self.id.request_layout();
                         }
                         ToggleHandleBehavior::Snap => {
                             if event.pos.x as f32 > self.width / 2. && !self.state {
                                 self.position = self.width;
-                                cx.app_state_mut().request_layout(self.id());
+                                self.id.request_layout();
                                 self.state = true;
                                 if let Some(ontoggle) = &self.ontoggle {
                                     ontoggle(true);
@@ -205,7 +187,7 @@ impl Widget for ToggleButton {
                             } else if (event.pos.x as f32) < self.width / 2. && self.state {
                                 self.position = 0.;
                                 // self.held = ToggleState::Nothing;
-                                cx.app_state_mut().request_layout(self.id());
+                                self.id.request_layout();
                                 self.state = false;
                                 if let Some(ontoggle) = &self.ontoggle {
                                     ontoggle(false);
@@ -230,8 +212,11 @@ impl Widget for ToggleButton {
         EventPropagation::Continue
     }
 
-    fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<kurbo::Rect> {
-        let layout = cx.get_layout(self.id()).unwrap();
+    fn compute_layout(
+        &mut self,
+        _cx: &mut crate::context::ComputeLayoutCx,
+    ) -> Option<peniko::kurbo::Rect> {
+        let layout = self.id.get_layout().unwrap_or_default();
         let size = layout.size;
         self.width = size.width;
         let circle_radius = match self.style.circle_rad() {
@@ -246,12 +231,12 @@ impl Widget for ToggleButton {
 
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         if self.style.read(cx) {
-            cx.app_state_mut().request_paint(self.id());
+            cx.app_state_mut().request_paint(self.id);
         }
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        let layout = cx.get_layout(self.id()).unwrap();
+        let layout = self.id.get_layout().unwrap_or_default();
         let size = Size::new(layout.size.width as f64, layout.size.height as f64);
         let circle_point = Point::new(self.position as f64, size.to_rect().center().y);
         let circle = crate::kurbo::Circle::new(circle_point, self.radius as f64);
@@ -287,16 +272,17 @@ impl ToggleButton {
     }
 
     pub fn toggle_style(
-        mut self,
+        self,
         style: impl Fn(ToggleButtonCustomStyle) -> ToggleButtonCustomStyle + 'static,
     ) -> Self {
         let id = self.id();
-        let offset = Widget::view_data_mut(&mut self).style.next_offset();
+        let view_state = id.state();
+        let offset = view_state.borrow_mut().style.next_offset();
         let style = create_updater(
             move || style(ToggleButtonCustomStyle(Style::new())),
-            move |style| id.update_style(style.0, offset),
+            move |style| id.update_style(offset, style.0),
         );
-        Widget::view_data_mut(&mut self).style.push(style.0);
+        view_state.borrow_mut().style.push(style.0);
         self
     }
 }

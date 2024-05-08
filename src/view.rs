@@ -20,14 +20,14 @@
 //! Then, we use a function to construct the slider. As part of this function we create an effect that will be re-run every time the signals in the  `percent` closure change.
 //! In the effect we send the change to the associated [`Id`]. This change can then be handled in the [`Widget::update`] method.
 //! ```rust
-//! use floem::view::ViewData;
+//! use floem::ViewId;
 //! use floem::reactive::*;
 //!
 //! struct Slider {
-//!     data: ViewData,
+//!     id: ViewId,
 //! }
 //! pub fn slider(percent: impl Fn() -> f32 + 'static) -> Slider {
-//!    let id = floem::id::Id::next();
+//!    let id = ViewId::new();
 //!
 //!    // If the following effect is not created, and `percent` is accesed directly,
 //!    // `percent` will only be accessed a single time and will not be reactive.
@@ -37,56 +37,29 @@
 //!        id.update_state(percent);
 //!    });
 //!    Slider {
-//!        data: ViewData::new(id),
+//!        id,
 //!    }
 //! }
 //! ```
 //!
 
+use floem_reactive::{ReadSignal, RwSignal};
 use floem_renderer::Renderer;
-use kurbo::{Circle, Insets, Line, Point, Rect, RoundedRect, Size};
+use peniko::kurbo::{Circle, Insets, Line, Point, Rect, RoundedRect, Size};
 use std::any::Any;
 use taffy::tree::NodeId;
 
 use crate::{
-    context::{AppState, ComputeLayoutCx, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx},
-    event::Event,
-    id::Id,
+    app_state::AppState,
+    context::{ComputeLayoutCx, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx},
+    event::{Event, EventPropagation},
+    id::ViewId,
     style::{BoxShadowProp, Style, StyleClassRef},
-    view_data::ViewStyleProps,
-    EventPropagation,
+    view_state::ViewStyleProps,
+    views::{dyn_container, DynamicContainer},
 };
 
-pub use crate::view_data::ViewData;
-
-pub type AnyWidget = Box<dyn Widget>;
-
-/// The View trait provides an interface to access the [`ViewData`] and to build a [`Widget`] into a View.
-pub trait View: Sized {
-    fn view_data(&self) -> &ViewData;
-    fn view_data_mut(&mut self) -> &mut ViewData;
-
-    fn id(&self) -> Id {
-        self.view_data().id()
-    }
-
-    /// This method builds the widget described by the view. Implementations may not assume that an
-    /// implicit scope is available. It may differ from the scope the view was created in or may not
-    /// be available at all.
-    fn build(self) -> AnyWidget;
-
-    /// Converts this view into the `AnyView` type.
-    fn any(self) -> AnyView
-    where
-        Self: 'static,
-    {
-        AnyView {
-            view: Box::new(self),
-        }
-    }
-}
-
-/// A type that can hold any view.
+/// type erased [`View`]
 ///
 /// Views in Floem are strongly typed. [`AnyView`] allows you to escape the strong typing by converting any type implementing [View] into the [AnyView] type.
 ///
@@ -109,52 +82,100 @@ pub trait View: Sized {
 ///
 /// ```
 /// use floem::views::*;
-/// use floem::widgets::*;
-/// use floem::view::View;
+/// use floem::{View, IntoView};
 ///
 /// let check = true;
 ///
 /// container(if check == true {
-///     checkbox(|| true).any()
+///     checkbox(|| true).into_any()
 /// } else {
-///     label(|| "no check".to_string()).any()
+///     label(|| "no check".to_string()).into_any()
 /// });
 /// ```
-pub struct AnyView {
-    view: Box<dyn DynView>,
-}
+pub type AnyView = Box<dyn View>;
 
-impl View for AnyView {
-    fn view_data(&self) -> &ViewData {
-        self.view.view_data()
-    }
+/// Converts the value into a [`View`].
+pub trait IntoView: Sized {
+    type V: View + 'static;
 
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        self.view.view_data_mut()
-    }
+    /// Converts the value into a [`View`].
+    fn into_view(self) -> Self::V;
 
-    fn build(self) -> AnyWidget {
-        self.view.build()
+    /// Converts the value into a [`AnyView`].
+    fn into_any(self) -> AnyView {
+        Box::new(self.into_view())
     }
 }
 
-trait DynView {
-    fn view_data(&self) -> &ViewData;
-    fn view_data_mut(&mut self) -> &mut ViewData;
-    fn build(self: Box<Self>) -> Box<dyn Widget>;
+impl<IV: IntoView + 'static> IntoView for Box<dyn Fn() -> IV> {
+    type V = DynamicContainer;
+
+    fn into_view(self) -> Self::V {
+        dyn_container(self)
+    }
 }
 
-impl<V: View> DynView for V {
-    fn view_data(&self) -> &ViewData {
-        self.view_data()
-    }
+impl<T: IntoView + Clone + 'static> IntoView for RwSignal<T> {
+    type V = DynamicContainer;
 
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        self.view_data_mut()
+    fn into_view(self) -> Self::V {
+        dyn_container(move || self.get())
     }
+}
 
-    fn build(self: Box<Self>) -> Box<dyn Widget> {
-        View::build(*self)
+impl<T: IntoView + Clone + 'static> IntoView for ReadSignal<T> {
+    type V = DynamicContainer;
+
+    fn into_view(self) -> Self::V {
+        dyn_container(move || self.get())
+    }
+}
+
+impl<VW: View + 'static> IntoView for VW {
+    type V = VW;
+
+    fn into_view(self) -> Self::V {
+        self
+    }
+}
+
+impl IntoView for i32 {
+    type V = crate::views::Label;
+
+    fn into_view(self) -> Self::V {
+        crate::views::text(self)
+    }
+}
+
+impl IntoView for usize {
+    type V = crate::views::Label;
+
+    fn into_view(self) -> Self::V {
+        crate::views::text(self)
+    }
+}
+
+impl IntoView for &str {
+    type V = crate::views::Label;
+
+    fn into_view(self) -> Self::V {
+        crate::views::text(self)
+    }
+}
+
+impl IntoView for String {
+    type V = crate::views::Label;
+
+    fn into_view(self) -> Self::V {
+        crate::views::text(self)
+    }
+}
+
+impl<IV: IntoView + 'static> IntoView for Vec<IV> {
+    type V = crate::views::Stack;
+
+    fn into_view(self) -> Self::V {
+        crate::views::stack_from_iter(self)
     }
 }
 
@@ -162,26 +183,8 @@ impl<V: View> DynView for V {
 ///
 /// The [view_data](Widget::view_data) and [view_data_mut](Widget::view_data_mut) methods must be implemented. If the widget contains a child then the [for_each_child](Widget::for_each_child), [for_each_child_mut](Widget::for_each_child_mut), and [for_each_child_rev_mut](Widget::for_each_child_rev_mut) methods must also be implemented.
 /// The other methods may be implemented as necessary to implement the Widget.
-pub trait Widget {
-    fn view_data(&self) -> &ViewData;
-    fn view_data_mut(&mut self) -> &mut ViewData;
-
-    /// This method walks over children and must be implemented if the view has any children.
-    /// It should return children back to front and should stop if `_for_each` returns `true`.
-    fn for_each_child<'a>(&'a self, _for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {}
-
-    /// This method walks over children and must be implemented if the view has any children.
-    /// It should return children back to front and should stop if `_for_each` returns `true`.
-    fn for_each_child_mut<'a>(&'a mut self, _for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
-    }
-
-    /// This method walks over children and must be implemented if the view has any children.
-    /// It should return children front to back and should stop if `_for_each` returns `true`.
-    fn for_each_child_rev_mut<'a>(
-        &'a mut self,
-        _for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
-    ) {
-    }
+pub trait View {
+    fn id(&self) -> ViewId;
 
     fn view_style(&self) -> Option<Style> {
         None
@@ -189,32 +192,6 @@ pub trait Widget {
 
     fn view_class(&self) -> Option<StyleClassRef> {
         None
-    }
-
-    fn child(&self, id: Id) -> Option<&dyn Widget> {
-        let mut result = None;
-        self.for_each_child(&mut |view| {
-            if view.view_data().id() == id {
-                result = Some(view);
-                true
-            } else {
-                false
-            }
-        });
-        result
-    }
-
-    fn child_mut(&mut self, id: Id) -> Option<&mut dyn Widget> {
-        let mut result = None;
-        self.for_each_child_mut(&mut |view| {
-            if view.view_data().id() == id {
-                result = Some(view);
-                true
-            } else {
-                false
-            }
-        });
-        result
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -239,10 +216,9 @@ pub trait Widget {
     /// If the style changes needs other passes to run you're expected to call
     /// `cx.app_state_mut().request_changes`.
     fn style(&mut self, cx: &mut StyleCx<'_>) {
-        self.for_each_child_mut(&mut |child| {
+        for child in self.id().children() {
             cx.style_view(child);
-            false
-        });
+        }
     }
 
     /// Use this method to layout the view's children.
@@ -251,12 +227,13 @@ pub trait Widget {
     /// If the layout changes needs other passes to run you're expected to call
     /// `cx.app_state_mut().request_changes`.
     fn layout(&mut self, cx: &mut LayoutCx) -> NodeId {
-        cx.layout_node(self.view_data().id(), true, |cx| {
+        cx.layout_node(self.id(), true, |cx| {
             let mut nodes = Vec::new();
-            self.for_each_child_mut(&mut |child| {
-                nodes.push(cx.layout_view(child));
-                false
-            });
+            for child in self.id().children() {
+                let view = child.view();
+                let mut view = view.borrow_mut();
+                nodes.push(view.layout(cx));
+            }
             nodes
         })
     }
@@ -266,7 +243,7 @@ pub trait Widget {
     /// If the layout changes needs other passes to run you're expected to call
     /// `cx.app_state_mut().request_changes`.
     fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
-        default_compute_layout(self, cx)
+        default_compute_layout(self.id(), cx)
     }
 
     /// Implement this to handle events and to pass them down to children
@@ -275,47 +252,99 @@ pub trait Widget {
     ///
     /// If the event needs other passes to run you're expected to call
     /// `cx.app_state_mut().request_changes`.
-    fn event(
-        &mut self,
-        cx: &mut EventCx,
-        id_path: Option<&[Id]>,
-        event: Event,
-    ) -> EventPropagation {
-        default_event(self, cx, id_path, event)
+    // fn event(
+    //     &mut self,
+    //     cx: &mut EventCx,
+    //     id_path: Option<&[Id]>,
+    //     event: Event,
+    // ) -> EventPropagation {
+    //     default_event(self, cx, id_path, event)
+    // }
+
+    fn event_before_children(&mut self, _cx: &mut EventCx, _event: &Event) -> EventPropagation {
+        EventPropagation::Continue
+    }
+
+    fn event_after_children(&mut self, _cx: &mut EventCx, _event: &Event) -> EventPropagation {
+        EventPropagation::Continue
     }
 
     /// `View`-specific implementation. Will be called in [`PaintCx::paint_view`](crate::context::PaintCx::paint_view).
     /// Usually you'll call `paint_view` for every child view. But you might also draw text, adjust the offset, clip
     /// or draw text.
     fn paint(&mut self, cx: &mut PaintCx) {
-        self.for_each_child_mut(&mut |child| {
-            cx.paint_view(child);
-            false
-        });
+        cx.paint_children(self.id());
     }
 
     /// Scrolls the view and all direct and indirect children to bring the `target` view to be
     /// visible. Returns true if this view contains or is the target.
-    fn scroll_to(&mut self, cx: &mut AppState, target: Id, rect: Option<Rect>) -> bool {
-        if self.view_data().id() == target {
+    fn scroll_to(&mut self, cx: &mut AppState, target: ViewId, rect: Option<Rect>) -> bool {
+        if self.id() == target {
             return true;
         }
         let mut found = false;
-        self.for_each_child_mut(&mut |child| {
-            found |= child.scroll_to(cx, target, rect);
-            found
-        });
+
+        for child in self.id().children() {
+            found |= child.view().borrow_mut().scroll_to(cx, target, rect);
+        }
         found
     }
 }
 
+impl View for Box<dyn View> {
+    fn id(&self) -> ViewId {
+        (**self).id()
+    }
+
+    fn view_style(&self) -> Option<Style> {
+        (**self).view_style()
+    }
+
+    fn view_class(&self) -> Option<StyleClassRef> {
+        (**self).view_class()
+    }
+
+    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
+        (**self).debug_name()
+    }
+
+    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {
+        (**self).update(cx, state)
+    }
+
+    fn style(&mut self, cx: &mut StyleCx) {
+        (**self).style(cx)
+    }
+
+    fn layout(&mut self, cx: &mut LayoutCx) -> NodeId {
+        (**self).layout(cx)
+    }
+
+    fn event_before_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
+        (**self).event_before_children(cx, event)
+    }
+
+    fn event_after_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
+        (**self).event_after_children(cx, event)
+    }
+
+    fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
+        (**self).compute_layout(cx)
+    }
+
+    fn paint(&mut self, cx: &mut PaintCx) {
+        (**self).paint(cx)
+    }
+
+    fn scroll_to(&mut self, cx: &mut AppState, target: ViewId, rect: Option<Rect>) -> bool {
+        (**self).scroll_to(cx, target, rect)
+    }
+}
+
 /// Computes the layout of the view's children, if any.
-pub fn default_compute_layout<V: Widget + ?Sized>(
-    view: &mut V,
-    cx: &mut ComputeLayoutCx,
-) -> Option<Rect> {
+pub fn default_compute_layout(id: ViewId, cx: &mut ComputeLayoutCx) -> Option<Rect> {
     let mut layout_rect: Option<Rect> = None;
-    view.for_each_child_mut(&mut |child| {
+    for child in id.children() {
         let child_layout = cx.compute_view_layout(child);
         if let Some(child_layout) = child_layout {
             if let Some(rect) = layout_rect {
@@ -324,27 +353,8 @@ pub fn default_compute_layout<V: Widget + ?Sized>(
                 layout_rect = Some(child_layout);
             }
         }
-        false
-    });
-    layout_rect
-}
-
-pub fn default_event<V: Widget + ?Sized>(
-    view: &mut V,
-    cx: &mut EventCx,
-    id_path: Option<&[Id]>,
-    event: Event,
-) -> EventPropagation {
-    let mut handled = false;
-    view.for_each_child_rev_mut(&mut |child| {
-        handled |= cx.view_event(child, id_path, event.clone()).is_processed();
-        handled
-    });
-    if handled {
-        EventPropagation::Stop
-    } else {
-        EventPropagation::Continue
     }
+    layout_rect
 }
 
 pub(crate) fn paint_bg(
@@ -504,38 +514,16 @@ pub(crate) fn paint_border(cx: &mut PaintCx, style: &ViewStyleProps, size: Size)
     }
 }
 
-pub(crate) fn view_children(view: &dyn Widget) -> Vec<&dyn Widget> {
-    let mut result = Vec::new();
-    view.for_each_child(&mut |view| {
-        result.push(view);
-        false
-    });
-    result
-}
-
 /// Tab navigation finds the next or previous view with the `keyboard_navigatable` status in the tree.
 #[allow(dead_code)]
-pub(crate) fn view_tab_navigation(
-    root_view: &dyn Widget,
-    app_state: &mut AppState,
-    backwards: bool,
-) {
-    let start = app_state
-        .focus
-        .filter(|id| id.id_path().is_some())
-        .unwrap_or(root_view.view_data().id());
+pub(crate) fn view_tab_navigation(root_view: ViewId, app_state: &mut AppState, backwards: bool) {
+    let start = app_state.focus.unwrap_or(root_view);
 
-    assert!(
-        view_filtered_children(root_view, start.id_path().unwrap().dispatch()).is_some(),
-        "The focused view is missing from the tree"
-    );
-
-    let tree_iter = |id: Id| {
+    let tree_iter = |id: ViewId| {
         if backwards {
-            view_tree_previous(root_view, &id)
-                .unwrap_or_else(|| view_nested_last_child(root_view).view_data().id())
+            view_tree_previous(root_view, id).unwrap_or_else(|| view_nested_last_child(root_view))
         } else {
-            view_tree_next(root_view, &id).unwrap_or(root_view.view_data().id())
+            view_tree_next(id).unwrap_or(root_view)
         }
     };
 
@@ -548,63 +536,32 @@ pub(crate) fn view_tab_navigation(
     app_state.update_focus(new_focus, true);
 }
 
-fn view_filtered_children<'a>(view: &'a dyn Widget, id_path: &[Id]) -> Option<Vec<&'a dyn Widget>> {
-    let id = id_path[0];
-    let id_path = &id_path[1..];
-
-    if id == view.view_data().id() {
-        if id_path.is_empty() {
-            Some(view_children(view))
-        } else if let Some(child) = view.child(id_path[0]) {
-            view_filtered_children(child, id_path)
-        } else {
-            None
-        }
-    } else {
-        None
-    }
-}
-
 /// Get the next item in the tree, either the first child or the next sibling of this view or of the first parent view
-fn view_tree_next(root_view: &dyn Widget, id: &Id) -> Option<Id> {
-    let id_path = id.id_path().unwrap();
-
-    if let Some(child) = view_filtered_children(root_view, id_path.dispatch())
-        .unwrap()
-        .into_iter()
-        .next()
-    {
-        return Some(child.view_data().id());
+fn view_tree_next(id: ViewId) -> Option<ViewId> {
+    if let Some(child) = id.children().into_iter().next() {
+        return Some(child);
     }
 
-    let mut ancestor = *id;
+    let mut ancestor = id;
     loop {
-        let id_path = ancestor.id_path().unwrap();
-        if id_path.dispatch().is_empty() {
-            return None;
-        }
-        if let Some(next_sibling) = view_next_sibling(root_view, id_path.dispatch()) {
-            return Some(next_sibling.view_data().id());
+        if let Some(next_sibling) = view_next_sibling(ancestor) {
+            return Some(next_sibling);
         }
         ancestor = ancestor.parent()?;
     }
 }
 
 /// Get the id of the view after this one (but with the same parent and level of nesting)
-fn view_next_sibling<'a>(root_view: &'a dyn Widget, id_path: &[Id]) -> Option<&'a dyn Widget> {
-    let id = *id_path.last().unwrap();
-    let parent = &id_path[0..(id_path.len() - 1)];
+fn view_next_sibling(id: ViewId) -> Option<ViewId> {
+    let parent = id.parent();
 
-    if parent.is_empty() {
+    let Some(parent) = parent else {
         // We're the root, which has no sibling
         return None;
-    }
+    };
 
-    let children = view_filtered_children(root_view, parent).unwrap();
-    let pos = children
-        .iter()
-        .position(|v| v.view_data().id() == id)
-        .unwrap();
+    let children = parent.children();
+    let pos = children.iter().position(|v| v == &id).unwrap();
 
     if pos + 1 < children.len() {
         Some(children[pos + 1])
@@ -614,34 +571,28 @@ fn view_next_sibling<'a>(root_view: &'a dyn Widget, id_path: &[Id]) -> Option<&'
 }
 
 /// Get the next item in the tree, the deepest last child of the previous sibling of this view or the parent
-fn view_tree_previous(root_view: &dyn Widget, id: &Id) -> Option<Id> {
-    let id_path = id.id_path().unwrap();
-
-    view_previous_sibling(root_view, id_path.dispatch())
-        .map(|view| view_nested_last_child(view).view_data().id())
+fn view_tree_previous(root_view: ViewId, id: ViewId) -> Option<ViewId> {
+    view_previous_sibling(id)
+        .map(view_nested_last_child)
         .or_else(|| {
-            (root_view.view_data().id() != *id).then_some(
+            (root_view != id).then_some(
                 id.parent()
-                    .unwrap_or_else(|| view_nested_last_child(root_view).view_data().id()),
+                    .unwrap_or_else(|| view_nested_last_child(root_view)),
             )
         })
 }
 
 /// Get the id of the view before this one (but with the same parent and level of nesting)
-fn view_previous_sibling<'a>(root_view: &'a dyn Widget, id_path: &[Id]) -> Option<&'a dyn Widget> {
-    let id = *id_path.last().unwrap();
-    let parent = &id_path[0..(id_path.len() - 1)];
+fn view_previous_sibling(id: ViewId) -> Option<ViewId> {
+    let parent = id.parent();
 
-    if parent.is_empty() {
+    let Some(parent) = parent else {
         // We're the root, which has no sibling
         return None;
-    }
+    };
 
-    let children = view_filtered_children(root_view, parent).unwrap();
-    let pos = children
-        .iter()
-        .position(|v| v.view_data().id() == id)
-        .unwrap();
+    let children = parent.children();
+    let pos = children.iter().position(|v| v == &id).unwrap();
 
     if pos > 0 {
         Some(children[pos - 1])
@@ -650,18 +601,9 @@ fn view_previous_sibling<'a>(root_view: &'a dyn Widget, id_path: &[Id]) -> Optio
     }
 }
 
-pub(crate) fn view_children_set_parent_id(view: &dyn Widget) {
-    let parent_id = view.view_data().id();
-    view.for_each_child(&mut |child| {
-        child.view_data().id().set_parent(parent_id);
-        view_children_set_parent_id(child);
-        false
-    });
-}
-
-fn view_nested_last_child(view: &dyn Widget) -> &dyn Widget {
+fn view_nested_last_child(view: ViewId) -> ViewId {
     let mut last_child = view;
-    while let Some(new_last_child) = view_children(last_child).pop() {
+    while let Some(new_last_child) = last_child.children().pop() {
         last_child = new_last_child;
     }
     last_child
@@ -669,7 +611,7 @@ fn view_nested_last_child(view: &dyn Widget) -> &dyn Widget {
 
 /// Produces an ascii art debug display of all of the views.
 #[allow(dead_code)]
-pub(crate) fn view_debug_tree(root_view: &dyn Widget) {
+pub(crate) fn view_debug_tree(root_view: ViewId) {
     let mut views = vec![(root_view, Vec::new())];
     while let Some((current_view, active_lines)) = views.pop() {
         // Ascii art for the tree view
@@ -681,11 +623,11 @@ pub(crate) fn view_debug_tree(root_view: &dyn Widget) {
         }
         println!(
             "{:?} {}",
-            current_view.view_data().id(),
-            &current_view.debug_name()
+            current_view,
+            current_view.view().borrow().debug_name()
         );
 
-        let mut children = view_children(current_view);
+        let mut children = current_view.children();
         if let Some(last_child) = children.pop() {
             views.push((last_child, [active_lines.as_slice(), &[false]].concat()));
         }
@@ -696,83 +638,5 @@ pub(crate) fn view_debug_tree(root_view: &dyn Widget) {
                 .rev()
                 .map(|child| (child, [active_lines.as_slice(), &[true]].concat())),
         );
-    }
-}
-
-impl Widget for Box<dyn Widget> {
-    fn view_data(&self) -> &ViewData {
-        (**self).view_data()
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        (**self).view_data_mut()
-    }
-
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
-        (**self).for_each_child(for_each)
-    }
-
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
-        (**self).for_each_child_mut(for_each)
-    }
-
-    fn for_each_child_rev_mut<'a>(
-        &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
-    ) {
-        (**self).for_each_child_rev_mut(for_each)
-    }
-
-    fn view_style(&self) -> Option<Style> {
-        (**self).view_style()
-    }
-
-    fn view_class(&self) -> Option<StyleClassRef> {
-        (**self).view_class()
-    }
-
-    fn child(&self, id: Id) -> Option<&dyn Widget> {
-        (**self).child(id)
-    }
-
-    fn child_mut(&mut self, id: Id) -> Option<&mut dyn Widget> {
-        (**self).child_mut(id)
-    }
-
-    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        (**self).debug_name()
-    }
-
-    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {
-        (**self).update(cx, state)
-    }
-
-    fn style(&mut self, cx: &mut StyleCx) {
-        (**self).style(cx)
-    }
-
-    fn layout(&mut self, cx: &mut LayoutCx) -> NodeId {
-        (**self).layout(cx)
-    }
-
-    fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
-        (**self).compute_layout(cx)
-    }
-
-    fn event(
-        &mut self,
-        cx: &mut EventCx,
-        id_path: Option<&[Id]>,
-        event: Event,
-    ) -> EventPropagation {
-        (**self).event(cx, id_path, event)
-    }
-
-    fn paint(&mut self, cx: &mut PaintCx) {
-        (**self).paint(cx)
-    }
-
-    fn scroll_to(&mut self, cx: &mut AppState, target: Id, rect: Option<Rect>) -> bool {
-        (**self).scroll_to(cx, target, rect)
     }
 }

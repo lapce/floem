@@ -1,8 +1,8 @@
 use floem::{
     keyboard::{Key, Modifiers, NamedKey},
     reactive::RwSignal,
-    view::View,
     views::{
+        button,
         editor::{
             command::{Command, CommandExecuted},
             core::{command::EditCommand, editor::EditType, selection::Selection},
@@ -10,10 +10,10 @@ use floem::{
         },
         stack, text_editor, Decorators,
     },
-    widgets::button,
+    IntoView, View,
 };
 
-fn app_view() -> impl View {
+fn app_view() -> impl IntoView {
     let text = std::env::args()
         .nth(1)
         .map(|s| std::fs::read_to_string(s).unwrap());

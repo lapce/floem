@@ -4,14 +4,14 @@ use std::{
 };
 
 use floem_winit::window::ResizeDirection;
-use kurbo::{Point, Size, Vec2};
+use peniko::kurbo::{Point, Size, Vec2};
 
 use crate::{
     app::{add_app_update_event, AppUpdateEvent},
-    id::Id,
+    id::ViewId,
     menu::Menu,
     update::{UpdateMessage, CENTRAL_UPDATE_MESSAGES},
-    view::Widget,
+    view::View,
     window_handle::{get_current_view, set_current_view},
 };
 
@@ -129,11 +129,11 @@ pub fn set_ime_cursor_area(position: Point, size: Size) {
 }
 
 /// Creates a new overlay on the current window.
-pub fn add_overlay<V: Widget + 'static>(
+pub fn add_overlay<V: View + 'static>(
     position: Point,
-    view: impl FnOnce(Id) -> V + 'static,
-) -> Id {
-    let id = Id::next();
+    view: impl FnOnce(ViewId) -> V + 'static,
+) -> ViewId {
+    let id = ViewId::new();
     add_update_message(UpdateMessage::AddOverlay {
         id,
         position,
@@ -143,6 +143,6 @@ pub fn add_overlay<V: Widget + 'static>(
 }
 
 /// Removes an overlay from the current window.
-pub fn remove_overlay(id: Id) {
+pub fn remove_overlay(id: ViewId) {
     add_update_message(UpdateMessage::RemoveOverlay { id });
 }

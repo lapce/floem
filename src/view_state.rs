@@ -1,8 +1,9 @@
 use crate::{
     animate::{AnimPropKind, Animation},
-    context::{EventCallback, InteractionState, MenuCallback, MoveListener, ResizeListener},
+    context::{
+        EventCallback, InteractionState, MenuCallback, MoveListener, ResizeCallback, ResizeListener,
+    },
     event::EventListener,
-    id::{Id, ID_PATHS},
     pointer::PointerInputEvent,
     prop_extractor,
     responsive::ScreenSizeBp,
@@ -10,13 +11,11 @@ use crate::{
         Background, BorderBottom, BorderColor, BorderLeft, BorderRadius, BorderRight, BorderTop,
         LayoutProps, Outline, OutlineColor, Style, StyleClassRef, StyleSelectors,
     },
-    view::Widget,
-    EventPropagation,
 };
 use bitflags::bitflags;
-use kurbo::Rect;
+use peniko::kurbo::{Point, Rect};
 use smallvec::SmallVec;
-use std::{collections::HashMap, marker::PhantomData, time::Duration};
+use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::Rc, time::Duration};
 use taffy::tree::NodeId;
 
 /// A stack of view attributes. Each entry is associated with a view decorator call.
@@ -60,60 +59,6 @@ impl<T> Stack<T> {
     }
 }
 
-/// View data stores internal state associated with a view.
-/// Each view is expected to own and give access to this data.
-pub struct ViewData {
-    pub(crate) id: Id,
-    pub(crate) style: Stack<Style>,
-    pub(crate) event_handlers: SmallVec<[Box<EventCallback>; 1]>,
-    pub(crate) debug_name: SmallVec<[String; 1]>,
-}
-
-impl ViewData {
-    pub fn new(id: Id) -> Self {
-        Self {
-            id,
-            style: Default::default(),
-            event_handlers: Default::default(),
-            debug_name: Default::default(),
-        }
-    }
-    pub fn id(&self) -> Id {
-        self.id
-    }
-
-    pub(crate) fn style(&self) -> Style {
-        let mut result = Style::new();
-        for entry in self.style.stack.iter() {
-            result.apply_mut(entry.clone());
-        }
-        result
-    }
-}
-
-pub(crate) fn update_data(id: Id, root: &mut dyn Widget, f: impl FnOnce(&mut ViewData)) {
-    pub(crate) fn update_inner(
-        id_path: &[Id],
-        view: &mut dyn Widget,
-        f: impl FnOnce(&mut ViewData),
-    ) {
-        let id = id_path[0];
-        let id_path = &id_path[1..];
-        if id == view.view_data().id() {
-            if id_path.is_empty() {
-                f(view.view_data_mut());
-            } else if let Some(child) = view.child_mut(id_path[0]) {
-                update_inner(id_path, child, f);
-            }
-        }
-    }
-
-    let id_path = ID_PATHS.with(|paths| paths.borrow().get(&id).cloned());
-    if let Some(id_path) = id_path {
-        update_inner(id_path.dispatch(), root, f)
-    }
-}
-
 prop_extractor! {
     pub(crate) ViewStyleProps {
         pub border_left: BorderLeft,
@@ -142,6 +87,7 @@ bitflags! {
 pub struct ViewState {
     pub(crate) node: NodeId,
     pub(crate) requested_changes: ChangeFlags,
+    pub(crate) style: Stack<Style>,
     /// Layout is requested on all direct and indirect children.
     pub(crate) request_style_recursive: bool,
     pub(crate) has_style_selectors: StyleSelectors,
@@ -154,13 +100,14 @@ pub struct ViewState {
     pub(crate) dragging_style: Option<Style>,
     pub(crate) combined_style: Style,
     pub(crate) taffy_style: taffy::style::Style,
-    pub(crate) event_listeners: HashMap<EventListener, Vec<Box<EventCallback>>>,
-    pub(crate) context_menu: Option<Box<MenuCallback>>,
-    pub(crate) popout_menu: Option<Box<MenuCallback>>,
-    pub(crate) resize_listener: Option<ResizeListener>,
-    pub(crate) move_listener: Option<MoveListener>,
-    pub(crate) cleanup_listener: Option<Box<dyn Fn()>>,
+    pub(crate) event_listeners: HashMap<EventListener, Vec<Rc<EventCallback>>>,
+    pub(crate) context_menu: Option<Rc<MenuCallback>>,
+    pub(crate) popout_menu: Option<Rc<MenuCallback>>,
+    pub(crate) resize_listener: Option<Rc<RefCell<ResizeListener>>>,
+    pub(crate) move_listener: Option<Rc<RefCell<MoveListener>>>,
+    pub(crate) cleanup_listener: Option<Rc<dyn Fn()>>,
     pub(crate) last_pointer_down: Option<PointerInputEvent>,
+    pub(crate) debug_name: SmallVec<[String; 1]>,
 }
 
 impl ViewState {
@@ -168,6 +115,7 @@ impl ViewState {
         Self {
             node: taffy.new_leaf(taffy::style::Style::DEFAULT).unwrap(),
             viewport: None,
+            style: Default::default(),
             layout_rect: Rect::ZERO,
             layout_props: Default::default(),
             view_style_props: Default::default(),
@@ -186,26 +134,7 @@ impl ViewState {
             move_listener: None,
             cleanup_listener: None,
             last_pointer_down: None,
-        }
-    }
-
-    pub(crate) fn apply_event(
-        &self,
-        listener: &EventListener,
-        event: &crate::event::Event,
-    ) -> Option<EventPropagation> {
-        let mut handled = false;
-        if let Some(handlers) = self.event_listeners.get(listener) {
-            for handler in handlers {
-                handled |= handler(event).is_processed();
-            }
-        } else {
-            return None;
-        }
-        if handled {
-            Some(EventPropagation::Stop)
-        } else {
-            Some(EventPropagation::Continue)
+            debug_name: Default::default(),
         }
     }
 
@@ -213,12 +142,10 @@ impl ViewState {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn compute_style(
         &mut self,
-        view_data: &mut ViewData,
         view_style: Option<Style>,
         interact_state: InteractionState,
         screen_size_bp: ScreenSizeBp,
         view_class: Option<StyleClassRef>,
-        classes: &[StyleClassRef],
         context: &Style,
     ) -> bool {
         let mut new_frame = false;
@@ -230,8 +157,8 @@ impl ViewState {
             computed_style = computed_style.apply_classes_from_context(&[view_class], context);
         }
         computed_style = computed_style
-            .apply_classes_from_context(classes, context)
-            .apply(view_data.style());
+            .apply_classes_from_context(&self.classes, context)
+            .apply(self.style());
 
         'anim: {
             if let Some(animation) = self.animation.as_mut() {
@@ -275,5 +202,42 @@ impl ViewState {
         self.combined_style = computed_style;
 
         new_frame
+    }
+
+    pub(crate) fn style(&self) -> Style {
+        let mut result = Style::new();
+        for entry in self.style.stack.iter() {
+            result.apply_mut(entry.clone());
+        }
+        result
+    }
+
+    pub(crate) fn add_event_listener(
+        &mut self,
+        listener: EventListener,
+        action: Box<EventCallback>,
+    ) {
+        self.event_listeners
+            .entry(listener)
+            .or_default()
+            .push(Rc::new(action));
+    }
+
+    pub(crate) fn update_resize_listener(&mut self, action: Box<ResizeCallback>) {
+        self.resize_listener = Some(Rc::new(RefCell::new(ResizeListener {
+            rect: Rect::ZERO,
+            callback: action,
+        })));
+    }
+
+    pub(crate) fn update_move_listener(&mut self, action: Box<dyn Fn(Point)>) {
+        self.move_listener = Some(Rc::new(RefCell::new(MoveListener {
+            window_origin: Point::ZERO,
+            callback: action,
+        })));
+    }
+
+    pub(crate) fn update_cleanup_listener(&mut self, action: impl Fn() + 'static) {
+        self.cleanup_listener = Some(Rc::new(action));
     }
 }

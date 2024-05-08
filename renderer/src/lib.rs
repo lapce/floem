@@ -1,10 +1,10 @@
 pub use floem_cosmic_text as cosmic_text;
 use floem_cosmic_text::TextLayout;
-use floem_peniko::{
+use image::DynamicImage;
+use peniko::{
     kurbo::{Affine, Point, Rect, Shape},
     BrushRef,
 };
-use image::DynamicImage;
 pub use resvg::tiny_skia;
 pub use resvg::usvg;
 

@@ -2,14 +2,13 @@ use floem::{
     cosmic_text::{self, Weight},
     peniko::Color,
     reactive::create_rw_signal,
-    view::View,
-    views::{Decorators, SelectionCornerRadius},
-    widgets::{text_input, PlaceholderTextClass},
+    views::{text_input, Decorators, PlaceholderTextClass, SelectionCornerRadius},
+    IntoView,
 };
 
 use crate::form::{form, form_item};
 
-pub fn text_input_view() -> impl View {
+pub fn text_input_view() -> impl IntoView {
     let text = create_rw_signal("".to_string());
 
     form({

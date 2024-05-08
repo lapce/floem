@@ -10,7 +10,7 @@
 //!
 //! ## The counter example to show composing views
 //! ```rust
-//! use floem::{reactive::*, views::*, widgets::*};
+//! use floem::{reactive::*, views::*};
 //!
 //! let (counter, set_counter) = create_signal(0);
 //! v_stack((
@@ -103,6 +103,9 @@ pub use drag_resize_window_area::*;
 mod img;
 pub use img::*;
 
+mod button;
+pub use button::*;
+
 #[cfg(feature = "editor")]
 pub mod editor;
 
@@ -110,3 +113,16 @@ pub mod editor;
 pub mod text_editor;
 #[cfg(feature = "editor")]
 pub use text_editor::*;
+
+pub mod dropdown;
+
+pub mod slider;
+
+mod radio_button;
+pub use radio_button::*;
+
+mod checkbox;
+pub use checkbox::*;
+
+mod toggle_button;
+pub use toggle_button::*;

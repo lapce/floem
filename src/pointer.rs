@@ -1,5 +1,5 @@
 use floem_winit::event::MouseButton;
-use kurbo::{Point, Vec2};
+use peniko::kurbo::{Point, Vec2};
 
 use crate::keyboard::Modifiers;
 

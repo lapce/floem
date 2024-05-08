@@ -3,18 +3,18 @@ use floem::{
     peniko::Color,
     reactive::create_rw_signal,
     style::Position,
-    view::View,
     views::{
         container, h_stack, label, scroll, v_stack, virtual_stack, Decorators, VirtualDirection,
         VirtualItemSize,
     },
+    IntoView, View,
 };
 
 const SIDEBAR_WIDTH: f64 = 140.0;
 const TOPBAR_HEIGHT: f64 = 30.0;
 const SIDEBAR_ITEM_HEIGHT: f64 = 21.0;
 
-pub fn right_sidebar_view() -> impl View {
+pub fn right_sidebar_view() -> impl IntoView {
     let long_list: im::Vector<i32> = (0..100).collect();
     let long_list = create_rw_signal(long_list);
 

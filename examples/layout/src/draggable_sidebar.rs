@@ -1,19 +1,18 @@
 use floem::{
-    event::{Event, EventListener},
+    event::{Event, EventListener, EventPropagation},
     peniko::Color,
     reactive::{create_rw_signal, create_signal},
     style::{CursorStyle, Position},
-    view::View,
     views::{
         container, h_stack, label, scroll, virtual_stack, Decorators, VirtualDirection,
         VirtualItemSize,
     },
-    EventPropagation,
+    IntoView, View,
 };
 
 const SIDEBAR_WIDTH: f64 = 100.0;
 
-pub fn draggable_sidebar_view() -> impl View {
+pub fn draggable_sidebar_view() -> impl IntoView {
     let long_list: im::Vector<i32> = (0..100).collect();
     let (long_list, _set_long_list) = create_signal(long_list);
     let sidebar_width = create_rw_signal(SIDEBAR_WIDTH);

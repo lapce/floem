@@ -1,19 +1,19 @@
 use crate::{
     context::PaintCx,
     cosmic_text::{Attrs, AttrsList, TextLayout},
-    id::Id,
+    id::ViewId,
     peniko::kurbo::Point,
     prop, prop_extractor,
     style::{Style, TextColor},
     style_class,
-    view::{AnyWidget, View, ViewData, Widget},
+    view::View,
     views::Decorators,
     Renderer,
 };
 use floem_editor_core::{cursor::CursorMode, mode::Mode};
-use floem_peniko::Color;
 use floem_reactive::RwSignal;
-use kurbo::Rect;
+use peniko::kurbo::Rect;
+use peniko::Color;
 
 use super::{CurrentLineColor, Editor};
 
@@ -41,7 +41,7 @@ impl GutterStyle {
 }
 
 pub struct EditorGutterView {
-    data: ViewData,
+    id: ViewId,
     editor: RwSignal<Editor>,
     full_width: f64,
     text_width: f64,
@@ -51,10 +51,10 @@ pub struct EditorGutterView {
 style_class!(pub GutterClass);
 
 pub fn editor_gutter_view(editor: RwSignal<Editor>) -> EditorGutterView {
-    let id = Id::next();
+    let id = ViewId::new();
 
     EditorGutterView {
-        data: ViewData::new(id),
+        id,
         editor,
         full_width: 0.0,
         text_width: 0.0,
@@ -64,25 +64,8 @@ pub fn editor_gutter_view(editor: RwSignal<Editor>) -> EditorGutterView {
 }
 
 impl View for EditorGutterView {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> AnyWidget {
-        Box::new(self)
-    }
-}
-impl Widget for EditorGutterView {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
+    fn id(&self) -> ViewId {
+        self.id
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -96,11 +79,12 @@ impl Widget for EditorGutterView {
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::prelude::NodeId {
-        cx.layout_node(self.id(), true, |cx| {
+        cx.layout_node(self.id(), true, |_cx| {
             let (width, height) = (self.text_width, 10.0);
-            let layout_node = cx
-                .app_state_mut()
-                .taffy
+            let layout_node = self
+                .id
+                .taffy()
+                .borrow_mut()
                 .new_leaf(taffy::style::Style::DEFAULT)
                 .unwrap();
 
@@ -108,12 +92,13 @@ impl Widget for EditorGutterView {
                 .width(self.gutter_style.left_padding() + width + self.gutter_style.right_padding())
                 .height(height)
                 .to_taffy_style();
-            let _ = cx.app_state_mut().taffy.set_style(layout_node, style);
+            let _ = self.id.taffy().borrow_mut().set_style(layout_node, style);
             vec![layout_node]
         })
     }
-    fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
-        if let Some(width) = cx.get_layout(self.data.id()).map(|l| l.size.width as f64) {
+
+    fn compute_layout(&mut self, _cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
+        if let Some(width) = self.id.get_layout().map(|l| l.size.width as f64) {
             self.full_width = width;
         }
 
@@ -137,7 +122,7 @@ impl Widget for EditorGutterView {
             > 1e-2
         {
             self.text_width = widest_text_width;
-            cx.app_state_mut().request_layout(self.id());
+            self.id.request_layout();
         }
         None
     }
