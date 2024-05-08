@@ -519,16 +519,11 @@ pub(crate) fn paint_border(cx: &mut PaintCx, style: &ViewStyleProps, size: Size)
 pub(crate) fn view_tab_navigation(root_view: ViewId, app_state: &mut AppState, backwards: bool) {
     let start = app_state.focus.unwrap_or(root_view);
 
-    assert!(
-        view_filtered_children(root_view, start).is_some(),
-        "The focused view is missing from the tree"
-    );
-
     let tree_iter = |id: ViewId| {
         if backwards {
             view_tree_previous(root_view, id).unwrap_or_else(|| view_nested_last_child(root_view))
         } else {
-            view_tree_next(root_view, id).unwrap_or(root_view)
+            view_tree_next(id).unwrap_or(root_view)
         }
     };
 
@@ -541,37 +536,15 @@ pub(crate) fn view_tab_navigation(root_view: ViewId, app_state: &mut AppState, b
     app_state.update_focus(new_focus, true);
 }
 
-fn view_filtered_children(view: ViewId, id: ViewId) -> Option<Vec<ViewId>> {
-    let parent = id.parent();
-
-    if id == view {
-        if let Some(parent) = parent {
-            if view.children().contains(&parent) {
-                view_filtered_children(parent, parent)
-            } else {
-                None
-            }
-        } else {
-            Some(view.children())
-        }
-    } else {
-        None
-    }
-}
-
 /// Get the next item in the tree, either the first child or the next sibling of this view or of the first parent view
-fn view_tree_next(root_view: ViewId, id: ViewId) -> Option<ViewId> {
-    if let Some(child) = view_filtered_children(root_view, id)
-        .unwrap()
-        .into_iter()
-        .next()
-    {
+fn view_tree_next(id: ViewId) -> Option<ViewId> {
+    if let Some(child) = id.children().into_iter().next() {
         return Some(child);
     }
 
     let mut ancestor = id;
     loop {
-        if let Some(next_sibling) = view_next_sibling(root_view, ancestor) {
+        if let Some(next_sibling) = view_next_sibling(ancestor) {
             return Some(next_sibling);
         }
         ancestor = ancestor.parent()?;
@@ -579,7 +552,7 @@ fn view_tree_next(root_view: ViewId, id: ViewId) -> Option<ViewId> {
 }
 
 /// Get the id of the view after this one (but with the same parent and level of nesting)
-fn view_next_sibling(root_view: ViewId, id: ViewId) -> Option<ViewId> {
+fn view_next_sibling(id: ViewId) -> Option<ViewId> {
     let parent = id.parent();
 
     let Some(parent) = parent else {
@@ -587,7 +560,7 @@ fn view_next_sibling(root_view: ViewId, id: ViewId) -> Option<ViewId> {
         return None;
     };
 
-    let children = view_filtered_children(root_view, parent).unwrap();
+    let children = parent.children();
     let pos = children.iter().position(|v| v == &id).unwrap();
 
     if pos + 1 < children.len() {
@@ -599,7 +572,7 @@ fn view_next_sibling(root_view: ViewId, id: ViewId) -> Option<ViewId> {
 
 /// Get the next item in the tree, the deepest last child of the previous sibling of this view or the parent
 fn view_tree_previous(root_view: ViewId, id: ViewId) -> Option<ViewId> {
-    view_previous_sibling(root_view, id)
+    view_previous_sibling(id)
         .map(view_nested_last_child)
         .or_else(|| {
             (root_view != id).then_some(
@@ -610,7 +583,7 @@ fn view_tree_previous(root_view: ViewId, id: ViewId) -> Option<ViewId> {
 }
 
 /// Get the id of the view before this one (but with the same parent and level of nesting)
-fn view_previous_sibling(root_view: ViewId, id: ViewId) -> Option<ViewId> {
+fn view_previous_sibling(id: ViewId) -> Option<ViewId> {
     let parent = id.parent();
 
     let Some(parent) = parent else {
@@ -618,7 +591,7 @@ fn view_previous_sibling(root_view: ViewId, id: ViewId) -> Option<ViewId> {
         return None;
     };
 
-    let children = view_filtered_children(root_view, parent).unwrap();
+    let children = parent.children();
     let pos = children.iter().position(|v| v == &id).unwrap();
 
     if pos > 0 {

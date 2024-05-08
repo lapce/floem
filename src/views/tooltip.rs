@@ -11,7 +11,7 @@ use crate::{
     view::{default_compute_layout, IntoView, View},
 };
 
-use super::{container, Decorators};
+use super::container;
 
 style_class!(pub TooltipClass);
 
@@ -49,7 +49,6 @@ pub fn tooltip<V: IntoView + 'static, T: IntoView + 'static>(
         style: Default::default(),
         window_origin: None,
     }
-    .keyboard_listenable()
 }
 
 impl View for Tooltip {
@@ -71,7 +70,7 @@ impl View for Tooltip {
         }
     }
 
-    fn event_before_children(&mut self, _cx: &mut EventCx, event: &Event) -> EventPropagation {
+    fn event_before_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
         match &event {
             Event::PointerMove(e) => {
                 if self.overlay.is_none() && cx.app_state.dragging.is_none() {
