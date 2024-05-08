@@ -263,7 +263,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         let view = self.into_view();
         let id = view.id();
         let state = id.state();
-        state.borrow_mut().update_cleanup_listener(Box::new(action));
+        state.borrow_mut().update_cleanup_listener(action);
         view
     }
 
@@ -324,7 +324,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     fn context_menu(self, menu: impl Fn() -> Menu + 'static) -> Self::DV {
         let view = self.into_view();
         let id = view.id();
-        id.update_context_menu(Box::new(menu));
+        id.update_context_menu(menu);
         view
     }
 
@@ -332,7 +332,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     fn popout_menu(self, menu: impl Fn() -> Menu + 'static) -> Self::DV {
         let view = self.into_view();
         let id = view.id();
-        id.update_popout_menu(Box::new(menu));
+        id.update_popout_menu(menu);
         view
     }
 }

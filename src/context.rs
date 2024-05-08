@@ -218,7 +218,8 @@ impl<'a> EventCx<'a> {
                             let layout = view_state.borrow().layout_rect;
                             Point::new(layout.x0, layout.y1)
                         };
-                        if let Some(menu) = view_state.borrow().popout_menu.as_ref() {
+                        let popout_menu = view_state.borrow().popout_menu.clone();
+                        if let Some(menu) = popout_menu {
                             show_context_menu(menu(), Some(bottom_left));
                             return EventPropagation::Stop;
                         }
@@ -395,7 +396,8 @@ impl<'a> EventCx<'a> {
                             layout.y0 + pointer_event.pos.y,
                         )
                     };
-                    if let Some(menu) = view_state.borrow().context_menu.as_ref() {
+                    let context_menu = view_state.borrow().context_menu.clone();
+                    if let Some(menu) = context_menu {
                         show_context_menu(menu(), Some(viewport_event_position));
                         return EventPropagation::Stop;
                     }
@@ -751,7 +753,9 @@ impl<'a> ComputeLayoutCx<'a> {
             }
         }
 
-        if let Some(listener) = view_state.borrow_mut().move_listener.as_mut() {
+        let move_listener = view_state.borrow().move_listener.clone();
+        if let Some(listener) = move_listener {
+            let mut listener = listener.borrow_mut();
             if window_origin != listener.window_origin {
                 listener.window_origin = window_origin;
                 (*listener.callback)(window_origin);

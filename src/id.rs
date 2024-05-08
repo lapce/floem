@@ -12,8 +12,9 @@ use taffy::{Display, Layout, NodeId, TaffyTree};
 
 use crate::{
     animate::Animation,
-    context::{EventCallback, MenuCallback, ResizeCallback},
+    context::{EventCallback, ResizeCallback},
     event::{EventListener, EventPropagation},
+    menu::Menu,
     style::{DisplayProp, Style, StyleClassRef, StyleSelector},
     unit::PxPct,
     update::{UpdateMessage, CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES},
@@ -281,12 +282,12 @@ impl ViewId {
         self.add_update_message(UpdateMessage::ClearFocus(*self));
     }
 
-    pub fn update_context_menu(&self, menu: Box<MenuCallback>) {
-        self.state().borrow_mut().context_menu = Some(menu);
+    pub fn update_context_menu(&self, menu: impl Fn() -> Menu + 'static) {
+        self.state().borrow_mut().context_menu = Some(Rc::new(menu));
     }
 
-    pub fn update_popout_menu(&self, menu: Box<MenuCallback>) {
-        self.state().borrow_mut().popout_menu = Some(menu);
+    pub fn update_popout_menu(&self, menu: impl Fn() -> Menu + 'static) {
+        self.state().borrow_mut().popout_menu = Some(Rc::new(menu));
     }
 
     pub fn request_active(&self) {

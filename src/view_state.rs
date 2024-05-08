@@ -101,11 +101,11 @@ pub struct ViewState {
     pub(crate) combined_style: Style,
     pub(crate) taffy_style: taffy::style::Style,
     pub(crate) event_listeners: HashMap<EventListener, Vec<Rc<EventCallback>>>,
-    pub(crate) context_menu: Option<Box<MenuCallback>>,
-    pub(crate) popout_menu: Option<Box<MenuCallback>>,
+    pub(crate) context_menu: Option<Rc<MenuCallback>>,
+    pub(crate) popout_menu: Option<Rc<MenuCallback>>,
     pub(crate) resize_listener: Option<Rc<RefCell<ResizeListener>>>,
-    pub(crate) move_listener: Option<MoveListener>,
-    pub(crate) cleanup_listener: Option<Box<dyn Fn()>>,
+    pub(crate) move_listener: Option<Rc<RefCell<MoveListener>>>,
+    pub(crate) cleanup_listener: Option<Rc<dyn Fn()>>,
     pub(crate) last_pointer_down: Option<PointerInputEvent>,
     pub(crate) debug_name: SmallVec<[String; 1]>,
 }
@@ -231,13 +231,13 @@ impl ViewState {
     }
 
     pub(crate) fn update_move_listener(&mut self, action: Box<dyn Fn(Point)>) {
-        self.move_listener = Some(MoveListener {
+        self.move_listener = Some(Rc::new(RefCell::new(MoveListener {
             window_origin: Point::ZERO,
             callback: action,
-        });
+        })));
     }
 
-    pub(crate) fn update_cleanup_listener(&mut self, action: Box<dyn Fn()>) {
-        self.cleanup_listener = Some(action);
+    pub(crate) fn update_cleanup_listener(&mut self, action: impl Fn() + 'static) {
+        self.cleanup_listener = Some(Rc::new(action));
     }
 }
