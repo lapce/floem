@@ -95,18 +95,20 @@ impl View for RichText {
     fn compute_layout(&mut self, _cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
         let layout = self.id.get_layout().unwrap_or_default();
         let view_state = self.id.state();
-        let view_state = view_state.borrow();
-        let style = view_state.combined_style.builtin();
-        let padding_left = match style.padding_left() {
-            PxPct::Px(padding) => padding as f32,
-            PxPct::Pct(pct) => pct as f32 * layout.size.width,
+        let (padding_left, padding_right) = {
+            let view_state = view_state.borrow();
+            let style = view_state.combined_style.builtin();
+            let padding_left = match style.padding_left() {
+                PxPct::Px(padding) => padding as f32,
+                PxPct::Pct(pct) => pct as f32 * layout.size.width,
+            };
+            let padding_right = match style.padding_right() {
+                PxPct::Px(padding) => padding as f32,
+                PxPct::Pct(pct) => pct as f32 * layout.size.width,
+            };
+            self.text_overflow = style.text_overflow();
+            (padding_left, padding_right)
         };
-        let padding_right = match style.padding_right() {
-            PxPct::Px(padding) => padding as f32,
-            PxPct::Pct(pct) => pct as f32 * layout.size.width,
-        };
-
-        self.text_overflow = style.text_overflow();
 
         let padding = padding_left + padding_right;
         let width = self.text_layout.size().width as f32;

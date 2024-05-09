@@ -3,7 +3,6 @@ use floem_reactive::{as_child_of_current_scope, create_updater, Scope};
 use crate::{
     id::ViewId,
     view::{IntoView, View},
-    AnyView,
 };
 
 /// A container for a dynamically updating View. See [`dyn_container`]
@@ -68,7 +67,11 @@ where
 
     let (child, child_scope) = create_updater(
         move || view_fn(()),
-        move |new_state| id.update_state(new_state),
+        move |(new_view, new_scope)| {
+            let current_children = id.children();
+            id.set_children(vec![new_view]);
+            id.update_state((current_children, new_scope));
+        },
     );
 
     id.set_children(vec![child]);
@@ -81,14 +84,13 @@ impl View for DynamicContainer {
     }
 
     fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
-        if let Ok(val) = state.downcast::<(AnyView, Scope)>() {
+        if let Ok(val) = state.downcast::<(Vec<ViewId>, Scope)>() {
             let old_child_scope = self.child_scope;
-            for child in self.id.children() {
+            let (old_children, child_scope) = *val;
+            self.child_scope = child_scope;
+            for child in old_children {
                 cx.app_state_mut().remove_view(child);
             }
-            let (child, child_scope) = *val;
-            self.child_scope = child_scope;
-            self.id.set_children(vec![child]);
             old_child_scope.dispose();
             self.id.request_all();
         }

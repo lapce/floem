@@ -11,16 +11,18 @@ use slotmap::new_key_type;
 use taffy::{Display, Layout, NodeId, TaffyTree};
 
 use crate::{
+    action::add_update_message,
     animate::Animation,
     context::{EventCallback, ResizeCallback},
     event::{EventListener, EventPropagation},
     menu::Menu,
     style::{DisplayProp, Style, StyleClassRef, StyleSelector},
     unit::PxPct,
-    update::{UpdateMessage, CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES},
+    update::{UpdateMessage, DEFERRED_UPDATE_MESSAGES},
     view::{IntoView, View},
     view_state::{ChangeFlags, StackOffset, ViewState},
     view_storage::VIEW_STORAGE,
+    window_handle::get_current_view,
 };
 
 new_key_type! {
@@ -140,20 +142,6 @@ impl ViewId {
         VIEW_STORAGE.with_borrow(|s| s.parent.get(*self).cloned().flatten())
     }
 
-    pub fn root(&self) -> ViewId {
-        VIEW_STORAGE.with_borrow(|s| {
-            let mut parent = s.parent.get(*self).cloned().flatten();
-            while let Some(id) = parent {
-                if let Some(id) = s.parent.get(id).cloned().flatten() {
-                    parent = Some(id)
-                } else {
-                    return parent.unwrap_or(*self);
-                }
-            }
-            parent.unwrap_or(*self)
-        })
-    }
-
     pub fn layout_rect(&self) -> Rect {
         self.state().borrow().layout_rect
     }
@@ -247,7 +235,7 @@ impl ViewId {
     }
 
     pub fn request_paint(&self) {
-        self.add_update_message(UpdateMessage::RequestPaint);
+        add_update_message(UpdateMessage::RequestPaint);
     }
 
     /// request that this node be styled again
@@ -275,11 +263,11 @@ impl ViewId {
     }
 
     pub fn request_focus(&self) {
-        self.add_update_message(UpdateMessage::Focus(*self));
+        add_update_message(UpdateMessage::Focus(*self));
     }
 
     pub fn clear_focus(&self) {
-        self.add_update_message(UpdateMessage::ClearFocus(*self));
+        add_update_message(UpdateMessage::ClearFocus(*self));
     }
 
     pub fn update_context_menu(&self, menu: impl Fn() -> Menu + 'static) {
@@ -291,26 +279,26 @@ impl ViewId {
     }
 
     pub fn request_active(&self) {
-        self.add_update_message(UpdateMessage::Active(*self));
+        add_update_message(UpdateMessage::Active(*self));
     }
 
     pub fn inspect(&self) {
-        self.add_update_message(UpdateMessage::Inspect);
+        add_update_message(UpdateMessage::Inspect);
     }
 
     pub fn scroll_to(&self, rect: Option<Rect>) {
-        self.add_update_message(UpdateMessage::ScrollTo { id: *self, rect });
+        add_update_message(UpdateMessage::ScrollTo { id: *self, rect });
     }
 
     pub fn update_animation(&self, animation: Animation) {
-        self.add_update_message(UpdateMessage::Animation {
+        add_update_message(UpdateMessage::Animation {
             id: *self,
             animation,
         });
     }
 
     pub fn update_state(&self, state: impl Any) {
-        self.add_update_message(UpdateMessage::State {
+        add_update_message(UpdateMessage::State {
             id: *self,
             state: Box::new(state),
         });
@@ -393,29 +381,25 @@ impl ViewId {
     }
 
     pub fn update_disabled(&self, is_disabled: bool) {
-        self.add_update_message(UpdateMessage::Disabled {
+        add_update_message(UpdateMessage::Disabled {
             id: *self,
             is_disabled,
         });
     }
 
     pub fn keyboard_navigatable(&self) {
-        self.add_update_message(UpdateMessage::KeyboardNavigable { id: *self });
+        add_update_message(UpdateMessage::KeyboardNavigable { id: *self });
     }
 
     pub fn draggable(&self) {
-        self.add_update_message(UpdateMessage::Draggable { id: *self });
-    }
-
-    fn add_update_message(&self, msg: UpdateMessage) {
-        CENTRAL_UPDATE_MESSAGES.with(|msgs| {
-            msgs.borrow_mut().push((*self, msg));
-        });
+        add_update_message(UpdateMessage::Draggable { id: *self });
     }
 
     pub fn update_state_deferred(&self, state: impl Any) {
-        CENTRAL_DEFERRED_UPDATE_MESSAGES.with(|msgs| {
-            msgs.borrow_mut().push((*self, Box::new(state)));
+        let current_view = get_current_view();
+        DEFERRED_UPDATE_MESSAGES.with_borrow_mut(|msgs| {
+            let msgs = msgs.entry(current_view).or_default();
+            msgs.push((*self, Box::new(state)));
         });
     }
 }

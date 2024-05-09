@@ -10,7 +10,7 @@ use crate::{
     app::{add_app_update_event, AppUpdateEvent},
     id::ViewId,
     menu::Menu,
-    update::{UpdateMessage, CENTRAL_UPDATE_MESSAGES},
+    update::{UpdateMessage, UPDATE_MESSAGES},
     view::View,
     window_handle::{get_current_view, set_current_view},
 };
@@ -18,10 +18,11 @@ use crate::{
 #[cfg(any(feature = "rfd-async-std", feature = "rfd-tokio"))]
 pub use crate::file_action::*;
 
-fn add_update_message(msg: UpdateMessage) {
+pub(crate) fn add_update_message(msg: UpdateMessage) {
     let current_view = get_current_view();
-    CENTRAL_UPDATE_MESSAGES.with(|msgs| {
-        msgs.borrow_mut().push((current_view, msg));
+    UPDATE_MESSAGES.with_borrow_mut(|msgs| {
+        let msgs = msgs.entry(current_view).or_default();
+        msgs.push(msg);
     });
 }
 
