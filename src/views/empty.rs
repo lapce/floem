@@ -2,7 +2,7 @@ use crate::{id::ViewId, view::View};
 
 /// An empty View. See [`empty`].
 pub struct Empty {
-    id: ViewId,
+    pub(crate) id: ViewId,
 }
 
 /// An empty View. This view can still have a size, background, border radius, and outline.

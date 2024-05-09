@@ -83,7 +83,12 @@ impl ViewId {
     }
 
     pub(crate) fn view(&self) -> Rc<RefCell<Box<dyn View>>> {
-        VIEW_STORAGE.with_borrow_mut(|s| s.views.get(*self).unwrap().clone())
+        VIEW_STORAGE.with_borrow(|s| {
+            s.views
+                .get(*self)
+                .cloned()
+                .unwrap_or_else(|| s.stale_view.clone())
+        })
     }
 
     pub fn add_child(&self, child: Box<dyn View>) {
