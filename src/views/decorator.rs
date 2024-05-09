@@ -145,7 +145,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         modifiers: Modifiers,
         action: impl Fn(&Event) + 'static,
     ) -> Self::DV {
-        self.on_event(EventListener::KeyDown, move |e| {
+        self.on_event(EventListener::KeyUp, move |e| {
             if let Event::KeyUp(ke) = e {
                 if ke.key.logical_key == key && ke.modifiers == modifiers {
                     action(e);
