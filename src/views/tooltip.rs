@@ -49,6 +49,9 @@ pub fn tooltip<V: IntoView + 'static, T: IntoView + 'static>(
         style: Default::default(),
         window_origin: None,
     }
+    .on_cleanup(move || {
+        remove_overlay(id);
+    })
 }
 
 impl View for Tooltip {
@@ -105,13 +108,5 @@ impl View for Tooltip {
     ) -> Option<peniko::kurbo::Rect> {
         self.window_origin = Some(cx.window_origin);
         default_compute_layout(self.id, cx)
-    }
-}
-
-impl Drop for Tooltip {
-    fn drop(&mut self) {
-        if let Some(id) = self.overlay {
-            remove_overlay(id);
-        }
     }
 }

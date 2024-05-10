@@ -95,9 +95,12 @@ impl AppState {
             self.remove_view(child);
         }
         let view_state = id.state();
-        if let Some(action) = view_state.borrow().cleanup_listener.as_ref() {
+
+        let cleanup_listener = view_state.borrow().cleanup_listener.clone();
+        if let Some(action) = cleanup_listener {
             action();
         }
+
         let node = view_state.borrow().node;
         let taffy = id.taffy();
         let mut taffy = taffy.borrow_mut();
