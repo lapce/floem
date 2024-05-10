@@ -26,7 +26,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install dependencies on Ubuntu
         if: startsWith(matrix.os, 'ubuntu')
@@ -34,10 +34,9 @@ jobs:
           sudo apt-get -y update
           sudo apt-get -y install clang libwayland-dev libxkbcommon-x11-dev pkg-config libvulkan-dev libxcb-shape0-dev libxcb-xfixes0-dev
 
-      - name: Update toolchain & add llvm-tools
+      - name: Update toolchain
         run: |
           rustup update
-          rustup component add llvm-tools-preview
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -60,7 +59,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Update toolchain & add rustfmt
         run: |
@@ -83,7 +82,7 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Update toolchain & add clippy
         run: |
