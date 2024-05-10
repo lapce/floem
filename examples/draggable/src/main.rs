@@ -1,10 +1,10 @@
 use floem::{
     peniko::Color,
-    view::View,
     views::{label, Decorators},
+    IntoView,
 };
 
-fn app_view() -> impl View {
+fn app_view() -> impl IntoView {
     label(|| "Drag me!")
         .style(|s| {
             s.border(1.0)

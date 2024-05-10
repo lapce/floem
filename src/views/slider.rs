@@ -1,19 +1,20 @@
 //! A toggle button widget. An example can be found in widget-gallery/button in the floem examples.
 
-use floem_peniko::Color;
 use floem_reactive::{create_effect, create_updater};
 use floem_renderer::Renderer;
 use floem_winit::keyboard::{Key, NamedKey};
-use kurbo::{Circle, Point, RoundedRect};
+use peniko::kurbo::{Circle, Point, RoundedRect};
+use peniko::Color;
 
 use crate::{
+    event::EventPropagation,
+    id::ViewId,
     prop, prop_extractor,
     style::{Background, BorderRadius, Foreground, Height, Style, StyleValue},
     style_class,
     unit::{PxPct, PxPctAuto},
-    view::{View, ViewData, Widget},
+    view::View,
     views::Decorators,
-    EventPropagation,
 };
 
 enum SliderUpdate {
@@ -45,7 +46,7 @@ prop_extractor! {
 
 /// A slider. See [`slider`]
 pub struct Slider {
-    data: ViewData,
+    id: ViewId,
     onchangepx: Option<Box<dyn Fn(f32)>>,
     onchangepct: Option<Box<dyn Fn(f32)>>,
     held: bool,
@@ -86,7 +87,7 @@ pub struct Slider {
 /// # use floem::unit::UnitExt;
 /// # use floem::peniko::Color;
 /// # use floem::style::Foreground;
-/// # use floem::widgets::slider;
+/// # use floem::views::slider;
 /// # use floem::views::empty;
 /// # use floem::views::Decorators;
 /// empty()
@@ -108,13 +109,13 @@ pub struct Slider {
 ///  );
 ///```
 pub fn slider(percent: impl Fn() -> f32 + 'static) -> Slider {
-    let id = crate::id::Id::next();
+    let id = ViewId::new();
     create_effect(move |_| {
         let percent = percent();
         id.update_state(SliderUpdate::Percent(percent));
     });
     Slider {
-        data: ViewData::new(id),
+        id,
         onchangepx: None,
         onchangepct: None,
         held: false,
@@ -133,57 +134,34 @@ pub fn slider(percent: impl Fn() -> f32 + 'static) -> Slider {
 }
 
 impl View for Slider {
-    fn view_data(&self) -> &ViewData {
-        &self.data
+    fn id(&self) -> ViewId {
+        self.id
     }
 
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn Widget> {
-        Box::new(self)
-    }
-}
-
-impl Widget for Slider {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        "Slider".into()
-    }
-
-    fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
+    fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(update) = state.downcast::<SliderUpdate>() {
             match *update {
                 SliderUpdate::Percent(percent) => self.percent = percent,
             }
-            cx.request_layout(self.id());
+            self.id.request_layout();
         }
     }
 
-    fn event(
+    fn event_before_children(
         &mut self,
         cx: &mut crate::context::EventCx,
-        _id_path: Option<&[crate::id::Id]>,
-        event: crate::event::Event,
+        event: &crate::event::Event,
     ) -> EventPropagation {
         let pos_changed = match event {
             crate::event::Event::PointerDown(event) => {
                 cx.update_active(self.id());
-                cx.app_state_mut().request_layout(self.id());
+                self.id.request_layout();
                 self.held = true;
                 self.percent = event.pos.x as f32 / self.size.width * 100.;
                 true
             }
             crate::event::Event::PointerUp(event) => {
-                cx.app_state_mut().request_layout(self.id());
+                self.id.request_layout();
 
                 // set the state based on the position of the slider
                 let changed = self.held;
@@ -195,7 +173,7 @@ impl Widget for Slider {
                 changed
             }
             crate::event::Event::PointerMove(event) => {
-                cx.app_state_mut().request_layout(self.id());
+                self.id.request_layout();
                 if self.held {
                     self.percent = event.pos.x as f32 / self.size.width * 100.;
                     true
@@ -209,11 +187,11 @@ impl Widget for Slider {
             }
             crate::event::Event::KeyDown(event) => {
                 if event.key.logical_key == Key::Named(NamedKey::ArrowLeft) {
-                    cx.app_state_mut().request_layout(self.id());
+                    self.id.request_layout();
                     self.percent -= 10.;
                     true
                 } else if event.key.logical_key == Key::Named(NamedKey::ArrowRight) {
-                    cx.app_state_mut().request_layout(self.id());
+                    self.id.request_layout();
                     self.percent += 10.;
                     true
                 } else {
@@ -248,13 +226,16 @@ impl Widget for Slider {
         paint |= self.accent_bar_style.read_style(cx, &accent_bar_style);
         paint |= self.style.read(cx);
         if paint {
-            cx.app_state_mut().request_paint(self.data.id());
+            cx.app_state_mut().request_paint(self.id);
         }
     }
 
-    fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<kurbo::Rect> {
+    fn compute_layout(
+        &mut self,
+        _cx: &mut crate::context::ComputeLayoutCx,
+    ) -> Option<peniko::kurbo::Rect> {
         self.update_restrict_position();
-        let layout = cx.get_layout(self.id()).unwrap();
+        let layout = self.id.get_layout().unwrap_or_default();
 
         self.size = layout.size;
 
@@ -262,7 +243,9 @@ impl Widget for Slider {
             PxPct::Px(px) => px as f32,
             PxPct::Pct(pct) => self.size.width.min(self.size.height) / 2. * (pct as f32 / 100.),
         };
-        let circle_point = Point::new(self.handle_center() as f64, (self.size.height / 2.) as f64);
+        let width = self.size.width - circle_radius * 2.;
+        let center = width * (self.percent / 100.) + circle_radius;
+        let circle_point = Point::new(center as f64, (self.size.height / 2.) as f64);
         self.handle = crate::kurbo::Circle::new(circle_point, circle_radius as f64);
 
         let base_bar_height = match self.base_bar_style.height() {
@@ -299,14 +282,14 @@ impl Widget for Slider {
             self.handle.radius
         };
 
-        self.base_bar = kurbo::Rect::new(
+        self.base_bar = peniko::kurbo::Rect::new(
             bar_x_start,
             base_bar_y_start,
             bar_x_start + base_bar_length,
             base_bar_y_start + base_bar_height,
         )
         .to_rounded_rect(base_bar_radius);
-        self.accent_bar = kurbo::Rect::new(
+        self.accent_bar = peniko::kurbo::Rect::new(
             bar_x_start,
             accent_bar_y_start,
             self.handle_center() as f64,
@@ -360,18 +343,20 @@ impl Slider {
         self.onchangepx = Some(Box::new(onchangepx));
         self
     }
+
     /// Sets the custom style properties of the `Slider`.
     pub fn slider_style(
-        mut self,
+        self,
         style: impl Fn(SliderCustomStyle) -> SliderCustomStyle + 'static,
     ) -> Self {
         let id = self.id();
-        let offset = Widget::view_data_mut(&mut self).style.next_offset();
+        let view_state = id.state();
+        let offset = view_state.borrow_mut().style.next_offset();
         let style = create_updater(
             move || style(SliderCustomStyle(Style::new())),
-            move |style| id.update_style(style.0, offset),
+            move |style| id.update_style(offset, style.0),
         );
-        Widget::view_data_mut(&mut self).style.push(style.0);
+        view_state.borrow_mut().style.push(style.0);
         self
     }
 }

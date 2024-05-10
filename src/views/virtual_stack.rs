@@ -1,7 +1,7 @@
 use std::{hash::Hash, marker::PhantomData, ops::Range};
 
 use floem_reactive::{as_child_of_current_scope, create_effect, create_signal, Scope, WriteSignal};
-use kurbo::Rect;
+use peniko::kurbo::Rect;
 use smallvec::SmallVec;
 use taffy::{
     style::{Dimension, FlexDirection, LengthPercentage},
@@ -10,11 +10,13 @@ use taffy::{
 
 use crate::{
     context::ComputeLayoutCx,
-    id::Id,
-    view::{self, AnyWidget, View, ViewData, Widget},
+    id::ViewId,
+    view::{self, IntoView, View},
 };
 
 use super::{apply_diff, diff, Diff, DiffOpAdd, FxIndexSet, HashRun};
+
+type ViewFn<T> = Box<dyn Fn(T) -> (Box<dyn View>, Scope)>;
 
 #[derive(Clone, Copy)]
 pub enum VirtualDirection {
@@ -53,12 +55,12 @@ pub struct VirtualStack<T>
 where
     T: 'static,
 {
-    data: ViewData,
+    id: ViewId,
     direction: VirtualDirection,
-    children: Vec<Option<(AnyWidget, Scope)>>,
+    children: Vec<Option<(ViewId, Scope)>>,
     viewport: Rect,
     set_viewport: WriteSignal<Rect>,
-    view_fn: Box<dyn Fn(T) -> (AnyWidget, Scope)>,
+    view_fn: ViewFn<T>,
     phatom: PhantomData<T>,
     before_size: f64,
     content_size: f64,
@@ -117,9 +119,9 @@ where
     KF: Fn(&T) -> K + 'static,
     K: Eq + Hash + 'static,
     VF: Fn(T) -> V + 'static,
-    V: View + 'static,
+    V: IntoView + 'static,
 {
-    let id = Id::next();
+    let id = ViewId::new();
 
     let (viewport, set_viewport) = create_signal(Rect::ZERO);
 
@@ -214,10 +216,10 @@ where
         (before_size, content_size, HashRun(hashed_items))
     });
 
-    let view_fn = Box::new(as_child_of_current_scope(move |e| view_fn(e).build()));
+    let view_fn = Box::new(as_child_of_current_scope(move |e| view_fn(e).into_any()));
 
     VirtualStack {
-        data: ViewData::new(id),
+        id,
         direction,
         children: Vec::new(),
         viewport: Rect::ZERO,
@@ -232,58 +234,8 @@ where
 }
 
 impl<T> View for VirtualStack<T> {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn Widget> {
-        Box::new(self)
-    }
-}
-
-impl<T> Widget for VirtualStack<T> {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
-        for child in self.children.iter().filter_map(|child| child.as_ref()) {
-            if for_each(&child.0) {
-                break;
-            }
-        }
-    }
-
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
-        for child in self.children.iter_mut().filter_map(|child| child.as_mut()) {
-            if for_each(&mut child.0) {
-                break;
-            }
-        }
-    }
-
-    fn for_each_child_rev_mut<'a>(
-        &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
-    ) {
-        for child in self
-            .children
-            .iter_mut()
-            .rev()
-            .filter_map(|child| child.as_mut())
-        {
-            if for_each(&mut child.0) {
-                break;
-            }
-        }
+    fn id(&self) -> ViewId {
+        self.id
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -307,16 +259,17 @@ impl<T> Widget for VirtualStack<T> {
                 &mut self.children,
                 &self.view_fn,
             );
-            cx.request_all(self.id());
+            self.id.request_all();
         }
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::tree::NodeId {
         cx.layout_node(self.id(), true, |cx| {
             let nodes = self
-                .children
-                .iter_mut()
-                .filter_map(|child| Some(cx.layout_view(&mut child.as_mut()?.0)))
+                .id
+                .children()
+                .into_iter()
+                .map(|id| id.view().borrow_mut().layout(cx))
                 .collect::<Vec<_>>();
             let content_size = match self.direction {
                 VirtualDirection::Vertical => taffy::prelude::Size {
@@ -330,23 +283,25 @@ impl<T> Widget for VirtualStack<T> {
             };
             if self.offset_node.is_none() {
                 self.offset_node = Some(
-                    cx.app_state_mut()
-                        .taffy
+                    self.id
+                        .taffy()
+                        .borrow_mut()
                         .new_leaf(taffy::style::Style::DEFAULT)
                         .unwrap(),
                 );
             }
             if self.content_node.is_none() {
                 self.content_node = Some(
-                    cx.app_state_mut()
-                        .taffy
+                    self.id
+                        .taffy()
+                        .borrow_mut()
                         .new_leaf(taffy::style::Style::DEFAULT)
                         .unwrap(),
                 );
             }
             let offset_node = self.offset_node.unwrap();
             let content_node = self.content_node.unwrap();
-            let _ = cx.app_state_mut().taffy.set_style(
+            let _ = self.id.taffy().borrow_mut().set_style(
                 offset_node,
                 taffy::style::Style {
                     position: taffy::style::Position::Relative,
@@ -375,7 +330,7 @@ impl<T> Widget for VirtualStack<T> {
                     ..Default::default()
                 },
             );
-            let _ = cx.app_state_mut().taffy.set_style(
+            let _ = self.id.taffy().borrow_mut().set_style(
                 content_node,
                 taffy::style::Style {
                     min_size: content_size,
@@ -383,10 +338,15 @@ impl<T> Widget for VirtualStack<T> {
                     ..Default::default()
                 },
             );
-            let _ = cx.app_state_mut().taffy.set_children(offset_node, &nodes);
-            let _ = cx
-                .app_state_mut()
-                .taffy
+            let _ = self
+                .id
+                .taffy()
+                .borrow_mut()
+                .set_children(offset_node, &nodes);
+            let _ = self
+                .id
+                .taffy()
+                .borrow_mut()
                 .set_children(content_node, &[offset_node]);
             vec![content_node]
         })
@@ -399,7 +359,7 @@ impl<T> Widget for VirtualStack<T> {
             self.set_viewport.set(viewport);
         }
 
-        view::default_compute_layout(self, cx)
+        view::default_compute_layout(self.id, cx)
     }
 }
 

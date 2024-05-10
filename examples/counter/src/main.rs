@@ -1,18 +1,19 @@
 use floem::{
-    keyboard::{Key, ModifiersState, NamedKey},
+    keyboard::{Key, Modifiers, NamedKey},
     peniko::Color,
     reactive::create_signal,
     unit::UnitExt,
-    view::View,
-    views::{label, stack, text, Decorators},
+    views::{dyn_container, Decorators},
+    IntoView, View,
 };
 
-fn app_view() -> impl View {
+fn app_view() -> impl IntoView {
     let (counter, set_counter) = create_signal(0);
-    let view = stack((
-        label(move || format!("Value: {}", counter.get())).style(|s| s.padding(10.0)),
-        stack((
-            text("Increment")
+    let view = (
+        dyn_container(move || format!("Value: {}", counter.get())),
+        counter.style(|s| s.padding(10.0)),
+        (
+            "Increment"
                 .style(|s| {
                     s.border_radius(10.0)
                         .padding(10.0)
@@ -28,7 +29,7 @@ fn app_view() -> impl View {
                     }
                 })
                 .keyboard_navigatable(),
-            text("Decrement")
+            "Decrement"
                 .on_click_stop({
                     move |_| {
                         set_counter.update(|value| *value -= 1);
@@ -45,7 +46,7 @@ fn app_view() -> impl View {
                         .active(|s| s.color(Color::WHITE).background(Color::RED))
                 })
                 .keyboard_navigatable(),
-            text("Reset to 0")
+            "Reset to 0"
                 .on_click_stop(move |_| {
                     println!("Reset counter pressed"); // will not fire if button is disabled
                     set_counter.update(|value| *value = 0);
@@ -63,21 +64,19 @@ fn app_view() -> impl View {
                         .active(|s| s.color(Color::WHITE).background(Color::YELLOW_GREEN))
                 })
                 .keyboard_navigatable(),
-        )),
-    ))
-    .style(|s| {
-        s.size(100.pct(), 100.pct())
-            .flex_col()
-            .items_center()
-            .justify_center()
-    });
+        ),
+    )
+        .style(|s| {
+            s.size(100.pct(), 100.pct())
+                .flex_col()
+                .items_center()
+                .justify_center()
+        });
 
     let id = view.id();
-    view.on_key_up(
-        Key::Named(NamedKey::F11),
-        ModifiersState::empty(),
-        move |_| id.inspect(),
-    )
+    view.on_key_up(Key::Named(NamedKey::F11), Modifiers::empty(), move |_| {
+        id.inspect()
+    })
 }
 
 fn main() {

@@ -1,9 +1,4 @@
 use anyhow::{anyhow, Result};
-use floem_peniko::kurbo::PathEl;
-use floem_peniko::{
-    kurbo::{Affine, Point, Rect, Shape},
-    BrushRef, Color, GradientKind,
-};
 use floem_renderer::cosmic_text::{CacheKey, SubpixelBin, SwashCache, SwashContent, TextLayout};
 use floem_renderer::tiny_skia::{
     self, FillRule, FilterQuality, GradientStop, LinearGradient, Mask, MaskType, Paint, Path,
@@ -12,6 +7,11 @@ use floem_renderer::tiny_skia::{
 use floem_renderer::Img;
 use floem_renderer::Renderer;
 use image::DynamicImage;
+use peniko::kurbo::PathEl;
+use peniko::{
+    kurbo::{Affine, Point, Rect, Shape},
+    BrushRef, Color, GradientKind,
+};
 use softbuffer::{Context, Surface};
 use std::collections::HashMap;
 use std::num::NonZeroU32;
@@ -36,10 +36,10 @@ struct Glyph {
 #[derive(PartialEq, Clone, Copy)]
 struct CacheColor(bool);
 
-pub struct TinySkiaRenderer {
+pub struct TinySkiaRenderer<W> {
     #[allow(unused)]
-    context: Context,
-    surface: Surface,
+    context: Context<W>,
+    surface: Surface<W, W>,
     pixmap: Pixmap,
     mask: Mask,
     scale: f64,
@@ -54,22 +54,17 @@ pub struct TinySkiaRenderer {
     glyph_cache: HashMap<(CacheKey, Color), (CacheColor, Option<Rc<Glyph>>)>,
 }
 
-impl TinySkiaRenderer {
-    pub fn new<
-        W: raw_window_handle::HasRawDisplayHandle + raw_window_handle::HasRawWindowHandle,
-    >(
-        window: &W,
-        width: u32,
-        height: u32,
-        scale: f64,
-    ) -> Result<Self> {
-        let context = unsafe {
-            Context::new(&window).map_err(|err| anyhow!("unable to create context: {}", err))?
-        };
-        let surface = unsafe {
-            Surface::new(&context, &window)
-                .map_err(|err| anyhow!("unable to create surface: {}", err))?
-        };
+impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle>
+    TinySkiaRenderer<W>
+{
+    pub fn new(window: W, width: u32, height: u32, scale: f64) -> Result<Self>
+    where
+        W: Clone,
+    {
+        let context = Context::new(window.clone())
+            .map_err(|err| anyhow!("unable to create context: {}", err))?;
+        let surface = Surface::new(&context, window)
+            .map_err(|err| anyhow!("unable to create surface: {}", err))?;
 
         let pixmap =
             Pixmap::new(width, height).ok_or_else(|| anyhow!("unable to create pixmap"))?;
@@ -117,7 +112,7 @@ fn to_point(point: Point) -> tiny_skia::Point {
     tiny_skia::Point::from_xy(point.x as f32, point.y as f32)
 }
 
-impl TinySkiaRenderer {
+impl<W> TinySkiaRenderer<W> {
     fn shape_to_path(&self, shape: &impl Shape) -> Option<Path> {
         let mut builder = PathBuilder::new();
         for element in shape.path_elements(0.1) {
@@ -338,7 +333,9 @@ impl TinySkiaRenderer {
     }
 }
 
-impl Renderer for TinySkiaRenderer {
+impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle> Renderer
+    for TinySkiaRenderer<W>
+{
     fn begin(&mut self, _capture: bool) {
         self.transform = Affine::IDENTITY;
         self.pixmap.fill(tiny_skia::Color::WHITE);
@@ -479,12 +476,12 @@ impl Renderer for TinySkiaRenderer {
         }
 
         let mut pixmap = try_ret!(tiny_skia::Pixmap::new(width, height));
-        let rtree = resvg::Tree::from_usvg(svg.tree);
+        // let rtree = resvg::Tree::from_usvg(svg.tree);
         let svg_transform = tiny_skia::Transform::from_scale(
-            (width as f64 / rtree.size.width()) as f32,
-            (height as f64 / rtree.size.height()) as f32,
+            width as f32 / svg.tree.size().width(),
+            height as f32 / svg.tree.size().height(),
         );
-        rtree.render(svg_transform, &mut pixmap.as_mut());
+        resvg::render(svg.tree, svg_transform, &mut pixmap.as_mut());
 
         self.render_pixmap_paint(&pixmap, rect, paint);
 

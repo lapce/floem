@@ -1,13 +1,12 @@
 use floem::{
     action::{open_file, save_as},
     file::{FileDialogOptions, FileSpec},
-    keyboard::{Key, ModifiersState, NamedKey},
-    view::View,
-    views::{h_stack, Decorators},
-    widgets::button,
+    keyboard::{Key, Modifiers, NamedKey},
+    views::{button, h_stack, Decorators},
+    IntoView, View,
 };
 
-fn app_view() -> impl View {
+fn app_view() -> impl IntoView {
     let view = h_stack((
         button(|| "Select file").on_click_cont(|_| {
             open_file(
@@ -88,11 +87,9 @@ fn app_view() -> impl View {
     });
 
     let id = view.id();
-    view.on_key_up(
-        Key::Named(NamedKey::F11),
-        ModifiersState::empty(),
-        move |_| id.inspect(),
-    )
+    view.on_key_up(Key::Named(NamedKey::F11), Modifiers::empty(), move |_| {
+        id.inspect()
+    })
 }
 
 fn main() {

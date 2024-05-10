@@ -9,6 +9,8 @@ use floem_winit::{
 };
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
+#[allow(deprecated)]
+use raw_window_handle::HasRawDisplayHandle;
 
 use crate::{
     action::Timer,
@@ -16,11 +18,9 @@ use crate::{
     clipboard::Clipboard,
     inspector::Capture,
     profiler::Profile,
-    view::{AnyView, View},
+    view::{IntoView, View},
     window::WindowConfig,
 };
-
-use raw_window_handle::HasRawDisplayHandle;
 
 type AppEventCallback = dyn Fn(AppEvent);
 
@@ -31,7 +31,7 @@ thread_local! {
     pub(crate) static APP_UPDATE_EVENTS: RefCell<Vec<AppUpdateEvent>> = Default::default();
 }
 
-pub fn launch<V: View + 'static>(app_view: impl FnOnce() -> V + 'static) {
+pub fn launch<V: IntoView + 'static>(app_view: impl FnOnce() -> V + 'static) {
     Application::new().window(move |_| app_view(), None).run()
 }
 
@@ -48,7 +48,7 @@ pub(crate) enum UserEvent {
 
 pub(crate) enum AppUpdateEvent {
     NewWindow {
-        view_fn: Box<dyn FnOnce(WindowId) -> AnyView>,
+        view_fn: Box<dyn FnOnce(WindowId) -> Box<dyn View>>,
         config: Option<WindowConfig>,
     },
     CloseWindow {
@@ -104,7 +104,8 @@ impl Application {
         let event_loop_proxy = event_loop.create_proxy();
         *EVENT_LOOP_PROXY.lock() = Some(event_loop_proxy.clone());
         unsafe {
-            Clipboard::init(event_loop.raw_display_handle());
+            #[allow(deprecated)]
+            Clipboard::init(event_loop.raw_display_handle().unwrap());
         }
         let handle = ApplicationHandle::new();
         Self {
@@ -130,14 +131,14 @@ impl Application {
 
     /// Create a new window for the application. If you want multiple windows, just chain more
     /// `window()` methods to the builder.
-    pub fn window<V: View + 'static>(
+    pub fn window<V: IntoView + 'static>(
         mut self,
         app_view: impl FnOnce(WindowId) -> V + 'static,
         config: Option<WindowConfig>,
     ) -> Self {
         self.handle.as_mut().unwrap().new_window(
             &self.event_loop,
-            Box::new(|window_id| app_view(window_id).any()),
+            Box::new(|window_id| app_view(window_id).into_any()),
             config,
         );
         self

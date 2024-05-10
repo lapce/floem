@@ -1,18 +1,19 @@
 use super::{
-    virtual_stack, Decorators, Item, VirtualDirection, VirtualItemSize, VirtualStack, VirtualVector,
+    container, virtual_stack, Decorators, Item, ListClass, ListItemClass, VirtualDirection,
+    VirtualItemSize, VirtualVector,
 };
 use crate::context::ComputeLayoutCx;
+use crate::event::EventPropagation;
+use crate::id::ViewId;
 use crate::reactive::create_effect;
-use crate::view::View;
-use crate::EventPropagation;
+use crate::view::IntoView;
 use crate::{
     event::{Event, EventListener},
-    id::Id,
     keyboard::{Key, NamedKey},
-    view::{ViewData, Widget},
+    view::View,
 };
 use floem_reactive::{create_rw_signal, RwSignal};
-use kurbo::{Rect, Size};
+use peniko::kurbo::{Rect, Size};
 use std::hash::Hash;
 use std::rc::Rc;
 
@@ -23,16 +24,16 @@ enum ListUpdate {
 
 /// A view that is like a [`virtual_stack`](super::virtual_stack()) but also supports item selection.
 /// See [`virtual_list`] and [`virtual_stack`](super::virtual_stack()).
-pub struct VirtualList<T: 'static> {
-    data: ViewData,
+pub struct VirtualList {
+    id: ViewId,
     direction: VirtualDirection,
     child_size: Size,
     selection: RwSignal<Option<usize>>,
     offsets: RwSignal<Vec<f64>>,
-    child: VirtualStack<(usize, T)>,
+    child: ViewId,
 }
 
-impl<T> VirtualList<T> {
+impl VirtualList {
     pub fn selection(&self) -> RwSignal<Option<usize>> {
         self.selection
     }
@@ -56,7 +57,7 @@ pub fn virtual_list<T, IF, I, KF, K, VF, V>(
     each_fn: IF,
     key_fn: KF,
     view_fn: VF,
-) -> VirtualList<T>
+) -> VirtualList
 where
     T: 'static,
     IF: Fn() -> I + 'static,
@@ -64,9 +65,9 @@ where
     KF: Fn(&T) -> K + 'static,
     K: Eq + Hash + 'static,
     VF: Fn(T) -> V + 'static,
-    V: View + 'static,
+    V: IntoView + 'static,
 {
-    let id = Id::next();
+    let id = ViewId::new();
     let selection = create_rw_signal(None);
     let length = create_rw_signal(0);
     let offsets = create_rw_signal(Vec::new());
@@ -126,11 +127,21 @@ where
         },
         move |(_, e)| key_fn(e),
         move |(index, e)| {
+            let id = ViewId::new();
+            let child =
+                container(view_fn(e))
+                    .class(ListItemClass)
+                    .style(move |s| match direction {
+                        VirtualDirection::Horizontal => s.flex_row(),
+                        VirtualDirection::Vertical => s.flex_col(),
+                    });
+            let child_id = child.id();
+            id.set_children(vec![child]);
             Item {
-                data: ViewData::new(Id::next()),
+                id,
                 selection,
                 index,
-                child: view_fn(e).build(),
+                child: child_id,
             }
             .on_click_stop(move |_| {
                 if selection.get_untracked() != Some(index) {
@@ -144,14 +155,17 @@ where
         VirtualDirection::Horizontal => s.flex_row(),
         VirtualDirection::Vertical => s.flex_col(),
     });
+    let child = stack.id();
+    id.set_children(vec![stack.into_view()]);
     VirtualList {
-        data: ViewData::new(id),
+        id,
         selection,
         direction,
         offsets,
         child_size: Size::ZERO,
-        child: stack,
+        child,
     }
+    .class(ListClass)
     .keyboard_navigatable()
     .on_event(EventListener::KeyDown, move |e| {
         if let Event::KeyDown(key_event) = e {
@@ -216,53 +230,16 @@ where
     })
 }
 
-impl<T> View for VirtualList<T> {
-    fn view_data(&self) -> &ViewData {
-        &self.data
+impl View for VirtualList {
+    fn id(&self) -> ViewId {
+        self.id
     }
 
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn Widget> {
-        Box::new(self)
-    }
-}
-
-impl<T> Widget for VirtualList<T> {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
-        for_each(&self.child);
-    }
-
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
-        for_each(&mut self.child);
-    }
-
-    fn for_each_child_rev_mut<'a>(
-        &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
-    ) {
-        for_each(&mut self.child);
-    }
-
-    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        "VirtualList".into()
-    }
-
-    fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
+    fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(change) = state.downcast::<ListUpdate>() {
             match *change {
                 ListUpdate::SelectionChanged => {
-                    cx.app_state_mut().request_style_recursive(self.id())
+                    self.id.request_style_recursive();
                 }
                 ListUpdate::ScrollToSelected => {
                     if let Some(index) = self.selection.get_untracked() {
@@ -276,7 +253,7 @@ impl<T> Widget for VirtualList<T> {
                                         Rect::new(*before, 0.0, *after, self.child_size.height)
                                     }
                                 };
-                                self.child.id().scroll_to(Some(rect));
+                                self.child.scroll_to(Some(rect));
                             }
                         });
                     }
@@ -286,12 +263,12 @@ impl<T> Widget for VirtualList<T> {
     }
 
     fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
-        self.child_size = cx
-            .app_state
-            .get_layout(self.child.id())
+        self.child_size = self
+            .child
+            .get_layout()
             .map(|layout| Size::new(layout.size.width as f64, layout.size.height as f64))
             .unwrap();
 
-        cx.compute_view_layout(&mut self.child)
+        cx.compute_view_layout(self.child)
     }
 }

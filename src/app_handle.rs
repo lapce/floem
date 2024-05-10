@@ -6,7 +6,7 @@ use floem_winit::{
     event_loop::{ControlFlow, EventLoopWindowTarget},
     window::WindowId,
 };
-use kurbo::{Point, Size};
+use peniko::kurbo::{Point, Size};
 
 use crate::{
     action::{Timer, TimerToken},
@@ -14,7 +14,7 @@ use crate::{
     ext_event::EXT_EVENT_HANDLER,
     inspector::Capture,
     profiler::{Profile, ProfileEvent},
-    view::AnyView,
+    view::View,
     window::WindowConfig,
     window_handle::WindowHandle,
 };
@@ -183,7 +183,7 @@ impl ApplicationHandle {
                 }
             }
             WindowEvent::ModifiersChanged(modifiers) => {
-                window_handle.modifiers = modifiers.state();
+                window_handle.modifiers_changed(modifiers.state());
             }
             WindowEvent::Ime(ime) => {
                 window_handle.ime(ime);
@@ -245,7 +245,7 @@ impl ApplicationHandle {
     pub(crate) fn new_window(
         &mut self,
         event_loop: &EventLoopWindowTarget<UserEvent>,
-        view_fn: Box<dyn FnOnce(WindowId) -> AnyView>,
+        view_fn: Box<dyn FnOnce(WindowId) -> Box<dyn View>>,
         config: Option<WindowConfig>,
     ) {
         let mut window_builder = floem_winit::window::WindowBuilder::new();

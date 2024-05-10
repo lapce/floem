@@ -5,13 +5,13 @@ use floem::{
     reactive::{create_rw_signal, create_signal},
     style_class,
     unit::UnitExt,
-    view::View,
     views::{label, stack, Decorators},
+    IntoView, View,
 };
 
 style_class!(pub Button);
 
-fn app_view() -> impl View {
+fn app_view() -> impl IntoView {
     let (counter, set_counter) = create_signal(0);
     let window_scale = create_rw_signal(1.0);
     let view = stack((

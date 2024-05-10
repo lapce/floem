@@ -2,14 +2,36 @@ use floem_winit::{
     keyboard::{KeyCode, PhysicalKey},
     window::Theme,
 };
-use kurbo::{Point, Size};
+use peniko::kurbo::{Point, Size};
 
 use crate::{
     keyboard::KeyEvent,
     pointer::{PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
 };
 
-#[derive(Debug, Hash, PartialEq, Eq)]
+/// Control whether an event will continue propagating or whether it should stop.
+pub enum EventPropagation {
+    /// Stop event propagation and mark the event as processed
+    Stop,
+    /// Let event propagation continue
+    Continue,
+}
+
+impl EventPropagation {
+    pub fn is_continue(&self) -> bool {
+        matches!(self, EventPropagation::Continue)
+    }
+
+    pub fn is_stop(&self) -> bool {
+        matches!(self, EventPropagation::Stop)
+    }
+
+    pub fn is_processed(&self) -> bool {
+        matches!(self, EventPropagation::Stop)
+    }
+}
+
+#[derive(Debug, Hash, PartialEq, Eq, Copy, Clone)]
 pub enum EventListener {
     /// Receives [`Event::KeyDown`]
     KeyDown,

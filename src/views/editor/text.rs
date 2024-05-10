@@ -2,7 +2,7 @@ use std::{borrow::Cow, fmt::Debug, ops::Range, rc::Rc};
 
 use crate::{
     cosmic_text::{Attrs, AttrsList, FamilyOwned, Stretch, Weight},
-    keyboard::ModifiersState,
+    keyboard::Modifiers,
     peniko::Color,
     reactive::{RwSignal, Scope},
     style,
@@ -136,6 +136,7 @@ pub trait Document: DocumentPhantom + Downcast {
         Some(PhantomText {
             kind: PhantomTextKind::Ime,
             text: preedit.text,
+            affinity: None,
             col,
             font_size: None,
             fg: None,
@@ -164,7 +165,7 @@ pub trait Document: DocumentPhantom + Downcast {
         ed: &Editor,
         cmd: &Command,
         count: Option<usize>,
-        modifiers: ModifiersState,
+        modifiers: Modifiers,
     ) -> CommandExecuted;
 
     fn receive_char(&self, ed: &Editor, c: &str);
@@ -430,7 +431,7 @@ pub struct ExtCmdDocument<D, F> {
 }
 impl<
         D: Document,
-        F: Fn(&Editor, &Command, Option<usize>, ModifiersState) -> CommandExecuted + 'static,
+        F: Fn(&Editor, &Command, Option<usize>, Modifiers) -> CommandExecuted + 'static,
     > ExtCmdDocument<D, F>
 {
     pub fn new(doc: D, handler: F) -> ExtCmdDocument<D, F> {
@@ -442,7 +443,7 @@ impl<
 impl<D, F> Document for ExtCmdDocument<D, F>
 where
     D: Document,
-    F: Fn(&Editor, &Command, Option<usize>, ModifiersState) -> CommandExecuted + 'static,
+    F: Fn(&Editor, &Command, Option<usize>, Modifiers) -> CommandExecuted + 'static,
 {
     fn text(&self) -> Rope {
         self.doc.text()
@@ -485,7 +486,7 @@ where
         ed: &Editor,
         cmd: &Command,
         count: Option<usize>,
-        modifiers: ModifiersState,
+        modifiers: Modifiers,
     ) -> CommandExecuted {
         if (self.handler)(ed, cmd, count, modifiers) == CommandExecuted::Yes {
             return CommandExecuted::Yes;
@@ -509,7 +510,7 @@ where
 impl<D, F> DocumentPhantom for ExtCmdDocument<D, F>
 where
     D: Document,
-    F: Fn(&Editor, &Command, Option<usize>, ModifiersState) -> CommandExecuted,
+    F: Fn(&Editor, &Command, Option<usize>, Modifiers) -> CommandExecuted,
 {
     fn phantom_text(&self, edid: EditorId, styling: &EditorStyle, line: usize) -> PhantomTextLine {
         self.doc.phantom_text(edid, styling, line)
@@ -532,7 +533,7 @@ where
 impl<D, F> CommonAction for ExtCmdDocument<D, F>
 where
     D: Document + CommonAction,
-    F: Fn(&Editor, &Command, Option<usize>, ModifiersState) -> CommandExecuted,
+    F: Fn(&Editor, &Command, Option<usize>, Modifiers) -> CommandExecuted,
 {
     fn exec_motion_mode(
         &self,

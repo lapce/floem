@@ -1,14 +1,13 @@
 use floem::{
     reactive::{create_effect, create_rw_signal},
     unit::UnitExt,
-    view::View,
-    views::{label, stack, text_input, Decorators},
-    widgets::slider,
+    views::{label, slider, stack, text_input, Decorators},
+    IntoView,
 };
 
 use crate::form::{self, form_item};
 
-pub fn slider_view() -> impl View {
+pub fn slider_view() -> impl IntoView {
     let set_slider = create_rw_signal(50.);
     let input = create_rw_signal(String::from("50"));
     create_effect(move |_| {

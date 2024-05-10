@@ -5,15 +5,15 @@ use floem::{
     reactive::create_signal,
     style::{Background, BorderColor, Outline, OutlineColor, Style, TextColor, Transition},
     style_class,
-    view::View,
     views::{label, stack, text, Decorators},
+    {IntoView, View},
 };
 
 style_class!(pub Button);
 style_class!(pub Label);
 style_class!(pub Frame);
 
-fn app_view() -> impl View {
+fn app_view() -> impl IntoView {
     let blue_button = Style::new()
         .background(Color::rgb8(137, 145, 160))
         .color(Color::WHITE)

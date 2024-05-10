@@ -2,9 +2,9 @@ use taffy::style::FlexDirection;
 
 use crate::{
     context::UpdateCx,
-    id::Id,
+    id::ViewId,
     style::{Style, StyleClassRef},
-    view::{View, ViewData, Widget},
+    view::{IntoView, View},
     view_tuple::ViewTuple,
 };
 
@@ -12,9 +12,18 @@ use crate::{
 ///
 /// The children of a stack can still get reactive updates.
 pub struct Stack {
-    data: ViewData,
-    pub(crate) children: Vec<Box<dyn Widget>>,
+    id: ViewId,
     direction: Option<FlexDirection>,
+}
+
+pub(crate) fn create_stack(
+    children: Vec<Box<dyn View>>,
+    direction: Option<FlexDirection>,
+) -> Stack {
+    let id = ViewId::new();
+    id.set_children(children);
+
+    Stack { id, direction }
 }
 
 /// A basic stack that is built from a tuple of views which remains static and always contains the same elements in the same order.
@@ -34,43 +43,30 @@ pub struct Stack {
 /// ));
 /// ```
 pub fn stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
-    Stack {
-        data: ViewData::new(Id::next()),
-        children: children.into_widgets(),
-        direction: None,
-    }
+    create_stack(children.into_views(), None)
 }
 
 /// A stack which defaults to `FlexDirection::Row`. See also [`v_stack`].
 pub fn h_stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
-    Stack {
-        data: ViewData::new(Id::next()),
-        children: children.into_widgets(),
-        direction: Some(FlexDirection::Row),
-    }
+    create_stack(children.into_views(), Some(FlexDirection::Row))
 }
 
 /// A stack which defaults to `FlexDirection::Column`. See also [`h_stack`].
 pub fn v_stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
-    Stack {
-        data: ViewData::new(Id::next()),
-        children: children.into_widgets(),
-        direction: Some(FlexDirection::Column),
-    }
+    create_stack(children.into_views(), Some(FlexDirection::Column))
 }
 
 fn from_iter<V>(iterator: impl IntoIterator<Item = V>, direction: Option<FlexDirection>) -> Stack
 where
-    V: View + 'static,
+    V: IntoView + 'static,
 {
-    Stack {
-        data: ViewData::new(Id::next()),
-        children: iterator
+    create_stack(
+        iterator
             .into_iter()
-            .map(|v| -> Box<dyn Widget> { v.build() })
+            .map(|v| -> Box<dyn View> { v.into_any() })
             .collect(),
         direction,
-    }
+    )
 }
 
 /// Creates a stack from an iterator of views. See also [`v_stack_from_iter`] and [`h_stack_from_iter`].
@@ -82,7 +78,7 @@ where
 /// ```
 pub fn stack_from_iter<V>(iterator: impl IntoIterator<Item = V>) -> Stack
 where
-    V: View + 'static,
+    V: IntoView + 'static,
 {
     from_iter(iterator, None)
 }
@@ -90,7 +86,7 @@ where
 /// Creates a stack from an iterator of views. It defaults to `FlexDirection::Row`. See also [`v_stack_from_iter`].
 pub fn h_stack_from_iter<V>(iterator: impl IntoIterator<Item = V>) -> Stack
 where
-    V: View + 'static,
+    V: IntoView + 'static,
 {
     from_iter(iterator, Some(FlexDirection::Row))
 }
@@ -98,64 +94,19 @@ where
 /// Creates a stack from an iterator of views. It defaults to `FlexDirection::Column`.See also [`h_stack_from_iter`].
 pub fn v_stack_from_iter<V>(iterator: impl IntoIterator<Item = V>) -> Stack
 where
-    V: View + 'static,
+    V: IntoView + 'static,
 {
     from_iter(iterator, Some(FlexDirection::Column))
 }
 
 impl View for Stack {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn Widget> {
-        Box::new(self)
-    }
-}
-
-impl Widget for Stack {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
+    fn id(&self) -> ViewId {
+        self.id
     }
 
     fn view_style(&self) -> Option<crate::style::Style> {
         self.direction
             .map(|direction| Style::new().flex_direction(direction))
-    }
-
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
-        for child in &self.children {
-            if for_each(child) {
-                break;
-            }
-        }
-    }
-
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
-        for child in &mut self.children {
-            if for_each(child) {
-                break;
-            }
-        }
-    }
-
-    fn for_each_child_rev_mut<'a>(
-        &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
-    ) {
-        for child in self.children.iter_mut().rev() {
-            if for_each(child) {
-                break;
-            }
-        }
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -166,19 +117,19 @@ impl Widget for Stack {
         }
     }
 
-    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn std::any::Any>) {
-        if let Ok(state) = state.downcast() {
-            self.children = *state;
-            cx.request_all(self.id());
+    fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn std::any::Any>) {
+        if let Ok(state) = state.downcast::<Vec<Box<dyn View>>>() {
+            self.id.set_children(*state);
+            self.id.request_all();
         }
     }
 }
 
 impl Stack {
     pub fn add_class_by_idx(self, class: impl Fn(usize) -> StyleClassRef) -> Self {
-        for (index, child) in self.children.iter().enumerate() {
+        for (index, child) in self.id.children().into_iter().enumerate() {
             let style_class = class(index);
-            child.view_data().id().add_class(style_class);
+            child.add_class(style_class);
         }
         self
     }

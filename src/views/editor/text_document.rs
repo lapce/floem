@@ -16,9 +16,10 @@ use floem_editor_core::{
     word::WordCursor,
 };
 use floem_reactive::{create_effect, RwSignal, Scope};
-use floem_winit::keyboard::ModifiersState;
 use lapce_xi_rope::{Rope, RopeDelta};
 use smallvec::{smallvec, SmallVec};
+
+use crate::keyboard::Modifiers;
 
 use super::{
     actions::{handle_command_default, CommonAction},
@@ -35,7 +36,7 @@ pub struct PreCommand<'a> {
     pub editor: &'a Editor,
     pub cmd: &'a Command,
     pub count: Option<usize>,
-    pub mods: ModifiersState,
+    pub mods: Modifiers,
 }
 
 type OnUpdateFn = Box<dyn Fn(OnUpdate)>;
@@ -170,7 +171,7 @@ impl Document for TextDocument {
         ed: &Editor,
         cmd: &Command,
         count: Option<usize>,
-        modifiers: ModifiersState,
+        modifiers: Modifiers,
     ) -> CommandExecuted {
         let pre_commands = self.pre_command.borrow();
         let pre_commands = pre_commands.get(&ed.id());
@@ -249,6 +250,7 @@ impl DocumentPhantom for TextDocument {
                 text.push(PhantomText {
                     kind: PhantomTextKind::Placeholder,
                     col: 0,
+                    affinity: None,
                     text: placeholder,
                     font_size: None,
                     fg: Some(styling.placeholder_color()),
@@ -347,10 +349,10 @@ impl CommonAction for TextDocument {
                 buffer.set_cursor_before(old_cursor);
                 buffer.set_cursor_after(cursor.mode.clone());
             });
-        }
 
-        self.update_cache_rev();
-        self.on_update(Some(ed), &deltas);
+            self.update_cache_rev();
+            self.on_update(Some(ed), &deltas);
+        }
 
         !deltas.is_empty()
     }

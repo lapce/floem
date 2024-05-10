@@ -6,16 +6,16 @@ use floem::{
     peniko::Color,
     reactive::{create_rw_signal, create_signal},
     style_class,
-    view::View,
     views::{container, empty, h_stack, label, stack, static_label, text, v_stack, Decorators},
+    IntoView,
 };
 
-fn app_view() -> impl View {
+fn app_view() -> impl IntoView {
     v_stack((progress_bar_container(), cube_container()))
 }
 
 style_class!(pub Button);
-fn progress_bar_container() -> impl View {
+fn progress_bar_container() -> impl IntoView {
     let width = 300.0;
     let anim_id = create_rw_signal(None);
     let is_stopped = create_rw_signal(false);
@@ -108,7 +108,7 @@ fn progress_bar_container() -> impl View {
     })
 }
 
-fn cube_container() -> impl View {
+fn cube_container() -> impl IntoView {
     let (counter, set_counter) = create_signal(0.0);
     let (is_hovered, set_is_hovered) = create_signal(false);
 

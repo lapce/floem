@@ -3,17 +3,16 @@ use std::{any::Any, fmt::Display};
 use crate::{
     context::UpdateCx,
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
-    id::Id,
+    id::ViewId,
     prop_extractor,
-    style::Style,
-    style::{FontProps, LineHeight, TextColor, TextOverflow, TextOverflowProp},
+    style::{FontProps, LineHeight, Style, TextColor, TextOverflow, TextOverflowProp},
     unit::PxPct,
-    view::{View, ViewData, Widget},
+    view::View,
 };
-use floem_peniko::Color;
 use floem_reactive::create_updater;
 use floem_renderer::Renderer;
-use kurbo::{Point, Rect};
+use peniko::kurbo::{Point, Rect};
+use peniko::Color;
 use taffy::tree::NodeId;
 
 prop_extractor! {
@@ -31,7 +30,7 @@ struct TextOverflowListener {
 
 /// A View that can display text from a [`String`]. See [`label`], [`text`], and [`static_label`].
 pub struct Label {
-    data: ViewData,
+    id: ViewId,
     label: String,
     text_layout: Option<TextLayout>,
     text_node: Option<NodeId>,
@@ -44,9 +43,9 @@ pub struct Label {
 }
 
 impl Label {
-    fn new(id: Id, label: String) -> Self {
+    fn new(id: ViewId, label: String) -> Self {
         Label {
-            data: ViewData::new(id),
+            id,
             label,
             text_layout: None,
             text_node: None,
@@ -77,7 +76,7 @@ pub fn text<S: Display>(text: S) -> Label {
 
 /// A non-reactive view that can display text from an item that can be turned into a [`String`]. See also [`label`].
 pub fn static_label(label: impl Into<String>) -> Label {
-    Label::new(Id::next(), label.into())
+    Label::new(ViewId::new(), label.into())
 }
 
 /// A view that can reactively display text from an item that implements [`Display`]. See also [`text`] for a non-reactive label.
@@ -91,7 +90,7 @@ pub fn static_label(label: impl Into<String>) -> Label {
 /// label(move || text.get());
 /// ```
 pub fn label<S: Display + 'static>(label: impl Fn() -> S + 'static) -> Label {
-    let id = Id::next();
+    let id = ViewId::new();
     let initial_label = create_updater(
         move || label().to_string(),
         move |new_label| id.update_state(new_label),
@@ -147,40 +146,22 @@ impl Label {
 }
 
 impl View for Label {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn Widget> {
-        Box::new(self)
-    }
-}
-
-impl Widget for Label {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
+    fn id(&self) -> ViewId {
+        self.id
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         format!("Label: {:?}", self.label).into()
     }
 
-    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {
+    fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn Any>) {
         if let Ok(state) = state.downcast() {
             self.label = *state;
             self.text_layout = None;
             self.available_text = None;
             self.available_width = None;
             self.available_text_layout = None;
-            cx.request_layout(self.id());
+            self.id.request_layout();
         }
     }
 
@@ -190,12 +171,12 @@ impl Widget for Label {
             self.available_text = None;
             self.available_width = None;
             self.available_text_layout = None;
-            cx.app_state_mut().request_layout(self.id());
+            self.id.request_layout();
         }
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::tree::NodeId {
-        cx.layout_node(self.id(), true, |cx| {
+        cx.layout_node(self.id(), true, |_cx| {
             let (width, height) = if self.label.is_empty() {
                 (0.0, self.font.size().unwrap_or(14.0))
             } else {
@@ -218,8 +199,9 @@ impl Widget for Label {
 
             if self.text_node.is_none() {
                 self.text_node = Some(
-                    cx.app_state_mut()
-                        .taffy
+                    self.id
+                        .taffy()
+                        .borrow_mut()
                         .new_leaf(taffy::style::Style::DEFAULT)
                         .unwrap(),
                 );
@@ -227,30 +209,33 @@ impl Widget for Label {
             let text_node = self.text_node.unwrap();
 
             let style = Style::new().width(width).height(height).to_taffy_style();
-            let _ = cx.app_state_mut().taffy.set_style(text_node, style);
+            let _ = self.id.taffy().borrow_mut().set_style(text_node, style);
 
             vec![text_node]
         })
     }
 
-    fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
+    fn compute_layout(&mut self, _cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
         if self.label.is_empty() {
             return None;
         }
 
-        let layout = cx.get_layout(self.id()).unwrap();
-        let style = cx.app_state_mut().get_builtin_style(self.id());
-        let text_overflow = style.text_overflow();
-        let padding_left = match style.padding_left() {
-            PxPct::Px(padding) => padding as f32,
-            PxPct::Pct(pct) => pct as f32 * layout.size.width,
+        let layout = self.id.get_layout().unwrap_or_default();
+        let (text_overflow, padding) = {
+            let view_state = self.id.state();
+            let view_state = view_state.borrow();
+            let style = view_state.combined_style.builtin();
+            let padding_left = match style.padding_left() {
+                PxPct::Px(padding) => padding as f32,
+                PxPct::Pct(pct) => pct as f32 * layout.size.width,
+            };
+            let padding_right = match style.padding_right() {
+                PxPct::Px(padding) => padding as f32,
+                PxPct::Pct(pct) => pct as f32 * layout.size.width,
+            };
+            let text_overflow = style.text_overflow();
+            (text_overflow, padding_left + padding_right)
         };
-        let padding_right = match style.padding_right() {
-            PxPct::Px(padding) => padding as f32,
-            PxPct::Pct(pct) => pct as f32 * layout.size.width,
-        };
-        let padding = padding_left + padding_right;
-
         let text_layout = self.text_layout.as_ref().unwrap();
         let width = text_layout.size().width as f32;
         let available_width = layout.size.width - padding;
@@ -286,11 +271,11 @@ impl Widget for Label {
                     text_layout.set_size(available_width, f32::MAX);
                     self.available_text_layout = Some(text_layout);
                     self.available_width = Some(available_width);
-                    cx.app_state_mut().request_layout(self.id());
+                    self.id.request_layout();
                 }
             } else {
                 if self.available_text_layout.is_some() {
-                    cx.app_state_mut().request_layout(self.id());
+                    self.id.request_layout();
                 }
                 self.available_text = None;
                 self.available_width = None;
@@ -316,7 +301,14 @@ impl Widget for Label {
         }
 
         let text_node = self.text_node.unwrap();
-        let location = cx.app_state.taffy.layout(text_node).unwrap().location;
+        let location = self
+            .id
+            .taffy()
+            .borrow()
+            .layout(text_node)
+            .cloned()
+            .unwrap_or_default()
+            .location;
         let point = Point::new(location.x as f64, location.y as f64);
         if let Some(text_layout) = self.available_text_layout.as_ref() {
             cx.draw_text(text_layout, point);

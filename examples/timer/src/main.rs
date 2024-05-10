@@ -4,16 +4,15 @@ use floem::{
     action::exec_after,
     reactive::{create_effect, create_rw_signal},
     unit::UnitExt,
-    view::View,
-    views::{container, label, stack, text, v_stack, Decorators},
-    widgets::{button, slider},
+    views::{button, container, label, slider, stack, text, v_stack, Decorators},
+    IntoView,
 };
 
 fn main() {
     floem::launch(app_view);
 }
 
-fn app_view() -> impl View {
+fn app_view() -> impl IntoView {
     // We take maximum duration as 100s for convenience so that
     // one percent represents one second.
     let target_duration = create_rw_signal(100.0);

@@ -12,14 +12,14 @@ use std::{
 use crate::{
     action::{exec_after, TimerToken},
     cosmic_text::{Attrs, AttrsList, LineHeightValue, TextLayout, Wrap},
-    keyboard::ModifiersState,
+    keyboard::Modifiers,
     kurbo::{Point, Rect, Vec2},
     peniko::Color,
     pointer::{PointerButton, PointerInputEvent, PointerMoveEvent},
     prop, prop_extractor,
     reactive::{batch, untrack, ReadSignal, RwSignal, Scope},
     style::{CursorColor, StylePropValue, TextColor},
-    view::{AnyView, View},
+    view::{IntoView, View},
     views::text,
 };
 use floem_editor_core::{
@@ -67,8 +67,8 @@ use self::{
 
 prop!(pub WrapProp: WrapMethod {} = WrapMethod::EditorWidth);
 impl StylePropValue for WrapMethod {
-    fn debug_view(&self) -> Option<AnyView> {
-        Some(crate::views::text(self).any())
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        Some(crate::views::text(self).into_any())
     }
 }
 prop!(pub CursorSurroundingLines: usize {} = 1);
@@ -82,14 +82,14 @@ prop!(pub PlaceholderColor: Color {} = Color::DIM_GRAY);
 prop!(pub PreeditUnderlineColor: Color {} = Color::WHITE);
 prop!(pub RenderWhitespaceProp: RenderWhitespace {} = RenderWhitespace::None);
 impl StylePropValue for RenderWhitespace {
-    fn debug_view(&self) -> Option<AnyView> {
-        Some(crate::views::text(self).any())
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        Some(crate::views::text(self).into_any())
     }
 }
 prop!(pub IndentStyleProp: IndentStyle {} = IndentStyle::Spaces(4));
 impl StylePropValue for IndentStyle {
-    fn debug_view(&self) -> Option<AnyView> {
-        Some(text(self).any())
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        Some(text(self).into_any())
     }
 }
 prop!(pub DropdownShadow: Option<Color> {} = None);
@@ -166,7 +166,7 @@ pub struct Editor {
 
     pub editor_view_focused: Trigger,
     pub editor_view_focus_lost: Trigger,
-    pub editor_view_id: RwSignal<Option<crate::id::Id>>,
+    pub editor_view_id: RwSignal<Option<crate::id::ViewId>>,
 
     /// The current scroll position.
     pub scroll_delta: RwSignal<Vec2>,
@@ -196,9 +196,9 @@ impl Editor {
     /// Create a new editor into the given document, using the styling.  
     /// `doc`: The backing [`Document`], such as [TextDocument](self::text_document::TextDocument)
     /// `style`: How the editor should be styled, such as [SimpleStyling](self::text::SimpleStyling)
-    pub fn new(cx: Scope, doc: Rc<dyn Document>, style: Rc<dyn Styling>) -> Editor {
+    pub fn new(cx: Scope, doc: Rc<dyn Document>, style: Rc<dyn Styling>, modal: bool) -> Editor {
         let id = EditorId::next();
-        Editor::new_id(cx, id, doc, style)
+        Editor::new_id(cx, id, doc, style, modal)
     }
 
     /// Create a new editor into the given document, using the styling.  
@@ -210,8 +210,9 @@ impl Editor {
         id: EditorId,
         doc: Rc<dyn Document>,
         style: Rc<dyn Styling>,
+        modal: bool,
     ) -> Editor {
-        let editor = Editor::new_direct(cx, id, doc, style);
+        let editor = Editor::new_direct(cx, id, doc, style, modal);
         editor.recreate_view_effects();
 
         editor
@@ -238,11 +239,11 @@ impl Editor {
         id: EditorId,
         doc: Rc<dyn Document>,
         style: Rc<dyn Styling>,
+        modal: bool,
     ) -> Editor {
         let cx = cx.create_child();
 
         let viewport = cx.create_rw_signal(Rect::ZERO);
-        let modal = false;
         let cursor_mode = if modal {
             CursorMode::Normal(0)
         } else {
@@ -386,6 +387,7 @@ impl Editor {
             editor_id.unwrap_or_else(EditorId::next),
             doc,
             style,
+            false,
         );
 
         batch(|| {
@@ -514,8 +516,8 @@ impl Editor {
         self.cursor.update(|cursor| {
             cursor.set_offset(
                 new_offset,
-                pointer_event.modifiers.shift_key(),
-                pointer_event.modifiers.alt_key(),
+                pointer_event.modifiers.shift(),
+                pointer_event.modifiers.alt(),
             )
         });
     }
@@ -529,8 +531,8 @@ impl Editor {
             cursor.add_region(
                 start,
                 end,
-                pointer_event.modifiers.shift_key(),
-                pointer_event.modifiers.alt_key(),
+                pointer_event.modifiers.shift(),
+                pointer_event.modifiers.alt(),
             )
         });
     }
@@ -546,8 +548,8 @@ impl Editor {
             cursor.add_region(
                 start,
                 end,
-                pointer_event.modifiers.shift_key(),
-                pointer_event.modifiers.alt_key(),
+                pointer_event.modifiers.shift(),
+                pointer_event.modifiers.alt(),
             )
         });
     }
@@ -556,9 +558,8 @@ impl Editor {
         let mode = self.cursor.with_untracked(|c| c.get_mode());
         let (offset, _is_inside) = self.offset_of_point(mode, pointer_event.pos);
         if self.active.get_untracked() && self.cursor.with_untracked(|c| c.offset()) != offset {
-            self.cursor.update(|cursor| {
-                cursor.set_offset(offset, true, pointer_event.modifiers.alt_key())
-            });
+            self.cursor
+                .update(|cursor| cursor.set_offset(offset, true, pointer_event.modifiers.alt()));
         }
     }
 
@@ -580,7 +581,7 @@ impl Editor {
     }
 
     // TODO: should this have modifiers state in its api
-    pub fn page_move(&self, down: bool, mods: ModifiersState) {
+    pub fn page_move(&self, down: bool, mods: Modifiers) {
         let viewport = self.viewport.get_untracked();
         // TODO: don't assume line height is constant
         let line_height = f64::from(self.line_height(0));
@@ -597,7 +598,7 @@ impl Editor {
         self.doc().run_command(self, &cmd, Some(lines), mods);
     }
 
-    pub fn scroll(&self, top_shift: f64, down: bool, count: usize, mods: ModifiersState) {
+    pub fn scroll(&self, top_shift: f64, down: bool, count: usize, mods: Modifiers) {
         let viewport = self.viewport.get_untracked();
         // TODO: don't assume line height is constant
         let line_height = f64::from(self.line_height(0));
@@ -852,7 +853,7 @@ impl Editor {
     /// `x` being the leading edge of the character, and `y` being the baseline.
     pub fn line_point_of_offset(&self, offset: usize, affinity: CursorAffinity) -> Point {
         let (line, col) = self.offset_to_line_col(offset);
-        self.line_point_of_line_col(line, col, affinity)
+        self.line_point_of_line_col(line, col, affinity, false)
     }
 
     /// Returns the point into the text layout of the line at the given line and col.
@@ -862,9 +863,24 @@ impl Editor {
         line: usize,
         col: usize,
         affinity: CursorAffinity,
+        force_affinity: bool,
     ) -> Point {
         let text_layout = self.text_layout(line);
-        hit_position_aff(&text_layout.text, col, affinity == CursorAffinity::Backward).point
+        let index = if force_affinity {
+            text_layout
+                .phantom_text
+                .col_after_force(col, affinity == CursorAffinity::Forward)
+        } else {
+            text_layout
+                .phantom_text
+                .col_after(col, affinity == CursorAffinity::Forward)
+        };
+        hit_position_aff(
+            &text_layout.text,
+            index,
+            affinity == CursorAffinity::Backward,
+        )
+        .point
     }
 
     /// Get the (point above, point below) of a particular offset within the editor.
@@ -873,8 +889,9 @@ impl Editor {
         let line_height = f64::from(self.style().line_height(self.id(), line));
 
         let info = self.screen_lines.with_untracked(|sl| {
-            sl.iter_line_info()
-                .find(|info| info.vline_info.interval.contains(offset))
+            sl.iter_line_info().find(|info| {
+                info.vline_info.interval.start <= offset && offset <= info.vline_info.interval.end
+            })
         });
         let Some(info) = info else {
             // TODO: We could do a smarter method where we get the approximate y position
@@ -937,10 +954,7 @@ impl Editor {
         let hit_point = text_layout.text.hit_point(Point::new(point.x, y));
         // We have to unapply the phantom text shifting in order to get back to the column in
         // the actual buffer
-        let phantom_text = self
-            .doc()
-            .phantom_text(self.id(), &self.es.get_untracked(), line);
-        let col = phantom_text.before_col(hit_point.index);
+        let col = text_layout.phantom_text.before_col(hit_point.index);
         // Ensure that the column doesn't end up out of bounds, so things like clicking on the far
         // right end will just go to the end of the line.
         let max_col = self.line_end_col(line, mode != Mode::Normal);
@@ -979,8 +993,9 @@ impl Editor {
                 let text_layout = self.text_layout(line);
                 let hit_point = text_layout.text.hit_point(Point::new(x, 0.0));
                 let n = hit_point.index;
+                let col = text_layout.phantom_text.before_col(n);
 
-                n.min(self.line_end_col(line, caret))
+                col.min(self.line_end_col(line, caret))
             }
             ColPosition::End => self.line_end_col(line, caret),
             ColPosition::Start => 0,
@@ -1008,8 +1023,9 @@ impl Editor {
                     .sum();
                 let hit_point = text_layout.text.hit_point(Point::new(x, y_pos));
                 let n = hit_point.index;
+                let col = text_layout.phantom_text.before_col(n);
 
-                n.min(self.line_end_col(line, caret))
+                col.min(self.line_end_col(line, caret))
             }
             // Otherwise it is the same as the other function
             _ => self.line_horiz_col(line, horiz, caret),
@@ -1246,6 +1262,7 @@ impl TextLayoutProvider for Editor {
             extra_style: Vec::new(),
             whitespaces,
             indent,
+            phantom_text,
         };
         self.es.with_untracked(|es| {
             style.apply_layout_styles(edid, es, line, &mut layout_line);

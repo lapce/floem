@@ -1,13 +1,12 @@
 use floem::{
     reactive::create_signal,
-    view::View,
-    views::Decorators,
-    widgets::{checkbox, labeled_checkbox},
+    views::{checkbox, labeled_checkbox, Decorators},
+    IntoView,
 };
 
 use crate::form::{form, form_item};
 
-pub fn checkbox_view() -> impl View {
+pub fn checkbox_view() -> impl IntoView {
     let width = 160.0;
     let (is_checked, set_is_checked) = create_signal(true);
     form({

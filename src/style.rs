@@ -2,10 +2,10 @@
 //!
 //!
 
-use floem_peniko::Color;
 use floem_renderer::cosmic_text;
 use floem_renderer::cosmic_text::{LineHeightValue, Weight};
 use im_rc::hashmap::Entry;
+use peniko::Color;
 use rustc_hash::FxHasher;
 use std::any::{type_name, Any};
 use std::collections::HashMap;
@@ -30,11 +30,11 @@ use taffy::{
 use crate::context::InteractionState;
 use crate::responsive::{ScreenSize, ScreenSizeBp};
 use crate::unit::{Px, PxPct, PxPctAuto, UnitExt};
-use crate::view::{AnyView, View};
+use crate::view::{IntoView, View};
 use crate::views::{empty, stack, text, Decorators};
 
 pub trait StylePropValue: Clone + PartialEq + Debug {
-    fn debug_view(&self) -> Option<AnyView> {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
         None
     }
 
@@ -74,7 +74,7 @@ impl StylePropValue for LineHeightValue {}
 impl StylePropValue for Size<LengthPercentage> {}
 
 impl<T: StylePropValue> StylePropValue for Option<T> {
-    fn debug_view(&self) -> Option<AnyView> {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
         self.as_ref().and_then(|v| v.debug_view())
     }
 
@@ -87,7 +87,7 @@ impl<T: StylePropValue> StylePropValue for Option<T> {
     }
 }
 impl<T: StylePropValue> StylePropValue for Vec<T> {
-    fn debug_view(&self) -> Option<AnyView> {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
         None
     }
 
@@ -96,34 +96,34 @@ impl<T: StylePropValue> StylePropValue for Vec<T> {
     }
 }
 impl StylePropValue for Px {
-    fn debug_view(&self) -> Option<AnyView> {
-        Some(text(format!("{} px", self.0)).any())
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        Some(text(format!("{} px", self.0)).into_any())
     }
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         self.0.interpolate(&other.0, value).map(Px)
     }
 }
 impl StylePropValue for PxPctAuto {
-    fn debug_view(&self) -> Option<AnyView> {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
         let label = match self {
             Self::Px(v) => format!("{} px", v),
             Self::Pct(v) => format!("{}%", v),
             Self::Auto => "auto".to_string(),
         };
-        Some(text(label).any())
+        Some(text(label).into_any())
     }
 }
 impl StylePropValue for PxPct {
-    fn debug_view(&self) -> Option<AnyView> {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
         let label = match self {
             Self::Px(v) => format!("{} px", v),
             Self::Pct(v) => format!("{}%", v),
         };
-        Some(text(label).any())
+        Some(text(label).into_any())
     }
 }
 impl StylePropValue for Color {
-    fn debug_view(&self) -> Option<AnyView> {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
         let color = *self;
         let color = empty().style(move |s| {
             s.background(color)
@@ -142,7 +142,7 @@ impl StylePropValue for Color {
         Some(
             stack((text(format!("{self:?}")), color))
                 .style(|s| s.items_center())
-                .any(),
+                .into_any(),
         )
     }
 
@@ -228,7 +228,7 @@ pub struct StylePropInfo {
     pub(crate) inherited: bool,
     pub(crate) default_as_any: fn() -> Rc<dyn Any>,
     pub(crate) debug_any: fn(val: &dyn Any) -> String,
-    pub(crate) debug_view: fn(val: &dyn Any) -> Option<AnyView>,
+    pub(crate) debug_view: fn(val: &dyn Any) -> Option<Box<dyn View>>,
     pub(crate) transition_key: StyleKey,
 }
 
@@ -261,7 +261,7 @@ impl StylePropInfo {
                     match v {
                         StyleMapValue::Val(v) => v.debug_view(),
 
-                        StyleMapValue::Unset => Some(text("Unset").any()),
+                        StyleMapValue::Unset => Some(text("Unset").into_any()),
                     }
                 } else {
                     panic!(
@@ -851,7 +851,7 @@ impl Style {
         self.set_map_selector(class.key, map)
     }
 
-    pub(crate) fn builtin(&self) -> BuiltinStyle<'_> {
+    pub fn builtin(&self) -> BuiltinStyle<'_> {
         BuiltinStyle { style: self }
     }
 

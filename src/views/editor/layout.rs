@@ -4,7 +4,7 @@ use crate::{
 };
 use floem_editor_core::buffer::rope_text::RopeText;
 
-use super::visual_line::TextLayoutProvider;
+use super::{phantom_text::PhantomTextLine, visual_line::TextLayoutProvider};
 
 #[derive(Clone, Debug)]
 pub struct LineExtraStyle {
@@ -25,7 +25,9 @@ pub struct TextLayoutLine {
     pub text: TextLayout,
     pub whitespaces: Option<Vec<(char, (f64, f64))>>,
     pub indent: f64,
+    pub phantom_text: PhantomTextLine,
 }
+
 impl TextLayoutLine {
     /// The number of line breaks in the text layout. Always at least `1`.
     pub fn line_count(&self) -> usize {

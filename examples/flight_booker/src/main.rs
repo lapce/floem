@@ -2,9 +2,11 @@ use floem::{
     peniko::Color,
     reactive::{create_rw_signal, create_signal},
     unit::UnitExt,
-    view::View,
-    views::{dyn_container, empty, h_stack, text, v_stack, Decorators},
-    widgets::{button, labeled_radio_button, text_input},
+    views::{
+        button, dyn_container, empty, h_stack, labeled_radio_button, text, text_input, v_stack,
+        Decorators,
+    },
+    IntoView,
 };
 use time::Date;
 
@@ -25,7 +27,7 @@ enum FlightMode {
 static DATE_FORMAT: &[time::format_description::FormatItem<'_>] =
     time::macros::format_description!("[day]-[month]-[year]");
 
-pub fn app_view() -> impl View {
+pub fn app_view() -> impl IntoView {
     let (flight_mode, flight_mode_set) = create_signal(FlightMode::OneWay);
 
     let start_text = create_rw_signal("24-02-2024".to_string());
@@ -82,16 +84,13 @@ pub fn app_view() -> impl View {
         })
         .on_click_stop(move |_| did_booking.set(true));
 
-    let success_message = dyn_container(
-        move || did_booking.get(),
-        move |booked| match (booked, flight_mode.get()) {
-            (true, FlightMode::OneWay) => text(oneway_message(start_text.get())).any(),
-            (true, FlightMode::Return) => {
-                text(return_message(start_text.get(), return_text.get())).any()
-            }
-            (false, _) => empty().any(),
-        },
-    );
+    let success_message = dyn_container(move || match (did_booking.get(), flight_mode.get()) {
+        (true, FlightMode::OneWay) => text(oneway_message(start_text.get())).into_any(),
+        (true, FlightMode::Return) => {
+            text(return_message(start_text.get(), return_text.get())).into_any()
+        }
+        (false, _) => empty().into_any(),
+    });
 
     v_stack((
         mode_picker,

@@ -4,18 +4,18 @@ use crate::{
     action::{set_ime_allowed, set_ime_cursor_area},
     context::{LayoutCx, PaintCx, UpdateCx},
     cosmic_text::{Attrs, AttrsList, TextLayout},
-    event::{Event, EventListener},
-    id::Id,
-    keyboard::{Key, ModifiersState, NamedKey},
+    event::{Event, EventListener, EventPropagation},
+    id::ViewId,
+    keyboard::{Key, Modifiers, NamedKey},
     kurbo::{BezPath, Line, Point, Rect, Size, Vec2},
     peniko::Color,
     reactive::{batch, create_effect, create_memo, create_rw_signal, Memo, RwSignal, Scope},
     style::{CursorStyle, Style},
     style_class,
     taffy::tree::NodeId,
-    view::{AnyWidget, View, ViewData, Widget},
+    view::{IntoView, View},
     views::{scroll, stack, Decorators},
-    EventPropagation, Renderer,
+    Renderer,
 };
 use floem_editor_core::{
     cursor::{ColPosition, CursorAffinity, CursorMode},
@@ -27,7 +27,6 @@ use crate::views::editor::{
     gutter::editor_gutter_view,
     keypress::{key::KeyInput, press::KeyPress},
     layout::LineExtraStyle,
-    phantom_text::PhantomTextKind,
     visual_line::{RVLine, VLineInfo},
 };
 
@@ -320,6 +319,7 @@ pub struct LineInfo {
     pub vline_y: f64,
     pub vline_info: VLineInfo<()>,
 }
+
 impl LineInfo {
     pub fn with_base(mut self, base: ScreenLinesBase) -> Self {
         self.y += base.active_viewport.y0;
@@ -329,12 +329,12 @@ impl LineInfo {
 }
 
 pub struct EditorView {
-    id: Id,
-    data: ViewData,
+    id: ViewId,
     editor: RwSignal<Editor>,
     is_active: Memo<bool>,
     inner_node: Option<NodeId>,
 }
+
 impl EditorView {
     #[allow(clippy::too_many_arguments)]
     fn paint_normal_selection(
@@ -345,7 +345,6 @@ impl EditorView {
         start_offset: usize,
         end_offset: usize,
         affinity: CursorAffinity,
-        is_block_cursor: bool,
     ) {
         // TODO: selections should have separate start/end affinity
         let (start_rvline, start_col) = ed.rvline_col_of_offset(start_offset, affinity);
@@ -360,7 +359,6 @@ impl EditorView {
             let rvline = info.rvline;
             let line = rvline.line;
 
-            let phantom_text = ed.phantom_text(line);
             let left_col = if rvline == start_rvline {
                 start_col
             } else {
@@ -371,8 +369,6 @@ impl EditorView {
             } else {
                 ed.last_col(info, true)
             };
-            let left_col = phantom_text.col_after(left_col, is_block_cursor);
-            let right_col = phantom_text.col_after(right_col, false);
 
             // Skip over empty selections
             if !info.is_empty_phantom() && left_col == right_col {
@@ -381,10 +377,10 @@ impl EditorView {
 
             // TODO: What affinity should these use?
             let x0 = ed
-                .line_point_of_line_col(line, left_col, CursorAffinity::Forward)
+                .line_point_of_line_col(line, left_col, CursorAffinity::Forward, true)
                 .x;
             let x1 = ed
-                .line_point_of_line_col(line, right_col, CursorAffinity::Backward)
+                .line_point_of_line_col(line, right_col, CursorAffinity::Backward, true)
                 .x;
             // TODO(minor): Should this be line != end_line?
             let x1 = if rvline != end_rvline {
@@ -442,16 +438,12 @@ impl EditorView {
             let rvline = info.rvline;
             let line = rvline.line;
 
-            // TODO: give ed a phantom_col_after
-            let phantom_text = ed.phantom_text(line);
-
             // The left column is always 0 for linewise selections.
             let right_col = ed.last_col(info, true);
-            let right_col = phantom_text.col_after(right_col, false);
 
             // TODO: what affinity to use?
             let x1 = ed
-                .line_point_of_line_col(line, right_col, CursorAffinity::Backward)
+                .line_point_of_line_col(line, right_col, CursorAffinity::Backward, true)
                 .x
                 + CHAR_WIDTH;
 
@@ -494,16 +486,13 @@ impl EditorView {
             } else {
                 right_col.min(max_col)
             };
-            let phantom_text = ed.phantom_text(line);
-            let left_col = phantom_text.col_after(left_col, true);
-            let right_col = phantom_text.col_after(right_col, false);
 
             // TODO: what affinity to use?
             let x0 = ed
-                .line_point_of_line_col(line, left_col, CursorAffinity::Forward)
+                .line_point_of_line_col(line, left_col, CursorAffinity::Forward, true)
                 .x;
             let x1 = ed
-                .line_point_of_line_col(line, right_col, CursorAffinity::Backward)
+                .line_point_of_line_col(line, right_col, CursorAffinity::Backward, true)
                 .x;
 
             let line_height = ed.line_height(line);
@@ -577,7 +566,6 @@ impl EditorView {
                     start_offset,
                     end_offset,
                     cursor.affinity,
-                    true,
                 );
             }
             CursorMode::Visual {
@@ -621,7 +609,6 @@ impl EditorView {
                         start.min(end),
                         start.max(end),
                         cursor.affinity,
-                        false,
                     );
                 }
             }
@@ -801,39 +788,18 @@ impl EditorView {
         }
     }
 }
+
 impl View for EditorView {
-    fn id(&self) -> Id {
+    fn id(&self) -> ViewId {
         self.id
     }
 
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> AnyWidget {
-        Box::new(self)
-    }
-}
-impl Widget for EditorView {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
     fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
-        let id = self.id();
         self.editor.with_untracked(|ed| {
             ed.es.update(|s| {
                 if s.read(cx) {
                     ed.floem_style_id.update(|val| *val += 1);
-                    cx.app_state_mut().request_paint(id);
+                    cx.app_state_mut().request_paint(self.id());
                 }
             })
         });
@@ -846,13 +812,13 @@ impl Widget for EditorView {
     fn update(&mut self, _cx: &mut UpdateCx, _state: Box<dyn std::any::Any>) {}
 
     fn layout(&mut self, cx: &mut LayoutCx) -> crate::taffy::tree::NodeId {
-        cx.layout_node(self.id, true, |cx| {
+        cx.layout_node(self.id, true, |_cx| {
             let editor = self.editor.get_untracked();
 
             let parent_size = editor.parent_size.get_untracked();
 
             if self.inner_node.is_none() {
-                self.inner_node = Some(cx.new_node());
+                self.inner_node = Some(self.id.new_taffy_node());
             }
 
             let screen_lines = editor.screen_lines.get_untracked();
@@ -881,7 +847,7 @@ impl Widget for EditorView {
                 .height(height)
                 .margin_bottom(margin_bottom)
                 .to_taffy_style();
-            cx.set_style(inner_node, style);
+            let _ = self.id.taffy().borrow_mut().set_style(inner_node, style);
 
             vec![inner_node]
         })
@@ -894,9 +860,12 @@ impl Widget for EditorView {
         if editor.viewport.with_untracked(|v| v != &viewport) {
             editor.viewport.set(viewport);
         }
-        let parent_size = cx.app_state.get_layout_rect(self.id.parent().unwrap());
-        if editor.parent_size.with_untracked(|ps| ps != &parent_size) {
-            editor.parent_size.set(parent_size);
+
+        if let Some(parent) = self.id.parent() {
+            let parent_size = parent.layout_rect();
+            if editor.parent_size.with_untracked(|ps| ps != &parent_size) {
+                editor.parent_size.set(parent_size);
+            }
         }
         None
     }
@@ -926,12 +895,10 @@ pub fn editor_view(
     editor: RwSignal<Editor>,
     is_active: impl Fn(bool) -> bool + 'static + Copy,
 ) -> EditorView {
-    let id = Id::next();
+    let id = ViewId::new();
     let is_active = create_memo(move |_| is_active(true));
 
     let ed = editor.get_untracked();
-
-    let data = ViewData::new(id);
 
     let doc = ed.doc;
     let style = ed.style;
@@ -979,7 +946,6 @@ pub fn editor_view(
 
     EditorView {
         id,
-        data,
         editor,
         is_active,
         inner_node: None,
@@ -1048,23 +1014,9 @@ pub fn cursor_caret(
         .filter(|(preedit_line, _)| *preedit_line == info.rvline.line)
         .map(|(_, (start, _))| start);
 
-    let phantom_text = ed.phantom_text(info.rvline.line);
-
     let (_, col) = ed.offset_to_line_col(offset);
-    let ime_kind = preedit_start.map(|_| PhantomTextKind::Ime);
-    // The cursor should be after phantom text if the affinity is forward, or it is a block cursor.
-    // - if we have a relevant preedit we skip over IMEs
-    // - we skip over completion lens, as the text should be after the cursor
-    let col = phantom_text.col_after_ignore(
-        col,
-        affinity == CursorAffinity::Forward || (block && !after_last_char),
-        |p| p.kind == PhantomTextKind::Completion || Some(p.kind) == ime_kind,
-    );
-    // We shift forward by the IME's start. This is due to the cursor potentially being in the
-    // middle of IME phantom text while editing it.
-    let col = col + preedit_start.unwrap_or(0);
 
-    let point = ed.line_point_of_line_col(info.rvline.line, col, affinity);
+    let point = ed.line_point_of_line_col(info.rvline.line, col, CursorAffinity::Forward, false);
 
     let rvline = if preedit_start.is_some() {
         // If there's an IME edit, then we need to use the point's y to get the actual y position
@@ -1082,11 +1034,16 @@ pub fn cursor_caret(
 
     let x0 = point.x;
     if block {
+        let x0 = ed
+            .line_point_of_line_col(info.rvline.line, col, CursorAffinity::Forward, true)
+            .x;
+        let new_offset = ed.move_right(offset, Mode::Insert, 1);
+        let (_, new_col) = ed.offset_to_line_col(new_offset);
         let width = if after_last_char {
             CHAR_WIDTH
         } else {
             let x1 = ed
-                .line_point_of_line_col(info.rvline.line, col + 1, affinity)
+                .line_point_of_line_col(info.rvline.line, new_col, CursorAffinity::Backward, true)
                 .x;
             x1 - x0
         };
@@ -1108,8 +1065,8 @@ pub fn cursor_caret(
 pub fn editor_container_view(
     editor: RwSignal<Editor>,
     is_active: impl Fn(bool) -> bool + 'static + Copy,
-    handle_key_event: impl Fn(&KeyPress, ModifiersState) -> CommandExecuted + 'static,
-) -> impl View {
+    handle_key_event: impl Fn(&KeyPress, Modifiers) -> CommandExecuted + 'static,
+) -> impl IntoView {
     stack((
         editor_gutter(editor),
         editor_content(editor, is_active, handle_key_event),
@@ -1124,7 +1081,7 @@ pub fn editor_container_view(
 
 /// Default editor gutter
 /// Simply shows line numbers
-pub fn editor_gutter(editor: RwSignal<Editor>) -> impl View {
+pub fn editor_gutter(editor: RwSignal<Editor>) -> impl IntoView {
     let ed = editor.get_untracked();
 
     let scroll_delta = ed.scroll_delta;
@@ -1145,8 +1102,8 @@ pub fn editor_gutter(editor: RwSignal<Editor>) -> impl View {
 fn editor_content(
     editor: RwSignal<Editor>,
     is_active: impl Fn(bool) -> bool + 'static + Copy,
-    handle_key_event: impl Fn(&KeyPress, ModifiersState) -> CommandExecuted + 'static,
-) -> impl View {
+    handle_key_event: impl Fn(&KeyPress, Modifiers) -> CommandExecuted + 'static,
+) -> impl IntoView {
     let ed = editor.get_untracked();
     let cursor = ed.cursor;
     let scroll_delta = ed.scroll_delta;
@@ -1198,9 +1155,10 @@ fn editor_content(
                 handle_key_event(&keypress, key_event.modifiers);
 
                 let mut mods = key_event.modifiers;
-                mods.set(ModifiersState::SHIFT, false);
+                mods.set(Modifiers::SHIFT, false);
+                mods.set(Modifiers::ALTGR, false);
                 #[cfg(target_os = "macos")]
-                mods.set(ModifiersState::ALT, false);
+                mods.set(Modifiers::ALT, false);
 
                 if mods.is_empty() {
                     if let KeyInput::Keyboard(Key::Character(c), _) = keypress.key {
@@ -1269,7 +1227,7 @@ mod tests {
     use std::{collections::HashMap, rc::Rc};
 
     use floem_reactive::create_rw_signal;
-    use kurbo::Rect;
+    use peniko::kurbo::Rect;
 
     use crate::views::editor::{
         view::LineInfo,

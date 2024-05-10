@@ -3,7 +3,7 @@
 //!
 //! ## Counter Example
 //! ```rust
-//! use floem::{reactive::*, views::*, widgets::*};
+//! use floem::{reactive::*, views::*};
 //!
 //! let (counter, set_counter) = create_signal(0);
 //! v_stack((
@@ -49,9 +49,8 @@
 //!
 //! ```
 //! # use floem::reactive::create_rw_signal;
-//! # use floem::view::View;
-//! # use floem::views::{label, v_stack, Decorators};
-//! # use floem::widgets::text_input;
+//! # use floem::View;
+//! # use floem::views::{label, v_stack, text_input, Decorators};
 //! #
 //! fn app_view() -> impl View {
 //!     let text = create_rw_signal("Hello world".to_string());
@@ -92,7 +91,7 @@
 //! #  use floem::reactive::create_signal;
 //! #  use floem::style::Style;
 //! #  use floem::unit::UnitExt;
-//! #  use floem::view::View;
+//! #  use floem::View;
 //! #  use floem::views::{label, Decorators};
 //! #
 //! # let (active_tab, _set_active_tab) = create_signal(0);
@@ -113,7 +112,7 @@
 //!
 //! ## Trivial Example
 //! ```rust
-//! use floem::{views::*, widgets::*, peniko::Color};
+//! use floem::{views::*, peniko::Color};
 //!
 //! let root_view = stack((
 //!     button(move || "Button One"),
@@ -153,12 +152,15 @@ pub mod action;
 pub mod animate;
 mod app;
 mod app_handle;
+pub(crate) mod app_state;
 mod clipboard;
 pub mod context;
 pub mod event;
 pub mod ext_event;
 pub mod file;
-pub mod id;
+#[cfg(any(feature = "rfd-async-std", feature = "rfd-tokio"))]
+pub mod file_action;
+pub(crate) mod id;
 mod inspector;
 pub mod keyboard;
 pub mod menu;
@@ -168,23 +170,26 @@ mod profiler;
 pub mod renderer;
 pub mod responsive;
 pub mod style;
+pub(crate) mod theme;
 pub mod unit;
 mod update;
-pub mod view;
-pub(crate) mod view_data;
+pub(crate) mod view;
+pub(crate) mod view_state;
+pub(crate) mod view_storage;
 pub mod view_tuple;
 pub mod views;
-pub mod widgets;
 pub mod window;
 mod window_handle;
 
 pub use app::{launch, quit_app, AppEvent, Application};
+pub use app_state::AppState;
 pub use clipboard::{Clipboard, ClipboardError};
-pub use context::EventPropagation;
-pub use floem_peniko as peniko;
 pub use floem_reactive as reactive;
 pub use floem_renderer::cosmic_text;
 pub use floem_renderer::Renderer;
+pub use id::ViewId;
 pub use kurbo;
+pub use peniko;
 pub use taffy;
+pub use view::{AnyView, IntoView, View};
 pub use window::{close_window, new_window};

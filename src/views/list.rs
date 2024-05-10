@@ -1,16 +1,20 @@
-use super::{v_stack_from_iter, Decorators, Stack};
+use super::{container, v_stack_from_iter, Decorators};
 use crate::context::StyleCx;
+use crate::event::EventPropagation;
+use crate::id::ViewId;
 use crate::reactive::create_effect;
-use crate::style::{Style, StyleClassRef};
-use crate::view::View;
-use crate::EventPropagation;
+use crate::style::Style;
+use crate::style_class;
+use crate::view::IntoView;
 use crate::{
     event::{Event, EventListener},
-    id::Id,
     keyboard::{Key, NamedKey},
-    view::{ViewData, Widget},
+    view::View,
 };
 use floem_reactive::{create_rw_signal, RwSignal};
+
+style_class!(pub ListClass);
+style_class!(pub ListItemClass);
 
 enum ListUpdate {
     SelectionChanged,
@@ -19,18 +23,18 @@ enum ListUpdate {
 }
 
 pub(crate) struct Item {
-    pub(crate) data: ViewData,
+    pub(crate) id: ViewId,
     pub(crate) index: usize,
     pub(crate) selection: RwSignal<Option<usize>>,
-    pub(crate) child: Box<dyn Widget>,
+    pub(crate) child: ViewId,
 }
 
 /// A list of views that support the selection of items. See [`list`].
 pub struct List {
-    data: ViewData,
+    id: ViewId,
     selection: RwSignal<Option<usize>>,
     onaccept: Option<Box<dyn Fn(Option<usize>)>>,
-    child: Stack,
+    child: ViewId,
 }
 
 impl List {
@@ -50,10 +54,6 @@ impl List {
         self.onaccept = Some(Box::new(on_accept));
         self
     }
-    pub fn add_class_by_idx(mut self, class: impl Fn(usize) -> StyleClassRef) -> Self {
-        self.child = self.child.add_class_by_idx(class);
-        self
-    }
 }
 
 /// A list of views built from an iterator which remains static and always contains the same elements in the same order.
@@ -67,34 +67,40 @@ impl List {
 /// ```
 pub fn list<V>(iterator: impl IntoIterator<Item = V>) -> List
 where
-    V: Widget + 'static,
+    V: IntoView + 'static,
 {
-    let id = Id::next();
+    let list_id = ViewId::new();
     let selection = create_rw_signal(None);
     create_effect(move |_| {
         selection.track();
-        id.update_state(ListUpdate::SelectionChanged);
+        list_id.update_state(ListUpdate::SelectionChanged);
     });
     let stack = v_stack_from_iter(iterator.into_iter().enumerate().map(move |(index, v)| {
+        let id = ViewId::new();
+        let v = container(v).class(ListItemClass);
+        let child = v.id();
+        id.set_children(vec![v]);
         Item {
-            data: ViewData::new(Id::next()),
+            id,
             selection,
             index,
-            child: Box::new(v),
+            child,
         }
         .on_click_stop(move |_| {
             if selection.get_untracked() != Some(index) {
                 selection.set(Some(index));
-                id.update_state(ListUpdate::Accept);
+                list_id.update_state(ListUpdate::Accept);
             }
         })
     }))
     .style(|s| s.width_full().height_full());
-    let length = stack.children.len();
+    let length = stack.id().children().len();
+    let child = stack.id();
+    list_id.set_children(vec![stack]);
     List {
-        data: ViewData::new(id),
+        id: list_id,
         selection,
-        child: stack,
+        child,
         onaccept: None,
     }
     .keyboard_navigatable()
@@ -104,14 +110,14 @@ where
                 Key::Named(NamedKey::Home) => {
                     if length > 0 {
                         selection.set(Some(0));
-                        id.update_state(ListUpdate::ScrollToSelected);
+                        list_id.update_state(ListUpdate::ScrollToSelected);
                     }
                     EventPropagation::Stop
                 }
                 Key::Named(NamedKey::End) => {
                     if length > 0 {
                         selection.set(Some(length - 1));
-                        id.update_state(ListUpdate::ScrollToSelected);
+                        list_id.update_state(ListUpdate::ScrollToSelected);
                     }
                     EventPropagation::Stop
                 }
@@ -121,20 +127,20 @@ where
                         Some(i) => {
                             if i > 0 {
                                 selection.set(Some(i - 1));
-                                id.update_state(ListUpdate::ScrollToSelected);
+                                list_id.update_state(ListUpdate::ScrollToSelected);
                             }
                         }
                         None => {
                             if length > 0 {
                                 selection.set(Some(length - 1));
-                                id.update_state(ListUpdate::ScrollToSelected);
+                                list_id.update_state(ListUpdate::ScrollToSelected);
                             }
                         }
                     }
                     EventPropagation::Stop
                 }
                 Key::Named(NamedKey::Enter) => {
-                    id.update_state(ListUpdate::Accept);
+                    list_id.update_state(ListUpdate::Accept);
                     EventPropagation::Stop
                 }
                 Key::Named(NamedKey::ArrowDown) => {
@@ -143,13 +149,13 @@ where
                         Some(i) => {
                             if i < length - 1 {
                                 selection.set(Some(i + 1));
-                                id.update_state(ListUpdate::ScrollToSelected);
+                                list_id.update_state(ListUpdate::ScrollToSelected);
                             }
                         }
                         None => {
                             if length > 0 {
                                 selection.set(Some(0));
-                                id.update_state(ListUpdate::ScrollToSelected);
+                                list_id.update_state(ListUpdate::ScrollToSelected);
                             }
                         }
                     }
@@ -161,59 +167,23 @@ where
             EventPropagation::Continue
         }
     })
+    .class(ListClass)
 }
 
 impl View for List {
-    fn view_data(&self) -> &ViewData {
-        &self.data
+    fn id(&self) -> ViewId {
+        self.id
     }
 
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn Widget> {
-        Box::new(self)
-    }
-}
-
-impl Widget for List {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
-        for_each(&self.child);
-    }
-
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
-        for_each(&mut self.child);
-    }
-
-    fn for_each_child_rev_mut<'a>(
-        &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
-    ) {
-        for_each(&mut self.child);
-    }
-
-    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        "List".into()
-    }
-
-    fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
+    fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(change) = state.downcast::<ListUpdate>() {
             match *change {
                 ListUpdate::SelectionChanged => {
-                    cx.app_state_mut().request_style_recursive(self.id())
+                    self.id.request_style_recursive();
                 }
                 ListUpdate::ScrollToSelected => {
                     if let Some(index) = self.selection.get_untracked() {
-                        self.child.children[index].view_data().id().scroll_to(None);
+                        self.child.children()[index].scroll_to(None);
                     }
                 }
                 ListUpdate::Accept => {
@@ -227,45 +197,12 @@ impl Widget for List {
 }
 
 impl View for Item {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
-    }
-
-    fn build(self) -> Box<dyn Widget> {
-        Box::new(self)
-    }
-}
-
-impl Widget for Item {
-    fn view_data(&self) -> &ViewData {
-        &self.data
-    }
-
-    fn view_data_mut(&mut self) -> &mut ViewData {
-        &mut self.data
+    fn id(&self) -> ViewId {
+        self.id
     }
 
     fn view_style(&self) -> Option<crate::style::Style> {
         Some(Style::new().flex_col())
-    }
-
-    fn for_each_child<'a>(&'a self, for_each: &mut dyn FnMut(&'a dyn Widget) -> bool) {
-        for_each(&self.child);
-    }
-
-    fn for_each_child_mut<'a>(&'a mut self, for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool) {
-        for_each(&mut self.child);
-    }
-
-    fn for_each_child_rev_mut<'a>(
-        &'a mut self,
-        for_each: &mut dyn FnMut(&'a mut dyn Widget) -> bool,
-    ) {
-        for_each(&mut self.child);
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
@@ -277,10 +214,10 @@ impl Widget for Item {
         if Some(self.index) == selected {
             cx.save();
             cx.selected();
-            cx.style_view(&mut self.child);
+            cx.style_view(self.child);
             cx.restore();
         } else {
-            cx.style_view(&mut self.child);
+            cx.style_view(self.child);
         }
     }
 }
