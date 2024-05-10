@@ -742,6 +742,9 @@ impl<'a> ComputeLayoutCx<'a> {
 
         let window_origin = origin + self.window_origin.to_vec2() - this_viewport_origin;
         self.window_origin = window_origin;
+        {
+            view_state.borrow_mut().window_origin = window_origin;
+        }
 
         let resize_listener = view_state.borrow().resize_listener.clone();
         if let Some(resize) = resize_listener.as_ref() {

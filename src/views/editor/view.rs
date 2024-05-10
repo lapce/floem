@@ -1126,7 +1126,6 @@ fn editor_content(
                 editor.with_untracked(|ed| ed.editor_view_focus_lost.notify())
             })
             .on_event_cont(EventListener::PointerDown, move |event| {
-                // TODO:
                 if let Event::PointerDown(pointer_event) = event {
                     id.request_active();
                     id.request_focus();

@@ -104,6 +104,7 @@ pub struct ViewState {
     pub(crate) context_menu: Option<Rc<MenuCallback>>,
     pub(crate) popout_menu: Option<Rc<MenuCallback>>,
     pub(crate) resize_listener: Option<Rc<RefCell<ResizeListener>>>,
+    pub(crate) window_origin: Point,
     pub(crate) move_listener: Option<Rc<RefCell<MoveListener>>>,
     pub(crate) cleanup_listener: Option<Rc<dyn Fn()>>,
     pub(crate) last_pointer_down: Option<PointerInputEvent>,
@@ -134,6 +135,7 @@ impl ViewState {
             move_listener: None,
             cleanup_listener: None,
             last_pointer_down: None,
+            window_origin: Point::ZERO,
             debug_name: Default::default(),
         }
     }

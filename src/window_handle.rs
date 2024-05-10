@@ -239,7 +239,21 @@ impl WindowHandle {
             }
 
             let id = cx.app_state.active.unwrap();
-            cx.unconditional_view_event(id, event.clone(), true);
+
+            {
+                let window_origin = id.state().borrow().window_origin;
+                let layout = id.get_layout().unwrap_or_default();
+                let viewport = id.state().borrow().viewport.unwrap_or_default();
+                cx.unconditional_view_event(
+                    id,
+                    event.clone().offset((
+                        window_origin.x - layout.location.x as f64 + viewport.x0,
+                        window_origin.y - layout.location.y as f64 + viewport.y0,
+                    )),
+                    true,
+                );
+            }
+
             if let Event::PointerUp(_) = &event {
                 // To remove the styles applied by the Active selector
                 if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {

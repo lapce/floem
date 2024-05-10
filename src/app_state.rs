@@ -85,6 +85,11 @@ impl AppState {
 
     /// This removes a view from the app state.
     pub fn remove_view(&mut self, id: ViewId) {
+        let exists = VIEW_STORAGE.with_borrow(|s| s.view_ids.contains_key(id));
+        if !exists {
+            return;
+        }
+
         let children = id.children();
         for child in children {
             self.remove_view(child);
