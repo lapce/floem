@@ -36,7 +36,7 @@ jobs:
 
       - name: Update toolchain
         run: |
-          rustup update
+          rustup update --no-self-update
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -86,7 +86,7 @@ jobs:
 
       - name: Update toolchain & add clippy
         run: |
-          rustup update
+          rustup update --no-self-update
           rustup component add clippy
 
       - name: Install dependencies on Ubuntu
