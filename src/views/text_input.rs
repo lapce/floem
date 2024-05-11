@@ -956,7 +956,7 @@ impl View for TextInput {
     fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn Any>) {
         if let Ok(state) = state.downcast::<(String, bool)>() {
             let (_, is_focused) = *state;
-            if is_focused {
+            if is_focused && !self.is_focused {
                 self.cursor_glyph_idx = self.buffer.with_untracked(|buff| buff.len());
             }
 
