@@ -64,7 +64,7 @@ pub(crate) enum AppUpdateEvent {
     RequestTimer {
         timer: Timer,
     },
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     MenuAction {
         window_id: WindowId,
         action_id: usize,

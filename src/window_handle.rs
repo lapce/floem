@@ -17,9 +17,9 @@ use floem_winit::{
 use image::DynamicImage;
 use peniko::kurbo::{Affine, Point, Rect, Size, Vec2};
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::unit::UnitExt;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::views::{container, stack};
 use crate::{
     animate::{AnimPropKind, AnimUpdateMsg, AnimValue, AnimatedProp, SizeUnit},
@@ -72,7 +72,7 @@ pub(crate) struct WindowHandle {
     pub(crate) cursor_position: Point,
     pub(crate) window_position: Point,
     pub(crate) last_pointer_down: Option<(u8, Point, Instant)>,
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     pub(crate) context_menu: RwSignal<Option<(Menu, Point)>>,
 }
 
@@ -95,13 +95,13 @@ impl WindowHandle {
 
         set_current_view(id);
 
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         let context_menu = scope.create_rw_signal(None);
 
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
         let view = with_scope(scope, move || view_fn(window_id));
 
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         let view = with_scope(scope, move || {
             stack((
                 container(view_fn(window_id)).style(|s| s.size(100.pct(), 100.pct())),
@@ -138,7 +138,7 @@ impl WindowHandle {
             modifiers: Modifiers::default(),
             cursor_position: Point::ZERO,
             window_position: Point::ZERO,
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             context_menu,
             last_pointer_down: None,
         };
@@ -820,7 +820,7 @@ impl WindowHandle {
                         self.show_context_menu(platform_menu, pos);
                         #[cfg(target_os = "windows")]
                         self.show_context_menu(platform_menu, pos);
-                        #[cfg(target_os = "linux")]
+                        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
                         self.show_context_menu(menu, platform_menu, pos);
                     }
                     UpdateMessage::WindowMenu { menu } => {
@@ -1123,7 +1123,7 @@ impl WindowHandle {
         }
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     fn show_context_menu(
         &self,
         menu: Menu,
@@ -1183,7 +1183,7 @@ pub(crate) fn set_current_view(id: ViewId) {
     });
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 fn context_menu_view(
     cx: Scope,
     window_id: WindowId,
