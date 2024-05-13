@@ -1,0 +1,3 @@
+disallowed-macros = [
+  { path = "std::panic", reason = "Library should not panic" },
+]
