@@ -79,24 +79,31 @@ impl<W: wgpu::WindowHandle> Renderer<W> {
 
         let vger_err = if !force_tiny_skia {
             match VgerRenderer::new(window.clone(), size.width as u32, size.height as u32, scale) {
-                Ok(vger) => return Self::Vger(vger),
-                Err(err) => Some(err),
+                Ok(vger) => {
+                    tracing::info!("Starting Vger renderer");
+                    return Self::Vger(vger);
+                }
+                Err(err) => {
+                    tracing::error!("Failed to create VgerRenderer: {err}");
+                    Some(err)
+                },
             }
         } else {
             None
         };
 
-        let tiny_skia_err =
-            match TinySkiaRenderer::new(window, size.width as u32, size.height as u32, scale) {
-                Ok(tiny_skia) => return Self::TinySkia(tiny_skia),
-                Err(err) => err,
+        let tiny_skia_err = match TinySkiaRenderer::new(window, size.width as u32, size.height as u32, scale) {
+                Ok(tiny_skia) => {
+                    tracing::info!("Starting TinySkia renderer");
+                    return Self::TinySkia(tiny_skia);
+                }
+                Err(err) => {
+                    tracing::error!("Failed to create VgerRenderer: {err}");
+                    Some(err)
+                },
             };
 
-        if !force_tiny_skia {
-            panic!("Failed to create VgerRenderer: {}\nFailed to create TinySkiaRenderer: {tiny_skia_err}", vger_err.unwrap());
-        } else {
-            panic!("Failed to create TinySkiaRenderer: {tiny_skia_err}");
-        }
+        unreachable!("Failed to create any renderer: {:?}", (vger_err, tiny_skia_err));
     }
 
     pub fn resize(&mut self, scale: f64, size: Size) {
