@@ -1,14 +1,14 @@
 [package]
-name = "floem_renderer"
+name              = "floem_renderer"
 version.workspace = true
-edition = "2021"
-repository = "https://github.com/lapce/floem"
-description = "A native Rust UI library with fine-grained reactivity"
+edition           = "2021"
+repository        = "https://github.com/lapce/floem"
+description       = "A native Rust UI library with fine-grained reactivity"
 license.workspace = true
 
 [dependencies]
 peniko = { workspace = true }
-image = { workspace = true }
-resvg = { workspace = true }
+image  = { workspace = true }
+resvg  = { workspace = true }
 
 floem-cosmic-text = "0.7.2"

@@ -1,20 +1,21 @@
 [package]
-name = "floem_vger_renderer"
+name              = "floem_vger_renderer"
 version.workspace = true
-edition = "2021"
-repository = "https://github.com/lapce/floem"
-description = "A native Rust UI library with fine-grained reactivity"
+edition           = "2021"
+repository        = "https://github.com/lapce/floem"
+description       = "A native Rust UI library with fine-grained reactivity"
 license.workspace = true
 
 [dependencies]
-image = { workspace = true }
-resvg = { workspace = true }
-peniko = { workspace = true }
+image             = { workspace = true }
+resvg             = { workspace = true }
+peniko            = { workspace = true }
 raw-window-handle = { workspace = true }
-wgpu = { workspace = true }
+wgpu              = { workspace = true }
+tracing           = { workspace = true }
 
-futures = "0.3.26"
-anyhow = "1.0.69"
-swash = "0.1.8"
-floem-vger-rs = { package = "floem-vger", version = "0.2.8" }  # Alias library to avoid overlap with subcrate
+futures        = "0.3.26"
+anyhow         = "1.0.69"
+swash          = "0.1.8"
+floem-vger-rs  = { package = "floem-vger", version = "0.2.8" } # Alias library to avoid overlap with subcrate
 floem_renderer = { path = "../renderer", version = "0.1.0" }

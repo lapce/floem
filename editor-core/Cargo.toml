@@ -1,20 +1,20 @@
 [package]
-name = "floem-editor-core"
+name              = "floem-editor-core"
 version.workspace = true
-edition = "2021"
-repository = "https://github.com/lapce/floem"
+edition           = "2021"
+repository        = "https://github.com/lapce/floem"
 license.workspace = true
 
 [dependencies]
-serde = { workspace = true, optional = true }
-strum = { workspace = true }
+serde        = { workspace = true, optional = true }
+strum        = { workspace = true }
 strum_macros = { workspace = true }
 
 lapce-xi-rope = { workspace = true }
 
 itertools = "0.12.1"
-bitflags = "2.4.2"
-memchr = "2.7.1"
+bitflags  = "2.4.2"
+memchr    = "2.7.1"
 
 once_cell.workspace = true
 

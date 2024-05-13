@@ -1,100 +1,109 @@
 [workspace]
 resolver = "2"
-members = ["renderer", "vger", "tiny_skia", "reactive", "editor-core", "examples/*"]
+members  = ["renderer", "vger", "tiny_skia", "reactive", "editor-core", "examples/*"]
 
 [workspace.package]
 license = "MIT"
 version = "0.1.1"
 
 [package]
-name = "floem"
+name              = "floem"
+authors           = ["The Floem contributors"]
+readme            = "README.md"
+repository        = "https://github.com/lapce/floem"
+description       = "A native Rust UI library with fine-grained reactivity"
+edition           = "2021"
+rust-version      = "1.75"
 version.workspace = true
-authors = ["The Floem contributors"]
-readme = "README.md"
-repository = "https://github.com/lapce/floem"
-description = "A native Rust UI library with fine-grained reactivity"
-edition = "2021"
-rust-version = "1.75"
 license.workspace = true
 
 [workspace.dependencies]
-peniko = "0.1.0"
-kurbo = { version = "0.11", features = ["serde"] }
-serde = "1.0"
+peniko        = "0.1.0"
+kurbo         = { version = "0.11", features = ["serde"] }
+serde         = "1.0"
 lapce-xi-rope = { version = "0.3.2", features = ["serde"] }
-strum = { version = "0.26.2" }
-strum_macros = { version = "0.26.2" }
-once_cell = "1.17.1"
+strum         = { version = "0.26.2" }
+strum_macros  = { version = "0.26.2" }
+once_cell     = "1.17.1"
 # Image format features are defined via new features
-image = { version = "0.25", default-features = false }
-im = { version = "15.1.0" }
-resvg = { version = "0.40.0" }
-raw-window-handle = "0.6.0"
-wgpu = { version = "0.19.0" }
+image             = { version = "0.25", default-features = false }
+im                = { version = "15.1.0" }
+resvg             = { version = "0.40.0" }
+raw-window-handle = { version = "0.6.0" }
+wgpu              = { version = "0.19.0" }
 
 [dependencies]
-slotmap = "1.0.7"
-sha2 = "0.10.6"
-bitflags = "2.2.1"
-indexmap = "2"
-rustc-hash = "1.1.0"
-smallvec = "1.10.0"
-educe = "0.5.11"
-taffy = { version = "0.4", features = ["grid"] }
-rfd = { version = "0.14.0", default-features = false, features = [
-    "xdg-portal",
-], optional = true }
-raw-window-handle = { workspace = true }
-unicode-segmentation = "1.10.0"
-peniko = { workspace = true }
-kurbo = { workspace = true }
-crossbeam-channel = "0.5.6"
-im-rc = "15.1.0"
-serde = { workspace = true, optional = true }
-lapce-xi-rope = { workspace = true, optional = true }
-strum = { workspace = true, optional = true }
-strum_macros = { workspace = true, optional = true }
-# TODO: once https://github.com/rust-lang/rust/issues/65991 is stabilized we don't need this
-downcast-rs = { version = "1.2.0", optional = true }
-parking_lot = { version = "0.12.1" }
-floem_renderer = { path = "renderer", version = "0.1.0" }
-floem_vger_renderer = { path = "vger", version = "0.1.0" }
+slotmap                  = { version = "1.0.7" }
+sha2                     = { version = "0.10.6" }
+bitflags                 = { version = "2.2.1" }
+indexmap                 = { version = "2" }
+rustc-hash               = { version = "1.1.0" }
+smallvec                 = { version = "1.10.0" }
+educe                    = { version = "0.5.11" }
+taffy                    = { version = "0.4", features = ["grid"] }
+rfd                      = { version = "0.14.0", default-features = false, features = ["xdg-portal"], optional = true }
+raw-window-handle        = { workspace = true }
+unicode-segmentation     = { version = "1.10.0" }
+peniko                   = { workspace = true }
+kurbo                    = { workspace = true }
+crossbeam-channel        = { version = "0.5.6" }
+im-rc                    = { version = "15.1.0" }
+serde                    = { workspace = true, optional = true }
+lapce-xi-rope            = { workspace = true, optional = true }
+strum                    = { workspace = true, optional = true }
+strum_macros             = { workspace = true, optional = true }
+downcast-rs              = { version = "1.2.0", optional = true }                                                       # TODO: once https://github.com/rust-lang/rust/issues/65991 is stabilized we don't need this
+parking_lot              = { version = "0.12.1" }
+floem_renderer           = { path = "renderer", version = "0.1.0" }
+floem_vger_renderer      = { path = "vger", version = "0.1.0" }
 floem_tiny_skia_renderer = { path = "tiny_skia", version = "0.1.0" }
-floem_reactive = { path = "reactive", version = "0.1.0" }
-floem-winit = { version = "0.29.4", features = ["rwh_05"] }
-floem-editor-core = { path = "editor-core", version = "0.1.0", optional = true }
-copypasta = { version = "0.10.0", default-features = false, features = ["wayland", "x11"] }
-once_cell = { workspace = true }
-image = { workspace = true }
-im = { workspace = true }
-wgpu = { workspace = true }
+floem_reactive           = { path = "reactive", version = "0.1.0" }
+floem-winit              = { version = "0.29.4", features = ["rwh_05"] }
+floem-editor-core        = { path = "editor-core", version = "0.1.0", optional = true }
+copypasta                = { version = "0.10.0", default-features = false, features = ["wayland", "x11"] }
+once_cell                = { workspace = true }
+image                    = { workspace = true }
+im                       = { workspace = true }
+wgpu                     = { workspace = true }
 
 [features]
 default = ["editor", "default-image-formats"]
+
+# renderer-all       = ["renderer-vger", "renderer-tiny-skia"]
+# renderer-vger      = ["dep:floem_vger_renderer"]
+# renderer-tiny-skia = ["dep:floem_tiny_skia_renderer"]
+
 # TODO: this is only winit and the editor serde, there are other dependencies that still depend on
 # serde
 serde = ["floem-winit/serde", "dep:serde"]
-editor = ["floem-editor-core", "dep:lapce-xi-rope", "dep:strum", "dep:strum_macros", "dep:downcast-rs"]
+editor = [
+  "floem-editor-core",
+  "dep:lapce-xi-rope",
+  "dep:strum",
+  "dep:strum_macros",
+  "dep:downcast-rs",
+]
 
 # Image support
 # From: https://github.com/image-rs/image/blob/main/Cargo.toml
 default-image-formats = ["image-jpeg", "image-ico", "image-png", "image-webp"]
+# Available formats
 image-avif = ["image/avif"]
-image-bmp = ["image/bmp"]
-image-dds = ["image/dds"]
-image-exr = ["image/exr"]
-image-ff = ["image/ff"]
-image-gif = ["image/gif"]
-image-hdr = ["image/hdr"]
-image-ico = ["image/ico"]
+image-bmp  = ["image/bmp"]
+image-dds  = ["image/dds"]
+image-exr  = ["image/exr"]
+image-ff   = ["image/ff"]
+image-gif  = ["image/gif"]
+image-hdr  = ["image/hdr"]
+image-ico  = ["image/ico"]
 image-jpeg = ["image/jpeg"]
-image-png = ["image/png"]
-image-pnm = ["image/pnm"]
-image-qoi = ["image/qoi"]
-image-tga = ["image/tga"]
+image-png  = ["image/png"]
+image-pnm  = ["image/pnm"]
+image-qoi  = ["image/qoi"]
+image-tga  = ["image/tga"]
 image-tiff = ["image/tiff"]
 image-webp = ["image/webp"]
 
 # rfd (file dialog) async runtime
 rfd-async-std = ["dep:rfd", "rfd/async-std"]
-rfd-tokio = ["dep:rfd", "rfd/tokio"]
+rfd-tokio     = ["dep:rfd", "rfd/tokio"]

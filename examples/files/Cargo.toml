@@ -1,8 +1,8 @@
 [package]
-name = "fils"
+name    = "fils"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 im.workspace = true
-floem = { path = "../..", features = ["rfd-async-std"] }
+floem        = { path = "../..", features = ["rfd-async-std"] }

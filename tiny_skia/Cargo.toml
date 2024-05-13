@@ -1,20 +1,20 @@
 [package]
-name = "floem_tiny_skia_renderer"
+name              = "floem_tiny_skia_renderer"
 version.workspace = true
-edition = "2021"
-repository = "https://github.com/lapce/floem"
-description = "A native Rust UI library with fine-grained reactivity"
+edition           = "2021"
+repository        = "https://github.com/lapce/floem"
+description       = "A native Rust UI library with fine-grained reactivity"
 license.workspace = true
 
 [dependencies]
-peniko = { workspace = true }
-image = { workspace = true }
-resvg = { workspace = true }
+peniko            = { workspace = true }
+image             = { workspace = true }
+resvg             = { workspace = true }
 raw-window-handle = { workspace = true }
 
-futures = "0.3.26"
-anyhow = "1.0.69"
-swash = "0.1.8"
+futures        = "0.3.26"
+anyhow         = "1.0.69"
+swash          = "0.1.8"
 floem_renderer = { path = "../renderer", version = "0.1.0" }
-softbuffer = "0.4.1"
-bytemuck = "1.12"
+softbuffer     = "0.4.1"
+bytemuck       = "1.12"

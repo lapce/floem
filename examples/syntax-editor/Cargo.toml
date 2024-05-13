@@ -1,10 +1,10 @@
 [package]
-name = "syntax-editor"
+name    = "syntax-editor"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 im.workspace = true
-floem = { path = "../..", features = ["editor"] }
-syntect = "5.2.0"
-lazy_static = "1.4.0"
+floem        = { path = "../..", features = ["editor"] }
+syntect      = "5.2.0"
+lazy_static  = "1.4.0"

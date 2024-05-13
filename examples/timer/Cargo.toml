@@ -1,6 +1,6 @@
 [package]
-name = "timer"
-edition = "2021"
+name              = "timer"
+edition           = "2021"
 license.workspace = true
 version.workspace = true
 
