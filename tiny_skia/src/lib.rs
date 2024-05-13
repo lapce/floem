@@ -102,6 +102,10 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
     pub fn set_scale(&mut self, scale: f64) {
         self.scale = scale;
     }
+
+    pub fn scale(&self) -> f64 {
+        self.scale
+    }
 }
 
 fn to_color(color: Color) -> tiny_skia::Color {

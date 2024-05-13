@@ -125,6 +125,10 @@ impl VgerRenderer {
     pub fn set_scale(&mut self, scale: f64) {
         self.scale = scale;
     }
+
+    pub fn scale(&self) -> f64 {
+        self.scale
+    }
 }
 
 impl VgerRenderer {

@@ -113,6 +113,13 @@ impl<W: wgpu::WindowHandle> Renderer<W> {
             Renderer::TinySkia(r) => r.set_scale(scale),
         }
     }
+
+    pub fn scale(&self) -> f64 {
+        match self {
+            Renderer::Vger(r) => r.scale(),
+            Renderer::TinySkia(r) => r.scale(),
+        }
+    }
 }
 
 impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
