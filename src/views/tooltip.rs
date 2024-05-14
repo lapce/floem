@@ -1,4 +1,5 @@
 use peniko::kurbo::Point;
+use std::cell::RefCell;
 use std::{rc::Rc, time::Duration};
 
 use crate::views::Decorators;
@@ -27,7 +28,7 @@ prop_extractor! {
 pub struct Tooltip {
     id: ViewId,
     hover: Option<(Point, TimerToken)>,
-    overlay: Option<ViewId>,
+    overlay: Rc<RefCell<Option<ViewId>>>,
     tip: Rc<dyn Fn() -> Box<dyn View>>,
     style: TooltipStyle,
     window_origin: Option<Point>,
@@ -41,16 +42,19 @@ pub fn tooltip<V: IntoView + 'static, T: IntoView + 'static>(
     let id = ViewId::new();
     let child = child.into_view();
     id.set_children(vec![child]);
+    let overlay = Rc::new(RefCell::new(None));
     Tooltip {
         id,
         tip: Rc::new(move || container(tip()).class(TooltipClass).into_any()),
         hover: None,
-        overlay: None,
+        overlay: overlay.clone(),
         style: Default::default(),
         window_origin: None,
     }
     .on_cleanup(move || {
-        remove_overlay(id);
+        if let Some(overlay_id) = overlay.borrow_mut().take() {
+            remove_overlay(overlay_id);
+        }
     })
 }
 
@@ -64,10 +68,11 @@ impl View for Tooltip {
             if let Some(window_origin) = self.window_origin {
                 if self.hover.map(|(_, t)| t) == Some(*token) {
                     let tip = self.tip.clone();
-                    self.overlay = Some(add_overlay(
+                    let overlay_id = add_overlay(
                         window_origin + self.hover.unwrap().0.to_vec2() + (10., 10.),
                         move |_| tip(),
-                    ));
+                    );
+                    *self.overlay.borrow_mut() = Some(overlay_id);
                 }
             }
         }
@@ -76,7 +81,7 @@ impl View for Tooltip {
     fn event_before_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
         match &event {
             Event::PointerMove(e) => {
-                if self.overlay.is_none() && cx.app_state.dragging.is_none() {
+                if self.overlay.borrow().is_none() && cx.app_state.dragging.is_none() {
                     let id = self.id();
                     let token =
                         exec_after(Duration::from_secs_f64(self.style.delay()), move |token| {
@@ -92,9 +97,8 @@ impl View for Tooltip {
             | Event::KeyUp(_)
             | Event::KeyDown(_) => {
                 self.hover = None;
-                if let Some(id) = self.overlay {
+                if let Some(id) = self.overlay.borrow_mut().take() {
                     remove_overlay(id);
-                    self.overlay = None;
                 }
             }
             _ => {}
