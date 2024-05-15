@@ -38,7 +38,8 @@ use crate::{
     style::{CursorStyle, Style, StyleSelector},
     theme::{default_theme, Theme},
     update::{
-        UpdateMessage, ANIM_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES,
+        UpdateMessage, ANIM_UPDATE_MESSAGES, CENTRAL_DEFERRED_UPDATE_MESSAGES,
+        CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES,
         UPDATE_MESSAGES,
     },
     view::{default_compute_layout, view_tab_navigation, IntoView, View},
@@ -690,8 +691,40 @@ impl WindowHandle {
         paint || mem::take(&mut self.app_state.request_paint)
     }
 
+    fn process_central_messages(&self) {
+        CENTRAL_UPDATE_MESSAGES.with_borrow_mut(|central_msgs| {
+            if !central_msgs.is_empty() {
+                UPDATE_MESSAGES.with_borrow_mut(|msgs| {
+                    let central_msgs = std::mem::take(&mut *central_msgs);
+                    for (id, msg) in central_msgs {
+                        if let Some(root) = id.root() {
+                            let msgs = msgs.entry(root).or_default();
+                            msgs.push(msg);
+                        }
+                    }
+                });
+            }
+        });
+
+        CENTRAL_DEFERRED_UPDATE_MESSAGES.with(|central_msgs| {
+            if !central_msgs.borrow().is_empty() {
+                DEFERRED_UPDATE_MESSAGES.with(|msgs| {
+                    let mut msgs = msgs.borrow_mut();
+                    let central_msgs = std::mem::take(&mut *central_msgs.borrow_mut());
+                    for (id, msg) in central_msgs {
+                        if let Some(root) = id.root() {
+                            let msgs = msgs.entry(root).or_default();
+                            msgs.push((id, msg));
+                        }
+                    }
+                });
+            }
+        });
+    }
+
     fn process_update_messages(&mut self) {
         loop {
+            self.process_central_messages();
             let msgs =
                 UPDATE_MESSAGES.with(|msgs| msgs.borrow_mut().remove(&self.id).unwrap_or_default());
             if msgs.is_empty() {
@@ -892,6 +925,7 @@ impl WindowHandle {
     }
 
     fn process_deferred_update_messages(&mut self) {
+        self.process_central_messages();
         let msgs = DEFERRED_UPDATE_MESSAGES
             .with(|msgs| msgs.borrow_mut().remove(&self.id).unwrap_or_default());
         let mut cx = UpdateCx {

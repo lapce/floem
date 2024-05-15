@@ -10,7 +10,7 @@ use crate::{
     app::{add_app_update_event, AppUpdateEvent},
     id::ViewId,
     menu::Menu,
-    update::{UpdateMessage, UPDATE_MESSAGES},
+    update::{UpdateMessage, CENTRAL_UPDATE_MESSAGES},
     view::View,
     window_handle::{get_current_view, set_current_view},
 };
@@ -20,9 +20,8 @@ pub use crate::file_action::*;
 
 pub(crate) fn add_update_message(msg: UpdateMessage) {
     let current_view = get_current_view();
-    UPDATE_MESSAGES.with_borrow_mut(|msgs| {
-        let msgs = msgs.entry(current_view).or_default();
-        msgs.push(msg);
+    CENTRAL_UPDATE_MESSAGES.with_borrow_mut(|msgs| {
+        msgs.push((current_view, msg));
     });
 }
 

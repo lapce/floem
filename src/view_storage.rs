@@ -15,6 +15,8 @@ pub(crate) struct ViewStorage {
     pub(crate) children: SecondaryMap<ViewId, Vec<ViewId>>,
     // the parent of a View
     pub(crate) parent: SecondaryMap<ViewId, Option<ViewId>>,
+    /// Cache the root ViewId for a view
+    pub(crate) root: SecondaryMap<ViewId, Option<ViewId>>,
     pub(crate) states: SecondaryMap<ViewId, Rc<RefCell<ViewState>>>,
     pub(crate) stale_view_state: Rc<RefCell<ViewState>>,
     pub(crate) stale_view: Rc<RefCell<AnyView>>,
@@ -38,6 +40,7 @@ impl ViewStorage {
             views: Default::default(),
             children: Default::default(),
             parent: Default::default(),
+            root: Default::default(),
             states: Default::default(),
             stale_view_state: Rc::new(RefCell::new(state_view_state)),
             stale_view: Rc::new(RefCell::new(
@@ -47,5 +50,20 @@ impl ViewStorage {
                 .into_any(),
             )),
         }
+    }
+
+    pub(crate) fn root_view_id(&self, id: ViewId) -> Option<ViewId> {
+        let mut parent = self.parent.get(id).cloned().flatten();
+        while let Some(parent_id) = parent {
+            match self.parent.get(parent_id).cloned().flatten() {
+                Some(id) => {
+                    parent = Some(id);
+                }
+                None => {
+                    return parent;
+                }
+            }
+        }
+        parent
     }
 }
