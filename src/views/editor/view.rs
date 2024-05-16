@@ -950,6 +950,7 @@ pub fn editor_view(
         is_active,
         inner_node: None,
     }
+    .keyboard_navigatable()
     .on_event(EventListener::ImePreedit, move |event| {
         if !is_active.get_untracked() {
             return EventPropagation::Continue;
