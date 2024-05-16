@@ -396,6 +396,26 @@ impl<R: StylePropReader> ExtratorField<R> {
     }
 }
 
+impl<R: StylePropReader> PartialEq for ExtratorField<R>
+where
+    R::Type: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.get() == other.get()
+    }
+}
+
+impl<R: StylePropReader> Eq for ExtratorField<R> where R::Type: Eq {}
+
+impl<R: StylePropReader> std::hash::Hash for ExtratorField<R>
+where
+    R::Type: std::hash::Hash,
+{
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.get().hash(state)
+    }
+}
+
 #[macro_export]
 macro_rules! prop {
     ($v:vis $name:ident: $ty:ty { $($options:tt)* } = $default:expr
@@ -429,12 +449,13 @@ macro_rules! prop {
 #[macro_export]
 macro_rules! prop_extractor {
     (
-        $vis:vis $name:ident {
+        $(#[$attrs:meta])* $vis:vis $name:ident {
             $($prop_vis:vis $prop:ident: $reader:ty),*
             $(,)?
         }
     ) => {
         #[derive(Debug, Clone)]
+        $(#[$attrs])?
         $vis struct $name {
             $(
                 $prop_vis $prop: $crate::style::ExtratorField<$reader>,
