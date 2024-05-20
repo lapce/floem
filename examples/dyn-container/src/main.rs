@@ -40,10 +40,13 @@ fn app_view() -> impl IntoView {
                 })
                 .style(|s| s.margin_bottom(20)),
         )),
-        dyn_container(move || match view.get() {
-            ViewSwitcher::One => view_one().into_any(),
-            ViewSwitcher::Two => view_two(view).into_any(),
-        })
+        dyn_container(
+            move || view.get(),
+            move |view_value| match view_value {
+                ViewSwitcher::One => view_one().into_any(),
+                ViewSwitcher::Two => view_two(view).into_any(),
+            },
+        )
         .style(|s| s.padding(10).border(1)),
     ))
     .style(|s| {

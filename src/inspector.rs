@@ -443,222 +443,227 @@ fn stats(capture: &Capture) -> impl IntoView {
 
 fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<ViewId>>) -> impl IntoView {
     let capture = capture.clone();
-    dyn_container(move || {
-        if let Some(view) = selected.get().and_then(|id| capture.root.find(id)) {
-            let name = info("Type", view.name.clone());
-            let id = info("Id", view.id.data().as_ffi().to_string());
-            let count = info("Child Count", format!("{}", view.children.len()));
-            let beyond = |view: f64, window| {
-                if view > window {
-                    format!(" ({} after window edge)", view - window)
-                } else if view < 0.0 {
-                    format!(" ({} before window edge)", -view)
-                } else {
-                    String::new()
-                }
-            };
-            let x = info(
-                "X",
-                format!(
-                    "{}{}",
-                    view.layout.x0,
-                    beyond(view.layout.x0, capture.window_size.width)
-                ),
-            );
-            let y = info(
-                "Y",
-                format!(
-                    "{}{}",
-                    view.layout.y0,
-                    beyond(view.layout.y0, capture.window_size.height)
-                ),
-            );
-            let w = info(
-                "Width",
-                format!(
-                    "{}{}",
-                    view.layout.width(),
-                    beyond(view.layout.x1, capture.window_size.width)
-                ),
-            );
-            let h = info(
-                "Height",
-                format!(
-                    "{}{}",
-                    view.layout.height(),
-                    beyond(view.layout.y1, capture.window_size.height)
-                ),
-            );
-            let tx = info(
-                "Taffy X",
-                format!(
-                    "{}{}",
-                    view.taffy.location.x,
-                    beyond(
-                        view.taffy.location.x as f64 + view.taffy.size.width as f64,
-                        capture.window_size.width
-                    )
-                ),
-            );
-            let ty = info(
-                "Taffy Y",
-                format!(
-                    "{}{}",
-                    view.taffy.location.y,
-                    beyond(
-                        view.taffy.location.x as f64 + view.taffy.size.width as f64,
-                        capture.window_size.width
-                    )
-                ),
-            );
-            let tw = info(
-                "Taffy Width",
-                format!(
-                    "{}{}",
-                    view.taffy.size.width,
-                    beyond(
-                        view.taffy.location.x as f64 + view.taffy.size.width as f64,
-                        capture.window_size.width
-                    )
-                ),
-            );
-            let th = info(
-                "Taffy Height",
-                format!(
-                    "{}{}",
-                    view.taffy.size.height,
-                    beyond(
-                        view.taffy.location.y as f64 + view.taffy.size.height as f64,
-                        capture.window_size.height
-                    )
-                ),
-            );
-            let clear = button(|| "Clear selection")
-                .style(|s| s.margin(5.0))
-                .on_click_stop(move |_| selected.set(None));
-            let clear = stack((clear,));
-
-            let style_header = header("View Style");
-            let class_header = header("Class Header");
-
-            let direct: HashSet<_> = view.direct_style.map.keys().copied().collect();
-
-            let style = capture
-                .state
-                .styles
-                .get(&view.id)
-                .cloned()
-                .unwrap_or_default();
-
-            let mut style_list = style
-                .map
-                .clone()
-                .into_iter()
-                .filter_map(|(p, v)| match p.info {
-                    style::StyleKeyInfo::Prop(..) => Some((StylePropRef { key: p }, v)),
-                    _ => None,
-                })
-                .map(|(p, v)| ((p, format!("{:?}", p.key)), v))
-                .collect::<Vec<_>>();
-
-            style_list.sort_unstable_by(|a, b| a.0 .1.cmp(&b.0 .1));
-
-            let mut class_list = view
-                .classes
-                .clone()
-                .into_iter()
-                .map(|val| StylePropRef { key: val.key })
-                .map(|val| format!("{:?}", val.key))
-                .collect::<Vec<_>>();
-
-            class_list.sort_unstable();
-
-            let style_list =
-                v_stack_from_iter(style_list.into_iter().map(|((prop, name), value)| {
-                    let name = name.strip_prefix("floem::style::").unwrap_or(&name);
-                    let name = if direct.contains(&prop.key) {
-                        text(name).into_any()
+    dyn_container(
+        move || selected.get(),
+        move |selected_value| {
+            if let Some(view) = selected_value.and_then(|id| capture.root.find(id)) {
+                let name = info("Type", view.name.clone());
+                let id = info("Id", view.id.data().as_ffi().to_string());
+                let count = info("Child Count", format!("{}", view.children.len()));
+                let beyond = |view: f64, window| {
+                    if view > window {
+                        format!(" ({} after window edge)", view - window)
+                    } else if view < 0.0 {
+                        format!(" ({} before window edge)", -view)
                     } else {
-                        stack((
-                            text("Inherited").style(|s| {
-                                s.margin_right(5.0)
-                                    .background(Color::WHITE_SMOKE.with_alpha_factor(0.6))
-                                    .border(1.0)
-                                    .border_radius(5.0)
-                                    .border_color(Color::WHITE_SMOKE)
-                                    .padding(1.0)
-                                    .font_size(10.0)
-                                    .color(Color::BLACK.with_alpha_factor(0.4))
-                            }),
-                            text(name),
-                        ))
-                        .into_any()
-                    };
-                    let mut v = (prop.info().debug_view)(&*value).unwrap_or_else(|| {
-                        static_label((prop.info().debug_any)(&*value)).into_any()
-                    });
-                    if let Some(transition) = style
-                        .map
-                        .get(&prop.info().transition_key)
-                        .map(|v| v.downcast_ref::<Transition>().unwrap().clone())
-                    {
-                        let transition = stack((
-                            text("Transition").style(|s| {
-                                s.margin_top(5.0)
-                                    .margin_right(5.0)
-                                    .background(Color::WHITE_SMOKE.with_alpha_factor(0.6))
-                                    .border(1.0)
-                                    .border_radius(5.0)
-                                    .border_color(Color::WHITE_SMOKE)
-                                    .padding(1.0)
-                                    .font_size(10.0)
-                                    .color(Color::BLACK.with_alpha_factor(0.4))
-                            }),
-                            static_label(format!("{transition:?}")),
-                        ))
-                        .style(|s| s.items_center());
-                        v = v_stack((v, transition)).into_any();
+                        String::new()
                     }
-                    stack((
-                        stack((name.style(|s| {
-                            s.margin_right(5.0)
-                                .color(Color::BLACK.with_alpha_factor(0.6))
-                        }),))
-                        .style(|s| s.min_width(150.0).flex_direction(FlexDirection::RowReverse)),
-                        v,
-                    ))
-                    .style(|s| {
-                        s.padding(5.0)
-                            .items_center()
-                            .hover(|s| s.background(Color::rgba8(228, 237, 216, 160)))
-                    })
-                }))
-                .style(|s| s.width_full());
+                };
+                let x = info(
+                    "X",
+                    format!(
+                        "{}{}",
+                        view.layout.x0,
+                        beyond(view.layout.x0, capture.window_size.width)
+                    ),
+                );
+                let y = info(
+                    "Y",
+                    format!(
+                        "{}{}",
+                        view.layout.y0,
+                        beyond(view.layout.y0, capture.window_size.height)
+                    ),
+                );
+                let w = info(
+                    "Width",
+                    format!(
+                        "{}{}",
+                        view.layout.width(),
+                        beyond(view.layout.x1, capture.window_size.width)
+                    ),
+                );
+                let h = info(
+                    "Height",
+                    format!(
+                        "{}{}",
+                        view.layout.height(),
+                        beyond(view.layout.y1, capture.window_size.height)
+                    ),
+                );
+                let tx = info(
+                    "Taffy X",
+                    format!(
+                        "{}{}",
+                        view.taffy.location.x,
+                        beyond(
+                            view.taffy.location.x as f64 + view.taffy.size.width as f64,
+                            capture.window_size.width
+                        )
+                    ),
+                );
+                let ty = info(
+                    "Taffy Y",
+                    format!(
+                        "{}{}",
+                        view.taffy.location.y,
+                        beyond(
+                            view.taffy.location.x as f64 + view.taffy.size.width as f64,
+                            capture.window_size.width
+                        )
+                    ),
+                );
+                let tw = info(
+                    "Taffy Width",
+                    format!(
+                        "{}{}",
+                        view.taffy.size.width,
+                        beyond(
+                            view.taffy.location.x as f64 + view.taffy.size.width as f64,
+                            capture.window_size.width
+                        )
+                    ),
+                );
+                let th = info(
+                    "Taffy Height",
+                    format!(
+                        "{}{}",
+                        view.taffy.size.height,
+                        beyond(
+                            view.taffy.location.y as f64 + view.taffy.size.height as f64,
+                            capture.window_size.height
+                        )
+                    ),
+                );
+                let clear = button(|| "Clear selection")
+                    .style(|s| s.margin(5.0))
+                    .on_click_stop(move |_| selected.set(None));
+                let clear = stack((clear,));
 
-            v_stack((
-                name,
-                id,
-                count,
-                x,
-                y,
-                w,
-                h,
-                tx,
-                ty,
-                tw,
-                th,
-                clear,
-                style_header,
-                style_list,
-                class_header,
-                v_stack_from_iter(class_list.iter().map(text)).style(|s| s.gap(10, 10)),
-            ))
-            .style(|s| s.width_full())
-            .into_any()
-        } else {
-            text("No selection").style(|s| s.padding(5.0)).into_any()
-        }
-    })
+                let style_header = header("View Style");
+                let class_header = header("Class Header");
+
+                let direct: HashSet<_> = view.direct_style.map.keys().copied().collect();
+
+                let style = capture
+                    .state
+                    .styles
+                    .get(&view.id)
+                    .cloned()
+                    .unwrap_or_default();
+
+                let mut style_list = style
+                    .map
+                    .clone()
+                    .into_iter()
+                    .filter_map(|(p, v)| match p.info {
+                        style::StyleKeyInfo::Prop(..) => Some((StylePropRef { key: p }, v)),
+                        _ => None,
+                    })
+                    .map(|(p, v)| ((p, format!("{:?}", p.key)), v))
+                    .collect::<Vec<_>>();
+
+                style_list.sort_unstable_by(|a, b| a.0 .1.cmp(&b.0 .1));
+
+                let mut class_list = view
+                    .classes
+                    .clone()
+                    .into_iter()
+                    .map(|val| StylePropRef { key: val.key })
+                    .map(|val| format!("{:?}", val.key))
+                    .collect::<Vec<_>>();
+
+                class_list.sort_unstable();
+
+                let style_list =
+                    v_stack_from_iter(style_list.into_iter().map(|((prop, name), value)| {
+                        let name = name.strip_prefix("floem::style::").unwrap_or(&name);
+                        let name = if direct.contains(&prop.key) {
+                            text(name).into_any()
+                        } else {
+                            stack((
+                                text("Inherited").style(|s| {
+                                    s.margin_right(5.0)
+                                        .background(Color::WHITE_SMOKE.with_alpha_factor(0.6))
+                                        .border(1.0)
+                                        .border_radius(5.0)
+                                        .border_color(Color::WHITE_SMOKE)
+                                        .padding(1.0)
+                                        .font_size(10.0)
+                                        .color(Color::BLACK.with_alpha_factor(0.4))
+                                }),
+                                text(name),
+                            ))
+                            .into_any()
+                        };
+                        let mut v = (prop.info().debug_view)(&*value).unwrap_or_else(|| {
+                            static_label((prop.info().debug_any)(&*value)).into_any()
+                        });
+                        if let Some(transition) = style
+                            .map
+                            .get(&prop.info().transition_key)
+                            .map(|v| v.downcast_ref::<Transition>().unwrap().clone())
+                        {
+                            let transition = stack((
+                                text("Transition").style(|s| {
+                                    s.margin_top(5.0)
+                                        .margin_right(5.0)
+                                        .background(Color::WHITE_SMOKE.with_alpha_factor(0.6))
+                                        .border(1.0)
+                                        .border_radius(5.0)
+                                        .border_color(Color::WHITE_SMOKE)
+                                        .padding(1.0)
+                                        .font_size(10.0)
+                                        .color(Color::BLACK.with_alpha_factor(0.4))
+                                }),
+                                static_label(format!("{transition:?}")),
+                            ))
+                            .style(|s| s.items_center());
+                            v = v_stack((v, transition)).into_any();
+                        }
+                        stack((
+                            stack((name.style(|s| {
+                                s.margin_right(5.0)
+                                    .color(Color::BLACK.with_alpha_factor(0.6))
+                            }),))
+                            .style(|s| {
+                                s.min_width(150.0).flex_direction(FlexDirection::RowReverse)
+                            }),
+                            v,
+                        ))
+                        .style(|s| {
+                            s.padding(5.0)
+                                .items_center()
+                                .hover(|s| s.background(Color::rgba8(228, 237, 216, 160)))
+                        })
+                    }))
+                    .style(|s| s.width_full());
+
+                v_stack((
+                    name,
+                    id,
+                    count,
+                    x,
+                    y,
+                    w,
+                    h,
+                    tx,
+                    ty,
+                    tw,
+                    th,
+                    clear,
+                    style_header,
+                    style_list,
+                    class_header,
+                    v_stack_from_iter(class_list.iter().map(text)).style(|s| s.gap(10, 10)),
+                ))
+                .style(|s| s.width_full())
+                .into_any()
+            } else {
+                text("No selection").style(|s| s.padding(5.0)).into_any()
+            }
+        },
+    )
     .into_view()
 }
 
@@ -922,9 +927,12 @@ pub fn capture(window_id: WindowId) {
                     move || [0, 1].into_iter(),
                     |it| *it,
                     move |it| match it {
-                        0 => dyn_container(move || {
-                            inspector_view(window_id, capture, &capture.get()).into_any()
-                        })
+                        0 => dyn_container(
+                            move || capture.get(),
+                            move |capture_value| {
+                                inspector_view(window_id, capture, &capture_value).into_any()
+                            },
+                        )
                         .style(|s| s.width_full().height_full())
                         .into_any(),
                         1 => profiler(window_id).into_any(),
