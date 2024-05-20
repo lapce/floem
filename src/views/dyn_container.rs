@@ -21,9 +21,8 @@ pub struct DynamicContainer<T: 'static> {
 /// ```
 /// use floem::{
 ///     reactive::create_rw_signal,
-///     view::View,
-///     views::{dyn_container, label, v_stack, Decorators},
-///     widgets::toggle_button,
+///     View, IntoView,
+///     views::{dyn_container, label, v_stack, Decorators, toggle_button},
 /// };
 ///
 /// #[derive(Clone)]
@@ -47,8 +46,8 @@ pub struct DynamicContainer<T: 'static> {
 ///         dyn_container(
 ///             move || view.get(),
 ///             move |value| match value {
-///                 ViewSwitcher::One => label(|| "One").any(),
-///                 ViewSwitcher::Two => v_stack((label(|| "Stacked"), label(|| "Two"))).any(),
+///                 ViewSwitcher::One => label(|| "One").into_any(),
+///                 ViewSwitcher::Two => v_stack((label(|| "Stacked"), label(|| "Two"))).into_any(),
 ///             },
 ///         ),
 ///     ))
