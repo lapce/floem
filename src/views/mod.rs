@@ -61,6 +61,9 @@ pub use container::*;
 mod dyn_container;
 pub use dyn_container::*;
 
+mod dyn_view;
+pub use dyn_view::*;
+
 mod value_container;
 pub use value_container::*;
 

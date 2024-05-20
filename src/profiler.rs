@@ -126,23 +126,26 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
 
     let hovered_event: RwSignal<Option<ProfileEvent>> = create_rw_signal(None);
 
-    let event_tooltip = dyn_container(move || {
-        if let Some(event) = hovered_event.get() {
-            let len = event
-                .end
-                .saturating_duration_since(event.start)
-                .as_secs_f64();
-            v_stack((
-                info("Name", event.name.to_string()),
-                info("Time", format!("{:.4} ms", len * 1000.0)),
-            ))
-            .into_any()
-        } else {
-            text("No hovered event")
-                .style(|s| s.padding(5.0))
+    let event_tooltip = dyn_container(
+        move || hovered_event.get(),
+        move |hovered_event| {
+            if let Some(event) = hovered_event {
+                let len = event
+                    .end
+                    .saturating_duration_since(event.start)
+                    .as_secs_f64();
+                v_stack((
+                    info("Name", event.name.to_string()),
+                    info("Time", format!("{:.4} ms", len * 1000.0)),
+                ))
                 .into_any()
-        }
-    })
+            } else {
+                text("No hovered event")
+                    .style(|s| s.padding(5.0))
+                    .into_any()
+            }
+        },
+    )
     .style(|s| s.min_height(50));
 
     let frames = v_stack((
@@ -164,62 +167,65 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
             .background(Color::BLACK.with_alpha_factor(0.2))
     });
 
-    let timeline = dyn_container(move || {
-        if let Some(frame) = selected_frame.get() {
-            let list = frame.events.iter().map(|event| {
-                let len = event
-                    .end
-                    .saturating_duration_since(event.start)
-                    .as_secs_f64();
-                let left = event
-                    .start
-                    .saturating_duration_since(frame.start.unwrap())
-                    .as_secs_f64()
-                    / frame.duration.as_secs_f64();
-                let width = len / frame.duration.as_secs_f64();
-                let event_ = event.clone();
-                clip(
-                    static_label(format!("{} ({:.4} ms)", event.name, len * 1000.0))
-                        .style(|s| s.padding(5.0)),
+    let timeline = dyn_container(
+        move || selected_frame.get(),
+        move |selected_frame| {
+            if let Some(frame) = selected_frame {
+                let list = frame.events.iter().map(|event| {
+                    let len = event
+                        .end
+                        .saturating_duration_since(event.start)
+                        .as_secs_f64();
+                    let left = event
+                        .start
+                        .saturating_duration_since(frame.start.unwrap())
+                        .as_secs_f64()
+                        / frame.duration.as_secs_f64();
+                    let width = len / frame.duration.as_secs_f64();
+                    let event_ = event.clone();
+                    clip(
+                        static_label(format!("{} ({:.4} ms)", event.name, len * 1000.0))
+                            .style(|s| s.padding(5.0)),
+                    )
+                    .style(move |s| {
+                        s.min_width(0)
+                            .width_pct(width * 100.0)
+                            .absolute()
+                            .inset_left_pct(left * 100.0)
+                            .border(0.3)
+                            .border_color(Color::rgb8(129, 164, 192))
+                            .background(Color::rgb8(209, 222, 233).with_alpha_factor(0.6))
+                            .text_clip()
+                            .hover(|s| {
+                                s.color(Color::WHITE)
+                                    .background(Color::BLACK.with_alpha_factor(0.6))
+                            })
+                    })
+                    .on_event_cont(EventListener::PointerEnter, move |_| {
+                        hovered_event.set(Some(event_.clone()))
+                    })
+                });
+                scroll(
+                    v_stack_from_iter(list)
+                        .style(move |s| s.min_width_pct(zoom.get() * 100.0).height_full()),
                 )
-                .style(move |s| {
-                    s.min_width(0)
-                        .width_pct(width * 100.0)
-                        .absolute()
-                        .inset_left_pct(left * 100.0)
-                        .border(0.3)
-                        .border_color(Color::rgb8(129, 164, 192))
-                        .background(Color::rgb8(209, 222, 233).with_alpha_factor(0.6))
-                        .text_clip()
-                        .hover(|s| {
-                            s.color(Color::WHITE)
-                                .background(Color::BLACK.with_alpha_factor(0.6))
-                        })
+                .style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0))
+                .on_event(EventListener::PointerWheel, move |e| {
+                    if let Event::PointerWheel(e) = e {
+                        zoom.set(zoom.get() * (1.0 - e.delta.y / 400.0));
+                        EventPropagation::Stop
+                    } else {
+                        EventPropagation::Continue
+                    }
                 })
-                .on_event_cont(EventListener::PointerEnter, move |_| {
-                    hovered_event.set(Some(event_.clone()))
-                })
-            });
-            scroll(
-                v_stack_from_iter(list)
-                    .style(move |s| s.min_width_pct(zoom.get() * 100.0).height_full()),
-            )
-            .style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0))
-            .on_event(EventListener::PointerWheel, move |e| {
-                if let Event::PointerWheel(e) = e {
-                    zoom.set(zoom.get() * (1.0 - e.delta.y / 400.0));
-                    EventPropagation::Stop
-                } else {
-                    EventPropagation::Continue
-                }
-            })
-            .into_any()
-        } else {
-            text("No selected frame")
-                .style(|s| s.padding(5.0))
                 .into_any()
-        }
-    })
+            } else {
+                text("No selected frame")
+                    .style(|s| s.padding(5.0))
+                    .into_any()
+            }
+        },
+    )
     .style(|s| {
         s.width_full()
             .min_height(0)
@@ -274,13 +280,16 @@ pub fn profiler(window_id: WindowId) -> impl IntoView {
             .background(Color::BLACK.with_alpha_factor(0.2))
     });
 
-    let lower = dyn_container(move || {
-        if let Some(profile) = profile.get() {
-            profile_view(&profile).into_any()
-        } else {
-            text("No profile").style(|s| s.padding(5.0)).into_any()
-        }
-    })
+    let lower = dyn_container(
+        move || profile.get(),
+        move |profile| {
+            if let Some(profile) = profile {
+                profile_view(&profile).into_any()
+            } else {
+                text("No profile").style(|s| s.padding(5.0)).into_any()
+            }
+        },
+    )
     .style(|s| s.width_full().min_height(0).flex_basis(0).flex_grow(1.0));
 
     // FIXME: This needs an extra `container` or the `v_stack` ends up horizontal.

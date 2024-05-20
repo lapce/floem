@@ -56,7 +56,7 @@ use crate::{
     id::ViewId,
     style::{BoxShadowProp, Style, StyleClassRef},
     view_state::ViewStyleProps,
-    views::{dyn_container, DynamicContainer},
+    views::{dyn_view, DynamicView},
 };
 
 /// type erased [`View`]
@@ -108,26 +108,26 @@ pub trait IntoView: Sized {
 }
 
 impl<IV: IntoView + 'static> IntoView for Box<dyn Fn() -> IV> {
-    type V = DynamicContainer;
+    type V = DynamicView;
 
     fn into_view(self) -> Self::V {
-        dyn_container(self)
+        dyn_view(self)
     }
 }
 
 impl<T: IntoView + Clone + 'static> IntoView for RwSignal<T> {
-    type V = DynamicContainer;
+    type V = DynamicView;
 
     fn into_view(self) -> Self::V {
-        dyn_container(move || self.get())
+        dyn_view(move || self.get())
     }
 }
 
 impl<T: IntoView + Clone + 'static> IntoView for ReadSignal<T> {
-    type V = DynamicContainer;
+    type V = DynamicView;
 
     fn into_view(self) -> Self::V {
-        dyn_container(move || self.get())
+        dyn_view(move || self.get())
     }
 }
 

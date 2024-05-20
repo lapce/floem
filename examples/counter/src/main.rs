@@ -3,14 +3,14 @@ use floem::{
     peniko::Color,
     reactive::create_signal,
     unit::UnitExt,
-    views::{dyn_container, Decorators},
+    views::{dyn_view, Decorators},
     IntoView, View,
 };
 
 fn app_view() -> impl IntoView {
     let (counter, set_counter) = create_signal(0);
     let view = (
-        dyn_container(move || format!("Value: {}", counter.get())),
+        dyn_view(move || format!("Value: {}", counter.get())),
         counter.style(|s| s.padding(10.0)),
         (
             "Increment"
