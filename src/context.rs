@@ -849,7 +849,7 @@ std::thread_local! {
     /// and memory footprint of PaintCx or PaintState or ViewId with a field for it.
     /// This is ephemerally set before paint calls that are painting the view in a
     /// location other than its natural one for purposes of drag and drop.
-    static CURRENT_DRAG_PAINTING_ID : std::cell::Cell<Option<ViewId>> = std::cell::Cell::new(None);
+    static CURRENT_DRAG_PAINTING_ID : std::cell::Cell<Option<ViewId>> = const { std::cell::Cell::new(None) };
 }
 
 pub struct PaintCx<'a> {
