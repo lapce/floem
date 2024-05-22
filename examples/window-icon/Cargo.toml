@@ -1,0 +1,10 @@
+[package]
+name = "window-icon"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+im.workspace = true
+floem = { path = "../.." }
+image = "0.25"
+nsvg = "0.5"

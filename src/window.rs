@@ -1,4 +1,5 @@
 pub use floem_winit::window::Fullscreen;
+pub use floem_winit::window::Icon;
 pub use floem_winit::window::ResizeDirection;
 pub use floem_winit::window::Theme;
 pub use floem_winit::window::WindowButtons;
@@ -16,7 +17,7 @@ pub struct WindowConfig {
     pub(crate) show_titlebar: Option<bool>,
     pub(crate) transparent: Option<bool>,
     pub(crate) fullscreen: Option<Fullscreen>,
-    pub(crate) window_icon: Option<bool>,
+    pub(crate) window_icon: Option<Icon>,
     pub(crate) title: Option<String>,
     pub(crate) enabled_buttons: Option<WindowButtons>,
     pub(crate) resizable: Option<bool>,
@@ -50,7 +51,7 @@ impl WindowConfig {
         self
     }
 
-    pub fn window_icon(mut self, window_icon: bool) -> Self {
+    pub fn window_icon(mut self, window_icon: Icon) -> Self {
         self.window_icon = Some(window_icon);
         self
     }
