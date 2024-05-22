@@ -217,9 +217,9 @@ pub enum MacOsOptionAsAlt {
 }
 
 #[cfg(target_os = "macos")]
-impl Into<floem_winit::platform::macos::OptionAsAlt> for MacOsOptionAsAlt {
-    fn into(self) -> floem_winit::platform::macos::OptionAsAlt {
-        match self {
+impl From<MacOsOptionAsAlt> for floem_winit::platform::macos::OptionAsAlt {
+    fn from(opts: MacOsOptionAsAlt) -> floem_winit::platform::macos::OptionAsAlt {
+        match opts {
             MacOsOptionAsAlt::OnlyLeft => floem_winit::platform::macos::OptionAsAlt::OnlyLeft,
             MacOsOptionAsAlt::OnlyRight => floem_winit::platform::macos::OptionAsAlt::OnlyRight,
             MacOsOptionAsAlt::Both => floem_winit::platform::macos::OptionAsAlt::Both,
