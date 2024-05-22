@@ -842,6 +842,16 @@ impl<'a> LayoutCx<'a> {
     }
 }
 
+std::thread_local! {
+    /// Holds the ID of a View being painted very briefly if it is being rendered as
+    /// a moving drag image.  Since that is a relatively unusual thing to need, it
+    /// makes more sense to use a thread local for it and avoid cluttering the fields
+    /// and memory footprint of PaintCx or PaintState or ViewId with a field for it.
+    /// This is ephemerally set before paint calls that are painting the view in a
+    /// location other than its natural one for purposes of drag and drop.
+    static CURRENT_DRAG_PAINTING_ID : std::cell::Cell<Option<ViewId>> = std::cell::Cell::new(None);
+}
+
 pub struct PaintCx<'a> {
     pub(crate) app_state: &'a mut AppState,
     pub(crate) paint_state: &'a mut PaintState,
@@ -875,6 +885,21 @@ impl<'a> PaintCx<'a> {
         } else {
             self.paint_state.renderer.clear_clip();
         }
+    }
+
+    /// Allows a `View` to determine if it is being called in order to
+    /// paint a *draggable* image of itself during a drag (likely
+    /// `draggable()` was called on the `View` or `ViewId`) as opposed
+    /// to a normal paint in order to alter the way it renders itself.
+    pub fn is_drag_paint(&self, id: ViewId) -> bool {
+        // This could be an associated function, but it is likely
+        // a Good Thing to restrict access to cases when the caller actually
+        // has a PaintCx, and that doesn't make it a breaking change to
+        // use instance methods in the future.
+        if let Some(dragging) = CURRENT_DRAG_PAINTING_ID.get() {
+            return dragging == id;
+        }
+        false
     }
 
     /// paint the children of this view
@@ -967,6 +992,11 @@ impl<'a> PaintCx<'a> {
                         } else {
                             style
                         };
+
+                    // Important: If any method early exit points are added in this
+                    // code block, they MUST call CURRENT_DRAG_PAINTING_ID.take() before
+                    // returning.
+                    CURRENT_DRAG_PAINTING_ID.set(Some(id));
                     paint_bg(self, &style, &view_style_props, size);
 
                     view.borrow_mut().paint(self);
@@ -974,6 +1004,7 @@ impl<'a> PaintCx<'a> {
                     paint_outline(self, &view_style_props, size);
 
                     self.restore();
+                    CURRENT_DRAG_PAINTING_ID.take();
                 }
             }
         }
