@@ -62,6 +62,10 @@ impl ViewId {
         self.taffy().borrow().layout(node).cloned().ok()
     }
 
+    pub fn taffy_node(&self) -> NodeId {
+        self.state().borrow().node
+    }
+
     pub(crate) fn state(&self) -> Rc<RefCell<ViewState>> {
         VIEW_STORAGE.with_borrow_mut(|s| {
             if !s.view_ids.contains_key(*self) {
@@ -80,7 +84,7 @@ impl ViewId {
         })
     }
 
-    pub(crate) fn view(&self) -> Rc<RefCell<Box<dyn View>>> {
+    pub fn view(&self) -> Rc<RefCell<Box<dyn View>>> {
         VIEW_STORAGE.with_borrow(|s| {
             s.views
                 .get(*self)
