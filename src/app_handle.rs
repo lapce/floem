@@ -291,8 +291,8 @@ impl ApplicationHandle {
             if let Some(title) = config.title {
                 window_builder = window_builder.with_title(title);
             }
-            if let Some(icon) = config.window_icon_value {
-                window_builder = window_builder.with_window_icon(Some(icon));
+            if let Some(window_icon) = config.window_icon {
+                window_builder = window_builder.with_window_icon(Some(window_icon));
             }
             config.apply_default_theme.unwrap_or(true)
         } else {

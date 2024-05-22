@@ -39,7 +39,7 @@ fn main() {
                 WindowConfig::default()
                     .size(Size::new(800.0, 250.0))
                     .title("Window Size Example")
-                    .set_window_icon(icon),
+                    .window_icon(icon),
             ),
         )
         .run();
