@@ -3,7 +3,7 @@ use floem::{
     keyboard::{Key, NamedKey},
     kurbo::Size,
     views::Decorators,
-    window::{WindowConfig, Icon},
+    window::{Icon, WindowConfig},
     Application, IntoView, View,
 };
 use std::path::Path;
