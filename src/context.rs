@@ -685,6 +685,10 @@ impl<'a> ComputeLayoutCx<'a> {
         }
     }
 
+    pub fn window_origin(&self) -> Point {
+        self.window_origin
+    }
+
     pub fn app_state_mut(&mut self) -> &mut AppState {
         self.app_state
     }
