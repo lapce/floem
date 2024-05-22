@@ -65,7 +65,7 @@ fn app_view() -> impl IntoView {
 }
 
 fn main() {
-    let png_icon_path = concat!(env!("CARGO_MANIFEST_DIR"), "./assets/ferris.png");
+    let png_icon_path = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/ferris.png");
     let png_icon = load_png_icon(Path::new(png_icon_path));
 
     Application::new()
