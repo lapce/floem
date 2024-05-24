@@ -179,6 +179,21 @@ impl<IV: IntoView + 'static> IntoView for Vec<IV> {
     }
 }
 
+/// Default implementation of `View::layout()` which can be used by
+/// view implementations that need the default behavior and also need
+/// to implement that method to do additional work.
+pub fn recursively_layout_view(id: ViewId, cx: &mut LayoutCx) -> NodeId {
+    cx.layout_node(id, true, |cx| {
+        let mut nodes = Vec::new();
+        for child in id.children() {
+            let view = child.view();
+            let mut view = view.borrow_mut();
+            nodes.push(view.layout(cx));
+        }
+        nodes
+    })
+}
+
 /// The Widget trait contains the methods for implementing updates, styling, layout, events, and painting.
 ///
 /// The [view_data](Widget::view_data) and [view_data_mut](Widget::view_data_mut) methods must be implemented. If the widget contains a child then the [for_each_child](Widget::for_each_child), [for_each_child_mut](Widget::for_each_child_mut), and [for_each_child_rev_mut](Widget::for_each_child_rev_mut) methods must also be implemented.
@@ -227,15 +242,7 @@ pub trait View {
     /// If the layout changes needs other passes to run you're expected to call
     /// `cx.app_state_mut().request_changes`.
     fn layout(&mut self, cx: &mut LayoutCx) -> NodeId {
-        cx.layout_node(self.id(), true, |cx| {
-            let mut nodes = Vec::new();
-            for child in self.id().children() {
-                let view = child.view();
-                let mut view = view.borrow_mut();
-                nodes.push(view.layout(cx));
-            }
-            nodes
-        })
+        recursively_layout_view(self.id(), cx)
     }
 
     /// Responsible for computing the layout of the view's children.

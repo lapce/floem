@@ -191,5 +191,5 @@ pub use id::ViewId;
 pub use kurbo;
 pub use peniko;
 pub use taffy;
-pub use view::{AnyView, IntoView, View};
+pub use view::{recursively_layout_view, AnyView, IntoView, View};
 pub use window::{close_window, new_window};
