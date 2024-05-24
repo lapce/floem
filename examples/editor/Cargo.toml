@@ -1,8 +1,8 @@
 [package]
-name = "editor"
+name    = "editor"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 im.workspace = true
-floem = { path = "../..", features = ["editor"] }
+floem        = { path = "../..", features = ["editor"] }

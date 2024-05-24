@@ -1,9 +1,9 @@
 [package]
-name = "widget-gallery"
+name    = "widget-gallery"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 im.workspace = true
-floem = { path = "../.." }
-strum = { version = "0.25.0", features = ["derive"] }
+floem        = { path = "../.." }
+strum        = { version = "0.25.0", features = ["derive"] }

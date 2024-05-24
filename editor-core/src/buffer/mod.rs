@@ -95,7 +95,7 @@ pub struct Buffer {
 
 impl Display for Buffer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.text().to_string())
+        write!(f, "{}", self.text())
     }
 }
 

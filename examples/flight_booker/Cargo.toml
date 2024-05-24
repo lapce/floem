@@ -1,6 +1,6 @@
 [package]
-name = "flight_booker"
-edition = "2021"
+name              = "flight_booker"
+edition           = "2021"
 license.workspace = true
 version.workspace = true
 
@@ -8,4 +8,4 @@ version.workspace = true
 
 [dependencies]
 floem = { path = "../.." }
-time = { version = "0.3.31", features = ["parsing", "macros"] }
+time  = { version = "0.3.31", features = ["parsing", "macros"] }

@@ -1,9 +1,9 @@
 [package]
-name = "floem_reactive"
+name              = "floem_reactive"
 version.workspace = true
-edition = "2021"
-repository = "https://github.com/lapce/floem"
-description = "A native Rust UI library with fine-grained reactivity"
+edition           = "2021"
+repository        = "https://github.com/lapce/floem"
+description       = "A native Rust UI library with fine-grained reactivity"
 license.workspace = true
 
 [dependencies]
