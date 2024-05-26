@@ -45,6 +45,7 @@ use crate::{
     view::{default_compute_layout, view_tab_navigation, IntoView, View},
     view_state::ChangeFlags,
     views::Decorators,
+    window_tracking::{remove_window_id_mapping, store_window_id_mapping},
 };
 
 /// The top-level window handle that owns the winit Window.
@@ -120,6 +121,7 @@ impl WindowHandle {
         id.set_view(view.into_any());
 
         let window = Arc::new(window);
+        store_window_id_mapping(id, window_id, &window);
         let paint_state = PaintState::new(window.clone(), scale, size.get_untracked() * scale);
         let mut window_handle = Self {
             window: Some(window),
@@ -1132,6 +1134,7 @@ impl WindowHandle {
     pub(crate) fn destroy(&mut self) {
         self.event(Event::WindowClosed);
         self.scope.dispose();
+        remove_window_id_mapping(&self.id, &self.window_id);
     }
 
     #[cfg(target_os = "macos")]
