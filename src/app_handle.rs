@@ -279,6 +279,19 @@ impl ApplicationHandle {
                     window_builder = window_builder.with_decorations(false);
                 }
             }
+            if let Some(undecorated) = config.undecorated {
+                window_builder = window_builder.with_decorations(!undecorated);
+                #[cfg(target_os = "macos")]
+                if undecorated {
+                    use floem_winit::platform::macos::WindowBuilderExtMacOS;
+                    // A palette-style window that will only obtain window focus but
+                    // not actually propagate the first mouse click it receives is
+                    // very unlikely to be expected behavior - these typically are
+                    // used for something that offers a quick choice and are closed
+                    // in a single pointer gesture.
+                    window_builder = window_builder.with_accepts_first_mouse(true);
+                }
+            }
             if let Some(transparent) = config.transparent {
                 window_builder = window_builder.with_transparent(transparent);
             }

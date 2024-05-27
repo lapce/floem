@@ -21,6 +21,7 @@ pub struct WindowConfig {
     pub(crate) title: Option<String>,
     pub(crate) enabled_buttons: Option<WindowButtons>,
     pub(crate) resizable: Option<bool>,
+    pub(crate) undecorated: Option<bool>,
     pub(crate) window_level: Option<WindowLevel>,
     pub(crate) apply_default_theme: Option<bool>,
 }
@@ -38,6 +39,11 @@ impl WindowConfig {
 
     pub fn show_titlebar(mut self, show_titlebar: bool) -> Self {
         self.show_titlebar = Some(show_titlebar);
+        self
+    }
+
+    pub fn undecorated(mut self, undecorated: bool) -> Self {
+        self.undecorated = Some(undecorated);
         self
     }
 
