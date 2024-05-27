@@ -307,6 +307,43 @@ impl ApplicationHandle {
             if let Some(window_icon) = config.window_icon {
                 window_builder = window_builder.with_window_icon(Some(window_icon));
             }
+            #[cfg(target_os = "macos")]
+            if let Some(mac) = config.mac_os_config {
+                use floem_winit::platform::macos::WindowBuilderExtMacOS;
+                if let Some(val) = mac.movable_by_window_background {
+                    window_builder = window_builder.with_movable_by_window_background(val);
+                }
+                if let Some(val) = mac.titlebar_transparent {
+                    window_builder = window_builder.with_titlebar_transparent(val);
+                }
+                if let Some(val) = mac.titlebar_hidden {
+                    window_builder = window_builder.with_titlebar_hidden(val);
+                }
+                if let Some(val) = mac.full_size_content_view {
+                    window_builder = window_builder.with_fullsize_content_view(val);
+                }
+                if let Some(val) = mac.movable {
+                    window_builder = window_builder.with_movable(val);
+                }
+                if let Some((x, y)) = mac.traffic_lights_offset {
+                    window_builder = window_builder.with_traffic_lights_offset(x, y);
+                }
+                if let Some(val) = mac.accepts_first_mouse {
+                    window_builder = window_builder.with_accepts_first_mouse(val);
+                }
+                if let Some(val) = mac.option_as_alt {
+                    window_builder = window_builder.with_option_as_alt(val.into());
+                }
+                if let Some(title) = mac.tabbing_identifier {
+                    window_builder = window_builder.with_tabbing_identifier(title.as_str());
+                }
+                if let Some(disallow_hidpi) = mac.disallow_high_dpi {
+                    window_builder = window_builder.with_disallow_hidpi(disallow_hidpi);
+                }
+                if let Some(shadow) = mac.has_shadow {
+                    window_builder = window_builder.with_has_shadow(shadow);
+                }
+            }
             config.apply_default_theme.unwrap_or(true)
         } else {
             true
