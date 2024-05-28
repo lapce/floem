@@ -417,6 +417,12 @@ impl ViewId {
         self.add_update_message(UpdateMessage::Draggable { id: *self });
     }
 
+    /// Alter the visibility of the current window the view represented by this ID
+    /// is in.
+    pub fn window_visible(&self, visible: bool) {
+        self.add_update_message(UpdateMessage::WindowVisible(visible));
+    }
+
     fn add_update_message(&self, msg: UpdateMessage) {
         CENTRAL_UPDATE_MESSAGES.with_borrow_mut(|msgs| {
             msgs.push((*self, msg));

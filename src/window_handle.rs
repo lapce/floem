@@ -928,6 +928,11 @@ impl WindowHandle {
                         cx.app_state.remove_view(id);
                         self.id.request_all();
                     }
+                    UpdateMessage::WindowVisible(visible) => {
+                        if let Some(window) = self.window.as_ref() {
+                            window.set_visible(visible);
+                        }
+                    }
                 }
             }
         }

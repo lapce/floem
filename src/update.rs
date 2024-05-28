@@ -94,4 +94,5 @@ pub(crate) enum UpdateMessage {
         position: Point,
         size: Size,
     },
+    WindowVisible(bool),
 }
