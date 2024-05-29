@@ -258,22 +258,11 @@ impl ViewId {
         self.request_changes(ChangeFlags::LAYOUT)
     }
 
-    fn is_in_active_window(&self) -> bool {
+    pub fn is_in_active_window(&self) -> bool {
         if let Some(root) = self.root() {
             return crate::window_handle::get_current_view() == root;
         }
         false
-    }
-
-    fn force_repaint(&self) -> bool {
-        if let Some(window_id) = self.window_id() {
-            // This should not fail unless, say, the view was never
-            // added to a parent view that is realized
-            if crate::window_tracking::force_window_repaint(&window_id) {
-                return true;
-            }
-        }
-        crate::window_tracking::force_all_repaint()
     }
 
     pub fn window_id(&self) -> Option<WindowId> {
@@ -283,9 +272,6 @@ impl ViewId {
     pub fn request_paint(&self) {
         let active = self.is_in_active_window();
         self.add_update_message(UpdateMessage::RequestPaint);
-        if !active {
-            self.force_repaint();
-        }
     }
 
     /// request that this node be styled again
@@ -356,23 +342,6 @@ impl ViewId {
             id: *self,
             state: Box::new(state),
         });
-        // A state update sent from the active window to a view
-        // in another window will be enqueued, but will not actually
-        // be retrieved and processed some external OS-level event
-        // triggers a repaint; in order to get the event processed,
-        // we need to force a repaint via the winit window, bypassing
-        // the usual mechanism to trigger a repaint (repaint messages
-        // too, will just be enqueued but not run until ... a repaint
-        // happens for some external reason).
-        //
-        // Without this, it is impossible for popup windows and similar
-        // to deliver messages to their parent that affect their display
-        // (or close the popup window), because the inactive window is
-        // completely quiescent unless jogged by, say the mouse passing
-        // over it.
-        if !self.is_in_active_window() {
-            self.force_repaint();
-        }
     }
 
     /// `viewport` is relative to the `id` view.
@@ -487,51 +456,5 @@ impl ViewId {
     /// Get a layout in screen-coordinates for this view, if possible.
     pub fn screen_layout(&self) -> Option<ScreenLayout> {
         crate::screen_layout::try_create_screen_layout(self)
-    }
-}
-
-/// Ensures `WindowIdExt` cannot be implemented on arbitrary types.
-trait WindowIdExtSealed {}
-impl WindowIdExtSealed for WindowId {}
-
-/// Extends WindowId to give instances methods to retrieve properties of the associated window,
-/// much as ViewId does.  Methods may return None if the view is not realized on-screen, or
-/// if information needed to compute the result is not available on the current platform or
-/// available on the current platform but not from the calling thread.
-#[allow(private_bounds)]
-pub trait WindowIdExt: WindowIdExtSealed {
-    /// Get the bounds of the content of this window, including
-    /// titlebar and native window borders.
-    fn bounds_on_screen_including_frame(&self) -> Option<Rect>;
-    /// Get the bounds of the content of this window, excluding
-    /// titlebar and native window borders.
-    fn bounds_of_content_on_screen(&self) -> Option<Rect>;
-    /// Get the location of the window including any OS titlebar.
-    fn position_on_screen_including_frame(&self) -> Option<Point>;
-    /// Get the location of the window **excluding** any OS titlebar.
-    fn position_of_content_on_screen(&self) -> Option<Point>;
-    /// Get the logical bounds of the monitor this window is on
-    fn monitor_bounds(&self) -> Option<Rect>;
-}
-
-impl WindowIdExt for WindowId {
-    fn bounds_on_screen_including_frame(&self) -> Option<Rect> {
-        window_outer_screen_bounds(self)
-    }
-
-    fn bounds_of_content_on_screen(&self) -> Option<Rect> {
-        window_inner_screen_bounds(self)
-    }
-
-    fn position_on_screen_including_frame(&self) -> Option<Point> {
-        window_outer_screen_position(self)
-    }
-
-    fn position_of_content_on_screen(&self) -> Option<Point> {
-        window_inner_screen_position(self)
-    }
-
-    fn monitor_bounds(&self) -> Option<Rect> {
-        monitor_bounds(self)
     }
 }
