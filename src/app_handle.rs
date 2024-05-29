@@ -240,6 +240,7 @@ impl ApplicationHandle {
                 }
             }
         }
+        self.handle_updates_for_all_windows();
     }
 
     pub(crate) fn new_window(
@@ -386,6 +387,10 @@ impl ApplicationHandle {
         while let Some(trigger) = { EXT_EVENT_HANDLER.queue.lock().pop_front() } {
             trigger.notify();
         }
+        self.handle_updates_for_all_windows();
+    }
+
+    fn handle_updates_for_all_windows(&mut self) {
         for (_, handle) in self.window_handles.iter_mut() {
             handle.process_update();
         }
@@ -426,9 +431,7 @@ impl ApplicationHandle {
                     (timer.action)(token);
                 }
             }
-            for (_, handle) in self.window_handles.iter_mut() {
-                handle.process_update();
-            }
+            self.handle_updates_for_all_windows();
         }
         self.fire_timer(event_loop);
     }
