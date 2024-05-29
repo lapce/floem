@@ -176,7 +176,7 @@ impl ViewId {
 
     /// Returns the layout rect excluding borders, padding and position.
     /// This is relative to the view.
-    pub fn get_content_rect(&mut self) -> Rect {
+    pub fn get_content_rect(&self) -> Rect {
         let size = self
             .get_layout()
             .map(|layout| layout.size)
