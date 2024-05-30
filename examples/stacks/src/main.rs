@@ -18,7 +18,7 @@ fn app_view() -> impl IntoView {
             "Renders off-screen: true",
             stack::stack_view(),
         )
-            .style(|s| s.flex_col().gap_height(5).width_pct(25.0)),
+            .style(|s| s.flex_col().column_gap(5).width_pct(25.0)),
         (
             "stack_from_iter".style(|s| s.font_size(16.0)),
             "From signal: false",
@@ -26,7 +26,7 @@ fn app_view() -> impl IntoView {
             "Renders off-screen: true",
             stack_from_iter::stack_from_iter_view(),
         )
-            .style(|s| s.flex_col().gap_height(5).width_pct(25.0)),
+            .style(|s| s.flex_col().column_gap(5).width_pct(25.0)),
         (
             "dyn_stack".style(|s| s.font_size(16.0)),
             "From signal: true",
@@ -34,7 +34,7 @@ fn app_view() -> impl IntoView {
             "Renders off-screen: true",
             dyn_stack::dyn_stack_view(),
         )
-            .style(|s| s.flex_col().gap_height(5).width_pct(25.0)),
+            .style(|s| s.flex_col().column_gap(5).width_pct(25.0)),
         (
             "virtual_stack".style(|s| s.font_size(16.0)),
             "From signal: true",
@@ -42,9 +42,9 @@ fn app_view() -> impl IntoView {
             "Renders off-screen: false",
             virtual_stack::virtual_stack_view(),
         )
-            .style(|s| s.flex_col().gap_height(5).width_pct(25.0)),
+            .style(|s| s.flex_col().column_gap(5).width_pct(25.0)),
     )
-        .style(|s| s.flex().margin(20).width_full().height_full().gap_width(10))
+        .style(|s| s.flex().margin(20).width_full().height_full().row_gap(10))
         .into_view();
 
     let id = view.id();

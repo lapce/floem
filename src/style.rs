@@ -1352,7 +1352,7 @@ impl Style {
         self.height(height.pct())
     }
 
-    pub fn gap_width(self, width: impl Into<PxPct>) -> Self {
+    pub fn row_gap(self, width: impl Into<PxPct>) -> Self {
         let gap_height = self.get(Gap).height;
         self.set(
             Gap,
@@ -1363,7 +1363,7 @@ impl Style {
         )
     }
 
-    pub fn gap_height(self, height: impl Into<PxPct>) -> Self {
+    pub fn column_gap(self, height: impl Into<PxPct>) -> Self {
         let gap_width = self.get(Gap).width;
         self.set(
             Gap,
@@ -1374,7 +1374,7 @@ impl Style {
         )
     }
 
-    pub fn gap_width_height(self, width: impl Into<PxPct>, height: impl Into<PxPct>) -> Self {
+    pub fn row_col_gap(self, width: impl Into<PxPct>, height: impl Into<PxPct>) -> Self {
         self.set(
             Gap,
             Size {
