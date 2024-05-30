@@ -144,6 +144,9 @@ impl WindowHandle {
             last_pointer_down: None,
         };
         window_handle.app_state.set_root_size(size.get_untracked());
+        if let Some(theme) = theme.get_untracked() {
+            window_handle.event(Event::ThemeChanged(theme));
+        }
         window_handle
     }
 
@@ -336,6 +339,7 @@ impl WindowHandle {
 
     pub(crate) fn os_theme_changed(&mut self, theme: floem_winit::window::Theme) {
         self.os_theme.set(Some(theme));
+        self.event(Event::ThemeChanged(theme));
     }
 
     pub(crate) fn size(&mut self, size: Size) {
