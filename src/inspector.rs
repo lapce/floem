@@ -655,7 +655,7 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<ViewId>>) -> i
                     style_header,
                     style_list,
                     class_header,
-                    v_stack_from_iter(class_list.iter().map(text)).style(|s| s.gap(10, 10)),
+                    v_stack_from_iter(class_list.iter().map(text)).style(|s| s.gap(10)),
                 ))
                 .style(|s| s.width_full())
                 .into_any()
