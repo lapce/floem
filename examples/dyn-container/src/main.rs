@@ -21,7 +21,7 @@ fn view_two(view: RwSignal<ViewSwitcher>) -> impl IntoView {
             view.set(ViewSwitcher::One);
         }),
     ))
-    .style(|s| s.gap_height(10.0))
+    .style(|s| s.column_gap(10.0))
 }
 
 fn app_view() -> impl IntoView {
@@ -54,7 +54,7 @@ fn app_view() -> impl IntoView {
             .height_full()
             .items_center()
             .justify_center()
-            .gap_width(10)
+            .row_gap(10)
     })
 }
 

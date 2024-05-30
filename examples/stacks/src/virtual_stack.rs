@@ -27,5 +27,5 @@ pub fn virtual_stack_view() -> impl IntoView {
         )
         .style(|s| s.width(100).height(200).border(1)),
     )
-        .style(|s| s.flex_col().gap_height(5).margin_top(10))
+        .style(|s| s.flex_col().column_gap(5).margin_top(10))
 }

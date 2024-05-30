@@ -79,7 +79,7 @@ fn app_view() -> impl IntoView {
         }),
     ))
     .style(|s| {
-        s.gap_width(5)
+        s.row_gap(5)
             .width_full()
             .height_full()
             .items_center()
