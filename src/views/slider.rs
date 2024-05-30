@@ -215,7 +215,7 @@ impl View for Slider {
         EventPropagation::Continue
     }
 
-    fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+    fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         let style = cx.style();
         let mut paint = false;
 

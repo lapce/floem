@@ -613,7 +613,7 @@ impl<'a> StyleCx<'a> {
             }
         }
 
-        view.borrow_mut().style(self);
+        view.borrow_mut().style_pass(self);
 
         self.restore();
     }

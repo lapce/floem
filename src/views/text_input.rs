@@ -1014,7 +1014,7 @@ impl View for TextInput {
         EventPropagation::Continue
     }
 
-    fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+    fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         let style = cx.style();
         if self.font.read(cx) || self.text_buf.is_none() {
             self.update_text_layout();

@@ -233,7 +233,7 @@ impl View for ToggleButton {
         None
     }
 
-    fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+    fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         if self.style.read(cx) {
             cx.app_state_mut().request_paint(self.id);
         }
