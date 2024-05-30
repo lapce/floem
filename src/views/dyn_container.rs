@@ -96,6 +96,7 @@ impl<T: 'static> View for DynamicContainer<T> {
             let old_child_scope = self.child_scope;
             let old_child_id = self.child_id;
             let (new_child, new_child_scope) = (self.child_fn)(*val);
+            self.child_id = new_child.id();
             self.id.set_children(vec![new_child]);
             self.child_scope = new_child_scope;
             cx.app_state_mut().remove_view(old_child_id);
