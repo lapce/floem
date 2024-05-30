@@ -56,7 +56,7 @@ pub struct DynamicContainer<T: 'static> {
 ///             .height_full()
 ///             .items_center()
 ///             .justify_center()
-///             .gap(10, 0)
+///             .gap_width(10)
 ///     })
 /// }
 ///
