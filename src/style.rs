@@ -1374,12 +1374,22 @@ impl Style {
         )
     }
 
+    pub fn gap_width_height(self, width: impl Into<PxPct>, height: impl Into<PxPct>) -> Self {
+        self.set(
+            Gap,
+            Size {
+                width: width.into().into(),
+                height: height.into().into(),
+            },
+        )
+    }
+
     pub fn gap(self, gap: impl Into<PxPct>) -> Self {
         let gap = gap.into();
         self.set(
             Gap,
             Size {
-                width: gap.clone().into(),
+                width: gap.into(),
                 height: gap.into(),
             },
         )

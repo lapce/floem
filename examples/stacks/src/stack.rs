@@ -16,14 +16,14 @@ pub fn stack_view() -> impl IntoView {
         stack((
             "Item 3",
             "Item 4",
-        )).style(|s| s.flex_col().gap(0, 5)),
+        )).style(|s| s.flex_col().gap_height(5)),
 
         // The vertical stack view which has flex_col() built in
         v_stack((
             "Item 5",
             "Item 6",
-        )).style(|s| s.gap(0, 5)),
+        )).style(|s| s.gap_height(5)),
 
     )
-    .style(|s| s.flex_col().gap(0, 5).margin_top(10))
+    .style(|s| s.flex_col().gap( 5).margin_top(10))
 }
