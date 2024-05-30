@@ -771,6 +771,11 @@ impl WindowHandle {
                             id.request_style_recursive();
                         }
                     }
+                    UpdateMessage::ClearActive(id) => {
+                        if Some(id) == cx.app_state.active {
+                            cx.app_state.active = None;
+                        }
+                    }
                     UpdateMessage::ScrollTo { id, rect } => {
                         self.id
                             .view()

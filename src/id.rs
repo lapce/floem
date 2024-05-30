@@ -300,6 +300,10 @@ impl ViewId {
         self.add_update_message(UpdateMessage::Active(*self));
     }
 
+    pub fn clear_active(&self) {
+        self.add_update_message(UpdateMessage::ClearActive(*self));
+    }
+
     pub fn inspect(&self) {
         self.add_update_message(UpdateMessage::Inspect);
     }
