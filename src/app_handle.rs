@@ -17,6 +17,7 @@ use crate::{
     view::View,
     window::WindowConfig,
     window_handle::WindowHandle,
+    window_id::process_window_updates,
 };
 
 pub(crate) struct ApplicationHandle {
@@ -391,8 +392,9 @@ impl ApplicationHandle {
     }
 
     fn handle_updates_for_all_windows(&mut self) {
-        for (_, handle) in self.window_handles.iter_mut() {
+        for (window_id, handle) in self.window_handles.iter_mut() {
             handle.process_update();
+            while process_window_updates(window_id) {}
         }
     }
 

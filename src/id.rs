@@ -22,10 +22,7 @@ use crate::{
     view::{IntoView, View},
     view_state::{ChangeFlags, StackOffset, ViewState},
     view_storage::VIEW_STORAGE,
-    window_tracking::{
-        monitor_bounds, window_id_for_root, window_inner_screen_bounds,
-        window_inner_screen_position, window_outer_screen_bounds, window_outer_screen_position,
-    },
+    window_tracking::window_id_for_root,
     ScreenLayout,
 };
 
@@ -258,19 +255,12 @@ impl ViewId {
         self.request_changes(ChangeFlags::LAYOUT)
     }
 
-    pub fn is_in_active_window(&self) -> bool {
-        if let Some(root) = self.root() {
-            return crate::window_handle::get_current_view() == root;
-        }
-        false
-    }
-
+    /// Get the window id of the window containing this view, if there is one.
     pub fn window_id(&self) -> Option<WindowId> {
         self.root().and_then(window_id_for_root)
     }
 
     pub fn request_paint(&self) {
-        let active = self.is_in_active_window();
         self.add_update_message(UpdateMessage::RequestPaint);
     }
 

@@ -197,4 +197,4 @@ pub use screen_layout::ScreenLayout;
 pub use taffy;
 pub use view::{recursively_layout_view, AnyView, IntoView, View};
 pub use window::{close_window, new_window};
-pub use window_id::WindowIdExt;
+pub use window_id::{Urgency, WindowIdExt};

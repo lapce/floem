@@ -17,7 +17,7 @@ use std::{
 
 static WINDOW_FOR_WINDOW_AND_ROOT_IDS: OnceLock<RwLock<WindowMapping>> = OnceLock::new();
 
-/// Add a mapping from root_id -> window_id -> window for the given triple.
+/// Add a mapping from `root_id` -> `window_id` -> `window` for the given triple.
 pub fn store_window_id_mapping(
     root_id: ViewId,
     window_id: WindowId,
@@ -26,7 +26,7 @@ pub fn store_window_id_mapping(
     with_window_map_mut(move |m| m.add(root_id, window_id, window.clone()));
 }
 
-/// Remove the mapping from root_id -> window_id -> window for the given triple.
+/// Remove the mapping from `root_id` -> `window_id` -> `window` for the given triple.
 pub fn remove_window_id_mapping(root_id: &ViewId, window_id: &WindowId) {
     with_window_map_mut(move |m| m.remove(root_id, window_id));
 }
@@ -71,14 +71,17 @@ impl WindowMapping {
         self.window_for_window_id.get(window).map(f)
     }
 
-    fn each_window<F: Fn(&Arc<Window>)>(&self, f: F) {
-        for (_, window) in self.window_for_window_id.iter() {
-            f(window)
-        }
-    }
-
     fn window_id_for_root(&self, id: &ViewId) -> Option<WindowId> {
         self.window_id_for_root_view_id.get(id).copied()
+    }
+
+    fn root_view_id_for(&self, window_id: &WindowId) -> Option<ViewId> {
+        for (k, v) in self.window_id_for_root_view_id.iter() {
+            if v == window_id {
+                return Some(*k);
+            }
+        }
+        None
     }
 }
 
@@ -110,6 +113,14 @@ fn with_window_map<F: FnOnce(&WindowMapping) -> T, T>(f: F) -> Option<T> {
     }
 }
 
+pub fn with_window<F: FnOnce(&Window) -> T, T>(window: &WindowId, f: F) -> Option<T> {
+    with_window_map(|m| m.with_window(window, |w| f(w.as_ref()))).unwrap_or(None)
+}
+
+pub fn root_view_id(window: &WindowId) -> Option<ViewId> {
+    with_window_map(|m| m.root_view_id_for(window)).unwrap_or(None)
+}
+
 /// Force a single window to repaint - this is necessary in cases where the
 /// window is not the active window and otherwise would not process update
 /// messages sent to it.
@@ -123,15 +134,6 @@ pub fn force_window_repaint(id: &WindowId) -> bool {
 
 pub fn window_id_for_root(root_id: ViewId) -> Option<WindowId> {
     with_window_map(|map| map.window_id_for_root(&root_id)).unwrap_or(None)
-}
-
-pub fn force_all_repaint() -> bool {
-    with_window_map(|m| {
-        println!("Force repaint of {} windows", m.window_for_window_id.len());
-        m.each_window(|window| window.request_redraw());
-        !m.window_for_window_id.is_empty()
-    })
-    .unwrap_or(false)
 }
 
 pub fn monitor_bounds(id: &WindowId) -> Option<Rect> {
