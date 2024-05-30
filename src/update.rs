@@ -36,6 +36,7 @@ pub(crate) enum UpdateMessage {
     Focus(ViewId),
     ClearFocus(ViewId),
     Active(ViewId),
+    ClearActive(ViewId),
     WindowScale(f64),
     Disabled {
         id: ViewId,
