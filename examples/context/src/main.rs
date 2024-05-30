@@ -22,7 +22,7 @@ fn context_container<V: IntoView + 'static>(
         s.padding(10)
             .border(1)
             .border_color(color)
-            .gap(0, 5)
+            .gap_height(5)
             .items_center()
     })
 }
@@ -43,7 +43,7 @@ fn app_view() -> impl IntoView {
             .height_full()
             .items_center()
             .justify_center()
-            .gap(0, 5)
+            .gap_height(5)
     });
 
     let id = view.id();

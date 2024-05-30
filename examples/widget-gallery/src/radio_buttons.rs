@@ -47,7 +47,7 @@ pub fn radio_buttons_view() -> impl IntoView {
                         },
                     ),
                 ))
-                .style(|s| s.gap(0.0, 10.0).margin_left(5.0))
+                .style(|s| s.gap_height(10.0).margin_left(5.0))
             }),
             form_item("Disabled Radio Buttons:".to_string(), width, move || {
                 v_stack((
@@ -67,7 +67,7 @@ pub fn radio_buttons_view() -> impl IntoView {
                         })
                         .disabled(|| true),
                 ))
-                .style(|s| s.gap(0.0, 10.0).margin_left(5.0))
+                .style(|s| s.gap_height(10.0).margin_left(5.0))
             }),
             form_item("Labelled Radio Buttons:".to_string(), width, move || {
                 v_stack((

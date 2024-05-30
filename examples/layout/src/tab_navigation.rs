@@ -78,7 +78,7 @@ pub fn tab_navigation_view() -> impl IntoView {
         s.flex_row()
             .width_full()
             .height(TABBAR_HEIGHT)
-            .gap(5, 0)
+            .gap_width(5)
             .padding(CONTENT_PADDING)
             .border_bottom(1)
             .border_color(Color::rgb8(205, 205, 205))

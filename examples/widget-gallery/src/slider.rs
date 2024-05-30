@@ -25,7 +25,7 @@ pub fn slider_view() -> impl IntoView {
                         .on_change_pct(move |val| set_slider.set(val)),
                     label(move || format!("{:.1}%", set_slider.get())),
                 ))
-                .style(|s| s.gap(10., 10))
+                .style(|s| s.gap(10))
             }),
             form_item("Unaligned Slider:".to_string(), 120.0, move || {
                 stack((
@@ -39,7 +39,7 @@ pub fn slider_view() -> impl IntoView {
                         .on_change_pct(move |val| set_slider.set(val)),
                     label(move || format!("{:.1}%", set_slider.get())),
                 ))
-                .style(|s| s.gap(10., 10))
+                .style(|s| s.gap(10))
             }),
             form_item("Progress bar:".to_string(), 120.0, move || {
                 stack((
@@ -51,7 +51,7 @@ pub fn slider_view() -> impl IntoView {
                         .on_change_pct(move |val| set_slider.set(val)),
                     label(move || format!("{:.1}%", set_slider.get())),
                 ))
-                .style(|s| s.gap(10., 10))
+                .style(|s| s.gap(10))
             }),
         )
     })

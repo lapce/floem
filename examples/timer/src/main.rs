@@ -57,7 +57,7 @@ fn app_view() -> impl IntoView {
         stack((text("Duration: "), duration_slider)).style(|s| s.justify_between()),
         reset_button,
     ))
-    .style(|s| s.gap(5, 5));
+    .style(|s| s.gap(5));
 
     container(view).style(|s| {
         s.size(100.pct(), 100.pct())
