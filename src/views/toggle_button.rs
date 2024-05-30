@@ -69,9 +69,13 @@ pub struct ToggleButton {
 ///
 /// Styles:
 /// background color: [style::Background]
-/// foreground color: [style::Foreground]
+///
+/// Toggle color: [style::Foreground]
+///
 /// inner switch inset: [ToggleButtonInset]
+///
 /// inner switch (circle) size/radius: [ToggleButtonCircleRad]
+///
 /// toggle button switch behavior: [ToggleButtonBehavior] / [ToggleHandleBehavior]
 ///
 /// An example using [`RwSignal`](floem_reactive::RwSignal):
@@ -279,7 +283,7 @@ impl ToggleButton {
         let view_state = id.state();
         let offset = view_state.borrow_mut().style.next_offset();
         let style = create_updater(
-            move || style(ToggleButtonCustomStyle(Style::new())),
+            move || style(ToggleButtonCustomStyle::new()),
             move |style| id.update_style(offset, style.0),
         );
         view_state.borrow_mut().style.push(style.0);
@@ -291,6 +295,10 @@ impl ToggleButton {
 pub struct ToggleButtonCustomStyle(Style);
 
 impl ToggleButtonCustomStyle {
+    pub fn new() -> Self {
+        Self(Style::new())
+    }
+
     /// Sets the color of the toggle handle.
     ///
     /// # Arguments
@@ -338,9 +346,13 @@ impl ToggleButtonCustomStyle {
         self
     }
 
-    /// Apply regular style properties
-    pub fn style(mut self, style: impl Fn(Style) -> Style + 'static) -> Self {
-        self = Self(self.0.apply(style(Style::new())));
-        self
+    /// Get the inner style
+    pub fn style(self) -> Style {
+        self.0
+    }
+}
+impl Default for ToggleButtonCustomStyle {
+    fn default() -> Self {
+        Self::new()
     }
 }
