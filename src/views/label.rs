@@ -165,7 +165,7 @@ impl View for Label {
         }
     }
 
-    fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+    fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         if self.font.read(cx) | self.style.read(cx) {
             self.text_layout = None;
             self.available_text = None;

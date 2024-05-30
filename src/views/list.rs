@@ -209,7 +209,7 @@ impl View for Item {
         "Item".into()
     }
 
-    fn style(&mut self, cx: &mut StyleCx<'_>) {
+    fn style_pass(&mut self, cx: &mut StyleCx<'_>) {
         let selected = self.selection.get_untracked();
         if Some(self.index) == selected {
             cx.save();

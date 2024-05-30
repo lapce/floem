@@ -794,7 +794,7 @@ impl View for EditorView {
         self.id
     }
 
-    fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+    fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         self.editor.with_untracked(|ed| {
             ed.es.update(|s| {
                 if s.read(cx) {

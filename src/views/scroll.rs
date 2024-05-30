@@ -658,7 +658,7 @@ impl View for Scroll {
         found
     }
 
-    fn style(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+    fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         let style = cx.style();
 
         self.scroll_style.read(cx);

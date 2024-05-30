@@ -124,7 +124,7 @@ impl<T> View for Tab<T> {
         }
     }
 
-    fn style(&mut self, cx: &mut StyleCx<'_>) {
+    fn style_pass(&mut self, cx: &mut StyleCx<'_>) {
         for (i, child) in self.id.children().into_iter().enumerate() {
             cx.style_view(child);
             let child_view = child.state();

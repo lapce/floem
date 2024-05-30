@@ -230,7 +230,7 @@ pub trait View {
     ///
     /// If the style changes needs other passes to run you're expected to call
     /// `cx.app_state_mut().request_changes`.
-    fn style(&mut self, cx: &mut StyleCx<'_>) {
+    fn style_pass(&mut self, cx: &mut StyleCx<'_>) {
         for child in self.id().children() {
             cx.style_view(child);
         }
@@ -319,8 +319,8 @@ impl View for Box<dyn View> {
         (**self).update(cx, state)
     }
 
-    fn style(&mut self, cx: &mut StyleCx) {
-        (**self).style(cx)
+    fn style_pass(&mut self, cx: &mut StyleCx) {
+        (**self).style_pass(cx)
     }
 
     fn layout(&mut self, cx: &mut LayoutCx) -> NodeId {
