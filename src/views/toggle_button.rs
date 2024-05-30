@@ -351,3 +351,8 @@ impl ToggleButtonCustomStyle {
         self.0
     }
 }
+impl Default for ToggleButtonCustomStyle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
