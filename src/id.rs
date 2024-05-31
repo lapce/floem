@@ -6,6 +6,7 @@
 
 use std::{any::Any, cell::RefCell, rc::Rc};
 
+use floem_winit::window::WindowId;
 use peniko::kurbo::{Insets, Point, Rect, Size};
 use slotmap::new_key_type;
 use taffy::{Display, Layout, NodeId, TaffyTree};
@@ -21,6 +22,8 @@ use crate::{
     view::{IntoView, View},
     view_state::{ChangeFlags, StackOffset, ViewState},
     view_storage::VIEW_STORAGE,
+    window_tracking::window_id_for_root,
+    ScreenLayout,
 };
 
 new_key_type! {
@@ -252,6 +255,11 @@ impl ViewId {
         self.request_changes(ChangeFlags::LAYOUT)
     }
 
+    /// Get the window id of the window containing this view, if there is one.
+    pub fn window_id(&self) -> Option<WindowId> {
+        self.root().and_then(window_id_for_root)
+    }
+
     pub fn request_paint(&self) {
         self.add_update_message(UpdateMessage::RequestPaint);
     }
@@ -417,6 +425,12 @@ impl ViewId {
         self.add_update_message(UpdateMessage::Draggable { id: *self });
     }
 
+    /// Alter the visibility of the current window the view represented by this ID
+    /// is in.
+    pub fn window_visible(&self, visible: bool) {
+        self.add_update_message(UpdateMessage::WindowVisible(visible));
+    }
+
     fn add_update_message(&self, msg: UpdateMessage) {
         CENTRAL_UPDATE_MESSAGES.with_borrow_mut(|msgs| {
             msgs.push((*self, msg));
@@ -427,5 +441,10 @@ impl ViewId {
         CENTRAL_DEFERRED_UPDATE_MESSAGES.with_borrow_mut(|msgs| {
             msgs.push((*self, Box::new(state)));
         });
+    }
+
+    /// Get a layout in screen-coordinates for this view, if possible.
+    pub fn screen_layout(&self) -> Option<ScreenLayout> {
+        crate::screen_layout::try_create_screen_layout(self)
     }
 }
