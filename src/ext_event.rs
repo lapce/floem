@@ -148,3 +148,43 @@ pub fn create_signal_from_channel<T: Send + 'static>(
 
     read
 }
+
+#[cfg(feature = "tokio")]
+pub fn create_signal_from_tokio_channel<T: Send + 'static>(
+    mut rx: tokio::sync::mpsc::UnboundedReceiver<T>,
+) -> ReadSignal<Option<T>> {
+    let cx = Scope::new();
+    let trigger = cx.create_trigger();
+
+    let channel_closed = cx.create_rw_signal(false);
+    let (read, write) = cx.create_signal(None);
+    let data = std::sync::Arc::new(std::sync::Mutex::new(VecDeque::new()));
+
+    {
+        let data = data.clone();
+        cx.create_effect(move |_| {
+            trigger.track();
+            while let Some(value) = data.lock().unwrap().pop_front() {
+                write.set(value);
+            }
+
+            if channel_closed.get() {
+                cx.dispose();
+            }
+        });
+    }
+
+    let send = create_ext_action(cx, move |_| {
+        channel_closed.set(true);
+    });
+
+    tokio::spawn(async move {
+        while let Some(event) = rx.recv().await {
+            data.lock().unwrap().push_back(Some(event));
+            crate::ext_event::register_ext_trigger(trigger);
+        }
+        send(());
+    });
+
+    read
+}
