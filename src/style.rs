@@ -367,17 +367,17 @@ impl<P: StyleProp> StylePropReader for Option<P> {
 }
 
 #[derive(Clone)]
-pub struct ExtratorField<R: StylePropReader> {
+pub struct ExtractorField<R: StylePropReader> {
     state: R::State,
 }
 
-impl<R: StylePropReader> Debug for ExtratorField<R> {
+impl<R: StylePropReader> Debug for ExtractorField<R> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.state.fmt(f)
     }
 }
 
-impl<R: StylePropReader> ExtratorField<R> {
+impl<R: StylePropReader> ExtractorField<R> {
     pub fn read(
         &mut self,
         style: &Style,
@@ -396,7 +396,7 @@ impl<R: StylePropReader> ExtratorField<R> {
     }
 }
 
-impl<R: StylePropReader> PartialEq for ExtratorField<R>
+impl<R: StylePropReader> PartialEq for ExtractorField<R>
 where
     R::Type: PartialEq,
 {
@@ -405,9 +405,9 @@ where
     }
 }
 
-impl<R: StylePropReader> Eq for ExtratorField<R> where R::Type: Eq {}
+impl<R: StylePropReader> Eq for ExtractorField<R> where R::Type: Eq {}
 
-impl<R: StylePropReader> std::hash::Hash for ExtratorField<R>
+impl<R: StylePropReader> std::hash::Hash for ExtractorField<R>
 where
     R::Type: std::hash::Hash,
 {
@@ -458,7 +458,7 @@ macro_rules! prop_extractor {
         $(#[$attrs])?
         $vis struct $name {
             $(
-                $prop_vis $prop: $crate::style::ExtratorField<$reader>,
+                $prop_vis $prop: $crate::style::ExtractorField<$reader>,
             )*
         }
 
@@ -504,7 +504,7 @@ macro_rules! prop_extractor {
             fn default() -> Self {
                 Self {
                     $(
-                        $prop: $crate::style::ExtratorField::new(),
+                        $prop: $crate::style::ExtractorField::new(),
                     )*
                 }
             }

@@ -808,7 +808,7 @@ fn capture_view(
             .flex_col()
     });
 
-    let seperator = empty().style(move |s| {
+    let separator = empty().style(move |s| {
         s.width_full()
             .min_height(1.0)
             .background(Color::BLACK.with_alpha_factor(0.2))
@@ -817,7 +817,7 @@ fn capture_view(
     let left = v_stack((
         header("Captured Window"),
         scroll(image).style(|s| s.max_height_pct(60.0)),
-        seperator,
+        separator,
         left_scroll,
     ))
     .style(|s| s.max_width_pct(60.0));
@@ -844,13 +844,13 @@ fn capture_view(
 
     let tree = tree.style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0));
 
-    let seperator = empty().style(move |s| {
+    let separator = empty().style(move |s| {
         s.height_full()
             .min_width(1.0)
             .background(Color::BLACK.with_alpha_factor(0.2))
     });
 
-    h_stack((left, seperator, tree)).style(|s| s.height_full().width_full().max_width_full())
+    h_stack((left, separator, tree)).style(|s| s.height_full().width_full().max_width_full())
 }
 
 fn inspector_view(
@@ -941,13 +941,13 @@ pub fn capture(window_id: WindowId) {
                 )
                 .style(|s| s.flex_basis(0.0).min_height(0.0).flex_grow(1.0));
 
-                let seperator = empty().style(move |s| {
+                let separator = empty().style(move |s| {
                     s.width_full()
                         .min_height(1.0)
                         .background(Color::BLACK.with_alpha_factor(0.2))
                 });
 
-                let stack = v_stack((tabs, seperator, tab));
+                let stack = v_stack((tabs, separator, tab));
                 let id = stack.id();
                 stack
                     .style(|s| s.width_full().height_full())

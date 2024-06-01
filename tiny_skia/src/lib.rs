@@ -285,15 +285,15 @@ impl<W> TinySkiaRenderer<W> {
     }
 
     fn current_transform(&self) -> Transform {
-        let transfrom = self.transform.as_coeffs();
+        let transform = self.transform.as_coeffs();
         let scale = self.scale as f32;
         Transform::from_row(
-            transfrom[0] as f32,
-            transfrom[1] as f32,
-            transfrom[2] as f32,
-            transfrom[3] as f32,
-            transfrom[4] as f32,
-            transfrom[5] as f32,
+            transform[0] as f32,
+            transform[1] as f32,
+            transform[2] as f32,
+            transform[3] as f32,
+            transform[4] as f32,
+            transform[5] as f32,
         )
         .post_scale(scale, scale)
     }
