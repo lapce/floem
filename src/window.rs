@@ -55,9 +55,7 @@ impl WindowConfig {
     ///
     /// Panics if either width or height of new size is zero.
     pub fn size(mut self, size: impl Into<Size>) -> Self {
-        let new_size = size.into();
-        assert!(new_size.width != 0.0 && new_size.height != 0.0);
-        self.size = new_size;
+        self.size = size.into();
         self
     }
 
