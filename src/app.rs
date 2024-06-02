@@ -118,8 +118,13 @@ impl Application {
         self
     }
 
-    /// create a new window for the application, if you want multiple windows,
-    /// just chain more window method to the builder
+    /// Create a new window for the application, if you want multiple windows,
+    /// just chain more window method to the builder.
+    ///
+    /// # Note
+    ///
+    /// Using `None` as a configuration argument is equivalent to using
+    /// `WindowConfig::default()`.
     pub fn window<V: IntoView + 'static>(
         mut self,
         app_view: impl FnOnce(WindowId) -> V + 'static,
@@ -128,7 +133,7 @@ impl Application {
         self.handle.as_mut().unwrap().new_window(
             &self.event_loop,
             Box::new(|window_id| app_view(window_id).into_any()),
-            config,
+            config.unwrap_or_default(),
         );
         self
     }

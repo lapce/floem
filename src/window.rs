@@ -10,85 +10,123 @@ use peniko::kurbo::{Point, Size};
 use crate::app::{add_app_update_event, AppUpdateEvent};
 use crate::view::IntoView;
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct WindowConfig {
-    pub(crate) size: Option<Size>,
+    pub(crate) size: Size,
     pub(crate) position: Option<Point>,
-    pub(crate) show_titlebar: Option<bool>,
-    pub(crate) transparent: Option<bool>,
+    pub(crate) show_titlebar: bool,
+    pub(crate) transparent: bool,
     pub(crate) fullscreen: Option<Fullscreen>,
     pub(crate) window_icon: Option<Icon>,
     pub(crate) title: Option<String>,
-    pub(crate) enabled_buttons: Option<WindowButtons>,
-    pub(crate) resizable: Option<bool>,
-    pub(crate) undecorated: Option<bool>,
-    pub(crate) window_level: Option<WindowLevel>,
-    pub(crate) apply_default_theme: Option<bool>,
+    pub(crate) enabled_buttons: WindowButtons,
+    pub(crate) resizable: bool,
+    pub(crate) undecorated: bool,
+    pub(crate) window_level: WindowLevel,
+    pub(crate) apply_default_theme: bool,
     #[allow(dead_code)]
     pub(crate) mac_os_config: Option<MacOSWindowConfig>,
 }
 
+impl Default for WindowConfig {
+    fn default() -> Self {
+        Self {
+            size: Size::new(800.0, 600.0),
+            position: None,
+            show_titlebar: true,
+            transparent: false,
+            fullscreen: None,
+            window_icon: None,
+            title: None,
+            enabled_buttons: WindowButtons::all(),
+            resizable: true,
+            undecorated: false,
+            window_level: WindowLevel::Normal,
+            apply_default_theme: true,
+            mac_os_config: None,
+        }
+    }
+}
+
 impl WindowConfig {
+    /// Sets new window size.
+    ///
+    /// # Panics
+    ///
+    /// Panics if either width or height of new size is zero.
     pub fn size(mut self, size: impl Into<Size>) -> Self {
-        self.size = Some(size.into());
+        let new_size = size.into();
+        assert!(new_size.width != 0.0 && new_size.height != 0.0);
+        self.size = new_size;
         self
     }
 
+    #[inline]
     pub fn position(mut self, position: Point) -> Self {
         self.position = Some(position);
         self
     }
 
+    #[inline]
     pub fn show_titlebar(mut self, show_titlebar: bool) -> Self {
-        self.show_titlebar = Some(show_titlebar);
+        self.show_titlebar = show_titlebar;
         self
     }
 
+    #[inline]
     pub fn undecorated(mut self, undecorated: bool) -> Self {
-        self.undecorated = Some(undecorated);
+        self.undecorated = undecorated;
         self
     }
 
+    #[inline]
     pub fn with_transparent(mut self, transparent: bool) -> Self {
-        self.transparent = Some(transparent);
+        self.transparent = transparent;
         self
     }
 
+    #[inline]
     pub fn fullscreen(mut self, fullscreen: Fullscreen) -> Self {
         self.fullscreen = Some(fullscreen);
         self
     }
 
+    #[inline]
     pub fn window_icon(mut self, window_icon: Icon) -> Self {
         self.window_icon = Some(window_icon);
         self
     }
 
+    #[inline]
     pub fn title(mut self, title: impl Into<String>) -> Self {
         self.title = Some(title.into());
         self
     }
 
+    #[inline]
     pub fn enabled_buttons(mut self, enabled_buttons: WindowButtons) -> Self {
-        self.enabled_buttons = Some(enabled_buttons);
+        self.enabled_buttons = enabled_buttons;
         self
     }
 
+    #[inline]
     pub fn resizable(mut self, resizable: bool) -> Self {
-        self.resizable = Some(resizable);
+        self.resizable = resizable;
         self
     }
 
+    #[inline]
     pub fn window_level(mut self, window_level: WindowLevel) -> Self {
-        self.window_level = Some(window_level);
+        self.window_level = window_level;
         self
     }
 
     /// If set to true, the stylesheet for Floem's default theme will be
     /// injected into your window. You may want to disable this when using a
     /// completely custom theme.
+    #[inline]
     pub fn apply_default_theme(mut self, apply_default_theme: bool) -> Self {
-        self.apply_default_theme = Some(apply_default_theme);
+        self.apply_default_theme = apply_default_theme;
         self
     }
 

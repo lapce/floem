@@ -59,7 +59,7 @@ impl ApplicationHandle {
         for event in events {
             match event {
                 AppUpdateEvent::NewWindow { view_fn, config } => {
-                    self.new_window(event_loop, view_fn, config)
+                    self.new_window(event_loop, view_fn, config.unwrap_or_default())
                 }
                 AppUpdateEvent::CloseWindow { window_id } => {
                     self.close_window(window_id, event_loop);
@@ -248,113 +248,107 @@ impl ApplicationHandle {
         &mut self,
         event_loop: &EventLoopWindowTarget<UserEvent>,
         view_fn: Box<dyn FnOnce(WindowId) -> Box<dyn View>>,
-        config: Option<WindowConfig>,
+        #[allow(unused_variables)] WindowConfig {
+            size,
+            position,
+            show_titlebar,
+            transparent,
+            fullscreen,
+            window_icon,
+            title,
+            enabled_buttons,
+            resizable,
+            undecorated,
+            window_level,
+            apply_default_theme,
+            mac_os_config,
+        }: WindowConfig,
     ) {
-        let mut window_builder = floem_winit::window::WindowBuilder::new();
-        let transparent = config.as_ref().and_then(|c| c.transparent).unwrap_or(false);
-        let apply_default_theme = if let Some(config) = config {
-            if let Some(size) = config.size {
-                let size = if size.width == 0.0 || size.height == 0.0 {
-                    Size::new(800.0, 600.0)
-                } else {
-                    size
-                };
-                window_builder =
-                    window_builder.with_inner_size(LogicalSize::new(size.width, size.height));
-            }
-            if let Some(pos) = config.position {
-                window_builder = window_builder.with_position(LogicalPosition::new(pos.x, pos.y));
-            }
-            if let Some(show_titlebar) = config.show_titlebar {
-                #[cfg(target_os = "macos")]
-                if !show_titlebar {
-                    use floem_winit::platform::macos::WindowBuilderExtMacOS;
-                    window_builder = window_builder
-                        .with_movable(false)
-                        .with_title_hidden(true)
-                        .with_titlebar_transparent(true)
-                        .with_fullsize_content_view(true)
-                        .with_traffic_lights_offset(11.0, 16.0);
-                }
-                #[cfg(not(target_os = "macos"))]
-                if !show_titlebar {
-                    window_builder = window_builder.with_decorations(false);
-                }
-            }
-            if let Some(undecorated) = config.undecorated {
-                window_builder = window_builder.with_decorations(!undecorated);
-                #[cfg(target_os = "macos")]
-                if undecorated {
-                    use floem_winit::platform::macos::WindowBuilderExtMacOS;
-                    // A palette-style window that will only obtain window focus but
-                    // not actually propagate the first mouse click it receives is
-                    // very unlikely to be expected behavior - these typically are
-                    // used for something that offers a quick choice and are closed
-                    // in a single pointer gesture.
-                    window_builder = window_builder.with_accepts_first_mouse(true);
-                }
-            }
-            if let Some(transparent) = config.transparent {
-                window_builder = window_builder.with_transparent(transparent);
-            }
-            if let Some(fullscreen) = config.fullscreen {
-                window_builder = window_builder.with_fullscreen(Some(fullscreen));
-            }
-            if let Some(window_level) = config.window_level {
-                window_builder = window_builder.with_window_level(window_level);
-            }
-            if let Some(title) = config.title {
-                window_builder = window_builder.with_title(title);
-            }
-            if let Some(window_icon) = config.window_icon {
-                window_builder = window_builder.with_window_icon(Some(window_icon));
-            }
-            #[cfg(target_os = "macos")]
-            if let Some(mac) = config.mac_os_config {
-                use floem_winit::platform::macos::WindowBuilderExtMacOS;
-                if let Some(val) = mac.movable_by_window_background {
-                    window_builder = window_builder.with_movable_by_window_background(val);
-                }
-                if let Some(val) = mac.titlebar_transparent {
-                    window_builder = window_builder.with_titlebar_transparent(val);
-                }
-                if let Some(val) = mac.titlebar_hidden {
-                    window_builder = window_builder.with_titlebar_hidden(val);
-                }
-                if let Some(val) = mac.full_size_content_view {
-                    window_builder = window_builder.with_fullsize_content_view(val);
-                }
-                if let Some(val) = mac.movable {
-                    window_builder = window_builder.with_movable(val);
-                }
-                if let Some((x, y)) = mac.traffic_lights_offset {
-                    window_builder = window_builder.with_traffic_lights_offset(x, y);
-                }
-                if let Some(val) = mac.accepts_first_mouse {
-                    window_builder = window_builder.with_accepts_first_mouse(val);
-                }
-                if let Some(val) = mac.option_as_alt {
-                    window_builder = window_builder.with_option_as_alt(val.into());
-                }
-                if let Some(title) = mac.tabbing_identifier {
-                    window_builder = window_builder.with_tabbing_identifier(title.as_str());
-                }
-                if let Some(disallow_hidpi) = mac.disallow_high_dpi {
-                    window_builder = window_builder.with_disallow_hidpi(disallow_hidpi);
-                }
-                if let Some(shadow) = mac.has_shadow {
-                    window_builder = window_builder.with_has_shadow(shadow);
-                }
-            }
-            config.apply_default_theme.unwrap_or(true)
-        } else {
-            true
-        };
+        let mut window_builder = floem_winit::window::WindowBuilder::new()
+            .with_decorations(!undecorated)
+            .with_transparent(transparent)
+            .with_fullscreen(fullscreen)
+            .with_window_level(window_level)
+            .with_window_icon(window_icon)
+            .with_resizable(resizable)
+            .with_enabled_buttons(enabled_buttons)
+            .with_inner_size(LogicalSize::new(size.width, size.height));
 
-        let result = window_builder.build(event_loop);
-        let window = match result {
-            Ok(window) => window,
-            Err(_) => return,
+        if let Some(pos) = position {
+            window_builder = window_builder.with_position(LogicalPosition::new(pos.x, pos.y));
+        }
+
+        if let Some(title) = title {
+            window_builder = window_builder.with_title(title);
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        if !show_titlebar {
+            window_builder = window_builder.with_decorations(false);
+        }
+
+        #[cfg(target_os = "macos")]
+        if !show_titlebar {
+            use floem_winit::platform::macos::WindowBuilderExtMacOS;
+            window_builder = window_builder
+                .with_movable(false)
+                .with_title_hidden(true)
+                .with_titlebar_transparent(true)
+                .with_fullsize_content_view(true)
+                .with_traffic_lights_offset(11.0, 16.0);
+        }
+
+        #[cfg(target_os = "macos")]
+        if undecorated {
+            use floem_winit::platform::macos::WindowBuilderExtMacOS;
+            // A palette-style window that will only obtain window focus but
+            // not actually propagate the first mouse click it receives is
+            // very unlikely to be expected behavior - these typically are
+            // used for something that offers a quick choice and are closed
+            // in a single pointer gesture.
+            window_builder = window_builder.with_accepts_first_mouse(true);
+        }
+
+        #[cfg(target_os = "macos")]
+        if let Some(mac) = mac_os_config {
+            use floem_winit::platform::macos::WindowBuilderExtMacOS;
+            if let Some(val) = mac.movable_by_window_background {
+                window_builder = window_builder.with_movable_by_window_background(val);
+            }
+            if let Some(val) = mac.titlebar_transparent {
+                window_builder = window_builder.with_titlebar_transparent(val);
+            }
+            if let Some(val) = mac.titlebar_hidden {
+                window_builder = window_builder.with_titlebar_hidden(val);
+            }
+            if let Some(val) = mac.full_size_content_view {
+                window_builder = window_builder.with_fullsize_content_view(val);
+            }
+            if let Some(val) = mac.movable {
+                window_builder = window_builder.with_movable(val);
+            }
+            if let Some((x, y)) = mac.traffic_lights_offset {
+                window_builder = window_builder.with_traffic_lights_offset(x, y);
+            }
+            if let Some(val) = mac.accepts_first_mouse {
+                window_builder = window_builder.with_accepts_first_mouse(val);
+            }
+            if let Some(val) = mac.option_as_alt {
+                window_builder = window_builder.with_option_as_alt(val.into());
+            }
+            if let Some(title) = mac.tabbing_identifier {
+                window_builder = window_builder.with_tabbing_identifier(title.as_str());
+            }
+            if let Some(disallow_hidpi) = mac.disallow_high_dpi {
+                window_builder = window_builder.with_disallow_hidpi(disallow_hidpi);
+            }
+            if let Some(shadow) = mac.has_shadow {
+                window_builder = window_builder.with_has_shadow(shadow);
+            }
+        }
+
+        let Ok(window) = window_builder.build(event_loop) else {
+            return;
         };
         let window_id = window.id();
         let window_handle = WindowHandle::new(window, view_fn, transparent, apply_default_theme);
