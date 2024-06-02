@@ -37,7 +37,7 @@ style_class!(pub TextInputClass);
 style_class!(pub PlaceholderTextClass);
 
 prop_extractor! {
-    Extracter {
+    Extractor {
         color: TextColor,
     }
 }
@@ -90,7 +90,7 @@ pub struct TextInput {
     height: f32,
     // Approx max size of a glyph, given the current font weight & size.
     glyph_max_size: Size,
-    style: Extracter,
+    style: Extractor,
     font: FontProps,
     cursor_width: f64, // TODO: make this configurable
     is_focused: bool,

@@ -16,7 +16,7 @@ use peniko::Color;
 use taffy::tree::NodeId;
 
 prop_extractor! {
-    Extracter {
+    Extractor {
         color: TextColor,
         text_overflow: TextOverflowProp,
         line_height: LineHeight,
@@ -39,7 +39,7 @@ pub struct Label {
     available_text_layout: Option<TextLayout>,
     text_overflow_listener: Option<TextOverflowListener>,
     font: FontProps,
-    style: Extracter,
+    style: Extractor,
 }
 
 impl Label {

@@ -490,8 +490,8 @@ mod test {
     fn prev_boundary_should_be_none_at_position_zero() {
         let rope = Rope::from("Hello world");
         let mut cursor = WordCursor::new(&rope, 0);
-        let boudary = cursor.prev_boundary(Mode::Insert);
-        assert!(boudary.is_none())
+        let boundary = cursor.prev_boundary(Mode::Insert);
+        assert!(boundary.is_none())
     }
 
     #[test]

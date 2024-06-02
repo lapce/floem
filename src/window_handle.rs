@@ -1499,7 +1499,7 @@ fn context_menu_view(
     .style(move |s| {
         let window_size = window_size.get();
         let menu_size = context_menu_size.get();
-        let is_acitve = context_menu.with(|m| m.is_some());
+        let is_active = context_menu.with(|m| m.is_some());
         let mut pos = context_menu.with(|m| m.as_ref().map(|(_, pos)| *pos).unwrap_or_default());
         if pos.x + menu_size.width > window_size.width {
             pos.x = window_size.width - menu_size.width;
@@ -1519,7 +1519,7 @@ fn context_menu_view(
             .margin_left(pos.x as f32)
             .margin_top(pos.y as f32)
             .cursor(CursorStyle::Default)
-            .apply_if(!is_acitve, |s| s.hide())
+            .apply_if(!is_active, |s| s.hide())
             .box_shadow_blur(5.0)
             .box_shadow_color(Color::BLACK)
     });

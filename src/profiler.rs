@@ -161,7 +161,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
     ))
     .style(|s| s.max_width_pct(60.0).min_width(200.0));
 
-    let seperator = empty().style(move |s| {
+    let separator = empty().style(move |s| {
         s.height_full()
             .min_width(1.0)
             .background(Color::BLACK.with_alpha_factor(0.2))
@@ -237,7 +237,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
     let timeline = v_stack((header("Timeline"), timeline))
         .style(|s| s.min_width(0).flex_basis(0).flex_grow(1.0));
 
-    h_stack((frames, seperator, timeline)).style(|s| s.height_full().width_full().max_width_full())
+    h_stack((frames, separator, timeline)).style(|s| s.height_full().width_full().max_width_full())
 }
 
 thread_local! {
@@ -274,7 +274,7 @@ pub fn profiler(window_id: WindowId) -> impl IntoView {
     ))
     .style(|s| s.items_center());
 
-    let seperator = empty().style(move |s| {
+    let separator = empty().style(move |s| {
         s.width_full()
             .min_height(1.0)
             .background(Color::BLACK.with_alpha_factor(0.2))
@@ -293,7 +293,7 @@ pub fn profiler(window_id: WindowId) -> impl IntoView {
     .style(|s| s.width_full().min_height(0).flex_basis(0).flex_grow(1.0));
 
     // FIXME: This needs an extra `container` or the `v_stack` ends up horizontal.
-    container(v_stack((button, seperator, lower)).style(|s| s.width_full().height_full()))
+    container(v_stack((button, separator, lower)).style(|s| s.width_full().height_full()))
         .style(|s| s.width_full().height_full())
         .on_event_cont(EventListener::WindowClosed, move |_| {
             if profiling.get() {
