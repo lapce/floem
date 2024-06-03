@@ -967,13 +967,7 @@ pub fn capture(window_id: WindowId) {
                         EventPropagation::Continue
                     })
             },
-            Some(WindowConfig {
-                size: Some(Size {
-                    width: 1200.0,
-                    height: 800.0,
-                }),
-                ..Default::default()
-            }),
+            Some(WindowConfig::default().size((1200.0, 800.0))),
         );
     }
 
