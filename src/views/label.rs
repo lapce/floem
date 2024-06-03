@@ -1,31 +1,43 @@
-use std::{any::Any, fmt::Display};
+use std::{any::Any, fmt::Display, mem::swap};
 
 use crate::{
     context::UpdateCx,
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
+    event::{Event, EventPropagation},
     id::ViewId,
-    prop_extractor,
+    prop, prop_extractor,
     style::{FontProps, LineHeight, Style, TextColor, TextOverflow, TextOverflowProp},
     unit::PxPct,
     view::View,
 };
 use floem_reactive::create_updater;
-use floem_renderer::Renderer;
+use floem_renderer::{cosmic_text::HitPosition, Renderer};
 use peniko::kurbo::{Point, Rect};
 use peniko::Color;
 use taffy::tree::NodeId;
+
+prop!(pub Selectable: bool {} = false);
 
 prop_extractor! {
     Extractor {
         color: TextColor,
         text_overflow: TextOverflowProp,
         line_height: LineHeight,
+        text_selectable: Selectable,
     }
 }
 
 struct TextOverflowListener {
     last_is_overflown: Option<bool>,
     on_change_fn: Box<dyn Fn(bool) + 'static>,
+}
+
+#[derive(Debug, Clone)]
+enum SelectionState {
+    None,
+    Ready(Point),
+    Selecting(Point, Point),
+    Selected(Point, Point),
 }
 
 /// A View that can display text from a [`String`]. See [`label`], [`text`], and [`static_label`].
@@ -38,6 +50,9 @@ pub struct Label {
     available_width: Option<f32>,
     available_text_layout: Option<TextLayout>,
     text_overflow_listener: Option<TextOverflowListener>,
+    selection_pos: SelectionState,
+    selection_range: Option<core::ops::RangeInclusive<usize>>,
+    selection_rect: Option<Rect>,
     font: FontProps,
     style: Extractor,
 }
@@ -53,6 +68,9 @@ impl Label {
             available_width: None,
             available_text_layout: None,
             text_overflow_listener: None,
+            selection_pos: SelectionState::None,
+            selection_range: None,
+            selection_rect: None,
             font: FontProps::default(),
             style: Default::default(),
         }
@@ -143,6 +161,49 @@ impl Label {
             self.available_text_layout = Some(text_layout);
         }
     }
+
+    fn get_hit_point(&self, point: Point) -> usize {
+        let layout = self.id.get_layout().unwrap_or_default();
+        let view_state = self.id.state();
+        let view_state = view_state.borrow();
+        let style = view_state.combined_style.builtin();
+
+        let padding_left = match style.padding_left() {
+            PxPct::Px(padding) => padding as f32,
+            PxPct::Pct(pct) => pct as f32 * layout.size.width,
+        };
+        let padding_top = match style.padding_top() {
+            PxPct::Px(padding) => padding as f32,
+            PxPct::Pct(pct) => pct as f32 * layout.size.width,
+        };
+        if self.available_text_layout.is_some() {
+            println!("There is an available text layout");
+        }
+        self.text_layout
+            .as_ref()
+            .unwrap()
+            .hit_point(Point::new(
+                point.x - padding_left as f64,
+                // TODO: prevent cursor incorrectly going to end of buffer when clicking
+                // slightly below the text
+                point.y - padding_top as f64,
+            ))
+            .index
+    }
+
+    fn set_selection_range(&mut self) {
+        if let SelectionState::Selecting(start, end) | SelectionState::Selected(start, end) =
+            self.selection_pos
+        {
+            let mut start_index = self.get_hit_point(start);
+            let mut end_index = self.get_hit_point(end);
+            if start_index > end_index {
+                swap(&mut start_index, &mut end_index);
+            }
+
+            self.selection_range = Some(start_index..=end_index);
+        }
+    }
 }
 
 impl View for Label {
@@ -161,8 +222,43 @@ impl View for Label {
             self.available_text = None;
             self.available_width = None;
             self.available_text_layout = None;
+            self.selection_rect = None;
             self.id.request_layout();
         }
+    }
+
+    fn event_before_children(
+        &mut self,
+        _cx: &mut crate::context::EventCx,
+        event: &Event,
+    ) -> crate::event::EventPropagation {
+        match event {
+            Event::PointerDown(pe) => {
+                self.selection_rect = None;
+                self.selection_pos = SelectionState::Ready(pe.pos);
+                self.id.request_active();
+            }
+            Event::PointerMove(pme) => {
+                let (SelectionState::Selecting(start, _) | SelectionState::Ready(start)) =
+                    self.selection_pos
+                else {
+                    return EventPropagation::Continue;
+                };
+                self.selection_pos = SelectionState::Selecting(start, pme.pos);
+                self.id.request_layout();
+            }
+            Event::PointerUp(_) => {
+                self.id.clear_active();
+                if let SelectionState::Selecting(start, end) = self.selection_pos {
+                    self.selection_pos = SelectionState::Selected(start, end);
+                } else {
+                    self.selection_pos = SelectionState::None;
+                    self.id.request_paint();
+                }
+            }
+            _ => {}
+        }
+        EventPropagation::Continue
     }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
@@ -283,6 +379,30 @@ impl View for Label {
             }
         }
 
+        self.selection_rect = None;
+        self.set_selection_range();
+        let text_layout = self.text_layout.as_ref().unwrap();
+        if let Some(range) = &self.selection_range {
+            let HitPosition {
+                point:
+                    Point {
+                        x: start_x,
+                        y: start_y,
+                    },
+                ..
+            } = text_layout.hit_position(*range.start());
+            let HitPosition {
+                point: Point { x: end_x, y: end_y },
+                ..
+            } = text_layout.hit_position(*range.end());
+            self.selection_rect = Some(Rect::new(
+                start_x,
+                start_y - text_layout.layout_runs().next().unwrap().line_height as f64,
+                end_x,
+                end_y,
+            ));
+        }
+
         if let Some(listener) = self.text_overflow_listener.as_mut() {
             let was_overflown = listener.last_is_overflown;
             let now_overflown = width > available_width;
@@ -314,6 +434,9 @@ impl View for Label {
             cx.draw_text(text_layout, point);
         } else {
             cx.draw_text(self.text_layout.as_ref().unwrap(), point);
+        }
+        if let Some(rect) = self.selection_rect {
+            cx.fill(&rect, Color::GRAY.with_alpha_factor(0.5), 0.);
         }
     }
 }
