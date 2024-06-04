@@ -1,13 +1,16 @@
 use std::{any::Any, fmt::Display, mem::swap};
 
 use crate::{
-    context::UpdateCx,
+    context::{PaintCx, UpdateCx},
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
     event::{Event, EventPropagation},
     id::ViewId,
     keyboard::KeyEvent,
     prop, prop_extractor,
-    style::{FontProps, LineHeight, Style, TextColor, TextOverflow, TextOverflowProp},
+    style::{
+        CursorColor, FontProps, LineHeight, SelectionCornerRadius, SelectionStyle, Style,
+        TextColor, TextOverflow, TextOverflowProp,
+    },
     unit::PxPct,
     view::View,
     Clipboard,
@@ -55,8 +58,9 @@ pub struct Label {
     available_width: Option<f32>,
     available_text_layout: Option<TextLayout>,
     text_overflow_listener: Option<TextOverflowListener>,
-    selection_pos: SelectionState,
+    selection_state: SelectionState,
     selection_range: Option<(Cursor, Cursor)>,
+    selection_style: SelectionStyle,
     font: FontProps,
     style: Extractor,
 }
@@ -72,8 +76,9 @@ impl Label {
             available_width: None,
             available_text_layout: None,
             text_overflow_listener: None,
-            selection_pos: SelectionState::None,
+            selection_state: SelectionState::None,
             selection_range: None,
+            selection_style: Default::default(),
             font: FontProps::default(),
             style: Default::default(),
         }
@@ -191,7 +196,7 @@ impl Label {
     }
 
     fn set_selection_range(&mut self) {
-        match self.selection_pos {
+        match self.selection_state {
             SelectionState::None => {
                 self.selection_range = None;
             }
@@ -239,6 +244,52 @@ impl Label {
             _ => false,
         }
     }
+
+    fn paint_selection(&self, paint_cx: &mut PaintCx) {
+        if let Some((start_c, end_c)) = &self.selection_range {
+            let view_state = self.id.state();
+            let view_state = view_state.borrow();
+            let style = &view_state.combined_style;
+            let cursor_color = style.get(CursorColor);
+
+            let ss = &self.selection_style;
+            let start_line = start_c.line;
+            let end_line = end_c.line;
+
+            let text_layout = self.text_layout.as_ref().unwrap();
+            let num_lines = end_line - start_line + 1;
+            let runs = text_layout.layout_runs().skip(start_line).take(num_lines);
+
+            for run in runs {
+                if let Some((start_x, width)) = run.highlight(*start_c, *end_c) {
+                    let mut end_x = width + start_x;
+                    if width > 0. {
+                        end_x += run.line_height * 0.1
+                    }
+                    let start_y = (run.line_y - run.glyph_ascent) as f64;
+                    let end_y = (run.line_y + run.glyph_descent) as f64;
+                    let rect = Rect::new(start_x.into(), start_y, end_x.into(), end_y)
+                        .to_rounded_rect(ss.corner_radius());
+                    paint_cx.fill(&rect, cursor_color, 0.0);
+                }
+            }
+        }
+    }
+
+    pub fn label_style(
+        self,
+        style: impl Fn(LabelCustomStyle) -> LabelCustomStyle + 'static,
+    ) -> Self {
+        let id = self.id();
+        let view_state = id.state();
+        let offset = view_state.borrow_mut().style.next_offset();
+        let style = create_updater(
+            move || style(LabelCustomStyle::new()),
+            move |style| id.update_style(offset, style.0),
+        );
+        view_state.borrow_mut().style.push(style.0);
+        self
+    }
 }
 
 impl View for Label {
@@ -269,29 +320,30 @@ impl View for Label {
         match event {
             Event::PointerDown(pe) => {
                 if self.style.text_selectable() {
-                    self.selection_pos = SelectionState::Ready(pe.pos);
+                    self.selection_state = SelectionState::Ready(pe.pos);
                     self.id.request_focus();
                     self.id.request_active();
                 }
             }
             Event::PointerMove(pme) => {
                 if !self.style.text_selectable() {
-                    self.selection_pos = SelectionState::None;
+                    self.selection_state = SelectionState::None;
                     self.selection_range = None;
                 }
                 let (SelectionState::Selecting(start, _) | SelectionState::Ready(start)) =
-                    self.selection_pos
+                    self.selection_state
                 else {
                     return EventPropagation::Continue;
                 };
-                self.selection_pos = SelectionState::Selecting(start, pme.pos);
+                self.selection_state = SelectionState::Selecting(start, pme.pos);
                 self.id.request_layout();
             }
             Event::PointerUp(_) => {
-                if let SelectionState::Selecting(start, end) = self.selection_pos {
-                    self.selection_pos = SelectionState::Selected(start, end);
+                if let SelectionState::Selecting(start, end) = self.selection_state {
+                    self.selection_state = SelectionState::Selected(start, end);
+                    return EventPropagation::Stop;
                 } else {
-                    self.selection_pos = SelectionState::None;
+                    self.selection_state = SelectionState::None;
                     self.id.clear_active();
                     self.id.clear_focus();
                     self.id.request_layout();
@@ -314,6 +366,9 @@ impl View for Label {
             self.available_width = None;
             self.available_text_layout = None;
             self.id.request_layout();
+        }
+        if self.selection_style.read(cx) {
+            self.id.request_paint();
         }
     }
 
@@ -459,31 +514,46 @@ impl View for Label {
         } else {
             let text_layout = self.text_layout.as_ref().unwrap();
             cx.draw_text(text_layout, point);
-            if let Some((start_c, end_c)) = &self.selection_range {
-                let start_line = start_c.line;
-                let end_line = end_c.line;
-
-                let runs = text_layout
-                    .layout_runs()
-                    .skip(start_line)
-                    .take(end_line - start_line + 1);
-
-                for run in runs {
-                    if let Some((start, width)) = run.highlight(*start_c, *end_c) {
-                        let rect = Rect::new(
-                            start.into(),
-                            (run.line_y - run.line_height).into(),
-                            (width + start).into(),
-                            run.line_y.into(),
-                        );
-                        cx.fill(&rect, Color::GRAY.with_alpha_factor(0.5), 0.0);
-                    }
-                }
+            if cx.app_state.is_focused(&self.id()) {
+                self.paint_selection(cx);
             }
         }
     }
 }
 
+/// Represents a custom style for a `Label`.
+pub struct LabelCustomStyle(Style);
+
+impl LabelCustomStyle {
+    pub fn new() -> Self {
+        Self(Style::new())
+    }
+
+    pub fn selectable(mut self, selectable: impl Into<bool>) -> Self {
+        self = Self(self.0.set(Selectable, selectable));
+        self
+    }
+
+    pub fn selection_corner_radius(mut self, corner_radius: impl Into<f64>) -> Self {
+        self = Self(self.0.set(SelectionCornerRadius, corner_radius));
+        self
+    }
+
+    pub fn selection_color(mut self, color: impl Into<Color>) -> Self {
+        self = Self(self.0.set(CursorColor, color));
+        self
+    }
+
+    /// Get the inner style
+    pub fn style(self) -> Style {
+        self.0
+    }
+}
+impl Default for LabelCustomStyle {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 impl Label {
     pub fn selectable(self) -> Self {
         self.style(|s| s.set(Selectable, true))
