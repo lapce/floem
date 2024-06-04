@@ -165,7 +165,7 @@ enum ClipDirection {
     Backward,
 }
 
-enum TextCommand {
+pub(crate) enum TextCommand {
     SelectAll,
     Copy,
     Paste,

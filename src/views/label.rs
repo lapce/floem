@@ -5,16 +5,21 @@ use crate::{
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
     event::{Event, EventPropagation},
     id::ViewId,
+    keyboard::KeyEvent,
     prop, prop_extractor,
     style::{FontProps, LineHeight, Style, TextColor, TextOverflow, TextOverflowProp},
     unit::PxPct,
     view::View,
+    Clipboard,
 };
 use floem_reactive::create_updater;
-use floem_renderer::{cosmic_text::HitPosition, Renderer};
+use floem_renderer::{cosmic_text::Cursor, Renderer};
+use floem_winit::keyboard::{Key, SmolStr};
 use peniko::kurbo::{Point, Rect};
 use peniko::Color;
 use taffy::tree::NodeId;
+
+use super::{Decorators, TextCommand};
 
 prop!(pub Selectable: bool {} = false);
 
@@ -51,8 +56,7 @@ pub struct Label {
     available_text_layout: Option<TextLayout>,
     text_overflow_listener: Option<TextOverflowListener>,
     selection_pos: SelectionState,
-    selection_range: Option<core::ops::RangeInclusive<usize>>,
-    selection_rect: Option<Rect>,
+    selection_range: Option<(Cursor, Cursor)>,
     font: FontProps,
     style: Extractor,
 }
@@ -70,7 +74,6 @@ impl Label {
             text_overflow_listener: None,
             selection_pos: SelectionState::None,
             selection_range: None,
-            selection_rect: None,
             font: FontProps::default(),
             style: Default::default(),
         }
@@ -162,7 +165,7 @@ impl Label {
         }
     }
 
-    fn get_hit_point(&self, point: Point) -> usize {
+    fn get_hit_point(&self, point: Point) -> Option<Cursor> {
         let layout = self.id.get_layout().unwrap_or_default();
         let view_state = self.id.state();
         let view_state = view_state.borrow();
@@ -179,29 +182,61 @@ impl Label {
         if self.available_text_layout.is_some() {
             println!("There is an available text layout");
         }
-        self.text_layout
-            .as_ref()
-            .unwrap()
-            .hit_point(Point::new(
-                point.x - padding_left as f64,
-                // TODO: prevent cursor incorrectly going to end of buffer when clicking
-                // slightly below the text
-                point.y - padding_top as f64,
-            ))
-            .index
+        self.text_layout.as_ref().unwrap().hit(
+            point.x as f32 - padding_left,
+            // TODO: prevent cursor incorrectly going to end of buffer when clicking
+            // slightly below the text
+            point.y as f32 - padding_top,
+        )
     }
 
     fn set_selection_range(&mut self) {
-        if let SelectionState::Selecting(start, end) | SelectionState::Selected(start, end) =
-            self.selection_pos
-        {
-            let mut start_index = self.get_hit_point(start);
-            let mut end_index = self.get_hit_point(end);
-            if start_index > end_index {
-                swap(&mut start_index, &mut end_index);
+        match self.selection_pos {
+            SelectionState::None => {
+                self.selection_range = None;
             }
+            SelectionState::Selecting(start, end) | SelectionState::Selected(start, end) => {
+                let mut start_cursor = self.get_hit_point(start).expect("Start position is valid");
+                if let Some(mut end_cursor) = self.get_hit_point(end) {
+                    if start_cursor.index > end_cursor.index {
+                        swap(&mut start_cursor, &mut end_cursor);
+                    }
 
-            self.selection_range = Some(start_index..=end_index);
+                    self.selection_range = Some((start_cursor, end_cursor));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_modifier_cmd(&mut self, event: &KeyEvent, character: &SmolStr) -> bool {
+        if event.modifiers.is_empty() {
+            return false;
+        }
+
+        let command = (event, character).into();
+
+        match command {
+            TextCommand::Copy => {
+                if let Some((start_c, end_c)) = &self.selection_range {
+                    if let Some(ref text_layout) = self.text_layout {
+                        let start_line_idx = text_layout.lines[start_c.line].start_index();
+                        let end_line_idx = text_layout.lines[end_c.line].start_index();
+                        let start_idx = start_line_idx + start_c.index;
+                        let end_idx = end_line_idx + end_c.index;
+                        let selection_txt = self.label[start_idx..end_idx].into();
+                        let _ = Clipboard::set_contents(selection_txt);
+                    }
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+    fn handle_key_down(&mut self, event: &KeyEvent) -> bool {
+        match event.key.logical_key {
+            Key::Character(ref ch) => self.handle_modifier_cmd(event, ch),
+            _ => false,
         }
     }
 }
@@ -222,7 +257,6 @@ impl View for Label {
             self.available_text = None;
             self.available_width = None;
             self.available_text_layout = None;
-            self.selection_rect = None;
             self.id.request_layout();
         }
     }
@@ -234,11 +268,17 @@ impl View for Label {
     ) -> crate::event::EventPropagation {
         match event {
             Event::PointerDown(pe) => {
-                self.selection_rect = None;
-                self.selection_pos = SelectionState::Ready(pe.pos);
-                self.id.request_active();
+                if self.style.text_selectable() {
+                    self.selection_pos = SelectionState::Ready(pe.pos);
+                    self.id.request_focus();
+                    self.id.request_active();
+                }
             }
             Event::PointerMove(pme) => {
+                if !self.style.text_selectable() {
+                    self.selection_pos = SelectionState::None;
+                    self.selection_range = None;
+                }
                 let (SelectionState::Selecting(start, _) | SelectionState::Ready(start)) =
                     self.selection_pos
                 else {
@@ -248,12 +288,18 @@ impl View for Label {
                 self.id.request_layout();
             }
             Event::PointerUp(_) => {
-                self.id.clear_active();
                 if let SelectionState::Selecting(start, end) = self.selection_pos {
                     self.selection_pos = SelectionState::Selected(start, end);
                 } else {
                     self.selection_pos = SelectionState::None;
-                    self.id.request_paint();
+                    self.id.clear_active();
+                    self.id.clear_focus();
+                    self.id.request_layout();
+                }
+            }
+            Event::KeyDown(ke) => {
+                if self.handle_key_down(ke) {
+                    return EventPropagation::Stop;
                 }
             }
             _ => {}
@@ -379,29 +425,7 @@ impl View for Label {
             }
         }
 
-        self.selection_rect = None;
         self.set_selection_range();
-        let text_layout = self.text_layout.as_ref().unwrap();
-        if let Some(range) = &self.selection_range {
-            let HitPosition {
-                point:
-                    Point {
-                        x: start_x,
-                        y: start_y,
-                    },
-                ..
-            } = text_layout.hit_position(*range.start());
-            let HitPosition {
-                point: Point { x: end_x, y: end_y },
-                ..
-            } = text_layout.hit_position(*range.end());
-            self.selection_rect = Some(Rect::new(
-                start_x,
-                start_y - text_layout.layout_runs().next().unwrap().line_height as f64,
-                end_x,
-                end_y,
-            ));
-        }
 
         if let Some(listener) = self.text_overflow_listener.as_mut() {
             let was_overflown = listener.last_is_overflown;
@@ -433,10 +457,35 @@ impl View for Label {
         if let Some(text_layout) = self.available_text_layout.as_ref() {
             cx.draw_text(text_layout, point);
         } else {
-            cx.draw_text(self.text_layout.as_ref().unwrap(), point);
+            let text_layout = self.text_layout.as_ref().unwrap();
+            cx.draw_text(text_layout, point);
+            if let Some((start_c, end_c)) = &self.selection_range {
+                let start_line = start_c.line;
+                let end_line = end_c.line;
+
+                let runs = text_layout
+                    .layout_runs()
+                    .skip(start_line)
+                    .take(end_line - start_line + 1);
+
+                for run in runs {
+                    if let Some((start, width)) = run.highlight(*start_c, *end_c) {
+                        let rect = Rect::new(
+                            start.into(),
+                            (run.line_y - run.line_height).into(),
+                            (width + start).into(),
+                            run.line_y.into(),
+                        );
+                        cx.fill(&rect, Color::GRAY.with_alpha_factor(0.5), 0.0);
+                    }
+                }
+            }
         }
-        if let Some(rect) = self.selection_rect {
-            cx.fill(&rect, Color::GRAY.with_alpha_factor(0.5), 0.);
-        }
+    }
+}
+
+impl Label {
+    pub fn selectable(self) -> Self {
+        self.style(|s| s.set(Selectable, true))
     }
 }
