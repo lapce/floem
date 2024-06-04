@@ -247,12 +247,8 @@ impl Label {
 
     fn paint_selection(&self, paint_cx: &mut PaintCx) {
         if let Some((start_c, end_c)) = &self.selection_range {
-            let view_state = self.id.state();
-            let view_state = view_state.borrow();
-            let style = &view_state.combined_style;
-            let cursor_color = style.get(CursorColor);
-
             let ss = &self.selection_style;
+            let selection_color = ss.selection_color();
             let start_line = start_c.line;
             let end_line = end_c.line;
 
@@ -270,7 +266,7 @@ impl Label {
                     let end_y = (run.line_y + run.glyph_descent) as f64;
                     let rect = Rect::new(start_x.into(), start_y, end_x.into(), end_y)
                         .to_rounded_rect(ss.corner_radius());
-                    paint_cx.fill(&rect, cursor_color, 0.0);
+                    paint_cx.fill(&rect, selection_color, 0.0);
                 }
             }
         }
