@@ -11,6 +11,7 @@ use crate::{
         CursorColor, FontProps, LineHeight, SelectionCornerRadius, SelectionStyle, Style,
         TextColor, TextOverflow, TextOverflowProp,
     },
+    style_class,
     unit::PxPct,
     view::View,
     Clipboard,
@@ -22,7 +23,7 @@ use peniko::kurbo::{Point, Rect};
 use peniko::Color;
 use taffy::tree::NodeId;
 
-use super::TextCommand;
+use super::{Decorators, TextCommand};
 
 prop!(pub Selectable: bool {} = true);
 
@@ -34,6 +35,8 @@ prop_extractor! {
         text_selectable: Selectable,
     }
 }
+
+style_class!(pub LabelClass);
 
 struct TextOverflowListener {
     last_is_overflown: Option<bool>,
@@ -82,6 +85,7 @@ impl Label {
             font: FontProps::default(),
             style: Default::default(),
         }
+        .class(LabelClass)
     }
 }
 

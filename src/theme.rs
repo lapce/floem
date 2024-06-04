@@ -4,9 +4,10 @@ use crate::{
     views::{
         dropdown, scroll,
         slider::{self, SliderClass},
-        ButtonClass, CheckboxClass, LabeledCheckboxClass, LabeledRadioButtonClass, ListClass,
-        ListItemClass, PlaceholderTextClass, RadioButtonClass, RadioButtonDotClass, TextInputClass,
-        ToggleButtonCircleRad, ToggleButtonClass, ToggleButtonInset, TooltipClass,
+        ButtonClass, CheckboxClass, LabelClass, LabelCustomStyle, LabeledCheckboxClass,
+        LabeledRadioButtonClass, ListClass, ListItemClass, PlaceholderTextClass, RadioButtonClass,
+        RadioButtonDotClass, TextInputClass, ToggleButtonCircleRad, ToggleButtonClass,
+        ToggleButtonInset, TooltipClass,
     },
 };
 use peniko::Color;
@@ -55,6 +56,10 @@ pub(crate) fn default_theme() -> Theme {
         .apply(focus_style.clone());
 
     let button_style = Style::new()
+        .apply(LabelCustomStyle::new().selectable(false).style())
+        .class(LabelClass, |s| {
+            s.apply(LabelCustomStyle::new().selectable(false).style())
+        })
         .background(Color::rgb8(240, 240, 240))
         .disabled(|s| {
             s.background(Color::rgb8(180, 188, 175).with_alpha_factor(0.3))
