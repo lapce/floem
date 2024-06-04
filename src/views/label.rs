@@ -247,6 +247,14 @@ impl Label {
 
     fn paint_selection(&self, paint_cx: &mut PaintCx) {
         if let Some((start_c, end_c)) = &self.selection_range {
+            let location = self
+                .id
+                .taffy()
+                .borrow()
+                .layout(self.text_node.unwrap())
+                .cloned()
+                .unwrap_or_default()
+                .location;
             let ss = &self.selection_style;
             let selection_color = ss.selection_color();
             let start_line = start_c.line;
@@ -257,13 +265,14 @@ impl Label {
             let runs = text_layout.layout_runs().skip(start_line).take(num_lines);
 
             for run in runs {
-                if let Some((start_x, width)) = run.highlight(*start_c, *end_c) {
+                if let Some((mut start_x, width)) = run.highlight(*start_c, *end_c) {
+                    start_x += location.x;
                     let mut end_x = width + start_x;
                     if width > 0. {
                         end_x += run.line_height * 0.1
                     }
-                    let start_y = (run.line_y - run.glyph_ascent) as f64;
-                    let end_y = (run.line_y + run.glyph_descent) as f64;
+                    let start_y = (run.line_y - run.glyph_ascent + location.y) as f64;
+                    let end_y = (run.line_y + run.glyph_descent + location.y) as f64;
                     let rect = Rect::new(start_x.into(), start_y, end_x.into(), end_y)
                         .to_rounded_rect(ss.corner_radius());
                     paint_cx.fill(&rect, selection_color, 0.0);
