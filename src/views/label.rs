@@ -22,9 +22,9 @@ use peniko::kurbo::{Point, Rect};
 use peniko::Color;
 use taffy::tree::NodeId;
 
-use super::{Decorators, TextCommand};
+use super::TextCommand;
 
-prop!(pub Selectable: bool {} = false);
+prop!(pub Selectable: bool {} = true);
 
 prop_extractor! {
     Extractor {
@@ -552,10 +552,5 @@ impl LabelCustomStyle {
 impl Default for LabelCustomStyle {
     fn default() -> Self {
         Self::new()
-    }
-}
-impl Label {
-    pub fn selectable(self) -> Self {
-        self.style(|s| s.set(Selectable, true))
     }
 }
