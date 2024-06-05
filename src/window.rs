@@ -13,13 +13,13 @@ use crate::view::IntoView;
 /// Configures various attributes (e.g. size, position, transparency, etc.) of a window.
 #[derive(Debug)]
 pub struct WindowConfig {
-    pub(crate) size: Size,
+    pub(crate) size: Option<Size>,
     pub(crate) position: Option<Point>,
     pub(crate) show_titlebar: bool,
     pub(crate) transparent: bool,
     pub(crate) fullscreen: Option<Fullscreen>,
     pub(crate) window_icon: Option<Icon>,
-    pub(crate) title: Option<String>,
+    pub(crate) title: String,
     pub(crate) enabled_buttons: WindowButtons,
     pub(crate) resizable: bool,
     pub(crate) undecorated: bool,
@@ -32,13 +32,13 @@ pub struct WindowConfig {
 impl Default for WindowConfig {
     fn default() -> Self {
         Self {
-            size: Size::new(800.0, 600.0),
+            size: None,
             position: None,
             show_titlebar: true,
             transparent: false,
             fullscreen: None,
             window_icon: None,
-            title: None,
+            title: "Floem window".to_owned(),
             enabled_buttons: WindowButtons::all(),
             resizable: true,
             undecorated: false,
@@ -51,9 +51,11 @@ impl Default for WindowConfig {
 
 impl WindowConfig {
     /// Requests the window to be of specific dimensions.
+    ///
+    /// If this is not set, some platform-specific dimensions will be used.
     #[inline]
     pub fn size(mut self, size: impl Into<Size>) -> Self {
-        self.size = size.into();
+        self.size = Some(size.into());
         self
     }
 
@@ -116,7 +118,7 @@ impl WindowConfig {
     /// The default is `"Floem window"`.
     #[inline]
     pub fn title(mut self, title: impl Into<String>) -> Self {
-        self.title = Some(title.into());
+        self.title = title.into();
         self
     }
 

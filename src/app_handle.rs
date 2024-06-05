@@ -265,21 +265,21 @@ impl ApplicationHandle {
         }: WindowConfig,
     ) {
         let mut window_builder = floem_winit::window::WindowBuilder::new()
+            .with_title(title)
             .with_decorations(!undecorated)
             .with_transparent(transparent)
             .with_fullscreen(fullscreen)
             .with_window_level(window_level)
             .with_window_icon(window_icon)
             .with_resizable(resizable)
-            .with_enabled_buttons(enabled_buttons)
-            .with_inner_size(LogicalSize::new(size.width, size.height));
+            .with_enabled_buttons(enabled_buttons);
 
-        if let Some(pos) = position {
-            window_builder = window_builder.with_position(LogicalPosition::new(pos.x, pos.y));
+        if let Some(Point { x, y }) = position {
+            window_builder = window_builder.with_position(LogicalPosition::new(x, y));
         }
 
-        if let Some(title) = title {
-            window_builder = window_builder.with_title(title);
+        if let Some(Size { width, height }) = size {
+            window_builder = window_builder.with_inner_size(LogicalSize::new(width, height));
         }
 
         #[cfg(not(target_os = "macos"))]
