@@ -96,3 +96,72 @@ pub(crate) enum UpdateMessage {
     },
     WindowVisible(bool),
 }
+
+impl std::fmt::Debug for UpdateMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UpdateMessage::Focus(id) => f.write_fmt(format_args!("Focus({:?})", id)),
+            UpdateMessage::ClearFocus(id) => f.write_fmt(format_args!("ClearFocus({:?})", id)),
+            UpdateMessage::Active(id) => f.write_fmt(format_args!("Active({:?})", id)),
+            UpdateMessage::ClearActive(id) => f.write_fmt(format_args!("ClearActive({:?})", id)),
+            UpdateMessage::WindowScale(scale) => {
+                f.write_fmt(format_args!("WindowScale({})", scale))
+            }
+            UpdateMessage::Disabled { id, is_disabled } => {
+                f.write_fmt(format_args!("Disabled({:?}:{})", id, is_disabled))
+            }
+            UpdateMessage::RequestPaint => f.write_str("RequestPaint"),
+            UpdateMessage::State { id, state: _ } => {
+                f.write_fmt(format_args!("State({:?}:???)", id))
+            }
+            UpdateMessage::KeyboardNavigable { id } => {
+                f.write_fmt(format_args!("KeyboardNavigable({:?})", id))
+            }
+            UpdateMessage::Draggable { id } => f.write_fmt(format_args!("Draggable({:?})", id)),
+            UpdateMessage::ToggleWindowMaximized => f.write_str("ToggleWindowMaximized"),
+            UpdateMessage::SetWindowMaximized(maximized) => {
+                f.write_fmt(format_args!("SetWindowMaximized({})", maximized))
+            }
+            UpdateMessage::MinimizeWindow => f.write_str("MinimizeWindow"),
+            UpdateMessage::DragWindow => f.write_str("DragWindow"),
+            UpdateMessage::DragResizeWindow(direction) => {
+                f.write_fmt(format_args!("DragResizeWindow({:?})", direction))
+            }
+            UpdateMessage::SetWindowDelta(delta) => {
+                f.write_fmt(format_args!("SetWindowDelta({}, {})", delta.x, delta.y))
+            }
+            UpdateMessage::Animation { id, animation: _ } => {
+                f.write_fmt(format_args!("Animation({:?})", id))
+            }
+            UpdateMessage::ShowContextMenu { menu: _, pos } => {
+                f.write_fmt(format_args!("ShowContextMenu({:?})", pos))
+            }
+            UpdateMessage::WindowMenu { menu: _ } => f.write_str("WindowMenu"),
+            UpdateMessage::SetWindowTitle { title } => {
+                f.write_fmt(format_args!("SetWindowTitle({:?})", title))
+            }
+            UpdateMessage::AddOverlay {
+                id,
+                position,
+                view: _,
+            } => f.write_fmt(format_args!("AddOverlay({:?} : {:?})", id, position)),
+            UpdateMessage::RemoveOverlay { id } => {
+                f.write_fmt(format_args!("RemoveOverlay({:?})", id))
+            }
+            UpdateMessage::Inspect => f.write_str("Inspect"),
+            UpdateMessage::ScrollTo { id, rect } => {
+                f.write_fmt(format_args!("ScrollTo({:?}:{:?})", id, rect))
+            }
+            UpdateMessage::FocusWindow => f.write_str("FocusWindow"),
+            UpdateMessage::SetImeAllowed { allowed } => {
+                f.write_fmt(format_args!("SetImeAllowed({})", allowed))
+            }
+            UpdateMessage::SetImeCursorArea { position, size } => {
+                f.write_fmt(format_args!("SetImeCursorArea({:?}, {:?})", position, size))
+            }
+            UpdateMessage::WindowVisible(visible) => {
+                f.write_fmt(format_args!("WindowVisible({})", visible))
+            }
+        }
+    }
+}

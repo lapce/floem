@@ -72,7 +72,17 @@ impl WindowMapping {
     }
 
     fn window_id_for_root(&self, id: &ViewId) -> Option<WindowId> {
-        self.window_id_for_root_view_id.get(id).copied()
+        let result = self.window_id_for_root_view_id.get(id).copied();
+        // We are called by ViewId.window_id(), which should no longer ever return a
+        // ViewId from root() that is not actually a root - so if we get here with a
+        // window id that has gained a parent since it was determined to be a root,
+        // something is very wrong.
+        debug_assert!(
+            id.parent().is_none(),
+            "Not a root view id: {:?} - check the logic in ViewId.window_id().",
+            id
+        );
+        result
     }
 
     fn root_view_id_for(&self, window_id: &WindowId) -> Option<ViewId> {
@@ -92,6 +102,10 @@ pub fn with_window_id_and_window<F: FnOnce(&WindowId, &Window) -> T, T>(
     view.root()
         .and_then(|root_view_id| with_window_map(|m| m.with_window_id_and_window(root_view_id, f)))
         .unwrap_or(None)
+}
+
+pub fn is_known_root(id: &ViewId) -> bool {
+    with_window_map(|map| map.window_id_for_root_view_id.contains_key(id)).unwrap_or(false)
 }
 
 fn with_window_map_mut<F: FnMut(&mut WindowMapping)>(mut f: F) -> bool {
