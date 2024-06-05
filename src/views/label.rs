@@ -514,9 +514,8 @@ impl View for Label {
             .taffy()
             .borrow()
             .layout(text_node)
-            .cloned()
-            .unwrap_or_default()
-            .location;
+            .map_or(taffy::Layout::new().location, |layout| layout.location);
+
         let point = Point::new(location.x as f64, location.y as f64);
         if let Some(text_layout) = self.available_text_layout.as_ref() {
             cx.draw_text(text_layout, point);
