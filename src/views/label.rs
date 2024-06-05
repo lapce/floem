@@ -188,9 +188,6 @@ impl Label {
             PxPct::Px(padding) => padding as f32,
             PxPct::Pct(pct) => pct as f32 * layout.size.width,
         };
-        if self.available_text_layout.is_some() {
-            println!("There is an available text layout");
-        }
         self.text_layout.as_ref().unwrap().hit(
             point.x as f32 - padding_left,
             // TODO: prevent cursor incorrectly going to end of buffer when clicking
@@ -249,7 +246,7 @@ impl Label {
         }
     }
 
-    fn paint_selection(&self, paint_cx: &mut PaintCx) {
+    fn paint_selection(&self, text_layout: &TextLayout, paint_cx: &mut PaintCx) {
         if let Some((start_c, end_c)) = &self.selection_range {
             let location = self
                 .id
@@ -264,7 +261,6 @@ impl Label {
             let start_line = start_c.line;
             let end_line = end_c.line;
 
-            let text_layout = self.text_layout.as_ref().unwrap();
             let num_lines = end_line - start_line + 1;
             let runs = text_layout.layout_runs().skip(start_line).take(num_lines);
 
@@ -520,11 +516,14 @@ impl View for Label {
         let point = Point::new(location.x as f64, location.y as f64);
         if let Some(text_layout) = self.available_text_layout.as_ref() {
             cx.draw_text(text_layout, point);
+            if cx.app_state.is_focused(&self.id()) {
+                self.paint_selection(text_layout, cx);
+            }
         } else {
             let text_layout = self.text_layout.as_ref().unwrap();
             cx.draw_text(text_layout, point);
             if cx.app_state.is_focused(&self.id()) {
-                self.paint_selection(cx);
+                self.paint_selection(text_layout, cx);
             }
         }
     }

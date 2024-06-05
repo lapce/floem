@@ -3,7 +3,7 @@ use floem::{
     peniko::Color,
     reactive::create_signal,
     unit::UnitExt,
-    views::{dyn_view, Decorators},
+    views::{dyn_view, Decorators, LabelClass, LabelCustomStyle},
     IntoView, View,
 };
 
@@ -64,7 +64,12 @@ fn app_view() -> impl IntoView {
                         .active(|s| s.color(Color::WHITE).background(Color::YELLOW_GREEN))
                 })
                 .keyboard_navigatable(),
-        ),
+        )
+            .style(|s| {
+                s.class(LabelClass, |s| {
+                    s.apply(LabelCustomStyle::new().selectable(false).style())
+                })
+            }),
     )
         .style(|s| {
             s.size(100.pct(), 100.pct())
