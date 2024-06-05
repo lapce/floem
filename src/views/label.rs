@@ -204,7 +204,10 @@ impl Label {
             SelectionState::Selecting(start, end) | SelectionState::Selected(start, end) => {
                 let mut start_cursor = self.get_hit_point(start).expect("Start position is valid");
                 if let Some(mut end_cursor) = self.get_hit_point(end) {
-                    if start_cursor.index > end_cursor.index {
+                    if start_cursor.line > end_cursor.line
+                        || (start_cursor.line == end_cursor.line
+                            && start_cursor.index > end_cursor.index)
+                    {
                         swap(&mut start_cursor, &mut end_cursor);
                     }
 
