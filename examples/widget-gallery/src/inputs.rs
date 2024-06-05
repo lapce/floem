@@ -2,7 +2,8 @@ use floem::{
     cosmic_text::{self, Weight},
     peniko::Color,
     reactive::create_rw_signal,
-    views::{text_input, Decorators, PlaceholderTextClass, SelectionCornerRadius},
+    style::SelectionCornerRadius,
+    views::{text_input, Decorators, PlaceholderTextClass},
     IntoView,
 };
 
