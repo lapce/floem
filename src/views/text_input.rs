@@ -4,10 +4,10 @@ use crate::id::ViewId;
 use crate::keyboard::{self, KeyEvent, Modifiers};
 use crate::pointer::{PointerButton, PointerInputEvent};
 use crate::reactive::{create_effect, RwSignal};
-use crate::style::{CursorColor, FontProps, PaddingLeft};
+use crate::style::{FontProps, PaddingLeft, SelectionStyle};
 use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
-use crate::{prop, prop_extractor, style_class, Clipboard};
+use crate::{prop_extractor, style_class, Clipboard};
 use floem_reactive::create_rw_signal;
 use taffy::prelude::{Layout, NodeId};
 
@@ -39,15 +39,6 @@ style_class!(pub PlaceholderTextClass);
 prop_extractor! {
     Extractor {
         color: TextColor,
-    }
-}
-
-prop!(pub SelectionCornerRadius: f64 {} = 0.0);
-
-prop_extractor! {
-    SelectionStyle {
-        //TODO: background color?
-        selection_corner_radius: SelectionCornerRadius,
     }
 }
 
@@ -165,7 +156,7 @@ enum ClipDirection {
     Backward,
 }
 
-enum TextCommand {
+pub(crate) enum TextCommand {
     SelectAll,
     Copy,
     Paste,
@@ -855,24 +846,20 @@ impl TextInput {
         let view_state = self.id.state();
         let view_state = view_state.borrow();
         let style = &view_state.combined_style;
-        let cursor_color = style.get(CursorColor);
+
+        let cursor_color = self.selection_style.selection_color();
 
         let padding_left = match style.get(PaddingLeft) {
             PxPct::Px(padding) => padding,
             PxPct::Pct(pct) => pct / 100.0 * node_layout.size.width as f64,
         };
 
-        let horiz_pad = 1.0;
-        let border_radius = self.selection_style.selection_corner_radius();
+        let border_radius = self.selection_style.corner_radius();
         let selection_rect = self
             .get_selection_rect(&node_layout, padding_left)
-            .inflate(horiz_pad, 0.0)
+            .inflate(1., 0.)
             .to_rounded_rect(border_radius);
-        cx.fill(
-            &selection_rect,
-            cursor_color.unwrap_or(Color::rgba8(0, 0, 0, 150)),
-            0.0,
-        );
+        cx.fill(&selection_rect, cursor_color, 0.0);
     }
 }
 
@@ -1189,7 +1176,7 @@ impl View for TextInput {
                 .builtin()
                 .cursor_color();
             let cursor_rect = self.get_cursor_rect(&node_layout);
-            cx.fill(&cursor_rect, cursor_color.unwrap_or(Color::BLACK), 0.0);
+            cx.fill(&cursor_rect, cursor_color, 0.0);
         }
 
         if cx.app_state.is_focused(&self.id()) && self.selection.is_some() {

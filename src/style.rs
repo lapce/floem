@@ -1229,7 +1229,8 @@ define_builtin_props!(
     FontFamily font_family nocb: Option<String> { inherited } = None,
     FontWeight font_weight nocb: Option<Weight> { inherited } = None,
     FontStyle font_style nocb: Option<cosmic_text::Style> { inherited } = None,
-    CursorColor cursor_color nocb: Option<Color> {} = None,
+    CursorColor cursor_color nocb: Color {} = Color::BLACK.with_alpha_factor(0.3),
+    SelectionCornerRadius selection_corer_radius nocb: f64 {} = 1.,
     TextOverflowProp text_overflow: TextOverflow {} = TextOverflow::Wrap,
     LineHeight line_height nocb: Option<LineHeightValue> { inherited } = None,
     AspectRatio aspect_ratio: Option<f32> {} = None,
@@ -1255,6 +1256,13 @@ prop_extractor! {
         pub padding_top: PaddingTop,
         pub padding_right: PaddingRight,
         pub padding_bottom: PaddingBottom,
+    }
+}
+
+prop_extractor! {
+    pub SelectionStyle {
+        pub corner_radius: SelectionCornerRadius,
+        pub selection_color: CursorColor,
     }
 }
 
@@ -1695,7 +1703,7 @@ impl Style {
     }
 
     pub fn cursor_color(self, color: impl Into<StyleValue<Color>>) -> Self {
-        self.set_style_value(CursorColor, color.into().map(Some))
+        self.set_style_value(CursorColor, color.into())
     }
 
     pub fn line_height(self, normal: f32) -> Self {

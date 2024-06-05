@@ -134,7 +134,7 @@ impl EditorStyle {
 }
 impl EditorStyle {
     pub fn ed_caret(&self) -> Color {
-        self.caret().unwrap_or(Color::BLACK.with_alpha_factor(0.5))
+        self.caret()
     }
 }
 
