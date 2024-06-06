@@ -329,8 +329,6 @@ impl View for Label {
             Event::PointerDown(pe) => {
                 if self.style.text_selectable() {
                     self.selection_state = SelectionState::Ready(pe.pos);
-                    self.id.request_focus();
-                    self.id.request_active();
                 }
             }
             Event::PointerMove(pme) => {
@@ -344,12 +342,13 @@ impl View for Label {
                     return EventPropagation::Continue;
                 };
                 self.selection_state = SelectionState::Selecting(start, pme.pos);
+                self.id.request_focus();
+                self.id.request_active();
                 self.id.request_layout();
             }
             Event::PointerUp(_) => {
                 if let SelectionState::Selecting(start, end) = self.selection_state {
                     self.selection_state = SelectionState::Selected(start, end);
-                    return EventPropagation::Stop;
                 } else {
                     self.selection_state = SelectionState::None;
                     self.id.clear_active();
