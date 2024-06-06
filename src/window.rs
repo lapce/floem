@@ -10,15 +10,16 @@ use peniko::kurbo::{Point, Size};
 use crate::app::{add_app_update_event, AppUpdateEvent};
 use crate::view::IntoView;
 
+/// Configures various attributes (e.g. size, position, transparency, etc.) of a window.
 #[derive(Debug)]
 pub struct WindowConfig {
-    pub(crate) size: Size,
+    pub(crate) size: Option<Size>,
     pub(crate) position: Option<Point>,
     pub(crate) show_titlebar: bool,
     pub(crate) transparent: bool,
     pub(crate) fullscreen: Option<Fullscreen>,
     pub(crate) window_icon: Option<Icon>,
-    pub(crate) title: Option<String>,
+    pub(crate) title: String,
     pub(crate) enabled_buttons: WindowButtons,
     pub(crate) resizable: bool,
     pub(crate) undecorated: bool,
@@ -31,13 +32,13 @@ pub struct WindowConfig {
 impl Default for WindowConfig {
     fn default() -> Self {
         Self {
-            size: Size::new(800.0, 600.0),
+            size: None,
             position: None,
             show_titlebar: true,
             transparent: false,
             fullscreen: None,
             window_icon: None,
-            title: None,
+            title: "Floem window".to_owned(),
             enabled_buttons: WindowButtons::all(),
             resizable: true,
             undecorated: false,
@@ -49,70 +50,101 @@ impl Default for WindowConfig {
 }
 
 impl WindowConfig {
-    /// Sets new window size.
+    /// Requests the window to be of specific dimensions.
     ///
-    /// # Panics
-    ///
-    /// Panics if either width or height of new size is zero.
+    /// If this is not set, some platform-specific dimensions will be used.
+    #[inline]
     pub fn size(mut self, size: impl Into<Size>) -> Self {
-        self.size = size.into();
+        self.size = Some(size.into());
         self
     }
 
+    /// Sets a desired initial position for the window.
+    ///
+    /// If this is not set, some platform-specific position will be chosen.
     #[inline]
     pub fn position(mut self, position: Point) -> Self {
         self.position = Some(position);
         self
     }
 
+    /// Sets whether the window should have a title bar.
+    ///
+    /// The default is `true`.
     #[inline]
     pub fn show_titlebar(mut self, show_titlebar: bool) -> Self {
         self.show_titlebar = show_titlebar;
         self
     }
 
+    /// Sets whether the window should have a border, a title bar, etc.
+    ///
+    /// The default is `false`.
     #[inline]
     pub fn undecorated(mut self, undecorated: bool) -> Self {
         self.undecorated = undecorated;
         self
     }
 
+    /// Sets whether the background of the window should be transparent.
+    ///
+    /// The default is `false`.
     #[inline]
     pub fn with_transparent(mut self, transparent: bool) -> Self {
         self.transparent = transparent;
         self
     }
 
+    /// Sets whether the window should be put into fullscreen upon creation.
+    ///
+    /// The default is `None`.
     #[inline]
     pub fn fullscreen(mut self, fullscreen: Fullscreen) -> Self {
         self.fullscreen = Some(fullscreen);
         self
     }
 
+    /// Sets the window icon.
+    ///
+    /// The default is `None`.
     #[inline]
     pub fn window_icon(mut self, window_icon: Icon) -> Self {
         self.window_icon = Some(window_icon);
         self
     }
 
+    /// Sets the initial title of the window in the title bar.
+    ///
+    /// The default is `"Floem window"`.
     #[inline]
     pub fn title(mut self, title: impl Into<String>) -> Self {
-        self.title = Some(title.into());
+        self.title = title.into();
         self
     }
 
+    /// Sets the enabled window buttons.
+    ///
+    /// The default is `WindowButtons::all()`.
     #[inline]
     pub fn enabled_buttons(mut self, enabled_buttons: WindowButtons) -> Self {
         self.enabled_buttons = enabled_buttons;
         self
     }
 
+    /// Sets whether the window is resizable or not.
+    ///
+    /// The default is `true`.
     #[inline]
     pub fn resizable(mut self, resizable: bool) -> Self {
         self.resizable = resizable;
         self
     }
 
+    /// Sets the window level.
+    ///
+    /// This is just a hint to the OS, and the system could ignore it.
+    ///
+    /// The default is `WindowLevel::Normal`.
     #[inline]
     pub fn window_level(mut self, window_level: WindowLevel) -> Self {
         self.window_level = window_level;
