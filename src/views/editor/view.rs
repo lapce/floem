@@ -1056,7 +1056,7 @@ pub fn cursor_caret(
         }
     } else {
         LineRegion {
-            x: x0 - 1.0,
+            x: (x0 - 1.0).max(0.0),
             width: 2.0,
             rvline,
         }
