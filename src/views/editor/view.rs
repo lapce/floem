@@ -502,7 +502,7 @@ impl EditorView {
         }
     }
 
-    fn paint_cursor(cx: &mut PaintCx, ed: &Editor, is_active: bool, screen_lines: &ScreenLines) {
+    fn paint_cursor(cx: &mut PaintCx, ed: &Editor, screen_lines: &ScreenLines) {
         let cursor = ed.cursor;
 
         let viewport = ed.viewport.get_untracked();
@@ -538,8 +538,6 @@ impl EditorView {
             }
 
             EditorView::paint_selection(cx, ed, screen_lines);
-
-            EditorView::paint_cursor_caret(cx, ed, is_active, screen_lines);
         });
     }
 
@@ -615,7 +613,7 @@ impl EditorView {
         });
     }
 
-    pub fn paint_cursor_caret(
+    fn paint_cursor_caret(
         cx: &mut PaintCx,
         ed: &Editor,
         is_active: bool,
@@ -723,7 +721,13 @@ impl EditorView {
         }
     }
 
-    pub fn paint_text(cx: &mut PaintCx, ed: &Editor, viewport: Rect, screen_lines: &ScreenLines) {
+    pub fn paint_text(
+        cx: &mut PaintCx,
+        ed: &Editor,
+        viewport: Rect,
+        is_active: bool,
+        screen_lines: &ScreenLines,
+    ) {
         let edid = ed.id();
         let style = ed.style();
 
@@ -739,6 +743,24 @@ impl EditorView {
         let mut indent_text = TextLayout::new();
         indent_text.set_text(&format!("{indent_unit}a"), attrs_list);
         let indent_text_width = indent_text.hit_position(indent_unit.len()).point.x;
+
+        if ed.es.with(|s| s.show_indent_guide()) {
+            for (line, y) in screen_lines.iter_lines_y() {
+                let text_layout = ed.text_layout(line);
+                let line_height = f64::from(ed.line_height(line));
+                let mut x = 0.0;
+                while x + 1.0 < text_layout.indent {
+                    cx.stroke(
+                        &Line::new(Point::new(x, y), Point::new(x, y + line_height)),
+                        ed.es.with(|es| es.indent_guide()),
+                        1.0,
+                    );
+                    x += indent_text_width;
+                }
+            }
+        }
+
+        Self::paint_cursor_caret(cx, ed, is_active, screen_lines);
 
         for (line, y) in screen_lines.iter_lines_y() {
             let text_layout = ed.text_layout(line);
@@ -768,19 +790,6 @@ impl EditorView {
                         }
                         _ => {}
                     }
-                }
-            }
-
-            if ed.es.with(|s| s.show_indent_guide()) {
-                let line_height = f64::from(ed.line_height(line));
-                let mut x = 0.0;
-                while x + 1.0 < text_layout.indent {
-                    cx.stroke(
-                        &Line::new(Point::new(x, y), Point::new(x, y + line_height)),
-                        ed.es.with(|es| es.indent_guide()),
-                        1.0,
-                    );
-                    x += indent_text_width;
                 }
             }
 
@@ -883,9 +892,15 @@ impl View for EditorView {
         // I expect that most/all of the paint functions could restrict themselves to only what is
         // within the active screen lines without issue.
         let screen_lines = ed.screen_lines.get_untracked();
-        EditorView::paint_cursor(cx, &ed, self.is_active.get_untracked(), &screen_lines);
+        EditorView::paint_cursor(cx, &ed, &screen_lines);
         let screen_lines = ed.screen_lines.get_untracked();
-        EditorView::paint_text(cx, &ed, viewport, &screen_lines);
+        EditorView::paint_text(
+            cx,
+            &ed,
+            viewport,
+            self.is_active.get_untracked(),
+            &screen_lines,
+        );
     }
 }
 
@@ -1056,7 +1071,7 @@ pub fn cursor_caret(
         }
     } else {
         LineRegion {
-            x: (x0 - 1.0).max(0.0),
+            x: x0 - 1.0,
             width: 2.0,
             rvline,
         }
