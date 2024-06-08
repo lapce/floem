@@ -6,10 +6,10 @@ use crate::{
     event::{Event, EventPropagation},
     id::ViewId,
     keyboard::KeyEvent,
-    prop, prop_extractor,
+    prop_extractor,
     style::{
-        CursorColor, FontProps, LineHeight, SelectionCornerRadius, SelectionStyle, Style,
-        TextColor, TextOverflow, TextOverflowProp,
+        CursorColor, FontProps, LineHeight, Selectable, SelectionCornerRadius, SelectionStyle,
+        Style, TextColor, TextOverflow, TextOverflowProp,
     },
     style_class,
     unit::PxPct,
@@ -24,8 +24,6 @@ use peniko::Color;
 use taffy::tree::NodeId;
 
 use super::{Decorators, TextCommand};
-
-prop!(pub Selectable: bool {} = true);
 
 prop_extractor! {
     Extractor {
