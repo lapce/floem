@@ -325,8 +325,14 @@ impl<W> TinySkiaRenderer<W> {
                         .premultiply()
                         .to_color_u8();
                 }
+            } else if image.content == SwashContent::Color {
+                for (a, b) in pixmap.pixels_mut().iter_mut().zip(image.data.chunks(4)) {
+                    *a = tiny_skia::Color::from_rgba8(b[0], b[1], b[2], b[3])
+                        .premultiply()
+                        .to_color_u8();
+                }
             } else {
-                panic!("unexpected image content: {:?}", image.content);
+                return None;
             }
 
             Some(Rc::new(Glyph {
