@@ -63,8 +63,14 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
     {
         let context = Context::new(window.clone())
             .map_err(|err| anyhow!("unable to create context: {}", err))?;
-        let surface = Surface::new(&context, window)
+        let mut surface = Surface::new(&context, window)
             .map_err(|err| anyhow!("unable to create surface: {}", err))?;
+        surface
+            .resize(
+                NonZeroU32::new(width).unwrap_or(NonZeroU32::new(1).unwrap()),
+                NonZeroU32::new(height).unwrap_or(NonZeroU32::new(1).unwrap()),
+            )
+            .map_err(|_| anyhow!("failed to resize surface"))?;
 
         let pixmap =
             Pixmap::new(width, height).ok_or_else(|| anyhow!("unable to create pixmap"))?;
