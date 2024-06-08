@@ -1231,6 +1231,7 @@ define_builtin_props!(
     FontStyle font_style nocb: Option<cosmic_text::Style> { inherited } = None,
     CursorColor cursor_color nocb: Color {} = Color::BLACK.with_alpha_factor(0.3),
     SelectionCornerRadius selection_corer_radius nocb: f64 {} = 1.,
+    Selectable selectable: bool {} = true,
     TextOverflowProp text_overflow: TextOverflow {} = TextOverflow::Wrap,
     LineHeight line_height nocb: Option<LineHeightValue> { inherited } = None,
     AspectRatio aspect_ratio: Option<f32> {} = None,
