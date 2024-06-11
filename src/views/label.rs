@@ -3,7 +3,7 @@ use std::{any::Any, fmt::Display, mem::swap};
 use crate::{
     context::{PaintCx, UpdateCx},
     cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
-    event::{Event, EventPropagation},
+    event::{Event, EventListener, EventPropagation},
     id::ViewId,
     keyboard::KeyEvent,
     prop_extractor,
@@ -123,7 +123,9 @@ pub fn label<S: Display + 'static>(label: impl Fn() -> S + 'static) -> Label {
         move || label().to_string(),
         move |new_label| id.update_state(new_label),
     );
-    Label::new(id, initial_label)
+    Label::new(id, initial_label).on_event_cont(EventListener::FocusLost, move |_| {
+        id.request_layout();
+    })
 }
 
 impl Label {
@@ -326,33 +328,38 @@ impl View for Label {
         match event {
             Event::PointerDown(pe) => {
                 if self.style.text_selectable() {
+                    self.selection_range = None;
                     self.selection_state = SelectionState::Ready(pe.pos);
+                    self.id.request_layout();
                 }
             }
             Event::PointerMove(pme) => {
                 if !self.style.text_selectable() {
-                    self.selection_state = SelectionState::None;
-                    self.selection_range = None;
+                    if self.selection_range.is_some() {
+                        self.selection_state = SelectionState::None;
+                        self.selection_range = None;
+                        self.id.request_layout();
+                    }
+                } else {
+                    let (SelectionState::Selecting(start, _) | SelectionState::Ready(start)) =
+                        self.selection_state
+                    else {
+                        return EventPropagation::Continue;
+                    };
+                    self.selection_state = SelectionState::Selecting(start, pme.pos);
+                    self.id.request_active();
+                    self.id.request_focus();
+                    self.id.request_layout();
                 }
-                let (SelectionState::Selecting(start, _) | SelectionState::Ready(start)) =
-                    self.selection_state
-                else {
-                    return EventPropagation::Continue;
-                };
-                self.selection_state = SelectionState::Selecting(start, pme.pos);
-                self.id.request_focus();
-                self.id.request_active();
-                self.id.request_layout();
             }
             Event::PointerUp(_) => {
                 if let SelectionState::Selecting(start, end) = self.selection_state {
                     self.selection_state = SelectionState::Selected(start, end);
                 } else {
                     self.selection_state = SelectionState::None;
-                    self.id.clear_active();
-                    self.id.clear_focus();
-                    self.id.request_layout();
                 }
+                self.id.clear_active();
+                self.id.request_layout();
             }
             Event::KeyDown(ke) => {
                 if self.handle_key_down(ke) {
