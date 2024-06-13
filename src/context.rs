@@ -146,6 +146,15 @@ impl<'a> EventCx<'a> {
             .event_before_children(self, &event)
             .is_processed()
         {
+            if let Event::PointerDown(event) = &event {
+                if self.app_state.keyboard_navigable.contains(&view_id) {
+                    let rect = view_id.get_size().unwrap_or_default().to_rect();
+                    let now_focused = rect.contains(event.pos);
+                    if now_focused {
+                        self.app_state.update_focus(view_id, false);
+                    }
+                }
+            }
             return EventPropagation::Stop;
         }
 
