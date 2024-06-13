@@ -598,30 +598,50 @@ impl Editor {
         self.doc().run_command(self, &cmd, Some(lines), mods);
     }
 
-    pub fn center_window(&self, mods: Modifiers) {
+    pub fn center_window(&self) {
         let viewport = self.viewport.get_untracked();
         // TODO: don't assume line height is constant
         let line_height = f64::from(self.line_height(0));
         let offset = self.cursor.with_untracked(|cursor| cursor.offset());
         let (line, _col) = self.offset_to_line_col(offset);
 
-        let line_center = viewport.height() / 2.0;
+        let viewport_center = viewport.height() / 2.0;
+
         let current_line_position = line as f64 * line_height;
 
-        let diff = current_line_position - line_center;
+        let desired_top = current_line_position - viewport_center + (line_height / 2.0);
 
-        self.scroll_delta.set(Vec2::new(0.0, diff));
+        let scroll_delta = desired_top - viewport.y0;
 
-        let cmd = if diff > 0.0 {
-            MoveCommand::Down
-        } else {
-            MoveCommand::Up
-        };
+        self.scroll_delta.set(Vec2::new(0.0, scroll_delta));
+    }
 
-        let line_diff = (diff.abs() / line_height).round() as usize;
+    pub fn top_of_window(&self, scroll_off: usize) {
+        let viewport = self.viewport.get_untracked();
+        // TODO: don't assume line height is constant
+        let line_height = f64::from(self.line_height(0));
+        let offset = self.cursor.with_untracked(|cursor| cursor.offset());
+        let (line, _col) = self.offset_to_line_col(offset);
 
-        let cmd = Command::Move(cmd);
-        self.doc().run_command(self, &cmd, Some(line_diff), mods);
+        let desired_top = (line.saturating_sub(scroll_off)) as f64 * line_height;
+
+        let scroll_delta = desired_top - viewport.y0;
+
+        self.scroll_delta.set(Vec2::new(0.0, scroll_delta));
+    }
+
+    pub fn bottom_of_window(&self, scroll_off: usize) {
+        let viewport = self.viewport.get_untracked();
+        // TODO: don't assume line height is constant
+        let line_height = f64::from(self.line_height(0));
+        let offset = self.cursor.with_untracked(|cursor| cursor.offset());
+        let (line, _col) = self.offset_to_line_col(offset);
+
+        let desired_bottom = (line + scroll_off + 1) as f64 * line_height - viewport.height();
+
+        let scroll_delta = desired_bottom - viewport.y0;
+
+        self.scroll_delta.set(Vec2::new(0.0, scroll_delta));
     }
 
     pub fn scroll(&self, top_shift: f64, down: bool, count: usize, mods: Modifiers) {
