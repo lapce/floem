@@ -598,6 +598,32 @@ impl Editor {
         self.doc().run_command(self, &cmd, Some(lines), mods);
     }
 
+    pub fn center_window(&self, mods: Modifiers) {
+        let viewport = self.viewport.get_untracked();
+        // TODO: don't assume line height is constant
+        let line_height = f64::from(self.line_height(0));
+        let offset = self.cursor.with_untracked(|cursor| cursor.offset());
+        let (line, _col) = self.offset_to_line_col(offset);
+
+        let line_center = viewport.height() / 2.0;
+        let current_line_position = line as f64 * line_height;
+
+        let diff = current_line_position - line_center;
+
+        self.scroll_delta.set(Vec2::new(0.0, diff));
+
+        let cmd = if diff > 0.0 {
+            MoveCommand::Down
+        } else {
+            MoveCommand::Up
+        };
+
+        let line_diff = (diff.abs() / line_height).round() as usize;
+
+        let cmd = Command::Move(cmd);
+        self.doc().run_command(self, &cmd, Some(line_diff), mods);
+    }
+
     pub fn scroll(&self, top_shift: f64, down: bool, count: usize, mods: Modifiers) {
         let viewport = self.viewport.get_untracked();
         // TODO: don't assume line height is constant
