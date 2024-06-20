@@ -182,11 +182,11 @@ impl Label {
 
         let padding_left = match style.padding_left() {
             PxPct::Px(padding) => padding as f32,
-            PxPct::Pct(pct) => pct as f32 * layout.size.width,
+            PxPct::Pct(pct) => (pct / 100.) as f32 * layout.size.width,
         };
         let padding_top = match style.padding_top() {
             PxPct::Px(padding) => padding as f32,
-            PxPct::Pct(pct) => pct as f32 * layout.size.width,
+            PxPct::Pct(pct) => (pct / 100.) as f32 * layout.size.width,
         };
         self.text_layout.as_ref().unwrap().hit(
             point.x as f32 - padding_left,
@@ -436,11 +436,11 @@ impl View for Label {
             let style = view_state.combined_style.builtin();
             let padding_left = match style.padding_left() {
                 PxPct::Px(padding) => padding as f32,
-                PxPct::Pct(pct) => pct as f32 * layout.size.width,
+                PxPct::Pct(pct) => (pct / 100.) as f32 * layout.size.width,
             };
             let padding_right = match style.padding_right() {
                 PxPct::Px(padding) => padding as f32,
-                PxPct::Pct(pct) => pct as f32 * layout.size.width,
+                PxPct::Pct(pct) => (pct / 100.) as f32 * layout.size.width,
             };
             let text_overflow = style.text_overflow();
             (text_overflow, padding_left + padding_right)
