@@ -68,6 +68,9 @@ image = { workspace = true }
 im = { workspace = true }
 wgpu = { workspace = true }
 
+[dev-dependencies]
+criterion = "0.5"
+
 [features]
 default = ["editor", "default-image-formats"]
 # TODO: this is only winit and the editor serde, there are other dependencies that still depend on
@@ -99,3 +102,10 @@ tokio = ["dep:tokio"]
 # rfd (file dialog) async runtime
 rfd-async-std = ["dep:rfd", "rfd/async-std"]
 rfd-tokio = ["dep:rfd", "rfd/tokio"]
+
+[profile.bench]
+debug = true
+
+[[bench]]
+name = "basic_editing"
+harness = false
