@@ -2,6 +2,7 @@ use peniko::kurbo::Point;
 use std::cell::RefCell;
 use std::{rc::Rc, time::Duration};
 
+use crate::style::{Style, StyleClass as _};
 use crate::views::Decorators;
 use crate::{
     action::{add_overlay, exec_after, remove_overlay, TimerToken},
@@ -12,9 +13,8 @@ use crate::{
     view::{default_compute_layout, IntoView, View},
 };
 
-use super::container;
-
 style_class!(pub TooltipClass);
+style_class!(pub TooltipContainerClass);
 
 prop!(pub Delay: f64 {} = 0.6);
 
@@ -31,6 +31,8 @@ pub struct Tooltip {
     overlay: Rc<RefCell<Option<ViewId>>>,
     tip: Rc<dyn Fn() -> Box<dyn View>>,
     style: TooltipStyle,
+    tip_style: Style,
+    scale: f64,
     window_origin: Option<Point>,
 }
 
@@ -45,12 +47,15 @@ pub fn tooltip<V: IntoView + 'static, T: IntoView + 'static>(
     let overlay = Rc::new(RefCell::new(None));
     Tooltip {
         id,
-        tip: Rc::new(move || container(tip()).class(TooltipClass).into_any()),
+        tip: Rc::new(move || tip().into_any()),
         hover: None,
         overlay: overlay.clone(),
         style: Default::default(),
+        tip_style: Default::default(),
+        scale: 1.0,
         window_origin: None,
     }
+    .class(TooltipContainerClass)
     .on_cleanup(move || {
         if let Some(overlay_id) = overlay.borrow_mut().take() {
             remove_overlay(overlay_id);
@@ -68,13 +73,30 @@ impl View for Tooltip {
             if let Some(window_origin) = self.window_origin {
                 if self.hover.map(|(_, t)| t) == Some(*token) {
                     let tip = self.tip.clone();
+
+                    let tip_style = self.tip_style.clone();
                     let overlay_id = add_overlay(
-                        window_origin + self.hover.unwrap().0.to_vec2() + (10., 10.),
-                        move |_| tip(),
+                        window_origin
+                            + self.hover.unwrap().0.to_vec2()
+                            + (10. / self.scale, 10. / self.scale),
+                        move |_| tip().style(move |_| tip_style.clone()),
                     );
+                    // overlay_id.request_all();
                     *self.overlay.borrow_mut() = Some(overlay_id);
                 }
             }
+        }
+    }
+
+    fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+        self.style.read(cx);
+        self.scale = cx.app_state.scale;
+
+        self.tip_style =
+            Style::new().apply_classes_from_context(&[TooltipClass::class_ref()], &cx.current);
+
+        for child in self.id.children() {
+            cx.style_view(child);
         }
     }
 
@@ -112,5 +134,15 @@ impl View for Tooltip {
     ) -> Option<peniko::kurbo::Rect> {
         self.window_origin = Some(cx.window_origin);
         default_compute_layout(self.id, cx)
+    }
+}
+
+pub trait TooltipTrait {
+    fn tooltip<V: IntoView + 'static>(self, tip: impl Fn() -> V + 'static) -> Tooltip;
+}
+
+impl<T: View + 'static> TooltipTrait for T {
+    fn tooltip<V: IntoView + 'static>(self, tip: impl Fn() -> V + 'static) -> Tooltip {
+        tooltip(self, tip)
     }
 }
