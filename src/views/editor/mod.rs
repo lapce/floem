@@ -1,13 +1,5 @@
-use core::indent::IndentStyle;
-use std::{
-    cell::{Cell, RefCell},
-    cmp::Ordering,
-    collections::{hash_map::DefaultHasher, HashMap},
-    hash::{Hash, Hasher},
-    rc::Rc,
-    sync::Arc,
-    time::Duration,
-};
+use core::{buffer::InvalLines, indent::IndentStyle};
+use std::{cell::Cell, cmp::Ordering, collections::HashMap, rc::Rc, sync::Arc, time::Duration};
 
 use crate::{
     action::{exec_after, TimerToken},
@@ -17,7 +9,7 @@ use crate::{
     peniko::Color,
     pointer::{PointerButton, PointerInputEvent, PointerMoveEvent},
     prop, prop_extractor,
-    reactive::{batch, untrack, ReadSignal, RwSignal, Scope},
+    reactive::{batch, untrack, RwSignal, Scope},
     style::{CursorColor, StylePropValue, TextColor},
     view::{IntoView, View},
     views::text,
@@ -42,6 +34,7 @@ pub mod gutter;
 pub mod id;
 pub mod keypress;
 pub mod layout;
+pub mod line_render_cache;
 pub mod listener;
 pub mod movement;
 pub mod phantom_text;
@@ -60,8 +53,8 @@ use self::{
     text::{Document, Preedit, PreeditData, RenderWhitespace, Styling, WrapMethod},
     view::{LineInfo, ScreenLines, ScreenLinesBase},
     visual_line::{
-        hit_position_aff, ConfigId, FontSizeCacheId, LayoutEvent, LineFontSizeProvider, Lines,
-        RVLine, ResolvedWrap, TextLayoutProvider, VLine, VLineInfo,
+        hit_position_aff, ConfigId, LayoutEvent, Lines, RVLine, ResolvedWrap, TextLayoutProvider,
+        VLine, VLineInfo,
     },
 };
 
@@ -173,7 +166,7 @@ pub struct Editor {
     pub scroll_to: RwSignal<Option<Vec2>>,
 
     /// Holds the cache of the lines and provides many utility functions for them.
-    lines: Rc<Lines>,
+    pub lines: Rc<Lines>,
     pub screen_lines: RwSignal<ScreenLines>,
 
     /// Modal mode register
@@ -255,12 +248,7 @@ impl Editor {
         let doc = cx.create_rw_signal(doc);
         let style = cx.create_rw_signal(style);
 
-        let font_sizes = RefCell::new(Rc::new(EditorFontSizes {
-            id,
-            style: style.read_only(),
-            doc: doc.read_only(),
-        }));
-        let lines = Rc::new(Lines::new(cx, font_sizes));
+        let lines = Rc::new(Lines::new(cx));
         let screen_lines = cx.create_rw_signal(ScreenLines::new(cx, viewport.get_untracked()));
 
         let editor_style = cx.create_rw_signal(EditorStyle::default());
@@ -335,12 +323,7 @@ impl Editor {
             // Get rid of all the effects
             self.effects_cx.get().dispose();
 
-            *self.lines.font_sizes.borrow_mut() = Rc::new(EditorFontSizes {
-                id: self.id(),
-                style: self.style.read_only(),
-                doc: self.doc.read_only(),
-            });
-            self.lines.clear(0, None);
+            self.lines.clear(None);
             self.doc.set(doc);
             if let Some(styling) = styling {
                 self.style.set(styling);
@@ -360,12 +343,7 @@ impl Editor {
             // Get rid of all the effects
             self.effects_cx.get().dispose();
 
-            *self.lines.font_sizes.borrow_mut() = Rc::new(EditorFontSizes {
-                id: self.id(),
-                style: self.style.read_only(),
-                doc: self.doc.read_only(),
-            });
-            self.lines.clear(0, None);
+            self.lines.clear(None);
 
             self.style.set(styling);
 
@@ -449,10 +427,10 @@ impl Editor {
                 cursor,
                 offset,
             }));
-
-            self.doc().cache_rev().update(|cache_rev| {
-                *cache_rev += 1;
-            });
+            let line = self.rope_text().line_of_offset(offset);
+            self.doc()
+                .inval_lines_listener()
+                .send(InvalLines::single(line));
         });
     }
 
@@ -463,10 +441,17 @@ impl Editor {
         }
 
         batch(|| {
+            let offset = preedit
+                .preedit
+                .with_untracked(|p| p.as_ref().map(|p| p.offset));
             preedit.preedit.set(None);
-            self.doc().cache_rev().update(|cache_rev| {
-                *cache_rev += 1;
-            });
+
+            if let Some(offset) = offset {
+                let line = self.rope_text().line_of_offset(offset);
+                self.doc()
+                    .inval_lines_listener()
+                    .send(InvalLines::single(line));
+            }
         });
     }
 
@@ -474,7 +459,7 @@ impl Editor {
         self.doc().receive_char(self, c)
     }
 
-    fn compute_screen_lines(&self, base: RwSignal<ScreenLinesBase>) -> ScreenLines {
+    pub fn compute_screen_lines(&self, base: RwSignal<ScreenLinesBase>) -> ScreenLines {
         // This function *cannot* access `ScreenLines` with how it is currently implemented.
         // This is being called from within an update to screen lines.
 
@@ -1105,15 +1090,12 @@ impl Editor {
     }
 
     pub fn text_layout_trigger(&self, line: usize, trigger: bool) -> Arc<TextLayoutLine> {
-        let cache_rev = self.doc().cache_rev().get_untracked();
         self.lines
-            .get_init_text_layout(cache_rev, self.config_id(), self, line, trigger)
+            .get_init_text_layout(self.config_id(), self, line, trigger)
     }
 
     fn try_get_text_layout(&self, line: usize) -> Option<Arc<TextLayoutLine>> {
-        let cache_rev = self.doc().cache_rev().get_untracked();
-        self.lines
-            .try_get_text_layout(cache_rev, self.config_id(), line)
+        self.lines.try_get_text_layout(self.config_id(), line)
     }
 
     /// Create rendable whitespace layout by creating a new text layout
@@ -1189,12 +1171,7 @@ impl TextLayoutProvider for Editor {
         Editor::text(self)
     }
 
-    fn new_text_layout(
-        &self,
-        line: usize,
-        _font_size: usize,
-        _wrap: ResolvedWrap,
-    ) -> Arc<TextLayoutLine> {
+    fn new_text_layout(&self, line: usize, _wrap: ResolvedWrap) -> Arc<TextLayoutLine> {
         // TODO: we could share text layouts between different editor views given some knowledge of
         // their wrapping
         let edid = self.id();
@@ -1289,13 +1266,9 @@ impl TextLayoutProvider for Editor {
         let indent = if indent_line != line {
             // TODO: This creates the layout if it isn't already cached, but it doesn't cache the
             // result because the current method of managing the cache is not very smart.
-            let layout = self.try_get_text_layout(indent_line).unwrap_or_else(|| {
-                self.new_text_layout(
-                    indent_line,
-                    style.font_size(edid, indent_line),
-                    self.lines.wrap(),
-                )
-            });
+            let layout = self
+                .try_get_text_layout(indent_line)
+                .unwrap_or_else(|| self.new_text_layout(indent_line, self.lines.wrap()));
             layout.indent + 1.0
         } else {
             let offset = text.first_non_blank_character_on_line(indent_line);
@@ -1328,31 +1301,6 @@ impl TextLayoutProvider for Editor {
     }
 }
 
-struct EditorFontSizes {
-    id: EditorId,
-    style: ReadSignal<Rc<dyn Styling>>,
-    doc: ReadSignal<Rc<dyn Document>>,
-}
-impl LineFontSizeProvider for EditorFontSizes {
-    fn font_size(&self, line: usize) -> usize {
-        self.style
-            .with_untracked(|style| style.font_size(self.id, line))
-    }
-
-    fn cache_id(&self) -> FontSizeCacheId {
-        let mut hasher = DefaultHasher::new();
-
-        // TODO: is this actually good enough for comparing cache state?
-        // We could just have it return an arbitrary type that impl's Eq?
-        self.style
-            .with_untracked(|style| style.id().hash(&mut hasher));
-        self.doc
-            .with_untracked(|doc| doc.cache_rev().get_untracked().hash(&mut hasher));
-
-        hasher.finish()
-    }
-}
-
 /// Minimum width that we'll allow the view to be wrapped at.
 const MIN_WRAPPED_WIDTH: f32 = 100.0;
 
@@ -1364,6 +1312,7 @@ fn create_view_effects(cx: Scope, ed: &Editor) {
     let ed2 = ed.clone();
     let ed3 = ed.clone();
     let ed4 = ed.clone();
+    let ed5 = ed.clone();
 
     // Reset cursor blinking whenever the cursor changes
     {
@@ -1387,6 +1336,11 @@ fn create_view_effects(cx: Scope, ed: &Editor) {
         });
     };
 
+    let inval_lines_listener = ed.doc().inval_lines_listener();
+    inval_lines_listener.listen_with(cx, move |inval_lines| {
+        ed5.lines.invalidate(inval_lines);
+    });
+
     // Listen for layout events, currently only when a layout is created, and update screen
     // lines based on that
     ed3.lines.layout_event.listen_with(cx, move |val| {
@@ -1395,7 +1349,7 @@ fn create_view_effects(cx: Scope, ed: &Editor) {
         // function, to avoid getting confused about what is relevant where.
 
         match val {
-            LayoutEvent::CreatedLayout { line, .. } => {
+            LayoutEvent::CreatedLayout { line } => {
                 let sl = ed.screen_lines.get_untracked();
 
                 // Intelligently update screen lines, avoiding recalculation if possible
@@ -1477,9 +1431,6 @@ pub fn normal_compute_screen_lines(
     let min_vline = VLine((y0 / line_height as f64).floor() as usize);
     let max_vline = VLine((y1 / line_height as f64).ceil() as usize);
 
-    let cache_rev = editor.doc.get().cache_rev().get();
-    editor.lines.check_cache_rev(cache_rev);
-
     let min_info = editor.iter_vlines(false, min_vline).next();
 
     let mut rvlines = Vec::new();
@@ -1500,7 +1451,6 @@ pub fn normal_compute_screen_lines(
     let iter = lines
         .iter_rvlines_init(
             editor.text_prov(),
-            cache_rev,
             editor.config_id(),
             min_info.rvline,
             false,

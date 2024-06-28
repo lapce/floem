@@ -52,6 +52,7 @@ fn app_view() -> impl IntoView {
         stack((
             button(|| "Clear").on_click_stop(move |_| {
                 doc.edit_single(
+                    None,
                     Selection::region(0, doc.text().len()),
                     "",
                     EditType::DeleteSelection,

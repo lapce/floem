@@ -6,7 +6,7 @@ use std::{
 };
 
 use floem_editor_core::{
-    buffer::{rope_text::RopeText, Buffer, InvalLines},
+    buffer::{rope_text::RopeText, Buffer, InvalLines, InvalLinesR},
     command::EditCommand,
     cursor::Cursor,
     editor::{Action, EditConf, EditType},
@@ -25,6 +25,7 @@ use super::{
     actions::{handle_command_default, CommonAction},
     command::{Command, CommandExecuted},
     id::EditorId,
+    listener::Listener,
     phantom_text::{PhantomText, PhantomTextKind, PhantomTextLine},
     text::{Document, DocumentPhantom, PreeditData, SystemClipboard},
     Editor, EditorStyle,
@@ -44,7 +45,7 @@ type OnUpdateFn = Box<dyn Fn(OnUpdate)>;
 pub struct OnUpdate<'a> {
     /// Optional because the document can be edited from outside any editor views
     pub editor: Option<&'a Editor>,
-    deltas: &'a [(Rope, RopeDelta, InvalLines)],
+    deltas: &'a [(Rope, RopeDelta, InvalLinesR)],
 }
 impl<'a> OnUpdate<'a> {
     pub fn deltas(&self) -> impl Iterator<Item = &'a RopeDelta> {
@@ -57,7 +58,6 @@ impl<'a> OnUpdate<'a> {
 #[derive(Clone)]
 pub struct TextDocument {
     buffer: RwSignal<Buffer>,
-    cache_rev: RwSignal<u64>,
     preedit: PreeditData,
 
     /// Whether to keep the indent of the previous line when inserting a new line
@@ -66,6 +66,8 @@ pub struct TextDocument {
     pub auto_indent: Cell<bool>,
 
     pub placeholders: RwSignal<HashMap<EditorId, String>>,
+
+    inval_lines_listener: Listener<InvalLines>,
 
     // (cmd: &Command, count: Option<usize>, modifiers: ModifierState)
     /// Ran before a command is executed. If it says that it executed the command, then handlers
@@ -81,41 +83,41 @@ impl TextDocument {
         let preedit = PreeditData {
             preedit: cx.create_rw_signal(None),
         };
-        let cache_rev = cx.create_rw_signal(0);
+        let inval_lines_listener = Listener::new_empty(cx);
 
         let placeholders = cx.create_rw_signal(HashMap::new());
 
-        // Whenever the placeholders change, update the cache rev
+        // Whenever the placeholders change, invalidate the first line
         create_effect(move |_| {
             placeholders.track();
-            cache_rev.try_update(|cache_rev| {
-                *cache_rev += 1;
-            });
+            inval_lines_listener.send(InvalLines::single(0));
         });
 
         TextDocument {
             buffer: cx.create_rw_signal(buffer),
-            cache_rev,
             preedit,
             keep_indent: Cell::new(true),
             auto_indent: Cell::new(false),
+            inval_lines_listener,
             placeholders,
             pre_command: Rc::new(RefCell::new(HashMap::new())),
             on_updates: Rc::new(RefCell::new(SmallVec::new())),
         }
     }
 
-    fn update_cache_rev(&self) {
-        self.cache_rev.try_update(|cache_rev| {
-            *cache_rev += 1;
-        });
+    pub fn buffer(&self) -> RwSignal<Buffer> {
+        self.buffer
     }
 
-    fn on_update(&self, ed: Option<&Editor>, deltas: &[(Rope, RopeDelta, InvalLines)]) {
+    pub fn on_update(&self, ed: Option<&Editor>, deltas: &[(Rope, RopeDelta, InvalLinesR)]) {
         let on_updates = self.on_updates.borrow();
         let data = OnUpdate { editor: ed, deltas };
         for on_update in on_updates.iter() {
             on_update(data.clone());
+        }
+
+        for (_, _, inval_lines) in deltas {
+            self.inval_lines_listener().send(inval_lines.clone().into());
         }
     }
 
@@ -158,8 +160,8 @@ impl Document for TextDocument {
         self.buffer.with_untracked(|buffer| buffer.text().clone())
     }
 
-    fn cache_rev(&self) -> RwSignal<u64> {
-        self.cache_rev
+    fn inval_lines_listener(&self) -> Listener<InvalLines> {
+        self.inval_lines_listener
     }
 
     fn preedit(&self) -> PreeditData {
@@ -222,23 +224,25 @@ impl Document for TextDocument {
                     buffer.set_cursor_before(old_cursor_mode);
                     buffer.set_cursor_after(cursor.mode.clone());
                 });
-                // TODO: line specific invalidation
-                self.update_cache_rev();
                 self.on_update(Some(ed), &deltas);
             }
             ed.cursor.set(cursor);
         }
     }
 
-    fn edit(&self, iter: &mut dyn Iterator<Item = (Selection, &str)>, edit_type: EditType) {
+    fn edit(
+        &self,
+        ed: Option<&Editor>,
+        iter: &mut dyn Iterator<Item = (Selection, &str)>,
+        edit_type: EditType,
+    ) {
         let deltas = self
             .buffer
             .try_update(|buffer| buffer.edit(iter, edit_type));
         let deltas = deltas.map(|x| [x]);
         let deltas = deltas.as_ref().map(|x| x as &[_]).unwrap_or(&[]);
 
-        self.update_cache_rev();
-        self.on_update(None, deltas);
+        self.on_update(ed, deltas);
     }
 }
 impl DocumentPhantom for TextDocument {
@@ -350,7 +354,6 @@ impl CommonAction for TextDocument {
                 buffer.set_cursor_after(cursor.mode.clone());
             });
 
-            self.update_cache_rev();
             self.on_update(Some(ed), &deltas);
         }
 

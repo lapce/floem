@@ -1,4 +1,4 @@
-use std::{borrow::Cow, ops::Range};
+use std::{borrow::Cow, cell::Cell, ops::Range};
 
 use lapce_xi_rope::{interval::IntervalBounds, rope::ChunkIter, Cursor, Rope};
 
@@ -79,10 +79,14 @@ pub trait RopeText {
     /// assert_eq!(text.offset_of_line_col(1, 4), 11); // "d"
     /// ````
     fn offset_of_line_col(&self, line: usize, col: usize) -> usize {
+        let offset = self.offset_of_line(line);
+        let last_offset = self.offset_of_line(line + 1);
+        self.offset_of_offset_col(offset, last_offset, col)
+    }
+
+    fn offset_of_offset_col(&self, mut offset: usize, last_offset: usize, col: usize) -> usize {
         let mut pos = 0;
-        let mut offset = self.offset_of_line(line);
-        let text = self.slice_to_cow(offset..self.offset_of_line(line + 1));
-        let mut iter = text.chars().peekable();
+        let mut iter = self.chars(offset..last_offset).peekable();
         while let Some(c) = iter.next() {
             // Stop at the end of the line
             if c == '\n' || (c == '\r' && iter.peek() == Some(&'\n')) {
@@ -97,6 +101,35 @@ pub trait RopeText {
             offset += char_len;
         }
         offset
+    }
+
+    /// (start_line_offset, line_end_offset(caret), line+1 offset)  
+    /// Which we can provide as we need the first and last to compute the second.
+    fn line_offsets(&self, line: usize, caret: bool) -> (usize, usize, usize) {
+        // let line_start = self.offset_of_line(line);
+        // let line_end = self.line_end_offset(line, true);
+        // (line_start, line_end)
+
+        let start_offset = self.offset_of_line(line);
+        let end_offset = self.offset_of_line(line + 1);
+
+        let mut offset = end_offset;
+
+        let start = end_offset.saturating_sub(2).max(start_offset);
+        let mut chars = self.chars(start..end_offset);
+        let fst = chars.next();
+        let snd = chars.next();
+
+        if fst == Some('\r') && snd == Some('\n') {
+            offset -= 2;
+        } else if (fst == Some('\n') && snd == None) || snd == Some('\n') {
+            offset -= 1;
+        }
+
+        if !caret && start_offset != offset {
+            offset = self.prev_grapheme_offset(offset, 1, 0);
+        }
+        (start_offset, offset, end_offset)
     }
 
     fn line_end_col(&self, line: usize, caret: bool) -> usize {
@@ -121,19 +154,44 @@ pub trait RopeText {
     /// assert_eq!(text.line_end_offset(2, false), 11); // "world|"
     /// ```
     fn line_end_offset(&self, line: usize, caret: bool) -> usize {
-        let mut offset = self.offset_of_line(line + 1);
-        let mut line_content: &str = &self.line_content(line);
-        if line_content.ends_with("\r\n") {
-            offset -= 2;
-            line_content = &line_content[..line_content.len() - 2];
-        } else if line_content.ends_with('\n') {
-            offset -= 1;
-            line_content = &line_content[..line_content.len() - 1];
+        self.line_offsets(line, caret).1
+    }
+
+    /// Whether the line is completely empty  
+    /// This counts both 'empty' and 'only has newline'
+    /// ```rust
+    /// # use floem_editor_core::xi_rope::Rope;
+    /// # use floem_editor_core::buffer::rope_text::{RopeText, RopeTextRef};
+    /// let text = Rope::from("hello\nworld toast and jam\n\nhi");
+    /// let text = RopeTextRef::new(&text);
+    /// assert_eq!(text.is_line_empty(0), false);
+    /// assert_eq!(text.is_line_empty(1), false);
+    /// assert_eq!(text.is_line_empty(2), true);
+    /// assert_eq!(text.is_line_empty(3), false);
+    ///
+    /// let text = Rope::from("");
+    /// let text = RopeTextRef::new(&text);
+    /// assert_eq!(text.is_line_empty(0), true);
+    /// ```
+    fn is_line_empty(&self, line: usize) -> bool {
+        let start_offset = self.offset_of_line(line);
+        let end_offset = self.offset_of_line(line + 1);
+
+        if start_offset == end_offset {
+            return true;
         }
-        if !caret && !line_content.is_empty() {
-            offset = self.prev_grapheme_offset(offset, 1, 0);
+
+        let mut chars = self.chars(start_offset..end_offset);
+        let fst = chars.next();
+        let snd = chars.next();
+
+        if fst == Some('\r') && snd == Some('\n') {
+            true
+        } else if (fst == Some('\n') && snd == None) || snd == Some('\n') {
+            true
+        } else {
+            false
         }
-        offset
     }
 
     /// Returns the content of the given line.
@@ -226,6 +284,11 @@ pub trait RopeText {
     fn slice_to_cow(&self, range: Range<usize>) -> Cow<'_, str> {
         self.text()
             .slice_to_cow(range.start.min(self.len())..range.end.min(self.len()))
+    }
+
+    fn chars(&self, range: Range<usize>) -> impl Iterator<Item = char> + '_ {
+        let iter = self.text().iter_chunks(range);
+        iter.flat_map(str::chars)
     }
 
     // TODO(minor): Once you can have an `impl Trait` return type in a trait, this could use that.
@@ -366,18 +429,33 @@ pub trait RopeText {
     }
 }
 
+// We cache the last line. This is cheap to calculate, but is used many times.
 #[derive(Clone)]
 pub struct RopeTextVal {
-    pub text: Rope,
+    text: Rope,
+    last_line: Cell<Option<usize>>,
 }
 impl RopeTextVal {
     pub fn new(text: Rope) -> Self {
-        Self { text }
+        Self {
+            text,
+            last_line: Cell::new(None),
+        }
     }
 }
 impl RopeText for RopeTextVal {
     fn text(&self) -> &Rope {
         &self.text
+    }
+
+    fn last_line(&self) -> usize {
+        if let Some(last_line) = self.last_line.get() {
+            last_line
+        } else {
+            let last_line = self.line_of_offset(self.len());
+            self.last_line.set(Some(last_line));
+            last_line
+        }
     }
 }
 impl From<Rope> for RopeTextVal {
@@ -385,18 +463,32 @@ impl From<Rope> for RopeTextVal {
         Self::new(text)
     }
 }
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct RopeTextRef<'a> {
-    pub text: &'a Rope,
+    text: &'a Rope,
+    last_line: Cell<Option<usize>>,
 }
 impl<'a> RopeTextRef<'a> {
     pub fn new(text: &'a Rope) -> Self {
-        Self { text }
+        Self {
+            text,
+            last_line: Cell::new(None),
+        }
     }
 }
 impl<'a> RopeText for RopeTextRef<'a> {
     fn text(&self) -> &Rope {
         self.text
+    }
+
+    fn last_line(&self) -> usize {
+        if let Some(last_line) = self.last_line.get() {
+            last_line
+        } else {
+            let last_line = self.line_of_offset(self.len());
+            self.last_line.set(Some(last_line));
+            last_line
+        }
     }
 }
 impl<'a> From<&'a Rope> for RopeTextRef<'a> {

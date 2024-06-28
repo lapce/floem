@@ -63,12 +63,53 @@ struct Revision {
     cursor_after: Option<CursorMode>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct InvalLines {
     pub start_line: usize,
     pub inval_count: usize,
     pub new_count: usize,
+}
+impl InvalLines {
+    pub fn new(start_line: usize, inval_count: usize, new_count: usize) -> Self {
+        Self {
+            start_line,
+            inval_count,
+            new_count,
+        }
+    }
+
+    pub fn single(start_line: usize) -> Self {
+        Self {
+            start_line,
+            inval_count: 1,
+            new_count: 1,
+        }
+    }
+
+    pub fn all(line_count: usize) -> Self {
+        Self {
+            start_line: 0,
+            inval_count: line_count,
+            new_count: line_count,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct InvalLinesR {
+    pub start_line: usize,
+    pub inval_count: usize,
+    pub new_count: usize,
     pub old_text: Rope,
+}
+impl Into<InvalLines> for InvalLinesR {
+    fn into(self) -> InvalLines {
+        InvalLines {
+            start_line: self.start_line,
+            inval_count: self.inval_count,
+            new_count: self.new_count,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -214,7 +255,7 @@ impl Buffer {
         self.set_pristine();
     }
 
-    pub fn reload(&mut self, content: Rope, set_pristine: bool) -> (Rope, RopeDelta, InvalLines) {
+    pub fn reload(&mut self, content: Rope, set_pristine: bool) -> (Rope, RopeDelta, InvalLinesR) {
         // Determine the line ending of the new text
         let line_ending = LineEndingDetermination::determine(&content);
         self.line_ending = line_ending.unwrap_or(self.line_ending);
@@ -262,7 +303,7 @@ impl Buffer {
         &mut self,
         edits: I,
         edit_type: EditType,
-    ) -> (Rope, RopeDelta, InvalLines)
+    ) -> (Rope, RopeDelta, InvalLinesR)
     where
         I: IntoIterator<Item = E>,
         E: Borrow<(S, &'a str)>,
@@ -299,7 +340,7 @@ impl Buffer {
         self.add_delta(delta)
     }
 
-    pub fn normalize_line_endings(&mut self) -> Option<(Rope, RopeDelta, InvalLines)> {
+    pub fn normalize_line_endings(&mut self) -> Option<(Rope, RopeDelta, InvalLinesR)> {
         let Some(delta) = self.line_ending.normalize_delta(&self.text) else {
             // There were no changes needed
             return None;
@@ -310,7 +351,7 @@ impl Buffer {
 
     // TODO: don't clone the delta and return it, if the caller needs it then they can clone it
     /// Note: the delta's line-endings should be normalized.
-    fn add_delta(&mut self, delta: RopeDelta) -> (Rope, RopeDelta, InvalLines) {
+    fn add_delta(&mut self, delta: RopeDelta) -> (Rope, RopeDelta, InvalLinesR) {
         let text = self.text.clone();
 
         let undo_group = self.calculate_undo_group();
@@ -337,7 +378,7 @@ impl Buffer {
         new_text: Rope,
         new_tombstones: Rope,
         new_deletes_from_union: Subset,
-    ) -> InvalLines {
+    ) -> InvalLinesR {
         self.rev_counter += 1;
 
         let (iv, newlen) = delta.summary();
@@ -354,7 +395,7 @@ impl Buffer {
         let old_hard_count = old_logical_end_line - logical_start_line;
         let new_hard_count = new_logical_end_line - logical_start_line;
 
-        InvalLines {
+        InvalLinesR {
             start_line: logical_start_line,
             inval_count: old_hard_count,
             new_count: new_hard_count,
@@ -588,7 +629,7 @@ impl Buffer {
     ) -> (
         Rope,
         RopeDelta,
-        InvalLines,
+        InvalLinesR,
         Option<CursorMode>,
         Option<CursorMode>,
     ) {
@@ -622,7 +663,7 @@ impl Buffer {
         (text, delta, inval_lines, cursor_before, cursor_after)
     }
 
-    pub fn do_undo(&mut self) -> Option<(Rope, RopeDelta, InvalLines, Option<CursorMode>)> {
+    pub fn do_undo(&mut self) -> Option<(Rope, RopeDelta, InvalLinesR, Option<CursorMode>)> {
         if self.cur_undo <= 1 {
             return None;
         }
@@ -636,7 +677,7 @@ impl Buffer {
         Some((text, delta, inval_lines, cursor_before))
     }
 
-    pub fn do_redo(&mut self) -> Option<(Rope, RopeDelta, InvalLines, Option<CursorMode>)> {
+    pub fn do_redo(&mut self) -> Option<(Rope, RopeDelta, InvalLinesR, Option<CursorMode>)> {
         if self.cur_undo >= self.live_undos.len() {
             return None;
         }

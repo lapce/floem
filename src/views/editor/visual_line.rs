@@ -58,13 +58,15 @@
 use std::{
     cell::{Cell, RefCell},
     cmp::Ordering,
-    collections::HashMap,
     rc::Rc,
     sync::Arc,
 };
 
 use floem_editor_core::{
-    buffer::rope_text::{RopeText, RopeTextVal},
+    buffer::{
+        rope_text::{RopeText, RopeTextVal},
+        InvalLines,
+    },
     cursor::CursorAffinity,
     word::WordCursor,
 };
@@ -73,7 +75,7 @@ use floem_renderer::cosmic_text::{HitPosition, LayoutGlyph, TextLayout};
 use lapce_xi_rope::{Interval, Rope};
 use peniko::kurbo::Point;
 
-use super::{layout::TextLayoutLine, listener::Listener};
+use super::{layout::TextLayoutLine, line_render_cache::LineRenderCache, listener::Listener};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ResolvedWrap {
@@ -121,9 +123,6 @@ impl RVLine {
     }
 }
 
-/// (Font Size -> (Buffer Line Number -> Text Layout))  
-pub type Layouts = HashMap<usize, HashMap<usize, Arc<TextLayoutLine>>>;
-
 #[derive(Debug, Default, PartialEq, Clone, Copy)]
 pub struct ConfigId {
     editor_style_id: u64,
@@ -143,23 +142,16 @@ pub struct TextLayoutCache {
     /// The id of the last config so that we can clear when the config changes
     /// the first is the styling id and the second is an id for changes from Floem style
     config_id: ConfigId,
-    /// The most recent cache revision of the document.
-    cache_rev: u64,
-    /// (Font Size -> (Buffer Line Number -> Text Layout))  
-    /// Different font-sizes are cached separately, which is useful for features like code lens
-    /// where the font-size can rapidly change.  
-    /// It would also be useful for a prospective minimap feature.  
-    pub layouts: Layouts,
+    pub layouts: LineRenderCache<Arc<TextLayoutLine>>,
     /// The maximum width seen so far, used to determine if we need to show horizontal scrollbar
     pub max_width: f64,
 }
 impl TextLayoutCache {
-    pub fn clear(&mut self, cache_rev: u64, config_id: Option<ConfigId>) {
+    pub fn clear(&mut self, config_id: Option<ConfigId>) {
         self.layouts.clear();
         if let Some(config_id) = config_id {
             self.config_id = config_id;
         }
-        self.cache_rev = cache_rev;
         self.max_width = 0.0;
     }
 
@@ -170,26 +162,42 @@ impl TextLayoutCache {
         self.max_width = 0.0;
     }
 
-    pub fn get(&self, font_size: usize, line: usize) -> Option<&Arc<TextLayoutLine>> {
-        self.layouts.get(&font_size).and_then(|c| c.get(&line))
+    pub fn get(&self, line: usize) -> Option<&Arc<TextLayoutLine>> {
+        self.layouts.get(line)
     }
 
-    pub fn get_mut(&mut self, font_size: usize, line: usize) -> Option<&mut Arc<TextLayoutLine>> {
-        self.layouts
-            .get_mut(&font_size)
-            .and_then(|c| c.get_mut(&line))
+    pub fn get_mut(&mut self, line: usize) -> Option<&mut Arc<TextLayoutLine>> {
+        self.layouts.get_mut(line)
     }
 
     /// Get the (start, end) columns of the (line, line_index)
     pub fn get_layout_col(
         &self,
         text_prov: &impl TextLayoutProvider,
-        font_size: usize,
         line: usize,
         line_index: usize,
     ) -> Option<(usize, usize)> {
-        self.get(font_size, line)
+        self.get(line)
             .and_then(|l| l.layout_cols(text_prov, line).nth(line_index))
+    }
+
+    fn get_layout_col_offsets(
+        &self,
+        text_prov: &impl TextLayoutProvider,
+        line: usize,
+        line_index: usize,
+        line_offset: usize,
+        line_end_offset: usize,
+    ) -> Option<(usize, usize)> {
+        self.get(line).and_then(|l| {
+            let text = text_prov.rope_text();
+            l.layout_cols_offsets(text_prov, text, line, line_offset, line_end_offset)
+                .nth(line_index)
+        })
+    }
+
+    pub fn invalidate(&mut self, inval: InvalLines) {
+        self.layouts.invalidate(inval);
     }
 }
 
@@ -216,12 +224,7 @@ pub trait TextLayoutProvider {
 
     // TODO(minor): Do we really need to pass font size to this? The outer-api is providing line
     // font size provider already, so it should be able to just use that.
-    fn new_text_layout(
-        &self,
-        line: usize,
-        font_size: usize,
-        wrap: ResolvedWrap,
-    ) -> Arc<TextLayoutLine>;
+    fn new_text_layout(&self, line: usize, wrap: ResolvedWrap) -> Arc<TextLayoutLine>;
 
     /// Translate a column position into the postiion it would be before combining with the phantom
     /// text
@@ -239,13 +242,8 @@ impl<T: TextLayoutProvider> TextLayoutProvider for &T {
         (**self).text()
     }
 
-    fn new_text_layout(
-        &self,
-        line: usize,
-        font_size: usize,
-        wrap: ResolvedWrap,
-    ) -> Arc<TextLayoutLine> {
-        (**self).new_text_layout(line, font_size, wrap)
+    fn new_text_layout(&self, line: usize, wrap: ResolvedWrap) -> Arc<TextLayoutLine> {
+        (**self).new_text_layout(line, wrap)
     }
 
     fn before_phantom_col(&self, line: usize, col: usize) -> usize {
@@ -257,19 +255,6 @@ impl<T: TextLayoutProvider> TextLayoutProvider for &T {
     }
 }
 
-pub type FontSizeCacheId = u64;
-pub trait LineFontSizeProvider {
-    /// Get the 'general' font size for a specific buffer line.  
-    /// This is typically the editor font size.  
-    /// There might be alternate font-sizes within the line, like for phantom text, but those are
-    /// not considered here.
-    fn font_size(&self, line: usize) -> usize;
-
-    /// An identifier used to mark when the font size info has changed.  
-    /// This lets us update information.
-    fn cache_id(&self) -> FontSizeCacheId;
-}
-
 /// Layout events. This is primarily needed for logic which tracks visual lines intelligently, like
 /// `ScreenLines` in Lapce.  
 /// This is currently limited to only a `CreatedLayout` event, as changed to the cache rev would
@@ -277,31 +262,22 @@ pub trait LineFontSizeProvider {
 /// events, especially if cache rev gets more specific than clearing everything.
 #[derive(Debug, Clone, PartialEq)]
 pub enum LayoutEvent {
-    CreatedLayout { font_size: usize, line: usize },
+    CreatedLayout { line: usize },
 }
 
 /// The main structure for tracking visual line information.  
 pub struct Lines {
-    /// This is inside out from the usual way of writing Arc-RefCells due to sometimes wanting to
-    /// swap out font sizes, while also grabbing an `Arc` to hold.  
-    /// An `Arc<RefCell<_>>` has the issue that with a `dyn` it can't know they're the same size
-    /// if you were to assign. So this allows us to swap out the `Arc`, though it does mean that
-    /// the other holders of the `Arc` don't get the new version. That is fine currently.
-    pub font_sizes: RefCell<Rc<dyn LineFontSizeProvider>>,
-    text_layouts: Rc<RefCell<TextLayoutCache>>,
+    #[doc(hidden)]
+    pub text_layouts: Rc<RefCell<TextLayoutCache>>,
     wrap: Cell<ResolvedWrap>,
-    font_size_cache_id: Cell<FontSizeCacheId>,
     last_vline: Rc<Cell<Option<VLine>>>,
     pub layout_event: Listener<LayoutEvent>,
 }
 impl Lines {
-    pub fn new(cx: Scope, font_sizes: RefCell<Rc<dyn LineFontSizeProvider>>) -> Lines {
-        let id = font_sizes.borrow().cache_id();
+    pub fn new(cx: Scope) -> Lines {
         Lines {
-            font_sizes,
             text_layouts: Rc::new(RefCell::new(TextLayoutCache::default())),
             wrap: Cell::new(ResolvedWrap::None),
-            font_size_cache_id: Cell::new(id),
             last_vline: Rc::new(Cell::new(None)),
             layout_event: Listener::new_empty(cx),
         }
@@ -349,51 +325,51 @@ impl Lines {
         self.wrap.get() == ResolvedWrap::None && !text_prov.has_multiline_phantom()
     }
 
-    /// Get the font size that [`Self::font_sizes`] provides
-    pub fn font_size(&self, line: usize) -> usize {
-        self.font_sizes.borrow().font_size(line)
-    }
-
     /// Get the last visual line of the file.  
     /// Cached.
     pub fn last_vline(&self, text_prov: impl TextLayoutProvider) -> VLine {
-        let current_id = self.font_sizes.borrow().cache_id();
-        if current_id != self.font_size_cache_id.get() {
-            self.last_vline.set(None);
-            self.font_size_cache_id.set(current_id);
-        }
-
         if let Some(last_vline) = self.last_vline.get() {
             last_vline
         } else {
-            // For most files this should easily be fast enough.
-            // Though it could still be improved.
-            let rope_text = text_prov.rope_text();
-            let hard_line_count = rope_text.num_lines();
-
-            let line_count = if self.is_linear(text_prov) {
-                hard_line_count
-            } else {
-                let mut soft_line_count = 0;
-
-                let layouts = self.text_layouts.borrow();
-                for i in 0..hard_line_count {
-                    let font_size = self.font_size(i);
-                    if let Some(text_layout) = layouts.get(font_size, i) {
-                        let line_count = text_layout.line_count();
-                        soft_line_count += line_count;
-                    } else {
-                        soft_line_count += 1;
-                    }
-                }
-
-                soft_line_count
-            };
+            let line_count = self.count_lines(text_prov);
 
             let last_vline = line_count.saturating_sub(1);
             self.last_vline.set(Some(VLine(last_vline)));
             VLine(last_vline)
         }
+    }
+
+    fn count_lines(&self, text_prov: impl TextLayoutProvider) -> usize {
+        let rope_text = text_prov.rope_text();
+        let hard_line_count = rope_text.num_lines();
+
+        if self.is_linear(text_prov) {
+            return hard_line_count;
+        }
+
+        let mut soft_line_count = 0;
+
+        let layouts = self.text_layouts.borrow();
+        let layouts = &layouts.layouts;
+
+        let base_line = layouts.base_line();
+
+        // Before the layouts baseline, there is #base_line non-wrapped lines
+        soft_line_count += base_line;
+
+        // Add all the potentially wrapped line counts
+        for entry in layouts.iter() {
+            let line_count = entry.as_ref().map(|l| l.line_count()).unwrap_or(1);
+
+            soft_line_count += line_count;
+        }
+
+        // Add all the lines after the layouts
+        let after = base_line + layouts.len();
+        let diff = hard_line_count - after;
+        soft_line_count += diff;
+
+        soft_line_count
     }
 
     /// Clear the cache for the last vline
@@ -407,9 +383,8 @@ impl Lines {
         let rope_text = text_prov.rope_text();
         let last_line = rope_text.last_line();
         let layouts = self.text_layouts.borrow();
-        let font_size = self.font_size(last_line);
 
-        if let Some(layout) = layouts.get(font_size, last_line) {
+        if let Some(layout) = layouts.get(last_line) {
             let line_count = layout.line_count();
 
             RVLine::new(last_line, line_count - 1)
@@ -434,21 +409,18 @@ impl Lines {
     /// cache.
     pub fn get_init_text_layout(
         &self,
-        cache_rev: u64,
         config_id: ConfigId,
         text_prov: impl TextLayoutProvider,
         line: usize,
         trigger: bool,
     ) -> Arc<TextLayoutLine> {
-        self.check_cache(cache_rev, config_id);
+        self.check_cache(config_id);
 
-        let font_size = self.font_size(line);
         get_init_text_layout(
             &self.text_layouts,
             trigger.then_some(self.layout_event),
             text_prov,
             line,
-            font_size,
             self.wrap.get(),
             &self.last_vline,
         )
@@ -460,20 +432,12 @@ impl Lines {
     /// cache.
     pub fn try_get_text_layout(
         &self,
-        cache_rev: u64,
         config_id: ConfigId,
         line: usize,
     ) -> Option<Arc<TextLayoutLine>> {
-        self.check_cache(cache_rev, config_id);
+        self.check_cache(config_id);
 
-        let font_size = self.font_size(line);
-
-        self.text_layouts
-            .borrow()
-            .layouts
-            .get(&font_size)
-            .and_then(|f| f.get(&line))
-            .cloned()
+        self.text_layouts.borrow().layouts.get(line).cloned()
     }
 
     /// Initialize the text layout of every line in the real line interval.  
@@ -482,14 +446,13 @@ impl Lines {
     /// the [`LayoutEvent::CreatedLayout`] event.
     pub fn init_line_interval(
         &self,
-        cache_rev: u64,
         config_id: ConfigId,
         text_prov: &impl TextLayoutProvider,
         lines: impl Iterator<Item = usize>,
         trigger: bool,
     ) {
         for line in lines {
-            self.get_init_text_layout(cache_rev, config_id, text_prov, line, trigger);
+            self.get_init_text_layout(config_id, text_prov, line, trigger);
         }
     }
 
@@ -500,14 +463,13 @@ impl Lines {
     /// the [`LayoutEvent::CreatedLayout`] event.
     pub fn init_all(
         &self,
-        cache_rev: u64,
         config_id: ConfigId,
         text_prov: &impl TextLayoutProvider,
         trigger: bool,
     ) {
         let text = text_prov.text();
         let last_line = text.line_of_offset(text.len());
-        self.init_line_interval(cache_rev, config_id, text_prov, 0..=last_line, trigger);
+        self.init_line_interval(config_id, text_prov, 0..=last_line, trigger);
     }
 
     /// Iterator over [`VLineInfo`]s, starting at `start_line`.  
@@ -566,23 +528,21 @@ impl Lines {
     pub fn iter_vlines_init(
         &self,
         text_prov: impl TextLayoutProvider + Clone,
-        cache_rev: u64,
         config_id: ConfigId,
         start: VLine,
         trigger: bool,
     ) -> impl Iterator<Item = VLineInfo> {
-        self.check_cache(cache_rev, config_id);
+        self.check_cache(config_id);
 
         if start <= self.last_vline(&text_prov) {
             // We initialize the text layout for the line that start line is for
             let (_, rvline) = find_vline_init_info(self, &text_prov, start).unwrap();
-            self.get_init_text_layout(cache_rev, config_id, &text_prov, rvline.line, trigger);
+            self.get_init_text_layout(config_id, &text_prov, rvline.line, trigger);
             // If the start line was past the last vline then we don't need to initialize anything
             // since it won't get anything.
         }
 
         let text_layouts = self.text_layouts.clone();
-        let font_sizes = self.font_sizes.clone();
         let wrap = self.wrap.get();
         let last_vline = self.last_vline.clone();
         let layout_event = trigger.then_some(self.layout_event);
@@ -592,7 +552,6 @@ impl Lines {
                     // For every (first) vline we initialize the next buffer line's text layout
                     // This ensures it is ready for when re reach it.
                     let next_line = v.rvline.line + 1;
-                    let font_size = font_sizes.borrow().font_size(next_line);
                     // `init_iter_vlines` is the reason `get_init_text_layout` is split out.
                     // Being split out lets us avoid attaching lifetimes to the iterator, since it
                     // only uses Rc/Arcs it is given.
@@ -604,7 +563,6 @@ impl Lines {
                         layout_event,
                         &text_prov,
                         next_line,
-                        font_size,
                         wrap,
                         &last_vline,
                     );
@@ -622,13 +580,12 @@ impl Lines {
     pub fn iter_vlines_init_over(
         &self,
         text_prov: impl TextLayoutProvider + Clone,
-        cache_rev: u64,
         config_id: ConfigId,
         start: VLine,
         end: VLine,
         trigger: bool,
     ) -> impl Iterator<Item = VLineInfo> {
-        self.iter_vlines_init(text_prov, cache_rev, config_id, start, trigger)
+        self.iter_vlines_init(text_prov, config_id, start, trigger)
             .take_while(move |info| info.vline < end)
     }
 
@@ -641,20 +598,18 @@ impl Lines {
     pub fn iter_rvlines_init(
         &self,
         text_prov: impl TextLayoutProvider + Clone,
-        cache_rev: u64,
         config_id: ConfigId,
         start: RVLine,
         trigger: bool,
     ) -> impl Iterator<Item = VLineInfo<()>> {
-        self.check_cache(cache_rev, config_id);
+        self.check_cache(config_id);
 
         if start.line <= text_prov.rope_text().last_line() {
             // Initialize the text layout for the line that start line is for
-            self.get_init_text_layout(cache_rev, config_id, &text_prov, start.line, trigger);
+            self.get_init_text_layout(config_id, &text_prov, start.line, trigger);
         }
 
         let text_layouts = self.text_layouts.clone();
-        let font_sizes = self.font_sizes.clone();
         let wrap = self.wrap.get();
         let last_vline = self.last_vline.clone();
         let layout_event = trigger.then_some(self.layout_event);
@@ -664,7 +619,6 @@ impl Lines {
                     // For every (first) vline we initialize the next buffer line's text layout
                     // This ensures it is ready for when re reach it.
                     let next_line = v.rvline.line + 1;
-                    let font_size = font_sizes.borrow().font_size(next_line);
                     // `init_iter_lines` is the reason `get_init_text_layout` is split out.
                     // Being split out lets us avoid attaching lifetimes to the iterator, since it
                     // only uses Rc/Arcs that it. This is useful since `Lines` would be in a
@@ -675,7 +629,6 @@ impl Lines {
                         layout_event,
                         &text_prov,
                         next_line,
-                        font_size,
                         wrap,
                         &last_vline,
                     );
@@ -825,12 +778,11 @@ impl Lines {
         RVLine { line, line_index }: RVLine,
     ) -> usize {
         let rope_text = text_prov.rope_text();
-        let font_size = self.font_size(line);
         let layouts = self.text_layouts.borrow();
 
         // We could remove the debug asserts and allow invalid line indices. However I think it is
         // desirable to avoid those since they are probably indicative of bugs.
-        if let Some(text_layout) = layouts.get(font_size, line) {
+        if let Some(text_layout) = layouts.get(line) {
             debug_assert!(
                 line_index < text_layout.line_count(),
                 "Line index was out of bounds. This likely indicates keeping an rvline past when it was valid."
@@ -868,28 +820,20 @@ impl Lines {
     }
 
     /// Check whether the cache rev or config id has changed, clearing the cache if it has.
-    pub fn check_cache(&self, cache_rev: u64, config_id: ConfigId) {
-        let (prev_cache_rev, prev_config_id) = {
+    pub fn check_cache(&self, config_id: ConfigId) {
+        let prev_config_id = {
             let l = self.text_layouts.borrow();
-            (l.cache_rev, l.config_id)
+            l.config_id
         };
 
-        if cache_rev != prev_cache_rev || config_id != prev_config_id {
-            self.clear(cache_rev, Some(config_id));
-        }
-    }
-
-    /// Check whether the text layout cache revision is different.  
-    /// Clears the layouts and updates the cache rev if it was different.
-    pub fn check_cache_rev(&self, cache_rev: u64) {
-        if cache_rev != self.text_layouts.borrow().cache_rev {
-            self.clear(cache_rev, None);
+        if config_id != prev_config_id {
+            self.clear(Some(config_id));
         }
     }
 
     /// Clear the text layouts with a given cache revision
-    pub fn clear(&self, cache_rev: u64, config_id: Option<ConfigId>) {
-        self.text_layouts.borrow_mut().clear(cache_rev, config_id);
+    pub fn clear(&self, config_id: Option<ConfigId>) {
+        self.text_layouts.borrow_mut().clear(config_id);
         self.last_vline.set(None);
     }
 
@@ -897,6 +841,14 @@ impl Lines {
     pub fn clear_unchanged(&self) {
         self.text_layouts.borrow_mut().clear_unchanged();
         self.last_vline.set(None);
+    }
+
+    pub fn invalidate(&self, inval: InvalLines) {
+        if inval.inval_count == 0 {
+            return;
+        }
+
+        self.text_layouts.borrow_mut().invalidate(inval);
     }
 }
 
@@ -912,28 +864,14 @@ fn get_init_text_layout(
     layout_event: Option<Listener<LayoutEvent>>,
     text_prov: impl TextLayoutProvider,
     line: usize,
-    font_size: usize,
     wrap: ResolvedWrap,
     last_vline: &Cell<Option<VLine>>,
 ) -> Arc<TextLayoutLine> {
-    // If we don't have a second layer of the hashmap initialized for this specific font size,
-    // do it now
-    if !text_layouts.borrow().layouts.contains_key(&font_size) {
-        let mut cache = text_layouts.borrow_mut();
-        cache.layouts.insert(font_size, HashMap::new());
-    }
-
     // Get whether there's an entry for this specific font size and line
-    let cache_exists = text_layouts
-        .borrow()
-        .layouts
-        .get(&font_size)
-        .unwrap()
-        .get(&line)
-        .is_some();
+    let cache_exists = text_layouts.borrow().layouts.get(line).is_some();
     // If there isn't an entry then we actually have to create it
     if !cache_exists {
-        let text_layout = text_prov.new_text_layout(line, font_size, wrap);
+        let text_layout = text_prov.new_text_layout(line, wrap);
 
         // Update last vline
         if let Some(vline) = last_vline.get() {
@@ -958,27 +896,16 @@ fn get_init_text_layout(
             if width > cache.max_width {
                 cache.max_width = width;
             }
-            cache
-                .layouts
-                .get_mut(&font_size)
-                .unwrap()
-                .insert(line, text_layout);
+            cache.layouts.insert(line, text_layout);
         }
 
         if let Some(layout_event) = layout_event {
-            layout_event.send(LayoutEvent::CreatedLayout { font_size, line });
+            layout_event.send(LayoutEvent::CreatedLayout { line });
         }
     }
 
     // Just get the entry, assuming it has been created because we initialize it above.
-    text_layouts
-        .borrow()
-        .layouts
-        .get(&font_size)
-        .unwrap()
-        .get(&line)
-        .cloned()
-        .unwrap()
+    text_layouts.borrow().layouts.get(line).cloned().unwrap()
 }
 
 /// Returns (visual line, line_index)  
@@ -996,8 +923,7 @@ fn find_vline_of_offset(
     let line_start_offset = rope_text.offset_of_line(buffer_line);
     let vline = find_vline_of_line(lines, text_prov, buffer_line)?;
 
-    let font_size = lines.font_size(buffer_line);
-    let Some(text_layout) = layouts.get(font_size, buffer_line) else {
+    let Some(text_layout) = layouts.get(buffer_line) else {
         // No text layout for this line, so the vline we found is definitely correct.
         // As well, there is no previous soft line to consider
         return Some((vline, 0));
@@ -1038,8 +964,7 @@ fn find_rvline_of_offset(
     let buffer_line = rope_text.line_of_offset(offset);
     let line_start_offset = rope_text.offset_of_line(buffer_line);
 
-    let font_size = lines.font_size(buffer_line);
-    let Some(text_layout) = layouts.get(font_size, buffer_line) else {
+    let Some(text_layout) = layouts.get(buffer_line) else {
         // There is no text layout for this line so the line index is always zero.
         return Some(RVLine::new(buffer_line, 0));
     };
@@ -1063,8 +988,7 @@ fn find_rvline_of_offset(
                 } else {
                     // We have to get rvline info for that rvline, so we can get the last line index
                     // This should aways have at least one rvline in it.
-                    let font_sizes = lines.font_sizes.borrow();
-                    let (prev, _) = prev_rvline(&layouts, text_prov, &**font_sizes, rv)?;
+                    let (prev, _) = prev_rvline(&layouts, text_prov, &rope_text, rv)?;
                     return Some(prev);
                 }
             }
@@ -1158,9 +1082,7 @@ fn find_vline_of_line_backwards(
     let mut cur_vline = start.get();
 
     for cur_line in line..s_line {
-        let font_size = lines.font_size(cur_line);
-
-        let Some(text_layout) = layouts.get(font_size, cur_line) else {
+        let Some(text_layout) = layouts.get(cur_line) else {
             // no text layout, so its just a normal line
             cur_vline -= 1;
             continue;
@@ -1190,9 +1112,7 @@ fn find_vline_of_line_forwards(
     let mut cur_vline = start.get();
 
     for cur_line in s_line..line {
-        let font_size = lines.font_size(cur_line);
-
-        let Some(text_layout) = layouts.get(font_size, cur_line) else {
+        let Some(text_layout) = layouts.get(cur_line) else {
             // no text layout, so its just a normal line
             cur_vline += 1;
             continue;
@@ -1211,7 +1131,7 @@ fn find_vline_of_line_forwards(
 /// phantom text.
 ///
 /// Returns `None` if the visual line is out of bounds.
-fn find_vline_init_info(
+pub fn find_vline_init_info(
     lines: &Lines,
     text_prov: &impl TextLayoutProvider,
     vline: VLine,
@@ -1238,218 +1158,56 @@ fn find_vline_init_info(
         return None;
     }
 
-    if vline.get() < last_vline.get() / 2 {
-        let last_rvline = lines.last_rvline(text_prov);
-        find_vline_init_info_rv_backward(lines, text_prov, (last_vline, last_rvline), vline)
-    } else {
-        find_vline_init_info_forward(lines, text_prov, (VLine(0), 0), vline)
-    }
-}
-
-// TODO(minor): should we package (VLine, buffer line) into a struct since we use it for these
-// pseudo relative calculations often?
-/// Find the `(start offset, rvline)` of a given [`VLine`]  
-///   
-/// start offset is into the file, rather than text layout's string, so it does not include
-/// phantom text.  
-///
-/// Returns `None` if the visual line is out of bounds, or if the start is past our target.
-fn find_vline_init_info_forward(
-    lines: &Lines,
-    text_prov: &impl TextLayoutProvider,
-    (start, start_line): (VLine, usize),
-    vline: VLine,
-) -> Option<(usize, RVLine)> {
-    if start > vline {
-        return None;
-    }
-
-    let rope_text = text_prov.rope_text();
-
-    let mut cur_line = start_line;
-    let mut cur_vline = start.get();
-
     let layouts = lines.text_layouts.borrow();
-    while cur_vline < vline.get() {
-        let font_size = lines.font_size(cur_line);
-        let line_count = if let Some(text_layout) = layouts.get(font_size, cur_line) {
-            let line_count = text_layout.line_count();
+    let layouts = &layouts.layouts;
+    let base_line = layouts.base_line();
 
-            // We can then check if the visual line is in this intervening range.
-            if cur_vline + line_count > vline.get() {
-                // We found the line that contains the visual line.
-                // We can now find the offset of the visual line within the line.
-                let line_index = vline.get() - cur_vline;
-                // TODO: is it fine to unwrap here?
-                let col = text_layout
+    if base_line > vline.get() {
+        // The vline is not within the rendered, thus it is linear
+        let line = vline.get();
+        return Some((rope_text.offset_of_line(line), RVLine::new(line, 0)));
+    }
+
+    let mut cur_vline = base_line;
+    for (cur_line, entry) in layouts.iter_with_line() {
+        let line_count = entry.as_ref().map(|l| l.line_count()).unwrap_or(1);
+
+        if cur_vline + line_count > vline.get() {
+            let line_index = vline.get() - cur_vline;
+            let col = if let Some(entry) = &entry {
+                let col = entry
                     .start_layout_cols(text_prov, cur_line)
                     .nth(line_index)
                     .unwrap_or(0);
-                let col = text_prov.before_phantom_col(cur_line, col);
+                text_prov.before_phantom_col(cur_line, col)
+            } else {
+                0
+            };
 
-                let offset = rope_text.offset_of_line_col(cur_line, col);
-                return Some((offset, RVLine::new(cur_line, line_index)));
-            }
+            let offset = rope_text.offset_of_line_col(cur_line, col);
+            return Some((offset, RVLine::new(cur_line, line_index)));
+        }
 
-            // The visual line is not in this line, so we have to keep looking.
-            line_count
-        } else {
-            // There was no text layout so we only have to consider the line breaks in this line.
-            // Which, since we don't handle phantom text, is just one.
-
-            1
-        };
-
-        cur_line += 1;
         cur_vline += line_count;
     }
 
-    // We've reached the visual line we're looking for, we can return the offset.
-    // This also handles the case where the vline is past the end of the text.
+    let cur_line = base_line + layouts.len();
+
+    let linear_diff = vline.get() - cur_vline;
+
+    let cur_vline = cur_line + linear_diff;
+    let cur_line = cur_line + linear_diff;
+
     if cur_vline == vline.get() {
         if cur_line > rope_text.last_line() {
             return None;
         }
 
-        // We use cur_line because if our target vline is out of bounds
-        // then the result should be len
         Some((rope_text.offset_of_line(cur_line), RVLine::new(cur_line, 0)))
     } else {
-        // We've gone past the visual line we're looking for, so it is out of bounds.
+        // We've gone past the visual line we are looking for, so it is out of bounds.
         None
     }
-}
-
-/// Find the `(start offset, rvline)` of a given [`VLine`]
-///
-/// `start offset` is into the file, rather than the text layout's content, so it does not
-/// include phantom text.  
-///
-/// Returns `None` if the visual line is out of bounds or if the start is before our target.  
-/// This iterates backwards.
-fn find_vline_init_info_rv_backward(
-    lines: &Lines,
-    text_prov: &impl TextLayoutProvider,
-    (start, start_rvline): (VLine, RVLine),
-    vline: VLine,
-) -> Option<(usize, RVLine)> {
-    if start < vline {
-        // The start was before the target.
-        return None;
-    }
-
-    // This would the vline at the very start of the buffer line
-    let shifted_start = VLine(start.get() - start_rvline.line_index);
-    match shifted_start.cmp(&vline) {
-        // The shifted start was equivalent to the vline, which makes it easy to compute
-        Ordering::Equal => {
-            let offset = text_prov.rope_text().offset_of_line(start_rvline.line);
-            Some((offset, RVLine::new(start_rvline.line, 0)))
-        }
-        // The new start is before the vline, that means the vline is on the same line.
-        Ordering::Less => {
-            let line_index = vline.get() - shifted_start.get();
-            let layouts = lines.text_layouts.borrow();
-            let font_size = lines.font_size(start_rvline.line);
-            if let Some(text_layout) = layouts.get(font_size, start_rvline.line) {
-                vline_init_info_b(
-                    text_prov,
-                    text_layout,
-                    RVLine::new(start_rvline.line, line_index),
-                )
-            } else {
-                // There was no text layout so we only have to consider the line breaks in this line.
-
-                let base_offset = text_prov.rope_text().offset_of_line(start_rvline.line);
-                Some((base_offset, RVLine::new(start_rvline.line, 0)))
-            }
-        }
-        Ordering::Greater => find_vline_init_info_backward(
-            lines,
-            text_prov,
-            (shifted_start, start_rvline.line),
-            vline,
-        ),
-    }
-}
-
-fn find_vline_init_info_backward(
-    lines: &Lines,
-    text_prov: &impl TextLayoutProvider,
-    (mut start, mut start_line): (VLine, usize),
-    vline: VLine,
-) -> Option<(usize, RVLine)> {
-    loop {
-        let (prev_vline, prev_line) = prev_line_start(lines, start, start_line)?;
-
-        match prev_vline.cmp(&vline) {
-            // We found the target, and it was at the start
-            Ordering::Equal => {
-                let offset = text_prov.rope_text().offset_of_line(prev_line);
-                return Some((offset, RVLine::new(prev_line, 0)));
-            }
-            // The target is on this line, so we can just search for it
-            Ordering::Less => {
-                let font_size = lines.font_size(prev_line);
-                let layouts = lines.text_layouts.borrow();
-                if let Some(text_layout) = layouts.get(font_size, prev_line) {
-                    return vline_init_info_b(
-                        text_prov,
-                        text_layout,
-                        RVLine::new(prev_line, vline.get() - prev_vline.get()),
-                    );
-                } else {
-                    // There was no text layout so we only have to consider the line breaks in this line.
-                    // Which, since we don't handle phantom text, is just one.
-
-                    let base_offset = text_prov.rope_text().offset_of_line(prev_line);
-                    return Some((base_offset, RVLine::new(prev_line, 0)));
-                }
-            }
-            // The target is before this line, so we have to keep searching
-            Ordering::Greater => {
-                start = prev_vline;
-                start_line = prev_line;
-            }
-        }
-    }
-}
-
-/// Get the previous (line, start visual line) from a (line, start visual line).
-fn prev_line_start(lines: &Lines, vline: VLine, line: usize) -> Option<(VLine, usize)> {
-    if line == 0 {
-        return None;
-    }
-
-    let layouts = lines.text_layouts.borrow();
-
-    let prev_line = line - 1;
-    let font_size = lines.font_size(line);
-    if let Some(layout) = layouts.get(font_size, prev_line) {
-        let line_count = layout.line_count();
-        let prev_vline = vline.get() - line_count;
-        Some((VLine(prev_vline), prev_line))
-    } else {
-        // There's no layout for the previous line which makes this easy
-        Some((VLine(vline.get() - 1), prev_line))
-    }
-}
-
-fn vline_init_info_b(
-    text_prov: &impl TextLayoutProvider,
-    text_layout: &TextLayoutLine,
-    rv: RVLine,
-) -> Option<(usize, RVLine)> {
-    let rope_text = text_prov.rope_text();
-    let col = text_layout
-        .start_layout_cols(text_prov, rv.line)
-        .nth(rv.line_index)
-        .unwrap_or(0);
-    let col = text_prov.before_phantom_col(rv.line, col);
-
-    let offset = rope_text.offset_of_line_col(rv.line, col);
-
-    Some((offset, rv))
 }
 
 /// Information about the visual line and how it relates to the underlying buffer line.
@@ -1630,7 +1388,6 @@ impl<T: TextLayoutProvider> Iterator for VisualLines<T> {
 /// Iterator of the visual lines in a [`Lines`] relative to some starting buffer line.  
 /// This only considers wrapped and phantom text lines that have been rendered into a text layout.
 struct VisualLinesRelative<T: TextLayoutProvider> {
-    font_sizes: Rc<dyn LineFontSizeProvider>,
     text_layouts: Rc<RefCell<TextLayoutCache>>,
     text_prov: T,
 
@@ -1660,13 +1417,11 @@ impl<T: TextLayoutProvider> VisualLinesRelative<T> {
         }
 
         let layouts = lines.text_layouts.borrow();
-        let font_size = lines.font_size(start.line);
-        let offset = rvline_offset(&layouts, &text_prov, font_size, start);
+        let offset = rvline_offset(&layouts, &text_prov, start);
 
         let linear = lines.is_linear(&text_prov);
 
         VisualLinesRelative {
-            font_sizes: lines.font_sizes.borrow().clone(),
             text_layouts: lines.text_layouts.clone(),
             text_prov,
             is_done: false,
@@ -1680,7 +1435,6 @@ impl<T: TextLayoutProvider> VisualLinesRelative<T> {
 
     pub fn empty(lines: &Lines, text_prov: T, backwards: bool) -> VisualLinesRelative<T> {
         VisualLinesRelative {
-            font_sizes: lines.font_sizes.borrow().clone(),
             text_layouts: lines.text_layouts.clone(),
             text_prov,
             is_done: true,
@@ -1701,6 +1455,7 @@ impl<T: TextLayoutProvider> Iterator for VisualLinesRelative<T> {
         }
 
         let layouts = self.text_layouts.borrow();
+        let rope_text = self.text_prov.rope_text();
         if self.is_first_iter {
             // This skips the next line call on the first line.
             self.is_first_iter = false;
@@ -1708,7 +1463,7 @@ impl<T: TextLayoutProvider> Iterator for VisualLinesRelative<T> {
             let v = shift_rvline(
                 &layouts,
                 &self.text_prov,
-                &*self.font_sizes,
+                &rope_text,
                 self.rvline,
                 self.backwards,
                 self.linear,
@@ -1733,10 +1488,9 @@ impl<T: TextLayoutProvider> Iterator for VisualLinesRelative<T> {
 
         let start = self.offset;
 
-        let font_size = self.font_sizes.font_size(line);
-        let end = end_of_rvline(&layouts, &self.text_prov, font_size, self.rvline);
+        let end = end_of_rvline(&layouts, &self.text_prov, self.rvline);
 
-        let line_count = if let Some(text_layout) = layouts.get(font_size, line) {
+        let line_count = if let Some(text_layout) = layouts.get(line) {
             text_layout.line_count()
         } else {
             1
@@ -1749,24 +1503,26 @@ impl<T: TextLayoutProvider> Iterator for VisualLinesRelative<T> {
 }
 
 // TODO: This might skip spaces at the end of lines, which we probably don't want?
+#[doc(hidden)]
 /// Get the end offset of the visual line from the file's line and the line index.  
-fn end_of_rvline(
+pub fn end_of_rvline(
     layouts: &TextLayoutCache,
     text_prov: &impl TextLayoutProvider,
-    font_size: usize,
     RVLine { line, line_index }: RVLine,
 ) -> usize {
     if line > text_prov.rope_text().last_line() {
         return text_prov.text().len();
     }
 
-    if let Some((_, end_col)) = layouts.get_layout_col(text_prov, font_size, line, line_index) {
+    let rope_text = text_prov.rope_text();
+    let (line_offset, line_end_offset, next_line_offset) = rope_text.line_offsets(line, true);
+    if let Some((_, end_col)) =
+        layouts.get_layout_col_offsets(text_prov, line, line_index, line_offset, line_end_offset)
+    {
         let end_col = text_prov.before_phantom_col(line, end_col);
-        text_prov.rope_text().offset_of_line_col(line, end_col)
+        rope_text.offset_of_offset_col(line_offset, next_line_offset, end_col)
     } else {
-        let rope_text = text_prov.rope_text();
-
-        rope_text.line_end_offset(line, true)
+        line_end_offset
     }
 }
 
@@ -1774,13 +1530,12 @@ fn end_of_rvline(
 fn shift_rvline(
     layouts: &TextLayoutCache,
     text_prov: &impl TextLayoutProvider,
-    font_sizes: &dyn LineFontSizeProvider,
+    rope_text: &RopeTextVal,
     vline: RVLine,
     backwards: bool,
     linear: bool,
 ) -> Option<(RVLine, usize)> {
     if linear {
-        let rope_text = text_prov.rope_text();
         debug_assert_eq!(
             vline.line_index, 0,
             "Line index should be zero if we're linearly working with lines"
@@ -1804,21 +1559,19 @@ fn shift_rvline(
             Some((RVLine::new(next_line, 0), offset))
         }
     } else if backwards {
-        prev_rvline(layouts, text_prov, font_sizes, vline)
+        prev_rvline(layouts, text_prov, rope_text, vline)
     } else {
-        let font_size = font_sizes.font_size(vline.line);
-        Some(next_rvline(layouts, text_prov, font_size, vline))
+        Some(next_rvline(layouts, text_prov, rope_text, vline))
     }
 }
 
 fn rvline_offset(
     layouts: &TextLayoutCache,
     text_prov: &impl TextLayoutProvider,
-    font_size: usize,
     RVLine { line, line_index }: RVLine,
 ) -> usize {
     let rope_text = text_prov.rope_text();
-    if let Some((line_col, _)) = layouts.get_layout_col(text_prov, font_size, line, line_index) {
+    if let Some((line_col, _)) = layouts.get_layout_col(text_prov, line, line_index) {
         let line_col = text_prov.before_phantom_col(line, line_col);
 
         rope_text.offset_of_line_col(line, line_col)
@@ -1832,17 +1585,26 @@ fn rvline_offset(
 
 /// Move to the next visual line, giving the new information.  
 /// Returns `(new rel vline, offset)`
-fn next_rvline(
+pub fn next_rvline(
     layouts: &TextLayoutCache,
     text_prov: &impl TextLayoutProvider,
-    font_size: usize,
+    rope_text: &RopeTextVal,
     RVLine { line, line_index }: RVLine,
 ) -> (RVLine, usize) {
-    let rope_text = text_prov.rope_text();
-    if let Some(layout_line) = layouts.get(font_size, line) {
-        if let Some((line_col, _)) = layout_line.layout_cols(text_prov, line).nth(line_index + 1) {
+    if let Some(layout_line) = layouts.get(line) {
+        let (line_offset, line_end_offset, next_line_offset) = rope_text.line_offsets(line, true);
+        if let Some((line_col, _)) = layout_line
+            .layout_cols_offsets(
+                text_prov,
+                rope_text.clone(),
+                line,
+                line_offset,
+                line_end_offset,
+            )
+            .nth(line_index + 1)
+        {
             let line_col = text_prov.before_phantom_col(line, line_col);
-            let offset = rope_text.offset_of_line_col(line, line_col);
+            let offset = rope_text.offset_of_offset_col(line_offset, next_line_offset, line_col);
 
             (RVLine::new(line, line_index + 1), offset)
         } else {
@@ -1865,10 +1627,9 @@ fn next_rvline(
 fn prev_rvline(
     layouts: &TextLayoutCache,
     text_prov: &impl TextLayoutProvider,
-    font_sizes: &dyn LineFontSizeProvider,
+    rope_text: &RopeTextVal,
     RVLine { line, line_index }: RVLine,
 ) -> Option<(RVLine, usize)> {
-    let rope_text = text_prov.rope_text();
     if line_index == 0 {
         // Line index was zero so we must be moving back a buffer line
         if line == 0 {
@@ -1876,10 +1637,9 @@ fn prev_rvline(
         }
 
         let prev_line = line - 1;
-        let font_size = font_sizes.font_size(prev_line);
-        if let Some(layout_line) = layouts.get(font_size, prev_line) {
+        if let Some(layout_line) = layouts.get(prev_line) {
             let (i, line_col) = layout_line
-                .start_layout_cols(text_prov, prev_line)
+                .start_layout_cols_rope(text_prov, rope_text, prev_line)
                 .enumerate()
                 .last()
                 .unwrap_or((0, 0));
@@ -1896,8 +1656,7 @@ fn prev_rvline(
         // We're still on the same buffer line, so we can just move to the previous layout/vline.
 
         let prev_line_index = line_index - 1;
-        let font_size = font_sizes.font_size(line);
-        if let Some(layout_line) = layouts.get(font_size, line) {
+        if let Some(layout_line) = layouts.get(line) {
             if let Some((line_col, _)) = layout_line
                 .layout_cols(text_prov, line)
                 .nth(prev_line_index)
@@ -2016,7 +1775,7 @@ pub fn hit_position_aff(this: &TextLayout, idx: usize, before: bool) -> HitPosit
 
 #[cfg(test)]
 mod tests {
-    use std::{borrow::Cow, cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
+    use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
     use floem_editor_core::{
         buffer::rope_text::{RopeText, RopeTextRef, RopeTextVal},
@@ -2034,8 +1793,7 @@ mod tests {
     };
 
     use super::{
-        find_vline_init_info_forward, find_vline_init_info_rv_backward, ConfigId, FontSizeCacheId,
-        LineFontSizeProvider, Lines, RVLine, ResolvedWrap, TextLayoutProvider, VLine,
+        find_vline_init_info, ConfigId, Lines, RVLine, ResolvedWrap, TextLayoutProvider, VLine,
     };
 
     /// For most of the logic we standardize on a specific font size.
@@ -2067,12 +1825,7 @@ mod tests {
 
         // An implementation relatively close to the actual new text layout impl but simplified.
         // TODO(minor): It would be nice to just use the same impl as view's
-        fn new_text_layout(
-            &self,
-            line: usize,
-            font_size: usize,
-            wrap: ResolvedWrap,
-        ) -> Arc<TextLayoutLine> {
+        fn new_text_layout(&self, line: usize, wrap: ResolvedWrap) -> Arc<TextLayoutLine> {
             let rope_text = RopeTextRef::new(self.text);
             let line_content_original = rope_text.line_content(line);
 
@@ -2103,7 +1856,7 @@ mod tests {
 
             let attrs = Attrs::new()
                 .family(&self.font_family)
-                .font_size(font_size as f32);
+                .font_size(FONT_SIZE as f32);
             let mut attrs_list = AttrsList::new(attrs);
 
             // We don't do line styles, since they aren't relevant
@@ -2118,7 +1871,7 @@ mod tests {
                     attrs = attrs.color(fg);
                 }
                 if let Some(phantom_font_size) = phantom.font_size {
-                    attrs = attrs.font_size(phantom_font_size.min(font_size) as f32);
+                    attrs = attrs.font_size(phantom_font_size.min(FONT_SIZE) as f32);
                 }
                 attrs_list.add_span(start..end, attrs);
                 // if let Some(font_family) = phantom.font_family.clone() {
@@ -2167,19 +1920,6 @@ mod tests {
         }
     }
 
-    struct TestFontSize {
-        font_size: usize,
-    }
-    impl LineFontSizeProvider for TestFontSize {
-        fn font_size(&self, _line: usize) -> usize {
-            self.font_size
-        }
-
-        fn cache_id(&self) -> FontSizeCacheId {
-            0
-        }
-    }
-
     fn make_lines(text: &Rope, width: f32, init: bool) -> (TestTextLayoutProvider<'_>, Lines) {
         make_lines_ph(text, width, init, HashMap::new())
     }
@@ -2192,24 +1932,22 @@ mod tests {
     ) -> (TestTextLayoutProvider<'_>, Lines) {
         let wrap = Wrap::Word;
         let r_wrap = ResolvedWrap::Width(width);
-        let font_sizes = TestFontSize {
-            font_size: FONT_SIZE,
-        };
+
         let text = TestTextLayoutProvider::new(text, ph, wrap);
         let cx = Scope::new();
-        let lines = Lines::new(cx, RefCell::new(Rc::new(font_sizes)));
+        let lines = Lines::new(cx);
         lines.set_wrap(r_wrap);
 
         if init {
             let config_id = 0;
             let floem_style_id = 0;
-            lines.init_all(0, ConfigId::new(config_id, floem_style_id), &text, true);
+            lines.init_all(ConfigId::new(config_id, floem_style_id), &text, true);
         }
 
         (text, lines)
     }
 
-    fn render_breaks<'a>(text: &'a Rope, lines: &mut Lines, font_size: usize) -> Vec<Cow<'a, str>> {
+    fn render_breaks<'a>(text: &'a Rope, lines: &mut Lines) -> Vec<Cow<'a, str>> {
         // TODO: line_content on ropetextref would have the lifetime reference rope_text
         // rather than the held &'a Rope.
         // I think this would require an alternate trait for those functions to avoid incorrect lifetimes. Annoying but workable.
@@ -2218,7 +1956,7 @@ mod tests {
         let layouts = lines.text_layouts.borrow();
 
         for line in 0..rope_text.num_lines() {
-            if let Some(text_layout) = layouts.get(font_size, line) {
+            if let Some(text_layout) = layouts.get(line) {
                 let lines = &text_layout.text.lines;
                 for line in lines {
                     let layouts = line.layout_opt().as_deref().unwrap();
@@ -2278,22 +2016,12 @@ mod tests {
         }
     }
 
-    fn ffvline_info(
+    fn fvline_info(
         lines: &Lines,
         text_prov: impl TextLayoutProvider,
         vline: VLine,
     ) -> Option<(usize, RVLine)> {
-        find_vline_init_info_forward(lines, &text_prov, (VLine(0), 0), vline)
-    }
-
-    fn fbvline_info(
-        lines: &Lines,
-        text_prov: impl TextLayoutProvider,
-        vline: VLine,
-    ) -> Option<(usize, RVLine)> {
-        let last_vline = lines.last_vline(&text_prov);
-        let last_rvline = lines.last_rvline(&text_prov);
-        find_vline_init_info_rv_backward(lines, &text_prov, (last_vline, last_rvline), vline)
+        find_vline_init_info(lines, &text_prov, vline)
     }
 
     #[test]
@@ -2303,15 +2031,10 @@ mod tests {
         let (text_prov, lines) = make_lines(&text, 50.0, false);
 
         assert_eq!(
-            ffvline_info(&lines, &text_prov, VLine(0)),
+            fvline_info(&lines, &text_prov, VLine(0)),
             Some((0, RVLine::new(0, 0)))
         );
-        assert_eq!(
-            fbvline_info(&lines, &text_prov, VLine(0)),
-            Some((0, RVLine::new(0, 0)))
-        );
-        assert_eq!(ffvline_info(&lines, &text_prov, VLine(1)), None);
-        assert_eq!(fbvline_info(&lines, &text_prov, VLine(1)), None);
+        assert_eq!(fvline_info(&lines, &text_prov, VLine(1)), None);
 
         // Test empty buffer with phantom text and no wrapping
         let text = Rope::from("");
@@ -2325,46 +2048,28 @@ mod tests {
         let (text_prov, lines) = make_lines_ph(&text, 20.0, false, ph);
 
         assert_eq!(
-            ffvline_info(&lines, &text_prov, VLine(0)),
+            fvline_info(&lines, &text_prov, VLine(0)),
             Some((0, RVLine::new(0, 0)))
         );
-        assert_eq!(
-            fbvline_info(&lines, &text_prov, VLine(0)),
-            Some((0, RVLine::new(0, 0)))
-        );
-        assert_eq!(ffvline_info(&lines, &text_prov, VLine(1)), None);
-        assert_eq!(fbvline_info(&lines, &text_prov, VLine(1)), None);
+        assert_eq!(fvline_info(&lines, &text_prov, VLine(1)), None);
 
         // Test empty buffer with phantom text and wrapping
-        lines.init_all(0, ConfigId::new(0, 0), &text_prov, true);
+        lines.init_all(ConfigId::new(0, 0), &text_prov, true);
 
         assert_eq!(
-            ffvline_info(&lines, &text_prov, VLine(0)),
+            fvline_info(&lines, &text_prov, VLine(0)),
             Some((0, RVLine::new(0, 0)))
         );
         assert_eq!(
-            fbvline_info(&lines, &text_prov, VLine(0)),
-            Some((0, RVLine::new(0, 0)))
-        );
-        assert_eq!(
-            ffvline_info(&lines, &text_prov, VLine(1)),
+            fvline_info(&lines, &text_prov, VLine(1)),
             Some((0, RVLine::new(0, 1)))
         );
         assert_eq!(
-            fbvline_info(&lines, &text_prov, VLine(1)),
-            Some((0, RVLine::new(0, 1)))
-        );
-        assert_eq!(
-            ffvline_info(&lines, &text_prov, VLine(2)),
-            Some((0, RVLine::new(0, 2)))
-        );
-        assert_eq!(
-            fbvline_info(&lines, &text_prov, VLine(2)),
+            fvline_info(&lines, &text_prov, VLine(2)),
             Some((0, RVLine::new(0, 2)))
         );
         // Going outside bounds only ends up with None
-        assert_eq!(ffvline_info(&lines, &text_prov, VLine(3)), None);
-        assert_eq!(fbvline_info(&lines, &text_prov, VLine(3)), None);
+        assert_eq!(fvline_info(&lines, &text_prov, VLine(3)), None);
         // The affinity would shift from the front/end of the phantom line
         // TODO: test affinity of logic behind clicking past the last vline?
     }
@@ -2381,37 +2086,31 @@ mod tests {
         for line in 0..rope_text.num_lines() {
             let line_offset = rope_text.offset_of_line(line);
 
-            let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
-
-            let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
+            let info = fvline_info(&lines, &text_prov, VLine(line)).unwrap();
             assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
         }
 
-        assert_eq!(ffvline_info(&lines, &text_prov, VLine(20)), None);
+        assert_eq!(fvline_info(&lines, &text_prov, VLine(20)), None);
 
         assert_eq!(
-            render_breaks(&text, &mut lines, FONT_SIZE),
+            render_breaks(&text, &mut lines),
             ["hello", "world toast and jam", "the end", "hi"]
         );
 
-        lines.init_all(0, ConfigId::new(0, 0), &text_prov, true);
+        lines.init_all(ConfigId::new(0, 0), &text_prov, true);
 
         // Assert that even with text layouts, if it has no wrapping applied (because the width is large in this case) and no phantom text then it produces the same offsets as before.
         for line in 0..rope_text.num_lines() {
             let line_offset = rope_text.offset_of_line(line);
 
-            let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
-            let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
+            let info = fvline_info(&lines, &text_prov, VLine(line)).unwrap();
             assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
         }
 
-        assert_eq!(ffvline_info(&lines, &text_prov, VLine(20)), None);
-        assert_eq!(fbvline_info(&lines, &text_prov, VLine(20)), None);
+        assert_eq!(fvline_info(&lines, &text_prov, VLine(20)), None);
 
         assert_eq!(
-            render_breaks(&text, &mut lines, FONT_SIZE),
+            render_breaks(&text, &mut lines),
             ["hello ", "world toast and jam ", "the end ", "hi"]
         );
     }
@@ -2436,24 +2135,18 @@ mod tests {
         for line in 0..rope_text.num_lines() {
             let line_offset = rope_text.offset_of_line(line);
 
-            let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
-
-            let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
+            let info = fvline_info(&lines, &text_prov, VLine(line)).unwrap();
             assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
         }
 
-        lines.init_all(0, ConfigId::new(0, 0), &text_prov, true);
+        lines.init_all(ConfigId::new(0, 0), &text_prov, true);
 
         // With text layouts, the phantom text is applied.
         // But with a single line of phantom text, it doesn't affect the offsets.
         for line in 0..rope_text.num_lines() {
             let line_offset = rope_text.offset_of_line(line);
 
-            let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
-
-            let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
+            let info = fvline_info(&lines, &text_prov, VLine(line)).unwrap();
             assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
         }
 
@@ -2472,17 +2165,14 @@ mod tests {
         for line in 0..rope_text.num_lines() {
             let line_offset = rope_text.offset_of_line(line);
 
-            let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
-
-            let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
+            let info = fvline_info(&lines, &text_prov, VLine(line)).unwrap();
             assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
         }
 
-        lines.init_all(0, ConfigId::new(0, 0), &text_prov, true);
+        lines.init_all(ConfigId::new(0, 0), &text_prov, true);
 
         assert_eq!(
-            render_breaks(&text, &mut lines, FONT_SIZE),
+            render_breaks(&text, &mut lines),
             [
                 "greet",
                 "worldhello ",
@@ -2495,26 +2185,15 @@ mod tests {
         // With text layouts, the phantom text is applied.
         // With a phantom text that takes up multiple lines, it does not affect the offsets
         // but it does affect the valid visual lines.
-        let info = ffvline_info(&lines, &text_prov, VLine(0));
+        let info = fvline_info(&lines, &text_prov, VLine(0));
         assert_eq!(info, Some((0, RVLine::new(0, 0))));
-        let info = fbvline_info(&lines, &text_prov, VLine(0));
-        assert_eq!(info, Some((0, RVLine::new(0, 0))));
-        let info = ffvline_info(&lines, &text_prov, VLine(1));
-        assert_eq!(info, Some((0, RVLine::new(0, 1))));
-        let info = fbvline_info(&lines, &text_prov, VLine(1));
+        let info = fvline_info(&lines, &text_prov, VLine(1));
         assert_eq!(info, Some((0, RVLine::new(0, 1))));
 
         for line in 2..rope_text.num_lines() {
             let line_offset = rope_text.offset_of_line(line - 1);
 
-            let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(
-                info,
-                (line_offset, RVLine::new(line - 1, 0)),
-                "vline {}",
-                line
-            );
-            let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
+            let info = fvline_info(&lines, &text_prov, VLine(line)).unwrap();
             assert_eq!(
                 info,
                 (line_offset, RVLine::new(line - 1, 0)),
@@ -2526,14 +2205,7 @@ mod tests {
         // Then there's one extra vline due to the phantom text wrapping
         let line_offset = rope_text.offset_of_line(rope_text.last_line());
 
-        let info = ffvline_info(&lines, &text_prov, VLine(rope_text.last_line() + 1));
-        assert_eq!(
-            info,
-            Some((line_offset, RVLine::new(rope_text.last_line(), 0))),
-            "line {}",
-            rope_text.last_line() + 1,
-        );
-        let info = fbvline_info(&lines, &text_prov, VLine(rope_text.last_line() + 1));
+        let info = fvline_info(&lines, &text_prov, VLine(rope_text.last_line() + 1));
         assert_eq!(
             info,
             Some((line_offset, RVLine::new(rope_text.last_line(), 0))),
@@ -2555,17 +2227,17 @@ mod tests {
 
         // With no text layouts, phantom text isn't initialized so it has no affect.
         for line in 0..rope_text.num_lines() {
-            let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
+            let info = fvline_info(&lines, &text_prov, VLine(line)).unwrap();
 
             let line_offset = rope_text.offset_of_line(line);
 
             assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
         }
 
-        lines.init_all(0, ConfigId::new(0, 0), &text_prov, true);
+        lines.init_all(ConfigId::new(0, 0), &text_prov, true);
 
         assert_eq!(
-            render_breaks(&text, &mut lines, FONT_SIZE),
+            render_breaks(&text, &mut lines),
             [
                 "hello ",
                 "world toast and jam ",
@@ -2581,22 +2253,15 @@ mod tests {
         for line in 0..3 {
             let line_offset = rope_text.offset_of_line(line);
 
-            let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
-
-            let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
+            let info = fvline_info(&lines, &text_prov, VLine(line)).unwrap();
             assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
         }
 
         // ' end'
-        let info = ffvline_info(&lines, &text_prov, VLine(3));
-        assert_eq!(info, Some((29, RVLine::new(2, 1))));
-        let info = fbvline_info(&lines, &text_prov, VLine(3));
+        let info = fvline_info(&lines, &text_prov, VLine(3));
         assert_eq!(info, Some((29, RVLine::new(2, 1))));
 
-        let info = ffvline_info(&lines, &text_prov, VLine(4));
-        assert_eq!(info, Some((34, RVLine::new(3, 0))));
-        let info = fbvline_info(&lines, &text_prov, VLine(4));
+        let info = fvline_info(&lines, &text_prov, VLine(4));
         assert_eq!(info, Some((34, RVLine::new(3, 0))));
     }
 
@@ -2614,31 +2279,27 @@ mod tests {
         for line in 0..rope_text.num_lines() {
             let line_offset = rope_text.offset_of_line(line);
 
-            let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "line {}", line);
-
-            let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
+            let info = fvline_info(&lines, &text_prov, VLine(line)).unwrap();
             assert_eq!(info, (line_offset, RVLine::new(line, 0)), "line {}", line);
         }
 
-        assert_eq!(ffvline_info(&lines, &text_prov, VLine(20)), None);
-        assert_eq!(fbvline_info(&lines, &text_prov, VLine(20)), None);
+        assert_eq!(fvline_info(&lines, &text_prov, VLine(20)), None);
 
         assert_eq!(
-            render_breaks(&text, &mut lines, FONT_SIZE),
+            render_breaks(&text, &mut lines),
             ["hello", "world toast and jam", "the end", "hi"]
         );
 
-        lines.init_all(0, ConfigId::new(0, 0), &text_prov, true);
+        lines.init_all(ConfigId::new(0, 0), &text_prov, true);
 
         {
             let layouts = lines.text_layouts.borrow();
 
-            assert!(layouts.get(FONT_SIZE, 0).is_some());
-            assert!(layouts.get(FONT_SIZE, 1).is_some());
-            assert!(layouts.get(FONT_SIZE, 2).is_some());
-            assert!(layouts.get(FONT_SIZE, 3).is_some());
-            assert!(layouts.get(FONT_SIZE, 4).is_none());
+            assert!(layouts.get(0).is_some());
+            assert!(layouts.get(1).is_some());
+            assert!(layouts.get(2).is_some());
+            assert!(layouts.get(3).is_some());
+            assert!(layouts.get(4).is_none());
         }
 
         // start offset, start buffer line, layout line index)
@@ -2656,14 +2317,7 @@ mod tests {
         assert_eq!(lines.last_rvline(&text_prov), RVLine::new(3, 0));
         #[allow(clippy::needless_range_loop)]
         for line in 0..8 {
-            let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(
-                (info.0, info.1.line, info.1.line_index),
-                line_data[line],
-                "vline {}",
-                line
-            );
-            let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
+            let info = fvline_info(&lines, &text_prov, VLine(line)).unwrap();
             assert_eq!(
                 (info.0, info.1.line, info.1.line_index),
                 line_data[line],
@@ -2673,14 +2327,12 @@ mod tests {
         }
 
         // Directly out of bounds
-        assert_eq!(ffvline_info(&lines, &text_prov, VLine(9)), None,);
-        assert_eq!(fbvline_info(&lines, &text_prov, VLine(9)), None,);
+        assert_eq!(fvline_info(&lines, &text_prov, VLine(9)), None);
 
-        assert_eq!(ffvline_info(&lines, &text_prov, VLine(20)), None);
-        assert_eq!(fbvline_info(&lines, &text_prov, VLine(20)), None);
+        assert_eq!(fvline_info(&lines, &text_prov, VLine(20)), None);
 
         assert_eq!(
-            render_breaks(&text, &mut lines, FONT_SIZE),
+            render_breaks(&text, &mut lines),
             ["hello ", "world ", "toast ", "and ", "jam ", "the ", "end ", "hi"]
         );
 
@@ -2707,7 +2359,7 @@ mod tests {
         let (text_prov, mut lines) = make_lines(&text, 2., true);
 
         assert_eq!(
-            render_breaks(&text, &mut lines, FONT_SIZE),
+            render_breaks(&text, &mut lines),
             ["aaaa ", "bb ", "bb ", "cc ", "cc ", "dddd ", "eeee ", "ff ", "ff ", "gggg"]
         );
 
@@ -2726,14 +2378,7 @@ mod tests {
         ];
         #[allow(clippy::needless_range_loop)]
         for vline in 0..10 {
-            let info = ffvline_info(&lines, &text_prov, VLine(vline)).unwrap();
-            assert_eq!(
-                (info.0, info.1.line, info.1.line_index),
-                line_data[vline],
-                "vline {}",
-                vline
-            );
-            let info = fbvline_info(&lines, &text_prov, VLine(vline)).unwrap();
+            let info = fvline_info(&lines, &text_prov, VLine(vline)).unwrap();
             assert_eq!(
                 (info.0, info.1.line, info.1.line_index),
                 line_data[vline],
@@ -2785,15 +2430,7 @@ mod tests {
         for line in 0..rope_text.num_lines() {
             let line_offset = rope_text.offset_of_line(line);
 
-            let info = ffvline_info(&lines, &text_prov, VLine(line));
-            assert_eq!(
-                info,
-                Some((line_offset, RVLine::new(line, 0))),
-                "line {}",
-                line
-            );
-
-            let info = fbvline_info(&lines, &text_prov, VLine(line));
+            let info = fvline_info(&lines, &text_prov, VLine(line));
             assert_eq!(
                 info,
                 Some((line_offset, RVLine::new(line, 0))),
@@ -2802,24 +2439,23 @@ mod tests {
             );
         }
 
-        assert_eq!(ffvline_info(&lines, &text_prov, VLine(20)), None);
-        assert_eq!(fbvline_info(&lines, &text_prov, VLine(20)), None);
+        assert_eq!(fvline_info(&lines, &text_prov, VLine(20)), None);
 
         assert_eq!(
-            render_breaks(&text, &mut lines, FONT_SIZE),
+            render_breaks(&text, &mut lines),
             ["hello", "world toast and jam", "the end", "hi"]
         );
 
-        lines.init_all(0, ConfigId::new(0, 0), &text_prov, true);
+        lines.init_all(ConfigId::new(0, 0), &text_prov, true);
 
         {
             let layouts = lines.text_layouts.borrow();
 
-            assert!(layouts.get(FONT_SIZE, 0).is_some());
-            assert!(layouts.get(FONT_SIZE, 1).is_some());
-            assert!(layouts.get(FONT_SIZE, 2).is_some());
-            assert!(layouts.get(FONT_SIZE, 3).is_some());
-            assert!(layouts.get(FONT_SIZE, 4).is_none());
+            assert!(layouts.get(0).is_some());
+            assert!(layouts.get(1).is_some());
+            assert!(layouts.get(2).is_some());
+            assert!(layouts.get(3).is_some());
+            assert!(layouts.get(4).is_none());
         }
 
         // start offset, start buffer line, layout line index)
@@ -2837,15 +2473,7 @@ mod tests {
 
         #[allow(clippy::needless_range_loop)]
         for line in 0..9 {
-            let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(
-                (info.0, info.1.line, info.1.line_index),
-                line_data[line],
-                "vline {}",
-                line
-            );
-
-            let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
+            let info = fvline_info(&lines, &text_prov, VLine(line)).unwrap();
             assert_eq!(
                 (info.0, info.1.line, info.1.line_index),
                 line_data[line],
@@ -2855,11 +2483,9 @@ mod tests {
         }
 
         // Directly out of bounds
-        assert_eq!(ffvline_info(&lines, &text_prov, VLine(9)), None);
-        assert_eq!(fbvline_info(&lines, &text_prov, VLine(9)), None);
+        assert_eq!(fvline_info(&lines, &text_prov, VLine(9)), None);
 
-        assert_eq!(ffvline_info(&lines, &text_prov, VLine(20)), None);
-        assert_eq!(fbvline_info(&lines, &text_prov, VLine(20)), None);
+        assert_eq!(fvline_info(&lines, &text_prov, VLine(20)), None);
 
         // TODO: Currently the way we join phantom text and how cosmic wraps lines,
         // the phantom text will be joined with whatever the word next to it is - if there is no
@@ -2867,7 +2493,7 @@ mod tests {
         // An easy way to do this is to always include a space, and then manually cut the glyph
         // margin in the text layout.
         assert_eq!(
-            render_breaks(&text, &mut lines, FONT_SIZE),
+            render_breaks(&text, &mut lines),
             [
                 "greet ",
                 "worldhello ",
@@ -3012,7 +2638,7 @@ mod tests {
         let text =
             Rope::from("asdf\nposition: Some(EditorPosition::Offset(self.offset))\nasdf\nasdf");
         let (text_prov, mut lines) = make_lines(&text, 1., true);
-        println!("Breaks: {:?}", render_breaks(&text, &mut lines, FONT_SIZE));
+        println!("Breaks: {:?}", render_breaks(&text, &mut lines));
 
         let rvline = lines.rvline_of_offset(&text_prov, 3, CursorAffinity::Backward);
         assert_eq!(rvline, RVLine::new(0, 0));
@@ -3080,10 +2706,7 @@ mod tests {
         // The 'hi' is joined with the 'a' so it's not wrapped to a separate line
         assert_eq!(lines.num_vlines(&text_prov), 4);
 
-        assert_eq!(
-            render_breaks(&text, &mut lines, FONT_SIZE),
-            ["ahi ", "b ", "c ", "d "]
-        );
+        assert_eq!(render_breaks(&text, &mut lines), ["ahi ", "b ", "c ", "d "]);
 
         let vlines = [0, 0, 1, 1, 2, 2, 3, 3];
         // Unchanged. The phantom text has no effect in the position. It doesn't shift a line with
@@ -3130,10 +2753,7 @@ mod tests {
         assert_eq!(lines.num_vlines(&text_prov), 4);
 
         // TODO: Should this really be forward rendered?
-        assert_eq!(
-            render_breaks(&text, &mut lines, FONT_SIZE),
-            ["a ", "hib ", "c ", "d "]
-        );
+        assert_eq!(render_breaks(&text, &mut lines), ["a ", "hib ", "c ", "d "]);
 
         for (i, v) in vlines.iter().enumerate() {
             assert_eq!(
@@ -3185,7 +2805,7 @@ mod tests {
             .collect();
         assert_eq!(r, vec!["bb ", "bb "]);
 
-        let v = lines.get_init_text_layout(0, ConfigId::new(0, 0), &text_prov, 2, true);
+        let v = lines.get_init_text_layout(ConfigId::new(0, 0), &text_prov, 2, true);
         let v = v.layout_cols(&text_prov, 2).collect::<Vec<_>>();
         assert_eq!(v, [(0, 3), (3, 8), (8, 13), (13, 15)]);
         let r: Vec<_> = lines
@@ -3288,21 +2908,21 @@ mod tests {
         let text: Rope = "aaaa\nbb bb cc\ncc dddd eeee ff\nff gggg".into();
         let (text_prov, lines) = make_lines(&text, 2., false);
         let r: Vec<_> = lines
-            .iter_vlines_init(&text_prov, 0, ConfigId::new(0, 0), VLine(0), true)
+            .iter_vlines_init(&text_prov, ConfigId::new(0, 0), VLine(0), true)
             .take(2)
             .map(|l| text.slice_to_cow(l.interval))
             .collect();
         assert_eq!(r, vec!["aaaa", "bb "]);
 
         let r: Vec<_> = lines
-            .iter_vlines_init(&text_prov, 0, ConfigId::new(0, 0), VLine(1), true)
+            .iter_vlines_init(&text_prov, ConfigId::new(0, 0), VLine(1), true)
             .take(2)
             .map(|l| text.slice_to_cow(l.interval))
             .collect();
         assert_eq!(r, vec!["bb ", "bb "]);
 
         let r: Vec<_> = lines
-            .iter_vlines_init(&text_prov, 0, ConfigId::new(0, 0), VLine(3), true)
+            .iter_vlines_init(&text_prov, ConfigId::new(0, 0), VLine(3), true)
             .take(3)
             .map(|l| text.slice_to_cow(l.interval))
             .collect();
@@ -3312,17 +2932,17 @@ mod tests {
         let text: Rope = "".into();
         let (text_prov, lines) = make_lines(&text, 2., false);
         let r: Vec<_> = lines
-            .iter_vlines_init(&text_prov, 0, ConfigId::new(0, 0), VLine(0), true)
+            .iter_vlines_init(&text_prov, ConfigId::new(0, 0), VLine(0), true)
             .map(|l| text.slice_to_cow(l.interval))
             .collect();
         assert_eq!(r, vec![""]);
         let r: Vec<_> = lines
-            .iter_vlines_init(&text_prov, 0, ConfigId::new(0, 0), VLine(1), true)
+            .iter_vlines_init(&text_prov, ConfigId::new(0, 0), VLine(1), true)
             .map(|l| text.slice_to_cow(l.interval))
             .collect();
         assert_eq!(r, Vec::<&str>::new());
         let r: Vec<_> = lines
-            .iter_vlines_init(&text_prov, 0, ConfigId::new(0, 0), VLine(2), true)
+            .iter_vlines_init(&text_prov, ConfigId::new(0, 0), VLine(2), true)
             .map(|l| text.slice_to_cow(l.interval))
             .collect();
         assert_eq!(r, Vec::<&str>::new());
@@ -3477,7 +3097,7 @@ mod tests {
     fn test_end_of_rvline() {
         fn eor(lines: &Lines, text_prov: &impl TextLayoutProvider, rvline: RVLine) -> usize {
             let layouts = lines.text_layouts.borrow();
-            end_of_rvline(&layouts, text_prov, 12, rvline)
+            end_of_rvline(&layouts, text_prov, rvline)
         }
 
         fn check_equiv(text: &Rope, expected: usize, from: &str) {
