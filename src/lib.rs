@@ -195,6 +195,6 @@ pub use peniko;
 pub use peniko::kurbo;
 pub use screen_layout::ScreenLayout;
 pub use taffy;
-pub use view::{recursively_layout_view, AnyView, IntoView, View};
+pub use view::{default_compute_layout, recursively_layout_view, AnyView, IntoView, View};
 pub use window::{close_window, new_window};
 pub use window_id::{Urgency, WindowIdExt};
