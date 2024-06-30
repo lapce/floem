@@ -33,7 +33,7 @@
 //! The dynamic stack can dynamically change the elements in the stack by reactively updating the list of items provided to the [dyn_stack](dyn_stack()).
 //! Virtual stacks and virtual lists are like the dynamic stack but they also lazily load the items as they appear in a [scroll view](scroll()) and do not support the flexbox nor grid layout algorithms.
 //! Instead, they give every element a consistent size and use a basic layout.
-//! This is done for perfomance and allows for lists of millions of items to be used with very high performance.
+//! This is done for performance and allows for lists of millions of items to be used with very high performance.
 //!
 //! Lists differ from stacks in that they also have built-in support for the selection of items: up and down using arrow keys, top and bottom control using the home and end keys, and for the "acceptance" of an item using the Enter key.
 //! You could build this manually yourself using stacks but it is common enough that it is built-in as a list.

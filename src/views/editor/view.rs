@@ -44,7 +44,7 @@ pub struct DiffSection {
     /// The y index that the diff section is at.  
     /// This is multiplied by the line height to get the y position.  
     /// So this can roughly be considered as the `VLine of the start of this diff section, but it
-    /// isn't necessarily convertable to a `VLine` due to jumping over empty code sections.
+    /// isn't necessarily convertible to a `VLine` due to jumping over empty code sections.
     pub y_idx: usize,
     pub height: usize,
     pub kind: DiffSectionKind,

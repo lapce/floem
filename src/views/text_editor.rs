@@ -173,7 +173,7 @@ impl EditorCustomStyle {
         self
     }
 
-    /// Sets the padding to the left of the nubmers in the gutter.
+    /// Sets the padding to the left of the numbers in the gutter.
     pub fn gutter_left_padding(mut self, padding: f64) -> Self {
         self.0 = self
             .0

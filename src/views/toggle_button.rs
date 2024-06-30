@@ -17,12 +17,12 @@ use crate::{
     views::Decorators,
 };
 
-/// Controls the switching behavior of the switch. The cooresponding style prop is [ToggleButtonBehavior]
+/// Controls the switching behavior of the switch. The corresponding style prop is [ToggleButtonBehavior]
 #[derive(Debug, Clone, PartialEq)]
 pub enum ToggleHandleBehavior {
-    /// The switch foreground item will follow the position of the cursor. The toggle event happens when the cursor passes teh 50% threshhold.
+    /// The switch foreground item will follow the position of the cursor. The toggle event happens when the cursor passes the 50% threshold.
     Follow,
-    /// The switch foreground item will "snap" from being toggled off/on when the cursor passes the 50% threshhold.
+    /// The switch foreground item will "snap" from being toggled off/on when the cursor passes the 50% threshold.
     Snap,
 }
 
@@ -137,7 +137,7 @@ impl View for ToggleButton {
             crate::event::Event::PointerUp(_event) => {
                 self.id.request_layout();
 
-                // if held and pointer up. toggle the position (toggle state drag alrady changed the position)
+                // if held and pointer up. toggle the position (toggle state drag already changed the position)
                 if self.held == ToggleState::Held {
                     if self.position > self.width / 2. {
                         self.position = 0.;

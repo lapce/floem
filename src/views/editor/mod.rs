@@ -1391,7 +1391,7 @@ fn create_view_effects(cx: Scope, ed: &Editor) {
     // lines based on that
     ed3.lines.layout_event.listen_with(cx, move |val| {
         let ed = &ed2;
-        // TODO: Move this logic onto screen lines somehow, perhaps just an auxilary
+        // TODO: Move this logic onto screen lines somehow, perhaps just an auxiliary
         // function, to avoid getting confused about what is relevant where.
 
         match val {

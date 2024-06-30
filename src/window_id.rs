@@ -100,7 +100,7 @@ impl WindowIdExtSealed for WindowId {
 ///    methods whose return value have that as a prerequisite will return `None` or return a
 ///    reasonable default.
 ///  * X11: Some window managers (Openbox was one such which was tested) *appear* to support
-///    retreiving separate window-with-frame and window-content positions and sizes, but in
+///    retrieving separate window-with-frame and window-content positions and sizes, but in
 ///    fact report the same values for both.
 #[allow(private_bounds)]
 pub trait WindowIdExt: WindowIdExtSealed {
@@ -138,7 +138,7 @@ pub trait WindowIdExt: WindowIdExtSealed {
     fn is_document_edited(&self) -> bool;
 
     /// Instruct the window manager to indicate in the window's decorations
-    /// the the window contains an unsaved, edited document.  Only has an
+    /// that the window contains an unsaved, edited document.  Only has an
     /// effect on Mac OS.
     #[allow(unused_variables)] // edited unused on non-mac builds
     fn set_document_edited(&self, edited: bool) {
