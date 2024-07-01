@@ -39,7 +39,7 @@ indexmap = "2"
 rustc-hash = "1.1.0"
 smallvec = "1.10.0"
 educe = "0.5.11"
-taffy = { version = "0.4", features = ["grid"] }
+taffy = { version = "0.5", features = ["grid"] }
 rfd = { version = "0.14.0", default-features = false, features = [
     "xdg-portal",
 ], optional = true }
