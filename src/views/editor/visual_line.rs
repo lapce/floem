@@ -1,6 +1,6 @@
 //! Visual Line implementation  
 //!   
-//! Files are easily broken up into buffer lines by just spliiting on `\n` or `\r\n`.  
+//! Files are easily broken up into buffer lines by just splitting on `\n` or `\r\n`.
 //! However, editors require features like wrapping and multiline phantom text. These break the
 //! nice one-to-one correspondence between buffer lines and visual lines.  
 //!   
@@ -223,7 +223,7 @@ pub trait TextLayoutProvider {
         wrap: ResolvedWrap,
     ) -> Arc<TextLayoutLine>;
 
-    /// Translate a column position into the postiion it would be before combining with the phantom
+    /// Translate a column position into the position it would be before combining with the phantom
     /// text
     fn before_phantom_col(&self, line: usize, col: usize) -> usize;
 
@@ -1062,7 +1062,7 @@ fn find_rvline_of_offset(
                     // There is no previous line, we do nothing.
                 } else {
                     // We have to get rvline info for that rvline, so we can get the last line index
-                    // This should aways have at least one rvline in it.
+                    // This should always have at least one rvline in it.
                     let font_sizes = lines.font_sizes.borrow();
                     let (prev, _) = prev_rvline(&layouts, text_prov, &**font_sizes, rv)?;
                     return Some(prev);
@@ -1928,7 +1928,7 @@ fn prev_rvline(
 
 // FIXME: Put this in our cosmic-text fork.
 
-/// Hit position but decides wether it should go to the next line based on the `before` bool.
+/// Hit position but decides whether it should go to the next line based on the `before` bool.
 /// (Hit position should be equivalent to `before=false`).  
 /// This is needed when we have an idx at the end of, for example, a wrapped line which could be on
 /// the first or second line.

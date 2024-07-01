@@ -1,6 +1,6 @@
 //! # Decorator
 //!
-//! The decorator trait is the primary interface for extending the appereance and functionality of ['View']s.
+//! The decorator trait is the primary interface for extending the appearance and functionality of ['View']s.
 
 use floem_reactive::{create_effect, create_updater};
 use floem_winit::keyboard::Key;

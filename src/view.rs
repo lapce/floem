@@ -16,7 +16,7 @@
 //! For all reactive state that your type contains, either in the form of signals or derived signals, you need to process the changes within an effect.
 //! The most common pattern is to [get](floem_reactive::ReadSignal::get) the data in an effect and pass it in to `id.update_state()` and then handle that data in the `update` method of the View trait.
 //!
-//! For exmaple a minimal slider might look like the following. First, we define the struct with the [`ViewData`] that contains the [`Id`].
+//! For example a minimal slider might look like the following. First, we define the struct with the [`ViewData`] that contains the [`Id`].
 //! Then, we use a function to construct the slider. As part of this function we create an effect that will be re-run every time the signals in the  `percent` closure change.
 //! In the effect we send the change to the associated [`Id`]. This change can then be handled in the [`Widget::update`] method.
 //! ```rust
@@ -29,7 +29,7 @@
 //! pub fn slider(percent: impl Fn() -> f32 + 'static) -> Slider {
 //!    let id = ViewId::new();
 //!
-//!    // If the following effect is not created, and `percent` is accesed directly,
+//!    // If the following effect is not created, and `percent` is accessed directly,
 //!    // `percent` will only be accessed a single time and will not be reactive.
 //!    // Therefore the following `create_effect` is necessary for reactivity.
 //!    create_effect(move |_| {

@@ -72,7 +72,7 @@ impl ViewId {
     pub(crate) fn state(&self) -> Rc<RefCell<ViewState>> {
         VIEW_STORAGE.with_borrow_mut(|s| {
             if !s.view_ids.contains_key(*self) {
-                // if view_ids doens't have this view id, that means it's been cleaned up,
+                // if view_ids doesn't have this view id, that means it's been cleaned up,
                 // so we shouldn't create a new ViewState for this Id.
                 s.stale_view_state.clone()
             } else {
