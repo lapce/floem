@@ -33,7 +33,7 @@ fn app_view() -> impl IntoView {
         label(move || String::from("This window has an icon from a PNG file"))
             .style(|s| s.font_size(30.0)),
         button(|| "Open another window").on_click_stop(|_| {
-            let svg_icon = load_svg_icon(include_str!("../assets/ferris.svg"));
+            let svg_icon = load_svg_icon(include_str!("assets/ferris.svg"));
             new_window(
                 sub_window_view,
                 Some(
@@ -65,7 +65,10 @@ fn app_view() -> impl IntoView {
 }
 
 fn main() {
-    let png_icon_path = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/ferris.png");
+    let png_icon_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/examples/window-icon/assets/ferris.png"
+    );
     let png_icon = load_png_icon(Path::new(png_icon_path));
 
     Application::new()

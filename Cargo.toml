@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["renderer", "vger", "tiny_skia", "reactive", "editor-core", "examples/*"]
+members = ["renderer", "vger", "tiny_skia", "reactive", "editor-core"]
 
 [workspace.package]
 license = "MIT"
@@ -68,12 +68,20 @@ image = { workspace = true }
 im = { workspace = true }
 wgpu = { workspace = true }
 
+[dev-dependencies]
+lazy_static = "1.4.0"
+nsvg = "0.5"
+strum = { version = "0.25.0", features = ["derive"] }
+syntect = "5.2.0"
+time = { version = "0.3.31", features = ["parsing", "macros"] }
+
 [features]
 default = ["editor", "default-image-formats"]
 # TODO: this is only winit and the editor serde, there are other dependencies that still depend on
 # serde
 serde = ["floem-winit/serde", "dep:serde"]
 editor = ["floem-editor-core", "dep:lapce-xi-rope", "dep:strum", "dep:strum_macros", "dep:downcast-rs"]
+strum-derive = ["dep:strum", "strum/derive"]
 
 # Image support
 # From: https://github.com/image-rs/image/blob/main/Cargo.toml
@@ -99,3 +107,15 @@ tokio = ["dep:tokio"]
 # rfd (file dialog) async runtime
 rfd-async-std = ["dep:rfd", "rfd/async-std"]
 rfd-tokio = ["dep:rfd", "rfd/tokio"]
+
+[[example]]
+name = "files"
+required-features = ["rfd-async-std"]
+
+[[example]]
+name = "syntax-editor"
+required-features = ["editor"]
+
+[[example]]
+name = "widget-gallery"
+required-features = ["strum-derive"]
