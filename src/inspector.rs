@@ -9,7 +9,7 @@ use crate::view::{IntoView, View};
 use crate::view_state::ChangeFlags;
 use crate::views::{
     button, container, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label,
-    tab, text, v_stack, v_stack_from_iter, Decorators, Label,
+    tab, text, text_input, v_stack, v_stack_from_iter, Decorators, Label,
 };
 use crate::window::WindowConfig;
 use crate::{new_window, style};
@@ -822,6 +822,7 @@ fn capture_view(
     ))
     .style(|s| s.max_width_pct(60.0));
 
+    let root = capture.root.clone();
     let tree = scroll(captured_view(&capture.root, 0, &capture_view).style(|s| s.min_width_full()))
         .style(|s| {
             s.width_full()
@@ -836,10 +837,65 @@ fn capture_view(
         .on_click_stop(move |_| capture_view.selected.set(None))
         .scroll_to_view(move || capture_view.scroll_to.get());
 
+    let search_str = create_rw_signal("".to_string());
+    let inner_search = search_str;
+    let match_ids = create_rw_signal((0, Vec::<ViewId>::new()));
+
+    let search =
+        text_input(search_str).on_event_stop(EventListener::KeyUp, move |event: &Event| {
+            if let Event::KeyUp(key) = event {
+                match key.key.logical_key {
+                    keyboard::Key::Named(NamedKey::ArrowUp) => {
+                        let id = match_ids.try_update(|(match_index, ids)| {
+                            if !ids.is_empty() {
+                                if *match_index == 0 {
+                                    *match_index = ids.len() - 1;
+                                } else {
+                                    *match_index -= 1;
+                                }
+                            }
+                            ids.get(*match_index).copied()
+                        });
+                        if let Some(Some(id)) = id {
+                            capture_view.selected.set(Some(id));
+                            capture_view.highlighted.set(Some(id));
+                            capture_view.expanding_selection.set(Some(id));
+                        }
+                    }
+                    keyboard::Key::Named(NamedKey::ArrowDown) => {
+                        let id = match_ids.try_update(|(match_index, ids)| {
+                            if !ids.is_empty() {
+                                *match_index = (*match_index + 1) % ids.len();
+                            }
+                            ids.get(*match_index).copied()
+                        });
+                        if let Some(Some(id)) = id {
+                            capture_view.selected.set(Some(id));
+                            capture_view.highlighted.set(Some(id));
+                            capture_view.expanding_selection.set(Some(id));
+                        }
+                    }
+                    _ => {
+                        let content = inner_search.get();
+                        let ids = find_view(&content, &root);
+                        let first = match_ids.try_update(|(index, match_ids)| {
+                            *index = 0;
+                            let _ = std::mem::replace(match_ids, ids);
+                            match_ids.first().copied()
+                        });
+                        if let Some(Some(id)) = first {
+                            capture_view.selected.set(Some(id));
+                            capture_view.highlighted.set(Some(id));
+                            capture_view.expanding_selection.set(Some(id));
+                        }
+                    }
+                }
+            }
+        });
     let tree = if capture.root.warnings() {
-        v_stack((header("Warnings"), header("View Tree"), tree)).into_view()
+        v_stack((header("Warnings"), header("View Tree"), search, tree)).into_view()
     } else {
-        v_stack((header("View Tree"), tree)).into_view()
+        v_stack((header("View Tree"), search, tree)).into_view()
     };
 
     let tree = tree.style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0));
@@ -975,4 +1031,29 @@ pub fn capture(window_id: WindowId) {
         window_id,
         capture: capture.write_only(),
     })
+}
+
+fn find_view(name: &str, views: &Rc<CapturedView>) -> Vec<ViewId> {
+    let mut ids = Vec::new();
+    if name.is_empty() {
+        return ids;
+    }
+    if views.name.contains(name) {
+        ids.push(views.id);
+    }
+    views
+        .children
+        .iter()
+        .filter_map(|x| {
+            let ids = find_view(name, x);
+            if ids.is_empty() {
+                None
+            } else {
+                Some(ids)
+            }
+        })
+        .fold(ids, |mut init, mut item| {
+            init.append(&mut item);
+            init
+        })
 }
