@@ -741,7 +741,7 @@ impl Style {
         result
     }
 
-    pub(crate) fn apply_classes_from_context(
+    pub fn apply_classes_from_context(
         mut self,
         classes: &[StyleClassRef],
         context: &Style,
