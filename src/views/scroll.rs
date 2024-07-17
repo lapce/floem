@@ -661,25 +661,32 @@ impl View for Scroll {
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         let style = cx.style();
 
-        self.scroll_style.read(cx);
+        let mut refresh = false;
+        refresh |= self.scroll_style.read(cx);
 
         let handle_style = style.clone().apply_class(Handle);
-        self.handle_style.read_style(cx, &handle_style);
-        self.handle_hover_style.read_style(
+        refresh |= self.handle_style.read_style(cx, &handle_style);
+        refresh |= self.handle_hover_style.read_style(
             cx,
             &handle_style
                 .clone()
                 .apply_selectors(&[StyleSelector::Hover]),
         );
-        self.handle_active_style
+        refresh |= self
+            .handle_active_style
             .read_style(cx, &handle_style.apply_selectors(&[StyleSelector::Active]));
 
         let track_style = style.apply_class(Track);
-        self.track_style.read_style(cx, &track_style);
-        self.track_hover_style
+        refresh |= self.track_style.read_style(cx, &track_style);
+        refresh |= self
+            .track_hover_style
             .read_style(cx, &track_style.apply_selectors(&[StyleSelector::Hover]));
 
         cx.style_view(self.child);
+
+        if refresh {
+            self.id.request_style();
+        }
     }
 
     fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
