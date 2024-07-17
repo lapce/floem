@@ -62,10 +62,10 @@ impl<T: 'static> View for DropDown<T> {
         if self.style.read(cx) {
             cx.app_state_mut().request_paint(self.id);
         }
-        cx.save();
-        self.list_style =
-            Style::new().apply_classes_from_context(&[ListClass::class_ref()], &cx.current);
-        cx.restore();
+        self.list_style = cx
+            .indirect_style()
+            .clone()
+            .apply_classes_from_context(&[scroll::ScrollClass::class_ref()], cx.indirect_style());
 
         for child in self.id.children() {
             cx.style_view(child);
