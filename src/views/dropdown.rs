@@ -16,7 +16,7 @@ use crate::{
     views::{scroll, Decorators},
 };
 
-use super::{list, ListClass};
+use super::list;
 
 type ChildFn<T> = dyn Fn(T) -> (Box<dyn View>, Scope);
 
