@@ -103,6 +103,33 @@ impl CapturedView {
             .or_else(|| self.clipped.contains(pos).then_some(self))
     }
 
+    fn find_all_by_pos(&self, pos: Point) -> Vec<ViewId> {
+        let mut match_ids = Vec::new();
+        if self.clipped.contains(pos) {
+            let mut ids = self
+                .children
+                .iter()
+                .filter_map(|child| {
+                    let child_ids = child.find_all_by_pos(pos);
+                    if child_ids.is_empty() {
+                        None
+                    } else {
+                        Some(child_ids)
+                    }
+                })
+                .fold(Vec::new(), |mut init, mut item| {
+                    init.append(&mut item);
+                    init
+                });
+            if ids.is_empty() {
+                match_ids.push(self.id);
+            } else {
+                match_ids.append(&mut ids);
+            }
+        }
+        match_ids
+    }
+
     fn warnings(&self) -> bool {
         !self.requested_changes.is_empty() || self.children.iter().any(|child| child.warnings())
     }
@@ -689,7 +716,6 @@ fn capture_view(
 
     let window = capture.window.clone();
     let capture_ = capture.clone();
-    let capture__ = capture.clone();
     let (image_width, image_height) = capture
         .window
         .as_ref()
@@ -700,6 +726,9 @@ fn capture_view(
             )
         })
         .unwrap_or_default();
+
+    let contain_ids = create_rw_signal((0, Vec::<ViewId>::new()));
+
     let image = img_dynamic(move || window.clone())
         .style(move |s| {
             s.margin(5.0)
@@ -710,32 +739,78 @@ fn capture_view(
                 .margin_bottom(21.0)
                 .margin_right(21.0)
         })
-        .on_event(EventListener::PointerMove, move |e| {
-            if let Event::PointerMove(e) = e {
-                if let Some(view) = capture_.root.find_by_pos(e.pos) {
-                    if capture_view.highlighted.get() != Some(view.id) {
-                        capture_view.highlighted.set(Some(view.id));
+        .keyboard_navigatable()
+        .on_event_stop(EventListener::KeyUp, {
+            move |event: &Event| {
+                if let Event::KeyUp(key) = event {
+                    match key.key.logical_key {
+                        keyboard::Key::Named(NamedKey::ArrowUp) => {
+                            let id = contain_ids.try_update(|(match_index, ids)| {
+                                if !ids.is_empty() {
+                                    if *match_index == 0 {
+                                        *match_index = ids.len() - 1;
+                                    } else {
+                                        *match_index -= 1;
+                                    }
+                                }
+                                ids.get(*match_index).copied()
+                            });
+                            if let Some(Some(id)) = id {
+                                capture_view.selected.set(Some(id));
+                                capture_view.highlighted.set(Some(id));
+                                capture_view.expanding_selection.set(Some(id));
+                            }
+                        }
+                        keyboard::Key::Named(NamedKey::ArrowDown) => {
+                            let id = contain_ids.try_update(|(match_index, ids)| {
+                                if !ids.is_empty() {
+                                    *match_index = (*match_index + 1) % ids.len();
+                                }
+                                ids.get(*match_index).copied()
+                            });
+                            if let Some(Some(id)) = id {
+                                capture_view.selected.set(Some(id));
+                                capture_view.highlighted.set(Some(id));
+                                capture_view.expanding_selection.set(Some(id));
+                            }
+                        }
+                        _ => {}
                     }
-                    return EventPropagation::Continue;
                 }
             }
-            if capture_view.highlighted.get().is_some() {
-                capture_view.highlighted.set(None);
-            }
-            EventPropagation::Continue
         })
-        .on_click(move |e| {
-            if let Event::PointerUp(e) = e {
-                if let Some(view) = capture__.root.find_by_pos(e.pos) {
-                    capture_view.selected.set(Some(view.id));
-                    capture_view.expanding_selection.set(Some(view.id));
-                    return EventPropagation::Stop;
+        .on_event_stop(EventListener::PointerUp, {
+            let capture_ = capture_.clone();
+            move |event: &Event| {
+                if let Event::PointerUp(e) = event {
+                    let find_ids = capture_.root.find_all_by_pos(e.pos);
+                    if !find_ids.is_empty() {
+                        let first = contain_ids.try_update(|(index, ids)| {
+                            *index = 0;
+                            let _ = std::mem::replace(ids, find_ids);
+                            ids.first().copied()
+                        });
+                        if let Some(Some(id)) = first {
+                            capture_view.selected.set(Some(id));
+                            capture_view.highlighted.set(Some(id));
+                            capture_view.expanding_selection.set(Some(id));
+                        }
+                    }
                 }
             }
-            if capture_view.selected.get().is_some() {
-                capture_view.selected.set(None);
+        })
+        .on_event_stop(EventListener::PointerMove, {
+            move |event: &Event| {
+                if let Event::PointerMove(e) = event {
+                    if let Some(view) = capture_.root.find_by_pos(e.pos) {
+                        if capture_view.highlighted.get() != Some(view.id) {
+                            capture_view.highlighted.set(Some(view.id));
+                        }
+                    } else {
+                        capture_view.highlighted.set(None);
+                    }
+                }
             }
-            EventPropagation::Stop
         })
         .on_event_cont(EventListener::PointerLeave, move |_| {
             capture_view.highlighted.set(None)
