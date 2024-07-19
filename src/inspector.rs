@@ -7,12 +7,14 @@ use crate::profiler::profiler;
 use crate::style::{Style, StyleClassRef, StylePropRef, Transition};
 use crate::view::{IntoView, View};
 use crate::view_state::ChangeFlags;
+use crate::views::editor::text::SystemClipboard;
 use crate::views::{
     button, container, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label,
     tab, text, text_input, v_stack, v_stack_from_iter, Decorators, Label,
 };
 use crate::window::WindowConfig;
 use crate::{new_window, style};
+use floem_editor_core::register::Clipboard;
 use floem_reactive::{create_effect, create_rw_signal, create_signal, RwSignal, Scope};
 use floem_winit::keyboard::{self, NamedKey};
 use floem_winit::window::WindowId;
@@ -221,6 +223,7 @@ fn captured_view_no_children(
     view: &CapturedView,
     depth: usize,
     capture_view: &CaptureView,
+    capture: &Rc<Capture>,
 ) -> impl IntoView {
     let offset = depth as f64 * 14.0;
     let name = captured_view_name(view).into_view();
@@ -255,7 +258,7 @@ fn captured_view_no_children(
         .on_event_cont(EventListener::PointerEnter, move |_| {
             highlighted.set(Some(id))
         });
-
+    let row = add_event(row, view.name.clone(), id, *capture_view, capture);
     let row_id = row.id();
     let scroll_to = capture_view.scroll_to;
     let expanding_selection = capture_view.expanding_selection;
@@ -265,6 +268,7 @@ fn captured_view_no_children(
                 // Scroll to the row, then to the name part of the row.
                 scroll_to.set(Some(row_id));
                 scroll_to.set(Some(name_id));
+                row_id.request_focus();
             }
         }
     });
@@ -279,6 +283,7 @@ fn captured_view_with_children(
     depth: usize,
     capture_view: &CaptureView,
     children: Vec<Box<dyn View>>,
+    capture: &Rc<Capture>,
 ) -> impl IntoView {
     let offset = depth as f64 * 14.0;
     let name = captured_view_name(view).into_view();
@@ -346,6 +351,7 @@ fn captured_view_with_children(
     .on_event_cont(EventListener::PointerEnter, move |_| {
         highlighted.set(Some(id))
     });
+    let row = add_event(row, view.name.clone(), id, *capture_view, capture);
 
     let row_id = row.id();
     let scroll_to = capture_view.scroll_to;
@@ -358,6 +364,7 @@ fn captured_view_with_children(
                 // Scroll to the row, then to the name part of the row.
                 scroll_to.set(Some(row_id));
                 scroll_to.set(Some(name_id));
+                row_id.request_focus();
             }
         }
     });
@@ -387,17 +394,73 @@ fn captured_view(
     view: &Rc<CapturedView>,
     depth: usize,
     capture_view: &CaptureView,
+    capture: &Rc<Capture>,
 ) -> impl IntoView {
     if view.children.is_empty() {
-        captured_view_no_children(view, depth, capture_view).into_any()
+        captured_view_no_children(view, depth, capture_view, capture).into_any()
     } else {
         let children: Vec<_> = view
             .children
             .iter()
-            .map(|view| captured_view(view, depth + 1, capture_view))
+            .map(|view| captured_view(view, depth + 1, capture_view, capture))
             .collect();
-        captured_view_with_children(view, depth, capture_view, children).into_any()
+        captured_view_with_children(view, depth, capture_view, children, capture).into_any()
     }
+}
+
+fn add_event(
+    row: impl View + 'static,
+    name: String,
+    id: ViewId,
+    capture_view: CaptureView,
+    capture: &Rc<Capture>,
+) -> impl View {
+    let capture = capture.clone();
+    row.keyboard_navigatable()
+        .on_secondary_click({
+            let name = name.clone();
+            move |_| {
+                let mut clipboard = SystemClipboard::new();
+                clipboard.put_string(name.clone());
+                EventPropagation::Stop
+            }
+        })
+        .on_event_stop(EventListener::KeyUp, {
+            let capture = capture.clone();
+            move |event| {
+                if let Event::KeyUp(key) = event {
+                    match key.key.logical_key {
+                        keyboard::Key::Named(NamedKey::ArrowUp) => {
+                            let rs = find_relative_view_by_id_with_self(id, &capture.root);
+                            let Some(ids) = rs else {
+                                return;
+                            };
+                            if !key.modifiers.control() {
+                                if let Some(id) = ids.big_brother_id {
+                                    update_select_view_id(id, &capture_view);
+                                }
+                            } else if let Some(id) = ids.parent_id {
+                                update_select_view_id(id, &capture_view);
+                            }
+                        }
+                        keyboard::Key::Named(NamedKey::ArrowDown) => {
+                            let rs = find_relative_view_by_id_with_self(id, &capture.root);
+                            let Some(ids) = rs else {
+                                return;
+                            };
+                            if !key.modifiers.control() {
+                                if let Some(id) = ids.next_brother_id {
+                                    update_select_view_id(id, &capture_view);
+                                }
+                            } else if let Some(id) = ids.child_id {
+                                update_select_view_id(id, &capture_view);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        })
 }
 
 pub(crate) fn header(label: impl Display) -> Label {
@@ -898,19 +961,21 @@ fn capture_view(
     .style(|s| s.max_width_pct(60.0));
 
     let root = capture.root.clone();
-    let tree = scroll(captured_view(&capture.root, 0, &capture_view).style(|s| s.min_width_full()))
-        .style(|s| {
-            s.width_full()
-                .min_height(0)
-                .flex_basis(0)
-                .flex_grow(1.0)
-                .flex_col()
-        })
-        .on_event_cont(EventListener::PointerLeave, move |_| {
-            capture_view.highlighted.set(None)
-        })
-        .on_click_stop(move |_| capture_view.selected.set(None))
-        .scroll_to_view(move || capture_view.scroll_to.get());
+    let tree = scroll(
+        captured_view(&capture.root, 0, &capture_view, capture).style(|s| s.min_width_full()),
+    )
+    .style(|s| {
+        s.width_full()
+            .min_height(0)
+            .flex_basis(0)
+            .flex_grow(1.0)
+            .flex_col()
+    })
+    .on_event_cont(EventListener::PointerLeave, move |_| {
+        capture_view.highlighted.set(None)
+    })
+    .on_click_stop(move |_| capture_view.selected.set(None))
+    .scroll_to_view(move || capture_view.scroll_to.get());
 
     let search_str = create_rw_signal("".to_string());
     let inner_search = search_str;
@@ -932,9 +997,7 @@ fn capture_view(
                             ids.get(*match_index).copied()
                         });
                         if let Some(Some(id)) = id {
-                            capture_view.selected.set(Some(id));
-                            capture_view.highlighted.set(Some(id));
-                            capture_view.expanding_selection.set(Some(id));
+                            update_select_view_id(id, &capture_view);
                         }
                     }
                     keyboard::Key::Named(NamedKey::ArrowDown) => {
@@ -945,9 +1008,7 @@ fn capture_view(
                             ids.get(*match_index).copied()
                         });
                         if let Some(Some(id)) = id {
-                            capture_view.selected.set(Some(id));
-                            capture_view.highlighted.set(Some(id));
-                            capture_view.expanding_selection.set(Some(id));
+                            update_select_view_id(id, &capture_view);
                         }
                     }
                     _ => {
@@ -959,9 +1020,7 @@ fn capture_view(
                             match_ids.first().copied()
                         });
                         if let Some(Some(id)) = first {
-                            capture_view.selected.set(Some(id));
-                            capture_view.highlighted.set(Some(id));
-                            capture_view.expanding_selection.set(Some(id));
+                            update_select_view_id(id, &capture_view);
                         }
                     }
                 }
@@ -1131,4 +1190,87 @@ fn find_view(name: &str, views: &Rc<CapturedView>) -> Vec<ViewId> {
             init.append(&mut item);
             init
         })
+}
+
+fn find_relative_view_by_id_without_self(
+    id: ViewId,
+    views: &Rc<CapturedView>,
+) -> Option<RelativeViewId> {
+    let mut parent_id = None;
+    let mut big_brother_id = None;
+    let mut next_brother_id = None;
+    let mut first_child_id = None;
+    let mut found = false;
+    let mut previous = None;
+    for child in &views.children {
+        if child.id == id {
+            parent_id = Some(views.id);
+            big_brother_id = previous;
+            first_child_id = child.children.first().map(|x| x.id);
+            found = true;
+        } else if found {
+            next_brother_id = Some(child.id);
+            break;
+        } else {
+            previous = Some(child.id);
+        }
+    }
+    if found {
+        Some(RelativeViewId::new(
+            parent_id,
+            big_brother_id,
+            next_brother_id,
+            first_child_id,
+        ))
+    } else {
+        for child in &views.children {
+            let rs = find_relative_view_by_id_without_self(id, child);
+            if rs.is_some() {
+                return rs;
+            }
+        }
+        None
+    }
+}
+
+fn find_relative_view_by_id_with_self(
+    id: ViewId,
+    views: &Rc<CapturedView>,
+) -> Option<RelativeViewId> {
+    if views.id == id {
+        let first_child_id = views.children.first().map(|x| x.id);
+        Some(RelativeViewId::new(None, None, None, first_child_id))
+    } else {
+        find_relative_view_by_id_without_self(id, views)
+    }
+}
+
+fn update_select_view_id(id: ViewId, capture: &CaptureView) {
+    capture.selected.set(Some(id));
+    capture.highlighted.set(Some(id));
+    capture.expanding_selection.set(Some(id));
+}
+
+#[derive(Debug, Default, Clone)]
+struct RelativeViewId {
+    pub parent_id: Option<ViewId>,
+    pub big_brother_id: Option<ViewId>,
+    pub next_brother_id: Option<ViewId>,
+    pub child_id: Option<ViewId>,
+}
+
+impl RelativeViewId {
+    pub fn new(
+        parent_id: Option<ViewId>,
+        big_brother_id: Option<ViewId>,
+        next_brother_id: Option<ViewId>,
+        child_id: Option<ViewId>,
+    ) -> Self {
+        Self {
+            parent_id,
+            big_brother_id,
+            next_brother_id,
+            child_id,
+        }
+    }
 }
