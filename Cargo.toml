@@ -29,7 +29,7 @@ image = { version = "0.25", default-features = false }
 im = { version = "15.1.0" }
 resvg = { version = "0.40.0" }
 raw-window-handle = "0.6.0"
-wgpu = { version = "0.19.0" }
+wgpu = { version = "22.0.0" }
 
 [dependencies]
 slotmap = "1.0.7"

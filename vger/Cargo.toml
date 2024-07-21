@@ -16,5 +16,5 @@ wgpu = { workspace = true }
 futures = "0.3.26"
 anyhow = "1.0.69"
 swash = "0.1.8"
-floem-vger-rs = { package = "floem-vger", version = "0.2.8" }  # Alias library to avoid overlap with subcrate
+floem-vger-rs = { package = "floem-vger", version = "0.2.9" }  # Alias library to avoid overlap with subcrate
 floem_renderer = { path = "../renderer", version = "0.1.0" }
