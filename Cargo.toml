@@ -34,7 +34,7 @@ wgpu = { version = "22.0.0" }
 [dependencies]
 slotmap = "1.0.7"
 sha2 = "0.10.6"
-bitflags = "2.2.1"
+bitflags = "2.6.0"
 indexmap = "2"
 rustc-hash = "1.1.0"
 smallvec = "1.10.0"
