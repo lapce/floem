@@ -962,6 +962,41 @@ impl Editor {
         (self.offset_of_line_col(line, col), is_inside)
     }
 
+    /// Get the actual (line, col) of a particular point within the editor.
+    pub fn line_col_of_point_with_phantom(&self, point: Point) -> (usize, usize) {
+        let line_height = f64::from(self.style().line_height(self.id(), 0));
+        let info = if point.y <= 0.0 {
+            Some(self.first_rvline_info())
+        } else {
+            self.screen_lines
+                .with_untracked(|sl| {
+                    sl.iter_line_info().find(|info| {
+                        info.vline_y <= point.y && info.vline_y + line_height >= point.y
+                    })
+                })
+                .map(|info| info.vline_info)
+        };
+        let info = info.unwrap_or_else(|| {
+            for (y_idx, info) in self.iter_rvlines(false, RVLine::default()).enumerate() {
+                let vline_y = y_idx as f64 * line_height;
+                if vline_y <= point.y && vline_y + line_height >= point.y {
+                    return info;
+                }
+            }
+
+            self.last_rvline_info()
+        });
+
+        let rvline = info.rvline;
+        let line = rvline.line;
+        let text_layout = self.text_layout(line);
+
+        let y = text_layout.get_layout_y(rvline.line_index).unwrap_or(0.0);
+
+        let hit_point = text_layout.text.hit_point(Point::new(point.x, y));
+        (line, hit_point.index)
+    }
+
     /// Get the (line, col) of a particular point within the editor.
     /// The boolean indicates whether the point is within the text bounds.
     /// Points outside of vertical bounds will return the last line.
