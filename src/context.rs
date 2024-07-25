@@ -1,5 +1,6 @@
 use floem_renderer::Renderer as FloemRenderer;
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Shape, Size, Vec2};
+use std::cmp::Ordering;
 use std::{
     ops::{Deref, DerefMut},
     rc::Rc,
@@ -159,12 +160,35 @@ impl<'a> EventCx<'a> {
         }
 
         if !directed {
-            let children = view_id.children();
-            for child in children.into_iter().rev() {
-                if self.should_send(child, &event)
-                    && self
-                        .unconditional_view_event(child, event.clone(), false)
-                        .is_processed()
+            let mut children = view_id.children();
+            children = children
+                .into_iter()
+                .rev()
+                .filter(|child| self.should_send(*child, &event))
+                .collect();
+
+            children.sort_by(|x, y| {
+                let x_index = x
+                    .get_combined_style()
+                    .get_style_value(ZIndex)
+                    .unwrap_or(None)
+                    .unwrap_or(0);
+                let y_index = y
+                    .get_combined_style()
+                    .get_style_value(ZIndex)
+                    .unwrap_or(None)
+                    .unwrap_or(0);
+                if x_index > y_index {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                }
+            });
+
+            for child in children {
+                if self
+                    .unconditional_view_event(child, event.clone(), false)
+                    .is_processed()
                 {
                     return EventPropagation::Stop;
                 }
