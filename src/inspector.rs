@@ -263,12 +263,14 @@ fn captured_view_no_children(
     let scroll_to = capture_view.scroll_to;
     let expanding_selection = capture_view.expanding_selection;
     create_effect(move |_| {
-        if let Some(selection) = expanding_selection.get() {
+        if let Some((selection, request_focus)) = expanding_selection.get() {
             if selection == id {
                 // Scroll to the row, then to the name part of the row.
                 scroll_to.set(Some(row_id));
                 scroll_to.set(Some(name_id));
-                row_id.request_focus();
+                if request_focus {
+                    row_id.request_focus();
+                }
             }
         }
     });
@@ -356,7 +358,7 @@ fn captured_view_with_children(
     let row_id = row.id();
     let scroll_to = capture_view.scroll_to;
     create_effect(move |_| {
-        if let Some(selection) = expanding_selection.get() {
+        if let Some((selection, request_focus)) = expanding_selection.get() {
             if selection != id && view_.find(selection).is_some() {
                 expanded.set(true);
             }
@@ -364,7 +366,9 @@ fn captured_view_with_children(
                 // Scroll to the row, then to the name part of the row.
                 scroll_to.set(Some(row_id));
                 scroll_to.set(Some(name_id));
-                row_id.request_focus();
+                if request_focus {
+                    row_id.request_focus();
+                }
             }
         }
     });
@@ -437,10 +441,10 @@ fn add_event(
                             };
                             if !key.modifiers.control() {
                                 if let Some(id) = ids.big_brother_id {
-                                    update_select_view_id(id, &capture_view);
+                                    update_select_view_id(id, &capture_view, true);
                                 }
                             } else if let Some(id) = ids.parent_id {
-                                update_select_view_id(id, &capture_view);
+                                update_select_view_id(id, &capture_view, true);
                             }
                         }
                         keyboard::Key::Named(NamedKey::ArrowDown) => {
@@ -450,10 +454,10 @@ fn add_event(
                             };
                             if !key.modifiers.control() {
                                 if let Some(id) = ids.next_brother_id {
-                                    update_select_view_id(id, &capture_view);
+                                    update_select_view_id(id, &capture_view, true);
                                 }
                             } else if let Some(id) = ids.child_id {
-                                update_select_view_id(id, &capture_view);
+                                update_select_view_id(id, &capture_view, true);
                             }
                         }
                         _ => {}
@@ -759,7 +763,7 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<ViewId>>) -> i
 
 #[derive(Clone, Copy)]
 struct CaptureView {
-    expanding_selection: RwSignal<Option<ViewId>>,
+    expanding_selection: RwSignal<Option<(ViewId, bool)>>,
     scroll_to: RwSignal<Option<ViewId>>,
     selected: RwSignal<Option<ViewId>>,
     highlighted: RwSignal<Option<ViewId>>,
@@ -819,9 +823,7 @@ fn capture_view(
                                 ids.get(*match_index).copied()
                             });
                             if let Some(Some(id)) = id {
-                                capture_view.selected.set(Some(id));
-                                capture_view.highlighted.set(Some(id));
-                                capture_view.expanding_selection.set(Some(id));
+                                update_select_view_id(id, &capture_view, false);
                             }
                         }
                         keyboard::Key::Named(NamedKey::ArrowDown) => {
@@ -832,9 +834,7 @@ fn capture_view(
                                 ids.get(*match_index).copied()
                             });
                             if let Some(Some(id)) = id {
-                                capture_view.selected.set(Some(id));
-                                capture_view.highlighted.set(Some(id));
-                                capture_view.expanding_selection.set(Some(id));
+                                update_select_view_id(id, &capture_view, false);
                             }
                         }
                         _ => {}
@@ -854,9 +854,7 @@ fn capture_view(
                             ids.first().copied()
                         });
                         if let Some(Some(id)) = first {
-                            capture_view.selected.set(Some(id));
-                            capture_view.highlighted.set(Some(id));
-                            capture_view.expanding_selection.set(Some(id));
+                            update_select_view_id(id, &capture_view, false);
                         }
                     }
                 }
@@ -997,7 +995,7 @@ fn capture_view(
                             ids.get(*match_index).copied()
                         });
                         if let Some(Some(id)) = id {
-                            update_select_view_id(id, &capture_view);
+                            update_select_view_id(id, &capture_view, false);
                         }
                     }
                     keyboard::Key::Named(NamedKey::ArrowDown) => {
@@ -1008,7 +1006,7 @@ fn capture_view(
                             ids.get(*match_index).copied()
                         });
                         if let Some(Some(id)) = id {
-                            update_select_view_id(id, &capture_view);
+                            update_select_view_id(id, &capture_view, false);
                         }
                     }
                     _ => {
@@ -1020,7 +1018,7 @@ fn capture_view(
                             match_ids.first().copied()
                         });
                         if let Some(Some(id)) = first {
-                            update_select_view_id(id, &capture_view);
+                            update_select_view_id(id, &capture_view, false);
                         }
                     }
                 }
@@ -1245,10 +1243,10 @@ fn find_relative_view_by_id_with_self(
     }
 }
 
-fn update_select_view_id(id: ViewId, capture: &CaptureView) {
+fn update_select_view_id(id: ViewId, capture: &CaptureView, request_focus: bool) {
     capture.selected.set(Some(id));
     capture.highlighted.set(Some(id));
-    capture.expanding_selection.set(Some(id));
+    capture.expanding_selection.set(Some((id, request_focus)));
 }
 
 #[derive(Debug, Default, Clone)]
