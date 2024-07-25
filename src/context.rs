@@ -1,7 +1,7 @@
 use floem_renderer::Renderer as FloemRenderer;
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Shape, Size, Vec2};
-use std::cmp::Ordering;
 use std::{
+    cmp::Ordering,
     ops::{Deref, DerefMut},
     rc::Rc,
     sync::Arc,

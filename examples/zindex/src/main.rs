@@ -1,10 +1,9 @@
-use floem::event::{Event, EventListener, EventPropagation};
-use floem::views::h_stack;
 use floem::{
+    event::{Event, EventListener, EventPropagation},
+    IntoView,
     peniko::Color,
     reactive::provide_context,
-    views::{empty, v_stack, Decorators},
-    IntoView,
+    views::{Decorators, empty, h_stack, v_stack},
 };
 
 fn context_container(
