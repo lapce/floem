@@ -324,7 +324,7 @@ impl DropDownCustomStyle {
     ///
     /// # Arguments
     /// * `close`: If set to `true`, the dropdown will close upon item selection. If `false`, it
-    /// will remain open after an item is selected.
+    ///   will remain open after an item is selected.
     pub fn close_on_accept(mut self, close: bool) -> Self {
         self = Self(self.0.set(CloseOnAccept, close));
         self

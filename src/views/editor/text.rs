@@ -273,6 +273,7 @@ impl std::fmt::Display for RenderWhitespace {
 ///   - Default font size, font family, etc.
 /// - `AttrsList`: This lets you set spans of text to have different styling
 ///   - Syntax highlighting, bolding specific words, etc.
+///
 /// Then once the text layout for the line is created from that, we have:
 /// - `Layout Styles`: Where it may depend on the position of text in the line (after wrapping)
 ///   - Outline boxes

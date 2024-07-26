@@ -339,6 +339,7 @@ impl ToggleButtonCustomStyle {
     ///
     /// # Arguments
     /// * `switch` - A `ToggleHandleBehavior` that defines how the toggle handle behaves on interaction.
+    ///
     /// On `Follow`, the handle will follow the mouse.
     /// On `Snap`, the handle will snap to the nearest side.
     pub fn behavior(mut self, switch: ToggleHandleBehavior) -> Self {
