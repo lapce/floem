@@ -23,12 +23,12 @@ use crate::unit::UnitExt;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::views::{container, stack};
 use crate::{
-    dropped_file::{DroppedFileEvent, DroppedFileWithPositionEvent}
     animate::{AnimPropKind, AnimUpdateMsg, AnimValue, AnimatedProp, SizeUnit},
     app_state::AppState,
     context::{
         ComputeLayoutCx, EventCx, FrameUpdate, LayoutCx, PaintCx, PaintState, StyleCx, UpdateCx,
     },
+    dropped_file::{DroppedFileEvent, DroppedFileWithPositionEvent},
     event::{Event, EventListener},
     id::ViewId,
     inspector::{self, Capture, CaptureState, CapturedView},
