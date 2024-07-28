@@ -1,6 +1,7 @@
 use std::{
     cell::RefCell,
     mem,
+    path::PathBuf,
     rc::Rc,
     sync::Arc,
     time::{Duration, Instant},
@@ -22,6 +23,7 @@ use crate::unit::UnitExt;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::views::{container, stack};
 use crate::{
+    dropped_file::{DroppedFileEvent, DroppedFileWithPositionEvent}
     animate::{AnimPropKind, AnimUpdateMsg, AnimValue, AnimatedProp, SizeUnit},
     app_state::AppState,
     context::{
@@ -76,6 +78,7 @@ pub(crate) struct WindowHandle {
     pub(crate) last_pointer_down: Option<(u8, Point, Instant)>,
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     pub(crate) context_menu: RwSignal<Option<(Menu, Point)>>,
+    dropper_file: Option<PathBuf>,
 }
 
 impl WindowHandle {
@@ -144,6 +147,7 @@ impl WindowHandle {
             #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             context_menu,
             last_pointer_down: None,
+            dropper_file: None,
         };
         window_handle.app_state.set_root_size(size.get_untracked());
         if let Some(theme) = theme.get_untracked() {
@@ -390,7 +394,17 @@ impl WindowHandle {
         }
     }
 
+    pub(crate) fn dropped_file(&mut self, path: PathBuf) {
+        self.dropper_file = Some(path.clone());
+        self.event(Event::DroppedFile(DroppedFileEvent { path }));
+    }
+
     pub(crate) fn pointer_move(&mut self, pos: Point) {
+        if let Some(path) = self.dropper_file.take() {
+            self.event(Event::DroppedFileWithPosition(
+                DroppedFileWithPositionEvent { path, pos },
+            ));
+        }
         if self.cursor_position != pos {
             self.cursor_position = pos;
             let event = PointerMoveEvent {
