@@ -24,9 +24,6 @@ fn app_view() -> impl IntoView {
     .on_event_stop(EventListener::DroppedFile, |x| {
         println!("DroppedFile {:?}", x);
     })
-    .on_event_stop(EventListener::DroppedFileWithPosition, |x| {
-        println!("DroppedFileWithPosition {:?}", x.point());
-    })
 }
 
 fn main() {

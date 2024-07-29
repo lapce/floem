@@ -28,7 +28,7 @@ use crate::{
     context::{
         ComputeLayoutCx, EventCx, FrameUpdate, LayoutCx, PaintCx, PaintState, StyleCx, UpdateCx,
     },
-    dropped_file::DroppedFileWithPositionEvent,
+    dropped_file::DroppedFileEvent,
     event::{Event, EventListener},
     id::ViewId,
     inspector::{self, Capture, CaptureState, CapturedView},
@@ -400,9 +400,7 @@ impl WindowHandle {
 
     pub(crate) fn pointer_move(&mut self, pos: Point) {
         if let Some(path) = self.dropper_file.take() {
-            self.event(Event::DroppedFileWithPosition(
-                DroppedFileWithPositionEvent { path, pos },
-            ));
+            self.event(Event::DroppedFile(DroppedFileEvent { path, pos }));
         }
         if self.cursor_position != pos {
             self.cursor_position = pos;
