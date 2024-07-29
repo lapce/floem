@@ -28,7 +28,7 @@ use crate::{
     context::{
         ComputeLayoutCx, EventCx, FrameUpdate, LayoutCx, PaintCx, PaintState, StyleCx, UpdateCx,
     },
-    dropped_file::{DroppedFileEvent, DroppedFileWithPositionEvent},
+    dropped_file::DroppedFileWithPositionEvent,
     event::{Event, EventListener},
     id::ViewId,
     inspector::{self, Capture, CaptureState, CapturedView},
@@ -396,7 +396,6 @@ impl WindowHandle {
 
     pub(crate) fn dropped_file(&mut self, path: PathBuf) {
         self.dropper_file = Some(path.clone());
-        self.event(Event::DroppedFile(DroppedFileEvent { path }));
     }
 
     pub(crate) fn pointer_move(&mut self, pos: Point) {

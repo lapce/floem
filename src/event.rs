@@ -5,7 +5,7 @@ use floem_winit::{
 use peniko::kurbo::{Point, Size};
 
 use crate::{
-    dropped_file::{DroppedFileEvent, DroppedFileWithPositionEvent},
+    dropped_file::DroppedFileWithPositionEvent,
     keyboard::KeyEvent,
     pointer::{PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
 };
@@ -108,7 +108,6 @@ pub enum Event {
     PointerMove(PointerMoveEvent),
     PointerWheel(PointerWheelEvent),
     PointerLeave,
-    DroppedFile(DroppedFileEvent),
     DroppedFileWithPosition(DroppedFileWithPositionEvent),
     KeyDown(KeyEvent),
     KeyUp(KeyEvent),
@@ -151,7 +150,6 @@ impl Event {
             | Event::WindowMaximizeChanged(_)
             | Event::WindowGotFocus
             | Event::WindowLostFocus
-            | Event::DroppedFile(_)
             | Event::DroppedFileWithPosition(_) => false,
             Event::KeyDown(_) | Event::KeyUp(_) => true,
         }
@@ -179,7 +177,6 @@ impl Event {
             | Event::WindowMaximizeChanged(_)
             | Event::WindowGotFocus
             | Event::WindowLostFocus
-            | Event::DroppedFile(_)
             | Event::DroppedFileWithPosition(_) => false,
         }
     }
@@ -221,7 +218,6 @@ impl Event {
             | Event::WindowGotFocus
             | Event::WindowMaximizeChanged(_)
             | Event::WindowLostFocus
-            | Event::DroppedFile(_)
             | Event::DroppedFileWithPosition(_) => true,
         }
     }
@@ -249,8 +245,7 @@ impl Event {
             | Event::WindowMoved(_)
             | Event::WindowMaximizeChanged(_)
             | Event::WindowGotFocus
-            | Event::WindowLostFocus
-            | Event::DroppedFile(_) => None,
+            | Event::WindowLostFocus => None,
         }
     }
 
@@ -287,8 +282,7 @@ impl Event {
             | Event::WindowMoved(_)
             | Event::WindowMaximizeChanged(_)
             | Event::WindowGotFocus
-            | Event::WindowLostFocus
-            | Event::DroppedFile(_) => {}
+            | Event::WindowLostFocus => {}
         }
         self
     }
@@ -322,8 +316,7 @@ impl Event {
             | Event::WindowMoved(_)
             | Event::WindowMaximizeChanged(_)
             | Event::WindowGotFocus
-            | Event::WindowLostFocus
-            | Event::DroppedFile(_) => {}
+            | Event::WindowLostFocus => {}
         }
         self
     }
@@ -350,7 +343,6 @@ impl Event {
             Event::FocusLost => Some(EventListener::FocusLost),
             Event::FocusGained => Some(EventListener::FocusGained),
             Event::ThemeChanged(_) => Some(EventListener::ThemeChanged),
-            Event::DroppedFile(_) => Some(EventListener::DroppedFile),
             Event::DroppedFileWithPosition(_) => Some(EventListener::DroppedFileWithPosition),
         }
     }

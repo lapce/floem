@@ -6,8 +6,3 @@ pub struct DroppedFileWithPositionEvent {
     pub path: PathBuf,
     pub pos: Point,
 }
-
-#[derive(Debug, Clone)]
-pub struct DroppedFileEvent {
-    pub path: PathBuf,
-}
