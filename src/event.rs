@@ -5,6 +5,7 @@ use floem_winit::{
 use peniko::kurbo::{Point, Size};
 
 use crate::{
+    dropped_file::DroppedFileEvent,
     keyboard::KeyEvent,
     pointer::{PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
 };
@@ -94,6 +95,8 @@ pub enum EventListener {
     WindowLostFocus,
     /// Receives [`Event::WindowMaximizeChanged`]
     WindowMaximizeChanged,
+    /// Receives [`Event::DroppedFile`]
+    DroppedFile,
 }
 
 #[derive(Debug, Clone)]
@@ -103,6 +106,7 @@ pub enum Event {
     PointerMove(PointerMoveEvent),
     PointerWheel(PointerWheelEvent),
     PointerLeave,
+    DroppedFile(DroppedFileEvent),
     KeyDown(KeyEvent),
     KeyUp(KeyEvent),
     ImeEnabled,
@@ -143,7 +147,8 @@ impl Event {
             | Event::WindowMoved(_)
             | Event::WindowMaximizeChanged(_)
             | Event::WindowGotFocus
-            | Event::WindowLostFocus => false,
+            | Event::WindowLostFocus
+            | Event::DroppedFile(_) => false,
             Event::KeyDown(_) | Event::KeyUp(_) => true,
         }
     }
@@ -169,7 +174,8 @@ impl Event {
             | Event::WindowMoved(_)
             | Event::WindowMaximizeChanged(_)
             | Event::WindowGotFocus
-            | Event::WindowLostFocus => false,
+            | Event::WindowLostFocus
+            | Event::DroppedFile(_) => false,
         }
     }
 
@@ -209,7 +215,8 @@ impl Event {
             | Event::WindowMoved(_)
             | Event::WindowGotFocus
             | Event::WindowMaximizeChanged(_)
-            | Event::WindowLostFocus => true,
+            | Event::WindowLostFocus
+            | Event::DroppedFile(_) => true,
         }
     }
 
@@ -220,6 +227,7 @@ impl Event {
             }
             Event::PointerMove(pointer_event) => Some(pointer_event.pos),
             Event::PointerWheel(pointer_event) => Some(pointer_event.pos),
+            Event::DroppedFile(event) => Some(event.pos),
             Event::PointerLeave
             | Event::KeyDown(_)
             | Event::KeyUp(_)
@@ -253,6 +261,10 @@ impl Event {
                 pointer_event.pos.x /= scale;
                 pointer_event.pos.y /= scale;
             }
+            Event::DroppedFile(event) => {
+                event.pos.x /= scale;
+                event.pos.y /= scale;
+            }
             Event::PointerLeave
             | Event::KeyDown(_)
             | Event::KeyUp(_)
@@ -283,6 +295,9 @@ impl Event {
             }
             Event::PointerWheel(pointer_event) => {
                 pointer_event.pos -= offset;
+            }
+            Event::DroppedFile(event) => {
+                event.pos -= offset;
             }
             Event::PointerLeave
             | Event::KeyDown(_)
@@ -326,6 +341,7 @@ impl Event {
             Event::FocusLost => Some(EventListener::FocusLost),
             Event::FocusGained => Some(EventListener::FocusGained),
             Event::ThemeChanged(_) => Some(EventListener::ThemeChanged),
+            Event::DroppedFile(_) => Some(EventListener::DroppedFile),
         }
     }
 }

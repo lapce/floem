@@ -168,7 +168,9 @@ impl ApplicationHandle {
             WindowEvent::Destroyed => {
                 self.close_window(window_id, event_loop);
             }
-            WindowEvent::DroppedFile(_) => {}
+            WindowEvent::DroppedFile(path) => {
+                window_handle.dropped_file(path);
+            }
             WindowEvent::HoveredFile(_) => {}
             WindowEvent::HoveredFileCancelled => {}
             WindowEvent::Focused(focused) => {
