@@ -34,6 +34,7 @@ use taffy::style::{AlignItems, FlexDirection};
 pub struct CapturedView {
     id: ViewId,
     name: String,
+    custom_name: String,
     layout: Rect,
     taffy: Layout,
     clipped: Rect,
@@ -67,9 +68,11 @@ impl CapturedView {
             .cloned()
             .collect::<Vec<_>>()
             .join(" - ");
+        let custom_name = custom_name.iter().cloned().collect::<Vec<_>>().join(" - ");
         Self {
             id,
             name,
+            custom_name,
             layout,
             taffy,
             clipped,
@@ -106,28 +109,23 @@ impl CapturedView {
     }
 
     fn find_all_by_pos(&self, pos: Point) -> Vec<ViewId> {
-        let mut match_ids = Vec::new();
-        if self.clipped.contains(pos) {
-            let mut ids = self
-                .children
-                .iter()
-                .filter_map(|child| {
-                    let child_ids = child.find_all_by_pos(pos);
-                    if child_ids.is_empty() {
-                        None
-                    } else {
-                        Some(child_ids)
-                    }
-                })
-                .fold(Vec::new(), |mut init, mut item| {
-                    init.append(&mut item);
-                    init
-                });
-            if ids.is_empty() {
-                match_ids.push(self.id);
-            } else {
-                match_ids.append(&mut ids);
-            }
+        let mut match_ids = self
+            .children
+            .iter()
+            .filter_map(|child| {
+                let child_ids = child.find_all_by_pos(pos);
+                if child_ids.is_empty() {
+                    None
+                } else {
+                    Some(child_ids)
+                }
+            })
+            .fold(Vec::new(), |mut init, mut item| {
+                init.append(&mut item);
+                init
+            });
+        if match_ids.is_empty() && self.layout.contains(pos) {
+            match_ids.push(self.id);
         }
         match_ids
     }
@@ -258,7 +256,7 @@ fn captured_view_no_children(
         .on_event_cont(EventListener::PointerEnter, move |_| {
             highlighted.set(Some(id))
         });
-    let row = add_event(row, view.name.clone(), id, *capture_view, capture);
+    let row = add_event(row, view.custom_name.clone(), id, *capture_view, capture);
     let row_id = row.id();
     let scroll_to = capture_view.scroll_to;
     let expanding_selection = capture_view.expanding_selection;
@@ -353,7 +351,7 @@ fn captured_view_with_children(
     .on_event_cont(EventListener::PointerEnter, move |_| {
         highlighted.set(Some(id))
     });
-    let row = add_event(row, view.name.clone(), id, *capture_view, capture);
+    let row = add_event(row, view.custom_name.clone(), id, *capture_view, capture);
 
     let row_id = row.id();
     let scroll_to = capture_view.scroll_to;
