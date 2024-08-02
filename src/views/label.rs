@@ -229,8 +229,8 @@ impl Label {
             TextCommand::Copy => {
                 if let Some((start_c, end_c)) = &self.selection_range {
                     if let Some(ref text_layout) = self.text_layout {
-                        let start_line_idx = text_layout.lines[start_c.line].start_index();
-                        let end_line_idx = text_layout.lines[end_c.line].start_index();
+                        let start_line_idx = text_layout.lines()[start_c.line].start_index();
+                        let end_line_idx = text_layout.lines()[end_c.line].start_index();
                         let start_idx = start_line_idx + start_c.index;
                         let end_idx = end_line_idx + end_c.index;
                         let selection_txt = self.label[start_idx..end_idx].into();

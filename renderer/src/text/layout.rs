@@ -87,6 +87,11 @@ impl TextLayout {
         self.0.set_tab_width(&mut font_system, tab_width as u16);
     }
 
+    pub fn set_size(&mut self, width: f32, height: f32) {
+        let mut font_system = FONT_SYSTEM.lock();
+        self.0.set_size(&mut font_system, Some(width), Some(height));
+    }
+
     pub fn lines(&self) -> &[BufferLine] {
         &self.0.lines
     }
