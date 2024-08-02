@@ -1,11 +1,11 @@
 use std::{borrow::Cow, fmt::Debug, ops::Range, rc::Rc};
 
 use crate::{
-    cosmic_text::{Attrs, AttrsList, FamilyOwned, Stretch, Weight},
     keyboard::Modifiers,
     peniko::Color,
     reactive::{RwSignal, Scope},
     style,
+    text::{Attrs, AttrsList, FamilyOwned, Stretch, Weight},
     views::EditorCustomStyle,
 };
 use downcast_rs::{impl_downcast, Downcast};

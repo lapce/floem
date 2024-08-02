@@ -1,6 +1,6 @@
 use crate::{
-    cosmic_text::{LayoutLine, TextLayout},
     peniko::Color,
+    text::{LayoutLine, TextLayout},
 };
 use floem_editor_core::buffer::rope_text::RopeText;
 
@@ -41,7 +41,7 @@ impl TextLayoutLine {
         // normal buffer lines, we can have more than one due to multiline phantom text. So we have
         // to sum over all of the entries line counts.
         self.text
-            .lines
+            .lines()
             .iter()
             .flat_map(|l| l.layout_opt().as_deref())
             .flat_map(|ls| ls.iter())
@@ -56,9 +56,9 @@ impl TextLayoutLine {
     ) -> impl Iterator<Item = (usize, usize)> + 'a {
         let mut prefix = None;
         // Include an entry if there is nothing
-        if self.text.lines.len() == 1 {
-            let line_start = self.text.lines[0].start_index();
-            if let Some(layouts) = self.text.lines[0].layout_opt().as_deref() {
+        if self.text.lines().len() == 1 {
+            let line_start = self.text.lines()[0].start_index();
+            if let Some(layouts) = self.text.lines()[0].layout_opt().as_deref() {
                 // Do we need to require !layouts.is_empty()?
                 if !layouts.is_empty() && layouts.iter().all(|l| l.glyphs.is_empty()) {
                     // We assume the implicit glyph start is zero
@@ -70,7 +70,7 @@ impl TextLayoutLine {
         let line_v = line;
         let iter = self
             .text
-            .lines
+            .lines()
             .iter()
             .filter_map(|line| line.layout_opt().as_deref().map(|ls| (line, ls)))
             .flat_map(|(line, ls)| ls.iter().map(move |l| (line, l)))
@@ -126,7 +126,7 @@ impl TextLayoutLine {
         let mut line_y = 0.0;
         for (i, layout) in self.relevant_layouts().enumerate() {
             // This logic matches how layout run iter computes the line_y
-            let line_height = layout.line_ascent + layout.line_descent;
+            let line_height = layout.max_ascent + layout.line_descent;
             if i == nth {
                 let offset = (line_height - (layout.glyph_ascent + layout.glyph_descent)) / 2.0;
 

@@ -2,7 +2,6 @@ use std::{any::Any, fmt::Display, mem::swap};
 
 use crate::{
     context::{PaintCx, UpdateCx},
-    cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout},
     event::{Event, EventListener, EventPropagation},
     id::ViewId,
     keyboard::KeyEvent,
@@ -12,6 +11,7 @@ use crate::{
         Style, TextColor, TextOverflow, TextOverflowProp,
     },
     style_class,
+    text::{Attrs, AttrsList, FamilyOwned, TextLayout},
     unit::PxPct,
     view::View,
     Clipboard,

@@ -1,5 +1,5 @@
 pub use floem_cosmic_text as cosmic_text;
-use floem_cosmic_text::TextLayout;
+pub mod text;
 use image::DynamicImage;
 use peniko::{
     kurbo::{Affine, Point, Rect, Shape},
@@ -7,6 +7,7 @@ use peniko::{
 };
 pub use resvg::tiny_skia;
 pub use resvg::usvg;
+use text::TextLayout;
 
 pub struct Svg<'a> {
     pub tree: &'a usvg::Tree,

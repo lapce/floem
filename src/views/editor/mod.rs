@@ -11,7 +11,6 @@ use std::{
 
 use crate::{
     action::{exec_after, TimerToken},
-    cosmic_text::{Attrs, AttrsList, LineHeightValue, TextLayout, Wrap},
     keyboard::Modifiers,
     kurbo::{Point, Rect, Vec2},
     peniko::Color,
@@ -19,6 +18,7 @@ use crate::{
     prop, prop_extractor,
     reactive::{batch, untrack, ReadSignal, RwSignal, Scope},
     style::{CursorColor, StylePropValue, TextColor},
+    text::{Attrs, AttrsList, LineHeightValue, TextLayout, Wrap},
     view::{IntoView, View},
     views::text,
 };

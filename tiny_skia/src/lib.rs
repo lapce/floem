@@ -1,5 +1,7 @@
 use anyhow::{anyhow, Result};
-use floem_renderer::cosmic_text::{CacheKey, SubpixelBin, SwashCache, SwashContent, TextLayout};
+use floem_renderer::text::{
+    CacheKey, SubpixelBin, SwashCache, SwashContent, TextLayout, FONT_SYSTEM,
+};
 use floem_renderer::tiny_skia::{
     self, FillRule, FilterQuality, GradientStop, LinearGradient, Mask, MaskType, Paint, Path,
     PathBuilder, Pattern, Pixmap, RadialGradient, Shader, SpreadMode, Stroke, Transform,
@@ -311,7 +313,8 @@ impl<W> TinySkiaRenderer<W> {
         }
 
         let mut swash_cache = SwashCache::new();
-        let image = swash_cache.get_image_uncached(cache_key)?;
+        let mut font_system = FONT_SYSTEM.lock();
+        let image = swash_cache.get_image_uncached(&mut font_system, cache_key)?;
 
         let result = if image.placement.width == 0 || image.placement.height == 0 {
             // We can't create an empty `Pixmap`
@@ -421,21 +424,24 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
                 }
 
                 let glyph_x = x * self.scale as f32;
-                let (new_x, subpx_x) = SubpixelBin::new(glyph_x);
-                let glyph_x = new_x as f32;
-
                 let glyph_y = (y * self.scale as f32).round();
-                let (new_y, subpx_y) = SubpixelBin::new(glyph_y);
+                let font_size = (glyph_run.font_size * self.scale as f32).round() as u32;
+                let (cache_key, new_x, new_y) = CacheKey::new(
+                    glyph_run.font_id,
+                    glyph_run.glyph_id,
+                    font_size as f32,
+                    (glyph_x, glyph_y),
+                    glyph_run.cache_key_flags,
+                );
+
+                let glyph_x = new_x as f32;
                 let glyph_y = new_y as f32;
 
-                let font_size = (glyph_run.font_size * self.scale as f32).round() as u32;
-
-                let mut cache_key = glyph_run.cache_key;
-                cache_key.font_size = font_size;
-                cache_key.x_bin = subpx_x;
-                cache_key.y_bin = subpx_y;
-
-                let pixmap = self.cache_glyph(cache_key, glyph_run.color);
+                let color = match glyph_run.color_opt {
+                    Some(c) => Color::rgba8(c.r(), c.g(), c.b(), c.a()),
+                    None => Color::BLACK,
+                };
+                let pixmap = self.cache_glyph(cache_key, color);
 
                 if let Some(glyph) = pixmap {
                     self.render_pixmap_direct(

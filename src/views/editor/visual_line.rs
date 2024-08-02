@@ -69,7 +69,7 @@ use floem_editor_core::{
     word::WordCursor,
 };
 use floem_reactive::Scope;
-use floem_renderer::cosmic_text::{HitPosition, LayoutGlyph, TextLayout};
+use floem_renderer::text::{HitPosition, LayoutGlyph, TextLayout};
 use lapce_xi_rope::{Interval, Rope};
 use peniko::kurbo::Point;
 
@@ -2023,7 +2023,7 @@ mod tests {
         cursor::CursorAffinity,
     };
     use floem_reactive::Scope;
-    use floem_renderer::cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout, Wrap};
+    use floem_renderer::text::{Attrs, AttrsList, FamilyOwned, TextLayout, Wrap};
     use lapce_xi_rope::Rope;
     use smallvec::smallvec;
 
@@ -2219,8 +2219,7 @@ mod tests {
 
         for line in 0..rope_text.num_lines() {
             if let Some(text_layout) = layouts.get(font_size, line) {
-                let lines = &text_layout.text.lines;
-                for line in lines {
+                for line in text_layout.text.lines() {
                     let layouts = line.layout_opt().as_deref().unwrap();
                     for layout in layouts {
                         // Spacing
