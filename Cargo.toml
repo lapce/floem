@@ -72,7 +72,7 @@ crossbeam = "0.8"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = { version = "0.4" }
-web-time = "0.2"
+web-time = "1"
 
 [features]
 default = ["editor", "default-image-formats"]
