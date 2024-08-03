@@ -15,8 +15,13 @@ use crate::{
 use bitflags::bitflags;
 use peniko::kurbo::{Point, Rect};
 use smallvec::SmallVec;
-use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::Rc, time::Duration};
+use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::Rc};
 use taffy::tree::NodeId;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Duration;
+#[cfg(target_arch = "wasm32")]
+use web_time::Duration;
 
 /// A stack of view attributes. Each entry is associated with a view decorator call.
 pub(crate) struct Stack<T> {

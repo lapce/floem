@@ -10,6 +10,8 @@ pub use resvg::tiny_skia;
 pub use resvg::usvg;
 use text::TextLayout;
 
+pub mod gpu_resources;
+
 pub struct Svg<'a> {
     pub tree: &'a usvg::Tree,
     pub hash: &'a [u8],

@@ -15,7 +15,12 @@ use std::hash::Hasher;
 use std::hash::{BuildHasherDefault, Hash};
 use std::ptr;
 use std::rc::Rc;
+
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
+
 pub use taffy::style::{
     AlignContent, AlignItems, Dimension, Display, FlexDirection, FlexWrap, JustifyContent, Position,
 };
@@ -673,7 +678,10 @@ macro_rules! prop_extractor {
                 &mut self,
                 style: &$crate::style::Style,
                 fallback: &$crate::style::Style,
+                #[cfg(not(target_arch = "wasm32"))]
                 now: &std::time::Instant,
+                #[cfg(target_arch = "wasm32")]
+                now: &web_time::Instant,
                 request_transition: &mut bool
             ) -> bool {
                 false $(| self.$prop.read(style, fallback, now, request_transition))*
@@ -1963,8 +1971,8 @@ impl Style {
         self.set(ZIndex, Some(z_index))
     }
 
-    /// Allow the application of a function if the option exists.  
-    /// This is useful for chaining together a bunch of optional style changes.  
+    /// Allow the application of a function if the option exists.
+    /// This is useful for chaining together a bunch of optional style changes.
     /// ```rust
     /// use floem::style::Style;
     /// let maybe_none: Option<i32> = None;
@@ -1982,7 +1990,7 @@ impl Style {
         }
     }
 
-    /// Allow the application of a function if the condition holds.  
+    /// Allow the application of a function if the condition holds.
     /// This is useful for chaining together a bunch of optional style changes.
     /// ```rust
     /// use floem::style::Style;
