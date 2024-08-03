@@ -12,9 +12,7 @@ use peniko::{
     kurbo::{Affine, Point, Rect, Shape, Vec2},
     BrushRef, Color, GradientKind,
 };
-use wgpu::{
-    Backends, Device, DeviceType, Queue, StoreOp, Surface, SurfaceConfiguration, TextureFormat,
-};
+use wgpu::{Device, DeviceType, Queue, StoreOp, Surface, SurfaceConfiguration, TextureFormat};
 
 pub struct VgerRenderer {
     device: Arc<Device>,
@@ -32,26 +30,13 @@ pub struct VgerRenderer {
 }
 
 impl VgerRenderer {
-    pub fn new<W: wgpu::WindowHandle + 'static>(
-        window: W,
-        width: u32,
-        height: u32,
-        scale: f64,
-    ) -> Result<Self> {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::util::backend_bits_from_env().unwrap_or(Backends::all()),
-            ..Default::default()
-        });
-
-        let surface = instance.create_surface(window)?;
-
-        let adapter =
-            futures::executor::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::default(),
-                compatible_surface: Some(&surface),
-                force_fallback_adapter: false,
-            }))
-            .ok_or_else(|| anyhow::anyhow!("can't get adapter"))?;
+    pub fn new(gpu_resources: GpuResources, width: u32, height: u32, scale: f64) -> Result<Self> {
+        let GpuResources {
+            surface,
+            adapter,
+            device,
+            queue,
+        } = gpu_resources;
 
         if adapter.get_info().device_type == DeviceType::Cpu {
             return Err(anyhow::anyhow!("only cpu adapter found"));
@@ -70,13 +55,6 @@ impl VgerRenderer {
             ));
         }
 
-        let (device, queue) = futures::executor::block_on(adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                label: None,
-                ..Default::default()
-            },
-            None,
-        ))?;
         let device = Arc::new(device);
         let queue = Arc::new(queue);
 

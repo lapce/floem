@@ -48,6 +48,7 @@
 //! - Only one view can be focused at a time.
 //!
 use crate::text::TextLayout;
+use floem_renderer::gpu_resources::GpuResources;
 use floem_renderer::Img;
 use floem_tiny_skia_renderer::TinySkiaRenderer;
 use floem_vger_renderer::VgerRenderer;
@@ -62,7 +63,7 @@ pub enum Renderer<W> {
 }
 
 impl<W: wgpu::WindowHandle> Renderer<W> {
-    pub fn new(window: W, scale: f64, size: Size) -> Self
+    pub fn new(window: W, gpu_resources: GpuResources, scale: f64, size: Size) -> Self
     where
         W: Clone + 'static,
     {
@@ -74,7 +75,7 @@ impl<W: wgpu::WindowHandle> Renderer<W> {
             .unwrap_or(false);
 
         let vger_err = if !force_tiny_skia {
-            match VgerRenderer::new(window.clone(), size.width as u32, size.height as u32, scale) {
+            match VgerRenderer::new(gpu_resources, size.width as u32, size.height as u32, scale) {
                 Ok(vger) => return Self::Vger(vger),
                 Err(err) => Some(err),
             }

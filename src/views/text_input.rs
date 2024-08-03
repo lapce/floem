@@ -19,11 +19,15 @@ use crate::{peniko::Color, style::Style, view::View};
 
 use std::{
     any::Any,
-    ops::Range,
-    time::{Duration, Instant},
+    ops::Range
 };
 
 use crate::text::{Attrs, AttrsList, FamilyOwned, TextLayout};
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::{Instant, Duration};
+#[cfg(target_arch = "wasm32")]
+use web_time::{Instant, Duration};
+
 use peniko::kurbo::{Point, Rect, Size};
 
 use crate::{
