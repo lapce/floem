@@ -17,7 +17,7 @@ use crate::{
     Clipboard,
 };
 use floem_reactive::create_updater;
-use floem_renderer::{cosmic_text::Cursor, Renderer};
+use floem_renderer::{text::Cursor, Renderer};
 use floem_winit::keyboard::{Key, SmolStr};
 use peniko::kurbo::{Point, Rect};
 use peniko::Color;
@@ -84,6 +84,12 @@ impl Label {
             style: Default::default(),
         }
         .class(LabelClass)
+    }
+
+    fn effectve_text_layout(&self) -> &TextLayout {
+        self.available_text_layout
+            .as_ref()
+            .unwrap_or_else(|| self.text_layout.as_ref().unwrap())
     }
 }
 
@@ -188,7 +194,7 @@ impl Label {
             PxPct::Px(padding) => padding as f32,
             PxPct::Pct(pct) => (pct / 100.) as f32 * layout.size.width,
         };
-        self.text_layout.as_ref().unwrap().hit(
+        self.effectve_text_layout().hit(
             point.x as f32 - padding_left,
             // TODO: prevent cursor incorrectly going to end of buffer when clicking
             // slightly below the text
@@ -229,8 +235,8 @@ impl Label {
             TextCommand::Copy => {
                 if let Some((start_c, end_c)) = &self.selection_range {
                     if let Some(ref text_layout) = self.text_layout {
-                        let start_line_idx = text_layout.lines()[start_c.line].start_index();
-                        let end_line_idx = text_layout.lines()[end_c.line].start_index();
+                        let start_line_idx = text_layout.lines_range()[start_c.line].start;
+                        let end_line_idx = text_layout.lines_range()[end_c.line].start;
                         let start_idx = start_line_idx + start_c.index;
                         let end_idx = end_line_idx + end_c.index;
                         let selection_txt = self.label[start_idx..end_idx].into();
@@ -261,21 +267,16 @@ impl Label {
                 .location;
             let ss = &self.selection_style;
             let selection_color = ss.selection_color();
-            let start_line = start_c.line;
-            let end_line = end_c.line;
 
-            let num_lines = end_line - start_line + 1;
-            let runs = text_layout.layout_runs().skip(start_line).take(num_lines);
-
-            for run in runs {
+            for run in text_layout.layout_runs() {
                 if let Some((mut start_x, width)) = run.highlight(*start_c, *end_c) {
                     start_x += location.x;
                     let mut end_x = width + start_x;
                     if width > 0. {
                         end_x += run.line_height * 0.1
                     }
-                    let start_y = (run.line_y - run.glyph_ascent + location.y) as f64;
-                    let end_y = (run.line_y + run.glyph_descent + location.y) as f64;
+                    let start_y = location.y as f64 + run.line_top as f64;
+                    let end_y = start_y + run.line_height as f64;
                     let rect = Rect::new(start_x.into(), start_y, end_x.into(), end_y)
                         .to_rounded_rect(ss.corner_radius());
                     paint_cx.fill(&rect, selection_color, 0.0);
@@ -520,17 +521,11 @@ impl View for Label {
             .map_or(taffy::Layout::new().location, |layout| layout.location);
 
         let point = Point::new(location.x as f64, location.y as f64);
-        if let Some(text_layout) = self.available_text_layout.as_ref() {
-            cx.draw_text(text_layout, point);
-            if cx.app_state.is_focused(&self.id()) {
-                self.paint_selection(text_layout, cx);
-            }
-        } else {
-            let text_layout = self.text_layout.as_ref().unwrap();
-            cx.draw_text(text_layout, point);
-            if cx.app_state.is_focused(&self.id()) {
-                self.paint_selection(text_layout, cx);
-            }
+
+        let text_layout = self.effectve_text_layout();
+        cx.draw_text(text_layout, point);
+        if cx.app_state.is_focused(&self.id()) {
+            self.paint_selection(text_layout, cx);
         }
     }
 }

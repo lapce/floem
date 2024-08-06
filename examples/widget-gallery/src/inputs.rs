@@ -1,8 +1,8 @@
 use floem::{
-    cosmic_text::{self, Weight},
     peniko::Color,
     reactive::create_rw_signal,
     style::SelectionCornerRadius,
+    text::Weight,
     views::{text_input, Decorators, PlaceholderTextClass},
     IntoView,
 };
@@ -40,7 +40,7 @@ pub fn text_input_view() -> impl IntoView {
                             })
                             .class(PlaceholderTextClass, |s| {
                                 s.color(Color::LIGHT_SKY_BLUE)
-                                    .font_style(cosmic_text::Style::Italic)
+                                    .font_style(floem::text::Style::Italic)
                                     .font_weight(Weight::BOLD)
                             })
                     })

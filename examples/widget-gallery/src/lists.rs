@@ -1,8 +1,8 @@
 use floem::{
-    cosmic_text::Weight,
     peniko::Color,
     reactive::create_signal,
     style::JustifyContent,
+    text::Weight,
     views::{
         button, checkbox, container, h_stack, h_stack_from_iter, label, list, scroll, stack,
         v_stack, v_stack_from_iter, virtual_list, Decorators, VirtualDirection, VirtualItemSize,

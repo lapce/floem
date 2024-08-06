@@ -1,6 +1,6 @@
 use floem::{
-    cosmic_text::{Style as FontStyle, Weight},
     peniko::Color,
+    text::{Style as FontStyle, Weight},
     views::{label, static_label, tooltip, Decorators},
     IntoView,
 };

@@ -1989,8 +1989,8 @@ pub fn hit_position_aff(this: &TextLayout, idx: usize, before: bool) -> HitPosit
             last_position = HitPosition {
                 line,
                 point: Point::new(glyph.x as f64, run.line_y as f64),
-                glyph_ascent: run.glyph_ascent as f64,
-                glyph_descent: run.glyph_descent as f64,
+                glyph_ascent: run.max_ascent as f64,
+                glyph_descent: run.max_descent as f64,
             };
             if (glyph.start + offset..glyph.end + offset).contains(&idx) {
                 return last_position;

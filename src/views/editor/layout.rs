@@ -57,7 +57,7 @@ impl TextLayoutLine {
         let mut prefix = None;
         // Include an entry if there is nothing
         if self.text.lines().len() == 1 {
-            let line_start = self.text.lines()[0].start_index();
+            let line_start = self.text.lines_range()[0].start;
             if let Some(layouts) = self.text.lines()[0].layout_opt().as_deref() {
                 // Do we need to require !layouts.is_empty()?
                 if !layouts.is_empty() && layouts.iter().all(|l| l.glyphs.is_empty()) {
@@ -72,11 +72,17 @@ impl TextLayoutLine {
             .text
             .lines()
             .iter()
-            .filter_map(|line| line.layout_opt().as_deref().map(|ls| (line, ls)))
-            .flat_map(|(line, ls)| ls.iter().map(move |l| (line, l)))
-            .filter(|(_, l)| !l.glyphs.is_empty())
-            .map(move |(tl_line, l)| {
-                let line_start = tl_line.start_index();
+            .zip(self.text.lines_range().iter())
+            .filter_map(|(line, line_range)| {
+                line.layout_opt()
+                    .as_deref()
+                    .map(|ls| (line, line_range, ls))
+            })
+            .flat_map(|(line, line_range, ls)| ls.iter().map(move |l| (line, line_range, l)))
+            .filter(|(_, _, l)| !l.glyphs.is_empty())
+            .map(move |(tl_line, line_range, l)| {
+                let line_start = line_range.start;
+                tl_line.align();
 
                 let start = line_start + l.glyphs[0].start;
                 let end = line_start + l.glyphs.last().unwrap().end;
@@ -118,34 +124,17 @@ impl TextLayoutLine {
     }
 
     /// Get the top y position of the given line index
-    pub fn get_layout_y(&self, nth: usize) -> Option<f64> {
-        if nth == 0 {
-            return Some(0.0);
-        }
-
-        let mut line_y = 0.0;
-        for (i, layout) in self.relevant_layouts().enumerate() {
-            // This logic matches how layout run iter computes the line_y
-            let line_height = layout.max_ascent + layout.line_descent;
-            if i == nth {
-                let offset = (line_height - (layout.glyph_ascent + layout.glyph_descent)) / 2.0;
-
-                return Some((line_y - offset - layout.glyph_descent) as f64);
-            }
-
-            line_y += line_height;
-        }
-
-        None
+    pub fn get_layout_y(&self, nth: usize) -> Option<f32> {
+        self.text.layout_runs().nth(nth).map(|run| run.line_y)
     }
 
     /// Get the (start x, end x) positions of the given line index
     pub fn get_layout_x(&self, nth: usize) -> Option<(f32, f32)> {
-        let layout = self.relevant_layouts().nth(nth)?;
-
-        let start = layout.glyphs.first().map(|g| g.x).unwrap_or(0.0);
-        let end = layout.glyphs.last().map(|g| g.x + g.w).unwrap_or(0.0);
-
-        Some((start, end))
+        self.text.layout_runs().nth(nth).map(|run| {
+            (
+                run.glyphs.first().map(|g| g.x).unwrap_or(0.0),
+                run.glyphs.last().map(|g| g.x + g.w).unwrap_or(0.0),
+            )
+        })
     }
 }

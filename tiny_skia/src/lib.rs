@@ -1,7 +1,5 @@
 use anyhow::{anyhow, Result};
-use floem_renderer::text::{
-    CacheKey, SubpixelBin, SwashCache, SwashContent, TextLayout, FONT_SYSTEM,
-};
+use floem_renderer::text::{CacheKey, SwashCache, SwashContent, TextLayout, FONT_SYSTEM};
 use floem_renderer::tiny_skia::{
     self, FillRule, FilterQuality, GradientStop, LinearGradient, Mask, MaskType, Paint, Path,
     PathBuilder, Pattern, Pixmap, RadialGradient, Shader, SpreadMode, Stroke, Transform,

@@ -1,9 +1,7 @@
 use std::ops::Range;
 
-use cosmic_text::{fontdb, Family, Stretch, Style, Weight};
+use crate::text::{fontdb, Family, Stretch, Style, Weight};
 use peniko::Color;
-
-static DEFAULT_FAMILY: [FamilyOwned; 1] = [FamilyOwned::SansSerif];
 
 /// An owned version of [`Family`]
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -39,7 +37,7 @@ impl FamilyOwned {
         }
     }
 
-    pub fn parse_list<'a>(s: &'a str) -> impl Iterator<Item = FamilyOwned> + 'a + Clone {
+    pub fn parse_list(s: &str) -> impl Iterator<Item = FamilyOwned> + '_ + Clone {
         ParseList {
             source: s.as_bytes(),
             len: s.len(),
@@ -58,7 +56,7 @@ pub enum LineHeightValue {
 #[derive(Clone, Copy, Debug)]
 pub struct Attrs<'a> {
     attrs: cosmic_text::Attrs<'a>,
-    font_size: f32,
+    pub font_size: f32,
     line_height: LineHeightValue,
 }
 
@@ -206,10 +204,6 @@ impl<'a> From<cosmic_text::Attrs<'a>> for Attrs<'a> {
         }
     }
 }
-
-/// An owned version of [`Attrs`]
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct AttrsOwned(cosmic_text::AttrsOwned);
 
 #[derive(Clone)]
 struct ParseList<'a> {

@@ -1,7 +1,7 @@
-use floem::cosmic_text::{Attrs, AttrsList, Stretch, Style, Weight};
 use floem::keyboard::Modifiers;
 use floem::peniko::Color;
 use floem::reactive::RwSignal;
+use floem::text::{Attrs, AttrsList, Stretch, Style, Weight};
 use floem::views::button;
 use floem::views::editor::core::buffer::rope_text::RopeText;
 use floem::views::editor::id::EditorId;
@@ -9,8 +9,8 @@ use floem::views::editor::layout::TextLayoutLine;
 use floem::views::editor::text::{default_dark_color, Document, SimpleStylingBuilder, Styling};
 use floem::views::editor::EditorStyle;
 use floem::{
-    cosmic_text::FamilyOwned,
     keyboard::{Key, NamedKey},
+    text::FamilyOwned,
     views::{
         editor::{
             core::{editor::EditType, selection::Selection},
@@ -136,17 +136,17 @@ impl<'a> Styling for SyntaxHighlightingStyle<'a> {
                         ) {
                             let mut attr = default;
                             if style.font_style.contains(FontStyle::ITALIC) {
-                                attr.style = Style::Italic;
+                                attr = attr.style(Style::Italic);
                             }
                             if style.font_style.contains(FontStyle::BOLD) {
-                                attr.weight = Weight::BOLD;
+                                attr = attr.weight(Weight::BOLD);
                             }
-                            attr.color = Color::rgba8(
+                            attr = attr.color(Color::rgba8(
                                 style.foreground.r,
                                 style.foreground.g,
                                 style.foreground.b,
                                 style.foreground.a,
-                            );
+                            ));
 
                             attrs.add_span(range, attr);
                         }

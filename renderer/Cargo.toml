@@ -12,5 +12,4 @@ peniko = { workspace = true }
 image = { workspace = true }
 resvg = { workspace = true }
 
-floem-cosmic-text = "0.7.2"
-cosmic-text = "0.12.1"
+cosmic-text = { version = "0.12.1", features = ["shape-run-cache"] }

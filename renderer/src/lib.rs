@@ -1,4 +1,3 @@
-pub use floem_cosmic_text as cosmic_text;
 pub mod text;
 use image::DynamicImage;
 use peniko::{

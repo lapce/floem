@@ -1,5 +1,5 @@
 use floem::{
-    cosmic_text::Weight,
+    text::Weight,
     unit::UnitExt,
     view_tuple::ViewTuple,
     views::{container, label, stack, Decorators},

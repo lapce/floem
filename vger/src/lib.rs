@@ -3,7 +3,7 @@ use std::sync::mpsc::sync_channel;
 use std::sync::Arc;
 
 use anyhow::Result;
-use floem_renderer::text::{CacheKey, SubpixelBin, SwashCache, TextLayout, FONT_SYSTEM};
+use floem_renderer::text::{CacheKey, SwashCache, TextLayout, FONT_SYSTEM};
 use floem_renderer::{tiny_skia, Img, Renderer};
 use floem_vger_rs::{Image, PaintIndex, PixelFormat, Vger};
 use image::{DynamicImage, EncodableLayout, RgbaImage};
