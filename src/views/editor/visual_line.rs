@@ -2055,7 +2055,10 @@ mod tests {
                 phantom: ph,
                 // we use a specific font to make width calculations consistent between platforms.
                 // TODO(minor): Is there a more common font that we can use?
+                #[cfg(not(target_os = "windows"))]
                 font_family: vec![FamilyOwned::SansSerif],
+                #[cfg(target_os = "windows")]
+                font_family: vec![FamilyOwned::Name("Arial".to_string())],
                 wrap,
             }
         }
