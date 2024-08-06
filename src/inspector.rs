@@ -62,6 +62,7 @@ impl CapturedView {
         let view = view.borrow();
         let name = custom_name
             .iter()
+            .rev()
             .chain(std::iter::once(
                 &View::debug_name(view.as_ref()).to_string(),
             ))
