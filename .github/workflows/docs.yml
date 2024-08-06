@@ -25,11 +25,13 @@ jobs:
         uses: actions/configure-pages@v4
 
       - name: Update toolchain
-        run: rustup update
+        run: rustup install nightly
 
       - name: Build docs
+        env:
+          RUSTDOCFLAGS: "-Z unstable-options --enable-index-page"
         run: |
-            cargo doc --no-deps --workspace --lib --release
+            cargo +nightly doc --no-deps --workspace --lib --release -Z unstable-options -Z rustdoc-scrape-examples
             chmod -c -R +rX "target/doc" | while read line; do
               echo "::warning title=Invalid file permissions automatically fixed::$line"
             done
