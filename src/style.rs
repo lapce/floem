@@ -2,8 +2,7 @@
 //!
 //!
 
-use floem_renderer::cosmic_text;
-use floem_renderer::cosmic_text::{LineHeightValue, Weight};
+use floem_renderer::text::{LineHeightValue, Weight};
 use im_rc::hashmap::Entry;
 use peniko::Color;
 use rustc_hash::FxHasher;
@@ -68,7 +67,7 @@ impl StylePropValue for CursorStyle {}
 impl StylePropValue for BoxShadow {}
 impl StylePropValue for String {}
 impl StylePropValue for Weight {}
-impl StylePropValue for cosmic_text::Style {}
+impl StylePropValue for crate::text::Style {}
 impl StylePropValue for TextOverflow {}
 impl StylePropValue for LineHeightValue {}
 impl StylePropValue for Size<LengthPercentage> {}
@@ -1228,7 +1227,7 @@ define_builtin_props!(
     FontSize font_size nocb: Option<f32> { inherited } = None,
     FontFamily font_family nocb: Option<String> { inherited } = None,
     FontWeight font_weight nocb: Option<Weight> { inherited } = None,
-    FontStyle font_style nocb: Option<cosmic_text::Style> { inherited } = None,
+    FontStyle font_style nocb: Option<crate::text::Style> { inherited } = None,
     CursorColor cursor_color nocb: Color {} = Color::BLACK.with_alpha_factor(0.3),
     SelectionCornerRadius selection_corer_radius nocb: f64 {} = 1.,
     Selectable selectable: bool {} = true,
@@ -1699,7 +1698,7 @@ impl Style {
         self.font_weight(Weight::BOLD)
     }
 
-    pub fn font_style(self, style: impl Into<StyleValue<cosmic_text::Style>>) -> Self {
+    pub fn font_style(self, style: impl Into<StyleValue<crate::text::Style>>) -> Self {
         self.set_style_value(FontStyle, style.into().map(Some))
     }
 

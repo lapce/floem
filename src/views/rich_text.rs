@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use floem_reactive::create_effect;
-use floem_renderer::{cosmic_text::TextLayout, Renderer};
+use floem_renderer::{text::TextLayout, Renderer};
 use peniko::kurbo::{Point, Rect};
 use taffy::tree::NodeId;
 
@@ -48,7 +48,7 @@ impl View for RichText {
         format!(
             "RichText: {:?}",
             self.text_layout
-                .lines
+                .lines()
                 .iter()
                 .map(|text| text.text())
                 .collect::<String>()

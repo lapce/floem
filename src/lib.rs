@@ -189,7 +189,7 @@ pub use app::{launch, quit_app, AppEvent, Application};
 pub use app_state::AppState;
 pub use clipboard::{Clipboard, ClipboardError};
 pub use floem_reactive as reactive;
-pub use floem_renderer::cosmic_text;
+pub use floem_renderer::text;
 pub use floem_renderer::Renderer;
 pub use id::ViewId;
 pub use peniko;

@@ -47,7 +47,7 @@
 //! - Only one view can be active at a time.
 //! - Only one view can be focused at a time.
 //!
-use crate::cosmic_text::TextLayout;
+use crate::text::TextLayout;
 use floem_renderer::Img;
 use floem_tiny_skia_renderer::TinySkiaRenderer;
 use floem_vger_renderer::VgerRenderer;

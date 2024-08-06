@@ -1,11 +1,11 @@
 use crate::{
     context::PaintCx,
-    cosmic_text::{Attrs, AttrsList, TextLayout},
     id::ViewId,
     peniko::kurbo::Point,
     prop, prop_extractor,
     style::{Style, TextColor},
     style_class,
+    text::{Attrs, AttrsList, TextLayout},
     view::View,
     views::Decorators,
     Renderer,

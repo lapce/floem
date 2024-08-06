@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
 use crate::{
-    cosmic_text::{Attrs, AttrsList},
     peniko::Color,
+    text::{Attrs, AttrsList},
 };
 use floem_editor_core::cursor::CursorAffinity;
 use smallvec::SmallVec;

@@ -69,7 +69,7 @@ use floem_editor_core::{
     word::WordCursor,
 };
 use floem_reactive::Scope;
-use floem_renderer::cosmic_text::{HitPosition, LayoutGlyph, TextLayout};
+use floem_renderer::text::{HitPosition, LayoutGlyph, TextLayout};
 use lapce_xi_rope::{Interval, Rope};
 use peniko::kurbo::Point;
 
@@ -1989,8 +1989,8 @@ pub fn hit_position_aff(this: &TextLayout, idx: usize, before: bool) -> HitPosit
             last_position = HitPosition {
                 line,
                 point: Point::new(glyph.x as f64, run.line_y as f64),
-                glyph_ascent: run.glyph_ascent as f64,
-                glyph_descent: run.glyph_descent as f64,
+                glyph_ascent: run.max_ascent as f64,
+                glyph_descent: run.max_descent as f64,
             };
             if (glyph.start + offset..glyph.end + offset).contains(&idx) {
                 return last_position;
@@ -2023,7 +2023,7 @@ mod tests {
         cursor::CursorAffinity,
     };
     use floem_reactive::Scope;
-    use floem_renderer::cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout, Wrap};
+    use floem_renderer::text::{Attrs, AttrsList, FamilyOwned, TextLayout, Wrap};
     use lapce_xi_rope::Rope;
     use smallvec::smallvec;
 
@@ -2055,7 +2055,10 @@ mod tests {
                 phantom: ph,
                 // we use a specific font to make width calculations consistent between platforms.
                 // TODO(minor): Is there a more common font that we can use?
-                font_family: FamilyOwned::parse_list("Cascadia Code").collect(),
+                #[cfg(not(target_os = "windows"))]
+                font_family: vec![FamilyOwned::SansSerif],
+                #[cfg(target_os = "windows")]
+                font_family: vec![FamilyOwned::Name("Arial".to_string())],
                 wrap,
             }
         }
@@ -2219,8 +2222,7 @@ mod tests {
 
         for line in 0..rope_text.num_lines() {
             if let Some(text_layout) = layouts.get(font_size, line) {
-                let lines = &text_layout.text.lines;
-                for line in lines {
+                for line in text_layout.text.lines() {
                     let layouts = line.layout_opt().as_deref().unwrap();
                     for layout in layouts {
                         // Spacing

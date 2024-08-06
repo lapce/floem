@@ -11,7 +11,6 @@ use std::{
 
 use crate::{
     action::{exec_after, TimerToken},
-    cosmic_text::{Attrs, AttrsList, LineHeightValue, TextLayout, Wrap},
     keyboard::Modifiers,
     kurbo::{Point, Rect, Vec2},
     peniko::Color,
@@ -19,6 +18,7 @@ use crate::{
     prop, prop_extractor,
     reactive::{batch, untrack, ReadSignal, RwSignal, Scope},
     style::{CursorColor, StylePropValue, TextColor},
+    text::{Attrs, AttrsList, LineHeightValue, TextLayout, Wrap},
     view::{IntoView, View},
     views::text,
 };
@@ -993,7 +993,7 @@ impl Editor {
 
         let y = text_layout.get_layout_y(rvline.line_index).unwrap_or(0.0);
 
-        let hit_point = text_layout.text.hit_point(Point::new(point.x, y));
+        let hit_point = text_layout.text.hit_point(Point::new(point.x, y as f64));
         (line, hit_point.index)
     }
 
@@ -1032,7 +1032,7 @@ impl Editor {
 
         let y = text_layout.get_layout_y(rvline.line_index).unwrap_or(0.0);
 
-        let hit_point = text_layout.text.hit_point(Point::new(point.x, y));
+        let hit_point = text_layout.text.hit_point(Point::new(point.x, y as f64));
         // We have to unapply the phantom text shifting in order to get back to the column in
         // the actual buffer
         let col = text_layout.phantom_text.before_col(hit_point.index);
@@ -1095,14 +1095,14 @@ impl Editor {
         match *horiz {
             ColPosition::Col(x) => {
                 let text_layout = self.text_layout(line);
-                // TODO: It would be better to have an alternate hit point function that takes a
-                // line index..
                 let y_pos = text_layout
-                    .relevant_layouts()
-                    .take(line_index)
-                    .map(|l| (l.line_ascent + l.line_descent) as f64)
-                    .sum();
-                let hit_point = text_layout.text.hit_point(Point::new(x, y_pos));
+                    .text
+                    .layout_runs()
+                    .nth(line_index)
+                    .map(|run| run.line_y)
+                    .or_else(|| text_layout.text.layout_runs().last().map(|run| run.line_y))
+                    .unwrap_or(0.0);
+                let hit_point = text_layout.text.hit_point(Point::new(x, y_pos as f64));
                 let n = hit_point.index;
                 let col = text_layout.phantom_text.before_col(n);
 
@@ -1301,11 +1301,11 @@ impl TextLayoutProvider for Editor {
             WrapMethod::None => {}
             WrapMethod::EditorWidth => {
                 let width = self.viewport.get_untracked().width();
-                text_layout.set_wrap(Wrap::Word);
+                text_layout.set_wrap(Wrap::WordOrGlyph);
                 text_layout.set_size(width as f32, f32::MAX);
             }
             WrapMethod::WrapWidth { width } => {
-                text_layout.set_wrap(Wrap::Word);
+                text_layout.set_wrap(Wrap::WordOrGlyph);
                 text_layout.set_size(width, f32::MAX);
             }
             // TODO:

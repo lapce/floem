@@ -1,9 +1,9 @@
 use floem::{
-    cosmic_text::Weight,
     event::EventListener,
     peniko::Color,
     reactive::{create_signal, ReadSignal, WriteSignal},
     style::{CursorStyle, Position},
+    text::Weight,
     views::{container, h_stack, label, scroll, tab, v_stack, Decorators},
     IntoView, View,
 };

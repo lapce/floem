@@ -1,8 +1,8 @@
 use std::ops::Range;
 
 use floem::{
-    cosmic_text::{Attrs, AttrsList, Style, TextLayout},
     peniko::Color,
+    text::{Attrs, AttrsList, Style, TextLayout},
     views::{rich_text, scroll},
     IntoView,
 };

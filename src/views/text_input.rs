@@ -11,7 +11,7 @@ use crate::{prop_extractor, style_class, Clipboard};
 use floem_reactive::create_rw_signal;
 use taffy::prelude::{Layout, NodeId};
 
-use floem_renderer::{cosmic_text::Cursor, Renderer};
+use floem_renderer::{text::Cursor, Renderer};
 use floem_winit::keyboard::{Key, NamedKey, SmolStr};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -23,7 +23,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::cosmic_text::{Attrs, AttrsList, FamilyOwned, TextLayout};
+use crate::text::{Attrs, AttrsList, FamilyOwned, TextLayout};
 use peniko::kurbo::{Point, Rect, Size};
 
 use crate::{
@@ -288,10 +288,10 @@ impl TextInput {
     }
 
     fn clip_text(&mut self, node_layout: &Layout) {
-        let virt_text = self.text_buf.as_ref().unwrap();
+        let virt_text = self.text_buf.as_mut().unwrap();
         let node_width = node_layout.size.width as f64;
         let cursor_text_loc = Cursor::new(0, self.cursor_glyph_idx);
-        let layout_cursor = virt_text.layout_cursor(&cursor_text_loc);
+        let layout_cursor = virt_text.layout_cursor(cursor_text_loc);
         let cursor_glyph_pos = virt_text.hit_position(layout_cursor.glyph);
         let cursor_x = cursor_glyph_pos.point.x;
 
