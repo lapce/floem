@@ -1,6 +1,6 @@
 //! A toggle button widget. An example can be found in widget-gallery/button in the floem examples.
 
-use floem_reactive::{create_effect, create_updater};
+use floem_reactive::create_effect;
 use floem_renderer::Renderer;
 use floem_winit::keyboard::{Key, NamedKey};
 use peniko::kurbo::{Circle, Point, RoundedRect};
@@ -10,7 +10,10 @@ use crate::{
     event::EventPropagation,
     id::ViewId,
     prop, prop_extractor,
-    style::{Background, BorderRadius, Foreground, Height, Style, StyleValue},
+    style::{
+        Background, BorderRadius, CustomStylable, CustomStyle, Foreground, Height, Style,
+        StyleValue,
+    },
     style_class,
     unit::{PxPct, PxPctAuto},
     view::View,
@@ -349,19 +352,24 @@ impl Slider {
         self,
         style: impl Fn(SliderCustomStyle) -> SliderCustomStyle + 'static,
     ) -> Self {
-        let id = self.id();
-        let view_state = id.state();
-        let offset = view_state.borrow_mut().style.next_offset();
-        let style = create_updater(
-            move || style(SliderCustomStyle(Style::new())),
-            move |style| id.update_style(offset, style.0),
-        );
-        view_state.borrow_mut().style.push(style.0);
-        self
+        self.custom_style(style)
     }
 }
 
 pub struct SliderCustomStyle(Style);
+impl CustomStyle for SliderCustomStyle {
+    fn new_custom_style() -> Self {
+        Self(Style::new())
+    }
+
+    fn get_style(&self) -> Style {
+        self.0.clone()
+    }
+}
+
+impl CustomStylable<SliderCustomStyle> for Slider {
+    type DV = Self;
+}
 
 impl SliderCustomStyle {
     /// Sets the color of the slider handle.

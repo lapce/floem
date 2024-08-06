@@ -2,6 +2,7 @@
 //!
 //!
 
+use floem_reactive::create_updater;
 use floem_renderer::text::{LineHeightValue, Weight};
 use im_rc::hashmap::Entry;
 use peniko::Color;
@@ -1776,8 +1777,8 @@ impl Style {
         self.set(ZIndex, Some(z_index))
     }
 
-    /// Allow the application of a function if the option exists.  
-    /// This is useful for chaining together a bunch of optional style changes.  
+    /// Allow the application of a function if the option exists.
+    /// This is useful for chaining together a bunch of optional style changes.
     /// ```rust
     /// use floem::style::Style;
     /// let maybe_none: Option<i32> = None;
@@ -1795,7 +1796,7 @@ impl Style {
         }
     }
 
-    /// Allow the application of a function if the condition holds.  
+    /// Allow the application of a function if the condition holds.
     /// This is useful for chaining together a bunch of optional style changes.
     /// ```rust
     /// use floem::style::Style;
@@ -1809,6 +1810,10 @@ impl Style {
         } else {
             self
         }
+    }
+
+    pub fn apply_custom<CS: CustomStyle>(self, custom_style: CS) -> Self {
+        self.apply(custom_style.get_style())
     }
 }
 
@@ -1874,6 +1879,33 @@ impl Style {
             grid_auto_columns: style.grid_auto_columns(),
             ..Default::default()
         }
+    }
+}
+
+pub trait CustomStyle {
+    fn new_custom_style() -> Self;
+    fn get_style(&self) -> Style;
+}
+
+pub trait CustomStylable<S: CustomStyle + 'static>: IntoView<V = Self::DV> + Sized {
+    type DV: View;
+
+    /// #  Add a custom style to the view with acess to this view's specialized custom style.
+    ///
+    /// A note for implementors of the trait:
+    ///
+    /// _Don't try to implement this method yourself, just use the trait's default implementation._
+    fn custom_style(self, style: impl Fn(S) -> S + 'static) -> Self::DV {
+        let view = self.into_view();
+        let id = view.id();
+        let view_state = id.state();
+        let offset = view_state.borrow_mut().style.next_offset();
+        let style = create_updater(
+            move || style(S::new_custom_style()),
+            move |style| id.update_style(offset, style.get_style()),
+        );
+        view_state.borrow_mut().style.push(style.get_style());
+        view
     }
 }
 
