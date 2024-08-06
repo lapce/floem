@@ -371,8 +371,29 @@ impl TextLayout {
         let mut last_glyph_descent = 0.0;
         for (current_line, run) in self.layout_runs().enumerate() {
             for glyph in run.glyphs {
-                if line == run.line_i {
-                    if glyph.start > col {
+                match run.line_i.cmp(&line) {
+                    std::cmp::Ordering::Equal => {
+                        if glyph.start > col {
+                            return HitPosition {
+                                line: last_line,
+                                point: Point::new(
+                                    last_glyph.map(|g| (g.x + g.w) as f64).unwrap_or(0.0),
+                                    last_line_y as f64,
+                                ),
+                                glyph_ascent: last_glyph_ascent as f64,
+                                glyph_descent: last_glyph_descent as f64,
+                            };
+                        }
+                        if (glyph.start..glyph.end).contains(&col) {
+                            return HitPosition {
+                                line: current_line,
+                                point: Point::new(glyph.x as f64, run.line_y as f64),
+                                glyph_ascent: run.max_ascent as f64,
+                                glyph_descent: run.max_descent as f64,
+                            };
+                        }
+                    }
+                    std::cmp::Ordering::Greater => {
                         return HitPosition {
                             line: last_line,
                             point: Point::new(
@@ -383,25 +404,8 @@ impl TextLayout {
                             glyph_descent: last_glyph_descent as f64,
                         };
                     }
-                    if (glyph.start..glyph.end).contains(&col) {
-                        return HitPosition {
-                            line: current_line,
-                            point: Point::new(glyph.x as f64, run.line_y as f64),
-                            glyph_ascent: run.max_ascent as f64,
-                            glyph_descent: run.max_descent as f64,
-                        };
-                    }
-                } else if run.line_i > line {
-                    return HitPosition {
-                        line: last_line,
-                        point: Point::new(
-                            last_glyph.map(|g| (g.x + g.w) as f64).unwrap_or(0.0),
-                            last_line_y as f64,
-                        ),
-                        glyph_ascent: last_glyph_ascent as f64,
-                        glyph_descent: last_glyph_descent as f64,
-                    };
-                }
+                    std::cmp::Ordering::Less => {}
+                };
                 last_glyph = Some(glyph);
             }
             last_line = current_line;
