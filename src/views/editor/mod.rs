@@ -1301,11 +1301,11 @@ impl TextLayoutProvider for Editor {
             WrapMethod::None => {}
             WrapMethod::EditorWidth => {
                 let width = self.viewport.get_untracked().width();
-                text_layout.set_wrap(Wrap::Word);
+                text_layout.set_wrap(Wrap::WordOrGlyph);
                 text_layout.set_size(width as f32, f32::MAX);
             }
             WrapMethod::WrapWidth { width } => {
-                text_layout.set_wrap(Wrap::Word);
+                text_layout.set_wrap(Wrap::WordOrGlyph);
                 text_layout.set_size(width, f32::MAX);
             }
             // TODO:
