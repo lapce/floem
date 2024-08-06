@@ -20,7 +20,7 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - macos-13
+          - macos-latest
           - ubuntu-latest
           - windows-latest
     runs-on: ${{ matrix.os }}
@@ -75,7 +75,7 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - macos-13
+          - macos-latest
           - ubuntu-latest
           - windows-latest
     runs-on: ${{ matrix.os }}

@@ -2055,7 +2055,7 @@ mod tests {
                 phantom: ph,
                 // we use a specific font to make width calculations consistent between platforms.
                 // TODO(minor): Is there a more common font that we can use?
-                font_family: FamilyOwned::parse_list("Cascadia Code").collect(),
+                font_family: vec![FamilyOwned::SansSerif],
                 wrap,
             }
         }
