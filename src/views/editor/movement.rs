@@ -786,6 +786,7 @@ mod tests {
     };
     use floem_reactive::Scope;
     use lapce_xi_rope::Rope;
+    use peniko::kurbo::{Rect, Size};
 
     use crate::views::editor::{
         movement::{correct_crlf, end_of_line, move_down, move_up},
@@ -799,7 +800,11 @@ mod tests {
         let cx = Scope::new();
         let doc = Rc::new(TextDocument::new(cx, text));
         let style = Rc::new(SimpleStyling::new());
-        Editor::new(cx, doc, style, false)
+        let editor = Editor::new(cx, doc, style, false);
+        editor
+            .viewport
+            .set(Rect::ZERO.with_size(Size::new(f64::MAX, f64::MAX)));
+        editor
     }
 
     // Tests for movement logic.

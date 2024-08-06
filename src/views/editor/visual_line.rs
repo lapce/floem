@@ -2130,7 +2130,7 @@ mod tests {
             }
 
             let mut text_layout = TextLayout::new();
-            text_layout.set_wrap(Wrap::WordOrGlyph);
+            text_layout.set_wrap(Wrap::Word);
             match wrap {
                 // We do not have to set the wrap mode if we do not set the width
                 ResolvedWrap::None => {}
