@@ -385,7 +385,7 @@ pub(crate) fn paint_bg(
                 Some(color) => color,
                 None => return,
             };
-            cx.fill(&circle, bg, 0.0);
+            cx.fill(&circle, &bg, 0.0);
         } else {
             paint_box_shadow(cx, computed_style, rect, Some(radius));
             let bg = match style.background() {
@@ -393,7 +393,7 @@ pub(crate) fn paint_bg(
                 None => return,
             };
             let rounded_rect = rect.to_rounded_rect(radius);
-            cx.fill(&rounded_rect, bg, 0.0);
+            cx.fill(&rounded_rect, &bg, 0.0);
         }
     } else {
         paint_box_shadow(cx, computed_style, size.to_rect(), None);
@@ -401,7 +401,7 @@ pub(crate) fn paint_bg(
             Some(color) => color,
             None => return,
         };
-        cx.fill(&size.to_rect(), bg, 0.0);
+        cx.fill(&size.to_rect(), &bg, 0.0);
     }
 }
 
@@ -454,7 +454,7 @@ pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, size: Size
     };
     cx.stroke(
         &rect.to_rounded_rect(border_radius + half),
-        style.outline_color(),
+        &style.outline_color(),
         outline,
     );
 }
@@ -475,16 +475,16 @@ pub(crate) fn paint_border(cx: &mut PaintCx, style: &ViewStyleProps, size: Size)
         };
         if radius > 0.0 {
             let radius = (radius - half).max(0.0);
-            cx.stroke(&rect.to_rounded_rect(radius), border_color, left);
+            cx.stroke(&rect.to_rounded_rect(radius), &border_color, left);
         } else {
-            cx.stroke(&rect, border_color, left);
+            cx.stroke(&rect, &border_color, left);
         }
     } else {
         if left > 0.0 {
             let half = left / 2.0;
             cx.stroke(
                 &Line::new(Point::new(half, 0.0), Point::new(half, size.height)),
-                border_color,
+                &border_color,
                 left,
             );
         }
@@ -495,7 +495,7 @@ pub(crate) fn paint_border(cx: &mut PaintCx, style: &ViewStyleProps, size: Size)
                     Point::new(size.width - half, 0.0),
                     Point::new(size.width - half, size.height),
                 ),
-                border_color,
+                &border_color,
                 right,
             );
         }
@@ -503,7 +503,7 @@ pub(crate) fn paint_border(cx: &mut PaintCx, style: &ViewStyleProps, size: Size)
             let half = top / 2.0;
             cx.stroke(
                 &Line::new(Point::new(0.0, half), Point::new(size.width, half)),
-                border_color,
+                &border_color,
                 top,
             );
         }
@@ -514,7 +514,7 @@ pub(crate) fn paint_border(cx: &mut PaintCx, style: &ViewStyleProps, size: Size)
                     Point::new(0.0, size.height - half),
                     Point::new(size.width, size.height - half),
                 ),
-                border_color,
+                &border_color,
                 bottom,
             );
         }
