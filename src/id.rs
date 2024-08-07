@@ -370,6 +370,12 @@ impl ViewId {
         self.request_style_recursive();
     }
 
+    pub(crate) fn remove_class(&self, class: StyleClassRef) {
+        let state = self.state();
+        state.borrow_mut().classes.retain_mut(|c| *c != class);
+        self.request_style_recursive();
+    }
+
     pub(crate) fn update_style_selector(&self, selector: StyleSelector, style: Style) {
         if let StyleSelector::Dragging = selector {
             let state = self.state();

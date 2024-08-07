@@ -183,7 +183,7 @@ impl StyleClassInfo {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct StyleClassRef {
     pub key: StyleKey,
 }
