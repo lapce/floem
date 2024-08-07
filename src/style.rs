@@ -1777,8 +1777,8 @@ impl Style {
         self.set(ZIndex, Some(z_index))
     }
 
-    /// Allow the application of a function if the option exists.
-    /// This is useful for chaining together a bunch of optional style changes.
+    /// Allow the application of a function if the option exists.  
+    /// This is useful for chaining together a bunch of optional style changes.  
     /// ```rust
     /// use floem::style::Style;
     /// let maybe_none: Option<i32> = None;
@@ -1796,7 +1796,7 @@ impl Style {
         }
     }
 
-    /// Allow the application of a function if the condition holds.
+    /// Allow the application of a function if the condition holds.  
     /// This is useful for chaining together a bunch of optional style changes.
     /// ```rust
     /// use floem::style::Style;
