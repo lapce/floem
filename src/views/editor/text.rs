@@ -4,7 +4,6 @@ use crate::{
     keyboard::Modifiers,
     peniko::Color,
     reactive::{RwSignal, Scope},
-    style,
     text::{Attrs, AttrsList, FamilyOwned, Stretch, Weight},
     views::EditorCustomStyle,
 };
@@ -376,7 +375,7 @@ pub fn default_light_theme(mut style: EditorCustomStyle) -> EditorCustomStyle {
     style.0 = style
         .0
         .color(fg)
-        .set(style::Background, bg)
+        .background(bg)
         .class(GutterClass, |s| s.background(bg));
 
     style
