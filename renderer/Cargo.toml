@@ -11,5 +11,6 @@ parking_lot = { workspace = true }
 peniko = { workspace = true }
 image = { workspace = true }
 resvg = { workspace = true }
+swash = { workspace = true }
 
 cosmic-text = { version = "0.12.1", features = ["shape-run-cache"] }

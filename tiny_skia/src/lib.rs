@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
-use floem_renderer::text::{CacheKey, SwashCache, SwashContent, TextLayout, FONT_SYSTEM};
+use floem_renderer::swash::SwashScaler;
+use floem_renderer::text::{CacheKey, SwashContent, TextLayout};
 use floem_renderer::tiny_skia::{
     self, FillRule, FilterQuality, GradientStop, LinearGradient, Mask, MaskType, Paint, Path,
     PathBuilder, Pattern, Pixmap, RadialGradient, Shader, SpreadMode, Stroke, Transform,
@@ -52,6 +53,7 @@ pub struct TinySkiaRenderer<W> {
     image_cache: HashMap<Vec<u8>, (CacheColor, Rc<Pixmap>)>,
     #[allow(clippy::type_complexity)]
     glyph_cache: HashMap<(CacheKey, Color), (CacheColor, Option<Rc<Glyph>>)>,
+    swash_scaler: SwashScaler,
 }
 
 impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle>
@@ -88,6 +90,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
             cache_color: CacheColor(false),
             image_cache: Default::default(),
             glyph_cache: Default::default(),
+            swash_scaler: SwashScaler::new(),
         })
     }
 
@@ -310,9 +313,7 @@ impl<W> TinySkiaRenderer<W> {
             return glyph.clone();
         }
 
-        let mut swash_cache = SwashCache::new();
-        let mut font_system = FONT_SYSTEM.lock();
-        let image = swash_cache.get_image_uncached(&mut font_system, cache_key)?;
+        let image = self.swash_scaler.get_image(cache_key)?;
 
         let result = if image.placement.width == 0 || image.placement.height == 0 {
             // We can't create an empty `Pixmap`

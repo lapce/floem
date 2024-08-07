@@ -1,4 +1,6 @@
+pub mod swash;
 pub mod text;
+
 use image::DynamicImage;
 use peniko::{
     kurbo::{Affine, Point, Rect, Shape},

@@ -3,7 +3,8 @@ use std::sync::mpsc::sync_channel;
 use std::sync::Arc;
 
 use anyhow::Result;
-use floem_renderer::text::{CacheKey, SwashCache, TextLayout, FONT_SYSTEM};
+use floem_renderer::swash::SwashScaler;
+use floem_renderer::text::{CacheKey, TextLayout};
 use floem_renderer::{tiny_skia, Img, Renderer};
 use floem_vger_rs::{Image, PaintIndex, PixelFormat, Vger};
 use image::{DynamicImage, EncodableLayout, RgbaImage};
@@ -27,6 +28,7 @@ pub struct VgerRenderer {
     transform: Affine,
     clip: Option<Rect>,
     capture: bool,
+    swash_scaler: SwashScaler,
 }
 
 impl VgerRenderer {
@@ -110,6 +112,7 @@ impl VgerRenderer {
             transform: Affine::IDENTITY,
             clip: None,
             capture: false,
+            swash_scaler: SwashScaler::new(),
         })
     }
 
@@ -411,7 +414,6 @@ impl Renderer for VgerRenderer {
     }
 
     fn draw_text(&mut self, layout: &TextLayout, pos: impl Into<Point>) {
-        let mut swash_cache = SwashCache::new();
         let transform = self.transform.as_coeffs();
         let offset = Vec2::new(transform[4], transform[5]);
         let pos: Point = pos.into();
@@ -468,8 +470,7 @@ impl Renderer for VgerRenderer {
                         font_size,
                         (cache_key.x_bin, cache_key.y_bin),
                         || {
-                            let mut font_system = FONT_SYSTEM.lock();
-                            let image = swash_cache.get_image_uncached(&mut font_system, cache_key);
+                            let image = self.swash_scaler.get_image(cache_key);
                             image.unwrap_or_default()
                         },
                         paint,
