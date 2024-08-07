@@ -2,6 +2,7 @@
 //!
 //!
 
+use floem_reactive::create_updater;
 use floem_renderer::text::{LineHeightValue, Weight};
 use im_rc::hashmap::Entry;
 use peniko::Color;
@@ -1810,6 +1811,10 @@ impl Style {
             self
         }
     }
+
+    pub fn apply_custom<CS: Into<Style>>(self, custom_style: CS) -> Self {
+        self.apply(custom_style.into())
+    }
 }
 
 impl Style {
@@ -1874,6 +1879,30 @@ impl Style {
             grid_auto_columns: style.grid_auto_columns(),
             ..Default::default()
         }
+    }
+}
+
+pub trait CustomStylable<S: Default + Into<Style> + 'static>:
+    IntoView<V = Self::DV> + Sized
+{
+    type DV: View;
+
+    /// #  Add a custom style to the view with acess to this view's specialized custom style.
+    ///
+    /// A note for implementors of the trait:
+    ///
+    /// _Don't try to implement this method yourself, just use the trait's default implementation._
+    fn custom_style(self, style: impl Fn(S) -> S + 'static) -> Self::DV {
+        let view = self.into_view();
+        let id = view.id();
+        let view_state = id.state();
+        let offset = view_state.borrow_mut().style.next_offset();
+        let style = create_updater(
+            move || style(S::default()),
+            move |style| id.update_style(offset, style.into()),
+        );
+        view_state.borrow_mut().style.push(style.into());
+        view
     }
 }
 
