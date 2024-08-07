@@ -891,7 +891,7 @@ impl TextInput {
             .get_selection_rect(&node_layout, padding_left)
             .inflate(1., 0.)
             .to_rounded_rect(border_radius);
-        cx.fill(&selection_rect, cursor_color, 0.0);
+        cx.fill(&selection_rect, &cursor_color, 0.0);
     }
 }
 
@@ -1211,7 +1211,7 @@ impl View for TextInput {
                 .builtin()
                 .cursor_color();
             let cursor_rect = self.get_cursor_rect(&node_layout);
-            cx.fill(&cursor_rect, cursor_color, 0.0);
+            cx.fill(&cursor_rect, &cursor_color, 0.0);
         }
 
         if cx.app_state.is_focused(&self.id()) && self.selection.is_some() {

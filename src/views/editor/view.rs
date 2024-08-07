@@ -645,7 +645,7 @@ impl EditorView {
                     let line_height = ed.line_height(info.vline_info.rvline.line);
                     let rect =
                         Rect::from_origin_size((x, info.vline_y), (width, f64::from(line_height)));
-                    cx.fill(&rect, caret_color, 0.0);
+                    cx.fill(&rect, &caret_color, 0.0);
                 }
             }
         });

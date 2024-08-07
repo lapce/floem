@@ -141,13 +141,18 @@ impl VgerRenderer {
             BrushRef::Gradient(g) => match g.kind {
                 GradientKind::Linear { start, end } => {
                     let mut stops = g.stops.iter();
-                    let inner_color = stops.next()?;
-                    let outer_color = stops.next()?;
-                    let inner_color = vger_color(inner_color.color);
-                    let outer_color = vger_color(outer_color.color);
-                    let start =
-                        floem_vger_rs::defs::LocalPoint::new(start.x as f32, start.y as f32);
-                    let end = floem_vger_rs::defs::LocalPoint::new(end.x as f32, end.y as f32);
+                    let first_stop = stops.next()?;
+                    let second_stop = stops.next()?;
+                    let inner_color = vger_color(first_stop.color);
+                    let outer_color = vger_color(second_stop.color);
+                    let start = floem_vger_rs::defs::LocalPoint::new(
+                        start.x as f32 * first_stop.offset,
+                        start.y as f32 * first_stop.offset,
+                    );
+                    let end = floem_vger_rs::defs::LocalPoint::new(
+                        end.x as f32 * second_stop.offset,
+                        end.y as f32 * second_stop.offset,
+                    );
                     self.vger
                         .linear_gradient(start, end, inner_color, outer_color, 0.0)
                 }
