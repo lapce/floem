@@ -9,7 +9,7 @@ use crate::{
     event::{Event, EventListener, EventPropagation},
     id::ViewId,
     prop, prop_extractor,
-    style::{CustomStylable, CustomStyle, Style, StyleClass, Width},
+    style::{CustomStylable, Style, StyleClass, Width},
     style_class,
     unit::PxPctAuto,
     view::{default_compute_layout, IntoView, View},
@@ -310,13 +310,9 @@ impl<T> DropDown<T> {
 
 #[derive(Debug, Clone, Default)]
 pub struct DropDownCustomStyle(Style);
-impl CustomStyle for DropDownCustomStyle {
-    fn new_custom_style() -> Self {
-        Self(Style::new())
-    }
-
-    fn get_style(&self) -> Style {
-        self.0.clone()
+impl From<DropDownCustomStyle> for Style {
+    fn from(val: DropDownCustomStyle) -> Self {
+        val.0
     }
 }
 impl<T> CustomStylable<DropDownCustomStyle> for DropDown<T> {

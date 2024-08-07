@@ -1812,8 +1812,8 @@ impl Style {
         }
     }
 
-    pub fn apply_custom<CS: CustomStyle>(self, custom_style: CS) -> Self {
-        self.apply(custom_style.get_style())
+    pub fn apply_custom<CS: Into<Style>>(self, custom_style: CS) -> Self {
+        self.apply(custom_style.into())
     }
 }
 
@@ -1882,12 +1882,9 @@ impl Style {
     }
 }
 
-pub trait CustomStyle {
-    fn new_custom_style() -> Self;
-    fn get_style(&self) -> Style;
-}
-
-pub trait CustomStylable<S: CustomStyle + 'static>: IntoView<V = Self::DV> + Sized {
+pub trait CustomStylable<S: Default + Into<Style> + 'static>:
+    IntoView<V = Self::DV> + Sized
+{
     type DV: View;
 
     /// #  Add a custom style to the view with acess to this view's specialized custom style.
@@ -1901,10 +1898,10 @@ pub trait CustomStylable<S: CustomStyle + 'static>: IntoView<V = Self::DV> + Siz
         let view_state = id.state();
         let offset = view_state.borrow_mut().style.next_offset();
         let style = create_updater(
-            move || style(S::new_custom_style()),
-            move |style| id.update_style(offset, style.get_style()),
+            move || style(S::default()),
+            move |style| id.update_style(offset, style.into()),
         );
-        view_state.borrow_mut().style.push(style.get_style());
+        view_state.borrow_mut().style.push(style.into());
         view
     }
 }

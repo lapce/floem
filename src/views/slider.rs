@@ -10,10 +10,7 @@ use crate::{
     event::EventPropagation,
     id::ViewId,
     prop, prop_extractor,
-    style::{
-        Background, BorderRadius, CustomStylable, CustomStyle, Foreground, Height, Style,
-        StyleValue,
-    },
+    style::{Background, BorderRadius, CustomStylable, Foreground, Height, Style, StyleValue},
     style_class,
     unit::{PxPct, PxPctAuto},
     view::View,
@@ -356,14 +353,11 @@ impl Slider {
     }
 }
 
+#[derive(Debug, Default, Clone)]
 pub struct SliderCustomStyle(Style);
-impl CustomStyle for SliderCustomStyle {
-    fn new_custom_style() -> Self {
-        Self(Style::new())
-    }
-
-    fn get_style(&self) -> Style {
-        self.0.clone()
+impl From<SliderCustomStyle> for Style {
+    fn from(val: SliderCustomStyle) -> Self {
+        val.0
     }
 }
 
