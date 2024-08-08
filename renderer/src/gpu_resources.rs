@@ -90,7 +90,7 @@ impl GpuResources {
                             None,
                         )
                         .await
-                        .map_err(|err| GpuResourceError::DeviceRequestError(err))
+                        .map_err(GpuResourceError::DeviceRequestError)
                         .map(|(device, queue)| Self {
                             surface,
                             adapter,
