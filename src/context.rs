@@ -1157,7 +1157,9 @@ impl PaintState {
 
     pub(crate) fn renderer(&self) -> &crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>> {
         match self {
-            PaintState::PendingGpuResources { .. } => panic!("Tried to access renderer before it was initialized"),
+            PaintState::PendingGpuResources { .. } => {
+                panic!("Tried to access renderer before it was initialized")
+            }
             PaintState::Initialized { renderer } => renderer,
         }
     }
@@ -1166,7 +1168,9 @@ impl PaintState {
         &mut self,
     ) -> &mut crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>> {
         match self {
-            PaintState::PendingGpuResources { .. } => panic!("Tried to access renderer before it was initialized"),
+            PaintState::PendingGpuResources { .. } => {
+                panic!("Tried to access renderer before it was initialized")
+            }
             PaintState::Initialized { renderer } => renderer,
         }
     }
