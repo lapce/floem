@@ -1,15 +1,11 @@
-use floem::cosmic_text::load_font_data;
-use floem::cosmic_text::FONT_SYSTEM;
 use floem::kurbo::Size;
+use floem::text::FONT_SYSTEM;
 use floem::window::WindowConfig;
 use floem::Application;
 use floem::{
-    keyboard::{Key, Modifiers, NamedKey},
-    peniko::Color,
     reactive::create_signal,
-    unit::UnitExt,
-    views::{dyn_view, label, ButtonClass, Decorators, LabelClass, LabelCustomStyle},
-    IntoView, View,
+    views::{label, ButtonClass, Decorators},
+    IntoView,
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -45,9 +41,13 @@ pub fn run() {
     #[cfg(target_family = "wasm")]
     console_error_panic_hook::set_once();
 
-    load_font_data(Vec::from(FIRA_MONO));
-    load_font_data(Vec::from(FIRA_SANS));
-    load_font_data(Vec::from(DEJAVU_SERIF));
+    {
+        let mut font_system = FONT_SYSTEM.lock();
+        let font_db = font_system.db_mut();
+        font_db.load_font_data(Vec::from(FIRA_MONO));
+        font_db.load_font_data(Vec::from(FIRA_SANS));
+        font_db.load_font_data(Vec::from(DEJAVU_SERIF));
+    }
 
     let window_config = WindowConfig::default()
         .size(Size::new(800.0, 600.0))
