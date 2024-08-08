@@ -3,6 +3,7 @@ use std::sync::mpsc::sync_channel;
 use std::sync::Arc;
 
 use anyhow::Result;
+use floem_renderer::gpu_resources::GpuResources;
 use floem_renderer::swash::SwashScaler;
 use floem_renderer::text::{CacheKey, TextLayout};
 use floem_renderer::{tiny_skia, Img, Renderer};
