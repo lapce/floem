@@ -165,6 +165,7 @@ impl Application {
                     }
                 }
                 floem_winit::event::Event::MemoryWarning => {}
+                floem_winit::event::Event::Reopen => {}
             }
         });
     }
