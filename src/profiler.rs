@@ -12,8 +12,12 @@ use peniko::Color;
 use std::fmt::Display;
 use std::mem;
 use std::rc::Rc;
-use std::time::{Duration, Instant};
 use taffy::style::FlexDirection;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::{Duration, Instant};
+#[cfg(target_arch = "wasm32")]
+use web_time::{Duration, Instant};
 
 #[derive(Clone)]
 pub struct ProfileEvent {

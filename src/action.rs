@@ -1,10 +1,12 @@
-use std::{
-    sync::atomic::AtomicU64,
-    time::{Duration, Instant},
-};
+use std::sync::atomic::AtomicU64;
 
 use floem_winit::window::ResizeDirection;
 use peniko::kurbo::{Point, Size, Vec2};
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::{Duration, Instant};
+#[cfg(target_arch = "wasm32")]
+use web_time::{Duration, Instant};
 
 use crate::{
     app::{add_app_update_event, AppUpdateEvent},

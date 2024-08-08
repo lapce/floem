@@ -17,13 +17,14 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{peniko::Color, style::Style, view::View};
 
-use std::{
-    any::Any,
-    ops::Range,
-    time::{Duration, Instant},
-};
+use std::{any::Any, ops::Range};
 
 use crate::text::{Attrs, AttrsList, FamilyOwned, TextLayout};
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::{Duration, Instant};
+#[cfg(target_arch = "wasm32")]
+use web_time::{Duration, Instant};
+
 use peniko::kurbo::{Point, Rect, Size};
 
 use crate::{

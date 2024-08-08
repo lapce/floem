@@ -2,7 +2,7 @@ use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use raw_window_handle::RawDisplayHandle;
 
-#[cfg(not(any(target_os = "macos", windows)))]
+#[cfg(not(any(target_os = "macos", windows, target_arch = "wasm32")))]
 use copypasta::{
     wayland_clipboard,
     x11_clipboard::{Primary as X11SelectionClipboard, X11ClipboardContext},
@@ -54,7 +54,7 @@ impl Clipboard {
     unsafe fn new(
         #[allow(unused_variables)] /* on some platforms */ display: RawDisplayHandle,
     ) -> Self {
-        #[cfg(not(any(target_os = "macos", windows)))]
+        #[cfg(not(any(target_os = "macos", windows, target_arch = "wasm32")))]
         if let RawDisplayHandle::Wayland(display) = display {
             let (selection, clipboard) =
                 wayland_clipboard::create_clipboards_from_external(display.display.as_ptr());
@@ -64,7 +64,7 @@ impl Clipboard {
             };
         }
 
-        #[cfg(not(any(target_os = "macos", windows)))]
+        #[cfg(not(any(target_os = "macos", windows, target_arch = "wasm32")))]
         return Self {
             clipboard: Box::new(ClipboardContext::new().unwrap()),
             selection: Some(Box::new(
@@ -72,7 +72,8 @@ impl Clipboard {
             )),
         };
 
-        #[cfg(any(target_os = "macos", windows))]
+        // TODO: Implement clipboard support for the web
+        #[cfg(any(target_os = "macos", windows, target_arch = "wasm32"))]
         return Self {
             clipboard: Box::new(ClipboardContext::new().unwrap()),
             selection: None,

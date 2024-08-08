@@ -1,6 +1,11 @@
 use peniko::kurbo::Point;
 use std::cell::RefCell;
-use std::{rc::Rc, time::Duration};
+use std::rc::Rc;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Duration;
+#[cfg(target_arch = "wasm32")]
+use web_time::Duration;
 
 use crate::style::{Style, StyleClass as _};
 use crate::views::Decorators;
