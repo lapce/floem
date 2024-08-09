@@ -408,6 +408,9 @@ pub enum FocusCommand {
     #[strum(message = "Inline Find Left")]
     #[strum(serialize = "inline_find_left")]
     InlineFindLeft,
+    #[strum(message = "On Screen Find")]
+    #[strum(serialize = "on_screen_find")]
+    OnScreenFind,
     #[strum(message = "Create Mark")]
     #[strum(serialize = "create_mark")]
     CreateMark,
