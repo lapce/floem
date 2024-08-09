@@ -34,6 +34,7 @@ use taffy::style::{AlignItems, FlexDirection};
 pub struct CapturedView {
     id: ViewId,
     name: String,
+    id_data_str: String,
     custom_name: String,
     layout: Rect,
     taffy: Layout,
@@ -73,6 +74,7 @@ impl CapturedView {
         Self {
             id,
             name,
+            id_data_str: id.data().as_ffi().to_string(),
             custom_name,
             layout,
             taffy,
@@ -295,7 +297,7 @@ fn captured_view_with_children(
     let expanding_selection = capture_view.expanding_selection;
     let view_ = view.clone();
 
-    let expanded = create_rw_signal(true);
+    let expanded = create_rw_signal(false);
 
     let name_id = name.id();
     let row = stack((
@@ -423,8 +425,10 @@ fn add_event(
         .on_secondary_click({
             let name = name.clone();
             move |_| {
-                let mut clipboard = SystemClipboard::new();
-                clipboard.put_string(name.clone());
+                if !name.is_empty() {
+                    let mut clipboard = SystemClipboard::new();
+                    clipboard.put_string(name.clone());
+                }
                 EventPropagation::Stop
             }
         })
@@ -1169,7 +1173,7 @@ fn find_view(name: &str, views: &Rc<CapturedView>) -> Vec<ViewId> {
     if name.is_empty() {
         return ids;
     }
-    if views.name.contains(name) {
+    if views.name.contains(name) || views.id_data_str.contains(name) {
         ids.push(views.id);
     }
     views
