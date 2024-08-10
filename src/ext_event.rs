@@ -1,7 +1,6 @@
 use std::{cell::Cell, collections::VecDeque, sync::Arc};
 
 use floem_reactive::{create_effect, untrack, with_scope, ReadSignal, Scope, Trigger, WriteSignal};
-use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 
 use crate::{
@@ -10,22 +9,25 @@ use crate::{
     Application,
 };
 
-pub(crate) static EXT_EVENT_HANDLER: Lazy<ExtEventHandler> = Lazy::new(ExtEventHandler::default);
+pub(crate) static EXT_EVENT_HANDLER: ExtEventHandler = ExtEventHandler::new();
 
-#[derive(Clone)]
-pub struct ExtEventHandler {
-    pub(crate) queue: Arc<Mutex<VecDeque<Trigger>>>,
+pub(crate) struct ExtEventHandler {
+    pub(crate) queue: Mutex<VecDeque<Trigger>>,
 }
 
 impl Default for ExtEventHandler {
     fn default() -> Self {
-        Self {
-            queue: Arc::new(Mutex::new(VecDeque::new())),
-        }
+        Self::new()
     }
 }
 
 impl ExtEventHandler {
+    pub const fn new() -> Self {
+        Self {
+            queue: Mutex::new(VecDeque::new()),
+        }
+    }
+
     pub fn add_trigger(&self, trigger: Trigger) {
         EXT_EVENT_HANDLER.queue.lock().push_back(trigger);
         Application::with_event_loop_proxy(|proxy| {
