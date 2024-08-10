@@ -2,11 +2,11 @@ use std::{iter::Peekable, ops::Range};
 
 use lapce_xi_rope::{DeltaBuilder, Rope, RopeDelta};
 use memchr::{memchr, memchr2};
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 
 // Cached ropes for the two line endings
-static CR_LF: Lazy<Rope> = Lazy::new(|| Rope::from("\r\n"));
-static LF: Lazy<Rope> = Lazy::new(|| Rope::from("\n"));
+static CR_LF: LazyLock<Rope> = LazyLock::new(|| Rope::from("\r\n"));
+static LF: LazyLock<Rope> = LazyLock::new(|| Rope::from("\n"));
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LineEnding {

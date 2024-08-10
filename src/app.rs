@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc, sync::Arc};
+use std::{cell::RefCell, rc::Rc};
 
 use floem_reactive::WriteSignal;
 use floem_winit::{
@@ -6,7 +6,6 @@ use floem_winit::{
     monitor::MonitorHandle,
     window::WindowId,
 };
-use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 #[allow(deprecated)]
 use raw_window_handle::HasRawDisplayHandle;
@@ -23,8 +22,7 @@ use crate::{
 
 type AppEventCallback = dyn Fn(AppEvent);
 
-static EVENT_LOOP_PROXY: Lazy<Arc<Mutex<Option<EventLoopProxy<UserEvent>>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(None)));
+static EVENT_LOOP_PROXY: Mutex<Option<EventLoopProxy<UserEvent>>> = Mutex::new(None);
 
 thread_local! {
     pub(crate) static APP_UPDATE_EVENTS: RefCell<Vec<AppUpdateEvent>> = Default::default();
@@ -141,7 +139,7 @@ impl Application {
     pub fn run(mut self) {
         let mut handle = self.handle.take().unwrap();
         handle.idle();
-        let _ = self.event_loop.run(move |event, event_loop| {
+        let _ = self.event_loop.run(|event, event_loop| {
             event_loop.set_control_flow(ControlFlow::Wait);
             handle.handle_timer(event_loop);
 

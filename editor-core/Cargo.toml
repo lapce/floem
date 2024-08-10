@@ -16,7 +16,5 @@ itertools = "0.12.1"
 bitflags = "2.4.2"
 memchr = "2.7.1"
 
-once_cell.workspace = true
-
 [features]
 serde = ["dep:serde"]
