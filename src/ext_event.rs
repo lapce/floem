@@ -231,11 +231,7 @@ pub fn create_signal_from_stream<T: 'static>(
         // Run the effect when the waker is called
         trigger.track();
         let Ok(mut stream) = stream.try_borrow_mut() else {
-            // Race condition, we need to re-schedule-add the trigger?
-            // I'm not sure if this does not risks creating an infinite loop if the effect is re-run before it is itself over
-            // TODO: test with stream where the implementation returns pending but calls the waker immediately
-            EXT_EVENT_HANDLER.add_trigger(arc_trigger.0);
-            return;
+            unreachable!("The waker registers events effecs to be run only at idle")
         };
 
         let waker = waker(arc_trigger.clone());
