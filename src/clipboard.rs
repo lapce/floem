@@ -1,4 +1,3 @@
-use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use raw_window_handle::RawDisplayHandle;
 
@@ -10,7 +9,7 @@ use copypasta::{
 
 use copypasta::{ClipboardContext, ClipboardProvider};
 
-static CLIPBOARD: Lazy<Mutex<Option<Clipboard>>> = Lazy::new(|| Mutex::new(None));
+static CLIPBOARD: Mutex<Option<Clipboard>> = Mutex::new(None);
 
 pub struct Clipboard {
     clipboard: Box<dyn ClipboardProvider>,
