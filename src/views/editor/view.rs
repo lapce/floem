@@ -1163,6 +1163,7 @@ fn editor_content(
                     return;
                 };
 
+                let key_text = key_event.key.text.clone();
                 let Ok(keypress) = KeyPress::try_from(key_event) else {
                     return;
                 };
@@ -1181,6 +1182,10 @@ fn editor_content(
                     } else if let KeyInput::Keyboard(Key::Named(NamedKey::Space), _) = keypress.key
                     {
                         editor.get_untracked().receive_char(" ");
+                    } else if let KeyInput::Keyboard(Key::Unidentified(_), _) = keypress.key {
+                        if let Some(text) = key_text {
+                            editor.get_untracked().receive_char(&text);
+                        }
                     }
                 }
             })
