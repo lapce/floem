@@ -620,24 +620,12 @@ impl TextInput {
 
     fn handle_key_down(&mut self, cx: &mut EventCx, event: &KeyEvent) -> bool {
         match event.key.logical_key {
-            Key::Character(ref ch) => {
-                let handled_modifier_cmd = self.handle_modifier_cmd(event, ch);
-                if handled_modifier_cmd {
-                    return true;
-                }
-
-                let selection = self.selection.clone();
-                if let Some(selection) = selection {
-                    self.buffer
-                        .update(|buf| replace_range(buf, selection.clone(), None));
-                    self.cursor_glyph_idx = selection.start;
-                    self.selection = None;
-                }
-
-                self.buffer
-                    .update(|buf| buf.insert_str(self.cursor_glyph_idx, &ch.clone()));
-                self.move_cursor(Movement::Glyph, Direction::Right)
-            }
+            Key::Character(ref ch) => self.insert_text(event, ch),
+            Key::Unidentified(_) => event
+                .key
+                .text
+                .as_ref()
+                .map_or(false, |ch| self.insert_text(event, ch)),
             Key::Named(NamedKey::Space) => {
                 if let Some(selection) = &self.selection {
                     self.buffer
@@ -780,6 +768,25 @@ impl TextInput {
             }
             _ => false,
         }
+    }
+
+    fn insert_text(&mut self, event: &KeyEvent, ch: &SmolStr) -> bool {
+        let handled_modifier_cmd = self.handle_modifier_cmd(event, ch);
+        if handled_modifier_cmd {
+            return true;
+        }
+
+        let selection = self.selection.clone();
+        if let Some(selection) = selection {
+            self.buffer
+                .update(|buf| replace_range(buf, selection.clone(), None));
+            self.cursor_glyph_idx = selection.start;
+            self.selection = None;
+        }
+
+        self.buffer
+            .update(|buf| buf.insert_str(self.cursor_glyph_idx, &ch.clone()));
+        self.move_cursor(Movement::Glyph, Direction::Right)
     }
 
     fn move_selection(
