@@ -51,10 +51,32 @@ prop_extractor! {
     }
 }
 
+struct BufferState {
+    buffer: RwSignal<String>,
+    last_buffer: String,
+}
+
+impl BufferState {
+    fn update(&mut self, update: impl FnOnce(&mut String)) {
+        self.buffer.update(|s| {
+            update(s);
+            self.last_buffer = s.clone();
+        });
+    }
+
+    fn get_untracked(&self) -> String {
+        self.buffer.get_untracked()
+    }
+
+    fn with_untracked<T>(&self, f: impl FnOnce(&String) -> T) -> T {
+        self.buffer.with_untracked(f)
+    }
+}
+
 /// Text Input View
 pub struct TextInput {
     id: ViewId,
-    buffer: RwSignal<String>,
+    buffer: BufferState,
     pub(crate) placeholder_text: Option<String>,
     placeholder_buff: Option<TextLayout>,
     placeholder_style: PlaceholderStyle,
@@ -120,7 +142,10 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         placeholder_buff: None,
         placeholder_style: Default::default(),
         selection_style: Default::default(),
-        buffer,
+        buffer: BufferState {
+            buffer,
+            last_buffer: buffer.get_untracked(),
+        },
         text_buf: None,
         text_node: None,
         clipped_text: None,
@@ -785,7 +810,7 @@ impl TextInput {
         }
 
         self.buffer
-            .update(|buf| dbg!(buf).insert_str(self.cursor_glyph_idx, &ch.clone()));
+            .update(|buf| buf.insert_str(self.cursor_glyph_idx, &ch.clone()));
         self.move_cursor(Movement::Glyph, Direction::Right)
     }
 
@@ -949,13 +974,16 @@ impl View for TextInput {
 
     fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn Any>) {
         if let Ok(state) = state.downcast::<(String, bool)>() {
-            let (_, is_focused) = *state;
-            if is_focused {
-                self.cursor_glyph_idx = self.buffer.with_untracked(|buff| buff.len());
-            }
+            let (value, is_focused) = *state;
 
-            self.is_focused = is_focused;
-            self.id.request_layout();
+            // Only update recomputation if the state has actually changed
+            if self.is_focused != is_focused || value != self.buffer.last_buffer {
+                if is_focused {
+                    self.cursor_glyph_idx = self.buffer.with_untracked(|buf| buf.len());
+                }
+                self.is_focused = is_focused;
+                self.id.request_layout();
+            }
         } else {
             eprintln!("downcast failed");
         }
