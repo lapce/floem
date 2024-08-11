@@ -270,7 +270,7 @@ impl TextInput {
                 false
             }),
             (Movement::Word, Direction::Left) if self.cursor_glyph_idx > 0 => {
-                self.buffer.with(|buff| {
+                self.buffer.with_untracked(|buff| {
                     let mut prev_word_idx = 0;
                     for (idx, _) in buff.unicode_word_indices() {
                         if idx < self.cursor_glyph_idx {
@@ -318,7 +318,7 @@ impl TextInput {
 
         let new_text = self
             .buffer
-            .get()
+            .get_untracked()
             .chars()
             .skip(clip_start)
             .take(clip_end - clip_start)
@@ -527,7 +527,7 @@ impl TextInput {
             .layout(text_node)
             .cloned()
             .unwrap_or_default();
-        let len = self.buffer.with(|val| val.len());
+        let len = self.buffer.with_untracked(|val| val.len());
         self.cursor_glyph_idx = len;
 
         let text_buf = self.text_buf.as_ref().unwrap();
@@ -557,7 +557,7 @@ impl TextInput {
                 if let Some(selection) = &self.selection {
                     let selection_txt = self
                         .buffer
-                        .get()
+                        .get_untracked()
                         .chars()
                         .skip(selection.start)
                         .take(selection.end - selection.start)
@@ -570,7 +570,7 @@ impl TextInput {
                 if let Some(selection) = &self.selection {
                     let selection_txt = self
                         .buffer
-                        .get()
+                        .get_untracked()
                         .chars()
                         .skip(selection.start)
                         .take(selection.end - selection.start)
@@ -785,7 +785,7 @@ impl TextInput {
         }
 
         self.buffer
-            .update(|buf| buf.insert_str(self.cursor_glyph_idx, &ch.clone()));
+            .update(|buf| dbg!(buf).insert_str(self.cursor_glyph_idx, &ch.clone()));
         self.move_cursor(Movement::Glyph, Direction::Right)
     }
 
