@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc, time::Instant};
+use std::{collections::HashMap, mem, rc::Rc, time::Instant};
 
 use floem_winit::{
     dpi::{LogicalPosition, LogicalSize},
@@ -381,9 +381,12 @@ impl ApplicationHandle {
     }
 
     pub(crate) fn idle(&mut self) {
-        while let Some(trigger) = { EXT_EVENT_HANDLER.queue.lock().pop_front() } {
+        let ext_events = { mem::take(&mut *EXT_EVENT_HANDLER.queue.lock()) };
+
+        for trigger in ext_events {
             trigger.notify();
         }
+
         self.handle_updates_for_all_windows();
     }
 

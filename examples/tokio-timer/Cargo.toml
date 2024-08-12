@@ -1,0 +1,12 @@
+[package]
+name = "tokio-timer"
+edition = "2021"
+license.workspace = true
+version.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+floem = { path = "../..", features = ["futures"] }
+tokio = { version = "1.39.2", features = ["time", "rt-multi-thread"] }
+tokio-stream = "0.1.15"

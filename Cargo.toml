@@ -67,6 +67,7 @@ parking_lot = { workspace = true }
 image = { workspace = true }
 im = { workspace = true }
 wgpu = { workspace = true }
+futures = { version = "0.3.30", optional = true }
 
 [features]
 default = ["editor", "default-image-formats"]
@@ -99,3 +100,4 @@ tokio = ["dep:tokio"]
 # rfd (file dialog) async runtime
 rfd-async-std = ["dep:rfd", "rfd/async-std"]
 rfd-tokio = ["dep:rfd", "rfd/tokio"]
+futures = ["dep:futures"]
