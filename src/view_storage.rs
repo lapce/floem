@@ -52,18 +52,15 @@ impl ViewStorage {
         }
     }
 
+    /// Returns the deepest view ID encountered traversing parents.  It does *not* guarantee
+    /// that it is a real window root; any caller should perform the same test
+    /// of `window_tracking::is_known_root()` that `ViewId.root()` does before
+    /// assuming the returned value is really a window root.
     pub(crate) fn root_view_id(&self, id: ViewId) -> Option<ViewId> {
-        let mut parent = self.parent.get(id).cloned().flatten();
-        while let Some(parent_id) = parent {
-            match self.parent.get(parent_id).cloned().flatten() {
-                Some(id) => {
-                    parent = Some(id);
-                }
-                None => {
-                    return parent;
-                }
-            }
+        if let Some(p) = self.parent.get(id).unwrap_or(&None) {
+            self.root_view_id(*p)
+        } else {
+            Some(id)
         }
-        parent
     }
 }

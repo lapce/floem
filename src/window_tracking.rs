@@ -94,6 +94,10 @@ pub fn with_window_id_and_window<F: FnOnce(&WindowId, &Window) -> T, T>(
         .unwrap_or(None)
 }
 
+pub fn is_known_root(id: &ViewId) -> bool {
+    with_window_map(|map| map.window_id_for_root_view_id.contains_key(id)).unwrap_or(false)
+}
+
 fn with_window_map_mut<F: FnMut(&mut WindowMapping)>(mut f: F) -> bool {
     let map = WINDOW_FOR_WINDOW_AND_ROOT_IDS.get_or_init(|| RwLock::new(Default::default()));
     if let Ok(mut map) = map.write() {

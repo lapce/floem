@@ -3,14 +3,12 @@ use std::{hash::Hash, marker::PhantomData, ops::Range};
 use floem_reactive::{as_child_of_current_scope, create_effect, create_signal, Scope, WriteSignal};
 use peniko::kurbo::Rect;
 use smallvec::SmallVec;
-use taffy::{
-    style::{Dimension, FlexDirection, LengthPercentage},
-    tree::NodeId,
-};
+use taffy::{style::Dimension, tree::NodeId};
 
 use crate::{
     context::ComputeLayoutCx,
     id::ViewId,
+    style::Style,
     view::{self, IntoView, View},
 };
 
@@ -64,8 +62,7 @@ where
     phatom: PhantomData<T>,
     before_size: f64,
     content_size: f64,
-    offset_node: Option<NodeId>,
-    content_node: Option<NodeId>,
+    before_node: Option<NodeId>,
 }
 
 struct VirtualStackState<T> {
@@ -228,8 +225,7 @@ where
         phatom: PhantomData,
         before_size: 0.0,
         content_size: 0.0,
-        offset_node: None,
-        content_node: None,
+        before_node: None,
     }
 }
 
@@ -263,26 +259,25 @@ impl<T> View for VirtualStack<T> {
         }
     }
 
+    fn view_style(&self) -> Option<crate::style::Style> {
+        let style = match self.direction {
+            VirtualDirection::Vertical => Style::new().height(self.content_size),
+            VirtualDirection::Horizontal => Style::new().width(self.content_size),
+        };
+        Some(style)
+    }
+
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::tree::NodeId {
         cx.layout_node(self.id(), true, |cx| {
-            let nodes = self
+            let mut content_nodes = self
                 .id
                 .children()
                 .into_iter()
                 .map(|id| id.view().borrow_mut().layout(cx))
                 .collect::<Vec<_>>();
-            let content_size = match self.direction {
-                VirtualDirection::Vertical => taffy::prelude::Size {
-                    width: Dimension::Percent(1.0),
-                    height: Dimension::Length(self.content_size as f32),
-                },
-                VirtualDirection::Horizontal => taffy::prelude::Size {
-                    width: Dimension::Length(self.content_size as f32),
-                    height: Dimension::Percent(1.0),
-                },
-            };
-            if self.offset_node.is_none() {
-                self.offset_node = Some(
+
+            if self.before_node.is_none() {
+                self.before_node = Some(
                     self.id
                         .taffy()
                         .borrow_mut()
@@ -290,65 +285,26 @@ impl<T> View for VirtualStack<T> {
                         .unwrap(),
                 );
             }
-            if self.content_node.is_none() {
-                self.content_node = Some(
-                    self.id
-                        .taffy()
-                        .borrow_mut()
-                        .new_leaf(taffy::style::Style::DEFAULT)
-                        .unwrap(),
-                );
-            }
-            let offset_node = self.offset_node.unwrap();
-            let content_node = self.content_node.unwrap();
+            let before_node = self.before_node.unwrap();
             let _ = self.id.taffy().borrow_mut().set_style(
-                offset_node,
+                before_node,
                 taffy::style::Style {
-                    position: taffy::style::Position::Relative,
-                    padding: match self.direction {
-                        VirtualDirection::Vertical => taffy::prelude::Rect {
-                            left: LengthPercentage::Length(0.0),
-                            top: LengthPercentage::Length(self.before_size as f32),
-                            right: LengthPercentage::Length(0.0),
-                            bottom: LengthPercentage::Length(0.0),
+                    size: match self.direction {
+                        VirtualDirection::Vertical => taffy::prelude::Size {
+                            width: Dimension::Auto,
+                            height: Dimension::Length(self.before_size as f32),
                         },
-                        VirtualDirection::Horizontal => taffy::prelude::Rect {
-                            left: LengthPercentage::Length(self.before_size as f32),
-                            top: LengthPercentage::Length(0.0),
-                            right: LengthPercentage::Length(0.0),
-                            bottom: LengthPercentage::Length(0.0),
+                        VirtualDirection::Horizontal => taffy::prelude::Size {
+                            width: Dimension::Length(self.before_size as f32),
+                            height: Dimension::Auto,
                         },
-                    },
-                    flex_direction: match self.direction {
-                        VirtualDirection::Vertical => FlexDirection::Column,
-                        VirtualDirection::Horizontal => FlexDirection::Row,
-                    },
-                    size: taffy::prelude::Size {
-                        width: Dimension::Percent(1.0),
-                        height: Dimension::Percent(1.0),
                     },
                     ..Default::default()
                 },
             );
-            let _ = self.id.taffy().borrow_mut().set_style(
-                content_node,
-                taffy::style::Style {
-                    min_size: content_size,
-                    size: content_size,
-                    ..Default::default()
-                },
-            );
-            let _ = self
-                .id
-                .taffy()
-                .borrow_mut()
-                .set_children(offset_node, &nodes);
-            let _ = self
-                .id
-                .taffy()
-                .borrow_mut()
-                .set_children(content_node, &[offset_node]);
-            vec![content_node]
+            let mut nodes = vec![before_node];
+            nodes.append(&mut content_nodes);
+            nodes
         })
     }
 

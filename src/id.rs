@@ -22,7 +22,7 @@ use crate::{
     view::{IntoView, View},
     view_state::{ChangeFlags, StackOffset, ViewState},
     view_storage::VIEW_STORAGE,
-    window_tracking::window_id_for_root,
+    window_tracking::{is_known_root, window_id_for_root},
     ScreenLayout,
 };
 
@@ -37,6 +37,9 @@ impl ViewId {
 
     pub fn remove(&self) {
         VIEW_STORAGE.with_borrow_mut(|s| {
+            // Remove the cached root, in the (unlikely) case that this view is
+            // re-added to a different window
+            s.root.remove(*self);
             if let Some(Some(parent)) = s.parent.get(*self) {
                 if let Some(children) = s.children.get_mut(*parent) {
                     children.retain(|c| c != self);
@@ -155,11 +158,20 @@ impl ViewId {
     pub(crate) fn root(&self) -> Option<ViewId> {
         VIEW_STORAGE.with_borrow_mut(|s| {
             if let Some(root) = s.root.get(*self) {
+                // The cached value will be cleared on remove() above
                 return *root;
             }
             let root_view_id = s.root_view_id(*self);
-            s.root.insert(*self, root_view_id);
-            root_view_id
+            // root_view_id() always returns SOMETHING.  If the view is not yet added
+            // to a window, it can be itself or its nearest ancestor, which means we
+            // will store garbage permanently.
+            if let Some(root) = root_view_id {
+                if is_known_root(&root) {
+                    s.root.insert(*self, root_view_id);
+                    return Some(root);
+                }
+            }
+            None
         })
     }
 

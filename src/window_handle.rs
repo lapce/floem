@@ -712,11 +712,28 @@ impl WindowHandle {
         CENTRAL_UPDATE_MESSAGES.with_borrow_mut(|central_msgs| {
             if !central_msgs.is_empty() {
                 UPDATE_MESSAGES.with_borrow_mut(|msgs| {
-                    let central_msgs = std::mem::take(&mut *central_msgs);
-                    for (id, msg) in central_msgs {
+                    // We need to retain any messages which are for a view that either belongs
+                    // to a different window, or which does not yet have a root
+                    let removed_central_msgs =
+                        std::mem::replace(central_msgs, Vec::with_capacity(central_msgs.len()));
+                    for (id, msg) in removed_central_msgs {
                         if let Some(root) = id.root() {
                             let msgs = msgs.entry(root).or_default();
                             msgs.push(msg);
+                        } else {
+                            // Messages that are not for our root get put back - they may
+                            // belong to another window, or may be construction-time messages
+                            // for a View that does not yet have a window but will momentarily.
+                            //
+                            // Note that if there is a plethora of events for ids which were created
+                            // but never assigned to any view, they will probably pile up in here,
+                            // and if that becomes a real problem, we may want a garbage collection
+                            // mechanism, or give every message a max-touch-count and discard it
+                            // if it survives too many iterations through here. Unclear if there
+                            // are real-world app development patterns where that could actually be
+                            // an issue. Since any such mechanism would have some overhead, there
+                            // should be a proven need before building one.
+                            central_msgs.push((id, msg));
                         }
                     }
                 });
@@ -727,11 +744,17 @@ impl WindowHandle {
             if !central_msgs.borrow().is_empty() {
                 DEFERRED_UPDATE_MESSAGES.with(|msgs| {
                     let mut msgs = msgs.borrow_mut();
-                    let central_msgs = std::mem::take(&mut *central_msgs.borrow_mut());
-                    for (id, msg) in central_msgs {
+                    let removed_central_msgs = std::mem::replace(
+                        &mut *central_msgs.borrow_mut(),
+                        Vec::with_capacity(msgs.len()),
+                    );
+                    let unprocessed = &mut *central_msgs.borrow_mut();
+                    for (id, msg) in removed_central_msgs {
                         if let Some(root) = id.root() {
                             let msgs = msgs.entry(root).or_default();
                             msgs.push((id, msg));
+                        } else {
+                            unprocessed.push((id, msg));
                         }
                     }
                 });
