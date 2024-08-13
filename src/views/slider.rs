@@ -85,7 +85,7 @@ pub struct Slider {
 /// Styling Example:
 /// ```rust
 /// # use floem::unit::UnitExt;
-/// # use floem::peniko::Color;
+/// # use floem::peniko::{Color, Brush};
 /// # use floem::style::Foreground;
 /// # use floem::views::slider;
 /// # use floem::views::empty;
@@ -93,7 +93,7 @@ pub struct Slider {
 /// empty()
 ///     .style(|s|
 ///         s.class(slider::SliderClass, |s| {
-///             s.set(Foreground, Color::WHITE)
+///             s.set(Foreground, Brush::Solid(Color::WHITE))
 ///                 .set(slider::EdgeAlign, true)
 ///                 .set(slider::HandleRadius, 50.pct())
 ///         })
