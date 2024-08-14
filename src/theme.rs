@@ -10,7 +10,7 @@ use crate::{
         ToggleButtonInset, TooltipClass,
     },
 };
-use peniko::Color;
+use peniko::{Brush, Color};
 use std::rc::Rc;
 use taffy::style::AlignItems;
 
@@ -168,7 +168,10 @@ pub(crate) fn default_theme() -> Theme {
         .active(|s| {
             s.background(active_bg_color)
                 .color(Color::WHITE.with_alpha_factor(0.9))
-                .set(Foreground, Color::WHITE.with_alpha_factor(0.9))
+                .set(
+                    Foreground,
+                    Brush::Solid(Color::WHITE.with_alpha_factor(0.9)),
+                )
         })
         .aspect_ratio(2.)
         .background(Color::rgb8(240, 240, 240))
@@ -178,7 +181,7 @@ pub(crate) fn default_theme() -> Theme {
         .height(FONT_SIZE * 1.75)
         .hover(|s| s.background(hover_bg_color))
         .padding(padding)
-        .set(Foreground, Color::DARK_GRAY)
+        .set(Foreground, Brush::Solid(Color::DARK_GRAY))
         .set(ToggleButtonCircleRad, 75.pct())
         .set(ToggleButtonInset, 10.pct())
         .apply(border_style.clone())
@@ -242,7 +245,7 @@ pub(crate) fn default_theme() -> Theme {
             s.background(Color::GREEN).border_radius(100.pct())
         })
         .class(SliderClass, |s| {
-            s.set(Foreground, Color::DARK_GRAY)
+            s.set(Foreground, Brush::Solid(Color::DARK_GRAY))
                 .height(15)
                 .width(100)
                 .set(slider::EdgeAlign, true)

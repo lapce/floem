@@ -4,13 +4,13 @@ use floem_reactive::create_effect;
 use floem_renderer::Renderer;
 use floem_winit::keyboard::{Key, NamedKey};
 use peniko::kurbo::{Circle, Point, RoundedRect};
-use peniko::Color;
+use peniko::{Brush, Color};
 
 use crate::{
     event::EventPropagation,
     id::ViewId,
     prop, prop_extractor,
-    style::{Background, BorderRadius, CustomStylable, Foreground, Height, Style, StyleValue},
+    style::{Background, BorderRadius, CustomStylable, Foreground, Height, Style},
     style_class,
     unit::{PxPct, PxPctAuto},
     view::View,
@@ -85,7 +85,7 @@ pub struct Slider {
 /// Styling Example:
 /// ```rust
 /// # use floem::unit::UnitExt;
-/// # use floem::peniko::Color;
+/// # use floem::peniko::{Color, Brush};
 /// # use floem::style::Foreground;
 /// # use floem::views::slider;
 /// # use floem::views::empty;
@@ -93,7 +93,7 @@ pub struct Slider {
 /// empty()
 ///     .style(|s|
 ///         s.class(slider::SliderClass, |s| {
-///             s.set(Foreground, Color::WHITE)
+///             s.set(Foreground, Brush::Solid(Color::WHITE))
 ///                 .set(slider::EdgeAlign, true)
 ///                 .set(slider::HandleRadius, 50.pct())
 ///         })
@@ -305,19 +305,22 @@ impl View for Slider {
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         cx.fill(
             &self.base_bar,
-            self.base_bar_style.color().unwrap_or(Color::BLACK),
+            &self.base_bar_style.color().unwrap_or(Color::BLACK.into()),
             0.,
         );
         cx.clip(&self.base_bar);
         cx.fill(
             &self.accent_bar,
-            self.accent_bar_style.color().unwrap_or(Color::TRANSPARENT),
+            &self
+                .accent_bar_style
+                .color()
+                .unwrap_or(Color::TRANSPARENT.into()),
             0.,
         );
 
         if let Some(color) = self.style.foreground() {
             cx.clear_clip();
-            cx.fill(&self.handle, color, 0.);
+            cx.fill(&self.handle, &color, 0.);
         }
     }
 }
@@ -370,7 +373,7 @@ impl SliderCustomStyle {
     ///
     /// # Arguments
     /// * `color` - An optional `Color` that sets the handle's color. If `None` is provided, the handle color is not set.
-    pub fn handle_color(mut self, color: impl Into<Option<Color>>) -> Self {
+    pub fn handle_color(mut self, color: impl Into<Option<Brush>>) -> Self {
         self = SliderCustomStyle(self.0.set(Foreground, color));
         self
     }
@@ -397,7 +400,7 @@ impl SliderCustomStyle {
     ///
     /// # Arguments
     /// * `color` - A `StyleValue<Color>` that sets the bar's background color.
-    pub fn bar_color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
+    pub fn bar_color(mut self, color: impl Into<Brush>) -> Self {
         self = SliderCustomStyle(self.0.class(BarClass, |s| s.background(color)));
         self
     }
@@ -424,7 +427,7 @@ impl SliderCustomStyle {
     ///
     /// # Arguments
     /// * `color` - A `StyleValue<Color>` that sets the accent bar's background color.
-    pub fn accent_bar_color(mut self, color: impl Into<StyleValue<Color>>) -> Self {
+    pub fn accent_bar_color(mut self, color: impl Into<Brush>) -> Self {
         self = SliderCustomStyle(self.0.class(AccentBarClass, |s| s.background(color)));
         self
     }

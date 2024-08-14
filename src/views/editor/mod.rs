@@ -51,6 +51,7 @@ pub mod view;
 pub mod visual_line;
 
 pub use floem_editor_core as core;
+use peniko::Brush;
 
 use self::{
     command::Command,
@@ -133,7 +134,7 @@ impl EditorStyle {
     }
 }
 impl EditorStyle {
-    pub fn ed_caret(&self) -> Color {
+    pub fn ed_caret(&self) -> Brush {
         self.caret()
     }
 }

@@ -1,7 +1,7 @@
 use floem_reactive::create_effect;
 use floem_renderer::Renderer;
 use peniko::kurbo::{Point, Rect, Size, Vec2};
-use peniko::Color;
+use peniko::{Brush, Color};
 
 use crate::{
     app_state::AppState,
@@ -74,7 +74,7 @@ prop_extractor!(ScrollStyle {
     vertical_scroll_as_horizontal: VerticalScrollAsHorizontal,
 });
 
-const HANDLE_COLOR: Color = Color::rgba8(0, 0, 0, 120);
+const HANDLE_COLOR: Brush = Brush::Solid(Color::rgba8(0, 0, 0, 120));
 
 style_class!(pub ScrollClass);
 
@@ -367,14 +367,14 @@ impl Scroll {
                 let mut bounds = bounds - scroll_offset;
                 bounds.y0 = self.actual_rect.y0;
                 bounds.y1 = self.actual_rect.y1;
-                cx.fill(&bounds, color, 0.0);
+                cx.fill(&bounds, &color, 0.0);
             }
             let edge_width = style.border().0;
             let rect = (bounds - scroll_offset).inset(-edge_width / 2.0);
             let rect = rect.to_rounded_rect(radius(style, rect, true));
-            cx.fill(&rect, style.color().unwrap_or(HANDLE_COLOR), 0.0);
+            cx.fill(&rect, &style.color().unwrap_or(HANDLE_COLOR), 0.0);
             if edge_width > 0.0 {
-                cx.stroke(&rect, style.border_color(), edge_width);
+                cx.stroke(&rect, &style.border_color(), edge_width);
             }
         }
 
@@ -392,14 +392,14 @@ impl Scroll {
                 let mut bounds = bounds - scroll_offset;
                 bounds.x0 = self.actual_rect.x0;
                 bounds.x1 = self.actual_rect.x1;
-                cx.fill(&bounds, color, 0.0);
+                cx.fill(&bounds, &color, 0.0);
             }
             let edge_width = style.border().0;
             let rect = (bounds - scroll_offset).inset(-edge_width / 2.0);
             let rect = rect.to_rounded_rect(radius(style, rect, false));
-            cx.fill(&rect, style.color().unwrap_or(HANDLE_COLOR), 0.0);
+            cx.fill(&rect, &style.color().unwrap_or(HANDLE_COLOR), 0.0);
             if edge_width > 0.0 {
-                cx.stroke(&rect, style.border_color(), edge_width);
+                cx.stroke(&rect, &style.border_color(), edge_width);
             }
         }
     }

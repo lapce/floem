@@ -7,7 +7,7 @@ use super::{
 use std::{borrow::BorrowMut, collections::HashMap, rc::Rc, time::Duration, time::Instant};
 
 use floem_reactive::create_effect;
-use peniko::Color;
+use peniko::{Brush, Color};
 
 #[derive(Clone)]
 pub struct Animation {
@@ -152,9 +152,9 @@ impl Animation {
         self
     }
 
-    pub fn border_color(self, bord_color_fn: impl Fn() -> Color + 'static) -> Self {
+    pub fn border_color<B: Into<Brush>>(self, bord_color_fn: impl Fn() -> B + 'static) -> Self {
         create_effect(move |_| {
-            let border_color = bord_color_fn();
+            let border_color = bord_color_fn().into();
 
             self.id.update_style_prop(BorderColor, border_color);
         });
@@ -162,9 +162,9 @@ impl Animation {
         self
     }
 
-    pub fn background(self, bg_fn: impl Fn() -> Color + 'static) -> Self {
+    pub fn background<B: Into<Brush>>(self, bg_fn: impl Fn() -> B + 'static) -> Self {
         create_effect(move |_| {
-            let background = bg_fn();
+            let background = bg_fn().into();
 
             self.id.update_style_prop(Background, Some(background));
         });

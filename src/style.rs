@@ -5,7 +5,8 @@
 use floem_reactive::create_updater;
 use floem_renderer::text::{LineHeightValue, Weight};
 use im_rc::hashmap::Entry;
-use peniko::Color;
+use peniko::kurbo::Point;
+use peniko::{Brush, Color, ColorStop, ColorStops, Gradient, GradientKind};
 use rustc_hash::FxHasher;
 use std::any::{type_name, Any};
 use std::collections::HashMap;
@@ -160,6 +161,190 @@ impl StylePropValue for Color {
             .unwrap()
             .round() as u8;
         Some(Color { r, g, b, a })
+    }
+}
+
+impl StylePropValue for Gradient {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let box_width = 22.;
+        let box_height = 14.;
+        let mut grad = self.clone();
+        grad.kind = match grad.kind {
+            GradientKind::Linear { start, end } => {
+                let dx = end.x - start.x;
+                let dy = end.y - start.y;
+
+                let scale_x = box_width / dx.abs();
+                let scale_y = box_height / dy.abs();
+                let scale = scale_x.min(scale_y);
+
+                let new_dx = dx * scale;
+                let new_dy = dy * scale;
+
+                let new_start = Point {
+                    x: if dx > 0.0 { 0.0 } else { box_width },
+                    y: if dy > 0.0 { 0.0 } else { box_height },
+                };
+
+                let new_end = Point {
+                    x: new_start.x + new_dx,
+                    y: new_start.y + new_dy,
+                };
+
+                GradientKind::Linear {
+                    start: new_start,
+                    end: new_end,
+                }
+            }
+            _ => grad.kind,
+        };
+        let color = empty().style(move |s| {
+            s.background(grad.clone())
+                .width(box_width)
+                .height(box_height)
+                .border(1)
+                .border_color(Color::WHITE.with_alpha_factor(0.5))
+                .border_radius(5.0)
+        });
+        let color = stack((color,)).style(|s| {
+            s.border(1)
+                .border_color(Color::BLACK.with_alpha_factor(0.5))
+                .border_radius(5.0)
+                .margin_left(6.0)
+        });
+        Some(
+            stack((text(format!("{self:?}")), color))
+                .style(|s| s.items_center())
+                .into_any(),
+        )
+    }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        let mut interpolated_stops = ColorStops::new();
+
+        let mut i = 0;
+        let mut j = 0;
+
+        while i < self.stops.len() && j < other.stops.len() {
+            let stop1 = &self.stops[i];
+            let stop2 = &other.stops[j];
+
+            if stop1.offset == stop2.offset {
+                let interpolated_color = stop1.color.interpolate(&stop2.color, value).unwrap();
+                interpolated_stops.push(ColorStop::from((stop1.offset, interpolated_color)));
+                i += 1;
+                j += 1;
+            } else if stop1.offset < stop2.offset {
+                if j > 0 {
+                    let prev_stop2 = &other.stops[j - 1];
+                    let t = (stop1.offset - prev_stop2.offset) / (stop2.offset - prev_stop2.offset);
+                    let interpolated_color = prev_stop2
+                        .color
+                        .interpolate(&stop2.color, t as f64)
+                        .unwrap();
+                    interpolated_stops.push(ColorStop::from((stop1.offset, interpolated_color)));
+                } else {
+                    interpolated_stops.push(*stop1);
+                }
+                i += 1;
+            } else {
+                if i > 0 {
+                    let prev_stop1 = &self.stops[i - 1];
+                    let t = (stop2.offset - prev_stop1.offset) / (stop1.offset - prev_stop1.offset);
+                    let interpolated_color = prev_stop1
+                        .color
+                        .interpolate(&stop1.color, t as f64)
+                        .unwrap();
+                    interpolated_stops.push(ColorStop::from((stop2.offset, interpolated_color)));
+                } else {
+                    interpolated_stops.push(*stop2);
+                }
+                j += 1;
+            }
+        }
+
+        while i < self.stops.len() {
+            let stop1 = &self.stops[i];
+            if !other.stops.is_empty() {
+                let last_stop2 = &other.stops.last().unwrap();
+                let interpolated_color = stop1.color.interpolate(&last_stop2.color, value).unwrap();
+                interpolated_stops.push(ColorStop::from((stop1.offset, interpolated_color)));
+            } else {
+                interpolated_stops.push(*stop1);
+            }
+            i += 1;
+        }
+
+        while j < other.stops.len() {
+            let stop2 = &other.stops[j];
+            if !self.stops.is_empty() {
+                let last_stop1 = &self.stops.last().unwrap();
+                let interpolated_color = last_stop1.color.interpolate(&stop2.color, value).unwrap();
+                interpolated_stops.push(ColorStop::from((stop2.offset, interpolated_color)));
+            } else {
+                interpolated_stops.push(*stop2);
+            }
+            j += 1;
+        }
+
+        Some(Self {
+            kind: self.kind,
+            extend: self.extend,
+            stops: interpolated_stops,
+        })
+    }
+}
+impl StylePropValue for Brush {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        match self {
+            Brush::Solid(color) => color.debug_view(),
+            Brush::Gradient(grad) => grad.debug_view(),
+            Brush::Image(_) => None,
+        }
+    }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        match (self, other) {
+            (Brush::Solid(color), Brush::Solid(other)) => {
+                color.interpolate(other, value).map(Self::Solid)
+            }
+            (Brush::Gradient(gradient), Brush::Solid(solid)) => {
+                let interpolated_stops: ColorStops = gradient
+                    .stops
+                    .iter()
+                    .map(|stop| {
+                        let interpolated_color = stop.color.interpolate(solid, value).unwrap();
+                        ColorStop::from((stop.offset, interpolated_color))
+                    })
+                    .collect();
+                Some(Brush::Gradient(Gradient {
+                    kind: gradient.kind,
+                    extend: gradient.extend,
+                    stops: interpolated_stops,
+                }))
+            }
+            (Brush::Solid(solid), Brush::Gradient(gradient)) => {
+                let interpolated_stops: ColorStops = gradient
+                    .stops
+                    .iter()
+                    .map(|stop| {
+                        let interpolated_color = solid.interpolate(&stop.color, value).unwrap();
+                        ColorStop::from((stop.offset, interpolated_color))
+                    })
+                    .collect();
+                Some(Brush::Gradient(Gradient {
+                    kind: gradient.kind,
+                    extend: gradient.extend,
+                    stops: interpolated_stops,
+                }))
+            }
+
+            (Brush::Gradient(gradient1), Brush::Gradient(gradient2)) => {
+                gradient1.interpolate(gradient2, value).map(Brush::Gradient)
+            }
+
+            _ => None,
+        }
     }
 }
 
@@ -1204,9 +1389,9 @@ define_builtin_props!(
     BorderRight border_right: Px {} = Px(0.0),
     BorderBottom border_bottom: Px {} = Px(0.0),
     BorderRadius border_radius: PxPct {} = PxPct::Px(0.0),
-    OutlineColor outline_color: Color {} = Color::TRANSPARENT,
+    OutlineColor outline_color: Brush {} = Brush::Solid(Color::TRANSPARENT),
     Outline outline: Px {} = Px(0.0),
-    BorderColor border_color: Color {} = Color::BLACK,
+    BorderColor border_color: Brush {} = Brush::Solid(Color::BLACK),
     PaddingLeft padding_left: PxPct {} = PxPct::Px(0.0),
     PaddingTop padding_top: PxPct {} = PxPct::Px(0.0),
     PaddingRight padding_right: PxPct {} = PxPct::Px(0.0),
@@ -1222,14 +1407,14 @@ define_builtin_props!(
     ZIndex z_index nocb: Option<i32> {} = None,
     Cursor cursor nocb: Option<CursorStyle> {} = None,
     TextColor color nocb: Option<Color> { inherited } = None,
-    Background background nocb: Option<Color> {} = None,
-    Foreground foreground nocb: Option<Color> {} = None,
+    Background background nocb: Option<Brush> {} = None,
+    Foreground foreground nocb: Option<Brush> {} = None,
     BoxShadowProp box_shadow nocb: Option<BoxShadow> {} = None,
     FontSize font_size nocb: Option<f32> { inherited } = None,
     FontFamily font_family nocb: Option<String> { inherited } = None,
     FontWeight font_weight nocb: Option<Weight> { inherited } = None,
     FontStyle font_style nocb: Option<crate::text::Style> { inherited } = None,
-    CursorColor cursor_color nocb: Color {} = Color::BLACK.with_alpha_factor(0.3),
+    CursorColor cursor_color nocb: Brush {} = Brush::Solid(Color::BLACK.with_alpha_factor(0.3)),
     SelectionCornerRadius selection_corer_radius nocb: f64 {} = 1.,
     Selectable selectable: bool {} = true,
     TextOverflowProp text_overflow: TextOverflow {} = TextOverflow::Wrap,
@@ -1649,8 +1834,9 @@ impl Style {
         self.set_style_value(TextColor, color.into().map(Some))
     }
 
-    pub fn background(self, color: impl Into<StyleValue<Color>>) -> Self {
-        self.set_style_value(Background, color.into().map(Some))
+    pub fn background(self, color: impl Into<Brush>) -> Self {
+        let brush = StyleValue::Val(Some(color.into()));
+        self.set_style_value(Background, brush)
     }
 
     pub fn box_shadow_blur(self, blur_radius: impl Into<PxPct>) -> Self {
@@ -1703,7 +1889,7 @@ impl Style {
         self.set_style_value(FontStyle, style.into().map(Some))
     }
 
-    pub fn cursor_color(self, color: impl Into<StyleValue<Color>>) -> Self {
+    pub fn cursor_color(self, color: impl Into<StyleValue<Brush>>) -> Self {
         self.set_style_value(CursorColor, color.into())
     }
 

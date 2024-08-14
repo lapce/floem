@@ -19,8 +19,11 @@ use crate::{
 use floem_reactive::create_updater;
 use floem_renderer::{text::Cursor, Renderer};
 use floem_winit::keyboard::{Key, SmolStr};
-use peniko::kurbo::{Point, Rect};
 use peniko::Color;
+use peniko::{
+    kurbo::{Point, Rect},
+    Brush,
+};
 use taffy::tree::NodeId;
 
 use super::{Decorators, TextCommand};
@@ -276,7 +279,7 @@ impl Label {
                     let end_y = start_y + run.line_height as f64;
                     let rect = Rect::new(start_x.into(), start_y, end_x.into(), end_y)
                         .to_rounded_rect(ss.corner_radius());
-                    paint_cx.fill(&rect, selection_color, 0.0);
+                    paint_cx.fill(&rect, &selection_color, 0.0);
                 }
             }
         }
@@ -545,7 +548,7 @@ impl LabelCustomStyle {
         self
     }
 
-    pub fn selection_color(mut self, color: impl Into<Color>) -> Self {
+    pub fn selection_color(mut self, color: impl Into<Brush>) -> Self {
         self = Self(self.0.set(CursorColor, color));
         self
     }
