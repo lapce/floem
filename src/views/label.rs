@@ -7,8 +7,8 @@ use crate::{
     keyboard::KeyEvent,
     prop_extractor,
     style::{
-        CursorColor, FontProps, LineHeight, Selectable, SelectionCornerRadius, SelectionStyle,
-        Style, TextColor, TextOverflow, TextOverflowProp,
+        CursorColor, CustomStylable, FontProps, LineHeight, Selectable, SelectionCornerRadius,
+        SelectionStyle, Style, TextColor, TextOverflow, TextOverflowProp,
     },
     style_class,
     text::{Attrs, AttrsList, FamilyOwned, TextLayout},
@@ -289,15 +289,7 @@ impl Label {
         self,
         style: impl Fn(LabelCustomStyle) -> LabelCustomStyle + 'static,
     ) -> Self {
-        let id = self.id();
-        let view_state = id.state();
-        let offset = view_state.borrow_mut().style.next_offset();
-        let style = create_updater(
-            move || style(LabelCustomStyle::new()),
-            move |style| id.update_style(offset, style.0),
-        );
-        view_state.borrow_mut().style.push(style.0);
-        self
+        self.custom_style(style)
     }
 }
 
@@ -531,7 +523,17 @@ impl View for Label {
 }
 
 /// Represents a custom style for a `Label`.
+#[derive(Debug, Clone)]
 pub struct LabelCustomStyle(Style);
+impl From<LabelCustomStyle> for Style {
+    fn from(value: LabelCustomStyle) -> Self {
+        value.0
+    }
+}
+
+impl CustomStylable<LabelCustomStyle> for Label {
+    type DV = Self;
+}
 
 impl LabelCustomStyle {
     pub fn new() -> Self {

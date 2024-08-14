@@ -2,7 +2,6 @@ use strum::IntoEnumIterator;
 
 use floem::{
     peniko::Color,
-    reactive::create_rw_signal,
     unit::UnitExt,
     views::{container, dropdown::dropdown, label, stack, svg, Decorators},
     IntoView,
@@ -29,8 +28,6 @@ const CHEVRON_DOWN: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" xml:space
 </svg>"##;
 
 pub fn dropdown_view() -> impl IntoView {
-    let show_dropdown = create_rw_signal(false);
-
     let main_drop_view = move |item| {
         stack((
             label(move || item),
@@ -60,8 +57,7 @@ pub fn dropdown_view() -> impl IntoView {
                 // view for each item in the list
                 |item| label(move || item).into_any(),
             )
-            .show_list(move || show_dropdown.get())
-            .on_accept(move |_val| show_dropdown.set(false))
+            .keyboard_navigatable()
         }),)
     })
 }

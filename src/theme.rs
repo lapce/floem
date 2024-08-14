@@ -1,8 +1,9 @@
 use crate::{
     style::{Background, CursorStyle, Foreground, Style, Transition},
-    unit::{PxPct, UnitExt},
+    unit::UnitExt,
     views::{
-        dropdown, scroll,
+        dropdown::{self},
+        scroll,
         slider::{self, SliderClass},
         ButtonClass, CheckboxClass, LabelClass, LabelCustomStyle, LabeledCheckboxClass,
         LabeledRadioButtonClass, ListClass, ListItemClass, PlaceholderTextClass, RadioButtonClass,
@@ -226,30 +227,34 @@ pub(crate) fn default_theme() -> Theme {
         .class(LabeledRadioButtonClass, |_| labeled_radio_button_style)
         .class(TextInputClass, |_| input_style)
         .class(ButtonClass, |_| button_style)
+        .apply_custom(
+            scroll::ScrollCustomStyle::new()
+                .handle_border_radius(4.0)
+                .handle_background(Color::rgba8(166, 166, 166, 140))
+                .handle_thickness(16.0)
+                .handle_rounded(false),
+        )
         .class(scroll::Handle, |s| {
-            s.border_radius(4.0)
-                .background(Color::rgba8(166, 166, 166, 140))
-                .set(scroll::Thickness, 16.0)
-                .set(scroll::Rounded, false)
-                .active(|s| s.background(Color::rgb8(166, 166, 166)))
+            s.active(|s| s.background(Color::rgb8(166, 166, 166)))
                 .hover(|s| s.background(Color::rgb8(184, 184, 184)))
         })
         .class(scroll::Track, |s| {
             s.hover(|s| s.background(Color::rgba8(166, 166, 166, 30)))
         })
         .class(ToggleButtonClass, |_| toggle_button_style)
-        .class(slider::BarClass, |s| {
-            s.background(Color::BLACK).border_radius(100.pct())
-        })
-        .class(slider::AccentBarClass, |s| {
-            s.background(Color::GREEN).border_radius(100.pct())
-        })
         .class(SliderClass, |s| {
-            s.set(Foreground, Brush::Solid(Color::DARK_GRAY))
-                .height(15)
-                .width(100)
-                .set(slider::EdgeAlign, true)
-                .set(slider::HandleRadius, PxPct::Pct(100.))
+            s.apply_custom(
+                slider::SliderCustomStyle::new()
+                    .bar_color(Color::BLACK)
+                    .bar_radius(100.pct())
+                    .accent_bar_color(Color::GREEN)
+                    .accent_bar_radius(100.pct())
+                    .handle_color(Brush::Solid(Color::DARK_GRAY))
+                    .handle_radius(100.pct())
+                    .edge_align(true),
+            )
+            .height(15)
+            .width(100)
         })
         .class(PlaceholderTextClass, |s| {
             s.color(Color::rgba8(158, 158, 158, 30))
@@ -272,15 +277,15 @@ pub(crate) fn default_theme() -> Theme {
             s.width(75)
                 .padding(3)
                 .apply(border_style)
-                .class(ListClass, |s| {
+                .class(scroll::ScrollClass, |s| {
                     s.width_full()
                         .margin_top(3)
                         .padding_vert(3)
-                        .background(Color::LIGHT_GRAY)
+                        .background(Color::WHITE_SMOKE)
                         .box_shadow_blur(2.0)
                         .box_shadow_h_offset(2.0)
                         .box_shadow_v_offset(2.0)
-                        .box_shadow_color(Color::BLACK.with_alpha_factor(0.2))
+                        .box_shadow_color(Color::BLACK.with_alpha_factor(0.4))
                         .border_radius(5.pct())
                         .items_center()
                         .class(ListItemClass, |s| {

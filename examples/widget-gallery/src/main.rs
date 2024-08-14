@@ -20,7 +20,7 @@ use floem::{
     style::{Background, CursorStyle, Transition},
     unit::UnitExt,
     views::{
-        button, container, h_stack, label, scroll, stack, tab, v_stack, virtual_stack, Decorators,
+        button, h_stack, label, scroll, stack, tab, v_stack, virtual_stack, Decorators,
         VirtualDirection, VirtualItemSize,
     },
     IntoView, View,
@@ -122,20 +122,8 @@ fn app_view() -> impl IntoView {
         )
         .style(|s| s.flex_col().width(140.0))
     })
-    .style(|s| {
-        s.flex_col()
-            .width(140.0)
-            .flex_grow(1.0)
-            .min_height(0)
-            .flex_basis(0)
-    });
-
-    let list = container(list).style(|s| {
-        s.border(1.0)
-            .border_color(Color::GRAY)
-            .flex_grow(1.0)
-            .min_height(0)
-    });
+    .scroll_style(|s| s.shrink_to_fit())
+    .style(|s| s.border(1.).border_color(Color::GRAY));
 
     let id = list.id();
     let inspector = button(|| "Open Inspector")
@@ -168,7 +156,7 @@ fn app_view() -> impl IntoView {
     )
     .style(|s| s.flex_col().items_start());
 
-    let tab = scroll(tab).style(|s| s.flex_basis(0).min_width(0).flex_grow(1.0));
+    let tab = scroll(tab).scroll_style(|s| s.shrink_to_fit());
 
     let view = h_stack((left, tab))
         .style(|s| s.padding(5.0).width_full().height_full().row_gap(5.0))

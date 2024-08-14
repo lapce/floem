@@ -3,6 +3,8 @@ use floem_renderer::Renderer;
 use peniko::kurbo::{Point, Rect, Size, Vec2};
 use peniko::{Brush, Color};
 
+use crate::style::CustomStylable;
+use crate::unit::PxPct;
 use crate::{
     app_state::AppState,
     context::{ComputeLayoutCx, PaintCx},
@@ -62,14 +64,14 @@ prop_extractor! {
 
 prop!(pub VerticalInset: Px {} = Px(0.0));
 prop!(pub HorizontalInset: Px {} = Px(0.0));
-prop!(pub HideBar: bool {} = false);
+prop!(pub HideBars: bool {} = false);
 prop!(pub PropagatePointerWheel: bool {} = true);
 prop!(pub VerticalScrollAsHorizontal: bool {} = false);
 
 prop_extractor!(ScrollStyle {
     vertical_bar_inset: VerticalInset,
     horizontal_bar_inset: HorizontalInset,
-    hide_bar: HideBar,
+    hide_bar: HideBars,
     propagate_pointer_wheel: PropagatePointerWheel,
     vertical_scroll_as_horizontal: VerticalScrollAsHorizontal,
 });
@@ -609,6 +611,13 @@ impl Scroll {
             self.pan_to_visible(app_state, rect);
         }
     }
+
+    pub fn scroll_style(
+        self,
+        style: impl Fn(ScrollCustomStyle) -> ScrollCustomStyle + 'static,
+    ) -> Self {
+        self.custom_style(style)
+    }
 }
 
 impl View for Scroll {
@@ -862,5 +871,138 @@ impl View for Scroll {
         if !self.scroll_style.hide_bar() {
             self.draw_bars(cx);
         }
+    }
+}
+/// Represents a custom style for a `Label`.
+#[derive(Default, Debug, Clone)]
+pub struct ScrollCustomStyle(Style);
+impl From<ScrollCustomStyle> for Style {
+    fn from(value: ScrollCustomStyle) -> Self {
+        value.0
+    }
+}
+
+impl CustomStylable<ScrollCustomStyle> for Scroll {
+    type DV = Self;
+}
+
+impl ScrollCustomStyle {
+    pub fn new() -> Self {
+        Self(Style::new())
+    }
+
+    /// Configures the scroll view to allow the viewport to be smaller than the inner content,
+    /// while still taking up the full available space in its container.
+    ///
+    /// Use this when you need a scroll view that can shrink its viewport size to fit within
+    /// the container, ensuring the content remains scrollable even if the inner content is
+    /// greater than the parent size.
+    ///
+    /// Internally this does a `s.min_size(0., 0.).size_full()`.
+    pub fn shrink_to_fit(mut self) -> Self {
+        self = Self(self.0.min_size(0., 0.).size_full());
+        self
+    }
+
+    /// Sets the background color for the handle.
+    pub fn handle_background(mut self, color: impl Into<Brush>) -> Self {
+        self = Self(self.0.class(Handle, |s| s.background(color.into())));
+        self
+    }
+
+    /// Sets the border radius for the handle.
+    pub fn handle_border_radius(mut self, border_radius: impl Into<PxPct>) -> Self {
+        self = Self(self.0.class(Handle, |s| s.border_radius(border_radius)));
+        self
+    }
+
+    /// Sets the border color for the handle.
+    pub fn handle_border_color(mut self, border_color: impl Into<Brush>) -> Self {
+        self = Self(self.0.class(Handle, |s| s.border_color(border_color)));
+        self
+    }
+
+    /// Sets the border thickness for the handle.
+    pub fn handle_border(mut self, border: impl Into<Px>) -> Self {
+        self = Self(self.0.class(Handle, |s| s.set(Border, border)));
+        self
+    }
+
+    /// Sets whether the handle should have rounded corners.
+    pub fn handle_rounded(mut self, rounded: impl Into<bool>) -> Self {
+        self = Self(self.0.class(Handle, |s| s.set(Rounded, rounded)));
+        self
+    }
+
+    /// Sets the thickness of the handle.
+    pub fn handle_thickness(mut self, thickness: impl Into<Px>) -> Self {
+        self = Self(self.0.class(Handle, |s| s.set(Thickness, thickness)));
+        self
+    }
+
+    /// Sets the background color for the track.
+    pub fn track_background(mut self, color: impl Into<Brush>) -> Self {
+        self = Self(self.0.class(Track, |s| s.background(color.into())));
+        self
+    }
+
+    /// Sets the border radius for the track.
+    pub fn track_border_radius(mut self, border_radius: impl Into<PxPct>) -> Self {
+        self = Self(self.0.class(Track, |s| s.border_radius(border_radius)));
+        self
+    }
+
+    /// Sets the border color for the track.
+    pub fn track_border_color(mut self, border_color: impl Into<Brush>) -> Self {
+        self = Self(self.0.class(Track, |s| s.border_color(border_color)));
+        self
+    }
+
+    /// Sets the border thickness for the track.
+    pub fn track_border(mut self, border: impl Into<Px>) -> Self {
+        self = Self(self.0.class(Track, |s| s.set(Border, border)));
+        self
+    }
+
+    /// Sets whether the track should have rounded corners.
+    pub fn track_rounded(mut self, rounded: impl Into<bool>) -> Self {
+        self = Self(self.0.class(Track, |s| s.set(Rounded, rounded)));
+        self
+    }
+
+    /// Sets the thickness of the track.
+    pub fn track_thickness(mut self, thickness: impl Into<Px>) -> Self {
+        self = Self(self.0.class(Track, |s| s.set(Thickness, thickness)));
+        self
+    }
+
+    /// Sets the vertical track inset.
+    pub fn vertical_track_inset(mut self, inset: impl Into<Px>) -> Self {
+        self = Self(self.0.set(VerticalInset, inset));
+        self
+    }
+
+    /// Sets the horizontal track inset.
+    pub fn horizontal_track_inset(mut self, inset: impl Into<Px>) -> Self {
+        self = Self(self.0.set(HorizontalInset, inset));
+        self
+    }
+
+    /// Controls the visibility of the scroll bars.
+    pub fn hide_bars(mut self, hide: impl Into<bool>) -> Self {
+        self = Self(self.0.set(HideBars, hide));
+        self
+    }
+
+    /// Sets whether the pointer wheel events should be propagated.
+    pub fn propagate_pointer_wheel(mut self, propagate: impl Into<bool>) -> Self {
+        self = Self(self.0.set(PropagatePointerWheel, propagate));
+        self
+    }
+
+    /// Sets whether vertical scrolling should be interpreted as horizontal scrolling.
+    pub fn vertical_scroll_as_horizontal(mut self, vert_as_horiz: impl Into<bool>) -> Self {
+        self = Self(self.0.set(VerticalScrollAsHorizontal, vert_as_horiz));
+        self
     }
 }
