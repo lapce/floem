@@ -1173,7 +1173,12 @@ fn find_view(name: &str, views: &Rc<CapturedView>) -> Vec<ViewId> {
     if name.is_empty() {
         return ids;
     }
-    if views.name.contains(name) || views.id_data_str.contains(name) {
+    if views
+        .name
+        .to_lowercase()
+        .contains(name.to_lowercase().as_str())
+        || views.id_data_str.contains(name)
+    {
         ids.push(views.id);
     }
     views
