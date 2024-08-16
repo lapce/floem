@@ -299,39 +299,38 @@ impl<'a, I: Iterator<Item = &'a str>> Iterator for LoneCrChunkSearch<'a, I> {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let chunk = self.get_chunk()?;
+        loop {
+            let chunk = self.get_chunk()?;
 
-        let bytes = &chunk.as_bytes()[self.chunk_pos..];
+            let bytes = &chunk.as_bytes()[self.chunk_pos..];
 
-        let newline = memchr(b'\r', bytes);
-        match newline {
-            Some(x) => {
-                let offset = self.offset + self.chunk_pos + x;
+            let newline = memchr(b'\r', bytes);
+            match newline {
+                Some(x) => {
+                    let offset = self.offset + self.chunk_pos + x;
 
-                // Check if the next character is '\n' (indicating \r\n)
-                self.chunk_pos += x + 1;
-                if self.chunk_pos < chunk.len() && chunk.as_bytes()[self.chunk_pos] == b'\n' {
-                    // Skip \r\n sequences
-                    self.chunk_pos += 1;
-                    self.next()
-                } else if let Some(chunk_b) = self.get_chunk() {
-                    let chunk_b = &chunk_b.as_bytes()[self.chunk_pos..];
-                    if chunk_b.starts_with(b"\n") {
-                        // Skip \r\n sequences across chunks
+                    // Check if the next character is '\n' (indicating \r\n)
+                    self.chunk_pos += x + 1;
+                    if self.chunk_pos < chunk.len() && chunk.as_bytes()[self.chunk_pos] == b'\n' {
+                        // Skip \r\n sequences
                         self.chunk_pos += 1;
-                        self.next()
+                    } else if let Some(chunk_b) = self.get_chunk() {
+                        let chunk_b = &chunk_b.as_bytes()[self.chunk_pos..];
+                        if chunk_b.starts_with(b"\n") {
+                            // Skip \r\n sequences across chunks
+                            self.chunk_pos += 1;
+                        } else {
+                            // Lone \r
+                            return Some(offset);
+                        }
                     } else {
-                        // Lone \r
-                        Some(offset)
+                        // Lone \r at the end
+                        return Some(offset);
                     }
-                } else {
-                    // Lone \r at the end
-                    Some(offset)
                 }
-            }
-            None => {
-                self.advance_chunk();
-                self.next()
+                None => {
+                    self.advance_chunk();
+                }
             }
         }
     }
