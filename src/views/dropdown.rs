@@ -320,6 +320,9 @@ impl<T> CustomStylable<DropDownCustomStyle> for DropDown<T> {
 }
 
 impl DropDownCustomStyle {
+    pub fn new() -> Self {
+        Self::default()
+    }
     /// Sets the `CloseOnAccept` property for the dropdown, which determines whether the dropdown
     /// should automatically close when an item is selected. The default value is `true`.
     ///

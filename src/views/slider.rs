@@ -308,6 +308,7 @@ impl View for Slider {
             &self.base_bar_style.color().unwrap_or(Color::BLACK.into()),
             0.,
         );
+        cx.save();
         cx.clip(&self.base_bar);
         cx.fill(
             &self.accent_bar,
@@ -317,9 +318,9 @@ impl View for Slider {
                 .unwrap_or(Color::TRANSPARENT.into()),
             0.,
         );
+        cx.restore();
 
         if let Some(color) = self.style.foreground() {
-            cx.clear_clip();
             cx.fill(&self.handle, &color, 0.);
         }
     }
@@ -369,6 +370,10 @@ impl CustomStylable<SliderCustomStyle> for Slider {
 }
 
 impl SliderCustomStyle {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
     /// Sets the color of the slider handle.
     ///
     /// # Arguments

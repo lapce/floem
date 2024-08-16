@@ -962,21 +962,13 @@ fn capture_view(
     .style(|s| s.max_width_pct(60.0));
 
     let root = capture.root.clone();
-    let tree = scroll(
-        captured_view(&capture.root, 0, &capture_view, capture).style(|s| s.min_width_full()),
-    )
-    .style(|s| {
-        s.width_full()
-            .min_height(0)
-            .flex_basis(0)
-            .flex_grow(1.0)
-            .flex_col()
-    })
-    .on_event_cont(EventListener::PointerLeave, move |_| {
-        capture_view.highlighted.set(None)
-    })
-    .on_click_stop(move |_| capture_view.selected.set(None))
-    .scroll_to_view(move || capture_view.scroll_to.get());
+    let tree = scroll(captured_view(&capture.root, 0, &capture_view, capture))
+        .scroll_style(|s| s.shrink_to_fit())
+        .on_event_cont(EventListener::PointerLeave, move |_| {
+            capture_view.highlighted.set(None)
+        })
+        .on_click_stop(move |_| capture_view.selected.set(None))
+        .scroll_to_view(move || capture_view.scroll_to.get());
 
     let search_str = create_rw_signal("".to_string());
     let inner_search = search_str;
