@@ -32,7 +32,6 @@ fn tab_button(
     active_tab: ReadSignal<usize>,
 ) -> impl IntoView {
     label(move || this_tab)
-        .style(|s| s.justify_center())
         .keyboard_navigatable()
         .on_click_stop(move |_| {
             set_active_tab.update(|v: &mut usize| {
@@ -44,8 +43,7 @@ fn tab_button(
             });
         })
         .style(move |s| {
-            s.width(50)
-                .items_center()
+            s.width(70)
                 .hover(|s| s.font_weight(Weight::BOLD).cursor(CursorStyle::Pointer))
                 .apply_if(
                     active_tab.get()
