@@ -27,6 +27,7 @@ pub fn draggable_sidebar_view() -> impl IntoView {
             move |item| {
                 label(move || format!("Item {} with long lines", item)).style(move |s| {
                     s.text_ellipsis()
+                        .height(22)
                         .padding(10.0)
                         .padding_top(3.0)
                         .padding_bottom(3.0)
