@@ -19,7 +19,7 @@ use image::DynamicImage;
 use peniko::kurbo::{Affine, Point, Rect, Size, Vec2};
 
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-use crate::reactive::{SignalUpdate, SignalWith};
+use crate::reactive::SignalWith;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::unit::UnitExt;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
