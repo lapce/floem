@@ -48,7 +48,7 @@
 //! "just works" by accessing the value where you want to use it.
 //!
 //! ```
-//! # use floem::reactive::create_rw_signal;
+//! # use floem::reactive::{create_rw_signal, SignalGet};
 //! # use floem::View;
 //! # use floem::views::{label, v_stack, text_input, Decorators};
 //! #
@@ -88,7 +88,7 @@
 //!
 //! ```
 //! #  use floem::peniko::Color;
-//! #  use floem::reactive::create_signal;
+//! #  use floem::reactive::{create_signal, SignalGet};
 //! #  use floem::style::Style;
 //! #  use floem::unit::UnitExt;
 //! #  use floem::View;
