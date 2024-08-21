@@ -6,7 +6,7 @@ use crate::views::{
     button, clip, container, dyn_container, empty, h_stack, label, scroll, stack, static_label,
     text, v_stack, v_stack_from_iter, Decorators,
 };
-use floem_reactive::{create_rw_signal, RwSignal, Scope};
+use floem_reactive::{create_rw_signal, RwSignal, Scope, SignalGet, SignalUpdate};
 use floem_winit::window::WindowId;
 use peniko::Color;
 use std::fmt::Display;

@@ -1,6 +1,6 @@
 use floem::keyboard::Modifiers;
 use floem::peniko::Color;
-use floem::reactive::RwSignal;
+use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 use floem::text::{Attrs, AttrsList, Stretch, Style, Weight};
 use floem::views::button;
 use floem::views::editor::core::buffer::rope_text::RopeText;

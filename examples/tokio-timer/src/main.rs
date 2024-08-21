@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use floem::{
     ext_event::create_signal_from_stream,
-    reactive::create_rw_signal,
+    reactive::{create_rw_signal, SignalGet, SignalUpdate},
     unit::UnitExt,
     views::{button, container, label, slider, stack, text, v_stack, Decorators},
     IntoView,

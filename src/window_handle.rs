@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use floem_reactive::{with_scope, RwSignal, Scope};
+use floem_reactive::{with_scope, RwSignal, Scope, SignalGet, SignalUpdate};
 use floem_renderer::Renderer;
 use floem_winit::{
     dpi::{LogicalPosition, LogicalSize},

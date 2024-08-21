@@ -1,6 +1,9 @@
 use std::{hash::Hash, marker::PhantomData, ops::Range};
 
-use floem_reactive::{as_child_of_current_scope, create_effect, create_signal, Scope, WriteSignal};
+use floem_reactive::{
+    as_child_of_current_scope, create_effect, create_signal, Scope, SignalGet, SignalUpdate,
+    WriteSignal,
+};
 use peniko::kurbo::Rect;
 use smallvec::SmallVec;
 use taffy::{style::Dimension, tree::NodeId};

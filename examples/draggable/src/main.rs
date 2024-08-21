@@ -1,7 +1,7 @@
 use floem::{
     keyboard::{Key, Modifiers, NamedKey},
     peniko::Color,
-    reactive::{create_rw_signal, RwSignal},
+    reactive::{create_rw_signal, RwSignal, SignalGet, SignalUpdate},
     style::CursorStyle,
     views::{dyn_stack, label, Decorators},
     IntoView, View,

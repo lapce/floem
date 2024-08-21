@@ -784,7 +784,7 @@ mod tests {
         cursor::{ColPosition, CursorAffinity},
         mode::Mode,
     };
-    use floem_reactive::Scope;
+    use floem_reactive::{Scope, SignalUpdate};
     use lapce_xi_rope::Rope;
     use peniko::kurbo::{Rect, Size};
 

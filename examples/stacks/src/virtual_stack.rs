@@ -1,5 +1,5 @@
 use floem::{
-    reactive::create_rw_signal,
+    reactive::{create_rw_signal, SignalGet, SignalUpdate},
     views::{scroll, virtual_stack, ButtonClass, Decorators, VirtualDirection, VirtualItemSize},
     IntoView,
 };

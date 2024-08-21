@@ -12,7 +12,7 @@ use crate::{
     keyboard::{Key, NamedKey},
     view::View,
 };
-use floem_reactive::{create_rw_signal, RwSignal};
+use floem_reactive::{create_rw_signal, RwSignal, SignalGet, SignalUpdate, SignalWith};
 use peniko::kurbo::{Rect, Size};
 use std::hash::Hash;
 use std::rc::Rc;

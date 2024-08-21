@@ -2,7 +2,7 @@ use floem::{
     event::{Event, EventListener},
     keyboard::{Key, NamedKey},
     peniko::Color,
-    reactive::{create_rw_signal, create_signal},
+    reactive::{create_rw_signal, create_signal, SignalGet, SignalUpdate},
     style_class,
     unit::UnitExt,
     views::{label, stack, Decorators},

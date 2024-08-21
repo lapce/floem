@@ -4,6 +4,7 @@ use crate::{
     effect::create_effect,
     scope::Scope,
     signal::{create_signal, ReadSignal},
+    SignalGet, SignalUpdate, SignalWith,
 };
 
 /// Memo computes the value from the closure on creation, and stores the value.
@@ -11,7 +12,7 @@ use crate::{
 /// from last run, i.e., it will trigger a effect run when you Get() it whenever the
 /// computed value changes to a different value.
 pub struct Memo<T> {
-    getter: ReadSignal<Option<T>>,
+    getter: ReadSignal<T>,
     ty: PhantomData<T>,
 }
 
@@ -23,50 +24,15 @@ impl<T> Clone for Memo<T> {
     }
 }
 
-impl<T: Clone> Memo<T> {
-    /// Clones and returns the current value stored in the Memo, and subscribes
-    /// to the current running effect to this Memo.
-    pub fn get(&self) -> T
-    where
-        T: 'static,
-    {
-        self.getter.get().unwrap()
-    }
-
-    /// Clones and returns the current value stored in the Memo, but it doesn't subscribe
-    /// to the current running effect.
-    pub fn get_untracked(&self) -> T
-    where
-        T: 'static,
-    {
-        self.getter.get_untracked().unwrap()
+impl<T: Clone> SignalGet<T> for Memo<T> {
+    fn id(&self) -> crate::id::Id {
+        self.getter.id
     }
 }
 
-impl<T> Memo<T> {
-    /// Applies a closure to the current value stored in the Memo, and subscribes
-    /// to the current running effect to this Memo.
-    pub fn with<O>(&self, f: impl FnOnce(&T) -> O) -> O
-    where
-        T: 'static,
-    {
-        self.getter.with(|value| f(value.as_ref().unwrap()))
-    }
-
-    /// Applies a closure to the current value stored in the Memo, but it doesn't subscribe
-    /// to the current running effect.
-    pub fn with_untracked<O>(&self, f: impl FnOnce(&T) -> O) -> O
-    where
-        T: 'static,
-    {
-        self.getter
-            .with_untracked(|value| f(value.as_ref().unwrap()))
-    }
-
-    /// Only subscribes to the current running effect to this Memo.
-    pub fn track(&self) {
-        let signal = self.getter.id.signal().unwrap();
-        signal.subscribe();
+impl<T> SignalWith<T> for Memo<T> {
+    fn id(&self) -> crate::id::Id {
+        self.getter.id
     }
 }
 
@@ -77,16 +43,19 @@ where
     T: PartialEq + 'static,
 {
     let cx = Scope::current();
-    let (getter, setter) = create_signal(None::<T>);
+    let inital = f(None);
+    let (getter, setter) = create_signal(inital);
+    let reader = getter.read_untracked();
 
     create_effect(move |_| {
         cx.track();
-        let (is_different, new_value) = getter.with_untracked(|value| {
-            let new_value = f(value.as_ref());
-            (Some(&new_value) != value.as_ref(), new_value)
-        });
+        let (is_different, new_value) = {
+            let last_value = reader.borrow();
+            let new_value = f(Some(&last_value));
+            (new_value != *last_value, new_value)
+        };
         if is_different {
-            setter.set(Some(new_value));
+            setter.set(new_value);
         }
     });
 

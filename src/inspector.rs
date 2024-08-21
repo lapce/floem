@@ -15,7 +15,9 @@ use crate::views::{
 use crate::window::WindowConfig;
 use crate::{new_window, style};
 use floem_editor_core::register::Clipboard;
-use floem_reactive::{create_effect, create_rw_signal, create_signal, RwSignal, Scope};
+use floem_reactive::{
+    create_effect, create_rw_signal, create_signal, RwSignal, Scope, SignalGet, SignalUpdate,
+};
 use floem_winit::keyboard::{self, NamedKey};
 use floem_winit::window::WindowId;
 use image::DynamicImage;

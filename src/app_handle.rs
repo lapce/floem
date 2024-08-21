@@ -1,5 +1,6 @@
 use std::{collections::HashMap, mem, rc::Rc, time::Instant};
 
+use floem_reactive::SignalUpdate;
 use floem_winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::WindowEvent,

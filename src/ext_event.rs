@@ -1,6 +1,9 @@
 use std::{cell::Cell, collections::VecDeque, sync::Arc};
 
-use floem_reactive::{create_effect, untrack, with_scope, ReadSignal, Scope, Trigger, WriteSignal};
+use floem_reactive::{
+    create_effect, untrack, with_scope, ReadSignal, Scope, SignalGet, SignalUpdate, Trigger,
+    WriteSignal,
+};
 use parking_lot::Mutex;
 
 use crate::{

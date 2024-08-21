@@ -8,6 +8,7 @@ use floem_editor_core::{
     movement::Movement,
     register::Register,
 };
+use floem_reactive::{SignalGet, SignalUpdate, SignalWith};
 
 use super::{
     command::{Command, CommandExecuted},

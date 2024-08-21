@@ -16,7 +16,7 @@ use floem::{
     event::{Event, EventListener, EventPropagation},
     keyboard::{Key, NamedKey},
     peniko::Color,
-    reactive::create_signal,
+    reactive::{create_signal, SignalGet, SignalUpdate},
     style::{Background, CursorStyle, Transition},
     unit::UnitExt,
     views::{
