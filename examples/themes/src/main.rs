@@ -2,11 +2,11 @@ use floem::{
     event::{Event, EventListener},
     keyboard::{Key, NamedKey},
     peniko::Color,
-    reactive::create_signal,
+    reactive::{create_signal, SignalGet, SignalUpdate},
     style::{Background, BorderColor, Outline, OutlineColor, Style, TextColor, Transition},
     style_class,
     views::{label, stack, text, Decorators},
-    {IntoView, View},
+    IntoView, View,
 };
 
 style_class!(pub Button);

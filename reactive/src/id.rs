@@ -4,7 +4,7 @@ use crate::{effect::observer_clean_up, runtime::RUNTIME, signal::Signal};
 
 /// An internal id which can reference a Signal/Effect/Scope.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Hash)]
-pub(crate) struct Id(u64);
+pub struct Id(u64);
 
 impl Id {
     /// Create a new Id that's next in order

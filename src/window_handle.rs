@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use floem_reactive::{with_scope, RwSignal, Scope};
+use floem_reactive::{with_scope, RwSignal, Scope, SignalGet, SignalUpdate};
 use floem_renderer::Renderer;
 use floem_winit::{
     dpi::{LogicalPosition, LogicalSize},
@@ -18,6 +18,8 @@ use floem_winit::{
 use image::DynamicImage;
 use peniko::kurbo::{Affine, Point, Rect, Size, Vec2};
 
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+use crate::reactive::SignalWith;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::unit::UnitExt;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]

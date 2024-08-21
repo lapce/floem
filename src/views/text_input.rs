@@ -8,7 +8,7 @@ use crate::style::{FontProps, PaddingLeft, SelectionStyle};
 use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
 use crate::{prop_extractor, style_class, Clipboard};
-use floem_reactive::create_rw_signal;
+use floem_reactive::{create_rw_signal, SignalGet, SignalUpdate, SignalWith};
 use taffy::prelude::{Layout, NodeId};
 
 use floem_renderer::{text::Cursor, Renderer};

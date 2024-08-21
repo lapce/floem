@@ -8,6 +8,7 @@ use floem_editor_core::{
     command::{EditCommand, MoveCommand, MultiSelectionCommand, ScrollCommand},
     mode::Mode,
 };
+use floem_reactive::{SignalGet, SignalWith};
 
 use super::{
     command::{Command, CommandExecuted},

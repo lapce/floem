@@ -6,7 +6,7 @@ use crate::{
         ValueContainer,
     },
 };
-use floem_reactive::ReadSignal;
+use floem_reactive::{ReadSignal, SignalGet, SignalUpdate};
 use std::fmt::Display;
 
 style_class!(pub CheckboxClass);

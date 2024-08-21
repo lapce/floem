@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use floem::{
-    reactive::create_signal,
+    reactive::{create_signal, SignalGet, SignalUpdate},
     views::{labeled_radio_button, radio_button, v_stack, Decorators},
     IntoView,
 };

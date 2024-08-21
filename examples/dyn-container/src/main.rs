@@ -1,5 +1,5 @@
 use floem::{
-    reactive::{create_rw_signal, RwSignal},
+    reactive::{create_rw_signal, RwSignal, SignalGet, SignalUpdate},
     views::{button, dyn_container, h_stack, label, v_stack, Decorators},
     IntoView,
 };

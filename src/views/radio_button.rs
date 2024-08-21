@@ -6,7 +6,7 @@ use crate::{
         Decorators, ValueContainer,
     },
 };
-use floem_reactive::ReadSignal;
+use floem_reactive::{ReadSignal, SignalGet, SignalUpdate};
 
 style_class!(pub RadioButtonClass);
 style_class!(pub RadioButtonDotClass);

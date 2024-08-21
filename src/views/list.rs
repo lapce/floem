@@ -11,7 +11,7 @@ use crate::{
     keyboard::{Key, NamedKey},
     view::View,
 };
-use floem_reactive::{create_rw_signal, RwSignal};
+use floem_reactive::{create_rw_signal, RwSignal, SignalGet, SignalUpdate, SignalWith};
 
 style_class!(pub ListClass);
 style_class!(pub ListItemClass);

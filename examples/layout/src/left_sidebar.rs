@@ -1,7 +1,7 @@
 use floem::{
     event::EventListener,
     peniko::Color,
-    reactive::create_rw_signal,
+    reactive::{create_rw_signal, SignalGet},
     style::Position,
     views::{
         container, h_stack, label, scroll, v_stack, virtual_stack, Decorators, VirtualDirection,

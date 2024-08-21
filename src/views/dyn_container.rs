@@ -20,7 +20,7 @@ pub struct DynamicContainer<T: 'static> {
 /// ## Example
 /// ```
 /// use floem::{
-///     reactive::create_rw_signal,
+///     reactive::{create_rw_signal, SignalUpdate, SignalGet},
 ///     View, IntoView,
 ///     views::{dyn_container, label, v_stack, Decorators, toggle_button},
 /// };

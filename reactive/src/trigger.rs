@@ -1,4 +1,7 @@
-use crate::signal::{create_rw_signal, RwSignal};
+use crate::{
+    signal::{create_rw_signal, RwSignal},
+    SignalUpdate, SignalWith,
+};
 
 #[derive(Debug)]
 pub struct Trigger {

@@ -43,7 +43,7 @@
 //! ```
 //!
 
-use floem_reactive::{ReadSignal, RwSignal};
+use floem_reactive::{ReadSignal, RwSignal, SignalGet};
 use floem_renderer::Renderer;
 use peniko::kurbo::{Circle, Insets, Line, Point, Rect, RoundedRect, Size};
 use std::any::Any;

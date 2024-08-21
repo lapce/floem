@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use floem_editor_core::{buffer::rope_text::RopeTextVal, indent::IndentStyle};
-use floem_reactive::{create_updater, with_scope, RwSignal, Scope};
+use floem_reactive::{create_updater, with_scope, RwSignal, Scope, SignalUpdate, SignalWith};
 use peniko::Color;
 
 use lapce_xi_rope::Rope;

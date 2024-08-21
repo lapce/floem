@@ -1,6 +1,6 @@
 use floem::{
     peniko::Color,
-    reactive::create_signal,
+    reactive::{create_signal, SignalGet, SignalUpdate},
     responsive::{range, ScreenSize},
     style::TextOverflow,
     unit::UnitExt,

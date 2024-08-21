@@ -1,6 +1,6 @@
 use floem::{
     peniko::Color,
-    reactive::create_signal,
+    reactive::{create_signal, SignalGet, SignalUpdate},
     style::JustifyContent,
     text::Weight,
     views::{
