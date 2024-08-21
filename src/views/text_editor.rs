@@ -27,7 +27,7 @@ use super::editor::{
     keypress::press::KeyPress,
     text::{RenderWhitespace, WrapMethod},
     view::EditorViewClass,
-    CurrentLineColor, CursorSurroundingLines, IndentGuideColor, IndentStyleProp, Modal,
+    CurrentLineColor, CursorSurroundingLines, FillHeight, IndentGuideColor, IndentStyleProp, Modal,
     ModalRelativeLine, PhantomColor, PlaceholderColor, PreeditUnderlineColor, RenderWhitespaceProp,
     ScrollBeyondLastLine, SelectionColor, ShowIndentGuide, SmartTab, VisibleWhitespaceColor,
     WrapProp,
@@ -239,6 +239,15 @@ impl EditorCustomStyle {
         self.0 = self.0.class(EditorViewClass, |s| {
             s.set(ScrollBeyondLastLine, scroll_beyond)
         });
+        self
+    }
+
+    /// Sets whether to fill to the parent container's height.
+    /// E.g. disabling it will make the editor shrink to the text content's height
+    pub fn fill_height(mut self, fill_height: bool) -> Self {
+        self.0 = self
+            .0
+            .class(EditorViewClass, |s| s.set(FillHeight, fill_height));
         self
     }
 

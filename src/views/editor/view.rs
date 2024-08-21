@@ -843,7 +843,11 @@ impl View for EditorView {
 
             let width = editor.max_line_width().max(parent_size.width());
             let last_line_height = line_height * (editor.last_vline().get() + 1) as f64;
-            let height = last_line_height.max(parent_size.height());
+            let height = if editor.es.with_untracked(|es| es.fill_height()) {
+                last_line_height.max(parent_size.height())
+            } else {
+                last_line_height
+            };
 
             let margin_bottom = if editor.es.with_untracked(|es| es.scroll_beyond_last_line()) {
                 parent_size.height().min(last_line_height) - line_height

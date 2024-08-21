@@ -74,6 +74,7 @@ impl StylePropValue for WrapMethod {
 }
 prop!(pub CursorSurroundingLines: usize {} = 1);
 prop!(pub ScrollBeyondLastLine: bool {} = false);
+prop!(pub FillHeight: bool {} = true);
 prop!(pub ShowIndentGuide: bool {} = false);
 prop!(pub Modal: bool {} = false);
 prop!(pub ModalRelativeLine: bool {} = false);
@@ -126,6 +127,7 @@ prop_extractor! {
         pub visible_whitespace: VisibleWhitespaceColor,
         pub indent_guide: IndentGuideColor,
         pub scroll_beyond_last_line: ScrollBeyondLastLine,
+        pub fill_height: FillHeight
     }
 }
 impl EditorStyle {
