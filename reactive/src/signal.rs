@@ -194,11 +194,12 @@ impl Signal {
         self.with_untracked(f)
     }
 
-    pub(crate) fn update_value<U, T: 'static>(&self, f: impl FnOnce(&mut T) -> U) -> Option<U> {
+    pub(crate) fn update_value<U, T: 'static>(&self, f: impl FnOnce(&mut T) -> U) -> U {
         let result = self
             .value
             .downcast_ref::<RefCell<T>>()
-            .map(|v| f(&mut v.borrow_mut()));
+            .expect("to downcast signal type");
+        let result = f(&mut result.borrow_mut());
         self.run_effects();
         result
     }

@@ -35,15 +35,6 @@ pub trait SignalUpdate<T> {
     where
         T: 'static,
     {
-        let signal = self.id().signal().unwrap();
-        signal.update_value(|v| *v = new_value);
-    }
-
-    /// When the signal exists, sets the new_value to the Signal and triggers effect run
-    fn try_set(&self, new_value: T)
-    where
-        T: 'static,
-    {
         if let Some(signal) = self.id().signal() {
             signal.update_value(|v| *v = new_value);
         }
@@ -65,8 +56,7 @@ pub trait SignalUpdate<T> {
     where
         T: 'static,
     {
-        let signal = self.id().signal().unwrap();
-        signal.update_value(f)
+        self.id().signal().map(|signal| signal.update_value(f))
     }
 
     /// Convert the Signal to `WriteSignalValue` where it holds a RefCell wrapped
