@@ -58,7 +58,11 @@ pub trait SignalUpdate<T> {
     {
         self.id().signal().map(|signal| signal.update_value(f))
     }
+}
 
+pub trait SignalWrite<T> {
+    /// get the Signal Id
+    fn id(&self) -> Id;
     /// Convert the Signal to `WriteSignalValue` where it holds a RefCell wrapped
     /// original data of the signal, so that you can `borrow_mut()` to update the data.
     ///

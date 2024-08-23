@@ -1,5 +1,5 @@
 use floem::{
-    reactive::{create_signal, SignalGet, SignalUpdate},
+    reactive::RwSignal,
     views::{checkbox, labeled_checkbox, Decorators},
     IntoView,
 };
@@ -8,34 +8,24 @@ use crate::form::{form, form_item};
 
 pub fn checkbox_view() -> impl IntoView {
     let width = 160.0;
-    let (is_checked, set_is_checked) = create_signal(true);
+    let is_checked = RwSignal::new(true);
     form({
         (
             form_item("Checkbox:".to_string(), width, move || {
-                checkbox(move || is_checked.get())
-                    .on_update(move |checked| {
-                        set_is_checked.set(checked);
-                    })
-                    .style(|s| s.margin(5.0))
+                checkbox(is_checked).style(|s| s.margin(5.0))
             }),
             form_item("Disabled Checkbox:".to_string(), width, move || {
-                checkbox(move || is_checked.get())
+                checkbox(is_checked)
                     .style(|s| s.margin(5.0))
                     .disabled(|| true)
             }),
             form_item("Labelled Checkbox:".to_string(), width, move || {
-                labeled_checkbox(move || is_checked.get(), || "Check me!").on_update(
-                    move |checked| {
-                        set_is_checked.set(checked);
-                    },
-                )
+                labeled_checkbox(is_checked, || "Check me!")
             }),
             form_item(
                 "Disabled Labelled Checkbox:".to_string(),
                 width,
-                move || {
-                    labeled_checkbox(move || is_checked.get(), || "Check me!").disabled(|| true)
-                },
+                move || labeled_checkbox(is_checked, || "Check me!").disabled(|| true),
             ),
         )
     })

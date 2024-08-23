@@ -1,6 +1,6 @@
 use floem::{
     peniko::Color,
-    reactive::{create_signal, SignalGet, SignalUpdate},
+    reactive::{create_signal, RwSignal, SignalGet, SignalUpdate},
     style::JustifyContent,
     text::Weight,
     views::{
@@ -57,15 +57,11 @@ fn enhanced_list() -> impl IntoView {
             move || long_list.get().enumerate(),
             move |(_, item)| *item,
             move |(index, item)| {
-                let (is_checked, set_is_checked) = create_signal(true);
+                let checkbox_state = RwSignal::new(true);
                 container({
                     stack({
                         (
-                            checkbox(move || is_checked.get())
-                                .style(|s| s.margin_left(6))
-                                .on_update(move |checkd| {
-                                    set_is_checked.set(checkd);
-                                }),
+                            checkbox(checkbox_state).style(|s| s.margin_left(6)),
                             label(move || item.to_string()).style(|s| {
                                 s.margin_left(6).height(32.0).font_size(22.0).items_center()
                             }),

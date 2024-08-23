@@ -118,6 +118,24 @@ pub trait SignalWith<T> {
             f(None)
         }
     }
+}
+
+pub trait SignalRead<T> {
+    /// get the Signal Id
+    fn id(&self) -> Id;
+
+    /// Only subscribes to the current running effect to this Signal.
+    fn track(&self) {
+        self.id().signal().unwrap().subscribe();
+    }
+
+    /// If the signal isn't disposed,
+    // subscribes to the current running effect to this Signal.
+    fn try_track(&self) {
+        if let Some(signal) = self.id().signal() {
+            signal.subscribe();
+        }
+    }
 
     /// Reads the data stored in the Signal to a RefCell, so that you can `borrow()`
     /// and access the data.
