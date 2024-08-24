@@ -69,10 +69,10 @@ use crate::{
 /// use floem::widgets::*;
 /// use floem::reactive::{RwSignal, SignalGet};
 ///
-/// let check = RwSignal::new(true);
+/// let check = true;
 ///
-/// container(if check.get() == true {
-///     checkbox(check)
+/// container(if check == true {
+///     checkbox(|| true)
 /// } else {
 ///     label(|| "no check".to_string())
 /// });
@@ -86,10 +86,10 @@ use crate::{
 /// use floem::{View, IntoView};
 /// use floem::reactive::{RwSignal, SignalGet};
 ///
-/// let check = RwSignal::new(true);
+/// let check = true;
 ///
-/// container(if check.get() == true {
-///     checkbox(check).into_any()
+/// container(if check == true {
+///     checkbox(|| true).into_any()
 /// } else {
 ///     label(|| "no check".to_string()).into_any()
 /// });

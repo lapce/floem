@@ -1,6 +1,6 @@
 use floem::{
     reactive::RwSignal,
-    views::{checkbox, labeled_checkbox, Decorators},
+    views::{Checkbox, Decorators},
     IntoView,
 };
 
@@ -12,20 +12,20 @@ pub fn checkbox_view() -> impl IntoView {
     form({
         (
             form_item("Checkbox:".to_string(), width, move || {
-                checkbox(is_checked).style(|s| s.margin(5.0))
+                Checkbox::new_get_set(is_checked).style(|s| s.margin(5.0))
             }),
             form_item("Disabled Checkbox:".to_string(), width, move || {
-                checkbox(is_checked)
+                Checkbox::new_get(is_checked)
                     .style(|s| s.margin(5.0))
                     .disabled(|| true)
             }),
             form_item("Labelled Checkbox:".to_string(), width, move || {
-                labeled_checkbox(is_checked, || "Check me!")
+                Checkbox::new_labeled_get_set(is_checked, || "Check me!")
             }),
             form_item(
                 "Disabled Labelled Checkbox:".to_string(),
                 width,
-                move || labeled_checkbox(is_checked, || "Check me!").disabled(|| true),
+                move || Checkbox::new_labeled_get(is_checked, || "Check me!").disabled(|| true),
             ),
         )
     })

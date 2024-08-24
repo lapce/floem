@@ -5,8 +5,7 @@ use floem::{
     reactive::{create_rw_signal, RwSignal, SignalGet, SignalUpdate},
     unit::UnitExt,
     views::{
-        button, dyn_container, empty, labeled_radio_button, text, text_input, v_stack, Decorators,
-        StackExt,
+        button, dyn_container, empty, text, text_input, v_stack, Decorators, RadioButton, StackExt,
     },
     IntoView,
 };
@@ -67,7 +66,7 @@ pub fn app_view() -> impl IntoView {
     let did_booking = create_rw_signal(false);
 
     let mode_picker = FlightMode::iter()
-        .map(move |fm| labeled_radio_button(fm, flight_mode, move || fm))
+        .map(move |fm| RadioButton::new_labeled_get_set(fm, flight_mode, move || fm))
         .h_stack();
 
     let start_date_input = text_input(start_text)

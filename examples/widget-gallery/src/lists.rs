@@ -4,8 +4,8 @@ use floem::{
     style::JustifyContent,
     text::Weight,
     views::{
-        button, checkbox, container, h_stack, h_stack_from_iter, label, list, scroll, stack,
-        v_stack, v_stack_from_iter, virtual_list, Decorators, VirtualDirection, VirtualItemSize,
+        button, container, h_stack, h_stack_from_iter, label, list, scroll, stack, v_stack,
+        v_stack_from_iter, virtual_list, Checkbox, Decorators, VirtualDirection, VirtualItemSize,
         VirtualVector,
     },
     IntoView,
@@ -61,7 +61,7 @@ fn enhanced_list() -> impl IntoView {
                 container({
                     stack({
                         (
-                            checkbox(checkbox_state).style(|s| s.margin_left(6)),
+                            Checkbox::new_get_set(checkbox_state).style(|s| s.margin_left(6)),
                             label(move || item.to_string()).style(|s| {
                                 s.margin_left(6).height(32.0).font_size(22.0).items_center()
                             }),

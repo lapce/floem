@@ -17,6 +17,10 @@ use crate::{
     views::Decorators,
 };
 
+pub fn slider(percent: impl Fn() -> f32 + 'static) -> Slider {
+    Slider::new(percent)
+}
+
 enum SliderUpdate {
     Percent(f32),
 }

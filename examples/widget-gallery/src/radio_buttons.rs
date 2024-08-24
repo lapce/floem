@@ -3,7 +3,7 @@ use std::fmt::Display;
 use floem::{
     reactive::RwSignal,
     style_class,
-    views::{labeled_radio_button, radio_button, Decorators, StackExt as _},
+    views::{Decorators, RadioButton, StackExt as _},
     IntoView,
 };
 use strum::IntoEnumIterator;
@@ -21,7 +21,7 @@ impl Display for OperatingSystem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
             OperatingSystem::Windows => write!(f, "Windows"),
-            OperatingSystem::MacOS => write!(f, "MacOS"),
+            OperatingSystem::MacOS => write!(f, "macOS"),
             OperatingSystem::Linux => write!(f, "Linux"),
         }
     }
@@ -36,19 +36,21 @@ pub fn radio_buttons_view() -> impl IntoView {
         (
             form_item("Radio Buttons:".to_string(), width, move || {
                 OperatingSystem::iter()
-                    .map(move |os| radio_button(os, operating_system))
+                    .map(move |os| RadioButton::new_get_set(os, operating_system))
                     .v_stack()
                     .class(RadioButtonGroupClass)
             }),
             form_item("Disabled Radio Buttons:".to_string(), width, move || {
                 OperatingSystem::iter()
-                    .map(move |os| radio_button(os, operating_system).disabled(|| true))
+                    .map(move |os| RadioButton::new_get(os, operating_system).disabled(|| true))
                     .v_stack()
                     .class(RadioButtonGroupClass)
             }),
             form_item("Labelled Radio Buttons:".to_string(), width, move || {
                 OperatingSystem::iter()
-                    .map(move |os| labeled_radio_button(os, operating_system, move || os))
+                    .map(move |os| {
+                        RadioButton::new_labeled_get_set(os, operating_system, move || os)
+                    })
                     .v_stack()
                     .class(RadioButtonGroupClass)
             }),
@@ -58,7 +60,8 @@ pub fn radio_buttons_view() -> impl IntoView {
                 move || {
                     OperatingSystem::iter()
                         .map(move |os| {
-                            labeled_radio_button(os, operating_system, move || os).disabled(|| true)
+                            RadioButton::new_labeled_get(os, operating_system, move || os)
+                                .disabled(|| true)
                         })
                         .v_stack()
                         .class(RadioButtonGroupClass)
