@@ -3,7 +3,7 @@ use floem::text::FONT_SYSTEM;
 use floem::window::WindowConfig;
 use floem::Application;
 use floem::{
-    reactive::create_signal,
+    reactive::{create_signal, SignalGet, SignalUpdate},
     views::{label, ButtonClass, Decorators},
     IntoView,
 };
