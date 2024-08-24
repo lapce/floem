@@ -33,6 +33,7 @@ impl Checkbox {
     /// The state can be dynamically updated by the closure, and the checkbox will reflect these changes.
     ///
     /// You can add an `on_update` handler to the returned `ValueContainer` to handle changes.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new(checked: impl Fn() -> bool + 'static) -> ValueContainer<bool> {
         let (inbound_signal, outbound_signal) = create_value_container_signals(checked);
 

@@ -37,6 +37,7 @@ impl RadioButton {
     ///
     /// This method is useful when you want a radio button whose state is determined by a closure.
     /// The state can be dynamically updated by the closure, and the radio button will reflect these changes.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new<T>(represented_value: T, actual_value: impl Fn() -> T + 'static) -> ValueContainer<T>
     where
         T: Eq + PartialEq + Clone + 'static,
