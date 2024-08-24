@@ -2,7 +2,8 @@ use std::fmt::Display;
 
 use floem::{
     reactive::RwSignal,
-    views::{labeled_radio_button, radio_button, stack_from_iter, Decorators},
+    style_class,
+    views::{labeled_radio_button, radio_button, Decorators, StackExt as _},
     IntoView,
 };
 use strum::IntoEnumIterator;
@@ -26,41 +27,44 @@ impl Display for OperatingSystem {
     }
 }
 
+style_class!(RadioButtonGroupClass);
+
 pub fn radio_buttons_view() -> impl IntoView {
     let width = 160.0;
     let operating_system = RwSignal::new(OperatingSystem::Windows);
     form({
         (
             form_item("Radio Buttons:".to_string(), width, move || {
-                stack_from_iter(
-                    OperatingSystem::iter().map(|os| radio_button(os, operating_system)),
-                )
-                .style(|s| s.flex_col().gap(10.).margin_left(5.))
+                OperatingSystem::iter()
+                    .map(move |os| radio_button(os, operating_system))
+                    .v_stack()
+                    .class(RadioButtonGroupClass)
             }),
             form_item("Disabled Radio Buttons:".to_string(), width, move || {
-                stack_from_iter(
-                    OperatingSystem::iter()
-                        .map(|os| radio_button(os, operating_system).disabled(|| true)),
-                )
-                .style(|s| s.flex_col().gap(10.).margin_left(5.))
+                OperatingSystem::iter()
+                    .map(move |os| radio_button(os, operating_system).disabled(|| true))
+                    .v_stack()
+                    .class(RadioButtonGroupClass)
             }),
             form_item("Labelled Radio Buttons:".to_string(), width, move || {
-                stack_from_iter(
-                    OperatingSystem::iter()
-                        .map(|os| labeled_radio_button(os, operating_system, move || os)),
-                )
-                .style(|s| s.flex_col().gap(10.).margin_left(5.))
+                OperatingSystem::iter()
+                    .map(move |os| labeled_radio_button(os, operating_system, move || os))
+                    .v_stack()
+                    .class(RadioButtonGroupClass)
             }),
             form_item(
                 "Disabled Labelled Radio Buttons:".to_string(),
                 width,
                 move || {
-                    stack_from_iter(OperatingSystem::iter().map(|os| {
-                        labeled_radio_button(os, operating_system, move || os).disabled(|| true)
-                    }))
-                    .style(|s| s.flex_col().gap(10.).margin_left(5.))
+                    OperatingSystem::iter()
+                        .map(move |os| {
+                            labeled_radio_button(os, operating_system, move || os).disabled(|| true)
+                        })
+                        .v_stack()
+                        .class(RadioButtonGroupClass)
                 },
             ),
         )
     })
+    .style(|s| s.class(RadioButtonGroupClass, |s| s.gap(10.).margin_left(5.)))
 }

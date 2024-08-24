@@ -134,3 +134,25 @@ impl Stack {
         self
     }
 }
+
+pub trait StackExt {
+    fn stack(self, direction: FlexDirection) -> Stack;
+    fn v_stack(self) -> Stack
+    where
+        Self: Sized,
+    {
+        StackExt::stack(self, FlexDirection::Column)
+    }
+    fn h_stack(self) -> Stack
+    where
+        Self: Sized,
+    {
+        StackExt::stack(self, FlexDirection::Row)
+    }
+}
+
+impl<V: IntoView + 'static, T: IntoIterator<Item = V> + 'static> StackExt for T {
+    fn stack(self, direction: FlexDirection) -> Stack {
+        from_iter(self, Some(direction))
+    }
+}
