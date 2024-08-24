@@ -249,7 +249,7 @@ impl<T> Dropdown<T> {
         main_view: MF,
         iterator: I,
         list_item_fn: LF,
-    ) -> impl IntoView
+    ) -> Dropdown<T>
     where
         MF: Fn(T) -> Box<dyn View> + 'static,
         I: IntoIterator<Item = T> + Clone + 'static,
@@ -265,7 +265,7 @@ impl<T> Dropdown<T> {
         main_view: MF,
         iterator: I,
         list_item_fn: LF,
-    ) -> impl IntoView
+    ) -> Dropdown<T>
     where
         MF: Fn(T) -> Box<dyn View> + 'static,
         I: IntoIterator<Item = T> + Clone + 'static,
