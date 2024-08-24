@@ -1,4 +1,3 @@
-use floem::kurbo::Size;
 use floem::text::FONT_SYSTEM;
 use floem::window::WindowConfig;
 use floem::Application;
