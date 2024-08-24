@@ -6,6 +6,7 @@ use floem_winit::keyboard::{Key, NamedKey};
 use peniko::kurbo::{Circle, Point, RoundedRect};
 use peniko::{Brush, Color};
 
+use crate::IntoView;
 use crate::{
     event::EventPropagation,
     id::ViewId,
@@ -325,17 +326,17 @@ impl Slider {
         .keyboard_navigatable()
     }
 
-    pub fn new_get(percent: impl SignalGet<f32> + 'static) -> Self {
+    pub fn new_get(percent: impl SignalGet<f32> + 'static) -> impl IntoView {
         Self::new(move || percent.get())
     }
 
-    pub fn new_update(percent: impl SignalUpdate<f32> + 'static) -> Self {
+    pub fn new_update(percent: impl SignalUpdate<f32> + 'static) -> impl IntoView {
         Self::new(move || 0.).on_change_pct(move |pct| percent.set(pct))
     }
 
     pub fn new_get_update(
         percent: impl SignalGet<f32> + SignalUpdate<f32> + Copy + 'static,
-    ) -> Self {
+    ) -> impl IntoView {
         Self::new(move || percent.get()).on_change_pct(move |pct| percent.set(pct))
     }
 

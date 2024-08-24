@@ -67,11 +67,12 @@ use crate::{
 ///```compile_fail
 /// use floem::views::*;
 /// use floem::widgets::*;
+/// use floem::reactive::{RwSignal, SignalGet};
 ///
-/// let check = true;
+/// let check = RwSignal::new(true);
 ///
-/// container(if check == true {
-///     checkbox(|| true)
+/// container(if check.get() == true {
+///     checkbox(check)
 /// } else {
 ///     label(|| "no check".to_string())
 /// });
@@ -83,11 +84,12 @@ use crate::{
 /// ```
 /// use floem::views::*;
 /// use floem::{View, IntoView};
+/// use floem::reactive::{RwSignal, SignalGet};
 ///
-/// let check = true;
+/// let check = RwSignal::new(true);
 ///
-/// container(if check == true {
-///     checkbox(|| true).into_any()
+/// container(if check.get() == true {
+///     checkbox(check).into_any()
 /// } else {
 ///     label(|| "no check".to_string()).into_any()
 /// });
