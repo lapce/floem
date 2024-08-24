@@ -1,14 +1,15 @@
 use std::fmt::Display;
 
 use floem::{
-    reactive::{create_signal, SignalGet, SignalUpdate},
-    views::{labeled_radio_button, radio_button, v_stack, Decorators},
+    reactive::RwSignal,
+    views::{labeled_radio_button, radio_button, stack_from_iter, Decorators},
     IntoView,
 };
+use strum::IntoEnumIterator;
 
 use crate::form::{form, form_item};
 
-#[derive(PartialEq, Eq, Clone)]
+#[derive(PartialEq, Eq, Clone, Copy, strum::EnumIter)]
 enum OperatingSystem {
     Windows,
     MacOS,
@@ -27,109 +28,37 @@ impl Display for OperatingSystem {
 
 pub fn radio_buttons_view() -> impl IntoView {
     let width = 160.0;
-    let (operating_system, set_operating_system) = create_signal(OperatingSystem::Windows);
+    let operating_system = RwSignal::new(OperatingSystem::Windows);
     form({
         (
             form_item("Radio Buttons:".to_string(), width, move || {
-                v_stack((
-                    radio_button(OperatingSystem::Windows, move || operating_system.get())
-                        .on_update(move |value| {
-                            set_operating_system.set(value);
-                        }),
-                    radio_button(OperatingSystem::MacOS, move || operating_system.get()).on_update(
-                        move |value| {
-                            set_operating_system.set(value);
-                        },
-                    ),
-                    radio_button(OperatingSystem::Linux, move || operating_system.get()).on_update(
-                        move |value| {
-                            set_operating_system.set(value);
-                        },
-                    ),
-                ))
-                .style(|s| s.column_gap(10.0).margin_left(5.0))
+                stack_from_iter(
+                    OperatingSystem::iter().map(|os| radio_button(os, operating_system)),
+                )
+                .style(|s| s.flex_col().gap(10.).margin_left(5.))
             }),
             form_item("Disabled Radio Buttons:".to_string(), width, move || {
-                v_stack((
-                    radio_button(OperatingSystem::Windows, move || operating_system.get())
-                        .on_update(move |value| {
-                            set_operating_system.set(value);
-                        })
-                        .disabled(|| true),
-                    radio_button(OperatingSystem::MacOS, move || operating_system.get())
-                        .on_update(move |value| {
-                            set_operating_system.set(value);
-                        })
-                        .disabled(|| true),
-                    radio_button(OperatingSystem::Linux, move || operating_system.get())
-                        .on_update(move |value| {
-                            set_operating_system.set(value);
-                        })
-                        .disabled(|| true),
-                ))
-                .style(|s| s.column_gap(10.0).margin_left(5.0))
+                stack_from_iter(
+                    OperatingSystem::iter()
+                        .map(|os| radio_button(os, operating_system).disabled(|| true)),
+                )
+                .style(|s| s.flex_col().gap(10.).margin_left(5.))
             }),
             form_item("Labelled Radio Buttons:".to_string(), width, move || {
-                v_stack((
-                    labeled_radio_button(
-                        OperatingSystem::Windows,
-                        move || operating_system.get(),
-                        || OperatingSystem::Windows,
-                    )
-                    .on_update(move |value| {
-                        set_operating_system.set(value);
-                    }),
-                    labeled_radio_button(
-                        OperatingSystem::MacOS,
-                        move || operating_system.get(),
-                        || OperatingSystem::MacOS,
-                    )
-                    .on_update(move |value| {
-                        set_operating_system.set(value);
-                    }),
-                    labeled_radio_button(
-                        OperatingSystem::Linux,
-                        move || operating_system.get(),
-                        || OperatingSystem::Linux,
-                    )
-                    .on_update(move |value| {
-                        set_operating_system.set(value);
-                    }),
-                ))
+                stack_from_iter(
+                    OperatingSystem::iter()
+                        .map(|os| labeled_radio_button(os, operating_system, move || os)),
+                )
+                .style(|s| s.flex_col().gap(10.).margin_left(5.))
             }),
             form_item(
                 "Disabled Labelled Radio Buttons:".to_string(),
                 width,
                 move || {
-                    v_stack((
-                        labeled_radio_button(
-                            OperatingSystem::Windows,
-                            move || operating_system.get(),
-                            || OperatingSystem::Windows,
-                        )
-                        .on_update(move |value| {
-                            set_operating_system.set(value);
-                        })
-                        .disabled(|| true),
-                        labeled_radio_button(
-                            OperatingSystem::MacOS,
-                            move || operating_system.get(),
-                            || OperatingSystem::MacOS,
-                        )
-                        .on_update(move |value| {
-                            set_operating_system.set(value);
-                        })
-                        .disabled(|| true),
-                        labeled_radio_button(
-                            OperatingSystem::Linux,
-                            move || operating_system.get(),
-                            || OperatingSystem::Linux,
-                        )
-                        .on_update(move |value| {
-                            set_operating_system.set(value);
-                        })
-                        .disabled(|| true),
-                    ))
+                    stack_from_iter(OperatingSystem::iter().map(|os| {
+                        labeled_radio_button(os, operating_system, move || os).disabled(|| true)
+                    }))
+                    .style(|s| s.flex_col().gap(10.).margin_left(5.))
                 },
             ),
         )
