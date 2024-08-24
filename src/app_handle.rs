@@ -10,8 +10,6 @@ use web_time::Instant;
 #[cfg(target_arch = "wasm32")]
 use wgpu::web_sys;
 
-#[cfg(target_arch = "wasm32")]
-use floem_winit::platform::web::WindowExtWebSys;
 use floem_winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::WindowEvent,
