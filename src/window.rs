@@ -188,7 +188,7 @@ impl WindowConfig {
             self.web_config = Some(f(existing_config))
         } else {
             let new_config = f(WebWindowConfig {
-                canvas_parent_id: String::new(),
+                canvas_id: String::new(),
             });
             self.web_config = Some(new_config);
         }
@@ -324,14 +324,14 @@ impl From<MacOsOptionAsAlt> for floem_winit::platform::macos::OptionAsAlt {
 /// Web specific window (canvas) configuration properties, accessible via `WindowConfig::with_web_config( WebWindowConfig )`.
 #[derive(Default, Debug, Clone)]
 pub struct WebWindowConfig {
-    /// The id of the element that the canvas should be a child of.
-    pub(crate) canvas_parent_id: String,
+    /// The id of the HTML canvas element that floem should render to.
+    pub(crate) canvas_id: String,
 }
 
 impl WebWindowConfig {
-    /// Specify the id of the element that the canvas should be a child of.
-    pub fn canvas_parent_id(mut self, val: impl Into<String>) -> Self {
-        self.canvas_parent_id = val.into();
+    /// Specify the id of the HTML canvas element that floem should render to.
+    pub fn canvas_id(mut self, val: impl Into<String>) -> Self {
+        self.canvas_id = val.into();
         self
     }
 }

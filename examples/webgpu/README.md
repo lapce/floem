@@ -15,30 +15,33 @@ From this directory, run:
 trunk serve --open
 ```
 
-## Specifying the canvas container
+## Specifying the canvas element
 
-You must specify the ID of the parent element of the canvas in the `WindowConfig` struct.
-This is because the canvas is created as a child of the specified element.
+You must specify the ID of the HTML canvas element in the `WindowConfig` struct.
 
 ```rust
 let window_config = WindowConfig::default()
-    .with_web_config(|w| w.canvas_parent_id("canvas-container"));
+    .with_web_config(|w| w.canvas_id("the-canvas"));
 ```
 
 The application will otherwise panic with the following message:
 
 ```
-Specify a parent element ID for the canvas.
+Specify an id for the canvas.
 ```
 
 ## Resizing the canvas
 
-The canvas has a default size of 800x600. You can change this by changing the `size` field of the `WindowConfig`.
+By default, the floem window should automatically resize to fit the HTML canvas.
+This is usually the desired behavior, as the canvas will thereby integrate with the rest of the web application.
+You can change this behavior by specifying an explicit `size` in the `WindowConfig`.
 
 ```rust
 let window_config = WindowConfig::default()
     .size(Size::new(800.0, 600.0));
 ```
+
+Then, the canvas will have a fixed size and will not resize automatically based on the HTML canvas size.
 
 ## Fonts
 

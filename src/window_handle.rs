@@ -176,6 +176,18 @@ impl WindowHandle {
 
     pub(crate) fn init_renderer(&mut self) {
         self.paint_state.init_renderer();
+        // On the web, we need to get the canvas size once. The size will be updated automatically
+        // when the canvas element is resized subsequently. This is the correct place to do so
+        // because the renderer is not initialized until now.
+        #[cfg(target_arch = "wasm32")]
+        {
+            use floem_winit::platform::web::WindowExtWebSys;
+
+            let canvas = self.window.as_ref().unwrap().canvas().unwrap();
+            let rect = canvas.get_bounding_client_rect();
+            let size = LogicalSize::new(rect.width(), rect.height());
+            self.size(Size::new(size.width, size.height));
+        }
         // Now that the renderer is initialized, draw the first frame
         self.render_frame();
     }

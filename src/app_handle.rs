@@ -301,10 +301,6 @@ impl ApplicationHandle {
             web_config,
         }: WindowConfig,
     ) {
-        // On the web, we set a default size if none is provided to avoid the canvas being of zero size.
-        #[cfg(target_arch = "wasm32")]
-        let size = Some(size.unwrap_or(Size::new(800.0, 600.0)));
-
         let logical_size = size.map(|size| LogicalSize::new(size.width, size.height));
 
         let mut window_builder = floem_winit::window::WindowBuilder::new()
@@ -316,6 +312,30 @@ impl ApplicationHandle {
             .with_window_icon(window_icon)
             .with_resizable(resizable)
             .with_enabled_buttons(enabled_buttons);
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            use floem_winit::platform::web::WindowBuilderExtWebSys;
+            use wgpu::web_sys::wasm_bindgen::JsCast;
+
+            let parent_id = web_config.expect("Specify an id for the canvas.").canvas_id;
+            let doc = web_sys::window()
+                .and_then(|win| win.document())
+                .expect("Couldn't get document.");
+            let canvas = doc
+                .get_element_by_id(&parent_id)
+                .expect("Couldn't get canvas by supplied id.");
+            let canvas = canvas
+                .dyn_into::<web_sys::HtmlCanvasElement>()
+                .expect("Element behind supplied id is not a canvas.");
+
+            if let Some(size) = logical_size {
+                canvas.set_width(size.width as u32);
+                canvas.set_height(size.height as u32);
+            }
+
+            window_builder = window_builder.with_canvas(Some(canvas));
+        };
 
         if let Some(Point { x, y }) = position {
             window_builder = window_builder.with_position(LogicalPosition::new(x, y));
@@ -394,26 +414,6 @@ impl ApplicationHandle {
             return;
         };
         let window_id = window.id();
-
-        #[cfg(target_arch = "wasm32")]
-        {
-            let canvas = window.canvas();
-
-            let parent_id = web_config
-                .expect("Specify a parent element ID for the canvas.")
-                .canvas_parent_id;
-
-            web_sys::window()
-                .and_then(|win| win.document())
-                .and_then(|doc| {
-                    let dst = doc.get_element_by_id(&parent_id)?;
-                    let canvas = web_sys::Element::from(canvas?);
-                    dst.append_child(&canvas).ok()?;
-                    Some(())
-                })
-                .expect("Couldn't append canvas to document body.");
-        }
-
         let window_handle = WindowHandle::new(
             window,
             event_proxy,
