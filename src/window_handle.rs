@@ -1,17 +1,17 @@
-use std::{
-    cell::RefCell,
-    mem,
-    path::PathBuf,
-    rc::Rc,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{cell::RefCell, mem, path::PathBuf, rc::Rc, sync::Arc};
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::{Duration, Instant};
+#[cfg(target_arch = "wasm32")]
+use web_time::{Duration, Instant};
 
 use floem_reactive::{with_scope, RwSignal, Scope, SignalGet, SignalUpdate};
+use floem_renderer::gpu_resources::GpuResources;
 use floem_renderer::Renderer;
 use floem_winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::{ElementState, Ime, MouseButton, MouseScrollDelta},
+    event_loop::EventLoopProxy,
     keyboard::{Key, ModifiersState, NamedKey},
     window::{CursorIcon, WindowId},
 };
@@ -26,6 +26,7 @@ use crate::unit::UnitExt;
 use crate::views::{container, stack};
 use crate::{
     animate::{AnimPropKind, AnimUpdateMsg, AnimValue, AnimatedProp, SizeUnit},
+    app::UserEvent,
     app_state::AppState,
     context::{
         ComputeLayoutCx, EventCx, FrameUpdate, LayoutCx, PaintCx, PaintState, StyleCx, UpdateCx,
@@ -86,15 +87,17 @@ pub(crate) struct WindowHandle {
 impl WindowHandle {
     pub(crate) fn new(
         window: floem_winit::window::Window,
+        event_proxy: EventLoopProxy<UserEvent>,
         view_fn: impl FnOnce(floem_winit::window::WindowId) -> Box<dyn View> + 'static,
         transparent: bool,
         apply_default_theme: bool,
+        size: Option<LogicalSize<f64>>,
     ) -> Self {
         let scope = Scope::new();
         let window_id = window.id();
         let id = ViewId::new();
         let scale = window.scale_factor();
-        let size: LogicalSize<f64> = window.inner_size().to_logical(scale);
+        let size: LogicalSize<f64> = size.unwrap_or(window.inner_size().to_logical(scale));
         let size = Size::new(size.width, size.height);
         let size = scope.create_rw_signal(Size::new(size.width, size.height));
         let theme = scope.create_rw_signal(window.theme());
@@ -127,7 +130,20 @@ impl WindowHandle {
 
         let window = Arc::new(window);
         store_window_id_mapping(id, window_id, &window);
-        let paint_state = PaintState::new(window.clone(), scale, size.get_untracked() * scale);
+        let gpu_resources = GpuResources::request(
+            move |window_id| {
+                event_proxy
+                    .send_event(UserEvent::GpuResourcesUpdate { window_id })
+                    .unwrap();
+            },
+            window.clone(),
+        );
+        let paint_state = PaintState::new(
+            window.clone(),
+            gpu_resources,
+            scale,
+            size.get_untracked() * scale,
+        );
         let mut window_handle = Self {
             window: Some(window),
             window_id,
@@ -156,6 +172,28 @@ impl WindowHandle {
             window_handle.event(Event::ThemeChanged(theme));
         }
         window_handle
+    }
+
+    pub(crate) fn init_renderer(&mut self) {
+        self.paint_state.init_renderer();
+        // On the web, we need to get the canvas size once. The size will be updated automatically
+        // when the canvas element is resized subsequently. This is the correct place to do so
+        // because the renderer is not initialized until now.
+        #[cfg(target_arch = "wasm32")]
+        {
+            use floem_winit::platform::web::WindowExtWebSys;
+
+            let canvas = self.window.as_ref().unwrap().canvas().unwrap();
+            let rect = canvas.get_bounding_client_rect();
+            let size = LogicalSize::new(rect.width(), rect.height());
+            self.size(Size::new(size.width, size.height));
+        }
+        // Now that the renderer is initialized, draw the first frame
+        self.render_frame();
+    }
+
+    pub(crate) fn is_initialized(&self) -> bool {
+        matches!(self.paint_state, PaintState::Initialized { .. })
     }
 
     pub fn event(&mut self, event: Event) {
@@ -566,7 +604,7 @@ impl WindowHandle {
             saved_z_indexes: Vec::new(),
         };
         cx.paint_state
-            .renderer
+            .renderer_mut()
             .begin(cx.app_state.capture.is_some());
         if !self.transparent {
             let scale = cx.app_state.scale;
@@ -593,7 +631,7 @@ impl WindowHandle {
                 window.pre_present_notify();
             }
         }
-        cx.paint_state.renderer.finish()
+        cx.paint_state.renderer_mut().finish()
     }
 
     pub(crate) fn capture(&mut self) -> Capture {

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGPU Demo</title>
+    <style>
+        html,
+        body {
+            padding: 0;
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            background-color: grey
+        }
+
+        #the-canvas {
+            /* Margin around the canvas */
+            margin: 16px;
+            background-color: black;
+            /* Account for 16px margin on each side */
+            width: calc(100% - 32px);
+            height: calc(100% - 32px);
+            /* Maintains aspect ratio, scales to fill space */
+            object-fit: contain;
+        }
+
+        /* Remove focus outline (e.g. on Firefox) */
+        #the-canvas:focus-visible {
+            outline: none;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="the-canvas"></canvas>
+</body>
+
+</html>

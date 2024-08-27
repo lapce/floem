@@ -60,7 +60,7 @@ floem_renderer = { path = "renderer", version = "0.1.0" }
 floem_vger_renderer = { path = "vger", version = "0.1.0" }
 floem_tiny_skia_renderer = { path = "tiny_skia", version = "0.1.0" }
 floem_reactive = { path = "reactive", version = "0.1.0" }
-floem-winit = { version = "0.29.4", features = ["rwh_05"] }
+floem-winit = { git = "https://github.com/lapce/winit", rev = "c8d3b8fd6fa4ffd5e0f99be78aacddcf6de57bcd", features = ["rwh_05"] }
 floem-editor-core = { path = "editor-core", version = "0.1.0", optional = true }
 copypasta = { version = "0.10.0", default-features = false, features = ["wayland", "x11"] }
 parking_lot = { workspace = true }
@@ -68,6 +68,11 @@ image = { workspace = true }
 im = { workspace = true }
 wgpu = { workspace = true }
 futures = { version = "0.3.30", optional = true }
+crossbeam = "0.8"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = { version = "0.4" }
+web-time = "1"
 
 [features]
 default = ["editor", "default-image-formats"]

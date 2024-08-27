@@ -28,7 +28,12 @@ use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::rc::Rc;
+
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
+#[cfg(target_arch = "wasm32")]
+use web_time::{Duration, Instant};
+
 use taffy::prelude::Layout;
 use taffy::style::{AlignItems, FlexDirection};
 

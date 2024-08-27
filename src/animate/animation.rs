@@ -4,7 +4,12 @@ use super::{
     anim_val::AnimValue, AnimId, AnimPropKind, AnimState, AnimStateKind, AnimatedProp, Easing,
     EasingFn, EasingMode,
 };
-use std::{borrow::BorrowMut, collections::HashMap, rc::Rc, time::Duration, time::Instant};
+use std::{borrow::BorrowMut, collections::HashMap, rc::Rc};
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::{Duration, Instant};
+#[cfg(target_arch = "wasm32")]
+use web_time::{Duration, Instant};
 
 use floem_reactive::create_effect;
 use peniko::{Brush, Color};

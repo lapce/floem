@@ -1,12 +1,22 @@
-use std::{collections::HashMap, mem, rc::Rc, time::Instant};
+use std::{collections::HashMap, mem, rc::Rc};
 
 use floem_reactive::SignalUpdate;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+use web_time::Instant;
+
+#[cfg(target_arch = "wasm32")]
+use wgpu::web_sys;
+
 use floem_winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::WindowEvent,
-    event_loop::{ControlFlow, EventLoopWindowTarget},
+    event_loop::{ControlFlow, EventLoopProxy, EventLoopWindowTarget},
     window::WindowId,
 };
+
 use peniko::kurbo::{Point, Size};
 
 use crate::{
@@ -37,11 +47,12 @@ impl ApplicationHandle {
     pub(crate) fn handle_user_event(
         &mut self,
         event_loop: &EventLoopWindowTarget<UserEvent>,
+        event_proxy: EventLoopProxy<UserEvent>,
         event: UserEvent,
     ) {
         match event {
             UserEvent::AppUpdate => {
-                self.handle_update_event(event_loop);
+                self.handle_update_event(event_loop, event_proxy);
             }
             UserEvent::Idle => {
                 self.idle();
@@ -49,19 +60,32 @@ impl ApplicationHandle {
             UserEvent::QuitApp => {
                 event_loop.exit();
             }
+            UserEvent::GpuResourcesUpdate { window_id } => {
+                self.window_handles
+                    .get_mut(&window_id)
+                    .unwrap()
+                    .init_renderer();
+            }
         }
     }
 
-    pub(crate) fn handle_update_event(&mut self, event_loop: &EventLoopWindowTarget<UserEvent>) {
+    pub(crate) fn handle_update_event(
+        &mut self,
+        event_loop: &EventLoopWindowTarget<UserEvent>,
+        event_proxy: EventLoopProxy<UserEvent>,
+    ) {
         let events = APP_UPDATE_EVENTS.with(|events| {
             let mut events = events.borrow_mut();
             std::mem::take(&mut *events)
         });
         for event in events {
             match event {
-                AppUpdateEvent::NewWindow { view_fn, config } => {
-                    self.new_window(event_loop, view_fn, config.unwrap_or_default())
-                }
+                AppUpdateEvent::NewWindow { view_fn, config } => self.new_window(
+                    event_loop,
+                    event_proxy.clone(),
+                    view_fn,
+                    config.unwrap_or_default(),
+                ),
                 AppUpdateEvent::CloseWindow { window_id } => {
                     self.close_window(window_id, event_loop);
                 }
@@ -112,6 +136,12 @@ impl ApplicationHandle {
             Some(window_handle) => window_handle,
             None => return,
         };
+
+        // We only start reacting to events once the window is ready
+        // I.e. once the renderer has acquired the necessary GPU resources (if any) and is initialized.
+        if !window_handle.is_initialized() {
+            return;
+        }
 
         let start = window_handle.profile.is_some().then(|| {
             let name = match event {
@@ -250,6 +280,7 @@ impl ApplicationHandle {
     pub(crate) fn new_window(
         &mut self,
         event_loop: &EventLoopWindowTarget<UserEvent>,
+        event_proxy: EventLoopProxy<UserEvent>,
         view_fn: Box<dyn FnOnce(WindowId) -> Box<dyn View>>,
         #[allow(unused_variables)] WindowConfig {
             size,
@@ -265,8 +296,11 @@ impl ApplicationHandle {
             window_level,
             apply_default_theme,
             mac_os_config,
+            web_config,
         }: WindowConfig,
     ) {
+        let logical_size = size.map(|size| LogicalSize::new(size.width, size.height));
+
         let mut window_builder = floem_winit::window::WindowBuilder::new()
             .with_title(title)
             .with_decorations(!undecorated)
@@ -277,12 +311,36 @@ impl ApplicationHandle {
             .with_resizable(resizable)
             .with_enabled_buttons(enabled_buttons);
 
+        #[cfg(target_arch = "wasm32")]
+        {
+            use floem_winit::platform::web::WindowBuilderExtWebSys;
+            use wgpu::web_sys::wasm_bindgen::JsCast;
+
+            let parent_id = web_config.expect("Specify an id for the canvas.").canvas_id;
+            let doc = web_sys::window()
+                .and_then(|win| win.document())
+                .expect("Couldn't get document.");
+            let canvas = doc
+                .get_element_by_id(&parent_id)
+                .expect("Couldn't get canvas by supplied id.");
+            let canvas = canvas
+                .dyn_into::<web_sys::HtmlCanvasElement>()
+                .expect("Element behind supplied id is not a canvas.");
+
+            if let Some(size) = logical_size {
+                canvas.set_width(size.width as u32);
+                canvas.set_height(size.height as u32);
+            }
+
+            window_builder = window_builder.with_canvas(Some(canvas));
+        };
+
         if let Some(Point { x, y }) = position {
             window_builder = window_builder.with_position(LogicalPosition::new(x, y));
         }
 
-        if let Some(Size { width, height }) = size {
-            window_builder = window_builder.with_inner_size(LogicalSize::new(width, height));
+        if let Some(logical_size) = logical_size {
+            window_builder = window_builder.with_inner_size(logical_size);
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -354,7 +412,14 @@ impl ApplicationHandle {
             return;
         };
         let window_id = window.id();
-        let window_handle = WindowHandle::new(window, view_fn, transparent, apply_default_theme);
+        let window_handle = WindowHandle::new(
+            window,
+            event_proxy,
+            view_fn,
+            transparent,
+            apply_default_theme,
+            logical_size,
+        );
         self.window_handles.insert(window_id, window_handle);
     }
 

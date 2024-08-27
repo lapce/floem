@@ -1,11 +1,17 @@
+use floem_renderer::gpu_resources::{GpuResourceError, GpuResources};
 use floem_renderer::Renderer as FloemRenderer;
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Shape, Size, Vec2};
 use std::{
     ops::{Deref, DerefMut},
     rc::Rc,
     sync::Arc,
-    time::Instant,
 };
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::{Duration, Instant};
+#[cfg(target_arch = "wasm32")]
+use web_time::{Duration, Instant};
+
 use taffy::prelude::NodeId;
 
 use crate::{
@@ -38,7 +44,7 @@ pub(crate) struct MoveListener {
 pub struct DragState {
     pub(crate) id: ViewId,
     pub(crate) offset: Vec2,
-    pub(crate) released_at: Option<std::time::Instant>,
+    pub(crate) released_at: Option<Instant>,
 }
 
 pub(crate) enum FrameUpdate {
@@ -339,7 +345,7 @@ impl<'a> EventCx<'a> {
                         self.app_state.dragging.as_mut().filter(|d| d.id == view_id)
                     {
                         let dragging_id = dragging.id;
-                        dragging.released_at = Some(std::time::Instant::now());
+                        dragging.released_at = Some(Instant::now());
                         self.app_state.request_paint(view_id);
                         dragging_id.apply_event(&EventListener::DragEnd, &event);
                     }
@@ -887,16 +893,16 @@ impl<'a> PaintCx<'a> {
         self.transform = self.saved_transforms.pop().unwrap_or_default();
         self.clip = self.saved_clips.pop().unwrap_or_default();
         self.z_index = self.saved_z_indexes.pop().unwrap_or_default();
-        self.paint_state.renderer.transform(self.transform);
+        self.paint_state.renderer_mut().transform(self.transform);
         if let Some(z_index) = self.z_index {
-            self.paint_state.renderer.set_z_index(z_index);
+            self.paint_state.renderer_mut().set_z_index(z_index);
         } else {
-            self.paint_state.renderer.set_z_index(0);
+            self.paint_state.renderer_mut().set_z_index(0);
         }
         if let Some(rect) = self.clip {
-            self.paint_state.renderer.clip(&rect);
+            self.paint_state.renderer_mut().clip(&rect);
         } else {
-            self.paint_state.renderer.clear_clip();
+            self.paint_state.renderer_mut().clear_clip();
         }
     }
 
@@ -967,7 +973,7 @@ impl<'a> PaintCx<'a> {
                     let elapsed = released_at.elapsed().as_millis() as f64;
                     if elapsed < LIMIT {
                         offset_scale = Some(1.0 - elapsed / LIMIT);
-                        exec_after(std::time::Duration::from_millis(8), move |_| {
+                        exec_after(Duration::from_millis(8), move |_| {
                             id.request_paint();
                         });
                     } else {
@@ -985,7 +991,7 @@ impl<'a> PaintCx<'a> {
                     new[4] += offset.x;
                     new[5] += offset.y;
                     self.transform = Affine::new(new);
-                    self.paint_state.renderer.transform(self.transform);
+                    self.paint_state.renderer_mut().transform(self.transform);
                     self.set_z_index(1000);
                     self.clear_clip();
 
@@ -1041,10 +1047,10 @@ impl<'a> PaintCx<'a> {
 
         let rect = if let Some(existing) = self.clip {
             let rect = existing.rect().intersect(rect.rect());
-            self.paint_state.renderer.clip(&rect);
+            self.paint_state.renderer_mut().clip(&rect);
             rect.to_rounded_rect(0.0)
         } else {
-            self.paint_state.renderer.clip(&shape);
+            self.paint_state.renderer_mut().clip(&shape);
             rect
         };
         self.clip = Some(rect);
@@ -1053,7 +1059,7 @@ impl<'a> PaintCx<'a> {
     /// Remove clipping so the entire window can be rendered to.
     pub fn clear_clip(&mut self) {
         self.clip = None;
-        self.paint_state.renderer.clear_clip();
+        self.paint_state.renderer_mut().clear_clip();
     }
 
     pub fn offset(&mut self, offset: (f64, f64)) {
@@ -1061,7 +1067,7 @@ impl<'a> PaintCx<'a> {
         new[4] += offset.0;
         new[5] += offset.1;
         self.transform = Affine::new(new);
-        self.paint_state.renderer.transform(self.transform);
+        self.paint_state.renderer_mut().transform(self.transform);
         if let Some(rect) = self.clip.as_mut() {
             let raidus = rect.radii();
             *rect = rect
@@ -1078,7 +1084,7 @@ impl<'a> PaintCx<'a> {
             new[4] += offset.x as f64;
             new[5] += offset.y as f64;
             self.transform = Affine::new(new);
-            self.paint_state.renderer.transform(self.transform);
+            self.paint_state.renderer_mut().transform(self.transform);
 
             if let Some(rect) = self.clip.as_mut() {
                 let raidus = rect.radii();
@@ -1096,7 +1102,7 @@ impl<'a> PaintCx<'a> {
 
     pub(crate) fn set_z_index(&mut self, z_index: i32) {
         self.z_index = Some(z_index);
-        self.paint_state.renderer.set_z_index(z_index);
+        self.paint_state.renderer_mut().set_z_index(z_index);
     }
 
     pub fn is_focused(&self, id: ViewId) -> bool {
@@ -1105,23 +1111,76 @@ impl<'a> PaintCx<'a> {
 }
 
 // TODO: should this be private?
-pub struct PaintState {
-    pub(crate) renderer: crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>>,
+pub enum PaintState {
+    PendingGpuResources {
+        window: Arc<dyn wgpu::WindowHandle>,
+        rx: crossbeam::channel::Receiver<Result<GpuResources, GpuResourceError>>,
+        scale: f64,
+        size: Size,
+    },
+    Initialized {
+        renderer: crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>>,
+    },
 }
 
 impl PaintState {
-    pub fn new(window: Arc<dyn wgpu::WindowHandle>, scale: f64, size: Size) -> Self {
-        Self {
-            renderer: crate::renderer::Renderer::new(Arc::new(window), scale, size),
+    pub fn new(
+        window: Arc<dyn wgpu::WindowHandle>,
+        rx: crossbeam::channel::Receiver<Result<GpuResources, GpuResourceError>>,
+        scale: f64,
+        size: Size,
+    ) -> Self {
+        Self::PendingGpuResources {
+            window,
+            scale,
+            size,
+            rx,
+        }
+    }
+
+    pub(crate) fn init_renderer(&mut self) {
+        if let PaintState::PendingGpuResources {
+            window,
+            rx,
+            scale,
+            size,
+        } = self
+        {
+            let gpu_resources = rx.recv().unwrap().unwrap();
+            let renderer =
+                crate::renderer::Renderer::new(window.clone(), gpu_resources, *scale, *size);
+            *self = PaintState::Initialized { renderer };
+        } else {
+            panic!("Called PaintState::init_renderer when it was already initialized");
+        }
+    }
+
+    pub(crate) fn renderer(&self) -> &crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>> {
+        match self {
+            PaintState::PendingGpuResources { .. } => {
+                panic!("Tried to access renderer before it was initialized")
+            }
+            PaintState::Initialized { renderer } => renderer,
+        }
+    }
+
+    pub(crate) fn renderer_mut(
+        &mut self,
+    ) -> &mut crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>> {
+        match self {
+            PaintState::PendingGpuResources { .. } => {
+                panic!("Tried to access renderer before it was initialized")
+            }
+            PaintState::Initialized { renderer } => renderer,
         }
     }
 
     pub(crate) fn resize(&mut self, scale: f64, size: Size) {
-        self.renderer.resize(scale, size);
+        self.renderer_mut().resize(scale, size);
     }
 
     pub(crate) fn set_scale(&mut self, scale: f64) {
-        self.renderer.set_scale(scale);
+        self.renderer_mut().set_scale(scale);
     }
 }
 
@@ -1143,12 +1202,12 @@ impl Deref for PaintCx<'_> {
     type Target = crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>>;
 
     fn deref(&self) -> &Self::Target {
-        &self.paint_state.renderer
+        self.paint_state.renderer()
     }
 }
 
 impl DerefMut for PaintCx<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.paint_state.renderer
+        self.paint_state.renderer_mut()
     }
 }

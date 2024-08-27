@@ -37,10 +37,12 @@ pub enum AppEvent {
     Reopen { has_visible_windows: bool },
 }
 
+#[derive(Debug)]
 pub(crate) enum UserEvent {
     AppUpdate,
     Idle,
     QuitApp,
+    GpuResourcesUpdate { window_id: WindowId },
 }
 
 pub(crate) enum AppUpdateEvent {
@@ -130,6 +132,7 @@ impl Application {
     ) -> Self {
         self.handle.as_mut().unwrap().new_window(
             &self.event_loop,
+            self.event_loop.create_proxy(),
             Box::new(|window_id| app_view(window_id).into_any()),
             config.unwrap_or_default(),
         );
@@ -139,6 +142,7 @@ impl Application {
     pub fn run(mut self) {
         let mut handle = self.handle.take().unwrap();
         handle.idle();
+        let event_loop_proxy = self.event_loop.create_proxy();
         let _ = self.event_loop.run(|event, event_loop| {
             event_loop.set_control_flow(ControlFlow::Wait);
             handle.handle_timer(event_loop);
@@ -150,7 +154,7 @@ impl Application {
                 }
                 floem_winit::event::Event::DeviceEvent { .. } => {}
                 floem_winit::event::Event::UserEvent(event) => {
-                    handle.handle_user_event(event_loop, event);
+                    handle.handle_user_event(event_loop, event_loop_proxy.clone(), event);
                 }
                 floem_winit::event::Event::Suspended => {}
                 floem_winit::event::Event::Resumed => {}
@@ -161,6 +165,7 @@ impl Application {
                     }
                 }
                 floem_winit::event::Event::MemoryWarning => {}
+                floem_winit::event::Event::Reopen => {}
             }
         });
     }

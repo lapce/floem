@@ -27,6 +27,7 @@ pub struct WindowConfig {
     pub(crate) apply_default_theme: bool,
     #[allow(dead_code)]
     pub(crate) mac_os_config: Option<MacOSWindowConfig>,
+    pub(crate) web_config: Option<WebWindowConfig>,
 }
 
 impl Default for WindowConfig {
@@ -45,6 +46,7 @@ impl Default for WindowConfig {
             window_level: WindowLevel::Normal,
             apply_default_theme: true,
             mac_os_config: None,
+            web_config: None,
         }
     }
 }
@@ -176,6 +178,22 @@ impl WindowConfig {
         }
         self
     }
+
+    /// Set up web specific configuration.
+    /// The passed closure will only be called on the web.
+    #[allow(unused_variables, unused_mut)] // build will complain on non-web platforms otherwise
+    pub fn with_web_config(mut self, f: impl FnOnce(WebWindowConfig) -> WebWindowConfig) -> Self {
+        #[cfg(target_arch = "wasm32")]
+        if let Some(existing_config) = self.web_config {
+            self.web_config = Some(f(existing_config))
+        } else {
+            let new_config = f(WebWindowConfig {
+                canvas_id: String::new(),
+            });
+            self.web_config = Some(new_config);
+        }
+        self
+    }
 }
 
 /// Mac-OS specific window configuration properties, accessible via `WindowConfig::with_mac_os_config( FnMut( MacOsWindowConfig ) )`.
@@ -300,6 +318,21 @@ impl From<MacOsOptionAsAlt> for floem_winit::platform::macos::OptionAsAlt {
             MacOsOptionAsAlt::Both => floem_winit::platform::macos::OptionAsAlt::Both,
             MacOsOptionAsAlt::None => floem_winit::platform::macos::OptionAsAlt::None,
         }
+    }
+}
+
+/// Web specific window (canvas) configuration properties, accessible via `WindowConfig::with_web_config( WebWindowConfig )`.
+#[derive(Default, Debug, Clone)]
+pub struct WebWindowConfig {
+    /// The id of the HTML canvas element that floem should render to.
+    pub(crate) canvas_id: String,
+}
+
+impl WebWindowConfig {
+    /// Specify the id of the HTML canvas element that floem should render to.
+    pub fn canvas_id(mut self, val: impl Into<String>) -> Self {
+        self.canvas_id = val.into();
+        self
     }
 }
 
