@@ -2,8 +2,9 @@ use strum::IntoEnumIterator;
 
 use floem::{
     peniko::Color,
+    reactive::{create_effect, RwSignal, SignalGet},
     unit::UnitExt,
-    views::{container, dropdown::dropdown, label, stack, svg, Decorators},
+    views::{container, dropdown::Dropdown, label, stack, svg, Decorators},
     IntoView,
 };
 
@@ -45,12 +46,19 @@ pub fn dropdown_view() -> impl IntoView {
         .into_any()
     };
 
+    let dropdown_active_item = RwSignal::new(Values::Three);
+
+    create_effect(move |_| {
+        let active_item = dropdown_active_item.get();
+        println!("Selected: {active_item}");
+    });
+
     form::form({
         (form_item("Dropdown".to_string(), 120.0, move || {
-            dropdown(
-                // drivign function
-                move || Values::Three,
-                // main view
+            Dropdown::new_get_set(
+                // state
+                dropdown_active_item,
+                // main view function
                 main_drop_view,
                 // iterator to build list in dropdown
                 Values::iter(),

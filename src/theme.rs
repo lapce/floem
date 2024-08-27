@@ -273,7 +273,7 @@ pub(crate) fn default_theme() -> Theme {
                 .box_shadow_v_offset(2.0)
                 .box_shadow_color(Color::BLACK.with_alpha_factor(0.2))
         })
-        .class(dropdown::DropDownClass, |s| {
+        .class(dropdown::DropdownClass, |s| {
             s.width(75)
                 .padding(3)
                 .apply(border_style)

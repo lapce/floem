@@ -9,3 +9,4 @@ version.workspace = true
 [dependencies]
 floem = { path = "../.." }
 time = { version = "0.3.31", features = ["parsing", "macros"] }
+strum = { version = "0.25.0", features = ["derive"] }

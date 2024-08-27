@@ -67,6 +67,7 @@ use crate::{
 ///```compile_fail
 /// use floem::views::*;
 /// use floem::widgets::*;
+/// use floem::reactive::{RwSignal, SignalGet};
 ///
 /// let check = true;
 ///
@@ -83,6 +84,7 @@ use crate::{
 /// ```
 /// use floem::views::*;
 /// use floem::{View, IntoView};
+/// use floem::reactive::{RwSignal, SignalGet};
 ///
 /// let check = true;
 ///

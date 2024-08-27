@@ -10,8 +10,9 @@ use std::{
 use crate::{
     effect::{run_effect, EffectTrait},
     id::Id,
-    read::SignalWith,
+    read::{SignalRead, SignalWith},
     runtime::RUNTIME,
+    write::SignalWrite,
     SignalGet, SignalUpdate,
 };
 
@@ -67,6 +68,10 @@ impl<T> RwSignal<T> {
 impl<T: 'static> RwSignal<T> {
     pub fn new(value: T) -> Self {
         create_rw_signal(value)
+    }
+    pub fn new_split(value: T) -> (ReadSignal<T>, WriteSignal<T>) {
+        let sig = Self::new(value);
+        (sig.read_only(), sig.write_only())
     }
 }
 
@@ -248,6 +253,12 @@ impl<T> SignalWith<T> for RwSignal<T> {
     }
 }
 
+impl<T> SignalRead<T> for RwSignal<T> {
+    fn id(&self) -> Id {
+        self.id
+    }
+}
+
 impl<T> SignalUpdate<T> for RwSignal<T> {
     fn id(&self) -> Id {
         self.id
@@ -266,7 +277,19 @@ impl<T> SignalWith<T> for ReadSignal<T> {
     }
 }
 
+impl<T> SignalRead<T> for ReadSignal<T> {
+    fn id(&self) -> Id {
+        self.id
+    }
+}
+
 impl<T> SignalUpdate<T> for WriteSignal<T> {
+    fn id(&self) -> Id {
+        self.id
+    }
+}
+
+impl<T> SignalWrite<T> for WriteSignal<T> {
     fn id(&self) -> Id {
         self.id
     }

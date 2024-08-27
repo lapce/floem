@@ -1,6 +1,6 @@
 //! A toggle button widget. An example can be found in widget-gallery/button in the floem examples.
 
-use floem_reactive::create_effect;
+use floem_reactive::{create_effect, SignalGet, SignalUpdate};
 use floem_renderer::Renderer;
 use floem_winit::keyboard::{Key, NamedKey};
 use peniko::kurbo::{Circle, Point, RoundedRect};
@@ -16,6 +16,10 @@ use crate::{
     view::View,
     views::Decorators,
 };
+
+pub fn slider(percent: impl Fn() -> f32 + 'static) -> Slider {
+    Slider::new(percent)
+}
 
 enum SliderUpdate {
     Percent(f32),
@@ -42,23 +46,6 @@ prop_extractor! {
         height: Height
 
     }
-}
-
-/// A slider. See [`slider`]
-pub struct Slider {
-    id: ViewId,
-    onchangepx: Option<Box<dyn Fn(f32)>>,
-    onchangepct: Option<Box<dyn Fn(f32)>>,
-    held: bool,
-    percent: f32,
-    prev_percent: f32,
-    base_bar_style: BarStyle,
-    accent_bar_style: BarStyle,
-    handle: Circle,
-    base_bar: RoundedRect,
-    accent_bar: RoundedRect,
-    size: taffy::prelude::Size<f32>,
-    style: SliderStyle,
 }
 
 /// **A reactive slider.**
@@ -108,29 +95,20 @@ pub struct Slider {
 ///         })
 ///  );
 ///```
-pub fn slider(percent: impl Fn() -> f32 + 'static) -> Slider {
-    let id = ViewId::new();
-    create_effect(move |_| {
-        let percent = percent();
-        id.update_state(SliderUpdate::Percent(percent));
-    });
-    Slider {
-        id,
-        onchangepx: None,
-        onchangepct: None,
-        held: false,
-        percent: 0.0,
-        prev_percent: 0.0,
-        handle: Default::default(),
-        base_bar_style: Default::default(),
-        accent_bar_style: Default::default(),
-        base_bar: Default::default(),
-        accent_bar: Default::default(),
-        size: Default::default(),
-        style: Default::default(),
-    }
-    .class(SliderClass)
-    .keyboard_navigatable()
+pub struct Slider {
+    id: ViewId,
+    onchangepx: Option<Box<dyn Fn(f32)>>,
+    onchangepct: Option<Box<dyn Fn(f32)>>,
+    held: bool,
+    percent: f32,
+    prev_percent: f32,
+    base_bar_style: BarStyle,
+    accent_bar_style: BarStyle,
+    handle: Circle,
+    base_bar: RoundedRect,
+    accent_bar: RoundedRect,
+    size: taffy::prelude::Size<f32>,
+    style: SliderStyle,
 }
 
 impl View for Slider {
@@ -326,6 +304,45 @@ impl View for Slider {
     }
 }
 impl Slider {
+    pub fn new(percent: impl Fn() -> f32 + 'static) -> Self {
+        let id = ViewId::new();
+        create_effect(move |_| {
+            let percent = percent();
+            id.update_state(SliderUpdate::Percent(percent));
+        });
+        Slider {
+            id,
+            onchangepx: None,
+            onchangepct: None,
+            held: false,
+            percent: 0.0,
+            prev_percent: 0.0,
+            handle: Default::default(),
+            base_bar_style: Default::default(),
+            accent_bar_style: Default::default(),
+            base_bar: Default::default(),
+            accent_bar: Default::default(),
+            size: Default::default(),
+            style: Default::default(),
+        }
+        .class(SliderClass)
+        .keyboard_navigatable()
+    }
+
+    pub fn new_get(percent: impl SignalGet<f32> + 'static) -> Self {
+        Self::new(move || percent.get())
+    }
+
+    pub fn new_update(percent: impl SignalUpdate<f32> + 'static) -> Self {
+        Self::new(move || 0.).on_change_pct(move |pct| percent.set(pct))
+    }
+
+    pub fn new_get_update(
+        percent: impl SignalGet<f32> + SignalUpdate<f32> + Copy + 'static,
+    ) -> Self {
+        Self::new(move || percent.get()).on_change_pct(move |pct| percent.set(pct))
+    }
+
     fn update_restrict_position(&mut self) {
         self.percent = self.percent.clamp(0., 100.);
     }

@@ -1,6 +1,8 @@
 use std::{any::Any, rc::Rc};
 
-use floem_reactive::{as_child_of_current_scope, create_effect, create_updater, Scope};
+use floem_reactive::{
+    as_child_of_current_scope, create_effect, create_updater, Scope, SignalGet, SignalUpdate,
+};
 use floem_winit::keyboard::{Key, NamedKey};
 use peniko::kurbo::{Point, Rect};
 
@@ -20,15 +22,51 @@ use super::list;
 
 type ChildFn<T> = dyn Fn(T) -> (Box<dyn View>, Scope);
 
-style_class!(pub DropDownClass);
-style_class!(pub DropDownScrollClass);
+style_class!(pub DropdownClass);
+style_class!(pub DropdownScrollClass);
 
 prop!(pub CloseOnAccept: bool {} = true);
-prop_extractor!(DropDownStyle {
+prop_extractor!(DropdownStyle {
     close_on_accept: CloseOnAccept,
 });
 
-pub struct DropDown<T: 'static> {
+pub fn dropdown<T, MF, I, LF, AIF>(
+    active_item: AIF,
+    main_view: MF,
+    iterator: I,
+    list_item_fn: LF,
+) -> Dropdown<T>
+where
+    MF: Fn(T) -> Box<dyn View> + 'static,
+    I: IntoIterator<Item = T> + Clone + 'static,
+    LF: Fn(T) -> Box<dyn View> + Clone + 'static,
+    T: Clone + 'static,
+    AIF: Fn() -> T + 'static,
+{
+    Dropdown::new(active_item, main_view, iterator, list_item_fn)
+}
+
+/// A dropdown widget
+///
+/// **Styling**:
+/// You can modify the behavior of the dropdown through the `CloseOnAccept` property.
+/// If the property is set to `true` the dropdown will automatically close when an item is selected.
+/// If the property is set to `false` the dropwown will not automatically close when an item is selected.
+/// The default is `true`.
+/// Styling Example:
+/// ```rust
+/// # use floem::views::dropdown;
+/// # use floem::views::empty;
+/// # use floem::views::Decorators;
+/// // root view
+/// empty()
+///     .style(|s|
+///         s.class(dropdown::DropdownClass, |s| {
+///             s.set(dropdown::CloseOnAccept, false)
+///         })
+///  );
+///```
+pub struct Dropdown<T: 'static> {
     id: ViewId,
     main_view: ViewId,
     main_view_scope: Scope,
@@ -39,7 +77,7 @@ pub struct DropDown<T: 'static> {
     window_origin: Option<Point>,
     on_accept: Option<Box<dyn Fn(T)>>,
     on_open: Option<Box<dyn Fn(bool)>>,
-    style: DropDownStyle,
+    style: DropdownStyle,
 }
 
 enum Message {
@@ -49,7 +87,7 @@ enum Message {
     ListSelect(Box<dyn Any>),
 }
 
-impl<T: 'static> View for DropDown<T> {
+impl<T: 'static> View for Dropdown<T> {
     fn id(&self) -> ViewId {
         self.id
     }
@@ -135,96 +173,108 @@ impl<T: 'static> View for DropDown<T> {
     }
 }
 
-/// A dropdown widget
-///
-/// **Styling**:
-/// You can modify the behavior of the dropdown through the `CloseOnAccept` property.
-/// If the property is set to `true` the dropdown will automatically close when an item is selected.
-/// If the property is set to `false` the dropwown will not automatically close when an item is selected.
-/// The default is `true`.
-/// Styling Example:
-/// ```rust
-/// # use floem::views::dropdown;
-/// # use floem::views::empty;
-/// # use floem::views::Decorators;
-/// // root view
-/// empty()
-///     .style(|s|
-///         s.class(dropdown::DropDownClass, |s| {
-///             s.set(dropdown::CloseOnAccept, false)
-///         })
-///  );
-///```
-pub fn dropdown<MF, I, T, LF, AIF>(
-    active_item: AIF,
-    main_view: MF,
-    iterator: I,
-    list_item_fn: LF,
-) -> DropDown<T>
-where
-    MF: Fn(T) -> Box<dyn View> + 'static,
-    I: IntoIterator<Item = T> + Clone + 'static,
-    LF: Fn(T) -> Box<dyn View> + Clone + 'static,
-    T: Clone + 'static,
-    AIF: Fn() -> T + 'static,
-{
-    let dropdown_id = ViewId::new();
+impl<T> Dropdown<T> {
+    /// Creates a new dropdown
+    pub fn new<MF, I, LF, AIF>(
+        active_item: AIF,
+        main_view: MF,
+        iterator: I,
+        list_item_fn: LF,
+    ) -> Dropdown<T>
+    where
+        MF: Fn(T) -> Box<dyn View> + 'static,
+        I: IntoIterator<Item = T> + Clone + 'static,
+        LF: Fn(T) -> Box<dyn View> + Clone + 'static,
+        T: Clone + 'static,
+        AIF: Fn() -> T + 'static,
+    {
+        let dropdown_id = ViewId::new();
 
-    let list_view = Rc::new(move || {
-        let iterator = iterator.clone();
-        let iter_clone = iterator.clone();
-        let list_item_fn = list_item_fn.clone();
-        let inner_list = list(iterator.into_iter().map(list_item_fn))
-            .on_accept(move |opt_idx| {
-                if let Some(idx) = opt_idx {
-                    let val = iter_clone.clone().into_iter().nth(idx).unwrap();
-                    dropdown_id.update_state(Message::ActiveElement(Box::new(val.clone())));
-                    dropdown_id.update_state(Message::ListSelect(Box::new(val)));
-                }
-            })
-            .style(|s| s.size_full())
-            .keyboard_navigatable()
-            .on_event_stop(EventListener::PointerDown, move |_| {})
-            .on_event_stop(EventListener::FocusLost, move |_| {
-                dropdown_id.update_state(Message::ListFocusLost);
-            });
-        let inner_list_id = inner_list.id();
-        scroll(inner_list)
-            .on_event_stop(EventListener::FocusGained, move |_| {
-                inner_list_id.request_focus();
-            })
-            .class(DropDownScrollClass)
-            .into_any()
-    });
+        let list_view = Rc::new(move || {
+            let iterator = iterator.clone();
+            let iter_clone = iterator.clone();
+            let list_item_fn = list_item_fn.clone();
+            let inner_list = list(iterator.into_iter().map(list_item_fn))
+                .on_accept(move |opt_idx| {
+                    if let Some(idx) = opt_idx {
+                        let val = iter_clone.clone().into_iter().nth(idx).unwrap();
+                        dropdown_id.update_state(Message::ActiveElement(Box::new(val.clone())));
+                        dropdown_id.update_state(Message::ListSelect(Box::new(val)));
+                    }
+                })
+                .style(|s| s.size_full())
+                .keyboard_navigatable()
+                .on_event_stop(EventListener::PointerDown, move |_| {})
+                .on_event_stop(EventListener::FocusLost, move |_| {
+                    dropdown_id.update_state(Message::ListFocusLost);
+                });
+            let inner_list_id = inner_list.id();
+            scroll(inner_list)
+                .on_event_stop(EventListener::FocusGained, move |_| {
+                    inner_list_id.request_focus();
+                })
+                .class(DropdownScrollClass)
+                .into_any()
+        });
 
-    let initial = create_updater(active_item, move |new_state| {
-        dropdown_id.update_state(Message::ActiveElement(Box::new(new_state)));
-    });
+        let initial = create_updater(active_item, move |new_state| {
+            dropdown_id.update_state(Message::ActiveElement(Box::new(new_state)));
+        });
 
-    let main_fn = Box::new(as_child_of_current_scope(main_view));
+        let main_fn = Box::new(as_child_of_current_scope(main_view));
 
-    let (child, main_view_scope) = main_fn(initial);
-    let main_view = child.id();
+        let (child, main_view_scope) = main_fn(initial);
+        let main_view = child.id();
 
-    dropdown_id.set_children(vec![child]);
+        dropdown_id.set_children(vec![child]);
 
-    DropDown {
-        id: dropdown_id,
-        main_view,
-        main_view_scope,
-        main_fn,
-        list_view,
-        list_style: Style::new(),
-        overlay_id: None,
-        window_origin: None,
-        on_accept: None,
-        on_open: None,
-        style: Default::default(),
+        Self {
+            id: dropdown_id,
+            main_view,
+            main_view_scope,
+            main_fn,
+            list_view,
+            list_style: Style::new(),
+            overlay_id: None,
+            window_origin: None,
+            on_accept: None,
+            on_open: None,
+            style: Default::default(),
+        }
+        .class(DropdownClass)
     }
-    .class(DropDownClass)
-}
 
-impl<T> DropDown<T> {
+    pub fn new_get_set<MF, I, LF>(
+        active_item: impl SignalGet<T> + SignalUpdate<T> + Copy + 'static,
+        main_view: MF,
+        iterator: I,
+        list_item_fn: LF,
+    ) -> Dropdown<T>
+    where
+        MF: Fn(T) -> Box<dyn View> + 'static,
+        I: IntoIterator<Item = T> + Clone + 'static,
+        LF: Fn(T) -> Box<dyn View> + Clone + 'static,
+        T: Clone + 'static,
+    {
+        Self::new(move || active_item.get(), main_view, iterator, list_item_fn)
+            .on_accept(move |nv| active_item.set(nv))
+    }
+
+    pub fn new_get<MF, I, LF>(
+        active_item: impl SignalGet<T> + Copy + 'static,
+        main_view: MF,
+        iterator: I,
+        list_item_fn: LF,
+    ) -> Dropdown<T>
+    where
+        MF: Fn(T) -> Box<dyn View> + 'static,
+        I: IntoIterator<Item = T> + Clone + 'static,
+        LF: Fn(T) -> Box<dyn View> + Clone + 'static,
+        T: Clone + 'static,
+    {
+        Self::new(move || active_item.get(), main_view, iterator, list_item_fn)
+    }
+
     pub fn show_list(self, show: impl Fn() -> bool + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
@@ -315,7 +365,7 @@ impl From<DropDownCustomStyle> for Style {
         val.0
     }
 }
-impl<T> CustomStylable<DropDownCustomStyle> for DropDown<T> {
+impl<T> CustomStylable<DropDownCustomStyle> for Dropdown<T> {
     type DV = Self;
 }
 
@@ -335,7 +385,7 @@ impl DropDownCustomStyle {
     }
 }
 
-impl<T> Drop for DropDown<T> {
+impl<T> Drop for Dropdown<T> {
     fn drop(&mut self) {
         if let Some(id) = self.overlay_id {
             remove_overlay(id)

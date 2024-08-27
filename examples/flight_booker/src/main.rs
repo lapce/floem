@@ -1,13 +1,15 @@
+use std::fmt::Display;
+
 use floem::{
     peniko::Color,
-    reactive::{create_rw_signal, create_signal, SignalGet, SignalUpdate},
+    reactive::{create_rw_signal, RwSignal, SignalGet, SignalUpdate},
     unit::UnitExt,
     views::{
-        button, dyn_container, empty, h_stack, labeled_radio_button, text, text_input, v_stack,
-        Decorators,
+        button, dyn_container, empty, text, text_input, v_stack, Decorators, RadioButton, StackExt,
     },
     IntoView,
 };
+use strum::IntoEnumIterator;
 use time::Date;
 
 fn oneway_message(start_text: String) -> String {
@@ -18,17 +20,25 @@ fn return_message(start_text: String, return_text: String) -> String {
     format!("You have booked a flight on {start_text} and a return flight on {return_text}",)
 }
 
-#[derive(Eq, PartialEq, Clone)]
+#[derive(Eq, PartialEq, Clone, Copy, strum::EnumIter)]
 enum FlightMode {
     OneWay,
     Return,
+}
+impl Display for FlightMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FlightMode::OneWay => f.write_str("One Way Flight"),
+            FlightMode::Return => f.write_str("Return Flight"),
+        }
+    }
 }
 
 static DATE_FORMAT: &[time::format_description::FormatItem<'_>] =
     time::macros::format_description!("[day]-[month]-[year]");
 
 pub fn app_view() -> impl IntoView {
-    let (flight_mode, flight_mode_set) = create_signal(FlightMode::OneWay);
+    let flight_mode = RwSignal::new(FlightMode::OneWay);
 
     let start_text = create_rw_signal("24-02-2024".to_string());
     let start_date = move || Date::parse(&start_text.get(), &DATE_FORMAT).ok();
@@ -55,20 +65,9 @@ pub fn app_view() -> impl IntoView {
 
     let did_booking = create_rw_signal(false);
 
-    let mode_picker = h_stack((
-        labeled_radio_button(
-            FlightMode::OneWay,
-            move || flight_mode.get(),
-            || "One way flight",
-        )
-        .on_update(move |v| flight_mode_set.set(v)),
-        labeled_radio_button(
-            FlightMode::Return,
-            move || flight_mode.get(),
-            || "Return flight",
-        )
-        .on_update(move |v| flight_mode_set.set(v)),
-    ));
+    let mode_picker = FlightMode::iter()
+        .map(move |fm| RadioButton::new_labeled_get_set(fm, flight_mode, move || fm))
+        .h_stack();
 
     let start_date_input = text_input(start_text)
         .placeholder("Start date")

@@ -142,11 +142,11 @@ impl View for Tooltip {
     }
 }
 
-pub trait TooltipTrait {
+pub trait TooltipExt {
     fn tooltip<V: IntoView + 'static>(self, tip: impl Fn() -> V + 'static) -> Tooltip;
 }
 
-impl<T: View + 'static> TooltipTrait for T {
+impl<T: View + 'static> TooltipExt for T {
     fn tooltip<V: IntoView + 'static>(self, tip: impl Fn() -> V + 'static) -> Tooltip {
         tooltip(self, tip)
     }
