@@ -72,7 +72,7 @@ where
     let length = create_rw_signal(0);
     let offsets = create_rw_signal(Vec::new());
     create_effect(move |_| {
-        selection.track();
+        selection.track_with();
         id.update_state(ListUpdate::SelectionChanged);
     });
 

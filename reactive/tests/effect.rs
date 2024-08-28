@@ -12,8 +12,8 @@ fn batch_simple() {
     create_effect({
         let count = count.clone();
         move |_| {
-            name.track();
-            age.track();
+            name.track_with();
+            age.track_with();
 
             count.set(count.get() + 1);
         }
@@ -47,8 +47,8 @@ fn batch_batch() {
     create_effect({
         let count = count.clone();
         move |_| {
-            name.track();
-            age.track();
+            name.track_with();
+            age.track_with();
 
             count.set(count.get() + 1);
         }

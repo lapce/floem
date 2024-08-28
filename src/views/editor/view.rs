@@ -920,15 +920,15 @@ pub fn editor_view(
     let style = ed.style;
     let lines = ed.screen_lines;
     create_effect(move |_| {
-        doc.track();
-        style.track();
-        lines.track();
+        doc.track_with();
+        style.track_with();
+        lines.track_with();
         id.request_layout();
     });
 
     let hide_cursor = ed.cursor_info.hidden;
     create_effect(move |_| {
-        hide_cursor.track();
+        hide_cursor.track_with();
         id.request_paint();
     });
 
@@ -1200,7 +1200,7 @@ fn editor_content(
         let editor = editor.get_untracked();
         let cursor = cursor.get();
         let offset = cursor.offset();
-        editor.doc.track();
+        editor.doc.track_with();
         // TODO:?
         // editor.kind.track();
 

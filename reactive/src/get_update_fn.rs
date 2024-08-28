@@ -54,7 +54,7 @@ impl<T: Clone + 'static, O: Clone, GF: Fn(&T) -> O + Copy, UF: Fn(&O) -> T + Cop
         self.signal.id
     }
 
-    fn track(&self) {
+    fn track_with(&self) {
         SignalWith::id(self).signal().unwrap().subscribe();
     }
 

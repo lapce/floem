@@ -87,7 +87,7 @@ impl TextDocument {
 
         // Whenever the placeholders change, update the cache rev
         create_effect(move |_| {
-            placeholders.track();
+            placeholders.track_with();
             cache_rev.try_update(|cache_rev| {
                 *cache_rev += 1;
             });

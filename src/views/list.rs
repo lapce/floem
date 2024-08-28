@@ -72,7 +72,7 @@ where
     let list_id = ViewId::new();
     let selection = create_rw_signal(None);
     create_effect(move |_| {
-        selection.track();
+        selection.track_with();
         list_id.update_state(ListUpdate::SelectionChanged);
     });
     let stack = v_stack_from_iter(iterator.into_iter().enumerate().map(move |(index, v)| {

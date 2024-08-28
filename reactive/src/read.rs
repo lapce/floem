@@ -63,7 +63,9 @@ pub trait SignalWith<T> {
     fn id(&self) -> Id;
 
     /// Only subscribes to the current running effect to this Signal.
-    fn track(&self) {
+    ///
+    /// This does the exact same thing as [SignalRead::track] but is named differently to avoid naming conflicts
+    fn track_with(&self) {
         self.id().signal().unwrap().subscribe();
     }
 

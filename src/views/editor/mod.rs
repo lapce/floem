@@ -1406,7 +1406,7 @@ fn create_view_effects(cx: Scope, ed: &Editor) {
         let cursor_info = ed.cursor_info.clone();
         let cursor = ed.cursor;
         cx.create_effect(move |_| {
-            cursor.track();
+            cursor.track_with();
             cursor_info.reset();
         });
     }

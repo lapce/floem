@@ -36,7 +36,7 @@ fn app_view() -> impl IntoView {
 
     let tick = create_rw_signal(());
     create_effect(move |_| {
-        tick.track();
+        tick.track_with();
         let before_exec = Instant::now();
 
         exec_after(Duration::from_millis(100), move |_| {
