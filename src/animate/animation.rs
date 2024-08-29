@@ -1,8 +1,6 @@
-use peniko::kurbo::CubicBez;
-
 use crate::style::{Style, StyleKeyInfo, StylePropRef};
 
-use super::{AnimState, AnimStateKind, Easing, EasingFn, EasingMode};
+use super::{AnimState, AnimStateKind, Bezier, Easing, EasingFn, EasingMode};
 use std::any::Any;
 use std::rc::Rc;
 
@@ -81,7 +79,7 @@ impl KeyFrame {
     }
 
     /// Creates an animation that accelerates and/or decelerates using a custom cubic bezier.
-    pub fn ease_fn_bezier(self, curve: CubicBez) -> Self {
+    pub fn ease_fn_bezier(self, curve: Bezier) -> Self {
         self.easing_fn(EasingFn::CubicBezier(curve))
     }
 

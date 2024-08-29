@@ -1,6 +1,6 @@
 use std::f64::consts::PI;
 
-use peniko::kurbo::ParamCurve;
+use peniko::kurbo::{ParamCurve, Point};
 
 use super::assert_valid_time;
 
@@ -15,6 +15,9 @@ pub enum EasingMode {
     /// Interpolation uses EasingMode::In for the first half of the animation and EasingMode::Out for the second half.
     InOut,
 }
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Bezier(f64, f64, f64, f64);
 
 #[derive(Debug, Clone, Copy, Default)]
 pub enum EasingFn {
@@ -37,7 +40,7 @@ pub enum EasingFn {
     /// Creates an animation that accelerates and/or decelerates using a sine formula.
     Sine,
     /// Creates an animation that accelerates and/or decelerates using cubic bezier.
-    CubicBezier(crate::kurbo::CubicBez),
+    CubicBezier(Bezier),
     //TODO:
     // /// Retracts the motion of an animation slightly before it begins to animate in the path indicated.
     // Back,
@@ -86,10 +89,15 @@ impl Easing {
             EasingFn::Quartic => time.powf(4.0),
             EasingFn::Quintic => time.powf(5.0),
             EasingFn::Sine => 1.0 - ((time * PI) / 2.0).cos(),
-            EasingFn::CubicBezier(cubic_bez) => cubic_bez.eval(time).y,
-            // EasingFn::Power => todo!(),
-            // EasingFn::Back => todo!(),
-            // EasingFn::Bounce => todo!(),
+            EasingFn::CubicBezier(c) => {
+                let p1 = Point::new(0., 0.);
+                let p2 = Point::new(c.0, c.1);
+                let p3 = Point::new(c.2, c.3);
+                let p4 = Point::new(1., 1.);
+                crate::kurbo::CubicBez::new(p1, p2, p3, p4).eval(time).y
+            } // EasingFn::Power => todo!(),
+              // EasingFn::Back => todo!(),
+              // EasingFn::Bounce => todo!(),
         }
     }
 
