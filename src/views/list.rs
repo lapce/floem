@@ -11,7 +11,7 @@ use crate::{
     keyboard::{Key, NamedKey},
     view::View,
 };
-use floem_reactive::{create_rw_signal, RwSignal, SignalGet, SignalUpdate, SignalWith};
+use floem_reactive::{create_rw_signal, RwSignal, SignalGet, SignalTrack, SignalUpdate};
 
 style_class!(pub ListClass);
 style_class!(pub ListItemClass);
@@ -72,7 +72,7 @@ where
     let list_id = ViewId::new();
     let selection = create_rw_signal(None);
     create_effect(move |_| {
-        selection.track_with();
+        selection.track();
         list_id.update_state(ListUpdate::SelectionChanged);
     });
     let stack = v_stack_from_iter(iterator.into_iter().enumerate().map(move |(index, v)| {

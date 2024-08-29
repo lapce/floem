@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use floem::{
     action::exec_after,
     reactive::{
-        create_effect, create_get_update, create_rw_signal, SignalGet, SignalUpdate, SignalWith,
+        create_effect, create_get_update, create_rw_signal, SignalGet, SignalTrack, SignalUpdate,
     },
     unit::UnitExt,
     views::{button, container, label, slider, stack, text, v_stack, Decorators},
@@ -36,7 +36,7 @@ fn app_view() -> impl IntoView {
 
     let tick = create_rw_signal(());
     create_effect(move |_| {
-        tick.track_with();
+        tick.track();
         let before_exec = Instant::now();
 
         exec_after(Duration::from_millis(100), move |_| {

@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use crate::{
     effect::create_effect,
-    read::SignalRead,
+    read::{SignalRead, SignalTrack},
     scope::Scope,
     signal::{create_signal, ReadSignal},
     SignalGet, SignalUpdate, SignalWith,
@@ -32,6 +32,11 @@ impl<T: Clone> SignalGet<T> for Memo<T> {
 }
 
 impl<T> SignalWith<T> for Memo<T> {
+    fn id(&self) -> crate::id::Id {
+        self.getter.id
+    }
+}
+impl<T> SignalTrack<T> for Memo<T> {
     fn id(&self) -> crate::id::Id {
         self.getter.id
     }

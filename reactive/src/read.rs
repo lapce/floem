@@ -58,14 +58,11 @@ pub trait SignalGet<T: Clone> {
     }
 }
 
-pub trait SignalWith<T> {
-    /// get the Signal Id
+pub trait SignalTrack<T> {
     fn id(&self) -> Id;
-
     /// Only subscribes to the current running effect to this Signal.
     ///
-    /// This does the exact same thing as [SignalRead::track] but is named differently to avoid naming conflicts
-    fn track_with(&self) {
+    fn track(&self) {
         self.id().signal().unwrap().subscribe();
     }
 
@@ -76,6 +73,11 @@ pub trait SignalWith<T> {
             signal.subscribe();
         }
     }
+}
+
+pub trait SignalWith<T> {
+    /// get the Signal Id
+    fn id(&self) -> Id;
 
     /// Applies a closure to the current value stored in the Signal, and subscribes
     /// to the current running effect to this Memo.
@@ -125,19 +127,6 @@ pub trait SignalWith<T> {
 pub trait SignalRead<T> {
     /// get the Signal Id
     fn id(&self) -> Id;
-
-    /// Only subscribes to the current running effect to this Signal.
-    fn track(&self) {
-        self.id().signal().unwrap().subscribe();
-    }
-
-    /// If the signal isn't disposed,
-    // subscribes to the current running effect to this Signal.
-    fn try_track(&self) {
-        if let Some(signal) = self.id().signal() {
-            signal.subscribe();
-        }
-    }
 
     /// Reads the data stored in the Signal to a RefCell, so that you can `borrow()`
     /// and access the data.

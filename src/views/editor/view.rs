@@ -21,7 +21,7 @@ use floem_editor_core::{
     cursor::{ColPosition, CursorAffinity, CursorMode},
     mode::{Mode, VisualMode},
 };
-use floem_reactive::{SignalGet, SignalUpdate, SignalWith};
+use floem_reactive::{SignalGet, SignalTrack, SignalUpdate, SignalWith};
 
 use crate::views::editor::{
     command::CommandExecuted,
@@ -920,15 +920,15 @@ pub fn editor_view(
     let style = ed.style;
     let lines = ed.screen_lines;
     create_effect(move |_| {
-        doc.track_with();
-        style.track_with();
-        lines.track_with();
+        doc.track();
+        style.track();
+        lines.track();
         id.request_layout();
     });
 
     let hide_cursor = ed.cursor_info.hidden;
     create_effect(move |_| {
-        hide_cursor.track_with();
+        hide_cursor.track();
         id.request_paint();
     });
 
@@ -1200,7 +1200,7 @@ fn editor_content(
         let editor = editor.get_untracked();
         let cursor = cursor.get();
         let offset = cursor.offset();
-        editor.doc.track_with();
+        editor.doc.track();
         // TODO:?
         // editor.kind.track();
 

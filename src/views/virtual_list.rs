@@ -12,7 +12,9 @@ use crate::{
     keyboard::{Key, NamedKey},
     view::View,
 };
-use floem_reactive::{create_rw_signal, RwSignal, SignalGet, SignalUpdate, SignalWith};
+use floem_reactive::{
+    create_rw_signal, RwSignal, SignalGet, SignalTrack, SignalUpdate, SignalWith,
+};
 use peniko::kurbo::{Rect, Size};
 use std::hash::Hash;
 use std::rc::Rc;
@@ -72,7 +74,7 @@ where
     let length = create_rw_signal(0);
     let offsets = create_rw_signal(Vec::new());
     create_effect(move |_| {
-        selection.track_with();
+        selection.track();
         id.update_state(ListUpdate::SelectionChanged);
     });
 

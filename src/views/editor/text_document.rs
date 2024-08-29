@@ -15,7 +15,9 @@ use floem_editor_core::{
     selection::Selection,
     word::WordCursor,
 };
-use floem_reactive::{create_effect, RwSignal, Scope, SignalGet, SignalUpdate, SignalWith};
+use floem_reactive::{
+    create_effect, RwSignal, Scope, SignalGet, SignalTrack, SignalUpdate, SignalWith,
+};
 use lapce_xi_rope::{Rope, RopeDelta};
 use smallvec::{smallvec, SmallVec};
 
@@ -87,7 +89,7 @@ impl TextDocument {
 
         // Whenever the placeholders change, update the cache rev
         create_effect(move |_| {
-            placeholders.track_with();
+            placeholders.track();
             cache_rev.try_update(|cache_rev| {
                 *cache_rev += 1;
             });

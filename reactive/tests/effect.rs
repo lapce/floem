@@ -1,6 +1,6 @@
 use std::{cell::Cell, rc::Rc};
 
-use floem_reactive::{batch, create_effect, create_rw_signal, SignalUpdate, SignalWith};
+use floem_reactive::{batch, create_effect, create_rw_signal, SignalTrack, SignalUpdate};
 
 #[test]
 fn batch_simple() {
@@ -12,8 +12,8 @@ fn batch_simple() {
     create_effect({
         let count = count.clone();
         move |_| {
-            name.track_with();
-            age.track_with();
+            name.track();
+            age.track();
 
             count.set(count.get() + 1);
         }
@@ -47,8 +47,8 @@ fn batch_batch() {
     create_effect({
         let count = count.clone();
         move |_| {
-            name.track_with();
-            age.track_with();
+            name.track();
+            age.track();
 
             count.set(count.get() + 1);
         }
