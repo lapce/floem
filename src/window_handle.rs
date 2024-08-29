@@ -25,7 +25,6 @@ use crate::unit::UnitExt;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::views::{container, stack};
 use crate::{
-    animate::{AnimPropKind, AnimUpdateMsg, AnimValue, AnimatedProp, SizeUnit},
     app::UserEvent,
     app_state::AppState,
     context::{
@@ -43,9 +42,8 @@ use crate::{
     style::{CursorStyle, Style, StyleSelector},
     theme::{default_theme, Theme},
     update::{
-        UpdateMessage, ANIM_UPDATE_MESSAGES, CENTRAL_DEFERRED_UPDATE_MESSAGES,
-        CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES,
-        UPDATE_MESSAGES,
+        UpdateMessage, CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES,
+        CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES,
     },
     view::{default_compute_layout, view_tab_navigation, IntoView, View},
     view_state::ChangeFlags,
@@ -718,7 +716,6 @@ impl WindowHandle {
             if !self.needs_layout()
                 && !self.needs_style()
                 && !self.has_deferred_update_messages()
-                && !self.has_anim_update_messages()
                 && !self.app_state.request_compute_layout
             {
                 break;
@@ -739,7 +736,7 @@ impl WindowHandle {
             }
 
             self.process_deferred_update_messages();
-            self.process_anim_update_messages();
+            // self.process_anim_update_messages();
         }
 
         self.set_cursor();
@@ -919,10 +916,9 @@ impl WindowHandle {
                     }
                     UpdateMessage::Animation { id, animation } => {
                         let view_state = id.state();
-                        if let Some(ref listener) = animation.on_create_listener {
-                            listener(animation.id)
-                        }
-                        view_state.borrow_mut().animation = Some(animation);
+                        let mut view_state = view_state.borrow_mut();
+                        view_state.animation = Some(animation);
+                        drop(view_state);
                         id.request_style();
                     }
                     UpdateMessage::WindowScale(scale) => {
@@ -1029,102 +1025,53 @@ impl WindowHandle {
         }
     }
 
-    fn process_anim_update_messages(&mut self) {
-        let msgs: Vec<AnimUpdateMsg> = ANIM_UPDATE_MESSAGES.with(|msgs| {
-            let mut msgs = msgs.borrow_mut();
-            let len = msgs.len();
-            msgs.drain(0..len).collect()
-        });
+    // fn process_anim_update_messages(&mut self) {
+    //     let msgs: Vec<AnimUpdateMsg> = ANIM_UPDATE_MESSAGES.with(|msgs| {
+    //         let mut msgs = msgs.borrow_mut();
+    //         let len = msgs.len();
+    //         msgs.drain(0..len).collect()
+    //     });
 
-        for msg in msgs {
-            match msg {
-                AnimUpdateMsg::Prop {
-                    id: anim_id,
-                    kind,
-                    val,
-                } => {
-                    let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
-                    self.process_update_anim_prop(view_id, kind, val);
-                }
-                AnimUpdateMsg::Resume(anim_id) => {
-                    let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
-                    if let Some(anim) = view_id.state().borrow_mut().animation.as_mut() {
-                        anim.resume();
-                        view_id.request_style();
-                    }
-                }
-                AnimUpdateMsg::Pause(anim_id) => {
-                    let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
-                    if let Some(anim) = view_id.state().borrow_mut().animation.as_mut() {
-                        anim.pause();
-                    }
-                }
-                AnimUpdateMsg::Start(anim_id) => {
-                    let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
-                    if let Some(anim) = view_id.state().borrow_mut().animation.as_mut() {
-                        anim.start();
-                        view_id.request_style();
-                    }
-                }
-                AnimUpdateMsg::Stop(anim_id) => {
-                    let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
-                    if let Some(anim) = view_id.state().borrow_mut().animation.as_mut() {
-                        anim.stop();
-                        view_id.request_style();
-                    }
-                }
-            }
-        }
-    }
-
-    fn process_update_anim_prop(&mut self, view_id: ViewId, kind: AnimPropKind, val: AnimValue) {
-        let layout = view_id.get_layout().unwrap_or_default();
-        let view_state = view_id.state();
-        let prop = match kind {
-            AnimPropKind::Scale => todo!(),
-            AnimPropKind::Width => {
-                let width = layout.size.width;
-                AnimatedProp::Width {
-                    from: width as f64,
-                    to: val.get_f64(),
-                    unit: SizeUnit::Px,
-                }
-            }
-            AnimPropKind::Height => {
-                let height = layout.size.height;
-                AnimatedProp::Width {
-                    from: height as f64,
-                    to: val.get_f64(),
-                    unit: SizeUnit::Px,
-                }
-            }
-            AnimPropKind::Prop { prop } => {
-                //TODO:  get from cx
-                let from = view_state
-                    .borrow()
-                    .combined_style
-                    .map
-                    .get(&prop.key)
-                    .cloned()
-                    .unwrap_or_else(|| (prop.info().default_as_any)());
-                AnimatedProp::Prop {
-                    prop,
-                    from,
-                    to: val.get_any(),
-                }
-            }
-        };
-
-        // Overrides the old value
-        // TODO: logic based on the old val to make the animation smoother when overriding an old
-        // animation that was in progress
-        if let Some(anim) = view_state.borrow_mut().animation.as_mut() {
-            anim.props_mut().insert(kind, prop);
-            anim.start();
-        }
-
-        view_id.request_style();
-    }
+    //     for msg in msgs {
+    //         match msg {
+    //             AnimUpdateMsg::Prop {
+    //                 id: anim_id,
+    //                 kind,
+    //                 val,
+    //             } => {
+    //                 let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
+    //                 self.process_update_anim_prop(view_id, kind, val);
+    //             }
+    //             AnimUpdateMsg::Resume(anim_id) => {
+    //                 let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
+    //                 if let Some(anim) = view_id.state().borrow_mut().animation.as_mut() {
+    //                     anim.resume();
+    //                     view_id.request_style();
+    //                 }
+    //             }
+    //             AnimUpdateMsg::Pause(anim_id) => {
+    //                 let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
+    //                 if let Some(anim) = view_id.state().borrow_mut().animation.as_mut() {
+    //                     anim.pause();
+    //                 }
+    //             }
+    //             AnimUpdateMsg::Start(anim_id) => {
+    //                 let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
+    //                 if let Some(anim) = view_id.state().borrow_mut().animation.as_mut() {
+    //                     anim.start();
+    //                     view_id.request_style();
+    //                 }
+    //             }
+    //             AnimUpdateMsg::Stop(anim_id) => {
+    //                 let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
+    //                 if let Some(anim) = view_id.state().borrow_mut().animation.as_mut() {
+    //                     anim.stop();
+    //                     view_id.request_style();
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
 
     fn needs_layout(&mut self) -> bool {
         self.id
@@ -1149,10 +1096,6 @@ impl WindowHandle {
                 .map(|m| !m.is_empty())
                 .unwrap_or(false)
         })
-    }
-
-    fn has_anim_update_messages(&mut self) -> bool {
-        ANIM_UPDATE_MESSAGES.with(|m| !m.borrow().is_empty())
     }
 
     fn update_window_menu(&mut self, _menu: Menu) {

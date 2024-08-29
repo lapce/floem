@@ -1,5 +1,7 @@
 use std::f64::consts::PI;
 
+use peniko::kurbo::ParamCurve;
+
 use super::assert_valid_time;
 
 /// Alters how the easing function behaves, i.e. how the animation interpolates.
@@ -34,6 +36,8 @@ pub enum EasingFn {
     Quintic,
     /// Creates an animation that accelerates and/or decelerates using a sine formula.
     Sine,
+    /// Creates an animation that accelerates and/or decelerates using cubic bezier.
+    CubicBezier(crate::kurbo::CubicBez),
     //TODO:
     // /// Retracts the motion of an animation slightly before it begins to animate in the path indicated.
     // Back,
@@ -82,6 +86,7 @@ impl Easing {
             EasingFn::Quartic => time.powf(4.0),
             EasingFn::Quintic => time.powf(5.0),
             EasingFn::Sine => 1.0 - ((time * PI) / 2.0).cos(),
+            EasingFn::CubicBezier(cubic_bez) => cubic_bez.eval(time).y,
             // EasingFn::Power => todo!(),
             // EasingFn::Back => todo!(),
             // EasingFn::Bounce => todo!(),

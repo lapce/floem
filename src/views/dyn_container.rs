@@ -1,9 +1,17 @@
+use std::any::Any;
+
 use floem_reactive::{as_child_of_current_scope, create_updater, Scope};
 
 use crate::{
+    animate::Animation,
     view::{AnyView, View},
     IntoView, ViewId,
 };
+
+enum UpdateMessage {
+    Val(Box<dyn Any>),
+    AnimComplete,
+}
 
 type ChildFn<T> = dyn Fn(T) -> (AnyView, Scope);
 
@@ -13,6 +21,9 @@ pub struct DynamicContainer<T: 'static> {
     child_id: ViewId,
     child_scope: Scope,
     child_fn: Box<ChildFn<T>>,
+    enter_animation: Option<Animation>,
+    exit_animation: Option<Animation>,
+    boxed_val: Option<Box<T>>,
 }
 
 /// A container for a dynamically updating View
@@ -68,7 +79,9 @@ pub fn dyn_container<CF: Fn(T) -> IV + 'static, T: 'static, IV: IntoView>(
 ) -> DynamicContainer<T> {
     let id = ViewId::new();
 
-    let initial = create_updater(update_view, move |new_state| id.update_state(new_state));
+    let initial = create_updater(update_view, move |new_state| {
+        id.update_state(UpdateMessage::Val(Box::new(new_state)))
+    });
 
     let child_fn = Box::new(as_child_of_current_scope(move |e| child_fn(e).into_any()));
     let (child, child_scope) = child_fn(initial);
@@ -79,6 +92,9 @@ pub fn dyn_container<CF: Fn(T) -> IV + 'static, T: 'static, IV: IntoView>(
         child_scope,
         child_id,
         child_fn,
+        enter_animation: None,
+        exit_animation: None,
+        boxed_val: None,
     }
 }
 
@@ -92,16 +108,57 @@ impl<T: 'static> View for DynamicContainer<T> {
     }
 
     fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
-        if let Ok(val) = state.downcast::<T>() {
-            let old_child_scope = self.child_scope;
-            let old_child_id = self.child_id;
-            let (new_child, new_child_scope) = (self.child_fn)(*val);
-            self.child_id = new_child.id();
-            self.id.set_children(vec![new_child]);
-            self.child_scope = new_child_scope;
-            cx.app_state_mut().remove_view(old_child_id);
-            old_child_scope.dispose();
-            self.id.request_all();
+        if let Ok(message) = state.downcast::<UpdateMessage>() {
+            match *message {
+                UpdateMessage::Val(any) => {
+                    if let Ok(val) = any.downcast::<T>() {
+                        if let Some(ref mut exit_anim) = self.exit_animation {
+                            self.child_id.update_animation(exit_anim.clone());
+                            exit_anim.start();
+                            self.boxed_val = Some(val);
+                            return;
+                        } else {
+                            self.swap_child(cx, val);
+                        }
+                    }
+                }
+                UpdateMessage::AnimComplete => {
+                    if let Some(val) = self.boxed_val.take() {
+                        self.swap_child(cx, val)
+                    }
+                }
+            }
         }
+    }
+}
+
+impl<T: 'static> DynamicContainer<T> {
+    fn swap_child(&mut self, cx: &mut crate::context::UpdateCx, val: Box<T>) {
+        let old_child_scope = self.child_scope;
+        let old_child_id = self.child_id;
+        let (new_child, new_child_scope) = (self.child_fn)(*val);
+        self.child_id = new_child.id();
+        self.id.set_children(vec![new_child]);
+        self.child_scope = new_child_scope;
+        cx.app_state_mut().remove_view(old_child_id);
+        old_child_scope.dispose();
+        if let Some(ref mut start_anim) = self.enter_animation {
+            start_anim.start();
+            self.child_id.update_animation(start_anim.clone());
+            // start_anim.id.start();
+        }
+        self.id.request_all();
+    }
+
+    pub fn enter_animation(mut self, anim: Animation) -> Self {
+        self.enter_animation = Some(anim);
+        self
+    }
+    pub fn exit_animation(mut self, anim: Animation) -> Self {
+        let v_id = self.id;
+        let anim = anim.on_complete(move || v_id.update_state(UpdateMessage::AnimComplete));
+        // self.child_id.update_animation(anim.clone());
+        self.exit_animation = Some(anim);
+        self
     }
 }

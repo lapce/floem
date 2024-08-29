@@ -1,5 +1,9 @@
+use std::time::Duration;
+
 use floem::{
+    animate::animation,
     reactive::{create_rw_signal, RwSignal, SignalGet, SignalUpdate},
+    style::Style,
     views::{button, dyn_container, h_stack, label, v_stack, Decorators},
     IntoView,
 };
@@ -46,6 +50,11 @@ fn app_view() -> impl IntoView {
                 ViewSwitcher::One => view_one().into_any(),
                 ViewSwitcher::Two => view_two(view).into_any(),
             },
+        )
+        .exit_animation(
+            animation()
+                .duration(Duration::from_secs(1))
+                .style(Style::new().width(10)),
         )
         .style(|s| s.padding(10).border(1)),
     ))

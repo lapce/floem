@@ -1,5 +1,5 @@
 use crate::{
-    animate::{AnimPropKind, Animation},
+    animate::Animation,
     context::{
         EventCallback, InteractionState, MenuCallback, MoveListener, ResizeCallback, ResizeListener,
     },
@@ -17,11 +17,6 @@ use peniko::kurbo::{Point, Rect};
 use smallvec::SmallVec;
 use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::Rc};
 use taffy::tree::NodeId;
-
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::Duration;
-#[cfg(target_arch = "wasm32")]
-use web_time::Duration;
 
 /// A stack of view attributes. Each entry is associated with a view decorator call.
 pub(crate) struct Stack<T> {
@@ -176,24 +171,7 @@ impl ViewState {
 
                 new_frame = true;
 
-                let props = animation.props();
-
-                for kind in props.keys() {
-                    let val =
-                        animation.animate_prop(animation.elapsed().unwrap_or(Duration::ZERO), kind);
-                    match kind {
-                        AnimPropKind::Width => {
-                            computed_style = computed_style.width(val.get_f32());
-                        }
-                        AnimPropKind::Height => {
-                            computed_style = computed_style.height(val.get_f32());
-                        }
-                        AnimPropKind::Prop { prop } => {
-                            computed_style.map.insert(prop.key, val.get_any());
-                        }
-                        AnimPropKind::Scale => todo!(),
-                    }
-                }
+                animation.animate_into(&mut computed_style);
 
                 if animation.can_advance() {
                     animation.advance();

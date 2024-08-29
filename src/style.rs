@@ -118,6 +118,16 @@ impl StylePropValue for PxPctAuto {
         };
         Some(text(label).into_any())
     }
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        match (self, other) {
+            (Self::Px(v1), Self::Px(v2)) => Some(Self::Px(v1 + (v2 - v1) * value)),
+            (Self::Pct(v1), Self::Pct(v2)) => Some(Self::Pct(v1 + (v2 - v1) * value)),
+            (Self::Auto, Self::Auto) => Some(Self::Auto),
+            // If the types don't match or interpolation between Auto and a value is needed,
+            // you might want to return None or handle this case specifically.
+            _ => None,
+        }
+    }
 }
 impl StylePropValue for PxPct {
     fn debug_view(&self) -> Option<Box<dyn View>> {
@@ -417,6 +427,7 @@ pub struct StylePropInfo {
     pub(crate) name: fn() -> &'static str,
     pub(crate) inherited: bool,
     pub(crate) default_as_any: fn() -> Rc<dyn Any>,
+    pub(crate) interpolate: fn(val1: &dyn Any, val2: &dyn Any, time: f64) -> Option<Rc<dyn Any>>,
     pub(crate) debug_any: fn(val: &dyn Any) -> String,
     pub(crate) debug_view: fn(val: &dyn Any) -> Option<Box<dyn View>>,
     pub(crate) transition_key: StyleKey,
@@ -443,6 +454,27 @@ impl StylePropInfo {
                         "expected type {} for property {}",
                         type_name::<T>(),
                         std::any::type_name::<Name>(),
+                    )
+                }
+            },
+            interpolate: |val1, val2, time| {
+                if let (Some(v1), Some(v2)) = (
+                    val1.downcast_ref::<StyleMapValue<T>>(),
+                    val2.downcast_ref::<StyleMapValue<T>>(),
+                ) {
+                    if let (StyleMapValue::Val(v1), StyleMapValue::Val(v2)) = (v1, v2) {
+                        v1.interpolate(v2, time)
+                            .map(|val| Rc::new(StyleMapValue::Val(val)) as Rc<dyn Any>)
+                    } else {
+                        None
+                    }
+                } else {
+                    panic!(
+                        "expected type {} for property {}. Got typeids {:?} and {:?}",
+                        type_name::<T>(),
+                        std::any::type_name::<Name>(),
+                        val1.type_id(),
+                        val2.type_id()
                     )
                 }
             },
