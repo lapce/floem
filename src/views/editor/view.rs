@@ -21,7 +21,7 @@ use floem_editor_core::{
     cursor::{ColPosition, CursorAffinity, CursorMode},
     mode::{Mode, VisualMode},
 };
-use floem_reactive::{SignalGet, SignalUpdate, SignalWith};
+use floem_reactive::{SignalGet, SignalTrack, SignalUpdate, SignalWith};
 
 use crate::views::editor::{
     command::CommandExecuted,

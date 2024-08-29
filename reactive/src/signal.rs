@@ -10,7 +10,7 @@ use std::{
 use crate::{
     effect::{run_effect, EffectTrait},
     id::Id,
-    read::{SignalRead, SignalWith},
+    read::{SignalRead, SignalTrack, SignalWith},
     runtime::RUNTIME,
     write::SignalWrite,
     SignalGet, SignalUpdate,
@@ -253,6 +253,12 @@ impl<T> SignalWith<T> for RwSignal<T> {
     }
 }
 
+impl<T> SignalTrack<T> for RwSignal<T> {
+    fn id(&self) -> Id {
+        self.id
+    }
+}
+
 impl<T> SignalRead<T> for RwSignal<T> {
     fn id(&self) -> Id {
         self.id
@@ -272,6 +278,12 @@ impl<T: Clone> SignalGet<T> for ReadSignal<T> {
 }
 
 impl<T> SignalWith<T> for ReadSignal<T> {
+    fn id(&self) -> Id {
+        self.id
+    }
+}
+
+impl<T> SignalTrack<T> for ReadSignal<T> {
     fn id(&self) -> Id {
         self.id
     }

@@ -32,7 +32,7 @@ use floem_editor_core::{
     selection::Selection,
     soft_tab::{snap_to_soft_tab_line_col, SnapDirection},
 };
-use floem_reactive::{SignalGet, SignalUpdate, SignalWith, Trigger};
+use floem_reactive::{SignalGet, SignalTrack, SignalUpdate, SignalWith, Trigger};
 use lapce_xi_rope::Rope;
 
 pub mod actions;

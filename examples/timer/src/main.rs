@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use floem::{
     action::exec_after,
     reactive::{
-        create_effect, create_get_update, create_rw_signal, SignalGet, SignalUpdate, SignalWith,
+        create_effect, create_get_update, create_rw_signal, SignalGet, SignalTrack, SignalUpdate,
     },
     unit::UnitExt,
     views::{button, container, label, slider, stack, text, v_stack, Decorators},

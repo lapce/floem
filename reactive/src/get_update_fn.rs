@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::{RwSignal, SignalGet, SignalUpdate, SignalWith};
+use crate::{read::SignalTrack, RwSignal, SignalGet, SignalUpdate, SignalWith};
 
 pub struct GetUpdateFn<T, O, GF: Fn(&T) -> O + Clone + 'static, UF: Fn(&O) -> T + 'static> {
     signal: RwSignal<T>,
@@ -54,16 +54,6 @@ impl<T: Clone + 'static, O: Clone, GF: Fn(&T) -> O + Copy, UF: Fn(&O) -> T + Cop
         self.signal.id
     }
 
-    fn track(&self) {
-        SignalWith::id(self).signal().unwrap().subscribe();
-    }
-
-    fn try_track(&self) {
-        if let Some(signal) = SignalWith::id(self).signal() {
-            signal.subscribe();
-        }
-    }
-
     fn with<O2>(&self, f: impl FnOnce(&O) -> O2) -> O2
     where
         T: 'static,
@@ -104,6 +94,23 @@ impl<T: Clone + 'static, O: Clone, GF: Fn(&T) -> O + Copy, UF: Fn(&O) -> T + Cop
             signal.with_untracked(|v| f(Some(&func(v))))
         } else {
             f(None)
+        }
+    }
+}
+
+impl<T: Clone + 'static, O: Clone, GF: Fn(&T) -> O + Copy, UF: Fn(&O) -> T + Copy> SignalTrack<O>
+    for GetUpdateFn<T, O, GF, UF>
+{
+    fn id(&self) -> crate::id::Id {
+        self.signal.id
+    }
+    fn track(&self) {
+        SignalWith::id(self).signal().unwrap().subscribe();
+    }
+
+    fn try_track(&self) {
+        if let Some(signal) = SignalWith::id(self).signal() {
+            signal.subscribe();
         }
     }
 }

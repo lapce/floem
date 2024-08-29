@@ -15,7 +15,9 @@ use floem_editor_core::{
     selection::Selection,
     word::WordCursor,
 };
-use floem_reactive::{create_effect, RwSignal, Scope, SignalGet, SignalUpdate, SignalWith};
+use floem_reactive::{
+    create_effect, RwSignal, Scope, SignalGet, SignalTrack, SignalUpdate, SignalWith,
+};
 use lapce_xi_rope::{Rope, RopeDelta};
 use smallvec::{smallvec, SmallVec};
 
