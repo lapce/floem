@@ -26,7 +26,6 @@ impl KeyFrame {
         }
     }
 
-    /// This function is *NOT* reactive. This will only be run once and will not respond to changes in signals.
     pub fn style(mut self, style: impl Fn(Style) -> Style) -> Self {
         self.style = style(Style::new());
         self
@@ -254,8 +253,6 @@ impl Animation {
 
     /// If there is a matching keyframe id, the style in this keyframe will only override the style values in the new style.
     /// If you want the style to completely override style see [Animation::keyframe_override].
-    ///
-    /// This function is *NOT* reactive. This will only be run once and will not respond to changes in signals.
     pub fn keyframe(mut self, frame_id: u32, key_frame: impl Fn(KeyFrame) -> KeyFrame) -> Self {
         let frame = key_frame(KeyFrame::new(frame_id));
         match self.key_frames.entry(frame_id) {
@@ -273,8 +270,6 @@ impl Animation {
 
     /// If there is a matching keyframe id, the style in this keyframe will completely override the style in the frame that already exists.
     /// If you want the style to only override the new values see [Animation::keyframe].
-    ///
-    /// This function is *NOT* reactive. This will only be run once and will not respond to changes in signals.
     pub fn keyframe_override(
         mut self,
         frame_id: u32,
@@ -367,7 +362,8 @@ impl Animation {
         };
     }
 
-    pub(crate) fn resume(&mut self) {
+    // TODO: This function is never used but probably should be somewhere
+    pub(crate) fn _resume(&mut self) {
         debug_assert!(
             self.state_kind() == AnimStateKind::Paused,
             "Tried to resume an animation that is not paused"

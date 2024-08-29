@@ -310,12 +310,20 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         view
     }
 
-    fn animation(self, anim: Animation) -> Self::DV {
+    fn animation(self, animation: impl Fn(Animation) -> Animation + 'static) -> Self::DV {
         let view = self.into_view();
-        let id = view.id();
-        create_effect(move |_| {
-            id.update_animation(anim.clone());
-        });
+        let view_id = view.id();
+        let state = view_id.state();
+
+        let offset = state.borrow_mut().animation.next_offset();
+        let initial_animation = create_updater(
+            move || animation(Animation::new()),
+            move |animation| {
+                view_id.update_animation(offset, animation);
+            },
+        );
+        state.borrow_mut().animation.push(initial_animation);
+
         view
     }
 

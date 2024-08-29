@@ -321,7 +321,7 @@ impl WindowHandle {
             let hovered = &cx.app_state.hovered.clone();
             for id in was_hovered.unwrap().symmetric_difference(hovered) {
                 let view_state = id.state();
-                if view_state.borrow().animation.is_some()
+                if view_state.borrow().has_active_animation()
                     || view_state
                         .borrow()
                         .has_style_selectors
@@ -466,7 +466,7 @@ impl WindowHandle {
                     .borrow()
                     .has_style_selectors
                     .has(StyleSelector::Active)
-                || view_state.borrow().animation.is_some()
+                || view_state.borrow().has_active_animation()
             {
                 id.request_style_recursive();
             }
@@ -913,13 +913,6 @@ impl WindowHandle {
                                 floem_winit::dpi::LogicalPosition::new(pos.x, pos.y),
                             ));
                         }
-                    }
-                    UpdateMessage::Animation { id, animation } => {
-                        let view_state = id.state();
-                        let mut view_state = view_state.borrow_mut();
-                        view_state.animation = Some(animation);
-                        drop(view_state);
-                        id.request_style();
                     }
                     UpdateMessage::WindowScale(scale) => {
                         cx.app_state.scale = scale;

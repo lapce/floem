@@ -332,11 +332,10 @@ impl ViewId {
         self.add_update_message(UpdateMessage::ScrollTo { id: *self, rect });
     }
 
-    pub fn update_animation(&self, animation: Animation) {
-        self.add_update_message(UpdateMessage::Animation {
-            id: *self,
-            animation,
-        });
+    pub(crate) fn update_animation(&self, offset: StackOffset<Animation>, animation: Animation) {
+        let state = self.state();
+        state.borrow_mut().animation.set(offset, animation);
+        self.request_style();
     }
 
     pub fn update_state(&self, state: impl Any) {

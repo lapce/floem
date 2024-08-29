@@ -3,7 +3,7 @@ use std::{any::Any, cell::RefCell, collections::HashMap};
 use floem_winit::window::ResizeDirection;
 use peniko::kurbo::{Point, Rect, Size, Vec2};
 
-use crate::{animate::Animation, id::ViewId, menu::Menu, view::View};
+use crate::{id::ViewId, menu::Menu, view::View};
 
 thread_local! {
     /// Stores all the update message with their original `ViewId`
@@ -53,10 +53,6 @@ pub(crate) enum UpdateMessage {
     DragWindow,
     DragResizeWindow(ResizeDirection),
     SetWindowDelta(Vec2),
-    Animation {
-        id: ViewId,
-        animation: Animation,
-    },
     ShowContextMenu {
         menu: Menu,
         pos: Option<Point>,

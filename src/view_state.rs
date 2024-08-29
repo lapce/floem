@@ -95,7 +95,7 @@ pub struct ViewState {
     pub(crate) layout_rect: Rect,
     pub(crate) layout_props: LayoutProps,
     pub(crate) view_style_props: ViewStyleProps,
-    pub(crate) animation: Option<Animation>,
+    pub(crate) animation: Stack<Animation>,
     pub(crate) classes: Vec<StyleClassRef>,
     pub(crate) dragging_style: Option<Style>,
     pub(crate) combined_style: Style,
@@ -123,7 +123,7 @@ impl ViewState {
             requested_changes: ChangeFlags::all(),
             request_style_recursive: false,
             has_style_selectors: StyleSelectors::default(),
-            animation: None,
+            animation: Default::default(),
             classes: Vec::new(),
             combined_style: Style::new(),
             taffy_style: taffy::style::Style::DEFAULT,
@@ -162,21 +162,19 @@ impl ViewState {
             .apply_classes_from_context(&self.classes, context)
             .apply(self.style());
 
-        'anim: {
-            if let Some(animation) = self.animation.as_mut() {
-                // Means effectively no changes should be applied - bail out
-                if animation.is_completed() && animation.is_auto_reverse() {
-                    break 'anim;
-                }
+        for animation in self
+            .animation
+            .stack
+            .iter_mut()
+            .filter(|anim| !(anim.is_completed() && anim.is_auto_reverse()))
+        {
+            new_frame = true;
 
-                new_frame = true;
+            animation.animate_into(&mut computed_style);
 
-                animation.animate_into(&mut computed_style);
-
-                if animation.can_advance() {
-                    animation.advance();
-                    debug_assert!(!animation.is_idle());
-                }
+            if animation.can_advance() {
+                animation.advance();
+                debug_assert!(!animation.is_idle());
             }
         }
 
@@ -187,6 +185,15 @@ impl ViewState {
         self.combined_style = computed_style;
 
         new_frame
+    }
+
+    pub(crate) fn has_active_animation(&self) -> bool {
+        for animation in self.animation.stack.iter() {
+            if animation.is_in_progress() {
+                return true;
+            }
+        }
+        false
     }
 
     pub(crate) fn style(&self) -> Style {
