@@ -1018,54 +1018,6 @@ impl WindowHandle {
         }
     }
 
-    // fn process_anim_update_messages(&mut self) {
-    //     let msgs: Vec<AnimUpdateMsg> = ANIM_UPDATE_MESSAGES.with(|msgs| {
-    //         let mut msgs = msgs.borrow_mut();
-    //         let len = msgs.len();
-    //         msgs.drain(0..len).collect()
-    //     });
-
-    //     for msg in msgs {
-    //         match msg {
-    //             AnimUpdateMsg::Prop {
-    //                 id: anim_id,
-    //                 kind,
-    //                 val,
-    //             } => {
-    //                 let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
-    //                 self.process_update_anim_prop(view_id, kind, val);
-    //             }
-    //             AnimUpdateMsg::Resume(anim_id) => {
-    //                 let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
-    //                 if let Some(anim) = view_id.state().borrow_mut().animation.as_mut() {
-    //                     anim.resume();
-    //                     view_id.request_style();
-    //                 }
-    //             }
-    //             AnimUpdateMsg::Pause(anim_id) => {
-    //                 let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
-    //                 if let Some(anim) = view_id.state().borrow_mut().animation.as_mut() {
-    //                     anim.pause();
-    //                 }
-    //             }
-    //             AnimUpdateMsg::Start(anim_id) => {
-    //                 let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
-    //                 if let Some(anim) = view_id.state().borrow_mut().animation.as_mut() {
-    //                     anim.start();
-    //                     view_id.request_style();
-    //                 }
-    //             }
-    //             AnimUpdateMsg::Stop(anim_id) => {
-    //                 let view_id = self.app_state.get_view_id_by_anim_id(anim_id);
-    //                 if let Some(anim) = view_id.state().borrow_mut().animation.as_mut() {
-    //                     anim.stop();
-    //                     view_id.request_style();
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
-
     fn needs_layout(&mut self) -> bool {
         self.id
             .state()
