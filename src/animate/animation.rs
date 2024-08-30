@@ -8,7 +8,7 @@ use super::{AnimState, AnimStateCommand, AnimStateKind, Bezier, Easing};
 use std::any::Any;
 use std::rc::Rc;
 
-use floem_reactive::{create_effect, create_updater, RwSignal, SignalGet};
+use floem_reactive::{create_updater, RwSignal, SignalGet};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
@@ -312,14 +312,11 @@ impl Animation {
 
     pub fn state(mut self, command: impl Fn() -> AnimStateCommand + 'static) -> Self {
         let view_state = self.view_state;
-        let initial_command = create_updater(
-            move || command(),
-            move |command| {
-                if let Some((view_id, stack_offset)) = view_state.get_untracked() {
-                    view_id.update_animation_state(stack_offset, command);
-                }
-            },
-        );
+        let initial_command = create_updater(command, move |command| {
+            if let Some((view_id, stack_offset)) = view_state.get_untracked() {
+                view_id.update_animation_state(stack_offset, command);
+            }
+        });
         // apply the initial state in case this is called before being applied to a view
         self.transition(initial_command);
         self

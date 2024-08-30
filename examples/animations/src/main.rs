@@ -1,5 +1,6 @@
 use floem::{
     animate::Animation,
+    event::EventListener as EL,
     peniko::Color,
     reactive::{RwSignal, SignalGet, Trigger},
     unit::DurationUnitExt,
@@ -49,10 +50,10 @@ fn app_view() -> impl IntoView {
                     .pause(move || pause.track())
                     .resume(move || resume.track())
             })
-            .on_event_stop(floem::event::EventListener::PointerEnter, move |_| {
+            .on_event_stop(EL::PointerEnter, move |_| {
                 pause.notify();
             })
-            .on_event_stop(floem::event::EventListener::PointerLeave, move |_| {
+            .on_event_stop(EL::PointerLeave, move |_| {
                 resume.notify();
             }),
     ))
