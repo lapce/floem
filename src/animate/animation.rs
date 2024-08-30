@@ -8,7 +8,7 @@ use super::{AnimState, AnimStateCommand, AnimStateKind, Bezier, Easing};
 use std::any::Any;
 use std::rc::Rc;
 
-use floem_reactive::{create_updater, RwSignal, SignalGet};
+use floem_reactive::{create_effect, RwSignal, SignalGet};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
@@ -85,7 +85,7 @@ pub struct Animation {
     // This easing is used for when animating towards the default style (the style before the animation is applied).
     // pub(crate) easing: Easing,
     pub(crate) auto_reverse: bool,
-    pub(crate) skip: Option<Duration>,
+    pub(crate) delay: Duration,
     pub(crate) duration: Duration,
     pub(crate) repeat_mode: RepeatMode,
     pub(crate) animate: Animate,
@@ -106,7 +106,7 @@ impl Clone for Animation {
             // custom impl of clone in order to create a new signal
             view_state: RwSignal::new(None),
             auto_reverse: self.auto_reverse,
-            skip: self.skip,
+            delay: self.delay,
             duration: self.duration,
             repeat_mode: self.repeat_mode.clone(),
             animate: self.animate.clone(),
@@ -125,7 +125,7 @@ impl Default for Animation {
             state: AnimState::Idle,
             view_state: RwSignal::new(None),
             auto_reverse: false,
-            skip: None,
+            delay: Duration::ZERO,
             duration: Duration::from_secs(1),
             repeat_mode: RepeatMode::Times(1),
             animate: Animate::FromDefault,
@@ -281,6 +281,11 @@ impl Animation {
         self
     }
 
+    pub fn delay(mut self, delay: Duration) -> Self {
+        self.delay = delay;
+        self
+    }
+
     pub fn animate(mut self, animate: Animate) -> Self {
         self.animate = animate;
         self
@@ -310,15 +315,15 @@ impl Animation {
         self
     }
 
-    pub fn state(mut self, command: impl Fn() -> AnimStateCommand + 'static) -> Self {
+    pub fn state(self, command: impl Fn() -> AnimStateCommand + 'static) -> Self {
         let view_state = self.view_state;
-        let initial_command = create_updater(command, move |command| {
+        // don't apply the initial state here. changes timing in weird ways
+        create_effect(move |_| {
+            let command = command();
             if let Some((view_id, stack_offset)) = view_state.get_untracked() {
-                view_id.update_animation_state(stack_offset, command);
+                view_id.update_animation_state(stack_offset, command)
             }
         });
-        // apply the initial state in case this is called before being applied to a view
-        self.transition(initial_command);
         self
     }
 
@@ -410,7 +415,14 @@ impl Animation {
                 let duration = now - *started_on;
                 elapsed += duration;
 
-                if elapsed >= self.duration {
+                let temp_elapsed = if elapsed <= self.delay {
+                    // The animation hasn't started yet
+                    Duration::ZERO
+                } else {
+                    elapsed - self.delay
+                };
+
+                if temp_elapsed >= self.duration {
                     self.state = AnimState::PassFinished { elapsed };
                 }
             }
@@ -479,21 +491,25 @@ impl Animation {
     }
 
     pub(crate) fn total_time_percent(&self) -> f64 {
-        let mut elapsed = self.elapsed().unwrap_or(Duration::ZERO);
-
-        if let Some(skip) = self.skip {
-            elapsed += skip;
-        }
-
         if self.duration == Duration::ZERO {
             return 0.;
         }
 
-        if elapsed > self.duration {
-            elapsed = self.duration;
+        let mut elapsed = self.elapsed().unwrap_or(Duration::ZERO);
+
+        if elapsed < self.delay {
+            // The animation hasn't started yet
+            return 0.0;
+        }
+        elapsed -= self.delay;
+
+        let total_duration = self.duration + self.delay;
+
+        if elapsed > total_duration {
+            elapsed = total_duration;
         }
 
-        let mut percent = elapsed.as_secs_f64() / self.duration.as_secs_f64();
+        let mut percent = elapsed.as_millis() as f64 / self.duration.as_millis() as f64;
 
         if self.auto_reverse {
             // If the animation should auto-reverse, adjust the percent accordingly

@@ -49,6 +49,7 @@ fn app_view() -> impl IntoView {
                     .get()
                     .pause(move || pause.track())
                     .resume(move || resume.track())
+                    .delay(3.seconds())
             })
             .on_event_stop(EL::PointerEnter, move |_| {
                 pause.notify();
