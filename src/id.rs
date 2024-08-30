@@ -6,13 +6,14 @@
 
 use std::{any::Any, cell::RefCell, rc::Rc};
 
+use floem_reactive::SignalUpdate;
 use floem_winit::window::WindowId;
 use peniko::kurbo::{Insets, Point, Rect, Size};
 use slotmap::new_key_type;
 use taffy::{Display, Layout, NodeId, TaffyTree};
 
 use crate::{
-    animate::Animation,
+    animate::{AnimStateCommand, Animation},
     context::{EventCallback, ResizeCallback},
     event::{EventListener, EventPropagation},
     menu::Menu,
@@ -334,7 +335,21 @@ impl ViewId {
 
     pub(crate) fn update_animation(&self, offset: StackOffset<Animation>, animation: Animation) {
         let state = self.state();
+        animation.view_state.set(Some((*self, offset)));
         state.borrow_mut().animation.set(offset, animation);
+        self.request_style();
+    }
+
+    pub(crate) fn update_animation_state(
+        &self,
+        offset: StackOffset<Animation>,
+        command: AnimStateCommand,
+    ) {
+        let view_state = self.state();
+        view_state
+            .borrow_mut()
+            .animation
+            .update(offset, move |anim| anim.transition(command));
         self.request_style();
     }
 

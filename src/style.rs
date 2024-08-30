@@ -422,12 +422,14 @@ pub trait StyleProp: Default + Copy + 'static {
     fn default_value() -> Self::Type;
 }
 
+type InterpolateFn = fn(val1: &dyn Any, val2: &dyn Any, time: f64) -> Option<Rc<dyn Any>>;
+
 #[derive(Debug)]
 pub struct StylePropInfo {
     pub(crate) name: fn() -> &'static str,
     pub(crate) inherited: bool,
     pub(crate) default_as_any: fn() -> Rc<dyn Any>,
-    pub(crate) interpolate: fn(val1: &dyn Any, val2: &dyn Any, time: f64) -> Option<Rc<dyn Any>>,
+    pub(crate) interpolate: InterpolateFn,
     pub(crate) debug_any: fn(val: &dyn Any) -> String,
     pub(crate) debug_view: fn(val: &dyn Any) -> Option<Box<dyn View>>,
     pub(crate) transition_key: StyleKey,

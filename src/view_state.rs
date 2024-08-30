@@ -57,6 +57,10 @@ impl<T> Stack<T> {
     pub fn set(&mut self, offset: StackOffset<T>, value: T) {
         self.stack[offset.offset] = value;
     }
+
+    pub fn update(&mut self, offset: StackOffset<T>, update: impl Fn(&mut T) + 'static) {
+        update(&mut self.stack[offset.offset]);
+    }
 }
 
 prop_extractor! {

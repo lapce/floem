@@ -1,7 +1,7 @@
 use floem::{
     animate::Animation,
     peniko::Color,
-    reactive::{RwSignal, SignalGet},
+    reactive::{RwSignal, SignalGet, Trigger},
     unit::DurationUnitExt,
     views::{empty, h_stack, Decorators},
     IntoView,
@@ -25,6 +25,9 @@ fn app_view() -> impl IntoView {
             .auto_reverse(true),
     );
 
+    let pause = Trigger::new();
+    let resume = Trigger::new();
+
     h_stack((
         empty()
             .style(|s| s.background(Color::RED).size(500, 100))
@@ -39,10 +42,22 @@ fn app_view() -> impl IntoView {
                 .duration(5.seconds())
                 .repeat(true)
                 .auto_reverse(true)
+                .animate(floem::animate::Animate::ToDefault)
             }),
         empty()
             .style(|s| s.background(Color::GREEN).size(100, 300))
-            .animation(move |_| animation.get()),
+            .animation(move |_| {
+                animation
+                    .get()
+                    .pause(move || pause.track())
+                    .resume(move || resume.track())
+            })
+            .on_event_stop(floem::event::EventListener::PointerEnter, move |_| {
+                pause.notify();
+            })
+            .on_event_stop(floem::event::EventListener::PointerLeave, move |_| {
+                resume.notify();
+            }),
     ))
     .style(|s| s.size_full().gap(10).items_center().justify_center())
 }

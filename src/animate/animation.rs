@@ -1,9 +1,14 @@
-use crate::style::{Style, StyleKeyInfo, StylePropRef};
+use crate::{
+    style::{Style, StyleKeyInfo, StylePropRef},
+    view_state::StackOffset,
+    ViewId,
+};
 
-use super::{AnimState, AnimStateKind, Bezier, Easing, EasingFn, EasingMode};
+use super::{AnimState, AnimStateCommand, AnimStateKind, Bezier, Easing, EasingFn, EasingMode};
 use std::any::Any;
 use std::rc::Rc;
 
+use floem_reactive::{create_effect, RwSignal, SignalGet};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
@@ -115,9 +120,9 @@ pub enum Animate {
     ToDefault,
 }
 
-#[derive(Clone)]
 pub struct Animation {
     pub(crate) state: AnimState,
+    pub(crate) view_state: RwSignal<Option<(ViewId, StackOffset<Animation>)>>,
     // This easing is used for when animating towards the default style (the style before the animation is applied).
     // pub(crate) easing: Easing,
     pub(crate) auto_reverse: bool,
@@ -132,14 +137,34 @@ pub struct Animation {
     pub(crate) key_frames: im_rc::OrdMap<u32, KeyFrame>,
     // TODO: keep a lookup of styleprops to the last keyframe with that prop. this would be useful when there are lots of keyframes and sparse props
     // pub(crate)cache: std::collections::HashMap<StylePropRef, u32>,
-    pub(crate) on_create_listener: Option<Rc<dyn Fn() + 'static>>,
+    pub(crate) on_start_listener: Option<Rc<dyn Fn() + 'static>>,
     pub(crate) on_complete_listener: Option<Rc<dyn Fn() + 'static>>,
+}
+impl Clone for Animation {
+    fn clone(&self) -> Self {
+        Self {
+            state: self.state.clone(),
+            // custom impl of clone in order to create a new signal
+            view_state: RwSignal::new(None),
+            auto_reverse: self.auto_reverse,
+            skip: self.skip,
+            duration: self.duration,
+            repeat_mode: self.repeat_mode.clone(),
+            animate: self.animate.clone(),
+            repeat_count: self.repeat_count,
+            max_key_frame_num: self.max_key_frame_num,
+            folded_style: self.folded_style.clone(),
+            key_frames: self.key_frames.clone(),
+            on_start_listener: self.on_start_listener.clone(),
+            on_complete_listener: self.on_complete_listener.clone(),
+        }
+    }
 }
 impl Default for Animation {
     fn default() -> Self {
         Animation {
             state: AnimState::Idle,
-            // easing: Easing::default(),
+            view_state: RwSignal::new(None),
             auto_reverse: false,
             skip: None,
             duration: Duration::from_secs(1),
@@ -149,7 +174,7 @@ impl Default for Animation {
             max_key_frame_num: 100,
             folded_style: Style::new(),
             key_frames: im_rc::OrdMap::new(),
-            on_create_listener: None,
+            on_start_listener: None,
             on_complete_listener: None,
         }
     }
@@ -239,13 +264,13 @@ impl Animation {
 
     /// Returns the ID of the animation. Use this when you want to control(stop/pause/resume) the animation
     pub fn on_create(mut self, on_create_fn: impl Fn() + 'static) -> Self {
-        self.on_create_listener = Some(Rc::new(on_create_fn));
+        self.on_start_listener = Some(Rc::new(on_create_fn));
         self
     }
 
     /// Returns the ID of the animation. Use this when you want to control(stop/pause/resume) the animation
     pub fn on_complete(mut self, on_create_fn: impl Fn() + 'static) -> Self {
-        self.on_create_listener = Some(Rc::new(on_create_fn));
+        self.on_start_listener = Some(Rc::new(on_create_fn));
         self
     }
 
@@ -326,65 +351,59 @@ impl Animation {
         self
     }
 
-    /// This easing is used for when animating towards the default style (the style before the animation is applied).
-    // pub fn easing_fn(mut self, easing_fn: EasingFn) -> Self {
-    //     self.easing.func = easing_fn;
-    //     self
-    // }
-
-    /// This easing is used for when animating towards the default style (the style before the animation is applied).
-    // pub fn ease_mode(mut self, mode: EasingMode) -> Self {
-    //     self.easing.mode = mode;
-    //     self
-    // }
-
-    // pub fn ease_in(self) -> Self {
-    //     self.ease_mode(EasingMode::In)
-    // }
-
-    // pub fn ease_out(self) -> Self {
-    //     self.ease_mode(EasingMode::Out)
-    // }
-
-    // pub fn ease_in_out(self) -> Self {
-    //     self.ease_mode(EasingMode::InOut)
-    // }
-
-    pub fn pause(&mut self) {
-        debug_assert!(
-            self.state_kind() != AnimStateKind::Paused,
-            "Tried to pause an already paused animation"
-        );
-        self.state = AnimState::Paused {
-            elapsed: self.elapsed(),
-        };
-    }
-
-    // TODO: This function is never used but probably should be somewhere
-    pub(crate) fn _resume(&mut self) {
-        debug_assert!(
-            self.state_kind() == AnimStateKind::Paused,
-            "Tried to resume an animation that is not paused"
-        );
-        if let AnimState::Paused { elapsed } = &self.state {
-            self.state = AnimState::PassInProgress {
-                started_on: Instant::now(),
-                elapsed: elapsed.unwrap_or(Duration::ZERO),
+    pub fn state(self, command: impl Fn() -> AnimStateCommand + 'static) -> Self {
+        let view_state = self.view_state;
+        create_effect(move |_| {
+            let command = command();
+            if let Some((view_id, stack_offset)) = view_state.get_untracked() {
+                view_id.update_animation_state(stack_offset, command)
             }
-        }
+        });
+        self
     }
 
-    pub fn start(&mut self) {
-        self.repeat_count = 0;
-        self.state = AnimState::PassInProgress {
-            started_on: Instant::now(),
-            elapsed: Duration::ZERO,
-        }
+    pub fn pause(self, trigger: impl Fn() + 'static) -> Self {
+        self.state(move || {
+            trigger();
+            AnimStateCommand::Pause
+        })
+    }
+    pub fn resume(self, trigger: impl Fn() + 'static) -> Self {
+        self.state(move || {
+            trigger();
+            AnimStateCommand::Resume
+        })
+    }
+    pub fn start(self, trigger: impl Fn() + 'static) -> Self {
+        self.state(move || {
+            trigger();
+            AnimStateCommand::Start
+        })
+    }
+    pub fn stop(self, trigger: impl Fn() + 'static) -> Self {
+        self.state(move || {
+            trigger();
+            AnimStateCommand::Stop
+        })
     }
 
-    pub fn stop(&mut self) {
-        self.repeat_count = 0;
-        self.state = AnimState::Stopped;
+    #[allow(unused)]
+    pub(crate) fn pause_mut(mut self) {
+        self.transition(AnimStateCommand::Pause)
+    }
+
+    #[allow(unused)]
+    pub(crate) fn resume_mut(mut self) {
+        self.transition(AnimStateCommand::Resume)
+    }
+
+    pub(crate) fn start_mut(&mut self) {
+        self.transition(AnimStateCommand::Start)
+    }
+
+    #[allow(unused)]
+    pub(crate) fn stop_mut(&mut self) {
+        self.transition(AnimStateCommand::Stop)
     }
 
     pub fn state_kind(&self) -> AnimStateKind {
@@ -418,9 +437,9 @@ impl Animation {
     pub fn advance(&mut self) {
         match &mut self.state {
             AnimState::Idle => {
-                self.start();
-                if let Some(ref on_create) = self.on_create_listener {
-                    on_create()
+                self.start_mut();
+                if let Some(ref on_start) = self.on_start_listener {
+                    on_start()
                 }
             }
             AnimState::PassInProgress {
@@ -466,6 +485,43 @@ impl Animation {
                 if let Some(ref on_complete) = self.on_complete_listener {
                     on_complete()
                 }
+            }
+        }
+    }
+
+    pub(crate) fn transition(&mut self, command: AnimStateCommand) {
+        match command {
+            AnimStateCommand::Pause => {
+                debug_assert!(
+                    self.state_kind() != AnimStateKind::Paused,
+                    "Tried to pause an already paused animation"
+                );
+                self.state = AnimState::Paused {
+                    elapsed: self.elapsed(),
+                }
+            }
+            AnimStateCommand::Resume => {
+                debug_assert!(
+                    self.state_kind() == AnimStateKind::Paused,
+                    "Tried to resume an animation that is not paused"
+                );
+                if let AnimState::Paused { elapsed } = &self.state {
+                    self.state = AnimState::PassInProgress {
+                        started_on: Instant::now(),
+                        elapsed: elapsed.unwrap_or(Duration::ZERO),
+                    }
+                }
+            }
+            AnimStateCommand::Start => {
+                self.repeat_count = 0;
+                self.state = AnimState::PassInProgress {
+                    started_on: Instant::now(),
+                    elapsed: Duration::ZERO,
+                }
+            }
+            AnimStateCommand::Stop => {
+                self.repeat_count = 0;
+                self.state = AnimState::Stopped;
             }
         }
     }
