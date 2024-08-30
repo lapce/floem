@@ -13,13 +13,11 @@ fn app_view() -> impl IntoView {
             .duration(5.seconds())
             .keyframe(50, |kf| {
                 kf.style(|s| s.background(Color::BLACK).size(30, 30))
-                    .ease_fn_sine()
-                    .ease_in_out()
+                    .easing_in()
             })
             .keyframe(100, |kf| {
                 kf.style(|s| s.background(Color::AQUAMARINE).size(10, 300))
-                    .ease_fn_sine()
-                    .ease_in_out()
+                    .easing_out()
             })
             .repeat(true)
             .auto_reverse(true),
@@ -42,7 +40,6 @@ fn app_view() -> impl IntoView {
                 .duration(5.seconds())
                 .repeat(true)
                 .auto_reverse(true)
-                .animate(floem::animate::Animate::ToDefault)
             }),
         empty()
             .style(|s| s.background(Color::GREEN).size(100, 300))

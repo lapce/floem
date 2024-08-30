@@ -4,11 +4,11 @@ use crate::{
     ViewId,
 };
 
-use super::{AnimState, AnimStateCommand, AnimStateKind, Bezier, Easing, EasingFn, EasingMode};
+use super::{AnimState, AnimStateCommand, AnimStateKind, Bezier, Easing};
 use std::any::Any;
 use std::rc::Rc;
 
-use floem_reactive::{create_effect, RwSignal, SignalGet};
+use floem_reactive::{create_effect, create_updater, RwSignal, SignalGet};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
@@ -35,75 +35,34 @@ impl KeyFrame {
     }
 
     /// This easing function will be used while animating towards this keyframe
-    pub fn easing_fn(mut self, easing_fn: EasingFn) -> Self {
-        self.easing.func = easing_fn;
+    pub fn easing(mut self, easing: impl Into<Easing>) -> Self {
+        self.easing = easing.into();
         self
     }
-    pub fn ease_fn_linear(self) -> Self {
-        self.easing_fn(EasingFn::Linear)
-    }
 
-    /// Creates an animation that accelerates and/or decelerates using a circular function.
-    pub fn ease_fn_circle(self) -> Self {
-        self.easing_fn(EasingFn::Circle)
-    }
-
-    /// Creates an animation that resembles a spring oscillating back and forth until it comes to rest.
-    pub fn ease_fn_elastic(self) -> Self {
-        self.easing_fn(EasingFn::Elastic)
-    }
-
-    /// Creates an animation that accelerates and/or decelerates using an exponential formula.
-    pub fn ease_fn_exponential(self) -> Self {
-        self.easing_fn(EasingFn::Exponential)
-    }
-
-    /// Creates an animation that accelerates and/or decelerates using the formula `f(t) = t2`.
-    pub fn ease_fn_quadratic(self) -> Self {
-        self.easing_fn(EasingFn::Quadratic)
-    }
-
-    /// Creates an animation that accelerates and/or decelerates using the formula `f(t) = t3`.
-    pub fn ease_fn_cubic(self) -> Self {
-        self.easing_fn(EasingFn::Cubic)
-    }
-
-    /// Creates an animation that accelerates and/or decelerates using the formula `f(t) = t4`.
-    pub fn ease_fn_quartic(self) -> Self {
-        self.easing_fn(EasingFn::Quartic)
-    }
-
-    /// Create an animation that accelerates and/or decelerates using the formula `f(t) = t5`.
-    pub fn ease_fn_quintic(self) -> Self {
-        self.easing_fn(EasingFn::Quintic)
-    }
-
-    /// Creates an animation that accelerates and/or decelerates using a sine formula.
-    pub fn ease_fn_sine(self) -> Self {
-        self.easing_fn(EasingFn::Sine)
+    pub fn easing_linear(self) -> Self {
+        self.easing(Easing::Linear)
     }
 
     /// Creates an animation that accelerates and/or decelerates using a custom cubic bezier.
-    pub fn ease_fn_bezier(self, curve: Bezier) -> Self {
-        self.easing_fn(EasingFn::CubicBezier(curve))
+    pub fn easing_bezier(self, curve: Bezier) -> Self {
+        self.easing(Easing::CubicBezier(curve))
     }
 
-    /// This easing mode will be used while animating towards this keyframe
-    pub fn ease_mode(mut self, mode: EasingMode) -> Self {
-        self.easing.mode = mode;
-        self
+    pub fn easing_ease(self) -> Self {
+        self.easing(Bezier::EASE)
     }
 
-    pub fn ease_in(self) -> Self {
-        self.ease_mode(EasingMode::In)
+    pub fn easing_in(self) -> Self {
+        self.easing(Bezier::EASE_IN)
     }
 
-    pub fn ease_out(self) -> Self {
-        self.ease_mode(EasingMode::Out)
+    pub fn easing_out(self) -> Self {
+        self.easing(Bezier::EASE_OUT)
     }
 
-    pub fn ease_in_out(self) -> Self {
-        self.ease_mode(EasingMode::InOut)
+    pub fn easing_in_out(self) -> Self {
+        self.easing(Bezier::EASE_IN_OUT)
     }
 }
 
@@ -351,14 +310,18 @@ impl Animation {
         self
     }
 
-    pub fn state(self, command: impl Fn() -> AnimStateCommand + 'static) -> Self {
+    pub fn state(mut self, command: impl Fn() -> AnimStateCommand + 'static) -> Self {
         let view_state = self.view_state;
-        create_effect(move |_| {
-            let command = command();
-            if let Some((view_id, stack_offset)) = view_state.get_untracked() {
-                view_id.update_animation_state(stack_offset, command)
-            }
-        });
+        let initial_command = create_updater(
+            move || command(),
+            move |command| {
+                if let Some((view_id, stack_offset)) = view_state.get_untracked() {
+                    view_id.update_animation_state(stack_offset, command);
+                }
+            },
+        );
+        // apply the initial state in case this is called before being applied to a view
+        self.transition(initial_command);
         self
     }
 
@@ -492,19 +455,11 @@ impl Animation {
     pub(crate) fn transition(&mut self, command: AnimStateCommand) {
         match command {
             AnimStateCommand::Pause => {
-                debug_assert!(
-                    self.state_kind() != AnimStateKind::Paused,
-                    "Tried to pause an already paused animation"
-                );
                 self.state = AnimState::Paused {
                     elapsed: self.elapsed(),
                 }
             }
             AnimStateCommand::Resume => {
-                debug_assert!(
-                    self.state_kind() == AnimStateKind::Paused,
-                    "Tried to resume an animation that is not paused"
-                );
                 if let AnimState::Paused { elapsed } = &self.state {
                     self.state = AnimState::PassInProgress {
                         started_on: Instant::now(),
@@ -591,7 +546,7 @@ impl Animation {
 
         let eased_time = upper
             .easing
-            .ease(self.get_local_percent(lower.id, upper.id));
+            .apply_easing_fn(self.get_local_percent(lower.id, upper.id));
 
         let props = upper
             .style
@@ -619,7 +574,7 @@ impl Animation {
                     .unwrap_or((0, (key.info().default_as_any)()));
                 let eased_time = upper
                     .easing
-                    .ease(self.get_local_percent(from_prop_id, upper.id));
+                    .apply_easing_fn(self.get_local_percent(from_prop_id, upper.id));
 
                 if let Some(interpolated) =
                     (key.info().interpolate)(&*from_prop.clone(), &*to_prop.clone(), eased_time)
