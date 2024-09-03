@@ -1580,6 +1580,16 @@ prop_extractor! {
         pub flex_shrink: FlexShrink,
         pub flex_basis: FlexBasis ,
 
+        pub inset_left: InsetLeft,
+        pub inset_top: InsetTop,
+        pub inset_right: InsetRight,
+        pub inset_bottom: InsetBottom,
+
+        pub margin_left: MarginLeft,
+        pub margin_top: MarginTop,
+        pub margin_right: MarginRight,
+        pub margin_bottom: MarginBottom,
+
         pub row_gap: RowGap,
         pub col_gap: ColGap,
     }
@@ -1604,6 +1614,14 @@ impl LayoutProps {
             .flex_grow(self.flex_grow())
             .flex_shrink(self.flex_shrink())
             .flex_basis(self.flex_basis())
+            .inset_left(self.inset_left())
+            .inset_top(self.inset_top())
+            .inset_right(self.inset_right())
+            .inset_bottom(self.inset_bottom())
+            .margin_left(self.margin_left())
+            .margin_top(self.margin_top())
+            .margin_right(self.margin_right())
+            .margin_bottom(self.margin_bottom())
             .row_gap(self.row_gap())
             .column_gap(self.col_gap())
     }

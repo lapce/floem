@@ -2,7 +2,7 @@ use peniko::kurbo::{ParamCurve, Point};
 
 use super::assert_valid_time;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StepPosition {
     None,
     Both,
@@ -10,7 +10,7 @@ pub enum StepPosition {
     End,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Step {
     num_steps: usize,
     step_position: StepPosition,
@@ -81,7 +81,7 @@ impl Step {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Bezier(pub f64, pub f64, pub f64, pub f64);
 impl Bezier {
     pub const EASE: Self = Bezier(0.25, 0.1, 0.25, 1.);
@@ -95,7 +95,7 @@ impl From<Bezier> for Easing {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub enum Easing {
     #[default]
     Linear,

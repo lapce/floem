@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
 use web_time::{Duration, Instant};
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct KeyFrame {
     id: u32,
     style: Style,
@@ -25,7 +25,8 @@ impl KeyFrame {
     pub fn new(id: u32) -> Self {
         Self {
             id,
-            ..Default::default()
+            style: Style::default(),
+            easing: Easing::default(),
         }
     }
 
@@ -66,7 +67,7 @@ impl KeyFrame {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq)]
 pub enum Animate {
     /// This effectively assign the computed style (the style before animations are applied) to keyframe 0
     ///
@@ -76,7 +77,7 @@ pub enum Animate {
     ///
     /// You can use this if you want the end of the animation the be the style without any animation applied.
     /// To do this, you would assign your animation style at keyframe 0 and let it animate towards having no animation applied at all
-    ToDefault,
+    ToDefault(Easing),
 }
 
 pub struct Animation {
@@ -554,42 +555,61 @@ impl Animation {
     }
 
     pub(crate) fn animate_into(&mut self, computed_style: &mut Style) {
+        enum KeyFrameDefault {
+            Keyframe(KeyFrame),
+            Default,
+        }
+        impl KeyFrameDefault {
+            fn id(&self) -> u32 {
+                match self {
+                    KeyFrameDefault::Keyframe(kf) => kf.id,
+                    KeyFrameDefault::Default => 0,
+                }
+            }
+
+            fn get(&self, key: &StylePropRef) -> Option<Rc<dyn Any>> {
+                match self {
+                    KeyFrameDefault::Keyframe(kf) => kf.style.map.get(&key.key).cloned(),
+                    KeyFrameDefault::Default => Some((key.info().default_as_any)()),
+                }
+            }
+        }
         let (lower, upper) = self.get_current_keyframes();
 
-        if lower.is_none() && upper.is_none() {
+        if lower.is_none() && upper.is_none() && !matches!(self.animate, Animate::ToDefault(..)) {
             // no keyframes have been set
             return;
         }
 
         let upper = if let Some(upper) = upper {
             upper
-        } else if self.animate == Animate::ToDefault {
+        } else if let Animate::ToDefault(ref easing) = self.animate {
             KeyFrame {
                 id: self.max_key_frame_num,
                 style: computed_style.clone(),
-                easing: Default::default(),
+                easing: easing.clone(),
             }
         } else {
             // animation is over. No more keyframes. Just keep applying the last folded style
             computed_style.apply_mut(self.folded_style.clone());
             return;
         };
+
         let lower = if let Some(lower) = lower {
-            lower
+            KeyFrameDefault::Keyframe(lower)
         } else if self.animate == Animate::FromDefault {
-            KeyFrame {
+            KeyFrameDefault::Keyframe(KeyFrame {
                 id: 0,
                 style: computed_style.clone(),
                 easing: Default::default(),
-            }
+            })
         } else {
-            // there is no lower keyframe yet. No reference. Don't change anything.
-            return;
+            KeyFrameDefault::Default
         };
 
         let eased_time = upper
             .easing
-            .apply_easing_fn(self.get_local_percent(lower.id, upper.id));
+            .apply_easing_fn(self.get_local_percent(lower.id(), upper.id));
 
         let props = upper
             .style
@@ -602,7 +622,7 @@ impl Animation {
             .collect::<Vec<_>>();
 
         for (prop_ref, to_prop) in props {
-            if let Some(from_prop) = lower.style.map.get(&prop_ref.key) {
+            if let Some(from_prop) = lower.get(&prop_ref) {
                 // we do the above first check instead of immediately checking all lower because the lower variable might be the computed_style
                 if let Some(interpolated) = (prop_ref.info().interpolate)(
                     &*from_prop.clone(),
