@@ -1,6 +1,6 @@
 use crate::{
     style::{Background, CursorStyle, Foreground, Style, Transition},
-    unit::UnitExt,
+    unit::{DurationUnitExt, UnitExt},
     views::{
         dropdown::{self},
         scroll,
@@ -71,7 +71,7 @@ pub(crate) fn default_theme() -> Theme {
             s.background(active_bg_color)
                 .color(Color::WHITE.with_alpha_factor(0.9))
         })
-        .transition(Background, Transition::linear(0.04))
+        .transition(Background, Transition::linear(400.millis()))
         .focus(|s| s.hover(|s| s.background(focus_hover_bg_color)))
         .hover(|s| s.background(hover_bg_color))
         .padding(padding)
@@ -86,7 +86,7 @@ pub(crate) fn default_theme() -> Theme {
         .height(20.)
         .background(Color::WHITE)
         .active(|s| s.background(active_bg_color))
-        .transition(Background, Transition::linear(0.04))
+        .transition(Background, Transition::linear(400.millis()))
         .hover(|s| s.background(hover_bg_color))
         .focus(|s| s.hover(|s| s.background(focus_hover_bg_color)))
         .apply(border_style.clone())
@@ -100,7 +100,7 @@ pub(crate) fn default_theme() -> Theme {
         .row_gap(padding)
         .hover(|s| s.background(hover_bg_color))
         .padding(padding)
-        .transition(Background, Transition::linear(0.04))
+        .transition(Background, Transition::linear(400.millis()))
         .border_radius(border_radius)
         .active(|s| s.class(CheckboxClass, |s| s.background(active_bg_color)))
         .focus(|s| {
@@ -123,7 +123,7 @@ pub(crate) fn default_theme() -> Theme {
         .justify_center()
         .background(Color::WHITE)
         .active(|s| s.background(active_bg_color))
-        .transition(Background, Transition::linear(0.04))
+        .transition(Background, Transition::linear(400.millis()))
         .hover(|s| s.background(hover_bg_color))
         .focus(|s| s.hover(|s| s.background(focus_hover_bg_color)))
         .apply(border_style.clone())
@@ -149,7 +149,7 @@ pub(crate) fn default_theme() -> Theme {
         .row_gap(padding)
         .hover(|s| s.background(hover_bg_color))
         .padding(padding)
-        .transition(Background, Transition::linear(0.04))
+        .transition(Background, Transition::linear(400.millis()))
         .border_radius(border_radius)
         .active(|s| s.class(RadioButtonClass, |s| s.background(active_bg_color)))
         .focus(|s| {

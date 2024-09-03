@@ -596,13 +596,6 @@ impl<'a> StyleCx<'a> {
         Style::apply_only_inherited(&mut self.current, &self.direct);
         CaptureState::capture_style(view_id, self);
 
-        // If there's any changes to the Taffy style, request layout.
-        let taffy_style = self.direct.to_taffy_style();
-        if taffy_style != view_state.borrow().taffy_style {
-            view_state.borrow_mut().taffy_style = taffy_style;
-            view_id.request_layout();
-        }
-
         // This is used by the `request_transition` and `style` methods below.
         self.current_view = view_id;
 
@@ -626,6 +619,13 @@ impl<'a> StyleCx<'a> {
             if new_frame {
                 self.app_state.schedule_style(view_id);
             }
+        }
+        // If there's any changes to the Taffy style, request layout.
+        let layout_style = view_state.borrow().layout_props.to_style();
+        let taffy_style = self.direct.clone().apply(layout_style).to_taffy_style();
+        if taffy_style != view_state.borrow().taffy_style {
+            view_state.borrow_mut().taffy_style = taffy_style;
+            view_id.request_layout();
         }
 
         view.borrow_mut().style_pass(self);
@@ -844,7 +844,13 @@ impl<'a> LayoutCx<'a> {
             .borrow_mut()
             .requested_changes
             .remove(ChangeFlags::LAYOUT);
-        let style = view_state.borrow().combined_style.to_taffy_style();
+        let layout_style = view_state.borrow().layout_props.to_style();
+        let style = view_state
+            .borrow()
+            .combined_style
+            .clone()
+            .apply(layout_style)
+            .to_taffy_style();
         let _ = id.taffy().borrow_mut().set_style(node, style);
 
         if has_children {
@@ -951,6 +957,7 @@ impl<'a> PaintCx<'a> {
         if !is_empty {
             let style = view_state.borrow().combined_style.clone();
             let view_style_props = view_state.borrow().view_style_props.clone();
+            let layout_props = view_state.borrow().layout_props.clone();
 
             if let Some(z_index) = style.get(ZIndex) {
                 self.set_z_index(z_index);
@@ -959,7 +966,7 @@ impl<'a> PaintCx<'a> {
             paint_bg(self, &style, &view_style_props, size);
 
             view.borrow_mut().paint(self);
-            paint_border(self, &view_style_props, size);
+            paint_border(self, &layout_props, &view_style_props, size);
             paint_outline(self, &view_style_props, size)
         }
 
@@ -1011,6 +1018,7 @@ impl<'a> PaintCx<'a> {
                         } else {
                             style
                         };
+                    let layout_props = view_state.borrow().layout_props.clone();
 
                     // Important: If any method early exit points are added in this
                     // code block, they MUST call CURRENT_DRAG_PAINTING_ID.take() before
@@ -1019,7 +1027,7 @@ impl<'a> PaintCx<'a> {
                     paint_bg(self, &style, &view_style_props, size);
 
                     view.borrow_mut().paint(self);
-                    paint_border(self, &view_style_props, size);
+                    paint_border(self, &layout_props, &view_style_props, size);
                     paint_outline(self, &view_style_props, size);
 
                     self.restore();

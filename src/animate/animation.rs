@@ -1,5 +1,5 @@
 use crate::{
-    style::{Style, StyleKeyInfo, StylePropRef},
+    style::{Style, StyleKey, StyleKeyInfo, StylePropRef},
     view_state::StackOffset,
     ViewId,
 };
@@ -8,7 +8,7 @@ use super::{AnimState, AnimStateCommand, AnimStateKind, Bezier, Easing};
 use std::any::Any;
 use std::rc::Rc;
 
-use floem_reactive::{create_effect, RwSignal, SignalGet};
+use floem_reactive::{create_updater, RwSignal, SignalGet};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
@@ -98,6 +98,7 @@ pub struct Animation {
     // pub(crate)cache: std::collections::HashMap<StylePropRef, u32>,
     pub(crate) on_start_listener: Option<Rc<dyn Fn() + 'static>>,
     pub(crate) on_complete_listener: Option<Rc<dyn Fn() + 'static>>,
+    pub(crate) debug_description: Option<String>,
 }
 impl Clone for Animation {
     fn clone(&self) -> Self {
@@ -116,6 +117,7 @@ impl Clone for Animation {
             key_frames: self.key_frames.clone(),
             on_start_listener: self.on_start_listener.clone(),
             on_complete_listener: self.on_complete_listener.clone(),
+            debug_description: self.debug_description.clone(),
         }
     }
 }
@@ -135,6 +137,7 @@ impl Default for Animation {
             key_frames: im_rc::OrdMap::new(),
             on_start_listener: None,
             on_complete_listener: None,
+            debug_description: None,
         }
     }
 }
@@ -145,7 +148,7 @@ impl Animation {
 }
 
 pub(crate) fn assert_valid_time(time: f64) {
-    assert!(time >= 0.0 || time <= 1.0);
+    assert!(time >= 0.0 || time <= 1.0, "time is {time}");
 }
 
 /// The mode to specify how the animation should repeat. See also [`Animation::advance`]
@@ -315,41 +318,71 @@ impl Animation {
         self
     }
 
-    pub fn state(self, command: impl Fn() -> AnimStateCommand + 'static) -> Self {
+    /// If `apply_initial` is false the initial command will not be applied to the animation.
+    /// This is useful if you want the effect to be subscribed to changes but not run the first time.
+    pub fn state(
+        mut self,
+        command: impl Fn() -> AnimStateCommand + 'static,
+        apply_inital: bool,
+    ) -> Self {
         let view_state = self.view_state;
-        // don't apply the initial state here. changes timing in weird ways
-        create_effect(move |_| {
-            let command = command();
+        let initial_command = create_updater(command, move |command| {
             if let Some((view_id, stack_offset)) = view_state.get_untracked() {
                 view_id.update_animation_state(stack_offset, command)
             }
         });
+        if apply_inital {
+            self.transition(initial_command);
+        }
         self
     }
 
     pub fn pause(self, trigger: impl Fn() + 'static) -> Self {
-        self.state(move || {
-            trigger();
-            AnimStateCommand::Pause
-        })
+        self.state(
+            move || {
+                trigger();
+                AnimStateCommand::Pause
+            },
+            false,
+        )
     }
     pub fn resume(self, trigger: impl Fn() + 'static) -> Self {
-        self.state(move || {
-            trigger();
-            AnimStateCommand::Resume
-        })
+        self.state(
+            move || {
+                trigger();
+                AnimStateCommand::Resume
+            },
+            false,
+        )
     }
     pub fn start(self, trigger: impl Fn() + 'static) -> Self {
-        self.state(move || {
-            trigger();
-            AnimStateCommand::Start
-        })
+        self.state(
+            move || {
+                trigger();
+                AnimStateCommand::Start
+            },
+            false,
+        )
     }
     pub fn stop(self, trigger: impl Fn() + 'static) -> Self {
-        self.state(move || {
-            trigger();
-            AnimStateCommand::Stop
-        })
+        self.state(
+            move || {
+                trigger();
+                AnimStateCommand::Stop
+            },
+            false,
+        )
+    }
+
+    pub fn debug_name(mut self, description: impl Into<String>) -> Self {
+        match &mut self.debug_description {
+            Some(inner_desc) => {
+                inner_desc.push_str("; ");
+                inner_desc.push_str(&description.into())
+            }
+            val @ None => *val = Some(description.into()),
+        };
+        self
     }
 
     #[allow(unused)]
@@ -503,13 +536,11 @@ impl Animation {
         }
         elapsed -= self.delay;
 
-        let total_duration = self.duration + self.delay;
-
-        if elapsed > total_duration {
-            elapsed = total_duration;
+        if elapsed > self.duration {
+            elapsed = self.duration;
         }
 
-        let mut percent = elapsed.as_millis() as f64 / self.duration.as_millis() as f64;
+        let mut percent = elapsed.as_secs_f64() / self.duration.as_secs_f64();
 
         if self.auto_reverse {
             // If the animation should auto-reverse, adjust the percent accordingly
@@ -540,7 +571,6 @@ impl Animation {
             }
         } else {
             // animation is over. No more keyframes. Just keep applying the last folded style
-            // TODO: Does this still need to interpolate? probably
             computed_style.apply_mut(self.folded_style.clone());
             return;
         };
@@ -571,29 +601,31 @@ impl Animation {
             })
             .collect::<Vec<_>>();
 
-        for (key, to_prop) in props {
-            if let Some(from_prop) = lower.style.map.get(&key.key) {
+        for (prop_ref, to_prop) in props {
+            if let Some(from_prop) = lower.style.map.get(&prop_ref.key) {
                 // we do the above first check instead of immediately checking all lower because the lower variable might be the computed_style
-                if let Some(interpolated) =
-                    (key.info().interpolate)(&*from_prop.clone(), &*to_prop.clone(), eased_time)
-                {
-                    // dbg!("interpolating prop", (key.info().name)());
-                    self.folded_style.map.insert(key.key, interpolated);
+                if let Some(interpolated) = (prop_ref.info().interpolate)(
+                    &*from_prop.clone(),
+                    &*to_prop.clone(),
+                    eased_time,
+                ) {
+                    self.folded_style.map.insert(prop_ref.key, interpolated);
                 }
             } else {
                 // search for prop in lower
                 let (from_prop_id, from_prop) = self
-                    .find_prop_in_lower(&key)
-                    .unwrap_or((0, (key.info().default_as_any)()));
+                    .find_key_in_lower(&prop_ref.key)
+                    .unwrap_or((0, (prop_ref.info().default_as_any)()));
                 let eased_time = upper
                     .easing
                     .apply_easing_fn(self.get_local_percent(from_prop_id, upper.id));
 
-                if let Some(interpolated) =
-                    (key.info().interpolate)(&*from_prop.clone(), &*to_prop.clone(), eased_time)
-                {
-                    // dbg!("interpolating prop", (key.info().name)());
-                    self.folded_style.map.insert(key.key, interpolated);
+                if let Some(interpolated) = (prop_ref.info().interpolate)(
+                    &*from_prop.clone(),
+                    &*to_prop.clone(),
+                    eased_time,
+                ) {
+                    self.folded_style.map.insert(prop_ref.key, interpolated);
                 }
             };
         }
@@ -606,21 +638,21 @@ impl Animation {
         let high_frame = high_frame as f64;
         let total_num_frames = self.max_key_frame_num as f64;
 
-        let low_frame_percent = low_frame / total_num_frames;
+        let low_frame_percent = low_frame.max(0.01) / total_num_frames;
         let high_frame_percent = high_frame / total_num_frames;
         let keyframe_range = high_frame_percent - low_frame_percent;
 
         (self.total_time_percent() - low_frame_percent) / keyframe_range
     }
 
-    pub(crate) fn find_prop_in_lower(&self, prop: &StylePropRef) -> Option<(u32, Rc<dyn Any>)> {
+    pub(crate) fn find_key_in_lower(&self, key: &StyleKey) -> Option<(u32, Rc<dyn Any>)> {
         let percent = self.total_time_percent();
         let frame_target = (self.max_key_frame_num as f64 * percent).floor() as u32;
         let (smaller, _bigger) = self.key_frames.split(&frame_target);
         smaller
             .into_iter()
             .rev()
-            .find(|(_p, v)| v.style.map.contains_key(&prop.key))
-            .map(|(p, v)| (p, v.style.map.get(&prop.key).unwrap().clone()))
+            .find(|(_p, v)| v.style.map.contains_key(key))
+            .map(|(p, v)| (p, v.style.map.get(key).unwrap().clone()))
     }
 }

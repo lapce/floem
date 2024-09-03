@@ -54,7 +54,7 @@ use crate::{
     context::{ComputeLayoutCx, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx},
     event::{Event, EventPropagation},
     id::ViewId,
-    style::{BoxShadowProp, Style, StyleClassRef},
+    style::{BoxShadowProp, LayoutProps, Style, StyleClassRef},
     view_state::ViewStyleProps,
     views::{dyn_view, DynamicView},
 };
@@ -461,11 +461,16 @@ pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, size: Size
     );
 }
 
-pub(crate) fn paint_border(cx: &mut PaintCx, style: &ViewStyleProps, size: Size) {
-    let left = style.border_left().0;
-    let top = style.border_top().0;
-    let right = style.border_right().0;
-    let bottom = style.border_bottom().0;
+pub(crate) fn paint_border(
+    cx: &mut PaintCx,
+    layout_style: &LayoutProps,
+    style: &ViewStyleProps,
+    size: Size,
+) {
+    let left = layout_style.border_left().0;
+    let top = layout_style.border_top().0;
+    let right = layout_style.border_right().0;
+    let bottom = layout_style.border_bottom().0;
 
     let border_color = style.border_color();
     if left == top && top == right && right == bottom && bottom == left && left > 0.0 {

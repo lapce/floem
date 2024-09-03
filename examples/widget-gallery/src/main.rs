@@ -18,7 +18,7 @@ use floem::{
     peniko::Color,
     reactive::{create_signal, SignalGet, SignalUpdate},
     style::{Background, CursorStyle, Transition},
-    unit::UnitExt,
+    unit::{DurationUnitExt, UnitExt},
     views::{
         button, h_stack, label, scroll, stack, tab, v_stack, virtual_stack, Decorators,
         VirtualDirection, VirtualItemSize,
@@ -102,7 +102,7 @@ fn app_view() -> impl IntoView {
                             .padding(5.0)
                             .width(100.pct())
                             .height(36.0)
-                            .transition(Background, Transition::linear(0.4))
+                            .transition(Background, Transition::ease_in_out(400.millis()))
                             .items_center()
                             .border_bottom(1.0)
                             .border_color(Color::LIGHT_GRAY)

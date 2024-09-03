@@ -51,32 +51,38 @@ impl Step {
         }
     }
 
+    pub fn new_end(num_steps: usize) -> Self {
+        Self {
+            num_steps,
+            step_position: StepPosition::End,
+        }
+    }
+
     pub fn eval(&self, time: f64) -> f64 {
         match self.step_position {
             StepPosition::Start => {
                 let step_size = 1.0 / self.num_steps as f64;
-                (time / step_size).ceil().min(self.num_steps as f64) - 1.
+                ((time / step_size).floor() * step_size).min(1.0)
             }
             StepPosition::End => {
                 let step_size = 1.0 / self.num_steps as f64;
-                (time / step_size).floor().min(self.num_steps as f64 - 1.0)
+                ((time / step_size).ceil() * step_size).min(1.0)
             }
             StepPosition::None => {
-                let step_size = 1.0 / (self.num_steps + 1) as f64;
-                ((time + step_size / 2.0) / step_size)
-                    .floor()
-                    .min(self.num_steps as f64)
+                let step_size = 1.0 / self.num_steps as f64;
+                ((time / step_size).floor() * step_size + step_size / 2.0).min(1.0)
             }
             StepPosition::Both => {
                 let step_size = 1.0 / (self.num_steps - 1) as f64;
-                (time / step_size).round().min(self.num_steps as f64)
+                let adjusted_time = ((time / step_size).round() * step_size).min(1.0);
+                (adjusted_time / step_size).round() * step_size
             }
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub struct Bezier(f64, f64, f64, f64);
+pub struct Bezier(pub f64, pub f64, pub f64, pub f64);
 impl Bezier {
     pub const EASE: Self = Bezier(0.25, 0.1, 0.25, 1.);
     pub const EASE_IN: Self = Bezier(0.42, 0., 1., 1.);
@@ -111,7 +117,8 @@ impl Easing {
                 let p2 = Point::new(c.0, c.1);
                 let p3 = Point::new(c.2, c.3);
                 let p4 = Point::new(1., 1.);
-                crate::kurbo::CubicBez::new(p1, p2, p3, p4).eval(time).y
+                let point = crate::kurbo::CubicBez::new(p1, p2, p3, p4).eval(time);
+                point.y
             }
             Easing::Step(step) => step.eval(time),
             Easing::Combined(vec) => vec

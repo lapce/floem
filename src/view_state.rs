@@ -8,8 +8,8 @@ use crate::{
     prop_extractor,
     responsive::ScreenSizeBp,
     style::{
-        Background, BorderBottom, BorderColor, BorderLeft, BorderRadius, BorderRight, BorderTop,
-        LayoutProps, Outline, OutlineColor, Style, StyleClassRef, StyleSelectors,
+        Background, BorderColor, BorderRadius, LayoutProps, Outline, OutlineColor, Style,
+        StyleClassRef, StyleSelectors,
     },
 };
 use bitflags::bitflags;
@@ -65,10 +65,6 @@ impl<T> Stack<T> {
 
 prop_extractor! {
     pub(crate) ViewStyleProps {
-        pub border_left: BorderLeft,
-        pub border_top: BorderTop,
-        pub border_right: BorderRight,
-        pub border_bottom: BorderBottom,
         pub border_radius: BorderRadius,
 
         pub outline: Outline,

@@ -224,8 +224,8 @@ pub fn rect_from_physical_bounds_for_window(
         Rect::new(
             pos.x as f64,
             pos.y as f64,
-            pos.x as f64 + sz.width.max(0) as f64,
-            pos.y as f64 + sz.height.max(0) as f64,
+            pos.x as f64 + sz.width as f64,
+            pos.y as f64 + sz.height as f64,
         ),
     )
 }
