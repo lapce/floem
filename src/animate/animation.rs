@@ -108,7 +108,7 @@ impl Default for Animation {
     fn default() -> Self {
         Animation {
             state: AnimState::Idle,
-            effect_states: SmallVec::new_const(),
+            effect_states: SmallVec::new(),
             auto_reverse: false,
             delay: Duration::ZERO,
             duration: Duration::from_secs(1),
@@ -308,7 +308,7 @@ impl Animation {
         command: impl Fn() -> AnimStateCommand + 'static,
         apply_inital: bool,
     ) -> Self {
-        let states = RwSignal::new(SmallVec::new_const());
+        let states = RwSignal::new(SmallVec::new());
         self.effect_states.push(states);
         let initial_command = create_updater(command, move |command| {
             for (view_id, stack_offset) in states.get_untracked() {

@@ -736,7 +736,6 @@ impl WindowHandle {
             }
 
             self.process_deferred_update_messages();
-            // self.process_anim_update_messages();
         }
 
         self.set_cursor();
