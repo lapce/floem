@@ -279,24 +279,6 @@ impl AppState {
             || (selector_kind == StyleSelector::Dragging && view_state.dragging_style.is_some())
     }
 
-    // // TODO: animated should be a HashMap<Id, AnimId>
-    // // so we don't have to loop through all view states
-    // pub(crate) fn get_view_id_by_anim_id(&self, anim_id: AnimId) -> ViewId {
-    //     VIEW_STORAGE.with_borrow(|s| {
-    //         s.states
-    //             .iter()
-    //             .find(|(_, vs)| {
-    //                 vs.borrow()
-    //                     .animation
-    //                     .as_ref()
-    //                     .map(|a| a.id() == anim_id)
-    //                     .unwrap_or(false)
-    //             })
-    //             .unwrap()
-    //             .0
-    //     })
-    // }
-
     pub(crate) fn update_context_menu(&mut self, menu: &mut Menu) {
         if let Some(action) = menu.item.action.take() {
             self.context_menu.insert(menu.item.id as usize, action);
