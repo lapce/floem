@@ -322,7 +322,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
                 view_id.update_animation(offset, animation);
             },
         );
-        for effect_state in &initial_animation.view_state {
+        for effect_state in &initial_animation.effect_states {
             effect_state.update(|stack| stack.push((view_id, offset)));
         }
 
