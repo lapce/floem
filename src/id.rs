@@ -335,7 +335,9 @@ impl ViewId {
 
     pub(crate) fn update_animation(&self, offset: StackOffset<Animation>, animation: Animation) {
         let state = self.state();
-        animation.view_state.set(Some((*self, offset)));
+        animation
+            .view_state
+            .update(move |stack| stack.push((*self, offset)));
         state.borrow_mut().animation.set(offset, animation);
         self.request_style();
     }

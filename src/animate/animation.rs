@@ -9,6 +9,7 @@ use std::any::Any;
 use std::rc::Rc;
 
 use floem_reactive::{create_updater, RwSignal, SignalGet};
+use smallvec::SmallVec;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
@@ -80,9 +81,10 @@ pub enum Animate {
     ToDefault(Easing),
 }
 
+#[derive(Clone)]
 pub struct Animation {
     pub(crate) state: AnimState,
-    pub(crate) view_state: RwSignal<Option<(ViewId, StackOffset<Animation>)>>,
+    pub(crate) view_state: RwSignal<SmallVec<[(ViewId, StackOffset<Animation>); 1]>>,
     // This easing is used for when animating towards the default style (the style before the animation is applied).
     // pub(crate) easing: Easing,
     pub(crate) auto_reverse: bool,
@@ -101,32 +103,11 @@ pub struct Animation {
     pub(crate) on_complete_listener: Option<Rc<dyn Fn() + 'static>>,
     pub(crate) debug_description: Option<String>,
 }
-impl Clone for Animation {
-    fn clone(&self) -> Self {
-        Self {
-            state: self.state.clone(),
-            // custom impl of clone in order to create a new signal
-            view_state: RwSignal::new(None),
-            auto_reverse: self.auto_reverse,
-            delay: self.delay,
-            duration: self.duration,
-            repeat_mode: self.repeat_mode.clone(),
-            animate: self.animate.clone(),
-            repeat_count: self.repeat_count,
-            max_key_frame_num: self.max_key_frame_num,
-            folded_style: self.folded_style.clone(),
-            key_frames: self.key_frames.clone(),
-            on_start_listener: self.on_start_listener.clone(),
-            on_complete_listener: self.on_complete_listener.clone(),
-            debug_description: self.debug_description.clone(),
-        }
-    }
-}
 impl Default for Animation {
     fn default() -> Self {
         Animation {
             state: AnimState::Idle,
-            view_state: RwSignal::new(None),
+            view_state: RwSignal::new(SmallVec::new()),
             auto_reverse: false,
             delay: Duration::ZERO,
             duration: Duration::from_secs(1),
@@ -328,7 +309,7 @@ impl Animation {
     ) -> Self {
         let view_state = self.view_state;
         let initial_command = create_updater(command, move |command| {
-            if let Some((view_id, stack_offset)) = view_state.get_untracked() {
+            for (view_id, stack_offset) in view_state.get_untracked() {
                 view_id.update_animation_state(stack_offset, command)
             }
         });

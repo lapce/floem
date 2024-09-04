@@ -101,10 +101,8 @@ pub enum Easing {
     Linear,
     CubicBezier(Bezier),
     Step(Step),
-    //TODO: Add spring animations
     Combined(Vec<Self>),
 }
-impl Easing {}
 
 impl Easing {
     pub(crate) fn apply_easing_fn(&self, time: f64) -> f64 {
