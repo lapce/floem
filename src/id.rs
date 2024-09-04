@@ -6,7 +6,6 @@
 
 use std::{any::Any, cell::RefCell, rc::Rc};
 
-use floem_reactive::SignalUpdate;
 use floem_winit::window::WindowId;
 use peniko::kurbo::{Insets, Point, Rect, Size};
 use slotmap::new_key_type;
@@ -335,9 +334,6 @@ impl ViewId {
 
     pub(crate) fn update_animation(&self, offset: StackOffset<Animation>, animation: Animation) {
         let state = self.state();
-        animation
-            .view_state
-            .update(move |stack| stack.push((*self, offset)));
         state.borrow_mut().animation.set(offset, animation);
         self.request_style();
     }

@@ -84,7 +84,7 @@ pub enum Animate {
 #[derive(Clone)]
 pub struct Animation {
     pub(crate) state: AnimState,
-    pub(crate) view_state: RwSignal<SmallVec<[(ViewId, StackOffset<Animation>); 1]>>,
+    pub(crate) view_state: SmallVec<[RwSignal<SmallVec<[(ViewId, StackOffset<Animation>); 1]>>; 1]>,
     // This easing is used for when animating towards the default style (the style before the animation is applied).
     // pub(crate) easing: Easing,
     pub(crate) auto_reverse: bool,
@@ -107,7 +107,7 @@ impl Default for Animation {
     fn default() -> Self {
         Animation {
             state: AnimState::Idle,
-            view_state: RwSignal::new(SmallVec::new()),
+            view_state: SmallVec::new_const(),
             auto_reverse: false,
             delay: Duration::ZERO,
             duration: Duration::from_secs(1),
@@ -307,9 +307,10 @@ impl Animation {
         command: impl Fn() -> AnimStateCommand + 'static,
         apply_inital: bool,
     ) -> Self {
-        let view_state = self.view_state;
+        let states = RwSignal::new(SmallVec::new_const());
+        self.view_state.push(states);
         let initial_command = create_updater(command, move |command| {
-            for (view_id, stack_offset) in view_state.get_untracked() {
+            for (view_id, stack_offset) in states.get_untracked() {
                 view_id.update_animation_state(stack_offset, command)
             }
         });
