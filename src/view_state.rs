@@ -1,5 +1,5 @@
 use crate::{
-    animate::{AnimPropKind, Animation},
+    animate::Animation,
     context::{
         EventCallback, InteractionState, MenuCallback, MoveListener, ResizeCallback, ResizeListener,
     },
@@ -8,8 +8,8 @@ use crate::{
     prop_extractor,
     responsive::ScreenSizeBp,
     style::{
-        Background, BorderBottom, BorderColor, BorderLeft, BorderRadius, BorderRight, BorderTop,
-        LayoutProps, Outline, OutlineColor, Style, StyleClassRef, StyleSelectors,
+        Background, BorderColor, BorderRadius, LayoutProps, Outline, OutlineColor, Style,
+        StyleClassRef, StyleSelectors,
     },
 };
 use bitflags::bitflags;
@@ -17,11 +17,6 @@ use peniko::kurbo::{Point, Rect};
 use smallvec::SmallVec;
 use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::Rc};
 use taffy::tree::NodeId;
-
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::Duration;
-#[cfg(target_arch = "wasm32")]
-use web_time::Duration;
 
 /// A stack of view attributes. Each entry is associated with a view decorator call.
 pub(crate) struct Stack<T> {
@@ -62,14 +57,14 @@ impl<T> Stack<T> {
     pub fn set(&mut self, offset: StackOffset<T>, value: T) {
         self.stack[offset.offset] = value;
     }
+
+    pub fn update(&mut self, offset: StackOffset<T>, update: impl Fn(&mut T) + 'static) {
+        update(&mut self.stack[offset.offset]);
+    }
 }
 
 prop_extractor! {
     pub(crate) ViewStyleProps {
-        pub border_left: BorderLeft,
-        pub border_top: BorderTop,
-        pub border_right: BorderRight,
-        pub border_bottom: BorderBottom,
         pub border_radius: BorderRadius,
 
         pub outline: Outline,
@@ -100,7 +95,7 @@ pub struct ViewState {
     pub(crate) layout_rect: Rect,
     pub(crate) layout_props: LayoutProps,
     pub(crate) view_style_props: ViewStyleProps,
-    pub(crate) animation: Option<Animation>,
+    pub(crate) animation: Stack<Animation>,
     pub(crate) classes: Vec<StyleClassRef>,
     pub(crate) dragging_style: Option<Style>,
     pub(crate) combined_style: Style,
@@ -128,7 +123,7 @@ impl ViewState {
             requested_changes: ChangeFlags::all(),
             request_style_recursive: false,
             has_style_selectors: StyleSelectors::default(),
-            animation: None,
+            animation: Default::default(),
             classes: Vec::new(),
             combined_style: Style::new(),
             taffy_style: taffy::style::Style::DEFAULT,
@@ -167,38 +162,19 @@ impl ViewState {
             .apply_classes_from_context(&self.classes, context)
             .apply(self.style());
 
-        'anim: {
-            if let Some(animation) = self.animation.as_mut() {
-                // Means effectively no changes should be applied - bail out
-                if animation.is_completed() && animation.is_auto_reverse() {
-                    break 'anim;
-                }
+        for animation in self
+            .animation
+            .stack
+            .iter_mut()
+            .filter(|anim| !(anim.is_completed() && anim.is_auto_reverse()))
+        {
+            new_frame = true;
 
-                new_frame = true;
+            animation.animate_into(&mut computed_style);
 
-                let props = animation.props();
-
-                for kind in props.keys() {
-                    let val =
-                        animation.animate_prop(animation.elapsed().unwrap_or(Duration::ZERO), kind);
-                    match kind {
-                        AnimPropKind::Width => {
-                            computed_style = computed_style.width(val.get_f32());
-                        }
-                        AnimPropKind::Height => {
-                            computed_style = computed_style.height(val.get_f32());
-                        }
-                        AnimPropKind::Prop { prop } => {
-                            computed_style.map.insert(prop.key, val.get_any());
-                        }
-                        AnimPropKind::Scale => todo!(),
-                    }
-                }
-
-                if animation.can_advance() {
-                    animation.advance();
-                    debug_assert!(!animation.is_idle());
-                }
+            if animation.can_advance() {
+                animation.advance();
+                debug_assert!(!animation.is_idle());
             }
         }
 
@@ -209,6 +185,15 @@ impl ViewState {
         self.combined_style = computed_style;
 
         new_frame
+    }
+
+    pub(crate) fn has_active_animation(&self) -> bool {
+        for animation in self.animation.stack.iter() {
+            if animation.is_in_progress() {
+                return true;
+            }
+        }
+        false
     }
 
     pub(crate) fn style(&self) -> Style {

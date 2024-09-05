@@ -587,7 +587,7 @@ impl Lines {
         let last_vline = self.last_vline.clone();
         let layout_event = trigger.then_some(self.layout_event);
         self.iter_vlines(text_prov.clone(), false, start)
-            .map(move |v| {
+            .inspect(move |v| {
                 if v.is_first() {
                     // For every (first) vline we initialize the next buffer line's text layout
                     // This ensures it is ready for when re reach it.
@@ -609,7 +609,6 @@ impl Lines {
                         &last_vline,
                     );
                 }
-                v
             })
     }
 
@@ -659,7 +658,7 @@ impl Lines {
         let last_vline = self.last_vline.clone();
         let layout_event = trigger.then_some(self.layout_event);
         self.iter_rvlines(text_prov.clone(), false, start)
-            .map(move |v| {
+            .inspect(move |v| {
                 if v.is_first() {
                     // For every (first) vline we initialize the next buffer line's text layout
                     // This ensures it is ready for when re reach it.
@@ -680,7 +679,6 @@ impl Lines {
                         &last_vline,
                     );
                 }
-                v
             })
     }
 

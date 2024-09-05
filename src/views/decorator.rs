@@ -2,7 +2,7 @@
 //!
 //! The decorator trait is the primary interface for extending the appearance and functionality of ['View']s.
 
-use floem_reactive::{create_effect, create_updater};
+use floem_reactive::{create_effect, create_updater, SignalUpdate};
 use floem_winit::keyboard::Key;
 use peniko::kurbo::{Point, Rect};
 
@@ -310,12 +310,24 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         view
     }
 
-    fn animation(self, anim: Animation) -> Self::DV {
+    fn animation(self, animation: impl Fn(Animation) -> Animation + 'static) -> Self::DV {
         let view = self.into_view();
-        let id = view.id();
-        create_effect(move |_| {
-            id.update_animation(anim.clone());
-        });
+        let view_id = view.id();
+        let state = view_id.state();
+
+        let offset = state.borrow_mut().animation.next_offset();
+        let initial_animation = create_updater(
+            move || animation(Animation::new()),
+            move |animation| {
+                view_id.update_animation(offset, animation);
+            },
+        );
+        for effect_state in &initial_animation.effect_states {
+            effect_state.update(|stack| stack.push((view_id, offset)));
+        }
+
+        state.borrow_mut().animation.push(initial_animation);
+
         view
     }
 

@@ -5,7 +5,6 @@ use peniko::kurbo::{Point, Size};
 use taffy::{AvailableSpace, NodeId};
 
 use crate::{
-    animate::AnimId,
     context::{DragState, FrameUpdate, InteractionState},
     event::{Event, EventListener},
     id::ViewId,
@@ -278,24 +277,6 @@ impl AppState {
 
         view_state.has_style_selectors.has(selector_kind)
             || (selector_kind == StyleSelector::Dragging && view_state.dragging_style.is_some())
-    }
-
-    // TODO: animated should be a HashMap<Id, AnimId>
-    // so we don't have to loop through all view states
-    pub(crate) fn get_view_id_by_anim_id(&self, anim_id: AnimId) -> ViewId {
-        VIEW_STORAGE.with_borrow(|s| {
-            s.states
-                .iter()
-                .find(|(_, vs)| {
-                    vs.borrow()
-                        .animation
-                        .as_ref()
-                        .map(|a| a.id() == anim_id)
-                        .unwrap_or(false)
-                })
-                .unwrap()
-                .0
-        })
     }
 
     pub(crate) fn update_context_menu(&mut self, menu: &mut Menu) {

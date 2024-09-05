@@ -3,12 +3,7 @@ use std::{any::Any, cell::RefCell, collections::HashMap};
 use floem_winit::window::ResizeDirection;
 use peniko::kurbo::{Point, Rect, Size, Vec2};
 
-use crate::{
-    animate::{AnimUpdateMsg, Animation},
-    id::ViewId,
-    menu::Menu,
-    view::View,
-};
+use crate::{id::ViewId, menu::Menu, view::View};
 
 thread_local! {
     /// Stores all the update message with their original `ViewId`
@@ -24,7 +19,6 @@ thread_local! {
     /// Similar to `CENTRAL_UPDATE_MESSAGES` but for `DEFERRED_UPDATE_MESSAGES`
     pub(crate) static CENTRAL_DEFERRED_UPDATE_MESSAGES: RefCell<Vec<(ViewId, Box<dyn Any>)>> = Default::default();
     pub(crate) static DEFERRED_UPDATE_MESSAGES: RefCell<DeferredUpdateMessages> = Default::default();
-    pub(crate) static ANIM_UPDATE_MESSAGES: RefCell<Vec<AnimUpdateMsg>> = Default::default();
     /// It stores the active view handle, so that when you dispatch an action, it knows
     /// which view handle it submitted to
     pub(crate) static CURRENT_RUNNING_VIEW_HANDLE: RefCell<ViewId> = RefCell::new(ViewId::new());
@@ -59,10 +53,6 @@ pub(crate) enum UpdateMessage {
     DragWindow,
     DragResizeWindow(ResizeDirection),
     SetWindowDelta(Vec2),
-    Animation {
-        id: ViewId,
-        animation: Animation,
-    },
     ShowContextMenu {
         menu: Menu,
         pos: Option<Point>,

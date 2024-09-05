@@ -17,9 +17,9 @@ use std::ptr;
 use std::rc::Rc;
 
 #[cfg(not(target_arch = "wasm32"))]
-use std::time::Instant;
+use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
-use web_time::Instant;
+use web_time::{Duration, Instant};
 
 pub use taffy::style::{
     AlignContent, AlignItems, Dimension, Display, FlexDirection, FlexWrap, JustifyContent, Position,
@@ -33,6 +33,7 @@ use taffy::{
     },
 };
 
+use crate::animate::{Bezier, Easing};
 use crate::context::InteractionState;
 use crate::responsive::{ScreenSize, ScreenSizeBp};
 use crate::unit::{Px, PxPct, PxPctAuto, UnitExt};
@@ -49,10 +50,27 @@ pub trait StylePropValue: Clone + PartialEq + Debug {
     }
 }
 
-impl StylePropValue for i32 {}
+impl StylePropValue for i32 {
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some((*self as f64 + (*other as f64 - *self as f64) * value).round() as i32)
+    }
+}
 impl StylePropValue for bool {}
-impl StylePropValue for f32 {}
-impl StylePropValue for usize {}
+impl StylePropValue for f32 {
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some(*self * (1.0 - value as f32) + *other * value as f32)
+    }
+}
+impl StylePropValue for u16 {
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some((*self as f64 + (*other as f64 - *self as f64) * value).round() as u16)
+    }
+}
+impl StylePropValue for usize {
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some((*self as f64 + (*other as f64 - *self as f64) * value).round() as usize)
+    }
+}
 impl StylePropValue for f64 {
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         Some(*self * (1.0 - value) + *other * value)
@@ -71,12 +89,41 @@ impl<T: StylePropValue, M: StylePropValue> StylePropValue for MinMax<T, M> {}
 impl<T: StylePropValue> StylePropValue for Line<T> {}
 impl StylePropValue for GridPlacement {}
 impl StylePropValue for CursorStyle {}
-impl StylePropValue for BoxShadow {}
+impl StylePropValue for BoxShadow {
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some(Self {
+            blur_radius: self
+                .blur_radius
+                .interpolate(&other.blur_radius, value)
+                .unwrap(),
+            color: self.color.interpolate(&other.color, value).unwrap(),
+            spread: self.spread.interpolate(&other.spread, value).unwrap(),
+            h_offset: self.h_offset.interpolate(&other.h_offset, value).unwrap(),
+            v_offset: self.v_offset.interpolate(&other.v_offset, value).unwrap(),
+        })
+    }
+}
 impl StylePropValue for String {}
-impl StylePropValue for Weight {}
+impl StylePropValue for Weight {
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        self.0.interpolate(&other.0, value).map(Weight)
+    }
+}
 impl StylePropValue for crate::text::Style {}
 impl StylePropValue for TextOverflow {}
-impl StylePropValue for LineHeightValue {}
+impl StylePropValue for LineHeightValue {
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        match (self, other) {
+            (LineHeightValue::Normal(v1), LineHeightValue::Normal(v2)) => {
+                v1.interpolate(v2, value).map(LineHeightValue::Normal)
+            }
+            (LineHeightValue::Px(v1), LineHeightValue::Px(v2)) => {
+                v1.interpolate(v2, value).map(LineHeightValue::Px)
+            }
+            _ => None,
+        }
+    }
+}
 impl StylePropValue for Size<LengthPercentage> {}
 
 impl<T: StylePropValue> StylePropValue for Option<T> {
@@ -97,8 +144,18 @@ impl<T: StylePropValue> StylePropValue for Vec<T> {
         None
     }
 
-    fn interpolate(&self, _other: &Self, _value: f64) -> Option<Self> {
-        None
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        self.iter().zip(other.iter()).try_fold(
+            Vec::with_capacity(self.len()),
+            |mut acc, (v1, v2)| {
+                if let Some(interpolated) = v1.interpolate(v2, value) {
+                    acc.push(interpolated);
+                    Some(acc)
+                } else {
+                    None
+                }
+            },
+        )
     }
 }
 impl StylePropValue for Px {
@@ -118,6 +175,15 @@ impl StylePropValue for PxPctAuto {
         };
         Some(text(label).into_any())
     }
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        match (self, other) {
+            (Self::Px(v1), Self::Px(v2)) => Some(Self::Px(v1 + (v2 - v1) * value)),
+            (Self::Pct(v1), Self::Pct(v2)) => Some(Self::Pct(v1 + (v2 - v1) * value)),
+            (Self::Auto, Self::Auto) => Some(Self::Auto),
+            // TODO: Figure out some way to get in the relevent layout information in order to interpolate betweeen pixels and percent
+            _ => None,
+        }
+    }
 }
 impl StylePropValue for PxPct {
     fn debug_view(&self) -> Option<Box<dyn View>> {
@@ -126,6 +192,15 @@ impl StylePropValue for PxPct {
             Self::Pct(v) => format!("{}%", v),
         };
         Some(text(label).into_any())
+    }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        match (self, other) {
+            (Self::Px(v1), Self::Px(v2)) => Some(Self::Px(v1 + (v2 - v1) * value)),
+            (Self::Pct(v1), Self::Pct(v2)) => Some(Self::Pct(v1 + (v2 - v1) * value)),
+            // TODO: Figure out some way to get in the relevent layout information in order to interpolate betweeen pixels and percent
+            _ => None,
+        }
     }
 }
 impl StylePropValue for Color {
@@ -412,11 +487,14 @@ pub trait StyleProp: Default + Copy + 'static {
     fn default_value() -> Self::Type;
 }
 
+type InterpolateFn = fn(val1: &dyn Any, val2: &dyn Any, time: f64) -> Option<Rc<dyn Any>>;
+
 #[derive(Debug)]
 pub struct StylePropInfo {
     pub(crate) name: fn() -> &'static str,
     pub(crate) inherited: bool,
     pub(crate) default_as_any: fn() -> Rc<dyn Any>,
+    pub(crate) interpolate: InterpolateFn,
     pub(crate) debug_any: fn(val: &dyn Any) -> String,
     pub(crate) debug_view: fn(val: &dyn Any) -> Option<Box<dyn View>>,
     pub(crate) transition_key: StyleKey,
@@ -443,6 +521,27 @@ impl StylePropInfo {
                         "expected type {} for property {}",
                         type_name::<T>(),
                         std::any::type_name::<Name>(),
+                    )
+                }
+            },
+            interpolate: |val1, val2, time| {
+                if let (Some(v1), Some(v2)) = (
+                    val1.downcast_ref::<StyleMapValue<T>>(),
+                    val2.downcast_ref::<StyleMapValue<T>>(),
+                ) {
+                    if let (StyleMapValue::Val(v1), StyleMapValue::Val(v2)) = (v1, v2) {
+                        v1.interpolate(v2, time)
+                            .map(|val| Rc::new(StyleMapValue::Val(val)) as Rc<dyn Any>)
+                    } else {
+                        None
+                    }
+                } else {
+                    panic!(
+                        "expected type {} for property {}. Got typeids {:?} and {:?}",
+                        type_name::<T>(),
+                        std::any::type_name::<Name>(),
+                        val1.type_id(),
+                        val2.type_id()
                     )
                 }
             },
@@ -762,11 +861,15 @@ impl<T: StylePropValue> TransitionState<T> {
         }
         if let Some(active) = &mut self.active {
             if let Some(transition) = &self.transition {
-                let time = now.saturating_duration_since(active.start).as_secs_f64();
+                let time = now.saturating_duration_since(active.start);
                 if time < transition.duration {
-                    if let Some(i) =
-                        T::interpolate(&active.before, &active.after, time / transition.duration)
-                    {
+                    if let Some(i) = T::interpolate(
+                        &active.before,
+                        &active.after,
+                        transition.easing.apply_easing_fn(
+                            time.as_secs_f64() / transition.duration.as_secs_f64(),
+                        ),
+                    ) {
                         active.current = i;
                         *request_transition = true;
                         return true;
@@ -802,12 +905,23 @@ impl<T: StylePropValue> Default for TransitionState<T> {
 
 #[derive(Clone, Debug)]
 pub struct Transition {
-    duration: f64,
+    pub duration: Duration,
+    pub easing: Easing,
 }
 
 impl Transition {
-    pub fn linear(duration: f64) -> Self {
-        Self { duration }
+    pub fn linear(duration: Duration) -> Self {
+        Self {
+            duration,
+            easing: Easing::Linear,
+        }
+    }
+
+    pub fn ease_in_out(duration: Duration) -> Self {
+        Self {
+            duration,
+            easing: Easing::CubicBezier(Bezier::EASE_IN_OUT),
+        }
     }
 }
 
@@ -1428,7 +1542,8 @@ define_builtin_props!(
     TextOverflowProp text_overflow: TextOverflow {} = TextOverflow::Wrap,
     LineHeight line_height nocb: Option<LineHeightValue> { inherited } = None,
     AspectRatio aspect_ratio: Option<f32> {} = None,
-    Gap gap nocb: Size<LengthPercentage> {} = Size::zero(),
+    ColGap col_gap nocb: PxPct {} = PxPct::Px(0.),
+    RowGap row_gap nocb: PxPct {} = PxPct::Px(0.),
 );
 
 prop_extractor! {
@@ -1446,10 +1561,69 @@ prop_extractor! {
         pub border_top: BorderTop,
         pub border_right: BorderRight,
         pub border_bottom: BorderBottom,
+
         pub padding_left: PaddingLeft,
         pub padding_top: PaddingTop,
         pub padding_right: PaddingRight,
         pub padding_bottom: PaddingBottom,
+
+        pub width: Width,
+        pub height: Height,
+
+        pub min_width: MinWidth,
+        pub min_height: MinHeight,
+
+        pub max_width: MaxWidth,
+        pub max_height: MaxHeight,
+
+        pub flex_grow: FlexGrow,
+        pub flex_shrink: FlexShrink,
+        pub flex_basis: FlexBasis ,
+
+        pub inset_left: InsetLeft,
+        pub inset_top: InsetTop,
+        pub inset_right: InsetRight,
+        pub inset_bottom: InsetBottom,
+
+        pub margin_left: MarginLeft,
+        pub margin_top: MarginTop,
+        pub margin_right: MarginRight,
+        pub margin_bottom: MarginBottom,
+
+        pub row_gap: RowGap,
+        pub col_gap: ColGap,
+    }
+}
+impl LayoutProps {
+    pub fn to_style(&self) -> Style {
+        Style::new()
+            .width(self.width())
+            .height(self.height())
+            .border_left(self.border_left())
+            .border_top(self.border_top())
+            .border_right(self.border_right())
+            .border_bottom(self.border_bottom())
+            .padding_left(self.padding_left())
+            .padding_top(self.padding_top())
+            .padding_right(self.padding_right())
+            .padding_bottom(self.padding_bottom())
+            .min_width(self.min_width())
+            .min_height(self.min_height())
+            .max_width(self.max_width())
+            .max_height(self.max_height())
+            .flex_grow(self.flex_grow())
+            .flex_shrink(self.flex_shrink())
+            .flex_basis(self.flex_basis())
+            .inset_left(self.inset_left())
+            .inset_top(self.inset_top())
+            .inset_right(self.inset_right())
+            .inset_bottom(self.inset_bottom())
+            .margin_left(self.margin_left())
+            .margin_top(self.margin_top())
+            .margin_right(self.margin_right())
+            .margin_bottom(self.margin_bottom())
+            .row_gap(self.row_gap())
+            .column_gap(self.col_gap())
     }
 }
 
@@ -1555,46 +1729,20 @@ impl Style {
     }
 
     pub fn row_gap(self, width: impl Into<PxPct>) -> Self {
-        let gap_height = self.get(Gap).height;
-        self.set(
-            Gap,
-            Size {
-                width: width.into().into(),
-                height: gap_height,
-            },
-        )
+        self.set(RowGap, width.into())
     }
 
     pub fn column_gap(self, height: impl Into<PxPct>) -> Self {
-        let gap_width = self.get(Gap).width;
-        self.set(
-            Gap,
-            Size {
-                width: gap_width,
-                height: height.into().into(),
-            },
-        )
+        self.set(ColGap, height.into())
     }
 
     pub fn row_col_gap(self, width: impl Into<PxPct>, height: impl Into<PxPct>) -> Self {
-        self.set(
-            Gap,
-            Size {
-                width: width.into().into(),
-                height: height.into().into(),
-            },
-        )
+        self.row_gap(width).column_gap(height)
     }
 
     pub fn gap(self, gap: impl Into<PxPct>) -> Self {
         let gap = gap.into();
-        self.set(
-            Gap,
-            Size {
-                width: gap.into(),
-                height: gap.into(),
-            },
-        )
+        self.row_gap(gap).column_gap(gap)
     }
 
     pub fn size(self, width: impl Into<PxPctAuto>, height: impl Into<PxPctAuto>) -> Self {
@@ -2064,7 +2212,10 @@ impl Style {
                 right: style.inset_right().into(),
                 bottom: style.inset_bottom().into(),
             },
-            gap: style.gap(),
+            gap: Size {
+                width: style.row_gap().into(),
+                height: style.col_gap().into(),
+            },
             grid_template_rows: style.grid_template_rows(),
             grid_template_columns: style.grid_template_columns(),
             grid_row: style.grid_row(),

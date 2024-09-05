@@ -12,7 +12,7 @@ use slotmap::new_key_type;
 use taffy::{Display, Layout, NodeId, TaffyTree};
 
 use crate::{
-    animate::Animation,
+    animate::{AnimStateCommand, Animation},
     context::{EventCallback, ResizeCallback},
     event::{EventListener, EventPropagation},
     menu::Menu,
@@ -332,11 +332,23 @@ impl ViewId {
         self.add_update_message(UpdateMessage::ScrollTo { id: *self, rect });
     }
 
-    pub fn update_animation(&self, animation: Animation) {
-        self.add_update_message(UpdateMessage::Animation {
-            id: *self,
-            animation,
-        });
+    pub(crate) fn update_animation(&self, offset: StackOffset<Animation>, animation: Animation) {
+        let state = self.state();
+        state.borrow_mut().animation.set(offset, animation);
+        self.request_style();
+    }
+
+    pub(crate) fn update_animation_state(
+        &self,
+        offset: StackOffset<Animation>,
+        command: AnimStateCommand,
+    ) {
+        let view_state = self.state();
+        view_state
+            .borrow_mut()
+            .animation
+            .update(offset, move |anim| anim.transition(command));
+        self.request_style();
     }
 
     pub fn update_state(&self, state: impl Any) {

@@ -28,7 +28,7 @@ pub(crate) enum AnimState {
     },
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum AnimStateKind {
     Idle,
     Paused,
@@ -36,4 +36,12 @@ pub enum AnimStateKind {
     PassInProgress,
     PassFinished,
     Completed,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum AnimStateCommand {
+    Pause,
+    Resume,
+    Start,
+    Stop,
 }

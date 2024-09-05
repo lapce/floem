@@ -7,14 +7,12 @@ use crate::profiler::profiler;
 use crate::style::{Style, StyleClassRef, StylePropRef, Transition};
 use crate::view::{IntoView, View};
 use crate::view_state::ChangeFlags;
-use crate::views::editor::text::SystemClipboard;
 use crate::views::{
     button, container, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label,
     tab, text, text_input, v_stack, v_stack_from_iter, Decorators, Label,
 };
 use crate::window::WindowConfig;
-use crate::{new_window, style};
-use floem_editor_core::register::Clipboard;
+use crate::{new_window, style, Clipboard};
 use floem_reactive::{
     create_effect, create_rw_signal, create_signal, RwSignal, Scope, SignalGet, SignalUpdate,
 };
@@ -433,8 +431,8 @@ fn add_event(
             let name = name.clone();
             move |_| {
                 if !name.is_empty() {
-                    let mut clipboard = SystemClipboard::new();
-                    clipboard.put_string(name.clone());
+                    // TODO: Log error
+                    let _ = Clipboard::set_contents(name.clone());
                 }
                 EventPropagation::Stop
             }

@@ -1,186 +1,64 @@
-use std::time::Duration;
-
 use floem::{
-    animate::{animation, EasingFn},
-    event::EventListener,
+    animate::Animation,
+    event::EventListener as EL,
     peniko::Color,
-    reactive::{create_rw_signal, create_signal, SignalGet, SignalUpdate},
-    style_class,
-    views::{container, empty, h_stack, label, stack, static_label, text, v_stack, Decorators},
+    reactive::{RwSignal, SignalGet, Trigger},
+    unit::DurationUnitExt,
+    views::{empty, h_stack, Decorators},
     IntoView,
 };
 
 fn app_view() -> impl IntoView {
-    v_stack((progress_bar_container(), cube_container()))
-}
+    let animation = RwSignal::new(
+        Animation::new()
+            .duration(5.seconds())
+            .keyframe(50, |kf| {
+                kf.style(|s| s.background(Color::BLACK).size(30, 30))
+                    .easing_in()
+            })
+            .keyframe(100, |kf| {
+                kf.style(|s| s.background(Color::AQUAMARINE).size(10, 300))
+                    .easing_out()
+            })
+            .repeat(true)
+            .auto_reverse(true),
+    );
 
-style_class!(pub Button);
-fn progress_bar_container() -> impl IntoView {
-    let width = 300.0;
-    let anim_id = create_rw_signal(None);
-    let is_stopped = create_rw_signal(false);
-    let is_paused = create_rw_signal(false);
+    let pause = Trigger::new();
+    let resume = Trigger::new();
 
-    v_stack((
-        text("Progress bar"),
-        container(
-            empty()
-                .style(|s| {
-                    s.border_color(Color::DIM_GRAY)
-                        .background(Color::LIME_GREEN)
-                        .border_radius(3)
-                        .width(0)
-                        .height(20.)
-                        .active(|s| s.color(Color::BLACK))
+    h_stack((
+        empty()
+            .style(|s| s.background(Color::RED).size(500, 100))
+            .animation(move |_| animation.get().duration(10.seconds())),
+        empty()
+            .style(|s| s.background(Color::BLUE).size(50, 100))
+            .animation(move |_| animation.get())
+            .animation(move |a| {
+                a.keyframe(100, |kf| {
+                    kf.style(|s| s.border(5).border_color(Color::PURPLE))
                 })
-                .animation(
-                    animation()
-                        .on_create(move |id| anim_id.update(|aid| *aid = Some(id)))
-                        // Animate from 0 to 300px in 10 seconds
-                        .width(move || width)
-                        .easing_fn(EasingFn::Quartic)
-                        .ease_in_out()
-                        .duration(Duration::from_secs(10)),
-                ),
-        )
-        .style(move |s| {
-            s.width(width)
-                .border(1.0)
-                .border_radius(2)
-                .box_shadow_blur(3.0)
-                .border_color(Color::DIM_GRAY)
-                .background(Color::DIM_GRAY)
-                .margin_vert(10)
-        }),
-        h_stack((
-            label(move || if is_stopped.get() { "Start" } else { "Stop" })
-                .on_click_stop(move |_| {
-                    let anim_id = anim_id.get().expect("id should be set in on_create");
-                    let stopped = is_stopped.get();
-                    if stopped {
-                        anim_id.start()
-                    } else {
-                        anim_id.stop()
-                    }
-                    is_stopped.update(|val| *val = !stopped);
-                    is_paused.update(|val| *val = false);
-                })
-                .class(Button),
-            label(move || if is_paused.get() { "Resume" } else { "Pause" })
-                .on_click_stop(move |_| {
-                    let anim_id = anim_id.get().expect("id should be set in on_create");
-                    let paused = is_paused.get();
-                    if paused {
-                        anim_id.resume()
-                    } else {
-                        anim_id.pause()
-                    }
-                    is_paused.update(|val| *val = !paused);
-                })
-                .disabled(move || is_stopped.get())
-                .class(Button),
-            static_label("Restart")
-                .on_click_stop(move |_| {
-                    let anim_id = anim_id.get().expect("id should be set in on_create");
-                    anim_id.stop();
-                    anim_id.start();
-                    is_stopped.update(|val| *val = false);
-                    is_paused.update(|val| *val = false);
-                })
-                .class(Button),
-        )),
+                .duration(5.seconds())
+                .repeat(true)
+                .auto_reverse(true)
+            }),
+        empty()
+            .style(|s| s.background(Color::GREEN).size(100, 300))
+            .animation(move |_| {
+                animation
+                    .get()
+                    .pause(move || pause.track())
+                    .resume(move || resume.track())
+                    .delay(3.seconds())
+            })
+            .on_event_stop(EL::PointerEnter, move |_| {
+                pause.notify();
+            })
+            .on_event_stop(EL::PointerLeave, move |_| {
+                resume.notify();
+            }),
     ))
-    .style(|s| {
-        s.margin_vert(20)
-            .margin_horiz(10)
-            .padding(8)
-            .class(Button, |s| {
-                s.width(70)
-                    .border(1.0)
-                    .padding_left(10)
-                    .border_radius(5)
-                    .margin_left(5.)
-                    .disabled(|s| s.background(Color::DIM_GRAY))
-            })
-            .width(400)
-            .border(1.0)
-            .border_color(Color::DIM_GRAY)
-    })
-}
-
-fn cube_container() -> impl IntoView {
-    let (counter, set_counter) = create_signal(0.0);
-    let (is_hovered, set_is_hovered) = create_signal(false);
-
-    stack({
-        (label(|| "Hover or click me!")
-            .on_click_stop(move |_| {
-                set_counter.update(|value| *value += 1.0);
-            })
-            .on_event_stop(EventListener::PointerEnter, move |_| {
-                set_is_hovered.update(|val| *val = true);
-            })
-            .on_event_stop(EventListener::PointerLeave, move |_| {
-                set_is_hovered.update(|val| *val = false);
-            })
-            .style(|s| {
-                s.border(1.0)
-                    .background(Color::RED)
-                    .color(Color::BLACK)
-                    .padding(10.0)
-                    .margin(20.0)
-                    .size(120.0, 120.0)
-                    .active(|s| s.color(Color::BLACK))
-            })
-            .animation(
-                animation()
-                    //TODO:
-                    // .border_radius(move || if is_hovered.get() { 1.0 } else { 40.0 })
-                    .border_color(|| Color::CYAN)
-                    .color(|| Color::CYAN)
-                    .background(move || {
-                        if is_hovered.get() {
-                            Color::DEEP_PINK
-                        } else {
-                            Color::DARK_ORANGE
-                        }
-                    })
-                    .easing_fn(EasingFn::Quartic)
-                    .ease_in_out()
-                    .duration(Duration::from_secs(1)),
-            ),)
-    })
-    .style(|s| {
-        s.border(5.0)
-            .background(Color::BLUE)
-            .padding(10.0)
-            .size(400.0, 400.0)
-            .color(Color::BLACK)
-    })
-    .animation(
-        animation()
-            .width(move || {
-                if counter.get() % 2.0 == 0.0 {
-                    400.0
-                } else {
-                    600.0
-                }
-            })
-            .height(move || {
-                if counter.get() % 2.0 == 0.0 {
-                    200.0
-                } else {
-                    500.0
-                }
-            })
-            .border_color(|| Color::CYAN)
-            .color(|| Color::CYAN)
-            .background(|| Color::LAVENDER)
-            .easing_fn(EasingFn::Cubic)
-            .ease_in_out()
-            .auto_reverse(true)
-            .duration(Duration::from_secs(2)),
-    )
+    .style(|s| s.size_full().gap(10).items_center().justify_center())
 }
 
 fn main() {
