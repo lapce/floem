@@ -1,8 +1,5 @@
-use std::time::Duration;
-
 use floem::{
     animate::Animation,
-    peniko::Color,
     reactive::{create_rw_signal, RwSignal, SignalGet, SignalUpdate},
     views::*,
     IntoView,
@@ -39,22 +36,11 @@ fn app_view() -> impl IntoView {
     let view = create_rw_signal(ViewSwitcher::One);
 
     v_stack((
-        text_button("Switch views").on_click_stop(move |_| {
+        button(|| "Switch views").on_click_stop(move |_| {
             view.update(|which| which.toggle());
         }),
         dyn_container(move || view.get(), move |which| which.view(view))
             .style(|s| s.border(1).border_radius(5)),
-        empty()
-            .animation(move |a| {
-                Animation::scale(a).apply_if(view.get() == ViewSwitcher::One, |a| {
-                    a.duration(Duration::from_millis(400))
-                })
-            })
-            .style(move |s| {
-                s.size(100, 100)
-                    .background(Color::RED)
-                    .apply_if(view.get() == ViewSwitcher::Two, |s| s.hide())
-            }),
     ))
     .style(|s| {
         s.width_full()
@@ -73,7 +59,7 @@ fn view_one() -> impl IntoView {
 fn view_two(view: RwSignal<ViewSwitcher>) -> impl IntoView {
     v_stack((
         "Another view",
-        text_button("Switch back").on_click_stop(move |_| {
+        button(|| "Switch back").on_click_stop(move |_| {
             view.set(ViewSwitcher::One);
         }),
     ))
