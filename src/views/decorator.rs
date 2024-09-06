@@ -315,7 +315,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         let view_id = view.id();
         let state = view_id.state();
 
-        let offset = state.borrow_mut().animation.next_offset();
+        let offset = state.borrow_mut().animations.next_offset();
         let initial_animation = create_updater(
             move || animation(Animation::new()),
             move |animation| {
@@ -326,7 +326,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
             effect_state.update(|stack| stack.push((view_id, offset)));
         }
 
-        state.borrow_mut().animation.push(initial_animation);
+        state.borrow_mut().animations.push(initial_animation);
 
         view
     }

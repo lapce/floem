@@ -1,3 +1,4 @@
+use floem_reactive::Scope;
 use floem_renderer::gpu_resources::{GpuResourceError, GpuResources};
 use floem_renderer::Renderer as FloemRenderer;
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Shape, Size, Vec2};
@@ -14,6 +15,9 @@ use web_time::{Duration, Instant};
 
 use taffy::prelude::NodeId;
 
+use crate::animate::RepeatMode;
+use crate::style::DisplayProp;
+use crate::view_state::IsHiddenState;
 use crate::{
     action::{exec_after, show_context_menu},
     app_state::AppState,
@@ -101,7 +105,7 @@ impl<'a> EventCx<'a> {
         event: Event,
         directed: bool,
     ) -> EventPropagation {
-        if view_id.is_hidden() {
+        if view_id.style_has_hidden() {
             // we don't process events for hidden view
             return EventPropagation::Continue;
         }
@@ -471,7 +475,7 @@ impl<'a> EventCx<'a> {
     /// Used to determine if you should send an event to another view. This is basically a check for pointer events to see if the pointer is inside a child view and to make sure the current view isn't hidden or disabled.
     /// Usually this is used if you want to propagate an event to a child view
     pub fn should_send(&mut self, id: ViewId, event: &Event) -> bool {
-        if id.is_hidden() || (self.app_state.is_disabled(&id) && !event.allow_disabled()) {
+        if id.style_has_hidden() || (self.app_state.is_disabled(&id) && !event.allow_disabled()) {
             return false;
         }
         if let Some(point) = event.point() {
@@ -736,10 +740,71 @@ impl<'a> ComputeLayoutCx<'a> {
     /// Returns the bounding rect that encompasses this view and its children
     pub fn compute_view_layout(&mut self, id: ViewId) -> Option<Rect> {
         let view_state = id.state();
-        if id.is_hidden() {
-            view_state.borrow_mut().layout_rect = Rect::ZERO;
-            return None;
+        let is_hidden_state = view_state.borrow().is_hidden_state;
+        if let IsHiddenState::Visble(dis) = is_hidden_state {
+            if id.style_has_hidden() {
+                dbg!("step 1; has hidden style, visible state.");
+                // view state isn't yet marked as hidden but the style is, meaning that this is the first time that this view is hidden,
+                // need to check for animations
+                let count = animations_recursive_on_remove(id, Scope::current());
+                view_state.borrow_mut().num_waiting_animations = count;
+                dbg!(count);
+
+                if count > 0 {
+                    // set the combined style to display
+                    view_state
+                        .borrow_mut()
+                        .combined_style
+                        .apply_mut(Style::new().display(dis));
+                    view_state.borrow_mut().is_hidden_state = IsHiddenState::AnimatingOut(dis);
+                    dbg!("set to animating out");
+                } else {
+                    // hidden and no animations active
+                    dbg!("hidden, no animations");
+                    view_state.borrow_mut().layout_rect = Rect::ZERO;
+                    view_state.borrow_mut().is_hidden_state = IsHiddenState::Hidden;
+                    return None;
+                }
+            } else {
+                // hidden state visible and style not hidden. nothing to do. just go on
+            }
+        } else if let IsHiddenState::AnimatingOut(dis) = is_hidden_state {
+            if !id.style_has_hidden() {
+                // finished hiding before animations finished
+                dbg!("finished hiding before animations finished");
+                let display = view_state.borrow().combined_style.get(DisplayProp);
+                view_state.borrow_mut().is_hidden_state = IsHiddenState::Visble(display);
+            } else if view_state.borrow().num_waiting_animations == 0 {
+                // animations finished, set state to hidden
+                dbg!("animaitons finished, set state to hidden");
+                view_state.borrow_mut().is_hidden_state = IsHiddenState::Hidden;
+                view_state.borrow_mut().layout_rect = Rect::ZERO;
+                id.request_layout();
+                return None;
+            } else {
+                // while still animating keep the same display mode
+                dbg!("still animating. setting combined style");
+                view_state
+                    .borrow_mut()
+                    .combined_style
+                    .apply_mut(Style::new().display(dis));
+            }
+        } else {
+            if !id.style_has_hidden() {
+                // view state was marked as hidden but style is now not, transition to visible
+                dbg!("view state was marked as hidden but style is now not, transition to visible");
+                animations_recursive_on_create(id);
+                let display = view_state.borrow().combined_style.get(DisplayProp);
+                view_state.borrow_mut().is_hidden_state = IsHiddenState::Visble(display);
+            } else {
+                // dbg!("style has hidden, view state has hidden");
+                // style is hidden, view state has hidden.
+                view_state.borrow_mut().layout_rect = Rect::ZERO;
+                return None;
+            }
         }
+        drop(view_state);
+        let view_state = id.state();
 
         self.save();
 
@@ -845,11 +910,13 @@ impl<'a> LayoutCx<'a> {
             .requested_changes
             .remove(ChangeFlags::LAYOUT);
         let layout_style = view_state.borrow().layout_props.to_style();
+        let animate_out_display = view_state.borrow().is_hidden_state.get_display();
         let style = view_state
             .borrow()
             .combined_style
             .clone()
             .apply(layout_style)
+            .apply_opt(animate_out_display, Style::display)
             .to_taffy_style();
         let _ = id.taffy().borrow_mut().set_style(node, style);
 
@@ -942,7 +1009,7 @@ impl<'a> PaintCx<'a> {
     /// - clipping
     /// - painting computed styles like background color, border, font-styles, and z-index and handling painting requirements of drag and drop
     pub fn paint_view(&mut self, id: ViewId) {
-        if id.is_hidden() {
+        if id.style_has_hidden() {
             return;
         }
         let view = id.view();
@@ -1218,4 +1285,56 @@ impl DerefMut for PaintCx<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.paint_state.renderer_mut()
     }
+}
+
+fn animations_recursive_on_remove(id: ViewId, scope: Scope) -> u16 {
+    let mut wait_for = 0;
+    let state = id.state();
+    let mut state = state.borrow_mut();
+    let animations = &mut state.animations.stack;
+    let mut request_style = false;
+    for anim in animations {
+        if anim.run_on_remove && !matches!(anim.repeat_mode, RepeatMode::LoopForever) {
+            anim.reverse_once = true;
+            anim.start_mut();
+            request_style = true;
+            wait_for += 1;
+            let trigger = anim.on_complete_trigger;
+            scope.create_updater(
+                move || trigger.track(),
+                move |_| {
+                    id.transition_anim_complete();
+                },
+            );
+        }
+    }
+    drop(state);
+    if request_style {
+        id.request_style();
+    }
+
+    id.children().into_iter().fold(wait_for, |acc, id| {
+        acc + animations_recursive_on_remove(id, scope)
+    })
+}
+
+fn animations_recursive_on_create(id: ViewId) {
+    let state = id.state();
+    let mut state = state.borrow_mut();
+    let animations = &mut state.animations.stack;
+    let mut request_style = false;
+    for anim in animations {
+        if anim.run_on_remove && !matches!(anim.repeat_mode, RepeatMode::LoopForever) {
+            anim.start_mut();
+            request_style = true;
+        }
+    }
+    drop(state);
+    if request_style {
+        id.request_style();
+    }
+
+    id.children()
+        .into_iter()
+        .for_each(|id| animations_recursive_on_create(id));
 }

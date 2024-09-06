@@ -234,7 +234,7 @@ impl ViewId {
         Some(layout)
     }
 
-    pub fn is_hidden(&self) -> bool {
+    pub fn style_has_hidden(&self) -> bool {
         let state = self.state();
         let state = state.borrow();
         state.combined_style.get(DisplayProp) == Display::None
@@ -242,13 +242,13 @@ impl ViewId {
 
     /// Is this view, or any parent view, marked as hidden
     pub fn is_hidden_recursive(&self) -> bool {
-        if self.is_hidden() {
+        if self.style_has_hidden() {
             return true;
         }
 
         let mut parent = self.parent();
         while let Some(id) = parent {
-            if id.is_hidden() {
+            if id.style_has_hidden() {
                 return true;
             }
             parent = id.parent();
@@ -332,9 +332,13 @@ impl ViewId {
         self.add_update_message(UpdateMessage::ScrollTo { id: *self, rect });
     }
 
+    pub(crate) fn transition_anim_complete(&self) {
+        self.add_update_message(UpdateMessage::ViewTransitionAnimComplete(*self));
+    }
+
     pub(crate) fn update_animation(&self, offset: StackOffset<Animation>, animation: Animation) {
         let state = self.state();
-        state.borrow_mut().animation.set(offset, animation);
+        state.borrow_mut().animations.set(offset, animation);
         self.request_style();
     }
 
@@ -346,7 +350,7 @@ impl ViewId {
         let view_state = self.state();
         view_state
             .borrow_mut()
-            .animation
+            .animations
             .update(offset, move |anim| anim.transition(command));
         self.request_style();
     }

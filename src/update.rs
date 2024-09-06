@@ -85,4 +85,5 @@ pub(crate) enum UpdateMessage {
         size: Size,
     },
     WindowVisible(bool),
+    ViewTransitionAnimComplete(ViewId),
 }
