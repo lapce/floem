@@ -743,12 +743,10 @@ impl<'a> ComputeLayoutCx<'a> {
         let is_hidden_state = view_state.borrow().is_hidden_state;
         if let IsHiddenState::Visble(dis) = is_hidden_state {
             if id.style_has_hidden() {
-                dbg!("step 1; has hidden style, visible state.");
                 // view state isn't yet marked as hidden but the style is, meaning that this is the first time that this view is hidden,
                 // need to check for animations
                 let count = animations_recursive_on_remove(id, Scope::current());
                 view_state.borrow_mut().num_waiting_animations = count;
-                dbg!(count);
 
                 if count > 0 {
                     // set the combined style to display
@@ -757,10 +755,8 @@ impl<'a> ComputeLayoutCx<'a> {
                         .combined_style
                         .apply_mut(Style::new().display(dis));
                     view_state.borrow_mut().is_hidden_state = IsHiddenState::AnimatingOut(dis);
-                    dbg!("set to animating out");
                 } else {
                     // hidden and no animations active
-                    dbg!("hidden, no animations");
                     view_state.borrow_mut().layout_rect = Rect::ZERO;
                     view_state.borrow_mut().is_hidden_state = IsHiddenState::Hidden;
                     return None;
@@ -771,19 +767,16 @@ impl<'a> ComputeLayoutCx<'a> {
         } else if let IsHiddenState::AnimatingOut(dis) = is_hidden_state {
             if !id.style_has_hidden() {
                 // finished hiding before animations finished
-                dbg!("finished hiding before animations finished");
                 let display = view_state.borrow().combined_style.get(DisplayProp);
                 view_state.borrow_mut().is_hidden_state = IsHiddenState::Visble(display);
             } else if view_state.borrow().num_waiting_animations == 0 {
                 // animations finished, set state to hidden
-                dbg!("animaitons finished, set state to hidden");
                 view_state.borrow_mut().is_hidden_state = IsHiddenState::Hidden;
                 view_state.borrow_mut().layout_rect = Rect::ZERO;
                 id.request_layout();
                 return None;
             } else {
                 // while still animating keep the same display mode
-                dbg!("still animating. setting combined style");
                 view_state
                     .borrow_mut()
                     .combined_style
@@ -792,12 +785,10 @@ impl<'a> ComputeLayoutCx<'a> {
         } else {
             if !id.style_has_hidden() {
                 // view state was marked as hidden but style is now not, transition to visible
-                dbg!("view state was marked as hidden but style is now not, transition to visible");
                 animations_recursive_on_create(id);
                 let display = view_state.borrow().combined_style.get(DisplayProp);
                 view_state.borrow_mut().is_hidden_state = IsHiddenState::Visble(display);
             } else {
-                // dbg!("style has hidden, view state has hidden");
                 // style is hidden, view state has hidden.
                 view_state.borrow_mut().layout_rect = Rect::ZERO;
                 return None;
@@ -1324,7 +1315,7 @@ fn animations_recursive_on_create(id: ViewId) {
     let animations = &mut state.animations.stack;
     let mut request_style = false;
     for anim in animations {
-        if anim.run_on_remove && !matches!(anim.repeat_mode, RepeatMode::LoopForever) {
+        if anim.run_on_create && !matches!(anim.repeat_mode, RepeatMode::LoopForever) {
             anim.start_mut();
             request_style = true;
         }

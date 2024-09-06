@@ -200,6 +200,11 @@ impl Animation {
         self
     }
 
+    pub fn with_duration(self, duration: impl FnOnce(Self, Duration) -> Self) -> Self {
+        let d = self.duration;
+        duration(self, d)
+    }
+
     pub fn is_idle(&self) -> bool {
         self.state_kind() == AnimStateKind::Idle
     }
@@ -297,6 +302,7 @@ impl Animation {
         self.run_on_create(true)
             .run_on_remove(true)
             .initial_state(AnimStateCommand::Stop)
+            .animate_to_default(Bezier::EASE_IN_OUT.into())
     }
 
     pub fn auto_reverse(mut self, auto_rev: bool) -> Self {
