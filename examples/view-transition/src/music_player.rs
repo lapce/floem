@@ -1,5 +1,5 @@
 use floem::{
-    animate::Bezier,
+    animate::Animation,
     peniko::{Brush, Color},
     reactive::{RwSignal, SignalGet, SignalUpdate},
     style::{Background, Transition},
@@ -11,6 +11,8 @@ use floem::{
     },
     AnyView, IntoView,
 };
+
+use crate::box_shadow;
 
 const FONT_SIZE: f32 = 12.;
 const BACKGROUND: Color = Color::rgb8(235, 235, 240);
@@ -70,14 +72,7 @@ impl PlayPause {
             PlayPause::Play => svg(|| svg::PLAY.to_string()).into_any(),
             PlayPause::Pause => svg(|| svg::PAUSE.to_string()).into_any(),
         }
-        .animation(|a| {
-            a.view_transition()
-                .animate_to_default(Bezier::EASE_IN_OUT.into())
-                .keyframe(0, |kf| kf.style(|s| s.size(0, 0)))
-                .debug_name("Scale the width and height from zero to the default")
-                .run_on_remove(false)
-                .with_duration(|a, d| a.duration(d * 1))
-        })
+        .animation(|a| Animation::scale(a).run_on_remove(false))
     }
 }
 
@@ -131,10 +126,7 @@ pub fn music_player() -> impl IntoView {
             .padding(15)
             .gap(10)
             .width(300)
-            .box_shadow_color(Color::BLACK.with_alpha_factor(0.7))
-            .box_shadow_h_offset(3)
-            .box_shadow_v_offset(3.)
-            .box_shadow_blur(1.5)
+            .apply(box_shadow())
     });
 
     container(card).style(|s| {

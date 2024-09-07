@@ -2,6 +2,7 @@ use floem::{
     animate::Animation,
     peniko::Color,
     reactive::{RwSignal, SignalGet, SignalUpdate},
+    style::Style,
     taffy::FlexWrap,
     views::*,
     IntoView,
@@ -54,7 +55,7 @@ fn app_view() -> impl IntoView {
                     Animation::scale(a)
                         .run_on_remove(false)
                         .with_duration(|a, d| a.delay(d))
-                        .debug_name("Take double time time while entering")
+                        .debug_name("Delay the same amount of time as the duration")
                 })
                 .animation(move |a| Animation::scale(a).run_on_create(false))
                 .style(move |s| {
@@ -62,10 +63,7 @@ fn app_view() -> impl IntoView {
                         .border_radius(5)
                         .background(Color::RED)
                         .apply_if(state.get() == ViewSwitcher::Two, |s| s.hide())
-                        .box_shadow_color(Color::BLACK.with_alpha_factor(0.7))
-                        .box_shadow_h_offset(3)
-                        .box_shadow_v_offset(3.)
-                        .box_shadow_blur(1.5)
+                        .apply(box_shadow())
                 }),
         ))
         .style(|s| s.items_center().justify_center().flex_wrap(FlexWrap::Wrap)),
@@ -94,4 +92,12 @@ fn view_two(view: RwSignal<ViewSwitcher>) -> impl IntoView {
             .border(1)
             .border_radius(5)
     })
+}
+
+fn box_shadow() -> Style {
+    Style::new()
+        .box_shadow_color(Color::BLACK.with_alpha_factor(0.7))
+        .box_shadow_h_offset(3)
+        .box_shadow_v_offset(3.)
+        .box_shadow_blur(1.5)
 }
