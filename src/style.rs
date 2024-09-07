@@ -901,8 +901,6 @@ impl<T: StylePropValue> TransitionState<T> {
                         *request_transition = true;
                         return true;
                     }
-                } else {
-                    // *self = Self::default();
                 }
             }
             // time has past duration, or the value is not interpolatable

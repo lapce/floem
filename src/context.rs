@@ -782,17 +782,15 @@ impl<'a> ComputeLayoutCx<'a> {
                     .combined_style
                     .apply_mut(Style::new().display(dis));
             }
+        } else if !id.style_has_hidden() {
+            // view state was marked as hidden but style is now not, transition to visible
+            animations_recursive_on_create(id);
+            let display = view_state.borrow().combined_style.get(DisplayProp);
+            view_state.borrow_mut().is_hidden_state = IsHiddenState::Visble(display);
         } else {
-            if !id.style_has_hidden() {
-                // view state was marked as hidden but style is now not, transition to visible
-                animations_recursive_on_create(id);
-                let display = view_state.borrow().combined_style.get(DisplayProp);
-                view_state.borrow_mut().is_hidden_state = IsHiddenState::Visble(display);
-            } else {
-                // style is hidden, view state has hidden.
-                view_state.borrow_mut().layout_rect = Rect::ZERO;
-                return None;
-            }
+            // style is hidden, view state has hidden.
+            view_state.borrow_mut().layout_rect = Rect::ZERO;
+            return None;
         }
         drop(view_state);
         let view_state = id.state();
@@ -1327,5 +1325,5 @@ fn animations_recursive_on_create(id: ViewId) {
 
     id.children()
         .into_iter()
-        .for_each(|id| animations_recursive_on_create(id));
+        .for_each(animations_recursive_on_create);
 }

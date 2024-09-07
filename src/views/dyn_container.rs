@@ -165,7 +165,7 @@ impl<T> DynamicContainer<T> {
         self.child_scope = new_child_scope;
         cx.app_state_mut().remove_view(old_child_id);
         old_child_scope.dispose();
-        animations_recursive_on_create(self.id, self.child_id);
+        animations_recursive_on_create(self.child_id);
         self.id.request_all();
     }
 }
@@ -203,7 +203,7 @@ fn animations_recursive_on_remove(id: ViewId, child_id: ViewId, child_scope: Sco
             acc + animations_recursive_on_remove(id, child_id, child_scope)
         })
 }
-fn animations_recursive_on_create(id: ViewId, child_id: ViewId) {
+fn animations_recursive_on_create(child_id: ViewId) {
     let state = child_id.state();
     let mut state = state.borrow_mut();
     let animations = &mut state.animations.stack;
@@ -222,5 +222,5 @@ fn animations_recursive_on_create(id: ViewId, child_id: ViewId) {
     child_id
         .children()
         .into_iter()
-        .for_each(|child_id| animations_recursive_on_create(id, child_id));
+        .for_each(animations_recursive_on_create);
 }

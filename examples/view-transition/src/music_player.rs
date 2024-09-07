@@ -19,26 +19,7 @@ const ICON: Color = Color::rgb8(120, 120, 127); // medium gray - icons and accen
 const MUSIC_ICON: Color = Color::rgb8(11, 11, 21);
 const TEXT_COLOR: Color = Color::rgb8(48, 48, 54);
 
-const PLAY_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6">
-  <path fill-rule="evenodd" d="M4.5 5.653c0-1.427 1.529-2.33 2.779-1.643l11.54 6.347c1.295.712 1.295 2.573 0 3.286L7.28 19.99c-1.25.687-2.779-.217-2.779-1.643V5.653Z" clip-rule="evenodd" />
-</svg>
-"#;
-const PAUSE_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6">
-  <path fill-rule="evenodd" d="M6.75 5.25a.75.75 0 0 1 .75-.75H9a.75.75 0 0 1 .75.75v13.5a.75.75 0 0 1-.75.75H7.5a.75.75 0 0 1-.75-.75V5.25Zm7.5 0A.75.75 0 0 1 15 4.5h1.5a.75.75 0 0 1 .75.75v13.5a.75.75 0 0 1-.75.75H15a.75.75 0 0 1-.75-.75V5.25Z" clip-rule="evenodd" />
-</svg>
-"#;
-// const FORWARD_SVG: &str = r#"b<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6">
-//   <path d="M5.055 7.06C3.805 6.347 2.25 7.25 2.25 8.69v8.122c0 1.44 1.555 2.343 2.805 1.628L12 14.471v2.34c0 1.44 1.555 2.343 2.805 1.628l7.108-4.061c1.26-.72 1.26-2.536 0-3.256l-7.108-4.061C13.555 6.346 12 7.249 12 8.689v2.34L5.055 7.061Z" />
-// </svg>
-// "#;
-const BACKWARD_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6">
-  <path d="M9.195 18.44c1.25.714 2.805-.189 2.805-1.629v-2.34l6.945 3.968c1.25.715 2.805-.188 2.805-1.628V8.69c0-1.44-1.555-2.343-2.805-1.628L12 11.029v-2.34c0-1.44-1.555-2.343-2.805-1.628l-7.108 4.061c-1.26.72-1.26 2.536 0 3.256l7.108 4.061Z" />
-</svg>
-"#;
-const MUSIC_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-6">
-  <path fill-rule="evenodd" d="M19.952 1.651a.75.75 0 0 1 .298.599V16.303a3 3 0 0 1-2.176 2.884l-1.32.377a2.553 2.553 0 1 1-1.403-4.909l2.311-.66a1.5 1.5 0 0 0 1.088-1.442V6.994l-9 2.572v9.737a3 3 0 0 1-2.176 2.884l-1.32.377a2.553 2.553 0 1 1-1.402-4.909l2.31-.66a1.5 1.5 0 0 0 1.088-1.442V5.25a.75.75 0 0 1 .544-.721l10.5-3a.75.75 0 0 1 .658.122Z" clip-rule="evenodd" />
-</svg>
-"#;
+mod svg;
 
 #[derive(Debug, Clone)]
 struct SongInfo {
@@ -86,8 +67,8 @@ impl PlayPause {
     }
     fn view(&self) -> AnyView {
         match self {
-            PlayPause::Play => svg(|| PLAY_SVG.to_string()).into_any(),
-            PlayPause::Pause => svg(|| PAUSE_SVG.to_string()).into_any(),
+            PlayPause::Play => svg(|| svg::PLAY.to_string()).into_any(),
+            PlayPause::Pause => svg(|| svg::PAUSE.to_string()).into_any(),
         }
         .animation(|a| {
             a.view_transition()
@@ -104,7 +85,7 @@ pub fn music_player() -> impl IntoView {
     let song_info = RwSignal::new(SongInfo::default());
 
     let now_playing = h_stack((
-        svg(|| MUSIC_SVG.to_string()).style(|s| s.color(MUSIC_ICON)),
+        svg(|| svg::MUSIC.to_string()).style(|s| s.color(MUSIC_ICON)),
         "Now Playing".style(|s| s.font_weight(Weight::MEDIUM)),
     ))
     .style(|s| s.gap(5).items_center());
@@ -117,9 +98,9 @@ pub fn music_player() -> impl IntoView {
     .on_click_stop(move |_| play_pause_state.update(|which| which.toggle()));
 
     let media_buttons = h_stack((
-        container(svg(|| BACKWARD_SVG.to_string())).class(ButtonClass),
+        container(svg(|| svg::BACKWARD.to_string())).class(ButtonClass),
         play_pause_button,
-        container(svg(|| BACKWARD_SVG.to_string())).class(ButtonClass),
+        container(svg(|| svg::BACKWARD.to_string())).class(ButtonClass),
     ))
     .style(|s| {
         s.align_self(Some(floem::taffy::AlignItems::Center))
@@ -164,6 +145,8 @@ pub fn music_player() -> impl IntoView {
             .color(TEXT_COLOR)
             .class(SvgClass, |s| {
                 s.size(20, 20)
+                    .items_center()
+                    .justify_center()
                     .transition_size(Transition::linear(25.millis()))
                     .transition_color(Transition::linear(25.millis()))
             })

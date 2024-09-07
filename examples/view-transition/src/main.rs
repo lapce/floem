@@ -48,7 +48,7 @@ fn app_view() -> impl IntoView {
             state.update(|which| which.toggle());
         }),
         h_stack((
-            dyn_container(move || state.get(), move |which| which.view(state)).style(|s| s),
+            dyn_container(move || state.get(), move |which| which.view(state)),
             empty()
                 .animation(move |a| {
                     Animation::scale(a)
