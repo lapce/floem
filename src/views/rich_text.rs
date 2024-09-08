@@ -307,7 +307,7 @@ where
     fn add(mut self, rhs: S) -> Self::Output {
         let rhs: RichSpan = rhs.into();
         let self_len = self.text.len();
-        let new_text = self.text + &rhs.text;
+        let new_text = self.text + rhs.text;
         self.spans
             .push((self_len..new_text.len(), AttrsOwned::new(rhs.attrs)));
         Self {
