@@ -53,3 +53,13 @@ impl View for Clip {
         cx.restore();
     }
 }
+
+pub trait ClipExt {
+    fn clip(self) -> Clip;
+}
+
+impl<T: View + 'static> ClipExt for T {
+    fn clip(self) -> Clip {
+        clip(self)
+    }
+}

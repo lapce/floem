@@ -1,7 +1,7 @@
 use std::{any::Any, cell::RefCell, collections::HashMap, fmt, rc::Rc};
 
 use crate::{
-    create_effect,
+    create_effect, create_updater,
     id::Id,
     memo::{create_memo, Memo},
     runtime::RUNTIME,
@@ -88,6 +88,18 @@ impl Scope {
         T: Any + 'static,
     {
         with_scope(self, || create_effect(f))
+    }
+
+    /// Create updater under this Scope
+    pub fn create_updater<R>(
+        self,
+        compute: impl Fn() -> R + 'static,
+        on_change: impl Fn(R) + 'static,
+    ) -> R
+    where
+        R: 'static,
+    {
+        with_scope(self, || create_updater(compute, on_change))
     }
 
     /// This is normally used in create_effect, and it will bind the effect's lifetime
