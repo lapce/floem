@@ -7,7 +7,6 @@ use std::{
     rc::Rc,
     sync::Arc,
 };
-use taffy::Display;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
@@ -742,69 +741,37 @@ impl<'a> ComputeLayoutCx<'a> {
     pub fn compute_view_layout(&mut self, id: ViewId) -> Option<Rect> {
         let view_state = id.state();
 
-        {
-            let mut view_state_ref = view_state.borrow_mut();
-            let is_hidden_state = view_state_ref.is_hidden_state;
-            let style_has_hidden = view_state_ref.combined_style.get(DisplayProp) == Display::None;
-
-            match is_hidden_state {
-                IsHiddenState::Visble(dis) if style_has_hidden => {
-                    // view state isn't yet marked as hidden but the style is, meaning that this is the first time that this view is hidden,
-                    // need to check for animations
-                    drop(view_state_ref);
-                    let count = animations_recursive_on_remove(id, Scope::current());
-                    let mut view_state_ref = view_state.borrow_mut();
-                    view_state_ref.num_waiting_animations = count;
-
-                    if count > 0 {
-                        // set the combined style to display
-                        view_state_ref
-                            .combined_style
-                            .apply_mut(Style::new().display(dis));
-                        view_state_ref.is_hidden_state = IsHiddenState::AnimatingOut(dis);
-                    } else {
-                        // hidden and no animations active
-                        view_state_ref.layout_rect = Rect::ZERO;
-                        view_state_ref.is_hidden_state = IsHiddenState::Hidden;
-                        return None;
-                    }
-                }
-                IsHiddenState::AnimatingOut(dis) => {
-                    if !style_has_hidden {
-                        // finished hiding before animations finished
-                        let display = view_state_ref.combined_style.get(DisplayProp);
-                        view_state_ref.is_hidden_state = IsHiddenState::Visble(display);
-                    } else if view_state_ref.num_waiting_animations == 0 {
-                        // animations finished, set state to hidden
-                        view_state_ref.is_hidden_state = IsHiddenState::Hidden;
-                        view_state_ref.layout_rect = Rect::ZERO;
-                        drop(view_state_ref);
-                        id.request_layout();
-                        return None;
-                    } else {
-                        // while still animating, keep the same display mode
-                        view_state_ref
-                            .combined_style
-                            .apply_mut(Style::new().display(dis));
-                    }
-                }
-                IsHiddenState::Hidden => {
-                    drop(view_state_ref);
-                    if !id.style_has_hidden() {
-                        // view state was marked as hidden but style is now not, transition to visible
-                        animations_recursive_on_create(id);
-                        let mut view_state_ref = view_state.borrow_mut();
-                        let display = view_state_ref.combined_style.get(DisplayProp);
-                        view_state_ref.is_hidden_state = IsHiddenState::Visble(display);
-                    } else {
-                        // style is hidden, view state has hidden
-                        view_state.borrow_mut().layout_rect = Rect::ZERO;
-                        return None;
-                    }
-                }
-                _ => {}
-            };
+        let mut is_hidden_state = view_state.borrow().is_hidden_state;
+        let display = view_state.borrow().combined_style.get(DisplayProp);
+        let request_layout = is_hidden_state.transition(
+            display,
+            || {
+                let count = animations_recursive_on_remove(id, Scope::current());
+                view_state.borrow_mut().num_waiting_animations = count;
+                count > 0
+            },
+            || {
+                animations_recursive_on_create(id);
+            },
+            || view_state.borrow().num_waiting_animations,
+        );
+        if request_layout {
+            id.request_layout();
         }
+
+        view_state.borrow_mut().is_hidden_state = is_hidden_state;
+        if is_hidden_state == IsHiddenState::Hidden {
+            view_state.borrow_mut().layout_rect = Rect::ZERO;
+            return None;
+        }
+
+        let modified = view_state
+            .borrow()
+            .combined_style
+            .clone()
+            .apply_opt(is_hidden_state.get_display(), Style::display);
+
+        view_state.borrow_mut().combined_style = modified;
 
         self.save();
 
