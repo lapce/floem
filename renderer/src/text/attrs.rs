@@ -53,6 +53,31 @@ pub enum LineHeightValue {
 }
 
 /// Text attributes
+#[derive(Clone, Debug)]
+pub struct AttrsOwned {
+    attrs: cosmic_text::AttrsOwned,
+    pub font_size: f32,
+    line_height: LineHeightValue,
+}
+impl AttrsOwned {
+    pub fn new(attrs: Attrs) -> Self {
+        Self {
+            attrs: cosmic_text::AttrsOwned::new(attrs.attrs),
+            font_size: attrs.font_size,
+            line_height: attrs.line_height,
+        }
+    }
+
+    pub fn as_attrs(&self) -> Attrs {
+        Attrs {
+            attrs: self.attrs.as_attrs(),
+            font_size: self.font_size,
+            line_height: self.line_height,
+        }
+    }
+}
+
+/// Text attributes
 #[derive(Clone, Copy, Debug)]
 pub struct Attrs<'a> {
     attrs: cosmic_text::Attrs<'a>,
