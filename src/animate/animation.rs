@@ -8,14 +8,14 @@ use super::{AnimState, AnimStateCommand, AnimStateKind, Bezier, Easing};
 use std::any::Any;
 use std::rc::Rc;
 
-use floem_reactive::{create_updater, RwSignal, SignalGet};
+use floem_reactive::{create_updater, RwSignal, SignalGet, Trigger};
 use smallvec::SmallVec;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
 use web_time::{Duration, Instant};
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct KeyFrame {
     id: u32,
     style: Style,
@@ -68,7 +68,7 @@ impl KeyFrame {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Animate {
     /// This effectively assign the computed style (the style before animations are applied) to keyframe 0
     ///
@@ -82,7 +82,7 @@ pub enum Animate {
 }
 
 type EffectStateVec = SmallVec<[RwSignal<SmallVec<[(ViewId, StackOffset<Animation>); 1]>>; 1]>;
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Animation {
     pub(crate) state: AnimState,
     pub(crate) effect_states: EffectStateVec,
@@ -95,13 +95,17 @@ pub struct Animation {
     pub(crate) animate: Animate,
     /// How many times the animation has been repeated so far
     pub(crate) repeat_count: usize,
+    /// run on remove and run on create should be checked for and respected by any view that dynamically creates sub views
+    pub(crate) run_on_remove: bool,
+    pub(crate) run_on_create: bool,
+    pub(crate) reverse_once: bool,
     pub(crate) max_key_frame_num: u32,
     pub(crate) folded_style: Style,
     pub(crate) key_frames: im_rc::OrdMap<u32, KeyFrame>,
     // TODO: keep a lookup of styleprops to the last keyframe with that prop. this would be useful when there are lots of keyframes and sparse props
     // pub(crate)cache: std::collections::HashMap<StylePropRef, u32>,
-    pub(crate) on_start_listener: Option<Rc<dyn Fn() + 'static>>,
-    pub(crate) on_complete_listener: Option<Rc<dyn Fn() + 'static>>,
+    pub(crate) on_start_trigger: Trigger,
+    pub(crate) on_complete_trigger: Trigger,
     pub(crate) debug_description: Option<String>,
 }
 impl Default for Animation {
@@ -111,15 +115,18 @@ impl Default for Animation {
             effect_states: SmallVec::new(),
             auto_reverse: false,
             delay: Duration::ZERO,
-            duration: Duration::from_secs(1),
+            duration: Duration::from_millis(200),
             repeat_mode: RepeatMode::Times(1),
             animate: Animate::FromDefault,
             repeat_count: 0,
+            run_on_remove: false,
+            run_on_create: false,
+            reverse_once: false,
             max_key_frame_num: 100,
             folded_style: Style::new(),
             key_frames: im_rc::OrdMap::new(),
-            on_start_listener: None,
-            on_complete_listener: None,
+            on_start_trigger: Trigger::new(),
+            on_complete_trigger: Trigger::new(),
             debug_description: None,
         }
     }
@@ -127,6 +134,14 @@ impl Default for Animation {
 impl Animation {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn scale(animation: Self) -> Self {
+        animation
+            .view_transition()
+            .animate_to_default(Bezier::EASE_IN_OUT.into())
+            .keyframe(0, |kf| kf.style(|s| s.size(0, 0)))
+            .debug_name("Scale the width and height from zero to the default")
     }
 }
 
@@ -173,9 +188,21 @@ pub enum AnimDirection {
 }
 
 impl Animation {
+    pub fn apply_if(self, cond: bool, f: impl FnOnce(Self) -> Self) -> Self {
+        if cond {
+            f(self)
+        } else {
+            self
+        }
+    }
     pub fn duration(mut self, duration: Duration) -> Self {
         self.duration = duration;
         self
+    }
+
+    pub fn with_duration(self, duration: impl FnOnce(Self, Duration) -> Self) -> Self {
+        let d = self.duration;
+        duration(self, d)
     }
 
     pub fn is_idle(&self) -> bool {
@@ -208,14 +235,14 @@ impl Animation {
     }
 
     /// Returns the ID of the animation. Use this when you want to control(stop/pause/resume) the animation
-    pub fn on_create(mut self, on_create_fn: impl Fn() + 'static) -> Self {
-        self.on_start_listener = Some(Rc::new(on_create_fn));
+    pub fn on_create(self, on_create: impl Fn(Trigger) + 'static) -> Self {
+        on_create(self.on_start_trigger);
         self
     }
 
     /// Returns the ID of the animation. Use this when you want to control(stop/pause/resume) the animation
-    pub fn on_complete(mut self, on_create_fn: impl Fn() + 'static) -> Self {
-        self.on_start_listener = Some(Rc::new(on_create_fn));
+    pub fn on_complete(self, on_complete: impl Fn(Trigger) + 'static) -> Self {
+        on_complete(self.on_complete_trigger);
         self
     }
 
@@ -253,13 +280,29 @@ impl Animation {
         let percent = self.total_time_percent();
         let frame_target = (self.max_key_frame_num as f64 * percent).floor() as u32;
         let (smaller, target, bigger) = self.key_frames.split_lookup(&frame_target);
-        let upper = if let Some(target) = target {
+        let lower = if let Some(target) = target {
             Some(target)
         } else {
-            bigger.values().next().cloned()
+            smaller.values().last().cloned()
         };
-        let lower = smaller.values().last().cloned();
+        let upper = bigger.values().next().cloned();
         (lower, upper)
+    }
+
+    pub fn run_on_create(mut self, run_on_create: bool) -> Self {
+        self.run_on_create = run_on_create;
+        self
+    }
+    pub fn run_on_remove(mut self, run_on_remove: bool) -> Self {
+        self.run_on_remove = run_on_remove;
+        self
+    }
+
+    pub fn view_transition(self) -> Self {
+        self.run_on_create(true)
+            .run_on_remove(true)
+            .initial_state(AnimStateCommand::Stop)
+            .animate_to_default(Bezier::EASE_IN_OUT.into())
     }
 
     pub fn auto_reverse(mut self, auto_rev: bool) -> Self {
@@ -274,6 +317,11 @@ impl Animation {
 
     pub fn animate(mut self, animate: Animate) -> Self {
         self.animate = animate;
+        self
+    }
+
+    pub fn animate_to_default(mut self, easing: Easing) -> Self {
+        self.animate = Animate::ToDefault(easing);
         self
     }
 
@@ -298,6 +346,11 @@ impl Animation {
     /// If you need more than 100 keyframes, increase this number, but be aware, the keyframe numbers will then be as a percentage of the maximum
     pub fn max_key_frame(mut self, max: u32) -> Self {
         self.max_key_frame_num = max;
+        self
+    }
+
+    pub fn initial_state(mut self, command: AnimStateCommand) -> Self {
+        self.transition(command);
         self
     }
 
@@ -420,9 +473,7 @@ impl Animation {
         match &mut self.state {
             AnimState::Idle => {
                 self.start_mut();
-                if let Some(ref on_start) = self.on_start_listener {
-                    on_start()
-                }
+                self.on_start_trigger.notify();
             }
             AnimState::PassInProgress {
                 started_on,
@@ -430,7 +481,7 @@ impl Animation {
             } => {
                 let now = Instant::now();
                 let duration = now - *started_on;
-                elapsed += duration;
+                elapsed = duration;
 
                 let temp_elapsed = if elapsed <= self.delay {
                     // The animation hasn't started yet
@@ -453,6 +504,8 @@ impl Animation {
                 RepeatMode::Times(times) => {
                     self.repeat_count += 1;
                     if self.repeat_count >= times {
+                        self.reverse_once = false;
+                        self.on_complete_trigger.notify();
                         self.state = AnimState::Completed {
                             elapsed: Some(*elapsed),
                         }
@@ -470,11 +523,7 @@ impl Animation {
             AnimState::Stopped => {
                 debug_assert!(false, "Tried to advance a stopped animation")
             }
-            AnimState::Completed { .. } => {
-                if let Some(ref on_complete) = self.on_complete_listener {
-                    on_complete()
-                }
-            }
+            AnimState::Completed { .. } => {}
         }
     }
 
@@ -534,7 +583,11 @@ impl Animation {
             percent *= 2.0; // Normalize to [0.0, 1.0] range after reversal adjustment
         }
 
-        percent
+        if self.reverse_once {
+            1. - percent
+        } else {
+            percent
+        }
     }
 
     pub(crate) fn animate_into(&mut self, computed_style: &mut Style) {

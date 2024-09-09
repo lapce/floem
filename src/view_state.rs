@@ -19,6 +19,7 @@ use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::Rc};
 use taffy::tree::NodeId;
 
 /// A stack of view attributes. Each entry is associated with a view decorator call.
+#[derive(Debug)]
 pub(crate) struct Stack<T> {
     pub(crate) stack: SmallVec<[T; 1]>,
 }
@@ -83,6 +84,21 @@ bitflags! {
     }
 }
 
+#[derive(Clone, Copy)]
+pub enum IsHiddenState {
+    Visble(taffy::style::Display),
+    AnimatingOut(taffy::style::Display),
+    Hidden,
+}
+impl IsHiddenState {
+    pub(crate) fn get_display(&self) -> Option<taffy::style::Display> {
+        match self {
+            IsHiddenState::Visble(dis) | IsHiddenState::AnimatingOut(dis) => Some(*dis),
+            IsHiddenState::Hidden => None,
+        }
+    }
+}
+
 /// View state stores internal state associated with a view which is owned and managed by Floem.
 pub struct ViewState {
     pub(crate) node: NodeId,
@@ -95,7 +111,7 @@ pub struct ViewState {
     pub(crate) layout_rect: Rect,
     pub(crate) layout_props: LayoutProps,
     pub(crate) view_style_props: ViewStyleProps,
-    pub(crate) animation: Stack<Animation>,
+    pub(crate) animations: Stack<Animation>,
     pub(crate) classes: Vec<StyleClassRef>,
     pub(crate) dragging_style: Option<Style>,
     pub(crate) combined_style: Style,
@@ -108,6 +124,8 @@ pub struct ViewState {
     pub(crate) move_listener: Option<Rc<RefCell<MoveListener>>>,
     pub(crate) cleanup_listener: Option<Rc<dyn Fn()>>,
     pub(crate) last_pointer_down: Option<PointerInputEvent>,
+    pub(crate) is_hidden_state: IsHiddenState,
+    pub(crate) num_waiting_animations: u16,
     pub(crate) debug_name: SmallVec<[String; 1]>,
 }
 
@@ -123,7 +141,7 @@ impl ViewState {
             requested_changes: ChangeFlags::all(),
             request_style_recursive: false,
             has_style_selectors: StyleSelectors::default(),
-            animation: Default::default(),
+            animations: Default::default(),
             classes: Vec::new(),
             combined_style: Style::new(),
             taffy_style: taffy::style::Style::DEFAULT,
@@ -136,6 +154,8 @@ impl ViewState {
             cleanup_listener: None,
             last_pointer_down: None,
             window_origin: Point::ZERO,
+            is_hidden_state: IsHiddenState::Visble(taffy::Display::Flex),
+            num_waiting_animations: 0,
             debug_name: Default::default(),
         }
     }
@@ -163,19 +183,17 @@ impl ViewState {
             .apply(self.style());
 
         for animation in self
-            .animation
+            .animations
             .stack
             .iter_mut()
-            .filter(|anim| !(anim.is_completed() && anim.is_auto_reverse()))
+            .filter(|anim| anim.can_advance())
         {
             new_frame = true;
 
             animation.animate_into(&mut computed_style);
 
-            if animation.can_advance() {
-                animation.advance();
-                debug_assert!(!animation.is_idle());
-            }
+            animation.advance();
+            debug_assert!(!animation.is_idle());
         }
 
         self.has_style_selectors = computed_style.selectors();
@@ -188,7 +206,7 @@ impl ViewState {
     }
 
     pub(crate) fn has_active_animation(&self) -> bool {
-        for animation in self.animation.stack.iter() {
+        for animation in self.animations.stack.iter() {
             if animation.is_in_progress() {
                 return true;
             }

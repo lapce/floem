@@ -999,6 +999,11 @@ impl WindowHandle {
                             window.set_visible(visible);
                         }
                     }
+                    UpdateMessage::ViewTransitionAnimComplete(id) => {
+                        let num_waiting =
+                            id.state().borrow().num_waiting_animations.saturating_sub(1);
+                        id.state().borrow_mut().num_waiting_animations = num_waiting;
+                    }
                 }
             }
         }

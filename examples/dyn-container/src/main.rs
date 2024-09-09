@@ -1,63 +1,72 @@
 use floem::{
+    animate::Animation,
     reactive::{create_rw_signal, RwSignal, SignalGet, SignalUpdate},
-    views::{button, dyn_container, h_stack, label, v_stack, Decorators},
+    views::*,
     IntoView,
 };
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 enum ViewSwitcher {
     One,
     Two,
 }
+impl ViewSwitcher {
+    fn toggle(&mut self) {
+        *self = match self {
+            ViewSwitcher::One => ViewSwitcher::Two,
+            ViewSwitcher::Two => ViewSwitcher::One,
+        };
+    }
 
-fn view_one() -> impl IntoView {
-    label(|| "A view")
+    fn view(&self, state: RwSignal<Self>) -> impl IntoView {
+        match self {
+            ViewSwitcher::One => view_one().into_any(),
+            ViewSwitcher::Two => view_two(state).into_any(),
+        }
+        .animation(Animation::scale)
+        .clip()
+    }
 }
 
-fn view_two(view: RwSignal<ViewSwitcher>) -> impl IntoView {
-    v_stack((
-        label(|| "Another view"),
-        button(|| "Switch back").on_click_stop(move |_| {
-            view.set(ViewSwitcher::One);
-        }),
-    ))
-    .style(|s| s.column_gap(10.0))
+fn main() {
+    floem::launch(app_view);
 }
 
 fn app_view() -> impl IntoView {
     let view = create_rw_signal(ViewSwitcher::One);
 
     v_stack((
-        h_stack((
-            label(|| "Swap views:").style(|s| s.padding(5)),
-            button(|| "Switch views")
-                .on_click_stop(move |_| {
-                    if view.get() == ViewSwitcher::One {
-                        view.set(ViewSwitcher::Two);
-                    } else {
-                        view.set(ViewSwitcher::One);
-                    }
-                })
-                .style(|s| s.margin_bottom(20)),
-        )),
-        dyn_container(
-            move || view.get(),
-            move |view_value| match view_value {
-                ViewSwitcher::One => view_one().into_any(),
-                ViewSwitcher::Two => view_two(view).into_any(),
-            },
-        )
-        .style(|s| s.padding(10).border(1)),
+        button(|| "Switch views").on_click_stop(move |_| {
+            view.update(|which| which.toggle());
+        }),
+        dyn_container(move || view.get(), move |which| which.view(view))
+            .style(|s| s.border(1).border_radius(5)),
     ))
     .style(|s| {
         s.width_full()
             .height_full()
             .items_center()
             .justify_center()
-            .row_gap(10)
+            .gap(20)
     })
 }
 
-fn main() {
-    floem::launch(app_view);
+fn view_one() -> impl IntoView {
+    // container used to make the text clip evenly on both sides while animating
+    container("A view").style(|s| s.size(100, 100).items_center().justify_center())
+}
+
+fn view_two(view: RwSignal<ViewSwitcher>) -> impl IntoView {
+    v_stack((
+        "Another view",
+        button(|| "Switch back").on_click_stop(move |_| {
+            view.set(ViewSwitcher::One);
+        }),
+    ))
+    .style(|s| {
+        s.column_gap(10.0)
+            .size(150, 100)
+            .items_center()
+            .justify_center()
+    })
 }

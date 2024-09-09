@@ -513,7 +513,7 @@ impl StylePropInfo {
             debug_any: |val| {
                 if let Some(v) = val.downcast_ref::<StyleMapValue<T>>() {
                     match v {
-                        StyleMapValue::Val(v) => format!("{:?}", v),
+                        StyleMapValue::Val(v) | StyleMapValue::Animated(v) => format!("{:?}", v),
                         StyleMapValue::Unset => "Unset".to_owned(),
                     }
                 } else {
@@ -529,9 +529,13 @@ impl StylePropInfo {
                     val1.downcast_ref::<StyleMapValue<T>>(),
                     val2.downcast_ref::<StyleMapValue<T>>(),
                 ) {
-                    if let (StyleMapValue::Val(v1), StyleMapValue::Val(v2)) = (v1, v2) {
+                    if let (
+                        StyleMapValue::Val(v1) | StyleMapValue::Animated(v1),
+                        StyleMapValue::Val(v2) | StyleMapValue::Animated(v2),
+                    ) = (v1, v2)
+                    {
                         v1.interpolate(v2, time)
-                            .map(|val| Rc::new(StyleMapValue::Val(val)) as Rc<dyn Any>)
+                            .map(|val| Rc::new(StyleMapValue::Animated(val)) as Rc<dyn Any>)
                     } else {
                         None
                     }
@@ -548,7 +552,7 @@ impl StylePropInfo {
             debug_view: |val| {
                 if let Some(v) = val.downcast_ref::<StyleMapValue<T>>() {
                     match v {
-                        StyleMapValue::Val(v) => v.debug_view(),
+                        StyleMapValue::Val(v) | StyleMapValue::Animated(v) => v.debug_view(),
 
                         StyleMapValue::Unset => Some(text("Unset").into_any()),
                     }
@@ -601,6 +605,8 @@ pub trait StylePropReader {
 impl<P: StyleProp> StylePropReader for P {
     type State = (P::Type, TransitionState<P::Type>);
     type Type = P::Type;
+
+    // returns true if the value has changed
     fn read(
         state: &mut Self::State,
         style: &Style,
@@ -608,25 +614,43 @@ impl<P: StyleProp> StylePropReader for P {
         now: &Instant,
         request_transition: &mut bool,
     ) -> bool {
-        let new = style
-            .get_prop::<P>()
-            .or_else(|| fallback.get_prop::<P>())
-            .unwrap_or_else(|| P::default_value());
+        // get the style property
+        let style_value = style.get_prop_style_value::<P>();
+        let mut prop_animated = false;
+        let new = match style_value {
+            StyleValue::Animated(val) => {
+                *request_transition = true;
+                prop_animated = true;
+                val
+            }
+            StyleValue::Val(val) => val,
+            StyleValue::Unset | StyleValue::Base => fallback
+                .get_prop::<P>()
+                .unwrap_or_else(|| P::default_value()),
+        };
+        // set the transition state to the transition if one is found
         state.1.read(
             style
                 .get_transition::<P>()
                 .or_else(|| fallback.get_transition::<P>()),
         );
+
+        // there is a previously stored value in state.0. if the values are different, a transition should be started if there is one
         let changed = new != state.0;
-        if changed {
+        if changed && !prop_animated {
             state.1.transition(&Self::get(state), &new);
+            state.0 = new;
+        } else if prop_animated {
             state.0 = new;
         }
         changed | state.1.step(now, request_transition)
     }
+
+    // get the current value from the transition state if one is active, else just return the value that was read from the style map
     fn get(state: &Self::State) -> Self::Type {
         state.1.get(&state.0)
     }
+
     fn new() -> Self::State {
         (P::default_value(), TransitionState::default())
     }
@@ -806,6 +830,7 @@ macro_rules! prop_extractor {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StyleMapValue<T> {
+    Animated(T),
     Val(T),
     /// Use the default value for the style, typically from the underlying `ComputedStyle`
     Unset,
@@ -815,6 +840,7 @@ impl<T> StyleMapValue<T> {
     pub(crate) fn as_ref(&self) -> Option<&T> {
         match self {
             Self::Val(v) => Some(v),
+            Self::Animated(v) => Some(v),
             Self::Unset => None,
         }
     }
@@ -854,6 +880,7 @@ impl<T: StylePropValue> TransitionState<T> {
         }
     }
 
+    // returns true if changed
     fn step(&mut self, now: &Instant, request_transition: &mut bool) -> bool {
         if !self.initial {
             // We have observed the initial value. Any further changes may trigger animations.
@@ -876,6 +903,7 @@ impl<T: StylePropValue> TransitionState<T> {
                     }
                 }
             }
+            // time has past duration, or the value is not interpolatable
             self.active = None;
 
             true
@@ -1030,6 +1058,7 @@ impl Style {
             .map(
                 |v| match v.downcast_ref::<StyleMapValue<P::Type>>().unwrap() {
                     StyleMapValue::Val(v) => StyleValue::Val(v.clone()),
+                    StyleMapValue::Animated(v) => StyleValue::Animated(v.clone()),
                     StyleMapValue::Unset => StyleValue::Unset,
                 },
             )
@@ -1391,6 +1420,8 @@ impl Default for BoxShadow {
 /// The value for a [`Style`] property
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StyleValue<T> {
+    // a value that has been inserted into the map by an animation
+    Animated(T),
     Val(T),
     /// Use the default value for the style, typically from the underlying `ComputedStyle`
     Unset,
@@ -1403,6 +1434,7 @@ impl<T> StyleValue<T> {
     pub fn map<U>(self, f: impl FnOnce(T) -> U) -> StyleValue<U> {
         match self {
             Self::Val(x) => StyleValue::Val(f(x)),
+            Self::Animated(x) => StyleValue::Animated(f(x)),
             Self::Unset => StyleValue::Unset,
             Self::Base => StyleValue::Base,
         }
@@ -1411,6 +1443,7 @@ impl<T> StyleValue<T> {
     pub fn unwrap_or(self, default: T) -> T {
         match self {
             Self::Val(x) => x,
+            Self::Animated(x) => x,
             Self::Unset => default,
             Self::Base => default,
         }
@@ -1419,6 +1452,7 @@ impl<T> StyleValue<T> {
     pub fn unwrap_or_else(self, f: impl FnOnce() -> T) -> T {
         match self {
             Self::Val(x) => x,
+            Self::Animated(x) => x,
             Self::Unset => f(),
             Self::Base => f(),
         }
@@ -1427,6 +1461,7 @@ impl<T> StyleValue<T> {
     pub fn as_mut(&mut self) -> Option<&mut T> {
         match self {
             Self::Val(x) => Some(x),
+            Self::Animated(x) => Some(x),
             Self::Unset => None,
             Self::Base => None,
         }
@@ -1650,6 +1685,7 @@ impl Style {
     pub fn set_style_value<P: StyleProp>(mut self, _prop: P, value: StyleValue<P::Type>) -> Self {
         let insert = match value {
             StyleValue::Val(value) => StyleMapValue::Val(value),
+            StyleValue::Animated(value) => StyleMapValue::Animated(value),
             StyleValue::Unset => StyleMapValue::Unset,
             StyleValue::Base => {
                 self.map.remove(&P::key());
@@ -2156,6 +2192,25 @@ impl Style {
 
     pub fn apply_custom<CS: Into<Style>>(self, custom_style: CS) -> Self {
         self.apply(custom_style.into())
+    }
+
+    pub fn transition_width(self, transition: Transition) -> Self {
+        self.transition(Width, transition)
+    }
+
+    pub fn transition_height(self, transition: Transition) -> Self {
+        self.transition(Height, transition)
+    }
+
+    pub fn transition_size(self, transition: Transition) -> Self {
+        self.transition_width(transition.clone())
+            .transition_height(transition)
+    }
+    pub fn transition_color(self, transition: Transition) -> Self {
+        self.transition(TextColor, transition)
+    }
+    pub fn transition_background(self, transition: Transition) -> Self {
+        self.transition(Background, transition)
     }
 }
 
