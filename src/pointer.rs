@@ -10,7 +10,7 @@ pub struct PointerWheelEvent {
     pub modifiers: Modifiers,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Copy, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Copy, Hash, Ord, PartialOrd)]
 pub enum PointerButton {
     Primary,
     Secondary,
