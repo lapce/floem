@@ -493,6 +493,7 @@ type InterpolateFn = fn(val1: &dyn Any, val2: &dyn Any, time: f64) -> Option<Rc<
 pub struct StylePropInfo {
     pub(crate) name: fn() -> &'static str,
     pub(crate) inherited: bool,
+    #[allow(unused)]
     pub(crate) default_as_any: fn() -> Rc<dyn Any>,
     pub(crate) interpolate: InterpolateFn,
     pub(crate) debug_any: fn(val: &dyn Any) -> String,
@@ -1063,6 +1064,13 @@ impl Style {
                 },
             )
             .unwrap_or(StyleValue::Base)
+    }
+
+    pub(crate) fn style_props(&self) -> impl Iterator<Item = StylePropRef> + '_ {
+        self.map.keys().filter_map(|p| match p.info {
+            StyleKeyInfo::Prop(..) => Some(StylePropRef { key: *p }),
+            _ => None,
+        })
     }
 
     pub(crate) fn selectors(&self) -> StyleSelectors {
