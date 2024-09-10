@@ -100,10 +100,10 @@ struct PropFrames {
 }
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct PropCache<const S: usize> {
-    map: im_rc::HashMap<StylePropRef, SmallVec<[u16; S]>>,
+pub(crate) struct PropCache {
+    map: im_rc::HashMap<StylePropRef, SmallVec<[u16; 5]>>,
 }
-impl<const S: usize> PropCache<S> {
+impl PropCache {
     fn get_prop_frames(&self, prop: StylePropRef, idx: u16) -> Option<PropFrames> {
         self.map.get(&prop).map(|frames| {
             match frames.binary_search(&idx) {
@@ -154,12 +154,11 @@ impl<const S: usize> PropCache<S> {
     }
 }
 
-type EffectStateVec<const S: usize> =
-    SmallVec<[RwSignal<SmallVec<[(ViewId, StackOffset<Animation<S>>); 1]>>; 1]>;
+type EffectStateVec = SmallVec<[RwSignal<SmallVec<[(ViewId, StackOffset<Animation>); 1]>>; 1]>;
 #[derive(Debug, Clone)]
-pub struct Animation<const S: usize = 5> {
+pub struct Animation {
     pub(crate) state: AnimState,
-    pub(crate) effect_states: EffectStateVec<S>,
+    pub(crate) effect_states: EffectStateVec,
     // This easing is used for when animating towards the default style (the style before the animation is applied).
     // pub(crate) easing: Easing,
     pub(crate) auto_reverse: bool,
@@ -177,7 +176,7 @@ pub struct Animation<const S: usize = 5> {
     pub(crate) folded_style: Style,
     pub(crate) key_frames: im_rc::HashMap<u16, KeyFrame>,
     // TODO: keep a lookup of styleprops to the last keyframe with that prop. this would be useful when there are lots of keyframes and sparse props
-    pub(crate) cache: PropCache<S>,
+    pub(crate) cache: PropCache,
     pub(crate) on_start_trigger: Trigger,
     pub(crate) on_complete_trigger: Trigger,
     pub(crate) debug_description: Option<String>,
