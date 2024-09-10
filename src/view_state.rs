@@ -84,18 +84,61 @@ bitflags! {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IsHiddenState {
-    Visble(taffy::style::Display),
+    Visible(taffy::style::Display),
     AnimatingOut(taffy::style::Display),
     Hidden,
+    None,
 }
 impl IsHiddenState {
     pub(crate) fn get_display(&self) -> Option<taffy::style::Display> {
         match self {
-            IsHiddenState::Visble(dis) | IsHiddenState::AnimatingOut(dis) => Some(*dis),
-            IsHiddenState::Hidden => None,
+            IsHiddenState::AnimatingOut(dis) => Some(*dis),
+            _ => None,
         }
+    }
+
+    // returns true if the view should request layout
+    pub(crate) fn transition(
+        &mut self,
+        display: taffy::Display,
+        remove_animations: impl FnOnce() -> bool,
+        add_animations: impl FnOnce(),
+        num_waiting_anim: impl FnOnce() -> u16,
+    ) -> bool {
+        let hide = display == taffy::Display::None;
+        let mut request_layout = false;
+        *self = match self {
+            Self::None if hide => Self::Hidden,
+            Self::None if !hide => Self::Visible(display),
+            Self::Visible(dis) if !hide => Self::Visible(*dis),
+            Self::Visible(dis) if hide => {
+                let active_animations = remove_animations();
+                if active_animations {
+                    // request_layout = true;
+                    Self::AnimatingOut(*dis)
+                } else {
+                    Self::Hidden
+                }
+            }
+            Self::AnimatingOut(_) if !hide => Self::Visible(display),
+            Self::AnimatingOut(dis) if hide => {
+                if num_waiting_anim() == 0 {
+                    request_layout = true;
+                    Self::Hidden
+                } else {
+                    Self::AnimatingOut(*dis)
+                }
+            }
+            Self::Hidden if hide => Self::Hidden,
+            Self::Hidden if !hide => {
+                add_animations();
+                Self::Visible(display)
+            }
+            _ => unreachable!(),
+        };
+        request_layout
     }
 }
 
@@ -154,7 +197,7 @@ impl ViewState {
             cleanup_listener: None,
             last_pointer_down: None,
             window_origin: Point::ZERO,
-            is_hidden_state: IsHiddenState::Visble(taffy::Display::Flex),
+            is_hidden_state: IsHiddenState::None,
             num_waiting_animations: 0,
             debug_name: Default::default(),
         }
