@@ -23,7 +23,7 @@ impl ViewSwitcher {
             ViewSwitcher::One => view_one().into_any(),
             ViewSwitcher::Two => view_two(state).into_any(),
         }
-        .animation(Animation::scale)
+        .animation(Animation::scale_effect)
         .clip()
     }
 }

@@ -72,7 +72,7 @@ impl PlayPause {
             PlayPause::Play => svg(|| svg::PLAY.to_string()).into_any(),
             PlayPause::Pause => svg(|| svg::PAUSE.to_string()).into_any(),
         }
-        .animation(|a| Animation::scale(a).run_on_remove(false))
+        .animation(|a| Animation::scale_effect(a).run_on_remove(false))
     }
 }
 

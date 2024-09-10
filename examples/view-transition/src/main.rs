@@ -27,7 +27,7 @@ impl ViewSwitcher {
             ViewSwitcher::One => music_player::music_player().into_any(),
             ViewSwitcher::Two => view_two(state).into_any(),
         }
-        .animation(Animation::scale)
+        .animation(Animation::scale_effect)
         .clip()
         .style(|s| s.padding(8))
         .animation(|a| {
@@ -52,12 +52,11 @@ fn app_view() -> impl IntoView {
             dyn_container(move || state.get(), move |which| which.view(state)),
             empty()
                 .animation(move |a| {
-                    Animation::scale(a)
-                        .run_on_remove(false)
+                    a.scale_effect()
+                        .only_on_create()
                         .with_duration(|a, d| a.delay(d))
-                        .debug_name("Delay the same amount of time as the duration")
                 })
-                .animation(move |a| Animation::scale(a).run_on_create(false))
+                .animation(move |a| a.scale_effect().only_on_remove())
                 .style(move |s| {
                     s.size(100, 100)
                         .border_radius(5)
