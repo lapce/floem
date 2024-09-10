@@ -1,5 +1,5 @@
 use crate::{
-    style::{Style, StyleKey, StyleKeyInfo, StylePropRef},
+    style::{Style, StylePropRef},
     view_state::StackOffset,
     ViewId,
 };
@@ -9,21 +9,31 @@ use std::any::Any;
 use std::rc::Rc;
 
 use floem_reactive::{create_updater, RwSignal, SignalGet, Trigger};
-use smallvec::SmallVec;
+use smallvec::{smallvec, SmallVec};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
 use web_time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
+pub struct KeyFrameProp {
+    id: u16,
+    val: Rc<dyn Any>,
+    /// This easing will be used while animating towards this keyframe (or away from this keyframe if the animation is reversing).
+    /// None when representing a lower prop
+    easing: Option<Easing>,
+}
+
+#[derive(Debug, Clone)]
 pub struct KeyFrame {
-    id: u32,
+    #[allow(unused)]
+    id: u16,
     style: Style,
     /// This easing will be used while animating towards this keyframe (or away from this keyframe if the animation is reversing).
     easing: Easing,
 }
 impl KeyFrame {
-    pub fn new(id: u32) -> Self {
+    pub fn new(id: u16) -> Self {
         Self {
             id,
             style: Style::default(),
@@ -73,12 +83,75 @@ pub enum Animate {
     /// This effectively assign the computed style (the style before animations are applied) to keyframe 0
     ///
     /// You can use this if you want the start of the animation the be the style without any animation applied and animate towards your keyframes
-    FromDefault,
+    FromComputed,
     /// This effectively assign the computed style (the style before animations are applied) to the maximum keyframe
     ///
     /// You can use this if you want the end of the animation the be the style without any animation applied.
     /// To do this, you would assign your animation style at keyframe 0 and let it animate towards having no animation applied at all
-    ToDefault(Easing),
+    ToComputed(Easing),
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PropFrames {
+    // the closeset frame to the current idx that is less than or equal to current
+    lower_idx: Option<u16>,
+    // the closeset frame to the current idx that is greater than current
+    upper_idx: Option<u16>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct PropCache {
+    map: im_rc::HashMap<StylePropRef, SmallVec<[u16; 5]>>,
+}
+impl PropCache {
+    fn get_prop_frames(&self, prop: StylePropRef, idx: u16) -> Option<PropFrames> {
+        self.map.get(&prop).map(|frames| {
+            match frames.binary_search(&idx) {
+                Ok(exact_idx) => {
+                    // Exact match found: lower is the exact match, upper is the next frame if it exists
+                    let lower = Some(frames[exact_idx]);
+                    let upper = frames.get(exact_idx + 1).copied();
+                    PropFrames {
+                        lower_idx: lower,
+                        upper_idx: upper,
+                    }
+                }
+                Err(pos) => {
+                    // No exact match found
+                    let lower = if pos > 0 {
+                        Some(frames[pos - 1]) // Largest smaller frame
+                    } else {
+                        None
+                    };
+                    let upper = frames.get(pos).copied(); // Smallest larger frame, if it exists
+                    PropFrames {
+                        lower_idx: lower,
+                        upper_idx: upper,
+                    }
+                }
+            }
+        })
+    }
+
+    fn insert_prop(&mut self, prop: StylePropRef, idx: u16) {
+        match self.map.entry(prop) {
+            im_rc::hashmap::Entry::Occupied(mut oe) => {
+                if let Err(pos) = oe.get().binary_search(&idx) {
+                    oe.get_mut().insert(pos, idx)
+                }
+            }
+            im_rc::hashmap::Entry::Vacant(ve) => {
+                ve.insert(smallvec![idx]);
+            }
+        };
+    }
+    fn remove_prop(&mut self, prop: StylePropRef, idx: u16) {
+        if let im_rc::hashmap::Entry::Occupied(mut oe) = self.map.entry(prop) {
+            if let Ok(pos) = oe.get().binary_search(&idx) {
+                oe.get_mut().remove(pos);
+            }
+        };
+    }
 }
 
 type EffectStateVec = SmallVec<[RwSignal<SmallVec<[(ViewId, StackOffset<Animation>); 1]>>; 1]>;
@@ -99,11 +172,11 @@ pub struct Animation {
     pub(crate) run_on_remove: bool,
     pub(crate) run_on_create: bool,
     pub(crate) reverse_once: bool,
-    pub(crate) max_key_frame_num: u32,
+    pub(crate) max_key_frame_num: u16,
     pub(crate) folded_style: Style,
-    pub(crate) key_frames: im_rc::OrdMap<u32, KeyFrame>,
+    pub(crate) key_frames: im_rc::HashMap<u16, KeyFrame>,
     // TODO: keep a lookup of styleprops to the last keyframe with that prop. this would be useful when there are lots of keyframes and sparse props
-    // pub(crate)cache: std::collections::HashMap<StylePropRef, u32>,
+    pub(crate) cache: PropCache,
     pub(crate) on_start_trigger: Trigger,
     pub(crate) on_complete_trigger: Trigger,
     pub(crate) debug_description: Option<String>,
@@ -117,14 +190,15 @@ impl Default for Animation {
             delay: Duration::ZERO,
             duration: Duration::from_millis(200),
             repeat_mode: RepeatMode::Times(1),
-            animate: Animate::FromDefault,
+            animate: Animate::FromComputed,
             repeat_count: 0,
             run_on_remove: false,
             run_on_create: false,
             reverse_once: false,
             max_key_frame_num: 100,
             folded_style: Style::new(),
-            key_frames: im_rc::OrdMap::new(),
+            cache: Default::default(),
+            key_frames: im_rc::HashMap::new(),
             on_start_trigger: Trigger::new(),
             on_complete_trigger: Trigger::new(),
             debug_description: None,
@@ -136,9 +210,15 @@ impl Animation {
         Self::default()
     }
 
-    pub fn scale(animation: Self) -> Self {
-        animation
-            .view_transition()
+    pub fn view_transition(self) -> Self {
+        self.run_on_create(true)
+            .run_on_remove(true)
+            .initial_state(AnimStateCommand::Stop)
+            .animate_to_default(Bezier::EASE_IN_OUT.into())
+    }
+
+    pub fn scale_effect(self) -> Self {
+        self.view_transition()
             .animate_to_default(Bezier::EASE_IN_OUT.into())
             .keyframe(0, |kf| kf.style(|s| s.size(0, 0)))
             .debug_name("Scale the width and height from zero to the default")
@@ -188,75 +268,20 @@ pub enum AnimDirection {
 }
 
 impl Animation {
-    pub fn apply_if(self, cond: bool, f: impl FnOnce(Self) -> Self) -> Self {
-        if cond {
-            f(self)
-        } else {
-            self
-        }
-    }
-    pub fn duration(mut self, duration: Duration) -> Self {
-        self.duration = duration;
-        self
-    }
-
-    pub fn with_duration(self, duration: impl FnOnce(Self, Duration) -> Self) -> Self {
-        let d = self.duration;
-        duration(self, d)
-    }
-
-    pub fn is_idle(&self) -> bool {
-        self.state_kind() == AnimStateKind::Idle
-    }
-
-    pub fn is_in_progress(&self) -> bool {
-        self.state_kind() == AnimStateKind::PassInProgress
-    }
-
-    pub fn is_completed(&self) -> bool {
-        self.state_kind() == AnimStateKind::Completed
-    }
-
-    pub fn is_stopped(&self) -> bool {
-        self.state_kind() == AnimStateKind::Stopped
-    }
-
-    pub fn can_advance(&self) -> bool {
-        match self.state_kind() {
-            AnimStateKind::PassFinished | AnimStateKind::PassInProgress | AnimStateKind::Idle => {
-                true
-            }
-            AnimStateKind::Paused | AnimStateKind::Stopped | AnimStateKind::Completed => false,
-        }
-    }
-
-    pub fn is_auto_reverse(&self) -> bool {
-        self.auto_reverse
-    }
-
-    /// Returns the ID of the animation. Use this when you want to control(stop/pause/resume) the animation
-    pub fn on_create(self, on_create: impl Fn(Trigger) + 'static) -> Self {
-        on_create(self.on_start_trigger);
-        self
-    }
-
-    /// Returns the ID of the animation. Use this when you want to control(stop/pause/resume) the animation
-    pub fn on_complete(self, on_complete: impl Fn(Trigger) + 'static) -> Self {
-        on_complete(self.on_complete_trigger);
-        self
-    }
-
     /// If there is a matching keyframe id, the style in this keyframe will only override the style values in the new style.
     /// If you want the style to completely override style see [Animation::keyframe_override].
-    pub fn keyframe(mut self, frame_id: u32, key_frame: impl Fn(KeyFrame) -> KeyFrame) -> Self {
+    pub fn keyframe(mut self, frame_id: u16, key_frame: impl Fn(KeyFrame) -> KeyFrame) -> Self {
         let frame = key_frame(KeyFrame::new(frame_id));
+        for prop in frame.style.style_props() {
+            self.cache.insert_prop(prop, frame_id);
+        }
         match self.key_frames.entry(frame_id) {
-            im_rc::ordmap::Entry::Occupied(mut oe) => {
+            im_rc::hashmap::Entry::Occupied(mut oe) => {
                 let e_frame = oe.get_mut();
                 e_frame.style.apply_mut(frame.style);
                 e_frame.easing = frame.easing;
             }
-            im_rc::ordmap::Entry::Vacant(ve) => {
+            im_rc::hashmap::Entry::Vacant(ve) => {
                 ve.insert(frame);
             }
         }
@@ -267,42 +292,69 @@ impl Animation {
     /// If you want the style to only override the new values see [Animation::keyframe].
     pub fn keyframe_override(
         mut self,
-        frame_id: u32,
+        frame_id: u16,
         key_frame: impl Fn(KeyFrame) -> KeyFrame,
     ) -> Self {
         let frame = key_frame(KeyFrame::new(frame_id));
-        self.key_frames.insert(frame_id, frame);
+        let frame_style = frame.style.clone();
+        if let Some(kf) = self.key_frames.insert(frame_id, frame) {
+            for prop in kf.style.style_props() {
+                self.cache.remove_prop(prop, frame_id);
+            }
+        }
+        for prop in frame_style.style_props() {
+            self.cache.insert_prop(prop, frame_id);
+        }
         self
     }
 
-    // get the keyframe that is the current target
-    pub fn get_current_keyframes(&self) -> (Option<KeyFrame>, Option<KeyFrame>) {
-        let percent = self.total_time_percent();
-        let frame_target = (self.max_key_frame_num as f64 * percent).floor() as u32;
-        let (smaller, target, bigger) = self.key_frames.split_lookup(&frame_target);
-        let lower = if let Some(target) = target {
-            Some(target)
+    pub fn duration(mut self, duration: Duration) -> Self {
+        self.duration = duration;
+        self
+    }
+
+    pub fn with_duration(self, duration: impl FnOnce(Self, Duration) -> Self) -> Self {
+        let d = self.duration;
+        duration(self, d)
+    }
+
+    pub fn apply_if(self, cond: bool, f: impl FnOnce(Self) -> Self) -> Self {
+        if cond {
+            f(self)
         } else {
-            smaller.values().last().cloned()
-        };
-        let upper = bigger.values().next().cloned();
-        (lower, upper)
+            self
+        }
+    }
+
+    pub fn on_create(self, on_create: impl Fn(Trigger) + 'static) -> Self {
+        on_create(self.on_start_trigger);
+        self
+    }
+
+    pub fn on_complete(self, on_complete: impl Fn(Trigger) + 'static) -> Self {
+        on_complete(self.on_complete_trigger);
+        self
     }
 
     pub fn run_on_create(mut self, run_on_create: bool) -> Self {
         self.run_on_create = run_on_create;
         self
     }
+
+    pub fn only_on_create(mut self) -> Self {
+        self.run_on_remove = false;
+        self.run_on_create = true;
+        self
+    }
+
     pub fn run_on_remove(mut self, run_on_remove: bool) -> Self {
         self.run_on_remove = run_on_remove;
         self
     }
-
-    pub fn view_transition(self) -> Self {
-        self.run_on_create(true)
-            .run_on_remove(true)
-            .initial_state(AnimStateCommand::Stop)
-            .animate_to_default(Bezier::EASE_IN_OUT.into())
+    pub fn only_on_remove(mut self) -> Self {
+        self.run_on_remove = true;
+        self.run_on_create = false;
+        self
     }
 
     pub fn auto_reverse(mut self, auto_rev: bool) -> Self {
@@ -321,7 +373,7 @@ impl Animation {
     }
 
     pub fn animate_to_default(mut self, easing: Easing) -> Self {
-        self.animate = Animate::ToDefault(easing);
+        self.animate = Animate::ToComputed(easing);
         self
     }
 
@@ -344,7 +396,7 @@ impl Animation {
     /// This is used to determine which keyframe is at 100% completion.
     /// The default is 100.
     /// If you need more than 100 keyframes, increase this number, but be aware, the keyframe numbers will then be as a percentage of the maximum
-    pub fn max_key_frame(mut self, max: u32) -> Self {
+    pub fn max_key_frame(mut self, max: u16) -> Self {
         self.max_key_frame_num = max;
         self
     }
@@ -543,6 +595,7 @@ impl Animation {
                 }
             }
             AnimStateCommand::Start => {
+                self.folded_style.map.clear();
                 self.repeat_count = 0;
                 self.state = AnimState::PassInProgress {
                     started_on: Instant::now(),
@@ -590,106 +643,102 @@ impl Animation {
         }
     }
 
-    pub(crate) fn animate_into(&mut self, computed_style: &mut Style) {
-        enum KeyFrameDefault {
-            Keyframe(KeyFrame),
-            Default,
-        }
-        impl KeyFrameDefault {
-            fn id(&self) -> u32 {
-                match self {
-                    KeyFrameDefault::Keyframe(kf) => kf.id,
-                    KeyFrameDefault::Default => 0,
-                }
+    pub(crate) fn get_current_kf_props(
+        &self,
+        prop: StylePropRef,
+        frame_target: u16,
+        computed_style: &Style,
+    ) -> Option<(KeyFrameProp, KeyFrameProp)> {
+        let PropFrames {
+            lower_idx,
+            upper_idx,
+        } = self.cache.get_prop_frames(prop, frame_target)?;
+
+        let upper = if let Some(upper) = upper_idx {
+            let frame = self
+                .key_frames
+                .get(&upper)
+                .expect("If the value is in the cache, it should also be in the key frames");
+            KeyFrameProp {
+                id: upper,
+                val: frame
+                    .style
+                    .map
+                    .get(&prop.key)
+                    .expect("same as above")
+                    .clone(),
+                easing: Some(frame.easing.clone()),
             }
-
-            fn get(&self, key: &StylePropRef) -> Option<Rc<dyn Any>> {
-                match self {
-                    KeyFrameDefault::Keyframe(kf) => kf.style.map.get(&key.key).cloned(),
-                    KeyFrameDefault::Default => Some((key.info().default_as_any)()),
-                }
-            }
-        }
-        let (lower, upper) = self.get_current_keyframes();
-
-        if lower.is_none() && upper.is_none() && !matches!(self.animate, Animate::ToDefault(..)) {
-            // no keyframes have been set
-            return;
-        }
-
-        let upper = if let Some(upper) = upper {
-            upper
-        } else if let Animate::ToDefault(ref easing) = self.animate {
-            KeyFrame {
+        } else if let Animate::ToComputed(ref easing) = self.animate {
+            KeyFrameProp {
                 id: self.max_key_frame_num,
-                style: computed_style.clone(),
-                easing: easing.clone(),
+                val: computed_style.map.get(&prop.key)?.clone(),
+                easing: Some(easing.clone()),
             }
         } else {
-            // animation is over. No more keyframes. Just keep applying the last folded style
-            computed_style.apply_mut(self.folded_style.clone());
-            return;
+            return None;
         };
 
-        let lower = if let Some(lower) = lower {
-            KeyFrameDefault::Keyframe(lower)
-        } else if self.animate == Animate::FromDefault {
-            KeyFrameDefault::Keyframe(KeyFrame {
+        let lower = if let Some(lower) = lower_idx {
+            let frame = self
+                .key_frames
+                .get(&lower)
+                .expect("If the value is in the cache, it should also be in the key frames");
+            KeyFrameProp {
+                id: lower,
+                val: frame
+                    .style
+                    .map
+                    .get(&prop.key)
+                    .expect("same as above")
+                    .clone(),
+                easing: Some(frame.easing.clone()),
+            }
+        } else if self.animate == Animate::FromComputed {
+            KeyFrameProp {
                 id: 0,
-                style: computed_style.clone(),
-                easing: Default::default(),
-            })
+                val: computed_style.map.get(&prop.key)?.clone(),
+                easing: None,
+            }
         } else {
-            KeyFrameDefault::Default
+            return None;
+            // KeyFrameProp {
+            //     id: 0,
+            //     val: (prop.info().default_as_any)().clone(),
+            //     easing: None,
+            // }
         };
 
-        let eased_time = upper
-            .easing
-            .apply_easing_fn(self.get_local_percent(lower.id(), upper.id));
+        Some((lower, upper))
+    }
 
-        let props = upper
-            .style
-            .map
-            .into_iter()
-            .filter_map(|(p, v)| match p.info {
-                StyleKeyInfo::Prop(..) => Some((StylePropRef { key: p }, v)),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
+    pub(crate) fn animate_into(&mut self, computed_style: &mut Style) {
+        let percent = self.total_time_percent();
+        let frame_target = (self.max_key_frame_num as f64 * percent).round() as u16;
 
-        for (prop_ref, to_prop) in props {
-            if let Some(from_prop) = lower.get(&prop_ref) {
-                // we do the above first check instead of immediately checking all lower because the lower variable might be the computed_style
-                if let Some(interpolated) = (prop_ref.info().interpolate)(
-                    &*from_prop.clone(),
-                    &*to_prop.clone(),
-                    eased_time,
-                ) {
-                    self.folded_style.map.insert(prop_ref.key, interpolated);
-                }
-            } else {
-                // search for prop in lower
-                let (from_prop_id, from_prop) = self
-                    .find_key_in_lower(&prop_ref.key)
-                    .unwrap_or((0, (prop_ref.info().default_as_any)()));
-                let eased_time = upper
-                    .easing
-                    .apply_easing_fn(self.get_local_percent(from_prop_id, upper.id));
+        let props = self.cache.map.keys();
 
-                if let Some(interpolated) = (prop_ref.info().interpolate)(
-                    &*from_prop.clone(),
-                    &*to_prop.clone(),
-                    eased_time,
-                ) {
-                    self.folded_style.map.insert(prop_ref.key, interpolated);
-                }
+        for prop in props {
+            let Some((lower, upper)) =
+                self.get_current_kf_props(*prop, frame_target, computed_style)
+            else {
+                continue;
             };
+            let eased_time = upper
+                .easing
+                .expect("upper always has easing")
+                .apply_easing_fn(self.get_local_percent(lower.id, upper.id));
+            if let Some(interpolated) =
+                (prop.info().interpolate)(&*lower.val.clone(), &*upper.val.clone(), eased_time)
+            {
+                self.folded_style.map.insert(prop.key, interpolated);
+            }
         }
 
         computed_style.apply_mut(self.folded_style.clone());
     }
 
-    pub(crate) fn get_local_percent(&self, low_frame: u32, high_frame: u32) -> f64 {
+    pub(crate) fn get_local_percent(&self, low_frame: u16, high_frame: u16) -> f64 {
         let low_frame = low_frame as f64;
         let high_frame = high_frame as f64;
         let total_num_frames = self.max_key_frame_num as f64;
@@ -701,14 +750,32 @@ impl Animation {
         (self.total_time_percent() - low_frame_percent) / keyframe_range
     }
 
-    pub(crate) fn find_key_in_lower(&self, key: &StyleKey) -> Option<(u32, Rc<dyn Any>)> {
-        let percent = self.total_time_percent();
-        let frame_target = (self.max_key_frame_num as f64 * percent).floor() as u32;
-        let (smaller, _bigger) = self.key_frames.split(&frame_target);
-        smaller
-            .into_iter()
-            .rev()
-            .find(|(_p, v)| v.style.map.contains_key(key))
-            .map(|(p, v)| (p, v.style.map.get(key).unwrap().clone()))
+    pub fn is_idle(&self) -> bool {
+        self.state_kind() == AnimStateKind::Idle
+    }
+
+    pub fn is_in_progress(&self) -> bool {
+        self.state_kind() == AnimStateKind::PassInProgress
+    }
+
+    pub fn is_completed(&self) -> bool {
+        self.state_kind() == AnimStateKind::Completed
+    }
+
+    pub fn is_stopped(&self) -> bool {
+        self.state_kind() == AnimStateKind::Stopped
+    }
+
+    pub fn can_advance(&self) -> bool {
+        match self.state_kind() {
+            AnimStateKind::PassFinished | AnimStateKind::PassInProgress | AnimStateKind::Idle => {
+                true
+            }
+            AnimStateKind::Paused | AnimStateKind::Stopped | AnimStateKind::Completed => false,
+        }
+    }
+
+    pub fn is_auto_reverse(&self) -> bool {
+        self.auto_reverse
     }
 }
