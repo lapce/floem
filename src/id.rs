@@ -432,7 +432,7 @@ impl ViewId {
         let event_listeners = self.state().borrow().event_listeners.clone();
         if let Some(handlers) = event_listeners.get(listener) {
             for handler in handlers {
-                handled |= handler(event).is_processed();
+                handled |= (handler.borrow_mut())(event).is_processed();
             }
         } else {
             return None;

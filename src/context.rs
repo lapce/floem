@@ -30,7 +30,7 @@ use crate::{
     view_state::ChangeFlags,
 };
 
-pub type EventCallback = dyn Fn(&Event) -> EventPropagation;
+pub type EventCallback = dyn FnMut(&Event) -> EventPropagation;
 pub type ResizeCallback = dyn Fn(Rect);
 pub type MenuCallback = dyn Fn() -> Menu;
 
@@ -366,7 +366,7 @@ impl<'a> EventCx<'a> {
                                 .map(|e| e.count == 2)
                                 .unwrap_or(false)
                             && handlers.iter().fold(false, |handled, handler| {
-                                handled | handler(&event).is_processed()
+                                handled | (handler.borrow_mut())(&event).is_processed()
                             })
                         {
                             return EventPropagation::Stop;
@@ -378,7 +378,7 @@ impl<'a> EventCx<'a> {
                             && self.app_state.is_clicking(&view_id)
                             && last_pointer_down.is_some()
                             && handlers.iter().fold(false, |handled, handler| {
-                                handled | handler(&event).is_processed()
+                                handled | (handler.borrow_mut())(&event).is_processed()
                             })
                         {
                             return EventPropagation::Stop;
@@ -401,7 +401,7 @@ impl<'a> EventCx<'a> {
                         if on_view
                             && last_pointer_down.is_some()
                             && handlers.iter().fold(false, |handled, handler| {
-                                handled | handler(&event).is_processed()
+                                handled | (handler.borrow_mut())(&event).is_processed()
                             })
                         {
                             return EventPropagation::Stop;
@@ -446,7 +446,7 @@ impl<'a> EventCx<'a> {
                 };
                 if should_run
                     && handlers.iter().fold(false, |handled, handler| {
-                        handled | handler(&event).is_processed()
+                        handled | (handler.borrow_mut())(&event).is_processed()
                     })
                 {
                     return EventPropagation::Stop;

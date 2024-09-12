@@ -159,7 +159,7 @@ pub struct ViewState {
     pub(crate) dragging_style: Option<Style>,
     pub(crate) combined_style: Style,
     pub(crate) taffy_style: taffy::style::Style,
-    pub(crate) event_listeners: HashMap<EventListener, Vec<Rc<EventCallback>>>,
+    pub(crate) event_listeners: HashMap<EventListener, Vec<Rc<RefCell<EventCallback>>>>,
     pub(crate) context_menu: Option<Rc<MenuCallback>>,
     pub(crate) popout_menu: Option<Rc<MenuCallback>>,
     pub(crate) resize_listener: Option<Rc<RefCell<ResizeListener>>>,
@@ -273,7 +273,7 @@ impl ViewState {
         self.event_listeners
             .entry(listener)
             .or_default()
-            .push(Rc::new(action));
+            .push(Rc::new(RefCell::new(action)));
     }
 
     pub(crate) fn update_resize_listener(&mut self, action: Box<ResizeCallback>) {
