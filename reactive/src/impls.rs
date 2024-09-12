@@ -3,13 +3,13 @@ use crate::{Memo, ReadSignal, RwSignal, SignalUpdate, SignalWith, WriteSignal};
 // Binary operation macro
 macro_rules! impl_bin_op {
     ($signal_type:ident, $trait:ident, $method:ident, $op:tt) => {
-        impl<T: std::ops::$trait<Output = T> + Clone + 'static> std::ops::$trait<T> for $signal_type<T>
+        impl<T: std::ops::$trait<Output = T> + 'static> std::ops::$trait<T> for $signal_type<T>
         where
             for<'a> &'a T: std::ops::$trait<T, Output = T>
         {
             type Output = T;
             fn $method(self, rhs: T) -> Self::Output {
-                self.with(|val| (*val).clone() $op rhs)
+                self.with(|val| val $op rhs)
             }
         }
     };
