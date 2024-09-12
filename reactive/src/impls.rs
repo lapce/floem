@@ -1,6 +1,6 @@
 use crate::{Memo, ReadSignal, RwSignal, SignalUpdate, SignalWith, WriteSignal};
 
-// Binary operation macro (unchanged)
+// Binary operation macro
 macro_rules! impl_bin_op {
     ($signal_type:ident, $trait:ident, $method:ident, $op:tt) => {
         impl<T: std::ops::$trait<Output = T> + Clone + 'static> std::ops::$trait<T> for $signal_type<T>
@@ -15,7 +15,7 @@ macro_rules! impl_bin_op {
     };
 }
 
-// Assignment operation macro (unchanged)
+// Assignment operation macro
 macro_rules! impl_assign_op {
     ($signal_type:ident, $trait:ident, $method:ident, $op:tt) => {
         impl<T: std::ops::$trait + 'static> std::ops::$trait<T> for $signal_type<T> {
@@ -26,7 +26,7 @@ macro_rules! impl_assign_op {
     };
 }
 
-// PartialEq implementation macro (unchanged)
+// PartialEq implementation macro
 macro_rules! impl_partial_eq {
     ($signal_type:ident) => {
         impl<T: PartialEq + 'static> PartialEq<T> for $signal_type<T> {
