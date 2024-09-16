@@ -1,8 +1,15 @@
+//! # Floem Reactive
+//!
+//! [`RwSignal::new_split`](RwSignal::new_split) returns a separated [`ReadSignal`] and [`WriteSignal`] for a variable.
+//! An existing `RwSignal` may be converted using [`RwSignal::read_only`](RwSignal::read_only)
+//! and [`RwSignal::write_only`](RwSignal::write_only) where necessary, but the reverse is not possible.
+
 mod base;
 mod context;
 mod effect;
 mod get_update_fn;
 mod id;
+mod impls;
 mod memo;
 mod read;
 mod runtime;

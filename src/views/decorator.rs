@@ -152,7 +152,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     fn on_event(
         self,
         listener: EventListener,
-        action: impl Fn(&Event) -> EventPropagation + 'static,
+        action: impl FnMut(&Event) -> EventPropagation + 'static,
     ) -> Self::DV {
         let view = self.into_view();
         view.id().add_event_listener(listener, Box::new(action));
@@ -218,7 +218,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     }
 
     /// Add an event handler for [EventListener::Click].
-    fn on_click(self, action: impl Fn(&Event) -> EventPropagation + 'static) -> Self::DV {
+    fn on_click(self, action: impl FnMut(&Event) -> EventPropagation + 'static) -> Self::DV {
         self.on_event(EventListener::Click, action)
     }
 
@@ -233,7 +233,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
 
     /// Add an event handler for [EventListener::Click]. This event will be handled with
     /// the given handler and the event will stop propagating.
-    fn on_click_stop(self, action: impl Fn(&Event) + 'static) -> Self::DV {
+    fn on_click_stop(self, mut action: impl FnMut(&Event) + 'static) -> Self::DV {
         self.on_click(move |e| {
             action(e);
             EventPropagation::Stop
