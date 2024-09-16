@@ -17,10 +17,15 @@ pub(crate) enum AnimState {
         started_on: Instant,
         elapsed: Duration,
     },
+    ExtMode {
+        started_on: Instant,
+        elapsed: Duration,
+    },
     /// Depending on the [`RepeatMode`] of the animation, we either go back to `PassInProgress`
     /// or advance to `Completed`.
     PassFinished {
         elapsed: Duration,
+        was_in_ext: bool,
     },
     // NOTE: If animation has `RepeatMode::LoopForever`, this state will never be reached.
     Completed {

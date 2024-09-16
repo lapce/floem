@@ -178,11 +178,11 @@ fn animations_recursive_on_remove(id: ViewId, child_id: ViewId, child_scope: Sco
     let mut request_style = false;
     for anim in animations {
         if anim.run_on_remove && !matches!(anim.repeat_mode, RepeatMode::LoopForever) {
-            anim.reverse_once = true;
+            anim.reverse_once.set(true);
             anim.start_mut();
             request_style = true;
             wait_for += 1;
-            let trigger = anim.on_complete_trigger;
+            let trigger = anim.on_visual_complete;
             child_scope.create_updater(
                 move || trigger.track(),
                 move |_| {

@@ -33,7 +33,7 @@ use taffy::{
     },
 };
 
-use crate::animate::{Bezier, Easing};
+use crate::animate::{Bezier, Easing, Linear, Spring};
 use crate::context::InteractionState;
 use crate::responsive::{ScreenSize, ScreenSizeBp};
 use crate::unit::{Px, PxPct, PxPctAuto, UnitExt};
@@ -487,7 +487,8 @@ pub trait StyleProp: Default + Copy + 'static {
     fn default_value() -> Self::Type;
 }
 
-type InterpolateFn = fn(val1: &dyn Any, val2: &dyn Any, time: f64) -> Option<Rc<dyn Any>>;
+pub(crate) type InterpolateFn =
+    fn(val1: &dyn Any, val2: &dyn Any, time: f64) -> Option<Rc<dyn Any>>;
 
 #[derive(Debug)]
 pub struct StylePropInfo {
@@ -890,13 +891,12 @@ impl<T: StylePropValue> TransitionState<T> {
         if let Some(active) = &mut self.active {
             if let Some(transition) = &self.transition {
                 let time = now.saturating_duration_since(active.start);
-                if time < transition.duration {
+                let time_percent = time.as_secs_f64() / transition.duration.as_secs_f64();
+                if time < transition.duration || !transition.easing.finished(time_percent) {
                     if let Some(i) = T::interpolate(
                         &active.before,
                         &active.after,
-                        transition.easing.apply_easing_fn(
-                            time.as_secs_f64() / transition.duration.as_secs_f64(),
-                        ),
+                        transition.easing.eval(time_percent),
                     ) {
                         active.current = i;
                         *request_transition = true;
@@ -935,22 +935,27 @@ impl<T: StylePropValue> Default for TransitionState<T> {
 #[derive(Clone, Debug)]
 pub struct Transition {
     pub duration: Duration,
-    pub easing: Easing,
+    pub easing: Rc<dyn Easing>,
 }
 
 impl Transition {
-    pub fn linear(duration: Duration) -> Self {
+    pub fn new(duration: Duration, easing: impl Easing + 'static) -> Self {
         Self {
             duration,
-            easing: Easing::Linear,
+            easing: Rc::new(easing),
         }
     }
 
+    pub fn linear(duration: Duration) -> Self {
+        Self::new(duration, Linear)
+    }
+
     pub fn ease_in_out(duration: Duration) -> Self {
-        Self {
-            duration,
-            easing: Easing::CubicBezier(Bezier::EASE_IN_OUT),
-        }
+        Self::new(duration, Bezier::ease_in_out())
+    }
+
+    pub fn spring(duration: Duration) -> Self {
+        Self::new(duration, Spring::default())
     }
 }
 

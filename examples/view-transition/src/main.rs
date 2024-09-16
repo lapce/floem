@@ -51,12 +51,7 @@ fn app_view() -> impl IntoView {
         h_stack((
             dyn_container(move || state.get(), move |which| which.view(state)),
             empty()
-                .animation(move |a| {
-                    a.scale_effect()
-                        .only_on_create()
-                        .with_duration(|a, d| a.delay(d))
-                })
-                .animation(move |a| a.scale_effect().only_on_remove())
+                .animation(move |a| a.scale_effect().with_duration(|a, d| a.delay(d)))
                 .style(move |s| {
                     s.size(100, 100)
                         .border_radius(5)
