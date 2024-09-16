@@ -30,7 +30,7 @@
 //! text input fields. For a list of Floem's built-in widgets, refer [here](widgets#functions). You can try them out
 //! via the [widget gallery example](https://github.com/lapce/floem/blob/main/examples/widget-gallery/src/main.rs).
 //!
-//! ## State management  
+//! ## State management
 //! Floem uses reactivity built on signals and effects for its state management. This design
 //! pattern has been popularized by SolidJS in the JavaScript ecosystem and directly
 //! inspired Leptos in the Rust ecosystem. Floem uses its own reactive system with an API that

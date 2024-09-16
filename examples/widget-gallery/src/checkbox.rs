@@ -1,6 +1,7 @@
 use floem::{
+    peniko::{Brush, Color, Gradient},
     reactive::RwSignal,
-    views::{Checkbox, Decorators},
+    views::{Checkbox, Decorators, SvgColor},
     IntoView,
 };
 
@@ -12,7 +13,15 @@ pub fn checkbox_view() -> impl IntoView {
     form({
         (
             form_item("Checkbox:".to_string(), width, move || {
-                Checkbox::new_get_set(is_checked).style(|s| s.margin(5.0))
+                Checkbox::new_get_set(is_checked).style(|s| {
+                    s.margin(5.0).set(
+                        SvgColor,
+                        Brush::Gradient(
+                            Gradient::new_linear((0., 0.), (20., 0.))
+                                .with_stops([(0., Color::LIGHT_BLUE), (1., Color::RED)]),
+                        ),
+                    )
+                })
             }),
             form_item("Disabled Checkbox:".to_string(), width, move || {
                 Checkbox::new_get(is_checked)

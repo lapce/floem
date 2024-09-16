@@ -147,7 +147,8 @@ impl Label {
     }
 
     fn get_attrs_list(&self) -> AttrsList {
-        let mut attrs = Attrs::new().color(self.style.color().unwrap_or(Color::BLACK));
+        let color = self.style.color().unwrap_or(Color::BLACK);
+        let mut attrs = Attrs::new().color(color);
         if let Some(font_size) = self.font.size() {
             attrs = attrs.font_size(font_size);
         }

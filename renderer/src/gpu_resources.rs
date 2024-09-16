@@ -11,6 +11,7 @@
 use std::{future::Future, sync::Arc};
 
 use crossbeam::channel::{self, Receiver};
+use vello::wgpu;
 use wgpu::Backends;
 
 use floem_winit::window::{Window, WindowId};

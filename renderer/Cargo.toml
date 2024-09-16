@@ -13,6 +13,7 @@ image = { workspace = true }
 resvg = { workspace = true }
 swash = { workspace = true }
 
+vello.workspace = true 
 cosmic-text = { version = "0.12.1", features = ["shape-run-cache"] }
 floem-winit = { git = "https://github.com/lapce/winit", rev = "c8d3b8fd6fa4ffd5e0f99be78aacddcf6de57bcd", features = ["rwh_05"] }
 
@@ -22,3 +23,4 @@ futures = "0.3.26"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = { version = "0.4" }
+

@@ -11,10 +11,17 @@ image = { workspace = true }
 resvg = { workspace = true }
 peniko = { workspace = true }
 raw-window-handle = { workspace = true }
-wgpu = { workspace = true }
+# wgpu = { workspace = true }
 
 futures = "0.3.26"
 anyhow = "1.0.69"
 swash = "0.1.8"
-floem-vger-rs = { git = "https://github.com/lapce/vger-rs", rev = "cfdec48f8093837f06be6fecfd75b0e5a0c5a3cf", package = "floem-vger"}
+vello.workspace = true 
+# vello = { path = "../../vello/vello" }
+# vello_svg = { version = "*" }
+vello_svg = "0.3.1"
 floem_renderer = { path = "../renderer", version = "0.1.0" }
+
+# [patch.crates-io]
+# vello.workspace = {git = "https://github.com/linebender/vello"}
+
