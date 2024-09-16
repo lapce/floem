@@ -122,7 +122,7 @@ impl PropFrameKind {
 }
 impl PartialOrd for PropFrameKind {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.inner().partial_cmp(&other.inner())
+        Some(self.cmp(other))
     }
 }
 impl Ord for PropFrameKind {

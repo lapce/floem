@@ -178,7 +178,7 @@ impl Spring {
         let omega = (k / m).sqrt();
         let zeta = c / (2.0 * (k * m).sqrt());
 
-        let val = if zeta < 1.0 {
+        if zeta < 1.0 {
             // Underdamped
             let omega_d = omega * (1.0 - zeta * zeta).sqrt();
             let e = (-zeta * omega * time).exp();
@@ -205,9 +205,7 @@ impl Spring {
             let b = v0 + omega * a;
 
             1.0 - e * (a + b * time)
-        };
-
-        val
+        }
     }
 
     const THRESHOLD: f64 = 0.003;
@@ -215,8 +213,7 @@ impl Spring {
         let position = self.eval(time);
         let velocity = self.velocity(time);
 
-        let finished = (1.0 - position).abs() < Self::THRESHOLD && velocity.abs() < Self::THRESHOLD;
-        finished
+        (1.0 - position).abs() < Self::THRESHOLD && velocity.abs() < Self::THRESHOLD
     }
 
     pub fn velocity(&self, time: f64) -> f64 {
@@ -242,10 +239,8 @@ impl Spring {
             let a = 1.0;
             let b = (v0 + zeta * omega * a) / omega_d;
 
-            let vel = e
-                * ((zeta * omega * (a * cos_term + b * sin_term))
-                    + (a * -omega_d * sin_term + b * omega_d * cos_term));
-            vel
+            e * ((zeta * omega * (a * cos_term + b * sin_term))
+                + (a * -omega_d * sin_term + b * omega_d * cos_term))
         } else if zeta > 1.0 {
             // Overdamped
             let r1 = -omega * (zeta - (zeta * zeta - 1.0).sqrt());
@@ -254,16 +249,14 @@ impl Spring {
             let a = (v0 - r2) / (r1 - r2);
             let b = 1.0 - a;
 
-            let vel = -a * r1 * (r1 * time).exp() - b * r2 * (r2 * time).exp();
-            vel
+            -a * r1 * (r1 * time).exp() - b * r2 * (r2 * time).exp()
         } else {
             // Critically damped
             let e = (-omega * time).exp();
             let a = 1.0;
             let b = v0 + omega * a;
 
-            let vel = e * (b - omega * (a + b * time));
-            vel
+            e * (b - omega * (a + b * time))
         }
     }
 }
