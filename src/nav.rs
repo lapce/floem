@@ -40,7 +40,7 @@ pub(crate) fn view_arrow_navigation(key: NamedKey, app_state: &mut AppState, vie
     keyboard_navigable.retain(|id| {
         let layout = id.layout_rect();
 
-        !layout.intersect(intersect_target).is_empty()
+        !layout.intersect(intersect_target).is_zero_area()
             && center_target.contains(layout.center())
             && app_state.can_focus(*id)
             && *id != focused

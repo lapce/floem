@@ -986,7 +986,7 @@ impl<'a> PaintCx<'a> {
         let size = self.transform(id);
         let is_empty = self
             .clip
-            .map(|rect| rect.rect().intersect(size.to_rect()).is_empty())
+            .map(|rect| rect.rect().intersect(size.to_rect()).is_zero_area())
             .unwrap_or(false);
         if !is_empty {
             let style = view_state.borrow().combined_style.clone();
@@ -1262,11 +1262,11 @@ fn animations_recursive_on_remove(id: ViewId, scope: Scope) -> u16 {
     let mut request_style = false;
     for anim in animations {
         if anim.run_on_remove && !matches!(anim.repeat_mode, RepeatMode::LoopForever) {
-            anim.reverse_once = true;
+            anim.reverse_once.set(true);
             anim.start_mut();
             request_style = true;
             wait_for += 1;
-            let trigger = anim.on_complete_trigger;
+            let trigger = anim.on_visual_complete;
             scope.create_updater(
                 move || trigger.track(),
                 move |_| {

@@ -14,11 +14,11 @@ fn app_view() -> impl IntoView {
             .duration(5.seconds())
             .keyframe(50, |kf| {
                 kf.style(|s| s.background(Color::BLACK).size(30, 30))
-                    .easing_in()
+                    .ease_in()
             })
             .keyframe(100, |kf| {
                 kf.style(|s| s.background(Color::AQUAMARINE).size(10, 300))
-                    .easing_out()
+                    .ease_out()
             })
             .repeat(true)
             .auto_reverse(true),
