@@ -59,7 +59,7 @@ pub struct TinySkiaRenderer<W> {
 impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle>
     TinySkiaRenderer<W>
 {
-    pub fn new(window: W, width: u32, height: u32, scale: f64) -> Result<Self>
+    pub fn new(window: W, width: u32, height: u32, scale: f64, font_embolden: f32) -> Result<Self>
     where
         W: Clone,
     {
@@ -90,7 +90,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
             cache_color: CacheColor(false),
             image_cache: Default::default(),
             glyph_cache: Default::default(),
-            swash_scaler: SwashScaler::new(),
+            swash_scaler: SwashScaler::new(font_embolden),
         })
     }
 

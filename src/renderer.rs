@@ -63,7 +63,13 @@ pub enum Renderer<W> {
 }
 
 impl<W: wgpu::WindowHandle> Renderer<W> {
-    pub fn new(window: W, gpu_resources: GpuResources, scale: f64, size: Size) -> Self
+    pub fn new(
+        window: W,
+        gpu_resources: GpuResources,
+        scale: f64,
+        size: Size,
+        font_embolden: f32,
+    ) -> Self
     where
         W: Clone + 'static,
     {
@@ -75,7 +81,13 @@ impl<W: wgpu::WindowHandle> Renderer<W> {
             .unwrap_or(false);
 
         let vger_err = if !force_tiny_skia {
-            match VgerRenderer::new(gpu_resources, size.width as u32, size.height as u32, scale) {
+            match VgerRenderer::new(
+                gpu_resources,
+                size.width as u32,
+                size.height as u32,
+                scale,
+                font_embolden,
+            ) {
                 Ok(vger) => return Self::Vger(vger),
                 Err(err) => Some(err),
             }
@@ -83,11 +95,16 @@ impl<W: wgpu::WindowHandle> Renderer<W> {
             None
         };
 
-        let tiny_skia_err =
-            match TinySkiaRenderer::new(window, size.width as u32, size.height as u32, scale) {
-                Ok(tiny_skia) => return Self::TinySkia(tiny_skia),
-                Err(err) => err,
-            };
+        let tiny_skia_err = match TinySkiaRenderer::new(
+            window,
+            size.width as u32,
+            size.height as u32,
+            scale,
+            font_embolden,
+        ) {
+            Ok(tiny_skia) => return Self::TinySkia(tiny_skia),
+            Err(err) => err,
+        };
 
         if !force_tiny_skia {
             panic!("Failed to create VgerRenderer: {}\nFailed to create TinySkiaRenderer: {tiny_skia_err}", vger_err.unwrap());
