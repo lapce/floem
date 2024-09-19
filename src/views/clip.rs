@@ -58,7 +58,7 @@ pub trait ClipExt {
     fn clip(self) -> Clip;
 }
 
-impl<T: View + 'static> ClipExt for T {
+impl<T: IntoView + 'static> ClipExt for T {
     fn clip(self) -> Clip {
         clip(self)
     }

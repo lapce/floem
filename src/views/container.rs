@@ -28,3 +28,12 @@ impl View for Container {
         "Container".into()
     }
 }
+pub trait ContainerExt {
+    fn container(self) -> Container;
+}
+
+impl<T: IntoView + 'static> ContainerExt for T {
+    fn container(self) -> Container {
+        container(self)
+    }
+}

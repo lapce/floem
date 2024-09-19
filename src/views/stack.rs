@@ -150,9 +150,30 @@ pub trait StackExt {
         StackExt::stack(self, FlexDirection::Row)
     }
 }
-
 impl<V: IntoView + 'static, T: IntoIterator<Item = V> + 'static> StackExt for T {
     fn stack(self, direction: FlexDirection) -> Stack {
         from_iter(self, Some(direction))
+    }
+}
+// Necessary to have a separate Ext trait because IntoIterator could be implemented on tuples of specific view types
+pub trait TupleStackExt {
+    fn stack(self, direction: FlexDirection) -> Stack;
+    fn v_stack(self) -> Stack
+    where
+        Self: Sized,
+    {
+        TupleStackExt::stack(self, FlexDirection::Column)
+    }
+    fn h_stack(self) -> Stack
+    where
+        Self: Sized,
+    {
+        TupleStackExt::stack(self, FlexDirection::Row)
+    }
+}
+
+impl<T: ViewTuple + 'static> TupleStackExt for T {
+    fn stack(self, direction: FlexDirection) -> Stack {
+        create_stack(self.into_views(), Some(direction))
     }
 }
