@@ -10,18 +10,23 @@ const IS_MACOS: bool = cfg!(target_os = "macos");
 
 pub struct SwashScaler {
     context: ScaleContext,
+    font_embolden: f32,
 }
 
 impl Default for SwashScaler {
     fn default() -> Self {
-        Self::new()
+        Self {
+            context: ScaleContext::new(),
+            font_embolden: 0.,
+        }
     }
 }
 
 impl SwashScaler {
-    pub fn new() -> Self {
+    pub fn new(font_embolden: f32) -> Self {
         Self {
             context: ScaleContext::new(),
+            font_embolden,
         }
     }
 
@@ -45,8 +50,6 @@ impl SwashScaler {
         // in a real renderer
         let offset = Vector::new(cache_key.x_bin.as_float(), cache_key.y_bin.as_float());
 
-        let embolden = if IS_MACOS { 0.2 } else { 0. };
-
         // Select our source order
         Render::new(&[
             // Color outline with the first palette
@@ -60,7 +63,7 @@ impl SwashScaler {
         .format(Format::Alpha)
         // Apply the fractional offset
         .offset(offset)
-        .embolden(embolden)
+        .embolden(self.font_embolden)
         .transform(if cache_key.flags.contains(CacheKeyFlags::FAKE_ITALIC) {
             Some(Transform::skew(
                 Angle::from_degrees(14.0),

@@ -90,6 +90,7 @@ impl WindowHandle {
         transparent: bool,
         apply_default_theme: bool,
         size: Option<LogicalSize<f64>>,
+        font_embolden: f32,
     ) -> Self {
         let scope = Scope::new();
         let window_id = window.id();
@@ -141,6 +142,7 @@ impl WindowHandle {
             gpu_resources,
             scale,
             size.get_untracked() * scale,
+            font_embolden,
         );
         let mut window_handle = Self {
             window: Some(window),

@@ -297,6 +297,7 @@ impl ApplicationHandle {
             apply_default_theme,
             mac_os_config,
             web_config,
+            font_embolden,
         }: WindowConfig,
     ) {
         let logical_size = size.map(|size| LogicalSize::new(size.width, size.height));
@@ -419,6 +420,7 @@ impl ApplicationHandle {
             transparent,
             apply_default_theme,
             logical_size,
+            font_embolden,
         );
         self.window_handles.insert(window_id, window_handle);
     }

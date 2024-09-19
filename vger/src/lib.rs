@@ -31,7 +31,13 @@ pub struct VgerRenderer {
 }
 
 impl VgerRenderer {
-    pub fn new(gpu_resources: GpuResources, width: u32, height: u32, scale: f64) -> Result<Self> {
+    pub fn new(
+        gpu_resources: GpuResources,
+        width: u32,
+        height: u32,
+        scale: f64,
+        font_embolden: f32,
+    ) -> Result<Self> {
         let GpuResources {
             surface,
             adapter,
@@ -91,7 +97,7 @@ impl VgerRenderer {
             transform: Affine::IDENTITY,
             clip: None,
             capture: false,
-            swash_scaler: SwashScaler::new(),
+            swash_scaler: SwashScaler::new(font_embolden),
         })
     }
 

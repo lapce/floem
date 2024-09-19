@@ -25,6 +25,7 @@ pub struct WindowConfig {
     pub(crate) undecorated: bool,
     pub(crate) window_level: WindowLevel,
     pub(crate) apply_default_theme: bool,
+    pub(crate) font_embolden: f32,
     #[allow(dead_code)]
     pub(crate) mac_os_config: Option<MacOSWindowConfig>,
     pub(crate) web_config: Option<WebWindowConfig>,
@@ -45,6 +46,7 @@ impl Default for WindowConfig {
             undecorated: false,
             window_level: WindowLevel::Normal,
             apply_default_theme: true,
+            font_embolden: if cfg!(target_os = "macos") { 0.2 } else { 0. },
             mac_os_config: None,
             web_config: None,
         }
@@ -159,6 +161,15 @@ impl WindowConfig {
     #[inline]
     pub fn apply_default_theme(mut self, apply_default_theme: bool) -> Self {
         self.apply_default_theme = apply_default_theme;
+        self
+    }
+
+    /// Sets the amount by which fonts are emboldened.
+    ///
+    /// The default is 0.0 except for on macOS where the default is 0.2
+    #[inline]
+    pub fn font_embolden(mut self, font_embolden: f32) -> Self {
+        self.font_embolden = font_embolden;
         self
     }
 

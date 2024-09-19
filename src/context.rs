@@ -1159,6 +1159,7 @@ pub enum PaintState {
         rx: crossbeam::channel::Receiver<Result<GpuResources, GpuResourceError>>,
         scale: f64,
         size: Size,
+        font_embolden: f32,
     },
     Initialized {
         renderer: crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>>,
@@ -1171,12 +1172,14 @@ impl PaintState {
         rx: crossbeam::channel::Receiver<Result<GpuResources, GpuResourceError>>,
         scale: f64,
         size: Size,
+        font_embolden: f32,
     ) -> Self {
         Self::PendingGpuResources {
             window,
             scale,
             size,
             rx,
+            font_embolden,
         }
     }
 
@@ -1186,11 +1189,17 @@ impl PaintState {
             rx,
             scale,
             size,
+            font_embolden,
         } = self
         {
             let gpu_resources = rx.recv().unwrap().unwrap();
-            let renderer =
-                crate::renderer::Renderer::new(window.clone(), gpu_resources, *scale, *size);
+            let renderer = crate::renderer::Renderer::new(
+                window.clone(),
+                gpu_resources,
+                *scale,
+                *size,
+                *font_embolden,
+            );
             *self = PaintState::Initialized { renderer };
         } else {
             panic!("Called PaintState::init_renderer when it was already initialized");
