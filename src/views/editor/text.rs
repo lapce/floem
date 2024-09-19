@@ -49,6 +49,11 @@ impl SystemClipboard {
     pub fn new() -> Self {
         Self
     }
+
+    #[cfg(windows)]
+    pub fn get_file_list() -> Option<Vec<std::path::PathBuf>> {
+        crate::Clipboard::get_file_list().ok()
+    }
 }
 
 impl Clipboard for SystemClipboard {
