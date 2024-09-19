@@ -44,6 +44,13 @@ impl Clipboard {
             .map_err(|e| ClipboardError::ProviderError(e.to_string()))
     }
 
+    #[cfg(windows)]
+    pub(crate) fn get_file_list() -> Result<Vec<std::path::PathBuf>, ClipboardError> {
+        clipboard_win::Clipboard::new_attempts(10)
+            .and_then(|x| x.get_file_list())
+            .map_err(|e| ClipboardError::ProviderError(e.to_string()))
+    }
+
     pub(crate) unsafe fn init(display: RawDisplayHandle) {
         *CLIPBOARD.lock() = Some(Self::new(display));
     }
