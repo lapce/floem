@@ -9,10 +9,10 @@
 //! v_stack((
 //!     label(move || format!("Value: {}", counter.get())),
 //!     h_stack((
-//!         button(|| "Increment").on_click_stop(move |_| {
+//!         button("Increment").on_click_stop(move |_| {
 //!             set_counter.update(|value| *value += 1);
 //!         }),
-//!         button(|| "Decrement").on_click_stop(move |_| {
+//!         button("Decrement").on_click_stop(move |_| {
 //!             set_counter.update(|value| *value -= 1);
 //!         }),
 //!     )),
@@ -115,8 +115,8 @@
 //! use floem::{views::*, peniko::Color};
 //!
 //! let root_view = stack((
-//!     button(move || "Button One"),
-//!     button(move || "Button Two"),
+//!     button("Button One"),
+//!     button("Button Two"),
 //! )).style(|s| s.class(ButtonClass, |s| s.width(150).height(100).background(Color::GRAY).color(Color::GREEN)));
 //! ```
 //! This makes it so that all `Buttons` in the ui that are children of `root_view` will have the same styling, but still allows for local overrides.

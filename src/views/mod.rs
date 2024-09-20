@@ -16,10 +16,10 @@
 //! v_stack((
 //!     label(move || format!("Value: {}", counter.get())),
 //!     h_stack((
-//!         button(|| "Increment").on_click_stop(move |_| {
+//!         button("Increment").on_click_stop(move |_| {
 //!             set_counter.update(|value| *value += 1);
 //!         }),
-//!         button(|| "Decrement").on_click_stop(move |_| {
+//!         button("Decrement").on_click_stop(move |_| {
 //!             set_counter.update(|value| *value -= 1);
 //!         }),
 //!     )),
