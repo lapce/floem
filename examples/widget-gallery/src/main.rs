@@ -20,7 +20,7 @@ use floem::{
     style::{Background, CursorStyle, Transition},
     unit::{DurationUnitExt, UnitExt},
     views::{
-        button, h_stack, label, scroll, stack, tab, v_stack, virtual_stack, Decorators,
+        dyn_button, h_stack, label, scroll, stack, tab, v_stack, virtual_stack, Decorators,
         VirtualDirection, VirtualItemSize,
     },
     IntoView, View,
@@ -126,7 +126,7 @@ fn app_view() -> impl IntoView {
     .style(|s| s.border(1.).border_color(Color::GRAY));
 
     let id = list.id();
-    let inspector = button(|| "Open Inspector")
+    let inspector = dyn_button(|| "Open Inspector")
         .on_click_stop(move |_| {
             id.inspect();
         })

@@ -8,7 +8,7 @@ use crate::style::{Style, StyleClassRef, StylePropRef, Transition};
 use crate::view::{IntoView, View};
 use crate::view_state::ChangeFlags;
 use crate::views::{
-    button, container, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label,
+    container, dyn_button, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label,
     tab, text, text_input, v_stack, v_stack_from_iter, Decorators, Label,
 };
 use crate::window::WindowConfig;
@@ -637,7 +637,7 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<ViewId>>) -> i
                         )
                     ),
                 );
-                let clear = button(|| "Clear selection")
+                let clear = dyn_button(|| "Clear selection")
                     .style(|s| s.margin(5.0))
                     .on_click_stop(move |_| selected.set(None));
                 let clear = stack((clear,));
@@ -933,7 +933,7 @@ fn capture_view(
             selected_view(capture, capture_view.selected),
             header("Stats"),
             stats(capture),
-            button(|| "Recapture")
+            dyn_button(|| "Recapture")
                 .style(|s| s.margin(5.0))
                 .on_click_stop(move |_| {
                     add_app_update_event(AppUpdateEvent::CaptureWindow {

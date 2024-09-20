@@ -2,7 +2,7 @@ use floem::keyboard::Modifiers;
 use floem::peniko::Color;
 use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 use floem::text::{Attrs, AttrsList, Stretch, Style, Weight};
-use floem::views::button;
+use floem::views::dyn_button;
 use floem::views::editor::core::buffer::rope_text::RopeText;
 use floem::views::editor::id::EditorId;
 use floem::views::editor::layout::TextLayoutLine;
@@ -228,14 +228,14 @@ mod tests {
     let view = stack((
         editor,
         stack((
-            button(|| "Clear").on_click_stop(move |_| {
+            dyn_button(|| "Clear").on_click_stop(move |_| {
                 doc.edit_single(
                     Selection::region(0, doc.text().len()),
                     "",
                     EditType::DeleteSelection,
                 );
             }),
-            button(|| "Gutter").on_click_stop(move |_| {
+            dyn_button(|| "Gutter").on_click_stop(move |_| {
                 hide_gutter.update(|hide| *hide = !*hide);
             }),
         ))

@@ -1,6 +1,6 @@
 use floem::{
     reactive::{create_rw_signal, SignalGet, SignalUpdate},
-    views::{button, h_stack, label, text_input, v_stack, Decorators},
+    views::{dyn_button, h_stack, label, text_input, v_stack, Decorators},
     Clipboard, IntoView,
 };
 
@@ -13,21 +13,21 @@ pub fn clipboard_view() -> impl IntoView {
     form({
         (
             form_item("Simple copy".to_string(), 120.0, move || {
-                button(|| "Copy the answer").on_click_stop(move |_| {
+                dyn_button(|| "Copy the answer").on_click_stop(move |_| {
                     let _ = Clipboard::set_contents("42".to_string());
                 })
             }),
             form_item("Copy from input".to_string(), 120.0, move || {
                 h_stack((
                     text_input(text1).keyboard_navigatable(),
-                    button(|| "Copy").on_click_stop(move |_| {
+                    dyn_button(|| "Copy").on_click_stop(move |_| {
                         let _ = Clipboard::set_contents(text1.get());
                     }),
                 ))
             }),
             form_item("Get clipboard".to_string(), 120.0, move || {
                 v_stack((
-                    button(|| "Get clipboard").on_click_stop(move |_| {
+                    dyn_button(|| "Get clipboard").on_click_stop(move |_| {
                         if let Ok(content) = Clipboard::get_contents() {
                             text2.set(content);
                         }

@@ -19,12 +19,22 @@ pub struct Svg {
 
 style_class!(pub SvgClass);
 
-pub fn svg(svg_str: impl Fn() -> String + 'static) -> Svg {
+pub fn dyn_svg(svg_str: impl Fn() -> String + 'static) -> Svg {
     let id = ViewId::new();
     create_effect(move |_| {
         let new_svg_str = svg_str();
         id.update_state(new_svg_str);
     });
+    Svg {
+        id,
+        svg_tree: None,
+        svg_hash: None,
+    }
+    .class(SvgClass)
+}
+pub fn svg(svg_str: impl Into<String> + 'static) -> Svg {
+    let id = ViewId::new();
+    id.update_state(svg_str);
     Svg {
         id,
         svg_tree: None,

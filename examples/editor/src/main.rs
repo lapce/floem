@@ -2,7 +2,7 @@ use floem::{
     keyboard::{Key, Modifiers, NamedKey},
     reactive::{RwSignal, SignalGet, SignalUpdate},
     views::{
-        button,
+        dyn_button,
         editor::{
             command::{Command, CommandExecuted},
             core::{command::EditCommand, editor::EditType, selection::Selection},
@@ -50,14 +50,14 @@ fn app_view() -> impl IntoView {
         editor_a,
         editor_b,
         stack((
-            button(|| "Clear").on_click_stop(move |_| {
+            dyn_button(|| "Clear").on_click_stop(move |_| {
                 doc.edit_single(
                     Selection::region(0, doc.text().len()),
                     "",
                     EditType::DeleteSelection,
                 );
             }),
-            button(|| "Flip Gutter").on_click_stop(move |_| {
+            dyn_button(|| "Flip Gutter").on_click_stop(move |_| {
                 hide_gutter_a.update(|hide| *hide = !*hide);
                 hide_gutter_b.update(|hide| *hide = !*hide);
             }),
