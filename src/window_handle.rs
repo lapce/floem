@@ -1285,7 +1285,7 @@ fn context_menu_view(
                     stack((
                         stack((
                             text(title),
-                            svg(|| submenu_svg.to_string()).style(move |s| {
+                            dyn_svg(|| submenu_svg.to_string()).style(move |s| {
                                 s.size(20.0, 20.0)
                                     .color(Color::rgb8(201, 201, 201))
                                     .margin_right(10.0)
