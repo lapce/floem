@@ -51,7 +51,7 @@ fn app_view() -> impl IntoView {
     );
     let elapsed_time_bar = gauge(progress);
 
-    let reset_button = button(|| "Reset").on_click_stop(move |_| started_at.set(Instant::now()));
+    let reset_button = button("Reset").action(move || started_at.set(Instant::now()));
 
     let view = v_stack((
         stack((text("Elapsed Time: "), elapsed_time_bar)).style(|s| s.justify_between()),

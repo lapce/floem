@@ -69,8 +69,8 @@ impl PlayPause {
     }
     fn view(&self) -> AnyView {
         match self {
-            PlayPause::Play => svg(|| svg::PLAY.to_string()).into_any(),
-            PlayPause::Pause => svg(|| svg::PAUSE.to_string()).into_any(),
+            PlayPause::Play => svg(svg::PLAY).into_any(),
+            PlayPause::Pause => svg(svg::PAUSE).into_any(),
         }
         .animation(|a| Animation::scale_effect(a).run_on_remove(false))
     }
@@ -80,7 +80,7 @@ pub fn music_player() -> impl IntoView {
     let song_info = RwSignal::new(SongInfo::default());
 
     let now_playing = h_stack((
-        svg(|| svg::MUSIC.to_string()).style(|s| s.color(MUSIC_ICON)),
+        svg(svg::MUSIC).style(|s| s.color(MUSIC_ICON)),
         "Now Playing".style(|s| s.font_weight(Weight::MEDIUM)),
     ))
     .style(|s| s.gap(5).items_center());
@@ -93,9 +93,9 @@ pub fn music_player() -> impl IntoView {
     .on_click_stop(move |_| play_pause_state.update(|which| which.toggle()));
 
     let media_buttons = h_stack((
-        container(svg(|| svg::BACKWARD.to_string())).class(ButtonClass),
+        container(svg(svg::BACKWARD)).class(ButtonClass),
         play_pause_button,
-        container(svg(|| svg::BACKWARD.to_string())).class(ButtonClass),
+        container(svg(svg::BACKWARD)).class(ButtonClass),
     ))
     .style(|s| {
         s.align_self(Some(floem::taffy::AlignItems::Center))

@@ -12,16 +12,12 @@
 //! ```rust
 //! use floem::{reactive::*, views::*};
 //!
-//! let (counter, set_counter) = create_signal(0);
+//! let (counter, mut set_counter) = create_signal(0);
 //! v_stack((
-//!     label(move || format!("Value: {}", counter.get())),
+//!     label(move || format!("Value: {counter}")),
 //!     h_stack((
-//!         button(|| "Increment").on_click_stop(move |_| {
-//!             set_counter.update(|value| *value += 1);
-//!         }),
-//!         button(|| "Decrement").on_click_stop(move |_| {
-//!             set_counter.update(|value| *value -= 1);
-//!         }),
+//!         button("Increment").action(move || set_counter.update(|value| *value += 1)),
+//!         button("Decrement").action(move || set_counter.update(|value| *value -= 1)),
 //!     )),
 //! ));
 //! ```

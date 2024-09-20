@@ -228,14 +228,14 @@ mod tests {
     let view = stack((
         editor,
         stack((
-            button(|| "Clear").on_click_stop(move |_| {
+            button("Clear").action(move || {
                 doc.edit_single(
                     Selection::region(0, doc.text().len()),
                     "",
                     EditType::DeleteSelection,
                 );
             }),
-            button(|| "Gutter").on_click_stop(move |_| {
+            button("Gutter").action(move || {
                 hide_gutter.update(|hide| *hide = !*hide);
             }),
         ))

@@ -10,9 +10,7 @@ use floem::{
 fn sub_window_view(id: WindowId) -> impl IntoView {
     v_stack((
         label(move || String::from("Hello world")).style(|s| s.font_size(30.0)),
-        button(|| "Close this window").on_click_stop(move |_| {
-            close_window(id);
-        }),
+        button("Close this window").action(move || close_window(id)),
     ))
     .style(|s| {
         s.flex_col()
@@ -27,7 +25,7 @@ fn sub_window_view(id: WindowId) -> impl IntoView {
 fn app_view() -> impl IntoView {
     let view = v_stack((
         label(move || String::from("Hello world")).style(|s| s.font_size(30.0)),
-        button(|| "Open another window").on_click_stop(|_| {
+        button("Open another window").action(|| {
             new_window(
                 sub_window_view,
                 Some(

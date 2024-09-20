@@ -11,15 +11,11 @@ pub fn button_view() -> impl IntoView {
     form({
         (
             form_item("Basic Button:".to_string(), 120.0, || {
-                button(|| "Click me").on_click_stop(|_| {
-                    println!("Button clicked");
-                })
+                button("Click me").action(|| println!("Button clicked"))
             }),
             form_item("Styled Button:".to_string(), 120.0, || {
-                button(|| "Click me")
-                    .on_click_stop(|_| {
-                        println!("Button clicked");
-                    })
+                button("Click me")
+                    .action(|| println!("Button clicked"))
                     .style(|s| {
                         s.border(1.0)
                             .border_radius(10.0)
@@ -34,12 +30,12 @@ pub fn button_view() -> impl IntoView {
                     })
             }),
             form_item("Disabled Button:".to_string(), 120.0, || {
-                button(|| "Click me").disabled(|| true).on_click_stop(|_| {
-                    println!("Button clicked");
-                })
+                button("Click me")
+                    .disabled(|| true)
+                    .action(|| println!("Button clicked"))
             }),
             form_item("Secondary click button:".to_string(), 120.0, || {
-                button(|| "Right click me").on_secondary_click_stop(|_| {
+                button("Right click me").on_secondary_click_stop(|_| {
                     println!("Secondary mouse button click.");
                 })
             }),

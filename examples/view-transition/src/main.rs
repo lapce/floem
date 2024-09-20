@@ -45,9 +45,7 @@ fn app_view() -> impl IntoView {
     let state = RwSignal::new(ViewSwitcher::One);
 
     v_stack((
-        button(|| "Switch views").on_click_stop(move |_| {
-            state.update(|which| which.toggle());
-        }),
+        button("Switch views").action(move || state.update(|which| which.toggle())),
         h_stack((
             dyn_container(move || state.get(), move |which| which.view(state)),
             empty()
@@ -74,9 +72,7 @@ fn app_view() -> impl IntoView {
 fn view_two(view: RwSignal<ViewSwitcher>) -> impl IntoView {
     v_stack((
         "Another view",
-        button(|| "Switch back").on_click_stop(move |_| {
-            view.set(ViewSwitcher::One);
-        }),
+        button("Switch back").action(move || view.set(ViewSwitcher::One)),
     ))
     .style(|s| {
         s.column_gap(10.0)

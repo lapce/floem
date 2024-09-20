@@ -126,10 +126,8 @@ fn app_view() -> impl IntoView {
     .style(|s| s.border(1.).border_color(Color::GRAY));
 
     let id = list.id();
-    let inspector = button(|| "Open Inspector")
-        .on_click_stop(move |_| {
-            id.inspect();
-        })
+    let inspector = button("Open Inspector")
+        .action(move || id.inspect())
         .style(|s| s);
 
     let left = v_stack((list, inspector)).style(|s| s.height_full().column_gap(5.0));

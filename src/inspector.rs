@@ -637,7 +637,7 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<ViewId>>) -> i
                         )
                     ),
                 );
-                let clear = button(|| "Clear selection")
+                let clear = button("Clear selection")
                     .style(|s| s.margin(5.0))
                     .on_click_stop(move |_| selected.set(None));
                 let clear = stack((clear,));
@@ -933,7 +933,7 @@ fn capture_view(
             selected_view(capture, capture_view.selected),
             header("Stats"),
             stats(capture),
-            button(|| "Recapture")
+            button("Recapture")
                 .style(|s| s.margin(5.0))
                 .on_click_stop(move |_| {
                     add_app_update_event(AppUpdateEvent::CaptureWindow {

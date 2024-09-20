@@ -109,11 +109,11 @@ fn enhanced_list() -> impl IntoView {
 }
 
 fn h_buttons_from_iter() -> impl IntoView {
-    let button_iter = (0..3).map(|i| button(move || format!("Button {}", i)));
+    let button_iter = (0..3).map(|i| button(format!("Button {i}")));
     h_stack_from_iter(button_iter)
 }
 
 fn v_buttons_from_iter() -> impl IntoView {
-    let button_iter = (0..3).map(|i| button(move || format!("Button {}", i)));
+    let button_iter = (0..3).map(|i| button(format!("Button {i}")));
     v_stack_from_iter(button_iter)
 }

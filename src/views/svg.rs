@@ -11,20 +11,28 @@ use crate::{id::ViewId, style_class, view::View};
 
 use super::Decorators;
 
+style_class!(pub SvgClass);
+
 pub struct Svg {
     id: ViewId,
     svg_tree: Option<Tree>,
     svg_hash: Option<Vec<u8>>,
 }
 
-style_class!(pub SvgClass);
+impl Svg {
+    pub fn update_value(self, svg_str: impl Fn() -> String + 'static) -> Self {
+        let id = self.id;
+        create_effect(move |_| {
+            let new_svg_str = svg_str();
+            id.update_state(new_svg_str);
+        });
+        self
+    }
+}
 
-pub fn svg(svg_str: impl Fn() -> String + 'static) -> Svg {
+pub fn svg(svg_str: impl Into<String> + 'static) -> Svg {
     let id = ViewId::new();
-    create_effect(move |_| {
-        let new_svg_str = svg_str();
-        id.update_state(new_svg_str);
-    });
+    id.update_state(svg_str);
     Svg {
         id,
         svg_tree: None,

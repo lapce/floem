@@ -255,13 +255,13 @@ pub fn profiler(window_id: WindowId) -> impl IntoView {
     let profile = PROFILE.with(|c| *c);
 
     let button = h_stack((
-        button(move || {
+        button(label(move || {
             if profiling.get() {
                 "Stop Profiling"
             } else {
                 "Start Profiling"
             }
-        })
+        }))
         .on_click_stop(move |_| {
             add_app_update_event(AppUpdateEvent::ProfileWindow {
                 window_id,
