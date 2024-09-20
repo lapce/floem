@@ -20,7 +20,7 @@ pub struct Svg {
 }
 
 impl Svg {
-    pub fn update_svg(self, svg_str: impl Fn() -> String + 'static) -> Self {
+    pub fn update_value(self, svg_str: impl Fn() -> String + 'static) -> Self {
         let id = self.id;
         create_effect(move |_| {
             let new_svg_str = svg_str();
