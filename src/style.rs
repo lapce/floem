@@ -2074,8 +2074,9 @@ impl Style {
         self.set(BoxShadowProp, Some(value))
     }
 
-    pub fn font_size(self, size: impl Into<StyleValue<f32>>) -> Self {
-        self.set_style_value(FontSize, size.into().map(Some))
+    pub fn font_size(self, size: impl Into<Px>) -> Self {
+        let px = size.into();
+        self.set_style_value(FontSize, StyleValue::Val(Some(px.0 as f32)))
     }
 
     pub fn font_family(self, family: impl Into<StyleValue<String>>) -> Self {
