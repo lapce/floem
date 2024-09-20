@@ -12,6 +12,7 @@ fn app_view() -> impl IntoView {
     let animation = RwSignal::new(
         Animation::new()
             .duration(5.seconds())
+            .keyframe(0, |kf| kf.computed())
             .keyframe(50, |kf| {
                 kf.style(|s| s.background(Color::BLACK).size(30, 30))
                     .ease_in()
