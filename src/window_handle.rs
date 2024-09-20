@@ -1216,7 +1216,7 @@ fn context_menu_view(
 
     use crate::{
         app::{add_app_update_event, AppUpdateEvent},
-        views::{dyn_stack, dyn_svg, empty, text},
+        views::{dyn_stack, empty, svg, text},
     };
 
     #[derive(Clone, PartialEq, Eq, Hash)]

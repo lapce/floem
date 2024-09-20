@@ -1,18 +1,10 @@
-use crate::{
-    style_class,
-    views::{self, Decorators},
-    View, ViewId,
-};
+use crate::{style_class, views::Decorators, IntoView, View, ViewId};
 use core::ops::FnMut;
-use std::fmt::Display;
 
 style_class!(pub ButtonClass);
 
-pub fn dyn_button<S: Display + 'static>(label: impl Fn() -> S + 'static) -> Button {
-    Button::new_dyn(label)
-}
-pub fn button<S: Display + 'static>(label: S) -> Button {
-    Button::new(label)
+pub fn button<V: IntoView + 'static>(child: V) -> Button {
+    Button::new(child)
 }
 
 pub struct Button {
@@ -24,16 +16,9 @@ impl View for Button {
     }
 }
 impl Button {
-    pub fn new_dyn<S: Display + 'static>(label: impl Fn() -> S + 'static) -> Self {
+    pub fn new(child: impl IntoView) -> Self {
         let id = ViewId::new();
-        let text = views::label(label);
-        id.add_child(Box::new(text));
-        Button { id }.keyboard_navigatable().class(ButtonClass)
-    }
-    pub fn new<S: Display>(label: S) -> Self {
-        let id = ViewId::new();
-        let text = views::text(label);
-        id.add_child(Box::new(text));
+        id.add_child(Box::new(child.into_view()));
         Button { id }.keyboard_navigatable().class(ButtonClass)
     }
 
@@ -47,7 +32,7 @@ impl Button {
 pub trait ButtonExt {
     fn button(self) -> Button;
 }
-impl<T: std::fmt::Display + 'static> ButtonExt for T {
+impl<T: IntoView + 'static> ButtonExt for T {
     fn button(self) -> Button {
         button(self)
     }

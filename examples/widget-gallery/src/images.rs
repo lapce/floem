@@ -1,6 +1,6 @@
 use floem::{
     unit::UnitExt,
-    views::{dyn_svg, img, Decorators},
+    views::{img, svg, Decorators},
     IntoView,
 };
 
@@ -23,11 +23,10 @@ pub fn img_view() -> impl IntoView {
                 img(move || ferris_png.to_vec()).style(|s| s.width(230.px()).height(153.px()))
             }),
             form_item("SVG(from file):".to_string(), 120.0, move || {
-                dyn_svg(move || ferris_svg.to_string())
-                    .style(|s| s.width(230.px()).height(153.px()))
+                svg(ferris_svg).style(|s| s.width(230.px()).height(153.px()))
             }),
             form_item("SVG(from string):".to_string(), 120.0, move || {
-                dyn_svg(move || svg_str.to_string()).style(|s| s.width(100.px()).height(100.px()))
+                svg(svg_str).style(|s| s.width(100.px()).height(100.px()))
             }),
             form_item("JPG:".to_string(), 120.0, move || {
                 img(move || sunflower.to_vec())

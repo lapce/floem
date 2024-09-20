@@ -2,13 +2,13 @@ use floem::{
     action::{open_file, save_as},
     file::{FileDialogOptions, FileSpec},
     keyboard::{Key, Modifiers, NamedKey},
-    views::{dyn_button, h_stack, Decorators},
+    views::{button, h_stack, Decorators},
     IntoView, View,
 };
 
 fn app_view() -> impl IntoView {
     let view = h_stack((
-        dyn_button(|| "Select file").on_click_cont(|_| {
+        button("Select file").on_click_cont(|_| {
             open_file(
                 FileDialogOptions::new()
                     .force_starting_directory("/")
@@ -24,7 +24,7 @@ fn app_view() -> impl IntoView {
                 },
             );
         }),
-        dyn_button(|| "Select multiple files").on_click_cont(|_| {
+        button("Select multiple files").on_click_cont(|_| {
             open_file(
                 FileDialogOptions::new()
                     .multi_selection()
@@ -40,7 +40,7 @@ fn app_view() -> impl IntoView {
                 },
             );
         }),
-        dyn_button(|| "Select folder").on_click_cont(|_| {
+        button("Select folder").on_click_cont(|_| {
             open_file(
                 FileDialogOptions::new()
                     .select_directories()
@@ -52,7 +52,7 @@ fn app_view() -> impl IntoView {
                 },
             );
         }),
-        dyn_button(|| "Select multiple folder").on_click_cont(|_| {
+        button("Select multiple folder").on_click_cont(|_| {
             open_file(
                 FileDialogOptions::new()
                     .select_directories()
@@ -65,7 +65,7 @@ fn app_view() -> impl IntoView {
                 },
             );
         }),
-        dyn_button(|| "Save file").on_click_cont(|_| {
+        button("Save file").on_click_cont(|_| {
             save_as(
                 FileDialogOptions::new()
                     .default_name("floem.file")

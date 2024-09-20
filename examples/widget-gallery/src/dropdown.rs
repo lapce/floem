@@ -4,7 +4,7 @@ use floem::{
     peniko::Color,
     reactive::{create_effect, RwSignal, SignalGet},
     unit::UnitExt,
-    views::{container, dropdown::Dropdown, dyn_svg, label, stack, Decorators},
+    views::{container, dropdown::Dropdown, label, stack, svg, Decorators},
     IntoView,
 };
 
@@ -32,11 +32,7 @@ pub fn dropdown_view() -> impl IntoView {
     let main_drop_view = move |item| {
         stack((
             label(move || item),
-            container(
-                dyn_svg(|| String::from(CHEVRON_DOWN))
-                    .style(|s| s.size(12, 12).color(Color::BLACK)),
-            )
-            .style(|s| {
+            container(svg(CHEVRON_DOWN).style(|s| s.size(12, 12).color(Color::BLACK))).style(|s| {
                 s.items_center()
                     .padding(3.)
                     .border_radius(7.pct())

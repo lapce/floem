@@ -3,7 +3,7 @@ use crate::event::{Event, EventListener, EventPropagation};
 use crate::inspector::header;
 use crate::view::IntoView;
 use crate::views::{
-    clip, container, dyn_button, dyn_container, empty, h_stack, label, scroll, stack, static_label,
+    button, clip, container, dyn_container, empty, h_stack, label, scroll, stack, static_label,
     text, v_stack, v_stack_from_iter, Decorators,
 };
 use floem_reactive::{create_rw_signal, RwSignal, Scope, SignalGet, SignalUpdate};
@@ -255,13 +255,13 @@ pub fn profiler(window_id: WindowId) -> impl IntoView {
     let profile = PROFILE.with(|c| *c);
 
     let button = h_stack((
-        dyn_button(move || {
+        button(label(move || {
             if profiling.get() {
                 "Stop Profiling"
             } else {
                 "Start Profiling"
             }
-        })
+        }))
         .on_click_stop(move |_| {
             add_app_update_event(AppUpdateEvent::ProfileWindow {
                 window_id,

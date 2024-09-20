@@ -4,7 +4,7 @@ use floem::{
     style::JustifyContent,
     text::Weight,
     views::{
-        container, dyn_button, h_stack, h_stack_from_iter, label, list, scroll, stack, v_stack,
+        button, container, h_stack, h_stack_from_iter, label, list, scroll, stack, v_stack,
         v_stack_from_iter, virtual_list, Checkbox, Decorators, VirtualDirection, VirtualItemSize,
         VirtualVector,
     },
@@ -109,11 +109,11 @@ fn enhanced_list() -> impl IntoView {
 }
 
 fn h_buttons_from_iter() -> impl IntoView {
-    let button_iter = (0..3).map(|i| dyn_button(move || format!("Button {}", i)));
+    let button_iter = (0..3).map(|i| button(format!("Button {i}")));
     h_stack_from_iter(button_iter)
 }
 
 fn v_buttons_from_iter() -> impl IntoView {
-    let button_iter = (0..3).map(|i| dyn_button(move || format!("Button {}", i)));
+    let button_iter = (0..3).map(|i| button(format!("Button {i}")));
     v_stack_from_iter(button_iter)
 }

@@ -5,8 +5,7 @@ use floem::{
     reactive::{create_rw_signal, RwSignal, SignalGet, SignalUpdate},
     unit::UnitExt,
     views::{
-        dyn_button, dyn_container, empty, text, text_input, v_stack, Decorators, RadioButton,
-        StackExt,
+        button, dyn_container, empty, text, text_input, v_stack, Decorators, RadioButton, StackExt,
     },
     IntoView,
 };
@@ -78,11 +77,11 @@ pub fn app_view() -> impl IntoView {
         .style(move |s| s.apply_if(!return_date_is_valid(), |s| s.background(Color::RED)))
         .disabled(move || !return_text_is_enabled());
 
-    let book_button = dyn_button(|| "Book")
+    let book_button = button("Book")
         .disabled(move || {
             !(dates_are_chronological() && start_date_is_valid() && return_date_is_valid())
         })
-        .on_click_stop(move |_| did_booking.set(true));
+        .action(move || did_booking.set(true));
 
     let success_message = dyn_container(
         move || (did_booking.get(), flight_mode.get()),

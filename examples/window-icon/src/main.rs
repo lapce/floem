@@ -4,7 +4,7 @@ use floem::{
     keyboard::{Key, NamedKey},
     kurbo::Size,
     new_window,
-    views::{dyn_button, label, v_stack, Decorators},
+    views::{button, label, v_stack, Decorators},
     window::{Icon, WindowConfig, WindowId},
     Application, IntoView, View,
 };
@@ -14,9 +14,7 @@ fn sub_window_view(id: WindowId) -> impl IntoView {
     v_stack((
         label(move || String::from("This window has an icon from an SVG file."))
             .style(|s| s.font_size(30.0)),
-        dyn_button(|| "Close this window").on_click_stop(move |_| {
-            close_window(id);
-        }),
+        button("Close this window").action(move || close_window(id)),
     ))
     .style(|s| {
         s.flex_col()
@@ -32,7 +30,7 @@ fn app_view() -> impl IntoView {
     let view = v_stack((
         label(move || String::from("This window has an icon from a PNG file"))
             .style(|s| s.font_size(30.0)),
-        dyn_button(|| "Open another window").on_click_stop(|_| {
+        button("Open another window").action(|| {
             let svg_icon = load_svg_icon(include_str!("../assets/ferris.svg"));
             new_window(
                 sub_window_view,

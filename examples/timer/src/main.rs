@@ -6,7 +6,7 @@ use floem::{
         create_effect, create_get_update, create_rw_signal, SignalGet, SignalTrack, SignalUpdate,
     },
     unit::UnitExt,
-    views::{container, dyn_button, label, slider, stack, text, v_stack, Decorators},
+    views::{button, container, label, slider, stack, text, v_stack, Decorators},
     IntoView,
 };
 
@@ -54,8 +54,7 @@ fn app_view() -> impl IntoView {
     );
     let elapsed_time_bar = gauge(progress);
 
-    let reset_button =
-        dyn_button(|| "Reset").on_click_stop(move |_| elapsed_time.set(Duration::ZERO));
+    let reset_button = button("Reset").action(move || elapsed_time.set(Duration::ZERO));
 
     let view = v_stack((
         stack((text("Elapsed Time: "), elapsed_time_bar)).style(|s| s.justify_between()),
