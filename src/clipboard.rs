@@ -35,6 +35,9 @@ impl Clipboard {
     }
 
     pub fn set_contents(s: String) -> Result<(), ClipboardError> {
+        if s.is_empty() {
+            return Err(ClipboardError::ProviderError("content is empty".to_string()))
+        }
         CLIPBOARD
             .lock()
             .as_mut()
