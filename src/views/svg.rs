@@ -20,11 +20,11 @@ pub struct Svg {
 }
 
 impl Svg {
-    pub fn update_value(self, svg_str: impl Fn() -> String + 'static) -> Self {
+    pub fn update_value<S: Into<String>>(self, svg_str: impl Fn() -> S + 'static) -> Self {
         let id = self.id;
         create_effect(move |_| {
             let new_svg_str = svg_str();
-            id.update_state(new_svg_str);
+            id.update_state(new_svg_str.into());
         });
         self
     }
@@ -32,7 +32,7 @@ impl Svg {
 
 pub fn svg(svg_str: impl Into<String> + 'static) -> Svg {
     let id = ViewId::new();
-    id.update_state(svg_str);
+    id.update_state(svg_str.into());
     Svg {
         id,
         svg_tree: None,
