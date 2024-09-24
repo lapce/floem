@@ -1592,8 +1592,9 @@ define_builtin_props!(
     RowGap row_gap nocb: PxPct {} = PxPct::Px(0.),
     ScaleX scale_x: PxPct {} = PxPct::Pct(100.),
     ScaleY scale_y: PxPct {} = PxPct::Pct(100.),
-    TransformX transform_x: PxPct {} = PxPct::Px(0.),
-    TransformY transform_y: PxPct {} = PxPct::Px(0.),
+    TranslateX translate_x: PxPct {} = PxPct::Px(0.),
+    TranslateY translate_y: PxPct {} = PxPct::Px(0.),
+    // Rotation rotate: Px {} = Px(0.),
 );
 
 prop_extractor! {
@@ -1646,8 +1647,10 @@ prop_extractor! {
         pub scale_x: ScaleX,
         pub scale_y: ScaleY,
 
-        pub transform_x: TransformX,
-        pub transform_y: TransformY,
+        pub transform_x: TranslateX,
+        pub transform_y: TranslateY,
+
+        // pub rotation: Rotation,
     }
 }
 impl LayoutProps {
@@ -2233,6 +2236,7 @@ impl Style {
         self.transition_width(transition.clone())
             .transition_height(transition)
     }
+
     pub fn transition_color(self, transition: Transition) -> Self {
         self.transition(TextColor, transition)
     }

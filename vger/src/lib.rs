@@ -9,6 +9,7 @@ use floem_renderer::text::{CacheKey, TextLayout};
 use floem_renderer::{tiny_skia, Img, Renderer};
 use floem_vger_rs::{Image, PaintIndex, PixelFormat, Vger};
 use image::{DynamicImage, EncodableLayout, RgbaImage};
+use peniko::kurbo::Size;
 use peniko::{
     kurbo::{Affine, Point, Rect, Shape},
     BrushRef, Color, GradientKind,
@@ -418,26 +419,33 @@ impl Renderer for VgerRenderer {
         let transformed_y = transform[1] * pos.x + transform[3] * pos.y + transform[5];
         let pos = Point::new(transformed_x, transformed_y);
 
-        let coeffs = self.transform.as_coeffs();
-        let scale = (coeffs[0] + coeffs[3]) / 2. * self.scale;
+        let scale_x = transform[0];
+        let scale_y = transform[3];
+
+        let scale = (transform[0] + transform[3]) / 2. * self.scale;
+        if scale.abs() < 0.1 {
+            // I'm not sure why this is necessary but there is very strange artifacting if this is disable and scale gets too small.
+            // Probably not a bad optimization anyways though
+            return;
+        }
 
         let clip = self.clip;
         for line in layout.layout_runs() {
-            if let Some(rect) = clip {
-                let y = pos.y + line.line_y as f64;
-                if y + (line.line_height as f64) < rect.y0 {
+            if let Some(clip_rect) = clip {
+                let y = pos.y + (line.line_y as f64 * scale_y);
+                if y + (line.line_height as f64 * scale_y) < clip_rect.y0 {
                     continue;
                 }
-                if y - (line.line_height as f64) > rect.y1 {
+                if y - (line.line_height as f64 * scale_y) > clip_rect.y1 {
                     break;
                 }
             }
             'line_loop: for glyph_run in line.glyphs {
-                let x = glyph_run.x + pos.x as f32;
-                let y = line.line_y + pos.y as f32;
+                let x = glyph_run.x * scale_x as f32 + pos.x as f32;
+                let y = line.line_y * scale_y as f32 + pos.y as f32;
 
                 if let Some(rect) = clip {
-                    if ((x + glyph_run.w) as f64) < rect.x0 {
+                    if ((x + glyph_run.w * scale_x as f32) as f64) < rect.x0 {
                         continue;
                     } else if x as f64 > rect.x1 {
                         break 'line_loop;
@@ -596,7 +604,14 @@ impl Renderer for VgerRenderer {
             transform[1] * rect_origin.x + transform[3] * rect_origin.y + transform[5];
         let transformed_origin = Point::new(rect_top_left_x, rect_top_left_y);
 
-        let transformed_rect = rect.with_origin(transformed_origin);
+        let rect_size = rect.size();
+        let rect_width =
+            transform[0] * rect_size.width + transform[2] * rect_size.height + transform[4];
+        let rect_height =
+            transform[1] * rect_size.width + transform[3] * rect_size.height + transform[5];
+        let transformed_size = Size::new(rect_width, rect_height);
+
+        let transformed_rect = Rect::from_origin_size(transformed_origin, transformed_size);
 
         self.clip = Some(transformed_rect);
     }
