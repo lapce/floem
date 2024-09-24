@@ -1122,10 +1122,44 @@ impl<'a> PaintCx<'a> {
     pub fn transform(&mut self, id: ViewId) -> Size {
         if let Some(layout) = id.get_layout() {
             let offset = layout.location;
-            let mut new = self.transform.as_coeffs();
-            new[4] += offset.x as f64;
-            new[5] += offset.y as f64;
-            self.transform = Affine::new(new);
+            self.transform *= Affine::translate(Vec2 {
+                x: offset.x as f64,
+                y: offset.y as f64,
+            });
+
+            let view_state = id.state();
+            let transform_x = match view_state.borrow().layout_props.transform_x() {
+                crate::unit::PxPct::Px(px) => px,
+                crate::unit::PxPct::Pct(pct) => pct / 100.,
+            };
+            let transform_y = match view_state.borrow().layout_props.transform_y() {
+                crate::unit::PxPct::Px(px) => px,
+                crate::unit::PxPct::Pct(pct) => pct / 100.,
+            };
+            self.transform *= Affine::translate(Vec2 {
+                x: transform_x,
+                y: transform_y,
+            });
+
+            let scale_x = match view_state.borrow().layout_props.scale_x() {
+                crate::unit::PxPct::Px(px) => px / layout.size.width as f64,
+                crate::unit::PxPct::Pct(pct) => pct / 100.,
+            };
+            let scale_y = match view_state.borrow().layout_props.scale_y() {
+                crate::unit::PxPct::Px(px) => px / layout.size.height as f64,
+                crate::unit::PxPct::Pct(pct) => pct / 100.,
+            };
+            let center_x = layout.size.width as f64 / 2.0;
+            let center_y = layout.size.height as f64 / 2.0;
+            self.transform *= Affine::translate(Vec2 {
+                x: center_x,
+                y: center_y,
+            });
+            self.transform *= Affine::scale_non_uniform(scale_x, scale_y);
+            self.transform *= Affine::translate(Vec2 {
+                x: -center_x,
+                y: -center_y,
+            });
             self.paint_state.renderer_mut().transform(self.transform);
 
             if let Some(rect) = self.clip.as_mut() {

@@ -1,6 +1,4 @@
 //! # Style
-//!
-//!
 
 use floem_reactive::create_updater;
 use floem_renderer::text::{LineHeightValue, Weight};
@@ -1592,6 +1590,10 @@ define_builtin_props!(
     AspectRatio aspect_ratio: Option<f32> {} = None,
     ColGap col_gap nocb: PxPct {} = PxPct::Px(0.),
     RowGap row_gap nocb: PxPct {} = PxPct::Px(0.),
+    ScaleX scale_x: PxPct {} = PxPct::Pct(100.),
+    ScaleY scale_y: PxPct {} = PxPct::Pct(100.),
+    TransformX transform_x: PxPct {} = PxPct::Px(0.),
+    TransformY transform_y: PxPct {} = PxPct::Px(0.),
 );
 
 prop_extractor! {
@@ -1640,6 +1642,12 @@ prop_extractor! {
 
         pub row_gap: RowGap,
         pub col_gap: ColGap,
+
+        pub scale_x: ScaleX,
+        pub scale_y: ScaleY,
+
+        pub transform_x: TransformX,
+        pub transform_y: TransformY,
     }
 }
 impl LayoutProps {
@@ -2167,6 +2175,11 @@ impl Style {
 
     pub fn z_index(self, z_index: i32) -> Self {
         self.set(ZIndex, Some(z_index))
+    }
+
+    pub fn scale(self, scale: impl Into<PxPct>) -> Self {
+        let val = scale.into();
+        self.scale_x(val).scale_y(val)
     }
 
     /// Allow the application of a function if the option exists.

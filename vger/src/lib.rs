@@ -10,7 +10,7 @@ use floem_renderer::{tiny_skia, Img, Renderer};
 use floem_vger_rs::{Image, PaintIndex, PixelFormat, Vger};
 use image::{DynamicImage, EncodableLayout, RgbaImage};
 use peniko::{
-    kurbo::{Affine, Point, Rect, Shape, Vec2},
+    kurbo::{Affine, Point, Rect, Shape},
     BrushRef, Color, GradientKind,
 };
 use wgpu::{Device, DeviceType, Queue, StoreOp, Surface, SurfaceConfiguration, TextureFormat};
@@ -151,10 +151,13 @@ impl VgerRenderer {
 
     fn vger_point(&self, point: Point) -> floem_vger_rs::defs::LocalPoint {
         let coeffs = self.transform.as_coeffs();
-        let point = point + Vec2::new(coeffs[4], coeffs[5]);
+
+        let transformed_x = coeffs[0] * point.x + coeffs[2] * point.y + coeffs[4];
+        let transformed_y = coeffs[1] * point.x + coeffs[3] * point.y + coeffs[5];
+
         floem_vger_rs::defs::LocalPoint::new(
-            (point.x * self.scale) as f32,
-            (point.y * self.scale) as f32,
+            (transformed_x * self.scale) as f32,
+            (transformed_y * self.scale) as f32,
         )
     }
 
@@ -284,11 +287,13 @@ impl Renderer for VgerRenderer {
     }
 
     fn stroke<'b>(&mut self, shape: &impl Shape, brush: impl Into<BrushRef<'b>>, width: f64) {
+        let coeffs = self.transform.as_coeffs();
+        let scale = (coeffs[0] + coeffs[3]) / 2. * self.scale;
         let paint = match self.brush_to_paint(brush) {
             Some(paint) => paint,
             None => return,
         };
-        let width = (width * self.scale).round() as f32;
+        let width = (width * scale).round() as f32;
         if let Some(rect) = shape.as_rect() {
             let min = rect.origin();
             let max = min + rect.size().to_vec2();
@@ -302,7 +307,7 @@ impl Renderer for VgerRenderer {
         } else if let Some(rect) = shape.as_rounded_rect() {
             let min = rect.origin();
             let max = min + rect.rect().size().to_vec2();
-            let radius = (rect.radii().top_left * self.scale) as f32;
+            let radius = (rect.radii().top_left * scale) as f32;
             self.vger.stroke_rect(
                 self.vger_point(min),
                 self.vger_point(max),
@@ -320,7 +325,7 @@ impl Renderer for VgerRenderer {
         } else if let Some(circle) = shape.as_circle() {
             self.vger.stroke_arc(
                 self.vger_point(circle.center),
-                (circle.radius * self.scale) as f32,
+                (circle.radius * scale) as f32,
                 width,
                 0.0,
                 std::f32::consts::PI,
@@ -352,6 +357,8 @@ impl Renderer for VgerRenderer {
     }
 
     fn fill<'b>(&mut self, path: &impl Shape, brush: impl Into<BrushRef<'b>>, blur_radius: f64) {
+        let coeffs = self.transform.as_coeffs();
+        let scale = (coeffs[0] + coeffs[3]) / 2. * self.scale;
         let paint = match self.brush_to_paint(brush) {
             Some(paint) => paint,
             None => return,
@@ -361,19 +368,19 @@ impl Renderer for VgerRenderer {
                 self.vger_rect(rect),
                 0.0,
                 paint,
-                (blur_radius * self.scale) as f32,
+                (blur_radius * scale) as f32,
             );
         } else if let Some(rect) = path.as_rounded_rect() {
             self.vger.fill_rect(
                 self.vger_rect(rect.rect()),
-                (rect.radii().top_left * self.scale) as f32,
+                (rect.radii().top_left * scale) as f32,
                 paint,
-                (blur_radius * self.scale) as f32,
+                (blur_radius * scale) as f32,
             );
         } else if let Some(circle) = path.as_circle() {
             self.vger.fill_circle(
                 self.vger_point(circle.center),
-                (circle.radius * self.scale) as f32,
+                (circle.radius * scale) as f32,
                 paint,
             )
         } else {
@@ -405,12 +412,19 @@ impl Renderer for VgerRenderer {
 
     fn draw_text(&mut self, layout: &TextLayout, pos: impl Into<Point>) {
         let transform = self.transform.as_coeffs();
-        let offset = Vec2::new(transform[4], transform[5]);
+
         let pos: Point = pos.into();
+        let transformed_x = transform[0] * pos.x + transform[2] * pos.y + transform[4];
+        let transformed_y = transform[1] * pos.x + transform[3] * pos.y + transform[5];
+        let pos = Point::new(transformed_x, transformed_y);
+
+        let coeffs = self.transform.as_coeffs();
+        let scale = (coeffs[0] + coeffs[3]) / 2. * self.scale;
+
         let clip = self.clip;
         for line in layout.layout_runs() {
             if let Some(rect) = clip {
-                let y = pos.y + offset.y + line.line_y as f64;
+                let y = pos.y + line.line_y as f64;
                 if y + (line.line_height as f64) < rect.y0 {
                     continue;
                 }
@@ -419,8 +433,8 @@ impl Renderer for VgerRenderer {
                 }
             }
             'line_loop: for glyph_run in line.glyphs {
-                let x = glyph_run.x + pos.x as f32 + offset.x as f32;
-                let y = line.line_y + pos.y as f32 + offset.y as f32;
+                let x = glyph_run.x + pos.x as f32;
+                let y = line.line_y + pos.y as f32;
 
                 if let Some(rect) = clip {
                     if ((x + glyph_run.w) as f64) < rect.x0 {
@@ -441,7 +455,7 @@ impl Renderer for VgerRenderer {
                 if let Some(paint) = self.brush_to_paint(color) {
                     let glyph_x = x * self.scale as f32;
                     let glyph_y = (y * self.scale as f32).round();
-                    let font_size = (glyph_run.font_size * self.scale as f32).round() as u32;
+                    let font_size = (glyph_run.font_size * scale as f32).round() as u32;
                     let (cache_key, new_x, new_y) = CacheKey::new(
                         glyph_run.font_id,
                         glyph_run.glyph_id,
@@ -472,19 +486,28 @@ impl Renderer for VgerRenderer {
 
     fn draw_img(&mut self, img: Img<'_>, rect: Rect) {
         let transform = self.transform.as_coeffs();
-        let width = (rect.width() * self.scale).round() as u32;
-        let height = (rect.height() * self.scale).round() as u32;
-        let width = width.max(1);
-        let height = height.max(1);
+
+        let scale_x = transform[0] * self.scale;
+        let scale_y = transform[3] * self.scale;
+
         let origin = rect.origin();
-        let x = ((origin.x + transform[4]) * self.scale).round() as f32;
-        let y = ((origin.y + transform[5]) * self.scale).round() as f32;
+        let transformed_x =
+            (transform[0] * origin.x + transform[2] * origin.y + transform[4]) * self.scale;
+        let transformed_y =
+            (transform[1] * origin.x + transform[3] * origin.y + transform[5]) * self.scale;
+
+        let x = transformed_x.round() as f32;
+        let y = transformed_y.round() as f32;
+
+        let width = (rect.width() * scale_x).round().max(1.0) as u32;
+        let height = (rect.height() * scale_y).round().max(1.0) as u32;
 
         self.vger.render_image(x, y, img.hash, width, height, || {
             let rgba = img.img.clone().into_rgba8();
             let data = rgba.as_bytes().to_vec();
 
             let (width, height) = rgba.dimensions();
+
             Image {
                 width,
                 height,
@@ -501,15 +524,24 @@ impl Renderer for VgerRenderer {
         brush: Option<impl Into<BrushRef<'b>>>,
     ) {
         let transform = self.transform.as_coeffs();
-        let width = (rect.width() * self.scale).round() as u32;
-        let height = (rect.height() * self.scale).round() as u32;
-        let width = width.max(1);
-        let height = height.max(1);
-        let origin = rect.origin();
-        let x = ((origin.x + transform[4]) * self.scale).round() as f32;
-        let y = ((origin.y + transform[5]) * self.scale).round() as f32;
 
-        let paint = brush.and_then(|brush| self.brush_to_paint(brush));
+        let scale_x = transform[0] * self.scale;
+        let scale_y = transform[3] * self.scale;
+
+        let origin = rect.origin();
+        let transformed_x =
+            (transform[0] * origin.x + transform[2] * origin.y + transform[4]) * self.scale;
+        let transformed_y =
+            (transform[1] * origin.x + transform[3] * origin.y + transform[5]) * self.scale;
+
+        let x = transformed_x.round() as f32;
+        let y = transformed_y.round() as f32;
+
+        let width = (rect.width() * scale_x).round().max(1.0) as u32;
+        let height = (rect.height() * scale_y).round().max(1.0) as u32;
+
+        let paint = brush.and_then(|b| self.brush_to_paint(b));
+
         self.vger.render_svg(
             x,
             y,
@@ -518,10 +550,17 @@ impl Renderer for VgerRenderer {
             height,
             || {
                 let mut img = tiny_skia::Pixmap::new(width, height).unwrap();
-                let scale = (width as f32 / svg.tree.size().width())
+
+                let svg_scale = (width as f32 / svg.tree.size().width())
                     .min(height as f32 / svg.tree.size().height());
-                let transform = tiny_skia::Transform::from_scale(scale, scale);
+
+                let final_scale_x = svg_scale;
+                let final_scale_y = svg_scale;
+
+                let transform = tiny_skia::Transform::from_scale(final_scale_x, final_scale_y);
+
                 resvg::render(svg.tree, transform, &mut img.as_mut());
+
                 img.take()
             },
             paint,
@@ -549,8 +588,17 @@ impl Renderer for VgerRenderer {
             .scissor(self.vger_rect(rect), (radius * self.scale) as f32);
 
         let transform = self.transform.as_coeffs();
-        let offset = Vec2::new(transform[4], transform[5]);
-        self.clip = Some(rect + offset);
+
+        let rect_origin = rect.origin();
+        let rect_top_left_x =
+            transform[0] * rect_origin.x + transform[2] * rect_origin.y + transform[4];
+        let rect_top_left_y =
+            transform[1] * rect_origin.x + transform[3] * rect_origin.y + transform[5];
+        let transformed_origin = Point::new(rect_top_left_x, rect_top_left_y);
+
+        let transformed_rect = rect.with_origin(transformed_origin);
+
+        self.clip = Some(transformed_rect);
     }
 
     fn clear_clip(&mut self) {

@@ -4,6 +4,7 @@ use floem::{
     reactive::{RwSignal, SignalGet, SignalUpdate},
     style::Style,
     taffy::FlexWrap,
+    unit::UnitExt,
     views::*,
     IntoView,
 };
@@ -27,7 +28,8 @@ impl ViewSwitcher {
             ViewSwitcher::One => music_player::music_player().into_any(),
             ViewSwitcher::Two => view_two(state).into_any(),
         }
-        .animation(Animation::scale_effect)
+        .style(|s| s.scale(100.pct()))
+        .animation(Animation::scale_size_effect)
         .clip()
         .style(|s| s.padding(8))
         .animation(|a| {
