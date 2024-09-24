@@ -7,14 +7,19 @@ use floem_renderer::{
 use peniko::kurbo::Size;
 use sha2::{Digest, Sha256};
 
-use crate::{id::ViewId, style_class, view::View};
+use crate::{id::ViewId, prop_extractor, style::TextColor, style_class, view::View};
 
 use super::Decorators;
 
 style_class!(pub SvgClass);
 
+prop_extractor!(SvgProps {
+    text_color: TextColor,
+});
+
 pub struct Svg {
     id: ViewId,
+    props: SvgProps,
     svg_tree: Option<Tree>,
     svg_hash: Option<Vec<u8>>,
 }
@@ -37,6 +42,7 @@ pub fn svg(svg_str: impl Into<String> + 'static) -> Svg {
         id,
         svg_tree: None,
         svg_hash: None,
+        props: Default::default(),
     }
     .class(SvgClass)
 }
@@ -44,6 +50,10 @@ pub fn svg(svg_str: impl Into<String> + 'static) -> Svg {
 impl View for Svg {
     fn id(&self) -> ViewId {
         self.id
+    }
+
+    fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+        self.props.read(cx);
     }
 
     fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
@@ -67,7 +77,7 @@ impl View for Svg {
             let hash = self.svg_hash.as_ref().unwrap();
             let layout = self.id.get_layout().unwrap_or_default();
             let rect = Size::new(layout.size.width as f64, layout.size.height as f64).to_rect();
-            let color = self.id.state().borrow().combined_style.builtin().color();
+            let color = self.props.text_color();
             cx.draw_svg(floem_renderer::Svg { tree, hash }, rect, color);
         }
     }

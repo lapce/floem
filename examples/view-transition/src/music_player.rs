@@ -2,9 +2,9 @@ use floem::{
     animate::Animation,
     peniko::{Brush, Color},
     reactive::{RwSignal, SignalGet, SignalUpdate},
-    style::{Background, Transition},
+    style::{ScaleX, ScaleY, Style, Transition},
     text::Weight,
-    unit::DurationUnitExt,
+    unit::{DurationUnitExt, UnitExt},
     views::{
         container, dyn_container, empty, h_stack, slider, svg, v_stack, ButtonClass, Decorators,
         Stack, SvgClass,
@@ -129,7 +129,21 @@ pub fn music_player() -> impl IntoView {
             .apply(box_shadow())
     });
 
-    container(card).style(|s| {
+    let button_style = |s: Style| {
+        s.border(0)
+            .padding(5)
+            .items_center()
+            .justify_center()
+            .background(Color::TRANSPARENT)
+            .hover(|s| s.background(SLIDER))
+            .active(|s| {
+                s.class(SvgClass, |s| {
+                    s.color(ICON).scale_x(50.pct()).scale_y(50.pct())
+                })
+            })
+    };
+
+    container(card).style(move |s| {
         s.size(300, 175)
             .items_center()
             .justify_center()
@@ -139,20 +153,11 @@ pub fn music_player() -> impl IntoView {
                 s.size(20, 20)
                     .items_center()
                     .justify_center()
-                    .transition_size(Transition::linear(25.millis()))
-                    .transition_color(Transition::linear(25.millis()))
+                    .scale(100.pct())
+                    .transition(ScaleX, Transition::spring(50.millis()))
+                    .transition(ScaleY, Transition::spring(50.millis()))
+                    .transition_color(Transition::linear(50.millis()))
             })
-            .class(ButtonClass, |s| {
-                s.border(0)
-                    .size(25, 25)
-                    .items_center()
-                    .justify_center()
-                    .background(Color::TRANSPARENT)
-                    .hover(|s| s.background(SLIDER))
-                    .active(|s| {
-                        s.set_style_value(Background, floem::style::StyleValue::Unset)
-                            .class(SvgClass, |s| s.size(12, 12).color(ICON))
-                    })
-            })
+            .class(ButtonClass, button_style)
     })
 }

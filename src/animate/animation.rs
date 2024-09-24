@@ -1,6 +1,7 @@
 use crate::{
     animate::{AnimState, AnimStateCommand, AnimStateKind, Bezier, Easing, Linear, Spring},
     style::{Style, StylePropRef},
+    unit::UnitExt,
     view_state::StackOffset,
     ViewId,
 };
@@ -335,8 +336,15 @@ impl Animation {
             .keyframe(100, |kf| kf.computed())
     }
 
-    /// Quickly set an animation to be a view transition and set the animation to animate from size(0, 0) to the "normal" computed style of a view (the view with no animations applied).
+    /// Quickly set an animation to be a view transition and set the animation to animate from scale 0% to the "normal" computed style of a view (the view with no animations applied).
     pub fn scale_effect(self) -> Self {
+        self.view_transition()
+            .keyframe(0, |kf| kf.style(|s| s.scale(0.pct())))
+            .debug_name("Scale the width and height from zero to the default")
+    }
+
+    /// Quickly set an animation to be a view transition and set the animation to animate from size(0, 0) to the "normal" computed style of a view (the view with no animations applied).
+    pub fn scale_size_effect(self) -> Self {
         self.view_transition()
             .keyframe(0, |kf| kf.style(|s| s.size(0, 0)))
             .debug_name("Scale the width and height from zero to the default")
