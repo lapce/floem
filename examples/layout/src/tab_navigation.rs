@@ -9,25 +9,25 @@ use floem::{
 };
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
-enum Tabs {
+enum Tab {
     General,
     Settings,
     Feedback,
 }
 
-impl std::fmt::Display for Tabs {
+impl std::fmt::Display for Tab {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match *self {
-            Tabs::General => write!(f, "General"),
-            Tabs::Settings => write!(f, "Settings"),
-            Tabs::Feedback => write!(f, "Feedback"),
+            Tab::General => write!(f, "General"),
+            Tab::Settings => write!(f, "Settings"),
+            Tab::Feedback => write!(f, "Feedback"),
         }
     }
 }
 
 fn tab_button(
-    this_tab: Tabs,
-    tabs: ReadSignal<im::Vector<Tabs>>,
+    this_tab: Tab,
+    tabs: ReadSignal<im::Vector<Tab>>,
     set_active_tab: WriteSignal<usize>,
     active_tab: ReadSignal<usize>,
 ) -> impl IntoView {
@@ -61,16 +61,16 @@ const TABBAR_HEIGHT: f64 = 37.0;
 const CONTENT_PADDING: f64 = 10.0;
 
 pub fn tab_navigation_view() -> impl IntoView {
-    let tabs = vec![Tabs::General, Tabs::Settings, Tabs::Feedback]
+    let tabs = vec![Tab::General, Tab::Settings, Tab::Feedback]
         .into_iter()
-        .collect::<im::Vector<Tabs>>();
+        .collect::<im::Vector<Tab>>();
     let (tabs, _set_tabs) = create_signal(tabs);
     let (active_tab, set_active_tab) = create_signal(0);
 
     let tabs_bar = h_stack((
-        tab_button(Tabs::General, tabs, set_active_tab, active_tab),
-        tab_button(Tabs::Settings, tabs, set_active_tab, active_tab),
-        tab_button(Tabs::Feedback, tabs, set_active_tab, active_tab),
+        tab_button(Tab::General, tabs, set_active_tab, active_tab),
+        tab_button(Tab::Settings, tabs, set_active_tab, active_tab),
+        tab_button(Tab::Feedback, tabs, set_active_tab, active_tab),
     ))
     .style(|s| {
         s.flex_row()
