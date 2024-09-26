@@ -85,7 +85,7 @@ pub fn tab_navigation_view() -> impl IntoView {
     let main_content = container(
         scroll(
             tab(
-                move || active_tab.get(),
+                move || Some(active_tab.get()),
                 move || tabs.get(),
                 |it| *it,
                 |it| container(label(move || format!("{}", it))),
