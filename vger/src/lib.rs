@@ -426,6 +426,7 @@ impl Renderer for VgerRenderer {
         if scale.abs() < 0.1 {
             // I'm not sure why this is necessary but there is very strange artifacting if this is disable and scale gets too small.
             // Probably not a bad optimization anyways though
+            // TODO: render a rectangle instead
             return;
         }
 
