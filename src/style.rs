@@ -1647,8 +1647,8 @@ prop_extractor! {
         pub scale_x: ScaleX,
         pub scale_y: ScaleY,
 
-        pub transform_x: TranslateX,
-        pub transform_y: TranslateY,
+        pub translate_x: TranslateX,
+        pub translate_y: TranslateY,
 
         // pub rotation: Rotation,
     }

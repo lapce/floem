@@ -1128,11 +1128,11 @@ impl<'a> PaintCx<'a> {
             });
 
             let view_state = id.state();
-            let transform_x = match view_state.borrow().layout_props.transform_x() {
+            let transform_x = match view_state.borrow().layout_props.translate_x() {
                 crate::unit::PxPct::Px(px) => px,
                 crate::unit::PxPct::Pct(pct) => pct / 100.,
             };
-            let transform_y = match view_state.borrow().layout_props.transform_y() {
+            let transform_y = match view_state.borrow().layout_props.translate_y() {
                 crate::unit::PxPct::Px(px) => px,
                 crate::unit::PxPct::Pct(pct) => pct / 100.,
             };
