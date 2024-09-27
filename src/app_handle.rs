@@ -407,6 +407,9 @@ impl ApplicationHandle {
             if let Some(shadow) = mac.has_shadow {
                 window_builder = window_builder.with_has_shadow(shadow);
             }
+            if let Some(hide) = mac.titlebar_buttons_hidden {
+                window_builder = window_builder.with_titlebar_buttons_hidden(hide)
+            }
         }
 
         let Ok(window) = window_builder.build(event_loop) else {
