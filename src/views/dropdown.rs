@@ -244,7 +244,7 @@ impl<T> Dropdown<T> {
         .class(DropdownClass)
     }
 
-    pub fn new_get_set<MF, I, LF>(
+    pub fn new_rw<MF, I, LF>(
         active_item: impl SignalGet<T> + SignalUpdate<T> + Copy + 'static,
         main_view: MF,
         iterator: I,
@@ -258,21 +258,6 @@ impl<T> Dropdown<T> {
     {
         Self::new(move || active_item.get(), main_view, iterator, list_item_fn)
             .on_accept(move |nv| active_item.set(nv))
-    }
-
-    pub fn new_get<MF, I, LF>(
-        active_item: impl SignalGet<T> + Copy + 'static,
-        main_view: MF,
-        iterator: I,
-        list_item_fn: LF,
-    ) -> Dropdown<T>
-    where
-        MF: Fn(T) -> Box<dyn View> + 'static,
-        I: IntoIterator<Item = T> + Clone + 'static,
-        LF: Fn(T) -> Box<dyn View> + Clone + 'static,
-        T: Clone + 'static,
-    {
-        Self::new(move || active_item.get(), main_view, iterator, list_item_fn)
     }
 
     pub fn show_list(self, show: impl Fn() -> bool + 'static) -> Self {
