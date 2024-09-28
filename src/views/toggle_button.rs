@@ -1,6 +1,6 @@
 //! A toggle button widget. An example can be found in widget-gallery/button in the floem examples.
 
-use floem_reactive::{create_effect, create_updater};
+use floem_reactive::{create_effect, SignalGet, SignalUpdate};
 use floem_renderer::Renderer;
 use floem_winit::keyboard::{Key, NamedKey};
 use peniko::kurbo::{Point, Size};
@@ -87,24 +87,7 @@ pub struct ToggleButton {
 ///         .on_toggle(move |new_state| state.set(new_state));
 ///```
 pub fn toggle_button(state: impl Fn() -> bool + 'static) -> ToggleButton {
-    let id = ViewId::new();
-    create_effect(move |_| {
-        let state = state();
-        id.update_state(state);
-    });
-
-    ToggleButton {
-        id,
-        state: false,
-        ontoggle: None,
-        position: 0.0,
-        held: ToggleState::Nothing,
-        width: 0.,
-        radius: 0.,
-        style: Default::default(),
-    }
-    .class(ToggleButtonClass)
-    .keyboard_navigatable()
+    ToggleButton::new(state)
 }
 
 impl View for ToggleButton {
@@ -266,6 +249,31 @@ impl ToggleButton {
             .position
             .max(self.radius + inset)
             .min(self.width - self.radius - inset);
+    }
+
+    pub fn new(state: impl Fn() -> bool + 'static) -> Self {
+        let id = ViewId::new();
+        create_effect(move |_| {
+            let state = state();
+            id.update_state(state);
+        });
+
+        Self {
+            id,
+            state: false,
+            ontoggle: None,
+            position: 0.0,
+            held: ToggleState::Nothing,
+            width: 0.,
+            radius: 0.,
+            style: Default::default(),
+        }
+        .class(ToggleButtonClass)
+        .keyboard_navigatable()
+    }
+
+    pub fn new_rw(state: impl SignalGet<bool> + SignalUpdate<bool> + Copy + 'static) -> Self {
+        Self::new(move || state.get()).on_toggle(move |ns| state.set(ns))
     }
 
     /// Add an event handler to be run when the button is toggled.
