@@ -99,46 +99,48 @@ impl IsHiddenState {
         }
     }
 
-    // returns true if the view should request layout
     pub(crate) fn transition(
         &mut self,
-        display: taffy::Display,
+        computed_display: taffy::Display,
         remove_animations: impl FnOnce() -> bool,
         add_animations: impl FnOnce(),
+        stop_reset_animations: impl FnOnce(),
         num_waiting_anim: impl FnOnce() -> u16,
-    ) -> bool {
-        let hide = display == taffy::Display::None;
-        let mut request_layout = false;
+    ) {
+        let computed_has_hide = computed_display == taffy::Display::None;
         *self = match self {
-            Self::None if hide => Self::Hidden,
-            Self::None if !hide => Self::Visible(display),
-            Self::Visible(dis) if !hide => Self::Visible(*dis),
-            Self::Visible(dis) if hide => {
+            // initial states (makes it so that the animations aren't run on intial app/view load)
+            Self::None if computed_has_hide => Self::Hidden,
+            Self::None if !computed_has_hide => Self::Visible(computed_display),
+            // do nothing
+            Self::Visible(dis) if !computed_has_hide => Self::Visible(*dis),
+            // transition to hidden
+            Self::Visible(dis) if computed_has_hide => {
                 let active_animations = remove_animations();
                 if active_animations {
-                    // request_layout = true;
                     Self::AnimatingOut(*dis)
                 } else {
                     Self::Hidden
                 }
             }
-            Self::AnimatingOut(_) if !hide => Self::Visible(display),
-            Self::AnimatingOut(dis) if hide => {
+            Self::AnimatingOut(_) if !computed_has_hide => {
+                stop_reset_animations();
+                Self::Visible(computed_display)
+            }
+            Self::AnimatingOut(dis) if computed_has_hide => {
                 if num_waiting_anim() == 0 {
-                    request_layout = true;
                     Self::Hidden
                 } else {
                     Self::AnimatingOut(*dis)
                 }
             }
-            Self::Hidden if hide => Self::Hidden,
-            Self::Hidden if !hide => {
+            Self::Hidden if computed_has_hide => Self::Hidden,
+            Self::Hidden if !computed_has_hide => {
                 add_animations();
-                Self::Visible(display)
+                Self::Visible(computed_display)
             }
             _ => unreachable!(),
         };
-        request_layout
     }
 }
 
@@ -225,23 +227,27 @@ impl ViewState {
             .apply_classes_from_context(&self.classes, context)
             .apply(self.style());
 
+        self.has_style_selectors = computed_style.selectors();
+
+        computed_style.apply_interact_state(&interact_state, screen_size_bp);
+
         for animation in self
             .animations
             .stack
             .iter_mut()
-            .filter(|anim| anim.can_advance())
+            .filter(|anim| anim.can_advance() || anim.should_apply_folded())
         {
-            new_frame = true;
+            if animation.can_advance() {
+                new_frame = true;
 
-            animation.animate_into(&mut computed_style);
+                animation.animate_into(&mut computed_style);
 
-            animation.advance();
+                animation.advance();
+            } else {
+                animation.apply_folded(&mut computed_style)
+            }
             debug_assert!(!animation.is_idle());
         }
-
-        self.has_style_selectors = computed_style.selectors();
-
-        computed_style.apply_interact_state(&interact_state, screen_size_bp);
 
         self.combined_style = computed_style;
 
