@@ -1006,3 +1006,13 @@ impl ScrollCustomStyle {
         self
     }
 }
+
+pub trait ScrollExt {
+    fn scroll(self) -> Scroll;
+}
+
+impl<T: IntoView + 'static> ScrollExt for T {
+    fn scroll(self) -> Scroll {
+        scroll(self)
+    }
+}
