@@ -354,14 +354,4 @@ impl ToggleButtonCustomStyle {
         self = Self(self.0.set(ToggleButtonBehavior, switch));
         self
     }
-
-    /// Get the inner style
-    pub fn style(self) -> Style {
-        self.0
-    }
-}
-impl Default for ToggleButtonCustomStyle {
-    fn default() -> Self {
-        Self::new()
-    }
 }
