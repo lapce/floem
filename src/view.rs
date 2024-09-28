@@ -78,7 +78,7 @@ use crate::{
 /// });
 /// ```
 /// The above example will fail to compile because `container` is expecting a single type implementing `View` so the if and
-/// the else must return the same type. However the branches return different types. The solution to this is to use the [View::any] method
+/// the else must return the same type. However the branches return different types. The solution to this is to use the [IntoView::into_any] method
 /// to escape the strongly typed requirement.
 ///
 /// ```
@@ -196,9 +196,9 @@ pub fn recursively_layout_view(id: ViewId, cx: &mut LayoutCx) -> NodeId {
     })
 }
 
-/// The Widget trait contains the methods for implementing updates, styling, layout, events, and painting.
+/// The View trait contains the methods for implementing updates, styling, layout, events, and painting.
 ///
-/// The [view_data](Widget::view_data) and [view_data_mut](Widget::view_data_mut) methods must be implemented. If the widget contains a child then the [for_each_child](Widget::for_each_child), [for_each_child_mut](Widget::for_each_child_mut), and [for_each_child_rev_mut](Widget::for_each_child_rev_mut) methods must also be implemented.
+/// The [id](View::id) method must be implemented.
 /// The other methods may be implemented as necessary to implement the Widget.
 pub trait View {
     fn id(&self) -> ViewId;
@@ -226,7 +226,11 @@ pub trait View {
     ///
     /// If the update needs other passes to run you're expected to call
     /// `_cx.app_state_mut().request_changes`.
-    fn update(&mut self, _cx: &mut UpdateCx, _state: Box<dyn Any>) {}
+    fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {
+        // these are here to just ignore these arguments in the default case
+        let _ = cx;
+        let _ = state;
+    }
 
     /// Use this method to style the view's children.
     ///
@@ -270,11 +274,19 @@ pub trait View {
     //     default_event(self, cx, id_path, event)
     // }
 
-    fn event_before_children(&mut self, _cx: &mut EventCx, _event: &Event) -> EventPropagation {
+    fn event_before_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
+        // these are here to just ignore these arguments in the default case
+        let _ = cx;
+        let _ = event;
+
         EventPropagation::Continue
     }
 
-    fn event_after_children(&mut self, _cx: &mut EventCx, _event: &Event) -> EventPropagation {
+    fn event_after_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
+        // these are here to just ignore these arguments in the default case
+        let _ = cx;
+        let _ = event;
+
         EventPropagation::Continue
     }
 

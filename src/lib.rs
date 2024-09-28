@@ -5,149 +5,146 @@
 //! ```rust
 //! use floem::{reactive::*, views::*};
 //!
-//! let (counter, set_counter) = create_signal(0);
+//! let mut counter = RwSignal::new(0);
+//!
 //! v_stack((
-//!     label(move || format!("Value: {}", counter.get())),
+//!     label(move || format!("Value: {counter}")),
 //!     h_stack((
-//!         button("Increment").on_click_stop(move |_| {
-//!             set_counter.update(|value| *value += 1);
-//!         }),
-//!         button("Decrement").on_click_stop(move |_| {
-//!             set_counter.update(|value| *value -= 1);
-//!         }),
+//!         button("Increment").action(move || counter += 1),
+//!         button("Decrement").action(move || counter -= 1),
 //!     )),
 //! ));
 //! ```
 //!
 //! ## Views
-//! Floem models the UI using a tree of [View](view::View) instances that is constructed once. Views are self-contained
-//! components that can be composed together to create complex UIs, capable of reacting to state changes and events.
+//! Floem models the UI using a tree of [Views](view::View) that is constructed once.
+//! Views can be composed together to create complex UIs that are capable of reacting to state changes and events.
 //!
-//! You can read more about the built-in views and how to compose your UI in the [views module](crate::views) or more about authoring your own views and widgets in the [view module](crate::view). For customizing the appearance of your views and UI see the [Customizing appearance section](#customizing-appearance) of this documentation and the [style module](style).
+//! You can read more about the built-in views and how to compose your UI in the [views module](crate::views).
 //!
-//! ## Widgets
-//! Widgets are specialized high-level views providing certain functionality. Common examples include buttons, labels or
-//! text input fields. For a list of Floem's built-in widgets, refer [here](widgets#functions). You can try them out
-//! via the [widget gallery example](https://github.com/lapce/floem/blob/main/examples/widget-gallery/src/main.rs).
-//!
-//! ## State management  
+//! ## State management
 //! Floem uses reactivity built on signals and effects for its state management. This design
-//! pattern has been popularized by SolidJS in the JavaScript ecosystem and directly
+//! pattern has been popularized by SolidJS in the JavaScript ecosystem and this implementation has been directly
 //! inspired Leptos in the Rust ecosystem. Floem uses its own reactive system with an API that
-//! is nearly identical to the one in the leptos_reactive crate. To learn more about signals and
-//! effects, you may want to explore Leptos' [documentation](https://docs.rs/leptos_reactive/latest/leptos_reactive/)
-//! and their [book](https://leptos-rs.github.io/leptos/).
+//! is similar to the one in the leptos_reactive crate. To learn more about signals and
+//! effects, you may want to explore the Leptos [documentation](https://docs.rs/leptos_reactive/latest/leptos_reactive/index.html)
+//! and the [leptos book](https://leptos-rs.github.io/leptos/).
 //!
-//! #### Local state
+//! #### State
 //!
-//! You can create a signal anywhere in the program using [`create_rw_signal`](floem_reactive::create_rw_signal)
-//! or [`create_signal`](floem_reactive::create_signal). When you use a signal's value within a view by calling
-//! [`get`](floem_reactive::ReadSignal::get) or [`with`](floem_reactive::ReadSignal::with),
+//! You can create a reactive signal anywhere in the program using [`RwSignal::new()`](floem_reactive::RwSignal::new) and [`RwSignal::new_split()`](floem_reactive::RwSignal::new_split) or use a [different signal type](floem_reactive).
+//!
+//! When you use a signal in a reactive context and call the [`get`](floem_reactive::SignalGet::get) or [`with`](floem_reactive::SignalWith::with) methods, (which are also called when you use an operator such as `==`)
 //! the runtime will automatically subscribe the correct side effects
 //! to changes in that signal, creating reactivity. To the programmer this is transparent. The reactivity
-//! "just works" by accessing the value where you want to use it.
+//! "just works" when you access the value where you want to use it.
 //!
+//! Example:
 //! ```
-//! # use floem::reactive::{create_rw_signal, SignalGet};
-//! # use floem::View;
-//! # use floem::views::{label, v_stack, text_input, Decorators};
+//! # use floem::reactive::*;
+//! # use floem::IntoView;
+//! # use floem::views::*;
 //! #
-//! fn app_view() -> impl View {
-//!     let text = create_rw_signal("Hello world".to_string());
-//!     v_stack((text_input(text), label(move || text.get()))).style(|s| s.padding(10.0))
+//! fn app_view() -> impl IntoView {
+//!     let text = RwSignal::new("Hello world".to_string());
+//!
+//!     let input = text_input(text);
+//!     let label_view = label(move || text);
+//!
+//!     v_stack((input, label_view))
 //! }
 //! ```
 //!
-//! In this example, `text` is a signal containing a `String` that can both be read from and written to.
-//! The signal is used in two different places in the [vertical stack](crate::views::v_stack).
-//! The [text input](crate::views::text_input) has direct access to the [`RwSignal`](floem_reactive::RwSignal)
-//! and will mutate the underlying `String` when the user types in the input box. The reactivity will then
-//! trigger a rerender of the [label](crate::views::label) with the updated text value.
+//! In this example, `text` is a signal containing a `String` that can be both read from and written to.
+//! The [text input](crate::views::text_input) has direct access to the signal and will mutate the underlying `String` when the user types in the input box.
+//! The reactivity will then automatically trigger a re-render of the [label](crate::views::label) with the updated text value.
 //!
-//! [`create_signal`](floem_reactive::create_signal) returns a separated
-//! [`ReadSignal`](floem_reactive::ReadSignal) and [`WriteSignal`](floem_reactive::WriteSignal) for a variable.
-//! An existing `RwSignal` may be converted using [`RwSignal::read_only`](floem_reactive::RwSignal::read_only)
-//! and [`RwSignal::write_only`](floem_reactive::RwSignal::write_only) where necessary, but the reverse is not
-//! possible.
-//!
-//! #### Global state
-//!
-//! Global state can be implemented using [provide_context](floem_reactive::provide_context) and
-//! [use_context](floem_reactive::use_context).
+//! All signal types implement `Copy`, so they can be easily used where needed without needing to manually clone them.
 //!
 //! ## Customizing appearance
 //!
-//! You can style a View instance by calling its [`style`](views::Decorators::style) method. You'll need to import the
-//! `floem::views::Decorators` trait to use the `style` method. The `style` method takes a function exposing a
-//! [`Style`](crate::style::Style) parameter. Through this parameter, you can access methods that modify a variety
-//! of familiar properties like width, padding, and background. Some `Style` properties
-//! such as font size are inherited from parent views and can be overridden.
+//! Floem has a powerful built-in style system that allows you to customize the appearance of your UI.
 //!
-//! Styles can be updated reactively using any signal. Here's how to apply a gray background color while the value
-//! held by the `active_tab` signal equals 0:
-//!
+//! Example:
 //! ```
 //! #  use floem::peniko::Color;
-//! #  use floem::reactive::{create_signal, SignalGet};
+//! #  use floem::reactive::*;
 //! #  use floem::style::Style;
 //! #  use floem::unit::UnitExt;
 //! #  use floem::View;
-//! #  use floem::views::{label, Decorators};
+//! #  use floem::views::{text, Decorators};
 //! #
-//! # let (active_tab, _set_active_tab) = create_signal(0);
-//! #
-//! label(|| "Some text").style(move |s| {
-//!     s.flex_row()
-//!         .width(100.pct())
-//!         .height(32.0)
-//!         .border_bottom(1.0)
+//! // Styles can be updated reactively using any signal.
+//! // This will apply a gray background color while `active_tab` equals 0.
+//!
+//! let active_tab = RwSignal::new(0);
+//!
+//! // The following closure inside `style` will be automatically re-run any time `active_tab` is set.
+//! text("Some text").style(move |s| {
+//!     s.width(75)
+//!         .font_size(21.)
+//!         .border_bottom(1.)
 //!         .border_color(Color::LIGHT_GRAY)
-//!         .apply_if(active_tab.get() == 0, |s| s.background(Color::GRAY))
+//!         .apply_if(active_tab == 0, |s| s.background(Color::GRAY))
 //! });
 //! ```
 //!
-//! Floem also has targeted styling through the use of classes.
-//! Any view can be tagged with any number of classes using the [`class`](views::Decorators::class()) method and many of Floem's built-in widgets and views have classes applied to them.
-//! This makes it so that a stylesheet can be applied in the form of a `Style` at the root view, or any parent view, by modifying the style of a class and these class styles will apply to all children of the View.
+//! The View instance is styled by calling the [`style`](crate::views::Decorators::style) method (you'll need to import the
+//! [`Decorators`](crate::views::Decorators) trait to use the it). The `style` method takes a closure that takes and returns a
+//! [`Style`](crate::style::Style) value using the builder pattern. Through this value, you can access methods that modify a variety
+//! of familiar properties such as width, padding, and background. Some `Style` properties
+//! such as font size are `inherited` and will apply to all of a view's children until overriden.
+// TODO: Add links on these
 //!
-//! ## Trivial Example
-//! ```rust
-//! use floem::{views::*, peniko::Color};
+//! In this same style value, floem supports:
+//!     adding custom properties, applying styles [conditionally](style::Style::apply_if), [property transitions](style::Style::transition), defining styles on different [interaction states](style::Style::hover), themeing with [classes](style::Style::class), and more.
 //!
-//! let root_view = stack((
-//!     button("Button One"),
-//!     button("Button Two"),
-//! )).style(|s| s.class(ButtonClass, |s| s.width(150).height(100).background(Color::GRAY).color(Color::GREEN)));
+//! For additional information about styling, [see here](crate::style).
+//!
+//! ## Animation
+//!
+//! In addition to [property transitions](style::Style::transition) that can be added to `Style`s,
+//! Floem has a full keyframe animation system that allows you to animate any property that can be [interpolated](style::StylePropValue::interpolate) and builds on the capabilities and ergonomics of the style system.
+//!
+//! Example:
+//!
+//! Animations in Floem, by default, have keyframes ranging from 0-100.
+//!
+//! - The first keyframe will use the computed style, which will include the red background with size of 500x100.
+//! - At 50%, the animation will animate to a black square of 30x30 with a bezier easing of ease_in.
+//! - At 100% the animation will animate to an aquamarine rectangle of 10x300 with an bezier easing of ease_out.
+//! - The animation will then automatically repeat and will repeat forever.
+//!
 //! ```
-//! This makes it so that all `Buttons` in the ui that are children of `root_view` will have the same styling, but still allows for local overrides.
+//! #  use floem::peniko::Color;
+//! #  use floem::reactive::*;
+//! #  use floem::style::Style;
+//! #  use floem::unit::{UnitExt, DurationUnitExt};
+//! #  use floem::View;
+//! #  use floem::views::*;
+//! #
+//! empty()
+//!     .style(|s| s.background(Color::RED).size(500, 100))
+//!     .animation(move |a| {
+//!         a.duration(5.seconds())
+//!             .keyframe(0, |kf| kf.computed_style())
+//!             .keyframe(50, |kf| {
+//!                 kf.style(|s| s.background(Color::BLACK).size(30, 30))
+//!                     .ease_in()
+//!             })
+//!             .keyframe(100, |kf| {
+//!                 kf.style(|s| s.background(Color::AQUAMARINE).size(10, 300))
+//!                     .ease_out()
+//!             })
+//!             .repeat(true)
+//!     });
+//! ```
 //!
-//! For additional information about styling, [see here](crate::style::Style).
+//! You can add aninimations to a View instance by calling the [`animation`](crate::views::Decorators::animation) method from the `Decorators` trait.
+//! The `animation` method takes a closure that takes and returns an [`Animation`](crate::animate::Animation) value using the builder pattern.
 //!
-//! ## Themes and widget customizations
-//!
-//! Floem widgets ship with default styling that can be customized to your liking using style
-//! classes. Take the [text input widget](https://github.com/lapce/floem/blob/main/src/widgets/text_input.rs)
-//! for example: it exposes a style class `TextInputClass`. Any styling rules that are attached
-//! to this class using [Style's `class` method](style::Style::class) will be applied to the text input.
-//! Widgets may expose multiple classes to enable customization of different aspects of their UI. The
-//! labeled checkbox is an example of this: both the checkbox itself and the label next to it can
-//! be customized using `CheckboxClass` and `LabeledCheckboxClass` respectively.
-//!
-//! To theme a window, call the [`style`](views::Decorators::style) method on your root view and inject
-//! your stylesheet. In your [`WindowConfig`](crate::window::WindowConfig), you may want to disable the
-//! injection of Floem's default styling. The
-//! [`themes` example](https://github.com/lapce/floem/blob/main/examples/themes/src/main.rs) is available
-//! as a reference.
-//!
-//! You can also check the
-//! [floem-themes](https://github.com/topics/floem-themes) GitHub topic for a list of reusable
-//! themes made by the community. This list is unmoderated.
-//!
-//! ## Additional reading
-//!
-//! - [Understanding Ids](crate::id)
-//! - [How the update lifecycle works](crate::renderer)
-//!
+//! For additional information about animation, [see here](crate::animate::Animation).
+
 pub mod action;
 pub mod animate;
 mod app;

@@ -109,6 +109,8 @@ pub fn screen_layout_for_window(window_id: WindowId, window: &Window) -> Option<
         .unwrap_or(None)
 }
 
+/// A ScreenLayout is a snapshot of the layout of a view within a window
+///
 /// Relates a realized `View` to the bounds of the window that contains it,
 /// and the window to the bounds of the monitor that contains it.  All fields
 /// are in logical coordinates (if the OS scales physical coordinates for high

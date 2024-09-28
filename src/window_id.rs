@@ -38,14 +38,15 @@ enum WindowUpdate {
     RequestAttention(Option<UserAttentionType>),
     Minimize(bool),
     Maximize(bool),
-    // Mac OS only
+    // macOS only
     #[allow(unused_variables)] // seen as unused on linux, etc.
     DocumentEdited(bool),
 }
 
 /// Delegate enum for `winit`'s
+///
 /// [`UserAttentionType`](https://docs.rs/winit/latest/winit/window/enum.UserAttentionType.html),
-/// used for making the window's icon bounce in the Mac OS dock or the equivalent of that on
+/// used for making the window's icon bounce in the macOS dock or the equivalent of that on
 /// other platforms.
 #[derive(Default, Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Urgency {
@@ -88,12 +89,14 @@ impl WindowIdExtSealed for WindowId {
 }
 
 /// Extends `WindowId` to give instances methods to retrieve properties of the associated window,
-/// much as `ViewId` does.  Methods may return None if the view is not realized on-screen, or
+/// much as `ViewId` does.
+///
+/// Methods may return None if the view is not realized on-screen, or
 /// if information needed to compute the result is not available on the current platform or
 /// available on the current platform but not from the calling thread.
 ///
 /// **Platform support notes:**
-///  * Mac OS: Many of the methods here, if called from a thread other than `main`, are
+///  * macOS: Many of the methods here, if called from a thread other than `main`, are
 ///    blocking because accessing most window properties may only be done from the main
 ///    thread on that OS.
 ///  * Android & Wayland: Getting the outer position of a window is not supported by `winit` and
@@ -134,12 +137,12 @@ pub trait WindowIdExt: WindowIdExtSealed {
     fn is_maximized(&self) -> bool;
 
     /// Determine if the window decorations should indicate an edited, unsaved
-    /// document.  Platform-dependent: Will only ever return `true` on Mac OS.
+    /// document.  Platform-dependent: Will only ever return `true` on macOS.
     fn is_document_edited(&self) -> bool;
 
     /// Instruct the window manager to indicate in the window's decorations
     /// that the window contains an unsaved, edited document.  Only has an
-    /// effect on Mac OS.
+    /// effect on macOS.
     #[allow(unused_variables)] // edited unused on non-mac builds
     fn set_document_edited(&self, edited: bool) {
         #[cfg(target_os = "macos")]
@@ -186,7 +189,7 @@ pub trait WindowIdExt: WindowIdExtSealed {
 
     /// Cause the desktop to perform some attention-drawing behavior that draws
     /// the user's attention specifically to this window - e.g. bouncing in
-    /// the dock on Mac OS.  On X11, after calling this method with some urgency
+    /// the dock on macOS.  On X11, after calling this method with some urgency
     /// other than `None`, it is necessary to *clear* the attention-seeking state
     /// by calling this method again with `Urgency::None`.
     fn request_attention(&self, urgency: Urgency) {
@@ -332,7 +335,7 @@ pub(crate) fn process_window_updates(id: &WindowId) -> bool {
                     with_window(id, |window| {
                         window.set_minimized(minimize);
                         if !minimize {
-                            // If we don't trigger a repaint on Mac OS,
+                            // If we don't trigger a repaint on macOS,
                             // unminimize doesn't happen until an input
                             // event arrives. Unrelated to
                             // https://github.com/lapce/floem/issues/463 -
@@ -433,7 +436,7 @@ fn bounds_to_logical_outer_position_and_inner_size(
 }
 
 /// Some operations - notably minimize and restoring visibility - don't take
-/// effect on Mac OS until something triggers a repaint in the target window - the
+/// effect on macOS until something triggers a repaint in the target window - the
 /// issue is below the level of floem's event loops and seems to be in winit or
 /// deeper.  Workaround is to force the window to repaint.
 #[allow(unused_variables)] // non mac builds see `window` as unused

@@ -1,3 +1,11 @@
+#![deny(missing_docs)]
+
+//! Action functions that can be called anywhere in a Floem application
+//!
+//! This module includes a variety of functions that can interact with the window from which the function is being called.
+//!
+//! This includes, moving the window, resizing the window, adding context menus and overlays, and running a callback after a specified duration.
+
 use std::sync::atomic::AtomicU64;
 
 use floem_winit::window::ResizeDirection;
@@ -27,30 +35,39 @@ pub(crate) fn add_update_message(msg: UpdateMessage) {
     });
 }
 
+/// Toggle whether the window is maximized or not
 pub fn toggle_window_maximized() {
     add_update_message(UpdateMessage::ToggleWindowMaximized);
 }
 
+/// Set the maximized state of the window
 pub fn set_window_maximized(maximized: bool) {
     add_update_message(UpdateMessage::SetWindowMaximized(maximized));
 }
 
+/// Minimize the window
 pub fn minimize_window() {
     add_update_message(UpdateMessage::MinimizeWindow);
 }
 
+/// If and while the mouse is pressed, allow the window to be dragged
 pub fn drag_window() {
     add_update_message(UpdateMessage::DragWindow);
 }
 
+/// If and while the mouse is pressed, allow the window to be resized
 pub fn drag_resize_window(direction: ResizeDirection) {
     add_update_message(UpdateMessage::DragResizeWindow(direction));
 }
 
+/// Move the window by a specified delta
 pub fn set_window_delta(delta: Vec2) {
     add_update_message(UpdateMessage::SetWindowDelta(delta));
 }
 
+/// Set the window scale
+///
+/// This will scale all view elements in the renderer
 pub fn update_window_scale(window_scale: f64) {
     add_update_message(UpdateMessage::WindowScale(window_scale));
 }
@@ -61,6 +78,8 @@ pub(crate) struct Timer {
     pub(crate) deadline: Instant,
 }
 
+/// A token associated with a timer
+// TODO: what is this for?
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Hash)]
 pub struct TimerToken(u64);
 
@@ -85,6 +104,7 @@ impl TimerToken {
     }
 }
 
+/// Execute a callback after a specified duration
 pub fn exec_after(duration: Duration, action: impl FnOnce(TimerToken) + 'static) -> TimerToken {
     let view = get_current_view();
     let action = move |token| {
@@ -106,26 +126,42 @@ pub fn exec_after(duration: Duration, action: impl FnOnce(TimerToken) + 'static)
     token
 }
 
+/// Show a system context menu at the specified position
+///
+/// Platform support:
+/// - Windows: Yes
+/// - macOS: Yes
+/// - Linux: Uses a custom Floem View
 pub fn show_context_menu(menu: Menu, pos: Option<Point>) {
     add_update_message(UpdateMessage::ShowContextMenu { menu, pos });
 }
 
+/// Set the system window menu
+///
+/// Platform support:
+/// - Windows: No
+/// - macOS: Yes (not currently implemented)
+/// - Linux: No
 pub fn set_window_menu(menu: Menu) {
     add_update_message(UpdateMessage::WindowMenu { menu });
 }
 
+/// Set the title of the window
 pub fn set_window_title(title: String) {
     add_update_message(UpdateMessage::SetWindowTitle { title });
 }
 
+/// Focus the window
 pub fn focus_window() {
     add_update_message(UpdateMessage::FocusWindow);
 }
 
+/// Set whether ime input is shown
 pub fn set_ime_allowed(allowed: bool) {
     add_update_message(UpdateMessage::SetImeAllowed { allowed });
 }
 
+/// Set the ime cursor area
 pub fn set_ime_cursor_area(position: Point, size: Size) {
     add_update_message(UpdateMessage::SetImeCursorArea { position, size });
 }
