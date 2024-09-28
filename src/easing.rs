@@ -1,3 +1,5 @@
+//! The Easing trait and the built-in easing functions.
+
 use peniko::kurbo::{ParamCurve, Point};
 
 pub trait Easing: std::fmt::Debug {

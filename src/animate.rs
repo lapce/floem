@@ -1,5 +1,9 @@
+#![deny(missing_docs)]
+
+//! Animations
+
 use crate::{
-    animate::{AnimState, AnimStateCommand, AnimStateKind, Bezier, Easing, Linear, Spring},
+    easing::*,
     style::{Style, StylePropRef},
     unit::UnitExt,
     view_state::StackOffset,
@@ -19,7 +23,7 @@ use web_time::{Duration, Instant};
 /// Holds a resolved prop, along with the associated frame id and easing function
 #[derive(Clone, Debug)]
 pub struct KeyFrameProp {
-    // the style prop value. This will either come from an animation frame or it will be pulled from the computed style
+    // the style prop value. This will either come from an animation frameor it will be pulled from the computed style
     val: Rc<dyn Any>,
     // the frame id
     id: u16,
@@ -30,8 +34,9 @@ pub struct KeyFrameProp {
 /// Defines whether the style in a key frame should be stored in the frame or it it should be pulled from the computed style
 #[derive(Clone, Debug)]
 pub enum KeyFrameStyle {
-    // when computed, props will be pulled from the computed style
+    /// when computed style, props will be pulled from the computed style
     Computed,
+    /// When using style, the props will be stored in the key frame
     Style(Style),
 }
 impl From<Style> for KeyFrameStyle {
@@ -51,6 +56,7 @@ pub struct KeyFrame {
     easing: Rc<dyn Easing>,
 }
 impl KeyFrame {
+    /// Create a new keyframe with the given id
     pub fn new(id: u16) -> Self {
         Self {
             id,
@@ -70,7 +76,7 @@ impl KeyFrame {
     }
 
     /// Set this keyframe to pull its props from the computed style. The will completely overwrite any previously applied styles to this keyframe.
-    pub fn computed(mut self) -> Self {
+    pub fn computed_style(mut self) -> Self {
         self.style = KeyFrameStyle::Computed;
         self
     }
@@ -263,9 +269,87 @@ impl ReverseOnce {
     }
 }
 
+/// The mode to specify how the animation should repeat. See also [`Animation::advance`]
+#[derive(Clone, Debug)]
+pub enum RepeatMode {
+    // Once started, the animation will juggle between [`AnimState::PassInProgress`] and [`AnimState::PassFinished`],
+    // but will never reach [`AnimState::Completed`]
+    /// Repeat the animation forever
+    LoopForever,
+    // On every pass, we animate until `elapsed >= duration`, then we reset elapsed time to 0 and increment `repeat_count` is
+    // increased by 1. This process is repeated until `repeat_count >= times`, and then the animation is set
+    // to [`AnimState::Completed`].
+    /// Repeat the animation the specified number of times before the animation enters a Complete state
+    Times(usize),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum AnimState {
+    Idle,
+    Stopped,
+    Paused {
+        elapsed: Option<Duration>,
+    },
+    /// How many passes(loops) there will be is controlled by the [`RepeatMode`] of the animation.
+    /// By default, the animation will only have a single pass,
+    /// but it can be set to [`RepeatMode::LoopForever`] to loop indefinitely.
+    PassInProgress {
+        started_on: Instant,
+        elapsed: Duration,
+    },
+    ExtMode {
+        started_on: Instant,
+        elapsed: Duration,
+    },
+    /// Depending on the [`RepeatMode`] of the animation, we either go back to `PassInProgress`
+    /// or advance to `Completed`.
+    PassFinished {
+        elapsed: Duration,
+        was_in_ext: bool,
+    },
+    // NOTE: If animation has `RepeatMode::LoopForever`, this state will never be reached.
+    Completed {
+        elapsed: Option<Duration>,
+    },
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+/// Represents the different states an animation can be in.
+pub enum AnimStateKind {
+    /// The animation is idle and has not started yet.
+    Idle,
+    /// The animation is paused and can be resumed.
+    Paused,
+    /// The animation is stopped and cannot be resumed.
+    Stopped,
+    /// The animation is currently in progress.
+    ///
+    /// In this state the animation is actively animating the properties of the view.
+    PassInProgress,
+    /// The animation has finished a pass but may repeat based on the repeat mode.
+    PassFinished,
+    /// The animation has completed all its passes and will not run again until started.
+    Completed,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+/// Commands to control the state of an animation
+pub enum AnimStateCommand {
+    /// Pause the animation
+    Pause,
+    /// Resume the animation
+    Resume,
+    /// Start the animation
+    Start,
+    /// Stop the animation
+    Stop,
+}
+
 type EffectStateVec = SmallVec<[RwSignal<SmallVec<[(ViewId, StackOffset<Animation>); 1]>>; 1]>;
 
-/// An animation struct. Use [Animation::new] or the `.animate()` method from the decorators trait to build an animation.
+/// The main animation struct
+///
+/// Use [Animation::new] or the [Decorators::animation](crate::views::Decorators::animation) method to build an animation.
 #[derive(Debug, Clone)]
 pub struct Animation {
     pub(crate) state: AnimState,
@@ -281,6 +365,7 @@ pub struct Animation {
     pub(crate) run_on_create: bool,
     pub(crate) reverse_once: ReverseOnce,
     pub(crate) max_key_frame_num: u16,
+    pub(crate) apply_when_finished: bool,
     pub(crate) folded_style: Style,
     pub(crate) key_frames: im_rc::HashMap<u16, KeyFrame>,
     // frames should be added to this if when they are the lower frame, they return not done. check/run them before other frames
@@ -310,6 +395,7 @@ impl Default for Animation {
             run_on_create: false,
             reverse_once: ReverseOnce::Val(false),
             max_key_frame_num: 100,
+            apply_when_finished: false,
             folded_style: Style::new(),
             cache: Default::default(),
             key_frames: im_rc::HashMap::new(),
@@ -321,6 +407,8 @@ impl Default for Animation {
         }
     }
 }
+
+/// # Methods for creating an animation, including methods that quickly initialize the animation for specific uses
 impl Animation {
     /// Create a new animation
     pub fn new() -> Self {
@@ -328,12 +416,20 @@ impl Animation {
     }
 
     /// Quickly set a few properties on an animation to set up an animation to be used as a view transition (on creation and removal).
+    /// (Sets keyframes 0 and 100 to use the computed style until overriden)
     pub fn view_transition(self) -> Self {
         self.run_on_create(true)
             .run_on_remove(true)
             .initial_state(AnimStateCommand::Stop)
-            .keyframe(0, |kf| kf.computed())
-            .keyframe(100, |kf| kf.computed())
+            .keyframe(0, |kf| kf.computed_style().ease(Spring::gentle()))
+            .keyframe(100, |kf| kf.computed_style().ease(Spring::gentle()))
+    }
+
+    /// Quickly set an animation to be a view transition and override the default easing function on keyframes 0 and 100.
+    pub fn view_transition_with_ease(self, ease: impl Easing + 'static + Clone) -> Self {
+        self.view_transition()
+            .keyframe(0, |kf| kf.computed_style().ease(ease.clone()))
+            .keyframe(100, |kf| kf.computed_style().ease(ease.clone()))
     }
 
     /// Quickly set an animation to be a view transition and set the animation to animate from scale 0% to the "normal" computed style of a view (the view with no animations applied).
@@ -351,21 +447,10 @@ impl Animation {
     }
 }
 
-/// The mode to specify how the animation should repeat. See also [`Animation::advance`]
-#[derive(Clone, Debug)]
-pub enum RepeatMode {
-    // Once started, the animation will juggle between [`AnimState::PassInProgress`] and [`AnimState::PassFinished`],
-    // but will never reach [`AnimState::Completed`]
-    /// Repeat the animation forever
-    LoopForever,
-    // On every pass, we animate until `elapsed >= duration`, then we reset elapsed time to 0 and increment `repeat_count` is
-    // increased by 1. This process is repeated until `repeat_count >= times`, and then the animation is set
-    // to [`AnimState::Completed`].
-    /// Repeat the animation the specified number of times before the animation enters a Complete state
-    Times(usize),
-}
-
+/// # Methods for setting properties on an `Animation`
 impl Animation {
+    /// Build a KeyFrame
+    ///
     /// If there is a matching keyframe id, the style in this keyframe will only override the style values in the new style.
     /// If you want the style to completely override style see [Animation::keyframe_override].
     pub fn keyframe(mut self, frame_id: u16, key_frame: impl Fn(KeyFrame) -> KeyFrame) -> Self {
@@ -407,6 +492,8 @@ impl Animation {
         self
     }
 
+    /// Build and overwrite a [KeyFrame]
+    ///
     /// If there is a matching keyframe id, the style in this keyframe will completely override the style in the frame that already exists.
     /// If you want the style to only override the new values see [Animation::keyframe].
     pub fn keyframe_override(
@@ -436,6 +523,7 @@ impl Animation {
     }
 
     /// Sets the perceived duration of the animation.
+    ///
     /// The total duration of an animation will run until all animating props return `finished`.
     /// This is useful for spring animations which don't conform well to strict ending times.
     pub fn duration(mut self, duration: Duration) -> Self {
@@ -449,7 +537,7 @@ impl Animation {
         duration(self, d)
     }
 
-    /// Conditioanlly apply properties to this animation if the condition is `true`.
+    /// Conditionally apply properties to this animation if the condition is `true`.
     pub fn apply_if(self, cond: bool, f: impl FnOnce(Self) -> Self) -> Self {
         if cond {
             f(self)
@@ -458,25 +546,26 @@ impl Animation {
         }
     }
 
-    /// Gives you access to the on create trigger by calling the closure you pass in once and then returning self.
+    /// Provides access to the on create trigger by calling the closure in once and then returning self.
     pub fn on_create(self, on_create: impl FnOnce(Trigger) + 'static) -> Self {
         on_create(self.on_start);
         self
     }
 
-    /// Gives you access to the on visual complete trigger by calling the closure you pass in once and then returning self.
+    /// Provides access to the on visual complete trigger by calling the closure once and then returning self.
     pub fn on_visual_complete(self, on_visual_complete: impl FnOnce(Trigger) + 'static) -> Self {
         on_visual_complete(self.on_visual_complete);
         self
     }
 
-    /// Gives you access to the on complete trigger by calling the closure you pass in once and then returning self.
+    /// Provides access to the on complete trigger by calling the closure once and then returning self.
     pub fn on_complete(self, on_complete: impl FnOnce(Trigger) + 'static) -> Self {
         on_complete(self.on_complete);
         self
     }
 
     /// Set whether this animation should run when being created.
+    ///
     /// I.e when being created by a dyn container or when being shown after being hidden.
     pub fn run_on_create(mut self, run_on_create: bool) -> Self {
         self.run_on_create = run_on_create;
@@ -501,6 +590,12 @@ impl Animation {
     pub fn only_on_remove(mut self) -> Self {
         self.run_on_remove = true;
         self.run_on_create = false;
+        self
+    }
+
+    /// Set whether the properties from the final keyframe of this animation should be applied even when the animation is finished.
+    pub fn apply_when_finished(mut self, apply: bool) -> Self {
+        self.apply_when_finished = apply;
         self
     }
 
@@ -544,9 +639,12 @@ impl Animation {
     }
 
     /// This is used to determine which keyframe is at 100% completion.
+    ///
     /// The default is 100.
+    ///
     /// If you need more than 100 keyframes, increase this number, but be aware, the keyframe numbers will then be as a percentage of the maximum.
-    /// This does not move existing keyframes.
+    ///
+    /// *This does not move existing keyframes.*
     pub fn max_key_frame(mut self, max: u16) -> Self {
         self.max_key_frame_num = max;
         self
@@ -622,6 +720,7 @@ impl Animation {
         )
     }
 
+    /// Add a debug description to the animation
     pub fn debug_name(mut self, description: impl Into<String>) -> Self {
         match &mut self.debug_description {
             Some(inner_desc) => {
@@ -652,6 +751,7 @@ impl Animation {
         self.transition(AnimStateCommand::Stop)
     }
 
+    /// Matches the current state of the animation and returns the kind of state it is in.
     pub fn state_kind(&self) -> AnimStateKind {
         match self.state {
             AnimState::Idle => AnimStateKind::Idle,
@@ -664,6 +764,7 @@ impl Animation {
         }
     }
 
+    /// Returns the current amount of time that has elapsed since the animation started.
     pub fn elapsed(&self) -> Option<Duration> {
         match &self.state {
             AnimState::Idle => None,
@@ -815,11 +916,14 @@ impl Animation {
 
         let mut elapsed = self.elapsed().unwrap_or(Duration::ZERO);
 
-        if elapsed < self.delay {
+        // don't account for delay when reversing
+        if !self.reverse_once.is_rev() && elapsed < self.delay {
             // The animation hasn't started yet
             return 0.0;
         }
-        elapsed -= self.delay;
+        if !self.reverse_once.is_rev() {
+            elapsed -= self.delay;
+        }
 
         let mut percent = elapsed.as_secs_f64() / self.duration.as_secs_f64();
 
@@ -922,7 +1026,11 @@ impl Animation {
         }
     }
 
-    // While advancing, this function can mutably apply it's animated props to a style.
+    pub(crate) fn apply_folded(&mut self, computed_style: &mut Style) {
+        computed_style.apply_mut(self.folded_style.clone());
+    }
+
+    /// While advancing, this function can mutably apply it's animated props to a style.
     pub fn animate_into(&mut self, computed_style: &mut Style) {
         // TODO: OPTIMIZE. I've tried to make this efficient, but it would be good to work this over for eficiency because it is called on every frame during an animation.
         // Some work is repeated and could be improved.
@@ -1028,22 +1136,27 @@ impl Animation {
         }
     }
 
+    /// returns `true` if the animation is in the idle state
     pub fn is_idle(&self) -> bool {
         self.state_kind() == AnimStateKind::Idle
     }
 
+    /// returns `true` if the animation is in the pass in progress state
     pub fn is_in_progress(&self) -> bool {
         self.state_kind() == AnimStateKind::PassInProgress
     }
 
+    /// returns `true` if the animation is in the completed state
     pub fn is_completed(&self) -> bool {
         self.state_kind() == AnimStateKind::Completed
     }
 
+    /// returns `true` if the animation is in the stopped state
     pub fn is_stopped(&self) -> bool {
         self.state_kind() == AnimStateKind::Stopped
     }
 
+    /// returns true if the animation can advance, which either means the animation will transition states, or properties can be animated and updated
     pub fn can_advance(&self) -> bool {
         match self.state_kind() {
             AnimStateKind::PassFinished | AnimStateKind::PassInProgress | AnimStateKind::Idle => {
@@ -1053,7 +1166,23 @@ impl Animation {
         }
     }
 
+    /// returns true if the animation should auto reverse
     pub fn is_auto_reverse(&self) -> bool {
         self.auto_reverse
+    }
+
+    /// returns true if the internal folded style of the animation should be applied.
+    ///
+    /// This is used when the animation cannot advance but the folded style should still be applied.
+    pub(crate) fn should_apply_folded(&self) -> bool {
+        self.apply_when_finished
+            || match self.state_kind() {
+                AnimStateKind::Paused => true,
+                AnimStateKind::Idle
+                | AnimStateKind::Stopped
+                | AnimStateKind::PassInProgress
+                | AnimStateKind::PassFinished
+                | AnimStateKind::Completed => false,
+            }
     }
 }
