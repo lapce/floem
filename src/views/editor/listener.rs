@@ -1,9 +1,10 @@
 use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate};
 
-/// A signal listener that receives 'events' from the outside and runs the callback.  
-/// This is implemented using effects and normal rw signals. This should be used when it doesn't  
+/// A signal listener that receives 'events' from the outside and runs the callback.
+///
+/// This is implemented using effects and normal rw signals. This should be used when it doesn't
 /// make sense to think of it as 'storing' a value, like an `RwSignal` would typically be used for.
-///  
+///
 /// Copied/Cloned listeners refer to the same listener.
 #[derive(Debug)]
 pub struct Listener<T: 'static> {
@@ -21,7 +22,8 @@ impl<T: Clone + 'static> Listener<T> {
         listener
     }
 
-    /// Construct a listener when you can't yet give it a callback.  
+    /// Construct a listener when you can't yet give it a callback.
+    ///
     /// Call `listen` to set a callback.
     pub fn new_empty(cx: Scope) -> Listener<T> {
         let val = cx.create_rw_signal(None);
@@ -32,13 +34,14 @@ impl<T: Clone + 'static> Listener<T> {
         self.cx
     }
 
-    /// Listen for values sent to this listener.      
+    /// Listen for values sent to this listener.
     pub fn listen(self, on_val: impl Fn(T) + 'static) {
         self.listen_with(self.cx, on_val)
     }
 
-    /// Listen for values sent to this listener.  
-    /// Allows creating the effect with a custom scope, letting it be disposed of.  
+    /// Listen for values sent to this listener.
+    ///
+    /// Allows creating the effect with a custom scope, letting it be disposed of.
     pub fn listen_with(self, cx: Scope, on_val: impl Fn(T) + 'static) {
         let val = self.val;
 
