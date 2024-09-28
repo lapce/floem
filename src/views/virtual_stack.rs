@@ -74,9 +74,9 @@ struct VirtualStackState<T> {
     content_size: f64,
 }
 
-/// A View that is like a [`dyn_stack`](super::dyn_stack()) but also lazily loads the items as they appear in a [scroll view](super::scroll()) and does not support the flexbox nor grid layout algorithms.
-/// Instead, the Virtual Stack gives every element a consistent size and uses a basic layout.
-/// This is done for performance and allows for lists of millions of items to be used with very high performance.
+/// A View that is like a [`dyn_stack`](super::dyn_stack()) but also lazily loads the items as they appear in a [scroll view](super::scroll())
+///
+/// This virtualization/lazy loading is done for performance and allows for lists of millions of items to be used with very high performance.
 ///
 /// ## Example
 /// ```

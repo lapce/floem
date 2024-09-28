@@ -35,6 +35,7 @@ pub enum ObjectFit {
 }
 
 /// Specifies the alignment of the element's contents within the element's box.
+///
 /// Areas of the box which aren't covered by the replaced element's object will show the element's background.
 /// See <https://developer.mozilla.org/en-US/docs/Web/CSS/object-position>.
 pub struct ObjectPosition {
