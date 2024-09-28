@@ -392,13 +392,13 @@ impl ViewId {
         self.state().borrow().combined_style.clone()
     }
 
-    pub(crate) fn add_class(&self, class: StyleClassRef) {
+    pub fn add_class(&self, class: StyleClassRef) {
         let state = self.state();
         state.borrow_mut().classes.push(class);
         self.request_style_recursive();
     }
 
-    pub(crate) fn remove_class(&self, class: StyleClassRef) {
+    pub fn remove_class(&self, class: StyleClassRef) {
         let state = self.state();
         state.borrow_mut().classes.retain_mut(|c| *c != class);
         self.request_style_recursive();
