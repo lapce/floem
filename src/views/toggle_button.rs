@@ -289,20 +289,18 @@ impl ToggleButton {
         self,
         style: impl Fn(ToggleButtonCustomStyle) -> ToggleButtonCustomStyle + 'static,
     ) -> Self {
-        let id = self.id();
-        let view_state = id.state();
-        let offset = view_state.borrow_mut().style.next_offset();
-        let style = create_updater(
-            move || style(ToggleButtonCustomStyle::new()),
-            move |style| id.update_style(offset, style.0),
-        );
-        view_state.borrow_mut().style.push(style.0);
-        self
+        self.style(move |s| s.apply_custom(style(Default::default())))
     }
 }
 
 /// Represents a custom style for a `ToggleButton`.
+#[derive(Debug, Default, Clone)]
 pub struct ToggleButtonCustomStyle(Style);
+impl From<ToggleButtonCustomStyle> for Style {
+    fn from(value: ToggleButtonCustomStyle) -> Self {
+        value.0
+    }
+}
 
 impl ToggleButtonCustomStyle {
     pub fn new() -> Self {
