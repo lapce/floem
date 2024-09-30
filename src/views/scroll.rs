@@ -67,6 +67,7 @@ prop!(pub HorizontalInset: Px {} = Px(0.0));
 prop!(pub HideBars: bool {} = false);
 prop!(pub PropagatePointerWheel: bool {} = true);
 prop!(pub VerticalScrollAsHorizontal: bool {} = false);
+prop!(pub OverflowClip: bool {} = true);
 
 prop_extractor!(ScrollStyle {
     vertical_bar_inset: VerticalInset,
@@ -74,6 +75,7 @@ prop_extractor!(ScrollStyle {
     hide_bar: HideBars,
     propagate_pointer_wheel: PropagatePointerWheel,
     vertical_scroll_as_horizontal: VerticalScrollAsHorizontal,
+    overflow_clip: OverflowClip,
 });
 
 const HANDLE_COLOR: Brush = Brush::Solid(Color::rgba8(0, 0, 0, 120));
@@ -858,11 +860,13 @@ impl View for Scroll {
             crate::unit::PxPct::Px(px) => px,
             crate::unit::PxPct::Pct(pct) => self.actual_rect.size().min_side() * (pct / 100.),
         };
-        if radius > 0.0 {
-            let rect = self.actual_rect.to_rounded_rect(radius);
-            cx.clip(&rect);
-        } else {
-            cx.clip(&self.actual_rect);
+        if self.scroll_style.overflow_clip() {
+            if radius > 0.0 {
+                let rect = self.actual_rect.to_rounded_rect(radius);
+                cx.clip(&rect);
+            } else {
+                cx.clip(&self.actual_rect);
+            }
         }
         cx.offset((-self.child_viewport.x0, -self.child_viewport.y0));
         cx.paint_view(self.child);
@@ -901,6 +905,11 @@ impl ScrollCustomStyle {
     /// Internally this does a `s.min_size(0., 0.).size_full()`.
     pub fn shrink_to_fit(mut self) -> Self {
         self = Self(self.0.min_size(0., 0.).size_full());
+        self
+    }
+
+    pub fn overflow_clip(mut self, clip: bool) -> Self {
+        self = Self(self.0.set(OverflowClip, clip));
         self
     }
 
