@@ -7,7 +7,8 @@ use crate::{
 use floem_editor_core::cursor::CursorAffinity;
 use smallvec::SmallVec;
 
-/// `PhantomText` is for text that is not in the actual document, but should be rendered with it.  
+/// `PhantomText` is for text that is not in the actual document, but should be rendered with it.
+///
 /// Ex: Inlay hints, IME text, error lens' diagnostics, etc
 #[derive(Debug, Clone)]
 pub struct PhantomText {
@@ -39,7 +40,8 @@ pub enum PhantomTextKind {
     Diagnostic,
 }
 
-/// Information about the phantom text on a specific line.  
+/// Information about the phantom text on a specific line.
+///
 /// This has various utility functions for transforming a coordinate (typically a column) into the
 /// resulting coordinate after the phantom text is combined with the line's real content.
 #[derive(Debug, Default, Clone)]
@@ -61,8 +63,9 @@ impl PhantomTextLine {
         last
     }
 
-    /// Translate a column position into the text into what it would be after combining  
-    /// If `before_cursor` is false and the cursor is right at the start then it will stay there  
+    /// Translate a column position into the text into what it would be after combining
+    ///
+    /// If `before_cursor` is false and the cursor is right at the start then it will stay there
     /// (Think 'is the phantom text before the cursor')
     pub fn col_after(&self, pre_col: usize, before_cursor: bool) -> usize {
         let mut last = pre_col;
@@ -81,7 +84,8 @@ impl PhantomTextLine {
         last
     }
 
-    /// Translate a column position into the text into what it would be after combining  
+    /// Translate a column position into the text into what it would be after combining
+    ///
     /// it only takes `before_cursor` in the params without considering the
     /// cursor affinity in phantom text
     pub fn col_after_force(&self, pre_col: usize, before_cursor: bool) -> usize {
@@ -95,9 +99,12 @@ impl PhantomTextLine {
         last
     }
 
-    /// Translate a column position into the text into what it would be after combining  
-    /// If `before_cursor` is false and the cursor is right at the start then it will stay there  
-    /// (Think 'is the phantom text before the cursor')  
+    /// Translate a column position into the text into what it would be after combining
+
+    /// If `before_cursor` is false and the cursor is right at the start then it will stay there
+    ///
+    /// (Think 'is the phantom text before the cursor')
+    ///
     /// This accepts a `PhantomTextKind` to ignore. Primarily for IME due to it needing to put the
     /// cursor in the middle.
     pub fn col_after_ignore(

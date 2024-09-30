@@ -1,49 +1,49 @@
-//! Visual Line implementation  
-//!   
+//! Visual Line implementation
+//!
 //! Files are easily broken up into buffer lines by just splitting on `\n` or `\r\n`.
 //! However, editors require features like wrapping and multiline phantom text. These break the
-//! nice one-to-one correspondence between buffer lines and visual lines.  
-//!   
+//! nice one-to-one correspondence between buffer lines and visual lines.
+//!
 //! When rendering with those, we have to display based on visual lines rather than the
 //! underlying buffer lines. As well, it is expected for interaction - like movement and clicking -
-//! to work in a similar intuitive manner as it would be if there was no wrapping or phantom text.  
+//! to work in a similar intuitive manner as it would be if there was no wrapping or phantom text.
 //! Ex: Moving down a line should move to the next visual line, not the next buffer line by
-//! default.  
+//! default.
 //! (Sometimes! Some vim defaults are to move to the next buffer line, or there might be other
-//! differences)  
-//!  
-//! There's two types of ways of talking about Visual Lines:  
-//! - [`VLine`]: Variables are often written with `vline` in the name  
-//! - [`RVLine`]: Variables are often written with `rvline` in the name  
-//!   
+//! differences)
+//!
+//! There's two types of ways of talking about Visual Lines:
+//! - [`VLine`]: Variables are often written with `vline` in the name
+//! - [`RVLine`]: Variables are often written with `rvline` in the name
+//!
 //! [`VLine`] is an absolute visual line within the file. This is useful for some positioning tasks
 //! but is more expensive to calculate due to the nontriviality of the `buffer line <-> visual line`
-//! conversion when the file has any wrapping or multiline phantom text.  
-//!  
+//! conversion when the file has any wrapping or multiline phantom text.
+//!
 //! Typically, code should prefer to use [`RVLine`]. This simply stores the underlying
 //! buffer line, and a line index. This is not enough for absolute positioning within the display,
 //! but it is enough for most other things (like movement). This is easier to calculate since it
 //! only needs to find the right (potentially wrapped or multiline) layout for the easy-to-work
 //! with buffer line.
-//!   
+//!
 //! [`VLine`] is a single `usize` internally which can be multiplied by the line-height to get the
-//! absolute position. This means that it is not stable across text layouts being changed.    
+//! absolute position. This means that it is not stable across text layouts being changed.
 //! An [`RVLine`] holds the buffer line and the 'line index' within the layout. The line index
 //! would be `0` for the first line, `1` if it is on the second wrapped line, etc. This is more
-//! stable across text layouts being changed, as it is only relative to a specific line.  
-//!   
+//! stable across text layouts being changed, as it is only relative to a specific line.
+//!
 //! -----
-//!   
+//!
 //! [`Lines`] is the main structure. It is responsible for holding the text layouts, as well as
 //! providing the functions to convert between (r)vlines and buffer lines.
-//!   
+//!
 //! ----
 //!
-//! Many of [`Lines`] functions are passed a [`TextLayoutProvider`].  
+//! Many of [`Lines`] functions are passed a [`TextLayoutProvider`].
 //! This serves the dual-purpose of giving us the text of the underlying file, as well as
-//! for constructing the text layouts that we use for rendering.  
+//! for constructing the text layouts that we use for rendering.
 //! Having a trait that is passed in simplifies the logic, since the caller is the one who tracks
-//! the text in whatever manner they chose.  
+//! the text in whatever manner they chose.
 
 // TODO: This file is getting long. Possibly it should be broken out into multiple files.
 // Especially as it will only grow with more utility functions.
@@ -92,8 +92,9 @@ impl ResolvedWrap {
     }
 }
 
-/// A line within the editor view.  
-/// This gives the absolute position of the visual line.  
+/// A line within the editor view.
+///
+/// This gives the absolute position of the visual line.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VLine(pub usize);
 impl VLine {
@@ -121,7 +122,7 @@ impl RVLine {
     }
 }
 
-/// (Font Size -> (Buffer Line Number -> Text Layout))  
+/// (Font Size -> (Buffer Line Number -> Text Layout))
 pub type Layouts = HashMap<usize, HashMap<usize, Arc<TextLayoutLine>>>;
 
 #[derive(Debug, Default, PartialEq, Clone, Copy)]
@@ -145,10 +146,12 @@ pub struct TextLayoutCache {
     config_id: ConfigId,
     /// The most recent cache revision of the document.
     cache_rev: u64,
-    /// (Font Size -> (Buffer Line Number -> Text Layout))  
+    /// (Font Size -> (Buffer Line Number -> Text Layout))
+    ///
     /// Different font-sizes are cached separately, which is useful for features like code lens
-    /// where the font-size can rapidly change.  
-    /// It would also be useful for a prospective minimap feature.  
+    /// where the font-size can rapidly change.
+    ///
+    /// It would also be useful for a prospective minimap feature.
     pub layouts: Layouts,
     /// The maximum width seen so far, used to determine if we need to show horizontal scrollbar
     pub max_width: f64,
@@ -163,7 +166,8 @@ impl TextLayoutCache {
         self.max_width = 0.0;
     }
 
-    /// Clear the layouts without changing the document cache revision.  
+    /// Clear the layouts without changing the document cache revision.
+    ///
     /// Ex: Wrapping width changed, which does not change what the document holds.
     pub fn clear_unchanged(&mut self) {
         self.layouts.clear();
@@ -197,10 +201,10 @@ impl TextLayoutCache {
 /// The [`TextLayoutProvider`] serves two primary roles:
 /// - Providing the [`Rope`] text of the underlying file
 /// - Constructing the text layout for a given line
-///   
+///
 /// Note: `text` does not necessarily include every piece of text. The obvious example is phantom
-/// text, which is not in the underlying buffer.  
-///  
+/// text, which is not in the underlying buffer.
+///
 /// Using this trait rather than passing around something like [Document](super::text::Document) allows the backend to
 /// be swapped out if needed. This would be useful if we ever wanted to reuse it across different
 /// views that did not naturally fit into our 'document' model. As well as when we want to extract
@@ -208,7 +212,8 @@ impl TextLayoutCache {
 pub trait TextLayoutProvider {
     fn text(&self) -> Rope;
 
-    /// Shorthand for getting a rope text version of `text`.  
+    /// Shorthand for getting a rope text version of `text`.
+    ///
     /// This MUST hold the same rope that `text` would return.
     fn rope_text(&self) -> RopeTextVal {
         RopeTextVal::new(self.text())
@@ -227,9 +232,11 @@ pub trait TextLayoutProvider {
     /// text
     fn before_phantom_col(&self, line: usize, col: usize) -> usize;
 
-    /// Whether the text has *any* multiline phantom text.  
+    /// Whether the text has *any* multiline phantom text.
+    ///
     /// This is used to determine whether we can use the fast route where the lines are linear,
-    /// which also requires no wrapping.  
+    /// which also requires no wrapping.
+    ///
     /// This should be a conservative estimate, so if you aren't bothering to check all of your
     /// phantom text then just return true.
     fn has_multiline_phantom(&self) -> bool;
@@ -259,19 +266,25 @@ impl<T: TextLayoutProvider> TextLayoutProvider for &T {
 
 pub type FontSizeCacheId = u64;
 pub trait LineFontSizeProvider {
-    /// Get the 'general' font size for a specific buffer line.  
-    /// This is typically the editor font size.  
+    /// Get the 'general' font size for a specific buffer line.
+    ///
+    /// This is typically the editor font size.
+    ///
     /// There might be alternate font-sizes within the line, like for phantom text, but those are
     /// not considered here.
     fn font_size(&self, line: usize) -> usize;
 
-    /// An identifier used to mark when the font size info has changed.  
+    /// An identifier used to mark when the font size info has changed.
+    ///
     /// This lets us update information.
     fn cache_id(&self) -> FontSizeCacheId;
 }
 
-/// Layout events. This is primarily needed for logic which tracks visual lines intelligently, like
-/// `ScreenLines` in Lapce.  
+/// Layout events
+///
+/// This is primarily needed for logic which tracks visual lines intelligently, like
+/// `ScreenLines` in Lapce.
+///
 /// This is currently limited to only a `CreatedLayout` event, as changed to the cache rev would
 /// capture the idea of all the layouts being cleared. In the future it could be expanded to more
 /// events, especially if cache rev gets more specific than clearing everything.
@@ -280,10 +293,11 @@ pub enum LayoutEvent {
     CreatedLayout { font_size: usize, line: usize },
 }
 
-/// The main structure for tracking visual line information.  
+/// The main structure for tracking visual line information.
 pub struct Lines {
     /// This is inside out from the usual way of writing Arc-RefCells due to sometimes wanting to
-    /// swap out font sizes, while also grabbing an `Arc` to hold.  
+    /// swap out font sizes, while also grabbing an `Arc` to hold.
+    ///
     /// An `Arc<RefCell<_>>` has the issue that with a `dyn` it can't know they're the same size
     /// if you were to assign. So this allows us to swap out the `Arc`, though it does mean that
     /// the other holders of the `Arc` don't get the new version. That is fine currently.
@@ -312,8 +326,9 @@ impl Lines {
         self.wrap.get()
     }
 
-    /// Set the wrapping style  
-    /// Does nothing if the wrapping style is the same as the current one.  
+    /// Set the wrapping style
+    ///
+    /// Does nothing if the wrapping style is the same as the current one.
     /// Will trigger a clear of the text layouts if the wrapping style is different.
     pub fn set_wrap(&self, wrap: ResolvedWrap) {
         if wrap == self.wrap.get() {
@@ -333,13 +348,16 @@ impl Lines {
         self.text_layouts.borrow().max_width
     }
 
-    /// Check if the lines can be modelled as a purely linear file.  
+    /// Check if the lines can be modelled as a purely linear file.
+    ///
     /// If `true` this makes various operations simpler because there is a one-to-one
-    /// correspondence between visual lines and buffer lines.  
-    /// However, if there is wrapping or any multiline phantom text, then we can't rely on that.  
-    ///   
+    /// correspondence between visual lines and buffer lines.
+    ///
+    /// However, if there is wrapping or any multiline phantom text, then we can't rely on that.
+    ///
     /// TODO:?
-    /// We could be smarter about various pieces.  
+    /// We could be smarter about various pieces.
+    ///
     /// - If there was no lines that exceeded the wrap width then we could do the fast path
     ///    - Would require tracking that but might not be too hard to do it whenever we create a
     ///      text layout
@@ -354,7 +372,8 @@ impl Lines {
         self.font_sizes.borrow().font_size(line)
     }
 
-    /// Get the last visual line of the file.  
+    /// Get the last visual line of the file.
+    ///
     /// Cached.
     pub fn last_vline(&self, text_prov: impl TextLayoutProvider) -> VLine {
         let current_id = self.font_sizes.borrow().cache_id();
@@ -401,7 +420,8 @@ impl Lines {
         self.last_vline.set(None);
     }
 
-    /// The last relative visual line.  
+    /// The last relative visual line.
+    ///
     /// Cheap, so not cached
     pub fn last_rvline(&self, text_prov: impl TextLayoutProvider) -> RVLine {
         let rope_text = text_prov.rope_text();
@@ -418,18 +438,19 @@ impl Lines {
         }
     }
 
-    /// 'len' version of [`Lines::last_vline`]  
+    /// 'len' version of [`Lines::last_vline`]
+    ///
     /// Cached.
     pub fn num_vlines(&self, text_prov: impl TextLayoutProvider) -> usize {
         self.last_vline(text_prov).get() + 1
     }
 
     /// Get the text layout for the given buffer line number.
-    /// This will create the text layout if it doesn't exist.  
-    ///   
+    /// This will create the text layout if it doesn't exist.
+    ///
     /// `trigger` (default to true) decides whether the creation of the text layout should trigger
-    /// the [`LayoutEvent::CreatedLayout`] event.  
-    ///   
+    /// the [`LayoutEvent::CreatedLayout`] event.
+    ///
     /// This will check the `config_id`, which decides whether it should clear out the text layout
     /// cache.
     pub fn get_init_text_layout(
@@ -454,8 +475,8 @@ impl Lines {
         )
     }
 
-    /// Try to get the text layout for the given line number.  
-    ///   
+    /// Try to get the text layout for the given line number.
+    ///
     /// This will check the `config_id`, which decides whether it should clear out the text layout
     /// cache.
     pub fn try_get_text_layout(
@@ -476,8 +497,8 @@ impl Lines {
             .cloned()
     }
 
-    /// Initialize the text layout of every line in the real line interval.  
-    ///   
+    /// Initialize the text layout of every line in the real line interval.
+    ///
     /// `trigger` (default to true) decides whether the creation of the text layout should trigger
     /// the [`LayoutEvent::CreatedLayout`] event.
     pub fn init_line_interval(
@@ -493,9 +514,9 @@ impl Lines {
         }
     }
 
-    /// Initialize the text layout of every line in the file.  
-    /// This should typically not be used.  
-    ///   
+    /// Initialize the text layout of every line in the file.
+    /// This should typically not be used.
+    ///
     /// `trigger` (default to true) decides whether the creation of the text layout should trigger
     /// the [`LayoutEvent::CreatedLayout`] event.
     pub fn init_all(
@@ -510,7 +531,7 @@ impl Lines {
         self.init_line_interval(cache_rev, config_id, text_prov, 0..=last_line, trigger);
     }
 
-    /// Iterator over [`VLineInfo`]s, starting at `start_line`.  
+    /// Iterator over [`VLineInfo`]s, starting at `start_line`.
     pub fn iter_vlines(
         &self,
         text_prov: impl TextLayoutProvider,
@@ -520,7 +541,8 @@ impl Lines {
         VisualLines::new(self, text_prov, backwards, start)
     }
 
-    /// Iterator over [`VLineInfo`]s, starting at `start_line` and ending at `end_line`.  
+    /// Iterator over [`VLineInfo`]s, starting at `start_line` and ending at `end_line`.
+    ///
     /// `start_line..end_line`
     pub fn iter_vlines_over(
         &self,
@@ -533,7 +555,8 @@ impl Lines {
             .take_while(move |info| info.vline < end)
     }
 
-    /// Iterator over *relative* [`VLineInfo`]s, starting at the rvline, `start_line`.  
+    /// Iterator over *relative* [`VLineInfo`]s, starting at the rvline, `start_line`.
+    ///
     /// This is preferable over `iter_vlines` if you do not need to absolute visual line value and
     /// can provide the buffer line.
     pub fn iter_rvlines(
@@ -546,10 +569,12 @@ impl Lines {
     }
 
     /// Iterator over *relative* [`VLineInfo`]s, starting at the rvline `start_line` and
-    /// ending at the buffer line `end_line`.  
-    /// `start_line..end_line`  
+    /// ending at the buffer line `end_line`.
+    ///
+    /// `start_line..end_line`
+    ///
     /// This is preferable over `iter_vlines` if you do not need the absolute visual line value and
-    /// you can provide the buffer line.  
+    /// you can provide the buffer line.
     pub fn iter_rvlines_over(
         &self,
         text_prov: impl TextLayoutProvider,
@@ -562,7 +587,7 @@ impl Lines {
     }
 
     // TODO(minor): Get rid of the clone bound.
-    /// Initialize the text layouts as you iterate over them.  
+    /// Initialize the text layouts as you iterate over them.
     pub fn iter_vlines_init(
         &self,
         text_prov: impl TextLayoutProvider + Clone,
@@ -613,7 +638,8 @@ impl Lines {
     }
 
     /// Iterator over [`VLineInfo`]s, starting at `start_line` and ending at `end_line`.
-    /// `start_line..end_line`  
+    /// `start_line..end_line`
+    ///
     /// Initializes the text layouts as you iterate over them.
     ///
     /// `trigger` (default to true) decides whether the creation of the text layout should trigger
@@ -633,6 +659,7 @@ impl Lines {
 
     /// Iterator over *relative* [`VLineInfo`]s, starting at the rvline, `start_line` and
     /// ending at the buffer line `end_line`.
+    ///
     /// `start_line..end_line`
     ///
     /// `trigger` (default to true) decides whether the creation of the text layout should trigger
@@ -682,10 +709,11 @@ impl Lines {
             })
     }
 
-    /// Get the visual line of the offset.  
-    ///   
+    /// Get the visual line of the offset.
+    ///
     /// `affinity` decides whether an offset at a soft line break is considered to be on the
-    /// previous line or the next line.  
+    /// previous line or the next line.
+    ///
     /// If `affinity` is `CursorAffinity::Forward` and is at the very end of the wrapped line, then
     /// the offset is considered to be on the next vline.
     pub fn vline_of_offset(
@@ -712,8 +740,8 @@ impl Lines {
         vline
     }
 
-    /// Get the visual line and column of the given offset.  
-    ///   
+    /// Get the visual line and column of the given offset.
+    ///
     /// The column is before phantom text is applied and is into the overall line, not the
     /// individual visual line.
     pub fn vline_col_of_offset(
@@ -772,7 +800,7 @@ impl Lines {
     }
 
     /// Get the relative visual line of the offset.
-    ///  
+    ///
     /// `affinity` decides whether an offset at a soft line break is considered to be on the
     /// previous line or the next line.
     /// If `affinity` is `CursorAffinity::Forward` and is at the very end of the wrapped line, then
@@ -796,8 +824,8 @@ impl Lines {
             .unwrap_or_else(|| self.last_rvline(text_prov))
     }
 
-    /// Get the relative visual line and column of the given offset  
-    ///   
+    /// Get the relative visual line and column of the given offset
+    ///
     /// The column is before phantom text is applied and is into the overall line, not the
     /// individual visual line.
     pub fn rvline_col_of_offset(
@@ -877,7 +905,8 @@ impl Lines {
         }
     }
 
-    /// Check whether the text layout cache revision is different.  
+    /// Check whether the text layout cache revision is different.
+    ///
     /// Clears the layouts and updates the cache rev if it was different.
     pub fn check_cache_rev(&self, cache_rev: u64) {
         if cache_rev != self.text_layouts.borrow().cache_rev {
@@ -898,11 +927,12 @@ impl Lines {
     }
 }
 
-/// This is a separate function as a hacky solution to lifetimes.  
+/// This is a separate function as a hacky solution to lifetimes.
+///
 /// While it being on `Lines` makes the most sense, it being separate lets us only have
 /// `text_layouts` and `wrap` from the original to then initialize a text layout. This simplifies
-/// lifetime issues in some functions, since they can just have an `Arc`/`Rc`.  
-///   
+/// lifetime issues in some functions, since they can just have an `Arc`/`Rc`.
+///
 /// Note: This does not clear the cache or check via config id. That should be done outside this
 /// as `Lines` does require knowing when the cache is invalidated.
 fn get_init_text_layout(
@@ -979,7 +1009,7 @@ fn get_init_text_layout(
         .unwrap()
 }
 
-/// Returns (visual line, line_index)  
+/// Returns (visual line, line_index)
 fn find_vline_of_offset(
     lines: &Lines,
     text_prov: &impl TextLayoutProvider,
@@ -1135,8 +1165,9 @@ fn find_vline_of_line(
     }
 }
 
-/// Get the first visual line of a buffer line.  
-/// This searches backwards from `pivot`, so it should be *after* the given line.  
+/// Get the first visual line of a buffer line.
+///
+/// This searches backwards from `pivot`, so it should be *after* the given line.
 /// This requires that the `pivot` is the first line index of the line it is for.
 fn find_vline_of_line_backwards(
     lines: &Lines,
@@ -1203,8 +1234,8 @@ fn find_vline_of_line_forwards(
     Some(VLine(cur_vline))
 }
 
-/// Find the (start offset, buffer line, layout line index) of a given visual line.  
-///   
+/// Find the (start offset, buffer line, layout line index) of a given visual line.
+///
 /// start offset is into the file, rather than the text layouts string, so it does not include
 /// phantom text.
 ///
@@ -1246,10 +1277,10 @@ fn find_vline_init_info(
 
 // TODO(minor): should we package (VLine, buffer line) into a struct since we use it for these
 // pseudo relative calculations often?
-/// Find the `(start offset, rvline)` of a given [`VLine`]  
-///   
+/// Find the `(start offset, rvline)` of a given [`VLine`]
+///
 /// start offset is into the file, rather than text layout's string, so it does not include
-/// phantom text.  
+/// phantom text.
 ///
 /// Returns `None` if the visual line is out of bounds, or if the start is past our target.
 fn find_vline_init_info_forward(
@@ -1321,9 +1352,9 @@ fn find_vline_init_info_forward(
 /// Find the `(start offset, rvline)` of a given [`VLine`]
 ///
 /// `start offset` is into the file, rather than the text layout's content, so it does not
-/// include phantom text.  
+/// include phantom text.
 ///
-/// Returns `None` if the visual line is out of bounds or if the start is before our target.  
+/// Returns `None` if the visual line is out of bounds or if the start is before our target.
 /// This iterates backwards.
 fn find_vline_init_info_rv_backward(
     lines: &Lines,
@@ -1454,18 +1485,21 @@ fn vline_init_info_b(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct VLineInfo<L = VLine> {
-    /// Start offset to end offset in the buffer that this visual line covers.  
-    /// Note that this is obviously not including phantom text.  
+    /// Start offset to end offset in the buffer that this visual line covers.
+    ///
+    /// Note that this is obviously not including phantom text.
     pub interval: Interval,
     /// The total number of lines in this buffer line. Always at least 1.
     pub line_count: usize,
     pub rvline: RVLine,
-    /// The actual visual line this is for.  
-    /// For relative visual line iteration, this is empty.  
+    /// The actual visual line this is for.
+    ///
+    /// For relative visual line iteration, this is empty.
     pub vline: L,
 }
 impl<L: std::fmt::Debug> VLineInfo<L> {
-    /// Create a new instance of `VLineInfo`  
+    /// Create a new instance of `VLineInfo`
+    ///
     /// This should rarely be used directly.
     pub fn new<I: Into<Interval>>(iv: I, rvline: RVLine, line_count: usize, vline: L) -> Self {
         Self {
@@ -1480,7 +1514,8 @@ impl<L: std::fmt::Debug> VLineInfo<L> {
         VLineInfo::new(self.interval, self.rvline, self.line_count, ())
     }
 
-    /// Check whether the interval is empty.  
+    /// Check whether the interval is empty.
+    ///
     /// Note that there could still be phantom text on this line.
     pub fn is_empty(&self) -> bool {
         self.interval.is_empty()
@@ -1514,8 +1549,9 @@ impl<L: std::fmt::Debug> VLineInfo<L> {
         line_start - start_offset
     }
 
-    /// Get the last column in the overall line of this visual line  
-    /// The caret decides whether it is after the last character, or before it.  
+    /// Get the last column in the overall line of this visual line
+    ///
+    /// The caret decides whether it is after the last character, or before it.
     /// ```rust,ignore
     /// // line content = "conf = Config::default();\n"
     /// // wrapped breakup = ["conf = ", "Config::default();\n"]
@@ -1567,9 +1603,10 @@ impl<L: std::fmt::Debug> VLineInfo<L> {
     }
 }
 
-/// Iterator of the visual lines in a [`Lines`].  
-/// This only considers wrapped and phantom text lines that have been rendered into a text layout.  
-///   
+/// Iterator of the visual lines in a [`Lines`].
+///
+/// This only considers wrapped and phantom text lines that have been rendered into a text layout.
+///
 /// In principle, we could consider the newlines in phantom text for lines that have not been
 /// rendered. However, that is more expensive to compute and is probably not actually *useful*.
 struct VisualLines<T: TextLayoutProvider> {
@@ -1625,7 +1662,8 @@ impl<T: TextLayoutProvider> Iterator for VisualLines<T> {
     }
 }
 
-/// Iterator of the visual lines in a [`Lines`] relative to some starting buffer line.  
+/// Iterator of the visual lines in a [`Lines`] relative to some starting buffer line.
+///
 /// This only considers wrapped and phantom text lines that have been rendered into a text layout.
 struct VisualLinesRelative<T: TextLayoutProvider> {
     font_sizes: Rc<dyn LineFontSizeProvider>,
@@ -1747,7 +1785,7 @@ impl<T: TextLayoutProvider> Iterator for VisualLinesRelative<T> {
 }
 
 // TODO: This might skip spaces at the end of lines, which we probably don't want?
-/// Get the end offset of the visual line from the file's line and the line index.  
+/// Get the end offset of the visual line from the file's line and the line index.
 fn end_of_rvline(
     layouts: &TextLayoutCache,
     text_prov: &impl TextLayoutProvider,
@@ -1828,7 +1866,8 @@ fn rvline_offset(
     }
 }
 
-/// Move to the next visual line, giving the new information.  
+/// Move to the next visual line, giving the new information.
+///
 /// Returns `(new rel vline, offset)`
 fn next_rvline(
     layouts: &TextLayoutCache,
@@ -1857,8 +1896,10 @@ fn next_rvline(
     }
 }
 
-/// Move to the previous visual line, giving the new information.  
-/// Returns `(new line, new line_index, offset)`  
+/// Move to the previous visual line, giving the new information.
+///
+/// Returns `(new line, new line_index, offset)`
+///
 /// Returns `None` if the line and line index are zero and thus there is no previous visual line.
 fn prev_rvline(
     layouts: &TextLayoutCache,
@@ -1927,7 +1968,8 @@ fn prev_rvline(
 // FIXME: Put this in our cosmic-text fork.
 
 /// Hit position but decides whether it should go to the next line based on the `before` bool.
-/// (Hit position should be equivalent to `before=false`).  
+///
+/// (Hit position should be equivalent to `before=false`).
 /// This is needed when we have an idx at the end of, for example, a wrapped line which could be on
 /// the first or second line.
 pub fn hit_position_aff(this: &TextLayout, idx: usize, before: bool) -> HitPosition {
