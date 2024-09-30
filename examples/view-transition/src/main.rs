@@ -4,7 +4,7 @@ use floem::{
     reactive::{RwSignal, SignalGet, SignalUpdate},
     style::Style,
     taffy::FlexWrap,
-    unit::UnitExt,
+    unit::{DurationUnitExt, UnitExt},
     views::*,
     IntoView,
 };
@@ -29,7 +29,7 @@ impl ViewSwitcher {
             ViewSwitcher::Two => view_two(state).into_any(),
         }
         .style(|s| s.scale(100.pct()))
-        .animation(Animation::scale_size_effect)
+        .animation(|s| Animation::scale_effect(s).duration(3.seconds()))
         .clip()
         .style(|s| s.padding(8))
         .animation(|a| {

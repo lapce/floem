@@ -1128,11 +1128,11 @@ impl<'a> PaintCx<'a> {
             });
 
             let view_state = id.state();
-            let transform_x = match view_state.borrow().layout_props.transform_x() {
+            let transform_x = match view_state.borrow().layout_props.translate_x() {
                 crate::unit::PxPct::Px(px) => px,
                 crate::unit::PxPct::Pct(pct) => pct / 100.,
             };
-            let transform_y = match view_state.borrow().layout_props.transform_y() {
+            let transform_y = match view_state.borrow().layout_props.translate_y() {
                 crate::unit::PxPct::Px(px) => px,
                 crate::unit::PxPct::Pct(pct) => pct / 100.,
             };
@@ -1160,6 +1160,9 @@ impl<'a> PaintCx<'a> {
                 x: -center_x,
                 y: -center_y,
             });
+
+            // let rotation = view_state.borrow().layout_props.rotation().0;
+            // self.transform *= Affine::rotate(rotation);
             self.paint_state.renderer_mut().transform(self.transform);
 
             if let Some(rect) = self.clip.as_mut() {
