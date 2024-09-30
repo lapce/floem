@@ -15,7 +15,7 @@ use web_time::{Duration, Instant};
 
 use taffy::prelude::NodeId;
 
-use crate::animate::RepeatMode;
+use crate::animate::{AnimStateKind, RepeatMode};
 use crate::style::DisplayProp;
 use crate::view_state::IsHiddenState;
 use crate::{
@@ -634,6 +634,36 @@ impl<'a> StyleCx<'a> {
 
         view.borrow_mut().style_pass(self);
 
+        let mut is_hidden_state = view_state.borrow().is_hidden_state;
+        let computed_display = view_state.borrow().combined_style.get(DisplayProp);
+        is_hidden_state.transition(
+            computed_display,
+            || {
+                let count = animations_on_remove(view_id, Scope::current());
+                view_state.borrow_mut().num_waiting_animations = count;
+                count > 0
+            },
+            || {
+                animations_on_create(view_id);
+            },
+            || {
+                stop_reset_remove_animations(view_id);
+            },
+            || view_state.borrow().num_waiting_animations,
+        );
+        // if request_layout {
+        //     view_id.request_layout();
+        // }
+
+        view_state.borrow_mut().is_hidden_state = is_hidden_state;
+        let modified = view_state
+            .borrow()
+            .combined_style
+            .clone()
+            .apply_opt(is_hidden_state.get_display(), Style::display);
+
+        view_state.borrow_mut().combined_style = modified;
+
         self.restore();
     }
 
@@ -741,37 +771,10 @@ impl<'a> ComputeLayoutCx<'a> {
     pub fn compute_view_layout(&mut self, id: ViewId) -> Option<Rect> {
         let view_state = id.state();
 
-        let mut is_hidden_state = view_state.borrow().is_hidden_state;
-        let display = view_state.borrow().combined_style.get(DisplayProp);
-        let request_layout = is_hidden_state.transition(
-            display,
-            || {
-                let count = animations_recursive_on_remove(id, Scope::current());
-                view_state.borrow_mut().num_waiting_animations = count;
-                count > 0
-            },
-            || {
-                animations_recursive_on_create(id);
-            },
-            || view_state.borrow().num_waiting_animations,
-        );
-        if request_layout {
-            id.request_layout();
-        }
-
-        view_state.borrow_mut().is_hidden_state = is_hidden_state;
-        if is_hidden_state == IsHiddenState::Hidden {
+        if view_state.borrow().is_hidden_state == IsHiddenState::Hidden {
             view_state.borrow_mut().layout_rect = Rect::ZERO;
             return None;
         }
-
-        let modified = view_state
-            .borrow()
-            .combined_style
-            .clone()
-            .apply_opt(is_hidden_state.get_display(), Style::display);
-
-        view_state.borrow_mut().combined_style = modified;
 
         self.save();
 
@@ -1300,10 +1303,11 @@ impl DerefMut for PaintCx<'_> {
     }
 }
 
-fn animations_recursive_on_remove(id: ViewId, scope: Scope) -> u16 {
+fn animations_on_remove(id: ViewId, scope: Scope) -> u16 {
     let mut wait_for = 0;
     let state = id.state();
     let mut state = state.borrow_mut();
+    state.num_waiting_animations = 0;
     let animations = &mut state.animations.stack;
     let mut request_style = false;
     for anim in animations {
@@ -1326,18 +1330,21 @@ fn animations_recursive_on_remove(id: ViewId, scope: Scope) -> u16 {
         id.request_style();
     }
 
-    id.children().into_iter().fold(wait_for, |acc, id| {
-        acc + animations_recursive_on_remove(id, scope)
-    })
+    id.children()
+        .into_iter()
+        .fold(wait_for, |acc, id| acc + animations_on_remove(id, scope))
 }
-
-fn animations_recursive_on_create(id: ViewId) {
+fn stop_reset_remove_animations(id: ViewId) {
     let state = id.state();
     let mut state = state.borrow_mut();
     let animations = &mut state.animations.stack;
     let mut request_style = false;
     for anim in animations {
-        if anim.run_on_create && !matches!(anim.repeat_mode, RepeatMode::LoopForever) {
+        if anim.run_on_remove
+            && anim.state_kind() == AnimStateKind::PassInProgress
+            && !matches!(anim.repeat_mode, RepeatMode::LoopForever)
+        {
+            anim.reverse_once.set(false);
             anim.start_mut();
             request_style = true;
         }
@@ -1349,5 +1356,26 @@ fn animations_recursive_on_create(id: ViewId) {
 
     id.children()
         .into_iter()
-        .for_each(animations_recursive_on_create);
+        .for_each(stop_reset_remove_animations)
+}
+
+fn animations_on_create(id: ViewId) {
+    let state = id.state();
+    let mut state = state.borrow_mut();
+    state.num_waiting_animations = 0;
+    let animations = &mut state.animations.stack;
+    let mut request_style = false;
+    for anim in animations {
+        if anim.run_on_create && !matches!(anim.repeat_mode, RepeatMode::LoopForever) {
+            anim.reverse_once.set(false);
+            anim.start_mut();
+            request_style = true;
+        }
+    }
+    drop(state);
+    if request_style {
+        id.request_style();
+    }
+
+    id.children().into_iter().for_each(animations_on_create);
 }

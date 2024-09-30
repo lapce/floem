@@ -31,8 +31,8 @@ use taffy::{
     },
 };
 
-use crate::animate::{Bezier, Easing, Linear, Spring};
 use crate::context::InteractionState;
+use crate::easing::*;
 use crate::responsive::{ScreenSize, ScreenSizeBp};
 use crate::unit::{Px, PxPct, PxPctAuto, UnitExt};
 use crate::view::{IntoView, View};

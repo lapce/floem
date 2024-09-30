@@ -156,6 +156,7 @@ pub(crate) mod app_state;
 mod clipboard;
 pub mod context;
 pub mod dropped_file;
+pub mod easing;
 pub mod event;
 pub mod ext_event;
 pub mod file;
