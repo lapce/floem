@@ -21,7 +21,7 @@ use crate::{
 style_class!(pub TooltipClass);
 style_class!(pub TooltipContainerClass);
 
-prop!(pub Delay: f64 {} = 0.6);
+prop!(pub Delay: Duration {} = Duration::from_millis(600));
 
 prop_extractor! {
     TooltipStyle {
@@ -110,10 +110,9 @@ impl View for Tooltip {
             Event::PointerMove(e) => {
                 if self.overlay.borrow().is_none() && cx.app_state.dragging.is_none() {
                     let id = self.id();
-                    let token =
-                        exec_after(Duration::from_secs_f64(self.style.delay()), move |token| {
-                            id.update_state(token);
-                        });
+                    let token = exec_after(self.style.delay(), move |token| {
+                        id.update_state(token);
+                    });
                     self.hover = Some((e.pos, token));
                 }
             }
@@ -146,7 +145,7 @@ pub trait TooltipExt {
     fn tooltip<V: IntoView + 'static>(self, tip: impl Fn() -> V + 'static) -> Tooltip;
 }
 
-impl<T: View + 'static> TooltipExt for T {
+impl<T: IntoView + 'static> TooltipExt for T {
     fn tooltip<V: IntoView + 'static>(self, tip: impl Fn() -> V + 'static) -> Tooltip {
         tooltip(self, tip)
     }

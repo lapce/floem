@@ -425,6 +425,17 @@ impl StylePropValue for Brush {
         }
     }
 }
+impl StylePropValue for Duration {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        None
+    }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        self.as_secs_f64()
+            .interpolate(&other.as_secs_f64(), value)
+            .map(Duration::from_secs_f64)
+    }
+}
 
 pub trait StyleClass: Default + Copy + 'static {
     fn key() -> StyleKey;
