@@ -1,6 +1,6 @@
 //! A toggle button widget. An example can be found in widget-gallery/button in the floem examples.
 
-use floem_reactive::{create_effect, create_updater};
+use floem_reactive::{create_effect, SignalGet, SignalUpdate};
 use floem_renderer::Renderer;
 use floem_winit::keyboard::{Key, NamedKey};
 use peniko::kurbo::{Point, Size};
@@ -87,24 +87,7 @@ pub struct ToggleButton {
 ///         .on_toggle(move |new_state| state.set(new_state));
 ///```
 pub fn toggle_button(state: impl Fn() -> bool + 'static) -> ToggleButton {
-    let id = ViewId::new();
-    create_effect(move |_| {
-        let state = state();
-        id.update_state(state);
-    });
-
-    ToggleButton {
-        id,
-        state: false,
-        ontoggle: None,
-        position: 0.0,
-        held: ToggleState::Nothing,
-        width: 0.,
-        radius: 0.,
-        style: Default::default(),
-    }
-    .class(ToggleButtonClass)
-    .keyboard_navigatable()
+    ToggleButton::new(state)
 }
 
 impl View for ToggleButton {
@@ -268,6 +251,31 @@ impl ToggleButton {
             .min(self.width - self.radius - inset);
     }
 
+    pub fn new(state: impl Fn() -> bool + 'static) -> Self {
+        let id = ViewId::new();
+        create_effect(move |_| {
+            let state = state();
+            id.update_state(state);
+        });
+
+        Self {
+            id,
+            state: false,
+            ontoggle: None,
+            position: 0.0,
+            held: ToggleState::Nothing,
+            width: 0.,
+            radius: 0.,
+            style: Default::default(),
+        }
+        .class(ToggleButtonClass)
+        .keyboard_navigatable()
+    }
+
+    pub fn new_rw(state: impl SignalGet<bool> + SignalUpdate<bool> + Copy + 'static) -> Self {
+        Self::new(move || state.get()).on_toggle(move |ns| state.set(ns))
+    }
+
     /// Add an event handler to be run when the button is toggled.
     ///
     ///This does not run if the state is changed because of an outside signal.
@@ -281,20 +289,18 @@ impl ToggleButton {
         self,
         style: impl Fn(ToggleButtonCustomStyle) -> ToggleButtonCustomStyle + 'static,
     ) -> Self {
-        let id = self.id();
-        let view_state = id.state();
-        let offset = view_state.borrow_mut().style.next_offset();
-        let style = create_updater(
-            move || style(ToggleButtonCustomStyle::new()),
-            move |style| id.update_style(offset, style.0),
-        );
-        view_state.borrow_mut().style.push(style.0);
-        self
+        self.style(move |s| s.apply_custom(style(Default::default())))
     }
 }
 
 /// Represents a custom style for a `ToggleButton`.
+#[derive(Debug, Default, Clone)]
 pub struct ToggleButtonCustomStyle(Style);
+impl From<ToggleButtonCustomStyle> for Style {
+    fn from(value: ToggleButtonCustomStyle) -> Self {
+        value.0
+    }
+}
 
 impl ToggleButtonCustomStyle {
     pub fn new() -> Self {
@@ -347,15 +353,5 @@ impl ToggleButtonCustomStyle {
     pub fn behavior(mut self, switch: ToggleHandleBehavior) -> Self {
         self = Self(self.0.set(ToggleButtonBehavior, switch));
         self
-    }
-
-    /// Get the inner style
-    pub fn style(self) -> Style {
-        self.0
-    }
-}
-impl Default for ToggleButtonCustomStyle {
-    fn default() -> Self {
-        Self::new()
     }
 }
