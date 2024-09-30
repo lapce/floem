@@ -9,6 +9,29 @@ use crate::{
     IntoView, ViewId,
 };
 
+#[macro_export]
+macro_rules! dyn_view {
+    ($signal:ident, $new:ident => $body:expr) => {
+        dyn_container(
+            move || {
+                use floem::reactive::SignalGet;
+                $signal.get()
+            },
+            move |$new| $body,
+        )
+    };
+
+    ($signal:ident => $body:expr) => {
+        dyn_container(
+            move || {
+                use floem::reactive::SignalGet;
+                $signal.get()
+            },
+            move |$signal| $body,
+        )
+    };
+}
+
 type ChildFn<T> = dyn Fn(T) -> (AnyView, Scope);
 
 /// A container for a dynamically updating View. See [`dyn_container`]
@@ -26,9 +49,9 @@ pub struct DynamicContainer<T: 'static> {
 /// ## Example
 /// ```
 /// use floem::{
-///     reactive::{create_rw_signal, SignalUpdate, SignalGet},
-///     View, IntoView,
-///     views::{dyn_container, label, v_stack, Decorators, toggle_button},
+///     reactive::{create_rw_signal, SignalGet, SignalUpdate},
+///     views::{dyn_container, label, toggle_button, v_stack, Decorators},
+///     IntoView, View,
 /// };
 ///
 /// #[derive(Clone)]
@@ -65,9 +88,7 @@ pub struct DynamicContainer<T: 'static> {
 ///             .row_gap(10)
 ///     })
 /// }
-///
 /// ```
-///
 pub fn dyn_container<CF: Fn(T) -> IV + 'static, T: 'static, IV: IntoView>(
     update_view: impl Fn() -> T + 'static,
     child_fn: CF,
