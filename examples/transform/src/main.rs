@@ -1,5 +1,6 @@
 use floem::{
     kurbo::{self},
+    peniko::Color,
     reactive::{create_rw_signal, SignalGet},
     unit::UnitExt,
     views::{button, container, h_stack, text_input, transform, v_stack, Decorators},
@@ -8,7 +9,7 @@ use floem::{
 };
 
 fn frame<V: IntoView + 'static>(child: V) -> impl IntoView {
-    container(child).style(|s| s.border(1.px()))
+    container(child.style(|s| s.size_full())).style(|s| s.border(1.px()).background(Color::BLACK))
 }
 
 fn app_view() -> impl IntoView {
