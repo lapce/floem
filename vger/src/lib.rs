@@ -9,7 +9,6 @@ use floem_renderer::text::{CacheKey, TextLayout};
 use floem_renderer::{tiny_skia, Img, Renderer};
 use floem_vger_rs::{Image, PaintIndex, PixelFormat, Vger};
 use image::{DynamicImage, EncodableLayout, RgbaImage};
-use peniko::kurbo::Size;
 use peniko::{
     kurbo::{Affine, Point, Rect, Shape},
     BrushRef, Color, GradientKind,
