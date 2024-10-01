@@ -137,12 +137,6 @@ impl ApplicationHandle {
             None => return,
         };
 
-        // We only start reacting to events once the window is ready
-        // I.e. once the renderer has acquired the necessary GPU resources (if any) and is initialized.
-        if !window_handle.is_initialized() {
-            return;
-        }
-
         let start = window_handle.profile.is_some().then(|| {
             let name = match event {
                 WindowEvent::ActivationTokenDone { .. } => "ActivationTokenDone",
