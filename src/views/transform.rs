@@ -65,7 +65,6 @@ pub fn transform<V: IntoView + 'static>(
         child_id,
         child_center,
         view_transform: view_transform_signal,
-        child_rect: kurbo::Rect::ZERO,
     }
 }
 
@@ -74,13 +73,12 @@ pub struct TransformView {
     child_id: ViewId,
     view_transform: RwSignal<kurbo::Affine>,
     child_center: RwSignal<kurbo::Point>,
-    child_rect: kurbo::Rect,
 }
 
 impl TransformView {
     fn update_size(&mut self) {
-        self.child_rect = self.child_id.layout_rect().with_origin(kurbo::Point::ZERO);
-        self.child_center.set(self.child_rect.center());
+        let child_rect = self.child_id.layout_rect().with_origin(kurbo::Point::ZERO);
+        self.child_center.set(child_rect.center());
     }
 }
 
