@@ -605,14 +605,11 @@ impl Renderer for VgerRenderer {
             transform[1] * rect_origin.x + transform[3] * rect_origin.y + transform[5];
         let transformed_origin = Point::new(rect_top_left_x, rect_top_left_y);
 
-        let rect_size = rect.size();
-        let rect_width =
-            transform[0] * rect_size.width + transform[2] * rect_size.height + transform[4];
-        let rect_height =
-            transform[1] * rect_size.width + transform[3] * rect_size.height + transform[5];
-        let transformed_size = Size::new(rect_width, rect_height);
+        let rect_end_x = transform[0] * rect.x1 + transform[2] * rect.y1 + transform[4];
+        let rect_end_y = transform[1] * rect.x1 + transform[3] * rect.y1 + transform[5];
+        let transformed_end = Point::new(rect_end_x, rect_end_y);
 
-        let transformed_rect = Rect::from_origin_size(transformed_origin, transformed_size);
+        let transformed_rect = Rect::from_points(transformed_origin, transformed_end);
 
         self.clip = Some(transformed_rect);
     }
