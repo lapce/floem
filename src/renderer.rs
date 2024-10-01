@@ -60,7 +60,12 @@ use peniko::BrushRef;
 pub enum Renderer<W> {
     Vger(VgerRenderer),
     TinySkia(TinySkiaRenderer<W>),
-    Uninitialized { scale: f64, size: Size },
+    /// Uninitialized renderer, used to allow the renderer to be created lazily
+    /// All operations on this renderer are no-ops
+    Uninitialized {
+        scale: f64,
+        size: Size,
+    },
 }
 
 impl<W: wgpu::WindowHandle> Renderer<W> {
