@@ -72,7 +72,7 @@ impl RadioButton {
     ///
     /// This method is ideal when you need a radio button that not only reflects a signal's state but also updates it.
     /// Clicking the radio button will set the signal to the represented value.
-    pub fn new_get_set<T>(
+    pub fn new_rw<T>(
         represented_value: T,
         actual_value: impl SignalGet<T> + SignalUpdate<T> + Copy + 'static,
     ) -> impl IntoView
@@ -142,7 +142,7 @@ impl RadioButton {
     ///
     /// This method is ideal when you need a labeled radio button that not only reflects a signal's state but also updates it.
     /// Clicking the radio button will set the signal to the represented value.
-    pub fn new_labeled_get_set<S: std::fmt::Display + 'static, T>(
+    pub fn new_labeled_rw<S: std::fmt::Display + 'static, T>(
         represented_value: T,
         actual_value: impl SignalGet<T> + SignalUpdate<T> + Copy + 'static,
         label: impl Fn() -> S + 'static,
