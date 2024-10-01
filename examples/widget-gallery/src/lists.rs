@@ -61,7 +61,7 @@ fn enhanced_list() -> impl IntoView {
                 container({
                     stack({
                         (
-                            Checkbox::new_get_set(checkbox_state).style(|s| s.margin_left(6)),
+                            Checkbox::new_rw(checkbox_state).style(|s| s.margin_left(6)),
                             label(move || item.to_string()).style(|s| {
                                 s.margin_left(6).height(32.0).font_size(22.0).items_center()
                             }),

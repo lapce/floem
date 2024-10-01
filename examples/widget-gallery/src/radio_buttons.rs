@@ -36,7 +36,7 @@ pub fn radio_buttons_view() -> impl IntoView {
         (
             form_item("Radio Buttons:".to_string(), width, move || {
                 OperatingSystem::iter()
-                    .map(move |os| RadioButton::new_get_set(os, operating_system))
+                    .map(move |os| RadioButton::new_rw(os, operating_system))
                     .v_stack()
                     .class(RadioButtonGroupClass)
             }),
@@ -48,9 +48,7 @@ pub fn radio_buttons_view() -> impl IntoView {
             }),
             form_item("Labelled Radio Buttons:".to_string(), width, move || {
                 OperatingSystem::iter()
-                    .map(move |os| {
-                        RadioButton::new_labeled_get_set(os, operating_system, move || os)
-                    })
+                    .map(move |os| RadioButton::new_labeled_rw(os, operating_system, move || os))
                     .v_stack()
                     .class(RadioButtonGroupClass)
             }),

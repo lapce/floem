@@ -52,7 +52,7 @@ pub fn dropdown_view() -> impl IntoView {
 
     form::form({
         (form_item("Dropdown".to_string(), 120.0, move || {
-            Dropdown::new_get_set(
+            Dropdown::new_rw(
                 // state
                 dropdown_active_item,
                 // main view function
