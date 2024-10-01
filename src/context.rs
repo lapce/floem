@@ -16,6 +16,7 @@ use web_time::{Duration, Instant};
 use taffy::prelude::NodeId;
 
 use crate::animate::{AnimStateKind, RepeatMode};
+use crate::renderer::Renderer;
 use crate::style::DisplayProp;
 use crate::view_state::IsHiddenState;
 use crate::{
@@ -1194,13 +1195,20 @@ impl<'a> PaintCx<'a> {
 
 // TODO: should this be private?
 pub enum PaintState {
+    /// The renderer is not yet initialized. This state is used to wait for the GPU resources to be acquired.
     PendingGpuResources {
         window: Arc<dyn wgpu::WindowHandle>,
         rx: crossbeam::channel::Receiver<Result<GpuResources, GpuResourceError>>,
-        scale: f64,
-        size: Size,
         font_embolden: f32,
+        /// This field holds an instance of `Renderer::Uninitialized` until the GPU resources are acquired,
+        /// which will be returned in `PaintState::renderer` and `PaintState::renderer_mut`.
+        /// All calls to renderer methods will be no-ops until the renderer is initialized.
+        ///
+        /// Previously, `PaintState::renderer` and `PaintState::renderer_mut` would panic if called when the renderer was uninitialized.
+        /// However, this turned out to be hard to handle properly and led to panics, especially since the rest of the application code can't control when the renderer is initialized.
+        renderer: crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>>,
     },
+    /// The renderer is initialized and ready to paint.
     Initialized {
         renderer: crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>>,
     },
@@ -1216,10 +1224,9 @@ impl PaintState {
     ) -> Self {
         Self::PendingGpuResources {
             window,
-            scale,
-            size,
             rx,
             font_embolden,
+            renderer: Renderer::Uninitialized { scale, size },
         }
     }
 
@@ -1227,17 +1234,16 @@ impl PaintState {
         if let PaintState::PendingGpuResources {
             window,
             rx,
-            scale,
-            size,
             font_embolden,
+            renderer,
         } = self
         {
             let gpu_resources = rx.recv().unwrap().unwrap();
             let renderer = crate::renderer::Renderer::new(
                 window.clone(),
                 gpu_resources,
-                *scale,
-                *size,
+                renderer.scale(),
+                renderer.size(),
                 *font_embolden,
             );
             *self = PaintState::Initialized { renderer };
@@ -1248,9 +1254,7 @@ impl PaintState {
 
     pub(crate) fn renderer(&self) -> &crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>> {
         match self {
-            PaintState::PendingGpuResources { .. } => {
-                panic!("Tried to access renderer before it was initialized")
-            }
+            PaintState::PendingGpuResources { renderer, .. } => renderer,
             PaintState::Initialized { renderer } => renderer,
         }
     }
@@ -1259,9 +1263,7 @@ impl PaintState {
         &mut self,
     ) -> &mut crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>> {
         match self {
-            PaintState::PendingGpuResources { .. } => {
-                panic!("Tried to access renderer before it was initialized")
-            }
+            PaintState::PendingGpuResources { renderer, .. } => renderer,
             PaintState::Initialized { renderer } => renderer,
         }
     }

@@ -8,7 +8,7 @@ use floem_renderer::tiny_skia::{
 use floem_renderer::Img;
 use floem_renderer::Renderer;
 use image::DynamicImage;
-use peniko::kurbo::PathEl;
+use peniko::kurbo::{PathEl, Size};
 use peniko::{
     kurbo::{Affine, Point, Rect, Shape},
     BrushRef, Color, GradientKind,
@@ -114,6 +114,10 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
 
     pub fn scale(&self) -> f64 {
         self.scale
+    }
+
+    pub fn size(&self) -> Size {
+        Size::new(self.pixmap.width() as f64, self.pixmap.height() as f64)
     }
 }
 

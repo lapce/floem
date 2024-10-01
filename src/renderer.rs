@@ -60,6 +60,12 @@ use peniko::BrushRef;
 pub enum Renderer<W> {
     Vger(VgerRenderer),
     TinySkia(TinySkiaRenderer<W>),
+    /// Uninitialized renderer, used to allow the renderer to be created lazily
+    /// All operations on this renderer are no-ops
+    Uninitialized {
+        scale: f64,
+        size: Size,
+    },
 }
 
 impl<W: wgpu::WindowHandle> Renderer<W> {
@@ -118,6 +124,7 @@ impl<W: wgpu::WindowHandle> Renderer<W> {
         match self {
             Renderer::Vger(r) => r.resize(size.width as u32, size.height as u32, scale),
             Renderer::TinySkia(r) => r.resize(size.width as u32, size.height as u32, scale),
+            Renderer::Uninitialized { .. } => {}
         }
     }
 
@@ -125,6 +132,11 @@ impl<W: wgpu::WindowHandle> Renderer<W> {
         match self {
             Renderer::Vger(r) => r.set_scale(scale),
             Renderer::TinySkia(r) => r.set_scale(scale),
+            Renderer::Uninitialized {
+                scale: old_scale, ..
+            } => {
+                *old_scale = scale;
+            }
         }
     }
 
@@ -132,6 +144,15 @@ impl<W: wgpu::WindowHandle> Renderer<W> {
         match self {
             Renderer::Vger(r) => r.scale(),
             Renderer::TinySkia(r) => r.scale(),
+            Renderer::Uninitialized { scale, .. } => *scale,
+        }
+    }
+
+    pub fn size(&self) -> Size {
+        match self {
+            Renderer::Vger(r) => r.size(),
+            Renderer::TinySkia(r) => r.size(),
+            Renderer::Uninitialized { size, .. } => *size,
         }
     }
 }
@@ -145,6 +166,7 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
             Renderer::TinySkia(r) => {
                 r.begin(capture);
             }
+            Renderer::Uninitialized { .. } => {}
         }
     }
 
@@ -156,6 +178,7 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
             Renderer::TinySkia(v) => {
                 v.clip(shape);
             }
+            Renderer::Uninitialized { .. } => {}
         }
     }
 
@@ -167,6 +190,7 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
             Renderer::TinySkia(v) => {
                 v.clear_clip();
             }
+            Renderer::Uninitialized { .. } => {}
         }
     }
 
@@ -178,6 +202,7 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
             Renderer::TinySkia(v) => {
                 v.stroke(shape, brush, width);
             }
+            Renderer::Uninitialized { .. } => {}
         }
     }
 
@@ -194,6 +219,7 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
             Renderer::TinySkia(v) => {
                 v.fill(path, brush, blur_radius);
             }
+            Renderer::Uninitialized { .. } => {}
         }
     }
 
@@ -205,6 +231,7 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
             Renderer::TinySkia(v) => {
                 v.draw_text(layout, pos);
             }
+            Renderer::Uninitialized { .. } => {}
         }
     }
 
@@ -216,6 +243,7 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
             Renderer::TinySkia(v) => {
                 v.draw_img(img, rect);
             }
+            Renderer::Uninitialized { .. } => {}
         }
     }
 
@@ -232,6 +260,7 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
             Renderer::TinySkia(v) => {
                 v.draw_svg(svg, rect, brush);
             }
+            Renderer::Uninitialized { .. } => {}
         }
     }
 
@@ -243,6 +272,7 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
             Renderer::TinySkia(v) => {
                 v.transform(transform);
             }
+            Renderer::Uninitialized { .. } => {}
         }
     }
 
@@ -254,6 +284,7 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
             Renderer::TinySkia(v) => {
                 v.set_z_index(z_index);
             }
+            Renderer::Uninitialized { .. } => {}
         }
     }
 
@@ -261,6 +292,7 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
         match self {
             Renderer::Vger(r) => r.finish(),
             Renderer::TinySkia(r) => r.finish(),
+            Renderer::Uninitialized { .. } => None,
         }
     }
 }

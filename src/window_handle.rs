@@ -192,10 +192,6 @@ impl WindowHandle {
         self.render_frame();
     }
 
-    pub(crate) fn is_initialized(&self) -> bool {
-        matches!(self.paint_state, PaintState::Initialized { .. })
-    }
-
     pub fn event(&mut self, event: Event) {
         set_current_view(self.id);
         let event = event.scale(self.app_state.scale);
