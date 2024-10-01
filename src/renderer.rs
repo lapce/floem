@@ -142,6 +142,14 @@ impl<W: wgpu::WindowHandle> Renderer<W> {
             Renderer::Uninitialized { scale, .. } => *scale,
         }
     }
+
+    pub fn size(&self) -> Size {
+        match self {
+            Renderer::Vger(r) => r.size(),
+            Renderer::TinySkia(r) => r.size(),
+            Renderer::Uninitialized { size, .. } => *size,
+        }
+    }
 }
 
 impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {

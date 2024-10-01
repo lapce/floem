@@ -1199,7 +1199,6 @@ pub enum PaintState {
         window: Arc<dyn wgpu::WindowHandle>,
         rx: crossbeam::channel::Receiver<Result<GpuResources, GpuResourceError>>,
         font_embolden: f32,
-        size: Size,
         renderer: crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>>,
     },
     Initialized {
@@ -1218,7 +1217,6 @@ impl PaintState {
         Self::PendingGpuResources {
             window,
             rx,
-            size,
             font_embolden,
             renderer: Renderer::Uninitialized { scale, size },
         }
@@ -1228,7 +1226,6 @@ impl PaintState {
         if let PaintState::PendingGpuResources {
             window,
             rx,
-            size,
             font_embolden,
             renderer,
         } = self
@@ -1238,7 +1235,7 @@ impl PaintState {
                 window.clone(),
                 gpu_resources,
                 renderer.scale(),
-                *size,
+                renderer.size(),
                 *font_embolden,
             );
             *self = PaintState::Initialized { renderer };
