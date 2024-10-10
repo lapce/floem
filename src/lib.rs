@@ -78,7 +78,7 @@
 //!
 //!     let label_view = label(move || text.get());
 //!
-//!     let button = button("Change Text").action(move || text.set("Hello, Floem!"));
+//!     let button = button("Change Text").action(move || text.set("Hello, Floem!".to_string()));
 //!
 //!     v_stack((button, label_view))
 //! }
