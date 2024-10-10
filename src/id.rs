@@ -494,6 +494,9 @@ impl ViewId {
         }
     }
 
+    /// Set whether this view should be marked as disabled or not.
+    ///
+    /// When a view is disabled it will not receive events and it can be styled with the disabled style.
     pub fn update_disabled(&self, is_disabled: bool) {
         self.add_update_message(UpdateMessage::Disabled {
             id: *self,
@@ -501,10 +504,14 @@ impl ViewId {
         });
     }
 
+    /// Mark this view as a view that can be navigated to using the keyboard
     pub fn keyboard_navigatable(&self) {
         self.add_update_message(UpdateMessage::KeyboardNavigable { id: *self });
     }
 
+    /// Mark this view as a view that can be dragged
+    ///
+    /// You can customize the apearance of a view while dragging in the style
     pub fn draggable(&self) {
         self.add_update_message(UpdateMessage::Draggable { id: *self });
     }
@@ -521,6 +528,8 @@ impl ViewId {
         });
     }
 
+    /// Send a state update that will be placed in deferred messages
+    // TODO: what is the difference?
     pub fn update_state_deferred(&self, state: impl Any) {
         CENTRAL_DEFERRED_UPDATE_MESSAGES.with_borrow_mut(|msgs| {
             msgs.push((*self, Box::new(state)));
