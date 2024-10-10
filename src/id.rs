@@ -1,8 +1,8 @@
+#![deny(missing_docs)]
 //! # ViewIds
 //!
 //! [`ViewId`]s are unique identifiers for views.
 //! They're used to identify views in the view tree.
-//!
 
 use std::{any::Any, cell::RefCell, rc::Rc};
 
@@ -27,14 +27,19 @@ use crate::{
 };
 
 new_key_type! {
+    /// A small unique identifier for an instance of a [View](crate::View).
+    ///
+    /// This id is how you can access and modify a view, including accessing children views and updating state.
    pub struct ViewId;
 }
 
 impl ViewId {
+    /// Create a new unique `Viewid`.
     pub fn new() -> ViewId {
         VIEW_STORAGE.with_borrow_mut(|s| s.view_ids.insert(()))
     }
 
+    /// Remove this view id and all of it's children from the `VIEW_STORAGE`
     pub fn remove(&self) {
         VIEW_STORAGE.with_borrow_mut(|s| {
             // Remove the cached root, in the (unlikely) case that this view is
@@ -53,6 +58,7 @@ impl ViewId {
         VIEW_STORAGE.with_borrow(|s| s.taffy.clone())
     }
 
+    /// Create a new taffy layout node
     pub fn new_taffy_node(&self) -> NodeId {
         self.taffy()
             .borrow_mut()
@@ -60,14 +66,17 @@ impl ViewId {
             .unwrap()
     }
 
+    /// Set the layout properties on a taffy node
     pub fn set_taffy_style(&self, node: NodeId, style: taffy::Style) {
         let _ = self.taffy().borrow_mut().set_style(node, style);
     }
 
+    /// Get the layout for a taffy node relative to it's parent
     pub fn taffy_layout(&self, node: NodeId) -> Option<taffy::Layout> {
         self.taffy().borrow().layout(node).cloned().ok()
     }
 
+    /// Get the taffy node associated with this Id
     pub fn taffy_node(&self) -> NodeId {
         self.state().borrow().node
     }
@@ -99,6 +108,7 @@ impl ViewId {
         })
     }
 
+    /// Add a child View to this Id's list of children
     pub fn add_child(&self, child: Box<dyn View>) {
         VIEW_STORAGE.with_borrow_mut(|s| {
             let child_id = child.id();
@@ -108,6 +118,7 @@ impl ViewId {
         });
     }
 
+    /// Set the children views of this Id
     pub fn set_children(&self, children: Vec<impl IntoView>) {
         VIEW_STORAGE.with_borrow_mut(|s| {
             let mut children_ids = Vec::new();
@@ -123,6 +134,7 @@ impl ViewId {
         });
     }
 
+    /// Set the view that should be associated with this Id
     pub fn set_view(&self, view: Box<dyn View>) {
         VIEW_STORAGE.with_borrow_mut(|s| {
             if s.view_ids.contains_key(*self) {
@@ -131,6 +143,7 @@ impl ViewId {
         });
     }
 
+    /// Set the Id that should be used as the parent of this Id
     pub fn set_parent(&self, parent: ViewId) {
         VIEW_STORAGE.with_borrow_mut(|s| {
             if s.view_ids.contains_key(*self) {
@@ -139,6 +152,7 @@ impl ViewId {
         });
     }
 
+    /// Set the Ids that should be used as the children of this Id
     pub fn set_children_ids(&self, children: Vec<ViewId>) {
         VIEW_STORAGE.with_borrow_mut(|s| {
             if s.view_ids.contains_key(*self) {
@@ -147,10 +161,12 @@ impl ViewId {
         });
     }
 
+    /// Get the list of ViewIds that are associated with the children views of this ViewId
     pub fn children(&self) -> Vec<ViewId> {
         VIEW_STORAGE.with_borrow(|s| s.children.get(*self).cloned().unwrap_or_default())
     }
 
+    /// Get the ViewId that has been set as this ViewId's parent
     pub fn parent(&self) -> Option<ViewId> {
         VIEW_STORAGE.with_borrow(|s| s.parent.get(*self).cloned().flatten())
     }
@@ -175,15 +191,18 @@ impl ViewId {
         })
     }
 
+    /// Get the computed rectangle that covers the area of this View
     pub fn layout_rect(&self) -> Rect {
         self.state().borrow().layout_rect
     }
 
+    /// Get the size of this View
     pub fn get_size(&self) -> Option<Size> {
         self.get_layout()
             .map(|l| Size::new(l.size.width as f64, l.size.height as f64))
     }
 
+    /// Get the Size of the parent View
     pub fn parent_size(&self) -> Option<Size> {
         let parent_id = self.parent()?;
         parent_id.get_size()
@@ -234,6 +253,7 @@ impl ViewId {
         Some(layout)
     }
 
+    /// Returns true if the computed style for this view is marked as hidden (Display::None)
     pub fn style_has_hidden(&self) -> bool {
         let state = self.state();
         let state = state.borrow();
@@ -263,6 +283,7 @@ impl ViewId {
         self.request_changes(ChangeFlags::all());
     }
 
+    /// Request that this view have it's layout pass run
     pub fn request_layout(&self) {
         self.request_changes(ChangeFlags::LAYOUT)
     }
@@ -272,6 +293,7 @@ impl ViewId {
         self.root().and_then(window_id_for_root)
     }
 
+    /// Request that this view have it's paint pass run
     pub fn request_paint(&self) {
         self.add_update_message(UpdateMessage::RequestPaint);
     }
@@ -300,34 +322,47 @@ impl ViewId {
         self.request_style();
     }
 
+    /// Request that this view gain the window focus
     pub fn request_focus(&self) {
         self.add_update_message(UpdateMessage::Focus(*self));
     }
 
+    /// Clear the focus from this window
     pub fn clear_focus(&self) {
         self.add_update_message(UpdateMessage::ClearFocus(*self));
     }
 
+    /// Set the system context menu that should be shown when this view is right-clicked
     pub fn update_context_menu(&self, menu: impl Fn() -> Menu + 'static) {
         self.state().borrow_mut().context_menu = Some(Rc::new(menu));
     }
 
+    /// Set the sytem popout menu that should be shown when this view is clicked
     pub fn update_popout_menu(&self, menu: impl Fn() -> Menu + 'static) {
         self.state().borrow_mut().popout_menu = Some(Rc::new(menu));
     }
 
+    /// Request that this view receive the active state (mark that this element is currently being interacted with)
+    ///
+    /// When an View has Active, it will receive events such as mouse events, even if the mouse is not directly over this view.
+    /// This is usefor for views such as Sliders, where the mouse event should be sent to the slider view as long as the mouse is pressed down,
+    /// even if the mouse moves out of the view, or even out of the Window.
     pub fn request_active(&self) {
         self.add_update_message(UpdateMessage::Active(*self));
     }
 
+    /// Request that the active state be removed from this View
     pub fn clear_active(&self) {
         self.add_update_message(UpdateMessage::ClearActive(*self));
     }
 
+    /// Send a message to the application to open the Inspector for this Window
     pub fn inspect(&self) {
         self.add_update_message(UpdateMessage::Inspect);
     }
 
+    /// Scrolls the view and all direct and indirect children to bring the view to be
+    /// visible. The optional rectangle can be used to add an additional offset and intersection.
     pub fn scroll_to(&self, rect: Option<Rect>) {
         self.add_update_message(UpdateMessage::ScrollTo { id: *self, rect });
     }
@@ -355,6 +390,7 @@ impl ViewId {
         self.request_style();
     }
 
+    /// Send a state update to the `update` method of the associated View
     pub fn update_state(&self, state: impl Any) {
         self.add_update_message(UpdateMessage::State {
             id: *self,
@@ -368,36 +404,50 @@ impl ViewId {
         state.borrow_mut().viewport = Some(viewport);
     }
 
+    /// Add an callback on an action for a given `EventListener`
     pub fn add_event_listener(&self, listener: EventListener, action: Box<EventCallback>) {
         let state = self.state();
         state.borrow_mut().add_event_listener(listener, action);
     }
 
+    /// Set a callback that should be run when the size of the view changes
     pub fn update_resize_listener(&self, action: Box<ResizeCallback>) {
         let state = self.state();
         state.borrow_mut().update_resize_listener(action);
     }
 
+    /// Set a callback that should be run when the position of the view changes
     pub fn update_move_listener(&self, action: Box<dyn Fn(Point)>) {
         let state = self.state();
         state.borrow_mut().update_move_listener(action);
     }
 
+    /// Set a callback that should be run when the view is removed from the view tree
     pub fn update_cleanup_listener(&self, action: Box<dyn Fn()>) {
         let state = self.state();
         state.borrow_mut().update_cleanup_listener(action);
     }
 
+    /// Get the combined style that is associated with this View.
+    ///
+    /// This will have all of the style properties set in it that are relevent to this view, including all properties from relevant classes.
+    ///
+    /// ## Warning
+    /// The view styles do not store property transition states, only markers of which properties _should_ be transitioned over time on change.
+    ///
+    /// If you have a property that could be transitioned over time, make sure to use a [prop extractor](crate::prop_extractor) that is updated in a style method of the View to extract the property.
     pub fn get_combined_style(&self) -> Style {
         self.state().borrow().combined_style.clone()
     }
 
+    /// Add a class to the list of style classes that are associated with this ViewId
     pub fn add_class(&self, class: StyleClassRef) {
         let state = self.state();
         state.borrow_mut().classes.push(class);
         self.request_style_recursive();
     }
 
+    /// Remove a class from the list of style classes that are associated with this ViewId
     pub fn remove_class(&self, class: StyleClassRef) {
         let state = self.state();
         state.borrow_mut().classes.retain_mut(|c| *c != class);
