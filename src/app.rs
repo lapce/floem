@@ -35,8 +35,8 @@ thread_local! {
 /// the root view of the application window.
 ///
 /// Example:
-/// ```
-/// launch(|| "Hello, World!")
+/// ```no_run
+/// floem::launch(|| "Hello, World!")
 /// ```
 ///
 /// To build an application and windows with more configuration, see [`Application`].
