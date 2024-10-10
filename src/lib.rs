@@ -1,7 +1,7 @@
 //! # Floem
 //! Floem is a cross-platform GUI library for Rust. It aims to be extremely performant while providing world-class developer ergonomics.
 //!
-//! Let's take a look at a simple example to demonstrate Floem's API and capabilities.
+//! The following is a simple example to demonstrate Floem's API and capabilities.
 //!
 //! ## Example: Counter
 //! ```rust
@@ -17,33 +17,30 @@
 //!     )),
 //! ));
 //! ```
-//! This concise code demonstrates the core concepts of building a reactive GUI with Floem:
+//! This example demonstrates the core concepts of building a reactive GUI with Floem:
 //!
-//! 1. **State Management**: The `RwSignal` provides a reactive way to manage the counter's state.
-//! 2. **Widgets**: Common UI elements like `stack`, `label`, and `button` are easily implemented.
-//! 3. **Reactivity**: The label automatically updates when the counter changes.
-//! 4. **Event Handling**: Button clicks are handled with simple closures that modify the state.
+//! - State Management: The `RwSignal` provides a reactive way to manage the counter's state.
+//! - Widgets: Common UI elements like `stack`, `label`, and `button` are easily implemented.
+//! - Reactivity: The label automatically updates when the counter changes.
+//! - Event Handling: Button clicks are handled with simple closures that modify the state.
 //!
-//! Floem's design philosophy emphasizes simplicity and performance, allowing you
-//! to create complex GUIs with minimal boilerplate.
-//!
+//! Floem's objectives prioritize simplicity and performance, enabling the development of complex graphical user interfaces with minimal boilerplate.
 //!
 //! ## Views
 //! Floem models the UI using a tree of [Views](view::View). Views, such as the `h_stack`, `label`, and
-//! `button` elements we used earlier, are the building blocks of UI in Floem.
+//! `button` elements are the building blocks of UI in Floem.
 //!
 //! Floem's main view tree is constructed only once.
-//! This guards against unnecessary and expensive rebuilds of your views.
-//! However, even though the tree is built only once, views can still receive reactive updates.
+//! This guards against unnecessary and expensive rebuilds of your views;
+//! however, even though the tree is built only once, views can still receive reactive updates.
 //!
 //! ### Composition and Flexibility
-//! Views in Floem are highly composable, allowing you to create complex UIs by combining
-//! simpler elements. For instance, in our counter example, we composed `label` and `button`
-//! views within `v_stack` and `h_stack` layouts to create a more complex interface.
+//! Views in Floem are composable, allowing for the construction of complex user interfaces by integrating simpler components.
+//! In the counter example, label and button views were combined within vertical (v_stack) and horizontal (h_stack) layouts to create a more intricate interface.
 //!
-//! This compositional approach enables you to:
-//! - Create reusable UI components
-//! - Organize complex layouts with ease
+//! This compositional approach provides the following benefits:
+//! - Reusable UI components
+//! - Easy and consistent refactoring
 //!
 //! ### Learn More
 //! Floem provides a set of built-in views to help you create UIs quickly.
@@ -57,7 +54,7 @@
 //!
 //! ### Signals as State
 //!
-//! You can create a reactive signal anywhere in the program using [`RwSignal::new()`](floem_reactive::RwSignal::new), [`RwSignal::new_split()`](floem_reactive::RwSignal::new_split), or use a [different signal type](floem_reactive).
+//! You can create reactive state by creating a signal anywhere in the program using [`RwSignal::new()`](floem_reactive::RwSignal::new), [`RwSignal::new_split()`](floem_reactive::RwSignal::new_split), or use a [different signal type](floem_reactive).
 //!
 //! When you use a signal by calling the [`get`](floem_reactive::SignalGet::get) or [`with`](floem_reactive::SignalWith::with) methods, (which are also called when you use an operator such as `==`)
 //! the runtime will automatically subscribe the correct side effects
