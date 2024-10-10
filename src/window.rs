@@ -174,8 +174,8 @@ impl WindowConfig {
     }
 
     /// Set up Mac-OS specific configuration.  The passed closure will only be
-    /// called on Mac OS.
-    #[allow(unused_variables, unused_mut)] // build will complain on non-mac os's otherwise
+    /// called on macOS.
+    #[allow(unused_variables, unused_mut)] // build will complain on non-macOS's otherwise
     pub fn with_mac_os_config(
         mut self,
         mut f: impl FnMut(MacOSWindowConfig) -> MacOSWindowConfig,
@@ -207,7 +207,8 @@ impl WindowConfig {
     }
 }
 
-/// Mac-OS specific window configuration properties, accessible via `WindowConfig::with_mac_os_config( FnMut( MacOsWindowConfig ) )`.
+/// Mac-OS specific window configuration properties, accessible via `WindowConfig::with_mac_os_config( FnMut( MacOsWindowConfig ) )`
+///
 /// See [the winit docs](https://docs.rs/winit/latest/winit/platform/macos/trait.WindowExtMacOS.html) for further
 /// information.
 #[derive(Default, Debug, Clone)]
@@ -234,7 +235,7 @@ impl MacOSWindowConfig {
         self
     }
 
-    /// Make the titlebar's transparency (does nothing on some versions of Mac OS).
+    /// Make the titlebar's transparency (does nothing on some versions of macOS).
     pub fn transparent_title_bar(mut self, val: bool) -> Self {
         self.titlebar_transparent = Some(val);
         self
@@ -252,8 +253,7 @@ impl MacOSWindowConfig {
         self
     }
 
-    /// Make the window content [use the full size of the window, including the title bar area]
-    /// (https://developer.apple.com/documentation/appkit/nswindow/stylemask/1644646-fullsizecontentview).
+    /// Make the window content [use the full size of the window, including the title bar area](https://developer.apple.com/documentation/appkit/nswindow/stylemask/1644646-fullsizecontentview).
     pub fn full_size_content_view(mut self, val: bool) -> Self {
         self.full_size_content_view = Some(val);
         self
@@ -266,7 +266,7 @@ impl MacOSWindowConfig {
     }
 
     /// Specify the position of the close / minimize / full screen buttons
-    /// on Mac OS
+    /// on macOS
     pub fn traffic_lights_offset(mut self, x_y_offset: (f64, f64)) -> Self {
         self.traffic_lights_offset = Some(x_y_offset);
         self
@@ -308,7 +308,9 @@ impl MacOSWindowConfig {
     }
 }
 
-/// Mac OS allows altering the way Option and Alt keys so Alt is treated
+/// macOS specific configuration for how the Option key is treated
+///
+/// macOS allows altering the way Option and Alt keys so Alt is treated
 /// as a modifier key rather than in character compose key.  This is a proxy
 /// for winit's [OptionAsAlt](https://docs.rs/winit/latest/winit/platform/macos/enum.OptionAsAlt.html).
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]

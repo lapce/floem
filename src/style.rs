@@ -2202,10 +2202,10 @@ impl Style {
     /// use floem::style::Style;
     /// let maybe_none: Option<i32> = None;
     /// let style = Style::default()
-    ///    .apply_opt(Some(5.0), Style::padding) // ran
-    ///    .apply_opt(maybe_none, Style::margin) // not ran
-    ///    .apply_opt(Some(5.0), |s, v| s.border_right(v * 2.0))
-    ///    .border_left(5.0); // ran, obviously
+    ///     .apply_opt(Some(5.0), Style::padding) // ran
+    ///     .apply_opt(maybe_none, Style::margin) // not ran
+    ///     .apply_opt(Some(5.0), |s, v| s.border_right(v * 2.0))
+    ///     .border_left(5.0); // ran, obviously
     /// ```
     pub fn apply_opt<T>(self, opt: Option<T>, f: impl FnOnce(Self, T) -> Self) -> Self {
         if let Some(t) = opt {
@@ -2216,7 +2216,7 @@ impl Style {
     }
 
     /// Allow the application of a function if the condition holds.
-    /// This is useful for chaining together a bunch of optional style changes.
+    /// This is useful for chaining together optional style changes.
     /// ```rust
     /// use floem::style::Style;
     /// let style = Style::default()

@@ -18,7 +18,7 @@
 //!
 //! #### Update
 //! The update of states on the Views could cause some of them to need a new layout recalculation, because the size might have changed etc.
-//! The reactive system can't directly manipulate the view state of the label because the AppState owns all the views. And instead, it will send the update to a message queue via [Id::update_state](crate::id::Id::update_state)
+//! The reactive system can't directly manipulate the view state of the label because the AppState owns all the views. And instead, it will send the update to a message queue via [ViewId::update_state](crate::ViewId::update_state)
 //! After the event propagation is done, Floem will process all the update messages in the queue, and it can manipulate the state of a particular view through the update method.
 //!
 //!

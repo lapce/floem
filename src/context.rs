@@ -972,8 +972,8 @@ impl<'a> PaintCx<'a> {
         }
     }
 
-    /// The entry point for painting a view. You shouldn't need to implement this yourself. Instead, implement [`Widget::paint`].
-    /// It handles the internal work before and after painting [`Widget::paint`] implementations.
+    /// The entry point for painting a view. You shouldn't need to implement this yourself. Instead, implement [`View::paint`].
+    /// It handles the internal work before and after painting [`View::paint`] implementations.
     /// It is responsible for
     /// - managing hidden status
     /// - clipping
