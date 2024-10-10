@@ -72,6 +72,11 @@ pub fn update_window_scale(window_scale: f64) {
     add_update_message(UpdateMessage::WindowScale(window_scale));
 }
 
+/// Send a message to the application to open the Inspector for this Window
+pub fn inspect() {
+    add_update_message(UpdateMessage::Inspect);
+}
+
 pub(crate) struct Timer {
     pub(crate) token: TimerToken,
     pub(crate) action: Box<dyn FnOnce(TimerToken)>,

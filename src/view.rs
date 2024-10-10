@@ -82,9 +82,9 @@ use crate::{
 /// to escape the strongly typed requirement.
 ///
 /// ```
-/// use floem::views::*;
-/// use floem::{View, IntoView};
 /// use floem::reactive::{RwSignal, SignalGet};
+/// use floem::views::*;
+/// use floem::{IntoView, View};
 ///
 /// let check = true;
 ///

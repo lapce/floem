@@ -43,10 +43,9 @@ enum WindowUpdate {
     DocumentEdited(bool),
 }
 
-/// Delegate enum for `winit`'s
+/// Delegate enum for `winit`'s [`UserAttentionType`](https://docs.rs/winit/latest/winit/window/enum.UserAttentionType.html)
 ///
-/// [`UserAttentionType`](https://docs.rs/winit/latest/winit/window/enum.UserAttentionType.html),
-/// used for making the window's icon bounce in the macOS dock or the equivalent of that on
+/// This is used for making the window's icon bounce in the macOS dock or the equivalent of that on
 /// other platforms.
 #[derive(Default, Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Urgency {

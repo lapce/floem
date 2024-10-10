@@ -7,7 +7,7 @@
 //! There is a collection of different `stacks` and `lists` that can be used to build collections of Views.
 //! There are also basic widgets such as [text_inputs](text_input::text_input), [labels](label::label), [images](img::img), and [svgs](svg::svg).
 //!
-//! ## The counter example to show composing views
+//! ## Example: Counter
 //! ```rust
 //! use floem::{reactive::*, views::*};
 //!
