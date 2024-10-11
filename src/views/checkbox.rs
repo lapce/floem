@@ -49,19 +49,11 @@ impl Checkbox {
         )
     }
 
-    /// Creates a new checkbox with a signal that provides its checked state.
-    ///
-    /// Use this method when you have a signal that provides the current state of the checkbox.
-    /// The checkbox will automatically update its state based on the signal but nothing will happen when clicked.
-    pub fn new_get(checked: impl SignalGet<bool> + 'static) -> impl IntoView {
-        checkbox_svg(checked)
-    }
-
     /// Creates a new checkbox with a signal that provides and updates its checked state.
     ///
     /// This method is ideal when you need a checkbox that not only reflects a signal's state but also updates it.
     /// Clicking the checkbox will toggle its state and update the signal accordingly.
-    pub fn new_get_set(
+    pub fn new_rw(
         checked: impl SignalGet<bool> + SignalUpdate<bool> + Copy + 'static,
     ) -> impl IntoView {
         checkbox_svg(checked).on_click_stop(move |_| {
@@ -94,24 +86,11 @@ impl Checkbox {
         )
     }
 
-    /// Creates a new labeled checkbox with a signal that provides its checked state.
-    ///
-    /// Use this method when you have a signal that provides the current state of the checkbox and you also want a label.
-    /// The checkbox and label will automatically update based on the signal.
-    pub fn new_labeled_get<S: Display + 'static>(
-        checked: impl SignalGet<bool> + 'static,
-        label: impl Fn() -> S + 'static,
-    ) -> impl IntoView {
-        h_stack((checkbox_svg(checked), views::label(label)))
-            .class(LabeledCheckboxClass)
-            .style(|s| s.items_center().justify_center())
-    }
-
     /// Creates a new labeled checkbox with a signal that provides and updates its checked state.
     ///
     /// This method is ideal when you need a labeled checkbox that not only reflects a signal's state but also updates it.
     /// Clicking the checkbox will toggle its state and update the signal accordingly.
-    pub fn new_labeled_get_set<S: Display + 'static>(
+    pub fn new_labeled_rw<S: Display + 'static>(
         checked: impl SignalGet<bool> + SignalUpdate<bool> + Copy + 'static,
         label: impl Fn() -> S + 'static,
     ) -> impl IntoView {

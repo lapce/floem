@@ -6,6 +6,7 @@ use crate::{
 
 /// BaseSignal gives you another way to control the lifetime of a Signal
 /// apart from Scope.
+///
 /// When BaseSignal is dropped, it will dispose the underlying Signal as well.
 /// The signal isn't put in any Scope when a BaseSignal is created, so that
 /// the lifetime of the signal can only be determined by BaseSignal rather than

@@ -215,7 +215,6 @@ pub fn create_signal_from_stream<T: 'static>(
     let (read, write) = cx.create_signal(inital_value);
 
     /// Waker that wakes by registering a trigger
-
     // TODO: since the trigger is just a `u64`, it could theorically be changed to be a `usize`,
     //       Then the implementation of the std::task::RawWakerVTable could pass the `usize` as the data pointer,
     //       avoiding any allocation/reference counting

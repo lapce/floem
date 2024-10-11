@@ -189,7 +189,7 @@ impl<'a> RichSpan<'a> {
         self
     }
 
-    pub fn style(mut self, style: floem_renderer::text::Style) -> RichSpan<'a> {
+    pub fn text_style(mut self, style: floem_renderer::text::Style) -> RichSpan<'a> {
         self.attrs = self.attrs.style(style);
         self
     }
@@ -429,15 +429,15 @@ where
         let span: RichSpan = self.into();
         span.stretch(stretch)
     }
-    fn style(self, style: crate::text::Style) -> RichSpan<'a> {
+    fn text_style(self, style: crate::text::Style) -> RichSpan<'a> {
         let span: RichSpan = self.into();
-        span.style(style)
+        span.text_style(style)
     }
     fn italic(self) -> RichSpan<'a> {
-        self.style(crate::text::Style::Italic)
+        self.text_style(crate::text::Style::Italic)
     }
     fn oblique(self) -> RichSpan<'a> {
-        self.style(crate::text::Style::Oblique)
+        self.text_style(crate::text::Style::Oblique)
     }
 
     fn weight(self, weight: crate::text::Weight) -> RichSpan<'a> {
