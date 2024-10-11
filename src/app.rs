@@ -28,6 +28,18 @@ thread_local! {
     pub(crate) static APP_UPDATE_EVENTS: RefCell<Vec<AppUpdateEvent>> = Default::default();
 }
 
+/// Initializes and runs an application with a single window.
+///
+/// This function creates a new `Application`, sets up a window with the provided view,
+/// and starts the application event loop. The `app_view` closure is used to define
+/// the root view of the application window.
+///
+/// Example:
+/// ```no_run
+/// floem::launch(|| "Hello, World!")
+/// ```
+///
+/// To build an application and windows with more configuration, see [`Application`].
 pub fn launch<V: IntoView + 'static>(app_view: impl FnOnce() -> V + 'static) {
     Application::new().window(move |_| app_view(), None).run()
 }
@@ -185,6 +197,10 @@ impl Application {
     }
 }
 
+/// Initiates the application shutdown process.
+///
+/// This function sends a `QuitApp` event to the application's event loop,
+/// triggering the application to close gracefully.
 pub fn quit_app() {
     Application::with_event_loop_proxy(|proxy| {
         let _ = proxy.send_event(UserEvent::QuitApp);
