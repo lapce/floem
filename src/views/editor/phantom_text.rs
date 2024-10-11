@@ -100,7 +100,7 @@ impl PhantomTextLine {
     }
 
     /// Translate a column position into the text into what it would be after combining
-
+    ///
     /// If `before_cursor` is false and the cursor is right at the start then it will stay there
     ///
     /// (Think 'is the phantom text before the cursor')

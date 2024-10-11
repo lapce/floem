@@ -9,6 +9,7 @@ use crate::{
 };
 
 /// Memo computes the value from the closure on creation, and stores the value.
+///
 /// It will act like a Signal when the value is different with the computed value
 /// from last run, i.e., it will trigger a effect run when you Get() it whenever the
 /// computed value changes to a different value.

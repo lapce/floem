@@ -84,7 +84,7 @@ impl<'a> EventCx<'a> {
         self.app_state.update_focus(id, keyboard_navigation);
     }
 
-    /// Internal method used by Floem. This can be called from parent `View`s to propagate an event to the child `View`.
+    // Internal method used by Floem. This can be called from parent `View`s to propagate an event to the child `View`.
     // pub fn view_event(
     //     &mut self,
     //     view: &mut dyn View,

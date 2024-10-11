@@ -927,7 +927,7 @@ fn replace_range(buff: &mut String, del_range: Range<usize>, replacement: Option
     buff.push_str(&after_del_range);
 }
 
-fn get_dbl_click_selection(glyph_idx: usize, buffer: &String) -> Range<usize> {
+fn get_dbl_click_selection(glyph_idx: usize, buffer: &str) -> Range<usize> {
     let mut selectable_ranges: Vec<Range<usize>> = Vec::new();
     let glyph_idx = usize::min(glyph_idx, buffer.len().saturating_sub(1));
 

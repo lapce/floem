@@ -10,6 +10,7 @@ use crate::{
 };
 
 /// You can manually control Signal's lifetime by using Scope.
+///
 /// Every Signal has a Scope created explicitly or implicitly,
 /// and when you Dispose the Scope, it will clean up all the Signals
 /// that belong to the Scope and all the child Scopes
