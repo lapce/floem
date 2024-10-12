@@ -153,13 +153,13 @@
 //!     .style(|s| s.background(Color::RED).size(500, 100))
 //!     .animation(move |a| {
 //!         a.duration(5.seconds())
-//!             .keyframe(0, |kf| kf.computed_style())
-//!             .keyframe(50, |kf| {
-//!                 kf.style(|s| s.background(Color::BLACK).size(30, 30))
+//!             .keyframe(0, |f| f.computed_style())
+//!             .keyframe(50, |f| {
+//!                 f.style(|s| s.background(Color::BLACK).size(30, 30))
 //!                     .ease_in()
 //!             })
-//!             .keyframe(100, |kf| {
-//!                 kf.style(|s| s.background(Color::AQUAMARINE).size(10, 300))
+//!             .keyframe(100, |f| {
+//!                 f.style(|s| s.background(Color::AQUAMARINE).size(10, 300))
 //!                     .ease_out()
 //!             })
 //!             .auto_reverse(true)
