@@ -21,7 +21,7 @@ license.workspace = true
 peniko = { version = "0.1.1", features = ["serde"] }
 serde = "1.0"
 lapce-xi-rope = { version = "0.3.2", features = ["serde"] }
-strum = { version = "0.26.2" }
+strum = { version = "0.26.2", features = ["derive"] }
 strum_macros = { version = "0.26.2" }
 # Image format features are defined via new features
 image = { version = "0.25", default-features = false }

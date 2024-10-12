@@ -1,3 +1,4 @@
+//! Items related to the Dropdown view. See [dropdown].
 use std::{any::Any, rc::Rc};
 
 use floem_reactive::{
@@ -30,6 +31,134 @@ prop_extractor!(DropdownStyle {
     close_on_accept: CloseOnAccept,
 });
 
+/// Create a dropdown widget.
+///
+/// # Example
+///
+/// A common scenario is populating a dropdown menu using an enum.
+///
+/// The below example creates a dropdown with three items, one for each character in our
+/// `Character` enum.
+///
+/// The `strum` crate can be useful. In this example, we use `strum` to create an iterator for our
+/// `Character` enum.
+///
+/// First, define the enum:
+/// ```rust
+/// use strum::IntoEnumIterator;
+///
+/// #[derive(Clone, strum::EnumIter)]
+/// enum Character {
+///     Ori,
+///     Naru,
+///     Gumo,
+/// }
+///
+/// // Implement Display so we can call .to_string() lower down.
+/// impl std::fmt::Display for Character {
+///     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+///         match self {
+///             Self::Ori => write!(f, "Ori"),
+///             Self::Naru => write!(f, "Naru"),
+///             Self::Gumo => write!(f, "Gumo"),
+///         }
+///     }
+/// }
+/// ```
+///
+/// Then, create the dropdown:
+///
+/// ```rust
+/// # use strum::IntoEnumIterator;
+/// # #[derive(Clone, strum::EnumIter)]
+/// # enum Character {
+/// #     Ori,
+/// #     Naru,
+/// #     Gumo,
+/// # }
+/// # // Implement Display so we can call .to_string() lower down.
+/// # impl std::fmt::Display for Character {
+/// #     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+/// #         match self {
+/// #             Self::Ori => write!(f, "Ori"),
+/// #             Self::Naru => write!(f, "Naru"),
+/// #             Self::Gumo => write!(f, "Gumo"),
+/// #         }
+/// #     }
+/// # }
+/// #
+/// # fn character_select() -> impl floem::IntoView {
+/// use floem::{reactive::*, views::*, IntoView};
+///
+/// let mode = RwSignal::new(Character::Ori);
+///
+/// dropdown::dropdown(
+///     move || mode.get(),
+///     move |m| text(m.to_string()).into_any(),
+///     Character::iter(),
+///     move |m| text(m.to_string()).into_any(),
+/// )
+/// .on_accept(move |new| mode.set(new))
+/// # }
+/// ```
+///
+/// You can display the selected item differently than the list of items.
+///
+/// For example, you could make the selected item bold, but keep the list of all items unbolded:
+///
+/// ```rust
+/// # use strum::IntoEnumIterator;
+/// # #[derive(Clone, strum::EnumIter)]
+/// # enum Character {
+/// #     Ori,
+/// #     Naru,
+/// #     Gumo,
+/// # }
+/// # // Implement Display so we can call .to_string() lower down.
+/// # impl std::fmt::Display for Character {
+/// #     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+/// #         match self {
+/// #             Self::Ori => write!(f, "Ori"),
+/// #             Self::Naru => write!(f, "Naru"),
+/// #             Self::Gumo => write!(f, "Gumo"),
+/// #         }
+/// #     }
+/// # }
+/// #
+/// # fn character_select() -> impl floem::IntoView {
+/// # use floem::{reactive::*, views::*, IntoView};
+/// #
+/// # let mode = RwSignal::new(Character::Ori);
+/// #
+/// dropdown::dropdown(
+///     move || mode.get(),
+///     move |m| text(m.to_string()).style(|s| s.font_bold()).into_any(),
+///     Character::iter(),
+///     move |m| text(m.to_string()).into_any(),
+/// )
+/// .on_accept(move |new| mode.set(new))
+/// # }
+/// ```
+///
+/// # Styling
+///
+/// You can modify the behavior of the dropdown through the `CloseOnAccept` property.
+/// If the property is set to `true`, the dropdown will automatically close when an item is selected.
+/// If the property is set to `false`, the dropdown will not automatically close when an item is selected.
+/// The default is `true`.
+/// Styling Example:
+/// ```rust
+/// # use floem::views::dropdown;
+/// # use floem::views::empty;
+/// # use floem::views::Decorators;
+/// // root view
+/// empty()
+///     .style(|s|
+///         s.class(dropdown::DropdownClass, |s| {
+///             s.set(dropdown::CloseOnAccept, false)
+///         })
+///  );
+///```
 pub fn dropdown<T, MF, I, LF, AIF>(
     active_item: AIF,
     main_view: MF,
@@ -46,26 +175,7 @@ where
     Dropdown::new(active_item, main_view, iterator, list_item_fn)
 }
 
-/// A dropdown widget
-///
-/// **Styling**:
-/// You can modify the behavior of the dropdown through the `CloseOnAccept` property.
-/// If the property is set to `true` the dropdown will automatically close when an item is selected.
-/// If the property is set to `false` the dropwown will not automatically close when an item is selected.
-/// The default is `true`.
-/// Styling Example:
-/// ```rust
-/// # use floem::views::dropdown;
-/// # use floem::views::empty;
-/// # use floem::views::Decorators;
-/// // root view
-/// empty()
-///     .style(|s|
-///         s.class(dropdown::DropdownClass, |s| {
-///             s.set(dropdown::CloseOnAccept, false)
-///         })
-///  );
-///```
+/// A dropdown widget. See [dropdown].
 pub struct Dropdown<T: 'static> {
     id: ViewId,
     main_view: ViewId,
@@ -174,7 +284,7 @@ impl<T: 'static> View for Dropdown<T> {
 }
 
 impl<T> Dropdown<T> {
-    /// Creates a new dropdown
+    /// Creates a new dropdown. See [dropdown].
     pub fn new<MF, I, LF, AIF>(
         active_item: AIF,
         main_view: MF,
