@@ -66,14 +66,13 @@ use crate::{
 /// to escape the strongly typed requirement.
 ///
 /// ```
-/// use floem::reactive::{RwSignal, SignalGet};
-/// use floem::views::*;
-/// use floem::{IntoView, View};
+/// use checkbox::Checkbox;
+/// use floem::prelude::*;
 ///
 /// let check = true;
 ///
 /// container(if check == true {
-///     checkbox(|| true).into_any()
+///     Checkbox::new(|| true).into_any()
 /// } else {
 ///     label(|| "no check".to_string()).into_any()
 /// });
