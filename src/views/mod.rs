@@ -71,8 +71,7 @@
 mod label;
 pub use label::*;
 
-mod rich_text;
-pub use rich_text::*;
+pub mod rich_text;
 
 mod dyn_stack;
 pub use dyn_stack::*;
@@ -89,11 +88,9 @@ pub use container::*;
 mod dyn_container;
 pub use dyn_container::*;
 
-mod dyn_view;
-pub use dyn_view::*;
+pub mod dyn_view;
 
-mod value_container;
-pub use value_container::*;
+pub mod value_container;
 
 mod decorator;
 pub use decorator::*;
@@ -101,20 +98,16 @@ pub use decorator::*;
 mod list;
 pub use list::*;
 
-mod virtual_list;
-pub use virtual_list::*;
+pub mod virtual_list;
 
-mod virtual_stack;
-pub use virtual_stack::*;
+pub mod virtual_stack;
 
 pub mod scroll;
 pub use scroll::{scroll, Scroll};
 
-mod tab;
-pub use tab::*;
+pub mod tab;
 
-mod tooltip;
-pub use tooltip::*;
+pub mod tooltip;
 
 mod stack;
 pub use stack::*;
@@ -125,11 +118,9 @@ pub use text_input::*;
 mod empty;
 pub use empty::*;
 
-mod drag_window_area;
-pub use drag_window_area::*;
+pub mod drag_window_area;
 
-mod drag_resize_window_area;
-pub use drag_resize_window_area::*;
+pub mod drag_resize_window_area;
 
 mod img;
 pub use img::*;
@@ -142,18 +133,13 @@ pub mod editor;
 
 #[cfg(feature = "editor")]
 pub mod text_editor;
-#[cfg(feature = "editor")]
-pub use text_editor::*;
 
 pub mod dropdown;
 
 pub mod slider;
 
-mod radio_button;
-pub use radio_button::*;
+pub mod radio_button;
 
-mod checkbox;
-pub use checkbox::*;
+pub mod checkbox;
 
-mod toggle_button;
-pub use toggle_button::*;
+pub mod toggle_button;

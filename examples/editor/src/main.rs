@@ -8,7 +8,9 @@ use floem::{
             core::{command::EditCommand, editor::EditType, selection::Selection},
             text::{default_dark_color, SimpleStyling},
         },
-        stack, text_editor, Decorators,
+        stack,
+        text_editor::*,
+        Decorators,
     },
     IntoView, View,
 };

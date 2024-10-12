@@ -19,10 +19,7 @@ use floem::{
     reactive::{create_signal, SignalGet, SignalUpdate},
     style::{Background, CursorStyle, Transition},
     unit::{DurationUnitExt, UnitExt},
-    views::{
-        button, h_stack, label, scroll, stack, tab, v_stack, virtual_stack, Decorators,
-        VirtualDirection, VirtualItemSize,
-    },
+    views::{button, h_stack, label, scroll, stack, tab::*, v_stack, virtual_stack::*, Decorators},
     IntoView, View,
 };
 

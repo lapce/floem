@@ -9,7 +9,7 @@ use crate::view::{IntoView, View};
 use crate::view_state::ChangeFlags;
 use crate::views::{
     button, container, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label,
-    tab, text, text_input, v_stack, v_stack_from_iter, Decorators, Label,
+    tab::*, text, text_input, v_stack, v_stack_from_iter, Decorators, Label,
 };
 use crate::window::WindowConfig;
 use crate::{new_window, style, Clipboard};

@@ -40,7 +40,7 @@ use crate::{
     id::ViewId,
     style::{BoxShadowProp, LayoutProps, Style, StyleClassRef},
     view_state::ViewStyleProps,
-    views::{dyn_view, DynamicView},
+    views::dyn_view::*,
 };
 
 /// Type erased [`View`]

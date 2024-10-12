@@ -1,10 +1,7 @@
 use crate::{
     style_class,
     view::IntoView,
-    views::{
-        self, create_value_container_signals, h_stack, svg, value_container, Decorators,
-        ValueContainer,
-    },
+    views::{self, h_stack, svg, value_container::*, Decorators},
 };
 use floem_reactive::{SignalGet, SignalUpdate};
 use std::fmt::Display;

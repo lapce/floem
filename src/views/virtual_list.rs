@@ -1,7 +1,3 @@
-use super::{
-    container, virtual_stack, Decorators, Item, ListClass, ListItemClass, VirtualDirection,
-    VirtualItemSize, VirtualVector,
-};
 use crate::context::ComputeLayoutCx;
 use crate::event::EventPropagation;
 use crate::id::ViewId;
@@ -18,6 +14,8 @@ use floem_reactive::{
 use peniko::kurbo::{Rect, Size};
 use std::hash::Hash;
 use std::rc::Rc;
+
+use super::{container, virtual_stack::*, Decorators, Item, ListClass, ListItemClass};
 
 enum ListUpdate {
     SelectionChanged,

@@ -3,10 +3,7 @@ use floem::{
     peniko::Color,
     reactive::{create_rw_signal, create_signal, SignalGet, SignalUpdate},
     style::{CursorStyle, Position},
-    views::{
-        container, h_stack, label, scroll, virtual_stack, Decorators, VirtualDirection,
-        VirtualItemSize,
-    },
+    views::{container, h_stack, label, scroll, virtual_stack::*, Decorators},
     IntoView, View,
 };
 

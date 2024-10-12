@@ -80,7 +80,7 @@ struct VirtualStackState<T> {
 ///
 /// ## Example
 /// ```
-/// use floem::{reactive::*, views::*, unit::UnitExt};
+/// use floem::{reactive::*, unit::UnitExt, views::*};
 ///
 /// let long_list: im::Vector<i32> = (0..1000000).collect();
 /// let (long_list, _set_long_list) = create_signal(long_list);

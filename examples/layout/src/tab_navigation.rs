@@ -4,7 +4,7 @@ use floem::{
     reactive::{create_signal, ReadSignal, SignalGet, SignalUpdate, WriteSignal},
     style::{CursorStyle, Position},
     text::Weight,
-    views::{container, h_stack, label, scroll, tab, v_stack, Decorators},
+    views::{container, h_stack, label, scroll, tab::*, v_stack, Decorators},
     IntoView, View,
 };
 

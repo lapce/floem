@@ -5,7 +5,7 @@ use crate::{
     peniko::Color,
     reactive::{RwSignal, Scope},
     text::{Attrs, AttrsList, FamilyOwned, Stretch, Weight},
-    views::EditorCustomStyle,
+    views::text_editor::EditorCustomStyle,
 };
 use downcast_rs::{impl_downcast, Downcast};
 use floem_editor_core::{

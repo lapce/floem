@@ -1,6 +1,6 @@
 use floem::{
     reactive::{RwSignal, SignalGet},
-    views::{checkbox, labeled_checkbox, Checkbox, Decorators},
+    views::{checkbox::*, Decorators},
     IntoView,
 };
 

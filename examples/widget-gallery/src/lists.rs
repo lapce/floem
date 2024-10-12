@@ -4,9 +4,8 @@ use floem::{
     style::JustifyContent,
     text::Weight,
     views::{
-        button, container, h_stack, h_stack_from_iter, label, list, scroll, stack, v_stack,
-        v_stack_from_iter, virtual_list, Checkbox, Decorators, VirtualDirection, VirtualItemSize,
-        VirtualVector,
+        button, checkbox::Checkbox, container, h_stack, h_stack_from_iter, label, list, scroll,
+        stack, v_stack, v_stack_from_iter, virtual_list::*, virtual_stack::*, Decorators,
     },
     IntoView,
 };
