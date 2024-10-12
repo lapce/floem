@@ -1,16 +1,3 @@
-//! # View and Widget Traits
-//! Views are self-contained components that can be composed together to create complex UIs.
-//! Views are the main building blocks of Floem.
-//!
-//! Views are structs that implement the View and widget traits. Many of these structs will also contain a child field that also implements View. In this way, views can be composed together easily to create complex UIs. This is the most common way to build UIs in Floem. For more information on how to compose views check out the [Views](crate::views) module.
-//!
-//! Creating a struct and manually implementing the View and Widget traits is typically only needed for building new widgets and for special cases. The rest of this module documentation is for help when manually implementing View and Widget on your own types.
-//!
-//!
-//! ## The View and Widget Traits
-//! The [`View`] trait is the trait that Floem uses to build  and display elements, and it builds on the [`Widget`] trait. The [`Widget`] trait contains the methods for implementing updates, styling, layout, events, and painting.
-//! Eventually, the goal is for Floem to integrate the Widget trait with other rust UI libraries so that the widget layer can be shared among all compatible UI libraries.
-//!
 //! ## State management
 //!
 //! For all reactive state that your type contains, either in the form of signals or derived signals, you need to process the changes within an effect.
@@ -20,28 +7,25 @@
 //! Then, we use a function to construct the slider. As part of this function we create an effect that will be re-run every time the signals in the  `percent` closure change.
 //! In the effect we send the change to the associated [`Id`]. This change can then be handled in the [`Widget::update`] method.
 //! ```rust
-//! use floem::ViewId;
 //! use floem::reactive::*;
+//! use floem::ViewId;
 //!
 //! struct Slider {
 //!     id: ViewId,
 //! }
 //! pub fn slider(percent: impl Fn() -> f32 + 'static) -> Slider {
-//!    let id = ViewId::new();
+//!     let id = ViewId::new();
 //!
-//!    // If the following effect is not created, and `percent` is accessed directly,
-//!    // `percent` will only be accessed a single time and will not be reactive.
-//!    // Therefore the following `create_effect` is necessary for reactivity.
-//!    create_effect(move |_| {
-//!        let percent = percent();
-//!        id.update_state(percent);
-//!    });
-//!    Slider {
-//!        id,
-//!    }
+//!     // If the following effect is not created, and `percent` is accessed directly,
+//!     // `percent` will only be accessed a single time and will not be reactive.
+//!     // Therefore the following `create_effect` is necessary for reactivity.
+//!     create_effect(move |_| {
+//!         let percent = percent();
+//!         id.update_state(percent);
+//!     });
+//!     Slider { id }
 //! }
 //! ```
-//!
 
 use floem_reactive::{ReadSignal, RwSignal, SignalGet};
 use floem_renderer::Renderer;
@@ -59,7 +43,7 @@ use crate::{
     views::{dyn_view, DynamicView},
 };
 
-/// type erased [`View`]
+/// Type erased [`View`]
 ///
 /// Views in Floem are strongly typed. [`AnyView`] allows you to escape the strong typing by converting any type implementing [View] into the [AnyView] type.
 ///
@@ -96,7 +80,20 @@ use crate::{
 /// ```
 pub type AnyView = Box<dyn View>;
 
-/// Converts the value into a [`View`].
+/// Converts a value into a [`View`].
+///
+/// This trait can be implemented on types which can be built into another type that implements the `View` trait.
+///
+/// For example, `&str` implements `IntoView` by building a `text` view and can therefore be used directly in a View tuple.
+/// ```rust
+/// # use floem::reactive::*;
+/// # use floem::views::*;
+/// # use floem::IntoView;
+/// fn app_view() -> impl IntoView {
+///     v_stack(("Item One", "Item Two"))
+/// }
+/// ```
+/// Check out the [other types](#foreign-impls) that `IntoView` is implemented for.
 pub trait IntoView: Sized {
     type V: View + 'static;
 
@@ -199,7 +196,47 @@ pub fn recursively_layout_view(id: ViewId, cx: &mut LayoutCx) -> NodeId {
 /// The View trait contains the methods for implementing updates, styling, layout, events, and painting.
 ///
 /// The [id](View::id) method must be implemented.
-/// The other methods may be implemented as necessary to implement the Widget.
+/// The other methods may be implemented as necessary to implement the functionality of the View.
+/// ## State Management in a Custom View
+///
+/// For all reactive state that your type contains, either in the form of signals or derived signals, you need to process the changes within an effect.
+/// The most common pattern is to [get](floem_reactive::SignalGet::get) the data in an effect and pass it in to `id.update_state()` and then handle that data in the `update` method of the View trait.
+///
+/// For example a minimal slider might look like the following. First, we define the struct that contains the [ViewId](crate::ViewId).
+/// Then, we use a function to construct the slider. As part of this function we create an effect that will be re-run every time the signals in the  `percent` closure change.
+/// In the effect we send the change to the associated [ViewId](crate::ViewId). This change can then be handled in the [View::update](crate::View::update) method.
+/// ```rust
+/// # use floem::{*, views::*, reactive::*};
+///
+/// struct Slider {
+///     id: ViewId,
+///     percent: f32,
+/// }
+/// pub fn slider(percent: impl Fn() -> f32 + 'static) -> Slider {
+///     let id = ViewId::new();
+///
+///     // If the following effect is not created, and `percent` is accessed directly,
+///     // `percent` will only be accessed a single time and will not be reactive.
+///     // Therefore the following `create_effect` is necessary for reactivity.
+///     create_effect(move |_| {
+///         let percent = percent();
+///         id.update_state(percent);
+///     });
+///     Slider { id, percent: 0.0 }
+/// }
+/// impl View for Slider {
+///     fn id(&self) -> ViewId {
+///         self.id
+///     }
+///
+///     fn update(&mut self, cx: &mut floem::context::UpdateCx, state: Box<dyn std::any::Any>) {
+///         if let Ok(percent) = state.downcast::<f32>() {
+///             self.percent = *percent;
+///             self.id.request_layout();
+///         }
+///     }
+/// }
+/// ```
 pub trait View {
     fn id(&self) -> ViewId;
 
@@ -259,12 +296,12 @@ pub trait View {
         default_compute_layout(self.id(), cx)
     }
 
-    /// Implement this to handle events and to pass them down to children
-    ///
-    /// Return true to stop the event from propagating to other views
-    ///
-    /// If the event needs other passes to run you're expected to call
-    /// `cx.app_state_mut().request_changes`.
+    // Implement this to handle events and to pass them down to children
+    //
+    // Return true to stop the event from propagating to other views
+    //
+    // If the event needs other passes to run you're expected to call
+    // `cx.app_state_mut().request_changes`.
     // fn event(
     //     &mut self,
     //     cx: &mut EventCx,

@@ -28,7 +28,10 @@ impl View for Container {
         "Container".into()
     }
 }
+
+/// A trait that adds a `container` method to any type that implements `IntoView`.
 pub trait ContainerExt {
+    /// Wrap the view in a container.
     fn container(self) -> Container;
 }
 

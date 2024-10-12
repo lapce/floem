@@ -18,6 +18,9 @@ use crate::{
 
 /// A trait that extends the appearance and functionality of Views through styling and event handling.
 pub trait Decorators: IntoView<V = Self::DV> + Sized {
+    /// The type of the decorated view.
+    ///
+    /// Using this type allows for chaining of decorators as well as maintaining the original type of the view which allows you to call methods that were a part of the original view even after calling a decorators method.
     type DV: View;
 
     /// Alter the style of the view.
@@ -26,8 +29,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     /// ```rust
     /// # use floem::{peniko::Color, View, views::{Decorators, label, stack}};
     /// fn view() -> impl View {
-    ///     label(|| "Hello".to_string())
-    ///         .style(|s| s.font_size(20.0).color(Color::RED))
+    ///     label(|| "Hello".to_string()).style(|s| s.font_size(20.0).color(Color::RED))
     /// }
     ///
     /// fn other() -> impl View {
@@ -55,6 +57,9 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         view
     }
 
+    /// Add a debug name to the view that will be shown in the inspector.
+    ///
+    /// This can be called multiple times and each name will be shown in the inspector with the most recent name showing first.
     fn debug_name(self, name: impl Into<String>) -> Self::DV {
         let view = self.into_view();
         let view_id = view.id();
@@ -63,6 +68,10 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         view
     }
 
+    /// Conditionally add a debug name to the view that will be shown in the inspector.
+    ///
+    /// # Reactivity
+    /// Both the `apply` and `name` functions are reactive.
     fn debug_name_if<S: Into<String>>(
         self,
         apply: impl Fn() -> bool + 'static,
@@ -97,12 +106,14 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         view
     }
 
+    /// Add a class to the view
     fn class<C: StyleClass>(self, _class: C) -> Self::DV {
         let view = self.into_view();
         view.id().add_class(C::class_ref());
         view
     }
 
+    /// Conditionally add a class to the view
     fn class_if<C: StyleClass>(self, apply: impl Fn() -> bool + 'static, _class: C) -> Self::DV {
         let view = self.into_view();
         let id = view.id();
@@ -117,6 +128,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         view
     }
 
+    /// Remove a class from the view
     fn remove_class<C: StyleClass>(self, _class: C) -> Self::DV {
         let view = self.into_view();
         view.id().remove_class(C::class_ref());
@@ -130,12 +142,17 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         view
     }
 
+    /// Mark the view as draggable
     fn draggable(self) -> Self::DV {
         let view = self.into_view();
         view.id().draggable();
         view
     }
 
+    /// Mark the view as disabled
+    ///
+    /// # Reactivity
+    /// The `disabled_fn` is reactive.
     fn disabled(self, disabled_fn: impl Fn() -> bool + 'static) -> Self::DV {
         let view = self.into_view();
         let id = view.id();
@@ -286,6 +303,12 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         })
     }
 
+    /// Set the event handler for resize events for this view.
+    ///
+    /// There can only be one resize event handler for a view.
+    ///
+    /// # Reactivity
+    /// The action will be called whenever the view is resized but will not rerun automatically in response to signal changes
     fn on_resize(self, action: impl Fn(Rect) + 'static) -> Self::DV {
         let view = self.into_view();
         let id = view.id();
@@ -294,6 +317,12 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         view
     }
 
+    /// Set the event handler for move events for this view.
+    ///
+    /// There can only be one move event handler for a view.
+    ///
+    /// # Reactivity
+    /// The action will be called whenever the view is moved but will not rerun automatically in response to signal changes
     fn on_move(self, action: impl Fn(Point) + 'static) -> Self::DV {
         let view = self.into_view();
         let id = view.id();
@@ -302,6 +331,14 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         view
     }
 
+    /// Set the event handler for cleanup events for this view.
+    ///
+    /// The cleanup event is called when the view is removed from the view tree.
+    ///
+    /// There can only be one cleanup event handler for a view.
+    ///
+    /// # Reactivity
+    /// The action will be called when the view is removed from the view tree but will not rerun automatically in response to signal changes
     fn on_cleanup(self, action: impl Fn() + 'static) -> Self::DV {
         let view = self.into_view();
         let id = view.id();
@@ -310,6 +347,14 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         view
     }
 
+    /// Add an animation to the view.
+    ///
+    /// You can add more than one animation to a view and all of them can be active at the same time.
+    ///
+    /// See the [Animation] struct for more information on how to create animations.
+    ///
+    /// # Reactivity
+    /// The animation function will be updated in response to signal changes in the function. The behavior is the same as the [style] method.
     fn animation(self, animation: impl Fn(Animation) -> Animation + 'static) -> Self::DV {
         let view = self.into_view();
         let view_id = view.id();
@@ -331,6 +376,10 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         view
     }
 
+    /// Clear the focus from the window.
+    ///
+    /// # Reactivity
+    /// The when function is reactive and will rereun in response to any signal changes in the function.
     fn clear_focus(self, when: impl Fn() + 'static) -> Self::DV {
         let view = self.into_view();
         let id = view.id();
@@ -341,6 +390,10 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         view
     }
 
+    /// Request that this view gets the focus for the window.
+    ///
+    /// # Reactivity
+    /// The when function is reactive and will rereun in response to any signal changes in the function.
     fn request_focus(self, when: impl Fn() + 'static) -> Self::DV {
         let view = self.into_view();
         let id = view.id();
@@ -351,6 +404,12 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         view
     }
 
+    /// Set the window scale factor.
+    ///
+    /// This internally calls the [floem::action::set_window_scale] function.
+    ///
+    /// # Reactivity
+    /// The scale function is reactive and will rereun in response to any signal changes in the function.
     fn window_scale(self, scale_fn: impl Fn() -> f64 + 'static) -> Self {
         create_effect(move |_| {
             let window_scale = scale_fn();
@@ -359,6 +418,12 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         self
     }
 
+    /// Set the window title.
+    ///
+    /// This internally calls the [floem::action::set_window_title] function.
+    ///
+    /// # Reactivity
+    /// The title function is reactive and will rereun in response to any signal changes in the function.
     fn window_title(self, title_fn: impl Fn() -> String + 'static) -> Self {
         create_effect(move |_| {
             let window_title = title_fn();
@@ -367,6 +432,17 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         self
     }
 
+    /// Set the system window menu
+    ///
+    /// This internally calls the [floem::action::set_window_menu] function.
+    ///
+    /// Platform support:
+    /// - Windows: No
+    /// - macOS: Yes (not currently implemented)
+    /// - Linux: No
+    ///
+    /// # Reactivity
+    /// The menu function is reactive and will rereun in response to any signal changes in the function.
     fn window_menu(self, menu_fn: impl Fn() -> Menu + 'static) -> Self {
         create_effect(move |_| {
             let menu = menu_fn();
@@ -376,6 +452,10 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     }
 
     /// Adds a secondary-click context menu to the view, which opens at the mouse position.
+    ///
+    /// # Reactivity
+    /// the menu function is not reactive and will not rerun in response to signal changes
+    // TODO: should this be reactive?
     fn context_menu(self, menu: impl Fn() -> Menu + 'static) -> Self::DV {
         let view = self.into_view();
         let id = view.id();
@@ -384,6 +464,10 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     }
 
     /// Adds a primary-click context menu, which opens below the view.
+    ///
+    /// # Reactivity
+    /// the menu function is not reactive and will not rerun in response to signal changes
+    // TODO: should this be reactive?
     fn popout_menu(self, menu: impl Fn() -> Menu + 'static) -> Self::DV {
         let view = self.into_view();
         let id = view.id();
