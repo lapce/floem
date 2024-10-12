@@ -1,10 +1,7 @@
+use dropdown::Dropdown;
 use strum::IntoEnumIterator;
 
-use floem::{
-    reactive::{create_effect, RwSignal, SignalGet},
-    views::{dropdown::Dropdown, Decorators},
-    IntoView,
-};
+use floem::{prelude::*, reactive::create_effect};
 
 use crate::form::{self, form_item};
 
@@ -32,7 +29,7 @@ pub fn dropdown_view() -> impl IntoView {
 
     form::form({
         (form_item("Dropdown".to_string(), 120.0, move || {
-            Dropdown::basic_rw(dropdown_active_item, Values::iter()).keyboard_navigatable()
+            Dropdown::new_rw(dropdown_active_item, Values::iter())
         }),)
     })
 }
