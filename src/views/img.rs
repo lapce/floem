@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use floem_reactive::create_effect;
@@ -90,8 +91,21 @@ pub struct Img {
     content_node: Option<NodeId>,
 }
 
+#[deprecated]
 pub fn img(image: impl Fn() -> Vec<u8> + 'static) -> Img {
+    img_from_bytes(image)
+}
+
+pub fn img_from_bytes(image: impl Fn() -> Vec<u8> + 'static) -> Img {
     img_dynamic(move || image::load_from_memory(&image()).ok().map(Rc::new))
+}
+
+pub fn img_from_image(image: impl Fn() -> DynamicImage + 'static) -> Img {
+    img_dynamic(move || Some(Rc::new(image())))
+}
+
+pub fn img_from_path(image: impl Fn() -> PathBuf + 'static) -> Img {
+    img_dynamic(move || image::open(&image()).ok().map(Rc::new))
 }
 
 pub(crate) fn img_dynamic(image: impl Fn() -> Option<Rc<DynamicImage>> + 'static) -> Img {
