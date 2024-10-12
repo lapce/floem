@@ -3,14 +3,10 @@ use crate::app_state::AppState;
 use crate::context::StyleCx;
 use crate::event::{Event, EventListener, EventPropagation};
 use crate::id::ViewId;
+use crate::prelude::*;
 use crate::profiler::profiler;
 use crate::style::{Style, StyleClassRef, StylePropRef, Transition};
-use crate::view::{IntoView, View};
 use crate::view_state::ChangeFlags;
-use crate::views::{
-    button, container, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label,
-    tab::*, text, text_input, v_stack, v_stack_from_iter, Decorators, Label,
-};
 use crate::window::WindowConfig;
 use crate::{new_window, style, Clipboard};
 use floem_reactive::{
@@ -19,6 +15,7 @@ use floem_reactive::{
 use floem_winit::keyboard::{self, NamedKey};
 use floem_winit::window::WindowId;
 use image::DynamicImage;
+use img::img_dynamic;
 use peniko::kurbo::{Point, Rect, Size};
 use peniko::Color;
 use slotmap::Key;

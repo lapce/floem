@@ -82,12 +82,12 @@ pub struct ToggleButton {
 ///
 /// An example using [`RwSignal`](floem_reactive::RwSignal):
 /// ```rust
-/// use floem::reactive::{SignalGet, SignalUpdate};
+/// use floem::prelude::*;
+/// use toggle_button::toggle_button;
 ///
-/// let state = floem::reactive::create_rw_signal(true);
-/// floem::views::toggle_button(move || state.get())
-///         .on_toggle(move |new_state| state.set(new_state));
-///```
+/// let state = create_rw_signal(true);
+/// toggle_button(move || state.get()).on_toggle(move |new_state| state.set(new_state));
+/// ```
 pub fn toggle_button(state: impl Fn() -> bool + 'static) -> ToggleButton {
     ToggleButton::new(state)
 }

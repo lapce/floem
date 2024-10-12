@@ -15,13 +15,10 @@ pub mod slider;
 use floem::{
     event::{Event, EventListener, EventPropagation},
     keyboard::{Key, NamedKey},
-    peniko::Color,
-    reactive::{create_signal, SignalGet, SignalUpdate},
+    prelude::*,
     style::{Background, CursorStyle, Transition},
-    unit::{DurationUnitExt, UnitExt},
-    views::{button, h_stack, label, scroll, stack, tab::*, v_stack, virtual_stack::*, Decorators},
-    IntoView, View,
 };
+use virtual_stack::*;
 
 fn app_view() -> impl IntoView {
     let tabs: im::Vector<&str> = vec![

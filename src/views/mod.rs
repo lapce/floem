@@ -25,7 +25,7 @@
 //! Views in Floem can also be easily refactored.
 //! ## Example: Refactored Counter
 //! ```rust
-//! use floem::{reactive::*, views::*};
+//! use floem::prelude::*;
 //!
 //! let mut counter = RwSignal::new(0);
 //!
@@ -99,13 +99,16 @@ mod list;
 pub use list::*;
 
 pub mod virtual_list;
+pub use virtual_list::virtual_list;
 
 pub mod virtual_stack;
+pub use virtual_stack::virtual_stack;
 
 pub mod scroll;
-pub use scroll::{scroll, Scroll};
+pub use scroll::{scroll, Scroll, ScrollExt};
 
 pub mod tab;
+pub use tab::tab;
 
 pub mod tooltip;
 
@@ -122,8 +125,8 @@ pub mod drag_window_area;
 
 pub mod drag_resize_window_area;
 
-mod img;
-pub use img::*;
+pub mod img;
+pub use img::img;
 
 mod button;
 pub use button::*;
