@@ -34,13 +34,7 @@ pub(crate) fn create_stack(
 /// ## Example
 /// ```rust
 /// use floem::views::*;
-/// stack((
-///    text("first element"),
-///     stack((
-///        text("new stack"),
-///        empty(),
-///     )),
-/// ));
+/// stack((text("first element"), stack((text("new stack"), empty()))));
 /// ```
 pub fn stack<VT: ViewTuple + 'static>(children: VT) -> Stack {
     create_stack(children.into_views(), None)
@@ -74,7 +68,11 @@ where
 /// ## Example
 /// ```rust
 /// use floem::views::*;
-/// stack_from_iter(vec![1,1,2,2,3,4,5,6,7,8,9].iter().map(|val| text(val)));
+/// stack_from_iter(
+///     vec![1, 1, 2, 2, 3, 4, 5, 6, 7, 8, 9]
+///         .iter()
+///         .map(|val| text(val)),
+/// );
 /// ```
 pub fn stack_from_iter<V>(iterator: impl IntoIterator<Item = V>) -> Stack
 where
@@ -135,6 +133,7 @@ impl Stack {
     }
 }
 
+/// An extenstion trait that let's you build a stack by calling `.v_stack` or `.h_stack`.
 pub trait StackExt {
     fn stack(self, direction: FlexDirection) -> Stack;
     fn v_stack(self) -> Stack
@@ -153,27 +152,5 @@ pub trait StackExt {
 impl<V: IntoView + 'static, T: IntoIterator<Item = V> + 'static> StackExt for T {
     fn stack(self, direction: FlexDirection) -> Stack {
         from_iter(self, Some(direction))
-    }
-}
-// Necessary to have a separate Ext trait because IntoIterator could be implemented on tuples of specific view types
-pub trait TupleStackExt {
-    fn stack(self, direction: FlexDirection) -> Stack;
-    fn v_stack(self) -> Stack
-    where
-        Self: Sized,
-    {
-        TupleStackExt::stack(self, FlexDirection::Column)
-    }
-    fn h_stack(self) -> Stack
-    where
-        Self: Sized,
-    {
-        TupleStackExt::stack(self, FlexDirection::Row)
-    }
-}
-
-impl<T: ViewTuple + 'static> TupleStackExt for T {
-    fn stack(self, direction: FlexDirection) -> Stack {
-        create_stack(self.into_views(), Some(direction))
     }
 }
