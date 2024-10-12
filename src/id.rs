@@ -338,6 +338,8 @@ impl ViewId {
     }
 
     /// Set the sytem popout menu that should be shown when this view is clicked
+    ///
+    /// Adds a primary-click context menu, which opens below the view.
     pub fn update_popout_menu(&self, menu: impl Fn() -> Menu + 'static) {
         self.state().borrow_mut().popout_menu = Some(Rc::new(menu));
     }

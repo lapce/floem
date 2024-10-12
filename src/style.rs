@@ -794,6 +794,7 @@ macro_rules! prop {
     ) => {
         $(#[$meta])*
         #[derive(Default, Copy, Clone)]
+        #[allow(missing_docs)]
         $v struct $name;
         impl $crate::style::StyleProp for $name {
             type Type = $ty;

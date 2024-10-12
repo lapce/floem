@@ -4,7 +4,10 @@ use floem_reactive::{
     as_child_of_current_scope, create_effect, create_updater, Scope, SignalGet, SignalUpdate,
 };
 use floem_winit::keyboard::{Key, NamedKey};
-use peniko::kurbo::{Point, Rect};
+use peniko::{
+    kurbo::{Point, Rect},
+    Color,
+};
 
 use crate::{
     action::{add_overlay, remove_overlay},
@@ -13,9 +16,10 @@ use crate::{
     prop, prop_extractor,
     style::{CustomStylable, Style, StyleClass, Width},
     style_class,
-    unit::PxPctAuto,
+    unit::{PxPctAuto, UnitExt},
     view::{default_compute_layout, IntoView, View},
-    views::{scroll, Decorators},
+    views::{container, scroll, stack, svg, text, Decorators},
+    AnyView,
 };
 
 use super::list;
@@ -23,7 +27,6 @@ use super::list;
 type ChildFn<T> = dyn Fn(T) -> (Box<dyn View>, Scope);
 
 style_class!(pub DropdownClass);
-style_class!(pub DropdownScrollClass);
 
 prop!(pub CloseOnAccept: bool {} = true);
 prop_extractor!(DropdownStyle {
@@ -59,13 +62,12 @@ where
 /// # use floem::views::empty;
 /// # use floem::views::Decorators;
 /// // root view
-/// empty()
-///     .style(|s|
-///         s.class(dropdown::DropdownClass, |s| {
-///             s.set(dropdown::CloseOnAccept, false)
-///         })
-///  );
-///```
+/// empty().style(|s| {
+///     s.class(dropdown::DropdownClass, |s| {
+///         s.set(dropdown::CloseOnAccept, false)
+///     })
+/// });
+/// ```
 pub struct Dropdown<T: 'static> {
     id: ViewId,
     main_view: ViewId,
@@ -162,7 +164,10 @@ impl<T: 'static> View for Dropdown<T> {
                 return EventPropagation::Stop;
             }
             Event::KeyUp(ref key_event)
-                if key_event.key.logical_key == Key::Named(NamedKey::Enter) =>
+                if matches!(
+                    key_event.key.logical_key,
+                    Key::Named(NamedKey::Enter) | Key::Named(NamedKey::Space)
+                ) =>
             {
                 self.swap_state()
             }
@@ -174,6 +179,31 @@ impl<T: 'static> View for Dropdown<T> {
 }
 
 impl<T> Dropdown<T> {
+    pub fn default_main_view(item: T) -> AnyView
+    where
+        T: std::fmt::Display,
+    {
+        const CHEVRON_DOWN: &str = r##"
+            <svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" viewBox="0 0 185.344 185.344">
+                <path fill="#010002" d="M92.672 144.373a10.707 10.707 0 0 1-7.593-3.138L3.145 59.301c-4.194-4.199
+                -4.194-10.992 0-15.18a10.72 10.72 0 0 1 15.18 0l74.347 74.341 74.347-74.341a10.72 10.72 0 0 1
+                15.18 0c4.194 4.194 4.194 10.981 0 15.18l-81.939 81.934a10.694 10.694 0 0 1-7.588 3.138z"/>
+            </svg>
+        "##;
+
+        stack((
+            text(item),
+            container(svg(CHEVRON_DOWN).style(|s| s.size(12, 12).color(Color::BLACK))).style(|s| {
+                s.items_center()
+                    .padding(3.)
+                    .border_radius(7.pct())
+                    .hover(move |s| s.background(Color::LIGHT_GRAY))
+            }),
+        ))
+        .style(|s| s.items_center().justify_between().size_full())
+        .into_any()
+    }
+
     /// Creates a new dropdown
     pub fn new<MF, I, LF, AIF>(
         active_item: AIF,
@@ -213,7 +243,6 @@ impl<T> Dropdown<T> {
                 .on_event_stop(EventListener::FocusGained, move |_| {
                     inner_list_id.request_focus();
                 })
-                .class(DropdownScrollClass)
                 .into_any()
         });
 
@@ -244,20 +273,129 @@ impl<T> Dropdown<T> {
         .class(DropdownClass)
     }
 
-    pub fn new_rw<MF, I, LF>(
-        active_item: impl SignalGet<T> + SignalUpdate<T> + Copy + 'static,
+    /// Creates a basic dropdown with a read-only function for the active item.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use floem::{*, views::*, reactive::*};
+    /// # use floem::views::dropdown::*;
+    /// let active_item = RwSignal::new(3);
+    ///
+    /// Dropdown::basic(move || active_item.get(), 1..=5).on_accept(move |val| active_item.set(val)));
+    /// ```
+    ///
+    /// This function is a convenience wrapper around `Dropdown::new` that uses default views
+    /// for the main and list items.
+    ///
+    /// See also [Dropdown::basic_rw].
+    ///
+    /// # Arguments
+    ///
+    /// * `active_item` - A function that returns the currently selected item.
+    ///     * `AIF` - The type of the active item function of type `T`.
+    ///     * `T` - The type of items in the dropdown. Must implement `Clone` and `std::fmt::Display`.
+    ///
+    /// * `iterator` - An iterator that provides the items to be displayed in the dropdown list.
+    ///                It must be `Clone` and iterate over items of type `T`.
+    ///     * `I` - The type of the iterator.
+    pub fn basic<AIF, I>(active_item: AIF, iterator: I) -> Dropdown<T>
+    where
+        AIF: Fn() -> T + 'static,
+        I: IntoIterator<Item = T> + Clone + 'static,
+        T: Clone + std::fmt::Display + 'static,
+    {
+        Self::new(active_item, Self::default_main_view, iterator, |v| {
+            crate::views::text(v).into_any()
+        })
+    }
+
+    /// Creates a new dropdown with a read-write signal for the active item.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use floem::{*, views::*, reactive::*};
+    /// # use floem::{views::dropdown::*};
+    /// let active_item = RwSignal::new(3);
+    ///
+    /// Dropdown::new_rw(
+    ///     active_item,
+    ///     |item| text(item).into_any(),
+    ///     1..=5,
+    ///     |item| text(item).into_any(),
+    /// );
+    /// ```
+    ///
+    /// This function allows for more customization compared to `basic_rw` by letting you specify
+    /// custom view functions for both the main dropdown display and the list items.
+    ///
+    /// # Arguments
+    ///
+    /// * `active_item` - A read-write signal representing the currently selected item.
+    ///                   It must implement both `SignalGet<T>` and `SignalUpdate<T>`.
+    ///     * `T` - The type of items in the dropdown. Must implement `Clone`.
+    ///     * `AI` - The type of the active item signal.
+    ///
+    /// * `main_view` - A function that takes a value of type `T` and returns an `AnyView`
+    ///                 to be used as the main dropdown display.
+    /// * `iterator` - An iterator that provides the items to be displayed in the dropdown list.
+    ///                It must be `Clone` and iterate over items of type `T`.
+    /// * `list_item_fn` - A function that takes a value of type `T` and returns an `AnyView`
+    ///                    to be used for each item in the dropdown list.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `MF` - The type of the main view function.
+    /// * `I` - The type of the iterator.
+    /// * `LF` - The type of the list item function.
+    pub fn new_rw<AI, MF, I, LF>(
+        active_item: AI,
         main_view: MF,
         iterator: I,
         list_item_fn: LF,
     ) -> Dropdown<T>
     where
-        MF: Fn(T) -> Box<dyn View> + 'static,
+        AI: SignalGet<T> + SignalUpdate<T> + Copy + 'static,
+        MF: Fn(T) -> AnyView + 'static,
         I: IntoIterator<Item = T> + Clone + 'static,
-        LF: Fn(T) -> Box<dyn View> + Clone + 'static,
+        LF: Fn(T) -> AnyView + Clone + 'static,
         T: Clone + 'static,
     {
         Self::new(move || active_item.get(), main_view, iterator, list_item_fn)
             .on_accept(move |nv| active_item.set(nv))
+    }
+
+    /// Creates a basic dropdown with a read-write signal for the active item.
+    ///
+    /// # Example:
+    /// ```rust
+    /// # use floem::{*, views::*, reactive::*};
+    /// # use floem::{views::dropdown::*};
+    /// let dropdown_active_item = RwSignal::new(3);
+    ///
+    /// Dropdown::basic_rw(dropdown_active_item, 1..=5);
+    /// ```
+    ///
+    /// This function is a convenience wrapper around `Dropdown::new_rw` that uses default views
+    /// for the main and list items.
+    ///
+    /// # Arguments
+    ///
+    /// * `active_item` - A read-write signal representing the currently selected item.
+    ///                   It must implement `SignalGet<T>` and `SignalUpdate<T>`.
+    ///     * `T` - The type of items in the dropdown. Must implement `Clone` and `std::fmt::Display`.
+    ///     * `AI` - The type of the active item signal.
+    /// * `iterator` - An iterator that provides the items to be displayed in the dropdown list.
+    ///                It must be `Clone` and iterate over items of type `T`.
+    ///     * `I` - The type of the iterator.
+    pub fn basic_rw<AI, I>(active_item: AI, iterator: I) -> Dropdown<T>
+    where
+        AI: SignalGet<T> + SignalUpdate<T> + Copy + 'static,
+        I: IntoIterator<Item = T> + Clone + 'static,
+        T: Clone + std::fmt::Display + 'static,
+    {
+        Self::new_rw(active_item, Self::default_main_view, iterator, |v| {
+            text(v).into_any()
+        })
     }
 
     pub fn show_list(self, show: impl Fn() -> bool + 'static) -> Self {
