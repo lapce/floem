@@ -1,7 +1,7 @@
 use floem::{
     peniko::Color,
     text::{Style as FontStyle, Weight},
-    views::{label, static_label, tooltip, Decorators},
+    views::{label, static_label, tooltip::*, Decorators},
     IntoView,
 };
 

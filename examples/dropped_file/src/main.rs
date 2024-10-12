@@ -2,7 +2,7 @@ use floem::{
     event::EventListener,
     keyboard::{Key, Modifiers, NamedKey},
     unit::UnitExt,
-    views::{dyn_view, Decorators},
+    views::{dyn_view::*, Decorators},
     IntoView, View,
 };
 

@@ -16,7 +16,9 @@ use floem::{
             core::{editor::EditType, selection::Selection},
             text::WrapMethod,
         },
-        stack, text_editor, Decorators,
+        stack,
+        text_editor::*,
+        Decorators,
     },
 };
 use floem::{IntoView, View};
