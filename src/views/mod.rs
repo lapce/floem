@@ -49,11 +49,11 @@
 //!     - static and always contains the same elements in the same order
 //! - [dynamic stack](dyn_stack())
 //!     - can dynamically change the elements in the stack by reactively updating the list of items provided
-//! - [virtual stack](virtual_stack())
+//! - [virtual stack](virtual_stack::virtual_stack())
 //!     - can dynamically change the elements in the stack
 //!     - can lazily load the items as they appear in a [scroll view](scroll())
 //!
-//! There is also a basic [list](list()) and a [virtual list](virtual_list()).
+//! There is also a basic [list](list()) and a [virtual list](virtual_list::virtual_list()).
 //! Lists are like their stack counterparts but they also have built-in support for the selection of items: up and down using arrow keys, top and bottom control using the home and end keys, and for the "acceptance" of an item using the Enter key.
 //! You could build this manually yourself using stacks but it is common enough that it is built-in as a list.
 //!

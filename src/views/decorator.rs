@@ -354,7 +354,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     /// See the [Animation] struct for more information on how to create animations.
     ///
     /// # Reactivity
-    /// The animation function will be updated in response to signal changes in the function. The behavior is the same as the [style] method.
+    /// The animation function will be updated in response to signal changes in the function. The behavior is the same as the [Decorators::style] method.
     fn animation(self, animation: impl Fn(Animation) -> Animation + 'static) -> Self::DV {
         let view = self.into_view();
         let view_id = view.id();
@@ -406,7 +406,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
 
     /// Set the window scale factor.
     ///
-    /// This internally calls the [floem::action::set_window_scale] function.
+    /// This internally calls the [crate::action::update_window_scale] function.
     ///
     /// # Reactivity
     /// The scale function is reactive and will rereun in response to any signal changes in the function.
@@ -420,7 +420,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
 
     /// Set the window title.
     ///
-    /// This internally calls the [floem::action::set_window_title] function.
+    /// This internally calls the [crate::action::set_window_title] function.
     ///
     /// # Reactivity
     /// The title function is reactive and will rereun in response to any signal changes in the function.
@@ -434,7 +434,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
 
     /// Set the system window menu
     ///
-    /// This internally calls the [floem::action::set_window_menu] function.
+    /// This internally calls the [crate::action::set_window_menu] function.
     ///
     /// Platform support:
     /// - Windows: No

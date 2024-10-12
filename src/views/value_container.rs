@@ -46,7 +46,7 @@ where
 
 /// A wrapper around another View that has value updates.
 ///
-/// A [`ValueContainer`] is useful for wrapping another [View](crate::view::View).
+/// A [`ValueContainer`] is useful for wrapping another [View].
 /// This is to provide the `on_update` method which can notify when the view's
 /// internal value was get changed
 pub fn value_container<T: 'static, V: IntoView + 'static>(
