@@ -1,10 +1,19 @@
+#![deny(missing_docs)]
+//! A view that allows the user to select an item from a list of items.
+//!
+//! The [Dropdown] struct provides several constructors, each offering different levels of customization and ease of use
+//!
+//! The [DropdownCustomStyle] struct allows for easy and advanced customization of the dropdown's appearance
 use std::{any::Any, rc::Rc};
 
 use floem_reactive::{
     as_child_of_current_scope, create_effect, create_updater, Scope, SignalGet, SignalUpdate,
 };
 use floem_winit::keyboard::{Key, NamedKey};
-use peniko::kurbo::{Point, Rect};
+use peniko::{
+    kurbo::{Point, Rect},
+    Color,
+};
 
 use crate::{
     action::{add_overlay, remove_overlay},
@@ -15,38 +24,45 @@ use crate::{
     style_class,
     unit::PxPctAuto,
     view::{default_compute_layout, IntoView, View},
-    views::{scroll, Decorators},
+    views::{container, scroll, stack, svg, text, Decorators},
+    AnyView,
 };
 
 use super::list;
 
-type ChildFn<T> = dyn Fn(T) -> (Box<dyn View>, Scope);
+type ChildFn<T> = dyn Fn(T) -> (AnyView, Scope);
 
-style_class!(pub DropdownClass);
-style_class!(pub DropdownScrollClass);
+style_class!(
+    /// A Style class that is applied to all dropdowns.
+    pub DropdownClass
+);
 
-prop!(pub CloseOnAccept: bool {} = true);
+prop!(
+    /// A property that determines whether the dropdown should close automatically when an item is selected.
+    pub CloseOnAccept: bool {} = true
+);
 prop_extractor!(DropdownStyle {
     close_on_accept: CloseOnAccept,
 });
 
-pub fn dropdown<T, MF, I, LF, AIF>(
-    active_item: AIF,
-    main_view: MF,
-    iterator: I,
-    list_item_fn: LF,
-) -> Dropdown<T>
-where
-    MF: Fn(T) -> Box<dyn View> + 'static,
-    I: IntoIterator<Item = T> + Clone + 'static,
-    LF: Fn(T) -> Box<dyn View> + Clone + 'static,
-    T: Clone + 'static,
-    AIF: Fn() -> T + 'static,
-{
-    Dropdown::new(active_item, main_view, iterator, list_item_fn)
-}
-
-/// A dropdown widget
+/// # A customizable dropdown view for selecting an item from a list.
+///
+/// The `Dropdown` struct provides several constructors, each offering different levels of
+/// customization and ease of use:
+///
+/// - [`Dropdown::basic_rw`]: The simplest constructor, ideal for quick setup with minimal customization.
+///   It uses default views and assumes direct access to a signal that can be both read from and written to for driving the selection of an item.
+///
+/// - [`Dropdown::basic`]: Similar to `basic_rw`, but uses a read-only function for the active item, and requires that you manually provide an `on_accept` callback.
+///
+/// - [`Dropdown::new`]: Offers full customization, letting you define custom view functions for
+///   both the main display and list items. Uses a read-only function for the active item and requires that you manually provide an `on_accept` callback.
+///
+/// - [`Dropdown::new_rw`]: Combines the full customization of `new` with the read-write signal
+///   capability of `basic_rw`.
+///
+///
+/// Choose the constructor that best fits your needs based on the level of customization required.
 ///
 /// **Styling**:
 /// You can modify the behavior of the dropdown through the `CloseOnAccept` property.
@@ -59,13 +75,12 @@ where
 /// # use floem::views::empty;
 /// # use floem::views::Decorators;
 /// // root view
-/// empty()
-///     .style(|s|
-///         s.class(dropdown::DropdownClass, |s| {
-///             s.set(dropdown::CloseOnAccept, false)
-///         })
-///  );
-///```
+/// empty().style(|s| {
+///     s.class(dropdown::DropdownClass, |s| {
+///         s.set(dropdown::CloseOnAccept, false)
+///     })
+/// });
+/// ```
 pub struct Dropdown<T: 'static> {
     id: ViewId,
     main_view: ViewId,
@@ -162,7 +177,10 @@ impl<T: 'static> View for Dropdown<T> {
                 return EventPropagation::Stop;
             }
             Event::KeyUp(ref key_event)
-                if key_event.key.logical_key == Key::Named(NamedKey::Enter) =>
+                if matches!(
+                    key_event.key.logical_key,
+                    Key::Named(NamedKey::Enter) | Key::Named(NamedKey::Space)
+                ) =>
             {
                 self.swap_state()
             }
@@ -174,7 +192,69 @@ impl<T: 'static> View for Dropdown<T> {
 }
 
 impl<T> Dropdown<T> {
-    /// Creates a new dropdown
+    /// Creates a default main view for the dropdown.
+    ///
+    /// This function generates a view that displays the given item as text,
+    /// along with a chevron-down icon to indicate that it's a dropdown.
+    pub fn default_main_view(item: T) -> AnyView
+    where
+        T: std::fmt::Display,
+    {
+        const CHEVRON_DOWN: &str = r##"
+            <svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" viewBox="0 0 185.344 185.344">
+                <path fill="#010002" d="M92.672 144.373a10.707 10.707 0 0 1-7.593-3.138L3.145 59.301c-4.194-4.199
+                -4.194-10.992 0-15.18a10.72 10.72 0 0 1 15.18 0l74.347 74.341 74.347-74.341a10.72 10.72 0 0 1
+                15.18 0c4.194 4.194 4.194 10.981 0 15.18l-81.939 81.934a10.694 10.694 0 0 1-7.588 3.138z"/>
+            </svg>
+        "##;
+
+        // TODO: this should be more customizable
+        stack((
+            text(item),
+            container(svg(CHEVRON_DOWN).style(|s| s.size(12, 12).color(Color::BLACK))).style(|s| {
+                s.items_center()
+                    .padding(3.)
+                    .border_radius(5)
+                    .hover(move |s| s.background(Color::LIGHT_GRAY))
+            }),
+        ))
+        .style(|s| s.items_center().justify_between().size_full())
+        .into_any()
+    }
+
+    /// Creates a new customizable dropdown.
+    ///
+    /// You might want to use some of the simpler constructors like [Dropdown::basic] or [Dropdown::basic_rw].
+    ///
+    /// # Example
+    /// ```rust
+    /// # use floem::{*, views::*, reactive::*};
+    /// # use floem::views::dropdown::*;
+    /// let active_item = RwSignal::new(3);
+    ///
+    /// Dropdown::new(
+    ///     move || active_item.get(),
+    ///     |main_item| text(main_item).into_any(),
+    ///     1..=5,
+    ///     |list_item| text(list_item).into_any(),
+    /// )
+    /// .on_accept(move |item| active_item.set(item));
+    /// ```
+    ///
+    /// This function provides full control over the dropdown's appearance and behavior
+    /// by allowing custom view functions for both the main display and list items.
+    ///
+    /// # Arguments
+    ///
+    /// * `active_item` - A function that returns the currently selected item.
+    ///
+    /// * `main_view` - A function that takes a value of type `T` and returns an `AnyView`
+    ///                 to be used as the main dropdown display.
+    ///
+    /// * `iterator` - An iterator that provides the items to be displayed in the dropdown list.
+    ///
+    /// * `list_item_fn` - A function that takes a value of type `T` and returns an `AnyView`
+    ///                    to be used for each item in the dropdown list.
     pub fn new<MF, I, LF, AIF>(
         active_item: AIF,
         main_view: MF,
@@ -182,9 +262,9 @@ impl<T> Dropdown<T> {
         list_item_fn: LF,
     ) -> Dropdown<T>
     where
-        MF: Fn(T) -> Box<dyn View> + 'static,
+        MF: Fn(T) -> AnyView + 'static,
         I: IntoIterator<Item = T> + Clone + 'static,
-        LF: Fn(T) -> Box<dyn View> + Clone + 'static,
+        LF: Fn(T) -> AnyView + Clone + 'static,
         T: Clone + 'static,
         AIF: Fn() -> T + 'static,
     {
@@ -213,7 +293,6 @@ impl<T> Dropdown<T> {
                 .on_event_stop(EventListener::FocusGained, move |_| {
                     inner_list_id.request_focus();
                 })
-                .class(DropdownScrollClass)
                 .into_any()
         });
 
@@ -244,22 +323,120 @@ impl<T> Dropdown<T> {
         .class(DropdownClass)
     }
 
-    pub fn new_rw<MF, I, LF>(
-        active_item: impl SignalGet<T> + SignalUpdate<T> + Copy + 'static,
+    /// Creates a basic dropdown with a read-only function for the active item.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use floem::{*, views::*, reactive::*};
+    /// # use floem::views::dropdown::*;
+    /// let active_item = RwSignal::new(3);
+    ///
+    /// Dropdown::basic(move || active_item.get(), 1..=5).on_accept(move |val| active_item.set(val));
+    /// ```
+    ///
+    /// This function is a convenience wrapper around `Dropdown::new` that uses default views
+    /// for the main and list items.
+    ///
+    /// See also [Dropdown::basic_rw].
+    ///
+    /// # Arguments
+    ///
+    /// * `active_item` - A function that returns the currently selected item.
+    ///
+    /// * `iterator` - An iterator that provides the items to be displayed in the dropdown list.
+    pub fn basic<AIF, I>(active_item: AIF, iterator: I) -> Dropdown<T>
+    where
+        AIF: Fn() -> T + 'static,
+        I: IntoIterator<Item = T> + Clone + 'static,
+        T: Clone + std::fmt::Display + 'static,
+    {
+        Self::new(active_item, Self::default_main_view, iterator, |v| {
+            crate::views::text(v).into_any()
+        })
+    }
+
+    /// Creates a new dropdown with a read-write signal for the active item.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use floem::{*, views::*, reactive::*};
+    /// # use floem::{views::dropdown::*};
+    /// let active_item = RwSignal::new(3);
+    ///
+    /// Dropdown::new_rw(
+    ///     active_item,
+    ///     |item| text(item).into_any(),
+    ///     1..=5,
+    ///     |item| text(item).into_any(),
+    /// );
+    /// ```
+    ///
+    /// This function allows for more customization compared to `basic_rw` by letting you specify
+    /// custom view functions for both the main dropdown display and the list items.
+    ///
+    /// # Arguments
+    ///
+    /// * `active_item` - A read-write signal representing the currently selected item.
+    ///
+    /// * `main_view` - A function that takes a value of type `T` and returns an `AnyView`
+    ///                 to be used as the main dropdown display.
+    ///
+    /// * `iterator` - An iterator that provides the items to be displayed in the dropdown list.
+    ///
+    /// * `list_item_fn` - A function that takes a value of type `T` and returns an `AnyView`
+    ///                    to be used for each item in the dropdown list.
+    pub fn new_rw<AI, MF, I, LF>(
+        active_item: AI,
         main_view: MF,
         iterator: I,
         list_item_fn: LF,
     ) -> Dropdown<T>
     where
-        MF: Fn(T) -> Box<dyn View> + 'static,
+        AI: SignalGet<T> + SignalUpdate<T> + Copy + 'static,
+        MF: Fn(T) -> AnyView + 'static,
         I: IntoIterator<Item = T> + Clone + 'static,
-        LF: Fn(T) -> Box<dyn View> + Clone + 'static,
+        LF: Fn(T) -> AnyView + Clone + 'static,
         T: Clone + 'static,
     {
         Self::new(move || active_item.get(), main_view, iterator, list_item_fn)
             .on_accept(move |nv| active_item.set(nv))
     }
 
+    /// Creates a basic dropdown with a read-write signal for the active item.
+    ///
+    /// # Example:
+    /// ```rust
+    /// # use floem::{*, views::*, reactive::*};
+    /// # use floem::{views::dropdown::*};
+    /// let dropdown_active_item = RwSignal::new(3);
+    ///
+    /// Dropdown::basic_rw(dropdown_active_item, 1..=5);
+    /// ```
+    ///
+    /// This function is a convenience wrapper around `Dropdown::new_rw` that uses default views
+    /// for the main and list items.
+    ///
+    /// # Arguments
+    ///
+    /// * `active_item` - A read-write signal representing the currently selected item.
+    ///                   It must implement `SignalGet<T>` and `SignalUpdate<T>`.
+    ///
+    /// * `iterator` - An iterator that provides the items to be displayed in the dropdown list.
+    pub fn basic_rw<AI, I>(active_item: AI, iterator: I) -> Dropdown<T>
+    where
+        AI: SignalGet<T> + SignalUpdate<T> + Copy + 'static,
+        I: IntoIterator<Item = T> + Clone + 'static,
+        T: Clone + std::fmt::Display + 'static,
+    {
+        Self::new_rw(active_item, Self::default_main_view, iterator, |v| {
+            text(v).into_any()
+        })
+    }
+
+    /// Sets a reactive condition for showing or hiding the dropdown list.
+    ///
+    /// # Reactivity
+    /// The `show` function will be re-run whenever any signal it depends on changes.
     pub fn show_list(self, show: impl Fn() -> bool + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
@@ -269,11 +446,17 @@ impl<T> Dropdown<T> {
         self
     }
 
+    /// Sets a callback function to be called when an item is selected from the dropdown.
+    ///
+    /// Only one `on_accept` callback can be set at a time.
     pub fn on_accept(mut self, on_accept: impl Fn(T) + 'static) -> Self {
         self.on_accept = Some(Box::new(on_accept));
         self
     }
 
+    /// Sets a callback function to be called when the dropdown is opened.
+    ///
+    /// Only one `on_open` callback can be set at a time.
     pub fn on_open(mut self, on_open: impl Fn(bool) + 'static) -> Self {
         self.on_open = Some(Box::new(on_open));
         self
@@ -334,27 +517,29 @@ impl<T> Dropdown<T> {
         }));
     }
 
-    /// Sets the custom style properties of the `DropDown`.
+    /// Sets the custom style properties of the `Dropdown`.
     pub fn dropdown_style(
         self,
-        style: impl Fn(DropDownCustomStyle) -> DropDownCustomStyle + 'static,
+        style: impl Fn(DropdownCustomStyle) -> DropdownCustomStyle + 'static,
     ) -> Self {
         self.custom_style(style)
     }
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct DropDownCustomStyle(Style);
-impl From<DropDownCustomStyle> for Style {
-    fn from(val: DropDownCustomStyle) -> Self {
+/// A struct that allows for easy custom styling of the `Dropdown` using the [Dropdown::dropdown_style] method or the [Style::custom_style](crate::style::CustomStyle::custom_style) method.
+pub struct DropdownCustomStyle(Style);
+impl From<DropdownCustomStyle> for Style {
+    fn from(val: DropdownCustomStyle) -> Self {
         val.0
     }
 }
-impl<T> CustomStylable<DropDownCustomStyle> for Dropdown<T> {
+impl<T> CustomStylable<DropdownCustomStyle> for Dropdown<T> {
     type DV = Self;
 }
 
-impl DropDownCustomStyle {
+impl DropdownCustomStyle {
+    /// Creates a new `DropDownCustomStyle` with default values.
     pub fn new() -> Self {
         Self::default()
     }

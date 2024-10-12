@@ -63,7 +63,11 @@ impl List {
 /// ## Example
 /// ```rust
 /// use floem::views::*;
-/// list(vec![1,1,2,2,3,4,5,6,7,8,9].iter().map(|val| text(val)));
+/// list(
+///     vec![1, 1, 2, 2, 3, 4, 5, 6, 7, 8, 9]
+///         .iter()
+///         .map(|val| text(val)),
+/// );
 /// ```
 pub fn list<V>(iterator: impl IntoIterator<Item = V>) -> List
 where
@@ -139,7 +143,7 @@ where
                     }
                     EventPropagation::Stop
                 }
-                Key::Named(NamedKey::Enter) => {
+                Key::Named(NamedKey::Enter) | Key::Named(NamedKey::Space) => {
                     list_id.update_state(ListUpdate::Accept);
                     EventPropagation::Stop
                 }
