@@ -470,18 +470,18 @@ impl TextInput {
         tmp.size() + Size::new(0., tmp.hit_position(0).glyph_descent)
     }
 
-    fn update_selection(&mut self, selection_start: usize, selection_stop: usize) {
-        if selection_stop < selection_start {
-            self.selection = Some(Range {
-                start: selection_stop,
-                end: selection_start,
-            });
-        } else if selection_stop > selection_start {
-            self.selection = Some(Range {
+    fn update_selection(&mut self, selection_start: usize, selection_end: usize) {
+        self.selection = match selection_start.cmp(&selection_end) {
+            std::cmp::Ordering::Less => Some(Range {
                 start: selection_start,
-                end: selection_stop,
-            });
-        }
+                end: selection_end,
+            }),
+            std::cmp::Ordering::Greater => Some(Range {
+                start: selection_end,
+                end: selection_start,
+            }),
+            std::cmp::Ordering::Equal => None,
+        };
     }
 
     fn update_text_layout(&mut self) {
