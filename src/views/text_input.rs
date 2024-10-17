@@ -655,8 +655,7 @@ impl TextInput {
     }
 
     fn handle_key_down(&mut self, cx: &mut EventCx, event: &KeyEvent) -> bool {
-        match event.key.logical_key {
-            Key::Character(ref ch) => self.insert_text(event, ch),
+        let handled = match event.key.logical_key {
             Key::Unidentified(_) => event
                 .key
                 .text
@@ -802,6 +801,19 @@ impl TextInput {
 
                 cursor_moved
             }
+            _ => false,
+        };
+        if handled {
+            return true;
+        }
+
+        let non_shift_mask = Modifiers::all().difference(Modifiers::SHIFT);
+        if event.modifiers.intersects(non_shift_mask) {
+            return false;
+        }
+
+        match event.key.logical_key {
+            Key::Character(ref ch) => self.insert_text(event, ch),
             _ => false,
         }
     }
