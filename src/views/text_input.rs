@@ -492,7 +492,6 @@ impl TextInput {
             .with_untracked(|buff| text_layout.set_text(buff, attrs_list.clone()));
 
         let glyph_max_size = self.get_font_glyph_max_size();
-        // let hit_pos = text_layout.hit_position(0);
         self.height = glyph_max_size.height as f32;
         self.glyph_max_size = glyph_max_size;
 
@@ -1181,7 +1180,6 @@ impl View for TextInput {
             if let Some(placeholder_buff) = &self.placeholder_buff {
                 self.paint_placeholder_text(placeholder_buff, cx);
             }
-            // return;
         }
 
         let text_node = self.text_node.unwrap();
