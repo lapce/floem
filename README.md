@@ -63,4 +63,10 @@ To help you master Floem, we provide [documentation](https://docs.rs/floem) and 
 
 ## Contributions
 
+<a href="https://ws.lap.dev/#https://github.com/lapce/floem" target="_blank">
+      <img src="https://lap.dev/images/open-in-lapdev.svg?version=8" alt="Open in Lapdev">
+</a>
+
+[Lapdev](https://lap.dev/) is a cloud dev env similar to GitHub Codespaces. By clicking the button above, you'll be taken to a fully set up Floem dev env where you can browse the code and start developing. All dependencies are pre-installed, so you can get straight to code.
+
 [Contributions welcome!](CONTRIBUTING.md) If you'd like to improve how Floem works and fix things, feel free to open an issue or submit a PR. If you'd like a conversation with Floem devs, you can join in the #floem channel on this [Discord](https://discord.gg/RB6cRYerXX).
