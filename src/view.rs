@@ -589,7 +589,8 @@ fn view_next_sibling(id: ViewId) -> Option<ViewId> {
     };
 
     let children = parent.children();
-    let pos = children.iter().position(|v| v == &id).unwrap();
+    //TODO: Log a warning if the child isn't found. This shouldn't happen (error in floem if it does), but this shouldn't panic if that does happen
+    let pos = children.iter().position(|v| v == &id)?;
 
     if pos + 1 < children.len() {
         Some(children[pos + 1])

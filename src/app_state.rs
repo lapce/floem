@@ -122,9 +122,12 @@ impl AppState {
         self.hovered.remove(&id);
         self.clicking.remove(&id);
         if self.focus == Some(id) {
-            self.prev_focus = self.focus;
             self.focus = None;
         }
+        if self.prev_focus == Some(id) {
+            self.prev_focus = None;
+        }
+
         if self.active == Some(id) {
             self.active = None;
         }
