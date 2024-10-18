@@ -11,7 +11,7 @@ use parking_lot::Mutex;
 use raw_window_handle::HasRawDisplayHandle;
 
 use crate::{
-    action::Timer,
+    action::{Timer, TimerToken},
     app_handle::ApplicationHandle,
     clipboard::Clipboard,
     inspector::Capture,
@@ -75,6 +75,9 @@ pub(crate) enum AppUpdateEvent {
     },
     RequestTimer {
         timer: Timer,
+    },
+    CancelTimer {
+        timer: TimerToken,
     },
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     MenuAction {
