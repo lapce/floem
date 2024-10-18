@@ -86,8 +86,10 @@ pub struct Scroll {
     id: ViewId,
     child: ViewId,
 
+    total_rect: Rect,
+
     /// the actual rect of the scroll view excluding padding and borders. The origin is relative to this view.
-    actual_rect: Rect,
+    content_rect: Rect,
 
     child_size: Size,
 
@@ -122,7 +124,8 @@ pub fn scroll<V: IntoView + 'static>(child: V) -> Scroll {
     Scroll {
         id,
         child: child_id,
-        actual_rect: Rect::ZERO,
+        content_rect: Rect::ZERO,
+        total_rect: Rect::ZERO,
         child_size: Size::ZERO,
         child_viewport: Rect::ZERO,
         computed_child_viewport: Rect::ZERO,
@@ -268,7 +271,8 @@ impl Scroll {
 
     fn update_size(&mut self) {
         self.child_size = self.child_size();
-        self.actual_rect = self.id.get_content_rect();
+        self.content_rect = self.id.get_content_rect();
+        self.total_rect = self.id.get_size().unwrap_or_default().to_rect();
     }
 
     fn clamp_child_viewport(
@@ -276,7 +280,7 @@ impl Scroll {
         app_state: &mut AppState,
         child_viewport: Rect,
     ) -> Option<()> {
-        let actual_rect = self.actual_rect;
+        let actual_rect = self.content_rect;
         let actual_size = actual_rect.size();
         let width = actual_rect.width();
         let height = actual_rect.height();
@@ -369,8 +373,8 @@ impl Scroll {
 
             if let Some(color) = track_style.color() {
                 let mut bounds = bounds - scroll_offset;
-                bounds.y0 = self.actual_rect.y0;
-                bounds.y1 = self.actual_rect.y1;
+                bounds.y0 = self.content_rect.y0;
+                bounds.y1 = self.content_rect.y1;
                 cx.fill(&bounds, &color, 0.0);
             }
             let edge_width = style.border().0;
@@ -394,8 +398,8 @@ impl Scroll {
 
             if let Some(color) = track_style.color() {
                 let mut bounds = bounds - scroll_offset;
-                bounds.x0 = self.actual_rect.x0;
-                bounds.x1 = self.actual_rect.x1;
+                bounds.x0 = self.content_rect.x0;
+                bounds.x1 = self.content_rect.x1;
                 cx.fill(&bounds, &color, 0.0);
             }
             let edge_width = style.border().0;
@@ -426,17 +430,17 @@ impl Scroll {
         let percent_visible = viewport_size.height / content_size.height;
         let percent_scrolled = scroll_offset.y / (content_size.height - viewport_size.height);
 
-        let length = (percent_visible * viewport_size.height).ceil();
+        let length = (percent_visible * self.total_rect.height()).ceil();
         // Vertical scroll bar must have ast least the same height as it's width
         let length = length.max(style.thickness().0);
 
-        let top_y_offset = ((viewport_size.height - length) * percent_scrolled).ceil();
+        let top_y_offset = ((self.total_rect.height() - length) * percent_scrolled).ceil();
         let bottom_y_offset = top_y_offset + length;
 
-        let x0 = scroll_offset.x + viewport_size.width - bar_width - bar_pad;
+        let x0 = scroll_offset.x + self.total_rect.width() - bar_width - bar_pad;
         let y0 = scroll_offset.y + top_y_offset;
 
-        let x1 = scroll_offset.x + viewport_size.width - bar_pad;
+        let x1 = scroll_offset.x + self.total_rect.width() - bar_pad;
         let y1 = scroll_offset.y + bottom_y_offset;
 
         Some(Rect::new(x0, y0, x1, y1))
@@ -459,7 +463,7 @@ impl Scroll {
         let percent_visible = viewport_size.width / content_size.width;
         let percent_scrolled = scroll_offset.x / (content_size.width - viewport_size.width);
 
-        let length = (percent_visible * viewport_size.width).ceil();
+        let length = (percent_visible * self.total_rect.width()).ceil();
         let length = length.max(SCROLLBAR_MIN_SIZE);
 
         let horizontal_padding = if viewport_size.height >= content_size.height {
@@ -469,29 +473,29 @@ impl Scroll {
         };
 
         let left_x_offset =
-            ((viewport_size.width - length - horizontal_padding) * percent_scrolled).ceil();
+            ((self.total_rect.width() - length - horizontal_padding) * percent_scrolled).ceil();
         let right_x_offset = left_x_offset + length;
 
         let x0 = scroll_offset.x + left_x_offset;
-        let y0 = scroll_offset.y + viewport_size.height - bar_width - bar_pad;
+        let y0 = scroll_offset.y + self.total_rect.height() - bar_width - bar_pad;
 
         let x1 = scroll_offset.x + right_x_offset;
-        let y1 = scroll_offset.y + viewport_size.height - bar_pad;
+        let y1 = scroll_offset.y + self.total_rect.height() - bar_pad;
 
         Some(Rect::new(x0, y0, x1, y1))
     }
 
     fn click_vertical_bar_area(&mut self, app_state: &mut AppState, pos: Point) {
-        let new_y = (pos.y / self.actual_rect.height()) * self.child_size.height
-            - self.actual_rect.height() / 2.0;
+        let new_y = (pos.y / self.content_rect.height()) * self.child_size.height
+            - self.content_rect.height() / 2.0;
         let mut new_origin = self.child_viewport.origin();
         new_origin.y = new_y;
         self.do_scroll_to(app_state, new_origin);
     }
 
     fn click_horizontal_bar_area(&mut self, app_state: &mut AppState, pos: Point) {
-        let new_x = (pos.x / self.actual_rect.width()) * self.child_size.width
-            - self.actual_rect.width() / 2.0;
+        let new_x = (pos.x / self.content_rect.width()) * self.child_size.width
+            - self.content_rect.width() / 2.0;
         let mut new_origin = self.child_viewport.origin();
         new_origin.x = new_x;
         self.do_scroll_to(app_state, new_origin);
@@ -606,7 +610,7 @@ impl Scroll {
             let rect = rect.with_origin(
                 rect.origin()
                     - self.id.layout_rect().origin().to_vec2()
-                    - self.actual_rect.origin().to_vec2()
+                    - self.content_rect.origin().to_vec2()
                     + self.computed_child_viewport.origin().to_vec2(),
             );
 
@@ -858,14 +862,14 @@ impl View for Scroll {
         cx.save();
         let radius = match self.id.state().borrow().combined_style.get(BorderRadius) {
             crate::unit::PxPct::Px(px) => px,
-            crate::unit::PxPct::Pct(pct) => self.actual_rect.size().min_side() * (pct / 100.),
+            crate::unit::PxPct::Pct(pct) => self.total_rect.size().min_side() * (pct / 100.),
         };
         if self.scroll_style.overflow_clip() {
             if radius > 0.0 {
-                let rect = self.actual_rect.to_rounded_rect(radius);
+                let rect = self.total_rect.to_rounded_rect(radius);
                 cx.clip(&rect);
             } else {
-                cx.clip(&self.actual_rect);
+                cx.clip(&self.total_rect);
             }
         }
         cx.offset((-self.child_viewport.x0, -self.child_viewport.y0));
