@@ -92,6 +92,9 @@ impl ApplicationHandle {
                 AppUpdateEvent::RequestTimer { timer } => {
                     self.request_timer(timer, event_loop);
                 }
+                AppUpdateEvent::CancelTimer { timer } => {
+                    self.remove_timer(&timer);
+                }
                 AppUpdateEvent::CaptureWindow { window_id, capture } => {
                     capture.set(self.capture_window(window_id).map(Rc::new));
                 }
@@ -465,6 +468,10 @@ impl ApplicationHandle {
     fn request_timer(&mut self, timer: Timer, event_loop: &EventLoopWindowTarget<UserEvent>) {
         self.timers.insert(timer.token, timer);
         self.fire_timer(event_loop);
+    }
+
+    fn remove_timer(&mut self, timer: &TimerToken) {
+        self.timers.remove(timer);
     }
 
     fn fire_timer(&mut self, event_loop: &EventLoopWindowTarget<UserEvent>) {

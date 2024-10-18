@@ -8,6 +8,7 @@
 
 use std::sync::atomic::AtomicU64;
 
+use floem_reactive::SignalWith;
 use floem_winit::window::ResizeDirection;
 use peniko::kurbo::{Point, Size, Vec2};
 
@@ -107,6 +108,11 @@ impl TimerToken {
     pub const fn into_raw(self) -> u64 {
         self.0
     }
+
+    /// Cancel a timer
+    pub fn cancel(self) {
+        add_app_update_event(AppUpdateEvent::CancelTimer { timer: self });
+    }
 }
 
 /// Execute a callback after a specified duration
@@ -129,6 +135,43 @@ pub fn exec_after(duration: Duration, action: impl FnOnce(TimerToken) + 'static)
         },
     });
     token
+}
+
+/// Debounce an action
+///
+/// This tracks a signal and checks if the inner value has changed by checking it's hash and will run the action only once an **uninterrupted** duration has passed
+pub fn debounce_update<T, F>(signal: impl SignalWith<T> + 'static, duration: Duration, action: F)
+where
+    T: std::hash::Hash + 'static,
+    F: Fn() + Clone + 'static,
+{
+    crate::reactive::create_stateful_updater(
+        move |prev_opt: Option<(u64, Option<TimerToken>)>| {
+            use std::hash::Hasher;
+            let mut hasher = std::hash::DefaultHasher::new();
+            signal.with(|v| v.hash(&mut hasher));
+            let hash = hasher.finish();
+            let execute = prev_opt
+                .map(|(prev_hash, _)| prev_hash != hash)
+                .unwrap_or(true);
+            (execute, (hash, prev_opt.and_then(|(_, timer)| timer)))
+        },
+        move |execute, (hash, prev_timer): (u64, Option<TimerToken>)| {
+            // Cancel the previous timer if it exists
+            if let Some(timer) = prev_timer {
+                timer.cancel();
+            }
+            let timer_token = if execute {
+                let action = action.clone();
+                Some(exec_after(duration.clone(), move |_| {
+                    action();
+                }))
+            } else {
+                None
+            };
+            (hash, timer_token)
+        },
+    );
 }
 
 /// Show a system context menu at the specified position
