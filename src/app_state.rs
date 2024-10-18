@@ -19,6 +19,7 @@ use crate::{
 pub struct AppState {
     /// keyboard focus
     pub(crate) focus: Option<ViewId>,
+    pub(crate) prev_focus: Option<ViewId>,
     /// when a view is active, it gets mouse event even when the mouse is
     /// not on it
     pub(crate) active: Option<ViewId>,
@@ -57,6 +58,7 @@ impl AppState {
             root: None,
             root_view_id,
             focus: None,
+            prev_focus: None,
             active: None,
             scale: 1.0,
             root_size: Size::ZERO,
@@ -120,6 +122,7 @@ impl AppState {
         self.hovered.remove(&id);
         self.clicking.remove(&id);
         if self.focus == Some(id) {
+            self.prev_focus = self.focus;
             self.focus = None;
         }
         if self.active == Some(id) {
@@ -253,6 +256,7 @@ impl AppState {
             }
         }
 
+        self.prev_focus = self.focus;
         self.focus = None;
     }
 
