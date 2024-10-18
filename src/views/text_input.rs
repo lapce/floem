@@ -660,7 +660,7 @@ impl TextInput {
                 .key
                 .text
                 .as_ref()
-                .map_or(false, |ch| self.insert_text(event, ch)),
+                .map_or(false, |ch| self.insert_text(ch)),
             Key::Named(NamedKey::Space) => {
                 if let Some(selection) = &self.selection {
                     self.buffer
@@ -807,23 +807,23 @@ impl TextInput {
             return true;
         }
 
-        let non_shift_mask = Modifiers::all().difference(Modifiers::SHIFT);
-        if event.modifiers.intersects(non_shift_mask) {
-            return false;
-        }
-
         match event.key.logical_key {
-            Key::Character(ref ch) => self.insert_text(event, ch),
+            Key::Character(ref ch) => {
+                let handled_modifier_cmd = self.handle_modifier_cmd(event, ch);
+                if handled_modifier_cmd {
+                    return true;
+                }
+                let non_shift_mask = Modifiers::all().difference(Modifiers::SHIFT);
+                if event.modifiers.intersects(non_shift_mask) {
+                    return false;
+                }
+                self.insert_text(ch)
+            }
             _ => false,
         }
     }
 
-    fn insert_text(&mut self, event: &KeyEvent, ch: &SmolStr) -> bool {
-        let handled_modifier_cmd = self.handle_modifier_cmd(event, ch);
-        if handled_modifier_cmd {
-            return true;
-        }
-
+    fn insert_text(&mut self, ch: &SmolStr) -> bool {
         let selection = self.selection.clone();
         if let Some(selection) = selection {
             self.buffer
