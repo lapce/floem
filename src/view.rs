@@ -543,7 +543,9 @@ pub(crate) fn paint_border(
 /// Tab navigation finds the next or previous view with the `keyboard_navigatable` status in the tree.
 #[allow(dead_code)]
 pub(crate) fn view_tab_navigation(root_view: ViewId, app_state: &mut AppState, backwards: bool) {
-    let start = app_state.focus.unwrap_or(root_view);
+    let start = app_state
+        .focus
+        .unwrap_or(app_state.prev_focus.unwrap_or(root_view));
 
     let tree_iter = |id: ViewId| {
         if backwards {
