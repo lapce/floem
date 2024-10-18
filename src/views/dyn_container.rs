@@ -48,11 +48,8 @@ pub struct DynamicContainer<T: 'static> {
 ///
 /// ## Example
 /// ```
-/// use floem::{
-///     reactive::{create_rw_signal, SignalGet, SignalUpdate},
-///     views::{dyn_container, label, toggle_button, v_stack, Decorators},
-///     IntoView, View,
-/// };
+/// use floem::prelude::*;
+/// use toggle_button::toggle_button;
 ///
 /// #[derive(Clone)]
 /// enum ViewSwitcher {

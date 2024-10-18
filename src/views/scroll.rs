@@ -44,12 +44,27 @@ enum BarHeldState {
     Horizontal(f64, Vec2),
 }
 
-style_class!(pub Handle);
-style_class!(pub Track);
+style_class!(
+    /// Style class that will be applied to the handles of the scroll view
+    pub Handle
+);
+style_class!(
+    /// Style class that will be applied to the scroll tracks of the scroll view
+    pub Track
+);
 
-prop!(pub Rounded: bool {} = cfg!(target_os = "macos"));
-prop!(pub Thickness: Px {} = Px(10.0));
-prop!(pub Border: Px {} = Px(0.0));
+prop!(
+    /// Determines if scroll handles should be rounded.
+    pub Rounded: bool {} = cfg!(target_os = "macos")
+);
+prop!(
+    /// Specifies the thickness of scroll handles in pixels.
+    pub Thickness: Px {} = Px(10.0)
+);
+prop!(
+    /// Defines the border width of a scroll track in pixels.
+    pub Border: Px {} = Px(0.0)
+);
 
 prop_extractor! {
     ScrollTrackStyle {
@@ -62,13 +77,35 @@ prop_extractor! {
     }
 }
 
-prop!(pub VerticalInset: Px {} = Px(0.0));
-prop!(pub HorizontalInset: Px {} = Px(0.0));
-prop!(pub HideBars: bool {} = false);
-prop!(pub PropagatePointerWheel: bool {} = true);
-prop!(pub VerticalScrollAsHorizontal: bool {} = false);
-prop!(pub OverflowClip: bool {} = true);
+prop!(
+    /// Specifies the vertical inset of the scrollable area in pixels.
+    pub VerticalInset: Px {} = Px(0.0)
+);
 
+prop!(
+    /// Defines the horizontal inset of the scrollable area in pixels.
+    pub HorizontalInset: Px {} = Px(0.0)
+);
+
+prop!(
+    /// Controls the visibility of scroll bars. When true, bars are hidden.
+    pub HideBars: bool {} = false
+);
+
+prop!(
+    /// Determines if pointer wheel events should propagate to parent elements.
+    pub PropagatePointerWheel: bool {} = true
+);
+
+prop!(
+    /// When true, vertical scroll input is interpreted as horizontal scrolling.
+    pub VerticalScrollAsHorizontal: bool {} = false
+);
+
+prop!(
+    /// Enables clipping of overflowing content when set to true.
+    pub OverflowClip: bool {} = true
+);
 prop_extractor!(ScrollStyle {
     vertical_bar_inset: VerticalInset,
     horizontal_bar_inset: HorizontalInset,
@@ -80,7 +117,10 @@ prop_extractor!(ScrollStyle {
 
 const HANDLE_COLOR: Brush = Brush::Solid(Color::rgba8(0, 0, 0, 120));
 
-style_class!(pub ScrollClass);
+style_class!(
+    /// Style class that is applied to every scroll view
+    pub ScrollClass
+);
 
 pub struct Scroll {
     id: ViewId,

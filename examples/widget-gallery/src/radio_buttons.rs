@@ -3,7 +3,7 @@ use std::fmt::Display;
 use floem::{
     reactive::RwSignal,
     style_class,
-    views::{Decorators, RadioButton, StackExt as _},
+    views::{radio_button::RadioButton, Decorators, StackExt as _},
     IntoView,
 };
 use strum::IntoEnumIterator;
