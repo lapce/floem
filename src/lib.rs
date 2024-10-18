@@ -221,6 +221,7 @@ pub use floem_reactive as reactive;
 pub use floem_renderer::text;
 use floem_renderer::Renderer;
 pub use id::ViewId;
+pub use macros::State;
 pub use peniko;
 pub use peniko::kurbo;
 pub use screen_layout::ScreenLayout;

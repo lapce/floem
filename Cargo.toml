@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["renderer", "vello", "vger", "tiny_skia", "reactive", "editor-core", "examples/*"]
+members = ["renderer", "vello", "vger", "tiny_skia", "reactive", "macros", "editor-core", "examples/*"]
 
 [workspace.package]
 license = "MIT"
@@ -33,6 +33,7 @@ parking_lot = { version = "0.12.1" }
 swash = { version = "0.1.17" }
 
 [dependencies]
+macros = {path = "macros", version = "0.1.0"}
 slotmap = "1.0.7"
 sha2 = "0.10.6"
 bitflags = "2.6.0"
