@@ -259,7 +259,9 @@ impl AppState {
             }
         }
 
-        self.prev_focus = self.focus;
+        if self.focus.is_some() {
+            self.prev_focus = self.focus;
+        }
         self.focus = None;
     }
 
