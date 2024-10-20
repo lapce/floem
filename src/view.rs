@@ -54,7 +54,7 @@ use crate::{
     context::{ComputeLayoutCx, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx},
     event::{Event, EventPropagation},
     id::ViewId,
-    style::{BoxShadowProp, LayoutProps, Style, StyleClassRef},
+    style::{LayoutProps, Style, StyleClassRef},
     view_state::ViewStyleProps,
     views::{dyn_view, DynamicView},
 };
