@@ -378,12 +378,7 @@ pub fn default_compute_layout(id: ViewId, cx: &mut ComputeLayoutCx) -> Option<Re
     layout_rect
 }
 
-pub(crate) fn paint_bg(
-    cx: &mut PaintCx,
-    computed_style: &Style,
-    style: &ViewStyleProps,
-    size: Size,
-) {
+pub(crate) fn paint_bg(cx: &mut PaintCx, style: &ViewStyleProps, size: Size) {
     let radius = match style.border_radius() {
         crate::unit::PxPct::Px(px) => px,
         crate::unit::PxPct::Pct(pct) => size.min_side() * (pct / 100.),
@@ -401,7 +396,7 @@ pub(crate) fn paint_bg(
             };
             cx.fill(&circle, &bg, 0.0);
         } else {
-            paint_box_shadow(cx, computed_style, rect, Some(radius));
+            paint_box_shadow(cx, style, rect, Some(radius));
             let bg = match style.background() {
                 Some(color) => color,
                 None => return,
@@ -410,7 +405,7 @@ pub(crate) fn paint_bg(
             cx.fill(&rounded_rect, &bg, 0.0);
         }
     } else {
-        paint_box_shadow(cx, computed_style, size.to_rect(), None);
+        paint_box_shadow(cx, style, size.to_rect(), None);
         let bg = match style.background() {
             Some(color) => color,
             None => return,
@@ -419,8 +414,13 @@ pub(crate) fn paint_bg(
     }
 }
 
-fn paint_box_shadow(cx: &mut PaintCx, style: &Style, rect: Rect, rect_radius: Option<f64>) {
-    if let Some(shadow) = style.get(BoxShadowProp).as_ref() {
+fn paint_box_shadow(
+    cx: &mut PaintCx,
+    style: &ViewStyleProps,
+    rect: Rect,
+    rect_radius: Option<f64>,
+) {
+    if let Some(shadow) = &style.shadow() {
         let min = rect.size().min_side();
         let h_offset = match shadow.h_offset {
             crate::unit::PxPct::Px(px) => px,
