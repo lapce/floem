@@ -314,6 +314,7 @@ impl AppState {
                 id.request_style_recursive();
             }
             id.apply_event(&EventListener::FocusGained, &Event::FocusGained);
+            id.scroll_to(None);
         }
 
         if let Some(old_id) = old {
