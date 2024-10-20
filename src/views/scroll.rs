@@ -418,7 +418,7 @@ impl Scroll {
         let scroll_offset = self.child_viewport.origin().to_vec2();
 
         // dbg!(viewport_size.height, content_size.height);
-        if viewport_size.height >= content_size.height {
+        if viewport_size.height >= content_size.height - 1. {
             return None;
         }
 
@@ -451,7 +451,7 @@ impl Scroll {
         let content_size = self.child_size;
         let scroll_offset = self.child_viewport.origin().to_vec2();
 
-        if viewport_size.width >= content_size.width {
+        if viewport_size.width >= content_size.width - 1. {
             return None;
         }
 
