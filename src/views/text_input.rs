@@ -1056,7 +1056,11 @@ impl View for TextInput {
             self.last_cursor_action_on = Instant::now();
         }
 
-        EventPropagation::Continue
+        if is_handled {
+            EventPropagation::Stop
+        } else {
+            EventPropagation::Continue
+        }
     }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
