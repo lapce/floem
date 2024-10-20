@@ -1001,7 +1001,7 @@ impl<'a> PaintCx<'a> {
                 self.set_z_index(z_index);
             }
 
-            paint_bg(self, &style, &view_style_props, size);
+            paint_bg(self, &view_style_props, size);
 
             view.borrow_mut().paint(self);
             paint_border(self, &layout_props, &view_style_props, size);
@@ -1042,27 +1042,23 @@ impl<'a> PaintCx<'a> {
 
                     let style = view_state.borrow().combined_style.clone();
                     let mut view_style_props = view_state.borrow().view_style_props.clone();
-                    let style =
-                        if let Some(dragging_style) = view_state.borrow().dragging_style.clone() {
-                            let style = style.apply(dragging_style);
-                            let mut _new_frame = false;
-                            view_style_props.read_explicit(
-                                &style,
-                                &style,
-                                &Instant::now(),
-                                &mut _new_frame,
-                            );
-                            style
-                        } else {
-                            style
-                        };
+                    if let Some(dragging_style) = view_state.borrow().dragging_style.clone() {
+                        let style = style.apply(dragging_style);
+                        let mut _new_frame = false;
+                        view_style_props.read_explicit(
+                            &style,
+                            &style,
+                            &Instant::now(),
+                            &mut _new_frame,
+                        );
+                    }
                     let layout_props = view_state.borrow().layout_props.clone();
 
                     // Important: If any method early exit points are added in this
                     // code block, they MUST call CURRENT_DRAG_PAINTING_ID.take() before
                     // returning.
                     CURRENT_DRAG_PAINTING_ID.set(Some(id));
-                    paint_bg(self, &style, &view_style_props, size);
+                    paint_bg(self, &view_style_props, size);
 
                     view.borrow_mut().paint(self);
                     paint_border(self, &layout_props, &view_style_props, size);

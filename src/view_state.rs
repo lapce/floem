@@ -8,8 +8,8 @@ use crate::{
     prop_extractor,
     responsive::ScreenSizeBp,
     style::{
-        Background, BorderColor, BorderRadius, LayoutProps, Outline, OutlineColor, Style,
-        StyleClassRef, StyleSelectors,
+        Background, BorderColor, BorderRadius, BoxShadowProp, LayoutProps, Outline, OutlineColor,
+        Style, StyleClassRef, StyleSelectors,
     },
 };
 use bitflags::bitflags;
@@ -72,6 +72,7 @@ prop_extractor! {
         pub outline_color: OutlineColor,
         pub border_color: BorderColor,
         pub background: Background,
+        pub shadow: BoxShadowProp,
     }
 }
 
