@@ -204,6 +204,11 @@ pub fn focus_window() {
     add_update_message(UpdateMessage::FocusWindow);
 }
 
+/// Clear the app focus
+pub fn clear_app_focus() {
+    add_update_message(UpdateMessage::ClearAppFocus);
+}
+
 /// Set whether ime input is shown
 pub fn set_ime_allowed(allowed: bool) {
     add_update_message(UpdateMessage::SetImeAllowed { allowed });

@@ -29,6 +29,7 @@ type DeferredUpdateMessages = HashMap<ViewId, Vec<(ViewId, Box<dyn Any>)>>;
 pub(crate) enum UpdateMessage {
     Focus(ViewId),
     ClearFocus(ViewId),
+    ClearAppFocus,
     Active(ViewId),
     ClearActive(ViewId),
     WindowScale(f64),
