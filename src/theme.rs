@@ -147,7 +147,6 @@ pub(crate) fn default_theme() -> Theme {
 
     let labeled_radio_button_style = Style::new()
         .row_gap(padding)
-        .border(Stroke::new(1.).with_dashes(0.5, [1., 2., 3.]))
         .hover(|s| s.background(hover_bg_color))
         .padding(padding)
         .transition(Background, Transition::linear(400.millis()))
