@@ -254,7 +254,7 @@ impl Renderer for VelloRenderer {
                     if let Some(run) = current_run.take() {
                         self.draw_glyph_run(
                             run,
-                            transform.then_translate((0., line.line_y as f64).into()),
+                            transform.pre_translate((0., line.line_y as f64).into()),
                         );
                     }
                     current_run = Some(GlyphRun {
@@ -274,7 +274,7 @@ impl Renderer for VelloRenderer {
             if let Some(run) = current_run.take() {
                 self.draw_glyph_run(
                     run,
-                    transform.then_translate((0., line.line_y as f64).into()),
+                    transform.pre_translate((0., line.line_y as f64).into()),
                 );
             }
         }
