@@ -1,7 +1,7 @@
 use floem::{
     peniko::Color,
     style::CursorStyle,
-    views::{button, toggle_button, Decorators, ToggleHandleBehavior},
+    views::{button, toggle_button::*, Decorators},
     IntoView,
 };
 

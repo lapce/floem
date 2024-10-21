@@ -1,7 +1,3 @@
-use super::{
-    container, virtual_stack, Decorators, Item, ListClass, ListItemClass, VirtualDirection,
-    VirtualItemSize, VirtualVector,
-};
 use crate::context::ComputeLayoutCx;
 use crate::event::EventPropagation;
 use crate::id::ViewId;
@@ -19,13 +15,15 @@ use peniko::kurbo::{Rect, Size};
 use std::hash::Hash;
 use std::rc::Rc;
 
+use super::{container, virtual_stack::*, Decorators, Item, ListClass, ListItemClass};
+
 enum ListUpdate {
     SelectionChanged,
     ScrollToSelected,
 }
 
-/// A view that is like a [`virtual_stack`](super::virtual_stack()) but also supports item selection.
-/// See [`virtual_list`] and [`virtual_stack`](super::virtual_stack()).
+/// A view that is like a [`virtual_stack`] but also supports item selection.
+/// See [`virtual_list`] and [`virtual_stack`].
 pub struct VirtualList {
     id: ViewId,
     direction: VirtualDirection,
@@ -49,8 +47,8 @@ impl VirtualList {
     }
 }
 
-/// A view that is like a [`virtual_stack`](super::virtual_stack()) but also supports item selection.
-/// See the [`virtual_stack`](super::virtual_stack()) for more documentation and an example.
+/// A view that is like a [`virtual_stack`] but also supports item selection.
+/// See the [`virtual_stack`] for more documentation and an example.
 ///
 /// Selection is done using the following: up and down using arrow keys, top and bottom control using the home and end keys, and for the “acceptance” of an item using the Enter key.
 pub fn virtual_list<T, IF, I, KF, K, VF, V>(

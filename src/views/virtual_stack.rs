@@ -30,7 +30,7 @@ pub enum VirtualItemSize<T> {
     Fixed(Box<dyn Fn() -> f64>),
 }
 
-/// A trait that can be implemented on a type so that the type can be used in a [`virtual_stack`] or [`virtual_list`](super::virtual_list()).
+/// A trait that can be implemented on a type so that the type can be used in a [`virtual_stack`] or [`virtual_list`](super::virtual_list::virtual_list).
 pub trait VirtualVector<T> {
     fn total_len(&self) -> usize;
 
@@ -80,7 +80,8 @@ struct VirtualStackState<T> {
 ///
 /// ## Example
 /// ```
-/// use floem::{reactive::*, views::*, unit::UnitExt};
+/// use floem::prelude::*;
+/// use floem::views::virtual_stack::*;
 ///
 /// let long_list: im::Vector<i32> = (0..1000000).collect();
 /// let (long_list, _set_long_list) = create_signal(long_list);

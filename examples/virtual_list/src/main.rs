@@ -1,9 +1,7 @@
 use floem::{
     reactive::{create_signal, SignalGet},
     unit::UnitExt,
-    views::{
-        container, label, scroll, virtual_list, Decorators, VirtualDirection, VirtualItemSize,
-    },
+    views::{container, label, scroll, virtual_list::virtual_list, virtual_stack::*, Decorators},
     IntoView,
 };
 
