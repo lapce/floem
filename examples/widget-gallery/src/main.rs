@@ -107,7 +107,7 @@ fn app_view() -> impl IntoView {
                             .border_bottom(1.0)
                             .border_color(Color::LIGHT_GRAY)
                             .apply_if(index == active_tab.get(), |s| {
-                                s.background(Color::GRAY.with_alpha_factor(0.6))
+                                s.background(Color::GRAY.multiply_alpha(0.6))
                             })
                             .focus_visible(|s| s.border(2.).border_color(Color::BLUE))
                             .hover(|s| {

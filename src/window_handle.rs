@@ -15,7 +15,6 @@ use floem_winit::{
     keyboard::{Key, ModifiersState, NamedKey},
     window::{CursorIcon, WindowId},
 };
-use image::DynamicImage;
 use peniko::kurbo::{Affine, Point, Rect, Size, Vec2};
 
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
@@ -588,7 +587,7 @@ impl WindowHandle {
         }
     }
 
-    pub fn paint(&mut self) -> Option<DynamicImage> {
+    pub fn paint(&mut self) -> Option<peniko::Image> {
         let mut cx = PaintCx {
             app_state: &mut self.app_state,
             paint_state: &mut self.paint_state,
@@ -676,7 +675,7 @@ impl WindowHandle {
         let taffy_root_node = self.id.state().borrow().node;
         let taffy_duration = self.layout();
         let post_layout = Instant::now();
-        let window = self.paint().map(Rc::new);
+        let window = self.paint();
         let end = Instant::now();
 
         let capture = Capture {

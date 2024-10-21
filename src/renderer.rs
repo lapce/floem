@@ -51,14 +51,13 @@ use crate::text::TextLayout;
 use floem_renderer::gpu_resources::GpuResources;
 use floem_renderer::Img;
 use floem_tiny_skia_renderer::TinySkiaRenderer;
-use floem_vger_renderer::VgerRenderer;
-use image::DynamicImage;
-use peniko::kurbo::{self, Affine, Rect, Shape, Size};
+use floem_vello_renderer::VelloRenderer;
+use peniko::kurbo::{self, Affine, Rect, Shape, Size, Stroke};
 use peniko::BrushRef;
 
 #[allow(clippy::large_enum_variant)]
 pub enum Renderer<W> {
-    Vger(VgerRenderer),
+    Vello(VelloRenderer),
     TinySkia(TinySkiaRenderer<W>),
     /// Uninitialized renderer, used to allow the renderer to be created lazily
     /// All operations on this renderer are no-ops
@@ -87,14 +86,14 @@ impl<W: wgpu::WindowHandle> Renderer<W> {
             .unwrap_or(false);
 
         let vger_err = if !force_tiny_skia {
-            match VgerRenderer::new(
+            match VelloRenderer::new(
                 gpu_resources,
                 size.width as u32,
                 size.height as u32,
                 scale,
                 font_embolden,
             ) {
-                Ok(vger) => return Self::Vger(vger),
+                Ok(vger) => return Self::Vello(vger),
                 Err(err) => Some(err),
             }
         } else {
@@ -122,7 +121,7 @@ impl<W: wgpu::WindowHandle> Renderer<W> {
     pub fn resize(&mut self, scale: f64, size: Size) {
         let size = Size::new(size.width.max(1.0), size.height.max(1.0));
         match self {
-            Renderer::Vger(r) => r.resize(size.width as u32, size.height as u32, scale),
+            Renderer::Vello(r) => r.resize(size.width as u32, size.height as u32, scale),
             Renderer::TinySkia(r) => r.resize(size.width as u32, size.height as u32, scale),
             Renderer::Uninitialized { .. } => {}
         }
@@ -130,7 +129,7 @@ impl<W: wgpu::WindowHandle> Renderer<W> {
 
     pub fn set_scale(&mut self, scale: f64) {
         match self {
-            Renderer::Vger(r) => r.set_scale(scale),
+            Renderer::Vello(r) => r.set_scale(scale),
             Renderer::TinySkia(r) => r.set_scale(scale),
             Renderer::Uninitialized {
                 scale: old_scale, ..
@@ -142,7 +141,7 @@ impl<W: wgpu::WindowHandle> Renderer<W> {
 
     pub fn scale(&self) -> f64 {
         match self {
-            Renderer::Vger(r) => r.scale(),
+            Renderer::Vello(r) => r.scale(),
             Renderer::TinySkia(r) => r.scale(),
             Renderer::Uninitialized { scale, .. } => *scale,
         }
@@ -150,7 +149,7 @@ impl<W: wgpu::WindowHandle> Renderer<W> {
 
     pub fn size(&self) -> Size {
         match self {
-            Renderer::Vger(r) => r.size(),
+            Renderer::Vello(r) => r.size(),
             Renderer::TinySkia(r) => r.size(),
             Renderer::Uninitialized { size, .. } => *size,
         }
@@ -160,7 +159,7 @@ impl<W: wgpu::WindowHandle> Renderer<W> {
 impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
     fn begin(&mut self, capture: bool) {
         match self {
-            Renderer::Vger(r) => {
+            Renderer::Vello(r) => {
                 r.begin(capture);
             }
             Renderer::TinySkia(r) => {
@@ -172,7 +171,7 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
 
     fn clip(&mut self, shape: &impl Shape) {
         match self {
-            Renderer::Vger(v) => {
+            Renderer::Vello(v) => {
                 v.clip(shape);
             }
             Renderer::TinySkia(v) => {
@@ -184,7 +183,7 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
 
     fn clear_clip(&mut self) {
         match self {
-            Renderer::Vger(v) => {
+            Renderer::Vello(v) => {
                 v.clear_clip();
             }
             Renderer::TinySkia(v) => {
@@ -194,13 +193,18 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
         }
     }
 
-    fn stroke<'b>(&mut self, shape: &impl Shape, brush: impl Into<BrushRef<'b>>, width: f64) {
+    fn stroke<'b, 's>(
+        &mut self,
+        shape: &impl Shape,
+        brush: impl Into<BrushRef<'b>>,
+        stroke: &'s Stroke,
+    ) {
         match self {
-            Renderer::Vger(v) => {
-                v.stroke(shape, brush, width);
+            Renderer::Vello(v) => {
+                v.stroke(shape, brush, stroke);
             }
             Renderer::TinySkia(v) => {
-                v.stroke(shape, brush, width);
+                v.stroke(shape, brush, stroke);
             }
             Renderer::Uninitialized { .. } => {}
         }
@@ -213,7 +217,7 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
         blur_radius: f64,
     ) {
         match self {
-            Renderer::Vger(v) => {
+            Renderer::Vello(v) => {
                 v.fill(path, brush, blur_radius);
             }
             Renderer::TinySkia(v) => {
@@ -225,7 +229,7 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
 
     fn draw_text(&mut self, layout: &TextLayout, pos: impl Into<kurbo::Point>) {
         match self {
-            Renderer::Vger(v) => {
+            Renderer::Vello(v) => {
                 v.draw_text(layout, pos);
             }
             Renderer::TinySkia(v) => {
@@ -237,7 +241,7 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
 
     fn draw_img(&mut self, img: Img<'_>, rect: Rect) {
         match self {
-            Renderer::Vger(v) => {
+            Renderer::Vello(v) => {
                 v.draw_img(img, rect);
             }
             Renderer::TinySkia(v) => {
@@ -254,7 +258,7 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
         brush: Option<impl Into<BrushRef<'b>>>,
     ) {
         match self {
-            Renderer::Vger(v) => {
+            Renderer::Vello(v) => {
                 v.draw_svg(svg, rect, brush);
             }
             Renderer::TinySkia(v) => {
@@ -266,7 +270,7 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
 
     fn transform(&mut self, transform: Affine) {
         match self {
-            Renderer::Vger(v) => {
+            Renderer::Vello(v) => {
                 v.transform(transform);
             }
             Renderer::TinySkia(v) => {
@@ -278,7 +282,7 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
 
     fn set_z_index(&mut self, z_index: i32) {
         match self {
-            Renderer::Vger(v) => {
+            Renderer::Vello(v) => {
                 v.set_z_index(z_index);
             }
             Renderer::TinySkia(v) => {
@@ -288,9 +292,9 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
         }
     }
 
-    fn finish(&mut self) -> Option<DynamicImage> {
+    fn finish(&mut self) -> Option<peniko::Image> {
         match self {
-            Renderer::Vger(r) => r.finish(),
+            Renderer::Vello(r) => r.finish(),
             Renderer::TinySkia(r) => r.finish(),
             Renderer::Uninitialized { .. } => None,
         }

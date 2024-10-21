@@ -1,9 +1,8 @@
 pub mod swash;
 pub mod text;
 
-use image::DynamicImage;
 use peniko::{
-    kurbo::{Affine, Point, Rect, Shape},
+    kurbo::{Affine, Point, Rect, Shape, Stroke},
     BrushRef,
 };
 pub use resvg::tiny_skia;
@@ -18,8 +17,7 @@ pub struct Svg<'a> {
 }
 
 pub struct Img<'a> {
-    pub img: &'a DynamicImage,
-    pub data: &'a [u8],
+    pub img: peniko::Image,
     pub hash: &'a [u8],
 }
 
@@ -36,7 +34,12 @@ pub trait Renderer {
     fn clear_clip(&mut self);
 
     /// Stroke a [`Shape`].
-    fn stroke<'b>(&mut self, shape: &impl Shape, brush: impl Into<BrushRef<'b>>, width: f64);
+    fn stroke<'b, 's>(
+        &mut self,
+        shape: &impl Shape,
+        brush: impl Into<BrushRef<'b>>,
+        stroke: &'s Stroke,
+    );
 
     /// Fill a [`Shape`], using the [non-zero fill rule].
     ///
@@ -53,5 +56,5 @@ pub trait Renderer {
 
     fn draw_img(&mut self, img: Img<'_>, rect: Rect);
 
-    fn finish(&mut self) -> Option<DynamicImage>;
+    fn finish(&mut self) -> Option<peniko::Image>;
 }

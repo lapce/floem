@@ -96,7 +96,7 @@ impl StylePropValue for IndentStyle {
 prop!(pub DropdownShadow: Option<Color> {} = None);
 prop!(pub Foreground: Color { inherited } = Color::rgb8(0x38, 0x3A, 0x42));
 prop!(pub Focus: Option<Color> {} = None);
-prop!(pub SelectionColor: Color {} = Color::BLACK.with_alpha_factor(0.5));
+prop!(pub SelectionColor: Color {} = Color::BLACK.multiply_alpha(0.5));
 prop!(pub CurrentLineColor: Option<Color> {  } = None);
 prop!(pub Link: Option<Color> {} = None);
 prop!(pub VisibleWhitespaceColor: Color {} = Color::TRANSPARENT);

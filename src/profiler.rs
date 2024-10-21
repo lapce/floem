@@ -8,6 +8,7 @@ use crate::views::{
 };
 use floem_reactive::{create_rw_signal, RwSignal, Scope, SignalGet, SignalUpdate};
 use floem_winit::window::WindowId;
+use peniko::kurbo::Stroke;
 use peniko::Color;
 use std::fmt::Display;
 use std::mem;
@@ -56,10 +57,8 @@ fn info(name: impl Display, value: String) -> impl IntoView {
 
 fn info_row(name: String, view: impl IntoView + 'static) -> impl IntoView {
     stack((
-        stack((static_label(name).style(|s| {
-            s.margin_right(5.0)
-                .color(Color::BLACK.with_alpha_factor(0.6))
-        }),))
+        stack((static_label(name)
+            .style(|s| s.margin_right(5.0).color(Color::BLACK.multiply_alpha(0.6))),))
         .style(|s| s.min_width(80.0).flex_direction(FlexDirection::RowReverse)),
         view,
     ))
@@ -168,7 +167,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
     let separator = empty().style(move |s| {
         s.height_full()
             .min_width(1.0)
-            .background(Color::BLACK.with_alpha_factor(0.2))
+            .background(Color::BLACK.multiply_alpha(0.2))
     });
 
     let timeline = dyn_container(
@@ -196,13 +195,13 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                             .width_pct(width * 100.0)
                             .absolute()
                             .inset_left_pct(left * 100.0)
-                            .border(0.3)
+                            .border(Stroke::new(0.3))
                             .border_color(Color::rgb8(129, 164, 192))
-                            .background(Color::rgb8(209, 222, 233).with_alpha_factor(0.6))
+                            .background(Color::rgb8(209, 222, 233).multiply_alpha(0.6))
                             .text_clip()
                             .hover(|s| {
                                 s.color(Color::WHITE)
-                                    .background(Color::BLACK.with_alpha_factor(0.6))
+                                    .background(Color::BLACK.multiply_alpha(0.6))
                             })
                     })
                     .on_event_cont(EventListener::PointerEnter, move |_| {
@@ -281,7 +280,7 @@ pub fn profiler(window_id: WindowId) -> impl IntoView {
     let separator = empty().style(move |s| {
         s.width_full()
             .min_height(1.0)
-            .background(Color::BLACK.with_alpha_factor(0.2))
+            .background(Color::BLACK.multiply_alpha(0.2))
     });
 
     let lower = dyn_container(

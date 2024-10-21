@@ -1,8 +1,8 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use floem_reactive::create_effect;
 use floem_renderer::Renderer;
-use image::{DynamicImage, GenericImageView};
+use peniko::Blob;
 use sha2::{Digest, Sha256};
 
 use crate::{id::ViewId, style::Style, unit::UnitExt, view::View};
@@ -83,18 +83,22 @@ impl ImageStyle {
 
 pub struct Img {
     id: ViewId,
-    //FIXME: store the pixel format(once its added to vger), for now we only store RGBA(RGB is converted to RGBA)
-    img: Option<Rc<DynamicImage>>,
+    img: Option<peniko::Image>,
     img_hash: Option<Vec<u8>>,
-    img_dimensions: Option<(u32, u32)>,
     content_node: Option<NodeId>,
 }
 
 pub fn img(image: impl Fn() -> Vec<u8> + 'static) -> Img {
-    img_dynamic(move || image::load_from_memory(&image()).ok().map(Rc::new))
+    let image = image::load_from_memory(&image()).ok();
+    let width = image.as_ref().map_or(0, |img| img.width());
+    let height = image.as_ref().map_or(0, |img| img.height());
+    let data = Arc::new(image.map_or(Default::default(), |img| img.into_rgba8().into_vec()));
+    let blob = Blob::new(data);
+    let image = peniko::Image::new(blob, peniko::Format::Rgba8, width, height);
+    img_dynamic(move || image.clone())
 }
 
-pub(crate) fn img_dynamic(image: impl Fn() -> Option<Rc<DynamicImage>> + 'static) -> Img {
+pub(crate) fn img_dynamic(image: impl Fn() -> peniko::Image + 'static) -> Img {
     let id = ViewId::new();
     create_effect(move |_| {
         id.update_state(image());
@@ -103,7 +107,6 @@ pub(crate) fn img_dynamic(image: impl Fn() -> Option<Rc<DynamicImage>> + 'static
         id,
         img: None,
         img_hash: None,
-        img_dimensions: None,
         content_node: None,
     }
 }
@@ -118,14 +121,12 @@ impl View for Img {
     }
 
     fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
-        if let Ok(img) = state.downcast::<Option<Rc<DynamicImage>>>() {
-            self.img_hash = (*img).as_ref().map(|img| {
-                let mut hasher = Sha256::new();
-                hasher.update(img.as_bytes());
-                hasher.finalize().to_vec()
-            });
-            self.img = *img;
-            self.img_dimensions = self.img.as_ref().map(|img| img.dimensions());
+        if let Ok(img) = state.downcast::<peniko::Image>() {
+            let mut hasher = Sha256::new();
+            hasher.update(img.data.data());
+            self.img_hash = Some(hasher.finalize().to_vec());
+
+            self.img = Some(*img);
             self.id.request_layout();
         }
     }
@@ -143,7 +144,11 @@ impl View for Img {
             }
             let content_node = self.content_node.unwrap();
 
-            let (width, height) = self.img_dimensions.unwrap_or((0, 0));
+            let (width, height) = self
+                .img
+                .as_ref()
+                .map(|img| (img.width, img.height))
+                .unwrap_or((0, 0));
 
             let style = Style::new()
                 .width((width as f64).px())
@@ -156,12 +161,11 @@ impl View for Img {
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        if let Some(img) = self.img.as_ref() {
+        if let Some(ref img) = self.img {
             let rect = self.id.get_content_rect();
             cx.draw_img(
                 floem_renderer::Img {
-                    img,
-                    data: img.as_bytes(),
+                    img: img.clone(),
                     hash: self.img_hash.as_ref().unwrap(),
                 },
                 rect,
