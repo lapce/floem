@@ -744,8 +744,9 @@ where
 
 #[macro_export]
 macro_rules! prop {
-    ($v:vis $name:ident: $ty:ty { $($options:tt)* } = $default:expr
+    ($(#[$meta:meta])* $v:vis $name:ident: $ty:ty { $($options:tt)* } = $default:expr
     ) => {
+        $(#[$meta])*
         #[derive(Default, Copy, Clone)]
         $v struct $name;
         impl $crate::style::StyleProp for $name {
