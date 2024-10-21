@@ -267,7 +267,7 @@ impl Renderer for VelloRenderer {
                 }
 
                 if let Some(run) = &mut current_run {
-                    run.glyphs.push(&glyph);
+                    run.glyphs.push(glyph);
                 }
             }
 
