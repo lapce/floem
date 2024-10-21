@@ -473,9 +473,11 @@ macro_rules! style_key_selector {
 
 #[macro_export]
 macro_rules! style_class {
-    ($v:vis $name:ident) => {
+    ($(#[$meta:meta])* $v:vis $name:ident) => {
+        $(#[$meta])*
         #[derive(Default, Copy, Clone)]
         $v struct $name;
+
         impl $crate::style::StyleClass for $name {
             fn key() -> $crate::style::StyleKey {
                 static INFO: $crate::style::StyleKeyInfo = $crate::style::StyleKeyInfo::Class(
