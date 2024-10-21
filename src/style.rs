@@ -410,6 +410,11 @@ impl From<f64> for StrokeWrap {
         Self(Stroke::new(value))
     }
 }
+impl From<i32> for StrokeWrap {
+    fn from(value: i32) -> Self {
+        Self(Stroke::new(value.into()))
+    }
+}
 impl StylePropValue for StrokeWrap {
     // TODO!
 }
