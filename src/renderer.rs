@@ -51,13 +51,18 @@ use crate::text::TextLayout;
 use floem_renderer::gpu_resources::GpuResources;
 use floem_renderer::Img;
 use floem_tiny_skia_renderer::TinySkiaRenderer;
+#[cfg(feature = "vello")]
+use floem_vello_renderer::VelloRenderer;
+#[cfg(not(feature = "vello"))]
 use floem_vger_renderer::VgerRenderer;
-use image::DynamicImage;
-use peniko::kurbo::{self, Affine, Rect, Shape, Size};
+use peniko::kurbo::{self, Affine, Rect, Shape, Size, Stroke};
 use peniko::BrushRef;
 
 #[allow(clippy::large_enum_variant)]
 pub enum Renderer<W> {
+    #[cfg(feature = "vello")]
+    Vello(VelloRenderer),
+    #[cfg(not(feature = "vello"))]
     Vger(VgerRenderer),
     TinySkia(TinySkiaRenderer<W>),
     /// Uninitialized renderer, used to allow the renderer to be created lazily
@@ -86,6 +91,23 @@ impl<W: wgpu::WindowHandle> Renderer<W> {
             .map(|val| val.as_str() == "1")
             .unwrap_or(false);
 
+        #[cfg(feature = "vello")]
+        let vger_err = if !force_tiny_skia {
+            match VelloRenderer::new(
+                gpu_resources,
+                size.width as u32,
+                size.height as u32,
+                scale,
+                font_embolden,
+            ) {
+                Ok(vger) => return Self::Vello(vger),
+                Err(err) => Some(err),
+            }
+        } else {
+            None
+        };
+
+        #[cfg(not(feature = "vello"))]
         let vger_err = if !force_tiny_skia {
             match VgerRenderer::new(
                 gpu_resources,
@@ -122,6 +144,9 @@ impl<W: wgpu::WindowHandle> Renderer<W> {
     pub fn resize(&mut self, scale: f64, size: Size) {
         let size = Size::new(size.width.max(1.0), size.height.max(1.0));
         match self {
+            #[cfg(feature = "vello")]
+            Renderer::Vello(r) => r.resize(size.width as u32, size.height as u32, scale),
+            #[cfg(not(feature = "vello"))]
             Renderer::Vger(r) => r.resize(size.width as u32, size.height as u32, scale),
             Renderer::TinySkia(r) => r.resize(size.width as u32, size.height as u32, scale),
             Renderer::Uninitialized { .. } => {}
@@ -130,6 +155,9 @@ impl<W: wgpu::WindowHandle> Renderer<W> {
 
     pub fn set_scale(&mut self, scale: f64) {
         match self {
+            #[cfg(feature = "vello")]
+            Renderer::Vello(r) => r.set_scale(scale),
+            #[cfg(not(feature = "vello"))]
             Renderer::Vger(r) => r.set_scale(scale),
             Renderer::TinySkia(r) => r.set_scale(scale),
             Renderer::Uninitialized {
@@ -142,6 +170,9 @@ impl<W: wgpu::WindowHandle> Renderer<W> {
 
     pub fn scale(&self) -> f64 {
         match self {
+            #[cfg(feature = "vello")]
+            Renderer::Vello(r) => r.scale(),
+            #[cfg(not(feature = "vello"))]
             Renderer::Vger(r) => r.scale(),
             Renderer::TinySkia(r) => r.scale(),
             Renderer::Uninitialized { scale, .. } => *scale,
@@ -150,6 +181,9 @@ impl<W: wgpu::WindowHandle> Renderer<W> {
 
     pub fn size(&self) -> Size {
         match self {
+            #[cfg(feature = "vello")]
+            Renderer::Vello(r) => r.size(),
+            #[cfg(not(feature = "vello"))]
             Renderer::Vger(r) => r.size(),
             Renderer::TinySkia(r) => r.size(),
             Renderer::Uninitialized { size, .. } => *size,
@@ -160,6 +194,11 @@ impl<W: wgpu::WindowHandle> Renderer<W> {
 impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
     fn begin(&mut self, capture: bool) {
         match self {
+            #[cfg(feature = "vello")]
+            Renderer::Vello(r) => {
+                r.begin(capture);
+            }
+            #[cfg(not(feature = "vello"))]
             Renderer::Vger(r) => {
                 r.begin(capture);
             }
@@ -172,6 +211,11 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
 
     fn clip(&mut self, shape: &impl Shape) {
         match self {
+            #[cfg(feature = "vello")]
+            Renderer::Vello(v) => {
+                v.clip(shape);
+            }
+            #[cfg(not(feature = "vello"))]
             Renderer::Vger(v) => {
                 v.clip(shape);
             }
@@ -184,6 +228,11 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
 
     fn clear_clip(&mut self) {
         match self {
+            #[cfg(feature = "vello")]
+            Renderer::Vello(v) => {
+                v.clear_clip();
+            }
+            #[cfg(not(feature = "vello"))]
             Renderer::Vger(v) => {
                 v.clear_clip();
             }
@@ -194,13 +243,23 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
         }
     }
 
-    fn stroke<'b>(&mut self, shape: &impl Shape, brush: impl Into<BrushRef<'b>>, width: f64) {
+    fn stroke<'b, 's>(
+        &mut self,
+        shape: &impl Shape,
+        brush: impl Into<BrushRef<'b>>,
+        stroke: &'s Stroke,
+    ) {
         match self {
+            #[cfg(feature = "vello")]
+            Renderer::Vello(v) => {
+                v.stroke(shape, brush, stroke);
+            }
+            #[cfg(not(feature = "vello"))]
             Renderer::Vger(v) => {
-                v.stroke(shape, brush, width);
+                v.stroke(shape, brush, stroke);
             }
             Renderer::TinySkia(v) => {
-                v.stroke(shape, brush, width);
+                v.stroke(shape, brush, stroke);
             }
             Renderer::Uninitialized { .. } => {}
         }
@@ -213,6 +272,11 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
         blur_radius: f64,
     ) {
         match self {
+            #[cfg(feature = "vello")]
+            Renderer::Vello(v) => {
+                v.fill(path, brush, blur_radius);
+            }
+            #[cfg(not(feature = "vello"))]
             Renderer::Vger(v) => {
                 v.fill(path, brush, blur_radius);
             }
@@ -225,6 +289,11 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
 
     fn draw_text(&mut self, layout: &TextLayout, pos: impl Into<kurbo::Point>) {
         match self {
+            #[cfg(feature = "vello")]
+            Renderer::Vello(v) => {
+                v.draw_text(layout, pos);
+            }
+            #[cfg(not(feature = "vello"))]
             Renderer::Vger(v) => {
                 v.draw_text(layout, pos);
             }
@@ -237,6 +306,11 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
 
     fn draw_img(&mut self, img: Img<'_>, rect: Rect) {
         match self {
+            #[cfg(feature = "vello")]
+            Renderer::Vello(v) => {
+                v.draw_img(img, rect);
+            }
+            #[cfg(not(feature = "vello"))]
             Renderer::Vger(v) => {
                 v.draw_img(img, rect);
             }
@@ -254,6 +328,11 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
         brush: Option<impl Into<BrushRef<'b>>>,
     ) {
         match self {
+            #[cfg(feature = "vello")]
+            Renderer::Vello(v) => {
+                v.draw_svg(svg, rect, brush);
+            }
+            #[cfg(not(feature = "vello"))]
             Renderer::Vger(v) => {
                 v.draw_svg(svg, rect, brush);
             }
@@ -266,6 +345,11 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
 
     fn transform(&mut self, transform: Affine) {
         match self {
+            #[cfg(feature = "vello")]
+            Renderer::Vello(v) => {
+                v.transform(transform);
+            }
+            #[cfg(not(feature = "vello"))]
             Renderer::Vger(v) => {
                 v.transform(transform);
             }
@@ -278,6 +362,11 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
 
     fn set_z_index(&mut self, z_index: i32) {
         match self {
+            #[cfg(feature = "vello")]
+            Renderer::Vello(v) => {
+                v.set_z_index(z_index);
+            }
+            #[cfg(not(feature = "vello"))]
             Renderer::Vger(v) => {
                 v.set_z_index(z_index);
             }
@@ -288,8 +377,11 @@ impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
         }
     }
 
-    fn finish(&mut self) -> Option<DynamicImage> {
+    fn finish(&mut self) -> Option<peniko::Image> {
         match self {
+            #[cfg(feature = "vello")]
+            Renderer::Vello(r) => r.finish(),
+            #[cfg(not(feature = "vello"))]
             Renderer::Vger(r) => r.finish(),
             Renderer::TinySkia(r) => r.finish(),
             Renderer::Uninitialized { .. } => None,

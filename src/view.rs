@@ -455,12 +455,8 @@ fn paint_box_shadow(
 }
 
 pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, size: Size) {
-    let outline = style.outline().0;
-    if outline == 0. {
-        // TODO: we should warn! when outline is < 0
-        return;
-    }
-    let half = outline / 2.0;
+    let outline = &style.outline().0;
+    let half = outline.width / 2.0;
     let rect = size.to_rect().inflate(half, half);
     let border_radius = match style.border_radius() {
         crate::unit::PxPct::Px(px) => px,
@@ -485,8 +481,13 @@ pub(crate) fn paint_border(
     let bottom = layout_style.border_bottom().0;
 
     let border_color = style.border_color();
-    if left == top && top == right && right == bottom && bottom == left && left > 0.0 {
-        let half = left / 2.0;
+    if left.width == top.width
+        && top.width == right.width
+        && right.width == bottom.width
+        && bottom.width == left.width
+        && left.width > 0.0
+    {
+        let half = left.width / 2.0;
         let rect = size.to_rect().inflate(-half, -half);
         let radius = match style.border_radius() {
             crate::unit::PxPct::Px(px) => px,
@@ -494,47 +495,48 @@ pub(crate) fn paint_border(
         };
         if radius > 0.0 {
             let radius = (radius - half).max(0.0);
-            cx.stroke(&rect.to_rounded_rect(radius), &border_color, left);
+            cx.stroke(&rect.to_rounded_rect(radius), &border_color, &left);
         } else {
-            cx.stroke(&rect, &border_color, left);
+            cx.stroke(&rect, &border_color, &left);
         }
     } else {
-        if left > 0.0 {
-            let half = left / 2.0;
+        // TODO: now with vello should we do this left.width > 0. check?
+        if left.width > 0.0 {
+            let half = left.width / 2.0;
             cx.stroke(
                 &Line::new(Point::new(half, 0.0), Point::new(half, size.height)),
                 &border_color,
-                left,
+                &left,
             );
         }
-        if right > 0.0 {
-            let half = right / 2.0;
+        if right.width > 0.0 {
+            let half = right.width / 2.0;
             cx.stroke(
                 &Line::new(
                     Point::new(size.width - half, 0.0),
                     Point::new(size.width - half, size.height),
                 ),
                 &border_color,
-                right,
+                &right,
             );
         }
-        if top > 0.0 {
-            let half = top / 2.0;
+        if top.width > 0.0 {
+            let half = top.width / 2.0;
             cx.stroke(
                 &Line::new(Point::new(0.0, half), Point::new(size.width, half)),
                 &border_color,
-                top,
+                &top,
             );
         }
-        if bottom > 0.0 {
-            let half = bottom / 2.0;
+        if bottom.width > 0.0 {
+            let half = bottom.width / 2.0;
             cx.stroke(
                 &Line::new(
                     Point::new(0.0, size.height - half),
                     Point::new(size.width, size.height - half),
                 ),
                 &border_color,
-                bottom,
+                &bottom,
             );
         }
     }

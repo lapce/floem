@@ -223,10 +223,10 @@ impl ViewId {
             PxPct::Pct(pct) => pct * abs,
         };
         rect.inset(-Insets {
-            x0: props.border_left().0 + pixels(props.padding_left(), rect.width()),
-            x1: props.border_right().0 + pixels(props.padding_right(), rect.width()),
-            y0: props.border_top().0 + pixels(props.padding_top(), rect.height()),
-            y1: props.border_bottom().0 + pixels(props.padding_bottom(), rect.height()),
+            x0: props.border_left().0.width + pixels(props.padding_left(), rect.width()),
+            x1: props.border_right().0.width + pixels(props.padding_right(), rect.width()),
+            y0: props.border_top().0.width + pixels(props.padding_top(), rect.height()),
+            y1: props.border_bottom().0.width + pixels(props.padding_bottom(), rect.height()),
         })
     }
 

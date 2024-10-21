@@ -1,10 +1,10 @@
 use strum::IntoEnumIterator;
 
 use floem::{
-    peniko::Color,
+    peniko::{Brush, Color},
     reactive::{create_effect, RwSignal, SignalGet},
     unit::UnitExt,
-    views::{container, dropdown::Dropdown, label, stack, svg, Decorators},
+    views::{container, dropdown::Dropdown, label, stack, svg, Decorators, SvgColor},
     IntoView,
 };
 
@@ -32,7 +32,11 @@ pub fn dropdown_view() -> impl IntoView {
     let main_drop_view = move |item| {
         stack((
             label(move || item),
-            container(svg(CHEVRON_DOWN).style(|s| s.size(12, 12).color(Color::BLACK))).style(|s| {
+            container(
+                svg(CHEVRON_DOWN)
+                    .style(|s| s.size(12, 12).set(SvgColor, Brush::Solid(Color::BLACK))),
+            )
+            .style(|s| {
                 s.items_center()
                     .padding(3.)
                     .border_radius(7.pct())

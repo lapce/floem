@@ -18,8 +18,7 @@ use floem_reactive::{
 };
 use floem_winit::keyboard::{self, NamedKey};
 use floem_winit::window::WindowId;
-use image::DynamicImage;
-use peniko::kurbo::{Point, Rect, Size};
+use peniko::kurbo::{Point, Rect, Size, Stroke};
 use peniko::Color;
 use slotmap::Key;
 use std::cell::Cell;
@@ -152,7 +151,7 @@ pub struct Capture {
     pub taffy_duration: Duration,
     pub taffy_node_count: usize,
     pub taffy_depth: usize,
-    pub window: Option<Rc<DynamicImage>>,
+    pub window: Option<peniko::Image>,
     pub window_size: Size,
     pub scale: f64,
     pub state: CaptureState,
@@ -183,38 +182,38 @@ fn captured_view_name(view: &CapturedView) -> impl IntoView {
     let name = static_label(view.name.clone());
     let id = text(view.id.data().as_ffi()).style(|s| {
         s.margin_right(5.0)
-            .background(Color::BLACK.with_alpha_factor(0.02))
-            .border(1.0)
+            .background(Color::BLACK.multiply_alpha(0.02))
+            .border(Stroke::new(1.))
             .border_radius(5.0)
-            .border_color(Color::BLACK.with_alpha_factor(0.07))
+            .border_color(Color::BLACK.multiply_alpha(0.07))
             .padding(3.0)
             .padding_top(0.0)
             .padding_bottom(0.0)
             .font_size(12.0)
-            .color(Color::BLACK.with_alpha_factor(0.6))
+            .color(Color::BLACK.multiply_alpha(0.6))
     });
     let tab = if view.focused {
         text("Focus")
             .style(|s| {
                 s.margin_right(5.0)
-                    .background(Color::rgb8(63, 81, 101).with_alpha_factor(0.6))
+                    .background(Color::rgb8(63, 81, 101).multiply_alpha(0.6))
                     .border_radius(5.0)
                     .padding(1.0)
                     .font_size(10.0)
-                    .color(Color::WHITE.with_alpha_factor(0.8))
+                    .color(Color::WHITE.multiply_alpha(0.8))
             })
             .into_any()
     } else if view.keyboard_navigable {
         text("Tab")
             .style(|s| {
                 s.margin_right(5.0)
-                    .background(Color::rgb8(204, 217, 221).with_alpha_factor(0.4))
-                    .border(1.0)
+                    .background(Color::rgb8(204, 217, 221).multiply_alpha(0.4))
+                    .border(Stroke::new(1.))
                     .border_radius(5.0)
-                    .border_color(Color::BLACK.with_alpha_factor(0.07))
+                    .border_color(Color::BLACK.multiply_alpha(0.07))
                     .padding(1.0)
                     .font_size(10.0)
-                    .color(Color::BLACK.with_alpha_factor(0.4))
+                    .color(Color::BLACK.multiply_alpha(0.4))
             })
             .into_any()
     } else {
@@ -309,23 +308,23 @@ fn captured_view_with_children(
         empty()
             .style(move |s| {
                 s.background(if expanded.get() {
-                    Color::WHITE.with_alpha_factor(0.3)
+                    Color::WHITE.multiply_alpha(0.3)
                 } else {
-                    Color::BLACK.with_alpha_factor(0.3)
+                    Color::BLACK.multiply_alpha(0.3)
                 })
-                .border(1.0)
+                .border(Stroke::new(1.0))
                 .width(12.0)
                 .height(12.0)
                 .margin_left(offset)
                 .margin_right(4.0)
-                .border_color(Color::BLACK.with_alpha_factor(0.4))
+                .border_color(Color::BLACK.multiply_alpha(0.4))
                 .border_radius(4.0)
                 .hover(move |s| {
-                    s.border_color(Color::BLACK.with_alpha_factor(0.6))
+                    s.border_color(Color::BLACK.multiply_alpha(0.6))
                         .background(if expanded.get() {
-                            Color::WHITE.with_alpha_factor(0.5)
+                            Color::WHITE.multiply_alpha(0.5)
                         } else {
-                            Color::BLACK.with_alpha_factor(0.5)
+                            Color::BLACK.multiply_alpha(0.5)
                         })
                 })
             })
@@ -384,7 +383,7 @@ fn captured_view_with_children(
             .height_full()
             .width(1.0)
             .margin_left(9.0 + offset)
-            .background(Color::BLACK.with_alpha_factor(0.1))
+            .background(Color::BLACK.multiply_alpha(0.1))
     });
 
     let list = v_stack_from_iter(children).style(move |s| {
@@ -481,7 +480,7 @@ pub(crate) fn header(label: impl Display) -> Label {
             .background(Color::WHITE_SMOKE)
             .width_full()
             .height(27.0)
-            .border_bottom(1.0)
+            .border_bottom(Stroke::new(1.))
             .border_color(Color::LIGHT_GRAY)
     })
 }
@@ -492,10 +491,8 @@ fn info(name: impl Display, value: String) -> impl IntoView {
 
 fn info_row(name: String, view: impl View + 'static) -> impl View {
     stack((
-        stack((static_label(name).style(|s| {
-            s.margin_right(5.0)
-                .color(Color::BLACK.with_alpha_factor(0.6))
-        }),))
+        stack((static_label(name)
+            .style(|s| s.margin_right(5.0).color(Color::BLACK.multiply_alpha(0.6))),))
         .style(|s| s.min_width(150.0).flex_direction(FlexDirection::RowReverse)),
         view,
     ))
@@ -686,13 +683,13 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<ViewId>>) -> i
                             stack((
                                 text("Inherited").style(|s| {
                                     s.margin_right(5.0)
-                                        .background(Color::WHITE_SMOKE.with_alpha_factor(0.6))
-                                        .border(1.0)
+                                        .background(Color::WHITE_SMOKE.multiply_alpha(0.6))
+                                        .border(Stroke::new(1.))
                                         .border_radius(5.0)
                                         .border_color(Color::WHITE_SMOKE)
                                         .padding(1.0)
                                         .font_size(10.0)
-                                        .color(Color::BLACK.with_alpha_factor(0.4))
+                                        .color(Color::BLACK.multiply_alpha(0.4))
                                 }),
                                 text(name),
                             ))
@@ -710,13 +707,13 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<ViewId>>) -> i
                                 text("Transition").style(|s| {
                                     s.margin_top(5.0)
                                         .margin_right(5.0)
-                                        .background(Color::WHITE_SMOKE.with_alpha_factor(0.6))
-                                        .border(1.0)
+                                        .background(Color::WHITE_SMOKE.multiply_alpha(0.6))
+                                        .border(Stroke::new(1.))
                                         .border_radius(5.0)
                                         .border_color(Color::WHITE_SMOKE)
                                         .padding(1.0)
                                         .font_size(10.0)
-                                        .color(Color::BLACK.with_alpha_factor(0.4))
+                                        .color(Color::BLACK.multiply_alpha(0.4))
                                 }),
                                 static_label(format!("{transition:?}")),
                             ))
@@ -725,8 +722,7 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<ViewId>>) -> i
                         }
                         stack((
                             stack((name.style(|s| {
-                                s.margin_right(5.0)
-                                    .color(Color::BLACK.with_alpha_factor(0.6))
+                                s.margin_right(5.0).color(Color::BLACK.multiply_alpha(0.6))
                             }),))
                             .style(|s| {
                                 s.min_width(150.0).flex_direction(FlexDirection::RowReverse)
@@ -796,19 +792,19 @@ fn capture_view(
         .as_ref()
         .map(|img| {
             (
-                img.width() as f64 / capture.scale,
-                img.height() as f64 / capture.scale,
+                img.width as f64 / capture.scale,
+                img.height as f64 / capture.scale,
             )
         })
         .unwrap_or_default();
 
     let contain_ids = create_rw_signal((0, Vec::<ViewId>::new()));
 
-    let image = img_dynamic(move || window.clone())
+    let image = img_dynamic(move || window.clone().unwrap())
         .style(move |s| {
             s.margin(5.0)
-                .border(1.0)
-                .border_color(Color::BLACK.with_alpha_factor(0.5))
+                .border(Stroke::new(1.))
+                .border_color(Color::BLACK.multiply_alpha(0.5))
                 .width(image_width + 2.0)
                 .height(image_height + 2.0)
                 .margin_bottom(21.0)
@@ -897,9 +893,9 @@ fn capture_view(
                 .margin_top(5.0 + view.layout.y0)
                 .width(view.layout.width())
                 .height(view.layout.height())
-                .background(Color::rgb8(186, 180, 216).with_alpha_factor(0.5))
-                .border_color(Color::rgb8(186, 180, 216).with_alpha_factor(0.7))
-                .border(1.0)
+                .background(Color::rgb8(186, 180, 216).multiply_alpha(0.5))
+                .border_color(Color::rgb8(186, 180, 216).multiply_alpha(0.7))
+                .border(Stroke::new(1.))
         } else {
             s
         }
@@ -919,7 +915,7 @@ fn capture_view(
                 .height(view.layout.height())
                 .background(Color::rgba8(228, 237, 216, 120))
                 .border_color(Color::rgba8(75, 87, 53, 120))
-                .border(1.0)
+                .border(Stroke::new(1.))
         } else {
             s
         }
@@ -955,7 +951,7 @@ fn capture_view(
     let separator = empty().style(move |s| {
         s.width_full()
             .min_height(1.0)
-            .background(Color::BLACK.with_alpha_factor(0.2))
+            .background(Color::BLACK.multiply_alpha(0.2))
     });
 
     let left = v_stack((
@@ -1035,7 +1031,7 @@ fn capture_view(
     let separator = empty().style(move |s| {
         s.height_full()
             .min_width(1.0)
-            .background(Color::BLACK.with_alpha_factor(0.2))
+            .background(Color::BLACK.multiply_alpha(0.2))
     });
 
     h_stack((left, separator, tree)).style(|s| s.height_full().width_full().max_width_full())
@@ -1093,8 +1089,8 @@ pub fn capture(window_id: WindowId) {
                         .on_click_stop(move |_| set_selected.set(index))
                         .style(move |s| {
                             s.padding(5.0)
-                                .border_right(1)
-                                .border_color(Color::BLACK.with_alpha_factor(0.2))
+                                .border_right(Stroke::new(1.))
+                                .border_color(Color::BLACK.multiply_alpha(0.2))
                                 .hover(move |s| {
                                     s.background(Color::rgba8(228, 237, 216, 160))
                                         .apply_if(selected.get() == index, |s| {
@@ -1132,7 +1128,7 @@ pub fn capture(window_id: WindowId) {
                 let separator = empty().style(move |s| {
                     s.width_full()
                         .min_height(1.0)
-                        .background(Color::BLACK.with_alpha_factor(0.2))
+                        .background(Color::BLACK.multiply_alpha(0.2))
                 });
 
                 let stack = v_stack((tabs, separator, tab));

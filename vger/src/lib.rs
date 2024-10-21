@@ -8,8 +8,9 @@ use floem_renderer::swash::SwashScaler;
 use floem_renderer::text::{CacheKey, TextLayout};
 use floem_renderer::{tiny_skia, Img, Renderer};
 use floem_vger_rs::{Image, PaintIndex, PixelFormat, Vger};
-use image::{DynamicImage, EncodableLayout, RgbaImage};
-use peniko::kurbo::Size;
+use image::EncodableLayout;
+use peniko::kurbo::{Size, Stroke};
+use peniko::Blob;
 use peniko::{
     kurbo::{Affine, Point, Rect, Shape},
     BrushRef, Color, GradientKind,
@@ -177,7 +178,7 @@ impl VgerRenderer {
         floem_vger_rs::defs::LocalRect::new(origin, size)
     }
 
-    fn render_image(&mut self) -> Option<DynamicImage> {
+    fn render_image(&mut self) -> Option<peniko::Image> {
         let width_align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT - 1;
         let width = (self.config.width + width_align) & !width_align;
         let height = self.config.height;
@@ -264,7 +265,13 @@ impl VgerRenderer {
             cursor += bytes_per_row as usize;
         }
 
-        RgbaImage::from_raw(self.config.width, height, cropped_buffer).map(DynamicImage::ImageRgba8)
+        Some(peniko::Image::new(
+            Blob::new(Arc::new(cropped_buffer)),
+            peniko::Format::Rgba8,
+            self.config.width,
+            height,
+        ))
+        // RgbaImage::from_raw(self.config.width, height, cropped_buffer).map(DynamicImage::ImageRgba8)
     }
 }
 
@@ -291,14 +298,19 @@ impl Renderer for VgerRenderer {
         );
     }
 
-    fn stroke<'b>(&mut self, shape: &impl Shape, brush: impl Into<BrushRef<'b>>, width: f64) {
+    fn stroke<'b, 's>(
+        &mut self,
+        shape: &impl Shape,
+        brush: impl Into<BrushRef<'b>>,
+        stroke: &'s Stroke,
+    ) {
         let coeffs = self.transform.as_coeffs();
         let scale = (coeffs[0] + coeffs[3]) / 2. * self.scale;
         let paint = match self.brush_to_paint(brush) {
             Some(paint) => paint,
             None => return,
         };
-        let width = (width * scale).round() as f32;
+        let width = (stroke.width * scale).round() as f32;
         if let Some(rect) = shape.as_rect() {
             let min = rect.origin();
             let max = min + rect.size().to_vec2();
@@ -423,34 +435,26 @@ impl Renderer for VgerRenderer {
         let transformed_y = transform[1] * pos.x + transform[3] * pos.y + transform[5];
         let pos = Point::new(transformed_x, transformed_y);
 
-        let scale_x = transform[0];
-        let scale_y = transform[3];
-
-        let scale = (transform[0] + transform[3]) / 2. * self.scale;
-        if scale.abs() < 0.1 {
-            // I'm not sure why this is necessary but there is very strange artifacting if this is disable and scale gets too small.
-            // Probably not a bad optimization anyways though
-            // TODO: render a rectangle instead
-            return;
-        }
+        let coeffs = self.transform.as_coeffs();
+        let scale = (coeffs[0] + coeffs[3]) / 2. * self.scale;
 
         let clip = self.clip;
         for line in layout.layout_runs() {
-            if let Some(clip_rect) = clip {
-                let y = pos.y + (line.line_y as f64 * scale_y);
-                if y + (line.line_height as f64 * scale_y) < clip_rect.y0 {
+            if let Some(rect) = clip {
+                let y = pos.y + line.line_y as f64;
+                if y + (line.line_height as f64) < rect.y0 {
                     continue;
                 }
-                if y - (line.line_height as f64 * scale_y) > clip_rect.y1 {
+                if y - (line.line_height as f64) > rect.y1 {
                     break;
                 }
             }
             'line_loop: for glyph_run in line.glyphs {
-                let x = glyph_run.x * scale_x as f32 + pos.x as f32;
-                let y = line.line_y * scale_y as f32 + pos.y as f32;
+                let x = glyph_run.x + pos.x as f32;
+                let y = line.line_y + pos.y as f32;
 
                 if let Some(rect) = clip {
-                    if ((x + glyph_run.w * scale_x as f32) as f64) < rect.x0 {
+                    if ((x + glyph_run.w) as f64) < rect.x0 {
                         continue;
                     } else if x as f64 > rect.x1 {
                         break 'line_loop;
@@ -516,10 +520,10 @@ impl Renderer for VgerRenderer {
         let height = (rect.height() * scale_y).round().max(1.0) as u32;
 
         self.vger.render_image(x, y, img.hash, width, height, || {
-            let rgba = img.img.clone().into_rgba8();
+            let rgba = img.img.data.data();
             let data = rgba.as_bytes().to_vec();
 
-            let (width, height) = rgba.dimensions();
+            let (width, height) = (img.img.width, img.img.height);
 
             Image {
                 width,
@@ -609,11 +613,7 @@ impl Renderer for VgerRenderer {
             transform[1] * rect_origin.x + transform[3] * rect_origin.y + transform[5];
         let transformed_origin = Point::new(rect_top_left_x, rect_top_left_y);
 
-        let rect_end_x = transform[0] * rect.x1 + transform[2] * rect.y1 + transform[4];
-        let rect_end_y = transform[1] * rect.x1 + transform[3] * rect.y1 + transform[5];
-        let transformed_end = Point::new(rect_end_x, rect_end_y);
-
-        let transformed_rect = Rect::from_points(transformed_origin, transformed_end);
+        let transformed_rect = rect.with_origin(transformed_origin);
 
         self.clip = Some(transformed_rect);
     }
@@ -623,7 +623,7 @@ impl Renderer for VgerRenderer {
         self.clip = None;
     }
 
-    fn finish(&mut self) -> Option<DynamicImage> {
+    fn finish(&mut self) -> Option<peniko::Image> {
         if self.capture {
             self.render_image()
         } else {

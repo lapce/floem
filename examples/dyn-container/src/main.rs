@@ -38,7 +38,7 @@ fn app_view() -> impl IntoView {
     v_stack((
         button("Switch views").action(move || view.update(|which| which.toggle())),
         dyn_container(move || view.get(), move |which| which.view(view))
-            .style(|s| s.border(1).border_radius(5)),
+            .style(|s| s.border(1.).border_radius(5)),
     ))
     .style(|s| {
         s.width_full()
