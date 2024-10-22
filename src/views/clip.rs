@@ -54,7 +54,9 @@ impl View for Clip {
     }
 }
 
+/// A trait that adds a `clip` method to any type that implements `IntoView`.
 pub trait ClipExt {
+    /// Wrap the view in a clip view.
     fn clip(self) -> Clip;
 }
 

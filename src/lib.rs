@@ -153,13 +153,13 @@
 //!     .style(|s| s.background(Color::RED).size(500, 100))
 //!     .animation(move |a| {
 //!         a.duration(5.seconds())
-//!             .keyframe(0, |kf| kf.computed_style())
-//!             .keyframe(50, |kf| {
-//!                 kf.style(|s| s.background(Color::BLACK).size(30, 30))
+//!             .keyframe(0, |f| f.computed_style())
+//!             .keyframe(50, |f| {
+//!                 f.style(|s| s.background(Color::BLACK).size(30, 30))
 //!                     .ease_in()
 //!             })
-//!             .keyframe(100, |kf| {
-//!                 kf.style(|s| s.background(Color::AQUAMARINE).size(10, 300))
+//!             .keyframe(100, |f| {
+//!                 f.style(|s| s.background(Color::AQUAMARINE).size(10, 300))
 //!                     .ease_out()
 //!             })
 //!             .auto_reverse(true)
@@ -228,3 +228,14 @@ pub use taffy;
 pub use view::{recursively_layout_view, AnyView, IntoView, View};
 pub use window::{close_window, new_window};
 pub use window_id::{Urgency, WindowIdExt};
+
+pub mod prelude {
+    pub use crate::unit::{DurationUnitExt, UnitExt};
+    pub use crate::view_tuple::ViewTuple;
+    pub use crate::views::*;
+    pub use crate::{IntoView, View};
+    pub use floem_reactive::{
+        create_rw_signal, create_signal, RwSignal, SignalGet, SignalTrack, SignalUpdate, SignalWith,
+    };
+    pub use peniko::Color;
+}

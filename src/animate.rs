@@ -421,28 +421,28 @@ impl Animation {
         self.run_on_create(true)
             .run_on_remove(true)
             .initial_state(AnimStateCommand::Stop)
-            .keyframe(0, |kf| kf.computed_style().ease(Spring::gentle()))
-            .keyframe(100, |kf| kf.computed_style().ease(Spring::gentle()))
+            .keyframe(0, |f| f.computed_style().ease(Spring::gentle()))
+            .keyframe(100, |f| f.computed_style().ease(Spring::gentle()))
     }
 
     /// Quickly set an animation to be a view transition and override the default easing function on keyframes 0 and 100.
     pub fn view_transition_with_ease(self, ease: impl Easing + 'static + Clone) -> Self {
         self.view_transition()
-            .keyframe(0, |kf| kf.computed_style().ease(ease.clone()))
-            .keyframe(100, |kf| kf.computed_style().ease(ease.clone()))
+            .keyframe(0, |f| f.computed_style().ease(ease.clone()))
+            .keyframe(100, |f| f.computed_style().ease(ease.clone()))
     }
 
     /// Quickly set an animation to be a view transition and set the animation to animate from scale 0% to the "normal" computed style of a view (the view with no animations applied).
     pub fn scale_effect(self) -> Self {
         self.view_transition()
-            .keyframe(0, |kf| kf.style(|s| s.scale(0.pct())))
+            .keyframe(0, |f| f.style(|s| s.scale(0.pct())))
             .debug_name("Scale the width and height from zero to the default")
     }
 
     /// Quickly set an animation to be a view transition and set the animation to animate from size(0, 0) to the "normal" computed style of a view (the view with no animations applied).
     pub fn scale_size_effect(self) -> Self {
         self.view_transition()
-            .keyframe(0, |kf| kf.style(|s| s.size(0, 0)))
+            .keyframe(0, |f| f.style(|s| s.size(0, 0)))
             .debug_name("Scale the width and height from zero to the default")
     }
 }
@@ -503,8 +503,8 @@ impl Animation {
     ) -> Self {
         let frame = key_frame(KeyFrame::new(frame_id));
         let frame_style = frame.style.clone();
-        if let Some(kf) = self.key_frames.insert(frame_id, frame) {
-            if let KeyFrameStyle::Style(style) = kf.style {
+        if let Some(f) = self.key_frames.insert(frame_id, frame) {
+            if let KeyFrameStyle::Style(style) = f.style {
                 for prop in style.style_props() {
                     self.cache.remove_prop(prop, frame_id);
                 }
