@@ -133,7 +133,7 @@ fn app_view() -> impl IntoView {
     let left = v_stack((list, inspector)).style(|s| s.height_full().column_gap(5.0));
 
     let tab = tab(
-        move || active_tab.get(),
+        move || Some(active_tab.get()),
         move || tabs.get(),
         |it| *it,
         |it| match it {
