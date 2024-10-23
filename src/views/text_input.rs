@@ -404,6 +404,10 @@ impl TextInput {
         })
     }
 
+    fn handle_triple_click(&mut self) {
+        self.select_all();
+    }
+
     fn get_box_position(&self, pos_x: f64, pos_y: f64) -> usize {
         let layout = self.id.get_layout().unwrap_or_default();
         let view_state = self.id.state();
@@ -578,7 +582,7 @@ impl TextInput {
     }
 
     fn handle_modifier_cmd(&mut self, event: &KeyEvent, character: &SmolStr) -> bool {
-        if event.modifiers.is_empty() {
+        if event.modifiers.is_empty() || event.modifiers == Modifiers::SHIFT {
             return false;
         }
 
@@ -1033,6 +1037,8 @@ impl View for TextInput {
 
                 if event.count == 2 {
                     self.handle_double_click(event.pos.x, event.pos.y);
+                } else if event.count == 3 {
+                    self.handle_triple_click();
                 } else {
                     self.cursor_glyph_idx = self.get_box_position(event.pos.x, event.pos.y);
                     self.selection = None;
@@ -1245,12 +1251,9 @@ impl View for TextInput {
         }
 
         let id = self.id();
-        exec_after(
-            Duration::from_millis(CURSOR_BLINK_INTERVAL_MS),
-            Box::new(move |_| {
-                id.request_paint();
-            }),
-        );
+        exec_after(Duration::from_millis(CURSOR_BLINK_INTERVAL_MS), move |_| {
+            id.request_paint();
+        });
     }
 }
 
