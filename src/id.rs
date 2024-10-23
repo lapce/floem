@@ -509,6 +509,11 @@ impl ViewId {
         self.add_update_message(UpdateMessage::KeyboardNavigable { id: *self });
     }
 
+    /// Mark this view as a view that can **not** be navigated to using the keyboard
+    pub fn remove_keyboard_navigatable(&self) {
+        self.add_update_message(UpdateMessage::RemoveKeyboardNavigable { id: *self });
+    }
+
     /// Mark this view as a view that can be dragged
     ///
     /// You can customize the apearance of a view while dragging in the style
