@@ -69,7 +69,7 @@ pub fn set_window_delta(delta: Vec2) {
 /// Set the window scale
 ///
 /// This will scale all view elements in the renderer
-pub fn update_window_scale(window_scale: f64) {
+pub fn set_window_scale(window_scale: f64) {
     add_update_message(UpdateMessage::WindowScale(window_scale));
 }
 
