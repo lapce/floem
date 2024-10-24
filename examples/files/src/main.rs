@@ -1,7 +1,7 @@
 use floem::{
     action::{open_file, save_as},
     file::{FileDialogOptions, FileSpec},
-    keyboard::{Key, Modifiers, NamedKey},
+    keyboard::{Key, NamedKey},
     views::{button, h_stack, Decorators},
     IntoView, View,
 };
@@ -87,9 +87,11 @@ fn app_view() -> impl IntoView {
     });
 
     let id = view.id();
-    view.on_key_up(Key::Named(NamedKey::F11), Modifiers::empty(), move |_| {
-        id.inspect()
-    })
+    view.on_key_up(
+        Key::Named(NamedKey::F11),
+        |m| m.is_empty(),
+        move |_| id.inspect(),
+    )
 }
 
 fn main() {
