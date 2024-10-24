@@ -129,13 +129,14 @@ impl<T> View for Tab<T> {
             cx.style_view(child);
             let child_view = child.state();
             let mut child_view = child_view.borrow_mut();
+            let display = child_view.combined_style.get(DisplayProp);
             child_view.combined_style = child_view.combined_style.clone().set(
                 DisplayProp,
                 if i != self.active {
                     // set display to none for non active child
                     Display::None
                 } else {
-                    Display::Flex
+                    display
                 },
             );
         }
