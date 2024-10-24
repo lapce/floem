@@ -113,6 +113,7 @@ impl StylePropValue for Weight {
     }
 }
 impl StylePropValue for crate::text::Style {}
+impl StylePropValue for crate::text::Align {}
 impl StylePropValue for TextOverflow {}
 impl StylePropValue for PointerEvents {}
 impl StylePropValue for LineHeightValue {
@@ -1710,6 +1711,7 @@ define_builtin_props!(
     SelectionCornerRadius selection_corer_radius nocb: f64 {} = 1.,
     Selectable selectable: bool {} = true,
     TextOverflowProp text_overflow: TextOverflow {} = TextOverflow::Wrap,
+    TextAlignProp text_align: Option<crate::text::Align> {} = None,
     LineHeight line_height nocb: Option<LineHeightValue> { inherited } = None,
     AspectRatio aspect_ratio: Option<f32> {} = None,
     ColGap col_gap nocb: PxPct {} = PxPct::Px(0.),

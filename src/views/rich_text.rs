@@ -234,7 +234,7 @@ impl IntoView for RichSpanOwned {
             attrs_list.add_span(span.0, span.1.as_attrs());
         }
 
-        layout.set_text(&self.text, attrs_list);
+        layout.set_text(&self.text, attrs_list, None);
         rich_text(move || layout.clone())
     }
 }

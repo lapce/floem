@@ -4,7 +4,7 @@ use crate::id::ViewId;
 use crate::keyboard::{self, KeyEvent, Modifiers};
 use crate::pointer::{MouseButton, PointerButton, PointerInputEvent};
 use crate::reactive::{create_effect, RwSignal};
-use crate::style::{FontFamily, FontProps, PaddingLeft, SelectionStyle};
+use crate::style::{FontFamily, FontProps, PaddingLeft, SelectionStyle, TextAlignProp};
 use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
 use crate::{prop_extractor, style_class, Clipboard};
@@ -40,6 +40,7 @@ style_class!(pub PlaceholderTextClass);
 prop_extractor! {
     Extractor {
         color: TextColor,
+        text_align: TextAlignProp,
     }
 }
 
@@ -50,6 +51,7 @@ prop_extractor! {
         pub font_weight: FontWeight,
         pub font_style: FontStyle,
         pub font_family: FontFamily,
+        pub text_align: TextAlignProp,
     }
 }
 
@@ -493,7 +495,8 @@ impl TextInput {
     fn get_font_glyph_max_size(&self) -> Size {
         let mut tmp = TextLayout::new();
         let attrs_list = self.get_text_attrs();
-        tmp.set_text("W", attrs_list);
+        let align = self.style.text_align();
+        tmp.set_text("W", attrs_list, align);
         tmp.size() + Size::new(0., tmp.hit_position(0).glyph_descent)
     }
 
@@ -514,9 +517,10 @@ impl TextInput {
     fn update_text_layout(&mut self) {
         let mut text_layout = TextLayout::new();
         let attrs_list = self.get_text_attrs();
+        let align = self.style.text_align();
 
         self.buffer
-            .with_untracked(|buff| text_layout.set_text(buff, attrs_list.clone()));
+            .with_untracked(|buff| text_layout.set_text(buff, attrs_list.clone(), align));
 
         let glyph_max_size = self.get_font_glyph_max_size();
         self.height = glyph_max_size.height as f32;
@@ -527,7 +531,7 @@ impl TextInput {
 
         if let Some(cr_text) = self.clipped_text.clone().as_ref() {
             let mut clp_txt_lay = text_layout;
-            clp_txt_lay.set_text(cr_text, attrs_list);
+            clp_txt_lay.set_text(cr_text, attrs_list, align);
 
             self.clip_txt_buf = Some(clp_txt_lay);
         }
@@ -1178,7 +1182,11 @@ impl View for TextInput {
                 if let Some(placeholder_text) = &self.placeholder_text {
                     let mut placeholder_buff = TextLayout::new();
                     let attrs_list = self.get_placeholder_text_attrs();
-                    placeholder_buff.set_text(placeholder_text, attrs_list);
+                    placeholder_buff.set_text(
+                        placeholder_text,
+                        attrs_list,
+                        self.placeholder_style.text_align(),
+                    );
                     self.placeholder_buff = Some(placeholder_buff);
                 }
             }

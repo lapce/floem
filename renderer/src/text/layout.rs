@@ -2,7 +2,7 @@ use std::{ops::Range, sync::LazyLock};
 
 use crate::text::AttrsList;
 use cosmic_text::{
-    Affinity, Buffer, BufferLine, Cursor, FontSystem, LayoutCursor, LayoutGlyph, LineEnding,
+    Affinity, Align, Buffer, BufferLine, Cursor, FontSystem, LayoutCursor, LayoutGlyph, LineEnding,
     LineIter, Metrics, Scroll, Shaping, Wrap,
 };
 use parking_lot::Mutex;
@@ -221,13 +221,13 @@ impl TextLayout {
         }
     }
 
-    pub fn new_with_text(text: &str, attrs_list: AttrsList) -> Self {
+    pub fn new_with_text(text: &str, attrs_list: AttrsList, align: Option<Align>) -> Self {
         let mut layout = Self::new();
-        layout.set_text(text, attrs_list);
+        layout.set_text(text, attrs_list, align);
         layout
     }
 
-    pub fn set_text(&mut self, text: &str, attrs_list: AttrsList) {
+    pub fn set_text(&mut self, text: &str, attrs_list: AttrsList, align: Option<Align>) {
         self.buffer.lines.clear();
         self.lines_range.clear();
         let mut attrs_list = attrs_list.0;
@@ -237,12 +237,10 @@ impl TextLayout {
             let new_attrs = attrs_list
                 .clone()
                 .split_off(line_text.len() + ending.as_str().len());
-            self.buffer.lines.push(BufferLine::new(
-                line_text,
-                ending,
-                attrs_list.clone(),
-                Shaping::Advanced,
-            ));
+            let mut line =
+                BufferLine::new(line_text, ending, attrs_list.clone(), Shaping::Advanced);
+            line.set_align(align);
+            self.buffer.lines.push(line);
             attrs_list = new_attrs;
         }
         if self.buffer.lines.is_empty() {
