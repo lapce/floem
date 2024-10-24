@@ -5,4 +5,4 @@
 .DS_Store
 rustc-ice*
 *.orig
-
+*.db
