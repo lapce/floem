@@ -228,3 +228,14 @@ pub use taffy;
 pub use view::{recursively_layout_view, AnyView, IntoView, View};
 pub use window::{close_window, new_window};
 pub use window_id::{Urgency, WindowIdExt};
+
+pub mod prelude {
+    pub use crate::unit::{DurationUnitExt, UnitExt};
+    pub use crate::view_tuple::ViewTuple;
+    pub use crate::views::*;
+    pub use crate::{IntoView, View};
+    pub use floem_reactive::{
+        create_rw_signal, create_signal, RwSignal, SignalGet, SignalTrack, SignalUpdate, SignalWith,
+    };
+    pub use peniko::Color;
+}
