@@ -1,7 +1,0 @@
-[package]
-name = "dropped_file"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-floem = { path = "../.." }
