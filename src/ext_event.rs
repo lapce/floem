@@ -4,7 +4,7 @@ use floem_reactive::{
     create_effect, create_rw_signal, untrack, with_scope, ReadSignal, RwSignal, Scope, SignalGet,
     SignalUpdate, SignalWith, WriteSignal,
 };
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::{
     app::UserEvent,
@@ -303,4 +303,172 @@ pub fn create_signal_from_stream<T: 'static>(
     });
 
     read
+}
+
+#[derive(Clone)]
+pub struct ArcRwSignal<T> {
+    inner: Arc<ArcRwSignalInner<T>>,
+}
+
+struct ArcRwSignalInner<T> {
+    // The actual data, protected by a RwLock for thread safety
+    data: RwLock<T>,
+    // Trigger for notifying the reactive system of changes
+    trigger: ExtSendTrigger,
+    // Main-thread signal for reactive integration (created lazily)
+    main_signal: parking_lot::Mutex<Option<RwSignal<()>>>,
+}
+
+impl<T> ArcRwSignal<T> {
+    /// Create a new ArcRwSignal with the given initial value
+    pub fn new(value: T) -> Self {
+        Self {
+            inner: Arc::new(ArcRwSignalInner {
+                data: RwLock::new(value),
+                trigger: ExtSendTrigger::new(),
+                main_signal: parking_lot::Mutex::new(None),
+            }),
+        }
+    }
+
+    /// Get a read guard to the data (like Arc<RwLock<T>>::read())
+    /// This does NOT subscribe to reactive effects.
+    pub fn read(&self) -> RwLockReadGuard<T> {
+        self.inner.data.read()
+    }
+
+    /// Get a write guard to the data (like Arc<RwLock<T>>::write())
+    /// This will notify reactive effects when the guard is dropped.
+    pub fn write(&self) -> ArcRwSignalWriteGuard<T> {
+        let guard = self.inner.data.write();
+        ArcRwSignalWriteGuard {
+            guard,
+            trigger: self.inner.trigger,
+        }
+    }
+
+    /// Try to get a read guard without blocking
+    pub fn try_read(&self) -> Option<RwLockReadGuard<T>> {
+        self.inner.data.try_read()
+    }
+
+    /// Try to get a write guard without blocking
+    pub fn try_write(&self) -> Option<ArcRwSignalWriteGuard<T>> {
+        self.inner
+            .data
+            .try_write()
+            .map(|guard| ArcRwSignalWriteGuard {
+                guard,
+                trigger: self.inner.trigger,
+            })
+    }
+}
+
+impl<T: Clone> ArcRwSignal<T> {
+    /// Get a clone of the current value and subscribe to changes in reactive contexts
+    pub fn get(&self) -> T {
+        self.track();
+        self.inner.data.read().clone()
+    }
+
+    /// Get a clone of the current value without subscribing to changes
+    pub fn get_untracked(&self) -> T {
+        self.inner.data.read().clone()
+    }
+
+    /// Set the value, notifying all reactive subscribers
+    pub fn set(&self, value: T) {
+        *self.inner.data.write() = value;
+        self.notify();
+    }
+
+    /// Update the value using a closure, notifying all reactive subscribers
+    pub fn update<R>(&self, f: impl FnOnce(&mut T) -> R) -> R {
+        let result = f(&mut *self.inner.data.write());
+        self.notify();
+        result
+    }
+
+    /// Apply a closure to the current value, subscribing to changes in reactive contexts
+    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
+        self.track();
+        f(&*self.inner.data.read())
+    }
+
+    /// Apply a closure to the current value without subscribing to changes
+    pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> R {
+        f(&*self.inner.data.read())
+    }
+}
+
+impl<T> ArcRwSignal<T> {
+    /// Subscribe to changes in reactive contexts (like signal.track())
+    pub fn track(&self) {
+        self.ensure_main_signal();
+        self.inner.trigger.track();
+    }
+
+    /// Manually notify reactive subscribers of changes
+    pub fn notify(&self) {
+        EXT_EVENT_HANDLER.add_trigger(self.inner.trigger);
+    }
+
+    /// Ensure the main-thread signal exists for reactive integration
+    fn ensure_main_signal(&self) {
+        let mut main_signal = self.inner.main_signal.lock();
+        if main_signal.is_none() {
+            *main_signal = Some(create_rw_signal(()));
+        }
+    }
+
+    /// Get a regular ReadSignal that updates when this ArcRwSignal changes.
+    /// The returned signal's value is always `()` - it's just for tracking changes.
+    pub fn to_read_signal(&self) -> ReadSignal<()> {
+        self.ensure_main_signal();
+        let main_signal = self.inner.main_signal.lock();
+        main_signal.as_ref().unwrap().read_only()
+    }
+
+    /// Get a regular WriteSignal that can trigger updates.
+    /// Writing to this signal will notify subscribers but won't change the actual data.
+    pub fn to_write_signal(&self) -> WriteSignal<()> {
+        self.ensure_main_signal();
+        let main_signal = self.inner.main_signal.lock();
+        main_signal.as_ref().unwrap().write_only()
+    }
+}
+
+/// A write guard that notifies reactive subscribers when dropped
+pub struct ArcRwSignalWriteGuard<'a, T> {
+    guard: RwLockWriteGuard<'a, T>,
+    trigger: ExtSendTrigger,
+}
+
+impl<T> Drop for ArcRwSignalWriteGuard<'_, T> {
+    fn drop(&mut self) {
+        EXT_EVENT_HANDLER.add_trigger(self.trigger);
+    }
+}
+
+impl<T> std::ops::Deref for ArcRwSignalWriteGuard<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.guard
+    }
+}
+
+impl<T> std::ops::DerefMut for ArcRwSignalWriteGuard<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.guard
+    }
+}
+
+// Make ArcRwSignal thread-safe
+unsafe impl<T: Send> Send for ArcRwSignal<T> {}
+unsafe impl<T: Send + Sync> Sync for ArcRwSignal<T> {}
+
+/// Convenience function to create an ArcRwSignal
+pub fn create_arc_rw_signal<T>(value: T) -> ArcRwSignal<T> {
+    ArcRwSignal::new(value)
 }
