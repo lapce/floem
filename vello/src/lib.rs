@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::mem;
+use std::num::NonZero;
 use std::sync::mpsc::sync_channel;
 use std::sync::Arc;
 
@@ -84,10 +85,10 @@ impl VelloRenderer {
             format: texture_format,
             width,
             height,
-            present_mode: wgpu::PresentMode::Fifo,
+            present_mode: wgpu::PresentMode::AutoVsync,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
             view_formats: vec![],
-            desired_maximum_frame_latency: 2,
+            desired_maximum_frame_latency: 1,
         };
         surface.configure(&device, &config);
 
@@ -98,7 +99,7 @@ impl VelloRenderer {
                 surface_format: Some(texture_format),
                 use_cpu: false,
                 antialiasing_support: vello::AaSupport::all(),
-                num_init_threads: None,
+                num_init_threads: Some(NonZero::new(1).unwrap()),
             },
         )
         .unwrap();
