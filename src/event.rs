@@ -98,6 +98,8 @@ pub enum EventListener {
     WindowLostFocus,
     /// Receives [`Event::WindowMaximizeChanged`]
     WindowMaximizeChanged,
+    /// Receives [`Event::WindowScaleChanged`]
+    WindowScaleChanged,
     /// Receives [`Event::DroppedFile`]
     DroppedFile,
 }
@@ -129,6 +131,7 @@ pub enum Event {
     ThemeChanged(Theme),
     FocusGained,
     FocusLost,
+    WindowScaleChanged(f64),
 }
 
 impl Event {
@@ -151,6 +154,7 @@ impl Event {
             | Event::WindowResized(_)
             | Event::WindowMoved(_)
             | Event::WindowMaximizeChanged(_)
+            | Event::WindowScaleChanged(_)
             | Event::WindowGotFocus
             | Event::WindowLostFocus
             | Event::DroppedFile(_) => false,
@@ -179,6 +183,7 @@ impl Event {
             | Event::WindowResized(_)
             | Event::WindowMoved(_)
             | Event::WindowMaximizeChanged(_)
+            | Event::WindowScaleChanged(_)
             | Event::WindowGotFocus
             | Event::WindowLostFocus
             | Event::DroppedFile(_) => false,
@@ -222,6 +227,7 @@ impl Event {
             | Event::WindowMoved(_)
             | Event::WindowGotFocus
             | Event::WindowMaximizeChanged(_)
+            | Event::WindowScaleChanged(_)
             | Event::WindowLostFocus
             | Event::DroppedFile(_) => true,
         }
@@ -250,6 +256,7 @@ impl Event {
             | Event::WindowResized(_)
             | Event::WindowMoved(_)
             | Event::WindowMaximizeChanged(_)
+            | Event::WindowScaleChanged(_)
             | Event::WindowGotFocus
             | Event::WindowLostFocus => None,
         }
@@ -288,6 +295,7 @@ impl Event {
             | Event::WindowResized(_)
             | Event::WindowMoved(_)
             | Event::WindowMaximizeChanged(_)
+            | Event::WindowScaleChanged(_)
             | Event::WindowGotFocus
             | Event::WindowLostFocus => {}
         }
@@ -312,6 +320,7 @@ impl Event {
             Event::WindowResized(_) => Some(EventListener::WindowResized),
             Event::WindowMoved(_) => Some(EventListener::WindowMoved),
             Event::WindowMaximizeChanged(_) => Some(EventListener::WindowMaximizeChanged),
+            Event::WindowScaleChanged(_) => Some(EventListener::WindowScaleChanged),
             Event::WindowGotFocus => Some(EventListener::WindowGotFocus),
             Event::WindowLostFocus => Some(EventListener::WindowLostFocus),
             Event::FocusLost => Some(EventListener::FocusLost),

@@ -439,6 +439,7 @@ impl WindowHandle {
         self.scale = scale;
         let scale = self.scale * self.app_state.scale;
         self.paint_state.set_scale(scale);
+        self.event(Event::WindowScaleChanged(scale));
         self.schedule_repaint();
     }
 
