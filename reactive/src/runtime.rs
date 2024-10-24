@@ -1,3 +1,5 @@
+#[cfg(not(test))]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
     any::{Any, TypeId},
     cell::{Cell, RefCell},
@@ -13,8 +15,16 @@ use crate::{
     signal::Signal,
 };
 
+#[cfg(not(test))]
+static CREATED: AtomicBool = AtomicBool::new(false);
 thread_local! {
-    pub(crate) static RUNTIME: Runtime = Runtime::new();
+    pub(crate) static RUNTIME: Runtime = {
+        #[cfg(not(test))]
+        if CREATED.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+            panic!("RUNTIME must only be created once. You are probably using signals from multiple threads. All signals need to be accessed exclusively from the main thread.");
+        }
+        Runtime::new()
+    };
 }
 
 /// The internal reactive Runtime which stores all the reactive system states in a
