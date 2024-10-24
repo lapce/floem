@@ -910,10 +910,34 @@ impl WindowHandle {
                     }
                     UpdateMessage::Disabled { id, is_disabled } => {
                         if is_disabled {
-                            cx.app_state.disabled.insert(id);
-                            cx.app_state.hovered.remove(&id);
+                            // When disabling, mark the current id as the root (true) and all children as non-root (false)
+                            cx.app_state.disabled.insert((id, true));
+                            let mut stack = vec![id];
+                            while let Some(current) = stack.pop() {
+                                for child in current.children() {
+                                    // Skip this subtree if the child is already a root
+                                    if !cx.app_state.disabled.contains(&(child, true)) {
+                                        cx.app_state.disabled.insert((child, false));
+                                        cx.app_state.hovered.remove(&child);
+                                        stack.push(child);
+                                    }
+                                }
+                            }
                         } else {
-                            cx.app_state.disabled.remove(&id);
+                            // When enabling, only remove items if this was their root
+                            if cx.app_state.disabled.remove(&(id, true)) {
+                                // If this was a root, remove all its descendants
+                                let mut stack = vec![id];
+                                while let Some(current) = stack.pop() {
+                                    for child in current.children() {
+                                        // Skip this subtree if the child is a root
+                                        if !cx.app_state.disabled.contains(&(child, true)) {
+                                            cx.app_state.disabled.remove(&(child, false));
+                                            stack.push(child);
+                                        }
+                                    }
+                                }
+                            }
                         }
                         id.request_style_recursive();
                     }

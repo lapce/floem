@@ -30,7 +30,8 @@ pub struct AppState {
     pub(crate) scheduled_updates: Vec<FrameUpdate>,
     pub(crate) request_compute_layout: bool,
     pub(crate) request_paint: bool,
-    pub(crate) disabled: HashSet<ViewId>,
+    // the bool idicates if this item is the root of the disabled item
+    pub(crate) disabled: HashSet<(ViewId, bool)>,
     pub(crate) keyboard_navigable: HashSet<ViewId>,
     pub(crate) draggable: HashSet<ViewId>,
     pub(crate) dragging: Option<DragState>,
@@ -116,7 +117,8 @@ impl AppState {
         }
         let _ = taffy.remove(node);
         id.remove();
-        self.disabled.remove(&id);
+        self.disabled.remove(&(id, true));
+        self.disabled.remove(&(id, false));
         self.keyboard_navigable.remove(&id);
         self.draggable.remove(&id);
         self.dragging_over.remove(&id);
@@ -144,7 +146,7 @@ impl AppState {
     }
 
     pub fn is_disabled(&self, id: &ViewId) -> bool {
-        self.disabled.contains(id)
+        self.disabled.contains(&(*id, true)) || self.disabled.contains(&(*id, false))
     }
 
     pub fn is_focused(&self, id: &ViewId) -> bool {
