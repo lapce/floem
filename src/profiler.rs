@@ -8,7 +8,6 @@ use crate::views::{
 };
 use floem_reactive::{create_rw_signal, RwSignal, Scope, SignalGet, SignalUpdate};
 use floem_winit::window::WindowId;
-use peniko::kurbo::Stroke;
 use peniko::Color;
 use std::fmt::Display;
 use std::mem;

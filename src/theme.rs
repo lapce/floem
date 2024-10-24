@@ -11,7 +11,7 @@ use crate::{
         ToggleButtonInset, TooltipClass,
     },
 };
-use peniko::{kurbo::Stroke, Brush, Color};
+use peniko::{Brush, Color};
 use std::rc::Rc;
 use taffy::style::AlignItems;
 

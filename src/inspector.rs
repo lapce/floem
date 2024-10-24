@@ -18,7 +18,7 @@ use floem_reactive::{
 };
 use floem_winit::keyboard::{self, NamedKey};
 use floem_winit::window::WindowId;
-use peniko::kurbo::{Point, Rect, Size, Stroke};
+use peniko::kurbo::{Point, Rect, Size};
 use peniko::Color;
 use slotmap::Key;
 use std::cell::Cell;

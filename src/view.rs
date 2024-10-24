@@ -259,12 +259,12 @@ pub trait View {
         default_compute_layout(self.id(), cx)
     }
 
-    /// Implement this to handle events and to pass them down to children
-    ///
-    /// Return true to stop the event from propagating to other views
-    ///
-    /// If the event needs other passes to run you're expected to call
-    /// `cx.app_state_mut().request_changes`.
+    // Implement this to handle events and to pass them down to children
+    //
+    // Return true to stop the event from propagating to other views
+    //
+    // If the event needs other passes to run you're expected to call
+    // `cx.app_state_mut().request_changes`.
     // fn event(
     //     &mut self,
     //     cx: &mut EventCx,
