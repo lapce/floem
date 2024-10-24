@@ -7,7 +7,7 @@ use floem_winit::keyboard::Key;
 use peniko::kurbo::{Point, Rect};
 
 use crate::{
-    action::{set_window_menu, set_window_title, update_window_scale},
+    action::{set_window_menu, set_window_scale, set_window_title},
     animate::Animation,
     event::{Event, EventListener, EventPropagation},
     keyboard::Modifiers,
@@ -354,7 +354,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     fn window_scale(self, scale_fn: impl Fn() -> f64 + 'static) -> Self {
         create_effect(move |_| {
             let window_scale = scale_fn();
-            update_window_scale(window_scale);
+            set_window_scale(window_scale);
         });
         self
     }
