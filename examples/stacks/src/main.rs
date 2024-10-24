@@ -1,5 +1,5 @@
 use floem::{
-    keyboard::{Key, Modifiers, NamedKey},
+    keyboard::{Key, NamedKey},
     views::Decorators,
     IntoView, View,
 };
@@ -48,9 +48,11 @@ fn app_view() -> impl IntoView {
         .into_view();
 
     let id = view.id();
-    view.on_key_up(Key::Named(NamedKey::F11), Modifiers::empty(), move |_| {
-        id.inspect()
-    })
+    view.on_key_up(
+        Key::Named(NamedKey::F11),
+        |m| m.is_empty(),
+        move |_| id.inspect(),
+    )
 }
 
 fn main() {

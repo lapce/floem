@@ -1,4 +1,3 @@
-use floem::keyboard::Modifiers;
 use floem::peniko::Color;
 use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 use floem::text::{Attrs, AttrsList, Stretch, Style, Weight};
@@ -244,9 +243,11 @@ mod tests {
     .style(|s| s.size_full().flex_col().items_center().justify_center());
 
     let id = view.id();
-    view.on_key_up(Key::Named(NamedKey::F11), Modifiers::empty(), move |_| {
-        id.inspect()
-    })
+    view.on_key_up(
+        Key::Named(NamedKey::F11),
+        |m| m.is_empty(),
+        move |_| id.inspect(),
+    )
 }
 
 fn main() {

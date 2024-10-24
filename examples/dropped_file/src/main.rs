@@ -1,6 +1,6 @@
 use floem::{
     event::EventListener,
-    keyboard::{Key, Modifiers, NamedKey},
+    keyboard::{Key, NamedKey},
     unit::UnitExt,
     views::{dyn_view, Decorators},
     IntoView, View,
@@ -15,9 +15,11 @@ fn app_view() -> impl IntoView {
     });
 
     let id = view.id();
-    view.on_key_up(Key::Named(NamedKey::F11), Modifiers::empty(), move |_| {
-        id.inspect()
-    })
+    view.on_key_up(
+        Key::Named(NamedKey::F11),
+        |m| m.is_empty(),
+        move |_| id.inspect(),
+    )
     .on_event_stop(EventListener::PointerMove, |x| {
         println!("PointerMove {:?}", x.point());
     })
