@@ -165,12 +165,12 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     fn on_key_down(
         self,
         key: Key,
-        modifiers: Modifiers,
+        cmp: impl Fn(Modifiers) -> bool + 'static,
         action: impl Fn(&Event) + 'static,
     ) -> Self::DV {
         self.on_event(EventListener::KeyDown, move |e| {
             if let Event::KeyDown(ke) = e {
-                if ke.key.logical_key == key && ke.modifiers == modifiers {
+                if ke.key.logical_key == key && cmp(ke.modifiers) {
                     action(e);
                     return EventPropagation::Stop;
                 }
@@ -185,12 +185,12 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     fn on_key_up(
         self,
         key: Key,
-        modifiers: Modifiers,
+        cmp: impl Fn(Modifiers) -> bool + 'static,
         action: impl Fn(&Event) + 'static,
     ) -> Self::DV {
         self.on_event(EventListener::KeyUp, move |e| {
             if let Event::KeyUp(ke) = e {
-                if ke.key.logical_key == key && ke.modifiers == modifiers {
+                if ke.key.logical_key == key && cmp(ke.modifiers) {
                     action(e);
                     return EventPropagation::Stop;
                 }

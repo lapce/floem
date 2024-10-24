@@ -1,5 +1,5 @@
 use floem::{
-    keyboard::{Key, Modifiers, NamedKey},
+    keyboard::{Key, NamedKey},
     reactive::{RwSignal, SignalGet, SignalUpdate},
     views::{
         button,
@@ -67,9 +67,11 @@ fn app_view() -> impl IntoView {
     .style(|s| s.size_full().flex_col().items_center().justify_center());
 
     let id = view.id();
-    view.on_key_up(Key::Named(NamedKey::F11), Modifiers::empty(), move |_| {
-        id.inspect()
-    })
+    view.on_key_up(
+        Key::Named(NamedKey::F11),
+        |m| m.is_empty(),
+        move |_| id.inspect(),
+    )
 }
 
 fn main() {
