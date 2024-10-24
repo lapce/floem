@@ -456,6 +456,10 @@ fn paint_box_shadow(
 
 pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, size: Size) {
     let outline = &style.outline().0;
+    if outline.width == 0. {
+        // TODO: we should warn! when outline is < 0
+        return;
+    }
     let half = outline.width / 2.0;
     let rect = size.to_rect().inflate(half, half);
     let border_radius = match style.border_radius() {
