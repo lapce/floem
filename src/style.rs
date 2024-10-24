@@ -1780,8 +1780,8 @@ impl LayoutProps {
             .margin_top(self.margin_top())
             .margin_right(self.margin_right())
             .margin_bottom(self.margin_bottom())
+            .col_gap(self.col_gap())
             .row_gap(self.row_gap())
-            .column_gap(self.col_gap())
     }
 }
 
@@ -1887,21 +1887,21 @@ impl Style {
         self.height(height.pct())
     }
 
-    pub fn row_gap(self, width: impl Into<PxPct>) -> Self {
-        self.set(RowGap, width.into())
+    pub fn col_gap(self, width: impl Into<PxPct>) -> Self {
+        self.set(ColGap, width.into())
     }
 
-    pub fn column_gap(self, height: impl Into<PxPct>) -> Self {
-        self.set(ColGap, height.into())
+    pub fn row_gap(self, height: impl Into<PxPct>) -> Self {
+        self.set(RowGap, height.into())
     }
 
     pub fn row_col_gap(self, width: impl Into<PxPct>, height: impl Into<PxPct>) -> Self {
-        self.row_gap(width).column_gap(height)
+        self.col_gap(width).row_gap(height)
     }
 
     pub fn gap(self, gap: impl Into<PxPct>) -> Self {
         let gap = gap.into();
-        self.row_gap(gap).column_gap(gap)
+        self.col_gap(gap).row_gap(gap)
     }
 
     pub fn size(self, width: impl Into<PxPctAuto>, height: impl Into<PxPctAuto>) -> Self {

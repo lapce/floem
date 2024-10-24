@@ -60,7 +60,7 @@ fn view_two(view: RwSignal<ViewSwitcher>) -> impl IntoView {
         button("Switch back").action(move || view.set(ViewSwitcher::One)),
     ))
     .style(|s| {
-        s.column_gap(10.0)
+        s.row_gap(10.0)
             .size(150, 100)
             .items_center()
             .justify_center()

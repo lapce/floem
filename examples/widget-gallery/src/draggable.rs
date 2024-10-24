@@ -1,12 +1,4 @@
-use floem::{
-    keyboard::{Key, NamedKey},
-    peniko::color::palette,
-    peniko::Color,
-    reactive::{create_rw_signal, RwSignal, SignalGet, SignalUpdate},
-    style::CursorStyle,
-    views::{dyn_stack, label, Decorators},
-    IntoView, View,
-};
+use floem::{prelude::*, style::CursorStyle};
 
 fn sortable_item(
     name: &str,
@@ -75,7 +67,7 @@ fn sortable_item(
         .style(move |s| {
             s.background(colors[item_id])
                 .selectable(false)
-                .row_gap(5)
+                .col_gap(5)
                 .items_center()
                 .border(2)
                 .border_color(palette::css::RED)
@@ -86,21 +78,14 @@ pub fn draggable_view() -> impl IntoView {
     let items = [
         "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
     ];
-    let sortable_items = create_rw_signal((0..items.len()).collect::<Vec<usize>>());
-    let dragger_id = create_rw_signal(0);
+    let sortable_items = RwSignal::new((0..items.len()).collect::<Vec<usize>>());
+    let dragger_id = RwSignal::new(0);
 
-    let view = dyn_stack(
+    dyn_stack(
         move || sortable_items.get(),
         move |item_id| *item_id,
         move |item_id| sortable_item(items[item_id], sortable_items, dragger_id, item_id),
     )
-    .style(|s| s.flex_col().column_gap(5).padding(10))
-    .into_view();
-
-    let id = view.id();
-    view.on_key_up(
-        Key::Named(NamedKey::F11),
-        |m| m.is_empty(),
-        move |_| id.inspect(),
-    )
+    .style(|s| s.flex_col().row_gap(5).padding(10))
+    .into_view()
 }

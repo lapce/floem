@@ -21,5 +21,5 @@ pub fn dyn_stack_view() -> impl IntoView {
 
     (button, stack)
         .h_stack()
-        .style(|s| s.flex_col().column_gap(5).margin_top(10))
+        .style(|s| s.flex_col().row_gap(5).margin_top(10))
 }

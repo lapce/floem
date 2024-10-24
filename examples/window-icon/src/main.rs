@@ -22,7 +22,7 @@ fn sub_window_view(id: WindowId) -> impl IntoView {
             .justify_center()
             .width_full()
             .height_full()
-            .column_gap(10.0)
+            .row_gap(10.0)
     })
 }
 
@@ -49,7 +49,7 @@ fn app_view() -> impl IntoView {
             .justify_center()
             .width_full()
             .height_full()
-            .column_gap(10.0)
+            .row_gap(10.0)
     });
 
     let id = view.id();

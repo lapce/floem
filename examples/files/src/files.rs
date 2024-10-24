@@ -95,7 +95,7 @@ pub fn files_view() -> impl IntoView {
         )),
     ))
     .style(|s| {
-        s.row_gap(5)
+        s.col_gap(5)
             .width_full()
             .height_full()
             .items_center()

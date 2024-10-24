@@ -9,9 +9,8 @@ pub fn label_view() -> impl IntoView {
     form((
         form_item(
             "Simple Label:",
-            tooltip("This is a simple label", || {
-                static_label("This is a tooltip for the label.")
-            }),
+            "This is a simple label with a tooltip.\n(hover over me)"
+                .tooltip(|| "This is a tooltip for the label."),
         ),
         form_item(
             "Styled Label:",

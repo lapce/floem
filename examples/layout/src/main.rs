@@ -94,7 +94,7 @@ fn app_view() -> impl IntoView {
             .width_full()
             .height_full()
             .padding(10.0)
-            .column_gap(10.0)
+            .row_gap(10.0)
     });
 
     let id = view.id();
