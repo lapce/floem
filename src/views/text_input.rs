@@ -465,11 +465,11 @@ impl TextInput {
     }
 
     fn get_cursor_rect(&self) -> Rect {
-        let (Some(parent_node), Some(text_node)) = (self.layout_node, self.text_node) else {
+        if self.layout_node.is_none() || self.text_node.is_none() {
             return Rect::ZERO;
-        };
+        }
 
-        let text_origin = self.get_text_origin(parent_node, text_node);
+        let text_origin = self.get_text_origin();
         let text_height = self
             .layout_data
             .borrow()
@@ -519,11 +519,11 @@ impl TextInput {
     }
 
     fn get_box_position(&self, pos_x: f64) -> usize {
-        let (Some(parent_node), Some(text_node)) = (self.layout_node, self.text_node) else {
+        if self.layout_node.is_none() || self.text_node.is_none() {
             return 0;
-        };
+        }
 
-        let text_loc = self.get_text_origin(parent_node, text_node);
+        let text_loc = self.get_text_origin();
 
         self.layout_data
             .borrow()
@@ -566,11 +566,11 @@ impl TextInput {
             return;
         }
 
-        let (Some(parent_node), Some(text_node)) = (self.layout_node, self.text_node) else {
+        if self.layout_node.is_none() || self.text_node.is_none() {
             return;
-        };
+        }
 
-        let text_loc = self.get_text_origin(parent_node, text_node);
+        let text_loc = self.get_text_origin();
         let visual_origin = self.id.get_visual_origin();
 
         let pos = Point::new(
@@ -1087,11 +1087,11 @@ impl TextInput {
             return;
         };
 
-        let (Some(parent_node), Some(text_node)) = (self.layout_node, self.text_node) else {
+        if self.layout_node.is_none() || self.text_node.is_none() {
             return;
-        };
+        }
 
-        let text_start_point = self.get_text_origin(parent_node, text_node);
+        let text_start_point = self.get_text_origin();
         let selection_origin =
             Point::new(text_start_point.x - self.scroll_offset, text_start_point.y);
 
@@ -1106,11 +1106,8 @@ impl TextInput {
         );
     }
 
-    fn get_text_origin(&self, parent_node: taffy::NodeId, text_node: taffy::NodeId) -> Point {
-        let content_rect = self
-            .id
-            .get_content_rect_relative(text_node, parent_node)
-            .unwrap_or_default();
+    fn get_text_origin(&self) -> Point {
+        let content_rect = self.id.get_content_rect_local();
         self.layout_data.borrow().centered_text_origin(content_rect)
     }
 }
@@ -1425,11 +1422,11 @@ impl View for TextInput {
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        let (Some(parent_node), Some(text_node)) = (self.layout_node, self.text_node) else {
+        if self.layout_node.is_none() || self.text_node.is_none() {
             return;
-        };
+        }
 
-        let text_start_point = self.get_text_origin(parent_node, text_node);
+        let text_start_point = self.get_text_origin();
 
         // Apply custom clip for text content area
         let mut clip_rect = self.id.get_layout_rect_local();
