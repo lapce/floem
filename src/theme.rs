@@ -41,7 +41,7 @@ pub(crate) fn default_theme() -> Theme {
 
     let focus_applied_style = Style::new().border_color(Color::rgb8(114, 74, 140));
 
-    let focus_visible_applied_style = Style::new().outline(Stroke::new(3.0));
+    let focus_visible_applied_style = Style::new().outline(3.0);
 
     let focus_style = Style::new()
         .outline_color(Color::rgba8(213, 208, 216, 150))
@@ -50,7 +50,7 @@ pub(crate) fn default_theme() -> Theme {
 
     let border_style = Style::new()
         .disabled(|s| s.border_color(Color::rgb8(131, 145, 123).multiply_alpha(0.3)))
-        .border(Stroke::new(1.0))
+        .border(1.0)
         .border_color(border)
         .padding(padding)
         .border_radius(border_radius)
@@ -174,7 +174,7 @@ pub(crate) fn default_theme() -> Theme {
         .aspect_ratio(2.)
         .background(Color::rgb8(240, 240, 240))
         .border_radius(50.pct())
-        .border(Stroke::new(1.))
+        .border(1.)
         .focus(|s| s.hover(|s| s.background(focus_hover_bg_color)))
         .height(FONT_SIZE * 1.75)
         .hover(|s| s.background(hover_bg_color))
@@ -258,7 +258,7 @@ pub(crate) fn default_theme() -> Theme {
                 .font_size(FONT_SIZE)
         })
         .class(TooltipClass, |s| {
-            s.border(Stroke::new(0.5))
+            s.border(0.5)
                 .border_color(Color::rgb8(140, 140, 140))
                 .color(Color::rgb8(80, 80, 80))
                 .border_radius(2.0)

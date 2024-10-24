@@ -183,7 +183,7 @@ fn captured_view_name(view: &CapturedView) -> impl IntoView {
     let id = text(view.id.data().as_ffi()).style(|s| {
         s.margin_right(5.0)
             .background(Color::BLACK.multiply_alpha(0.02))
-            .border(Stroke::new(1.))
+            .border(1.)
             .border_radius(5.0)
             .border_color(Color::BLACK.multiply_alpha(0.07))
             .padding(3.0)
@@ -208,7 +208,7 @@ fn captured_view_name(view: &CapturedView) -> impl IntoView {
             .style(|s| {
                 s.margin_right(5.0)
                     .background(Color::rgb8(204, 217, 221).multiply_alpha(0.4))
-                    .border(Stroke::new(1.))
+                    .border(1.)
                     .border_radius(5.0)
                     .border_color(Color::BLACK.multiply_alpha(0.07))
                     .padding(1.0)
@@ -312,7 +312,7 @@ fn captured_view_with_children(
                 } else {
                     Color::BLACK.multiply_alpha(0.3)
                 })
-                .border(Stroke::new(1.0))
+                .border(1.0)
                 .width(12.0)
                 .height(12.0)
                 .margin_left(offset)
@@ -480,7 +480,7 @@ pub(crate) fn header(label: impl Display) -> Label {
             .background(Color::WHITE_SMOKE)
             .width_full()
             .height(27.0)
-            .border_bottom(Stroke::new(1.))
+            .border_bottom(1.)
             .border_color(Color::LIGHT_GRAY)
     })
 }
@@ -684,7 +684,7 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<ViewId>>) -> i
                                 text("Inherited").style(|s| {
                                     s.margin_right(5.0)
                                         .background(Color::WHITE_SMOKE.multiply_alpha(0.6))
-                                        .border(Stroke::new(1.))
+                                        .border(1.)
                                         .border_radius(5.0)
                                         .border_color(Color::WHITE_SMOKE)
                                         .padding(1.0)
@@ -708,7 +708,7 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<ViewId>>) -> i
                                     s.margin_top(5.0)
                                         .margin_right(5.0)
                                         .background(Color::WHITE_SMOKE.multiply_alpha(0.6))
-                                        .border(Stroke::new(1.))
+                                        .border(1.)
                                         .border_radius(5.0)
                                         .border_color(Color::WHITE_SMOKE)
                                         .padding(1.0)
@@ -803,7 +803,7 @@ fn capture_view(
     let image = img_dynamic(move || window.clone().unwrap())
         .style(move |s| {
             s.margin(5.0)
-                .border(Stroke::new(1.))
+                .border(1.)
                 .border_color(Color::BLACK.multiply_alpha(0.5))
                 .width(image_width + 2.0)
                 .height(image_height + 2.0)
@@ -895,7 +895,7 @@ fn capture_view(
                 .height(view.layout.height())
                 .background(Color::rgb8(186, 180, 216).multiply_alpha(0.5))
                 .border_color(Color::rgb8(186, 180, 216).multiply_alpha(0.7))
-                .border(Stroke::new(1.))
+                .border(1.)
         } else {
             s
         }
@@ -915,7 +915,7 @@ fn capture_view(
                 .height(view.layout.height())
                 .background(Color::rgba8(228, 237, 216, 120))
                 .border_color(Color::rgba8(75, 87, 53, 120))
-                .border(Stroke::new(1.))
+                .border(1.)
         } else {
             s
         }
@@ -1089,7 +1089,7 @@ pub fn capture(window_id: WindowId) {
                         .on_click_stop(move |_| set_selected.set(index))
                         .style(move |s| {
                             s.padding(5.0)
-                                .border_right(Stroke::new(1.))
+                                .border_right(1.)
                                 .border_color(Color::BLACK.multiply_alpha(0.2))
                                 .hover(move |s| {
                                     s.background(Color::rgba8(228, 237, 216, 160))

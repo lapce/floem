@@ -82,7 +82,7 @@ fn view_two(view: RwSignal<ViewSwitcher>) -> impl IntoView {
             .size(150, 100)
             .items_center()
             .justify_center()
-            .border(Stroke::new(1.))
+            .border(1.)
             .border_radius(5)
     })
 }

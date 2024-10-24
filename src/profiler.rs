@@ -195,7 +195,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                             .width_pct(width * 100.0)
                             .absolute()
                             .inset_left_pct(left * 100.0)
-                            .border(Stroke::new(0.3))
+                            .border(0.3)
                             .border_color(Color::rgb8(129, 164, 192))
                             .background(Color::rgb8(209, 222, 233).multiply_alpha(0.6))
                             .text_clip()

@@ -131,7 +131,7 @@ pub fn music_player() -> impl IntoView {
     });
 
     let button_style = |s: Style| {
-        s.border(Stroke::new(0.))
+        s.border(0.)
             .padding(5)
             .items_center()
             .justify_center()

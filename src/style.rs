@@ -208,12 +208,12 @@ impl StylePropValue for Color {
             s.background(color)
                 .width(22.0)
                 .height(14.0)
-                .border(Stroke::new(1.))
+                .border(1.)
                 .border_color(Color::WHITE.multiply_alpha(0.5))
                 .border_radius(5.0)
         });
         let color = stack((color,)).style(|s| {
-            s.border(Stroke::new(1.))
+            s.border(1.)
                 .border_color(Color::BLACK.multiply_alpha(0.5))
                 .border_radius(5.0)
                 .margin_left(6.0)
@@ -280,12 +280,12 @@ impl StylePropValue for Gradient {
             s.background(grad.clone())
                 .width(box_width)
                 .height(box_height)
-                .border(Stroke::new(1.))
+                .border(1.)
                 .border_color(Color::WHITE.multiply_alpha(0.5))
                 .border_radius(5.0)
         });
         let color = stack((color,)).style(|s| {
-            s.border(Stroke::new(1.))
+            s.border(1.)
                 .border_color(Color::BLACK.multiply_alpha(0.5))
                 .border_radius(5.0)
                 .margin_left(6.0)
