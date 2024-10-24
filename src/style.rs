@@ -1357,6 +1357,10 @@ impl Style {
         self
     }
 
+    pub fn map(self, over: impl FnOnce(Self) -> Self) -> Self {
+        over(self)
+    }
+
     /// Apply multiple `Style`s to this style, returning a new `Style` with the overrides.
     /// Later styles take precedence over earlier styles.
     pub fn apply_overriding_styles(self, overrides: impl Iterator<Item = Style>) -> Style {
