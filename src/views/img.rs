@@ -9,7 +9,6 @@ use taffy::NodeId;
 
 use crate::{id::ViewId, style::Style, unit::UnitExt, view::View, Renderer};
 
-
 /// Holds information about image position and size inside container.
 pub struct ImageStyle {
     fit: ObjectFit,
@@ -44,7 +43,7 @@ pub struct ObjectPosition {
     #[allow(unused)]
     horiz: HorizPosition,
     #[allow(unused)]
-    vert: VertPosition
+    vert: VertPosition,
 }
 
 /// Specifies object position on horizontal axis inside the element's box.
@@ -58,7 +57,7 @@ pub enum HorizPosition {
     /// Horizontal position inside the element's box as **pixels**.
     Px(f64),
     /// Horizontal position inside the element's box as **percent**.
-    Pct(f64)
+    Pct(f64),
 }
 
 /// Specifies object position on vertical axis inside the element's box.
@@ -92,7 +91,7 @@ impl ImageStyle {
     }
 
     /// Specifies the alignment of the element's contents within the element's box.
-    /// 
+    ///
     /// Areas of the box which aren't covered by the replaced element's object will show the element's background.
     pub fn object_pos(mut self, obj_pos: ObjectPosition) -> Self {
         self.position = obj_pos;
@@ -109,9 +108,9 @@ pub struct Img {
 }
 
 /// A view that can display an image and controls its position.
-/// 
-/// It takes function that produce Vec<u8> and will convert it into [Image](peniko::image::Image).
-/// 
+///
+/// It takes function that produce `Vec<u8>` and will convert it into [Image](peniko::Image).
+///
 /// ### Example:
 /// ```rust
 /// # use crate::floem::views::Decorators;
@@ -124,7 +123,7 @@ pub struct Img {
 /// # Reactivity
 /// The `img` function is not reactive, so to make it change on event, wrap it
 /// with [dyn_view](crate::views::dyn_view::dyn_view).
-/// 
+///
 /// ### Example with reactive updates:
 /// ```rust
 /// # use floem::prelude::*;
@@ -132,13 +131,13 @@ pub struct Img {
 /// # use floem::views::img;
 /// # use floem::views::dyn_view;
 /// # use floem::reactive::RwSignal;
-/// 
+///
 /// #[derive(Clone)]
 /// enum Image {
 ///     ImageA,
 ///     ImageB
 /// }
-/// 
+///
 /// let ferris = include_bytes!("../../examples/widget-gallery/assets/ferris.png");
 /// let sunflower = include_bytes!("../../examples/widget-gallery/assets/sunflower.jpg");
 /// let switch_image = RwSignal::new(Image::ImageA);
@@ -164,15 +163,15 @@ pub fn img(image: impl Fn() -> Vec<u8> + 'static) -> Img {
 }
 
 /// A view that can display an image and controls its position.
-/// 
-/// It takes function that returns [PathBuf] and will convert it into [Image](peniko::image::Image).
-/// 
+///
+/// It takes function that returns [PathBuf] and will convert it into [Image](peniko::Image).
+///
 /// ### Example:
 /// ```rust
 /// # use std::path::PathBuf;
 /// # use floem::views::Decorators;
 /// # use floem::views::img_from_path;
-/// 
+///
 /// let path_to_ferris = PathBuf::from(r"../../examples/widget-gallery/assets/ferrig.png");
 /// // Create an image from the function returning PathBuf:
 /// img_from_path(move || path_to_ferris.clone())
@@ -182,7 +181,7 @@ pub fn img(image: impl Fn() -> Vec<u8> + 'static) -> Img {
 /// The `img` function is not reactive, so to make it change on event, wrap it
 /// with [dyn_view](crate::views::dyn_view::dyn_view).
 pub fn img_from_path(image: impl Fn() -> PathBuf + 'static) -> Img {
-    let image = image::open(&image()).ok();
+    let image = image::open(image()).ok();
     let width = image.as_ref().map_or(0, |img| img.width());
     let height = image.as_ref().map_or(0, |img| img.height());
     let data = Arc::new(image.map_or(Default::default(), |img| img.into_rgba8().into_vec()));
