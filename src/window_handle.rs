@@ -876,6 +876,9 @@ impl WindowHandle {
                     UpdateMessage::KeyboardNavigable { id } => {
                         cx.app_state.keyboard_navigable.insert(id);
                     }
+                    UpdateMessage::RemoveKeyboardNavigable { id } => {
+                        cx.app_state.keyboard_navigable.remove(&id);
+                    }
                     UpdateMessage::Draggable { id } => {
                         cx.app_state.draggable.insert(id);
                     }

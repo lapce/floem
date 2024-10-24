@@ -45,6 +45,9 @@ pub(crate) enum UpdateMessage {
     KeyboardNavigable {
         id: ViewId,
     },
+    RemoveKeyboardNavigable {
+        id: ViewId,
+    },
     Draggable {
         id: ViewId,
     },
