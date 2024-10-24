@@ -39,16 +39,17 @@ pub struct VgerRenderer {
 impl VgerRenderer {
     pub fn new(
         gpu_resources: GpuResources,
+        surface: wgpu::Surface<'static>,
         width: u32,
         height: u32,
         scale: f64,
         font_embolden: f32,
     ) -> Result<Self> {
         let GpuResources {
-            surface,
             adapter,
             device,
             queue,
+            ..
         } = gpu_resources;
 
         if adapter.get_info().device_type == DeviceType::Cpu {

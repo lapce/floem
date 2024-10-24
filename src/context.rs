@@ -978,6 +978,8 @@ pub struct PaintCx<'a> {
     pub(crate) saved_transforms: Vec<Affine>,
     pub(crate) saved_clips: Vec<Option<RoundedRect>>,
     pub(crate) saved_z_indexes: Vec<Option<i32>>,
+    pub gpu_resources: Option<GpuResources>,
+    pub window: Option<Arc<dyn Window>>,
 }
 
 impl PaintCx<'_> {
@@ -1234,7 +1236,7 @@ pub enum PaintState {
     /// The renderer is not yet initialized. This state is used to wait for the GPU resources to be acquired.
     PendingGpuResources {
         window: Arc<dyn Window>,
-        rx: Receiver<Result<GpuResources, GpuResourceError>>,
+        rx: Receiver<Result<(GpuResources, wgpu::Surface<'static>), GpuResourceError>>,
         font_embolden: f32,
         /// This field holds an instance of `Renderer::Uninitialized` until the GPU resources are acquired,
         /// which will be returned in `PaintState::renderer` and `PaintState::renderer_mut`.
@@ -1249,9 +1251,9 @@ pub enum PaintState {
 }
 
 impl PaintState {
-    pub fn new(
+    pub fn new_pending(
         window: Arc<dyn Window>,
-        rx: Receiver<Result<GpuResources, GpuResourceError>>,
+        rx: Receiver<Result<(GpuResources, wgpu::Surface<'static>), GpuResourceError>>,
         scale: f64,
         size: Size,
         font_embolden: f32,
@@ -1264,26 +1266,23 @@ impl PaintState {
         }
     }
 
-    pub(crate) fn init_renderer(&mut self) {
-        if let PaintState::PendingGpuResources {
-            window,
-            rx,
+    pub fn new(
+        window: Arc<dyn Window>,
+        surface: wgpu::Surface<'static>,
+        gpu_resources: GpuResources,
+        scale: f64,
+        size: Size,
+        font_embolden: f32,
+    ) -> Self {
+        let renderer = crate::renderer::Renderer::new(
+            window.clone(),
+            gpu_resources,
+            surface,
+            scale,
+            size,
             font_embolden,
-            renderer,
-        } = self
-        {
-            let gpu_resources = rx.recv().unwrap().unwrap();
-            let renderer = crate::renderer::Renderer::new(
-                window.clone(),
-                gpu_resources,
-                renderer.scale(),
-                renderer.size(),
-                *font_embolden,
-            );
-            *self = PaintState::Initialized { renderer };
-        } else {
-            panic!("Called PaintState::init_renderer when it was already initialized");
-        }
+        );
+        Self::Initialized { renderer }
     }
 
     pub(crate) fn renderer(&self) -> &crate::renderer::Renderer {

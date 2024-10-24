@@ -19,11 +19,10 @@ use wgpu::Backends;
 use winit::window::{Window, WindowId};
 
 /// The acquired GPU resources needed for rendering with wgpu.
+#[derive(Debug, Clone)]
 pub struct GpuResources {
-    /// The rendering surface, representing the window or screen where the graphics will be displayed.
-    /// It is the interface between wgpu and the platform's windowing system, enabling rendering
-    /// onto the screen.
-    pub surface: wgpu::Surface<'static>,
+    /// The wgpu instance
+    pub instance: wgpu::Instance,
 
     /// The adapter that represents the GPU or a rendering backend. It provides information about
     /// the capabilities of the hardware and is used to request a logical device (`wgpu::Device`).
@@ -48,10 +47,11 @@ impl GpuResources {
     /// - `window`: The window to associate with the created surface.
     pub fn request<F: Fn(WindowId) + 'static>(
         on_result: F,
+        required_features: wgpu::Features,
         window: Arc<dyn Window>,
-    ) -> Receiver<Result<Self, GpuResourceError>> {
+    ) -> Receiver<Result<(Self, wgpu::Surface<'static>), GpuResourceError>> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::from_env().unwrap_or(Backends::all()),
+            backends: Backends::from_env().unwrap_or(Backends::all()),
             ..Default::default()
         });
         // Channel passing to do async out-of-band within the winit event_loop since wasm can't
@@ -89,6 +89,7 @@ impl GpuResources {
                         .request_device(
                             &wgpu::DeviceDescriptor {
                                 label: None,
+                                required_features,
                                 ..Default::default()
                             },
                             None,
@@ -96,11 +97,12 @@ impl GpuResources {
                         .await
                         .map_err(GpuResourceError::DeviceRequestError)
                         .map(|(device, queue)| Self {
-                            surface,
                             adapter,
                             device,
                             queue,
-                        }),
+                            instance,
+                        })
+                        .map(|res| (res, surface)),
                 )
                 .unwrap();
                 on_result(window.id());

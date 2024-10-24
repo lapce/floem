@@ -171,7 +171,29 @@ impl Application {
         unsafe {
             Clipboard::init(event_loop.display_handle().unwrap().as_raw());
         }
-        let handle = ApplicationHandle::new();
+        let handle = ApplicationHandle::new(wgpu::Features::default());
+
+        Self {
+            receiver,
+            handle,
+            event_loop: Some(event_loop),
+            initial_windows: Vec::new(),
+        }
+    }
+    pub fn new_with_features(required_features: wgpu::Features) -> Self {
+        let event_loop = EventLoop::new().expect("can't start the event loop");
+
+        #[cfg(target_os = "macos")]
+        crate::app_delegate::set_app_delegate();
+
+        let event_loop_proxy = event_loop.create_proxy();
+        let (sender, receiver) = channel();
+
+        *EVENT_LOOP_PROXY.lock() = Some((event_loop_proxy.clone(), sender));
+        unsafe {
+            Clipboard::init(event_loop.display_handle().unwrap().as_raw());
+        }
+        let handle = ApplicationHandle::new(required_features);
 
         #[cfg(any(target_os = "windows", target_os = "macos"))]
         muda::MenuEvent::set_event_handler(Some(move |event: muda::MenuEvent| {
