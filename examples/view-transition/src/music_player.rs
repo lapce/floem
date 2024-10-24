@@ -1,5 +1,6 @@
 use floem::{
     animate::Animation,
+    kurbo::Stroke,
     peniko::{Brush, Color},
     reactive::{RwSignal, SignalGet, SignalUpdate},
     style::{ScaleX, ScaleY, Style, Transition},
@@ -130,7 +131,7 @@ pub fn music_player() -> impl IntoView {
     });
 
     let button_style = |s: Style| {
-        s.border(0)
+        s.border(0.)
             .padding(5)
             .items_center()
             .justify_center()

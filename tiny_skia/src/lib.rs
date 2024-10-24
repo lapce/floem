@@ -7,7 +7,6 @@ use floem_renderer::tiny_skia::{
 };
 use floem_renderer::Img;
 use floem_renderer::Renderer;
-use image::DynamicImage;
 use peniko::kurbo::{PathEl, Size};
 use peniko::{
     kurbo::{Affine, Point, Rect, Shape},
@@ -17,6 +16,7 @@ use softbuffer::{Context, Surface};
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::rc::Rc;
+use tiny_skia::{LineCap, LineJoin};
 
 macro_rules! try_ret {
     ($e:expr) => {
@@ -364,16 +364,36 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
         self.clip = None;
     }
 
-    fn stroke<'b>(&mut self, shape: &impl Shape, brush: impl Into<BrushRef<'b>>, width: f64) {
+    fn stroke<'b, 's>(
+        &mut self,
+        shape: &impl Shape,
+        brush: impl Into<BrushRef<'b>>,
+        stroke: &'s peniko::kurbo::Stroke,
+    ) {
         let paint = try_ret!(self.brush_to_paint(brush));
         let path = try_ret!(self.shape_to_path(shape));
+        let line_cap = match stroke.end_cap {
+            peniko::kurbo::Cap::Butt => LineCap::Butt,
+            peniko::kurbo::Cap::Square => LineCap::Square,
+            peniko::kurbo::Cap::Round => LineCap::Round,
+        };
+        let line_join = match stroke.join {
+            peniko::kurbo::Join::Bevel => LineJoin::Bevel,
+            peniko::kurbo::Join::Miter => LineJoin::Miter,
+            peniko::kurbo::Join::Round => LineJoin::Round,
+        };
+        // TODO: Finish dash
+        let stroke = Stroke {
+            width: stroke.width as f32,
+            miter_limit: stroke.miter_limit as f32,
+            line_cap,
+            line_join,
+            dash: None,
+        };
         self.pixmap.stroke_path(
             &path,
             &paint,
-            &Stroke {
-                width: width as f32,
-                ..Default::default()
-            },
+            &stroke,
             self.current_transform(),
             self.clip.is_some().then_some(&self.mask),
         );
@@ -466,10 +486,14 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
             return;
         }
 
-        let rgba_image = img.img.clone().into_rgba8();
-        let mut pixmap = try_ret!(Pixmap::new(rgba_image.width(), rgba_image.height()));
-        for (a, &b) in pixmap.pixels_mut().iter_mut().zip(rgba_image.pixels()) {
-            *a = tiny_skia::Color::from_rgba8(b.0[0], b.0[1], b.0[2], b.0[3])
+        let image_data = img.img.data.data();
+        let mut pixmap = try_ret!(Pixmap::new(img.img.width, img.img.height));
+        for (a, b) in pixmap
+            .pixels_mut()
+            .iter_mut()
+            .zip(image_data.chunks_exact(4))
+        {
+            *a = tiny_skia::Color::from_rgba8(b[0], b[1], b[2], b[3])
                 .premultiply()
                 .to_color_u8();
         }
@@ -544,7 +568,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
         self.clip = None;
     }
 
-    fn finish(&mut self) -> Option<DynamicImage> {
+    fn finish(&mut self) -> Option<peniko::Image> {
         // Remove cache entries which were not accessed.
         self.image_cache.retain(|_, (c, _)| *c == self.cache_color);
         self.glyph_cache.retain(|_, (c, _)| *c == self.cache_color);

@@ -1,5 +1,6 @@
 use floem::{
     animate::Animation,
+    kurbo::Stroke,
     peniko::Color,
     reactive::{RwSignal, SignalGet, SignalUpdate},
     style::Style,
@@ -81,14 +82,14 @@ fn view_two(view: RwSignal<ViewSwitcher>) -> impl IntoView {
             .size(150, 100)
             .items_center()
             .justify_center()
-            .border(1)
+            .border(1.)
             .border_radius(5)
     })
 }
 
 fn box_shadow() -> Style {
     Style::new()
-        .box_shadow_color(Color::BLACK.with_alpha_factor(0.7))
+        .box_shadow_color(Color::BLACK.multiply_alpha(0.7))
         .box_shadow_h_offset(3)
         .box_shadow_v_offset(3.)
         .box_shadow_blur(1.5)

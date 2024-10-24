@@ -49,7 +49,7 @@ pub(crate) fn default_theme() -> Theme {
         .focus_visible(|_| focus_visible_applied_style.clone());
 
     let border_style = Style::new()
-        .disabled(|s| s.border_color(Color::rgb8(131, 145, 123).with_alpha_factor(0.3)))
+        .disabled(|s| s.border_color(Color::rgb8(131, 145, 123).multiply_alpha(0.3)))
         .border(1.0)
         .border_color(border)
         .padding(padding)
@@ -63,13 +63,13 @@ pub(crate) fn default_theme() -> Theme {
         })
         .background(Color::rgb8(240, 240, 240))
         .disabled(|s| {
-            s.background(Color::rgb8(180, 188, 175).with_alpha_factor(0.3))
-                .border_color(Color::rgb8(131, 145, 123).with_alpha_factor(0.3))
+            s.background(Color::rgb8(180, 188, 175).multiply_alpha(0.3))
+                .border_color(Color::rgb8(131, 145, 123).multiply_alpha(0.3))
                 .color(Color::GRAY)
         })
         .active(|s| {
             s.background(active_bg_color)
-                .color(Color::WHITE.with_alpha_factor(0.9))
+                .color(Color::WHITE.multiply_alpha(0.9))
         })
         .transition(Background, Transition::linear(400.millis()))
         .focus(|s| s.hover(|s| s.background(focus_hover_bg_color)))
@@ -92,7 +92,7 @@ pub(crate) fn default_theme() -> Theme {
         .apply(border_style.clone())
         .apply(focus_style.clone())
         .disabled(|s| {
-            s.background(Color::rgb8(180, 188, 175).with_alpha_factor(0.3))
+            s.background(Color::rgb8(180, 188, 175).multiply_alpha(0.3))
                 .color(Color::GRAY)
         });
 
@@ -109,9 +109,9 @@ pub(crate) fn default_theme() -> Theme {
         })
         .disabled(|s| {
             s.color(Color::GRAY).class(CheckboxClass, |s| {
-                s.background(Color::rgb8(180, 188, 175).with_alpha_factor(0.3))
+                s.background(Color::rgb8(180, 188, 175).multiply_alpha(0.3))
                     .color(Color::GRAY)
-                    .hover(|s| s.background(Color::rgb8(180, 188, 175).with_alpha_factor(0.3)))
+                    .hover(|s| s.background(Color::rgb8(180, 188, 175).multiply_alpha(0.3)))
             })
         })
         .apply(focus_style.clone());
@@ -131,7 +131,7 @@ pub(crate) fn default_theme() -> Theme {
         .border_radius(100.0)
         .apply(focus_style.clone())
         .disabled(|s| {
-            s.background(Color::rgb8(180, 188, 175).with_alpha_factor(0.3))
+            s.background(Color::rgb8(180, 188, 175).multiply_alpha(0.3))
                 .color(Color::GRAY)
         });
 
@@ -158,9 +158,9 @@ pub(crate) fn default_theme() -> Theme {
         })
         .disabled(|s| {
             s.color(Color::GRAY).class(RadioButtonClass, |s| {
-                s.background(Color::rgb8(180, 188, 175).with_alpha_factor(0.3))
+                s.background(Color::rgb8(180, 188, 175).multiply_alpha(0.3))
                     .color(Color::GRAY)
-                    .hover(|s| s.background(Color::rgb8(180, 188, 175).with_alpha_factor(0.3)))
+                    .hover(|s| s.background(Color::rgb8(180, 188, 175).multiply_alpha(0.3)))
             })
         })
         .apply(focus_style.clone());
@@ -168,11 +168,8 @@ pub(crate) fn default_theme() -> Theme {
     let toggle_button_style = Style::new()
         .active(|s| {
             s.background(active_bg_color)
-                .color(Color::WHITE.with_alpha_factor(0.9))
-                .set(
-                    Foreground,
-                    Brush::Solid(Color::WHITE.with_alpha_factor(0.9)),
-                )
+                .color(Color::WHITE.multiply_alpha(0.9))
+                .set(Foreground, Brush::Solid(Color::WHITE.multiply_alpha(0.9)))
         })
         .aspect_ratio(2.)
         .background(Color::rgb8(240, 240, 240))
@@ -199,7 +196,7 @@ pub(crate) fn default_theme() -> Theme {
         .cursor(CursorStyle::Text)
         .padding(padding)
         .disabled(|s| {
-            s.background(Color::rgb8(180, 188, 175).with_alpha_factor(0.3))
+            s.background(Color::rgb8(180, 188, 175).multiply_alpha(0.3))
                 .color(Color::GRAY)
         });
 
@@ -271,7 +268,7 @@ pub(crate) fn default_theme() -> Theme {
                 .box_shadow_blur(2.0)
                 .box_shadow_h_offset(2.0)
                 .box_shadow_v_offset(2.0)
-                .box_shadow_color(Color::BLACK.with_alpha_factor(0.2))
+                .box_shadow_color(Color::BLACK.multiply_alpha(0.2))
         })
         .class(dropdown::DropdownClass, |s| {
             s.width(75)
@@ -285,7 +282,7 @@ pub(crate) fn default_theme() -> Theme {
                         .box_shadow_blur(2.0)
                         .box_shadow_h_offset(2.0)
                         .box_shadow_v_offset(2.0)
-                        .box_shadow_color(Color::BLACK.with_alpha_factor(0.4))
+                        .box_shadow_color(Color::BLACK.multiply_alpha(0.4))
                         .border_radius(5.pct())
                         .items_center()
                         .class(ListItemClass, |s| {

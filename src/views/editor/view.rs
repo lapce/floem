@@ -669,7 +669,7 @@ impl EditorView {
             direction *= -1.0;
         }
 
-        cx.stroke(&path, color, 1.0);
+        cx.stroke(&path, color, &peniko::kurbo::Stroke::new(1.));
     }
 
     pub fn paint_extra_style(
@@ -710,7 +710,7 @@ impl EditorView {
                 cx.stroke(
                     &Line::new(Point::new(x, y), Point::new(x + width, y)),
                     color,
-                    1.0,
+                    &peniko::kurbo::Stroke::new(1.),
                 );
             }
 
@@ -754,7 +754,7 @@ impl EditorView {
                     cx.stroke(
                         &Line::new(Point::new(x, y), Point::new(x, y + line_height)),
                         ed.es.with(|es| es.indent_guide()),
-                        1.0,
+                        &peniko::kurbo::Stroke::new(1.),
                     );
                     x += indent_text_width;
                 }

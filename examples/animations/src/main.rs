@@ -1,6 +1,7 @@
 use floem::{
     animate::Animation,
     event::EventListener as EL,
+    kurbo::Stroke,
     peniko::Color,
     reactive::{RwSignal, SignalGet, Trigger},
     unit::DurationUnitExt,
@@ -37,7 +38,7 @@ fn app_view() -> impl IntoView {
             .animation(move |_| animation.get())
             .animation(move |a| {
                 a.keyframe(100, |kf| {
-                    kf.style(|s| s.border(5).border_color(Color::PURPLE))
+                    kf.style(|s| s.border(5.).border_color(Color::PURPLE))
                 })
                 .duration(5.seconds())
                 .repeat(true)

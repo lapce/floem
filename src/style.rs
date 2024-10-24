@@ -3,7 +3,7 @@
 use floem_reactive::create_updater;
 use floem_renderer::text::{LineHeightValue, Weight};
 use im_rc::hashmap::Entry;
-use peniko::kurbo::Point;
+use peniko::kurbo::{Point, Stroke};
 use peniko::{Brush, Color, ColorStop, ColorStops, Gradient, GradientKind};
 use rustc_hash::FxHasher;
 use std::any::{type_name, Any};
@@ -208,13 +208,13 @@ impl StylePropValue for Color {
             s.background(color)
                 .width(22.0)
                 .height(14.0)
-                .border(1)
-                .border_color(Color::WHITE.with_alpha_factor(0.5))
+                .border(1.)
+                .border_color(Color::WHITE.multiply_alpha(0.5))
                 .border_radius(5.0)
         });
         let color = stack((color,)).style(|s| {
-            s.border(1)
-                .border_color(Color::BLACK.with_alpha_factor(0.5))
+            s.border(1.)
+                .border_color(Color::BLACK.multiply_alpha(0.5))
                 .border_radius(5.0)
                 .margin_left(6.0)
         });
@@ -280,13 +280,13 @@ impl StylePropValue for Gradient {
             s.background(grad.clone())
                 .width(box_width)
                 .height(box_height)
-                .border(1)
-                .border_color(Color::WHITE.with_alpha_factor(0.5))
+                .border(1.)
+                .border_color(Color::WHITE.multiply_alpha(0.5))
                 .border_radius(5.0)
         });
         let color = stack((color,)).style(|s| {
-            s.border(1)
-                .border_color(Color::BLACK.with_alpha_factor(0.5))
+            s.border(1.)
+                .border_color(Color::BLACK.multiply_alpha(0.5))
                 .border_radius(5.0)
                 .margin_left(6.0)
         });
@@ -371,6 +371,52 @@ impl StylePropValue for Gradient {
             stops: interpolated_stops,
         })
     }
+}
+
+// this is necessary because Stroke doens't impl partial eq. it probaly should...
+#[derive(Clone, Debug)]
+pub struct StrokeWrap(pub Stroke);
+impl StrokeWrap {
+    fn new(width: f64) -> Self {
+        Self(Stroke::new(width))
+    }
+}
+impl PartialEq for StrokeWrap {
+    fn eq(&self, other: &Self) -> bool {
+        let self_stroke = &self.0;
+        let other_stroke = &other.0;
+
+        self_stroke.width == other_stroke.width
+            && self_stroke.join == other_stroke.join
+            && self_stroke.miter_limit == other_stroke.miter_limit
+            && self_stroke.start_cap == other_stroke.start_cap
+            && self_stroke.end_cap == other_stroke.end_cap
+            && self_stroke.dash_pattern == other_stroke.dash_pattern
+            && self_stroke.dash_offset == other_stroke.dash_offset
+    }
+}
+impl From<Stroke> for StrokeWrap {
+    fn from(value: Stroke) -> Self {
+        Self(value)
+    }
+}
+impl From<f32> for StrokeWrap {
+    fn from(value: f32) -> Self {
+        Self(Stroke::new(value.into()))
+    }
+}
+impl From<f64> for StrokeWrap {
+    fn from(value: f64) -> Self {
+        Self(Stroke::new(value))
+    }
+}
+impl From<i32> for StrokeWrap {
+    fn from(value: i32) -> Self {
+        Self(Stroke::new(value.into()))
+    }
+}
+impl StylePropValue for StrokeWrap {
+    // TODO!
 }
 impl StylePropValue for Brush {
     fn debug_view(&self) -> Option<Box<dyn View>> {
@@ -1563,13 +1609,13 @@ define_builtin_props!(
     GridRow grid_row: Line<GridPlacement> {} = Line::default(),
     GridColumn grid_column: Line<GridPlacement> {} = Line::default(),
     AlignSelf align_self: Option<AlignItems> {} = None,
-    BorderLeft border_left: Px {} = Px(0.0),
-    BorderTop border_top: Px {} = Px(0.0),
-    BorderRight border_right: Px {} = Px(0.0),
-    BorderBottom border_bottom: Px {} = Px(0.0),
+    BorderLeft border_left nocb: StrokeWrap {} = StrokeWrap::new(0.),
+    BorderTop border_top nocb: StrokeWrap {} = StrokeWrap::new(0.0),
+    BorderRight border_right nocb: StrokeWrap {} = StrokeWrap::new(0.0),
+    BorderBottom border_bottom nocb: StrokeWrap {} = StrokeWrap::new(0.0),
     BorderRadius border_radius: PxPct {} = PxPct::Px(0.0),
     OutlineColor outline_color: Brush {} = Brush::Solid(Color::TRANSPARENT),
-    Outline outline: Px {} = Px(0.0),
+    Outline outline nocb: StrokeWrap {} = StrokeWrap::new(0.),
     BorderColor border_color: Brush {} = Brush::Solid(Color::BLACK),
     PaddingLeft padding_left: PxPct {} = PxPct::Px(0.0),
     PaddingTop padding_top: PxPct {} = PxPct::Px(0.0),
@@ -1593,7 +1639,7 @@ define_builtin_props!(
     FontFamily font_family nocb: Option<String> { inherited } = None,
     FontWeight font_weight nocb: Option<Weight> { inherited } = None,
     FontStyle font_style nocb: Option<crate::text::Style> { inherited } = None,
-    CursorColor cursor_color nocb: Brush {} = Brush::Solid(Color::BLACK.with_alpha_factor(0.3)),
+    CursorColor cursor_color nocb: Brush {} = Brush::Solid(Color::BLACK.multiply_alpha(0.3)),
     SelectionCornerRadius selection_corer_radius nocb: f64 {} = 1.,
     Selectable selectable: bool {} = true,
     TextOverflowProp text_overflow: TextOverflow {} = TextOverflow::Wrap,
@@ -1669,10 +1715,10 @@ impl LayoutProps {
         Style::new()
             .width(self.width())
             .height(self.height())
-            .border_left(self.border_left())
-            .border_top(self.border_top())
-            .border_right(self.border_right())
-            .border_bottom(self.border_bottom())
+            .border_left(self.border_left().0)
+            .border_top(self.border_top().0)
+            .border_right(self.border_right().0)
+            .border_bottom(self.border_bottom().0)
             .padding_left(self.padding_left())
             .padding_top(self.padding_top())
             .padding_right(self.padding_right())
@@ -1892,24 +1938,44 @@ impl Style {
         self.max_size(max_width.pct(), max_height.pct())
     }
 
-    pub fn border(self, border: impl Into<Px>) -> Self {
+    pub fn border(self, border: impl Into<StrokeWrap>) -> Self {
         let border = border.into();
-        self.border_left(border)
-            .border_top(border)
-            .border_right(border)
+        self.border_left(border.clone())
+            .border_top(border.clone())
+            .border_right(border.clone())
             .border_bottom(border)
     }
 
+    pub fn border_left(self, border: impl Into<StrokeWrap>) -> Self {
+        self.set_style_value(BorderLeft, StyleValue::Val(border.into()))
+    }
+
+    pub fn border_right(self, border: impl Into<StrokeWrap>) -> Self {
+        self.set_style_value(BorderRight, StyleValue::Val(border.into()))
+    }
+
+    pub fn border_top(self, border: impl Into<StrokeWrap>) -> Self {
+        self.set_style_value(BorderTop, StyleValue::Val(border.into()))
+    }
+
+    pub fn border_bottom(self, border: impl Into<StrokeWrap>) -> Self {
+        self.set_style_value(BorderBottom, StyleValue::Val(border.into()))
+    }
+
+    pub fn outline(self, outline: impl Into<StrokeWrap>) -> Self {
+        self.set_style_value(Outline, StyleValue::Val(outline.into()))
+    }
+
     /// Sets `border_left` and `border_right` to `border`
-    pub fn border_horiz(self, border: impl Into<Px>) -> Self {
+    pub fn border_horiz(self, border: impl Into<Stroke>) -> Self {
         let border = border.into();
-        self.border_left(border).border_right(border)
+        self.border_left(border.clone()).border_right(border)
     }
 
     /// Sets `border_top` and `border_bottom` to `border`
-    pub fn border_vert(self, border: impl Into<Px>) -> Self {
+    pub fn border_vert(self, border: impl Into<Stroke>) -> Self {
         let border = border.into();
-        self.border_top(border).border_bottom(border)
+        self.border_top(border.clone()).border_bottom(border)
     }
 
     pub fn padding_left_pct(self, padding: f64) -> Self {
@@ -2286,10 +2352,10 @@ impl Style {
             align_self: style.align_self(),
             aspect_ratio: style.aspect_ratio(),
             border: Rect {
-                left: LengthPercentage::Length(style.border_left().0 as f32),
-                top: LengthPercentage::Length(style.border_top().0 as f32),
-                right: LengthPercentage::Length(style.border_right().0 as f32),
-                bottom: LengthPercentage::Length(style.border_bottom().0 as f32),
+                left: LengthPercentage::Length(style.border_left().0.width as f32),
+                top: LengthPercentage::Length(style.border_top().0.width as f32),
+                right: LengthPercentage::Length(style.border_right().0.width as f32),
+                bottom: LengthPercentage::Length(style.border_bottom().0.width as f32),
             },
             padding: Rect {
                 left: style.padding_left().into(),
