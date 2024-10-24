@@ -519,6 +519,7 @@ pub struct InteractionState {
     pub(crate) is_disabled: bool,
     pub(crate) is_focused: bool,
     pub(crate) is_clicking: bool,
+    pub(crate) is_dark_mode: bool,
     pub(crate) using_keyboard_navigation: bool,
 }
 
@@ -563,6 +564,7 @@ impl<'a> StyleCx<'a> {
             is_disabled: self.app_state.is_disabled(id),
             is_focused: self.app_state.is_focused(id),
             is_clicking: self.app_state.is_clicking(id),
+            is_dark_mode: self.app_state.is_dark_mode(),
             using_keyboard_navigation: self.app_state.keyboard_navigation,
         }
     }

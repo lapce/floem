@@ -70,7 +70,7 @@ pub(crate) struct WindowHandle {
     size: RwSignal<Size>,
     theme: Option<Theme>,
     pub(crate) profile: Option<Profile>,
-    os_theme: RwSignal<Option<winit::window::Theme>>,
+    os_theme: Option<winit::window::Theme>,
     is_maximized: bool,
     transparent: bool,
     pub(crate) scale: f64,
@@ -99,7 +99,7 @@ impl WindowHandle {
         let size: LogicalSize<f64> = size.unwrap_or(window.surface_size().to_logical(scale));
         let size = Size::new(size.width, size.height);
         let size = scope.create_rw_signal(Size::new(size.width, size.height));
-        let theme = scope.create_rw_signal(window.theme());
+        let os_theme = window.theme();
         let is_maximized = window.is_maximized();
 
         set_current_view(id);
@@ -160,7 +160,7 @@ impl WindowHandle {
             paint_state,
             size,
             theme: apply_default_theme.then(default_theme),
-            os_theme: theme,
+            os_theme,
             is_maximized,
             transparent,
             profile: None,
@@ -174,7 +174,8 @@ impl WindowHandle {
             dropper_file: None,
         };
         window_handle.app_state.set_root_size(size.get_untracked());
-        if let Some(theme) = theme.get_untracked() {
+        window_handle.app_state.os_theme = os_theme;
+        if let Some(theme) = os_theme {
             window_handle.event(Event::ThemeChanged(theme));
         }
         window_handle
@@ -418,7 +419,10 @@ impl WindowHandle {
     }
 
     pub(crate) fn os_theme_changed(&mut self, theme: winit::window::Theme) {
-        self.os_theme.set(Some(theme));
+        self.os_theme = Some(theme);
+        self.app_state.os_theme = Some(theme);
+        self.id.request_all();
+        request_recursive_changes(self.id, ChangeFlags::STYLE);
         self.event(Event::ThemeChanged(theme));
     }
 
@@ -1275,6 +1279,13 @@ impl WindowHandle {
             modifiers.set(Modifiers::ALTGR, true);
         }
         self.modifiers = modifiers;
+    }
+}
+
+fn request_recursive_changes(id: ViewId, changes: ChangeFlags) {
+    id.state().borrow_mut().requested_changes = changes;
+    for child in id.children() {
+        request_recursive_changes(child, changes);
     }
 }
 

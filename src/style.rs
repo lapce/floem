@@ -1236,6 +1236,12 @@ impl Style {
                 self.apply_mut(map);
             }
         }
+        if interact_state.is_dark_mode {
+            if let Some(mut map) = self.get_nested_map(StyleSelector::DarkMode.to_key()) {
+                map.apply_interact_state(interact_state, screen_size_bp);
+                self.apply_mut(map);
+            }
+        }
 
         let focused_keyboard =
             interact_state.using_keyboard_navigation && interact_state.is_focused;
@@ -1383,6 +1389,7 @@ pub enum StyleSelector {
     Focus,
     FocusVisible,
     Disabled,
+    DarkMode,
     Active,
     Dragging,
     Selected,
@@ -1410,6 +1417,10 @@ style_key_selector!(
     selected,
     StyleSelectors::new().set(StyleSelector::Selected, true)
 );
+style_key_selector!(
+    darkmode,
+    StyleSelectors::new().set(StyleSelector::DarkMode, true)
+);
 
 impl StyleSelector {
     fn to_key(self) -> StyleKey {
@@ -1421,6 +1432,7 @@ impl StyleSelector {
             StyleSelector::Active => active(),
             StyleSelector::Dragging => dragging(),
             StyleSelector::Selected => selected(),
+            StyleSelector::DarkMode => darkmode(),
         }
     }
 }
@@ -1864,6 +1876,10 @@ impl Style {
 
     pub fn disabled(self, style: impl FnOnce(Style) -> Style) -> Self {
         self.selector(StyleSelector::Disabled, style)
+    }
+
+    pub fn dark_mode(self, style: impl FnOnce(Style) -> Style) -> Self {
+        self.selector(StyleSelector::DarkMode, style)
     }
 
     pub fn active(self, style: impl FnOnce(Style) -> Style) -> Self {
@@ -2553,6 +2569,12 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
     fn disabled(self, style: impl FnOnce(Self) -> Self) -> Self {
         let self_style: Style = self.into();
         let new = self_style.selector(StyleSelector::Disabled, |_| style(Self::default()).into());
+        new.into()
+    }
+
+    fn dark_mode(self, style: impl FnOnce(Self) -> Self) -> Self {
+        let self_style: Style = self.into();
+        let new = self_style.selector(StyleSelector::DarkMode, |_| style(Self::default()).into());
         new.into()
     }
 
