@@ -244,17 +244,40 @@ impl TextLayout {
             attrs_list = new_attrs;
         }
         if self.buffer.lines.is_empty() {
-            self.buffer.lines.push(BufferLine::new(
-                "",
-                LineEnding::default(),
-                attrs_list,
-                Shaping::Advanced,
-            ));
+            let mut line =
+                BufferLine::new("", LineEnding::default(), attrs_list, Shaping::Advanced);
+            line.set_align(align);
+            self.buffer.lines.push(line);
             self.lines_range.push(0..0)
         }
         self.buffer.set_scroll(Scroll::default());
+
         let mut font_system = FONT_SYSTEM.lock();
-        self.buffer.shape_until_scroll(&mut font_system, false);
+
+        // two-pass layout for alignment to work properly
+        let needs_two_pass =
+            align.is_some() && align != Some(Align::Left) && self.width_opt.is_none();
+        if needs_two_pass {
+            // first pass: shape and layout without width constraint to measure natural width
+            self.buffer.shape_until_scroll(&mut font_system, false);
+
+            // measure the actual width
+            let measured_width = self
+                .buffer
+                .layout_runs()
+                .fold(0.0f32, |width, run| width.max(run.line_w));
+
+            // second pass: set the measured width and layout again
+            if measured_width > 0.0 {
+                self.buffer
+                    .set_size(&mut font_system, Some(measured_width), self.height_opt);
+                // shape again after size change
+                self.buffer.shape_until_scroll(&mut font_system, false);
+            }
+        } else {
+            // For left-aligned text, single pass is sufficient
+            self.buffer.shape_until_scroll(&mut font_system, false);
+        }
     }
 
     pub fn set_wrap(&mut self, wrap: Wrap) {
