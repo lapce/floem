@@ -1073,6 +1073,180 @@ impl Transition {
     }
 }
 
+/// Direct transition controller using TransitionState without the Style system.
+///
+/// This allows you to animate any value that implements `StylePropValue` by managing
+/// the transition state directly. You control when transitions start, how they're
+/// configured, and when to step them forward.
+///
+/// # Example
+///
+/// ```rust
+/// use std::time::{Duration, Instant};
+/// use floem::style::{DirectTransition, Transition};
+///
+/// // Create a transition for animating opacity
+/// let mut opacity = DirectTransition::new(1., None);
+///
+/// // Configure transition timing and easing
+/// opacity.set_transition(Some(
+///     Transition::ease_in_out(Duration::from_millis(300))
+/// ));
+///
+/// // Start transition to new value
+/// opacity.transition_to(0.0);
+///
+/// // Animation loop - call this every frame
+/// let start_time = Instant::now();
+/// loop {
+///     let now = Instant::now();
+///     
+///     // Step the transition forward
+///     let changed = opacity.step(&now);
+///     
+///     // Get current interpolated value
+///     let current_opacity = opacity.get();
+///     
+///     // Only update rendering if value changed
+///     if changed {
+///         println!("Current opacity: {:.3}", current_opacity);
+///         // render_with_opacity(current_opacity);
+///     }
+///     
+///     // Exit when transition completes
+///     if !opacity.is_active() {
+///         println!("Transition complete!");
+///         break;
+///     }
+///     
+///     // Wait for next frame (~60fps)
+///     std::thread::sleep(Duration::from_millis(16));
+///     
+///     // Safety timeout
+///     if now.duration_since(start_time) > Duration::from_secs(2) {
+///         break;
+///     }
+/// }
+///
+/// // Chain multiple transitions
+/// opacity.transition_to(0.5); // Start new transition from current position
+/// // ... repeat animation loop
+///
+/// // Or jump immediately without animation
+/// opacity.set_immediate(1.0);
+/// ```
+#[derive(Debug, Clone)]
+pub struct DirectTransition<T: StylePropValue> {
+    pub current_value: T,
+    transition_state: TransitionState<T>,
+}
+
+impl<T: StylePropValue> DirectTransition<T> {
+    /// Create a new transition starting at the given value
+    pub fn new(initial_value: T, transition: Option<Transition>) -> Self {
+        let mut t = Self {
+            current_value: initial_value,
+            transition_state: TransitionState::default(),
+        };
+        t.transition_state.read(transition);
+        t
+    }
+
+    /// Configure the transition timing and easing function
+    ///
+    /// Pass `None` to disable transitions (values will change immediately)
+    pub fn set_transition(&mut self, transition: Option<Transition>) {
+        // If we're currently transitioning, preserve the current interpolated state
+        // as the new baseline instead of reverting to the original target
+        if self.transition_state.active.is_some() {
+            let current_interpolated = self.get();
+            self.current_value = current_interpolated;
+            self.transition_state.active = None;
+        }
+
+        self.transition_state.read(transition);
+    }
+
+    /// Start transitioning to a new target value
+    ///
+    /// Returns `true` if a transition was started, `false` if no transition
+    /// is configured or the target equals the current value
+    pub fn transition_to(&mut self, target: T) -> bool {
+        let before = if self.transition_state.active.is_some() {
+            // If already transitioning, start from current interpolated position
+            self.get()
+        } else {
+            self.current_value.clone()
+        };
+
+        self.current_value = target;
+
+        // Ensure transitions can start by marking as initialized
+        if !self.transition_state.initial {
+            self.transition_state.initial = true;
+        }
+
+        self.transition_state
+            .transition(&before, &self.current_value);
+        self.transition_state.active.is_some()
+    }
+
+    /// Step the transition forward in time
+    ///
+    /// Call this every frame with the current time. Returns `true` if the
+    /// interpolated value changed this frame, `false` otherwise.
+    ///
+    /// You can use the return value to optimize rendering - only update
+    /// when something actually changed.
+    pub fn step(&mut self, now: &Instant) -> bool {
+        let mut request_transition = false;
+        self.transition_state.step(now, &mut request_transition)
+    }
+
+    /// Get the current interpolated value
+    ///
+    /// During a transition, this returns the smoothly interpolated value.
+    /// When no transition is active, returns the target value.
+    pub fn get(&self) -> T {
+        self.transition_state.get(&self.current_value)
+    }
+
+    /// Check if a transition is currently active
+    pub fn is_active(&self) -> bool {
+        self.transition_state.active.is_some()
+    }
+
+    /// Get the target value (final destination of current/last transition)
+    pub fn target(&self) -> &T {
+        &self.current_value
+    }
+
+    /// Set value immediately without any transition
+    ///
+    /// This cancels any active transition and jumps directly to the new value
+    pub fn set_immediate(&mut self, value: T) {
+        self.current_value = value;
+        self.transition_state.active = None;
+    }
+
+    /// Get the progress of the current transition as a value from 0.0 to 1.0
+    ///
+    /// Returns `None` if no transition is active or configured
+    pub fn progress(&self, now: &Instant) -> Option<f64> {
+        if let Some(active) = &self.transition_state.active {
+            if let Some(transition) = &self.transition_state.transition {
+                let elapsed = now.saturating_duration_since(active.start);
+                let progress = elapsed.as_secs_f64() / transition.duration.as_secs_f64();
+                Some(progress.min(1.0))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum StyleKeyInfo {
     Transition,
