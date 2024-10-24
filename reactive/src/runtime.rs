@@ -1,9 +1,10 @@
+#[cfg(not(test))]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{
     any::{Any, TypeId},
     cell::{Cell, RefCell},
     collections::{HashMap, HashSet},
     rc::Rc,
-    sync::atomic::{AtomicBool, Ordering},
 };
 
 use smallvec::SmallVec;
@@ -14,9 +15,11 @@ use crate::{
     signal::Signal,
 };
 
+#[cfg(not(test))]
 static CREATED: AtomicBool = AtomicBool::new(false);
 thread_local! {
     pub(crate) static RUNTIME: Runtime = {
+        #[cfg(not(test))]
         if CREATED.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
             panic!("RUNTIME must only be created once. You are probably using signals from multiple threads. All signals need to be accessed exclusively from the main thread.");
         }
