@@ -290,6 +290,7 @@ impl ApplicationHandle {
             enabled_buttons,
             resizable,
             undecorated,
+            undecorated_shadow,
             window_level,
             apply_default_theme,
             mac_os_config,
@@ -344,6 +345,12 @@ impl ApplicationHandle {
         #[cfg(not(target_os = "macos"))]
         if !show_titlebar {
             window_builder = window_builder.with_decorations(false);
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            use floem_winit::platform::windows::WindowBuilderExtWindows;
+            window_builder = window_builder.with_undecorated_shadow(undecorated_shadow);
         }
 
         #[cfg(target_os = "macos")]

@@ -23,6 +23,7 @@ pub struct WindowConfig {
     pub(crate) enabled_buttons: WindowButtons,
     pub(crate) resizable: bool,
     pub(crate) undecorated: bool,
+    pub(crate) undecorated_shadow: bool,
     pub(crate) window_level: WindowLevel,
     pub(crate) apply_default_theme: bool,
     pub(crate) font_embolden: f32,
@@ -44,6 +45,7 @@ impl Default for WindowConfig {
             enabled_buttons: WindowButtons::all(),
             resizable: true,
             undecorated: false,
+            undecorated_shadow: false,
             window_level: WindowLevel::Normal,
             apply_default_theme: true,
             font_embolden: if cfg!(target_os = "macos") { 0.2 } else { 0. },
@@ -87,6 +89,15 @@ impl WindowConfig {
     #[inline]
     pub fn undecorated(mut self, undecorated: bool) -> Self {
         self.undecorated = undecorated;
+        self
+    }
+
+    /// Sets whether the window should have background drop shadow when undecorated.
+    ///
+    /// The default is `false`.
+    #[inline]
+    pub fn undecorated_shadow(mut self, undecorated_shadow: bool) -> Self {
+        self.undecorated_shadow = undecorated_shadow;
         self
     }
 
