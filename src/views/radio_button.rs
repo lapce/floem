@@ -46,7 +46,7 @@ impl RadioButton {
 
         value_container(
             radio_button_svg(represented_value.clone(), inbound_signal.read_only())
-                .keyboard_navigatable()
+                .keyboard_navigable()
                 .on_click_stop(move |_| {
                     outbound_signal.set(represented_value.clone());
                 }),
@@ -65,7 +65,7 @@ impl RadioButton {
     where
         T: Eq + PartialEq + Clone + 'static,
     {
-        radio_button_svg(represented_value, actual_value).keyboard_navigatable()
+        radio_button_svg(represented_value, actual_value).keyboard_navigable()
     }
 
     /// Creates a new radio button with a signal that provides and updates its selected state.
@@ -82,7 +82,7 @@ impl RadioButton {
         let cloneable_represented_value = represented_value.clone();
 
         radio_button_svg(cloneable_represented_value.clone(), actual_value)
-            .keyboard_navigatable()
+            .keyboard_navigable()
             .on_click_stop(move |_| {
                 actual_value.set(cloneable_represented_value.clone());
             })
@@ -109,7 +109,7 @@ impl RadioButton {
             ))
             .class(LabeledRadioButtonClass)
             .style(|s| s.items_center())
-            .keyboard_navigatable()
+            .keyboard_navigable()
             .on_click_stop(move |_| {
                 outbound_signal.set(represented_value.clone());
             }),
@@ -135,7 +135,7 @@ impl RadioButton {
         ))
         .class(LabeledRadioButtonClass)
         .style(|s| s.items_center())
-        .keyboard_navigatable()
+        .keyboard_navigable()
     }
 
     /// Creates a new labeled radio button with a signal that provides and updates its selected state.
@@ -158,7 +158,7 @@ impl RadioButton {
         ))
         .class(LabeledRadioButtonClass)
         .style(|s| s.items_center())
-        .keyboard_navigatable()
+        .keyboard_navigable()
         .on_click_stop(move |_| {
             actual_value.set(cloneable_represented_value.clone());
         })

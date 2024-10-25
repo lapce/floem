@@ -23,7 +23,7 @@ fn app_view() -> impl IntoView {
                     .on_click_stop(move |_| {
                         set_counter.update(|value| *value += 1);
                     })
-                    .keyboard_navigatable(),
+                    .keyboard_navigable(),
                 label(|| "Decrement")
                     .class(Button)
                     .on_click_stop(move |_| {
@@ -34,7 +34,7 @@ fn app_view() -> impl IntoView {
                             .hover(|s| s.background(Color::rgb8(244, 67, 54)))
                             .active(|s| s.background(Color::RED))
                     })
-                    .keyboard_navigatable(),
+                    .keyboard_navigable(),
                 label(|| "Reset to 0")
                     .class(Button)
                     .on_click_stop(move |_| {
@@ -48,7 +48,7 @@ fn app_view() -> impl IntoView {
                             .hover(|s| s.background(Color::LIGHT_YELLOW))
                             .active(|s| s.background(Color::YELLOW_GREEN))
                     })
-                    .keyboard_navigatable(),
+                    .keyboard_navigable(),
             )
         }),
         stack({

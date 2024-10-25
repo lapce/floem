@@ -32,7 +32,7 @@ fn tab_button(
     active_tab: ReadSignal<usize>,
 ) -> impl IntoView {
     label(move || this_tab)
-        .keyboard_navigatable()
+        .keyboard_navigable()
         .on_click_stop(move |_| {
             set_active_tab.update(|v: &mut usize| {
                 *v = tabs

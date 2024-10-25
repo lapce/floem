@@ -124,9 +124,9 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     }
 
     /// Allows the element to be navigated to with the keyboard. Similar to setting tabindex="0" in html.
-    fn keyboard_navigatable(self) -> Self::DV {
+    fn keyboard_navigable(self) -> Self::DV {
         let view = self.into_view();
-        view.id().keyboard_navigatable();
+        view.id().keyboard_navigable();
         view
     }
 

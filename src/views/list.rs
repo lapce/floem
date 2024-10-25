@@ -103,7 +103,7 @@ where
         child,
         onaccept: None,
     }
-    .keyboard_navigatable()
+    .keyboard_navigable()
     .on_event(EventListener::KeyDown, move |e| {
         if let Event::KeyDown(key_event) = e {
             match key_event.key.logical_key {

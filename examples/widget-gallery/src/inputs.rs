@@ -17,7 +17,7 @@ pub fn text_input_view() -> impl IntoView {
             form_item("Simple Input:".to_string(), 120.0, move || {
                 text_input(text)
                     .placeholder("Placeholder text")
-                    .keyboard_navigatable()
+                    .keyboard_navigable()
             }),
             form_item("Styled Input:".to_string(), 120.0, move || {
                 text_input(text)
@@ -44,7 +44,7 @@ pub fn text_input_view() -> impl IntoView {
                                     .font_weight(Weight::BOLD)
                             })
                     })
-                    .keyboard_navigatable()
+                    .keyboard_navigable()
             }),
             form_item("Disabled Input:".to_string(), 120.0, move || {
                 text_input(text).disabled(|| true)

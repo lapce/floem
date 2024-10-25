@@ -165,7 +165,7 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         is_focused: false,
         last_cursor_action_on: Instant::now(),
     }
-    .keyboard_navigatable()
+    .keyboard_navigable()
     .on_event_stop(EventListener::FocusGained, move |_| {
         is_focused.set(true);
     })
