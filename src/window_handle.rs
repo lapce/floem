@@ -1362,7 +1362,7 @@ fn context_menu_view(
                                 )
                             },
                         )
-                        .keyboard_navigatable()
+                        .keyboard_navigable()
                         .on_event_stop(EventListener::FocusGained, move |_| {
                             focus_count.update(|count| {
                                 *count += 1;
@@ -1447,7 +1447,7 @@ fn context_menu_view(
     })
     .on_event_stop(EventListener::PointerDown, move |_| {})
     .on_event_stop(EventListener::PointerMove, move |_| {})
-    .keyboard_navigatable()
+    .keyboard_navigable()
     .on_event_stop(EventListener::KeyDown, move |event| {
         if let Event::KeyDown(event) = event {
             if event.key.logical_key == Key::Named(NamedKey::Escape) {

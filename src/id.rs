@@ -505,7 +505,7 @@ impl ViewId {
     }
 
     /// Mark this view as a view that can be navigated to using the keyboard
-    pub fn keyboard_navigatable(&self) {
+    pub fn keyboard_navigable(&self) {
         self.add_update_message(UpdateMessage::KeyboardNavigable { id: *self });
     }
 

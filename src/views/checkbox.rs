@@ -19,7 +19,7 @@ fn checkbox_svg(checked: impl SignalGet<bool> + 'static) -> impl IntoView {
     svg(CHECKBOX_SVG)
         .update_value(svg_str)
         .class(CheckboxClass)
-        .keyboard_navigatable()
+        .keyboard_navigable()
 }
 
 /// The `Checkbox` struct provides various methods to create and manage checkboxes.

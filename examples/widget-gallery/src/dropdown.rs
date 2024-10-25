@@ -66,7 +66,7 @@ pub fn dropdown_view() -> impl IntoView {
                 // view for each item in the list
                 |item| label(move || item).into_any(),
             )
-            .keyboard_navigatable()
+            .keyboard_navigable()
         }),)
     })
 }

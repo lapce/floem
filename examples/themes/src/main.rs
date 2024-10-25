@@ -102,7 +102,7 @@ fn app_view() -> impl IntoView {
                     set_theme.update(|theme| *theme = !*theme);
                 }
             })
-            .keyboard_navigatable(),
+            .keyboard_navigable(),
         stack((
             label(move || format!("Value: {}", counter.get())).class(Label),
             text("Increment")
@@ -112,7 +112,7 @@ fn app_view() -> impl IntoView {
                         set_counter.update(|value| *value += 1);
                     }
                 })
-                .keyboard_navigatable(),
+                .keyboard_navigable(),
             text("Decrement")
                 .class(Button)
                 .on_click_stop({
@@ -120,7 +120,7 @@ fn app_view() -> impl IntoView {
                         set_counter.update(|value| *value -= 1);
                     }
                 })
-                .keyboard_navigatable(),
+                .keyboard_navigable(),
             text("Reset to 0")
                 .class(Button)
                 .on_click_stop(move |_| {
@@ -128,7 +128,7 @@ fn app_view() -> impl IntoView {
                     set_counter.update(|value| *value = 0);
                 })
                 .disabled(move || counter.get() == 0)
-                .keyboard_navigatable(),
+                .keyboard_navigable(),
         ))
         .class(Frame)
         .style(|s| s.items_center()),

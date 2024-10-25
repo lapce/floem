@@ -19,7 +19,7 @@ impl Button {
     pub fn new(child: impl IntoView) -> Self {
         let id = ViewId::new();
         id.add_child(Box::new(child.into_view()));
-        Button { id }.keyboard_navigatable().class(ButtonClass)
+        Button { id }.keyboard_navigable().class(ButtonClass)
     }
 
     pub fn action(self, mut on_press: impl FnMut() + 'static) -> Self {

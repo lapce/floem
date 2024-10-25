@@ -14,7 +14,7 @@ fn app_view() -> impl IntoView {
                 .items_center()
                 .justify_center()
         });
-    view.keyboard_navigatable()
+    view.keyboard_navigable()
         .on_event_stop(EventListener::KeyDown, move |e| {
             if let Event::KeyDown(e) = e {
                 if e.key.logical_key == Key::Character("q".into()) {

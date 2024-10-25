@@ -28,7 +28,7 @@ fn app_view() -> impl IntoView {
                         set_counter.update(|value| *value += 1);
                     }
                 })
-                .keyboard_navigatable(),
+                .keyboard_navigable(),
             "Decrement"
                 .on_click_stop({
                     move |_| {
@@ -45,7 +45,7 @@ fn app_view() -> impl IntoView {
                         .hover(|s| s.background(Color::rgb8(244, 67, 54)))
                         .active(|s| s.color(Color::WHITE).background(Color::RED))
                 })
-                .keyboard_navigatable(),
+                .keyboard_navigable(),
             "Reset to 0"
                 .on_click_stop(move |_| {
                     println!("Reset counter pressed"); // will not fire if button is disabled
@@ -63,7 +63,7 @@ fn app_view() -> impl IntoView {
                         .hover(|s| s.background(Color::LIGHT_YELLOW))
                         .active(|s| s.color(Color::WHITE).background(Color::YELLOW_GREEN))
                 })
-                .keyboard_navigatable(),
+                .keyboard_navigable(),
         )
             .style(|s| {
                 s.class(LabelClass, |s| {

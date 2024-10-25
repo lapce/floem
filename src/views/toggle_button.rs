@@ -271,7 +271,7 @@ impl ToggleButton {
             style: Default::default(),
         }
         .class(ToggleButtonClass)
-        .keyboard_navigatable()
+        .keyboard_navigable()
     }
 
     pub fn new_rw(state: impl SignalGet<bool> + SignalUpdate<bool> + Copy + 'static) -> Self {

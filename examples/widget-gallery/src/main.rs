@@ -95,7 +95,7 @@ fn app_view() -> impl IntoView {
                             EventPropagation::Continue
                         }
                     })
-                    .keyboard_navigatable()
+                    .keyboard_navigable()
                     .draggable()
                     .style(move |s| {
                         s.flex_row()

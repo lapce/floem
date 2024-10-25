@@ -19,7 +19,7 @@ pub fn clipboard_view() -> impl IntoView {
             }),
             form_item("Copy from input".to_string(), 120.0, move || {
                 h_stack((
-                    text_input(text1).keyboard_navigatable(),
+                    text_input(text1).keyboard_navigable(),
                     button("Copy").action(move || {
                         let _ = Clipboard::set_contents(text1.get());
                     }),

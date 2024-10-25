@@ -425,7 +425,7 @@ fn add_event(
     capture: &Rc<Capture>,
 ) -> impl View {
     let capture = capture.clone();
-    row.keyboard_navigatable()
+    row.keyboard_navigable()
         .on_secondary_click({
             let name = name.clone();
             move |_| {
@@ -810,7 +810,7 @@ fn capture_view(
                 .margin_bottom(21.0)
                 .margin_right(21.0)
         })
-        .keyboard_navigatable()
+        .keyboard_navigable()
         .on_event_stop(EventListener::KeyUp, {
             move |event: &Event| {
                 if let Event::KeyUp(key) = event {

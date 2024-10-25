@@ -326,7 +326,7 @@ impl Slider {
             style: Default::default(),
         }
         .class(SliderClass)
-        .keyboard_navigatable()
+        .keyboard_navigable()
     }
 
     pub fn new_get(percent: impl SignalGet<f32> + 'static) -> Self {
