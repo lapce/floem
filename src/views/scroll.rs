@@ -1,5 +1,4 @@
 use floem_reactive::create_effect;
-use floem_renderer::Renderer;
 use peniko::kurbo::{Point, Rect, Size, Stroke, Vec2};
 use peniko::{Brush, Color};
 
@@ -15,6 +14,7 @@ use crate::{
     style_class,
     unit::Px,
     view::{IntoView, View},
+    Renderer,
 };
 
 use super::Decorators;

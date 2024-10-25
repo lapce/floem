@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
 use floem_reactive::create_effect;
-use floem_renderer::Renderer;
 use peniko::Blob;
 use sha2::{Digest, Sha256};
 
-use crate::{id::ViewId, style::Style, unit::UnitExt, view::View};
+use crate::{id::ViewId, style::Style, unit::UnitExt, view::View, Renderer};
 
 use taffy::tree::NodeId;
 
