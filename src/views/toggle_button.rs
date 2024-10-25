@@ -1,7 +1,6 @@
 //! A toggle button widget. An example can be found in widget-gallery/button in the floem examples.
 
 use floem_reactive::{create_effect, SignalGet, SignalUpdate};
-use floem_renderer::Renderer;
 use floem_winit::keyboard::{Key, NamedKey};
 use peniko::kurbo::{Point, Size};
 use peniko::Brush;
@@ -15,6 +14,7 @@ use crate::{
     unit::PxPct,
     view::View,
     views::Decorators,
+    Renderer,
 };
 
 /// Controls the switching behavior of the switch. The corresponding style prop is [ToggleButtonBehavior]

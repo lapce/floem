@@ -44,7 +44,6 @@
 //!
 
 use floem_reactive::{ReadSignal, RwSignal, SignalGet};
-use floem_renderer::Renderer;
 use peniko::kurbo::{Circle, Insets, Line, Point, Rect, RoundedRect, Size};
 use std::any::Any;
 use taffy::tree::NodeId;
@@ -57,6 +56,7 @@ use crate::{
     style::{LayoutProps, Style, StyleClassRef},
     view_state::ViewStyleProps,
     views::{dyn_view, DynamicView},
+    Renderer,
 };
 
 /// type erased [`View`]

@@ -1,7 +1,6 @@
 //! A toggle button widget. An example can be found in widget-gallery/button in the floem examples.
 
 use floem_reactive::{create_effect, SignalGet, SignalUpdate};
-use floem_renderer::Renderer;
 use floem_winit::keyboard::{Key, NamedKey};
 use peniko::kurbo::{Circle, Point, RoundedRect};
 use peniko::{Brush, Color};
@@ -15,6 +14,7 @@ use crate::{
     unit::{PxPct, PxPctAuto},
     view::View,
     views::Decorators,
+    Renderer,
 };
 
 pub fn slider(percent: impl Fn() -> f32 + 'static) -> Slider {
