@@ -1,7 +1,6 @@
 use floem::{
     animate::Animation,
     event::EventListener as EL,
-    kurbo::Stroke,
     peniko::Color,
     reactive::{RwSignal, SignalGet, Trigger},
     unit::DurationUnitExt,

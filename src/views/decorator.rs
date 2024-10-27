@@ -130,6 +130,29 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         view
     }
 
+    /// Dynamically controls whether the default view behavior for an event should be disabled.
+    /// When disable is true, children will still see the event, but the view event function will not be called nor
+    /// the event listeners on the view.
+    ///
+    /// # Reactivity
+    /// This function is reactive and will re-run the disable function automatically in response to changes in signals
+    fn disable_default_event(
+        self,
+        disable: impl Fn() -> (EventListener, bool) + 'static,
+    ) -> Self::DV {
+        let view = self.into_view();
+        let id = view.id();
+        create_effect(move |_| {
+            let (event, disable) = disable();
+            if disable {
+                id.disable_default_event(event);
+            } else {
+                id.remove_disable_default_event(event);
+            }
+        });
+        view
+    }
+
     fn draggable(self) -> Self::DV {
         let view = self.into_view();
         view.id().draggable();
