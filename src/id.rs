@@ -514,6 +514,24 @@ impl ViewId {
         self.add_update_message(UpdateMessage::RemoveKeyboardNavigable { id: *self });
     }
 
+    /// Disables the default view behavior for the specified event.
+    ///
+    /// Children will still see the event, but the view event function will not be called nor the event listeners on the view
+    pub fn disable_default_event(&self, event: EventListener) {
+        self.state()
+            .borrow_mut()
+            .disable_default_events
+            .insert(event);
+    }
+
+    /// Re-enables the default view behavior for a previously disabled event.
+    pub fn remove_disable_default_event(&self, event: EventListener) {
+        self.state()
+            .borrow_mut()
+            .disable_default_events
+            .remove(&event);
+    }
+
     /// Mark this view as a view that can be dragged
     ///
     /// You can customize the apearance of a view while dragging in the style

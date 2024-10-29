@@ -13,6 +13,7 @@ use crate::{
     },
 };
 use bitflags::bitflags;
+use im::HashSet;
 use peniko::kurbo::{Point, Rect};
 use smallvec::SmallVec;
 use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::Rc};
@@ -172,6 +173,7 @@ pub struct ViewState {
     pub(crate) last_pointer_down: Option<PointerInputEvent>,
     pub(crate) is_hidden_state: IsHiddenState,
     pub(crate) num_waiting_animations: u16,
+    pub(crate) disable_default_events: HashSet<EventListener>,
     pub(crate) debug_name: SmallVec<[String; 1]>,
 }
 
@@ -202,6 +204,7 @@ impl ViewState {
             window_origin: Point::ZERO,
             is_hidden_state: IsHiddenState::None,
             num_waiting_animations: 0,
+            disable_default_events: HashSet::new(),
             debug_name: Default::default(),
         }
     }

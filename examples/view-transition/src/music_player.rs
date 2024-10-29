@@ -1,6 +1,5 @@
 use floem::{
     animate::Animation,
-    kurbo::Stroke,
     peniko::{Brush, Color},
     reactive::{RwSignal, SignalGet, SignalUpdate},
     style::{ScaleX, ScaleY, Style, Transition},
