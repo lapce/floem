@@ -141,12 +141,17 @@ impl<'a> EventCx<'a> {
         if !directed {
             let children = view_id.children();
             for child in children.into_iter().rev() {
-                if self.should_send(child, &event)
-                    && self
-                        .unconditional_view_event(child, event.clone(), false)
-                        .is_processed()
+                if !self.should_send(child, &event) {
+                    continue;
+                }
+                if self
+                    .unconditional_view_event(child, event.clone(), false)
+                    .is_processed()
                 {
                     return EventPropagation::Stop;
+                }
+                if event.is_pointer() {
+                    break;
                 }
             }
         }
@@ -439,23 +444,27 @@ impl<'a> EventCx<'a> {
         if id.style_has_hidden() || (self.app_state.is_disabled(&id) && !event.allow_disabled()) {
             return false;
         }
-        if let Some(point) = event.point() {
-            let layout_rect = id.layout_rect();
-            if let Some(layout) = id.get_layout() {
-                if layout_rect
-                    .with_origin(Point::new(
-                        layout.location.x as f64,
-                        layout.location.y as f64,
-                    ))
-                    .contains(point)
-                {
-                    return true;
-                }
-            }
-            false
-        } else {
-            true
+
+        let Some(point) = event.point() else {
+            return true;
+        };
+
+        let layout_rect = id.layout_rect();
+        let Some(layout) = id.get_layout() else {
+            return false;
+        };
+
+        // Check if point is within current view's bounds
+        let current_rect = layout_rect.with_origin(Point::new(
+            layout.location.x as f64,
+            layout.location.y as f64,
+        ));
+
+        if !current_rect.contains(point) {
+            return false;
         }
+
+        true
     }
 }
 
@@ -789,8 +798,8 @@ impl<'a> ComputeLayoutCx<'a> {
         } else {
             layout_rect
         };
-        view_state.borrow_mut().layout_rect = layout_rect;
 
+        view_state.borrow_mut().layout_rect = layout_rect;
         self.restore();
 
         Some(layout_rect)
