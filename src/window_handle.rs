@@ -107,20 +107,28 @@ impl WindowHandle {
         let context_menu = scope.create_rw_signal(None);
 
         #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
-        let view = with_scope(scope, move || view_fn(window_id));
+        let view = with_scope(scope, move || {
+            let main_view = view_fn(window_id);
+            let main_view_id = main_view.id();
+            (main_view_id, main_view)
+        });
 
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         let view = with_scope(scope, move || {
-            stack((
-                container(view_fn(window_id)).style(|s| s.size(100.pct(), 100.pct())),
-                context_menu_view(scope, window_id, context_menu, size),
-            ))
-            .style(|s| s.size(100.pct(), 100.pct()))
-            .into_any()
+            let main_view = view_fn(window_id);
+            let main_view_id = main_view.id();
+            (
+                main_view_id,
+                stack((
+                    container(main_view).style(|s| s.size(100.pct(), 100.pct())),
+                    context_menu_view(scope, window_id, context_menu, size),
+                ))
+                .style(|s| s.size(100.pct(), 100.pct()))
+                .into_any(),
+            )
         });
 
-        let widget = view;
-        let main_id = widget.id();
+        let (main_view_id, widget) = view;
         id.set_children(vec![widget]);
 
         let view = WindowView { id };
@@ -147,7 +155,7 @@ impl WindowHandle {
             window: Some(window),
             window_id,
             id,
-            main_view: main_id,
+            main_view: main_view_id,
             scope,
             app_state: AppState::new(id),
             paint_state,
