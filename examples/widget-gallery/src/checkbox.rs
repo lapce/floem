@@ -20,7 +20,7 @@ pub fn checkbox_view() -> impl IntoView {
                     .disabled(|| true)
             }),
             form_item("Labelled Checkbox:".to_string(), width, move || {
-                Checkbox::new_labeled_rw(is_checked, || "Check me!")
+                Checkbox::labeled_rw(is_checked, || "Check me!")
             }),
             form_item(
                 "Disabled Labelled Checkbox:".to_string(),
