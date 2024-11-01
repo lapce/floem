@@ -34,7 +34,7 @@ impl ViewSwitcher {
         .style(|s| s.padding(8))
         .animation(|a| {
             a.view_transition()
-                .keyframe(0, |kf| kf.style(|s| s.padding(0)))
+                .keyframe(0, |f| f.style(|s| s.padding(0)))
         })
     }
 }
