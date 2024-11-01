@@ -1,3 +1,6 @@
+#![deny(missing_docs)]
+//! Scroll View
+
 use floem_reactive::create_effect;
 use peniko::kurbo::{Point, Rect, Size, Stroke, Vec2};
 use peniko::{Brush, Color};
@@ -44,12 +47,27 @@ enum BarHeldState {
     Horizontal(f64, Vec2),
 }
 
-style_class!(pub Handle);
-style_class!(pub Track);
+style_class!(
+    /// Style class that will be applied to the handles of the scroll view
+    pub Handle
+);
+style_class!(
+    /// Style class that will be applied to the scroll tracks of the scroll view
+    pub Track
+);
 
-prop!(pub Rounded: bool {} = cfg!(target_os = "macos"));
-prop!(pub Thickness: Px {} = Px(10.0));
-prop!(pub Border: Px {} = Px(0.0));
+prop!(
+    /// Determines if scroll handles should be rounded (defaults to true on macOS).
+    pub Rounded: bool {} = cfg!(target_os = "macos")
+);
+prop!(
+    /// Specifies the thickness of scroll handles in pixels.
+    pub Thickness: Px {} = Px(10.0)
+);
+prop!(
+    /// Defines the border width of a scroll track in pixels.
+    pub Border: Px {} = Px(0.0)
+);
 
 prop_extractor! {
     ScrollTrackStyle {
@@ -62,12 +80,35 @@ prop_extractor! {
     }
 }
 
-prop!(pub VerticalInset: Px {} = Px(0.0));
-prop!(pub HorizontalInset: Px {} = Px(0.0));
-prop!(pub HideBars: bool {} = false);
-prop!(pub PropagatePointerWheel: bool {} = true);
-prop!(pub VerticalScrollAsHorizontal: bool {} = false);
-prop!(pub OverflowClip: bool {} = true);
+prop!(
+    /// Specifies the vertical inset of the scrollable area in pixels.
+    pub VerticalInset: Px {} = Px(0.0)
+);
+
+prop!(
+    /// Defines the horizontal inset of the scrollable area in pixels.
+    pub HorizontalInset: Px {} = Px(0.0)
+);
+
+prop!(
+    /// Controls the visibility of scroll bars. When true, bars are hidden.
+    pub HideBars: bool {} = false
+);
+
+prop!(
+    /// Determines if pointer wheel events should propagate to parent elements.
+    pub PropagatePointerWheel: bool {} = true
+);
+
+prop!(
+    /// When true, vertical scroll input is interpreted as horizontal scrolling.
+    pub VerticalScrollAsHorizontal: bool {} = false
+);
+
+prop!(
+    /// Enables clipping of overflowing content when set to true.
+    pub OverflowClip: bool {} = true
+);
 
 prop_extractor!(ScrollStyle {
     vertical_bar_inset: VerticalInset,
@@ -80,8 +121,12 @@ prop_extractor!(ScrollStyle {
 
 const HANDLE_COLOR: Brush = Brush::Solid(Color::rgba8(0, 0, 0, 120));
 
-style_class!(pub ScrollClass);
+style_class!(
+    /// Style class that is applied to every scroll view
+    pub ScrollClass
+);
 
+/// A scroll view
 pub struct Scroll {
     id: ViewId,
     child: ViewId,
@@ -115,6 +160,7 @@ pub struct Scroll {
     scroll_style: ScrollStyle,
 }
 
+/// Create a new scroll view
 pub fn scroll<V: IntoView + 'static>(child: V) -> Scroll {
     let id = ViewId::new();
     let child = child.into_view();
@@ -146,11 +192,22 @@ pub fn scroll<V: IntoView + 'static>(child: V) -> Scroll {
 }
 
 impl Scroll {
+    /// Sets a callback that will be triggered whenever the scroll position changes.
+    ///
+    /// This callback receives the viewport rectangle that represents the currently
+    /// visible portion of the scrollable content.
     pub fn on_scroll(mut self, onscroll: impl Fn(Rect) + 'static) -> Self {
         self.onscroll = Some(Box::new(onscroll));
         self
     }
 
+    /// Ensures that a specific rectangular area is visible within the scroll view by automatically
+    /// scrolling to it if necessary.
+    ///
+    /// # Reactivity
+    /// The viewport will automatically update to include the target rectangle whenever the rectangle's
+    /// position or size changes, as determined by the `to` function which will update any time there are
+    /// chagnes in the signals that it depends on.
     pub fn ensure_visible(self, to: impl Fn() -> Rect + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
@@ -161,6 +218,11 @@ impl Scroll {
         self
     }
 
+    /// Scrolls the view by the specified delta vector.
+    ///
+    /// # Reactivity
+    /// The scroll position will automatically update whenever the delta vector changes,
+    /// as determined by the `delta` function which will update any time there are chagnes in the signals that it depends on.
     pub fn scroll_delta(self, delta: impl Fn() -> Vec2 + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
@@ -171,6 +233,11 @@ impl Scroll {
         self
     }
 
+    /// Scrolls the view to the specified target point.
+    ///
+    /// # Reactivity
+    /// The scroll position will automatically update whenever the target point changes,
+    /// as determined by the `origin` function which will update any time there are changes in the signals that it depends on.
     pub fn scroll_to(self, origin: impl Fn() -> Option<Point> + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
@@ -182,7 +249,11 @@ impl Scroll {
         self
     }
 
-    /// Scroll the scroll view to a percent (0-100)
+    /// Scrolls the view to the specified percentage (0-100) of its scrollable content.
+    ///
+    /// # Reactivity
+    /// The scroll position will automatically update whenever the target percentage changes,
+    /// as determined by the `percent` function which will update any time there are changes in the signals that it depends on.
     pub fn scroll_to_percent(self, percent: impl Fn() -> f32 + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
@@ -192,6 +263,11 @@ impl Scroll {
         self
     }
 
+    /// Scrolls the view to make a specific view visible.
+    ///
+    /// # Reactivity
+    /// The scroll position will automatically update whenever the target view changes,
+    /// as determined by the `view` function which will update any time there are changes in the signals that it depends on.
     pub fn scroll_to_view(self, view: impl Fn() -> Option<ViewId> + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
@@ -618,6 +694,7 @@ impl Scroll {
         }
     }
 
+    /// Sets the custom style properties of the `Scroll`.
     pub fn scroll_style(
         self,
         style: impl Fn(ScrollCustomStyle) -> ScrollCustomStyle + 'static,
@@ -895,6 +972,7 @@ impl CustomStylable<ScrollCustomStyle> for Scroll {
 }
 
 impl ScrollCustomStyle {
+    /// Creates a new `ScrollCustomStyle`.
     pub fn new() -> Self {
         Self(Style::new())
     }
@@ -912,6 +990,7 @@ impl ScrollCustomStyle {
         self
     }
 
+    /// Conditionally configures the scroll view to clip the overflow of the content.
     pub fn overflow_clip(mut self, clip: bool) -> Self {
         self = Self(self.0.set(OverflowClip, clip));
         self
@@ -1020,7 +1099,9 @@ impl ScrollCustomStyle {
     }
 }
 
+/// A trait that adds a `scroll` method to any type that implements `IntoView`.
 pub trait ScrollExt {
+    /// Wrap the view in a scroll view.
     fn scroll(self) -> Scroll;
 }
 
