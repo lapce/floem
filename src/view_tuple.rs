@@ -1,7 +1,25 @@
-use crate::view::{IntoView, View};
+use taffy::FlexDirection;
+
+use crate::{
+    view::{IntoView, View},
+    views::{create_stack, Stack},
+};
 
 pub trait ViewTuple {
     fn into_views(self) -> Vec<Box<dyn View>>;
+    fn stack(self, direction: FlexDirection) -> Stack;
+    fn v_stack(self) -> Stack
+    where
+        Self: Sized,
+    {
+        ViewTuple::stack(self, FlexDirection::Column)
+    }
+    fn h_stack(self) -> Stack
+    where
+        Self: Sized,
+    {
+        ViewTuple::stack(self, FlexDirection::Row)
+    }
 }
 
 // Macro to implement ViewTuple for tuples of Views and Vec<Box<dyn View>>
@@ -14,6 +32,9 @@ macro_rules! impl_view_tuple {
                 vec![
                     $($t.into_any(),)+
                 ]
+            }
+            fn stack(self, direction: FlexDirection) -> Stack {
+                create_stack(self.into_views(), Some(direction))
             }
         }
 
