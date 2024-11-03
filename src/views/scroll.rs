@@ -207,7 +207,7 @@ impl Scroll {
     /// # Reactivity
     /// The viewport will automatically update to include the target rectangle whenever the rectangle's
     /// position or size changes, as determined by the `to` function which will update any time there are
-    /// chagnes in the signals that it depends on.
+    /// changes in the signals that it depends on.
     pub fn ensure_visible(self, to: impl Fn() -> Rect + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {
@@ -222,7 +222,7 @@ impl Scroll {
     ///
     /// # Reactivity
     /// The scroll position will automatically update whenever the delta vector changes,
-    /// as determined by the `delta` function which will update any time there are chagnes in the signals that it depends on.
+    /// as determined by the `delta` function which will update any time there are changes in the signals that it depends on.
     pub fn scroll_delta(self, delta: impl Fn() -> Vec2 + 'static) -> Self {
         let id = self.id();
         create_effect(move |_| {

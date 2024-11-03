@@ -167,7 +167,7 @@ impl Renderer for VelloRenderer {
             match &brush {
                 BrushRef::Solid(color) => {
                     let mut stroke = stroke.clone();
-                    // this special handlign is done to make thin strokes look better
+                    // this special handling is done to make thin strokes look better
                     stroke.width *= 1.5;
                     let color = color.multiply_alpha(0.5);
                     self.scene.stroke(

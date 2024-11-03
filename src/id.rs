@@ -337,7 +337,7 @@ impl ViewId {
         self.state().borrow_mut().context_menu = Some(Rc::new(menu));
     }
 
-    /// Set the sytem popout menu that should be shown when this view is clicked
+    /// Set the system popout menu that should be shown when this view is clicked
     ///
     /// Adds a primary-click context menu, which opens below the view.
     pub fn update_popout_menu(&self, menu: impl Fn() -> Menu + 'static) {
@@ -432,7 +432,7 @@ impl ViewId {
 
     /// Get the combined style that is associated with this View.
     ///
-    /// This will have all of the style properties set in it that are relevent to this view, including all properties from relevant classes.
+    /// This will have all of the style properties set in it that are relevant to this view, including all properties from relevant classes.
     ///
     /// ## Warning
     /// The view styles do not store property transition states, only markers of which properties _should_ be transitioned over time on change.

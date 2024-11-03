@@ -178,7 +178,7 @@ impl StylePropValue for PxPctAuto {
             (Self::Px(v1), Self::Px(v2)) => Some(Self::Px(v1 + (v2 - v1) * value)),
             (Self::Pct(v1), Self::Pct(v2)) => Some(Self::Pct(v1 + (v2 - v1) * value)),
             (Self::Auto, Self::Auto) => Some(Self::Auto),
-            // TODO: Figure out some way to get in the relevent layout information in order to interpolate betweeen pixels and percent
+            // TODO: Figure out some way to get in the relevant layout information in order to interpolate between pixels and percent
             _ => None,
         }
     }
@@ -196,7 +196,7 @@ impl StylePropValue for PxPct {
         match (self, other) {
             (Self::Px(v1), Self::Px(v2)) => Some(Self::Px(v1 + (v2 - v1) * value)),
             (Self::Pct(v1), Self::Pct(v2)) => Some(Self::Pct(v1 + (v2 - v1) * value)),
-            // TODO: Figure out some way to get in the relevent layout information in order to interpolate betweeen pixels and percent
+            // TODO: Figure out some way to get in the relevant layout information in order to interpolate between pixels and percent
             _ => None,
         }
     }
@@ -373,7 +373,7 @@ impl StylePropValue for Gradient {
     }
 }
 
-// this is necessary because Stroke doens't impl partial eq. it probaly should...
+// this is necessary because Stroke doesn't impl partial eq. it probably should...
 #[derive(Clone, Debug)]
 pub struct StrokeWrap(pub Stroke);
 impl StrokeWrap {
@@ -2399,7 +2399,7 @@ pub trait CustomStylable<S: Default + Into<Style> + 'static>:
 {
     type DV: View;
 
-    /// #  Add a custom style to the view with acess to this view's specialized custom style.
+    /// #  Add a custom style to the view with access to this view's specialized custom style.
     ///
     /// A note for implementors of the trait:
     ///
