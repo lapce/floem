@@ -108,6 +108,7 @@ pub struct TextInput {
     font: FontProps,
     cursor_width: f64, // TODO: make this configurable
     is_focused: bool,
+    last_pointer_down: Point,
     last_cursor_action_on: Instant,
 }
 
@@ -163,6 +164,7 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         width: 0.0,
         height: 0.0,
         is_focused: false,
+        last_pointer_down: Point::ZERO,
         last_cursor_action_on: Instant::now(),
     }
     .keyboard_navigable()
@@ -334,7 +336,7 @@ impl TextInput {
         let visible_range = clip_start_x..=clip_start_x + node_width;
 
         let mut clip_dir = ClipDirection::None;
-        if !visible_range.contains(&cursor_glyph_pos.point.x) {
+        if !visible_range.contains(&cursor_glyph_pos.point.x) && self.selection.is_none() {
             if cursor_x < *visible_range.start() {
                 clip_start_x = cursor_x;
                 clip_dir = ClipDirection::Backward;
@@ -390,6 +392,17 @@ impl TextInput {
                 node_location.y as f64 + text_height,
             ),
         )
+    }
+
+    fn scroll(&mut self, offset: f64) {
+        self.clip_start_x += offset;
+        self.clip_start_x = self.clip_start_x.max(0.);
+        self.clip_start_x = self.clip_start_x.min(
+            self.text_buf
+                .as_ref()
+                .map(|l| l.size().width - self.width as f64)
+                .unwrap_or(self.width as f64),
+        );
     }
 
     fn handle_double_click(&mut self, pos_x: f64, pos_y: f64) {
@@ -917,7 +930,10 @@ impl TextInput {
         let selection_rect = self
             .get_selection_rect(&node_layout, padding_left)
             .to_rounded_rect(border_radius);
+        cx.save();
+        cx.clip(&self.id.get_content_rect());
         cx.fill(&selection_rect, &cursor_color, 0.0);
+        cx.restore();
     }
 }
 
@@ -1034,6 +1050,7 @@ impl View for TextInput {
             ) => {
                 cx.update_active(self.id);
                 self.id.request_layout();
+                self.last_pointer_down = event.pos;
 
                 if event.count == 2 {
                     self.handle_double_click(event.pos.x, event.pos.y);
@@ -1048,6 +1065,14 @@ impl View for TextInput {
             Event::PointerMove(event) => {
                 self.id.request_layout();
                 if cx.is_active(self.id) {
+                    if event.pos.x < 0. && event.pos.x < self.last_pointer_down.x {
+                        self.scroll(event.pos.x);
+                    } else if event.pos.x > self.width as f64
+                        && event.pos.x > self.last_pointer_down.x
+                    {
+                        self.scroll(event.pos.x - self.width as f64);
+                    }
+
                     let selection_stop = self.get_box_position(event.pos.x, event.pos.y);
                     self.update_selection(self.cursor_glyph_idx, selection_stop);
                 }
