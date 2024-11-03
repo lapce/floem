@@ -200,7 +200,7 @@ pub fn create_signal_from_tokio_channel<T: Send + 'static>(
 
 #[cfg(feature = "futures")]
 pub fn create_signal_from_stream<T: 'static>(
-    inital_value: T,
+    initial_value: T,
     stream: impl futures::Stream<Item = T> + 'static,
 ) -> ReadSignal<T> {
     use std::{
@@ -212,10 +212,10 @@ pub fn create_signal_from_stream<T: 'static>(
 
     let cx = Scope::current().create_child();
     let trigger = cx.create_trigger();
-    let (read, write) = cx.create_signal(inital_value);
+    let (read, write) = cx.create_signal(initial_value);
 
     /// Waker that wakes by registering a trigger
-    // TODO: since the trigger is just a `u64`, it could theorically be changed to be a `usize`,
+    // TODO: since the trigger is just a `u64`, it could theoretically be changed to be a `usize`,
     //       Then the implementation of the std::task::RawWakerVTable could pass the `usize` as the data pointer,
     //       avoiding any allocation/reference counting
     struct TriggerWake(Trigger);

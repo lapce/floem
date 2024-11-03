@@ -118,7 +118,7 @@
 //! [`Decorators`](crate::views::Decorators) trait to use the it). The `style` method takes a closure that takes and returns a
 //! [`Style`](crate::style::Style) value using the builder pattern. Through this value, you can access methods that modify a variety
 //! of familiar properties such as width, padding, and background. Some `Style` properties
-//! such as font size are `inherited` and will apply to all of a view's children until overriden.
+//! such as font size are `inherited` and will apply to all of a view's children until overridden.
 // TODO: Add links on these
 //!
 //! In this same style value, floem supports:

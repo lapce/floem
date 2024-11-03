@@ -50,8 +50,8 @@ where
     T: PartialEq + 'static,
 {
     let cx = Scope::current();
-    let inital = f(None);
-    let (getter, setter) = create_signal(inital);
+    let initial = f(None);
+    let (getter, setter) = create_signal(initial);
     let reader = getter.read_untracked();
 
     create_effect(move |_| {

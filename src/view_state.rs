@@ -111,7 +111,7 @@ impl IsHiddenState {
     ) {
         let computed_has_hide = computed_display == taffy::Display::None;
         *self = match self {
-            // initial states (makes it so that the animations aren't run on intial app/view load)
+            // initial states (makes it so that the animations aren't run on initial app/view load)
             Self::None if computed_has_hide => Self::Hidden,
             Self::None if !computed_has_hide => Self::Visible(computed_display),
             // do nothing

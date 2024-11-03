@@ -373,7 +373,7 @@ pub struct Animation {
     pub(crate) cache: PropCache,
     /// This will fire at the start of each cycle of an animation.
     pub(crate) on_start: Trigger,
-    /// This tigger will fire at the completion of an animations duration.
+    /// This trigger will fire at the completion of an animations duration.
     /// Animations are allowed to go on for longer than their duration, until the easing reports finished.
     /// When waiting for the completion of an animation (such as to remove a view), this trigger should be preferred.
     pub(crate) on_visual_complete: Trigger,
@@ -416,7 +416,7 @@ impl Animation {
     }
 
     /// Quickly set a few properties on an animation to set up an animation to be used as a view transition (on creation and removal).
-    /// (Sets keyframes 0 and 100 to use the computed style until overriden)
+    /// (Sets keyframes 0 and 100 to use the computed style until overridden)
     pub fn view_transition(self) -> Self {
         self.run_on_create(true)
             .run_on_remove(true)
@@ -661,7 +661,7 @@ impl Animation {
     pub fn state(
         mut self,
         command: impl Fn() -> AnimStateCommand + 'static,
-        apply_inital: bool,
+        apply_initial: bool,
     ) -> Self {
         let states = RwSignal::new(SmallVec::new());
         self.effect_states.push(states);
@@ -670,7 +670,7 @@ impl Animation {
                 view_id.update_animation_state(stack_offset, command)
             }
         });
-        if apply_inital {
+        if apply_initial {
             self.transition(initial_command);
         }
         self
@@ -1037,7 +1037,7 @@ impl Animation {
 
         let computed_idxs = self.cache.computed_idxs.clone();
         for computed_idx in &computed_idxs {
-            // we add all of the props from the computed style to the cache becaues the computed style could change inbetween every frame.
+            // we add all of the props from the computed style to the cache because the computed style could change inbetween every frame.
             for prop in computed_style.style_props() {
                 self.cache
                     .insert_computed_prop(prop, PropFrameKind::Computed(*computed_idx));
@@ -1106,7 +1106,7 @@ impl Animation {
 
         computed_style.apply_mut(self.folded_style.clone());
 
-        // we remove all of the props in the computed style from the cache becaues the computed style could change inbetween every frame.
+        // we remove all of the props in the computed style from the cache because the computed style could change inbetween every frame.
         for computed_idx in computed_idxs {
             for prop in computed_style.style_props() {
                 self.cache.remove_prop(prop, computed_idx);
