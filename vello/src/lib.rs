@@ -32,7 +32,7 @@ pub struct VelloRenderer {
     window_scale: f64,
     transform: Affine,
     capture: bool,
-    font_cache: HashMap<(ID, usize), vello::peniko::Font>,
+    font_cache: HashMap<ID, vello::peniko::Font>,
 }
 
 impl VelloRenderer {
@@ -129,29 +129,29 @@ impl VelloRenderer {
         self.window_scale = scale;
     }
 
-    pub fn scale(&self) -> f64 {
+    pub const fn scale(&self) -> f64 {
         self.window_scale
     }
 
-    pub fn size(&self) -> Size {
+    pub const fn size(&self) -> Size {
         Size::new(self.config.width as f64, self.config.height as f64)
     }
 }
 
 impl Renderer for VelloRenderer {
     fn begin(&mut self, capture: bool) {
-        if self.capture != capture {
+        if self.capture == capture {
+            self.scene.reset();
+        } else {
             self.capture = capture;
             if self.alt_scene.is_none() {
                 self.alt_scene = Some(Scene::new());
             }
             if let Some(scene) = self.alt_scene.as_mut() {
-                scene.reset()
+                scene.reset();
             }
             self.scene.reset();
-            mem::swap(&mut self.scene, self.alt_scene.as_mut().unwrap())
-        } else {
-            self.scene.reset();
+            mem::swap(&mut self.scene, self.alt_scene.as_mut().unwrap());
         };
         self.transform = Affine::IDENTITY;
     }
@@ -203,9 +203,8 @@ impl Renderer for VelloRenderer {
     fn fill<'b>(&mut self, path: &impl Shape, brush: impl Into<BrushRef<'b>>, blur_radius: f64) {
         let brush: BrushRef<'b> = brush.into();
         if blur_radius > 0. {
-            let color = match brush {
-                BrushRef::Solid(c) => c,
-                _ => return,
+            let BrushRef::Solid(color) = brush else {
+                return;
             };
             let rect = path.as_rounded_rect().unwrap_or_default().rect();
 
@@ -214,7 +213,7 @@ impl Renderer for VelloRenderer {
                 rect,
                 color,
                 blur_radius,
-                2.5,
+                3.,
             );
         } else {
             self.scene.fill(
@@ -254,7 +253,7 @@ impl Renderer for VelloRenderer {
                     if let Some(run) = current_run.take() {
                         self.draw_glyph_run(
                             run,
-                            transform.pre_translate((0., line.line_y as f64).into()),
+                            transform.pre_translate((0., line.line_y.into()).into()),
                         );
                     }
                     current_run = Some(GlyphRun {
@@ -274,7 +273,7 @@ impl Renderer for VelloRenderer {
             if let Some(run) = current_run.take() {
                 self.draw_glyph_run(
                     run,
-                    transform.pre_translate((0., line.line_y as f64).into()),
+                    transform.pre_translate((0., line.line_y.into()).into()),
                 );
             }
         }
@@ -310,26 +309,27 @@ impl Renderer for VelloRenderer {
 
         let svg_size = svg.tree.size();
 
-        let scale_x = rect_width / svg_size.width() as f64;
-        let scale_y = rect_height / svg_size.height() as f64;
+        let scale_x = rect_width / f64::from(svg_size.width());
+        let scale_y = rect_height / f64::from(svg_size.height());
 
         let translate_x = rect.min_x();
         let translate_y = rect.min_y();
 
-        let new = if let Some(brush) = brush {
-            let brush = brush.into();
-            alpha_mask_scene(
-                rect.size(),
-                |scene| {
-                    scene.append(&vello_svg::render_tree(svg.tree), None);
-                },
-                move |scene| {
-                    scene.fill(Fill::NonZero, Affine::IDENTITY, brush, None, &rect);
-                },
-            )
-        } else {
-            vello_svg::render_tree(svg.tree)
-        };
+        let new = brush.map_or_else(
+            || vello_svg::render_tree(svg.tree),
+            |brush| {
+                let brush = brush.into();
+                alpha_mask_scene(
+                    rect.size(),
+                    |scene| {
+                        scene.append(&vello_svg::render_tree(svg.tree), None);
+                    },
+                    move |scene| {
+                        scene.fill(Fill::NonZero, Affine::IDENTITY, brush, None, &rect);
+                    },
+                )
+            },
+        );
 
         // Apply transformations to fit the SVG within the provided rectangle
         self.scene.append(
@@ -446,7 +446,7 @@ impl VelloRenderer {
         let bytes_per_pixel = 4;
         let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: (width as u64 * height as u64 * bytes_per_pixel),
+            size: (u64::from(width * height) * bytes_per_pixel),
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -480,7 +480,10 @@ impl VelloRenderer {
             if let Ok(r) = rx.try_recv() {
                 break r.ok()?;
             }
-            if let wgpu::MaintainResult::Ok = self.device.poll(wgpu::MaintainBase::Wait) {
+            if matches!(
+                self.device.poll(wgpu::MaintainBase::Wait),
+                wgpu::MaintainResult::Ok
+            ) {
                 rx.recv().ok()?.ok()?;
                 break;
             }
@@ -563,21 +566,23 @@ struct GlyphRun<'a> {
 }
 
 impl VelloRenderer {
-    fn get_font(&mut self, font_id: ID, metadata: usize) -> vello::peniko::Font {
-        let cache_key = (font_id, metadata);
-        self.font_cache.get(&cache_key).cloned().unwrap_or_else(|| {
-            let font = FONT_SYSTEM.lock().get_font(font_id).unwrap();
+    fn get_font(&mut self, font_id: ID) -> vello::peniko::Font {
+        self.font_cache.get(&font_id).cloned().unwrap_or_else(|| {
+            let mut font_system = FONT_SYSTEM.lock();
+            let font = font_system.get_font(font_id).unwrap();
+            let face = font_system.db().face(font_id).unwrap();
             let font_data = font.data();
-            let font_index = 0; // For now, we're not using metadata for font index
+            let font_index = face.index;
+            drop(font_system);
             let font =
                 vello::peniko::Font::new(Blob::new(Arc::new(font_data.to_vec())), font_index);
-            self.font_cache.insert(cache_key, font.clone());
+            self.font_cache.insert(font_id, font.clone());
             font
         })
     }
 
     fn draw_glyph_run(&mut self, run: GlyphRun, transform: Affine) {
-        let font = self.get_font(run.font_id, run.metadata);
+        let font = self.get_font(run.font_id);
         self.scene
             .draw_glyphs(&font)
             .font_size(run.font_size)
@@ -587,7 +592,7 @@ impl VelloRenderer {
             .draw(
                 Fill::NonZero,
                 run.glyphs.into_iter().map(|glyph| vello::Glyph {
-                    id: glyph.glyph_id as u32,
+                    id: glyph.glyph_id.into(),
                     x: glyph.x,
                     y: glyph.y,
                 }),
