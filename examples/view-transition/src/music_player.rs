@@ -63,14 +63,14 @@ enum PlayPause {
 impl PlayPause {
     fn toggle(&mut self) {
         *self = match self {
-            PlayPause::Play => PlayPause::Pause,
-            PlayPause::Pause => PlayPause::Play,
+            Self::Play => Self::Pause,
+            Self::Pause => Self::Play,
         };
     }
-    fn view(&self) -> AnyView {
+    fn view(self) -> AnyView {
         match self {
-            PlayPause::Play => svg(svg::PLAY).into_any(),
-            PlayPause::Pause => svg(svg::PAUSE).into_any(),
+            Self::Play => svg(svg::PLAY).into_any(),
+            Self::Pause => svg(svg::PAUSE).into_any(),
         }
         .animation(|a| Animation::scale_effect(a).run_on_remove(false))
     }
@@ -88,14 +88,14 @@ pub fn music_player() -> impl IntoView {
     let play_pause_state = RwSignal::new(PlayPause::Play);
 
     let play_pause_button = container(
-        dyn_container(move || play_pause_state.get(), move |which| which.view()).class(ButtonClass),
+        dyn_container(move || play_pause_state.get(), PlayPause::view).class(ButtonClass),
     )
-    .on_click_stop(move |_| play_pause_state.update(|which| which.toggle()));
+    .on_click_stop(move |_| play_pause_state.update(PlayPause::toggle));
 
     let media_buttons = h_stack((
         container(svg(svg::BACKWARD)).class(ButtonClass),
         play_pause_button,
-        container(svg(svg::BACKWARD)).class(ButtonClass),
+        container(svg(svg::FORWARD)).class(ButtonClass),
     ))
     .style(|s| {
         s.align_self(Some(floem::taffy::AlignItems::Center))

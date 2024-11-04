@@ -1,13 +1,4 @@
-use floem::{
-    animate::Animation,
-    peniko::Color,
-    reactive::{RwSignal, SignalGet, SignalUpdate},
-    style::Style,
-    taffy::FlexWrap,
-    unit::{DurationUnitExt, UnitExt},
-    views::*,
-    IntoView,
-};
+use floem::{prelude::*, style::Style, taffy::FlexWrap, IntoView};
 mod music_player;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -18,20 +9,20 @@ enum ViewSwitcher {
 impl ViewSwitcher {
     fn toggle(&mut self) {
         *self = match self {
-            ViewSwitcher::One => ViewSwitcher::Two,
-            ViewSwitcher::Two => ViewSwitcher::One,
+            Self::One => Self::Two,
+            Self::Two => Self::One,
         };
     }
 
-    fn view(&self, state: RwSignal<Self>) -> impl IntoView {
+    fn view(self, state: RwSignal<Self>) -> impl IntoView {
         match self {
-            ViewSwitcher::One => music_player::music_player().into_any(),
-            ViewSwitcher::Two => view_two(state).into_any(),
+            Self::One => music_player::music_player().into_any(),
+            Self::Two => view_two(state).into_any(),
         }
         .style(|s| s.scale(100.pct()))
-        .animation(|s| Animation::scale_effect(s).duration(3.seconds()))
+        .animation(|a| a.scale_effect().keyframe(0, |s| s.style(|s| s.size(0, 0))))
         .clip()
-        .style(|s| s.padding(8))
+        .style(|s| s.padding(20))
         .animation(|a| {
             a.view_transition()
                 .keyframe(0, |f| f.style(|s| s.padding(0)))
@@ -47,13 +38,18 @@ fn app_view() -> impl IntoView {
     let state = RwSignal::new(ViewSwitcher::One);
 
     v_stack((
-        button("Switch views").action(move || state.update(|which| which.toggle())),
+        button("Switch views").action(move || state.update(ViewSwitcher::toggle)),
         h_stack((
             dyn_container(move || state.get(), move |which| which.view(state)),
             empty()
-                .animation(move |a| a.scale_effect().with_duration(|a, d| a.delay(d)))
+                .animation(move |a| {
+                    a.scale_effect()
+                        .with_duration(|a, d| a.delay(d))
+                        .keyframe(0, |s| s.style(|s| s.size(0, 0)))
+                })
                 .style(move |s| {
                     s.size(100, 100)
+                        .scale(100.pct())
                         .border_radius(5)
                         .background(Color::RED)
                         .apply_if(state.get() == ViewSwitcher::Two, |s| s.hide())
@@ -88,8 +84,9 @@ fn view_two(view: RwSignal<ViewSwitcher>) -> impl IntoView {
 
 fn box_shadow() -> Style {
     Style::new()
-        .box_shadow_color(Color::BLACK.multiply_alpha(0.7))
-        .box_shadow_h_offset(3)
-        .box_shadow_v_offset(3.)
+        .box_shadow_color(Color::BLACK.multiply_alpha(0.5))
+        .box_shadow_h_offset(5.)
+        .box_shadow_v_offset(10.)
+        // .box_shadow_spread(1)
         .box_shadow_blur(1.5)
 }
