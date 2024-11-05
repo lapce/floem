@@ -58,14 +58,14 @@ impl Step {
         step_position: StepPosition::End,
     };
 
-    pub fn new(num_steps: usize, step_position: StepPosition) -> Self {
-        Step {
+    pub const fn new(num_steps: usize, step_position: StepPosition) -> Self {
+        Self {
             num_steps,
             step_position,
         }
     }
 
-    pub fn new_end(num_steps: usize) -> Self {
+    pub const fn new_end(num_steps: usize) -> Self {
         Self {
             num_steps,
             step_position: StepPosition::End,
@@ -86,7 +86,10 @@ impl Easing for Step {
             }
             StepPosition::None => {
                 let step_size = 1.0 / self.num_steps as f64;
-                ((time / step_size).floor() * step_size + step_size / 2.0).min(1.0)
+                (time / step_size)
+                    .floor()
+                    .mul_add(step_size, step_size / 2.0)
+                    .min(1.0)
             }
             StepPosition::Both => {
                 let step_size = 1.0 / (self.num_steps - 1) as f64;
@@ -100,20 +103,20 @@ impl Easing for Step {
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Bezier(pub f64, pub f64, pub f64, pub f64);
 impl Bezier {
-    const EASE: Self = Bezier(0.25, 0.1, 0.25, 1.);
-    const EASE_IN: Self = Bezier(0.42, 0., 1., 1.);
-    const EASE_OUT: Self = Bezier(0., 0., 0.58, 1.);
-    const EASE_IN_OUT: Self = Bezier(0.42, 0., 0.58, 1.);
-    pub fn ease() -> Self {
+    const EASE: Self = Self(0.25, 0.1, 0.25, 1.);
+    const EASE_IN: Self = Self(0.42, 0., 1., 1.);
+    const EASE_OUT: Self = Self(0., 0., 0.58, 1.);
+    const EASE_IN_OUT: Self = Self(0.42, 0., 0.58, 1.);
+    pub const fn ease() -> Self {
         Self::EASE
     }
-    pub fn ease_in() -> Self {
+    pub const fn ease_in() -> Self {
         Self::EASE_IN
     }
-    pub fn ease_out() -> Self {
+    pub const fn ease_out() -> Self {
         Self::EASE_OUT
     }
-    pub fn ease_in_out() -> Self {
+    pub const fn ease_in_out() -> Self {
         Self::EASE_IN_OUT
     }
 
@@ -142,8 +145,8 @@ pub struct Spring {
 }
 
 impl Spring {
-    pub fn new(mass: f64, stiffness: f64, damping: f64, initial_velocity: f64) -> Self {
-        Spring {
+    pub const fn new(mass: f64, stiffness: f64, damping: f64, initial_velocity: f64) -> Self {
+        Self {
             mass,
             stiffness,
             damping,
@@ -153,17 +156,17 @@ impl Spring {
     // TODO: figure out if these are reasonable values.
 
     /// Slower, smoother motion
-    pub fn gentle() -> Self {
+    pub const fn gentle() -> Self {
         Self::new(1., 50.0, 8.0, 0.0)
     }
 
     /// More overshoot, longer settling time
-    pub fn bouncy() -> Self {
+    pub const fn bouncy() -> Self {
         Self::new(1., 150.0, 5.0, 0.0)
     }
 
     /// Quick response, minimal overshoot
-    pub fn snappy() -> Self {
+    pub const fn snappy() -> Self {
         Self::new(1., 200.0, 20.0, 0.0)
     }
 
@@ -182,35 +185,35 @@ impl Spring {
 
         if zeta < 1.0 {
             // Underdamped
-            let omega_d = omega * (1.0 - zeta * zeta).sqrt();
+            let omega_d = omega * zeta.mul_add(-zeta, 1.0).sqrt();
             let e = (-zeta * omega * time).exp();
             let cos_term = (omega_d * time).cos();
             let sin_term = (omega_d * time).sin();
 
             let a = 1.0;
-            let b = (v0 + zeta * omega * a) / omega_d;
+            let b = (zeta * omega).mul_add(a, v0) / omega_d;
 
-            1.0 - e * (a * cos_term + b * sin_term)
+            e.mul_add(-a.mul_add(cos_term, b * sin_term), 1.0)
         } else if zeta > 1.0 {
             // Overdamped
-            let r1 = -omega * (zeta - (zeta * zeta - 1.0).sqrt());
-            let r2 = -omega * (zeta + (zeta * zeta - 1.0).sqrt());
+            let r1 = -omega * (zeta - zeta.mul_add(zeta, -1.0).sqrt());
+            let r2 = -omega * (zeta + zeta.mul_add(zeta, -1.0).sqrt());
 
             let a = (v0 - r2) / (r1 - r2);
             let b = 1.0 - a;
 
-            1.0 - a * (r1 * time).exp() - b * (r2 * time).exp()
+            b.mul_add(-(r2 * time).exp(), a.mul_add(-(r1 * time).exp(), 1.0))
         } else {
             // Critically damped
             let e = (-omega * time).exp();
             let a = 1.0;
-            let b = v0 + omega * a;
+            let b = omega.mul_add(a, v0);
 
-            1.0 - e * (a + b * time)
+            e.mul_add(-b.mul_add(time, a), 1.0)
         }
     }
 
-    const THRESHOLD: f64 = 0.003;
+    const THRESHOLD: f64 = 0.005;
     pub fn finished(&self, time: f64) -> bool {
         let position = self.eval(time);
         let velocity = self.velocity(time);
@@ -233,32 +236,34 @@ impl Spring {
 
         if zeta < 1.0 {
             // Underdamped
-            let omega_d = omega * (1.0 - zeta * zeta).sqrt();
+            let omega_d = omega * zeta.mul_add(-zeta, 1.0).sqrt();
             let e = (-zeta * omega * time).exp();
             let cos_term = (omega_d * time).cos();
             let sin_term = (omega_d * time).sin();
 
             let a = 1.0;
-            let b = (v0 + zeta * omega * a) / omega_d;
+            let b = (zeta * omega).mul_add(a, v0) / omega_d;
 
-            e * ((zeta * omega * (a * cos_term + b * sin_term))
-                + (a * -omega_d * sin_term + b * omega_d * cos_term))
+            e * (zeta * omega).mul_add(
+                a.mul_add(cos_term, b * sin_term),
+                (a * -omega_d).mul_add(sin_term, b * omega_d * cos_term),
+            )
         } else if zeta > 1.0 {
             // Overdamped
-            let r1 = -omega * (zeta - (zeta * zeta - 1.0).sqrt());
-            let r2 = -omega * (zeta + (zeta * zeta - 1.0).sqrt());
+            let r1 = -omega * (zeta - zeta.mul_add(zeta, -1.0).sqrt());
+            let r2 = -omega * (zeta + zeta.mul_add(zeta, -1.0).sqrt());
 
             let a = (v0 - r2) / (r1 - r2);
             let b = 1.0 - a;
 
-            -a * r1 * (r1 * time).exp() - b * r2 * (r2 * time).exp()
+            (-a * r1).mul_add((r1 * time).exp(), -(b * r2 * (r2 * time).exp()))
         } else {
             // Critically damped
             let e = (-omega * time).exp();
             let a = 1.0;
-            let b = v0 + omega * a;
+            let b = omega.mul_add(a, v0);
 
-            e * (b - omega * (a + b * time))
+            e * omega.mul_add(-b.mul_add(time, a), b)
         }
     }
 }
