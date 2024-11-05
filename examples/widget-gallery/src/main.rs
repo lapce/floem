@@ -1,8 +1,11 @@
+pub mod animation;
 pub mod buttons;
 pub mod checkbox;
 pub mod clipboard;
 pub mod context_menu;
+pub mod draggable;
 pub mod dropdown;
+pub mod dropped_file;
 pub mod form;
 pub mod images;
 pub mod inputs;
@@ -11,9 +14,6 @@ pub mod lists;
 pub mod radio_buttons;
 pub mod rich_text;
 pub mod slider;
-pub mod animation;
-pub mod draggable;
-pub mod dropped_file;
 
 use floem::{
     event::{Event, EventListener, EventPropagation},

@@ -102,4 +102,4 @@ pub fn draggable_view() -> impl IntoView {
         |m| m.is_empty(),
         move |_| id.inspect(),
     )
-} 
+}
