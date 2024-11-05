@@ -14,7 +14,7 @@ use crate::{
 };
 use bitflags::bitflags;
 use im::HashSet;
-use peniko::kurbo::{Point, Rect};
+use peniko::kurbo::{Affine, Point, Rect};
 use smallvec::SmallVec;
 use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::Rc};
 use taffy::tree::NodeId;
@@ -174,6 +174,7 @@ pub struct ViewState {
     pub(crate) is_hidden_state: IsHiddenState,
     pub(crate) num_waiting_animations: u16,
     pub(crate) disable_default_events: HashSet<EventListener>,
+    pub(crate) transform: Affine,
     pub(crate) debug_name: SmallVec<[String; 1]>,
 }
 
@@ -205,6 +206,7 @@ impl ViewState {
             is_hidden_state: IsHiddenState::None,
             num_waiting_animations: 0,
             disable_default_events: HashSet::new(),
+            transform: Affine::IDENTITY,
             debug_name: Default::default(),
         }
     }
