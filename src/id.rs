@@ -534,6 +534,11 @@ impl ViewId {
             .remove(&event);
     }
 
+    /// Set if the view should process pointer events
+    pub fn pointer_events(&self, pointer_events: bool) {
+        self.state().borrow_mut().pointer_events = pointer_events;
+    }
+
     /// Mark this view as a view that can be dragged
     ///
     /// You can customize the apearance of a view while dragging in the style

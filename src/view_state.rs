@@ -174,6 +174,7 @@ pub struct ViewState {
     pub(crate) is_hidden_state: IsHiddenState,
     pub(crate) num_waiting_animations: u16,
     pub(crate) disable_default_events: HashSet<EventListener>,
+    pub(crate) pointer_events: bool,
     pub(crate) transform: Affine,
     pub(crate) debug_name: SmallVec<[String; 1]>,
 }
@@ -206,6 +207,7 @@ impl ViewState {
             is_hidden_state: IsHiddenState::None,
             num_waiting_animations: 0,
             disable_default_events: HashSet::new(),
+            pointer_events: true,
             transform: Affine::IDENTITY,
             debug_name: Default::default(),
         }
