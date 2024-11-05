@@ -13,6 +13,7 @@ pub mod rich_text;
 pub mod slider;
 pub mod animation;
 pub mod draggable;
+pub mod dropped_file;
 
 use floem::{
     event::{Event, EventListener, EventPropagation},
@@ -44,6 +45,7 @@ fn app_view() -> impl IntoView {
         "Dropdown",
         "Animation",
         "Draggable",
+        "DroppedFile",
     ]
     .into_iter()
     .collect();
@@ -155,6 +157,7 @@ fn app_view() -> impl IntoView {
             "Dropdown" => dropdown::dropdown_view().into_any(),
             "Animation" => animation::animation_view().into_any(),
             "Draggable" => draggable::draggable_view().into_any(),
+            "DroppedFile" => dropped_file::dropped_file_view().into_any(),
             _ => label(|| "Not implemented".to_owned()).into_any(),
         },
     )
