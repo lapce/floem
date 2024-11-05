@@ -2,7 +2,7 @@ use floem_winit::{
     keyboard::{KeyCode, PhysicalKey},
     window::Theme,
 };
-use peniko::kurbo::{Point, Size};
+use peniko::kurbo::{Affine, Point, Size};
 
 use crate::{
     dropped_file::DroppedFileEvent,
@@ -247,57 +247,19 @@ impl Event {
         }
     }
 
-    pub fn scale(mut self, scale: f64) -> Event {
+    pub fn transform(mut self, transform: Affine) -> Event {
         match &mut self {
             Event::PointerDown(pointer_event) | Event::PointerUp(pointer_event) => {
-                pointer_event.pos.x /= scale;
-                pointer_event.pos.y /= scale;
+                pointer_event.pos = transform.inverse() * pointer_event.pos;
             }
             Event::PointerMove(pointer_event) => {
-                pointer_event.pos.x /= scale;
-                pointer_event.pos.y /= scale;
+                pointer_event.pos = transform.inverse() * pointer_event.pos;
             }
             Event::PointerWheel(pointer_event) => {
-                pointer_event.pos.x /= scale;
-                pointer_event.pos.y /= scale;
+                pointer_event.pos = transform.inverse() * pointer_event.pos;
             }
             Event::DroppedFile(event) => {
-                event.pos.x /= scale;
-                event.pos.y /= scale;
-            }
-            Event::PointerLeave
-            | Event::KeyDown(_)
-            | Event::KeyUp(_)
-            | Event::FocusGained
-            | Event::FocusLost
-            | Event::ImeEnabled
-            | Event::ImeDisabled
-            | Event::ImePreedit { .. }
-            | Event::ThemeChanged(_)
-            | Event::ImeCommit(_)
-            | Event::WindowClosed
-            | Event::WindowResized(_)
-            | Event::WindowMoved(_)
-            | Event::WindowMaximizeChanged(_)
-            | Event::WindowGotFocus
-            | Event::WindowLostFocus => {}
-        }
-        self
-    }
-
-    pub fn offset(mut self, offset: (f64, f64)) -> Event {
-        match &mut self {
-            Event::PointerDown(pointer_event) | Event::PointerUp(pointer_event) => {
-                pointer_event.pos -= offset;
-            }
-            Event::PointerMove(pointer_event) => {
-                pointer_event.pos -= offset;
-            }
-            Event::PointerWheel(pointer_event) => {
-                pointer_event.pos -= offset;
-            }
-            Event::DroppedFile(event) => {
-                event.pos -= offset;
+                event.pos = transform.inverse() * event.pos;
             }
             Event::PointerLeave
             | Event::KeyDown(_)
