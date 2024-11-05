@@ -11,6 +11,7 @@ pub mod lists;
 pub mod radio_buttons;
 pub mod rich_text;
 pub mod slider;
+pub mod animation;
 
 use floem::{
     event::{Event, EventListener, EventPropagation},
@@ -40,6 +41,7 @@ fn app_view() -> impl IntoView {
         "Clipboard",
         "Slider",
         "Dropdown",
+        "Animation",
     ]
     .into_iter()
     .collect();
@@ -149,6 +151,7 @@ fn app_view() -> impl IntoView {
             "Clipboard" => clipboard::clipboard_view().into_any(),
             "Slider" => slider::slider_view().into_any(),
             "Dropdown" => dropdown::dropdown_view().into_any(),
+            "Animation" => animation::animation_view().into_any(),
             _ => label(|| "Not implemented".to_owned()).into_any(),
         },
     )
