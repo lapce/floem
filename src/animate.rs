@@ -120,10 +120,10 @@ enum PropFrameKind {
     Computed(u16),
 }
 impl PropFrameKind {
-    fn inner(self) -> u16 {
+    const fn inner(self) -> u16 {
         match self {
-            PropFrameKind::Normal(val) => val,
-            PropFrameKind::Computed(val) => val,
+            Self::Normal(val) => val,
+            Self::Computed(val) => val,
         }
     }
 }
@@ -261,10 +261,10 @@ impl ReverseOnce {
     }
 
     /// return true if the animation should be reversing
-    pub fn is_rev(self) -> bool {
+    pub const fn is_rev(self) -> bool {
         match self {
-            ReverseOnce::Never => false,
-            ReverseOnce::Val(v) => v,
+            Self::Never => false,
+            Self::Val(v) => v,
         }
     }
 }
@@ -383,7 +383,7 @@ pub struct Animation {
 }
 impl Default for Animation {
     fn default() -> Self {
-        Animation {
+        Self {
             state: AnimState::Idle,
             effect_states: SmallVec::new(),
             auto_reverse: false,
@@ -526,7 +526,7 @@ impl Animation {
     ///
     /// The total duration of an animation will run until all animating props return `finished`.
     /// This is useful for spring animations which don't conform well to strict ending times.
-    pub fn duration(mut self, duration: Duration) -> Self {
+    pub const fn duration(mut self, duration: Duration) -> Self {
         self.duration = duration;
         self
     }
@@ -567,13 +567,13 @@ impl Animation {
     /// Set whether this animation should run when being created.
     ///
     /// I.e when being created by a dyn container or when being shown after being hidden.
-    pub fn run_on_create(mut self, run_on_create: bool) -> Self {
+    pub const fn run_on_create(mut self, run_on_create: bool) -> Self {
         self.run_on_create = run_on_create;
         self
     }
 
     /// Set whether this animation should run when being created and not when being removed.
-    pub fn only_on_create(mut self) -> Self {
+    pub const fn only_on_create(mut self) -> Self {
         self.run_on_remove = false;
         self.run_on_create = true;
         self
@@ -581,33 +581,33 @@ impl Animation {
 
     /// Set whether this animation should run when being removed.
     /// I.e when being removed by a dyn container or when being hidden.
-    pub fn run_on_remove(mut self, run_on_remove: bool) -> Self {
+    pub const fn run_on_remove(mut self, run_on_remove: bool) -> Self {
         self.run_on_remove = run_on_remove;
         self
     }
 
     /// Set whether this animation should run when being removed and not when being created.
-    pub fn only_on_remove(mut self) -> Self {
+    pub const fn only_on_remove(mut self) -> Self {
         self.run_on_remove = true;
         self.run_on_create = false;
         self
     }
 
     /// Set whether the properties from the final keyframe of this animation should be applied even when the animation is finished.
-    pub fn apply_when_finished(mut self, apply: bool) -> Self {
+    pub const fn apply_when_finished(mut self, apply: bool) -> Self {
         self.apply_when_finished = apply;
         self
     }
 
     /// Sets if this animation should auto reverse.
     /// If true, the animation will reach the final key frame twice as fast and then animate backwards
-    pub fn auto_reverse(mut self, auto_rev: bool) -> Self {
+    pub const fn auto_reverse(mut self, auto_rev: bool) -> Self {
         self.auto_reverse = auto_rev;
         self
     }
 
     /// Sets if this animation should be allowed to be reversed when the view is being removed or hidden.
-    pub fn reverse_on_exit(mut self, allow: bool) -> Self {
+    pub const fn reverse_on_exit(mut self, allow: bool) -> Self {
         if allow {
             self.reverse_once = ReverseOnce::Val(false);
         } else {
@@ -617,13 +617,13 @@ impl Animation {
     }
 
     /// Sets a delay for how long the animation should wait before starting.
-    pub fn delay(mut self, delay: Duration) -> Self {
+    pub const fn delay(mut self, delay: Duration) -> Self {
         self.delay = delay;
         self
     }
 
     /// Sets if the animation should the repeat forever.
-    pub fn repeat(mut self, repeat: bool) -> Self {
+    pub const fn repeat(mut self, repeat: bool) -> Self {
         self.repeat_mode = if repeat {
             RepeatMode::LoopForever
         } else {
@@ -633,7 +633,7 @@ impl Animation {
     }
 
     /// Sets the number of times the animation should repeat.
-    pub fn repeat_times(mut self, times: usize) -> Self {
+    pub const fn repeat_times(mut self, times: usize) -> Self {
         self.repeat_mode = RepeatMode::Times(times);
         self
     }
@@ -645,7 +645,7 @@ impl Animation {
     /// If you need more than 100 keyframes, increase this number, but be aware, the keyframe numbers will then be as a percentage of the maximum.
     ///
     /// *This does not move existing keyframes.*
-    pub fn max_key_frame(mut self, max: u16) -> Self {
+    pub const fn max_key_frame(mut self, max: u16) -> Self {
         self.max_key_frame_num = max;
         self
     }
@@ -752,7 +752,7 @@ impl Animation {
     }
 
     /// Matches the current state of the animation and returns the kind of state it is in.
-    pub fn state_kind(&self) -> AnimStateKind {
+    pub const fn state_kind(&self) -> AnimStateKind {
         match self.state {
             AnimState::Idle => AnimStateKind::Idle,
             AnimState::Stopped => AnimStateKind::Stopped,
@@ -1026,7 +1026,7 @@ impl Animation {
         }
     }
 
-    pub(crate) fn apply_folded(&mut self, computed_style: &mut Style) {
+    pub(crate) fn apply_folded(&self, computed_style: &mut Style) {
         computed_style.apply_mut(self.folded_style.clone());
     }
 
@@ -1157,7 +1157,7 @@ impl Animation {
     }
 
     /// returns true if the animation can advance, which either means the animation will transition states, or properties can be animated and updated
-    pub fn can_advance(&self) -> bool {
+    pub const fn can_advance(&self) -> bool {
         match self.state_kind() {
             AnimStateKind::PassFinished | AnimStateKind::PassInProgress | AnimStateKind::Idle => {
                 true
@@ -1167,14 +1167,14 @@ impl Animation {
     }
 
     /// returns true if the animation should auto reverse
-    pub fn is_auto_reverse(&self) -> bool {
+    pub const fn is_auto_reverse(&self) -> bool {
         self.auto_reverse
     }
 
     /// returns true if the internal folded style of the animation should be applied.
     ///
     /// This is used when the animation cannot advance but the folded style should still be applied.
-    pub(crate) fn should_apply_folded(&self) -> bool {
+    pub(crate) const fn should_apply_folded(&self) -> bool {
         self.apply_when_finished
             || match self.state_kind() {
                 AnimStateKind::Paused => true,

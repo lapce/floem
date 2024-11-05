@@ -33,15 +33,21 @@ fn app_view() -> impl IntoView {
             .style(|s| s.background(Color::RED).size(500, 100))
             .animation(move |_| animation.get().duration(10.seconds())),
         empty()
-            .style(|s| s.background(Color::BLUE).size(50, 100))
+            .style(|s| {
+                s.background(Color::BLUE)
+                    .size(50, 100)
+                    .border(5.)
+                    .border_color(Color::GREEN)
+            })
             .animation(move |_| animation.get())
             .animation(move |a| {
-                a.keyframe(100, |f| {
-                    f.style(|s| s.border(5.).border_color(Color::PURPLE))
-                })
-                .duration(5.seconds())
-                .repeat(true)
-                .auto_reverse(true)
+                a.keyframe(0, |f| f.computed_style())
+                    .keyframe(100, |f| {
+                        f.style(|s| s.border(5.).border_color(Color::PURPLE))
+                    })
+                    .duration(5.seconds())
+                    .repeat(true)
+                    .auto_reverse(true)
             }),
         empty()
             .style(|s| s.background(Color::GREEN).size(100, 300))
