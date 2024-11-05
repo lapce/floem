@@ -34,7 +34,7 @@ use taffy::{
 use crate::context::InteractionState;
 use crate::easing::*;
 use crate::responsive::{ScreenSize, ScreenSizeBp};
-use crate::unit::{Px, PxPct, PxPctAuto, UnitExt};
+use crate::unit::{Pct, Px, PxPct, PxPctAuto, UnitExt};
 use crate::view::{IntoView, View};
 use crate::views::{empty, stack, text, Decorators};
 
@@ -162,6 +162,14 @@ impl StylePropValue for Px {
     }
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         self.0.interpolate(&other.0, value).map(Px)
+    }
+}
+impl StylePropValue for Pct {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        Some(text(format!("{}%", self.0)).into_any())
+    }
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        self.0.interpolate(&other.0, value).map(Pct)
     }
 }
 impl StylePropValue for PxPctAuto {
@@ -1651,11 +1659,11 @@ define_builtin_props!(
     AspectRatio aspect_ratio: Option<f32> {} = None,
     ColGap col_gap nocb: PxPct {} = PxPct::Px(0.),
     RowGap row_gap nocb: PxPct {} = PxPct::Px(0.),
-    ScaleX scale_x: PxPct {} = PxPct::Pct(100.),
-    ScaleY scale_y: PxPct {} = PxPct::Pct(100.),
+    ScaleX scale_x: Pct {} = Pct(100.),
+    ScaleY scale_y: Pct {} = Pct(100.),
     TranslateX translate_x: PxPct {} = PxPct::Px(0.),
     TranslateY translate_y: PxPct {} = PxPct::Px(0.),
-    // Rotation rotate: Px {} = Px(0.),
+    Rotation rotate: Px {} = Px(0.),
 );
 
 prop_extractor! {
@@ -1711,9 +1719,11 @@ prop_extractor! {
         pub translate_x: TranslateX,
         pub translate_y: TranslateY,
 
-        // pub rotation: Rotation,
+        pub rotation: Rotation,
+
     }
 }
+
 impl LayoutProps {
     pub fn to_style(&self) -> Style {
         Style::new()
@@ -2261,7 +2271,7 @@ impl Style {
         self.set(ZIndex, Some(z_index))
     }
 
-    pub fn scale(self, scale: impl Into<PxPct>) -> Self {
+    pub fn scale(self, scale: impl Into<Pct>) -> Self {
         let val = scale.into();
         self.scale_x(val).scale_y(val)
     }
