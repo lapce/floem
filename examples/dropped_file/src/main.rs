@@ -21,7 +21,7 @@ fn app_view() -> impl IntoView {
         move |_| id.inspect(),
     )
     .on_event_stop(EventListener::PointerMove, |x| {
-        println!("PointerMove {:?}", x.point());
+        //println!("PointerMove {:?}", x.point());
     })
     .on_event_stop(EventListener::DroppedFile, |x| {
         println!("DroppedFile {:?}", x);
