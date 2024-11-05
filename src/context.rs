@@ -427,12 +427,15 @@ impl<'a> EventCx<'a> {
     pub(crate) fn offset_event(&self, id: ViewId, event: Event) -> Event {
         let state = id.state();
         let viewport = state.borrow().viewport;
+        let transform = state.borrow().transform;
 
         if let Some(layout) = id.get_layout() {
-            event.offset((
-                layout.location.x as f64 - viewport.map(|rect| rect.x0).unwrap_or(0.0),
-                layout.location.y as f64 - viewport.map(|rect| rect.y0).unwrap_or(0.0),
-            ))
+            event.transform(
+                Affine::translate((
+                    layout.location.x as f64 - viewport.map(|rect| rect.x0).unwrap_or(0.0),
+                    layout.location.y as f64 - viewport.map(|rect| rect.y0).unwrap_or(0.0),
+                )) * transform,
+            )
         } else {
             event
         }
@@ -634,6 +637,40 @@ impl<'a> StyleCx<'a> {
 
         view_state.borrow_mut().combined_style = modified;
 
+        let mut transform = Affine::IDENTITY;
+
+        let transform_x = match view_state.borrow().layout_props.translate_x() {
+            crate::unit::PxPct::Px(px) => px,
+            crate::unit::PxPct::Pct(pct) => pct / 100.,
+        };
+        let transform_y = match view_state.borrow().layout_props.translate_y() {
+            crate::unit::PxPct::Px(px) => px,
+            crate::unit::PxPct::Pct(pct) => pct / 100.,
+        };
+        transform *= Affine::translate(Vec2 {
+            x: transform_x,
+            y: transform_y,
+        });
+
+        let scale_x = view_state.borrow().layout_props.scale_x().0 / 100.;
+        let scale_y = view_state.borrow().layout_props.scale_y().0 / 100.;
+        let size = view_id.layout_rect();
+        let center_x = size.width() / 2.;
+        let center_y = size.height() / 2.;
+        transform *= Affine::translate(Vec2 {
+            x: center_x,
+            y: center_y,
+        });
+        transform *= Affine::scale_non_uniform(scale_x, scale_y);
+        let rotation = view_state.borrow().layout_props.rotation().0;
+        transform *= Affine::rotate(rotation);
+        transform *= Affine::translate(Vec2 {
+            x: -center_x,
+            y: -center_y,
+        });
+
+        view_state.borrow_mut().transform = transform;
+
         self.restore();
     }
 
@@ -800,6 +837,7 @@ impl<'a> ComputeLayoutCx<'a> {
         };
 
         view_state.borrow_mut().layout_rect = layout_rect;
+
         self.restore();
 
         Some(layout_rect)
@@ -1095,43 +1133,8 @@ impl<'a> PaintCx<'a> {
                 x: offset.x as f64,
                 y: offset.y as f64,
             });
+            self.transform *= id.state().borrow().transform;
 
-            let view_state = id.state();
-            let transform_x = match view_state.borrow().layout_props.translate_x() {
-                crate::unit::PxPct::Px(px) => px,
-                crate::unit::PxPct::Pct(pct) => pct / 100.,
-            };
-            let transform_y = match view_state.borrow().layout_props.translate_y() {
-                crate::unit::PxPct::Px(px) => px,
-                crate::unit::PxPct::Pct(pct) => pct / 100.,
-            };
-            self.transform *= Affine::translate(Vec2 {
-                x: transform_x,
-                y: transform_y,
-            });
-
-            let scale_x = match view_state.borrow().layout_props.scale_x() {
-                crate::unit::PxPct::Px(px) => px / layout.size.width as f64,
-                crate::unit::PxPct::Pct(pct) => pct / 100.,
-            };
-            let scale_y = match view_state.borrow().layout_props.scale_y() {
-                crate::unit::PxPct::Px(px) => px / layout.size.height as f64,
-                crate::unit::PxPct::Pct(pct) => pct / 100.,
-            };
-            let center_x = layout.size.width as f64 / 2.0;
-            let center_y = layout.size.height as f64 / 2.0;
-            self.transform *= Affine::translate(Vec2 {
-                x: center_x,
-                y: center_y,
-            });
-            self.transform *= Affine::scale_non_uniform(scale_x, scale_y);
-            self.transform *= Affine::translate(Vec2 {
-                x: -center_x,
-                y: -center_y,
-            });
-
-            // let rotation = view_state.borrow().layout_props.rotation().0;
-            // self.transform *= Affine::rotate(rotation);
             self.paint_state.renderer_mut().transform(self.transform);
 
             if let Some(rect) = self.clip.as_mut() {

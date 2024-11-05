@@ -230,7 +230,7 @@ impl Renderer for VelloRenderer {
         let pos: Point = pos.into();
         let transform = self
             .transform
-            .then_translate((pos.x, pos.y).into())
+            .pre_translate((pos.x, pos.y).into())
             .then_scale(self.window_scale);
 
         for line in layout.layout_runs() {

@@ -7,7 +7,7 @@ use floem_renderer::tiny_skia::{
 };
 use floem_renderer::Img;
 use floem_renderer::Renderer;
-use peniko::kurbo::{PathEl, Size};
+use peniko::kurbo::{self, PathEl, Size, Vec2};
 use peniko::{
     kurbo::{Affine, Point, Rect, Shape},
     BrushRef, Color, GradientKind,
@@ -112,7 +112,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
         self.scale = scale;
     }
 
-    pub fn scale(&self) -> f64 {
+    pub const fn scale(&self) -> f64 {
         self.scale
     }
 
@@ -218,8 +218,8 @@ impl<W> TinySkiaRenderer<W> {
         clip.intersect(&rect)
     }
 
-    /// Renders the pixmap at the position without transforming it.
-    fn render_pixmap_direct(&mut self, pixmap: &Pixmap, x: f32, y: f32) {
+    /// Renders the pixmap at the position and transforms it with the given transform.
+    fn render_pixmap_direct(&mut self, pixmap: &Pixmap, x: f32, y: f32, transform: kurbo::Affine) {
         let rect = try_ret!(tiny_skia::Rect::from_xywh(
             x,
             y,
@@ -237,9 +237,19 @@ impl<W> TinySkiaRenderer<W> {
             ..Default::default()
         };
 
+        let transform = transform.as_coeffs();
+        let scale = self.scale as f32;
+        let transform = Transform::from_row(
+            transform[0] as f32,
+            transform[1] as f32,
+            transform[2] as f32,
+            transform[3] as f32,
+            transform[4] as f32,
+            transform[5] as f32,
+        )
+        .post_scale(scale, scale);
         if let Some(rect) = self.clip_rect(rect) {
-            self.pixmap
-                .fill_rect(rect, &paint, Transform::identity(), None);
+            self.pixmap.fill_rect(rect, &paint, transform, None);
         }
     }
 
@@ -423,6 +433,11 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
         let offset = self.transform.translation();
         let pos: Point = pos.into();
         let clip = self.clip;
+
+        let transform = self.transform
+            * Affine::translate(Vec2::new(-offset.x, -offset.y))
+            * Affine::scale(1.0 / self.scale);
+
         for line in layout.layout_runs() {
             if let Some(rect) = clip {
                 let y = pos.y + offset.y + line.line_y as f64;
@@ -433,11 +448,9 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
                     break;
                 }
             }
-
             'line_loop: for glyph_run in line.glyphs {
                 let x = glyph_run.x + pos.x as f32 + offset.x as f32;
                 let y = line.line_y + pos.y as f32 + offset.y as f32;
-
                 if let Some(rect) = clip {
                     if ((x + glyph_run.w) as f64) < rect.x0 {
                         continue;
@@ -449,6 +462,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
                 let glyph_x = x * self.scale as f32;
                 let glyph_y = (y * self.scale as f32).round();
                 let font_size = (glyph_run.font_size * self.scale as f32).round() as u32;
+
                 let (cache_key, new_x, new_y) = CacheKey::new(
                     glyph_run.font_id,
                     glyph_run.glyph_id,
@@ -457,20 +471,17 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
                     glyph_run.cache_key_flags,
                 );
 
-                let glyph_x = new_x as f32;
-                let glyph_y = new_y as f32;
+                let color = glyph_run
+                    .color_opt
+                    .map_or(Color::BLACK, |c| Color::rgba8(c.r(), c.g(), c.b(), c.a()));
 
-                let color = match glyph_run.color_opt {
-                    Some(c) => Color::rgba8(c.r(), c.g(), c.b(), c.a()),
-                    None => Color::BLACK,
-                };
                 let pixmap = self.cache_glyph(cache_key, color);
-
                 if let Some(glyph) = pixmap {
                     self.render_pixmap_direct(
                         &glyph.pixmap,
-                        glyph_x + glyph.left,
-                        glyph_y - glyph.top,
+                        new_x as f32 + glyph.left,
+                        new_y as f32 - glyph.top,
+                        transform,
                     );
                 }
             }
@@ -555,8 +566,17 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
             shape.bounding_box()
         };
 
-        let offset = self.transform.translation();
-        self.clip = Some(rect + offset);
+        let p0 = self.transform * Point::new(rect.x0, rect.y0);
+        let p1 = self.transform * Point::new(rect.x1, rect.y0);
+        let p2 = self.transform * Point::new(rect.x0, rect.y1);
+        let p3 = self.transform * Point::new(rect.x1, rect.y1);
+        // Find the bounding box of transformed points
+        let x0 = p0.x.min(p1.x).min(p2.x).min(p3.x);
+        let y0 = p0.y.min(p1.y).min(p2.y).min(p3.y);
+        let x1 = p0.x.max(p1.x).max(p2.x).max(p3.x);
+        let y1 = p0.y.max(p1.y).max(p2.y).max(p3.y);
+
+        self.clip = Some(Rect::new(x0, y0, x1, y1));
 
         self.mask.clear();
         let path = try_ret!(self.shape_to_path(shape));

@@ -201,7 +201,7 @@ impl WindowHandle {
 
     pub fn event(&mut self, event: Event) {
         set_current_view(self.id);
-        let event = event.scale(self.app_state.scale);
+        let event = event.transform(Affine::scale(self.app_state.scale));
 
         let mut cx = EventCx {
             app_state: &mut self.app_state,
@@ -297,14 +297,11 @@ impl WindowHandle {
                 let window_origin = id.state().borrow().window_origin;
                 let layout = id.get_layout().unwrap_or_default();
                 let viewport = id.state().borrow().viewport.unwrap_or_default();
-                cx.unconditional_view_event(
-                    id,
-                    event.clone().offset((
-                        window_origin.x - layout.location.x as f64 + viewport.x0,
-                        window_origin.y - layout.location.y as f64 + viewport.y0,
-                    )),
-                    true,
-                );
+                let transform = Affine::translate((
+                    window_origin.x - layout.location.x as f64 + viewport.x0,
+                    window_origin.y - layout.location.y as f64 + viewport.y0,
+                ));
+                cx.unconditional_view_event(id, event.clone().transform(transform), true);
             }
 
             if let Event::PointerUp(_) = &event {
