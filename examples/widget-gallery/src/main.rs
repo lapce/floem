@@ -1,8 +1,11 @@
+pub mod animation;
 pub mod buttons;
 pub mod checkbox;
 pub mod clipboard;
 pub mod context_menu;
+pub mod draggable;
 pub mod dropdown;
+pub mod dropped_file;
 pub mod form;
 pub mod images;
 pub mod inputs;
@@ -40,6 +43,9 @@ fn app_view() -> impl IntoView {
         "Clipboard",
         "Slider",
         "Dropdown",
+        "Animation",
+        "Draggable",
+        "DroppedFile",
     ]
     .into_iter()
     .collect();
@@ -149,6 +155,9 @@ fn app_view() -> impl IntoView {
             "Clipboard" => clipboard::clipboard_view().into_any(),
             "Slider" => slider::slider_view().into_any(),
             "Dropdown" => dropdown::dropdown_view().into_any(),
+            "Animation" => animation::animation_view().into_any(),
+            "Draggable" => draggable::draggable_view().into_any(),
+            "DroppedFile" => dropped_file::dropped_file_view().into_any(),
             _ => label(|| "Not implemented".to_owned()).into_any(),
         },
     )
