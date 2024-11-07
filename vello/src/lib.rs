@@ -202,18 +202,29 @@ impl Renderer for VelloRenderer {
 
     fn fill<'b>(&mut self, path: &impl Shape, brush: impl Into<BrushRef<'b>>, blur_radius: f64) {
         let brush: BrushRef<'b> = brush.into();
-        if blur_radius > 0. {
+        if let Some(rounded) = path.as_rounded_rect() {
             let BrushRef::Solid(color) = brush else {
                 return;
             };
-            let rect = path.as_rounded_rect().unwrap_or_default().rect();
-
+            let rect_radius = rounded.radii().top_left;
+            let rect = rounded.rect();
             self.scene.draw_blurred_rounded_rect(
                 self.transform.then_scale(self.window_scale),
                 rect,
                 color,
+                rect_radius,
                 blur_radius,
-                3.,
+            );
+        } else if let Some(rect) = path.as_rect() {
+            let BrushRef::Solid(color) = brush else {
+                return;
+            };
+            self.scene.draw_blurred_rounded_rect(
+                self.transform.then_scale(self.window_scale),
+                rect,
+                color,
+                0.,
+                blur_radius,
             );
         } else {
             self.scene.fill(
