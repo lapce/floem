@@ -1,10 +1,7 @@
 use floem::{
     keyboard::{Key, NamedKey},
-    peniko::Color,
-    reactive::{create_rw_signal, RwSignal, SignalGet, SignalUpdate},
+    prelude::*,
     style::CursorStyle,
-    views::{dyn_stack, label, Decorators},
-    IntoView, View,
 };
 
 fn sortable_item(
@@ -35,7 +32,7 @@ fn sortable_item(
                 floem::event::EventListener::PointerDown,
                 |_| { /* Disable dragging for this view */ },
             ),
-        label(|| "drag me").style(|s| {
+        text("drag me").style(|s| {
             s.selectable(false)
                 .padding(2)
                 .cursor(CursorStyle::RowResize)
@@ -48,16 +45,14 @@ fn sortable_item(
         })
         .on_event(floem::event::EventListener::DragOver, move |_| {
             if dragger_id.get_untracked() != item_id {
-                let dragger_pos = sortable_items
-                    .get()
-                    .iter()
-                    .position(|id| *id == dragger_id.get_untracked())
-                    .unwrap();
+                let dragger_pos = sortable_items.with(|items| {
+                    items
+                        .iter()
+                        .position(|id| *id == dragger_id.get_untracked())
+                        .unwrap()
+                });
                 let hover_pos = sortable_items
-                    .get()
-                    .iter()
-                    .position(|id| *id == item_id)
-                    .unwrap();
+                    .with(|items| items.iter().position(|id| *id == item_id).unwrap());
 
                 sortable_items.update(|items| {
                     items.remove(dragger_pos);
