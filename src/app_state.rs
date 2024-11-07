@@ -44,6 +44,7 @@ pub struct AppState {
     /// regardless of the status of the animation
     pub(crate) cursor: Option<CursorStyle>,
     pub(crate) last_cursor: CursorIcon,
+    pub(crate) last_cursor_location: Point,
     pub(crate) keyboard_navigation: bool,
     pub(crate) window_menu: HashMap<usize, Box<dyn Fn()>>,
     pub(crate) context_menu: HashMap<usize, Box<dyn Fn()>>,
@@ -76,6 +77,7 @@ impl AppState {
             hovered: HashSet::new(),
             cursor: None,
             last_cursor: CursorIcon::Default,
+            last_cursor_location: Default::default(),
             keyboard_navigation: false,
             grid_bps: GridBreakpoints::default(),
             window_menu: HashMap::new(),

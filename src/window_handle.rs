@@ -207,7 +207,12 @@ impl WindowHandle {
             app_state: &mut self.app_state,
         };
 
-        let is_pointer_move = matches!(&event, Event::PointerMove(_));
+        let is_pointer_move = if let Event::PointerMove(pme) = &event {
+            cx.app_state.last_cursor_location = pme.pos;
+            true
+        } else {
+            false
+        };
         let (was_hovered, was_dragging_over) = if is_pointer_move {
             cx.app_state.cursor = None;
             let was_hovered = std::mem::take(&mut cx.app_state.hovered);

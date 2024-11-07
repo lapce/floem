@@ -9,7 +9,7 @@ pub trait Easing: std::fmt::Debug {
         None
     }
     fn finished(&self, time: f64) -> bool {
-        time >= 1. || time <= 0.
+        !(0. ..1.).contains(&time)
     }
 }
 
@@ -213,7 +213,7 @@ impl Spring {
         }
     }
 
-    const THRESHOLD: f64 = 0.005;
+    pub const THRESHOLD: f64 = 0.005;
     pub fn finished(&self, time: f64) -> bool {
         let position = self.eval(time);
         let velocity = self.velocity(time);
