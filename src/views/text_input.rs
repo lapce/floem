@@ -12,8 +12,8 @@ use floem_reactive::{create_rw_signal, SignalGet, SignalUpdate, SignalWith};
 use taffy::prelude::{Layout, NodeId};
 
 use floem_renderer::{text::Cursor, Renderer};
-use floem_winit::keyboard::{Key, NamedKey, SmolStr};
 use unicode_segmentation::UnicodeSegmentation;
+use winit::keyboard::{Key, NamedKey, SmolStr};
 
 use crate::{peniko::Color, style::Style, view::View};
 

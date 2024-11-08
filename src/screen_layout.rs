@@ -1,8 +1,8 @@
 //! Tools for computing screen locations from locations within a View and
 //! vice-versa.
 use crate::ViewId;
-use floem_winit::window::{Window, WindowId};
 use peniko::kurbo::{Point, Rect, Size};
+use winit::window::{Window, WindowId};
 
 use crate::window_tracking::{
     monitor_bounds_for_monitor, rect_from_physical_bounds_for_window, with_window_id_and_window,

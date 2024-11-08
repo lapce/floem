@@ -1,7 +1,3 @@
-use std::{collections::HashMap, mem, rc::Rc};
-
-use floem_reactive::SignalUpdate;
-
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 #[cfg(target_arch = "wasm32")]
@@ -10,14 +6,15 @@ use web_time::Instant;
 #[cfg(target_arch = "wasm32")]
 use wgpu::web_sys;
 
-use floem_winit::{
+use floem_reactive::SignalUpdate;
+use peniko::kurbo::{Point, Size};
+use std::{collections::HashMap, mem, rc::Rc};
+use winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::WindowEvent,
-    event_loop::{ControlFlow, EventLoopProxy, EventLoopWindowTarget},
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoopProxy},
     window::WindowId,
 };
-
-use peniko::kurbo::{Point, Size};
 
 use crate::{
     action::{Timer, TimerToken},
@@ -32,7 +29,7 @@ use crate::{
 };
 
 pub(crate) struct ApplicationHandle {
-    window_handles: HashMap<floem_winit::window::WindowId, WindowHandle>,
+    window_handles: HashMap<winit::window::WindowId, WindowHandle>,
     timers: HashMap<TimerToken, Timer>,
 }
 
@@ -131,9 +128,9 @@ impl ApplicationHandle {
 
     pub(crate) fn handle_window_event(
         &mut self,
-        window_id: floem_winit::window::WindowId,
+        window_id: winit::window::WindowId,
         event: WindowEvent,
-        event_loop: &EventLoopWindowTarget<UserEvent>,
+        event_loop: &dyn ActiveEventLoop,
     ) {
         let window_handle = match self.window_handles.get_mut(&window_id) {
             Some(window_handle) => window_handle,
@@ -276,8 +273,8 @@ impl ApplicationHandle {
 
     pub(crate) fn new_window(
         &mut self,
-        event_loop: &EventLoopWindowTarget<UserEvent>,
-        event_proxy: EventLoopProxy<UserEvent>,
+        event_loop: &dyn ActiveEventLoop,
+        event_proxy: EventLoopProxy,
         view_fn: Box<dyn FnOnce(WindowId) -> Box<dyn View>>,
         #[allow(unused_variables)] WindowConfig {
             size,
@@ -300,7 +297,7 @@ impl ApplicationHandle {
     ) {
         let logical_size = size.map(|size| LogicalSize::new(size.width, size.height));
 
-        let mut window_builder = floem_winit::window::WindowBuilder::new()
+        let mut window_attributes = winit::window::WindowAttributes::default()
             .with_title(title)
             .with_decorations(!undecorated)
             .with_transparent(transparent)
@@ -312,8 +309,8 @@ impl ApplicationHandle {
 
         #[cfg(target_arch = "wasm32")]
         {
-            use floem_winit::platform::web::WindowBuilderExtWebSys;
             use wgpu::web_sys::wasm_bindgen::JsCast;
+            use winit::platform::web::WindowBuilderExtWebSys;
 
             let parent_id = web_config.expect("Specify an id for the canvas.").canvas_id;
             let doc = web_sys::window()
@@ -335,11 +332,11 @@ impl ApplicationHandle {
         };
 
         if let Some(Point { x, y }) = position {
-            window_builder = window_builder.with_position(LogicalPosition::new(x, y));
+            window_attributes = window_attributes.with_position(LogicalPosition::new(x, y));
         }
 
         if let Some(logical_size) = logical_size {
-            window_builder = window_builder.with_inner_size(logical_size);
+            window_attributes = window_attributes.with_inner_size(logical_size);
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -355,68 +352,69 @@ impl ApplicationHandle {
 
         #[cfg(target_os = "macos")]
         if !show_titlebar {
-            use floem_winit::platform::macos::WindowBuilderExtMacOS;
-            window_builder = window_builder
-                .with_movable(false)
+            use winit::platform::macos::WindowAttributesExtMacOS;
+            window_attributes = window_attributes
+                .with_movable_by_window_background(false)
                 .with_title_hidden(true)
                 .with_titlebar_transparent(true)
-                .with_fullsize_content_view(true)
-                .with_traffic_lights_offset(11.0, 16.0);
+                .with_fullsize_content_view(true);
+            // .with_traffic_lights_offset(11.0, 16.0);
         }
 
         #[cfg(target_os = "macos")]
         if undecorated {
-            use floem_winit::platform::macos::WindowBuilderExtMacOS;
+            use winit::platform::macos::WindowAttributesExtMacOS;
             // A palette-style window that will only obtain window focus but
             // not actually propagate the first mouse click it receives is
             // very unlikely to be expected behavior - these typically are
             // used for something that offers a quick choice and are closed
             // in a single pointer gesture.
-            window_builder = window_builder.with_accepts_first_mouse(true);
+            window_attributes = window_attributes.with_accepts_first_mouse(true);
         }
 
         #[cfg(target_os = "macos")]
         if let Some(mac) = mac_os_config {
-            use floem_winit::platform::macos::WindowBuilderExtMacOS;
+            use winit::platform::macos::WindowAttributesExtMacOS;
             if let Some(val) = mac.movable_by_window_background {
-                window_builder = window_builder.with_movable_by_window_background(val);
+                window_attributes = window_attributes.with_movable_by_window_background(val);
             }
             if let Some(val) = mac.titlebar_transparent {
-                window_builder = window_builder.with_titlebar_transparent(val);
+                window_attributes = window_attributes.with_titlebar_transparent(val);
             }
             if let Some(val) = mac.titlebar_hidden {
-                window_builder = window_builder.with_titlebar_hidden(val);
+                window_attributes = window_attributes.with_titlebar_hidden(val);
             }
             if let Some(val) = mac.full_size_content_view {
-                window_builder = window_builder.with_fullsize_content_view(val);
+                window_attributes = window_attributes.with_fullsize_content_view(val);
             }
             if let Some(val) = mac.movable {
-                window_builder = window_builder.with_movable(val);
+                window_attributes = window_attributes.with_movable_by_window_background(val);
             }
             if let Some((x, y)) = mac.traffic_lights_offset {
-                window_builder = window_builder.with_traffic_lights_offset(x, y);
+                // TODO
+                // window_attributes = window_attributes.with_traffic_lights_offset(x, y);
             }
             if let Some(val) = mac.accepts_first_mouse {
-                window_builder = window_builder.with_accepts_first_mouse(val);
+                window_attributes = window_attributes.with_accepts_first_mouse(val);
             }
             if let Some(val) = mac.option_as_alt {
-                window_builder = window_builder.with_option_as_alt(val.into());
+                window_attributes = window_attributes.with_option_as_alt(val.into());
             }
             if let Some(title) = mac.tabbing_identifier {
-                window_builder = window_builder.with_tabbing_identifier(title.as_str());
+                window_attributes = window_attributes.with_tabbing_identifier(title.as_str());
             }
             if let Some(disallow_hidpi) = mac.disallow_high_dpi {
-                window_builder = window_builder.with_disallow_hidpi(disallow_hidpi);
+                window_attributes = window_attributes.with_disallow_hidpi(disallow_hidpi);
             }
             if let Some(shadow) = mac.has_shadow {
-                window_builder = window_builder.with_has_shadow(shadow);
+                window_attributes = window_attributes.with_has_shadow(shadow);
             }
             if let Some(hide) = mac.titlebar_buttons_hidden {
-                window_builder = window_builder.with_titlebar_buttons_hidden(hide)
+                window_attributes = window_attributes.with_titlebar_buttons_hidden(hide)
             }
         }
 
-        let Ok(window) = window_builder.build(event_loop) else {
+        let Ok(window) = event_loop.create_window(window_attributes) else {
             return;
         };
         let window_id = window.id();
@@ -435,8 +433,8 @@ impl ApplicationHandle {
     fn close_window(
         &mut self,
         window_id: WindowId,
-        #[cfg(target_os = "macos")] _event_loop: &EventLoopWindowTarget<UserEvent>,
-        #[cfg(not(target_os = "macos"))] event_loop: &EventLoopWindowTarget<UserEvent>,
+        #[cfg(target_os = "macos")] _event_loop: &dyn ActiveEventLoop,
+        #[cfg(not(target_os = "macos"))] event_loop: &dyn ActiveEventLoop,
     ) {
         if let Some(handle) = self.window_handles.get_mut(&window_id) {
             handle.window = None;
@@ -472,7 +470,7 @@ impl ApplicationHandle {
         }
     }
 
-    fn request_timer(&mut self, timer: Timer, event_loop: &EventLoopWindowTarget<UserEvent>) {
+    fn request_timer(&mut self, timer: Timer, event_loop: &dyn ActiveEventLoop) {
         self.timers.insert(timer.token, timer);
         self.fire_timer(event_loop);
     }
@@ -481,7 +479,7 @@ impl ApplicationHandle {
         self.timers.remove(timer);
     }
 
-    fn fire_timer(&mut self, event_loop: &EventLoopWindowTarget<UserEvent>) {
+    fn fire_timer(&mut self, event_loop: &dyn ActiveEventLoop) {
         if self.timers.is_empty() {
             return;
         }
@@ -492,7 +490,7 @@ impl ApplicationHandle {
         }
     }
 
-    pub(crate) fn handle_timer(&mut self, event_loop: &EventLoopWindowTarget<UserEvent>) {
+    pub(crate) fn handle_timer(&mut self, event_loop: &dyn ActiveEventLoop) {
         let now = Instant::now();
         let tokens: Vec<TimerToken> = self
             .timers

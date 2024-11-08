@@ -4,15 +4,15 @@
 //! and use the methods that look up the `Window` for that id to retrieve information
 //! such as screen position.
 use crate::ViewId;
-use floem_winit::{
-    dpi::{PhysicalPosition, PhysicalSize},
-    monitor::MonitorHandle,
-    window::{Window, WindowId},
-};
 use peniko::kurbo::{Point, Rect};
 use std::{
     collections::HashMap,
     sync::{Arc, OnceLock, RwLock},
+};
+use winit::{
+    dpi::{PhysicalPosition, PhysicalSize},
+    monitor::MonitorHandle,
+    window::{Window, WindowId},
 };
 
 static WINDOW_FOR_WINDOW_AND_ROOT_IDS: OnceLock<RwLock<WindowMapping>> = OnceLock::new();
@@ -67,7 +67,11 @@ impl WindowMapping {
             })
     }
 
-    fn with_window<F: FnOnce(&Arc<Window>) -> T, T>(&self, window: &WindowId, f: F) -> Option<T> {
+    fn with_window<F: FnOnce(&Arc<dyn Window>) -> T, T>(
+        &self,
+        window: &WindowId,
+        f: F,
+    ) -> Option<T> {
         self.window_for_window_id.get(window).map(f)
     }
 

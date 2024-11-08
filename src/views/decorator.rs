@@ -5,8 +5,8 @@
 //! The decorator trait is the primary interface for extending the appearance and functionality of ['View']s.
 
 use floem_reactive::{create_effect, create_updater, SignalUpdate};
-use floem_winit::keyboard::Key;
 use peniko::kurbo::{Point, Rect};
+use winit::keyboard::Key;
 
 use crate::{
     action::{set_window_menu, set_window_scale, set_window_title},

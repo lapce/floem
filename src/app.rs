@@ -1,14 +1,14 @@
 use std::{cell::RefCell, rc::Rc};
 
 use floem_reactive::WriteSignal;
-use floem_winit::{
-    event_loop::{ControlFlow, EventLoop, EventLoopBuilder, EventLoopProxy},
+use parking_lot::Mutex;
+use winit::{
+    application::ApplicationHandler,
+    event::WindowEvent,
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopBuilder, EventLoopProxy},
     monitor::MonitorHandle,
     window::WindowId,
 };
-use parking_lot::Mutex;
-#[allow(deprecated)]
-use raw_window_handle::HasRawDisplayHandle;
 
 use crate::{
     action::{Timer, TimerToken},
@@ -22,7 +22,7 @@ use crate::{
 
 type AppEventCallback = dyn Fn(AppEvent);
 
-static EVENT_LOOP_PROXY: Mutex<Option<EventLoopProxy<UserEvent>>> = Mutex::new(None);
+static EVENT_LOOP_PROXY: Mutex<Option<EventLoopProxy>> = Mutex::new(None);
 
 thread_local! {
     pub(crate) static APP_UPDATE_EVENTS: RefCell<Vec<AppUpdateEvent>> = Default::default();
@@ -100,12 +100,28 @@ pub(crate) fn add_app_update_event(event: AppUpdateEvent) {
 pub struct Application {
     handle: Option<ApplicationHandle>,
     event_listener: Option<Box<AppEventCallback>>,
-    event_loop: EventLoop<UserEvent>,
+    event_loop: Option<EventLoop>,
 }
 
 impl Default for Application {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl ApplicationHandler for Application {
+    fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
+        todo!()
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &dyn ActiveEventLoop,
+        window_id: WindowId,
+        event: WindowEvent,
+    ) {
+        let handle = self.handle.as_mut().unwrap();
+        handle.handle_window_event(window_id, event, event_loop);
     }
 }
 
@@ -155,6 +171,11 @@ impl Application {
     }
 
     pub fn run(mut self) {
+        let event_loop = self.event_loop.take().unwrap();
+        event_loop.run_app(self);
+    }
+
+    pub fn old_run(mut self) {
         let mut handle = self.handle.take().unwrap();
         handle.idle();
         let event_loop_proxy = self.event_loop.create_proxy();

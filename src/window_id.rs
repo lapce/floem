@@ -9,11 +9,11 @@ use super::window_tracking::{
     monitor_bounds, root_view_id, window_inner_screen_bounds, window_inner_screen_position,
     window_outer_screen_bounds, window_outer_screen_position,
 };
-use floem_winit::{
+use peniko::kurbo::{Point, Rect, Size};
+use winit::{
     dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize, Pixel},
     window::{UserAttentionType, Window, WindowId},
 };
-use peniko::kurbo::{Point, Rect, Size};
 
 // Using thread_local for consistency with static vars in updates.rs, but I suspect these
 // are thread_local not because thread-locality is desired, but only because static mutability is
@@ -259,7 +259,7 @@ impl WindowIdExt for WindowId {
     fn is_document_edited(&self) -> bool {
         with_window(
             self,
-            floem_winit::platform::macos::WindowExtMacOS::is_document_edited,
+            winit::platform::macos::WindowExtMacOS::is_document_edited,
         )
         .unwrap_or(false)
     }
@@ -303,7 +303,7 @@ pub(crate) fn process_window_updates(id: &WindowId) -> bool {
                 WindowUpdate::DocumentEdited(edited) => {
                     #[cfg(target_os = "macos")]
                     with_window(id, |window| {
-                        use floem_winit::platform::macos::WindowExtMacOS;
+                        use winit::platform::macos::WindowExtMacOS;
                         window.set_document_edited(edited);
                     });
                 }

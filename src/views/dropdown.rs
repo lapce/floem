@@ -9,11 +9,11 @@ use std::{any::Any, rc::Rc};
 use floem_reactive::{
     as_child_of_current_scope, create_effect, create_updater, Scope, SignalGet, SignalUpdate,
 };
-use floem_winit::keyboard::{Key, NamedKey};
 use peniko::{
     kurbo::{Point, Rect},
     Color,
 };
+use winit::keyboard::{Key, NamedKey};
 
 use crate::{
     action::{add_overlay, remove_overlay},

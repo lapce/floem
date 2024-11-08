@@ -16,8 +16,6 @@ use crate::{new_window, style, Clipboard};
 use floem_reactive::{
     create_effect, create_rw_signal, create_signal, RwSignal, Scope, SignalGet, SignalUpdate,
 };
-use floem_winit::keyboard::{self, NamedKey};
-use floem_winit::window::WindowId;
 use peniko::kurbo::{Point, Rect, Size};
 use peniko::Color;
 use slotmap::Key;
@@ -25,6 +23,8 @@ use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::rc::Rc;
+use winit::keyboard::{self, NamedKey};
+use winit::window::WindowId;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
