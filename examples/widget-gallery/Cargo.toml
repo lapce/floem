@@ -7,3 +7,4 @@ edition = "2021"
 im.workspace = true
 floem = { path = "../.." , features = ["rfd-async-std"] }
 strum = { version = "0.25.0", features = ["derive"] }
+files = { path = "../files/" }

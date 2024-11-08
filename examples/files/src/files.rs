@@ -2,11 +2,10 @@ use floem::{
     action::{open_file, save_as},
     file::{FileDialogOptions, FileInfo, FileSpec},
     reactive::{create_rw_signal, SignalGet, SignalUpdate},
+    text::Weight,
     views::{button, h_stack, label, v_stack, Decorators},
     IntoView,
 };
-
-use crate::form::form_item;
 
 pub fn files_view() -> impl IntoView {
     let files = create_rw_signal("".to_string());
@@ -86,20 +85,22 @@ pub fn files_view() -> impl IntoView {
             );
         }),
     ))
+    .style(|s| s.justify_center());
+
+    v_stack((
+        view,
+        h_stack((
+            "Path(s): ".style(|s| s.font_weight(Weight::BOLD)),
+            label(move || files.get()),
+        )),
+    ))
     .style(|s| {
         s.row_gap(5)
             .width_full()
             .height_full()
             .items_center()
             .justify_center()
-    });
-
-    v_stack((
-        view,
-        form_item("Files:".to_string(), 40.0, move || {
-            label(move || files.get())
-        }),
-    ))
+    })
 }
 
 fn display_files(file: FileInfo) -> String {

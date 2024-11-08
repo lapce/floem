@@ -6,7 +6,6 @@ pub mod context_menu;
 pub mod draggable;
 pub mod dropdown;
 pub mod dropped_file;
-pub mod files;
 pub mod form;
 pub mod images;
 pub mod inputs;
@@ -16,6 +15,7 @@ pub mod radio_buttons;
 pub mod rich_text;
 pub mod slider;
 
+use files;
 use floem::{
     event::{Event, EventListener, EventPropagation},
     keyboard::{Key, NamedKey},
