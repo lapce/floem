@@ -797,129 +797,140 @@ fn capture_view(
             )
         })
         .unwrap_or_default();
+    let size = capture_.window_size;
 
     let contain_ids = create_rw_signal((0, Vec::<ViewId>::new()));
 
-    let image = img_dynamic(move || window.clone().unwrap())
-        .style(move |s| {
-            s.margin(5.0)
-                .border(1.)
-                .border_color(Color::BLACK.multiply_alpha(0.5))
-                .width(image_width + 2.0)
-                .height(image_height + 2.0)
-                .margin_bottom(21.0)
-                .margin_right(21.0)
-        })
-        .keyboard_navigable()
-        .on_event_stop(EventListener::KeyUp, {
-            move |event: &Event| {
-                if let Event::KeyUp(key) = event {
-                    match key.key.logical_key {
-                        keyboard::Key::Named(NamedKey::ArrowUp) => {
-                            let id = contain_ids.try_update(|(match_index, ids)| {
-                                if !ids.is_empty() {
-                                    if *match_index == 0 {
-                                        *match_index = ids.len() - 1;
-                                    } else {
-                                        *match_index -= 1;
-                                    }
+    let image = if let Some(window) = window {
+        img_dynamic(move || window.clone()).into_any()
+    } else {
+        empty()
+            .style(move |s| s.min_width(size.width).min_height(size.height))
+            .into_any()
+    }
+    .style(move |s| {
+        s.margin(5.0)
+            .border(1.)
+            .border_color(Color::BLACK.multiply_alpha(0.5))
+            .width(image_width + 2.0)
+            .height(image_height + 2.0)
+            .margin_bottom(21.0)
+            .margin_right(21.0)
+    })
+    .keyboard_navigable()
+    .on_event_stop(EventListener::KeyUp, {
+        move |event: &Event| {
+            if let Event::KeyUp(key) = event {
+                match key.key.logical_key {
+                    keyboard::Key::Named(NamedKey::ArrowUp) => {
+                        let id = contain_ids.try_update(|(match_index, ids)| {
+                            if !ids.is_empty() {
+                                if *match_index == 0 {
+                                    *match_index = ids.len() - 1;
+                                } else {
+                                    *match_index -= 1;
                                 }
-                                ids.get(*match_index).copied()
-                            });
-                            if let Some(Some(id)) = id {
-                                update_select_view_id(id, &capture_view, false);
                             }
-                        }
-                        keyboard::Key::Named(NamedKey::ArrowDown) => {
-                            let id = contain_ids.try_update(|(match_index, ids)| {
-                                if !ids.is_empty() {
-                                    *match_index = (*match_index + 1) % ids.len();
-                                }
-                                ids.get(*match_index).copied()
-                            });
-                            if let Some(Some(id)) = id {
-                                update_select_view_id(id, &capture_view, false);
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        })
-        .on_event_stop(EventListener::PointerUp, {
-            let capture_ = capture_.clone();
-            move |event: &Event| {
-                if let Event::PointerUp(e) = event {
-                    let find_ids = capture_.root.find_all_by_pos(e.pos);
-                    if !find_ids.is_empty() {
-                        let first = contain_ids.try_update(|(index, ids)| {
-                            *index = 0;
-                            let _ = std::mem::replace(ids, find_ids);
-                            ids.first().copied()
+                            ids.get(*match_index).copied()
                         });
-                        if let Some(Some(id)) = first {
+                        if let Some(Some(id)) = id {
                             update_select_view_id(id, &capture_view, false);
                         }
                     }
+                    keyboard::Key::Named(NamedKey::ArrowDown) => {
+                        let id = contain_ids.try_update(|(match_index, ids)| {
+                            if !ids.is_empty() {
+                                *match_index = (*match_index + 1) % ids.len();
+                            }
+                            ids.get(*match_index).copied()
+                        });
+                        if let Some(Some(id)) = id {
+                            update_select_view_id(id, &capture_view, false);
+                        }
+                    }
+                    _ => {}
                 }
             }
-        })
-        .on_event_stop(EventListener::PointerMove, {
-            move |event: &Event| {
-                if let Event::PointerMove(e) = event {
-                    if let Some(view) = capture_.root.find_by_pos(e.pos) {
-                        if capture_view.highlighted.get() != Some(view.id) {
-                            capture_view.highlighted.set(Some(view.id));
-                        }
-                    } else {
-                        capture_view.highlighted.set(None);
+        }
+    })
+    .on_event_stop(EventListener::PointerUp, {
+        let capture_ = capture_.clone();
+        move |event: &Event| {
+            if let Event::PointerUp(e) = event {
+                let find_ids = capture_.root.find_all_by_pos(e.pos);
+                if !find_ids.is_empty() {
+                    let first = contain_ids.try_update(|(index, ids)| {
+                        *index = 0;
+                        let _ = std::mem::replace(ids, find_ids);
+                        ids.first().copied()
+                    });
+                    if let Some(Some(id)) = first {
+                        update_select_view_id(id, &capture_view, false);
                     }
                 }
             }
+        }
+    })
+    .on_event_stop(EventListener::PointerMove, {
+        move |event: &Event| {
+            if let Event::PointerMove(e) = event {
+                if let Some(view) = capture_.root.find_by_pos(e.pos) {
+                    if capture_view.highlighted.get() != Some(view.id) {
+                        capture_view.highlighted.set(Some(view.id));
+                    }
+                } else {
+                    capture_view.highlighted.set(None);
+                }
+            }
+        }
+    })
+    .on_event_cont(EventListener::PointerLeave, move |_| {
+        capture_view.highlighted.set(None)
+    });
+
+    let capture_ = capture.clone();
+    let selected_overlay = empty()
+        .style(move |s| {
+            if let Some(view) = capture_view
+                .selected
+                .get()
+                .and_then(|id| capture_.root.find(id))
+            {
+                s.absolute()
+                    .margin_left(5.0 + view.layout.x0)
+                    .margin_top(5.0 + view.layout.y0)
+                    .width(view.layout.width())
+                    .height(view.layout.height())
+                    .background(Color::rgb8(186, 180, 216).multiply_alpha(0.5))
+                    .border_color(Color::rgb8(186, 180, 216).multiply_alpha(0.7))
+                    .border(1.)
+            } else {
+                s
+            }
         })
-        .on_event_cont(EventListener::PointerLeave, move |_| {
-            capture_view.highlighted.set(None)
-        });
+        .pointer_events(|| false);
 
     let capture_ = capture.clone();
-    let selected_overlay = empty().style(move |s| {
-        if let Some(view) = capture_view
-            .selected
-            .get()
-            .and_then(|id| capture_.root.find(id))
-        {
-            s.absolute()
-                .margin_left(5.0 + view.layout.x0)
-                .margin_top(5.0 + view.layout.y0)
-                .width(view.layout.width())
-                .height(view.layout.height())
-                .background(Color::rgb8(186, 180, 216).multiply_alpha(0.5))
-                .border_color(Color::rgb8(186, 180, 216).multiply_alpha(0.7))
-                .border(1.)
-        } else {
-            s
-        }
-    });
-
-    let capture_ = capture.clone();
-    let highlighted_overlay = empty().style(move |s| {
-        if let Some(view) = capture_view
-            .highlighted
-            .get()
-            .and_then(|id| capture_.root.find(id))
-        {
-            s.absolute()
-                .margin_left(5.0 + view.layout.x0)
-                .margin_top(5.0 + view.layout.y0)
-                .width(view.layout.width())
-                .height(view.layout.height())
-                .background(Color::rgba8(228, 237, 216, 120))
-                .border_color(Color::rgba8(75, 87, 53, 120))
-                .border(1.)
-        } else {
-            s
-        }
-    });
+    let highlighted_overlay = empty()
+        .style(move |s| {
+            if let Some(view) = capture_view
+                .highlighted
+                .get()
+                .and_then(|id| capture_.root.find(id))
+            {
+                s.absolute()
+                    .margin_left(5.0 + view.layout.x0)
+                    .margin_top(5.0 + view.layout.y0)
+                    .width(view.layout.width())
+                    .height(view.layout.height())
+                    .background(Color::rgba8(228, 237, 216, 120))
+                    .border_color(Color::rgba8(75, 87, 53, 120))
+                    .border(1.)
+            } else {
+                s
+            }
+        })
+        .pointer_events(|| false);
 
     let image = stack((image, selected_overlay, highlighted_overlay));
 

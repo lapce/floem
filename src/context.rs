@@ -452,6 +452,10 @@ impl<'a> EventCx<'a> {
             return true;
         };
 
+        if !id.state().borrow().pointer_events {
+            return false;
+        }
+
         let layout_rect = id.layout_rect();
         let Some(layout) = id.get_layout() else {
             return false;
