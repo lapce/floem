@@ -35,7 +35,7 @@ fn sortable_item(
                 floem::event::EventListener::PointerDown,
                 |_| { /* Disable dragging for this view */ },
             ),
-        label(|| "drag me").style(|s| {
+        "drag me".style(|s| {
             s.selectable(false)
                 .padding(2)
                 .cursor(CursorStyle::RowResize)
