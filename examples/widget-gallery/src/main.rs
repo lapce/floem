@@ -15,9 +15,12 @@ pub mod radio_buttons;
 pub mod rich_text;
 pub mod slider;
 
+use files;
 use floem::{
     event::{Event, EventListener, EventPropagation},
     keyboard::{Key, NamedKey},
+    kurbo::Size,
+    new_window,
     peniko::Color,
     reactive::{create_signal, SignalGet, SignalUpdate},
     style::{Background, CursorStyle, Transition},
@@ -26,6 +29,7 @@ use floem::{
         button, h_stack, label, scroll, stack, tab, v_stack, virtual_stack, Decorators,
         VirtualDirection, VirtualItemSize,
     },
+    window::WindowConfig,
     IntoView, View,
 };
 
@@ -46,9 +50,31 @@ fn app_view() -> impl IntoView {
         "Animation",
         "Draggable",
         "DroppedFile",
+        "Files",
     ]
     .into_iter()
     .collect();
+
+    let create_view = |it: &str| match it {
+        "Label" => labels::label_view().into_any(),
+        "Button" => buttons::button_view().into_any(),
+        "Checkbox" => checkbox::checkbox_view().into_any(),
+        "Radio" => radio_buttons::radio_buttons_view().into_any(),
+        "Input" => inputs::text_input_view().into_any(),
+        "List" => lists::virt_list_view().into_any(),
+        "Menu" => context_menu::menu_view().into_any(),
+        "RichText" => rich_text::rich_text_view().into_any(),
+        "Image" => images::img_view().into_any(),
+        "Clipboard" => clipboard::clipboard_view().into_any(),
+        "Slider" => slider::slider_view().into_any(),
+        "Dropdown" => dropdown::dropdown_view().into_any(),
+        "Animation" => animation::animation_view().into_any(),
+        "Draggable" => draggable::draggable_view().into_any(),
+        "DroppedFile" => dropped_file::dropped_file_view().into_any(),
+        "Files" => files::files_view().into_any(),
+        _ => label(|| "Not implemented".to_owned()).into_any(),
+    };
+
     let (tabs, _set_tabs) = create_signal(tabs);
 
     let (active_tab, set_active_tab) = create_signal(0);
@@ -136,30 +162,29 @@ fn app_view() -> impl IntoView {
         .action(move || id.inspect())
         .style(|s| s);
 
-    let left = v_stack((list, inspector)).style(|s| s.height_full().column_gap(5.0));
+    let new_window = button("Open In Window").action(move || {
+        let mut name = "";
+        let active = active_tab.get();
+        if active < tabs.get().len() {
+            name = tabs.get().get(active_tab.get()).unwrap_or(&name);
+        }
+        new_window(
+            move |_| create_view(name),
+            Some(
+                WindowConfig::default()
+                    .size(Size::new(700.0, 400.0))
+                    .title(name),
+            ),
+        );
+    });
+
+    let left = v_stack((list, new_window, inspector)).style(|s| s.height_full().column_gap(5.0));
 
     let tab = tab(
         move || active_tab.get(),
         move || tabs.get(),
         |it| *it,
-        |it| match it {
-            "Label" => labels::label_view().into_any(),
-            "Button" => buttons::button_view().into_any(),
-            "Checkbox" => checkbox::checkbox_view().into_any(),
-            "Radio" => radio_buttons::radio_buttons_view().into_any(),
-            "Input" => inputs::text_input_view().into_any(),
-            "List" => lists::virt_list_view().into_any(),
-            "Menu" => context_menu::menu_view().into_any(),
-            "RichText" => rich_text::rich_text_view().into_any(),
-            "Image" => images::img_view().into_any(),
-            "Clipboard" => clipboard::clipboard_view().into_any(),
-            "Slider" => slider::slider_view().into_any(),
-            "Dropdown" => dropdown::dropdown_view().into_any(),
-            "Animation" => animation::animation_view().into_any(),
-            "Draggable" => draggable::draggable_view().into_any(),
-            "DroppedFile" => dropped_file::dropped_file_view().into_any(),
-            _ => label(|| "Not implemented".to_owned()).into_any(),
-        },
+        move |it| create_view(it),
     )
     .style(|s| s.flex_col().items_start());
 
