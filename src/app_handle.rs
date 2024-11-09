@@ -43,7 +43,7 @@ impl ApplicationHandle {
 
     pub(crate) fn handle_user_event(
         &mut self,
-        event_loop: &EventLoopWindowTarget<UserEvent>,
+        event_loop: &ActiveEventLoop,
         event_proxy: EventLoopProxy<UserEvent>,
         event: UserEvent,
     ) {
@@ -274,7 +274,6 @@ impl ApplicationHandle {
     pub(crate) fn new_window(
         &mut self,
         event_loop: &dyn ActiveEventLoop,
-        event_proxy: EventLoopProxy,
         view_fn: Box<dyn FnOnce(WindowId) -> Box<dyn View>>,
         #[allow(unused_variables)] WindowConfig {
             size,
@@ -336,7 +335,7 @@ impl ApplicationHandle {
         }
 
         if let Some(logical_size) = logical_size {
-            window_attributes = window_attributes.with_inner_size(logical_size);
+            window_attributes = window_attributes.with_surface_size(logical_size);
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -420,7 +419,6 @@ impl ApplicationHandle {
         let window_id = window.id();
         let window_handle = WindowHandle::new(
             window,
-            event_proxy,
             view_fn,
             transparent,
             apply_default_theme,

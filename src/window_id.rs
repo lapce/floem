@@ -3,7 +3,7 @@ use crate::{
     window_tracking::{force_window_repaint, with_window},
     ScreenLayout, ViewId,
 };
-use std::{cell::RefCell, collections::HashMap};
+use std::{cell::RefCell, collections::HashMap, sync::Arc};
 
 use super::window_tracking::{
     monitor_bounds, root_view_id, window_inner_screen_bounds, window_inner_screen_position,
@@ -251,7 +251,7 @@ impl WindowIdExt for WindowId {
     }
 
     fn is_maximized(&self) -> bool {
-        with_window(self, Window::is_maximized).unwrap_or(false)
+        with_window(self, |window| window.is_maximized()).unwrap_or(false)
     }
 
     #[cfg(target_os = "macos")]
@@ -283,7 +283,7 @@ impl WindowIdExt for WindowId {
     }
 
     fn scale(&self) -> f64 {
-        with_window(self, Window::scale_factor).unwrap_or(1.0)
+        with_window(self, |window| window.scale_factor()).unwrap_or(1.0)
     }
 }
 
@@ -311,18 +311,18 @@ pub(crate) fn process_window_updates(id: &WindowId) -> bool {
                     with_window(id, |window| {
                         let params =
                             bounds_to_logical_outer_position_and_inner_size(window, bds, true);
-                        window.set_outer_position(params.0);
+                        window.set_outer_position(params.0.into());
                         // XXX log any returned error?
-                        let _ = window.request_inner_size(params.1);
+                        let _ = window.request_surface_size(params.1.into());
                     });
                 }
                 WindowUpdate::InnerBounds(bds) => {
                     with_window(id, |window| {
                         let params =
                             bounds_to_logical_outer_position_and_inner_size(window, bds, false);
-                        window.set_outer_position(params.0);
+                        window.set_outer_position(params.0.into());
                         // XXX log any returned error?
-                        let _ = window.request_inner_size(params.1);
+                        let _ = window.request_surface_size(params.1.into());
                     });
                 }
                 WindowUpdate::RequestAttention(att) => {
@@ -348,12 +348,13 @@ pub(crate) fn process_window_updates(id: &WindowId) -> bool {
                 }
                 WindowUpdate::OuterLocation(outer) => {
                     with_window(id, |window| {
-                        window.set_outer_position(LogicalPosition::new(outer.x, outer.y));
+                        window.set_outer_position(LogicalPosition::new(outer.x, outer.y).into());
                     });
                 }
                 WindowUpdate::InnerSize(size) => {
                     with_window(id, |window| {
-                        window.request_inner_size(LogicalSize::new(size.width, size.height))
+                        window
+                            .request_surface_size(LogicalSize::new(size.width, size.height).into())
                     });
                 }
             }
@@ -378,7 +379,7 @@ pub(crate) fn process_window_updates(id: &WindowId) -> bool {
 /// inner size and outer position based on a `Rect` that represents either inner or
 /// outer.
 fn bounds_to_logical_outer_position_and_inner_size(
-    window: &Window,
+    window: &Arc<dyn Window>,
     target_bounds: Rect,
     target_is_outer: bool,
 ) -> (LogicalPosition<f64>, LogicalSize<f64>) {
@@ -395,7 +396,8 @@ fn bounds_to_logical_outer_position_and_inner_size(
     if target_is_outer {
         // We need to reduce the size we are requesting by the width and height of the
         // OS-added decorations to get the right target INNER size:
-        let inner_to_outer_size_delta = delta_size(window.inner_size(), window.outer_size(), scale);
+        let inner_to_outer_size_delta =
+            delta_size(window.surface_size(), window.outer_size(), scale);
 
         (
             LogicalPosition::new(target_bounds.x0, target_bounds.y0),
@@ -408,7 +410,7 @@ fn bounds_to_logical_outer_position_and_inner_size(
         // We need to shift the x/y position we are requesting up and left (negatively)
         // to come up with an *outer* location that makes sense with the passed rectangle's
         // size as an *inner* size
-        let size_delta = delta_size(window.inner_size(), window.outer_size(), scale);
+        let size_delta = delta_size(window.surface_size(), window.outer_size(), scale);
         let inner_to_outer_delta: (f64, f64) = if let Some(delta) =
             delta_position(window.inner_position(), window.outer_position(), scale)
         {
@@ -439,7 +441,7 @@ fn bounds_to_logical_outer_position_and_inner_size(
 /// issue is below the level of floem's event loops and seems to be in winit or
 /// deeper.  Workaround is to force the window to repaint.
 #[allow(unused_variables)] // non mac builds see `window` as unused
-fn maybe_yield_with_repaint(window: &Window) {
+fn maybe_yield_with_repaint(window: &Arc<dyn Window>) {
     #[cfg(target_os = "macos")]
     {
         window.request_redraw();
@@ -457,8 +459,7 @@ fn delta_size(inner: PhysicalSize<u32>, outer: PhysicalSize<u32>, window_scale: 
     (outer.width - inner.width, outer.height - inner.height)
 }
 
-type PositionResult =
-    Result<floem_winit::dpi::PhysicalPosition<i32>, floem_winit::error::NotSupportedError>;
+type PositionResult = Result<winit::dpi::PhysicalPosition<i32>, winit::error::RequestError>;
 
 fn delta_position(
     inner: PositionResult,

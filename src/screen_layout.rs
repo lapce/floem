@@ -1,5 +1,7 @@
 //! Tools for computing screen locations from locations within a View and
 //! vice-versa.
+use std::sync::Arc;
+
 use crate::ViewId;
 use peniko::kurbo::{Point, Rect, Size};
 use winit::window::{Window, WindowId};
@@ -26,7 +28,7 @@ pub fn try_create_screen_layout(view: &ViewId) -> Option<ScreenLayout> {
                             .outer_position()
                             .map(|outer_position| {
                                 let monitor_bounds = monitor_bounds_for_monitor(window, &monitor);
-                                let inner_size = window.inner_size();
+                                let inner_size = window.surface_size();
                                 let outer_size = window.outer_size();
 
                                 let window_bounds = rect_from_physical_bounds_for_window(
@@ -63,7 +65,10 @@ pub fn try_create_screen_layout(view: &ViewId) -> Option<ScreenLayout> {
     .unwrap_or(None)
 }
 
-pub fn screen_layout_for_window(window_id: WindowId, window: &Window) -> Option<ScreenLayout> {
+pub fn screen_layout_for_window(
+    window_id: WindowId,
+    window: &Arc<dyn Window>,
+) -> Option<ScreenLayout> {
     window
         .current_monitor()
         .map(|monitor| {
@@ -74,7 +79,7 @@ pub fn screen_layout_for_window(window_id: WindowId, window: &Window) -> Option<
                         .outer_position()
                         .map(|outer_position| {
                             let monitor_bounds = monitor_bounds_for_monitor(window, &monitor);
-                            let inner_size = window.inner_size();
+                            let inner_size = window.surface_size();
                             let outer_size = window.outer_size();
 
                             let window_bounds = rect_from_physical_bounds_for_window(

@@ -92,7 +92,7 @@ impl CapturedView {
             children: id
                 .children()
                 .into_iter()
-                .map(|view| Rc::new(CapturedView::capture(view, app_state, clipped)))
+                .map(|view| Arc::new(CapturedView::capture(view, app_state, clipped)))
                 .collect(),
         }
     }
@@ -1173,7 +1173,7 @@ pub fn capture(window_id: WindowId) {
     })
 }
 
-fn find_view(name: &str, views: &Rc<CapturedView>) -> Vec<ViewId> {
+fn find_view(name: &str, views: &Arc<CapturedView>) -> Vec<ViewId> {
     let mut ids = Vec::new();
     if name.is_empty() {
         return ids;
@@ -1205,7 +1205,7 @@ fn find_view(name: &str, views: &Rc<CapturedView>) -> Vec<ViewId> {
 
 fn find_relative_view_by_id_without_self(
     id: ViewId,
-    views: &Rc<CapturedView>,
+    views: &Arc<CapturedView>,
 ) -> Option<RelativeViewId> {
     let mut parent_id = None;
     let mut big_brother_id = None;
@@ -1246,7 +1246,7 @@ fn find_relative_view_by_id_without_self(
 
 fn find_relative_view_by_id_with_self(
     id: ViewId,
-    views: &Rc<CapturedView>,
+    views: &Arc<CapturedView>,
 ) -> Option<RelativeViewId> {
     if views.id == id {
         let first_child_id = views.children.first().map(|x| x.id);

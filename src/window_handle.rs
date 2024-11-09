@@ -1,5 +1,8 @@
 use std::{cell::RefCell, mem, path::PathBuf, rc::Rc, sync::Arc};
 
+use raw_window_handle::{
+    HasDisplayHandle, HasRawDisplayHandle, HasRawWindowHandle, HasWindowHandle,
+};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
@@ -14,7 +17,7 @@ use winit::{
     event::{ElementState, Ime, MouseButton, MouseScrollDelta},
     event_loop::EventLoopProxy,
     keyboard::{Key, ModifiersState, NamedKey},
-    window::{CursorIcon, WindowId},
+    window::{CursorIcon, Window, WindowId},
 };
 
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
@@ -48,6 +51,7 @@ use crate::{
     view_state::ChangeFlags,
     views::Decorators,
     window_tracking::{remove_window_id_mapping, store_window_id_mapping},
+    Application,
 };
 
 /// The top-level window handle that owns the winit Window.
@@ -84,7 +88,6 @@ pub(crate) struct WindowHandle {
 impl WindowHandle {
     pub(crate) fn new(
         window: Box<dyn winit::window::Window>,
-        event_proxy: EventLoopProxy,
         view_fn: impl FnOnce(winit::window::WindowId) -> Box<dyn View> + 'static,
         transparent: bool,
         apply_default_theme: bool,
@@ -95,7 +98,7 @@ impl WindowHandle {
         let window_id = window.id();
         let id = ViewId::new();
         let scale = window.scale_factor();
-        let size: LogicalSize<f64> = size.unwrap_or(window.inner_size().to_logical(scale));
+        let size: LogicalSize<f64> = size.unwrap_or(window.surface_size().to_logical(scale));
         let size = Size::new(size.width, size.height);
         let size = scope.create_rw_signal(Size::new(size.width, size.height));
         let theme = scope.create_rw_signal(window.theme());
@@ -134,13 +137,11 @@ impl WindowHandle {
         let view = WindowView { id };
         id.set_view(view.into_any());
 
-        let window = Arc::new(window);
+        let window: Arc<dyn Window> = window.into();
         store_window_id_mapping(id, window_id, &window);
         let gpu_resources = GpuResources::request(
             move |window_id| {
-                event_proxy
-                    .send_event(UserEvent::GpuResourcesUpdate { window_id })
-                    .unwrap();
+                Application::send_proxy_event(UserEvent::GpuResourcesUpdate { window_id });
             },
             window.clone(),
         );
@@ -699,7 +700,7 @@ impl WindowHandle {
             window,
             window_size: self.size.get_untracked() / self.app_state.scale,
             scale: self.scale * self.app_state.scale,
-            root: Rc::new(root),
+            root: Arc::new(root),
             state: self.app_state.capture.take().unwrap(),
         };
         // Process any updates produced by capturing
@@ -1100,7 +1101,7 @@ impl WindowHandle {
         };
         if cursor != self.app_state.last_cursor {
             if let Some(window) = self.window.as_ref() {
-                window.set_cursor_icon(cursor);
+                window.set_cursor(cursor.into());
             }
             self.app_state.last_cursor = cursor;
         }

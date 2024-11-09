@@ -7,7 +7,7 @@ use raw_window_handle::HasDisplayHandle;
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
-    event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopBuilder, EventLoopProxy},
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy},
     monitor::MonitorHandle,
     window::WindowId,
 };
@@ -157,12 +157,14 @@ impl Application {
     pub fn new() -> Self {
         let event_loop = EventLoop::new().expect("can't start the event loop");
         let event_loop_proxy = event_loop.create_proxy();
-        *EVENT_LOOP_PROXY.lock() = Some(event_loop_proxy.clone());
+        let (sender, receiver) = crossbeam_channel::unbounded();
+        *EVENT_LOOP_PROXY.lock() = Some((event_loop_proxy.clone(), sender));
         unsafe {
             Clipboard::init(event_loop.display_handle().unwrap().as_raw());
         }
         let handle = ApplicationHandle::new();
         Self {
+            receiver,
             handle: Some(handle),
             event_listener: None,
             event_loop: Some(event_loop),
@@ -187,8 +189,7 @@ impl Application {
         config: Option<WindowConfig>,
     ) -> Self {
         self.handle.as_mut().unwrap().new_window(
-            &self.event_loop,
-            self.event_loop.create_proxy(),
+            self.event_loop.as_ref().unwrap(),
             Box::new(|window_id| app_view(window_id).into_any()),
             config.unwrap_or_default(),
         );
@@ -237,12 +238,19 @@ impl Application {
         }
     }
 
+    pub(crate) fn send_proxy_event(event: UserEvent) {
+        if let Some((proxy, sender)) = EVENT_LOOP_PROXY.lock().as_ref() {
+            let _ = sender.send(event);
+            proxy.wake_up();
+        }
+    }
+
     pub fn available_monitors(&self) -> impl Iterator<Item = MonitorHandle> {
-        self.event_loop.available_monitors()
+        self.event_loop.as_ref().unwrap().available_monitors()
     }
 
     pub fn primary_monitor(&self) -> Option<MonitorHandle> {
-        self.event_loop.primary_monitor()
+        self.event_loop.as_ref().unwrap().primary_monitor()
     }
 }
 
@@ -251,7 +259,5 @@ impl Application {
 /// This function sends a `QuitApp` event to the application's event loop,
 /// triggering the application to close gracefully.
 pub fn quit_app() {
-    Application::with_event_loop_proxy(|proxy| {
-        let _ = proxy.send_event(UserEvent::QuitApp);
-    });
+    Application::send_proxy_event(UserEvent::QuitApp);
 }

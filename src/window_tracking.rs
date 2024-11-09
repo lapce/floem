@@ -53,7 +53,7 @@ impl WindowMapping {
             root, root_found, window_id, window_found);
     }
 
-    fn with_window_id_and_window<F: FnOnce(&WindowId, &Window) -> T, T>(
+    fn with_window_id_and_window<F: FnOnce(&WindowId, &Arc<dyn Window>) -> T, T>(
         &self,
         root_view_id: ViewId,
         f: F,
@@ -89,7 +89,7 @@ impl WindowMapping {
     }
 }
 
-pub fn with_window_id_and_window<F: FnOnce(&WindowId, &Window) -> T, T>(
+pub fn with_window_id_and_window<F: FnOnce(&WindowId, &Arc<dyn Window>) -> T, T>(
     view: &ViewId,
     f: F,
 ) -> Option<T> {
@@ -121,8 +121,8 @@ fn with_window_map<F: FnOnce(&WindowMapping) -> T, T>(f: F) -> Option<T> {
     }
 }
 
-pub fn with_window<F: FnOnce(&Window) -> T, T>(window: &WindowId, f: F) -> Option<T> {
-    with_window_map(|m| m.with_window(window, |w| f(w.as_ref()))).unwrap_or(None)
+pub fn with_window<F: FnOnce(&Arc<dyn Window>) -> T, T>(window: &WindowId, f: F) -> Option<T> {
+    with_window_map(|m| m.with_window(window, |w| f(w))).unwrap_or(None)
 }
 
 pub fn root_view_id(window: &WindowId) -> Option<ViewId> {
@@ -156,7 +156,7 @@ pub fn monitor_bounds(id: &WindowId) -> Option<Rect> {
     .unwrap_or(None)
 }
 
-pub fn monitor_bounds_for_monitor(window: &Window, monitor: &MonitorHandle) -> Rect {
+pub fn monitor_bounds_for_monitor(window: &Arc<dyn Window>, monitor: &MonitorHandle) -> Rect {
     let scale = 1.0 / window.scale_factor();
     let pos = monitor.position();
     let sz = monitor.size();
@@ -170,7 +170,7 @@ pub fn monitor_bounds_for_monitor(window: &Window, monitor: &MonitorHandle) -> R
     )
 }
 
-fn scale_rect(window: &Window, mut rect: Rect) -> Rect {
+fn scale_rect(window: &Arc<dyn Window>, mut rect: Rect) -> Rect {
     let scale = 1.0 / window.scale_factor();
     rect.x0 *= scale;
     rect.y0 *= scale;
@@ -179,7 +179,7 @@ fn scale_rect(window: &Window, mut rect: Rect) -> Rect {
     rect
 }
 
-fn scale_point(window: &Window, mut rect: Point) -> Point {
+fn scale_point(window: &Arc<dyn Window>, mut rect: Point) -> Point {
     let scale = 1.0 / window.scale_factor();
     rect.x *= scale;
     rect.y *= scale;
@@ -208,7 +208,7 @@ pub fn window_inner_screen_bounds(id: &WindowId) -> Option<Rect> {
                     Some(rect_from_physical_bounds_for_window(
                         window,
                         pos,
-                        window.inner_size(),
+                        window.surface_size(),
                     ))
                 })
                 .unwrap_or(None)
@@ -219,7 +219,7 @@ pub fn window_inner_screen_bounds(id: &WindowId) -> Option<Rect> {
 }
 
 pub fn rect_from_physical_bounds_for_window(
-    window: &Window,
+    window: &Arc<dyn Window>,
     pos: PhysicalPosition<i32>,
     sz: PhysicalSize<u32>,
 ) -> Rect {
