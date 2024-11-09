@@ -23,6 +23,7 @@ use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::rc::Rc;
+use std::sync::Arc;
 use winit::keyboard::{self, NamedKey};
 use winit::window::WindowId;
 
@@ -43,7 +44,7 @@ pub struct CapturedView {
     layout: Rect,
     taffy: Layout,
     clipped: Rect,
-    children: Vec<Rc<CapturedView>>,
+    children: Vec<Arc<CapturedView>>,
     direct_style: Style,
     requested_changes: ChangeFlags,
     keyboard_navigable: bool,
@@ -143,7 +144,7 @@ impl CapturedView {
 }
 
 pub struct Capture {
-    pub root: Rc<CapturedView>,
+    pub root: Arc<CapturedView>,
     pub start: Instant,
     pub post_style: Instant,
     pub post_layout: Instant,
@@ -286,7 +287,7 @@ fn captured_view_no_children(
 // Outlined to reduce stack usage.
 #[inline(never)]
 fn captured_view_with_children(
-    view: &Rc<CapturedView>,
+    view: &Arc<CapturedView>,
     depth: usize,
     capture_view: &CaptureView,
     children: Vec<Box<dyn View>>,
@@ -400,7 +401,7 @@ fn captured_view_with_children(
 }
 
 fn captured_view(
-    view: &Rc<CapturedView>,
+    view: &Arc<CapturedView>,
     depth: usize,
     capture_view: &CaptureView,
     capture: &Rc<Capture>,

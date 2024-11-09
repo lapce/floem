@@ -21,7 +21,7 @@ static WINDOW_FOR_WINDOW_AND_ROOT_IDS: OnceLock<RwLock<WindowMapping>> = OnceLoc
 pub fn store_window_id_mapping(
     root_id: ViewId,
     window_id: WindowId,
-    window: &Arc<floem_winit::window::Window>,
+    window: &Arc<dyn winit::window::Window>,
 ) {
     with_window_map_mut(move |m| m.add(root_id, window_id, window.clone()));
 }
@@ -33,14 +33,14 @@ pub fn remove_window_id_mapping(root_id: &ViewId, window_id: &WindowId) {
 
 /// Maps root-id:window-id:window triples, so a view can get its root and
 /// from that locate the window-id (if any) that it belongs to.
-#[derive(Default, Debug)]
+#[derive(Default)]
 struct WindowMapping {
-    window_for_window_id: HashMap<WindowId, Arc<Window>>,
+    window_for_window_id: HashMap<WindowId, Arc<dyn Window>>,
     window_id_for_root_view_id: HashMap<ViewId, WindowId>,
 }
 
 impl WindowMapping {
-    fn add(&mut self, root: ViewId, window_id: WindowId, window: Arc<Window>) {
+    fn add(&mut self, root: ViewId, window_id: WindowId, window: Arc<dyn Window>) {
         self.window_for_window_id.insert(window_id, window);
         self.window_id_for_root_view_id.insert(root, window_id);
     }

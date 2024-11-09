@@ -14,6 +14,7 @@ use std::hash::{BuildHasherDefault, Hash};
 use std::ptr;
 use std::rc::Rc;
 
+use std::sync::Arc;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
@@ -553,14 +554,14 @@ pub trait StyleProp: Default + Copy + 'static {
 }
 
 pub(crate) type InterpolateFn =
-    fn(val1: &dyn Any, val2: &dyn Any, time: f64) -> Option<Rc<dyn Any>>;
+    fn(val1: &dyn Any, val2: &dyn Any, time: f64) -> Option<Arc<dyn Any>>;
 
 #[derive(Debug)]
 pub struct StylePropInfo {
     pub(crate) name: fn() -> &'static str,
     pub(crate) inherited: bool,
     #[allow(unused)]
-    pub(crate) default_as_any: fn() -> Rc<dyn Any>,
+    pub(crate) default_as_any: fn() -> Arc<dyn Any>,
     pub(crate) interpolate: InterpolateFn,
     pub(crate) debug_any: fn(val: &dyn Any) -> String,
     pub(crate) debug_view: fn(val: &dyn Any) -> Option<Box<dyn View>>,
@@ -1076,7 +1077,7 @@ impl Debug for StyleKey {
     }
 }
 
-type ImHashMap<K, V> = im_rc::HashMap<K, V, BuildHasherDefault<FxHasher>>;
+type ImHashMap<K, V> = im::HashMap<K, V, BuildHasherDefault<FxHasher>>;
 
 style_key_selector!(selector_xs, StyleSelectors::new().responsive());
 style_key_selector!(selector_sm, StyleSelectors::new().responsive());
@@ -1098,7 +1099,7 @@ fn screen_size_bp_to_key(breakpoint: ScreenSizeBp) -> StyleKey {
 
 #[derive(Default, Clone)]
 pub struct Style {
-    pub(crate) map: ImHashMap<StyleKey, Rc<dyn Any>>,
+    pub(crate) map: ImHashMap<StyleKey, Arc<dyn Any>>,
 }
 
 impl Style {

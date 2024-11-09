@@ -17,28 +17,28 @@ use crate::{
 };
 
 /// A read write Signal which can act as both a Getter and a Setter
-pub struct RwSignal<T> {
+pub struct RwSignal<T: 'static> {
     pub(crate) id: Id,
     pub(crate) ty: PhantomData<T>,
 }
 
-impl<T> Copy for RwSignal<T> {}
+impl<T: 'static> Copy for RwSignal<T> {}
 
-impl<T> Clone for RwSignal<T> {
+impl<T: 'static> Clone for RwSignal<T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T> Eq for RwSignal<T> {}
+impl<T: 'static> Eq for RwSignal<T> {}
 
-impl<T> PartialEq for RwSignal<T> {
+impl<T: 'static> PartialEq for RwSignal<T> {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
-impl<T> fmt::Debug for RwSignal<T> {
+impl<T: 'static> fmt::Debug for RwSignal<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut s = f.debug_struct("RwSignal");
         s.field("id", &self.id);
@@ -47,7 +47,7 @@ impl<T> fmt::Debug for RwSignal<T> {
     }
 }
 
-impl<T> RwSignal<T> {
+impl<T: 'static> RwSignal<T> {
     /// Create a Getter of this Signal
     pub fn read_only(&self) -> ReadSignal<T> {
         ReadSignal {
@@ -93,14 +93,14 @@ where
 }
 
 /// A getter only Signal
-pub struct ReadSignal<T> {
+pub struct ReadSignal<T: 'static> {
     pub(crate) id: Id,
     pub(crate) ty: PhantomData<T>,
 }
 
-impl<T> Copy for ReadSignal<T> {}
+impl<T: 'static> Copy for ReadSignal<T> {}
 
-impl<T> Clone for ReadSignal<T> {
+impl<T: 'static> Clone for ReadSignal<T> {
     fn clone(&self) -> Self {
         *self
     }
@@ -115,22 +115,22 @@ impl<T> PartialEq for ReadSignal<T> {
 }
 
 /// A setter only Signal
-pub struct WriteSignal<T> {
+pub struct WriteSignal<T: 'static> {
     pub(crate) id: Id,
     pub(crate) ty: PhantomData<T>,
 }
 
-impl<T> Copy for WriteSignal<T> {}
+impl<T: 'static> Copy for WriteSignal<T> {}
 
-impl<T> Clone for WriteSignal<T> {
+impl<T: 'static> Clone for WriteSignal<T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T> Eq for WriteSignal<T> {}
+impl<T: Send + Sync> Eq for WriteSignal<T> {}
 
-impl<T> PartialEq for WriteSignal<T> {
+impl<T: Send + Sync> PartialEq for WriteSignal<T> {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }

@@ -1,7 +1,9 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, sync::Arc};
 
+use crossbeam_channel::{Receiver, Sender};
 use floem_reactive::WriteSignal;
 use parking_lot::Mutex;
+use raw_window_handle::HasDisplayHandle;
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
@@ -22,7 +24,7 @@ use crate::{
 
 type AppEventCallback = dyn Fn(AppEvent);
 
-static EVENT_LOOP_PROXY: Mutex<Option<EventLoopProxy>> = Mutex::new(None);
+static EVENT_LOOP_PROXY: Mutex<Option<(EventLoopProxy, Sender<UserEvent>)>> = Mutex::new(None);
 
 thread_local! {
     pub(crate) static APP_UPDATE_EVENTS: RefCell<Vec<AppUpdateEvent>> = Default::default();
@@ -49,12 +51,33 @@ pub enum AppEvent {
     Reopen { has_visible_windows: bool },
 }
 
-#[derive(Debug)]
 pub(crate) enum UserEvent {
-    AppUpdate,
     Idle,
     QuitApp,
-    GpuResourcesUpdate { window_id: WindowId },
+    NewWindow {
+        view_fn: Box<dyn FnOnce(WindowId) -> Box<dyn View> + Sync + Send>,
+        config: Option<WindowConfig>,
+    },
+    CloseWindow {
+        window_id: WindowId,
+    },
+    CaptureWindow {
+        window_id: WindowId,
+        capture: WriteSignal<Option<Arc<Capture>>>,
+    },
+    ProfileWindow {
+        window_id: WindowId,
+        end_profile: Option<WriteSignal<Option<Arc<Profile>>>>,
+    },
+    RequestTimer {
+        timer: Timer,
+    },
+    CancelTimer {
+        timer: TimerToken,
+    },
+    GpuResourcesUpdate {
+        window_id: WindowId,
+    },
 }
 
 pub(crate) enum AppUpdateEvent {
@@ -91,13 +114,14 @@ pub(crate) fn add_app_update_event(event: AppUpdateEvent) {
         events.borrow_mut().push(event);
     });
     Application::with_event_loop_proxy(|proxy| {
-        let _ = proxy.send_event(UserEvent::AppUpdate);
+        proxy.wake_up();
     });
 }
 
 /// Floem top level application
 /// This is the entry point of the application.
 pub struct Application {
+    receiver: Receiver<UserEvent>,
     handle: Option<ApplicationHandle>,
     event_listener: Option<Box<AppEventCallback>>,
     event_loop: Option<EventLoop>,
@@ -123,24 +147,25 @@ impl ApplicationHandler for Application {
         let handle = self.handle.as_mut().unwrap();
         handle.handle_window_event(window_id, event, event_loop);
     }
+
+    fn proxy_wake_up(&mut self, event_loop: &dyn ActiveEventLoop) {
+        for event in self.receiver.try_iter() {}
+    }
 }
 
 impl Application {
     pub fn new() -> Self {
-        let event_loop = EventLoopBuilder::with_user_event()
-            .build()
-            .expect("can't start the event loop");
+        let event_loop = EventLoop::new().expect("can't start the event loop");
         let event_loop_proxy = event_loop.create_proxy();
         *EVENT_LOOP_PROXY.lock() = Some(event_loop_proxy.clone());
         unsafe {
-            #[allow(deprecated)]
-            Clipboard::init(event_loop.raw_display_handle().unwrap());
+            Clipboard::init(event_loop.display_handle().unwrap().as_raw());
         }
         let handle = ApplicationHandle::new();
         Self {
             handle: Some(handle),
             event_listener: None,
-            event_loop,
+            event_loop: Some(event_loop),
         }
     }
 
@@ -206,7 +231,7 @@ impl Application {
         });
     }
 
-    pub(crate) fn with_event_loop_proxy(f: impl FnOnce(&EventLoopProxy<UserEvent>)) {
+    pub(crate) fn with_event_loop_proxy(f: impl FnOnce(&EventLoopProxy)) {
         if let Some(proxy) = EVENT_LOOP_PROXY.lock().as_ref() {
             f(proxy);
         }
