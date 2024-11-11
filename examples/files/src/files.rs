@@ -104,12 +104,6 @@ pub fn files_view() -> impl IntoView {
 }
 
 fn display_files(file: FileInfo) -> String {
-    let paths: Vec<&str> = file
-        .path
-        .iter()
-        .map(|p| p.to_str())
-        .filter(|p| p.is_some())
-        .map(|p| p.unwrap())
-        .collect();
+    let paths: Vec<&str> = file.path.iter().filter_map(|p| p.to_str()).collect();
     paths.join("\n")
 }

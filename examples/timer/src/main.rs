@@ -5,7 +5,7 @@ use floem::{
     reactive::{
         create_effect, create_get_update, create_rw_signal, SignalGet, SignalTrack, SignalUpdate,
     },
-    unit::UnitExt,
+    unit::{Pct, UnitExt},
     views::{button, container, label, slider, stack, text, v_stack, Decorators},
     IntoView,
 };
@@ -17,19 +17,19 @@ fn main() {
 fn app_view() -> impl IntoView {
     // We take maximum duration as 100s for convenience so that
     // one percent represents one second.
-    let target_duration = create_rw_signal(100.0);
+    let target_duration = create_rw_signal(100.pct());
     let duration_slider = thin_slider(target_duration);
 
     let elapsed_time = create_rw_signal(Duration::ZERO);
-    let is_active = move || elapsed_time.get().as_secs_f32() < target_duration.get();
+    let is_active = move || elapsed_time.get().as_secs_f64() < target_duration.get().0;
 
     let elapsed_time_label = label(move || {
         format!(
             "{:.1}s",
             if is_active() {
-                elapsed_time.get().as_secs_f32()
+                elapsed_time.get().as_secs_f64()
             } else {
-                target_duration.get()
+                target_duration.get().0
             }
         )
     });
@@ -49,7 +49,7 @@ fn app_view() -> impl IntoView {
 
     let progress = create_get_update(
         target_duration,
-        move |val| elapsed_time.get().as_secs_f32() / val * 100.,
+        move |val| Pct(elapsed_time.get().as_secs_f64() / val.0 * 100.),
         |val| *val,
     );
     let elapsed_time_bar = gauge(progress);
@@ -74,16 +74,16 @@ fn app_view() -> impl IntoView {
 
 /// A slider with a thin bar instead of the default thick bar.
 fn thin_slider(
-    fill_percent: impl SignalGet<f32> + SignalUpdate<f32> + Copy + 'static,
+    fill_percent: impl SignalGet<Pct> + SignalUpdate<Pct> + Copy + 'static,
 ) -> slider::Slider {
-    slider::Slider::new_get_update(fill_percent)
+    slider::Slider::new_rw(fill_percent)
         .slider_style(|s| s.accent_bar_height(30.pct()).bar_height(30.pct()))
         .style(|s| s.width(200))
 }
 
 /// A non-interactive slider that has been repurposed into a progress bar.
-fn gauge(fill_percent: impl SignalGet<f32> + Copy + 'static) -> slider::Slider {
-    slider::Slider::new_get(fill_percent)
+fn gauge(fill_percent: impl SignalGet<Pct> + 'static) -> slider::Slider {
+    slider::Slider::new(move || fill_percent.get())
         .disabled(|| true)
         .slider_style(|s| {
             s.handle_radius(0)

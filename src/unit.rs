@@ -9,6 +9,17 @@ pub struct Px(pub f64);
 /// A percent value
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Pct(pub f64);
+impl From<f32> for Pct {
+    fn from(value: f32) -> Self {
+        Pct(value as f64)
+    }
+}
+
+impl From<i32> for Pct {
+    fn from(value: i32) -> Self {
+        Pct(value as f64)
+    }
+}
 
 /// Used for automatically computed values
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

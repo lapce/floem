@@ -107,7 +107,7 @@ pub fn music_player() -> impl IntoView {
     let card = v_stack((
         now_playing,
         dyn_container(move || song_info.get(), |info| info),
-        slider::slider(move || 40.)
+        slider::slider(move || 40.pct())
             .style(|s| s.width_full())
             .slider_style(|s| {
                 s.bar_height(3)
