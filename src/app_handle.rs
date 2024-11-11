@@ -12,7 +12,7 @@ use std::{collections::HashMap, mem, rc::Rc};
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::WindowEvent,
-    event_loop::{ActiveEventLoop, ControlFlow, EventLoopProxy},
+    event_loop::{ActiveEventLoop, ControlFlow},
     window::WindowId,
 };
 
@@ -41,15 +41,10 @@ impl ApplicationHandle {
         }
     }
 
-    pub(crate) fn handle_user_event(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        event_proxy: EventLoopProxy<UserEvent>,
-        event: UserEvent,
-    ) {
+    pub(crate) fn handle_user_event(&mut self, event_loop: &dyn ActiveEventLoop, event: UserEvent) {
         match event {
             UserEvent::AppUpdate => {
-                self.handle_update_event(event_loop, event_proxy);
+                self.handle_update_event(event_loop);
             }
             UserEvent::Idle => {
                 self.idle();
@@ -66,23 +61,16 @@ impl ApplicationHandle {
         }
     }
 
-    pub(crate) fn handle_update_event(
-        &mut self,
-        event_loop: &EventLoopWindowTarget<UserEvent>,
-        event_proxy: EventLoopProxy<UserEvent>,
-    ) {
+    pub(crate) fn handle_update_event(&mut self, event_loop: &dyn ActiveEventLoop) {
         let events = APP_UPDATE_EVENTS.with(|events| {
             let mut events = events.borrow_mut();
             std::mem::take(&mut *events)
         });
         for event in events {
             match event {
-                AppUpdateEvent::NewWindow { view_fn, config } => self.new_window(
-                    event_loop,
-                    event_proxy.clone(),
-                    view_fn,
-                    config.unwrap_or_default(),
-                ),
+                AppUpdateEvent::NewWindow { view_fn, config } => {
+                    self.new_window(event_loop, view_fn, config.unwrap_or_default())
+                }
                 AppUpdateEvent::CloseWindow { window_id } => {
                     self.close_window(window_id, event_loop);
                 }
@@ -140,7 +128,7 @@ impl ApplicationHandle {
         let start = window_handle.profile.is_some().then(|| {
             let name = match event {
                 WindowEvent::ActivationTokenDone { .. } => "ActivationTokenDone",
-                WindowEvent::Resized(..) => "Resized",
+                WindowEvent::SurfaceResized(..) => "Resized",
                 WindowEvent::Moved(..) => "Moved",
                 WindowEvent::CloseRequested => "CloseRequested",
                 WindowEvent::Destroyed => "Destroyed",
@@ -151,22 +139,21 @@ impl ApplicationHandle {
                 WindowEvent::KeyboardInput { .. } => "KeyboardInput",
                 WindowEvent::ModifiersChanged(..) => "ModifiersChanged",
                 WindowEvent::Ime(..) => "Ime",
-                WindowEvent::CursorMoved { .. } => "CursorMoved",
-                WindowEvent::CursorEntered { .. } => "CursorEntered",
-                WindowEvent::CursorLeft { .. } => "CursorLeft",
+                WindowEvent::PointerMoved { .. } => "PointerMoved",
+                WindowEvent::PointerEntered { .. } => "PointerEntered",
+                WindowEvent::PointerLeft { .. } => "PointerLeft",
                 WindowEvent::MouseWheel { .. } => "MouseWheel",
-                WindowEvent::MouseInput { .. } => "MouseInput",
-                WindowEvent::TouchpadMagnify { .. } => "TouchpadMagnify",
-                WindowEvent::SmartMagnify { .. } => "SmartMagnify",
-                WindowEvent::TouchpadRotate { .. } => "TouchpadRotate",
+                WindowEvent::PointerButton { .. } => "PointerButton",
                 WindowEvent::TouchpadPressure { .. } => "TouchpadPressure",
-                WindowEvent::AxisMotion { .. } => "AxisMotion",
-                WindowEvent::Touch(_) => "Touch",
                 WindowEvent::ScaleFactorChanged { .. } => "ScaleFactorChanged",
                 WindowEvent::ThemeChanged(..) => "ThemeChanged",
                 WindowEvent::Occluded(..) => "Occluded",
-                WindowEvent::MenuAction(..) => "MenuAction",
                 WindowEvent::RedrawRequested => "RedrawRequested",
+                WindowEvent::PinchGesture { .. } => "PinchGesture",
+                WindowEvent::PanGesture { .. } => "PanGesture",
+                WindowEvent::DoubleTapGesture { .. } => "DoubleTapGesture",
+                WindowEvent::RotationGesture { .. } => "RotationGesture",
+                // WindowEvent::MenuAction(..) => "MenuAction",
             };
             (
                 name,
@@ -177,7 +164,7 @@ impl ApplicationHandle {
 
         match event {
             WindowEvent::ActivationTokenDone { .. } => {}
-            WindowEvent::Resized(size) => {
+            WindowEvent::SurfaceResized(size) => {
                 let size: LogicalSize<f64> = size.to_logical(window_handle.scale);
                 let size = Size::new(size.width, size.height);
                 window_handle.size(size);
@@ -216,27 +203,22 @@ impl ApplicationHandle {
             WindowEvent::Ime(ime) => {
                 window_handle.ime(ime);
             }
-            WindowEvent::CursorMoved { position, .. } => {
+            WindowEvent::PointerMoved { position, .. } => {
                 let position: LogicalPosition<f64> = position.to_logical(window_handle.scale);
                 let point = Point::new(position.x, position.y);
                 window_handle.pointer_move(point);
             }
-            WindowEvent::CursorEntered { .. } => {}
-            WindowEvent::CursorLeft { .. } => {
+            WindowEvent::PointerEntered { .. } => {}
+            WindowEvent::PointerLeft { .. } => {
                 window_handle.pointer_leave();
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 window_handle.mouse_wheel(delta);
             }
-            WindowEvent::MouseInput { state, button, .. } => {
-                window_handle.mouse_input(button, state);
+            WindowEvent::PointerButton { state, button, .. } => {
+                window_handle.pointer_button(button, state);
             }
-            WindowEvent::TouchpadMagnify { .. } => {}
-            WindowEvent::SmartMagnify { .. } => {}
-            WindowEvent::TouchpadRotate { .. } => {}
             WindowEvent::TouchpadPressure { .. } => {}
-            WindowEvent::AxisMotion { .. } => {}
-            WindowEvent::Touch(_) => {}
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 window_handle.scale(scale_factor);
             }
@@ -244,12 +226,11 @@ impl ApplicationHandle {
                 window_handle.os_theme_changed(theme);
             }
             WindowEvent::Occluded(_) => {}
-            WindowEvent::MenuAction(id) => {
-                window_handle.menu_action(id);
-            }
             WindowEvent::RedrawRequested => {
                 window_handle.render_frame();
-            }
+            } // WindowEvent::MenuAction(id) => {
+              //     window_handle.menu_action(id);
+              // }
         }
 
         if let Some((name, start, new_frame)) = start {

@@ -1,5 +1,9 @@
+use std::hash::{Hash, Hasher};
+
+use winit::event::ButtonSource;
+pub use winit::event::{FingerId, Force};
+
 use peniko::kurbo::{Point, Vec2};
-use winit::event::MouseButton;
 
 use crate::keyboard::Modifiers;
 
@@ -10,8 +14,58 @@ pub struct PointerWheelEvent {
     pub modifiers: Modifiers,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Copy, Hash, Ord, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub enum PointerButton {
+    Mouse(MouseButton),
+    Touch {
+        finger_id: FingerId,
+        force: Option<Force>,
+    },
+    Unknown(u16),
+}
+
+impl Eq for PointerButton {}
+
+impl Hash for PointerButton {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            PointerButton::Mouse(mouse_button) => mouse_button.hash(state),
+            PointerButton::Touch { finger_id, .. } => finger_id.hash(state),
+            PointerButton::Unknown(n) => n.hash(state),
+        }
+    }
+}
+
+impl From<ButtonSource> for PointerButton {
+    fn from(value: ButtonSource) -> Self {
+        match value {
+            ButtonSource::Mouse(mouse_button) => PointerButton::Mouse(mouse_button.into()),
+            ButtonSource::Touch { finger_id, force } => PointerButton::Touch { finger_id, force },
+            ButtonSource::Unknown(n) => PointerButton::Unknown(n),
+        }
+    }
+}
+
+impl PointerButton {
+    pub fn is_primary(&self) -> bool {
+        if let PointerButton::Mouse(mouse) = self {
+            mouse.is_primary()
+        } else {
+            false
+        }
+    }
+
+    pub fn is_secondary(&self) -> bool {
+        if let PointerButton::Mouse(mouse) = self {
+            mouse.is_secondary()
+        } else {
+            false
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Copy, Hash, Ord, PartialOrd)]
+pub enum MouseButton {
     Primary,
     Secondary,
     Auxiliary,
@@ -20,38 +74,38 @@ pub enum PointerButton {
     None,
 }
 
-impl From<MouseButton> for PointerButton {
-    fn from(value: MouseButton) -> Self {
+impl From<winit::event::MouseButton> for MouseButton {
+    fn from(value: winit::event::MouseButton) -> Self {
         match value {
-            MouseButton::Left => Self::Primary,
-            MouseButton::Right => Self::Secondary,
-            MouseButton::Middle => Self::Auxiliary,
-            MouseButton::Back => Self::X1,
-            MouseButton::Forward => Self::X2,
-            MouseButton::Other(_) => Self::None,
+            winit::event::MouseButton::Left => Self::Primary,
+            winit::event::MouseButton::Right => Self::Secondary,
+            winit::event::MouseButton::Middle => Self::Auxiliary,
+            winit::event::MouseButton::Back => Self::X1,
+            winit::event::MouseButton::Forward => Self::X2,
+            winit::event::MouseButton::Other(_) => Self::None,
         }
     }
 }
 
-impl PointerButton {
-    pub fn is_primary(self) -> bool {
-        self == PointerButton::Primary
+impl MouseButton {
+    pub fn is_primary(&self) -> bool {
+        self == &MouseButton::Primary
     }
 
-    pub fn is_secondary(self) -> bool {
-        self == PointerButton::Secondary
+    pub fn is_secondary(&self) -> bool {
+        self == &MouseButton::Secondary
     }
 
-    pub fn is_auxiliary(self) -> bool {
-        self == PointerButton::Auxiliary
+    pub fn is_auxiliary(&self) -> bool {
+        self == &MouseButton::Auxiliary
     }
 
-    pub fn is_x1(self) -> bool {
-        self == PointerButton::X1
+    pub fn is_x1(&self) -> bool {
+        self == &MouseButton::X1
     }
 
-    pub fn is_x2(self) -> bool {
-        self == PointerButton::X2
+    pub fn is_x2(&self) -> bool {
+        self == &MouseButton::X2
     }
 }
 

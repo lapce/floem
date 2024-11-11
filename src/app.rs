@@ -20,6 +20,7 @@ use crate::{
     profiler::Profile,
     view::{IntoView, View},
     window::WindowConfig,
+    AnyView,
 };
 
 type AppEventCallback = dyn Fn(AppEvent);
@@ -52,32 +53,10 @@ pub enum AppEvent {
 }
 
 pub(crate) enum UserEvent {
+    AppUpdate,
     Idle,
     QuitApp,
-    NewWindow {
-        view_fn: Box<dyn FnOnce(WindowId) -> Box<dyn View> + Sync + Send>,
-        config: Option<WindowConfig>,
-    },
-    CloseWindow {
-        window_id: WindowId,
-    },
-    CaptureWindow {
-        window_id: WindowId,
-        capture: WriteSignal<Option<Arc<Capture>>>,
-    },
-    ProfileWindow {
-        window_id: WindowId,
-        end_profile: Option<WriteSignal<Option<Arc<Profile>>>>,
-    },
-    RequestTimer {
-        timer: Timer,
-    },
-    CancelTimer {
-        timer: TimerToken,
-    },
-    GpuResourcesUpdate {
-        window_id: WindowId,
-    },
+    GpuResourcesUpdate { window_id: WindowId },
 }
 
 pub(crate) enum AppUpdateEvent {
@@ -122,9 +101,10 @@ pub(crate) fn add_app_update_event(event: AppUpdateEvent) {
 /// This is the entry point of the application.
 pub struct Application {
     receiver: Receiver<UserEvent>,
-    handle: Option<ApplicationHandle>,
+    handle: ApplicationHandle,
     event_listener: Option<Box<AppEventCallback>>,
     event_loop: Option<EventLoop>,
+    initial_windows: Vec<(Box<dyn FnOnce(WindowId) -> AnyView>, Option<WindowConfig>)>,
 }
 
 impl Default for Application {
@@ -135,7 +115,10 @@ impl Default for Application {
 
 impl ApplicationHandler for Application {
     fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
-        todo!()
+        while let Some((view_fn, window_config)) = self.initial_windows.pop() {
+            self.handle
+                .new_window(event_loop, view_fn, window_config.unwrap_or_default());
+        }
     }
 
     fn window_event(
@@ -144,12 +127,20 @@ impl ApplicationHandler for Application {
         window_id: WindowId,
         event: WindowEvent,
     ) {
-        let handle = self.handle.as_mut().unwrap();
-        handle.handle_window_event(window_id, event, event_loop);
+        self.handle
+            .handle_window_event(window_id, event, event_loop);
     }
 
     fn proxy_wake_up(&mut self, event_loop: &dyn ActiveEventLoop) {
-        for event in self.receiver.try_iter() {}
+        for event in self.receiver.try_iter() {
+            self.handle.handle_user_event(event_loop, event);
+        }
+    }
+
+    fn exiting(&mut self, _event_loop: &dyn ActiveEventLoop) {
+        if let Some(action) = self.event_listener.as_ref() {
+            action(AppEvent::WillTerminate);
+        }
     }
 }
 
@@ -165,9 +156,10 @@ impl Application {
         let handle = ApplicationHandle::new();
         Self {
             receiver,
-            handle: Some(handle),
+            handle,
             event_listener: None,
             event_loop: Some(event_loop),
+            initial_windows: Vec::new(),
         }
     }
 
@@ -188,11 +180,10 @@ impl Application {
         app_view: impl FnOnce(WindowId) -> V + 'static,
         config: Option<WindowConfig>,
     ) -> Self {
-        self.handle.as_mut().unwrap().new_window(
-            self.event_loop.as_ref().unwrap(),
-            Box::new(|window_id| app_view(window_id).into_any()),
-            config.unwrap_or_default(),
-        );
+        self.initial_windows.push((
+            Box::new(move |window_id: WindowId| app_view(window_id).into_any()),
+            config,
+        ));
         self
     }
 

@@ -14,7 +14,7 @@ use floem_renderer::Renderer;
 use peniko::kurbo::{Affine, Point, Rect, Size, Vec2};
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
-    event::{ElementState, Ime, MouseButton, MouseScrollDelta},
+    event::{ButtonSource, ElementState, Ime, MouseButton, MouseScrollDelta},
     event_loop::EventLoopProxy,
     keyboard::{Key, ModifiersState, NamedKey},
     window::{CursorIcon, Window, WindowId},
@@ -39,7 +39,7 @@ use crate::{
     keyboard::{KeyEvent, Modifiers},
     menu::Menu,
     nav::view_arrow_navigation,
-    pointer::{PointerButton, PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
+    pointer::{MouseButton, PointerButton, PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
     profiler::Profile,
     style::{CursorStyle, Style, StyleSelector},
     theme::{default_theme, Theme},
@@ -499,7 +499,7 @@ impl WindowHandle {
         self.event(Event::PointerWheel(event));
     }
 
-    pub(crate) fn mouse_input(&mut self, button: MouseButton, state: ElementState) {
+    pub(crate) fn pointer_button(&mut self, button: ButtonSource, state: ElementState) {
         let button: PointerButton = button.into();
         let count = if state.is_pressed() && button.is_primary() {
             if let Some((count, last_pos, instant)) = self.last_pointer_down.as_mut() {

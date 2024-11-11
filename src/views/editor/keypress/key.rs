@@ -4,12 +4,15 @@ use std::{
     str::FromStr,
 };
 
-use crate::keyboard::{Key, KeyCode, NativeKey, PhysicalKey};
+use crate::{
+    keyboard::{Key, KeyCode, NativeKey, PhysicalKey},
+    pointer::{MouseButton, PointerButton},
+};
 
 #[derive(Clone, Debug, Eq)]
 pub enum KeyInput {
     Keyboard(crate::keyboard::Key, crate::keyboard::PhysicalKey),
-    Pointer(crate::pointer::PointerButton),
+    Pointer(PointerButton),
 }
 
 impl KeyInput {
@@ -772,9 +775,11 @@ impl Display for KeyInput {
                 PhysicalKey::Code(KeyCode::F35) => f.write_str("F35"),
                 _ => f.write_str("Unidentified"),
             },
-            Self::Pointer(B::Auxiliary) => f.write_str("MouseMiddle"),
-            Self::Pointer(B::X2) => f.write_str("MouseForward"),
-            Self::Pointer(B::X1) => f.write_str("MouseBackward"),
+            Self::Pointer(PointerButton::Mouse(MouseButton::Auxiliary)) => {
+                f.write_str("MouseMiddle")
+            }
+            Self::Pointer(PointerButton::Mouse(MouseButton::X2)) => f.write_str("MouseForward"),
+            Self::Pointer(PointerButton::Mouse(MouseButton::X1)) => f.write_str("MouseBackward"),
             Self::Pointer(_) => f.write_str("MouseUnimplemented"),
         }
     }
@@ -798,7 +803,7 @@ impl Hash for KeyInput {
         match self {
             Self::Keyboard(_key, key_code) => key_code.hash(state),
             // TODO: Implement `Hash` for `druid::MouseButton`
-            Self::Pointer(btn) => (*btn as u8).hash(state),
+            Self::Pointer(btn) => btn.hash(state),
         }
     }
 }

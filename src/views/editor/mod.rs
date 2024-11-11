@@ -14,7 +14,7 @@ use crate::{
     keyboard::Modifiers,
     kurbo::{Point, Rect, Vec2},
     peniko::Color,
-    pointer::{PointerButton, PointerInputEvent, PointerMoveEvent},
+    pointer::{MouseButton, PointerInputEvent, PointerMoveEvent},
     prop, prop_extractor,
     reactive::{batch, untrack, ReadSignal, RwSignal, Scope},
     style::{CursorColor, StylePropValue, TextColor},
@@ -484,15 +484,11 @@ impl Editor {
 
     /// Default handler for `PointerDown` event
     pub fn pointer_down(&self, pointer_event: &PointerInputEvent) {
-        match pointer_event.button {
-            PointerButton::Primary => {
-                self.active.set(true);
-                self.left_click(pointer_event);
-            }
-            PointerButton::Secondary => {
-                self.right_click(pointer_event);
-            }
-            _ => {}
+        if pointer_event.button.is_primary() {
+            self.active.set(true);
+            self.left_click(pointer_event);
+        } else if pointer_event.button.is_secondary() {
+            self.right_click(pointer_event);
         }
     }
 
