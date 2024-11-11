@@ -1,4 +1,5 @@
 <div align="center">
+<img width=120 height=120 src="https://lap.dev/images/floem.svg"></img>
 
 # Floem
 
