@@ -3,12 +3,15 @@ use std::ops::Range;
 use floem::{
     peniko::Color,
     text::{Attrs, AttrsList, Style, TextLayout},
-    views::{rich_text, scroll, v_stack, RichTextExt},
+    views::{rich_text, scroll, v_stack, Decorators, RichTextExt},
     IntoView,
 };
 
 pub fn rich_text_view() -> impl IntoView {
-    let builder = "this".red().italic() + " is super cool".blue() + format!("\nnew value: {}", 5);
+    let builder = "This".red().italic()
+        + " is easy to build".blue()
+        + "\nTest value: "
+        + 5.to_string().green();
 
     let text = "
     // floem is a ui lib, homepage https://github.com/lapce/floem
@@ -17,7 +20,6 @@ pub fn rich_text_view() -> impl IntoView {
     }";
     scroll({
         v_stack((
-            builder,
             rich_text(move || {
                 let attrs = Attrs::new().color(Color::BLACK);
 
@@ -86,6 +88,8 @@ pub fn rich_text_view() -> impl IntoView {
                 text_layout.set_text(text, attrs_list);
                 text_layout
             }),
+            builder.style(|s| s.padding_left(15)),
         ))
+        .style(|s| s.gap(20))
     })
 }

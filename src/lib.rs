@@ -5,7 +5,7 @@
 //!
 //! ## Example: Counter
 //! ```rust
-//! use floem::{reactive::*, views::*};
+//! use floem::prelude::*;
 //!
 //! let mut counter = RwSignal::new(0);
 //!

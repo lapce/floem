@@ -1,5 +1,5 @@
-In this example, it shows the ability to have 1 million fixed height items in a list. 
+This example showcases Floem's ability to have 1 million fixed height items in a list. 
 
-What it does behind the scenes, is effectively only add the list item view on the screen to the view tree, and remove them from the view tree when they are out of view.
+Behind the scenes, it is keeping track of the list items that are visible and keeping or adding the items that are in view and removing the view items that are out of view.
 
-The ```VirtualList``` in Floem gives the user a way to deal with really long lists in a performant way without manually doing the adding and removing.
+The Floem `VirtualList` gives you a way to deal with extremely long lists in a performant way without manually doing the adding and removing of views from the view tree.

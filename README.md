@@ -1,6 +1,7 @@
 <div align="center">
 <img width=120 height=120 src="https://lap.dev/images/floem.svg"></img>
 
+
 # Floem
 
 A native Rust UI library with fine-grained reactivity
@@ -15,46 +16,43 @@ _The project is still maturing. We will make occasional breaking changes and add
 
 ## Quickstart
 
-![Quickstart](docs/img/quickstart.png)
-
 ```rust
-use floem::{
-    reactive::create_signal,
-    views::{button, label, Decorators},
-    IntoView,
-};
-
-fn app_view() -> impl IntoView {
-    // Create a reactive signal with a counter value, defaulting to 0
-    let (counter, mut set_counter) = create_signal(0);
-
-    // Create a vertical layout
-    (
-        // The counter value updates automatically, thanks to reactivity
-        label(move || format!("Value: {counter}")),
-        // Create a horizontal layout
-        (
-            button("Increment").action(move || set_counter += 1),
-            button("Decrement").action(move || set_counter -= 1),
-        ),
-    ).style(|s| s.flex_col())
-}
+use floem::prelude::*;
 
 fn main() {
-    floem::launch(app_view);
+    floem::launch(counter_view);
 }
+
+fn counter_view() -> impl IntoView {
+    let mut counter = RwSignal::new(0);
+
+    h_stack((
+        button("Increment").action(move || counter += 1),
+        label(move || format!("Value: {counter}")),
+        button("Decrement").action(move || counter -= 1),
+    ))
+    .style(|s| s.size_full().items_center().justify_center().gap(10))
+}
+
 ```
+
+
+<img src="docs/img/quickstart.png" width="300"/>
+
 
 ## Features
 
-Inspired by [Xilem](https://github.com/linebender/xilem), [Leptos](https://github.com/leptos-rs/leptos) and [rui](https://github.com/audulus/rui), Floem aims to be a high performance declarative UI library requiring minimal user effort.
+Inspired by [Xilem](https://github.com/linebender/xilem), [Leptos](https://github.com/leptos-rs/leptos) and [rui](https://github.com/audulus/rui), Floem aims to be a high performance declarative UI library with a highly ergonomic API.
 
-- **Cross-platform support**: Supports Windows, macOS and Linux with rendering using [wgpu](https://github.com/gfx-rs/wgpu). In case a GPU is unavailable, a CPU renderer powered by [tiny-skia](https://github.com/RazrFalcon/tiny-skia) will be used.
+- **Cross-platform**: Floem supports Windows, macOS and Linux with rendering using [wgpu](https://github.com/gfx-rs/wgpu). In case a GPU is unavailable, a CPU renderer powered by [tiny-skia](https://github.com/RazrFalcon/tiny-skia) will be used.
 - **Fine-grained reactivity**: The entire library is built around reactive primitives inspired by [leptos_reactive](https://crates.io/crates/leptos_reactive). The reactive "signals" allow you to keep your UI up-to-date with minimal effort, all while maintaining very high performance.
-- **Performance**: The view tree is only run once, safeguarding you from accidentally creating a bottleneck in a view generation function that slows down your entire application. Floem also provides tools to help you write efficient UI code, such as a [virtual list](https://github.com/lapce/floem/tree/main/examples/virtual_list).
-- **Flexbox layout**: Using [Taffy](https://crates.io/crates/taffy), the library provides the Flexbox (or Grid) layout system, which can be applied to any View node.
-- **Customizable widgets**: Don't want the default look? You can change pretty much anything you want using the styling API, or install a third-party theme.
-- **Element inspector**: Inspired by your browser's developer tools, Floem provides a [diagnostic tool](https://lapce.dev/floem/floem/id/struct.Id.html#method.inspect) to debug your layout.
+- **Performance**: The view tree is constructed only once, safeguarding you from accidentally creating a bottleneck in a view generation function that slows down your entire application. Floem also provides tools to help you write efficient UI code, such as a [virtual list](https://github.com/lapce/floem/tree/main/examples/virtual_list).
+- **Ergonomic API**: Floem aspires to have a highly ergonmic API that is a joy to use. 
+- **Flexbox layout**: Using [Taffy](https://crates.io/crates/taffy), the library provides the Flexbox and Grid layout systems, which can be applied to any View node.
+- **Customizable widgets**: Widgets are highly customizable. You can customize both the appearance and behavior of widgets using the styling API, which supports theming with classes. You can also install third-party themes.
+- **Transitions and Animations**: Floem supports both transitions and animations. Transitions, like css transitions, can animate any property that can be interpolated and can be applied alongside other styles, including in classes. 
+        Floem also supports full keyframe animations that build on the ergonomics of the style system. In both transitions and animations, Floem supports easing with spring functions.
+- **Element inspector**: Inspired by your browser's developer tools, Floem provides a [diagnostic tool](docs/img/inspector.png) to debug your layout.
 
 To sample Floem's capabilities, check out the repo and run the [widget gallery](examples/widget-gallery/src/main.rs) example with cargo.
 
