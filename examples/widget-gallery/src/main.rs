@@ -15,7 +15,6 @@ pub mod radio_buttons;
 pub mod rich_text;
 pub mod slider;
 
-use files;
 use floem::{
     event::{Event, EventListener, EventPropagation},
     keyboard::{Key, NamedKey},
@@ -184,7 +183,7 @@ fn app_view() -> impl IntoView {
         move || active_tab.get(),
         move || tabs.get(),
         |it| *it,
-        move |it| create_view(it),
+        create_view,
     )
     .style(|s| s.flex_col().items_start());
 
