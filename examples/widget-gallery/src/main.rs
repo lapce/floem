@@ -25,7 +25,7 @@ use floem::{
     style::{Background, CursorStyle, Transition},
     unit::{DurationUnitExt, UnitExt},
     views::{
-        button, h_stack, label, scroll, stack, tab, v_stack, virtual_stack, Decorators,
+        button, h_stack, label, scroll, stack, tab, v_stack, virtual_stack, Decorators, LabelClass,
         VirtualDirection, VirtualItemSize,
     },
     window::WindowConfig,
@@ -154,7 +154,11 @@ fn app_view() -> impl IntoView {
         .style(|s| s.flex_col().width(140.0))
     })
     .scroll_style(|s| s.shrink_to_fit())
-    .style(|s| s.border(1.).border_color(Color::GRAY));
+    .style(|s| {
+        s.border(1.)
+            .border_color(Color::GRAY)
+            .class(LabelClass, |s| s.selectable(false))
+    });
 
     let id = list.id();
     let inspector = button("Open Inspector")
