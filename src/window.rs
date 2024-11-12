@@ -363,7 +363,7 @@ impl WebWindowConfig {
 /// create a new window. You'll need to create Application first, otherwise it
 /// will panic
 pub fn new_window<V: IntoView + 'static>(
-    app_view: impl FnOnce(WindowId) -> V + 'static,
+    app_view: impl FnOnce(WindowId) -> V + 'static + Send + Sync,
     config: Option<WindowConfig>,
 ) {
     add_app_update_event(AppUpdateEvent::NewWindow {

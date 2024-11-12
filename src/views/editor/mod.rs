@@ -1576,17 +1576,18 @@ pub struct CursorInfo {
 
     pub blink_timer: RwSignal<TimerToken>,
     // TODO: should these just be rwsignals?
-    pub should_blink: Rc<dyn Fn() -> bool + 'static>,
-    pub blink_interval: Rc<dyn Fn() -> u64 + 'static>,
+    pub should_blink: Arc<dyn Fn() -> bool + 'static + Send + Sync>,
+    pub blink_interval: Arc<dyn Fn() -> u64 + 'static + Send + Sync>,
 }
+
 impl CursorInfo {
     pub fn new(cx: Scope) -> CursorInfo {
         CursorInfo {
             hidden: cx.create_rw_signal(false),
 
             blink_timer: cx.create_rw_signal(TimerToken::INVALID),
-            should_blink: Rc::new(|| true),
-            blink_interval: Rc::new(|| 500),
+            should_blink: Arc::new(|| true),
+            blink_interval: Arc::new(|| 500),
         }
     }
 

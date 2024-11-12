@@ -547,12 +547,12 @@ impl KeyInput {
     }
 
     fn mouse_from_str(s: &str) -> Option<crate::pointer::PointerButton> {
-        use crate::pointer::PointerButton as B;
+        use crate::pointer::MouseButton as B;
 
         Some(match s {
-            "mousemiddle" => B::Auxiliary,
-            "mouseforward" => B::X2,
-            "mousebackward" => B::X1,
+            "mousemiddle" => PointerButton::Mouse(B::Auxiliary),
+            "mouseforward" => PointerButton::Mouse(B::X2),
+            "mousebackward" => PointerButton::Mouse(B::X1),
             _ => return None,
         })
     }
@@ -560,8 +560,6 @@ impl KeyInput {
 
 impl Display for KeyInput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use crate::pointer::PointerButton as B;
-
         match self {
             Self::Keyboard(_key, key_code) => match key_code {
                 PhysicalKey::Unidentified(_) => f.write_str("Unidentified"),

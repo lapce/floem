@@ -2,7 +2,7 @@ use crate::action::exec_after;
 use crate::event::{EventListener, EventPropagation};
 use crate::id::ViewId;
 use crate::keyboard::{self, KeyEvent, Modifiers};
-use crate::pointer::{PointerButton, PointerInputEvent};
+use crate::pointer::{MouseButton, PointerButton, PointerInputEvent};
 use crate::reactive::{create_effect, RwSignal};
 use crate::style::{FontProps, PaddingLeft, SelectionStyle};
 use crate::style::{FontStyle, FontWeight, TextColor};
@@ -1044,7 +1044,7 @@ impl View for TextInput {
             // match on pointer primary button press
             Event::PointerDown(
                 event @ PointerInputEvent {
-                    button: PointerButton::Primary,
+                    button: PointerButton::Mouse(MouseButton::Primary),
                     ..
                 },
             ) => {

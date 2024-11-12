@@ -39,7 +39,7 @@ use crate::{
     keyboard::{KeyEvent, Modifiers},
     menu::Menu,
     nav::view_arrow_navigation,
-    pointer::{MouseButton, PointerButton, PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
+    pointer::{PointerButton, PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
     profiler::Profile,
     style::{CursorStyle, Style, StyleSelector},
     theme::{default_theme, Theme},
@@ -183,6 +183,7 @@ impl WindowHandle {
     }
 
     pub(crate) fn init_renderer(&mut self) {
+        println!("now init renderer");
         self.paint_state.init_renderer();
         // On the web, we need to get the canvas size once. The size will be updated automatically
         // when the canvas element is resized subsequently. This is the correct place to do so
@@ -1120,19 +1121,21 @@ impl WindowHandle {
     }
 
     #[cfg(target_os = "macos")]
-    fn show_context_menu(&self, menu: winit::menu::Menu, pos: Option<Point>) {
+    fn show_context_menu(&self, menu: muda::Menu, pos: Option<Point>) {
+        use muda::{
+            dpi::{LogicalPosition, Position},
+            ContextMenu,
+        };
+        use raw_window_handle::RawWindowHandle;
+
         if let Some(window) = self.window.as_ref() {
-            {
-                use winit::platform::macos::WindowExtMacOS;
-                window.show_context_menu(
-                    menu,
-                    pos.map(|pos| {
-                        winit::dpi::Position::Logical(winit::dpi::LogicalPosition::new(
-                            pos.x * self.app_state.scale,
-                            pos.y * self.app_state.scale,
-                        ))
-                    }),
-                );
+            if let RawWindowHandle::AppKit(handle) = window.window_handle().unwrap().as_raw() {
+                unsafe {
+                    menu.show_context_menu_for_nsview(
+                        handle.ns_view.as_ptr() as _,
+                        pos.map(|pos| Position::Logical(LogicalPosition::new(pos.x, pos.y))),
+                    )
+                };
             }
         }
     }

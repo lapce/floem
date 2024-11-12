@@ -73,14 +73,7 @@ impl ExtEventHandler {
     }
 
     pub fn add_trigger(&self, trigger: ExtSendTrigger) {
-        {
-            // Run this in a short block to prevent any deadlock if running the trigger effects
-            // causes another trigger to be registered
-            EXT_EVENT_HANDLER.queue.lock().push_back(trigger);
-        }
-        Application::with_event_loop_proxy(|proxy| {
-            let _ = proxy.send_event(UserEvent::Idle);
-        });
+        Application::send_proxy_event(UserEvent::Idle(trigger));
     }
 }
 

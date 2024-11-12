@@ -1,5 +1,7 @@
 use std::sync::atomic::AtomicU64;
 
+use muda::PredefinedMenuItem;
+
 /// An entry in a menu.
 ///
 /// An entry is either a [`MenuItem`], a submenu (i.e. [`Menu`]).
@@ -46,30 +48,46 @@ impl Menu {
         self.entry(MenuEntry::Separator)
     }
 
-    pub(crate) fn platform_menu(&self) -> winit::menu::Menu {
-        let mut menu = if self.popup {
-            floem_winit::menu::Menu::new_for_popup()
-        } else {
-            floem_winit::menu::Menu::new()
-        };
+    pub(crate) fn platform_menu(&self) -> muda::Menu {
+        let menu = muda::Menu::new();
         for entry in &self.children {
             match entry {
                 MenuEntry::Separator => {
-                    menu.add_separator();
+                    menu.append(&PredefinedMenuItem::separator());
                 }
                 MenuEntry::Item(item) => {
-                    menu.add_item(
-                        item.id as u32,
-                        &item.title,
-                        // item.key.as_ref(),
-                        item.selected,
+                    menu.append(&muda::MenuItem::with_id(
+                        item.id,
+                        item.title.clone(),
                         item.enabled,
-                    );
+                        None,
+                    ));
                 }
-                MenuEntry::SubMenu(m) => {
-                    let enabled = m.item.enabled;
-                    let title = m.item.title.clone();
-                    menu.add_dropdown(m.platform_menu(), &title, enabled);
+                MenuEntry::SubMenu(floem_menu) => {
+                    menu.append(&floem_menu.platform_submenu());
+                }
+            }
+        }
+        menu
+    }
+
+    pub(crate) fn platform_submenu(&self) -> muda::Submenu {
+        let menu = muda::Submenu::new(self.item.title.clone(), self.item.enabled);
+        for entry in &self.children {
+            match entry {
+                MenuEntry::Separator => {
+                    menu.append(&PredefinedMenuItem::separator());
+                }
+                MenuEntry::Item(item) => {
+                    menu.append(&muda::MenuItem::with_id(
+                        item.id,
+                        item.title.clone(),
+                        item.enabled,
+                        None,
+                    ));
+                }
+                MenuEntry::SubMenu(floem_menu) => {
+                    menu.append(&floem_menu.platform_submenu());
                 }
             }
         }

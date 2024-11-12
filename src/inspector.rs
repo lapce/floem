@@ -229,7 +229,7 @@ fn captured_view_no_children(
     view: &CapturedView,
     depth: usize,
     capture_view: &CaptureView,
-    capture: &Rc<Capture>,
+    capture: &Arc<Capture>,
 ) -> impl IntoView {
     let offset = depth as f64 * 14.0;
     let name = captured_view_name(view).into_view();
@@ -291,7 +291,7 @@ fn captured_view_with_children(
     depth: usize,
     capture_view: &CaptureView,
     children: Vec<Box<dyn View>>,
-    capture: &Rc<Capture>,
+    capture: &Arc<Capture>,
 ) -> impl IntoView {
     let offset = depth as f64 * 14.0;
     let name = captured_view_name(view).into_view();
@@ -404,7 +404,7 @@ fn captured_view(
     view: &Arc<CapturedView>,
     depth: usize,
     capture_view: &CaptureView,
-    capture: &Rc<Capture>,
+    capture: &Arc<Capture>,
 ) -> impl IntoView {
     if view.children.is_empty() {
         captured_view_no_children(view, depth, capture_view, capture).into_any()
@@ -423,7 +423,7 @@ fn add_event(
     name: String,
     id: ViewId,
     capture_view: CaptureView,
-    capture: &Rc<Capture>,
+    capture: &Arc<Capture>,
 ) -> impl View {
     let capture = capture.clone();
     row.keyboard_navigable()
@@ -541,7 +541,7 @@ fn stats(capture: &Capture) -> impl IntoView {
     ))
 }
 
-fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<ViewId>>) -> impl IntoView {
+fn selected_view(capture: &Arc<Capture>, selected: RwSignal<Option<ViewId>>) -> impl IntoView {
     let capture = capture.clone();
     dyn_container(
         move || selected.get(),
@@ -776,8 +776,8 @@ struct CaptureView {
 
 fn capture_view(
     window_id: WindowId,
-    capture_s: RwSignal<Option<Rc<Capture>>>,
-    capture: &Rc<Capture>,
+    capture_s: RwSignal<Option<Arc<Capture>>>,
+    capture: &Arc<Capture>,
 ) -> impl IntoView {
     let capture_view = CaptureView {
         expanding_selection: create_rw_signal(None),
@@ -1051,8 +1051,8 @@ fn capture_view(
 
 fn inspector_view(
     window_id: WindowId,
-    capture_s: RwSignal<Option<Rc<Capture>>>,
-    capture: &Option<Rc<Capture>>,
+    capture_s: RwSignal<Option<Arc<Capture>>>,
+    capture: &Option<Arc<Capture>>,
 ) -> impl IntoView {
     let view = if let Some(capture) = capture {
         capture_view(window_id, capture_s, capture).into_any()
@@ -1082,7 +1082,7 @@ fn inspector_view(
 
 thread_local! {
     pub(crate) static RUNNING: Cell<bool> = const { Cell::new(false) };
-    pub(crate) static CAPTURE: RwSignal<Option<Rc<Capture>>> = {
+    pub(crate) static CAPTURE: RwSignal<Option<Arc<Capture>>> = {
         Scope::new().create_rw_signal(None)
     };
 }

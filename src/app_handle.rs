@@ -6,9 +6,9 @@ use web_time::Instant;
 #[cfg(target_arch = "wasm32")]
 use wgpu::web_sys;
 
-use floem_reactive::SignalUpdate;
+use floem_reactive::{SignalUpdate, Trigger};
 use peniko::kurbo::{Point, Size};
-use std::{collections::HashMap, mem, rc::Rc};
+use std::{collections::HashMap, mem, rc::Rc, sync::Arc};
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::WindowEvent,
@@ -43,11 +43,11 @@ impl ApplicationHandle {
 
     pub(crate) fn handle_user_event(&mut self, event_loop: &dyn ActiveEventLoop, event: UserEvent) {
         match event {
-            UserEvent::AppUpdate => {
-                self.handle_update_event(event_loop);
+            UserEvent::AppUpdate(event) => {
+                self.handle_update_event(event_loop, event);
             }
-            UserEvent::Idle => {
-                self.idle();
+            UserEvent::Idle(trigger) => {
+                self.idle(trigger);
             }
             UserEvent::QuitApp => {
                 event_loop.exit();
@@ -61,55 +61,53 @@ impl ApplicationHandle {
         }
     }
 
-    pub(crate) fn handle_update_event(&mut self, event_loop: &dyn ActiveEventLoop) {
-        let events = APP_UPDATE_EVENTS.with(|events| {
-            let mut events = events.borrow_mut();
-            std::mem::take(&mut *events)
-        });
-        for event in events {
-            match event {
-                AppUpdateEvent::NewWindow { view_fn, config } => {
-                    self.new_window(event_loop, view_fn, config.unwrap_or_default())
-                }
-                AppUpdateEvent::CloseWindow { window_id } => {
-                    self.close_window(window_id, event_loop);
-                }
-                AppUpdateEvent::RequestTimer { timer } => {
-                    self.request_timer(timer, event_loop);
-                }
-                AppUpdateEvent::CancelTimer { timer } => {
-                    self.remove_timer(&timer);
-                }
-                AppUpdateEvent::CaptureWindow { window_id, capture } => {
-                    capture.set(self.capture_window(window_id).map(Rc::new));
-                }
-                AppUpdateEvent::ProfileWindow {
-                    window_id,
-                    end_profile,
-                } => {
-                    let handle = self.window_handles.get_mut(&window_id);
-                    if let Some(handle) = handle {
-                        if let Some(profile) = end_profile {
-                            profile.set(handle.profile.take().map(|mut profile| {
-                                profile.next_frame();
-                                Rc::new(profile)
-                            }));
-                        } else {
-                            handle.profile = Some(Profile::default());
-                        }
+    pub(crate) fn handle_update_event(
+        &mut self,
+        event_loop: &dyn ActiveEventLoop,
+        event: AppUpdateEvent,
+    ) {
+        match event {
+            AppUpdateEvent::NewWindow { view_fn, config } => {
+                self.new_window(event_loop, view_fn, config.unwrap_or_default())
+            }
+            AppUpdateEvent::CloseWindow { window_id } => {
+                self.close_window(window_id, event_loop);
+            }
+            AppUpdateEvent::RequestTimer { timer } => {
+                self.request_timer(timer, event_loop);
+            }
+            AppUpdateEvent::CancelTimer { timer } => {
+                self.remove_timer(&timer);
+            }
+            AppUpdateEvent::CaptureWindow { window_id, capture } => {
+                capture.set(self.capture_window(window_id).map(Arc::new));
+            }
+            AppUpdateEvent::ProfileWindow {
+                window_id,
+                end_profile,
+            } => {
+                let handle = self.window_handles.get_mut(&window_id);
+                if let Some(handle) = handle {
+                    if let Some(profile) = end_profile {
+                        profile.set(handle.profile.take().map(|mut profile| {
+                            profile.next_frame();
+                            Arc::new(profile)
+                        }));
+                    } else {
+                        handle.profile = Some(Profile::default());
                     }
                 }
-                #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-                AppUpdateEvent::MenuAction {
-                    window_id,
-                    action_id,
-                } => {
-                    let window_handle = match self.window_handles.get_mut(&window_id) {
-                        Some(window_handle) => window_handle,
-                        None => return,
-                    };
-                    window_handle.menu_action(action_id);
-                }
+            }
+            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+            AppUpdateEvent::MenuAction {
+                window_id,
+                action_id,
+            } => {
+                let window_handle = match self.window_handles.get_mut(&window_id) {
+                    Some(window_handle) => window_handle,
+                    None => return,
+                };
+                window_handle.menu_action(action_id);
             }
         }
     }
@@ -228,9 +226,13 @@ impl ApplicationHandle {
             WindowEvent::Occluded(_) => {}
             WindowEvent::RedrawRequested => {
                 window_handle.render_frame();
-            } // WindowEvent::MenuAction(id) => {
-              //     window_handle.menu_action(id);
-              // }
+            }
+            WindowEvent::PinchGesture { .. } => {}
+            WindowEvent::PanGesture { .. } => {}
+            WindowEvent::DoubleTapGesture { .. } => {}
+            WindowEvent::RotationGesture { .. } => {} // WindowEvent::MenuAction(id) => {
+                                                      //     window_handle.menu_action(id);
+                                                      // }
         }
 
         if let Some((name, start, new_frame)) = start {
@@ -275,6 +277,7 @@ impl ApplicationHandle {
             font_embolden,
         }: WindowConfig,
     ) {
+        println!("new window");
         let logical_size = size.map(|size| LogicalSize::new(size.width, size.height));
 
         let mut window_attributes = winit::window::WindowAttributes::default()
@@ -394,6 +397,7 @@ impl ApplicationHandle {
             }
         }
 
+        println!("window attributes {window_attributes:?}");
         let Ok(window) = event_loop.create_window(window_attributes) else {
             return;
         };
@@ -432,17 +436,11 @@ impl ApplicationHandle {
             .map(|handle| handle.capture())
     }
 
-    pub(crate) fn idle(&mut self) {
-        let ext_events = { mem::take(&mut *EXT_EVENT_HANDLER.queue.lock()) };
-
-        for trigger in ext_events {
-            trigger.notify();
-        }
-
-        self.handle_updates_for_all_windows();
+    pub(crate) fn idle(&mut self, trigger: Trigger) {
+        trigger.notify();
     }
 
-    fn handle_updates_for_all_windows(&mut self) {
+    pub(crate) fn handle_updates_for_all_windows(&mut self) {
         for (window_id, handle) in self.window_handles.iter_mut() {
             handle.process_update();
             while process_window_updates(window_id) {}

@@ -158,8 +158,11 @@ pub fn monitor_bounds(id: &WindowId) -> Option<Rect> {
 
 pub fn monitor_bounds_for_monitor(window: &Arc<dyn Window>, monitor: &MonitorHandle) -> Rect {
     let scale = 1.0 / window.scale_factor();
-    let pos = monitor.position();
-    let sz = monitor.size();
+    let pos = monitor.position().unwrap_or_default();
+    let sz = monitor
+        .current_video_mode()
+        .map(|h| h.size())
+        .unwrap_or_default();
     let x = pos.x as f64 * scale;
     let y = pos.y as f64 * scale;
     Rect::new(

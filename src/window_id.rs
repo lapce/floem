@@ -257,11 +257,8 @@ impl WindowIdExt for WindowId {
     #[cfg(target_os = "macos")]
     #[allow(dead_code)]
     fn is_document_edited(&self) -> bool {
-        with_window(
-            self,
-            winit::platform::macos::WindowExtMacOS::is_document_edited,
-        )
-        .unwrap_or(false)
+        use winit::platform::macos::WindowExtMacOS;
+        with_window(self, |window| window.is_document_edited()).unwrap_or(false)
     }
 
     #[cfg(not(target_os = "macos"))]
