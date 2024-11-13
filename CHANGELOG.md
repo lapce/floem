@@ -1,9 +1,9 @@
 # Changelog
 
-<!-- ## [0.2.0] - 2024-11-?? -->
-
 ## Unreleased
 
+
+## [0.2.0] - 2024-11-13
 
 ### Features
 - Add `update_state_deferred` and simplify `update_state` [#277](https://github.com/lapce/floem/pull/277)
@@ -68,7 +68,7 @@
 - add text input scroll when mouse goes out of bounds [#659](https://github.com/lapce/floem/pull/659)
 - add event transforms and the rotation transform [#664](https://github.com/lapce/floem/pull/664)
 
-## Changes
+### Changes
 - Split the `View` trait into `View` and `Widget` [#288](https://github.com/lapce/floem/pull/288)
 - Make `virtual_list` take a view [#333](https://github.com/lapce/floem/pull/333)
 - automatically propagate pointer events at scroll end [#380](https://github.com/lapce/floem/pull/380)

@@ -17,4 +17,4 @@ anyhow = "1.0.69"
 swash = "0.1.8"
 vello = "0.3.0"
 vello_svg = "0.4.0"
-floem_renderer = { path = "../renderer", version = "0.1.0" }
+floem_renderer = { path = "../renderer", version = "0.2.0" }

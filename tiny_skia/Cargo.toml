@@ -15,6 +15,6 @@ raw-window-handle = { workspace = true }
 futures = "0.3.26"
 anyhow = "1.0.69"
 swash = "0.1.8"
-floem_renderer = { path = "../renderer", version = "0.1.0" }
+floem_renderer = { path = "../renderer", version = "0.2.0" }
 softbuffer = "0.4.1"
 bytemuck = "1.12"
