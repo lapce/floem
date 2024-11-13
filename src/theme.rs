@@ -214,7 +214,8 @@ pub(crate) fn default_theme() -> Theme {
 
     let theme = Style::new()
         .class(ListClass, |s| {
-            s.focus(|s| s.class(ListItemClass, |_| item_focused_style))
+            s.apply(focus_style)
+                .focus(|s| s.class(ListItemClass, |_| item_focused_style))
                 .class(ListItemClass, |_| item_unfocused_style)
         })
         .class(LabeledCheckboxClass, |_| labeled_checkbox_style)
