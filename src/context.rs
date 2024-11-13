@@ -16,6 +16,7 @@ use web_time::{Duration, Instant};
 use taffy::prelude::NodeId;
 
 use crate::animate::{AnimStateKind, RepeatMode};
+use crate::easing::{Easing, Linear};
 use crate::renderer::Renderer;
 use crate::style::DisplayProp;
 use crate::view_state::IsHiddenState;
@@ -50,6 +51,7 @@ pub struct DragState {
     pub(crate) id: ViewId,
     pub(crate) offset: Vec2,
     pub(crate) released_at: Option<Instant>,
+    pub(crate) release_location: Option<Point>,
 }
 
 pub(crate) enum FrameUpdate {
@@ -253,26 +255,26 @@ impl<'a> EventCx<'a> {
                             .as_ref()
                             .filter(|(drag_id, _)| drag_id == &view_id)
                         {
-                            let vec2 = pointer_event.pos - *drag_start;
-
+                            let offset = pointer_event.pos - *drag_start;
                             if let Some(dragging) = self
                                 .app_state
                                 .dragging
                                 .as_mut()
                                 .filter(|d| d.id == view_id && d.released_at.is_none())
                             {
-                                // update the dragging offset if the view is dragging and not released
-                                dragging.offset = vec2;
+                                // update the mouse position if the view is dragging and not released
+                                dragging.offset = drag_start.to_vec2();
                                 self.app_state.request_paint(view_id);
-                            } else if vec2.x.abs() + vec2.y.abs() > 1.0 {
+                            } else if offset.x.abs() + offset.y.abs() > 1.0 {
                                 // start dragging when moved 1 px
                                 self.app_state.active = None;
-                                self.update_active(view_id);
                                 self.app_state.dragging = Some(DragState {
                                     id: view_id,
-                                    offset: vec2,
+                                    offset: drag_start.to_vec2(),
                                     released_at: None,
+                                    release_location: None,
                                 });
+                                self.update_active(view_id);
                                 self.app_state.request_paint(view_id);
                                 view_id.apply_event(&EventListener::DragStart, &event);
                             }
@@ -312,6 +314,7 @@ impl<'a> EventCx<'a> {
                         {
                             let dragging_id = dragging.id;
                             dragging.released_at = Some(Instant::now());
+                            dragging.release_location = Some(pointer_event.pos);
                             self.app_state.request_paint(view_id);
                             dragging_id.apply_event(&EventListener::DragEnd, &event);
                         }
@@ -1018,41 +1021,50 @@ impl<'a> PaintCx<'a> {
             paint_border(self, &layout_props, &view_style_props, size);
             paint_outline(self, &view_style_props, size)
         }
-
         let mut drag_set_to_none = false;
+
         if let Some(dragging) = self.app_state.dragging.as_ref() {
             if dragging.id == id {
-                let dragging_offset = dragging.offset;
-                let mut offset_scale = None;
-                if let Some(released_at) = dragging.released_at {
-                    const LIMIT: f64 = 300.0;
+                let transform = if let Some((released_at, release_location)) =
+                    dragging.released_at.zip(dragging.release_location)
+                {
+                    let easing = Linear;
+                    const ANIMATION_DURATION_MS: f64 = 300.0;
                     let elapsed = released_at.elapsed().as_millis() as f64;
-                    if elapsed < LIMIT {
-                        offset_scale = Some(1.0 - elapsed / LIMIT);
+                    let progress = elapsed / ANIMATION_DURATION_MS;
+
+                    if !(easing.finished(progress)) {
+                        let offset_scale = 1.0 - easing.eval(progress);
+                        let release_offset = release_location.to_vec2() - dragging.offset;
+
+                        // Schedule next animation frame
                         exec_after(Duration::from_millis(8), move |_| {
                             id.request_paint();
                         });
+
+                        Some(self.transform * Affine::translate(release_offset * offset_scale))
                     } else {
                         drag_set_to_none = true;
+                        None
                     }
                 } else {
-                    offset_scale = Some(1.0);
-                }
+                    // Handle active dragging
+                    let translation =
+                        self.app_state.last_cursor_location.to_vec2() - dragging.offset;
+                    Some(self.transform.with_translation(translation))
+                };
 
-                if let Some(offset_scale) = offset_scale {
-                    let offset = dragging_offset * offset_scale;
+                if let Some(transform) = transform {
                     self.save();
-
-                    let mut new = self.transform.as_coeffs();
-                    new[4] += offset.x;
-                    new[5] += offset.y;
-                    self.transform = Affine::new(new);
+                    self.transform = transform;
                     self.paint_state.renderer_mut().transform(self.transform);
                     self.set_z_index(1000);
                     self.clear_clip();
 
+                    // Apply styles
                     let style = view_state.borrow().combined_style.clone();
                     let mut view_style_props = view_state.borrow().view_style_props.clone();
+
                     if let Some(dragging_style) = view_state.borrow().dragging_style.clone() {
                         let style = style.apply(dragging_style);
                         let mut _new_frame = false;
@@ -1063,27 +1075,31 @@ impl<'a> PaintCx<'a> {
                             &mut _new_frame,
                         );
                     }
+
+                    // Paint with drag styling
                     let layout_props = view_state.borrow().layout_props.clone();
 
                     // Important: If any method early exit points are added in this
                     // code block, they MUST call CURRENT_DRAG_PAINTING_ID.take() before
                     // returning.
-                    CURRENT_DRAG_PAINTING_ID.set(Some(id));
-                    paint_bg(self, &view_style_props, size);
 
+                    CURRENT_DRAG_PAINTING_ID.set(Some(id));
+
+                    paint_bg(self, &view_style_props, size);
                     view.borrow_mut().paint(self);
                     paint_border(self, &layout_props, &view_style_props, size);
                     paint_outline(self, &view_style_props, size);
 
                     self.restore();
+
                     CURRENT_DRAG_PAINTING_ID.take();
                 }
             }
         }
+
         if drag_set_to_none {
             self.app_state.dragging = None;
         }
-
         self.restore();
     }
 
