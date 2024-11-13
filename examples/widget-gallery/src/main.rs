@@ -16,24 +16,17 @@ pub mod rich_text;
 pub mod slider;
 
 use floem::{
-    event::{Event, EventListener, EventPropagation},
+    event::{Event, EventListener},
     keyboard::{Key, NamedKey},
     kurbo::Size,
     new_window,
-    peniko::Color,
-    reactive::{create_signal, SignalGet, SignalUpdate},
+    prelude::*,
     style::{Background, CursorStyle, Transition},
-    unit::{DurationUnitExt, UnitExt},
-    views::{
-        button, h_stack, label, scroll, stack, tab, v_stack, virtual_stack, Decorators, LabelClass,
-        VirtualDirection, VirtualItemSize,
-    },
     window::WindowConfig,
-    IntoView, View,
 };
 
 fn app_view() -> impl IntoView {
-    let tabs: im::Vector<&str> = vec![
+    let tabs: Vec<&'static str> = vec![
         "Label",
         "Button",
         "Checkbox",
@@ -50,9 +43,7 @@ fn app_view() -> impl IntoView {
         "Draggable",
         "DroppedFile",
         "Files",
-    ]
-    .into_iter()
-    .collect();
+    ];
 
     let create_view = |it: &str| match it {
         "Label" => labels::label_view().into_any(),
@@ -74,114 +65,74 @@ fn app_view() -> impl IntoView {
         _ => label(|| "Not implemented".to_owned()).into_any(),
     };
 
-    let (tabs, _set_tabs) = create_signal(tabs);
+    let tabs = RwSignal::new(tabs);
 
     let (active_tab, set_active_tab) = create_signal(0);
 
-    let list = scroll({
-        virtual_stack(
-            VirtualDirection::Vertical,
-            VirtualItemSize::Fixed(Box::new(|| 36.0)),
-            move || tabs.get(),
-            move |item| *item,
-            move |item| {
-                let index = tabs
-                    .get_untracked()
-                    .iter()
-                    .position(|it| *it == item)
-                    .unwrap();
-                stack((label(move || item).style(|s| s.font_size(18.0)),))
-                    .on_click_stop(move |_| {
-                        set_active_tab.update(|v: &mut usize| {
-                            *v = tabs
-                                .get_untracked()
-                                .iter()
-                                .position(|it| *it == item)
-                                .unwrap();
-                        });
+    let side_tab_bar = list(tabs.get().into_iter().enumerate().map(move |(idx, item)| {
+        label(move || item)
+            .draggable()
+            .style(move |s| {
+                s.flex_row()
+                    .font_size(18.)
+                    .padding(5.0)
+                    .width(100.pct())
+                    .height(36.0)
+                    .transition(Background, Transition::ease_in_out(100.millis()))
+                    .items_center()
+                    .border_bottom(1.)
+                    .border_color(Color::LIGHT_GRAY)
+                    .selected(|s| {
+                        s.border(2.)
+                            .border_color(Color::BLUE)
+                            .background(Color::GRAY.multiply_alpha(0.6))
                     })
-                    .on_event(EventListener::KeyDown, move |e| {
-                        if let Event::KeyDown(key_event) = e {
-                            let active = active_tab.get();
-                            if key_event.modifiers.is_empty() {
-                                match key_event.key.logical_key {
-                                    Key::Named(NamedKey::ArrowUp) => {
-                                        if active > 0 {
-                                            set_active_tab.update(|v| *v -= 1)
-                                        }
-                                        EventPropagation::Stop
-                                    }
-                                    Key::Named(NamedKey::ArrowDown) => {
-                                        if active < tabs.get().len() - 1 {
-                                            set_active_tab.update(|v| *v += 1)
-                                        }
-                                        EventPropagation::Stop
-                                    }
-                                    _ => EventPropagation::Continue,
-                                }
-                            } else {
-                                EventPropagation::Continue
-                            }
-                        } else {
-                            EventPropagation::Continue
-                        }
+                    .hover(|s| {
+                        s.background(Color::LIGHT_GRAY)
+                            .apply_if(idx == active_tab.get(), |s| s.background(Color::GRAY))
+                            .cursor(CursorStyle::Pointer)
                     })
-                    .keyboard_navigable()
-                    .draggable()
-                    .style(move |s| {
-                        s.flex_row()
-                            .padding(5.0)
-                            .width(100.pct())
-                            .height(36.0)
-                            .transition(Background, Transition::ease_in_out(400.millis()))
-                            .items_center()
-                            .border_bottom(1.0)
-                            .border_color(Color::LIGHT_GRAY)
-                            .apply_if(index == active_tab.get(), |s| {
-                                s.background(Color::GRAY.multiply_alpha(0.6))
-                            })
-                            .focus_visible(|s| s.border(2.).border_color(Color::BLUE))
-                            .hover(|s| {
-                                s.background(Color::LIGHT_GRAY)
-                                    .apply_if(index == active_tab.get(), |s| {
-                                        s.background(Color::GRAY)
-                                    })
-                                    .cursor(CursorStyle::Pointer)
-                            })
-                    })
-            },
-        )
-        .style(|s| s.flex_col().width(140.0))
+            })
+            .dragging_style(|s| s.background(Color::GRAY.multiply_alpha(0.6)))
+    }))
+    .on_select(move |idx| {
+        if let Some(idx) = idx {
+            set_active_tab.set(idx);
+        }
     })
+    .keyboard_navigable()
+    .style(|s| s.flex_col().width(140.0))
+    .scroll()
+    .debug_name("Side Tab Bar")
     .scroll_style(|s| s.shrink_to_fit())
     .style(|s| {
         s.border(1.)
+            .padding(3.)
             .border_color(Color::GRAY)
             .class(LabelClass, |s| s.selectable(false))
     });
 
-    let id = list.id();
+    let id = side_tab_bar.id();
     let inspector = button("Open Inspector")
         .action(move || id.inspect())
         .style(|s| s);
 
     let new_window = button("Open In Window").action(move || {
-        let mut name = "";
-        let active = active_tab.get();
-        if active < tabs.get().len() {
-            name = tabs.get().get(active_tab.get()).unwrap_or(&name);
-        }
+        let name = tabs.with(|tabs| tabs.get(active_tab.get()).copied());
         new_window(
-            move |_| create_view(name),
+            move |_| create_view(name.unwrap_or_default()),
             Some(
                 WindowConfig::default()
                     .size(Size::new(700.0, 400.0))
-                    .title(name),
+                    .title(name.unwrap_or_default()),
             ),
         );
     });
 
-    let left = v_stack((list, new_window, inspector)).style(|s| s.height_full().column_gap(5.0));
+    let left_side_bar = (side_tab_bar, new_window, inspector)
+        .v_stack()
+        .debug_name("Left Side Bar")
+        .style(|s| s.height_full().column_gap(5.0));
 
     let tab = tab(
         move || active_tab.get(),
@@ -189,11 +140,13 @@ fn app_view() -> impl IntoView {
         |it| *it,
         create_view,
     )
+    .debug_name("Active Tab")
     .style(|s| s.flex_col().items_start());
 
     let tab = scroll(tab).scroll_style(|s| s.shrink_to_fit());
 
-    let view = h_stack((left, tab))
+    let view = (left_side_bar, tab)
+        .h_stack()
         .style(|s| s.padding(5.0).width_full().height_full().row_gap(5.0))
         .window_title(|| "Widget Gallery".to_owned());
 
