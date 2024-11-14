@@ -4,6 +4,7 @@ version.workspace = true
 edition = "2021"
 repository = "https://github.com/lapce/floem"
 license.workspace = true
+description = "The core of the floem text editor"
 
 [dependencies]
 serde = { workspace = true, optional = true }
