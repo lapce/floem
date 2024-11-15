@@ -56,7 +56,7 @@ prop_extractor!(DropdownStyle {
 ///
 /// - [`Dropdown::new`]: Similar to `new_rw`, but uses a read-only function for the active item, and requires that you manually provide an `on_accept` callback.
 ///
-/// - [`Dropdown::new`]: Offers full customization, letting you define custom view functions for
+/// - [`Dropdown::custom`]: Offers full customization, letting you define custom view functions for
 ///   both the main display and list items. Uses a read-only function for the active item and requires that you manually provide an `on_accept` callback.
 ///
 /// - The dropdown also has methods [`Dropdown::main_view`] and [`Dropdown::list_item_view`] that let you override the main view function and list item view function respectively.
