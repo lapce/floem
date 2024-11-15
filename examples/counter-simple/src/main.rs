@@ -1,26 +1,16 @@
-use floem::{
-    reactive::create_signal,
-    views::{button, label, Decorators},
-    IntoView,
-};
-
-fn app_view() -> impl IntoView {
-    // Create a reactive signal with a counter value, defaulting to 0
-    let (counter, mut set_counter) = create_signal(0);
-
-    // Create a vertical layout
-    (
-        // The counter value updates automatically, thanks to reactivity
-        label(move || format!("Value: {counter}")),
-        // Create a horizontal layout
-        (
-            button("Increment").action(move || set_counter += 1),
-            button("Decrement").action(move || set_counter -= 1),
-        ),
-    )
-        .style(|s| s.flex_col())
-}
+use floem::prelude::*;
 
 fn main() {
-    floem::launch(app_view);
+    floem::launch(counter_view);
+}
+
+fn counter_view() -> impl IntoView {
+    let mut counter = RwSignal::new(0);
+
+    h_stack((
+        button("Increment").action(move || counter += 1),
+        label(move || format!("Value: {counter}")),
+        button("Decrement").action(move || counter -= 1),
+    ))
+    .style(|s| s.size_full().items_center().justify_center().gap(10))
 }
