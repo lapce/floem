@@ -63,7 +63,7 @@ prop_extractor!(DropdownStyle {
 ///
 /// Choose the constructor that best fits your needs based on the level of customization required.
 ///
-/// # Usage with Enums
+/// ## Usage with Enums
 ///
 /// A common scenario is populating a dropdown menu from an enum. The `widget-gallery` example does this.
 ///
@@ -147,7 +147,8 @@ prop_extractor!(DropdownStyle {
 /// # }
 /// ```
 ///
-/// **Styling**:
+/// ## Styling
+///
 /// You can modify the behavior of the dropdown through the `CloseOnAccept` property.
 /// If the property is set to `true`, the dropdown will automatically close when an item is selected.
 /// If the property is set to `false`, the dropdown will not automatically close when an item is selected.
