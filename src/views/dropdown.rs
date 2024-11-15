@@ -118,9 +118,7 @@ prop_extractor!(DropdownStyle {
 /// let selected = RwSignal::new(Character::Ori);
 /// ```
 ///
-/// Finally, create the dropdown using one of the available constructors.
-///
-/// The simplest option is [`Dropdown::new_rw`]:
+/// Finally, create the dropdown using one of the available constructors, like [`Dropdown::new_rw`]:
 ///
 /// ```rust
 /// # use strum::IntoEnumIterator;
@@ -146,70 +144,6 @@ prop_extractor!(DropdownStyle {
 /// #     use floem::{prelude::*, views::dropdown::Dropdown};
 /// # let selected = RwSignal::new(Character::Ori);
 /// Dropdown::new_rw(selected, Character::iter())
-/// # }
-/// ```
-///
-/// Or, you may use [`Dropdown::new`]:
-///
-/// ```rust
-/// # use strum::IntoEnumIterator;
-/// #
-/// # #[derive(Clone, strum::EnumIter)]
-/// # enum Character {
-/// #     Ori,
-/// #     Naru,
-/// #     Gumo,
-/// # }
-/// #
-/// # impl std::fmt::Display for Character {
-/// #     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-/// #         match self {
-/// #             Self::Ori => write!(f, "Ori"),
-/// #             Self::Naru => write!(f, "Naru"),
-/// #             Self::Gumo => write!(f, "Gumo"),
-/// #         }
-/// #     }
-/// # }
-/// #
-/// # fn character_select() -> impl floem::IntoView {
-/// #     use floem::{prelude::*, views::dropdown::Dropdown};
-/// # let selected = RwSignal::new(Character::Ori);
-/// Dropdown::new(move || selected.get(), Character::iter()).on_accept(move |new| selected.set(new))
-/// # }
-/// ```
-///
-/// Or, you may use [`Dropdown::custom`]:
-///
-/// ```rust
-/// # use strum::IntoEnumIterator;
-/// #
-/// # #[derive(Clone, strum::EnumIter)]
-/// # enum Character {
-/// #     Ori,
-/// #     Naru,
-/// #     Gumo,
-/// # }
-/// #
-/// # impl std::fmt::Display for Character {
-/// #     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-/// #         match self {
-/// #             Self::Ori => write!(f, "Ori"),
-/// #             Self::Naru => write!(f, "Naru"),
-/// #             Self::Gumo => write!(f, "Gumo"),
-/// #         }
-/// #     }
-/// # }
-/// #
-/// # fn character_select() -> impl floem::IntoView {
-/// #     use floem::{prelude::*, views::dropdown::Dropdown};
-/// # let selected = RwSignal::new(Character::Ori);
-/// Dropdown::custom(
-///     move || selected.get(),
-///     move |m| text(m).into_any(),
-///     Character::iter(),
-///     move |m| text(m).into_any(),
-/// )
-/// .on_accept(move |new| selected.set(new))
 /// # }
 /// ```
 ///
