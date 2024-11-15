@@ -1,9 +1,9 @@
 #![deny(missing_docs)]
 //! A view that allows the user to select an item from a list of items.
 //!
-//! The [Dropdown] struct provides several constructors, each offering different levels of customization and ease of use
+//! The [Dropdown] struct provides several constructors, each offering different levels of customization and ease of use.
 //!
-//! The [DropdownCustomStyle] struct allows for easy and advanced customization of the dropdown's appearance
+//! The [DropdownCustomStyle] struct allows for easy and advanced customization of the dropdown's appearance.
 use std::{any::Any, rc::Rc};
 
 use floem_reactive::{
@@ -65,8 +65,8 @@ prop_extractor!(DropdownStyle {
 ///
 /// **Styling**:
 /// You can modify the behavior of the dropdown through the `CloseOnAccept` property.
-/// If the property is set to `true` the dropdown will automatically close when an item is selected.
-/// If the property is set to `false` the dropwown will not automatically close when an item is selected.
+/// If the property is set to `true`, the dropdown will automatically close when an item is selected.
+/// If the property is set to `false`, the dropdown will not automatically close when an item is selected.
 /// The default is `true`.
 /// Styling Example:
 /// ```rust
@@ -394,7 +394,7 @@ impl<T: Clone> Dropdown<T> {
         .on_accept(move |nv| active_item.set(nv))
     }
 
-    /// Override the main view for the dropdown
+    /// Overrides the main view for the dropdown.
     pub fn main_view(mut self, main_view: impl Fn(T) -> Box<dyn View> + 'static) -> Self {
         self.main_fn = Box::new(as_child_of_current_scope(main_view));
         let (child, main_view_scope) = (self.main_fn)(self.current_value.clone());
@@ -405,7 +405,7 @@ impl<T: Clone> Dropdown<T> {
         self
     }
 
-    /// Override the list view for each item in the dropdown list
+    /// Overrides the list view for each item in the dropdown list.
     pub fn list_item_view(mut self, list_item_fn: impl Fn(T) -> Box<dyn View> + 'static) -> Self {
         self.list_item_fn = Rc::new(list_item_fn);
         self
