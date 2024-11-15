@@ -1,9 +1,9 @@
 #![deny(missing_docs)]
 //! A view that allows the user to select an item from a list of items.
 //!
-//! The [Dropdown] struct provides several constructors, each offering different levels of customization and ease of use
+//! The [Dropdown] struct provides several constructors, each offering different levels of customization and ease of use.
 //!
-//! The [DropdownCustomStyle] struct allows for easy and advanced customization of the dropdown's appearance
+//! The [DropdownCustomStyle] struct allows for easy and advanced customization of the dropdown's appearance.
 use std::{any::Any, rc::Rc};
 
 use floem_reactive::{
@@ -56,17 +56,102 @@ prop_extractor!(DropdownStyle {
 ///
 /// - [`Dropdown::new`]: Similar to `new_rw`, but uses a read-only function for the active item, and requires that you manually provide an `on_accept` callback.
 ///
-/// - [`Dropdown::new`]: Offers full customization, letting you define custom view functions for
+/// - [`Dropdown::custom`]: Offers full customization, letting you define custom view functions for
 ///   both the main display and list items. Uses a read-only function for the active item and requires that you manually provide an `on_accept` callback.
 ///
 /// - The dropdown also has methods [`Dropdown::main_view`] and [`Dropdown::list_item_view`] that let you override the main view function and list item view function respectively.
 ///
 /// Choose the constructor that best fits your needs based on the level of customization required.
 ///
-/// **Styling**:
+/// ## Usage with Enums
+///
+/// A common scenario is populating a dropdown menu from an enum. The `widget-gallery` example does this.
+///
+/// The below example creates a dropdown with three items, one for each character in our `Character` enum.
+///
+/// The `strum` crate is handy for this use case. This example uses the `strum` crate to create an iterator for our `Character` enum.
+///
+/// First, define the enum and implement `Clone`, `strum::EnumIter`, and `Display` on it:
+/// ```rust
+/// use strum::IntoEnumIterator;
+///
+/// #[derive(Clone, strum::EnumIter)]
+/// enum Character {
+///     Ori,
+///     Naru,
+///     Gumo,
+/// }
+///
+/// impl std::fmt::Display for Character {
+///     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+///         match self {
+///             Self::Ori => write!(f, "Ori"),
+///             Self::Naru => write!(f, "Naru"),
+///             Self::Gumo => write!(f, "Gumo"),
+///         }
+///     }
+/// }
+/// ```
+///
+/// Then, create a signal:
+/// ```rust
+/// # use strum::IntoEnumIterator;
+/// #
+/// # #[derive(Clone, strum::EnumIter)]
+/// # enum Character {
+/// #     Ori,
+/// #     Naru,
+/// #     Gumo,
+/// # }
+/// #
+/// # impl std::fmt::Display for Character {
+/// #     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+/// #         match self {
+/// #             Self::Ori => write!(f, "Ori"),
+/// #             Self::Naru => write!(f, "Naru"),
+/// #             Self::Gumo => write!(f, "Gumo"),
+/// #         }
+/// #     }
+/// # }
+/// #
+/// # use floem::reactive::RwSignal;
+/// let selected = RwSignal::new(Character::Ori);
+/// ```
+///
+/// Finally, create the dropdown using one of the available constructors, like [`Dropdown::new_rw`]:
+///
+/// ```rust
+/// # use strum::IntoEnumIterator;
+/// #
+/// # #[derive(Clone, strum::EnumIter)]
+/// # enum Character {
+/// #     Ori,
+/// #     Naru,
+/// #     Gumo,
+/// # }
+/// #
+/// # impl std::fmt::Display for Character {
+/// #     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+/// #         match self {
+/// #             Self::Ori => write!(f, "Ori"),
+/// #             Self::Naru => write!(f, "Naru"),
+/// #             Self::Gumo => write!(f, "Gumo"),
+/// #         }
+/// #     }
+/// # }
+/// #
+/// # fn character_select() -> impl floem::IntoView {
+/// #     use floem::{prelude::*, views::dropdown::Dropdown};
+/// # let selected = RwSignal::new(Character::Ori);
+/// Dropdown::new_rw(selected, Character::iter())
+/// # }
+/// ```
+///
+/// ## Styling
+///
 /// You can modify the behavior of the dropdown through the `CloseOnAccept` property.
-/// If the property is set to `true` the dropdown will automatically close when an item is selected.
-/// If the property is set to `false` the dropwown will not automatically close when an item is selected.
+/// If the property is set to `true`, the dropdown will automatically close when an item is selected.
+/// If the property is set to `false`, the dropdown will not automatically close when an item is selected.
 /// The default is `true`.
 /// Styling Example:
 /// ```rust
@@ -394,7 +479,7 @@ impl<T: Clone> Dropdown<T> {
         .on_accept(move |nv| active_item.set(nv))
     }
 
-    /// Override the main view for the dropdown
+    /// Overrides the main view for the dropdown.
     pub fn main_view(mut self, main_view: impl Fn(T) -> Box<dyn View> + 'static) -> Self {
         self.main_fn = Box::new(as_child_of_current_scope(main_view));
         let (child, main_view_scope) = (self.main_fn)(self.current_value.clone());
@@ -405,7 +490,7 @@ impl<T: Clone> Dropdown<T> {
         self
     }
 
-    /// Override the list view for each item in the dropdown list
+    /// Overrides the list view for each item in the dropdown list.
     pub fn list_item_view(mut self, list_item_fn: impl Fn(T) -> Box<dyn View> + 'static) -> Self {
         self.list_item_fn = Rc::new(list_item_fn);
         self
