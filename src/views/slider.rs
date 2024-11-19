@@ -1,6 +1,6 @@
 //! A toggle button widget. An example can be found in widget-gallery/button in the floem examples.
 
-use floem_reactive::{create_effect, SignalGet, SignalUpdate};
+use floem_reactive::{create_updater, SignalGet, SignalUpdate};
 use floem_winit::keyboard::{Key, NamedKey};
 use peniko::kurbo::{Circle, Point, RoundedRect};
 use peniko::{Brush, Color};
@@ -316,16 +316,21 @@ impl Slider {
     /// ```
     pub fn new<P: Into<Pct>>(percent: impl Fn() -> P + 'static) -> Self {
         let id = ViewId::new();
-        create_effect(move |_| {
-            let percent = percent().into();
-            id.update_state(SliderUpdate::Percent(percent.0));
-        });
+        let percent = create_updater(
+            move || {
+                let percent = percent().into();
+                percent.0
+            },
+            move |percent| {
+                id.update_state(SliderUpdate::Percent(percent));
+            },
+        );
         Slider {
             id,
             onchangepx: None,
             onchangepct: None,
             held: false,
-            percent: 0.0,
+            percent,
             prev_percent: 0.0,
             handle: Default::default(),
             base_bar_style: Default::default(),
@@ -497,5 +502,168 @@ impl SliderCustomStyle {
     pub fn accent_bar_height(mut self, height: impl Into<PxPctAuto>) -> Self {
         self = SliderCustomStyle(self.0.class(AccentBarClass, |s| s.height(height)));
         self
+    }
+}
+
+#[cfg(test)]
+mod test {
+
+    use crate::{
+        context::{EventCx, UpdateCx},
+        event::Event,
+        pointer::{PointerButton, PointerInputEvent, PointerMoveEvent},
+        AppState,
+    };
+
+    use super::*;
+
+    // Test helper to create a minimal AppState
+    fn create_test_app_state(view_id: ViewId) -> AppState {
+        AppState::new(view_id)
+    }
+
+    // Test helper to create UpdateCx
+    fn create_test_update_cx(view_id: ViewId) -> UpdateCx<'static> {
+        UpdateCx {
+            app_state: Box::leak(Box::new(create_test_app_state(view_id))),
+        }
+    }
+
+    // Test helper to create EventCx
+    fn create_test_event_cx(view_id: ViewId) -> EventCx<'static> {
+        EventCx {
+            app_state: Box::leak(Box::new(create_test_app_state(view_id))),
+        }
+    }
+
+    // Helper to directly update slider value
+    fn update_slider_value(slider: &mut Slider, value: f64) {
+        let mut cx = create_test_update_cx(slider.id());
+        let state = Box::new(SliderUpdate::Percent(value));
+        slider.update(&mut cx, state);
+    }
+
+    #[test]
+    fn test_slider_initial_value() {
+        let percent = 53.0;
+        let slider = Slider::new(move || percent);
+        assert_eq!(slider.percent, percent as f64);
+    }
+
+    #[test]
+    fn test_slider_bounds() {
+        let mut slider = Slider::new(|| 0.0);
+
+        // Test upper bound
+        update_slider_value(&mut slider, 150.0);
+        slider.update_restrict_position();
+        assert_eq!(slider.percent, 100.0);
+
+        // Test lower bound
+        update_slider_value(&mut slider, -50.0);
+        slider.update_restrict_position();
+        assert_eq!(slider.percent, 0.0);
+    }
+
+    #[test]
+    fn test_slider_pointer_events() {
+        let mut slider = Slider::new(|| 0.0);
+        let mut cx = create_test_event_cx(slider.id());
+
+        // Set initial size for pointer calculations
+        slider.size = taffy::prelude::Size {
+            width: 100.0,
+            height: 20.0,
+        };
+
+        // Test pointer down at 75%
+        let pointer_down = Event::PointerDown(PointerInputEvent {
+            count: 1,
+            pos: Point::new(75.0, 10.0),
+            button: PointerButton::Primary,
+            modifiers: Default::default(),
+        });
+
+        slider.event_before_children(&mut cx, &pointer_down);
+        slider.update_restrict_position();
+
+        assert_eq!(slider.percent, 75.0);
+        assert!(slider.held);
+        assert_eq!(cx.app_state.active, Some(slider.id()));
+    }
+
+    #[test]
+    fn test_slider_drag_state() {
+        let mut slider = Slider::new(|| 50.0);
+        let mut cx = create_test_event_cx(slider.id());
+
+        slider.size = taffy::prelude::Size {
+            width: 100.0,
+            height: 20.0,
+        };
+
+        // Start drag
+        let pointer_down = Event::PointerDown(PointerInputEvent {
+            pos: Point::new(50.0, 10.0),
+            button: PointerButton::Primary,
+            count: 1,
+            modifiers: Default::default(),
+        });
+
+        slider.event_before_children(&mut cx, &pointer_down);
+        assert!(slider.held);
+        assert_eq!(cx.app_state.active, Some(slider.id()));
+
+        // Move while dragging
+        let pointer_move = Event::PointerMove(PointerMoveEvent {
+            pos: Point::new(75.0, 10.0),
+            modifiers: Default::default(),
+        });
+
+        slider.event_before_children(&mut cx, &pointer_move);
+        assert_eq!(slider.percent, 75.0);
+
+        // End drag
+        let pointer_up = Event::PointerUp(PointerInputEvent {
+            pos: Point::new(75.0, 10.0),
+            button: PointerButton::Primary,
+            count: 1,
+            modifiers: Default::default(),
+        });
+
+        slider.event_before_children(&mut cx, &pointer_up);
+        assert!(!slider.held);
+    }
+
+    #[test]
+    fn test_callback_handling() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        let callback_called = Arc::new(AtomicBool::new(false));
+        let callback_called_clone = callback_called.clone();
+
+        let mut slider = Slider::new(|| 0.0).on_change_pct(move |_| {
+            callback_called_clone.store(true, Ordering::SeqCst);
+        });
+
+        let mut cx = create_test_event_cx(slider.id());
+
+        slider.size = taffy::prelude::Size {
+            width: 100.0,
+            height: 20.0,
+        };
+
+        let pointer_event = Event::PointerDown(PointerInputEvent {
+            pos: Point::new(60.0, 10.0),
+            button: PointerButton::Primary,
+            count: 1,
+            modifiers: Default::default(),
+        });
+
+        slider.event_before_children(&mut cx, &pointer_event);
+        slider.update_restrict_position();
+
+        assert!(callback_called.load(Ordering::SeqCst));
     }
 }
