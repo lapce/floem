@@ -6,8 +6,8 @@
 
 mod base;
 mod context;
+mod derived;
 mod effect;
-mod get_update_fn;
 mod id;
 mod impls;
 mod memo;
@@ -20,8 +20,8 @@ mod write;
 
 pub use base::{create_base_signal, BaseSignal};
 pub use context::{provide_context, use_context};
+pub use derived::{create_derived_rw_signal, DerivedRwSignal};
 pub use effect::{batch, create_effect, create_stateful_updater, create_updater, untrack};
-pub use get_update_fn::{create_get_update, GetUpdateFn};
 pub use memo::{create_memo, Memo};
 pub use read::{ReadSignalValue, SignalGet, SignalRead, SignalTrack, SignalWith};
 pub use scope::{as_child_of_current_scope, with_scope, Scope};

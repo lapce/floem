@@ -1,5 +1,5 @@
 use floem::{
-    reactive::{create_get_update, create_rw_signal, SignalGet},
+    reactive::{create_rw_signal, DerivedRwSignal, SignalGet},
     unit::UnitExt,
     views::{label, slider, stack, text_input, Decorators},
     IntoView,
@@ -9,7 +9,7 @@ use crate::form::{self, form_item};
 
 pub fn slider_view() -> impl IntoView {
     let input = create_rw_signal(String::from("50"));
-    let slider_state = create_get_update(
+    let slider_state = DerivedRwSignal::new(
         input,
         |val| val.parse::<f64>().unwrap_or_default().pct(),
         |val| val.0.to_string(),
