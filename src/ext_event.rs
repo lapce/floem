@@ -1,8 +1,8 @@
 use std::{cell::Cell, collections::VecDeque, sync::Arc};
 
 use floem_reactive::{
-    create_effect, untrack, with_scope, ReadSignal, Scope, SignalGet, SignalUpdate, Trigger,
-    WriteSignal,
+    create_effect, create_rw_signal, untrack, with_scope, ReadSignal, RwSignal, Scope, SignalGet,
+    SignalUpdate, SignalWith, WriteSignal,
 };
 use parking_lot::Mutex;
 
@@ -12,10 +12,51 @@ use crate::{
     Application,
 };
 
+#[derive(Debug)]
+/// # SAFETY
+///
+/// **DO NOT USE THIS** trigger except for when using with `create_ext_action` or when you guarentee that
+/// the signal is never used from a different thread than it was created on.
+pub struct ExtSendTrigger {
+    signal: RwSignal<()>,
+}
+
+impl Copy for ExtSendTrigger {}
+
+impl Clone for ExtSendTrigger {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl ExtSendTrigger {
+    pub fn notify(&self) {
+        self.signal.set(());
+    }
+
+    pub fn track(&self) {
+        self.signal.with(|_| {});
+    }
+
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        create_trigger()
+    }
+}
+
+pub fn create_trigger() -> ExtSendTrigger {
+    ExtSendTrigger {
+        signal: create_rw_signal(()),
+    }
+}
+
+unsafe impl Send for ExtSendTrigger {}
+unsafe impl Sync for ExtSendTrigger {}
+
 pub(crate) static EXT_EVENT_HANDLER: ExtEventHandler = ExtEventHandler::new();
 
 pub(crate) struct ExtEventHandler {
-    pub(crate) queue: Mutex<VecDeque<Trigger>>,
+    pub(crate) queue: Mutex<VecDeque<ExtSendTrigger>>,
 }
 
 impl Default for ExtEventHandler {
@@ -31,7 +72,7 @@ impl ExtEventHandler {
         }
     }
 
-    pub fn add_trigger(&self, trigger: Trigger) {
+    pub fn add_trigger(&self, trigger: ExtSendTrigger) {
         {
             // Run this in a short block to prevent any deadlock if running the trigger effects
             // causes another trigger to be registered
@@ -43,7 +84,7 @@ impl ExtEventHandler {
     }
 }
 
-pub fn register_ext_trigger(trigger: Trigger) {
+pub fn register_ext_trigger(trigger: ExtSendTrigger) {
     EXT_EVENT_HANDLER.add_trigger(trigger);
 }
 
@@ -53,7 +94,7 @@ pub fn create_ext_action<T: Send + 'static>(
 ) -> impl FnOnce(T) {
     let view = get_current_view();
     let cx = cx.create_child();
-    let trigger = cx.create_trigger();
+    let trigger = with_scope(cx, ExtSendTrigger::new);
     let data = Arc::new(Mutex::new(None));
 
     {
@@ -87,7 +128,7 @@ pub fn update_signal_from_channel<T: Send + 'static>(
     rx: crossbeam_channel::Receiver<T>,
 ) {
     let cx = Scope::new();
-    let trigger = cx.create_trigger();
+    let trigger = with_scope(cx, ExtSendTrigger::new);
 
     let channel_closed = cx.create_rw_signal(false);
     let data = Arc::new(Mutex::new(VecDeque::new()));
@@ -123,7 +164,7 @@ pub fn create_signal_from_channel<T: Send + 'static>(
     rx: crossbeam_channel::Receiver<T>,
 ) -> ReadSignal<Option<T>> {
     let cx = Scope::new();
-    let trigger = cx.create_trigger();
+    let trigger = with_scope(cx, ExtSendTrigger::new);
 
     let channel_closed = cx.create_rw_signal(false);
     let (read, write) = cx.create_signal(None);
@@ -211,14 +252,14 @@ pub fn create_signal_from_stream<T: 'static>(
     use futures::task::{waker, ArcWake};
 
     let cx = Scope::current().create_child();
-    let trigger = cx.create_trigger();
+    let trigger = with_scope(cx, ExtSendTrigger::new);
     let (read, write) = cx.create_signal(initial_value);
 
     /// Waker that wakes by registering a trigger
     // TODO: since the trigger is just a `u64`, it could theoretically be changed to be a `usize`,
     //       Then the implementation of the std::task::RawWakerVTable could pass the `usize` as the data pointer,
     //       avoiding any allocation/reference counting
-    struct TriggerWake(Trigger);
+    struct TriggerWake(ExtSendTrigger);
     impl ArcWake for TriggerWake {
         fn wake_by_ref(arc_self: &Arc<Self>) {
             EXT_EVENT_HANDLER.add_trigger(arc_self.0);
