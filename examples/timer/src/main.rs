@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use floem::{
     action::exec_after,
     reactive::{
-        create_effect, create_get_update, create_rw_signal, SignalGet, SignalTrack, SignalUpdate,
+        create_effect, create_rw_signal, DerivedRwSignal, SignalGet, SignalTrack, SignalUpdate,
     },
     unit::{Pct, UnitExt},
     views::{button, container, label, slider, stack, text, v_stack, Decorators},
@@ -47,7 +47,7 @@ fn app_view() -> impl IntoView {
         });
     });
 
-    let progress = create_get_update(
+    let progress = DerivedRwSignal::new(
         target_duration,
         move |val| Pct(elapsed_time.get().as_secs_f64() / val.0 * 100.),
         |val| *val,

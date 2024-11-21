@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use floem::ext_event::create_signal_from_stream;
 use floem::prelude::*;
-use floem::reactive::create_get_update;
+use floem::reactive::DerivedRwSignal;
 use floem::unit::Pct;
 use tokio::runtime::Runtime;
 use tokio::time::Instant;
@@ -41,7 +41,7 @@ fn app_view() -> impl IntoView {
         )
     });
 
-    let progress = create_get_update(
+    let progress = DerivedRwSignal::new(
         target_duration,
         move |val| Pct(elapsed_time().as_secs_f64() / val.0 * 100.),
         |val| *val,

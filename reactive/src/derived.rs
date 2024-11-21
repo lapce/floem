@@ -2,23 +2,28 @@ use std::marker::PhantomData;
 
 use crate::{read::SignalTrack, RwSignal, SignalGet, SignalUpdate, SignalWith};
 
-pub struct GetUpdateFn<T, O, GF: Fn(&T) -> O + Clone + 'static, UF: Fn(&O) -> T + 'static> {
+/// A signal that is derived from an [RwSignal](super::RwSignal) but lets you specify getters and setters for the signal.
+///
+/// This is useful when you want a single state variable and don't want to use effects to synchronize multiple signals.
+///
+/// This is also useful when you want a derived signal that implements the [SignalGet], [SignalWith], etc. traits.
+pub struct DerivedRwSignal<T, O, GF: Fn(&T) -> O + Clone + 'static, UF: Fn(&O) -> T + 'static> {
     signal: RwSignal<T>,
     getter: RwSignal<Box<GF>>,
     setter: RwSignal<Box<UF>>,
     ty: PhantomData<T>,
 }
 
-impl<T, O, GF: Fn(&T) -> O + Copy, UF: Fn(&O) -> T + Copy> Clone for GetUpdateFn<T, O, GF, UF> {
+impl<T, O, GF: Fn(&T) -> O + Copy, UF: Fn(&O) -> T + Copy> Clone for DerivedRwSignal<T, O, GF, UF> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T, O, GF: Fn(&T) -> O + Copy, UF: Fn(&O) -> T + Copy> Copy for GetUpdateFn<T, O, GF, UF> {}
+impl<T, O, GF: Fn(&T) -> O + Copy, UF: Fn(&O) -> T + Copy> Copy for DerivedRwSignal<T, O, GF, UF> {}
 
 impl<T: Clone + 'static, O: Clone, GF: Fn(&T) -> O + Copy, UF: Fn(&O) -> T + Copy> SignalGet<O>
-    for GetUpdateFn<T, O, GF, UF>
+    for DerivedRwSignal<T, O, GF, UF>
 {
     fn id(&self) -> crate::id::Id {
         self.signal.id
@@ -48,7 +53,7 @@ impl<T: Clone + 'static, O: Clone, GF: Fn(&T) -> O + Copy, UF: Fn(&O) -> T + Cop
 }
 
 impl<T: Clone + 'static, O: Clone, GF: Fn(&T) -> O + Copy, UF: Fn(&O) -> T + Copy> SignalWith<O>
-    for GetUpdateFn<T, O, GF, UF>
+    for DerivedRwSignal<T, O, GF, UF>
 {
     fn id(&self) -> crate::id::Id {
         self.signal.id
@@ -99,7 +104,7 @@ impl<T: Clone + 'static, O: Clone, GF: Fn(&T) -> O + Copy, UF: Fn(&O) -> T + Cop
 }
 
 impl<T: Clone + 'static, O: Clone, GF: Fn(&T) -> O + Copy, UF: Fn(&O) -> T + Copy> SignalTrack<O>
-    for GetUpdateFn<T, O, GF, UF>
+    for DerivedRwSignal<T, O, GF, UF>
 {
     fn id(&self) -> crate::id::Id {
         self.signal.id
@@ -116,7 +121,7 @@ impl<T: Clone + 'static, O: Clone, GF: Fn(&T) -> O + Copy, UF: Fn(&O) -> T + Cop
 }
 
 impl<T: 'static, O, GF: Fn(&T) -> O + Copy, UF: Fn(&O) -> T + Copy> SignalUpdate<O>
-    for GetUpdateFn<T, O, GF, UF>
+    for DerivedRwSignal<T, O, GF, UF>
 {
     fn id(&self) -> crate::id::Id {
         self.signal.id
@@ -168,19 +173,35 @@ impl<T: 'static, O, GF: Fn(&T) -> O + Copy, UF: Fn(&O) -> T + Copy> SignalUpdate
         })
     }
 }
+impl<T, O, GF, UF> DerivedRwSignal<T, O, GF, UF>
+where
+    GF: Fn(&T) -> O + Clone + 'static,
+    UF: Fn(&O) -> T + 'static,
+{
+    pub fn new(signal: RwSignal<T>, getter: GF, setter: UF) -> Self {
+        let getter = RwSignal::new(Box::new(getter));
+        let setter = RwSignal::new(Box::new(setter));
+        DerivedRwSignal {
+            signal,
+            getter,
+            setter,
+            ty: PhantomData,
+        }
+    }
+}
 
-pub fn create_get_update<T, O, GF, UF>(
+pub fn create_derived_rw_signal<T, O, GF, UF>(
     signal: RwSignal<T>,
     getter: GF,
     setter: UF,
-) -> GetUpdateFn<T, O, GF, UF>
+) -> DerivedRwSignal<T, O, GF, UF>
 where
     GF: Fn(&T) -> O + Clone + 'static,
     UF: Fn(&O) -> T + 'static,
 {
     let getter = RwSignal::new(Box::new(getter));
     let setter = RwSignal::new(Box::new(setter));
-    GetUpdateFn {
+    DerivedRwSignal {
         signal,
         getter,
         setter,
