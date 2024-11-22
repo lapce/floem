@@ -126,3 +126,39 @@ pub fn labeled_checkbox<S: Display + 'static>(
 ) -> ValueContainer<bool> {
     Checkbox::labeled(checked, label)
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use floem_reactive::{create_rw_signal, SignalGet, SignalUpdate};
+
+    #[test]
+    fn test_checkbox_new_initial_value() {
+        let checked = create_rw_signal(false);
+        let _checkbox = Checkbox::new_rw(checked);
+        assert_eq!(checked.get(), false);
+    }
+
+    #[test]
+    fn test_checkbox_new_changes_state() {
+        let checked = create_rw_signal(false);
+        let _checkbox = Checkbox::new_rw(checked);
+        checked.set(true);
+        assert_eq!(checked.get(), true);
+    }
+
+    #[test]
+    fn test_checkbox_labeled_initial_value() {
+        let checked = create_rw_signal(false);
+        let _labeled_checkbox = Checkbox::labeled_rw(checked, || "Label for checkbox");
+        assert_eq!(checked.get(), false);
+    }
+
+    #[test]
+    fn test_checkbox_labeled_changes_state() {
+        let checked = create_rw_signal(false);
+        let _labeled_checkbox = Checkbox::labeled_rw(checked, || "Label for checkbox");
+        checked.set(true);
+        assert_eq!(checked.get(), true);
+    }
+}
