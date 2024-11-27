@@ -66,7 +66,6 @@ pub fn draggable_sidebar_view() -> impl IntoView {
     let dragger = label(|| "")
         .style(move |s| {
             s.position(Position::Absolute)
-                .z_index(10)
                 .inset_top(0)
                 .inset_bottom(0)
                 .inset_left(sidebar_width.get())
@@ -97,7 +96,7 @@ pub fn draggable_sidebar_view() -> impl IntoView {
             EventPropagation::Continue
         });
 
-    let view = h_stack((side_bar, dragger, main_window))
+    let view = h_stack((side_bar, main_window, dragger))
         .on_event(EventListener::PointerMove, move |event| {
             let pos = match event {
                 Event::PointerMove(p) => p.pos,
