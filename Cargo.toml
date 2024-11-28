@@ -32,7 +32,7 @@ wgpu = { version = "22.0.0" }
 parking_lot = { version = "0.12.1" }
 swash = { version = "0.1.17" }
 muda = { version = "0.15.3" }
-winit = { git = "https://github.com/rust-windowing/winit", rev = "3a60cbaba5fd96d9244a1f316ae562d7032b2b98" }
+winit = { git = "https://github.com/rust-windowing/winit", rev = "fc6cf89ac0674c64320024f800a41ffb365dab97" }
 
 [dependencies]
 slotmap = "1.0.7"

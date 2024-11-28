@@ -2,7 +2,7 @@ use std::{cell::Cell, collections::VecDeque, sync::Arc};
 
 use floem_reactive::{
     create_effect, create_rw_signal, untrack, with_scope, ReadSignal, RwSignal, Scope, SignalGet,
-    SignalUpdate, SignalWith, WriteSignal,
+    SignalUpdate, SignalWith, Trigger, WriteSignal,
 };
 use parking_lot::Mutex;
 

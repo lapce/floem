@@ -19,7 +19,7 @@ use winit::{
 use crate::{
     action::{Timer, TimerToken},
     app::{AppUpdateEvent, UserEvent, APP_UPDATE_EVENTS},
-    ext_event::EXT_EVENT_HANDLER,
+    ext_event::{ExtSendTrigger, EXT_EVENT_HANDLER},
     inspector::Capture,
     profiler::{Profile, ProfileEvent},
     view::View,
@@ -436,7 +436,7 @@ impl ApplicationHandle {
             .map(|handle| handle.capture())
     }
 
-    pub(crate) fn idle(&mut self, trigger: Trigger) {
+    pub(crate) fn idle(&mut self, trigger: ExtSendTrigger) {
         trigger.notify();
     }
 

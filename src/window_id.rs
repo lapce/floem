@@ -409,7 +409,7 @@ fn bounds_to_logical_outer_position_and_inner_size(
         // size as an *inner* size
         let size_delta = delta_size(window.surface_size(), window.outer_size(), scale);
         let inner_to_outer_delta: (f64, f64) = if let Some(delta) =
-            delta_position(window.inner_position(), window.outer_position(), scale)
+            delta_position(window.surface_position(), window.outer_position(), scale)
         {
             // This is the more accurate way, but may be unavailable on some platforms
             delta
@@ -459,17 +459,15 @@ fn delta_size(inner: PhysicalSize<u32>, outer: PhysicalSize<u32>, window_scale: 
 type PositionResult = Result<winit::dpi::PhysicalPosition<i32>, winit::error::RequestError>;
 
 fn delta_position(
-    inner: PositionResult,
+    inner: PhysicalPosition<i32>,
     outer: PositionResult,
     window_scale: f64,
 ) -> Option<(f64, f64)> {
-    if let Ok(inner) = inner {
-        if let Ok(outer) = outer {
-            let outer = winit_phys_position_to_point(outer, window_scale);
-            let inner = winit_phys_position_to_point(inner, window_scale);
+    if let Ok(outer) = outer {
+        let outer = winit_phys_position_to_point(outer, window_scale);
+        let inner = winit_phys_position_to_point(inner, window_scale);
 
-            return Some((inner.x - outer.x, inner.y - outer.y));
-        }
+        return Some((inner.x - outer.x, inner.y - outer.y));
     }
     None
 }

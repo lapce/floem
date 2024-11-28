@@ -192,12 +192,9 @@ fn scale_point(window: &Arc<dyn Window>, mut rect: Point) -> Point {
 pub fn window_inner_screen_position(id: &WindowId) -> Option<Point> {
     with_window_map(|m| {
         m.with_window(id, |window| {
-            window
-                .inner_position()
-                .map(|pos| Some(scale_point(window, Point::new(pos.x as f64, pos.y as f64))))
-                .unwrap_or(None)
+            let pos = window.surface_position();
+            scale_point(window, Point::new(pos.x as f64, pos.y as f64))
         })
-        .unwrap_or(None)
     })
     .unwrap_or(None)
 }
@@ -205,18 +202,9 @@ pub fn window_inner_screen_position(id: &WindowId) -> Option<Point> {
 pub fn window_inner_screen_bounds(id: &WindowId) -> Option<Rect> {
     with_window_map(|m| {
         m.with_window(id, |window| {
-            window
-                .inner_position()
-                .map(|pos| {
-                    Some(rect_from_physical_bounds_for_window(
-                        window,
-                        pos,
-                        window.surface_size(),
-                    ))
-                })
-                .unwrap_or(None)
+            let pos = window.surface_position();
+            rect_from_physical_bounds_for_window(window, pos, window.surface_size())
         })
-        .unwrap_or(None)
     })
     .unwrap_or(None)
 }

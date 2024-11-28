@@ -16,6 +16,7 @@ use crate::{
     action::{Timer, TimerToken},
     app_handle::ApplicationHandle,
     clipboard::Clipboard,
+    ext_event::ExtSendTrigger,
     inspector::Capture,
     profiler::Profile,
     view::{IntoView, View},
@@ -54,7 +55,7 @@ pub enum AppEvent {
 
 pub(crate) enum UserEvent {
     AppUpdate(AppUpdateEvent),
-    Idle(Trigger),
+    Idle(ExtSendTrigger),
     QuitApp,
     GpuResourcesUpdate { window_id: WindowId },
 }
