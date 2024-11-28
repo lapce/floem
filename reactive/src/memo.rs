@@ -13,31 +13,31 @@ use crate::{
 /// It will act like a Signal when the value is different with the computed value
 /// from last run, i.e., it will trigger a effect run when you Get() it whenever the
 /// computed value changes to a different value.
-pub struct Memo<T> {
+pub struct Memo<T: 'static> {
     getter: ReadSignal<T>,
     ty: PhantomData<T>,
 }
 
-impl<T> Copy for Memo<T> {}
+impl<T: 'static> Copy for Memo<T> {}
 
-impl<T> Clone for Memo<T> {
+impl<T: 'static> Clone for Memo<T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T: Clone> SignalGet<T> for Memo<T> {
+impl<T: 'static + Clone> SignalGet<T> for Memo<T> {
     fn id(&self) -> crate::id::Id {
         self.getter.id
     }
 }
 
-impl<T> SignalWith<T> for Memo<T> {
+impl<T: 'static> SignalWith<T> for Memo<T> {
     fn id(&self) -> crate::id::Id {
         self.getter.id
     }
 }
-impl<T> SignalTrack<T> for Memo<T> {
+impl<T: 'static> SignalTrack<T> for Memo<T> {
     fn id(&self) -> crate::id::Id {
         self.getter.id
     }

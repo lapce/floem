@@ -16,8 +16,6 @@ use crate::{new_window, style, Clipboard};
 use floem_reactive::{
     create_effect, create_rw_signal, create_signal, RwSignal, Scope, SignalGet, SignalUpdate,
 };
-use floem_winit::keyboard::{self, NamedKey};
-use floem_winit::window::WindowId;
 use peniko::kurbo::{Point, Rect, Size};
 use peniko::Color;
 use slotmap::Key;
@@ -25,6 +23,9 @@ use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::rc::Rc;
+use std::sync::Arc;
+use winit::keyboard::{self, NamedKey};
+use winit::window::WindowId;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
@@ -43,7 +44,7 @@ pub struct CapturedView {
     layout: Rect,
     taffy: Layout,
     clipped: Rect,
-    children: Vec<Rc<CapturedView>>,
+    children: Vec<Arc<CapturedView>>,
     direct_style: Style,
     requested_changes: ChangeFlags,
     keyboard_navigable: bool,
@@ -91,7 +92,7 @@ impl CapturedView {
             children: id
                 .children()
                 .into_iter()
-                .map(|view| Rc::new(CapturedView::capture(view, app_state, clipped)))
+                .map(|view| Arc::new(CapturedView::capture(view, app_state, clipped)))
                 .collect(),
         }
     }
@@ -143,7 +144,7 @@ impl CapturedView {
 }
 
 pub struct Capture {
-    pub root: Rc<CapturedView>,
+    pub root: Arc<CapturedView>,
     pub start: Instant,
     pub post_style: Instant,
     pub post_layout: Instant,
@@ -228,7 +229,7 @@ fn captured_view_no_children(
     view: &CapturedView,
     depth: usize,
     capture_view: &CaptureView,
-    capture: &Rc<Capture>,
+    capture: &Arc<Capture>,
 ) -> impl IntoView {
     let offset = depth as f64 * 14.0;
     let name = captured_view_name(view).into_view();
@@ -286,11 +287,11 @@ fn captured_view_no_children(
 // Outlined to reduce stack usage.
 #[inline(never)]
 fn captured_view_with_children(
-    view: &Rc<CapturedView>,
+    view: &Arc<CapturedView>,
     depth: usize,
     capture_view: &CaptureView,
     children: Vec<Box<dyn View>>,
-    capture: &Rc<Capture>,
+    capture: &Arc<Capture>,
 ) -> impl IntoView {
     let offset = depth as f64 * 14.0;
     let name = captured_view_name(view).into_view();
@@ -400,10 +401,10 @@ fn captured_view_with_children(
 }
 
 fn captured_view(
-    view: &Rc<CapturedView>,
+    view: &Arc<CapturedView>,
     depth: usize,
     capture_view: &CaptureView,
-    capture: &Rc<Capture>,
+    capture: &Arc<Capture>,
 ) -> impl IntoView {
     if view.children.is_empty() {
         captured_view_no_children(view, depth, capture_view, capture).into_any()
@@ -422,7 +423,7 @@ fn add_event(
     name: String,
     id: ViewId,
     capture_view: CaptureView,
-    capture: &Rc<Capture>,
+    capture: &Arc<Capture>,
 ) -> impl View {
     let capture = capture.clone();
     row.keyboard_navigable()
@@ -540,7 +541,7 @@ fn stats(capture: &Capture) -> impl IntoView {
     ))
 }
 
-fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<ViewId>>) -> impl IntoView {
+fn selected_view(capture: &Arc<Capture>, selected: RwSignal<Option<ViewId>>) -> impl IntoView {
     let capture = capture.clone();
     dyn_container(
         move || selected.get(),
@@ -775,8 +776,8 @@ struct CaptureView {
 
 fn capture_view(
     window_id: WindowId,
-    capture_s: RwSignal<Option<Rc<Capture>>>,
-    capture: &Rc<Capture>,
+    capture_s: RwSignal<Option<Arc<Capture>>>,
+    capture: &Arc<Capture>,
 ) -> impl IntoView {
     let capture_view = CaptureView {
         expanding_selection: create_rw_signal(None),
@@ -1050,8 +1051,8 @@ fn capture_view(
 
 fn inspector_view(
     window_id: WindowId,
-    capture_s: RwSignal<Option<Rc<Capture>>>,
-    capture: &Option<Rc<Capture>>,
+    capture_s: RwSignal<Option<Arc<Capture>>>,
+    capture: &Option<Arc<Capture>>,
 ) -> impl IntoView {
     let view = if let Some(capture) = capture {
         capture_view(window_id, capture_s, capture).into_any()
@@ -1081,7 +1082,7 @@ fn inspector_view(
 
 thread_local! {
     pub(crate) static RUNNING: Cell<bool> = const { Cell::new(false) };
-    pub(crate) static CAPTURE: RwSignal<Option<Rc<Capture>>> = {
+    pub(crate) static CAPTURE: RwSignal<Option<Arc<Capture>>> = {
         Scope::new().create_rw_signal(None)
     };
 }
@@ -1172,7 +1173,7 @@ pub fn capture(window_id: WindowId) {
     })
 }
 
-fn find_view(name: &str, views: &Rc<CapturedView>) -> Vec<ViewId> {
+fn find_view(name: &str, views: &Arc<CapturedView>) -> Vec<ViewId> {
     let mut ids = Vec::new();
     if name.is_empty() {
         return ids;
@@ -1204,7 +1205,7 @@ fn find_view(name: &str, views: &Rc<CapturedView>) -> Vec<ViewId> {
 
 fn find_relative_view_by_id_without_self(
     id: ViewId,
-    views: &Rc<CapturedView>,
+    views: &Arc<CapturedView>,
 ) -> Option<RelativeViewId> {
     let mut parent_id = None;
     let mut big_brother_id = None;
@@ -1245,7 +1246,7 @@ fn find_relative_view_by_id_without_self(
 
 fn find_relative_view_by_id_with_self(
     id: ViewId,
-    views: &Rc<CapturedView>,
+    views: &Arc<CapturedView>,
 ) -> Option<RelativeViewId> {
     if views.id == id {
         let first_child_id = views.children.first().map(|x| x.id);

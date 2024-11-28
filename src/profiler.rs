@@ -7,12 +7,13 @@ use crate::views::{
     text, v_stack, v_stack_from_iter, Decorators,
 };
 use floem_reactive::{create_rw_signal, RwSignal, Scope, SignalGet, SignalUpdate};
-use floem_winit::window::WindowId;
 use peniko::Color;
 use std::fmt::Display;
 use std::mem;
 use std::rc::Rc;
+use std::sync::Arc;
 use taffy::style::FlexDirection;
+use winit::window::WindowId;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
@@ -67,7 +68,7 @@ fn info_row(name: String, view: impl IntoView + 'static) -> impl IntoView {
     })
 }
 
-fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
+fn profile_view(profile: &Arc<Profile>) -> impl IntoView {
     let mut frames: Vec<_> = profile
         .frames
         .iter()
@@ -243,7 +244,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
 }
 
 thread_local! {
-    pub(crate) static PROFILE: RwSignal<Option<Rc<Profile>>> = {
+    pub(crate) static PROFILE: RwSignal<Option<Arc<Profile>>> = {
         Scope::new().create_rw_signal(None)
     };
 }

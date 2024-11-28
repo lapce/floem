@@ -7,6 +7,7 @@ use std::{
     rc::Rc,
     sync::Arc,
 };
+use winit::window::Window;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
@@ -1185,7 +1186,7 @@ impl<'a> PaintCx<'a> {
 pub enum PaintState {
     /// The renderer is not yet initialized. This state is used to wait for the GPU resources to be acquired.
     PendingGpuResources {
-        window: Arc<dyn wgpu::WindowHandle>,
+        window: Arc<dyn Window>,
         rx: crossbeam::channel::Receiver<Result<GpuResources, GpuResourceError>>,
         font_embolden: f32,
         /// This field holds an instance of `Renderer::Uninitialized` until the GPU resources are acquired,
@@ -1194,17 +1195,15 @@ pub enum PaintState {
         ///
         /// Previously, `PaintState::renderer` and `PaintState::renderer_mut` would panic if called when the renderer was uninitialized.
         /// However, this turned out to be hard to handle properly and led to panics, especially since the rest of the application code can't control when the renderer is initialized.
-        renderer: crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>>,
+        renderer: crate::renderer::Renderer,
     },
     /// The renderer is initialized and ready to paint.
-    Initialized {
-        renderer: crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>>,
-    },
+    Initialized { renderer: crate::renderer::Renderer },
 }
 
 impl PaintState {
     pub fn new(
-        window: Arc<dyn wgpu::WindowHandle>,
+        window: Arc<dyn Window>,
         rx: crossbeam::channel::Receiver<Result<GpuResources, GpuResourceError>>,
         scale: f64,
         size: Size,
@@ -1240,16 +1239,14 @@ impl PaintState {
         }
     }
 
-    pub(crate) fn renderer(&self) -> &crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>> {
+    pub(crate) fn renderer(&self) -> &crate::renderer::Renderer {
         match self {
             PaintState::PendingGpuResources { renderer, .. } => renderer,
             PaintState::Initialized { renderer } => renderer,
         }
     }
 
-    pub(crate) fn renderer_mut(
-        &mut self,
-    ) -> &mut crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>> {
+    pub(crate) fn renderer_mut(&mut self) -> &mut crate::renderer::Renderer {
         match self {
             PaintState::PendingGpuResources { renderer, .. } => renderer,
             PaintState::Initialized { renderer } => renderer,
@@ -1280,7 +1277,7 @@ impl<'a> UpdateCx<'a> {
 }
 
 impl Deref for PaintCx<'_> {
-    type Target = crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>>;
+    type Target = crate::renderer::Renderer;
 
     fn deref(&self) -> &Self::Target {
         self.paint_state.renderer()

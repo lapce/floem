@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use floem_winit::window::CursorIcon;
 use peniko::kurbo::{Point, Size};
 use taffy::{AvailableSpace, NodeId};
+use winit::window::CursorIcon;
 
 use crate::{
     context::{DragState, FrameUpdate, InteractionState},

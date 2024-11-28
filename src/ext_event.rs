@@ -2,7 +2,7 @@ use std::{cell::Cell, collections::VecDeque, sync::Arc};
 
 use floem_reactive::{
     create_effect, create_rw_signal, untrack, with_scope, ReadSignal, RwSignal, Scope, SignalGet,
-    SignalUpdate, SignalWith, WriteSignal,
+    SignalUpdate, SignalWith, Trigger, WriteSignal,
 };
 use parking_lot::Mutex;
 
@@ -73,14 +73,7 @@ impl ExtEventHandler {
     }
 
     pub fn add_trigger(&self, trigger: ExtSendTrigger) {
-        {
-            // Run this in a short block to prevent any deadlock if running the trigger effects
-            // causes another trigger to be registered
-            EXT_EVENT_HANDLER.queue.lock().push_back(trigger);
-        }
-        Application::with_event_loop_proxy(|proxy| {
-            let _ = proxy.send_event(UserEvent::Idle);
-        });
+        Application::send_proxy_event(UserEvent::Idle(trigger));
     }
 }
 

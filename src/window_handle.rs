@@ -1,5 +1,8 @@
 use std::{cell::RefCell, mem, path::PathBuf, rc::Rc, sync::Arc};
 
+use raw_window_handle::{
+    HasDisplayHandle, HasRawDisplayHandle, HasRawWindowHandle, HasWindowHandle,
+};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
@@ -8,14 +11,14 @@ use web_time::{Duration, Instant};
 use floem_reactive::{with_scope, RwSignal, Scope, SignalGet, SignalUpdate};
 use floem_renderer::gpu_resources::GpuResources;
 use floem_renderer::Renderer;
-use floem_winit::{
+use peniko::kurbo::{Affine, Point, Rect, Size, Vec2};
+use winit::{
     dpi::{LogicalPosition, LogicalSize},
-    event::{ElementState, Ime, MouseButton, MouseScrollDelta},
+    event::{ButtonSource, ElementState, Ime, MouseButton, MouseScrollDelta},
     event_loop::EventLoopProxy,
     keyboard::{Key, ModifiersState, NamedKey},
-    window::{CursorIcon, WindowId},
+    window::{CursorIcon, Window, WindowId},
 };
-use peniko::kurbo::{Affine, Point, Rect, Size, Vec2};
 
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::reactive::SignalWith;
@@ -48,6 +51,7 @@ use crate::{
     view_state::ChangeFlags,
     views::Decorators,
     window_tracking::{remove_window_id_mapping, store_window_id_mapping},
+    Application,
 };
 
 /// The top-level window handle that owns the winit Window.
@@ -57,7 +61,7 @@ use crate::{
 /// - processing all requests to update the animation state from the reactive system
 /// - requesting a new animation frame from the backend
 pub(crate) struct WindowHandle {
-    pub(crate) window: Option<Arc<floem_winit::window::Window>>,
+    pub(crate) window: Option<Arc<dyn winit::window::Window>>,
     window_id: WindowId,
     id: ViewId,
     main_view: ViewId,
@@ -68,7 +72,7 @@ pub(crate) struct WindowHandle {
     size: RwSignal<Size>,
     theme: Option<Theme>,
     pub(crate) profile: Option<Profile>,
-    os_theme: RwSignal<Option<floem_winit::window::Theme>>,
+    os_theme: RwSignal<Option<winit::window::Theme>>,
     is_maximized: bool,
     transparent: bool,
     pub(crate) scale: f64,
@@ -83,9 +87,8 @@ pub(crate) struct WindowHandle {
 
 impl WindowHandle {
     pub(crate) fn new(
-        window: floem_winit::window::Window,
-        event_proxy: EventLoopProxy<UserEvent>,
-        view_fn: impl FnOnce(floem_winit::window::WindowId) -> Box<dyn View> + 'static,
+        window: Box<dyn winit::window::Window>,
+        view_fn: impl FnOnce(winit::window::WindowId) -> Box<dyn View> + 'static,
         transparent: bool,
         apply_default_theme: bool,
         size: Option<LogicalSize<f64>>,
@@ -95,7 +98,7 @@ impl WindowHandle {
         let window_id = window.id();
         let id = ViewId::new();
         let scale = window.scale_factor();
-        let size: LogicalSize<f64> = size.unwrap_or(window.inner_size().to_logical(scale));
+        let size: LogicalSize<f64> = size.unwrap_or(window.surface_size().to_logical(scale));
         let size = Size::new(size.width, size.height);
         let size = scope.create_rw_signal(Size::new(size.width, size.height));
         let theme = scope.create_rw_signal(window.theme());
@@ -134,13 +137,11 @@ impl WindowHandle {
         let view = WindowView { id };
         id.set_view(view.into_any());
 
-        let window = Arc::new(window);
+        let window: Arc<dyn Window> = window.into();
         store_window_id_mapping(id, window_id, &window);
         let gpu_resources = GpuResources::request(
             move |window_id| {
-                event_proxy
-                    .send_event(UserEvent::GpuResourcesUpdate { window_id })
-                    .unwrap();
+                Application::send_proxy_event(UserEvent::GpuResourcesUpdate { window_id });
             },
             window.clone(),
         );
@@ -182,6 +183,7 @@ impl WindowHandle {
     }
 
     pub(crate) fn init_renderer(&mut self) {
+        println!("now init renderer");
         self.paint_state.init_renderer();
         // On the web, we need to get the canvas size once. The size will be updated automatically
         // when the canvas element is resized subsequently. This is the correct place to do so
@@ -388,7 +390,7 @@ impl WindowHandle {
         self.schedule_repaint();
     }
 
-    pub(crate) fn os_theme_changed(&mut self, theme: floem_winit::window::Theme) {
+    pub(crate) fn os_theme_changed(&mut self, theme: winit::window::Theme) {
         self.os_theme.set(Some(theme));
         self.event(Event::ThemeChanged(theme));
     }
@@ -420,7 +422,7 @@ impl WindowHandle {
         self.event(Event::WindowMoved(point));
     }
 
-    pub(crate) fn key_event(&mut self, key_event: floem_winit::event::KeyEvent) {
+    pub(crate) fn key_event(&mut self, key_event: winit::event::KeyEvent) {
         let event = KeyEvent {
             key: key_event,
             modifiers: self.modifiers,
@@ -498,7 +500,7 @@ impl WindowHandle {
         self.event(Event::PointerWheel(event));
     }
 
-    pub(crate) fn mouse_input(&mut self, button: MouseButton, state: ElementState) {
+    pub(crate) fn pointer_button(&mut self, button: ButtonSource, state: ElementState) {
         let button: PointerButton = button.into();
         let count = if state.is_pressed() && button.is_primary() {
             if let Some((count, last_pos, instant)) = self.last_pointer_down.as_mut() {
@@ -699,7 +701,7 @@ impl WindowHandle {
             window,
             window_size: self.size.get_untracked() / self.app_state.scale,
             scale: self.scale * self.app_state.scale,
-            root: Rc::new(root),
+            root: Arc::new(root),
             state: self.app_state.capture.take().unwrap(),
         };
         // Process any updates produced by capturing
@@ -925,8 +927,8 @@ impl WindowHandle {
                     UpdateMessage::SetWindowDelta(delta) => {
                         if let Some(window) = self.window.as_ref() {
                             let pos = self.window_position + delta;
-                            window.set_outer_position(floem_winit::dpi::Position::Logical(
-                                floem_winit::dpi::LogicalPosition::new(pos.x, pos.y),
+                            window.set_outer_position(winit::dpi::Position::Logical(
+                                winit::dpi::LogicalPosition::new(pos.x, pos.y),
                             ));
                         }
                     }
@@ -966,18 +968,14 @@ impl WindowHandle {
                     UpdateMessage::SetImeCursorArea { position, size } => {
                         if let Some(window) = self.window.as_ref() {
                             window.set_ime_cursor_area(
-                                floem_winit::dpi::Position::Logical(
-                                    floem_winit::dpi::LogicalPosition::new(
-                                        position.x * self.app_state.scale,
-                                        position.y * self.app_state.scale,
-                                    ),
-                                ),
-                                floem_winit::dpi::Size::Logical(
-                                    floem_winit::dpi::LogicalSize::new(
-                                        size.width * self.app_state.scale,
-                                        size.height * self.app_state.scale,
-                                    ),
-                                ),
+                                winit::dpi::Position::Logical(winit::dpi::LogicalPosition::new(
+                                    position.x * self.app_state.scale,
+                                    position.y * self.app_state.scale,
+                                )),
+                                winit::dpi::Size::Logical(winit::dpi::LogicalSize::new(
+                                    size.width * self.app_state.scale,
+                                    size.height * self.app_state.scale,
+                                )),
                             );
                         }
                     }
@@ -1104,7 +1102,7 @@ impl WindowHandle {
         };
         if cursor != self.app_state.last_cursor {
             if let Some(window) = self.window.as_ref() {
-                window.set_cursor_icon(cursor);
+                window.set_cursor(cursor.into());
             }
             self.app_state.last_cursor = cursor;
         }
@@ -1123,19 +1121,21 @@ impl WindowHandle {
     }
 
     #[cfg(target_os = "macos")]
-    fn show_context_menu(&self, menu: floem_winit::menu::Menu, pos: Option<Point>) {
+    fn show_context_menu(&self, menu: muda::Menu, pos: Option<Point>) {
+        use muda::{
+            dpi::{LogicalPosition, Position},
+            ContextMenu,
+        };
+        use raw_window_handle::RawWindowHandle;
+
         if let Some(window) = self.window.as_ref() {
-            {
-                use floem_winit::platform::macos::WindowExtMacOS;
-                window.show_context_menu(
-                    menu,
-                    pos.map(|pos| {
-                        floem_winit::dpi::Position::Logical(floem_winit::dpi::LogicalPosition::new(
-                            pos.x * self.app_state.scale,
-                            pos.y * self.app_state.scale,
-                        ))
-                    }),
-                );
+            if let RawWindowHandle::AppKit(handle) = window.window_handle().unwrap().as_raw() {
+                unsafe {
+                    menu.show_context_menu_for_nsview(
+                        handle.ns_view.as_ptr() as _,
+                        pos.map(|pos| Position::Logical(LogicalPosition::new(pos.x, pos.y))),
+                    )
+                };
             }
         }
     }

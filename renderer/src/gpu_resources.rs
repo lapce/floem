@@ -13,7 +13,7 @@ use std::{future::Future, sync::Arc};
 use crossbeam::channel::{self, Receiver};
 use wgpu::Backends;
 
-use floem_winit::window::{Window, WindowId};
+use winit::window::{Window, WindowId};
 
 /// The acquired GPU resources needed for rendering with wgpu.
 pub struct GpuResources {
@@ -45,7 +45,7 @@ impl GpuResources {
     /// - `window`: The window to associate with the created surface.
     pub fn request<F: Fn(WindowId) + 'static>(
         on_result: F,
-        window: Arc<Window>,
+        window: Arc<dyn Window>,
     ) -> Receiver<Result<Self, GpuResourceError>> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::util::backend_bits_from_env().unwrap_or(Backends::all()),
