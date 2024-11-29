@@ -197,6 +197,9 @@ impl WindowHandle {
         }
         // Now that the renderer is initialized, draw the first frame
         self.render_frame();
+        if let Some(window) = self.window.as_ref() {
+            window.set_visible(true);
+        }
     }
 
     pub fn event(&mut self, event: Event) {
