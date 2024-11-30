@@ -1118,7 +1118,7 @@ pub fn capture(window_id: WindowId) {
                     .style(|s| s.background(Color::WHITE));
 
                 let tab = tab(
-                    move || selected.get(),
+                    move || Some(selected.get()),
                     move || [0, 1].into_iter(),
                     |it| *it,
                     move |it| match it {
