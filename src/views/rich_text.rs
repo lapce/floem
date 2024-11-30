@@ -236,7 +236,7 @@ impl IntoView for RichSpanOwned {
         rich_text(move || layout.clone())
     }
 }
-impl<'a> IntoView for RichSpan<'a> {
+impl IntoView for RichSpan<'_> {
     type V = RichText;
 
     fn into_view(self) -> Self::V {
@@ -280,7 +280,7 @@ impl<'a> std::ops::Add<&'a str> for RichSpan<'a> {
         }
     }
 }
-impl<'a> std::ops::Add<String> for RichSpan<'a> {
+impl std::ops::Add<String> for RichSpan<'_> {
     type Output = RichSpanOwned;
 
     fn add(self, rhs: String) -> Self::Output {

@@ -1,6 +1,14 @@
 [workspace]
 resolver = "2"
-members = ["renderer", "vello", "vger", "tiny_skia", "reactive", "editor-core", "examples/*"]
+members = [
+  "renderer",
+  "vello",
+  "vger",
+  "tiny_skia",
+  "reactive",
+  "editor-core",
+  "examples/*",
+]
 
 [workspace.package]
 license = "MIT"
@@ -18,9 +26,9 @@ rust-version = "1.80"
 license.workspace = true
 
 [workspace.dependencies]
-peniko = { version = "0.2.0", features = ["serde"] }
-serde = "1.0"
-lapce-xi-rope = { version = "0.3.2", features = ["serde"] }
+peniko = { version = "0.2.0" }
+serde = { version = "1.0" }
+lapce-xi-rope = { version = "0.3.2" }
 strum = { version = "0.26.2", features = ["derive"] }
 strum_macros = { version = "0.26.2" }
 # Image format features are defined via new features
@@ -42,7 +50,7 @@ smallvec = "1.10.0"
 educe = "0.5.11"
 taffy = { version = "0.4", features = ["grid"] }
 rfd = { version = "0.14.0", default-features = false, features = [
-    "xdg-portal",
+  "xdg-portal",
 ], optional = true }
 tokio = { version = "1", features = ["sync", "rt"], optional = true }
 raw-window-handle = { workspace = true }
@@ -57,13 +65,16 @@ strum_macros = { workspace = true, optional = true }
 # TODO: once https://github.com/rust-lang/rust/issues/65991 is stabilized we don't need this
 downcast-rs = { version = "1.2.0", optional = true }
 floem_renderer = { path = "renderer", version = "0.2.0" }
-floem_vello_renderer ={ path = "vello", version = "0.2.0", optional = true}
-floem_vger_renderer ={ path = "vger", version = "0.2.0", optional = true}
+floem_vello_renderer = { path = "vello", version = "0.2.0", optional = true }
+floem_vger_renderer = { path = "vger", version = "0.2.0", optional = true }
 floem_tiny_skia_renderer = { path = "tiny_skia", version = "0.2.0" }
 floem_reactive = { path = "reactive", version = "0.2.0" }
 floem-winit = { version = "0.29.5", features = ["rwh_05"] }
 floem-editor-core = { path = "editor-core", version = "0.2.0", optional = true }
-copypasta = { version = "0.10.0", default-features = false, features = ["wayland", "x11"] }
+copypasta = { version = "0.10.0", default-features = false, features = [
+  "wayland",
+  "x11",
+] }
 parking_lot = { workspace = true }
 image = { workspace = true }
 im = { workspace = true }
@@ -84,10 +95,21 @@ default = ["editor", "default-image-formats", "vger"]
 vello = ["dep:floem_vello_renderer"]
 vger = ["dep:floem_vger_renderer"]
 
-# TODO: this is only winit and the editor serde, there are other dependencies that still depend on
-# serde
-serde = ["floem-winit/serde", "dep:serde"]
-editor = ["floem-editor-core", "dep:lapce-xi-rope", "dep:strum", "dep:strum_macros", "dep:downcast-rs"]
+serde = [
+  "dep:serde",
+  "floem-winit/serde",
+  "peniko/serde",
+  "lapce-xi-rope/serde",
+  "smallvec/serde",
+]
+
+editor = [
+  "floem-editor-core",
+  "dep:lapce-xi-rope",
+  "dep:strum",
+  "dep:strum_macros",
+  "dep:downcast-rs",
+]
 
 # Image support
 # From: https://github.com/image-rs/image/blob/main/Cargo.toml

@@ -85,7 +85,7 @@ pub struct Attrs<'a> {
     line_height: LineHeightValue,
 }
 
-impl<'a> Default for Attrs<'a> {
+impl Default for Attrs<'_> {
     fn default() -> Self {
         Self::new()
     }
@@ -237,7 +237,7 @@ struct ParseList<'a> {
     pos: usize,
 }
 
-impl<'a> Iterator for ParseList<'a> {
+impl Iterator for ParseList<'_> {
     type Item = FamilyOwned;
 
     fn next(&mut self) -> Option<Self::Item> {

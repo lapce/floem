@@ -2103,7 +2103,7 @@ mod tests {
             }
         }
     }
-    impl<'a> TextLayoutProvider for TestTextLayoutProvider<'a> {
+    impl TextLayoutProvider for TestTextLayoutProvider<'_> {
         fn text(&self) -> Rope {
             self.text.clone()
         }

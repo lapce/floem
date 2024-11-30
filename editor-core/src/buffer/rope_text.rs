@@ -394,7 +394,7 @@ impl<'a> RopeTextRef<'a> {
         Self { text }
     }
 }
-impl<'a> RopeText for RopeTextRef<'a> {
+impl RopeText for RopeTextRef<'_> {
     fn text(&self) -> &Rope {
         self.text
     }
