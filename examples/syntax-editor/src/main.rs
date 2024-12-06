@@ -41,7 +41,7 @@ struct SyntaxHighlightingStyle<'a> {
     pub states: RefCell<Vec<(ParseState, HighlightState)>>,
 }
 
-impl<'a> SyntaxHighlightingStyle<'a> {
+impl SyntaxHighlightingStyle<'_> {
     pub fn new(style: Rc<dyn Styling>) -> Self {
         let theme = &THEMES.themes["base16-ocean.dark"];
         let rust = SYNTAXSET.find_syntax_by_extension("rs").unwrap();
@@ -61,7 +61,7 @@ impl<'a> SyntaxHighlightingStyle<'a> {
     }
 }
 
-impl<'a> Styling for SyntaxHighlightingStyle<'a> {
+impl Styling for SyntaxHighlightingStyle<'_> {
     fn id(&self) -> u64 {
         self.style.id()
     }
