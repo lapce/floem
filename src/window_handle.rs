@@ -40,6 +40,7 @@ use crate::{
     profiler::Profile,
     style::{CursorStyle, Style, StyleSelector},
     theme::{default_theme, Theme},
+    touchpad::TouchpadMagnifyEvent,
     update::{
         UpdateMessage, CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES,
         CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES,
@@ -538,6 +539,11 @@ impl WindowHandle {
                 self.event(Event::PointerUp(event));
             }
         }
+    }
+
+    pub(crate) fn touchpad_magnify(&mut self, delta: f64) {
+        let event = TouchpadMagnifyEvent { delta };
+        self.event(Event::TouchpadMagnify(event));
     }
 
     pub(crate) fn focused(&mut self, focused: bool) {
