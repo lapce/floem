@@ -10,7 +10,7 @@ use floem_renderer::gpu_resources::GpuResources;
 use floem_renderer::Renderer;
 use floem_winit::{
     dpi::{LogicalPosition, LogicalSize},
-    event::{ElementState, Ime, MouseButton, MouseScrollDelta},
+    event::{ElementState, Ime, MouseButton, MouseScrollDelta, TouchPhase},
     event_loop::EventLoopProxy,
     keyboard::{Key, ModifiersState, NamedKey},
     window::{CursorIcon, WindowId},
@@ -541,8 +541,8 @@ impl WindowHandle {
         }
     }
 
-    pub(crate) fn touchpad_magnify(&mut self, delta: f64) {
-        let event = TouchpadMagnifyEvent { delta };
+    pub(crate) fn touchpad_magnify(&mut self, delta: f64, phase: TouchPhase) {
+        let event = TouchpadMagnifyEvent { delta, phase };
         self.event(Event::TouchpadMagnify(event));
     }
 
