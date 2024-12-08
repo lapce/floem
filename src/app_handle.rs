@@ -301,6 +301,7 @@ impl ApplicationHandle {
         let logical_size = size.map(|size| LogicalSize::new(size.width, size.height));
 
         let mut window_builder = floem_winit::window::WindowBuilder::new()
+            .with_visible(false)
             .with_title(title)
             .with_decorations(!undecorated)
             .with_transparent(transparent)
