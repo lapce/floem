@@ -10,7 +10,7 @@ use floem_renderer::gpu_resources::GpuResources;
 use floem_renderer::Renderer;
 use floem_winit::{
     dpi::{LogicalPosition, LogicalSize},
-    event::{ElementState, Ime, MouseButton, MouseScrollDelta},
+    event::{ElementState, Ime, MouseButton, MouseScrollDelta, TouchPhase},
     event_loop::EventLoopProxy,
     keyboard::{Key, ModifiersState, NamedKey},
     window::{CursorIcon, WindowId},
@@ -40,6 +40,7 @@ use crate::{
     profiler::Profile,
     style::{CursorStyle, Style, StyleSelector},
     theme::{default_theme, Theme},
+    touchpad::TouchpadMagnifyEvent,
     update::{
         UpdateMessage, CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES,
         CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES,
@@ -538,6 +539,11 @@ impl WindowHandle {
                 self.event(Event::PointerUp(event));
             }
         }
+    }
+
+    pub(crate) fn touchpad_magnify(&mut self, delta: f64, phase: TouchPhase) {
+        let event = TouchpadMagnifyEvent { delta, phase };
+        self.event(Event::TouchpadMagnify(event));
     }
 
     pub(crate) fn focused(&mut self, focused: bool) {

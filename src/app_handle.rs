@@ -234,7 +234,9 @@ impl ApplicationHandle {
             WindowEvent::MouseInput { state, button, .. } => {
                 window_handle.mouse_input(button, state);
             }
-            WindowEvent::TouchpadMagnify { .. } => {}
+            WindowEvent::TouchpadMagnify { delta, phase, .. } => {
+                window_handle.touchpad_magnify(delta, phase);
+            }
             WindowEvent::SmartMagnify { .. } => {}
             WindowEvent::TouchpadRotate { .. } => {}
             WindowEvent::TouchpadPressure { .. } => {}
