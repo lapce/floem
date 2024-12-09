@@ -81,7 +81,7 @@ impl CharBuffer {
     #[inline]
     pub fn new(char: char) -> Self {
         let mut buf = [0; 4];
-        let len = char.encode_utf8(&mut buf).as_bytes().len();
+        let len = char.encode_utf8(&mut buf).len();
         Self { len, buf }
     }
 

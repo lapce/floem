@@ -8,6 +8,7 @@ use crate::{
     dropped_file::DroppedFileEvent,
     keyboard::KeyEvent,
     pointer::{PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
+    touchpad::TouchpadMagnifyEvent,
 };
 
 /// Control whether an event will continue propagating or whether it should stop.
@@ -67,6 +68,8 @@ pub enum EventListener {
     PointerEnter,
     /// Receives [`Event::PointerLeave`]
     PointerLeave,
+    /// Receives [`Event::TouchpadMagnify`]
+    TouchpadMagnify,
     /// Receives [`Event::ImeEnabled`]
     ImeEnabled,
     /// Receives [`Event::ImeDisabled`]
@@ -106,6 +109,7 @@ pub enum Event {
     PointerMove(PointerMoveEvent),
     PointerWheel(PointerWheelEvent),
     PointerLeave,
+    TouchpadMagnify(TouchpadMagnifyEvent),
     DroppedFile(DroppedFileEvent),
     KeyDown(KeyEvent),
     KeyUp(KeyEvent),
@@ -135,6 +139,7 @@ impl Event {
             | Event::PointerMove(_)
             | Event::PointerWheel(_)
             | Event::PointerLeave
+            | Event::TouchpadMagnify(..)
             | Event::FocusGained
             | Event::FocusLost
             | Event::ImeEnabled
@@ -160,7 +165,8 @@ impl Event {
             | Event::PointerMove(_)
             | Event::PointerWheel(_)
             | Event::PointerLeave => true,
-            Event::KeyDown(_)
+            Event::TouchpadMagnify(_)
+            | Event::KeyDown(_)
             | Event::KeyUp(_)
             | Event::FocusGained
             | Event::FocusLost
@@ -207,7 +213,8 @@ impl Event {
             | Event::ImeCommit(_)
             | Event::KeyDown(_)
             | Event::KeyUp(_) => false,
-            Event::PointerLeave
+            Event::TouchpadMagnify(_)
+            | Event::PointerLeave
             | Event::PointerMove(_)
             | Event::ThemeChanged(_)
             | Event::WindowClosed
@@ -228,7 +235,8 @@ impl Event {
             Event::PointerMove(pointer_event) => Some(pointer_event.pos),
             Event::PointerWheel(pointer_event) => Some(pointer_event.pos),
             Event::DroppedFile(event) => Some(event.pos),
-            Event::PointerLeave
+            Event::TouchpadMagnify(_)
+            | Event::PointerLeave
             | Event::KeyDown(_)
             | Event::KeyUp(_)
             | Event::FocusGained
@@ -261,7 +269,8 @@ impl Event {
             Event::DroppedFile(event) => {
                 event.pos = transform.inverse() * event.pos;
             }
-            Event::PointerLeave
+            Event::TouchpadMagnify(_)
+            | Event::PointerLeave
             | Event::KeyDown(_)
             | Event::KeyUp(_)
             | Event::FocusGained
@@ -288,6 +297,7 @@ impl Event {
             Event::PointerMove(_) => Some(EventListener::PointerMove),
             Event::PointerWheel(_) => Some(EventListener::PointerWheel),
             Event::PointerLeave => Some(EventListener::PointerLeave),
+            Event::TouchpadMagnify(_) => Some(EventListener::TouchpadMagnify),
             Event::KeyDown(_) => Some(EventListener::KeyDown),
             Event::KeyUp(_) => Some(EventListener::KeyUp),
             Event::ImeEnabled => Some(EventListener::ImeEnabled),

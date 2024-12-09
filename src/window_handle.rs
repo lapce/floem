@@ -14,7 +14,7 @@ use floem_renderer::Renderer;
 use peniko::kurbo::{Affine, Point, Rect, Size, Vec2};
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
-    event::{ButtonSource, ElementState, Ime, MouseButton, MouseScrollDelta},
+    event::{ButtonSource, ElementState, Ime, MouseButton, MouseScrollDelta, TouchPhase},
     event_loop::EventLoopProxy,
     keyboard::{Key, ModifiersState, NamedKey},
     window::{CursorIcon, Window, WindowId},
@@ -43,6 +43,7 @@ use crate::{
     profiler::Profile,
     style::{CursorStyle, Style, StyleSelector},
     theme::{default_theme, Theme},
+    touchpad::TouchpadMagnifyEvent,
     update::{
         UpdateMessage, CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES,
         CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES,
@@ -199,6 +200,9 @@ impl WindowHandle {
         }
         // Now that the renderer is initialized, draw the first frame
         self.render_frame();
+        if let Some(window) = self.window.as_ref() {
+            window.set_visible(true);
+        }
     }
 
     pub fn event(&mut self, event: Event) {
@@ -537,6 +541,11 @@ impl WindowHandle {
                 self.event(Event::PointerUp(event));
             }
         }
+    }
+
+    pub(crate) fn touchpad_magnify(&mut self, delta: f64, phase: TouchPhase) {
+        let event = TouchpadMagnifyEvent { delta, phase };
+        self.event(Event::TouchpadMagnify(event));
     }
 
     pub(crate) fn focused(&mut self, focused: bool) {

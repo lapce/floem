@@ -151,7 +151,7 @@ enum AppCommand<'a> {
     SelectUp,
     SelectDown,
 }
-impl<'a> AppCommand<'a> {
+impl AppCommand<'_> {
     fn execute(self) {
         let (active, selected, todos) = TODOS_STATE.with(|s| (s.active, s.selected, s.todos));
         TODOS_STATE.with(|s| {

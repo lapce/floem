@@ -66,7 +66,7 @@ pub struct EventCx<'a> {
     pub(crate) app_state: &'a mut AppState,
 }
 
-impl<'a> EventCx<'a> {
+impl EventCx<'_> {
     pub fn app_state_mut(&mut self) -> &mut AppState {
         self.app_state
     }
@@ -941,7 +941,7 @@ pub struct PaintCx<'a> {
     pub(crate) saved_z_indexes: Vec<Option<i32>>,
 }
 
-impl<'a> PaintCx<'a> {
+impl PaintCx<'_> {
     pub fn save(&mut self) {
         self.saved_transforms.push(self.transform);
         self.saved_clips.push(self.clip);
@@ -1266,7 +1266,7 @@ pub struct UpdateCx<'a> {
     pub(crate) app_state: &'a mut AppState,
 }
 
-impl<'a> UpdateCx<'a> {
+impl UpdateCx<'_> {
     pub fn app_state_mut(&mut self) -> &mut AppState {
         self.app_state
     }

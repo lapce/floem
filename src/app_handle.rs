@@ -216,6 +216,11 @@ impl ApplicationHandle {
             WindowEvent::PointerButton { state, button, .. } => {
                 window_handle.pointer_button(button, state);
             }
+            WindowEvent::TouchpadMagnify { delta, phase, .. } => {
+                window_handle.touchpad_magnify(delta, phase);
+            }
+            WindowEvent::SmartMagnify { .. } => {}
+            WindowEvent::TouchpadRotate { .. } => {}
             WindowEvent::TouchpadPressure { .. } => {}
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 window_handle.scale(scale_factor);
@@ -281,6 +286,7 @@ impl ApplicationHandle {
         let logical_size = size.map(|size| LogicalSize::new(size.width, size.height));
 
         let mut window_attributes = winit::window::WindowAttributes::default()
+            .with_visible(false)
             .with_title(title)
             .with_decorations(!undecorated)
             .with_transparent(transparent)

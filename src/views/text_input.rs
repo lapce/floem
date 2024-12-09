@@ -677,7 +677,7 @@ impl TextInput {
                 .key
                 .text
                 .as_ref()
-                .map_or(false, |ch| self.insert_text(ch)),
+                .is_some_and(|ch| self.insert_text(ch)),
             Key::Named(NamedKey::Space) => {
                 if let Some(selection) = &self.selection {
                     self.buffer

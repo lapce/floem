@@ -44,7 +44,7 @@ pub struct LayoutRun<'a> {
     pub line_w: f32,
 }
 
-impl<'a> LayoutRun<'a> {
+impl LayoutRun<'_> {
     /// Return the pixel span `Some((x_left, x_width))` of the highlighted area between `cursor_start`
     /// and `cursor_end` within this run, or None if the cursor range does not intersect this run.
     /// This may return widths of zero if `cursor_start == cursor_end`, if the run is empty, or if the
