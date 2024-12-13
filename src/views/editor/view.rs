@@ -371,8 +371,13 @@ impl EditorView {
                 ed.last_col(info, true)
             };
 
+            let line_height = f64::from(ed.line_height(line));
+            
             // Skip over empty selections
             if !info.is_empty_phantom() && left_col == right_col {
+                let rect = Rect::from_origin_size((0.0, vline_y), (CHAR_WIDTH, line_height));
+                cx.fill(&rect, color, 0.0);
+                
                 continue;
             }
 
@@ -402,8 +407,7 @@ impl EditorView {
                 (x0, x1 - x0)
             };
 
-            let line_height = ed.line_height(line);
-            let rect = Rect::from_origin_size((x0, vline_y), (width, f64::from(line_height)));
+            let rect = Rect::from_origin_size((x0, vline_y), (width, line_height));
             cx.fill(&rect, color, 0.0);
         }
     }
