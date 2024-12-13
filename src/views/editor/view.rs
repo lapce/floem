@@ -372,12 +372,12 @@ impl EditorView {
             };
 
             let line_height = f64::from(ed.line_height(line));
-            
+
             // Skip over empty selections
             if !info.is_empty_phantom() && left_col == right_col {
                 let rect = Rect::from_origin_size((0.0, vline_y), (CHAR_WIDTH, line_height));
                 cx.fill(&rect, color, 0.0);
-                
+
                 continue;
             }
 
