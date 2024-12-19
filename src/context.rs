@@ -542,6 +542,7 @@ impl<'a> StyleCx<'a> {
         {
             let mut view_state = view_state.borrow_mut();
             if !view_state.requested_changes.contains(ChangeFlags::STYLE) {
+                self.restore();
                 return;
             }
             view_state.requested_changes.remove(ChangeFlags::STYLE);
