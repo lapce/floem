@@ -43,7 +43,7 @@ use crate::{
     profiler::Profile,
     style::{CursorStyle, Style, StyleSelector},
     theme::{default_theme, Theme},
-    touchpad::TouchpadMagnifyEvent,
+    touchpad::PinchGestureEvent,
     update::{
         UpdateMessage, CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES,
         CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES,
@@ -543,9 +543,9 @@ impl WindowHandle {
         }
     }
 
-    pub(crate) fn touchpad_magnify(&mut self, delta: f64, phase: TouchPhase) {
-        let event = TouchpadMagnifyEvent { delta, phase };
-        self.event(Event::TouchpadMagnify(event));
+    pub(crate) fn pinch_gesture(&mut self, delta: f64, phase: TouchPhase) {
+        let event = PinchGestureEvent { delta, phase };
+        self.event(Event::PinchGesture(event));
     }
 
     pub(crate) fn focused(&mut self, focused: bool) {

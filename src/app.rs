@@ -1,14 +1,13 @@
-use std::{cell::RefCell, rc::Rc, sync::Arc};
+use std::{cell::RefCell, sync::Arc};
 
 use crossbeam_channel::{Receiver, Sender};
-use floem_reactive::{Trigger, WriteSignal};
+use floem_reactive::WriteSignal;
 use parking_lot::Mutex;
 use raw_window_handle::HasDisplayHandle;
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
-    event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy},
-    monitor::MonitorHandle,
+    event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy},
     window::WindowId,
 };
 
