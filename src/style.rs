@@ -2,7 +2,7 @@
 
 use floem_reactive::create_updater;
 use floem_renderer::text::{LineHeightValue, Weight};
-use im_rc::hashmap::Entry;
+use im::hashmap::Entry;
 use peniko::kurbo::{Point, Stroke};
 use peniko::{Brush, Color, ColorStop, ColorStops, Gradient, GradientKind};
 use rustc_hash::FxHasher;
@@ -14,6 +14,7 @@ use std::hash::{BuildHasherDefault, Hash};
 use std::ptr;
 use std::rc::Rc;
 
+use std::sync::Arc;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
@@ -38,7 +39,7 @@ use crate::unit::{Pct, Px, PxPct, PxPctAuto, UnitExt};
 use crate::view::{IntoView, View};
 use crate::views::{empty, stack, text, Decorators};
 
-pub trait StylePropValue: Clone + PartialEq + Debug {
+pub trait StylePropValue: Clone + PartialEq + Debug + Send + Sync {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         None
     }
@@ -553,7 +554,7 @@ pub trait StyleProp: Default + Copy + 'static {
 }
 
 pub(crate) type InterpolateFn =
-    fn(val1: &dyn Any, val2: &dyn Any, time: f64) -> Option<Rc<dyn Any>>;
+    fn(val1: &dyn Any, val2: &dyn Any, time: f64) -> Option<Arc<dyn Any + Send + Sync>>;
 
 #[derive(Debug)]
 pub struct StylePropInfo {
@@ -601,8 +602,9 @@ impl StylePropInfo {
                         StyleMapValue::Val(v2) | StyleMapValue::Animated(v2),
                     ) = (v1, v2)
                     {
-                        v1.interpolate(v2, time)
-                            .map(|val| Rc::new(StyleMapValue::Animated(val)) as Rc<dyn Any>)
+                        v1.interpolate(v2, time).map(|val| {
+                            Arc::new(StyleMapValue::Animated(val)) as Arc<dyn Any + Send + Sync>
+                        })
                     } else {
                         None
                     }
@@ -1002,14 +1004,14 @@ impl<T: StylePropValue> Default for TransitionState<T> {
 #[derive(Clone, Debug)]
 pub struct Transition {
     pub duration: Duration,
-    pub easing: Rc<dyn Easing>,
+    pub easing: Arc<dyn Easing + Send + Sync>,
 }
 
 impl Transition {
-    pub fn new(duration: Duration, easing: impl Easing + 'static) -> Self {
+    pub fn new(duration: Duration, easing: impl Easing + 'static + Send + Sync) -> Self {
         Self {
             duration,
-            easing: Rc::new(easing),
+            easing: Arc::new(easing),
         }
     }
 
@@ -1076,7 +1078,7 @@ impl Debug for StyleKey {
     }
 }
 
-type ImHashMap<K, V> = im_rc::HashMap<K, V, BuildHasherDefault<FxHasher>>;
+type ImHashMap<K, V> = im::HashMap<K, V, BuildHasherDefault<FxHasher>>;
 
 style_key_selector!(selector_xs, StyleSelectors::new().responsive());
 style_key_selector!(selector_sm, StyleSelectors::new().responsive());
@@ -1098,7 +1100,7 @@ fn screen_size_bp_to_key(breakpoint: ScreenSizeBp) -> StyleKey {
 
 #[derive(Default, Clone)]
 pub struct Style {
-    pub(crate) map: ImHashMap<StyleKey, Rc<dyn Any>>,
+    pub(crate) map: ImHashMap<StyleKey, Arc<dyn Any + Send + Sync>>,
 }
 
 impl Style {
@@ -1272,10 +1274,10 @@ impl Style {
             Entry::Occupied(mut e) => {
                 let mut current = e.get_mut().downcast_ref::<Style>().unwrap().clone();
                 current.apply_mut(map);
-                *e.get_mut() = Rc::new(current);
+                *e.get_mut() = Arc::new(current);
             }
             Entry::Vacant(e) => {
-                e.insert(Rc::new(map));
+                e.insert(Arc::new(map));
             }
         }
     }
@@ -1292,7 +1294,7 @@ impl Style {
         BuiltinStyle { style: self }
     }
 
-    fn apply_iter(&mut self, iter: impl Iterator<Item = (StyleKey, Rc<dyn Any>)>) {
+    fn apply_iter(&mut self, iter: impl Iterator<Item = (StyleKey, Arc<dyn Any + Send + Sync>)>) {
         for (k, v) in iter {
             match k.info {
                 StyleKeyInfo::Class(..) | StyleKeyInfo::Selector(..) => match self.map.entry(k) {
@@ -1300,7 +1302,7 @@ impl Style {
                         // We need to merge the new map with the existing map.
 
                         let v = v.downcast_ref::<Style>().unwrap();
-                        match Rc::get_mut(e.get_mut()) {
+                        match Arc::get_mut(e.get_mut()) {
                             Some(current) => {
                                 current
                                     .downcast_mut::<Style>()
@@ -1311,7 +1313,7 @@ impl Style {
                                 let mut current =
                                     e.get_mut().downcast_ref::<Style>().unwrap().clone();
                                 current.apply_mut(v.clone());
-                                *e.get_mut() = Rc::new(current);
+                                *e.get_mut() = Arc::new(current);
                             }
                         }
                     }
@@ -1787,13 +1789,13 @@ impl Style {
                 return self;
             }
         };
-        self.map.insert(P::key(), Rc::new(insert));
+        self.map.insert(P::key(), Arc::new(insert));
         self
     }
 
     pub fn transition<P: StyleProp>(mut self, _prop: P, transition: Transition) -> Self {
         self.map
-            .insert(P::prop_ref().info().transition_key, Rc::new(transition));
+            .insert(P::prop_ref().info().transition_key, Arc::new(transition));
         self
     }
 

@@ -14,8 +14,8 @@ resvg = { workspace = true }
 swash = { workspace = true }
 
 cosmic-text = { version = "0.12.1", features = ["shape-run-cache"] }
-floem-winit = { version = "0.29.5", features = ["rwh_05"] }
 
+winit = { workspace = true }
 wgpu = { workspace = true }
 crossbeam = { version = "0.8" }
 futures = "0.3.26"

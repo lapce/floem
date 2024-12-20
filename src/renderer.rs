@@ -47,6 +47,8 @@
 //! - Only one view can be active at a time.
 //! - Only one view can be focused at a time.
 //!
+use std::sync::Arc;
+
 use crate::text::TextLayout;
 use floem_renderer::gpu_resources::GpuResources;
 use floem_renderer::Img;
@@ -57,14 +59,15 @@ use floem_vello_renderer::VelloRenderer;
 use floem_vger_renderer::VgerRenderer;
 use peniko::kurbo::{self, Affine, Rect, Shape, Size, Stroke};
 use peniko::BrushRef;
+use winit::window::Window;
 
 #[allow(clippy::large_enum_variant)]
-pub enum Renderer<W> {
+pub enum Renderer {
     #[cfg(feature = "vello")]
     Vello(VelloRenderer),
     #[cfg(not(feature = "vello"))]
     Vger(VgerRenderer),
-    TinySkia(TinySkiaRenderer<W>),
+    TinySkia(TinySkiaRenderer<Arc<dyn Window>>),
     /// Uninitialized renderer, used to allow the renderer to be created lazily
     /// All operations on this renderer are no-ops
     Uninitialized {
@@ -73,17 +76,14 @@ pub enum Renderer<W> {
     },
 }
 
-impl<W: wgpu::WindowHandle> Renderer<W> {
+impl Renderer {
     pub fn new(
-        window: W,
+        window: Arc<dyn Window>,
         gpu_resources: GpuResources,
         scale: f64,
         size: Size,
         font_embolden: f32,
-    ) -> Self
-    where
-        W: Clone + 'static,
-    {
+    ) -> Self {
         let size = Size::new(size.width.max(1.0), size.height.max(1.0));
 
         let force_tiny_skia = std::env::var("FLOEM_FORCE_TINY_SKIA")
@@ -191,7 +191,7 @@ impl<W: wgpu::WindowHandle> Renderer<W> {
     }
 }
 
-impl<W: wgpu::WindowHandle> floem_renderer::Renderer for Renderer<W> {
+impl floem_renderer::Renderer for Renderer {
     fn begin(&mut self, capture: bool) {
         match self {
             #[cfg(feature = "vello")]
