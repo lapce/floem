@@ -133,6 +133,7 @@ image-webp = ["image/webp"]
 tokio = ["dep:tokio"]
 
 # rfd (file dialog) async runtime
-rfd-async-std = ["dep:rfd", "rfd/async-std"]
-rfd-tokio = ["dep:rfd", "rfd/tokio"]
+rfd = ["dep:rfd"]
+rfd-async-std = ["rfd", "rfd/async-std"]
+rfd-tokio = ["rfd", "rfd/tokio"]
 futures = ["dep:futures"]

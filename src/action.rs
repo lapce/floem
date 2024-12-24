@@ -26,7 +26,7 @@ use crate::{
     window_handle::{get_current_view, set_current_view},
 };
 
-#[cfg(any(feature = "rfd-async-std", feature = "rfd-tokio"))]
+#[cfg(feature = "rfd")]
 pub use crate::file_action::*;
 
 pub(crate) fn add_update_message(msg: UpdateMessage) {
