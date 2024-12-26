@@ -1,18 +1,18 @@
+use crate::inspector::CapturedView;
+use crate::views::VirtualVector;
+use crate::ViewId;
+use floem_reactive::{create_rw_signal, RwSignal, SignalGet, SignalUpdate};
 use std::ops::AddAssign;
 use std::rc::Rc;
-use floem_reactive::{create_rw_signal, RwSignal, SignalGet, SignalUpdate};
-use crate::inspector::{CapturedView};
-use crate::{ ViewId};
-use crate::views::VirtualVector;
 
 #[derive(Clone)]
 pub struct CapturedDatas {
     pub root: CapturedData,
-    pub focus_line: RwSignal<usize>
+    pub focus_line: RwSignal<usize>,
 }
 
 impl CapturedDatas {
-    pub fn init_from_view(view: Rc<CapturedView>,) -> Self {
+    pub fn init_from_view(view: Rc<CapturedView>) -> Self {
         let root = CapturedData::init_from_view(view);
         Self {
             root,
@@ -41,7 +41,7 @@ impl CapturedDatas {
         next: &mut usize,
         min: usize,
         max: usize,
-        level: usize
+        level: usize,
     ) -> Vec<(usize, usize, CapturedData)> {
         self.root.get_children(next, min, max, level)
     }
@@ -50,9 +50,9 @@ impl CapturedDatas {
 pub enum DataType {
     Internal {
         children: Vec<CapturedData>,
-        expanded: RwSignal<bool>
+        expanded: RwSignal<bool>,
     },
-    Leaf
+    Leaf,
 }
 #[derive(Clone, Debug)]
 pub struct CapturedData {
@@ -78,17 +78,14 @@ impl CapturedData {
             Self {
                 id: view.id,
                 view_conf: view,
-                ty: DataType::Internal {
-                    children,
-                    expanded,
-                },
+                ty: DataType::Internal { children, expanded },
             }
         }
     }
     pub fn count_line(&self, id: ViewId, line: &mut usize) -> bool {
         line.add_assign(1);
         if self.id == id {
-            return true
+            return true;
         }
         match &self.ty {
             DataType::Internal { children, expanded } => {
@@ -100,37 +97,33 @@ impl CapturedData {
                     }
                 }
             }
-            DataType::Leaf => {
-            }
+            DataType::Leaf => {}
         }
         false
     }
 
     pub fn focus(&mut self, id: ViewId) -> bool {
         if self.id == id {
-            return true
+            return true;
         }
         match &mut self.ty {
             DataType::Internal { children, expanded } => {
                 for child in children.iter_mut() {
                     if child.focus(id) {
                         expanded.set(true);
-                        return true
+                        return true;
                     }
                 }
             }
-            DataType::Leaf => {
-            }
+            DataType::Leaf => {}
         }
         false
     }
 
     pub fn expanded(&self) -> Option<RwSignal<bool>> {
         match &self.ty {
-            DataType::Internal { expanded, .. } => {
-                Some(*expanded)
-            }
-            DataType::Leaf => {None}
+            DataType::Internal { expanded, .. } => Some(*expanded),
+            DataType::Leaf => None,
         }
     }
 
@@ -138,7 +131,7 @@ impl CapturedData {
     fn total(&self) -> usize {
         match &self.ty {
             DataType::Internal { expanded, children } => {
-                if expanded.get() == true {
+                if expanded.get() {
                     let mut total = 1;
                     for child in children {
                         total += child.total();
@@ -148,7 +141,7 @@ impl CapturedData {
                     1
                 }
             }
-            DataType::Leaf => {1}
+            DataType::Leaf => 1,
         }
     }
 
@@ -157,7 +150,7 @@ impl CapturedData {
         next: &mut usize,
         min: usize,
         max: usize,
-        level: usize
+        level: usize,
     ) -> Vec<(usize, usize, CapturedData)> {
         let mut children_data = Vec::new();
         if *next >= min && *next < max {
@@ -168,7 +161,7 @@ impl CapturedData {
         next.add_assign(1);
         match &self.ty {
             DataType::Internal { expanded, children } => {
-                if expanded.get() == true {
+                if expanded.get() {
                     for child in children {
                         let child_children = child.get_children(next, min, max, level + 1);
                         if !child_children.is_empty() {
@@ -180,12 +173,11 @@ impl CapturedData {
                     }
                 }
             }
-            DataType::Leaf => {            }
+            DataType::Leaf => {}
         }
         children_data
     }
 }
-
 
 impl VirtualVector<(usize, usize, CapturedData)> for CapturedDatas {
     fn total_len(&self) -> usize {
@@ -194,7 +186,7 @@ impl VirtualVector<(usize, usize, CapturedData)> for CapturedDatas {
 
     fn slice(
         &mut self,
-        range: std::ops::Range<usize>
+        range: std::ops::Range<usize>,
     ) -> impl Iterator<Item = (usize, usize, CapturedData)> {
         let min = range.start;
         let max = range.end;

@@ -151,9 +151,7 @@ fn capture_view(
         selected: create_rw_signal(None),
         highlighted: create_rw_signal(None),
     };
-    let datas = create_rw_signal(CapturedDatas::init_from_view(
-        capture.root.clone(),
-    ));
+    let datas = create_rw_signal(CapturedDatas::init_from_view(capture.root.clone()));
     let window = capture.window.clone();
     let capture_ = capture.clone();
     let (image_width, image_height) = capture
@@ -584,16 +582,14 @@ fn tree_node_name(view: &CapturedData, marge_left: f64) -> impl IntoView {
                 // .background(Color::WHITE.multiply_alpha(0.3))
                 .width(12.0)
                 .height(12.0)
-                .margin_right(4.0)
-                // .border(1.0)
-                // .border_radius(4.0)
-                // .border_color(Color::WHITE.multiply_alpha(0.4)),
+                .margin_right(4.0), // .border(1.0)
+                                    // .border_radius(4.0)
+                                    // .border_color(Color::WHITE.multiply_alpha(0.4)),
         })
-        .on_click_stop(move |_| match ty {
-            Some(expanded) => {
+        .on_click_stop(move |_| {
+            if let Some(expanded) = ty {
                 expanded.set(!expanded.get_untracked());
             }
-            None => {}
         });
     h_stack((checkbox, id, tab, name)).style(move |s| s.items_center().margin_left(marge_left))
 }

@@ -1,7 +1,6 @@
 mod data;
 mod view;
 
-pub use view::capture;
 use crate::app_state::AppState;
 use crate::context::StyleCx;
 use crate::event::{Event, EventListener, EventPropagation};
@@ -10,8 +9,7 @@ use crate::style::{Style, StyleClassRef, StylePropRef, Transition};
 use crate::view::{IntoView, View};
 use crate::view_state::ChangeFlags;
 use crate::views::{
-    button, dyn_container, stack, static_label,
-    text, v_stack, v_stack_from_iter, Decorators, Label,
+    button, dyn_container, stack, static_label, text, v_stack, v_stack_from_iter, Decorators, Label,
 };
 use crate::{style, Clipboard};
 use floem_reactive::{batch, RwSignal, Scope, SignalGet, SignalUpdate};
@@ -23,15 +21,16 @@ use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::rc::Rc;
+pub use view::capture;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
 use web_time::{Duration, Instant};
 
-use taffy::prelude::Layout;
-use taffy::style::{FlexDirection};
 use crate::inspector::data::CapturedDatas;
+use taffy::prelude::Layout;
+use taffy::style::FlexDirection;
 
 #[derive(Clone, Debug)]
 pub struct CapturedView {
@@ -182,7 +181,8 @@ fn add_event(
     name: String,
     id: ViewId,
     capture_view: CaptureView,
-    capture: &Rc<Capture>, datas: RwSignal<CapturedDatas>
+    capture: &Rc<Capture>,
+    datas: RwSignal<CapturedDatas>,
 ) -> impl View {
     let capture = capture.clone();
     row.keyboard_navigable()
@@ -623,12 +623,19 @@ fn find_relative_view_by_id_with_self(
     }
 }
 
-fn update_select_view_id(id: ViewId, capture: &CaptureView, request_focus: bool, datas: RwSignal<CapturedDatas>) {
+fn update_select_view_id(
+    id: ViewId,
+    capture: &CaptureView,
+    request_focus: bool,
+    datas: RwSignal<CapturedDatas>,
+) {
     capture.selected.set(Some(id));
     capture.highlighted.set(Some(id));
     capture.expanding_selection.set(Some((id, request_focus)));
     batch(|| {
-        datas.update(|x| { x.focus(id);});
+        datas.update(|x| {
+            x.focus(id);
+        });
     });
 }
 
