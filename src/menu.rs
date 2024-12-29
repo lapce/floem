@@ -1,7 +1,5 @@
 use std::sync::atomic::AtomicU64;
 
-use muda::PredefinedMenuItem;
-
 /// An entry in a menu.
 ///
 /// An entry is either a [`MenuItem`], a submenu (i.e. [`Menu`]).
@@ -48,12 +46,13 @@ impl Menu {
         self.entry(MenuEntry::Separator)
     }
 
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     pub(crate) fn platform_menu(&self) -> muda::Menu {
         let menu = muda::Menu::new();
         for entry in &self.children {
             match entry {
                 MenuEntry::Separator => {
-                    menu.append(&PredefinedMenuItem::separator());
+                    menu.append(&muda::PredefinedMenuItem::separator());
                 }
                 MenuEntry::Item(item) => {
                     menu.append(&muda::MenuItem::with_id(
@@ -71,12 +70,13 @@ impl Menu {
         menu
     }
 
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     pub(crate) fn platform_submenu(&self) -> muda::Submenu {
         let menu = muda::Submenu::new(self.item.title.clone(), self.item.enabled);
         for entry in &self.children {
             match entry {
                 MenuEntry::Separator => {
-                    menu.append(&PredefinedMenuItem::separator());
+                    menu.append(&muda::PredefinedMenuItem::separator());
                 }
                 MenuEntry::Item(item) => {
                     menu.append(&muda::MenuItem::with_id(
