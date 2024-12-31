@@ -283,6 +283,8 @@ impl ApplicationHandle {
         view_fn: Box<dyn FnOnce(WindowId) -> Box<dyn View>>,
         #[allow(unused_variables)] WindowConfig {
             size,
+            min_size,
+            max_size,
             position,
             show_titlebar,
             transparent,
@@ -301,6 +303,8 @@ impl ApplicationHandle {
         }: WindowConfig,
     ) {
         let logical_size = size.map(|size| LogicalSize::new(size.width, size.height));
+        let logical_min_size = min_size.map(|size| LogicalSize::new(size.width, size.height));
+        let logical_max_size = max_size.map(|size| LogicalSize::new(size.width, size.height));
 
         let mut window_builder = floem_winit::window::WindowBuilder::new()
             .with_visible(false)
@@ -343,6 +347,12 @@ impl ApplicationHandle {
 
         if let Some(logical_size) = logical_size {
             window_builder = window_builder.with_inner_size(logical_size);
+        }
+        if let Some(logical_min_size) = logical_min_size {
+            window_builder = window_builder.with_min_inner_size(logical_min_size);
+        }
+        if let Some(logical_max_size) = logical_max_size {
+            window_builder = window_builder.with_max_inner_size(logical_max_size);
         }
 
         #[cfg(not(target_os = "macos"))]
