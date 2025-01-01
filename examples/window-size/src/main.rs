@@ -2,48 +2,24 @@ use floem::{
     event::{Event, EventListener},
     keyboard::{Key, NamedKey},
     kurbo::Size,
-    views::{button, label, v_stack, Decorators},
-    window::{close_window, new_window, WindowConfig, WindowId},
+    prelude::{create_signal, SignalGet, SignalUpdate},
+    views::{label, v_stack, Decorators},
+    window::WindowConfig,
     Application, IntoView, View,
 };
 
-fn sub_window_view(id: WindowId) -> impl IntoView {
-    v_stack((
-        label(move || String::from("Hello world")).style(|s| s.font_size(30.0)),
-        button("Close this window").action(move || close_window(id)),
-    ))
-    .style(|s| {
-        s.flex_col()
-            .items_center()
-            .justify_center()
-            .width_full()
-            .height_full()
-            .column_gap(10.0)
-    })
-}
-
 fn app_view() -> impl IntoView {
-    let view = v_stack((
-        label(move || String::from("Hello world")).style(|s| s.font_size(30.0)),
-        button("Open another window").action(|| {
-            new_window(
-                sub_window_view,
-                Some(
-                    WindowConfig::default()
-                        .size(Size::new(600.0, 150.0))
-                        .title("Window Size Sub Example"),
-                ),
-            );
-        }),
-    ))
-    .style(|s| {
-        s.flex_col()
-            .items_center()
-            .justify_center()
-            .width_full()
-            .height_full()
-            .column_gap(10.0)
-    });
+    let (size, set_size) = create_signal(Size::default());
+
+    let view = v_stack((label(move || format!("{}", size.get())).style(|s| s.font_size(30.0)),))
+        .style(|s| {
+            s.flex_col()
+                .items_center()
+                .justify_center()
+                .width_full()
+                .height_full()
+                .column_gap(10.0)
+        });
 
     let id = view.id();
     view.on_event_stop(EventListener::KeyUp, move |e| {
@@ -53,17 +29,19 @@ fn app_view() -> impl IntoView {
             }
         }
     })
+    .on_resize(move |r| set_size.update(|value| *value = r.size()))
 }
 
 fn main() {
-    Application::new()
-        .window(
-            |_| app_view(),
-            Some(
-                WindowConfig::default()
-                    .size(Size::new(800.0, 250.0))
-                    .title("Window Size Example"),
-            ),
-        )
-        .run();
+    let app = Application::new().window(
+        |_| app_view(),
+        Some(
+            WindowConfig::default()
+                .size(Size::new(800.0, 600.0))
+                .min_size(Size::new(400.0, 300.0))
+                .max_size(Size::new(1200.0, 900.0))
+                .title("Window Size Example"),
+        ),
+    );
+    app.run();
 }
