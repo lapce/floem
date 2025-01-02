@@ -374,7 +374,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
 {
     fn begin(&mut self, _capture: bool) {
         self.transform = Affine::IDENTITY;
-        self.pixmap.fill(tiny_skia::Color::WHITE);
+        self.pixmap.fill(tiny_skia::Color::TRANSPARENT);
         self.clip = None;
     }
 
@@ -613,7 +613,8 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
         for (out_pixel, pixel) in (buffer.iter_mut()).zip(self.pixmap.pixels().iter()) {
             *out_pixel = ((pixel.red() as u32) << 16)
                 | ((pixel.green() as u32) << 8)
-                | (pixel.blue() as u32);
+                | (pixel.blue() as u32)
+                | ((pixel.alpha() as u32) << 24);
         }
 
         buffer
