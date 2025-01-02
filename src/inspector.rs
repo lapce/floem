@@ -11,17 +11,17 @@ use crate::view_state::ChangeFlags;
 use crate::views::{
     button, dyn_container, stack, static_label, text, v_stack, v_stack_from_iter, Decorators, Label,
 };
-use crate::{style, Clipboard};
+use crate::{keyboard, style, Clipboard};
 use floem_reactive::{batch, RwSignal, Scope, SignalGet, SignalUpdate};
-use floem_winit::keyboard::{self, NamedKey};
 use peniko::kurbo::{Point, Rect, Size};
 use peniko::Color;
 use slotmap::Key;
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
-use std::rc::Rc;
+use std::sync::Arc;
 pub use view::capture;
+use winit::keyboard::NamedKey;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
@@ -181,7 +181,7 @@ fn add_event(
     name: String,
     id: ViewId,
     capture_view: CaptureView,
-    capture: &Rc<Capture>,
+    capture: &Arc<Capture>,
     datas: RwSignal<CapturedDatas>,
 ) -> impl View {
     let capture = capture.clone();
@@ -540,7 +540,7 @@ thread_local! {
     };
 }
 
-fn find_view(name: &str, views: &Rc<CapturedView>) -> Vec<ViewId> {
+fn find_view(name: &str, views: &Arc<CapturedView>) -> Vec<ViewId> {
     let mut ids = Vec::new();
     if name.is_empty() {
         return ids;

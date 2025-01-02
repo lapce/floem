@@ -14,7 +14,7 @@ use crate::{
     keyboard::Modifiers,
     kurbo::{Point, Rect, Vec2},
     peniko::Color,
-    pointer::{MouseButton, PointerInputEvent, PointerMoveEvent},
+    pointer::{PointerInputEvent, PointerMoveEvent},
     prop, prop_extractor,
     reactive::{batch, untrack, ReadSignal, RwSignal, Scope},
     style::{CursorColor, StylePropValue, TextColor},

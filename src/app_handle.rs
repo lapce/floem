@@ -6,9 +6,9 @@ use web_time::Instant;
 #[cfg(target_arch = "wasm32")]
 use wgpu::web_sys;
 
-use floem_reactive::{SignalUpdate, Trigger};
+use floem_reactive::SignalUpdate;
 use peniko::kurbo::{Point, Size};
-use std::{collections::HashMap, mem, rc::Rc, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::WindowEvent,
@@ -18,8 +18,8 @@ use winit::{
 
 use crate::{
     action::{Timer, TimerToken},
-    app::{AppUpdateEvent, UserEvent, APP_UPDATE_EVENTS},
-    ext_event::{ExtSendTrigger, EXT_EVENT_HANDLER},
+    app::{AppUpdateEvent, UserEvent},
+    ext_event::ExtSendTrigger,
     inspector::Capture,
     profiler::{Profile, ProfileEvent},
     view::View,
@@ -281,7 +281,6 @@ impl ApplicationHandle {
             font_embolden,
         }: WindowConfig,
     ) {
-        println!("new window");
         let logical_size = size.map(|size| LogicalSize::new(size.width, size.height));
         let logical_min_size = min_size.map(|size| LogicalSize::new(size.width, size.height));
         let logical_max_size = max_size.map(|size| LogicalSize::new(size.width, size.height));
@@ -329,10 +328,10 @@ impl ApplicationHandle {
             window_attributes = window_attributes.with_surface_size(logical_size);
         }
         if let Some(logical_min_size) = logical_min_size {
-            window_builder = window_builder.with_min_inner_size(logical_min_size);
+            window_attributes = window_attributes.with_min_surface_size(logical_min_size);
         }
         if let Some(logical_max_size) = logical_max_size {
-            window_builder = window_builder.with_max_inner_size(logical_max_size);
+            window_attributes = window_attributes.with_max_surface_size(logical_max_size);
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -410,7 +409,6 @@ impl ApplicationHandle {
             }
         }
 
-        println!("window attributes {window_attributes:?}");
         let Ok(window) = event_loop.create_window(window_attributes) else {
             return;
         };

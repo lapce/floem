@@ -1,8 +1,6 @@
 use std::{cell::RefCell, mem, path::PathBuf, rc::Rc, sync::Arc};
 
-use raw_window_handle::{
-    HasDisplayHandle, HasRawDisplayHandle, HasRawWindowHandle, HasWindowHandle,
-};
+use raw_window_handle::HasWindowHandle;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
@@ -14,8 +12,7 @@ use floem_renderer::Renderer;
 use peniko::kurbo::{Affine, Point, Rect, Size, Vec2};
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
-    event::{ButtonSource, ElementState, Ime, MouseButton, MouseScrollDelta, TouchPhase},
-    event_loop::EventLoopProxy,
+    event::{ButtonSource, ElementState, Ime, MouseScrollDelta, TouchPhase},
     keyboard::{Key, ModifiersState, NamedKey},
     window::{CursorIcon, Window, WindowId},
 };
@@ -184,7 +181,6 @@ impl WindowHandle {
     }
 
     pub(crate) fn init_renderer(&mut self) {
-        println!("now init renderer");
         self.paint_state.init_renderer();
         // On the web, we need to get the canvas size once. The size will be updated automatically
         // when the canvas element is resized subsequently. This is the correct place to do so
@@ -1134,6 +1130,7 @@ impl WindowHandle {
 
     #[cfg(target_os = "macos")]
     fn show_context_menu(&self, menu: muda::Menu, pos: Option<Point>) {
+        println!("show context menu {pos:?}");
         use muda::{
             dpi::{LogicalPosition, Position},
             ContextMenu,
@@ -1145,7 +1142,12 @@ impl WindowHandle {
                 unsafe {
                     menu.show_context_menu_for_nsview(
                         handle.ns_view.as_ptr() as _,
-                        pos.map(|pos| Position::Logical(LogicalPosition::new(pos.x, pos.y))),
+                        pos.map(|pos| {
+                            Position::Logical(LogicalPosition::new(
+                                pos.x * self.app_state.scale,
+                                (self.size.get_untracked().height - pos.y) * self.app_state.scale,
+                            ))
+                        }),
                     )
                 };
             }

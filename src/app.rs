@@ -27,10 +27,6 @@ type AppEventCallback = dyn Fn(AppEvent);
 
 static EVENT_LOOP_PROXY: Mutex<Option<(EventLoopProxy, Sender<UserEvent>)>> = Mutex::new(None);
 
-thread_local! {
-    pub(crate) static APP_UPDATE_EVENTS: RefCell<Vec<AppUpdateEvent>> = Default::default();
-}
-
 /// Initializes and runs an application with a single window.
 ///
 /// This function creates a new `Application`, sets up a window with the provided view,
@@ -110,12 +106,10 @@ impl Default for Application {
 
 impl ApplicationHandler for Application {
     fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
-        println!("can create surfaces");
         while let Some((view_fn, window_config)) = self.initial_windows.pop() {
             self.handle
                 .new_window(event_loop, view_fn, window_config.unwrap_or_default());
         }
-        println!("window creation done");
     }
 
     fn window_event(
@@ -124,14 +118,12 @@ impl ApplicationHandler for Application {
         window_id: WindowId,
         event: WindowEvent,
     ) {
-        println!("window event {event:?}");
         self.handle.handle_timer(event_loop);
         self.handle
             .handle_window_event(window_id, event, event_loop);
     }
 
     fn proxy_wake_up(&mut self, event_loop: &dyn ActiveEventLoop) {
-        println!("proxy wake up");
         self.handle.handle_timer(event_loop);
         for event in self.receiver.try_iter() {
             self.handle.handle_user_event(event_loop, event);
@@ -195,8 +187,7 @@ impl Application {
 
     pub fn run(mut self) {
         let event_loop = self.event_loop.take().unwrap();
-        println!("now run app");
-        event_loop.run_app(self);
+        let _ = event_loop.run_app(self);
     }
 
     pub(crate) fn send_proxy_event(event: UserEvent) {
