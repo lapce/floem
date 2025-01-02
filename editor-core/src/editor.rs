@@ -185,6 +185,7 @@ impl Action {
                                 .map(|c| {
                                     let prop = get_char_property(c);
                                     prop == CharClassification::Lf
+                                        || prop == CharClassification::Cr
                                         || prop == CharClassification::Space
                                         || prop == CharClassification::Punctuation
                                 })
@@ -197,6 +198,7 @@ impl Action {
                                             .map(|c| {
                                                 let prop = get_char_property(c);
                                                 prop == CharClassification::Lf
+                                                    || prop == CharClassification::Cr
                                                     || prop == CharClassification::Space
                                                     || prop == CharClassification::Punctuation
                                             })
@@ -327,6 +329,7 @@ impl Action {
         let mut edits = Vec::with_capacity(selection.regions().len());
         let mut extra_edits = Vec::new();
         let mut shift = 0i32;
+        let line_ending = buffer.line_ending().get_chars();
         for region in selection.regions() {
             let offset = region.max();
             let line = buffer.line_of_offset(offset);
@@ -335,7 +338,7 @@ impl Action {
             let line_indent = buffer.indent_on_line(line);
             let first_half = buffer.slice_to_cow(line_start..offset);
             let second_half = buffer.slice_to_cow(offset..line_end);
-            let second_half = second_half.trim();
+            let second_half_trim = second_half.trim();
 
             // TODO: this could be done with 1 string
             let new_line_content = {
@@ -343,20 +346,15 @@ impl Action {
                 let indent = if auto_indent && has_unmatched_pair(&first_half) {
                     indent_storage = format!("{}{}", line_indent, buffer.indent_unit());
                     &indent_storage
-                } else if keep_indent && second_half.is_empty() {
-                    indent_storage = buffer.indent_on_line(line + 1);
-                    if indent_storage.len() > line_indent.len() {
-                        &indent_storage
-                    } else {
-                        &line_indent
-                    }
-                } else if keep_indent {
+                } else if keep_indent
+                    && (second_half_trim.is_empty() || !second_half.starts_with(&line_indent))
+                {
                     &line_indent
                 } else {
                     indent_storage = String::new();
                     &indent_storage
                 };
-                format!("\n{indent}")
+                format!("{line_ending}{indent}")
             };
 
             let selection = Selection::region(region.min(), region.max());
@@ -369,10 +367,10 @@ impl Action {
             if let Some(c) = first_half.chars().rev().find(|&c| c != ' ') {
                 if let Some(true) = matching_pair_direction(c) {
                     if let Some(c) = matching_char(c) {
-                        if second_half.starts_with(c) {
+                        if second_half_trim.starts_with(c) {
                             let selection =
                                 Selection::caret((region.max() as i32 + shift) as usize);
-                            let content = format!("\n{line_indent}");
+                            let content = format!("{line_ending}{line_indent}",);
                             extra_edits.push((selection, content));
                         }
                     }
