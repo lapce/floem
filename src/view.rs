@@ -405,7 +405,7 @@ pub fn default_compute_layout(id: ViewId, cx: &mut ComputeLayoutCx) -> Option<Re
     let mut layout_rect: Option<Rect> = None;
     for child in id.children() {
         if !child.style_has_hidden() {
-        let child_layout = cx.compute_view_layout(child);
+            let child_layout = cx.compute_view_layout(child);
             if let Some(child_layout) = child_layout {
                 if let Some(rect) = layout_rect {
                     layout_rect = Some(rect.union(child_layout));
