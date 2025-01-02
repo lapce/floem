@@ -129,7 +129,7 @@ prop_extractor! {
     }
 }
 impl EditorStyle {
-    fn ed_text_color(&self) -> Color {
+    pub fn ed_text_color(&self) -> Color {
         self.text_color().unwrap_or(Color::BLACK)
     }
 }
