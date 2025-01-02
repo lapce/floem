@@ -314,7 +314,7 @@ impl ApplicationHandle {
                 canvas.set_height(size.height as u32);
             }
 
-            window_builder = window_builder.with_canvas(Some(canvas));
+            window_attributes = window_attributes.with_canvas(Some(canvas));
         };
 
         if let Some(Point { x, y }) = position {
@@ -327,13 +327,13 @@ impl ApplicationHandle {
 
         #[cfg(not(target_os = "macos"))]
         if !show_titlebar {
-            window_builder = window_builder.with_decorations(false);
+            window_attributes = window_attributes.with_decorations(false);
         }
 
         #[cfg(target_os = "windows")]
         {
             use floem_winit::platform::windows::WindowBuilderExtWindows;
-            window_builder = window_builder.with_undecorated_shadow(undecorated_shadow);
+            window_attributes = window_attributes.with_undecorated_shadow(undecorated_shadow);
         }
 
         #[cfg(target_os = "macos")]

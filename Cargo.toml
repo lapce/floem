@@ -40,7 +40,7 @@ wgpu = { version = "22.0.0" }
 parking_lot = { version = "0.12.1" }
 swash = { version = "0.1.17" }
 muda = { version = "0.15.3" }
-winit = { git = "https://github.com/rust-windowing/winit", rev = "fc6cf89ac0674c64320024f800a41ffb365dab97" }
+winit = { git = "https://github.com/rust-windowing/winit", rev = "5ea81efc74ebaa04a7cb4621ec522bce14d700e5" }
 
 [dependencies]
 slotmap = "1.0.7"
@@ -80,10 +80,12 @@ parking_lot = { workspace = true }
 image = { workspace = true }
 im = { workspace = true }
 wgpu = { workspace = true }
-muda = { workspace = true }
 winit = { workspace = true }
 futures = { version = "0.3.30", optional = true }
 crossbeam = "0.8"
+
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+muda = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = { version = "0.4" }
