@@ -362,7 +362,7 @@ impl Lines {
     ///    - Would require tracking that but might not be too hard to do it whenever we create a
     ///      text layout
     /// - `is_linear` could be up to some line, which allows us to make at least the earliest parts
-    ///    before any wrapping were faster. However, early lines are faster to calculate anyways.
+    ///   before any wrapping were faster. However, early lines are faster to calculate anyways.
     pub fn is_linear(&self, text_prov: impl TextLayoutProvider) -> bool {
         self.wrap.get() == ResolvedWrap::None && !text_prov.has_multiline_phantom()
     }

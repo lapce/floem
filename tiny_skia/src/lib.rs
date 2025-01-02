@@ -611,8 +611,9 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
 
         // Copy from `tiny_skia::Pixmap` to the format specified by `softbuffer::Buffer`.
         for (out_pixel, pixel) in (buffer.iter_mut()).zip(self.pixmap.pixels().iter()) {
-            *out_pixel =
-                (pixel.red() as u32) << 16 | (pixel.green() as u32) << 8 | (pixel.blue() as u32);
+            *out_pixel = ((pixel.red() as u32) << 16)
+                | ((pixel.green() as u32) << 8)
+                | (pixel.blue() as u32);
         }
 
         buffer
