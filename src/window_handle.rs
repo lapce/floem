@@ -944,19 +944,16 @@ impl WindowHandle {
                         self.paint_state.set_scale(scale);
                     }
                     UpdateMessage::ShowContextMenu { menu, pos } => {
-                        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                        #[cfg(any(target_os = "windows", target_os = "macos"))]
                         {
                             let mut menu = menu.popup();
                             let platform_menu = menu.platform_menu();
                             cx.app_state.context_menu.clear();
                             cx.app_state.update_context_menu(&mut menu);
-                            #[cfg(target_os = "macos")]
                             self.show_context_menu(platform_menu, pos);
-                            #[cfg(target_os = "windows")]
-                            self.show_context_menu(platform_menu, pos);
-                            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-                            self.show_context_menu(menu, platform_menu, pos);
                         }
+                        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+                        self.show_context_menu(menu, platform_menu, pos);
                     }
                     UpdateMessage::WindowMenu { menu } => {
                         // let platform_menu = menu.platform_menu();

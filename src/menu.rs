@@ -46,7 +46,7 @@ impl Menu {
         self.entry(MenuEntry::Separator)
     }
 
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     pub(crate) fn platform_menu(&self) -> muda::Menu {
         let menu = muda::Menu::new();
         for entry in &self.children {
@@ -70,7 +70,7 @@ impl Menu {
         menu
     }
 
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
     pub(crate) fn platform_submenu(&self) -> muda::Submenu {
         let menu = muda::Submenu::new(self.item.title.clone(), self.item.enabled);
         for entry in &self.children {
