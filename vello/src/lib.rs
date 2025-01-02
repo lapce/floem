@@ -6,7 +6,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use floem_renderer::gpu_resources::GpuResources;
 use floem_renderer::text::fontdb::ID;
-use floem_renderer::text::{LayoutGlyph, FONT_SYSTEM, LayoutRun};
+use floem_renderer::text::{LayoutGlyph, LayoutRun, FONT_SYSTEM};
 use floem_renderer::{Img, Renderer};
 use peniko::kurbo::Size;
 use peniko::{
@@ -237,7 +237,11 @@ impl Renderer for VelloRenderer {
         }
     }
 
-    fn draw_text_with_layout<'b>(&mut self, layout: impl Iterator<Item=LayoutRun<'b>>, pos: impl Into<Point>) {
+    fn draw_text_with_layout<'b>(
+        &mut self,
+        layout: impl Iterator<Item = LayoutRun<'b>>,
+        pos: impl Into<Point>,
+    ) {
         let pos: Point = pos.into();
         let transform = self
             .transform

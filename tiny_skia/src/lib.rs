@@ -429,7 +429,11 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
         }
     }
 
-    fn draw_text_with_layout<'b>(&mut self, layout: impl Iterator<Item=LayoutRun<'b>>, pos: impl Into<Point>) {
+    fn draw_text_with_layout<'b>(
+        &mut self,
+        layout: impl Iterator<Item = LayoutRun<'b>>,
+        pos: impl Into<Point>,
+    ) {
         let offset = self.transform.translation();
         let pos: Point = pos.into();
         let clip = self.clip;

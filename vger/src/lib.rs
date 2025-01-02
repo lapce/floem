@@ -427,7 +427,11 @@ impl Renderer for VgerRenderer {
         }
     }
 
-    fn draw_text_with_layout<'b>(&mut self, layout: impl Iterator<Item=LayoutRun<'b>>, pos: impl Into<Point>) {
+    fn draw_text_with_layout<'b>(
+        &mut self,
+        layout: impl Iterator<Item = LayoutRun<'b>>,
+        pos: impl Into<Point>,
+    ) {
         let transform = self.transform.as_coeffs();
 
         let pos: Point = pos.into();

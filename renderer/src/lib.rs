@@ -1,6 +1,7 @@
 pub mod swash;
 pub mod text;
 
+use crate::text::LayoutRun;
 use peniko::{
     kurbo::{Affine, Point, Rect, Shape, Stroke},
     BrushRef,
@@ -8,7 +9,6 @@ use peniko::{
 pub use resvg::tiny_skia;
 pub use resvg::usvg;
 use text::TextLayout;
-use crate::text::LayoutRun;
 
 pub mod gpu_resources;
 
@@ -55,7 +55,11 @@ pub trait Renderer {
         self.draw_text_with_layout(layout.layout_runs(), pos);
     }
 
-    fn draw_text_with_layout<'b>(&mut self, layout: impl Iterator<Item=LayoutRun<'b>>, pos: impl Into<Point>);
+    fn draw_text_with_layout<'b>(
+        &mut self,
+        layout: impl Iterator<Item = LayoutRun<'b>>,
+        pos: impl Into<Point>,
+    );
 
     fn draw_svg<'b>(&mut self, svg: Svg<'b>, rect: Rect, brush: Option<impl Into<BrushRef<'b>>>);
 
