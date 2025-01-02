@@ -1,6 +1,7 @@
 pub mod swash;
 pub mod text;
 
+use crate::text::LayoutRun;
 use peniko::{
     kurbo::{Affine, Point, Rect, Shape, Stroke},
     BrushRef,
@@ -50,7 +51,15 @@ pub trait Renderer {
     ///
     /// The `pos` parameter specifies the upper-left corner of the layout object
     /// (even for right-to-left text).
-    fn draw_text(&mut self, layout: &TextLayout, pos: impl Into<Point>);
+    fn draw_text(&mut self, layout: &TextLayout, pos: impl Into<Point>) {
+        self.draw_text_with_layout(layout.layout_runs(), pos);
+    }
+
+    fn draw_text_with_layout<'b>(
+        &mut self,
+        layout: impl Iterator<Item = LayoutRun<'b>>,
+        pos: impl Into<Point>,
+    );
 
     fn draw_svg<'b>(&mut self, svg: Svg<'b>, rect: Rect, brush: Option<impl Into<BrushRef<'b>>>);
 
