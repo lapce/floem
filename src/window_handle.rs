@@ -953,7 +953,7 @@ impl WindowHandle {
                             self.show_context_menu(platform_menu, pos);
                         }
                         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-                        self.show_context_menu(menu, platform_menu, pos);
+                        self.show_context_menu(menu, pos);
                     }
                     UpdateMessage::WindowMenu { menu } => {
                         // let platform_menu = menu.platform_menu();
@@ -1171,12 +1171,7 @@ impl WindowHandle {
     }
 
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-    fn show_context_menu(
-        &self,
-        menu: Menu,
-        _platform_menu: floem_winit::menu::Menu,
-        pos: Option<Point>,
-    ) {
+    fn show_context_menu(&self, menu: Menu, pos: Option<Point>) {
         let pos = pos.unwrap_or(self.cursor_position);
         let pos = Point::new(pos.x / self.app_state.scale, pos.y / self.app_state.scale);
         self.context_menu.set(Some((menu, pos)));
