@@ -293,6 +293,34 @@ impl Scroll {
     /// If the target rect is larger than viewport size, we will prioritize
     /// the region of the target closest to its origin.
     pub fn pan_to_visible(&mut self, app_state: &mut AppState, rect: Rect) {
+        // If target is larger than viewport
+        if rect.width() > self.child_viewport.width()
+            || rect.height() > self.child_viewport.height()
+        {
+            // If there's any overlap at all, don't scroll
+            if rect.min_x() < self.child_viewport.max_x()
+                && rect.max_x() > self.child_viewport.min_x()
+                && rect.min_y() < self.child_viewport.max_y()
+                && rect.max_y() > self.child_viewport.min_y()
+            {
+                return;
+            }
+        } else {
+            // For smaller elements, check if at least 50% is visible
+            let intersection = Rect::new(
+                rect.min_x().max(self.child_viewport.min_x()),
+                rect.min_y().max(self.child_viewport.min_y()),
+                rect.max_x().min(self.child_viewport.max_x()),
+                rect.max_y().min(self.child_viewport.max_y()),
+            );
+
+            let intersection_area = intersection.width() * intersection.height();
+            let rect_area = rect.width() * rect.height();
+            if intersection_area >= rect_area * 0.5 {
+                return;
+            }
+        }
+
         /// Given a position and the min and max edges of an axis,
         /// return a delta by which to adjust that axis such that the value
         /// falls between its edges.
