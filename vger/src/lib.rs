@@ -5,7 +5,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use floem_renderer::gpu_resources::GpuResources;
 use floem_renderer::swash::SwashScaler;
-use floem_renderer::text::{CacheKey, TextLayout};
+use floem_renderer::text::{CacheKey, LayoutRun};
 use floem_renderer::{tiny_skia, Img, Renderer};
 use floem_vger_rs::{Image, PaintIndex, PixelFormat, Vger};
 use image::EncodableLayout;
@@ -427,7 +427,7 @@ impl Renderer for VgerRenderer {
         }
     }
 
-    fn draw_text(&mut self, layout: &TextLayout, pos: impl Into<Point>) {
+    fn draw_text_with_layout<'b>(&mut self, layout: impl Iterator<Item=LayoutRun<'b>>, pos: impl Into<Point>) {
         let transform = self.transform.as_coeffs();
 
         let pos: Point = pos.into();
@@ -439,7 +439,7 @@ impl Renderer for VgerRenderer {
         let scale = (coeffs[0] + coeffs[3]) / 2. * self.scale;
 
         let clip = self.clip;
-        for line in layout.layout_runs() {
+        for line in layout {
             if let Some(rect) = clip {
                 let y = pos.y + line.line_y as f64;
                 if y + (line.line_height as f64) < rect.y0 {

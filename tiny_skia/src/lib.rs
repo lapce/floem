@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use floem_renderer::swash::SwashScaler;
-use floem_renderer::text::{CacheKey, SwashContent, TextLayout};
+use floem_renderer::text::{CacheKey, LayoutRun, SwashContent};
 use floem_renderer::tiny_skia::{
     self, FillRule, FilterQuality, GradientStop, LinearGradient, Mask, MaskType, Paint, Path,
     PathBuilder, Pattern, Pixmap, RadialGradient, Shader, SpreadMode, Stroke, Transform,
@@ -429,7 +429,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
         }
     }
 
-    fn draw_text(&mut self, layout: &TextLayout, pos: impl Into<Point>) {
+    fn draw_text_with_layout<'b>(&mut self, layout: impl Iterator<Item=LayoutRun<'b>>, pos: impl Into<Point>) {
         let offset = self.transform.translation();
         let pos: Point = pos.into();
         let clip = self.clip;
@@ -438,7 +438,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
             * Affine::translate(Vec2::new(-offset.x, -offset.y))
             * Affine::scale(1.0 / self.scale);
 
-        for line in layout.layout_runs() {
+        for line in layout {
             if let Some(rect) = clip {
                 let y = pos.y + offset.y + line.line_y as f64;
                 if y + (line.line_height as f64) < rect.y0 {
