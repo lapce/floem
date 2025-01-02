@@ -94,6 +94,7 @@ where
             if selection.get_untracked() != Some(index) {
                 selection.set(Some(index));
                 list_id.update_state(ListUpdate::Accept);
+                list_id.update_state(ListUpdate::ScrollToSelected);
             }
         })
     }))

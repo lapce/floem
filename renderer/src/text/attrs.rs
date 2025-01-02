@@ -183,7 +183,7 @@ impl<'a> Attrs<'a> {
 }
 
 #[derive(PartialEq, Clone)]
-pub struct AttrsList(pub(crate) cosmic_text::AttrsList);
+pub struct AttrsList(pub cosmic_text::AttrsList);
 
 impl AttrsList {
     /// Create a new attributes list with a set of default [Attrs]

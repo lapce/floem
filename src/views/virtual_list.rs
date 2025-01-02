@@ -129,7 +129,7 @@ where
         },
         move |(_, e)| key_fn(e),
         move |(index, e)| {
-            let id = ViewId::new();
+            let item_id = ViewId::new();
             let child =
                 container(view_fn(e))
                     .class(ListItemClass)
@@ -138,16 +138,17 @@ where
                         VirtualDirection::Vertical => s.flex_col(),
                     });
             let child_id = child.id();
-            id.set_children(vec![child]);
+            item_id.set_children(vec![child]);
             Item {
-                id,
+                id: item_id,
                 selection,
                 index,
                 child: child_id,
             }
             .on_click_stop(move |_| {
                 if selection.get_untracked() != Some(index) {
-                    selection.set(Some(index))
+                    selection.set(Some(index));
+                    id.update_state(ListUpdate::ScrollToSelected);
                 }
             })
             .style(|s| s.width_full())

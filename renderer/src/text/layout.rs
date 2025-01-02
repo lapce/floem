@@ -91,7 +91,7 @@ impl LayoutRun<'_> {
         }
     }
 
-    fn cursor_from_glyph_right(&self, glyph: &LayoutGlyph) -> Cursor {
+    pub fn cursor_from_glyph_right(&self, glyph: &LayoutGlyph) -> Cursor {
         if self.rtl {
             Cursor::new_with_affinity(self.line_i, glyph.start, Affinity::After)
         } else {
@@ -219,6 +219,12 @@ impl TextLayout {
             width_opt: None,
             height_opt: None,
         }
+    }
+
+    pub fn new_with_text(text: &str, attrs_list: AttrsList) -> Self {
+        let mut layout = Self::new();
+        layout.set_text(text, attrs_list);
+        layout
     }
 
     pub fn set_text(&mut self, text: &str, attrs_list: AttrsList) {

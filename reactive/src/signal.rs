@@ -273,6 +273,12 @@ impl<T> SignalUpdate<T> for RwSignal<T> {
     }
 }
 
+impl<T> SignalWrite<T> for RwSignal<T> {
+    fn id(&self) -> Id {
+        self.id
+    }
+}
+
 impl<T: Clone> SignalGet<T> for ReadSignal<T> {
     fn id(&self) -> Id {
         self.id

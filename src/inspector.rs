@@ -1,21 +1,19 @@
-use crate::app::{add_app_update_event, AppUpdateEvent};
+mod data;
+mod view;
+
 use crate::app_state::AppState;
 use crate::context::StyleCx;
 use crate::event::{Event, EventListener, EventPropagation};
 use crate::id::ViewId;
-use crate::profiler::profiler;
 use crate::style::{Style, StyleClassRef, StylePropRef, Transition};
 use crate::view::{IntoView, View};
 use crate::view_state::ChangeFlags;
 use crate::views::{
-    button, container, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label,
-    tab, text, text_input, v_stack, v_stack_from_iter, Decorators, Label,
+    button, dyn_container, stack, static_label, text, v_stack, v_stack_from_iter, Decorators, Label,
 };
-use crate::window::WindowConfig;
-use crate::{new_window, style, Clipboard};
-use floem_reactive::{
-    create_effect, create_rw_signal, create_signal, RwSignal, Scope, SignalGet, SignalUpdate,
-};
+use crate::{style, Clipboard};
+use floem_reactive::{batch, RwSignal, Scope, SignalGet, SignalUpdate};
+use floem_winit::keyboard::{self, NamedKey};
 use peniko::kurbo::{Point, Rect, Size};
 use peniko::Color;
 use slotmap::Key;
@@ -23,17 +21,16 @@ use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::rc::Rc;
-use std::sync::Arc;
-use winit::keyboard::{self, NamedKey};
-use winit::window::WindowId;
+pub use view::capture;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
 use web_time::{Duration, Instant};
 
+use crate::inspector::data::CapturedDatas;
 use taffy::prelude::Layout;
-use taffy::style::{AlignItems, FlexDirection};
+use taffy::style::FlexDirection;
 
 #[derive(Clone, Debug)]
 pub struct CapturedView {
@@ -179,251 +176,13 @@ impl CaptureState {
     }
 }
 
-fn captured_view_name(view: &CapturedView) -> impl IntoView {
-    let name = static_label(view.name.clone());
-    let id = text(view.id.data().as_ffi()).style(|s| {
-        s.margin_right(5.0)
-            .background(Color::BLACK.multiply_alpha(0.02))
-            .border(1.)
-            .border_radius(5.0)
-            .border_color(Color::BLACK.multiply_alpha(0.07))
-            .padding(3.0)
-            .padding_top(0.0)
-            .padding_bottom(0.0)
-            .font_size(12.0)
-            .color(Color::BLACK.multiply_alpha(0.6))
-    });
-    let tab = if view.focused {
-        text("Focus")
-            .style(|s| {
-                s.margin_right(5.0)
-                    .background(Color::rgb8(63, 81, 101).multiply_alpha(0.6))
-                    .border_radius(5.0)
-                    .padding(1.0)
-                    .font_size(10.0)
-                    .color(Color::WHITE.multiply_alpha(0.8))
-            })
-            .into_any()
-    } else if view.keyboard_navigable {
-        text("Tab")
-            .style(|s| {
-                s.margin_right(5.0)
-                    .background(Color::rgb8(204, 217, 221).multiply_alpha(0.4))
-                    .border(1.)
-                    .border_radius(5.0)
-                    .border_color(Color::BLACK.multiply_alpha(0.07))
-                    .padding(1.0)
-                    .font_size(10.0)
-                    .color(Color::BLACK.multiply_alpha(0.4))
-            })
-            .into_any()
-    } else {
-        empty().into_any()
-    };
-    h_stack((id, tab, name)).style(|s| s.items_center())
-}
-
-// Outlined to reduce stack usage.
-#[inline(never)]
-fn captured_view_no_children(
-    view: &CapturedView,
-    depth: usize,
-    capture_view: &CaptureView,
-    capture: &Arc<Capture>,
-) -> impl IntoView {
-    let offset = depth as f64 * 14.0;
-    let name = captured_view_name(view).into_view();
-    let name_id = name.id();
-    let height = 20.0;
-    let id = view.id;
-    let selected = capture_view.selected;
-    let highlighted = capture_view.highlighted;
-
-    let row = container(name)
-        .style(move |s| {
-            s.padding_left(20.0 + offset)
-                .hover(move |s| {
-                    s.background(Color::rgba8(228, 237, 216, 160))
-                        .apply_if(selected.get() == Some(id), |s| {
-                            s.background(Color::rgb8(186, 180, 216))
-                        })
-                })
-                .height(height)
-                .apply_if(highlighted.get() == Some(id), |s| {
-                    s.background(Color::rgba8(228, 237, 216, 160))
-                })
-                .apply_if(selected.get() == Some(id), |s| {
-                    if highlighted.get() == Some(id) {
-                        s.background(Color::rgb8(186, 180, 216))
-                    } else {
-                        s.background(Color::rgb8(213, 208, 216))
-                    }
-                })
-        })
-        .on_click_stop(move |_| selected.set(Some(id)))
-        .on_event_cont(EventListener::PointerEnter, move |_| {
-            highlighted.set(Some(id))
-        });
-    let row = add_event(row, view.custom_name.clone(), id, *capture_view, capture);
-    let row_id = row.id();
-    let scroll_to = capture_view.scroll_to;
-    let expanding_selection = capture_view.expanding_selection;
-    create_effect(move |_| {
-        if let Some((selection, request_focus)) = expanding_selection.get() {
-            if selection == id {
-                // Scroll to the row, then to the name part of the row.
-                scroll_to.set(Some(row_id));
-                scroll_to.set(Some(name_id));
-                if request_focus {
-                    row_id.request_focus();
-                }
-            }
-        }
-    });
-
-    row
-}
-
-// Outlined to reduce stack usage.
-#[inline(never)]
-fn captured_view_with_children(
-    view: &Arc<CapturedView>,
-    depth: usize,
-    capture_view: &CaptureView,
-    children: Vec<Box<dyn View>>,
-    capture: &Arc<Capture>,
-) -> impl IntoView {
-    let offset = depth as f64 * 14.0;
-    let name = captured_view_name(view).into_view();
-    let height = 20.0;
-    let id = view.id;
-    let selected = capture_view.selected;
-    let highlighted = capture_view.highlighted;
-    let expanding_selection = capture_view.expanding_selection;
-    let view_ = view.clone();
-
-    let expanded = create_rw_signal(false);
-
-    let name_id = name.id();
-    let row = stack((
-        empty()
-            .style(move |s| {
-                s.background(if expanded.get() {
-                    Color::WHITE.multiply_alpha(0.3)
-                } else {
-                    Color::BLACK.multiply_alpha(0.3)
-                })
-                .border(1.0)
-                .width(12.0)
-                .height(12.0)
-                .margin_left(offset)
-                .margin_right(4.0)
-                .border_color(Color::BLACK.multiply_alpha(0.4))
-                .border_radius(4.0)
-                .hover(move |s| {
-                    s.border_color(Color::BLACK.multiply_alpha(0.6))
-                        .background(if expanded.get() {
-                            Color::WHITE.multiply_alpha(0.5)
-                        } else {
-                            Color::BLACK.multiply_alpha(0.5)
-                        })
-                })
-            })
-            .on_click_stop(move |_| {
-                expanded.set(!expanded.get());
-            }),
-        name,
-    ))
-    .style(move |s| {
-        s.padding_left(3.0)
-            .align_items(AlignItems::Center)
-            .hover(move |s| {
-                s.background(Color::rgba8(228, 237, 216, 160))
-                    .apply_if(selected.get() == Some(id), |s| {
-                        s.background(Color::rgb8(186, 180, 216))
-                    })
-            })
-            .height(height)
-            .apply_if(highlighted.get() == Some(id), |s| {
-                s.background(Color::rgba8(228, 237, 216, 160))
-            })
-            .apply_if(selected.get() == Some(id), |s| {
-                if highlighted.get() == Some(id) {
-                    s.background(Color::rgb8(186, 180, 216))
-                } else {
-                    s.background(Color::rgb8(213, 208, 216))
-                }
-            })
-    })
-    .on_click_stop(move |_| selected.set(Some(id)))
-    .on_event_cont(EventListener::PointerEnter, move |_| {
-        highlighted.set(Some(id))
-    });
-    let row = add_event(row, view.custom_name.clone(), id, *capture_view, capture);
-
-    let row_id = row.id();
-    let scroll_to = capture_view.scroll_to;
-    create_effect(move |_| {
-        if let Some((selection, request_focus)) = expanding_selection.get() {
-            if selection != id && view_.find(selection).is_some() {
-                expanded.set(true);
-            }
-            if selection == id {
-                // Scroll to the row, then to the name part of the row.
-                scroll_to.set(Some(row_id));
-                scroll_to.set(Some(name_id));
-                if request_focus {
-                    row_id.request_focus();
-                }
-            }
-        }
-    });
-
-    let line = empty().style(move |s| {
-        s.absolute()
-            .height_full()
-            .width(1.0)
-            .margin_left(9.0 + offset)
-            .background(Color::BLACK.multiply_alpha(0.1))
-    });
-
-    let list = v_stack_from_iter(children).style(move |s| {
-        s.display(if expanded.get() {
-            style::Display::Flex
-        } else {
-            style::Display::None
-        })
-    });
-
-    let list = v_stack((line, list));
-
-    v_stack((row, list))
-}
-
-fn captured_view(
-    view: &Arc<CapturedView>,
-    depth: usize,
-    capture_view: &CaptureView,
-    capture: &Arc<Capture>,
-) -> impl IntoView {
-    if view.children.is_empty() {
-        captured_view_no_children(view, depth, capture_view, capture).into_any()
-    } else {
-        let children: Vec<_> = view
-            .children
-            .iter()
-            .map(|view| captured_view(view, depth + 1, capture_view, capture))
-            .collect();
-        captured_view_with_children(view, depth, capture_view, children, capture).into_any()
-    }
-}
-
 fn add_event(
     row: impl View + 'static,
     name: String,
     id: ViewId,
     capture_view: CaptureView,
-    capture: &Arc<Capture>,
+    capture: &Rc<Capture>,
+    datas: RwSignal<CapturedDatas>,
 ) -> impl View {
     let capture = capture.clone();
     row.keyboard_navigable()
@@ -449,10 +208,10 @@ fn add_event(
                             };
                             if !key.modifiers.control() {
                                 if let Some(id) = ids.big_brother_id {
-                                    update_select_view_id(id, &capture_view, true);
+                                    update_select_view_id(id, &capture_view, true, datas);
                                 }
                             } else if let Some(id) = ids.parent_id {
-                                update_select_view_id(id, &capture_view, true);
+                                update_select_view_id(id, &capture_view, true, datas);
                             }
                         }
                         keyboard::Key::Named(NamedKey::ArrowDown) => {
@@ -462,10 +221,10 @@ fn add_event(
                             };
                             if !key.modifiers.control() {
                                 if let Some(id) = ids.next_brother_id {
-                                    update_select_view_id(id, &capture_view, true);
+                                    update_select_view_id(id, &capture_view, true, datas);
                                 }
                             } else if let Some(id) = ids.child_id {
-                                update_select_view_id(id, &capture_view, true);
+                                update_select_view_id(id, &capture_view, true, datas);
                             }
                         }
                         _ => {}
@@ -774,312 +533,6 @@ struct CaptureView {
     highlighted: RwSignal<Option<ViewId>>,
 }
 
-fn capture_view(
-    window_id: WindowId,
-    capture_s: RwSignal<Option<Arc<Capture>>>,
-    capture: &Arc<Capture>,
-) -> impl IntoView {
-    let capture_view = CaptureView {
-        expanding_selection: create_rw_signal(None),
-        scroll_to: create_rw_signal(None),
-        selected: create_rw_signal(None),
-        highlighted: create_rw_signal(None),
-    };
-
-    let window = capture.window.clone();
-    let capture_ = capture.clone();
-    let (image_width, image_height) = capture
-        .window
-        .as_ref()
-        .map(|img| {
-            (
-                img.width as f64 / capture.scale,
-                img.height as f64 / capture.scale,
-            )
-        })
-        .unwrap_or_default();
-    let size = capture_.window_size;
-
-    let contain_ids = create_rw_signal((0, Vec::<ViewId>::new()));
-
-    let image = if let Some(window) = window {
-        img_dynamic(move || window.clone()).into_any()
-    } else {
-        empty()
-            .style(move |s| s.min_width(size.width).min_height(size.height))
-            .into_any()
-    }
-    .style(move |s| {
-        s.margin(5.0)
-            .border(1.)
-            .border_color(Color::BLACK.multiply_alpha(0.5))
-            .width(image_width + 2.0)
-            .height(image_height + 2.0)
-            .margin_bottom(21.0)
-            .margin_right(21.0)
-    })
-    .keyboard_navigable()
-    .on_event_stop(EventListener::KeyUp, {
-        move |event: &Event| {
-            if let Event::KeyUp(key) = event {
-                match key.key.logical_key {
-                    keyboard::Key::Named(NamedKey::ArrowUp) => {
-                        let id = contain_ids.try_update(|(match_index, ids)| {
-                            if !ids.is_empty() {
-                                if *match_index == 0 {
-                                    *match_index = ids.len() - 1;
-                                } else {
-                                    *match_index -= 1;
-                                }
-                            }
-                            ids.get(*match_index).copied()
-                        });
-                        if let Some(Some(id)) = id {
-                            update_select_view_id(id, &capture_view, false);
-                        }
-                    }
-                    keyboard::Key::Named(NamedKey::ArrowDown) => {
-                        let id = contain_ids.try_update(|(match_index, ids)| {
-                            if !ids.is_empty() {
-                                *match_index = (*match_index + 1) % ids.len();
-                            }
-                            ids.get(*match_index).copied()
-                        });
-                        if let Some(Some(id)) = id {
-                            update_select_view_id(id, &capture_view, false);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-    })
-    .on_event_stop(EventListener::PointerUp, {
-        let capture_ = capture_.clone();
-        move |event: &Event| {
-            if let Event::PointerUp(e) = event {
-                let find_ids = capture_.root.find_all_by_pos(e.pos);
-                if !find_ids.is_empty() {
-                    let first = contain_ids.try_update(|(index, ids)| {
-                        *index = 0;
-                        let _ = std::mem::replace(ids, find_ids);
-                        ids.first().copied()
-                    });
-                    if let Some(Some(id)) = first {
-                        update_select_view_id(id, &capture_view, false);
-                    }
-                }
-            }
-        }
-    })
-    .on_event_stop(EventListener::PointerMove, {
-        move |event: &Event| {
-            if let Event::PointerMove(e) = event {
-                if let Some(view) = capture_.root.find_by_pos(e.pos) {
-                    if capture_view.highlighted.get() != Some(view.id) {
-                        capture_view.highlighted.set(Some(view.id));
-                    }
-                } else {
-                    capture_view.highlighted.set(None);
-                }
-            }
-        }
-    })
-    .on_event_cont(EventListener::PointerLeave, move |_| {
-        capture_view.highlighted.set(None)
-    });
-
-    let capture_ = capture.clone();
-    let selected_overlay = empty()
-        .style(move |s| {
-            if let Some(view) = capture_view
-                .selected
-                .get()
-                .and_then(|id| capture_.root.find(id))
-            {
-                s.absolute()
-                    .margin_left(5.0 + view.layout.x0)
-                    .margin_top(5.0 + view.layout.y0)
-                    .width(view.layout.width())
-                    .height(view.layout.height())
-                    .background(Color::rgb8(186, 180, 216).multiply_alpha(0.5))
-                    .border_color(Color::rgb8(186, 180, 216).multiply_alpha(0.7))
-                    .border(1.)
-            } else {
-                s
-            }
-        })
-        .pointer_events(|| false);
-
-    let capture_ = capture.clone();
-    let highlighted_overlay = empty()
-        .style(move |s| {
-            if let Some(view) = capture_view
-                .highlighted
-                .get()
-                .and_then(|id| capture_.root.find(id))
-            {
-                s.absolute()
-                    .margin_left(5.0 + view.layout.x0)
-                    .margin_top(5.0 + view.layout.y0)
-                    .width(view.layout.width())
-                    .height(view.layout.height())
-                    .background(Color::rgba8(228, 237, 216, 120))
-                    .border_color(Color::rgba8(75, 87, 53, 120))
-                    .border(1.)
-            } else {
-                s
-            }
-        })
-        .pointer_events(|| false);
-
-    let image = stack((image, selected_overlay, highlighted_overlay));
-
-    let left_scroll = scroll(
-        v_stack((
-            header("Selected View"),
-            selected_view(capture, capture_view.selected),
-            header("Stats"),
-            stats(capture),
-            button("Recapture")
-                .style(|s| s.margin(5.0))
-                .on_click_stop(move |_| {
-                    add_app_update_event(AppUpdateEvent::CaptureWindow {
-                        window_id,
-                        capture: capture_s.write_only(),
-                    })
-                }),
-        ))
-        .style(|s| s.min_width_full()),
-    )
-    .style(|s| {
-        s.width_full()
-            .flex_basis(0)
-            .min_height(0)
-            .flex_grow(1.0)
-            .flex_col()
-    });
-
-    let separator = empty().style(move |s| {
-        s.width_full()
-            .min_height(1.0)
-            .background(Color::BLACK.multiply_alpha(0.2))
-    });
-
-    let left = v_stack((
-        header("Captured Window"),
-        scroll(image).style(|s| s.max_height_pct(60.0)),
-        separator,
-        left_scroll,
-    ))
-    .style(|s| s.max_width_pct(60.0));
-
-    let root = capture.root.clone();
-    let tree = scroll(captured_view(&capture.root, 0, &capture_view, capture))
-        .scroll_style(|s| s.shrink_to_fit())
-        .on_event_cont(EventListener::PointerLeave, move |_| {
-            capture_view.highlighted.set(None)
-        })
-        .on_click_stop(move |_| capture_view.selected.set(None))
-        .scroll_to_view(move || capture_view.scroll_to.get());
-
-    let search_str = create_rw_signal("".to_string());
-    let inner_search = search_str;
-    let match_ids = create_rw_signal((0, Vec::<ViewId>::new()));
-
-    let search =
-        text_input(search_str).on_event_stop(EventListener::KeyUp, move |event: &Event| {
-            if let Event::KeyUp(key) = event {
-                match key.key.logical_key {
-                    keyboard::Key::Named(NamedKey::ArrowUp) => {
-                        let id = match_ids.try_update(|(match_index, ids)| {
-                            if !ids.is_empty() {
-                                if *match_index == 0 {
-                                    *match_index = ids.len() - 1;
-                                } else {
-                                    *match_index -= 1;
-                                }
-                            }
-                            ids.get(*match_index).copied()
-                        });
-                        if let Some(Some(id)) = id {
-                            update_select_view_id(id, &capture_view, false);
-                        }
-                    }
-                    keyboard::Key::Named(NamedKey::ArrowDown) => {
-                        let id = match_ids.try_update(|(match_index, ids)| {
-                            if !ids.is_empty() {
-                                *match_index = (*match_index + 1) % ids.len();
-                            }
-                            ids.get(*match_index).copied()
-                        });
-                        if let Some(Some(id)) = id {
-                            update_select_view_id(id, &capture_view, false);
-                        }
-                    }
-                    _ => {
-                        let content = inner_search.get();
-                        let ids = find_view(&content, &root);
-                        let first = match_ids.try_update(|(index, match_ids)| {
-                            *index = 0;
-                            let _ = std::mem::replace(match_ids, ids);
-                            match_ids.first().copied()
-                        });
-                        if let Some(Some(id)) = first {
-                            update_select_view_id(id, &capture_view, false);
-                        }
-                    }
-                }
-            }
-        });
-    let tree = if capture.root.warnings() {
-        v_stack((header("Warnings"), header("View Tree"), search, tree)).into_view()
-    } else {
-        v_stack((header("View Tree"), search, tree)).into_view()
-    };
-
-    let tree = tree.style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0));
-
-    let separator = empty().style(move |s| {
-        s.height_full()
-            .min_width(1.0)
-            .background(Color::BLACK.multiply_alpha(0.2))
-    });
-
-    h_stack((left, separator, tree)).style(|s| s.height_full().width_full().max_width_full())
-}
-
-fn inspector_view(
-    window_id: WindowId,
-    capture_s: RwSignal<Option<Arc<Capture>>>,
-    capture: &Option<Arc<Capture>>,
-) -> impl IntoView {
-    let view = if let Some(capture) = capture {
-        capture_view(window_id, capture_s, capture).into_any()
-    } else {
-        text("No capture").into_any()
-    };
-
-    stack((view,))
-        .window_title(|| "Floem Inspector".to_owned())
-        .style(|s| {
-            s.width_full()
-                .height_full()
-                .background(Color::WHITE)
-                .class(scroll::Handle, |s| {
-                    s.border_radius(4.0)
-                        .background(Color::rgba8(166, 166, 166, 140))
-                        .set(scroll::Thickness, 16.0)
-                        .set(scroll::Rounded, false)
-                        .active(|s| s.background(Color::rgb8(166, 166, 166)))
-                        .hover(|s| s.background(Color::rgb8(184, 184, 184)))
-                })
-                .class(scroll::Track, |s| {
-                    s.hover(|s| s.background(Color::rgba8(166, 166, 166, 30)))
-                })
-        })
-}
-
 thread_local! {
     pub(crate) static RUNNING: Cell<bool> = const { Cell::new(false) };
     pub(crate) static CAPTURE: RwSignal<Option<Arc<Capture>>> = {
@@ -1087,93 +540,7 @@ thread_local! {
     };
 }
 
-pub fn capture(window_id: WindowId) {
-    let capture = CAPTURE.with(|c| *c);
-
-    if !RUNNING.get() {
-        RUNNING.set(true);
-        new_window(
-            move |_| {
-                let (selected, set_selected) = create_signal(0);
-
-                let tab_item = |name, index| {
-                    text(name)
-                        .on_click_stop(move |_| set_selected.set(index))
-                        .style(move |s| {
-                            s.padding(5.0)
-                                .border_right(1.)
-                                .border_color(Color::BLACK.multiply_alpha(0.2))
-                                .hover(move |s| {
-                                    s.background(Color::rgba8(228, 237, 216, 160))
-                                        .apply_if(selected.get() == index, |s| {
-                                            s.background(Color::rgb8(186, 180, 216))
-                                        })
-                                })
-                                .apply_if(selected.get() == index, |s| {
-                                    s.background(Color::rgb8(213, 208, 216))
-                                })
-                        })
-                };
-
-                let tabs = h_stack((tab_item("Views", 0), tab_item("Profiler", 1)))
-                    .style(|s| s.background(Color::WHITE));
-
-                let tab = tab(
-                    move || selected.get(),
-                    move || [0, 1].into_iter(),
-                    |it| *it,
-                    move |it| match it {
-                        0 => dyn_container(
-                            move || capture.get(),
-                            move |capture_value| {
-                                inspector_view(window_id, capture, &capture_value).into_any()
-                            },
-                        )
-                        .style(|s| s.width_full().height_full())
-                        .into_any(),
-                        1 => profiler(window_id).into_any(),
-                        _ => panic!(),
-                    },
-                )
-                .style(|s| s.flex_basis(0.0).min_height(0.0).flex_grow(1.0));
-
-                let separator = empty().style(move |s| {
-                    s.width_full()
-                        .min_height(1.0)
-                        .background(Color::BLACK.multiply_alpha(0.2))
-                });
-
-                let stack = v_stack((tabs, separator, tab));
-                let id = stack.id();
-                stack
-                    .style(|s| s.width_full().height_full())
-                    .on_event(EventListener::KeyUp, move |e| {
-                        if let Event::KeyUp(e) = e {
-                            if e.key.logical_key == keyboard::Key::Named(NamedKey::F11)
-                                && e.modifiers.shift()
-                            {
-                                id.inspect();
-                                return EventPropagation::Stop;
-                            }
-                        }
-                        EventPropagation::Continue
-                    })
-                    .on_event(EventListener::WindowClosed, |_| {
-                        RUNNING.set(false);
-                        EventPropagation::Continue
-                    })
-            },
-            Some(WindowConfig::default().size((1200.0, 800.0))),
-        );
-    }
-
-    add_app_update_event(AppUpdateEvent::CaptureWindow {
-        window_id,
-        capture: capture.write_only(),
-    })
-}
-
-fn find_view(name: &str, views: &Arc<CapturedView>) -> Vec<ViewId> {
+fn find_view(name: &str, views: &Rc<CapturedView>) -> Vec<ViewId> {
     let mut ids = Vec::new();
     if name.is_empty() {
         return ids;
@@ -1256,10 +623,20 @@ fn find_relative_view_by_id_with_self(
     }
 }
 
-fn update_select_view_id(id: ViewId, capture: &CaptureView, request_focus: bool) {
+fn update_select_view_id(
+    id: ViewId,
+    capture: &CaptureView,
+    request_focus: bool,
+    datas: RwSignal<CapturedDatas>,
+) {
     capture.selected.set(Some(id));
     capture.highlighted.set(Some(id));
     capture.expanding_selection.set(Some((id, request_focus)));
+    batch(|| {
+        datas.update(|x| {
+            x.focus(id);
+        });
+    });
 }
 
 #[derive(Debug, Default, Clone)]

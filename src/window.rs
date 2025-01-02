@@ -14,6 +14,8 @@ use crate::view::IntoView;
 #[derive(Debug)]
 pub struct WindowConfig {
     pub(crate) size: Option<Size>,
+    pub(crate) min_size: Option<Size>,
+    pub(crate) max_size: Option<Size>,
     pub(crate) position: Option<Point>,
     pub(crate) show_titlebar: bool,
     pub(crate) transparent: bool,
@@ -36,6 +38,8 @@ impl Default for WindowConfig {
     fn default() -> Self {
         Self {
             size: None,
+            min_size: None,
+            max_size: None,
             position: None,
             show_titlebar: true,
             transparent: false,
@@ -62,6 +66,20 @@ impl WindowConfig {
     #[inline]
     pub fn size(mut self, size: impl Into<Size>) -> Self {
         self.size = Some(size.into());
+        self
+    }
+
+    /// Requests the window to be of specific min dimensions.
+    #[inline]
+    pub fn min_size(mut self, size: impl Into<Size>) -> Self {
+        self.min_size = Some(size.into());
+        self
+    }
+
+    /// Requests the window to be of specific max dimensions.
+    #[inline]
+    pub fn max_size(mut self, size: impl Into<Size>) -> Self {
+        self.max_size = Some(size.into());
         self
     }
 

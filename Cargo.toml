@@ -106,6 +106,7 @@ serde = [
   "peniko/serde",
   "lapce-xi-rope/serde",
   "smallvec/serde",
+  "floem-editor-core?/serde"
 ]
 
 editor = [
