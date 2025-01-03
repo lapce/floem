@@ -3,6 +3,7 @@ use floem_winit::{
     window::Theme,
 };
 use peniko::kurbo::{Affine, Point, Size};
+#[cfg(feature = "log")]
 use slotmap::Key;
 
 use crate::{
@@ -20,74 +21,74 @@ impl EventResult {
         Self(EventPropagation::Continue)
     }
 
-    pub fn event_stop(view_id: ViewId, event: &Event) -> Self {
+    pub fn event_stop(_view_id: ViewId, _event: &Event) -> Self {
         #[cfg(feature = "log")]
-        match event {
+        match _event {
             Event::PointerDown(_) => {
-                log::debug!("PointerDown processed by {}", view_id.data().as_ffi());
+                log::debug!("PointerDown processed by {}", _view_id.data().as_ffi());
             }
             Event::PointerUp(_) => {
-                log::debug!("PointerUp processed by {}", view_id.data().as_ffi());
+                log::debug!("PointerUp processed by {}", _view_id.data().as_ffi());
             }
             Event::PointerMove(_) => {
-                log::debug!("PointerMove processed by {}", view_id.data().as_ffi());
+                log::debug!("PointerMove processed by {}", _view_id.data().as_ffi());
             }
             Event::PointerWheel(_) => {
-                log::debug!("PointerWheel processed by {}", view_id.data().as_ffi());
+                log::debug!("PointerWheel processed by {}", _view_id.data().as_ffi());
             }
             Event::PointerLeave => {
-                log::debug!("PointerLeave processed by {}", view_id.data().as_ffi());
+                log::debug!("PointerLeave processed by {}", _view_id.data().as_ffi());
             }
             Event::DroppedFile(_) => {
-                log::debug!("DroppedFile processed by {}", view_id.data().as_ffi());
+                log::debug!("DroppedFile processed by {}", _view_id.data().as_ffi());
             }
             Event::KeyDown(_) => {
-                log::debug!("KeyDown processed by {}", view_id.data().as_ffi());
+                log::debug!("KeyDown processed by {}", _view_id.data().as_ffi());
             }
             Event::KeyUp(_) => {
-                log::debug!("KeyUp processed by {}", view_id.data().as_ffi());
+                log::debug!("KeyUp processed by {}", _view_id.data().as_ffi());
             }
             Event::ImeEnabled => {
-                log::debug!("ImeEnabled processed by {}", view_id.data().as_ffi());
+                log::debug!("ImeEnabled processed by {}", _view_id.data().as_ffi());
             }
             Event::ImeDisabled => {
-                log::debug!("ImeDisabled processed by {}", view_id.data().as_ffi());
+                log::debug!("ImeDisabled processed by {}", _view_id.data().as_ffi());
             }
             Event::ImePreedit { .. } => {
-                log::debug!("ImePreedit processed by {}", view_id.data().as_ffi());
+                log::debug!("ImePreedit processed by {}", _view_id.data().as_ffi());
             }
             Event::ImeCommit(_) => {
-                log::debug!("ImeCommit processed by {}", view_id.data().as_ffi());
+                log::debug!("ImeCommit processed by {}", _view_id.data().as_ffi());
             }
             Event::WindowGotFocus => {
-                log::debug!("WindowGotFocus processed by {}", view_id.data().as_ffi());
+                log::debug!("WindowGotFocus processed by {}", _view_id.data().as_ffi());
             }
             Event::WindowLostFocus => {
-                log::debug!("WindowLostFocus processed by {}", view_id.data().as_ffi());
+                log::debug!("WindowLostFocus processed by {}", _view_id.data().as_ffi());
             }
             Event::WindowClosed => {
-                log::debug!("WindowClosed processed by {}", view_id.data().as_ffi());
+                log::debug!("WindowClosed processed by {}", _view_id.data().as_ffi());
             }
             Event::WindowResized(_) => {
-                log::debug!("WindowResized processed by {}", view_id.data().as_ffi());
+                log::debug!("WindowResized processed by {}", _view_id.data().as_ffi());
             }
             Event::WindowMoved(_) => {
-                log::debug!("WindowMoved processed by {}", view_id.data().as_ffi());
+                log::debug!("WindowMoved processed by {}", _view_id.data().as_ffi());
             }
             Event::WindowMaximizeChanged(_) => {
                 log::debug!(
                     "WindowMaximizeChanged processed by {}",
-                    view_id.data().as_ffi()
+                    _view_id.data().as_ffi()
                 );
             }
             Event::ThemeChanged(_) => {
-                log::debug!("ThemeChanged processed by {}", view_id.data().as_ffi());
+                log::debug!("ThemeChanged processed by {}", _view_id.data().as_ffi());
             }
             Event::FocusGained => {
-                log::debug!("FocusGained processed by {}", view_id.data().as_ffi());
+                log::debug!("FocusGained processed by {}", _view_id.data().as_ffi());
             }
             Event::FocusLost => {
-                log::debug!("FocusLost processed by {}", view_id.data().as_ffi());
+                log::debug!("FocusLost processed by {}", _view_id.data().as_ffi());
             }
             Event::TouchpadMagnify(_) => {}
         }
