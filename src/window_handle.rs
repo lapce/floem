@@ -1158,15 +1158,15 @@ impl WindowHandle {
     }
 
     #[cfg(target_os = "windows")]
-    fn show_context_menu(&self, menu: floem_winit::menu::Menu, pos: Option<Point>) {
-        use floem_winit::platform::windows::WindowExtWindows;
+    fn show_context_menu(&self, menu: muda::Menu, pos: Option<Point>) {
+        use winit::platform::windows::WindowExtWindows;
 
         if let Some(window) = self.window.as_ref() {
             {
                 window.show_context_menu(
                     menu,
                     pos.map(|pos| {
-                        floem_winit::dpi::Position::Logical(floem_winit::dpi::LogicalPosition::new(
+                        Position::Logical(LogicalPosition::new(
                             pos.x * self.app_state.scale,
                             pos.y * self.app_state.scale,
                         ))
