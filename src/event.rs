@@ -3,13 +3,100 @@ use floem_winit::{
     window::Theme,
 };
 use peniko::kurbo::{Affine, Point, Size};
+use slotmap::Key;
 
 use crate::{
     dropped_file::DroppedFileEvent,
     keyboard::KeyEvent,
     pointer::{PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
     touchpad::TouchpadMagnifyEvent,
+    ViewId,
 };
+
+pub struct EventResult(pub EventPropagation);
+
+impl EventResult {
+    pub fn event_continue() -> Self {
+        Self(EventPropagation::Continue)
+    }
+
+    pub fn event_stop(view_id: ViewId, event: &Event) -> Self {
+        #[cfg(feature = "log")]
+        match event {
+            Event::PointerDown(_) => {
+                log::debug!("PointerDown processed by {}", view_id.data().as_ffi());
+            }
+            Event::PointerUp(_) => {
+                log::debug!("PointerUp processed by {}", view_id.data().as_ffi());
+            }
+            Event::PointerMove(_) => {
+                log::debug!("PointerMove processed by {}", view_id.data().as_ffi());
+            }
+            Event::PointerWheel(_) => {
+                log::debug!("PointerWheel processed by {}", view_id.data().as_ffi());
+            }
+            Event::PointerLeave => {
+                log::debug!("PointerLeave processed by {}", view_id.data().as_ffi());
+            }
+            Event::DroppedFile(_) => {
+                log::debug!("DroppedFile processed by {}", view_id.data().as_ffi());
+            }
+            Event::KeyDown(_) => {
+                log::debug!("KeyDown processed by {}", view_id.data().as_ffi());
+            }
+            Event::KeyUp(_) => {
+                log::debug!("KeyUp processed by {}", view_id.data().as_ffi());
+            }
+            Event::ImeEnabled => {
+                log::debug!("ImeEnabled processed by {}", view_id.data().as_ffi());
+            }
+            Event::ImeDisabled => {
+                log::debug!("ImeDisabled processed by {}", view_id.data().as_ffi());
+            }
+            Event::ImePreedit { .. } => {
+                log::debug!("ImePreedit processed by {}", view_id.data().as_ffi());
+            }
+            Event::ImeCommit(_) => {
+                log::debug!("ImeCommit processed by {}", view_id.data().as_ffi());
+            }
+            Event::WindowGotFocus => {
+                log::debug!("WindowGotFocus processed by {}", view_id.data().as_ffi());
+            }
+            Event::WindowLostFocus => {
+                log::debug!("WindowLostFocus processed by {}", view_id.data().as_ffi());
+            }
+            Event::WindowClosed => {
+                log::debug!("WindowClosed processed by {}", view_id.data().as_ffi());
+            }
+            Event::WindowResized(_) => {
+                log::debug!("WindowResized processed by {}", view_id.data().as_ffi());
+            }
+            Event::WindowMoved(_) => {
+                log::debug!("WindowMoved processed by {}", view_id.data().as_ffi());
+            }
+            Event::WindowMaximizeChanged(_) => {
+                log::debug!(
+                    "WindowMaximizeChanged processed by {}",
+                    view_id.data().as_ffi()
+                );
+            }
+            Event::ThemeChanged(_) => {
+                log::debug!("ThemeChanged processed by {}", view_id.data().as_ffi());
+            }
+            Event::FocusGained => {
+                log::debug!("FocusGained processed by {}", view_id.data().as_ffi());
+            }
+            Event::FocusLost => {
+                log::debug!("FocusLost processed by {}", view_id.data().as_ffi());
+            }
+            Event::TouchpadMagnify(_) => {}
+        }
+        Self(EventPropagation::Stop)
+    }
+    pub fn is_processed(&self) -> bool {
+        self.0.is_processed()
+    }
+}
 
 /// Control whether an event will continue propagating or whether it should stop.
 pub enum EventPropagation {
