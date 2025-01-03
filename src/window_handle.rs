@@ -187,10 +187,16 @@ impl WindowHandle {
         // because the renderer is not initialized until now.
         #[cfg(target_arch = "wasm32")]
         {
-            use floem_winit::platform::web::WindowExtWebSys;
+            use winit::platform::web::WindowExtWeb;
 
-            let canvas = self.window.as_ref().unwrap().canvas().unwrap();
-            let rect = canvas.get_bounding_client_rect();
+            let rect = self
+                .window
+                .as_ref()
+                .unwrap()
+                .canvas()
+                .unwrap()
+                .get_bounding_client_rect();
+            // let rect = canvas.get_bounding_client_rect();
             let size = LogicalSize::new(rect.width(), rect.height());
             self.size(Size::new(size.width, size.height));
         }

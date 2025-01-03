@@ -300,7 +300,7 @@ impl ApplicationHandle {
         #[cfg(target_arch = "wasm32")]
         {
             use wgpu::web_sys::wasm_bindgen::JsCast;
-            use winit::platform::web::WindowBuilderExtWebSys;
+            use winit::platform::web::WindowAttributesExtWeb;
 
             let parent_id = web_config.expect("Specify an id for the canvas.").canvas_id;
             let doc = web_sys::window()
