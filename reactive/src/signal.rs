@@ -128,9 +128,9 @@ impl<T> Clone for WriteSignal<T> {
     }
 }
 
-impl<T: Send + Sync> Eq for WriteSignal<T> {}
+impl<T> Eq for WriteSignal<T> {}
 
-impl<T: Send + Sync> PartialEq for WriteSignal<T> {
+impl<T> PartialEq for WriteSignal<T> {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
