@@ -1159,19 +1159,26 @@ impl WindowHandle {
 
     #[cfg(target_os = "windows")]
     fn show_context_menu(&self, menu: muda::Menu, pos: Option<Point>) {
-        use winit::platform::windows::WindowExtWindows;
+        use muda::{
+            dpi::{LogicalPosition, Position},
+            ContextMenu,
+        };
+        use raw_window_handle::HasWindowHandle;
+        use raw_window_handle::RawWindowHandle;
 
         if let Some(window) = self.window.as_ref() {
-            {
-                window.show_context_menu(
-                    menu,
-                    pos.map(|pos| {
-                        Position::Logical(LogicalPosition::new(
-                            pos.x * self.app_state.scale,
-                            pos.y * self.app_state.scale,
-                        ))
-                    }),
-                );
+            if let RawWindowHandle::Win32(handle) = window.window_handle().unwrap().as_raw() {
+                unsafe {
+                    menu.show_context_menu_for_hwnd(
+                        handle.hwnd as isize,
+                        pos.map(|pos| {
+                            Position::Logical(LogicalPosition::new(
+                                pos.x * self.app_state.scale,
+                                pos.y * self.app_state.scale,
+                            ))
+                        }),
+                    );
+                }
             }
         }
     }
