@@ -93,14 +93,14 @@ where
 }
 
 /// A getter only Signal
-pub struct ReadSignal<T: 'static> {
+pub struct ReadSignal<T> {
     pub(crate) id: Id,
     pub(crate) ty: PhantomData<T>,
 }
 
-impl<T: 'static> Copy for ReadSignal<T> {}
+impl<T> Copy for ReadSignal<T> {}
 
-impl<T: 'static> Clone for ReadSignal<T> {
+impl<T> Clone for ReadSignal<T> {
     fn clone(&self) -> Self {
         *self
     }
@@ -115,14 +115,14 @@ impl<T> PartialEq for ReadSignal<T> {
 }
 
 /// A setter only Signal
-pub struct WriteSignal<T: 'static> {
+pub struct WriteSignal<T> {
     pub(crate) id: Id,
     pub(crate) ty: PhantomData<T>,
 }
 
-impl<T: 'static> Copy for WriteSignal<T> {}
+impl<T> Copy for WriteSignal<T> {}
 
-impl<T: 'static> Clone for WriteSignal<T> {
+impl<T> Clone for WriteSignal<T> {
     fn clone(&self) -> Self {
         *self
     }
