@@ -85,6 +85,13 @@ impl LineEnding {
         }
     }
 
+    pub fn get_chars(&self) -> &'static str {
+        match self {
+            LineEnding::CrLf => "\r\n",
+            LineEnding::Lf => "\n",
+        }
+    }
+
     /// Get the name of the line ending
     pub fn as_str(&self) -> &'static str {
         match self {

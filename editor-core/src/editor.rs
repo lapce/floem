@@ -127,7 +127,7 @@ impl Action {
                     // wrap the text with that char and its corresponding closing pair
                     if region.start != region.end
                         && auto_surround
-                        && (matching_pair_type == Some(true) || c == '"' || c == '\'')
+                        && (matching_pair_type == Some(true) || c == '"' || c == '\'' || c == '`')
                     {
                         edits.push((Selection::region(region.min(), region.min()), c.to_string()));
                         edits_after.push((
@@ -135,6 +135,7 @@ impl Action {
                             match c {
                                 '"' => '"',
                                 '\'' => '\'',
+                                '`' => '`',
                                 _ => matching_char(c).unwrap(),
                             },
                         ));
@@ -142,7 +143,7 @@ impl Action {
                     }
 
                     if auto_closing_matching_pairs {
-                        if (c == '"' || c == '\'') && cursor_char == Some(c) {
+                        if (c == '"' || c == '\'' || c == '`') && cursor_char == Some(c) {
                             // Skip the closing character
                             let new_offset = buffer.next_grapheme_offset(offset, 1, buffer.len());
 
@@ -179,24 +180,26 @@ impl Action {
                             }
                         }
 
-                        if matching_pair_type == Some(true) || c == '"' || c == '\'' {
+                        if matching_pair_type == Some(true) || c == '"' || c == '\'' || c == '`' {
                             // Create a late edit to insert the closing pair, if allowed.
                             let is_whitespace_or_punct = cursor_char
                                 .map(|c| {
                                     let prop = get_char_property(c);
                                     prop == CharClassification::Lf
+                                        || prop == CharClassification::Cr
                                         || prop == CharClassification::Space
                                         || prop == CharClassification::Punctuation
                                 })
                                 .unwrap_or(true);
 
                             let should_insert_pair = match c {
-                                '"' | '\'' => {
+                                '"' | '\'' | '`' => {
                                     is_whitespace_or_punct
                                         && prev_cursor_char
                                             .map(|c| {
                                                 let prop = get_char_property(c);
                                                 prop == CharClassification::Lf
+                                                    || prop == CharClassification::Cr
                                                     || prop == CharClassification::Space
                                                     || prop == CharClassification::Punctuation
                                             })
@@ -209,6 +212,7 @@ impl Action {
                                 let insert_after = match c {
                                     '"' => '"',
                                     '\'' => '\'',
+                                    '`' => '`',
                                     _ => matching_char(c).unwrap(),
                                 };
                                 edits_after.push((idx, insert_after));
@@ -327,6 +331,7 @@ impl Action {
         let mut edits = Vec::with_capacity(selection.regions().len());
         let mut extra_edits = Vec::new();
         let mut shift = 0i32;
+        let line_ending = buffer.line_ending().get_chars();
         for region in selection.regions() {
             let offset = region.max();
             let line = buffer.line_of_offset(offset);
@@ -335,7 +340,7 @@ impl Action {
             let line_indent = buffer.indent_on_line(line);
             let first_half = buffer.slice_to_cow(line_start..offset);
             let second_half = buffer.slice_to_cow(offset..line_end);
-            let second_half = second_half.trim();
+            let second_half_trim = second_half.trim();
 
             // TODO: this could be done with 1 string
             let new_line_content = {
@@ -343,20 +348,15 @@ impl Action {
                 let indent = if auto_indent && has_unmatched_pair(&first_half) {
                     indent_storage = format!("{}{}", line_indent, buffer.indent_unit());
                     &indent_storage
-                } else if keep_indent && second_half.is_empty() {
-                    indent_storage = buffer.indent_on_line(line + 1);
-                    if indent_storage.len() > line_indent.len() {
-                        &indent_storage
-                    } else {
-                        &line_indent
-                    }
-                } else if keep_indent {
+                } else if keep_indent
+                    && (second_half_trim.is_empty() || !second_half.starts_with(&line_indent))
+                {
                     &line_indent
                 } else {
                     indent_storage = String::new();
                     &indent_storage
                 };
-                format!("\n{indent}")
+                format!("{line_ending}{indent}")
             };
 
             let selection = Selection::region(region.min(), region.max());
@@ -369,10 +369,10 @@ impl Action {
             if let Some(c) = first_half.chars().rev().find(|&c| c != ' ') {
                 if let Some(true) = matching_pair_direction(c) {
                     if let Some(c) = matching_char(c) {
-                        if second_half.starts_with(c) {
+                        if second_half_trim.starts_with(c) {
                             let selection =
                                 Selection::caret((region.max() as i32 + shift) as usize);
-                            let content = format!("\n{line_indent}");
+                            let content = format!("{line_ending}{line_indent}",);
                             extra_edits.push((selection, content));
                         }
                     }
@@ -1141,10 +1141,12 @@ impl Action {
                             if str_is_pair_left(&delete_str)
                                 || delete_str == "\""
                                 || delete_str == "'"
+                                || delete_str == "`"
                             {
                                 let matching_char = match delete_str.as_str() {
                                     "\"" => Some('"'),
                                     "'" => Some('\''),
+                                    "`" => Some('`'),
                                     _ => str_matching_pair(&delete_str),
                                 };
                                 if let Some(c) = matching_char {

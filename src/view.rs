@@ -404,12 +404,14 @@ impl View for Box<dyn View> {
 pub fn default_compute_layout(id: ViewId, cx: &mut ComputeLayoutCx) -> Option<Rect> {
     let mut layout_rect: Option<Rect> = None;
     for child in id.children() {
-        let child_layout = cx.compute_view_layout(child);
-        if let Some(child_layout) = child_layout {
-            if let Some(rect) = layout_rect {
-                layout_rect = Some(rect.union(child_layout));
-            } else {
-                layout_rect = Some(child_layout);
+        if !child.style_has_hidden() {
+            let child_layout = cx.compute_view_layout(child);
+            if let Some(child_layout) = child_layout {
+                if let Some(rect) = layout_rect {
+                    layout_rect = Some(rect.union(child_layout));
+                } else {
+                    layout_rect = Some(child_layout);
+                }
             }
         }
     }
