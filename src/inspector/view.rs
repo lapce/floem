@@ -12,16 +12,15 @@ use crate::prelude::{
 use crate::profiler::profiler;
 use crate::views::Decorators;
 use crate::window::WindowConfig;
-use crate::{new_window, IntoView, View, ViewId};
+use crate::{keyboard, new_window, IntoView, View, ViewId};
 use floem_reactive::{
     create_effect, create_rw_signal, create_signal, RwSignal, SignalGet, SignalUpdate,
 };
-use floem_winit::keyboard;
-use floem_winit::keyboard::NamedKey;
-use floem_winit::window::WindowId;
 use peniko::Color;
 use slotmap::Key;
-use std::rc::Rc;
+use std::sync::Arc;
+use winit::keyboard::NamedKey;
+use winit::window::WindowId;
 
 pub fn capture(window_id: WindowId) {
     let capture = CAPTURE.with(|c| *c);
@@ -111,8 +110,8 @@ pub fn capture(window_id: WindowId) {
 
 fn inspector_view(
     window_id: WindowId,
-    capture_s: RwSignal<Option<Rc<Capture>>>,
-    capture: &Option<Rc<Capture>>,
+    capture_s: RwSignal<Option<Arc<Capture>>>,
+    capture: &Option<Arc<Capture>>,
 ) -> impl IntoView {
     let view = if let Some(capture) = capture {
         capture_view(window_id, capture_s, capture).into_any()
@@ -142,8 +141,8 @@ fn inspector_view(
 
 fn capture_view(
     window_id: WindowId,
-    capture_s: RwSignal<Option<Rc<Capture>>>,
-    capture: &Rc<Capture>,
+    capture_s: RwSignal<Option<Arc<Capture>>>,
+    capture: &Arc<Capture>,
 ) -> impl IntoView {
     let capture_view = CaptureView {
         expanding_selection: create_rw_signal(None),
@@ -410,7 +409,7 @@ fn capture_view(
 }
 
 fn view_tree(
-    capture: Rc<Capture>,
+    capture: Arc<Capture>,
     capture_signal: CaptureView,
     datas: RwSignal<CapturedDatas>,
 ) -> impl View {
@@ -449,7 +448,7 @@ fn view_tree(
 fn tree_node(
     view: &CapturedData,
     capture_signal: CaptureView,
-    capture: Rc<Capture>,
+    capture: Arc<Capture>,
     level: usize,
     datas: RwSignal<CapturedDatas>,
 ) -> impl IntoView {

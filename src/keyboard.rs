@@ -1,13 +1,13 @@
 use bitflags::bitflags;
-pub use floem_winit::keyboard::{
+pub use winit::keyboard::{
     Key, KeyCode, KeyLocation, ModifiersState, NamedKey, NativeKey, PhysicalKey,
 };
-#[cfg(not(target_arch = "wasm32"))]
-pub use floem_winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+#[cfg(not(any(target_arch = "wasm32", target_os = "ios", target_os = "android")))]
+pub use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct KeyEvent {
-    pub key: floem_winit::event::KeyEvent,
+    pub key: winit::event::KeyEvent,
     pub modifiers: Modifiers,
 }
 

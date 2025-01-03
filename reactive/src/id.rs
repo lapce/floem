@@ -1,23 +1,16 @@
-use std::{marker::PhantomData, sync::atomic::AtomicU64};
+use std::sync::atomic::AtomicU64;
 
 use crate::{effect::observer_clean_up, runtime::RUNTIME, signal::Signal};
 
-/// Marker type explaining why something can't be sent across threads
-#[allow(dead_code)]
-struct NotThreadSafe(*const ());
-
 /// An internal id which can reference a Signal/Effect/Scope.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Hash)]
-pub struct Id(u64, PhantomData<NotThreadSafe>);
+pub struct Id(u64);
 
 impl Id {
     /// Create a new Id that's next in order
     pub(crate) fn next() -> Id {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
-        Id(
-            COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-            PhantomData,
-        )
+        Id(COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
     }
 
     /// Try to get the Signal that links with this Id

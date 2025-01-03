@@ -1,7 +1,7 @@
-use floem_winit::event::TouchPhase;
+use winit::event::TouchPhase;
 
 #[derive(Debug, Clone)]
-pub struct TouchpadMagnifyEvent {
+pub struct PinchGestureEvent {
     pub delta: f64,
     pub phase: TouchPhase,
 }

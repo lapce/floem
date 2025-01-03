@@ -1,9 +1,9 @@
 //! A toggle button widget. An example can be found in widget-gallery/button in the floem examples.
 
 use floem_reactive::{create_updater, SignalGet, SignalUpdate};
-use floem_winit::keyboard::{Key, NamedKey};
 use peniko::kurbo::{Circle, Point, RoundedRect};
 use peniko::{Brush, Color};
+use winit::keyboard::{Key, NamedKey};
 
 use crate::unit::Pct;
 use crate::{
@@ -511,7 +511,7 @@ mod test {
     use crate::{
         context::{EventCx, UpdateCx},
         event::Event,
-        pointer::{PointerButton, PointerInputEvent, PointerMoveEvent},
+        pointer::{MouseButton, PointerButton, PointerInputEvent, PointerMoveEvent},
         AppState,
     };
 
@@ -580,7 +580,7 @@ mod test {
         let pointer_down = Event::PointerDown(PointerInputEvent {
             count: 1,
             pos: Point::new(75.0, 10.0),
-            button: PointerButton::Primary,
+            button: PointerButton::Mouse(MouseButton::Primary),
             modifiers: Default::default(),
         });
 
@@ -605,7 +605,7 @@ mod test {
         // Start drag
         let pointer_down = Event::PointerDown(PointerInputEvent {
             pos: Point::new(50.0, 10.0),
-            button: PointerButton::Primary,
+            button: PointerButton::Mouse(MouseButton::Primary),
             count: 1,
             modifiers: Default::default(),
         });
@@ -626,7 +626,7 @@ mod test {
         // End drag
         let pointer_up = Event::PointerUp(PointerInputEvent {
             pos: Point::new(75.0, 10.0),
-            button: PointerButton::Primary,
+            button: PointerButton::Mouse(MouseButton::Primary),
             count: 1,
             modifiers: Default::default(),
         });
@@ -656,7 +656,7 @@ mod test {
 
         let pointer_event = Event::PointerDown(PointerInputEvent {
             pos: Point::new(60.0, 10.0),
-            button: PointerButton::Primary,
+            button: PointerButton::Mouse(MouseButton::Primary),
             count: 1,
             modifiers: Default::default(),
         });
