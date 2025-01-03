@@ -1170,7 +1170,7 @@ impl WindowHandle {
             if let RawWindowHandle::Win32(handle) = window.window_handle().unwrap().as_raw() {
                 unsafe {
                     menu.show_context_menu_for_hwnd(
-                        handle.hwnd as isize,
+                        isize::from(handle.hwnd),
                         pos.map(|pos| {
                             Position::Logical(LogicalPosition::new(
                                 pos.x * self.app_state.scale,
