@@ -78,10 +78,10 @@ impl Clipboard {
             }
 
             use copypasta::x11_clipboard::{Primary, X11ClipboardContext};
-            return Self {
+            Self {
                 clipboard: Box::new(ClipboardContext::new().unwrap()),
                 selection: Some(Box::new(X11ClipboardContext::<Primary>::new().unwrap())),
-            };
+            }
         }
 
         // TODO: Implement clipboard support for the web, ios, and android

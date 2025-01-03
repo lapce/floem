@@ -121,7 +121,7 @@ impl WindowHandle {
                 main_view_id,
                 stack((
                     container(main_view).style(|s| s.size(100.pct(), 100.pct())),
-                    context_menu_view(scope, window_id, context_menu, size),
+                    context_menu_view(scope, context_menu, size),
                 ))
                 .style(|s| s.size(100.pct(), 100.pct()))
                 .into_any(),
@@ -1234,7 +1234,6 @@ pub(crate) fn set_current_view(id: ViewId) {
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 fn context_menu_view(
     cx: Scope,
-    window_id: WindowId,
     context_menu: RwSignal<Option<(Menu, Point)>>,
     window_size: RwSignal<Size>,
 ) -> impl IntoView {
@@ -1250,7 +1249,7 @@ fn context_menu_view(
     enum MenuDisplay {
         Separator(usize),
         Item {
-            id: Option<u64>,
+            id: Option<String>,
             enabled: bool,
             title: String,
             children: Option<Vec<MenuDisplay>>,
@@ -1264,7 +1263,7 @@ fn context_menu_view(
             .map(|(s, e)| match e {
                 crate::menu::MenuEntry::Separator => MenuDisplay::Separator(s),
                 crate::menu::MenuEntry::Item(i) => MenuDisplay::Item {
-                    id: Some(i.id),
+                    id: Some(i.id.clone()),
                     enabled: i.enabled,
                     title: i.title.clone(),
                     children: None,
@@ -1289,7 +1288,6 @@ fn context_menu_view(
     let focus_count = cx.create_rw_signal(0);
 
     fn view_fn(
-        window_id: WindowId,
         menu: MenuDisplay,
         context_menu: RwSignal<Option<(Menu, Point)>>,
         focus_count: RwSignal<i32>,
@@ -1308,6 +1306,7 @@ fn context_menu_view(
                 let on_child_submenu = create_rw_signal(false);
                 let has_submenu = children.is_some();
                 let submenu_svg = r#"<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M10.072 8.024L5.715 3.667l.618-.62L11 7.716v.618L6.333 13l-.618-.619 4.357-4.357z"/></svg>"#;
+                let id_clone = id.clone();
                 container(
                     stack((
                         stack((
@@ -1339,21 +1338,15 @@ fn context_menu_view(
                         .on_click_stop(move |_| {
                             context_menu.set(None);
                             focus_count.set(0);
-                            if let Some(id) = id {
-                                add_app_update_event(AppUpdateEvent::MenuAction {
-                                    window_id,
-                                    action_id: id as usize,
-                                });
+                            if let Some(id) = id.clone() {
+                                add_app_update_event(AppUpdateEvent::MenuAction { action_id: id });
                             }
                         })
                         .on_secondary_click_stop(move |_| {
                             context_menu.set(None);
                             focus_count.set(0);
-                            if let Some(id) = id {
-                                add_app_update_event(AppUpdateEvent::MenuAction {
-                                    window_id,
-                                    action_id: id as usize,
-                                });
+                            if let Some(id) = id_clone.clone() {
+                                add_app_update_event(AppUpdateEvent::MenuAction { action_id: id });
                             }
                         })
                         .disabled(move || !enabled)
@@ -1374,15 +1367,7 @@ fn context_menu_view(
                         dyn_stack(
                             move || children.clone().unwrap_or_default(),
                             move |s| s.clone(),
-                            move |menu| {
-                                view_fn(
-                                    window_id,
-                                    menu,
-                                    context_menu,
-                                    focus_count,
-                                    on_child_submenu,
-                                )
-                            },
+                            move |menu| view_fn(menu, context_menu, focus_count, on_child_submenu),
                         )
                         .keyboard_navigable()
                         .on_event_stop(EventListener::FocusGained, move |_| {
@@ -1462,7 +1447,7 @@ fn context_menu_view(
     let view = dyn_stack(
         move || context_menu_items.get().unwrap_or_default(),
         move |s| s.clone(),
-        move |menu| view_fn(window_id, menu, context_menu, focus_count, on_child_submenu),
+        move |menu| view_fn(menu, context_menu, focus_count, on_child_submenu),
     )
     .on_resize(move |rect| {
         context_menu_size.set(rect.size());
