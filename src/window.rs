@@ -9,6 +9,12 @@ pub use winit::window::WindowLevel;
 
 use crate::app::{add_app_update_event, AppUpdateEvent};
 use crate::view::IntoView;
+use crate::AnyView;
+
+pub struct WindowCreation {
+    pub(crate) view_fn: Box<dyn FnOnce(WindowId) -> AnyView + Send + Sync>,
+    pub(crate) config: Option<WindowConfig>,
+}
 
 /// Configures various attributes (e.g. size, position, transparency, etc.) of a window.
 #[derive(Debug)]
@@ -385,8 +391,10 @@ pub fn new_window<V: IntoView + 'static>(
     config: Option<WindowConfig>,
 ) {
     add_app_update_event(AppUpdateEvent::NewWindow {
-        view_fn: Box::new(|window_id| app_view(window_id).into_any()),
-        config,
+        window_creation: WindowCreation {
+            view_fn: Box::new(|window_id| app_view(window_id).into_any()),
+            config,
+        },
     });
 }
 

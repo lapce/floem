@@ -67,9 +67,11 @@ impl ApplicationHandle {
         event: AppUpdateEvent,
     ) {
         match event {
-            AppUpdateEvent::NewWindow { view_fn, config } => {
-                self.new_window(event_loop, view_fn, config.unwrap_or_default())
-            }
+            AppUpdateEvent::NewWindow { window_creation } => self.new_window(
+                event_loop,
+                window_creation.view_fn,
+                window_creation.config.unwrap_or_default(),
+            ),
             AppUpdateEvent::CloseWindow { window_id } => {
                 self.close_window(window_id, event_loop);
             }
@@ -384,10 +386,10 @@ impl ApplicationHandle {
             if let Some(val) = mac.movable {
                 window_attributes = window_attributes.with_movable_by_window_background(val);
             }
-            if let Some((x, y)) = mac.traffic_lights_offset {
-                // TODO
-                // window_attributes = window_attributes.with_traffic_lights_offset(x, y);
-            }
+            // if let Some((x, y)) = mac.traffic_lights_offset {
+            // TODO
+            // window_attributes = window_attributes.with_traffic_lights_offset(x, y);
+            // }
             if let Some(val) = mac.accepts_first_mouse {
                 window_attributes = window_attributes.with_accepts_first_mouse(val);
             }

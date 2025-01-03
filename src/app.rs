@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use crossbeam::epoch::Pointable;
 use crossbeam_channel::{Receiver, Sender};
 use floem_reactive::WriteSignal;
 use parking_lot::Mutex;
@@ -19,9 +18,8 @@ use crate::{
     ext_event::ExtSendTrigger,
     inspector::Capture,
     profiler::Profile,
-    view::{IntoView, View},
-    window::WindowConfig,
-    AnyView,
+    view::IntoView,
+    window::{WindowConfig, WindowCreation},
 };
 
 type AppEventCallback = dyn Fn(AppEvent);
@@ -40,7 +38,7 @@ static EVENT_LOOP_PROXY: Mutex<Option<(EventLoopProxy, Sender<UserEvent>)>> = Mu
 /// ```
 ///
 /// To build an application and windows with more configuration, see [`Application`].
-pub fn launch<V: IntoView + 'static>(app_view: impl FnOnce() -> V + 'static) {
+pub fn launch<V: IntoView + 'static>(app_view: impl FnOnce() -> V + 'static + Send + Sync) {
     Application::new().window(move |_| app_view(), None).run()
 }
 
@@ -58,8 +56,7 @@ pub(crate) enum UserEvent {
 
 pub(crate) enum AppUpdateEvent {
     NewWindow {
-        view_fn: Box<dyn FnOnce(WindowId) -> Box<dyn View> + Send + Sync>,
-        config: Option<WindowConfig>,
+        window_creation: WindowCreation,
     },
     CloseWindow {
         window_id: WindowId,
@@ -94,7 +91,7 @@ pub struct Application {
     handle: ApplicationHandle,
     event_listener: Option<Box<AppEventCallback>>,
     event_loop: Option<EventLoop>,
-    initial_windows: Vec<(Box<dyn FnOnce(WindowId) -> AnyView>, Option<WindowConfig>)>,
+    initial_windows: Vec<WindowCreation>,
 }
 
 impl Default for Application {
@@ -105,9 +102,12 @@ impl Default for Application {
 
 impl ApplicationHandler for Application {
     fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
-        while let Some((view_fn, window_config)) = self.initial_windows.pop() {
-            self.handle
-                .new_window(event_loop, view_fn, window_config.unwrap_or_default());
+        while let Some(window_creation) = self.initial_windows.pop() {
+            self.handle.new_window(
+                event_loop,
+                window_creation.view_fn,
+                window_creation.config.unwrap_or_default(),
+            );
         }
     }
 
@@ -182,13 +182,13 @@ impl Application {
     /// `WindowConfig::default()`.
     pub fn window<V: IntoView + 'static>(
         mut self,
-        app_view: impl FnOnce(WindowId) -> V + 'static,
+        app_view: impl FnOnce(WindowId) -> V + 'static + Send + Sync,
         config: Option<WindowConfig>,
     ) -> Self {
-        self.initial_windows.push((
-            Box::new(move |window_id: WindowId| app_view(window_id).into_any()),
+        self.initial_windows.push(WindowCreation {
+            view_fn: Box::new(move |window_id: WindowId| app_view(window_id).into_any()),
             config,
-        ));
+        });
         self
     }
 
