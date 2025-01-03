@@ -17,28 +17,28 @@ use crate::{
 };
 
 /// A read write Signal which can act as both a Getter and a Setter
-pub struct RwSignal<T: 'static> {
+pub struct RwSignal<T> {
     pub(crate) id: Id,
     pub(crate) ty: PhantomData<T>,
 }
 
-impl<T: 'static> Copy for RwSignal<T> {}
+impl<T> Copy for RwSignal<T> {}
 
-impl<T: 'static> Clone for RwSignal<T> {
+impl<T> Clone for RwSignal<T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T: 'static> Eq for RwSignal<T> {}
+impl<T> Eq for RwSignal<T> {}
 
-impl<T: 'static> PartialEq for RwSignal<T> {
+impl<T> PartialEq for RwSignal<T> {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
-impl<T: 'static> fmt::Debug for RwSignal<T> {
+impl<T> fmt::Debug for RwSignal<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut s = f.debug_struct("RwSignal");
         s.field("id", &self.id);
@@ -47,7 +47,7 @@ impl<T: 'static> fmt::Debug for RwSignal<T> {
     }
 }
 
-impl<T: 'static> RwSignal<T> {
+impl<T> RwSignal<T> {
     /// Create a Getter of this Signal
     pub fn read_only(&self) -> ReadSignal<T> {
         ReadSignal {

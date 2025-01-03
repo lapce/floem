@@ -32,12 +32,12 @@ impl<T: Clone> SignalGet<T> for Memo<T> {
     }
 }
 
-impl<T: 'static> SignalWith<T> for Memo<T> {
+impl<T> SignalWith<T> for Memo<T> {
     fn id(&self) -> crate::id::Id {
         self.getter.id
     }
 }
-impl<T: 'static> SignalTrack<T> for Memo<T> {
+impl<T> SignalTrack<T> for Memo<T> {
     fn id(&self) -> crate::id::Id {
         self.getter.id
     }
