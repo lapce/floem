@@ -17,6 +17,7 @@ use taffy::prelude::NodeId;
 
 use crate::animate::{AnimStateKind, RepeatMode};
 use crate::easing::{Easing, Linear};
+use crate::event::EventResult;
 use crate::renderer::Renderer;
 use crate::style::DisplayProp;
 use crate::view_state::IsHiddenState;
@@ -93,15 +94,15 @@ impl EventCx<'_> {
         view_id: ViewId,
         event: Event,
         directed: bool,
-    ) -> EventPropagation {
+    ) -> EventResult {
         if view_id.style_has_hidden() {
             // we don't process events for hidden view
-            return EventPropagation::Continue;
+            return EventResult::event_continue();
         }
         if self.app_state.is_disabled(&view_id) && !event.allow_disabled() {
             // if the view is disabled and the event is not processed
             // for disabled views
-            return EventPropagation::Continue;
+            return EventResult::event_continue();
         }
 
         // offset the event positions if the event has positions
@@ -137,7 +138,7 @@ impl EventCx<'_> {
                     }
                 }
             }
-            return EventPropagation::Stop;
+            return EventResult::event_stop(view_id, &event);
         }
 
         if !directed {
@@ -150,7 +151,7 @@ impl EventCx<'_> {
                     .unconditional_view_event(child, event.clone(), false)
                     .is_processed()
                 {
-                    return EventPropagation::Stop;
+                    return EventResult::event_stop(child, &event);
                 }
                 if event.is_pointer() {
                     break;
@@ -164,37 +165,39 @@ impl EventCx<'_> {
                 .event_after_children(self, &event)
                 .is_processed()
         {
-            return EventPropagation::Stop;
+            return EventResult::event_stop(view_id, &event);
         }
 
         // CLARIFY: should this be disabled when disable_default?
         if !disable_default {
             match &event {
-                Event::PointerDown(event) => {
+                Event::PointerDown(pointer_down_event) => {
                     self.app_state.clicking.insert(view_id);
-                    if event.button.is_primary() {
+                    if pointer_down_event.button.is_primary() {
                         let rect = view_id.get_size().unwrap_or_default().to_rect();
-                        let now_focused = rect.contains(event.pos);
+                        let now_focused = rect.contains(pointer_down_event.pos);
 
                         if now_focused {
                             if self.app_state.keyboard_navigable.contains(&view_id) {
                                 // if the view can be focused, we update the focus
                                 self.app_state.update_focus(view_id, false);
                             }
-                            if event.count == 2
+                            if pointer_down_event.count == 2
                                 && view_state
                                     .borrow()
                                     .event_listeners
                                     .contains_key(&EventListener::DoubleClick)
                             {
-                                view_state.borrow_mut().last_pointer_down = Some(event.clone());
+                                view_state.borrow_mut().last_pointer_down =
+                                    Some(pointer_down_event.clone());
                             }
                             if view_state
                                 .borrow()
                                 .event_listeners
                                 .contains_key(&EventListener::Click)
                             {
-                                view_state.borrow_mut().last_pointer_down = Some(event.clone());
+                                view_state.borrow_mut().last_pointer_down =
+                                    Some(pointer_down_event.clone());
                             }
 
                             let bottom_left = {
@@ -204,17 +207,17 @@ impl EventCx<'_> {
                             let popout_menu = view_state.borrow().popout_menu.clone();
                             if let Some(menu) = popout_menu {
                                 show_context_menu(menu(), Some(bottom_left));
-                                return EventPropagation::Stop;
+                                return EventResult::event_stop(view_id, &event);
                             }
                             if self.app_state.draggable.contains(&view_id)
                                 && self.app_state.drag_start.is_none()
                             {
-                                self.app_state.drag_start = Some((view_id, event.pos));
+                                self.app_state.drag_start = Some((view_id, pointer_down_event.pos));
                             }
                         }
-                    } else if event.button.is_secondary() {
+                    } else if pointer_down_event.button.is_secondary() {
                         let rect = view_id.get_size().unwrap_or_default().to_rect();
-                        let now_focused = rect.contains(event.pos);
+                        let now_focused = rect.contains(pointer_down_event.pos);
 
                         if now_focused {
                             if self.app_state.keyboard_navigable.contains(&view_id) {
@@ -226,7 +229,8 @@ impl EventCx<'_> {
                                 .event_listeners
                                 .contains_key(&EventListener::SecondaryClick)
                             {
-                                view_state.borrow_mut().last_pointer_down = Some(event.clone());
+                                view_state.borrow_mut().last_pointer_down =
+                                    Some(pointer_down_event.clone());
                             }
                         }
                     }
@@ -284,7 +288,7 @@ impl EventCx<'_> {
                         .apply_event(&EventListener::PointerMove, &event)
                         .is_some_and(|prop| prop.is_processed())
                     {
-                        return EventPropagation::Stop;
+                        return EventResult::event_stop(view_id, &event);
                     }
                 }
                 Event::PointerUp(pointer_event) => {
@@ -334,7 +338,7 @@ impl EventCx<'_> {
                                     handled | (handler.borrow_mut())(&event).is_processed()
                                 })
                             {
-                                return EventPropagation::Stop;
+                                return EventResult::event_stop(view_id, &event);
                             }
                         }
 
@@ -346,7 +350,7 @@ impl EventCx<'_> {
                                     handled | (handler.borrow_mut())(&event).is_processed()
                                 })
                             {
-                                return EventPropagation::Stop;
+                                return EventResult::event_stop(view_id, &event);
                             }
                         }
 
@@ -354,7 +358,7 @@ impl EventCx<'_> {
                             .apply_event(&EventListener::PointerUp, &event)
                             .is_some_and(|prop| prop.is_processed())
                         {
-                            return EventPropagation::Stop;
+                            return EventResult::event_stop(view_id, &event);
                         }
                     } else if pointer_event.button.is_secondary() {
                         let rect = view_id.get_size().unwrap_or_default().to_rect();
@@ -370,7 +374,7 @@ impl EventCx<'_> {
                                     handled | (handler.borrow_mut())(&event).is_processed()
                                 })
                             {
-                                return EventPropagation::Stop;
+                                return EventResult::event_stop(view_id, &event);
                             }
                         }
 
@@ -384,7 +388,7 @@ impl EventCx<'_> {
                         let context_menu = view_state.borrow().context_menu.clone();
                         if let Some(menu) = context_menu {
                             show_context_menu(menu(), Some(viewport_event_position));
-                            return EventPropagation::Stop;
+                            return EventResult::event_stop(view_id, &event);
                         }
                     }
                 }
@@ -417,13 +421,13 @@ impl EventCx<'_> {
                             handled | (handler.borrow_mut())(&event).is_processed()
                         })
                     {
-                        return EventPropagation::Stop;
+                        return EventResult::event_stop(view_id, &event);
                     }
                 }
             }
         }
 
-        EventPropagation::Continue
+        EventResult::event_continue()
     }
 
     /// translate a window-positioned event to the local coordinate system of a view
