@@ -127,7 +127,7 @@ impl Action {
                     // wrap the text with that char and its corresponding closing pair
                     if region.start != region.end
                         && auto_surround
-                        && (matching_pair_type == Some(true) || c == '"' || c == '\'')
+                        && (matching_pair_type == Some(true) || c == '"' || c == '\'' || c == '`')
                     {
                         edits.push((Selection::region(region.min(), region.min()), c.to_string()));
                         edits_after.push((
@@ -135,6 +135,7 @@ impl Action {
                             match c {
                                 '"' => '"',
                                 '\'' => '\'',
+                                '`' => '`',
                                 _ => matching_char(c).unwrap(),
                             },
                         ));
@@ -142,7 +143,7 @@ impl Action {
                     }
 
                     if auto_closing_matching_pairs {
-                        if (c == '"' || c == '\'') && cursor_char == Some(c) {
+                        if (c == '"' || c == '\'' || c == '`') && cursor_char == Some(c) {
                             // Skip the closing character
                             let new_offset = buffer.next_grapheme_offset(offset, 1, buffer.len());
 
@@ -179,7 +180,7 @@ impl Action {
                             }
                         }
 
-                        if matching_pair_type == Some(true) || c == '"' || c == '\'' {
+                        if matching_pair_type == Some(true) || c == '"' || c == '\'' || c == '`' {
                             // Create a late edit to insert the closing pair, if allowed.
                             let is_whitespace_or_punct = cursor_char
                                 .map(|c| {
@@ -192,7 +193,7 @@ impl Action {
                                 .unwrap_or(true);
 
                             let should_insert_pair = match c {
-                                '"' | '\'' => {
+                                '"' | '\'' | '`' => {
                                     is_whitespace_or_punct
                                         && prev_cursor_char
                                             .map(|c| {
@@ -211,6 +212,7 @@ impl Action {
                                 let insert_after = match c {
                                     '"' => '"',
                                     '\'' => '\'',
+                                    '`' => '`',
                                     _ => matching_char(c).unwrap(),
                                 };
                                 edits_after.push((idx, insert_after));
@@ -1139,10 +1141,12 @@ impl Action {
                             if str_is_pair_left(&delete_str)
                                 || delete_str == "\""
                                 || delete_str == "'"
+                                || delete_str == "`"
                             {
                                 let matching_char = match delete_str.as_str() {
                                     "\"" => Some('"'),
                                     "'" => Some('\''),
+                                    "`" => Some('`'),
                                     _ => str_matching_pair(&delete_str),
                                 };
                                 if let Some(c) = matching_char {
