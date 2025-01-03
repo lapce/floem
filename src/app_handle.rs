@@ -98,16 +98,15 @@ impl ApplicationHandle {
                     }
                 }
             }
-            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-            AppUpdateEvent::MenuAction {
-                window_id,
-                action_id,
-            } => {
-                let window_handle = match self.window_handles.get_mut(&window_id) {
-                    Some(window_handle) => window_handle,
-                    None => return,
-                };
-                window_handle.menu_action(action_id);
+            AppUpdateEvent::MenuAction { action_id } => {
+                for (_, handle) in self.window_handles.iter_mut() {
+                    if handle.app_state.context_menu.contains_key(&action_id)
+                        || handle.app_state.window_menu.contains_key(&action_id)
+                    {
+                        handle.menu_action(&action_id);
+                        break;
+                    }
+                }
             }
         }
     }

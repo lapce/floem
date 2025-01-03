@@ -52,18 +52,18 @@ impl Menu {
         for entry in &self.children {
             match entry {
                 MenuEntry::Separator => {
-                    menu.append(&muda::PredefinedMenuItem::separator());
+                    let _ = menu.append(&muda::PredefinedMenuItem::separator());
                 }
                 MenuEntry::Item(item) => {
-                    menu.append(&muda::MenuItem::with_id(
-                        item.id,
+                    let _ = menu.append(&muda::MenuItem::with_id(
+                        item.id.clone(),
                         item.title.clone(),
                         item.enabled,
                         None,
                     ));
                 }
                 MenuEntry::SubMenu(floem_menu) => {
-                    menu.append(&floem_menu.platform_submenu());
+                    let _ = menu.append(&floem_menu.platform_submenu());
                 }
             }
         }
@@ -76,18 +76,18 @@ impl Menu {
         for entry in &self.children {
             match entry {
                 MenuEntry::Separator => {
-                    menu.append(&muda::PredefinedMenuItem::separator());
+                    let _ = menu.append(&muda::PredefinedMenuItem::separator());
                 }
                 MenuEntry::Item(item) => {
-                    menu.append(&muda::MenuItem::with_id(
-                        item.id,
+                    let _ = menu.append(&muda::MenuItem::with_id(
+                        item.id.clone(),
                         item.title.clone(),
                         item.enabled,
                         None,
                     ));
                 }
                 MenuEntry::SubMenu(floem_menu) => {
-                    menu.append(&floem_menu.platform_submenu());
+                    let _ = menu.append(&floem_menu.platform_submenu());
                 }
             }
         }
@@ -96,12 +96,10 @@ impl Menu {
 }
 
 pub struct MenuItem {
-    pub(crate) id: u64,
+    pub(crate) id: String,
     pub(crate) title: String,
-    // key: Option<HotKey>,
-    selected: Option<bool>,
     pub(crate) enabled: bool,
-    pub(crate) action: Option<Box<dyn Fn()>>,
+    pub(crate) action: Option<Box<dyn Fn() + Sync + Send>>,
 }
 
 impl From<MenuItem> for MenuEntry {
@@ -115,16 +113,14 @@ impl MenuItem {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Self {
-            id,
+            id: id.to_string(),
             title: title.into(),
-            // key: None,
-            selected: None,
             enabled: true,
             action: None,
         }
     }
 
-    pub fn action(mut self, action: impl Fn() + 'static) -> Self {
+    pub fn action(mut self, action: impl Fn() + 'static + Sync + Send) -> Self {
         self.action = Some(Box::new(action));
         self
     }

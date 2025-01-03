@@ -1,5 +1,6 @@
-use std::{cell::RefCell, sync::Arc};
+use std::sync::Arc;
 
+use crossbeam::epoch::Pointable;
 use crossbeam_channel::{Receiver, Sender};
 use floem_reactive::WriteSignal;
 use parking_lot::Mutex;
@@ -77,10 +78,8 @@ pub(crate) enum AppUpdateEvent {
     CancelTimer {
         timer: TimerToken,
     },
-    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     MenuAction {
-        window_id: WindowId,
-        action_id: usize,
+        action_id: String,
     },
 }
 
@@ -152,6 +151,14 @@ impl Application {
             Clipboard::init(event_loop.display_handle().unwrap().as_raw());
         }
         let handle = ApplicationHandle::new();
+
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        muda::MenuEvent::set_event_handler(Some(move |event: muda::MenuEvent| {
+            add_app_update_event(AppUpdateEvent::MenuAction {
+                action_id: event.id.0,
+            });
+        }));
+
         Self {
             receiver,
             handle,

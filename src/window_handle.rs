@@ -65,7 +65,7 @@ pub(crate) struct WindowHandle {
     main_view: ViewId,
     /// Reactive Scope for this WindowHandle
     scope: Scope,
-    app_state: AppState,
+    pub(crate) app_state: AppState,
     paint_state: PaintState,
     size: RwSignal<Size>,
     theme: Option<Theme>,
@@ -944,12 +944,13 @@ impl WindowHandle {
                         self.paint_state.set_scale(scale);
                     }
                     UpdateMessage::ShowContextMenu { menu, pos } => {
+                        let mut menu = menu.popup();
+                        cx.app_state.context_menu.clear();
+                        cx.app_state.update_context_menu(&mut menu);
+
                         #[cfg(any(target_os = "windows", target_os = "macos"))]
                         {
-                            let mut menu = menu.popup();
                             let platform_menu = menu.platform_menu();
-                            cx.app_state.context_menu.clear();
-                            cx.app_state.update_context_menu(&mut menu);
                             self.show_context_menu(platform_menu, pos);
                         }
                         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
@@ -1127,7 +1128,6 @@ impl WindowHandle {
 
     #[cfg(target_os = "macos")]
     fn show_context_menu(&self, menu: muda::Menu, pos: Option<Point>) {
-        println!("show context menu {pos:?}");
         use muda::{
             dpi::{LogicalPosition, Position},
             ContextMenu,
@@ -1177,12 +1177,12 @@ impl WindowHandle {
         self.context_menu.set(Some((menu, pos)));
     }
 
-    pub(crate) fn menu_action(&mut self, id: usize) {
+    pub(crate) fn menu_action(&mut self, id: &str) {
         set_current_view(self.id);
-        if let Some(action) = self.app_state.window_menu.get(&id) {
+        if let Some(action) = self.app_state.window_menu.get(id) {
             (*action)();
             self.process_update();
-        } else if let Some(action) = self.app_state.context_menu.get(&id) {
+        } else if let Some(action) = self.app_state.context_menu.get(id) {
             (*action)();
             self.process_update();
         }

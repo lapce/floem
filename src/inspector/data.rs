@@ -3,7 +3,6 @@ use crate::views::VirtualVector;
 use crate::ViewId;
 use floem_reactive::{create_rw_signal, RwSignal, SignalGet, SignalUpdate};
 use std::ops::AddAssign;
-use std::rc::Rc;
 use std::sync::Arc;
 
 #[derive(Clone)]
