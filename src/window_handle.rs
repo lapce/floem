@@ -1,6 +1,5 @@
 use std::{cell::RefCell, mem, path::PathBuf, rc::Rc, sync::Arc};
 
-use raw_window_handle::HasWindowHandle;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
@@ -1138,6 +1137,7 @@ impl WindowHandle {
             dpi::{LogicalPosition, Position},
             ContextMenu,
         };
+        use raw_window_handle::HasWindowHandle;
         use raw_window_handle::RawWindowHandle;
 
         if let Some(window) = self.window.as_ref() {
