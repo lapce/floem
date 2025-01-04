@@ -255,6 +255,10 @@ impl Event {
         }
     }
 
+    pub fn offset(self, offset: (f64, f64)) -> Event {
+        self.transform(Affine::translate(offset))
+    }
+
     pub fn transform(mut self, transform: Affine) -> Event {
         match &mut self {
             Event::PointerDown(pointer_event) | Event::PointerUp(pointer_event) => {

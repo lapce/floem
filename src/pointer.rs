@@ -48,18 +48,29 @@ impl From<ButtonSource> for PointerButton {
 
 impl PointerButton {
     pub fn is_primary(&self) -> bool {
-        if let PointerButton::Mouse(mouse) = self {
-            mouse.is_primary()
-        } else {
-            false
-        }
+        self.mouse_button() == MouseButton::Primary
     }
 
     pub fn is_secondary(&self) -> bool {
-        if let PointerButton::Mouse(mouse) = self {
-            mouse.is_secondary()
-        } else {
-            false
+        self.mouse_button() == MouseButton::Secondary
+    }
+
+    pub fn is_auxiliary(&self) -> bool {
+        self.mouse_button() == MouseButton::Auxiliary
+    }
+
+    pub fn mouse_button(self) -> MouseButton {
+        match self {
+            PointerButton::Mouse(mouse) => mouse,
+            PointerButton::Touch { .. } => MouseButton::Primary,
+            PointerButton::Unknown(button) => match button {
+                0 => MouseButton::Primary,
+                1 => MouseButton::Auxiliary,
+                2 => MouseButton::Secondary,
+                3 => MouseButton::X1,
+                4 => MouseButton::X2,
+                _ => MouseButton::None,
+            },
         }
     }
 }

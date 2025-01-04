@@ -99,7 +99,7 @@ pub struct MenuItem {
     pub(crate) id: String,
     pub(crate) title: String,
     pub(crate) enabled: bool,
-    pub(crate) action: Option<Box<dyn Fn() + Sync + Send>>,
+    pub(crate) action: Option<Box<dyn Fn()>>,
 }
 
 impl From<MenuItem> for MenuEntry {
@@ -120,7 +120,7 @@ impl MenuItem {
         }
     }
 
-    pub fn action(mut self, action: impl Fn() + 'static + Sync + Send) -> Self {
+    pub fn action(mut self, action: impl Fn() + 'static) -> Self {
         self.action = Some(Box::new(action));
         self
     }
