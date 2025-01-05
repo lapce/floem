@@ -2,7 +2,7 @@
 
 use floem_reactive::create_updater;
 use floem_renderer::text::{LineHeightValue, Weight};
-use im::hashmap::Entry;
+use im_rc::hashmap::Entry;
 use peniko::kurbo::{Point, Stroke};
 use peniko::{Brush, Color, ColorStop, ColorStops, Gradient, GradientKind};
 use rustc_hash::FxHasher;
@@ -1076,7 +1076,7 @@ impl Debug for StyleKey {
     }
 }
 
-type ImHashMap<K, V> = im::HashMap<K, V, BuildHasherDefault<FxHasher>>;
+type ImHashMap<K, V> = im_rc::HashMap<K, V, BuildHasherDefault<FxHasher>>;
 
 style_key_selector!(selector_xs, StyleSelectors::new().responsive());
 style_key_selector!(selector_sm, StyleSelectors::new().responsive());
