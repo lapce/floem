@@ -18,7 +18,7 @@ use floem_reactive::{
 };
 use peniko::Color;
 use slotmap::Key;
-use std::sync::Arc;
+use std::rc::Rc;
 use winit::keyboard::NamedKey;
 use winit::window::WindowId;
 
@@ -110,8 +110,8 @@ pub fn capture(window_id: WindowId) {
 
 fn inspector_view(
     window_id: WindowId,
-    capture_s: RwSignal<Option<Arc<Capture>>>,
-    capture: &Option<Arc<Capture>>,
+    capture_s: RwSignal<Option<Rc<Capture>>>,
+    capture: &Option<Rc<Capture>>,
 ) -> impl IntoView {
     let view = if let Some(capture) = capture {
         capture_view(window_id, capture_s, capture).into_any()
@@ -141,8 +141,8 @@ fn inspector_view(
 
 fn capture_view(
     window_id: WindowId,
-    capture_s: RwSignal<Option<Arc<Capture>>>,
-    capture: &Arc<Capture>,
+    capture_s: RwSignal<Option<Rc<Capture>>>,
+    capture: &Rc<Capture>,
 ) -> impl IntoView {
     let capture_view = CaptureView {
         expanding_selection: create_rw_signal(None),
@@ -409,7 +409,7 @@ fn capture_view(
 }
 
 fn view_tree(
-    capture: Arc<Capture>,
+    capture: Rc<Capture>,
     capture_signal: CaptureView,
     datas: RwSignal<CapturedDatas>,
 ) -> impl View {
@@ -448,7 +448,7 @@ fn view_tree(
 fn tree_node(
     view: &CapturedData,
     capture_signal: CaptureView,
-    capture: Arc<Capture>,
+    capture: Rc<Capture>,
     level: usize,
     datas: RwSignal<CapturedDatas>,
 ) -> impl IntoView {

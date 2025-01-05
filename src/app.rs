@@ -1,4 +1,4 @@
-use std::{cell::RefCell, sync::Arc};
+use std::{cell::RefCell, rc::Rc};
 
 use crossbeam_channel::{Receiver, Sender};
 use floem_reactive::WriteSignal;
@@ -66,11 +66,11 @@ pub(crate) enum AppUpdateEvent {
     },
     CaptureWindow {
         window_id: WindowId,
-        capture: WriteSignal<Option<Arc<Capture>>>,
+        capture: WriteSignal<Option<Rc<Capture>>>,
     },
     ProfileWindow {
         window_id: WindowId,
-        end_profile: Option<WriteSignal<Option<Arc<Profile>>>>,
+        end_profile: Option<WriteSignal<Option<Rc<Profile>>>>,
     },
     RequestTimer {
         timer: Timer,

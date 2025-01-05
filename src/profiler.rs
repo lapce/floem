@@ -11,7 +11,6 @@ use peniko::Color;
 use std::fmt::Display;
 use std::mem;
 use std::rc::Rc;
-use std::sync::Arc;
 use taffy::style::FlexDirection;
 use winit::window::WindowId;
 
@@ -68,7 +67,7 @@ fn info_row(name: String, view: impl IntoView + 'static) -> impl IntoView {
     })
 }
 
-fn profile_view(profile: &Arc<Profile>) -> impl IntoView {
+fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
     let mut frames: Vec<_> = profile
         .frames
         .iter()
@@ -244,7 +243,7 @@ fn profile_view(profile: &Arc<Profile>) -> impl IntoView {
 }
 
 thread_local! {
-    pub(crate) static PROFILE: RwSignal<Option<Arc<Profile>>> = {
+    pub(crate) static PROFILE: RwSignal<Option<Rc<Profile>>> = {
         Scope::new().create_rw_signal(None)
     };
 }

@@ -20,7 +20,6 @@ use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::rc::Rc;
-use std::sync::Arc;
 pub use view::capture;
 use winit::keyboard::NamedKey;
 
@@ -182,7 +181,7 @@ fn add_event(
     name: String,
     id: ViewId,
     capture_view: CaptureView,
-    capture: &Arc<Capture>,
+    capture: &Rc<Capture>,
     datas: RwSignal<CapturedDatas>,
 ) -> impl View {
     let capture = capture.clone();
@@ -301,7 +300,7 @@ fn stats(capture: &Capture) -> impl IntoView {
     ))
 }
 
-fn selected_view(capture: &Arc<Capture>, selected: RwSignal<Option<ViewId>>) -> impl IntoView {
+fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<ViewId>>) -> impl IntoView {
     let capture = capture.clone();
     dyn_container(
         move || selected.get(),
@@ -536,7 +535,7 @@ struct CaptureView {
 
 thread_local! {
     pub(crate) static RUNNING: Cell<bool> = const { Cell::new(false) };
-    pub(crate) static CAPTURE: RwSignal<Option<Arc<Capture>>> = {
+    pub(crate) static CAPTURE: RwSignal<Option<Rc<Capture>>> = {
         Scope::new().create_rw_signal(None)
     };
 }

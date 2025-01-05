@@ -8,7 +8,7 @@ use wgpu::web_sys;
 
 use floem_reactive::SignalUpdate;
 use peniko::kurbo::{Point, Size};
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, rc::Rc};
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::WindowEvent,
@@ -84,7 +84,7 @@ impl ApplicationHandle {
                     self.remove_timer(&timer);
                 }
                 AppUpdateEvent::CaptureWindow { window_id, capture } => {
-                    capture.set(self.capture_window(window_id).map(Arc::new));
+                    capture.set(self.capture_window(window_id).map(Rc::new));
                 }
                 AppUpdateEvent::ProfileWindow {
                     window_id,
@@ -95,7 +95,7 @@ impl ApplicationHandle {
                         if let Some(profile) = end_profile {
                             profile.set(handle.profile.take().map(|mut profile| {
                                 profile.next_frame();
-                                Arc::new(profile)
+                                Rc::new(profile)
                             }));
                         } else {
                             handle.profile = Some(Profile::default());
