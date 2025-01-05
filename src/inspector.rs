@@ -19,6 +19,7 @@ use slotmap::Key;
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
+use std::rc::Rc;
 use std::sync::Arc;
 pub use view::capture;
 use winit::keyboard::NamedKey;
@@ -41,7 +42,7 @@ pub struct CapturedView {
     layout: Rect,
     taffy: Layout,
     clipped: Rect,
-    children: Vec<Arc<CapturedView>>,
+    children: Vec<Rc<CapturedView>>,
     direct_style: Style,
     requested_changes: ChangeFlags,
     keyboard_navigable: bool,
@@ -89,7 +90,7 @@ impl CapturedView {
             children: id
                 .children()
                 .into_iter()
-                .map(|view| Arc::new(CapturedView::capture(view, app_state, clipped)))
+                .map(|view| Rc::new(CapturedView::capture(view, app_state, clipped)))
                 .collect(),
         }
     }
@@ -141,7 +142,7 @@ impl CapturedView {
 }
 
 pub struct Capture {
-    pub root: Arc<CapturedView>,
+    pub root: Rc<CapturedView>,
     pub start: Instant,
     pub post_style: Instant,
     pub post_layout: Instant,
@@ -540,7 +541,7 @@ thread_local! {
     };
 }
 
-fn find_view(name: &str, views: &Arc<CapturedView>) -> Vec<ViewId> {
+fn find_view(name: &str, views: &Rc<CapturedView>) -> Vec<ViewId> {
     let mut ids = Vec::new();
     if name.is_empty() {
         return ids;
@@ -572,7 +573,7 @@ fn find_view(name: &str, views: &Arc<CapturedView>) -> Vec<ViewId> {
 
 fn find_relative_view_by_id_without_self(
     id: ViewId,
-    views: &Arc<CapturedView>,
+    views: &Rc<CapturedView>,
 ) -> Option<RelativeViewId> {
     let mut parent_id = None;
     let mut big_brother_id = None;
@@ -613,7 +614,7 @@ fn find_relative_view_by_id_without_self(
 
 fn find_relative_view_by_id_with_self(
     id: ViewId,
-    views: &Arc<CapturedView>,
+    views: &Rc<CapturedView>,
 ) -> Option<RelativeViewId> {
     if views.id == id {
         let first_child_id = views.children.first().map(|x| x.id);

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{cell::RefCell, sync::Arc};
 
 use crossbeam_channel::{Receiver, Sender};
 use floem_reactive::WriteSignal;
@@ -15,7 +15,6 @@ use crate::{
     action::{Timer, TimerToken},
     app_handle::ApplicationHandle,
     clipboard::Clipboard,
-    ext_event::ExtSendTrigger,
     inspector::Capture,
     profiler::Profile,
     view::IntoView,
@@ -25,6 +24,10 @@ use crate::{
 type AppEventCallback = dyn Fn(AppEvent);
 
 static EVENT_LOOP_PROXY: Mutex<Option<(EventLoopProxy, Sender<UserEvent>)>> = Mutex::new(None);
+
+thread_local! {
+    pub(crate) static APP_UPDATE_EVENTS: RefCell<Vec<AppUpdateEvent>> = Default::default();
+}
 
 /// Initializes and runs an application with a single window.
 ///
@@ -38,7 +41,7 @@ static EVENT_LOOP_PROXY: Mutex<Option<(EventLoopProxy, Sender<UserEvent>)>> = Mu
 /// ```
 ///
 /// To build an application and windows with more configuration, see [`Application`].
-pub fn launch<V: IntoView + 'static>(app_view: impl FnOnce() -> V + 'static + Send + Sync) {
+pub fn launch<V: IntoView + 'static>(app_view: impl FnOnce() -> V + 'static) {
     Application::new().window(move |_| app_view(), None).run()
 }
 
@@ -48,8 +51,8 @@ pub enum AppEvent {
 }
 
 pub(crate) enum UserEvent {
-    AppUpdate(AppUpdateEvent),
-    Idle(ExtSendTrigger),
+    AppUpdate,
+    Idle,
     QuitApp,
     GpuResourcesUpdate { window_id: WindowId },
 }
@@ -81,7 +84,10 @@ pub(crate) enum AppUpdateEvent {
 }
 
 pub(crate) fn add_app_update_event(event: AppUpdateEvent) {
-    Application::send_proxy_event(UserEvent::AppUpdate(event));
+    APP_UPDATE_EVENTS.with(|events| {
+        events.borrow_mut().push(event);
+    });
+    Application::send_proxy_event(UserEvent::AppUpdate);
 }
 
 /// Floem top level application
@@ -182,7 +188,7 @@ impl Application {
     /// `WindowConfig::default()`.
     pub fn window<V: IntoView + 'static>(
         mut self,
-        app_view: impl FnOnce(WindowId) -> V + 'static + Send + Sync,
+        app_view: impl FnOnce(WindowId) -> V + 'static,
         config: Option<WindowConfig>,
     ) -> Self {
         self.initial_windows.push(WindowCreation {

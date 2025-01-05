@@ -80,7 +80,7 @@ pub fn inspect() {
 
 pub(crate) struct Timer {
     pub(crate) token: TimerToken,
-    pub(crate) action: Box<dyn FnOnce(TimerToken) + Send + Sync>,
+    pub(crate) action: Box<dyn FnOnce(TimerToken)>,
     pub(crate) deadline: Instant,
 }
 
@@ -116,10 +116,7 @@ impl TimerToken {
 }
 
 /// Execute a callback after a specified duration
-pub fn exec_after(
-    duration: Duration,
-    action: impl FnOnce(TimerToken) + 'static + Send + Sync,
-) -> TimerToken {
+pub fn exec_after(duration: Duration, action: impl FnOnce(TimerToken) + 'static) -> TimerToken {
     let view = get_current_view();
     let action = move |token| {
         let current_view = get_current_view();
@@ -146,7 +143,7 @@ pub fn exec_after(
 pub fn debounce_action<T, F>(signal: impl SignalWith<T> + 'static, duration: Duration, action: F)
 where
     T: std::hash::Hash + 'static,
-    F: Fn() + Clone + 'static + Send + Sync,
+    F: Fn() + Clone + 'static,
 {
     crate::reactive::create_stateful_updater(
         move |prev_opt: Option<(u64, Option<TimerToken>)>| {

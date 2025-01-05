@@ -12,7 +12,7 @@ use crate::view::IntoView;
 use crate::AnyView;
 
 pub struct WindowCreation {
-    pub(crate) view_fn: Box<dyn FnOnce(WindowId) -> AnyView + Send + Sync>,
+    pub(crate) view_fn: Box<dyn FnOnce(WindowId) -> AnyView>,
     pub(crate) config: Option<WindowConfig>,
 }
 
@@ -387,7 +387,7 @@ impl WebWindowConfig {
 /// create a new window. You'll need to create Application first, otherwise it
 /// will panic
 pub fn new_window<V: IntoView + 'static>(
-    app_view: impl FnOnce(WindowId) -> V + 'static + Send + Sync,
+    app_view: impl FnOnce(WindowId) -> V + 'static,
     config: Option<WindowConfig>,
 ) {
     add_app_update_event(AppUpdateEvent::NewWindow {

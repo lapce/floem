@@ -14,7 +14,6 @@ use std::hash::{BuildHasherDefault, Hash};
 use std::ptr;
 use std::rc::Rc;
 
-use std::sync::Arc;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
@@ -39,7 +38,7 @@ use crate::unit::{Pct, Px, PxPct, PxPctAuto, UnitExt};
 use crate::view::{IntoView, View};
 use crate::views::{empty, stack, text, Decorators};
 
-pub trait StylePropValue: Clone + PartialEq + Debug + Send + Sync {
+pub trait StylePropValue: Clone + PartialEq + Debug {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         None
     }
@@ -554,7 +553,7 @@ pub trait StyleProp: Default + Copy + 'static {
 }
 
 pub(crate) type InterpolateFn =
-    fn(val1: &dyn Any, val2: &dyn Any, time: f64) -> Option<Arc<dyn Any + Send + Sync>>;
+    fn(val1: &dyn Any, val2: &dyn Any, time: f64) -> Option<Rc<dyn Any>>;
 
 #[derive(Debug)]
 pub struct StylePropInfo {
@@ -602,9 +601,8 @@ impl StylePropInfo {
                         StyleMapValue::Val(v2) | StyleMapValue::Animated(v2),
                     ) = (v1, v2)
                     {
-                        v1.interpolate(v2, time).map(|val| {
-                            Arc::new(StyleMapValue::Animated(val)) as Arc<dyn Any + Send + Sync>
-                        })
+                        v1.interpolate(v2, time)
+                            .map(|val| Rc::new(StyleMapValue::Animated(val)) as Rc<dyn Any>)
                     } else {
                         None
                     }
@@ -1004,14 +1002,14 @@ impl<T: StylePropValue> Default for TransitionState<T> {
 #[derive(Clone, Debug)]
 pub struct Transition {
     pub duration: Duration,
-    pub easing: Arc<dyn Easing + Send + Sync>,
+    pub easing: Rc<dyn Easing>,
 }
 
 impl Transition {
-    pub fn new(duration: Duration, easing: impl Easing + 'static + Send + Sync) -> Self {
+    pub fn new(duration: Duration, easing: impl Easing + 'static) -> Self {
         Self {
             duration,
-            easing: Arc::new(easing),
+            easing: Rc::new(easing),
         }
     }
 
@@ -1100,7 +1098,7 @@ fn screen_size_bp_to_key(breakpoint: ScreenSizeBp) -> StyleKey {
 
 #[derive(Default, Clone)]
 pub struct Style {
-    pub(crate) map: ImHashMap<StyleKey, Arc<dyn Any + Send + Sync>>,
+    pub(crate) map: ImHashMap<StyleKey, Rc<dyn Any>>,
 }
 
 impl Style {
@@ -1274,10 +1272,10 @@ impl Style {
             Entry::Occupied(mut e) => {
                 let mut current = e.get_mut().downcast_ref::<Style>().unwrap().clone();
                 current.apply_mut(map);
-                *e.get_mut() = Arc::new(current);
+                *e.get_mut() = Rc::new(current);
             }
             Entry::Vacant(e) => {
-                e.insert(Arc::new(map));
+                e.insert(Rc::new(map));
             }
         }
     }
@@ -1294,7 +1292,7 @@ impl Style {
         BuiltinStyle { style: self }
     }
 
-    fn apply_iter(&mut self, iter: impl Iterator<Item = (StyleKey, Arc<dyn Any + Send + Sync>)>) {
+    fn apply_iter(&mut self, iter: impl Iterator<Item = (StyleKey, Rc<dyn Any>)>) {
         for (k, v) in iter {
             match k.info {
                 StyleKeyInfo::Class(..) | StyleKeyInfo::Selector(..) => match self.map.entry(k) {
@@ -1302,7 +1300,7 @@ impl Style {
                         // We need to merge the new map with the existing map.
 
                         let v = v.downcast_ref::<Style>().unwrap();
-                        match Arc::get_mut(e.get_mut()) {
+                        match Rc::get_mut(e.get_mut()) {
                             Some(current) => {
                                 current
                                     .downcast_mut::<Style>()
@@ -1313,7 +1311,7 @@ impl Style {
                                 let mut current =
                                     e.get_mut().downcast_ref::<Style>().unwrap().clone();
                                 current.apply_mut(v.clone());
-                                *e.get_mut() = Arc::new(current);
+                                *e.get_mut() = Rc::new(current);
                             }
                         }
                     }
@@ -1789,13 +1787,13 @@ impl Style {
                 return self;
             }
         };
-        self.map.insert(P::key(), Arc::new(insert));
+        self.map.insert(P::key(), Rc::new(insert));
         self
     }
 
     pub fn transition<P: StyleProp>(mut self, _prop: P, transition: Transition) -> Self {
         self.map
-            .insert(P::prop_ref().info().transition_key, Arc::new(transition));
+            .insert(P::prop_ref().info().transition_key, Rc::new(transition));
         self
     }
 

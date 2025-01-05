@@ -1576,8 +1576,8 @@ pub struct CursorInfo {
 
     pub blink_timer: RwSignal<TimerToken>,
     // TODO: should these just be rwsignals?
-    pub should_blink: Arc<dyn Fn() -> bool + 'static + Send + Sync>,
-    pub blink_interval: Arc<dyn Fn() -> u64 + 'static + Send + Sync>,
+    pub should_blink: Arc<dyn Fn() -> bool + 'static>,
+    pub blink_interval: Arc<dyn Fn() -> u64 + 'static>,
 }
 
 impl CursorInfo {

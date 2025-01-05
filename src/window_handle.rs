@@ -711,7 +711,7 @@ impl WindowHandle {
             window,
             window_size: self.size.get_untracked() / self.app_state.scale,
             scale: self.scale * self.app_state.scale,
-            root: Arc::new(root),
+            root: Rc::new(root),
             state: self.app_state.capture.take().unwrap(),
         };
         // Process any updates produced by capturing

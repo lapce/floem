@@ -18,8 +18,8 @@ use winit::{
 
 use crate::{
     action::{Timer, TimerToken},
-    app::{AppUpdateEvent, UserEvent},
-    ext_event::ExtSendTrigger,
+    app::{AppUpdateEvent, UserEvent, APP_UPDATE_EVENTS},
+    ext_event::EXT_EVENT_HANDLER,
     inspector::Capture,
     profiler::{Profile, ProfileEvent},
     view::View,
@@ -43,11 +43,11 @@ impl ApplicationHandle {
 
     pub(crate) fn handle_user_event(&mut self, event_loop: &dyn ActiveEventLoop, event: UserEvent) {
         match event {
-            UserEvent::AppUpdate(event) => {
-                self.handle_update_event(event_loop, event);
+            UserEvent::AppUpdate => {
+                self.handle_update_event(event_loop);
             }
-            UserEvent::Idle(trigger) => {
-                self.idle(trigger);
+            UserEvent::Idle => {
+                self.idle();
             }
             UserEvent::QuitApp => {
                 event_loop.exit();
@@ -61,52 +61,55 @@ impl ApplicationHandle {
         }
     }
 
-    pub(crate) fn handle_update_event(
-        &mut self,
-        event_loop: &dyn ActiveEventLoop,
-        event: AppUpdateEvent,
-    ) {
-        match event {
-            AppUpdateEvent::NewWindow { window_creation } => self.new_window(
-                event_loop,
-                window_creation.view_fn,
-                window_creation.config.unwrap_or_default(),
-            ),
-            AppUpdateEvent::CloseWindow { window_id } => {
-                self.close_window(window_id, event_loop);
-            }
-            AppUpdateEvent::RequestTimer { timer } => {
-                self.request_timer(timer, event_loop);
-            }
-            AppUpdateEvent::CancelTimer { timer } => {
-                self.remove_timer(&timer);
-            }
-            AppUpdateEvent::CaptureWindow { window_id, capture } => {
-                capture.set(self.capture_window(window_id).map(Arc::new));
-            }
-            AppUpdateEvent::ProfileWindow {
-                window_id,
-                end_profile,
-            } => {
-                let handle = self.window_handles.get_mut(&window_id);
-                if let Some(handle) = handle {
-                    if let Some(profile) = end_profile {
-                        profile.set(handle.profile.take().map(|mut profile| {
-                            profile.next_frame();
-                            Arc::new(profile)
-                        }));
-                    } else {
-                        handle.profile = Some(Profile::default());
+    pub(crate) fn handle_update_event(&mut self, event_loop: &dyn ActiveEventLoop) {
+        let events = APP_UPDATE_EVENTS.with(|events| {
+            let mut events = events.borrow_mut();
+            std::mem::take(&mut *events)
+        });
+
+        for event in events {
+            match event {
+                AppUpdateEvent::NewWindow { window_creation } => self.new_window(
+                    event_loop,
+                    window_creation.view_fn,
+                    window_creation.config.unwrap_or_default(),
+                ),
+                AppUpdateEvent::CloseWindow { window_id } => {
+                    self.close_window(window_id, event_loop);
+                }
+                AppUpdateEvent::RequestTimer { timer } => {
+                    self.request_timer(timer, event_loop);
+                }
+                AppUpdateEvent::CancelTimer { timer } => {
+                    self.remove_timer(&timer);
+                }
+                AppUpdateEvent::CaptureWindow { window_id, capture } => {
+                    capture.set(self.capture_window(window_id).map(Arc::new));
+                }
+                AppUpdateEvent::ProfileWindow {
+                    window_id,
+                    end_profile,
+                } => {
+                    let handle = self.window_handles.get_mut(&window_id);
+                    if let Some(handle) = handle {
+                        if let Some(profile) = end_profile {
+                            profile.set(handle.profile.take().map(|mut profile| {
+                                profile.next_frame();
+                                Arc::new(profile)
+                            }));
+                        } else {
+                            handle.profile = Some(Profile::default());
+                        }
                     }
                 }
-            }
-            AppUpdateEvent::MenuAction { action_id } => {
-                for (_, handle) in self.window_handles.iter_mut() {
-                    if handle.app_state.context_menu.contains_key(&action_id)
-                        || handle.app_state.window_menu.contains_key(&action_id)
-                    {
-                        handle.menu_action(&action_id);
-                        break;
+                AppUpdateEvent::MenuAction { action_id } => {
+                    for (_, handle) in self.window_handles.iter_mut() {
+                        if handle.app_state.context_menu.contains_key(&action_id)
+                            || handle.app_state.window_menu.contains_key(&action_id)
+                        {
+                            handle.menu_action(&action_id);
+                            break;
+                        }
                     }
                 }
             }
@@ -448,8 +451,14 @@ impl ApplicationHandle {
             .map(|handle| handle.capture())
     }
 
-    pub(crate) fn idle(&mut self, trigger: ExtSendTrigger) {
-        trigger.notify();
+    pub(crate) fn idle(&mut self) {
+        let ext_events = { std::mem::take(&mut *EXT_EVENT_HANDLER.queue.lock()) };
+
+        for trigger in ext_events {
+            trigger.notify();
+        }
+
+        self.handle_updates_for_all_windows();
     }
 
     pub(crate) fn handle_updates_for_all_windows(&mut self) {

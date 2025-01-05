@@ -55,7 +55,9 @@ unsafe impl Sync for ExtSendTrigger {}
 
 pub(crate) static EXT_EVENT_HANDLER: ExtEventHandler = ExtEventHandler::new();
 
-pub(crate) struct ExtEventHandler {}
+pub(crate) struct ExtEventHandler {
+    pub(crate) queue: Mutex<VecDeque<ExtSendTrigger>>,
+}
 
 impl Default for ExtEventHandler {
     fn default() -> Self {
@@ -65,11 +67,18 @@ impl Default for ExtEventHandler {
 
 impl ExtEventHandler {
     pub const fn new() -> Self {
-        Self {}
+        Self {
+            queue: Mutex::new(VecDeque::new()),
+        }
     }
 
     pub fn add_trigger(&self, trigger: ExtSendTrigger) {
-        Application::send_proxy_event(UserEvent::Idle(trigger));
+        {
+            // Run this in a short block to prevent any deadlock if running the trigger effects
+            // causes another trigger to be registered
+            EXT_EVENT_HANDLER.queue.lock().push_back(trigger);
+        }
+        Application::send_proxy_event(UserEvent::Idle);
     }
 }
 

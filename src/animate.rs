@@ -10,8 +10,8 @@ use crate::{
     ViewId,
 };
 
+use std::any::Any;
 use std::rc::Rc;
-use std::{any::Any, sync::Arc};
 
 use floem_reactive::{create_updater, RwSignal, SignalGet, Trigger};
 use smallvec::{smallvec, SmallVec};
@@ -24,7 +24,7 @@ use web_time::{Duration, Instant};
 #[derive(Clone, Debug)]
 pub struct KeyFrameProp {
     // the style prop value. This will either come from an animation frameor it will be pulled from the computed style
-    val: Arc<dyn Any>,
+    val: Rc<dyn Any>,
     // the frame id
     id: u16,
     /// This easing will be used while animating towards this keyframe. while this prop is the lower one this easing function will not be used.

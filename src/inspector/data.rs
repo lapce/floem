@@ -3,7 +3,7 @@ use crate::views::VirtualVector;
 use crate::ViewId;
 use floem_reactive::{create_rw_signal, RwSignal, SignalGet, SignalUpdate};
 use std::ops::AddAssign;
-use std::sync::Arc;
+use std::rc::Rc;
 
 #[derive(Clone)]
 pub struct CapturedDatas {
@@ -12,7 +12,7 @@ pub struct CapturedDatas {
 }
 
 impl CapturedDatas {
-    pub fn init_from_view(view: Arc<CapturedView>) -> Self {
+    pub fn init_from_view(view: Rc<CapturedView>) -> Self {
         let root = CapturedData::init_from_view(view);
         Self {
             root,
@@ -57,12 +57,12 @@ pub enum DataType {
 #[derive(Clone, Debug)]
 pub struct CapturedData {
     pub id: ViewId,
-    pub view_conf: Arc<CapturedView>,
+    pub view_conf: Rc<CapturedView>,
     pub ty: DataType,
 }
 
 impl CapturedData {
-    pub fn init_from_view(view: Arc<CapturedView>) -> Self {
+    pub fn init_from_view(view: Rc<CapturedView>) -> Self {
         if view.children.is_empty() {
             Self {
                 id: view.id,
