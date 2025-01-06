@@ -19,7 +19,7 @@ use taffy::prelude::NodeId;
 use crate::animate::{AnimStateKind, RepeatMode};
 use crate::easing::{Easing, Linear};
 use crate::renderer::Renderer;
-use crate::style::DisplayProp;
+use crate::style::{DisplayProp, PointerEvents, PointerEventsProp};
 use crate::view_state::IsHiddenState;
 use crate::{
     action::{exec_after, show_context_menu},
@@ -153,7 +153,10 @@ impl EventCx<'_> {
                 {
                     return EventPropagation::Stop;
                 }
-                if event.is_pointer() {
+                if event.is_pointer()
+                    && child.state().borrow().combined_style.get(PointerEventsProp)
+                        != Some(PointerEvents::None)
+                {
                     break;
                 }
             }
@@ -455,10 +458,6 @@ impl EventCx<'_> {
         let Some(point) = event.point() else {
             return true;
         };
-
-        if !id.state().borrow().pointer_events {
-            return false;
-        }
 
         let layout_rect = id.layout_rect();
         let Some(layout) = id.get_layout() else {

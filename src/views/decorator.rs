@@ -168,20 +168,6 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         view
     }
 
-    /// Dynamically set if the view should process pointer events
-    ///
-    /// # Reactivity
-    /// This function is reactive and will re-run the function automatically in response to changes in signals
-    fn pointer_events(self, pointer_events: impl Fn() -> bool + 'static) -> Self::DV {
-        let view = self.into_view();
-        let id = view.id();
-        create_effect(move |_| {
-            let pointer_events = pointer_events();
-            id.pointer_events(pointer_events);
-        });
-        view
-    }
-
     /// Mark the view as draggable
     fn draggable(self) -> Self::DV {
         let view = self.into_view();
