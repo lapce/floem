@@ -43,6 +43,7 @@ pub fn text_input_view() -> impl IntoView {
                                     .font_style(floem::text::Style::Italic)
                                     .font_weight(Weight::BOLD)
                             })
+                            .font_family("monospace".to_owned())
                     })
                     .keyboard_navigable()
             }),

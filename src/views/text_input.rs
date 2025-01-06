@@ -4,7 +4,7 @@ use crate::id::ViewId;
 use crate::keyboard::{self, KeyEvent, Modifiers};
 use crate::pointer::{PointerButton, PointerInputEvent};
 use crate::reactive::{create_effect, RwSignal};
-use crate::style::{FontProps, PaddingLeft, SelectionStyle};
+use crate::style::{FontFamily, FontProps, PaddingLeft, SelectionStyle};
 use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
 use crate::{prop_extractor, style_class, Clipboard};
@@ -49,6 +49,7 @@ prop_extractor! {
         //TODO: pub font_size: FontSize,
         pub font_weight: FontWeight,
         pub font_style: FontStyle,
+        pub font_family: FontFamily,
     }
 }
 
@@ -547,6 +548,28 @@ impl TextInput {
         } else if let Some(font_weight) = self.font.weight() {
             attrs = attrs.weight(font_weight);
         }
+
+        let input_font_family = self.font.family().as_ref().map(|font_family| {
+            let family: Vec<FamilyOwned> = FamilyOwned::parse_list(font_family).collect();
+            family
+        });
+
+        let placeholder_font_family =
+            self.placeholder_style
+                .font_family()
+                .as_ref()
+                .map(|font_family| {
+                    let family: Vec<FamilyOwned> = FamilyOwned::parse_list(font_family).collect();
+                    family
+                });
+
+        // Inherit the font family of the text input unless overridden by the placeholder
+        if let Some(font_family) = placeholder_font_family.as_ref() {
+            attrs = attrs.family(font_family);
+        } else if let Some(font_family) = input_font_family.as_ref() {
+            attrs = attrs.family(font_family);
+        }
+
         AttrsList::new(attrs)
     }
 
