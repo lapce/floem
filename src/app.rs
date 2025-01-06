@@ -209,14 +209,6 @@ impl Application {
             proxy.wake_up();
         }
     }
-
-    // pub fn available_monitors(&self) -> impl Iterator<Item = MonitorHandle> {
-    //     self.event_loop.as_ref().unwrap().available_monitors()
-    // }
-
-    // pub fn primary_monitor(&self) -> Option<MonitorHandle> {
-    //     self.event_loop.as_ref().unwrap().primary_monitor()
-    // }
 }
 
 /// Initiates the application shutdown process.
