@@ -27,17 +27,20 @@ pub const DEFAULT_CHECKBOX_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg
 
 fn checkbox_svg(
     checked: impl SignalGet<bool> + 'static,
-    check_svg: impl Into<String> + Clone + 'static,
+    check_svg: impl Into<String> + 'static,
 ) -> impl IntoView {
-    let check = check_svg.clone();
-    let update_svg = move || {
-        if checked.get() {
-            check_svg.clone().into()
-        } else {
-            "".to_string()
+    let check_svg: String = check_svg.into();
+    let update_svg = {
+        let check_svg = check_svg.clone();
+        move || {
+            if checked.get() {
+                check_svg.clone()
+            } else {
+                "".to_string()
+            }
         }
     };
-    svg(check)
+    svg(check_svg)
         .update_value(update_svg)
         .class(CheckboxClass)
         .keyboard_navigable()
