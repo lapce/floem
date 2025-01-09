@@ -54,8 +54,13 @@ pub(crate) enum UserEvent {
     AppUpdate,
     Idle,
     QuitApp,
-    Reopen { has_visible_windows: bool },
-    GpuResourcesUpdate { window_id: WindowId },
+    #[allow(dead_code)]
+    Reopen {
+        has_visible_windows: bool,
+    },
+    GpuResourcesUpdate {
+        window_id: WindowId,
+    },
 }
 
 pub(crate) enum AppUpdateEvent {
