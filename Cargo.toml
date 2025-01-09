@@ -40,7 +40,7 @@ wgpu = { version = "22.0.0" }
 parking_lot = { version = "0.12.1" }
 swash = { version = "0.1.17" }
 muda = { version = "0.15.3" }
-winit = { git = "https://github.com/rust-windowing/winit", rev = "5ea81efc74ebaa04a7cb4621ec522bce14d700e5" }
+winit = { git = "https://github.com/rust-windowing/winit", rev = "ee245c569d65fdeacf705ee5eedb564508d10ebe" }
 
 [dependencies]
 slotmap = "1.0.7"
@@ -93,6 +93,11 @@ web-time = "1"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 clipboard-win = "3.1.1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.5.2"
+objc2-foundation = "0.2.2"
+objc2-app-kit = "0.2.2"
 
 [features]
 default = ["editor", "default-image-formats", "vger"]

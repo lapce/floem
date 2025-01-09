@@ -55,7 +55,7 @@ impl CapturedView {
         let taffy = id.get_layout().unwrap_or_default();
         let view_state = id.state();
         let view_state = view_state.borrow();
-        let computed_style = view_state.combined_style.clone();
+        let combined_style = view_state.combined_style.clone();
         let keyboard_navigable = app_state.keyboard_navigable.contains(&id);
         let focused = app_state.focus == Some(id);
         let clipped = layout.intersect(clip);
@@ -81,7 +81,7 @@ impl CapturedView {
             layout,
             taffy,
             clipped,
-            direct_style: computed_style,
+            direct_style: combined_style,
             requested_changes: view_state.requested_changes,
             keyboard_navigable,
             focused,
@@ -161,17 +161,14 @@ pub struct CaptureState {
 }
 
 impl CaptureState {
-    pub(crate) fn capture_style(id: ViewId, cx: &mut StyleCx) {
+    pub(crate) fn capture_style(id: ViewId, cx: &mut StyleCx, computed_style: Style) {
         if cx.app_state_mut().capture.is_some() {
-            let direct = cx.direct.clone();
-            let mut current = (*cx.current).clone();
-            current.apply_mut(direct);
             cx.app_state_mut()
                 .capture
                 .as_mut()
                 .unwrap()
                 .styles
-                .insert(id, current);
+                .insert(id, computed_style);
         }
     }
 }

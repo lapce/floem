@@ -21,7 +21,7 @@ use crate::{
     window::{WindowConfig, WindowCreation},
 };
 
-type AppEventCallback = dyn Fn(AppEvent);
+pub(crate) type AppEventCallback = dyn Fn(AppEvent);
 
 static EVENT_LOOP_PROXY: Mutex<Option<(EventLoopProxy, Sender<UserEvent>)>> = Mutex::new(None);
 
@@ -54,6 +54,7 @@ pub(crate) enum UserEvent {
     AppUpdate,
     Idle,
     QuitApp,
+    Reopen { has_visible_windows: bool },
     GpuResourcesUpdate { window_id: WindowId },
 }
 
@@ -95,7 +96,6 @@ pub(crate) fn add_app_update_event(event: AppUpdateEvent) {
 pub struct Application {
     receiver: Receiver<UserEvent>,
     handle: ApplicationHandle,
-    event_listener: Option<Box<AppEventCallback>>,
     event_loop: Option<EventLoop>,
     initial_windows: Vec<WindowCreation>,
 }
@@ -137,7 +137,7 @@ impl ApplicationHandler for Application {
     }
 
     fn exiting(&mut self, _event_loop: &dyn ActiveEventLoop) {
-        if let Some(action) = self.event_listener.as_ref() {
+        if let Some(action) = self.handle.event_listener.as_ref() {
             action(AppEvent::WillTerminate);
         }
     }
@@ -150,6 +150,10 @@ impl ApplicationHandler for Application {
 impl Application {
     pub fn new() -> Self {
         let event_loop = EventLoop::new().expect("can't start the event loop");
+
+        #[cfg(target_os = "macos")]
+        crate::app_delegate::set_app_delegate();
+
         let event_loop_proxy = event_loop.create_proxy();
         let (sender, receiver) = crossbeam_channel::unbounded();
         *EVENT_LOOP_PROXY.lock() = Some((event_loop_proxy.clone(), sender));
@@ -168,14 +172,13 @@ impl Application {
         Self {
             receiver,
             handle,
-            event_listener: None,
             event_loop: Some(event_loop),
             initial_windows: Vec::new(),
         }
     }
 
     pub fn on_event(mut self, action: impl Fn(AppEvent) + 'static) -> Self {
-        self.event_listener = Some(Box::new(action));
+        self.handle.event_listener = Some(Box::new(action));
         self
     }
 

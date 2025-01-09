@@ -1648,7 +1648,7 @@ define_builtin_props!(
     InsetTop inset_top: PxPctAuto {} = PxPctAuto::Auto,
     InsetRight inset_right: PxPctAuto {} = PxPctAuto::Auto,
     InsetBottom inset_bottom: PxPctAuto {} = PxPctAuto::Auto,
-    PointerEventsProp pointer_events: Option<PointerEvents> {} = None,
+    PointerEventsProp pointer_events: Option<PointerEvents> { inherited } = None,
     ZIndex z_index nocb: Option<i32> {} = None,
     Cursor cursor nocb: Option<CursorStyle> {} = None,
     TextColor color nocb: Option<Color> { inherited } = None,

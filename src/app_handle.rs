@@ -18,7 +18,7 @@ use winit::{
 
 use crate::{
     action::{Timer, TimerToken},
-    app::{AppUpdateEvent, UserEvent, APP_UPDATE_EVENTS},
+    app::{AppEventCallback, AppUpdateEvent, UserEvent, APP_UPDATE_EVENTS},
     ext_event::EXT_EVENT_HANDLER,
     inspector::Capture,
     profiler::{Profile, ProfileEvent},
@@ -26,11 +26,13 @@ use crate::{
     window::WindowConfig,
     window_handle::WindowHandle,
     window_id::process_window_updates,
+    AppEvent,
 };
 
 pub(crate) struct ApplicationHandle {
     window_handles: HashMap<winit::window::WindowId, WindowHandle>,
     timers: HashMap<TimerToken, Timer>,
+    pub(crate) event_listener: Option<Box<AppEventCallback>>,
 }
 
 impl ApplicationHandle {
@@ -38,6 +40,7 @@ impl ApplicationHandle {
         Self {
             window_handles: HashMap::new(),
             timers: HashMap::new(),
+            event_listener: None,
         }
     }
 
@@ -51,6 +54,15 @@ impl ApplicationHandle {
             }
             UserEvent::QuitApp => {
                 event_loop.exit();
+            }
+            UserEvent::Reopen {
+                has_visible_windows,
+            } => {
+                if let Some(action) = self.event_listener.as_ref() {
+                    action(AppEvent::Reopen {
+                        has_visible_windows,
+                    });
+                }
             }
             UserEvent::GpuResourcesUpdate { window_id } => {
                 self.window_handles

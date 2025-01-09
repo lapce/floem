@@ -245,6 +245,7 @@ impl WindowHandle {
                 if let Some(id) = cx.app_state.focus {
                     processed |= cx
                         .unconditional_view_event(id, event.clone(), true)
+                        .0
                         .is_processed();
                 }
 
