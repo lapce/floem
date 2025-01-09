@@ -65,9 +65,11 @@ impl Checkbox {
         Self::new_custom(checked, DEFAULT_CHECKBOX_SVG)
     }
 
-    /// Creates a new checkbox with a closure that determines its checked state and a custom SVG
+    /// Creates a new checkbox with a closure that determines its checked state and accepts a custom SVG
     ///
-    /// The semantics of this is the exact same as [`Checkbox::new`], but allows you to provide a custom SVG for the checkbox.
+    /// The semantics are the same as [`Checkbox::new`].
+    ///
+    /// You can add an `on_update` handler to the returned `ValueContainer` to handle changes.
     pub fn new_custom(
         checked: impl Fn() -> bool + 'static,
         custom_check: impl Into<String> + Clone + 'static,
@@ -94,9 +96,9 @@ impl Checkbox {
         Self::new_rw_custom(checked, DEFAULT_CHECKBOX_SVG)
     }
 
-    /// Creates a new checkbox with a signal that provides and updates its checked state and a custom checked SVG.
+    /// Creates a new checkbox with a signal that provides and updates its checked state and accepts a custom SVG for the symbol.
     ///
-    /// The semantics of this is the exact same as [`Checkbox::new_rw`], but allows you to provide a custom SVG for the checkbox.
+    /// The semantics are the same as [`Checkbox::new_rw`].
     pub fn new_rw_custom(
         checked: impl SignalGet<bool> + SignalUpdate<bool> + Copy + 'static,
         custom_check: impl Into<String> + Clone + 'static,
@@ -118,9 +120,9 @@ impl Checkbox {
         Self::custom_labeled(checked, label, DEFAULT_CHECKBOX_SVG)
     }
 
-    /// Creates a new labeled checkbox with a closure that determines its checked state and a custom SVG.
+    /// Creates a new labeled checkbox with a closure that determines its checked state and accepts a custom SVG for the symbol.
     ///
-    /// The semantics of this is the exact same as [`Checkbox::labeled`], but allows you to provide a custom SVG for the checkbox.
+    /// The semantics are the same as [`Checkbox::labeled`].
     pub fn custom_labeled<S: Display + 'static>(
         checked: impl Fn() -> bool + 'static,
         label: impl Fn() -> S + 'static,
@@ -155,9 +157,9 @@ impl Checkbox {
         Self::custom_labeled_rw(checked, label, DEFAULT_CHECKBOX_SVG)
     }
 
-    /// Creates a new labeled checkbox with a signal that provides and updates its checked state and a custom SVG.
+    /// Creates a new labeled checkbox with a signal that provides and updates its checked state and accepts a custom SVG.
     ///
-    /// The semantics of this is the exact same as [`Checkbox::labeled_rw`], but allows you to provide a custom SVG for the checkbox.
+    /// The semantics are the same as [`Checkbox::labeled_rw`].
     pub fn custom_labeled_rw<S: Display + 'static>(
         checked: impl SignalGet<bool> + SignalUpdate<bool> + Copy + 'static,
         label: impl Fn() -> S + 'static,
@@ -177,8 +179,7 @@ pub fn checkbox(checked: impl Fn() -> bool + 'static) -> ValueContainer<bool> {
     Checkbox::new(checked)
 }
 
-/// Renders a checkbox using the provided checked signal and a custom check. See also [`Checkbox::new_rw`] and
-/// [`Checkbox::new`].
+/// Renders a checkbox using a `checked` signal and custom SVG. See also [`Checkbox::new_rw`] and
 pub fn custom_checkbox(
     checked: impl Fn() -> bool + 'static,
     custom_check: impl Into<String> + Clone + 'static,
