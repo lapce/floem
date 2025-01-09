@@ -5,8 +5,8 @@
 //! The decorator trait is the primary interface for extending the appearance and functionality of ['View']s.
 
 use floem_reactive::{create_effect, create_updater, SignalUpdate};
-use floem_winit::keyboard::Key;
 use peniko::kurbo::{Point, Rect};
+use winit::keyboard::Key;
 
 use crate::{
     action::{set_window_menu, set_window_scale, set_window_title},
@@ -164,20 +164,6 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
             } else {
                 id.remove_disable_default_event(event);
             }
-        });
-        view
-    }
-
-    /// Dynamically set if the view should process pointer events
-    ///
-    /// # Reactivity
-    /// This function is reactive and will re-run the function automatically in response to changes in signals
-    fn pointer_events(self, pointer_events: impl Fn() -> bool + 'static) -> Self::DV {
-        let view = self.into_view();
-        let id = view.id();
-        create_effect(move |_| {
-            let pointer_events = pointer_events();
-            id.pointer_events(pointer_events);
         });
         view
     }

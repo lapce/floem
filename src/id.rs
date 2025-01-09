@@ -6,10 +6,10 @@
 
 use std::{any::Any, cell::RefCell, rc::Rc};
 
-use floem_winit::window::WindowId;
 use peniko::kurbo::{Insets, Point, Rect, Size};
 use slotmap::new_key_type;
 use taffy::{Display, Layout, NodeId, TaffyTree};
+use winit::window::WindowId;
 
 use crate::{
     animate::{AnimStateCommand, Animation},
@@ -532,11 +532,6 @@ impl ViewId {
             .borrow_mut()
             .disable_default_events
             .remove(&event);
-    }
-
-    /// Set if the view should process pointer events
-    pub fn pointer_events(&self, pointer_events: bool) {
-        self.state().borrow_mut().pointer_events = pointer_events;
     }
 
     /// Mark this view as a view that can be dragged

@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use floem_winit::window::CursorIcon;
 use peniko::kurbo::{Point, Size};
 use taffy::{AvailableSpace, NodeId};
+use winit::window::CursorIcon;
 
 use crate::{
     context::{DragState, FrameUpdate, InteractionState},
@@ -46,8 +46,8 @@ pub struct AppState {
     pub(crate) last_cursor: CursorIcon,
     pub(crate) last_cursor_location: Point,
     pub(crate) keyboard_navigation: bool,
-    pub(crate) window_menu: HashMap<usize, Box<dyn Fn()>>,
-    pub(crate) context_menu: HashMap<usize, Box<dyn Fn()>>,
+    pub(crate) window_menu: HashMap<String, Box<dyn Fn()>>,
+    pub(crate) context_menu: HashMap<String, Box<dyn Fn()>>,
 
     /// This is set if we're currently capturing the window for the inspector.
     pub(crate) capture: Option<CaptureState>,
@@ -292,14 +292,14 @@ impl AppState {
 
     pub(crate) fn update_context_menu(&mut self, menu: &mut Menu) {
         if let Some(action) = menu.item.action.take() {
-            self.context_menu.insert(menu.item.id as usize, action);
+            self.context_menu.insert(menu.item.id.clone(), action);
         }
         for child in menu.children.iter_mut() {
             match child {
                 crate::menu::MenuEntry::Separator => {}
                 crate::menu::MenuEntry::Item(item) => {
                     if let Some(action) = item.action.take() {
-                        self.context_menu.insert(item.id as usize, action);
+                        self.context_menu.insert(item.id.clone(), action);
                     }
                 }
                 crate::menu::MenuEntry::SubMenu(m) => {

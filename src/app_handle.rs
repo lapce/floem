@@ -1,7 +1,3 @@
-use std::{collections::HashMap, mem, rc::Rc};
-
-use floem_reactive::SignalUpdate;
-
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 #[cfg(target_arch = "wasm32")]
@@ -10,18 +6,19 @@ use web_time::Instant;
 #[cfg(target_arch = "wasm32")]
 use wgpu::web_sys;
 
-use floem_winit::{
+use floem_reactive::SignalUpdate;
+use peniko::kurbo::{Point, Size};
+use std::{collections::HashMap, rc::Rc};
+use winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::WindowEvent,
-    event_loop::{ControlFlow, EventLoopProxy, EventLoopWindowTarget},
+    event_loop::{ActiveEventLoop, ControlFlow},
     window::WindowId,
 };
 
-use peniko::kurbo::{Point, Size};
-
 use crate::{
     action::{Timer, TimerToken},
-    app::{AppUpdateEvent, UserEvent, APP_UPDATE_EVENTS},
+    app::{AppEventCallback, AppUpdateEvent, UserEvent, APP_UPDATE_EVENTS},
     ext_event::EXT_EVENT_HANDLER,
     inspector::Capture,
     profiler::{Profile, ProfileEvent},
@@ -29,11 +26,13 @@ use crate::{
     window::WindowConfig,
     window_handle::WindowHandle,
     window_id::process_window_updates,
+    AppEvent,
 };
 
 pub(crate) struct ApplicationHandle {
-    window_handles: HashMap<floem_winit::window::WindowId, WindowHandle>,
+    window_handles: HashMap<winit::window::WindowId, WindowHandle>,
     timers: HashMap<TimerToken, Timer>,
+    pub(crate) event_listener: Option<Box<AppEventCallback>>,
 }
 
 impl ApplicationHandle {
@@ -41,24 +40,29 @@ impl ApplicationHandle {
         Self {
             window_handles: HashMap::new(),
             timers: HashMap::new(),
+            event_listener: None,
         }
     }
 
-    pub(crate) fn handle_user_event(
-        &mut self,
-        event_loop: &EventLoopWindowTarget<UserEvent>,
-        event_proxy: EventLoopProxy<UserEvent>,
-        event: UserEvent,
-    ) {
+    pub(crate) fn handle_user_event(&mut self, event_loop: &dyn ActiveEventLoop, event: UserEvent) {
         match event {
             UserEvent::AppUpdate => {
-                self.handle_update_event(event_loop, event_proxy);
+                self.handle_update_event(event_loop);
             }
             UserEvent::Idle => {
                 self.idle();
             }
             UserEvent::QuitApp => {
                 event_loop.exit();
+            }
+            UserEvent::Reopen {
+                has_visible_windows,
+            } => {
+                if let Some(action) = self.event_listener.as_ref() {
+                    action(AppEvent::Reopen {
+                        has_visible_windows,
+                    });
+                }
             }
             UserEvent::GpuResourcesUpdate { window_id } => {
                 self.window_handles
@@ -69,22 +73,18 @@ impl ApplicationHandle {
         }
     }
 
-    pub(crate) fn handle_update_event(
-        &mut self,
-        event_loop: &EventLoopWindowTarget<UserEvent>,
-        event_proxy: EventLoopProxy<UserEvent>,
-    ) {
+    pub(crate) fn handle_update_event(&mut self, event_loop: &dyn ActiveEventLoop) {
         let events = APP_UPDATE_EVENTS.with(|events| {
             let mut events = events.borrow_mut();
             std::mem::take(&mut *events)
         });
+
         for event in events {
             match event {
-                AppUpdateEvent::NewWindow { view_fn, config } => self.new_window(
+                AppUpdateEvent::NewWindow { window_creation } => self.new_window(
                     event_loop,
-                    event_proxy.clone(),
-                    view_fn,
-                    config.unwrap_or_default(),
+                    window_creation.view_fn,
+                    window_creation.config.unwrap_or_default(),
                 ),
                 AppUpdateEvent::CloseWindow { window_id } => {
                     self.close_window(window_id, event_loop);
@@ -114,16 +114,15 @@ impl ApplicationHandle {
                         }
                     }
                 }
-                #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-                AppUpdateEvent::MenuAction {
-                    window_id,
-                    action_id,
-                } => {
-                    let window_handle = match self.window_handles.get_mut(&window_id) {
-                        Some(window_handle) => window_handle,
-                        None => return,
-                    };
-                    window_handle.menu_action(action_id);
+                AppUpdateEvent::MenuAction { action_id } => {
+                    for (_, handle) in self.window_handles.iter_mut() {
+                        if handle.app_state.context_menu.contains_key(&action_id)
+                            || handle.app_state.window_menu.contains_key(&action_id)
+                        {
+                            handle.menu_action(&action_id);
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -131,9 +130,9 @@ impl ApplicationHandle {
 
     pub(crate) fn handle_window_event(
         &mut self,
-        window_id: floem_winit::window::WindowId,
+        window_id: winit::window::WindowId,
         event: WindowEvent,
-        event_loop: &EventLoopWindowTarget<UserEvent>,
+        event_loop: &dyn ActiveEventLoop,
     ) {
         let window_handle = match self.window_handles.get_mut(&window_id) {
             Some(window_handle) => window_handle,
@@ -143,7 +142,7 @@ impl ApplicationHandle {
         let start = window_handle.profile.is_some().then(|| {
             let name = match event {
                 WindowEvent::ActivationTokenDone { .. } => "ActivationTokenDone",
-                WindowEvent::Resized(..) => "Resized",
+                WindowEvent::SurfaceResized(..) => "Resized",
                 WindowEvent::Moved(..) => "Moved",
                 WindowEvent::CloseRequested => "CloseRequested",
                 WindowEvent::Destroyed => "Destroyed",
@@ -154,22 +153,21 @@ impl ApplicationHandle {
                 WindowEvent::KeyboardInput { .. } => "KeyboardInput",
                 WindowEvent::ModifiersChanged(..) => "ModifiersChanged",
                 WindowEvent::Ime(..) => "Ime",
-                WindowEvent::CursorMoved { .. } => "CursorMoved",
-                WindowEvent::CursorEntered { .. } => "CursorEntered",
-                WindowEvent::CursorLeft { .. } => "CursorLeft",
+                WindowEvent::PointerMoved { .. } => "PointerMoved",
+                WindowEvent::PointerEntered { .. } => "PointerEntered",
+                WindowEvent::PointerLeft { .. } => "PointerLeft",
                 WindowEvent::MouseWheel { .. } => "MouseWheel",
-                WindowEvent::MouseInput { .. } => "MouseInput",
-                WindowEvent::TouchpadMagnify { .. } => "TouchpadMagnify",
-                WindowEvent::SmartMagnify { .. } => "SmartMagnify",
-                WindowEvent::TouchpadRotate { .. } => "TouchpadRotate",
+                WindowEvent::PointerButton { .. } => "PointerButton",
                 WindowEvent::TouchpadPressure { .. } => "TouchpadPressure",
-                WindowEvent::AxisMotion { .. } => "AxisMotion",
-                WindowEvent::Touch(_) => "Touch",
                 WindowEvent::ScaleFactorChanged { .. } => "ScaleFactorChanged",
                 WindowEvent::ThemeChanged(..) => "ThemeChanged",
                 WindowEvent::Occluded(..) => "Occluded",
-                WindowEvent::MenuAction(..) => "MenuAction",
                 WindowEvent::RedrawRequested => "RedrawRequested",
+                WindowEvent::PinchGesture { .. } => "PinchGesture",
+                WindowEvent::PanGesture { .. } => "PanGesture",
+                WindowEvent::DoubleTapGesture { .. } => "DoubleTapGesture",
+                WindowEvent::RotationGesture { .. } => "RotationGesture",
+                // WindowEvent::MenuAction(..) => "MenuAction",
             };
             (
                 name,
@@ -180,7 +178,7 @@ impl ApplicationHandle {
 
         match event {
             WindowEvent::ActivationTokenDone { .. } => {}
-            WindowEvent::Resized(size) => {
+            WindowEvent::SurfaceResized(size) => {
                 let size: LogicalSize<f64> = size.to_logical(window_handle.scale);
                 let size = Size::new(size.width, size.height);
                 window_handle.size(size);
@@ -219,29 +217,25 @@ impl ApplicationHandle {
             WindowEvent::Ime(ime) => {
                 window_handle.ime(ime);
             }
-            WindowEvent::CursorMoved { position, .. } => {
+            WindowEvent::PointerMoved { position, .. } => {
                 let position: LogicalPosition<f64> = position.to_logical(window_handle.scale);
                 let point = Point::new(position.x, position.y);
                 window_handle.pointer_move(point);
             }
-            WindowEvent::CursorEntered { .. } => {}
-            WindowEvent::CursorLeft { .. } => {
+            WindowEvent::PointerEntered { .. } => {}
+            WindowEvent::PointerLeft { .. } => {
                 window_handle.pointer_leave();
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 window_handle.mouse_wheel(delta);
             }
-            WindowEvent::MouseInput { state, button, .. } => {
-                window_handle.mouse_input(button, state);
+            WindowEvent::PointerButton { state, button, .. } => {
+                window_handle.pointer_button(button, state);
             }
-            WindowEvent::TouchpadMagnify { delta, phase, .. } => {
-                window_handle.touchpad_magnify(delta, phase);
+            WindowEvent::PinchGesture { delta, phase, .. } => {
+                window_handle.pinch_gesture(delta, phase);
             }
-            WindowEvent::SmartMagnify { .. } => {}
-            WindowEvent::TouchpadRotate { .. } => {}
             WindowEvent::TouchpadPressure { .. } => {}
-            WindowEvent::AxisMotion { .. } => {}
-            WindowEvent::Touch(_) => {}
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 window_handle.scale(scale_factor);
             }
@@ -249,12 +243,14 @@ impl ApplicationHandle {
                 window_handle.os_theme_changed(theme);
             }
             WindowEvent::Occluded(_) => {}
-            WindowEvent::MenuAction(id) => {
-                window_handle.menu_action(id);
-            }
             WindowEvent::RedrawRequested => {
                 window_handle.render_frame();
             }
+            WindowEvent::PanGesture { .. } => {}
+            WindowEvent::DoubleTapGesture { .. } => {}
+            WindowEvent::RotationGesture { .. } => {} // WindowEvent::MenuAction(id) => {
+                                                      //     window_handle.menu_action(id);
+                                                      // }
         }
 
         if let Some((name, start, new_frame)) = start {
@@ -278,8 +274,7 @@ impl ApplicationHandle {
 
     pub(crate) fn new_window(
         &mut self,
-        event_loop: &EventLoopWindowTarget<UserEvent>,
-        event_proxy: EventLoopProxy<UserEvent>,
+        event_loop: &dyn ActiveEventLoop,
         view_fn: Box<dyn FnOnce(WindowId) -> Box<dyn View>>,
         #[allow(unused_variables)] WindowConfig {
             size,
@@ -306,7 +301,7 @@ impl ApplicationHandle {
         let logical_min_size = min_size.map(|size| LogicalSize::new(size.width, size.height));
         let logical_max_size = max_size.map(|size| LogicalSize::new(size.width, size.height));
 
-        let mut window_builder = floem_winit::window::WindowBuilder::new()
+        let mut window_attributes = winit::window::WindowAttributes::default()
             .with_visible(false)
             .with_title(title)
             .with_decorations(!undecorated)
@@ -319,8 +314,8 @@ impl ApplicationHandle {
 
         #[cfg(target_arch = "wasm32")]
         {
-            use floem_winit::platform::web::WindowBuilderExtWebSys;
             use wgpu::web_sys::wasm_bindgen::JsCast;
+            use winit::platform::web::WindowAttributesExtWeb;
 
             let parent_id = web_config.expect("Specify an id for the canvas.").canvas_id;
             let doc = web_sys::window()
@@ -338,104 +333,104 @@ impl ApplicationHandle {
                 canvas.set_height(size.height as u32);
             }
 
-            window_builder = window_builder.with_canvas(Some(canvas));
+            window_attributes = window_attributes.with_canvas(Some(canvas));
         };
 
         if let Some(Point { x, y }) = position {
-            window_builder = window_builder.with_position(LogicalPosition::new(x, y));
+            window_attributes = window_attributes.with_position(LogicalPosition::new(x, y));
         }
 
         if let Some(logical_size) = logical_size {
-            window_builder = window_builder.with_inner_size(logical_size);
+            window_attributes = window_attributes.with_surface_size(logical_size);
         }
         if let Some(logical_min_size) = logical_min_size {
-            window_builder = window_builder.with_min_inner_size(logical_min_size);
+            window_attributes = window_attributes.with_min_surface_size(logical_min_size);
         }
         if let Some(logical_max_size) = logical_max_size {
-            window_builder = window_builder.with_max_inner_size(logical_max_size);
+            window_attributes = window_attributes.with_max_surface_size(logical_max_size);
         }
 
         #[cfg(not(target_os = "macos"))]
         if !show_titlebar {
-            window_builder = window_builder.with_decorations(false);
+            window_attributes = window_attributes.with_decorations(false);
         }
 
         #[cfg(target_os = "windows")]
         {
-            use floem_winit::platform::windows::WindowBuilderExtWindows;
-            window_builder = window_builder.with_undecorated_shadow(undecorated_shadow);
+            use winit::platform::windows::WindowAttributesExtWindows;
+            window_attributes = window_attributes.with_undecorated_shadow(undecorated_shadow);
         }
 
         #[cfg(target_os = "macos")]
         if !show_titlebar {
-            use floem_winit::platform::macos::WindowBuilderExtMacOS;
-            window_builder = window_builder
-                .with_movable(false)
+            use winit::platform::macos::WindowAttributesExtMacOS;
+            window_attributes = window_attributes
+                .with_movable_by_window_background(false)
                 .with_title_hidden(true)
                 .with_titlebar_transparent(true)
-                .with_fullsize_content_view(true)
-                .with_traffic_lights_offset(11.0, 16.0);
+                .with_fullsize_content_view(true);
+            // .with_traffic_lights_offset(11.0, 16.0);
         }
 
         #[cfg(target_os = "macos")]
         if undecorated {
-            use floem_winit::platform::macos::WindowBuilderExtMacOS;
+            use winit::platform::macos::WindowAttributesExtMacOS;
             // A palette-style window that will only obtain window focus but
             // not actually propagate the first mouse click it receives is
             // very unlikely to be expected behavior - these typically are
             // used for something that offers a quick choice and are closed
             // in a single pointer gesture.
-            window_builder = window_builder.with_accepts_first_mouse(true);
+            window_attributes = window_attributes.with_accepts_first_mouse(true);
         }
 
         #[cfg(target_os = "macos")]
         if let Some(mac) = mac_os_config {
-            use floem_winit::platform::macos::WindowBuilderExtMacOS;
+            use winit::platform::macos::WindowAttributesExtMacOS;
             if let Some(val) = mac.movable_by_window_background {
-                window_builder = window_builder.with_movable_by_window_background(val);
+                window_attributes = window_attributes.with_movable_by_window_background(val);
             }
             if let Some(val) = mac.titlebar_transparent {
-                window_builder = window_builder.with_titlebar_transparent(val);
+                window_attributes = window_attributes.with_titlebar_transparent(val);
             }
             if let Some(val) = mac.titlebar_hidden {
-                window_builder = window_builder.with_titlebar_hidden(val);
+                window_attributes = window_attributes.with_titlebar_hidden(val);
             }
             if let Some(val) = mac.full_size_content_view {
-                window_builder = window_builder.with_fullsize_content_view(val);
+                window_attributes = window_attributes.with_fullsize_content_view(val);
             }
             if let Some(val) = mac.movable {
-                window_builder = window_builder.with_movable(val);
+                window_attributes = window_attributes.with_movable_by_window_background(val);
             }
-            if let Some((x, y)) = mac.traffic_lights_offset {
-                window_builder = window_builder.with_traffic_lights_offset(x, y);
-            }
+            // if let Some((x, y)) = mac.traffic_lights_offset {
+            // TODO
+            // window_attributes = window_attributes.with_traffic_lights_offset(x, y);
+            // }
             if let Some(val) = mac.accepts_first_mouse {
-                window_builder = window_builder.with_accepts_first_mouse(val);
+                window_attributes = window_attributes.with_accepts_first_mouse(val);
             }
             if let Some(val) = mac.option_as_alt {
-                window_builder = window_builder.with_option_as_alt(val.into());
+                window_attributes = window_attributes.with_option_as_alt(val.into());
             }
             if let Some(title) = mac.tabbing_identifier {
-                window_builder = window_builder.with_tabbing_identifier(title.as_str());
+                window_attributes = window_attributes.with_tabbing_identifier(title.as_str());
             }
             if let Some(disallow_hidpi) = mac.disallow_high_dpi {
-                window_builder = window_builder.with_disallow_hidpi(disallow_hidpi);
+                window_attributes = window_attributes.with_disallow_hidpi(disallow_hidpi);
             }
             if let Some(shadow) = mac.has_shadow {
-                window_builder = window_builder.with_has_shadow(shadow);
+                window_attributes = window_attributes.with_has_shadow(shadow);
             }
             if let Some(hide) = mac.titlebar_buttons_hidden {
-                window_builder = window_builder.with_titlebar_buttons_hidden(hide)
+                window_attributes = window_attributes.with_titlebar_buttons_hidden(hide)
             }
         }
 
-        let Ok(window) = window_builder.build(event_loop) else {
+        let Ok(window) = event_loop.create_window(window_attributes) else {
             return;
         };
         let window_id = window.id();
         let window_handle = WindowHandle::new(
             window,
-            event_proxy,
             view_fn,
             transparent,
             apply_default_theme,
@@ -448,8 +443,8 @@ impl ApplicationHandle {
     fn close_window(
         &mut self,
         window_id: WindowId,
-        #[cfg(target_os = "macos")] _event_loop: &EventLoopWindowTarget<UserEvent>,
-        #[cfg(not(target_os = "macos"))] event_loop: &EventLoopWindowTarget<UserEvent>,
+        #[cfg(target_os = "macos")] _event_loop: &dyn ActiveEventLoop,
+        #[cfg(not(target_os = "macos"))] event_loop: &dyn ActiveEventLoop,
     ) {
         if let Some(handle) = self.window_handles.get_mut(&window_id) {
             handle.window = None;
@@ -469,7 +464,7 @@ impl ApplicationHandle {
     }
 
     pub(crate) fn idle(&mut self) {
-        let ext_events = { mem::take(&mut *EXT_EVENT_HANDLER.queue.lock()) };
+        let ext_events = { std::mem::take(&mut *EXT_EVENT_HANDLER.queue.lock()) };
 
         for trigger in ext_events {
             trigger.notify();
@@ -478,14 +473,14 @@ impl ApplicationHandle {
         self.handle_updates_for_all_windows();
     }
 
-    fn handle_updates_for_all_windows(&mut self) {
+    pub(crate) fn handle_updates_for_all_windows(&mut self) {
         for (window_id, handle) in self.window_handles.iter_mut() {
             handle.process_update();
             while process_window_updates(window_id) {}
         }
     }
 
-    fn request_timer(&mut self, timer: Timer, event_loop: &EventLoopWindowTarget<UserEvent>) {
+    fn request_timer(&mut self, timer: Timer, event_loop: &dyn ActiveEventLoop) {
         self.timers.insert(timer.token, timer);
         self.fire_timer(event_loop);
     }
@@ -494,7 +489,7 @@ impl ApplicationHandle {
         self.timers.remove(timer);
     }
 
-    fn fire_timer(&mut self, event_loop: &EventLoopWindowTarget<UserEvent>) {
+    fn fire_timer(&mut self, event_loop: &dyn ActiveEventLoop) {
         if self.timers.is_empty() {
             return;
         }
@@ -505,7 +500,7 @@ impl ApplicationHandle {
         }
     }
 
-    pub(crate) fn handle_timer(&mut self, event_loop: &EventLoopWindowTarget<UserEvent>) {
+    pub(crate) fn handle_timer(&mut self, event_loop: &dyn ActiveEventLoop) {
         let now = Instant::now();
         let tokens: Vec<TimerToken> = self
             .timers

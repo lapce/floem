@@ -18,13 +18,13 @@ use crate::{
 };
 use floem_reactive::create_updater;
 use floem_renderer::{text::Cursor, Renderer};
-use floem_winit::keyboard::{Key, SmolStr};
 use peniko::Color;
 use peniko::{
     kurbo::{Point, Rect},
     Brush,
 };
 use taffy::tree::NodeId;
+use winit::keyboard::{Key, SmolStr};
 
 use super::{Decorators, TextCommand};
 

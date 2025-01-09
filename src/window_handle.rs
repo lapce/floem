@@ -8,14 +8,13 @@ use web_time::{Duration, Instant};
 use floem_reactive::{with_scope, RwSignal, Scope, SignalGet, SignalUpdate};
 use floem_renderer::gpu_resources::GpuResources;
 use floem_renderer::Renderer;
-use floem_winit::{
-    dpi::{LogicalPosition, LogicalSize},
-    event::{ElementState, Ime, MouseButton, MouseScrollDelta, TouchPhase},
-    event_loop::EventLoopProxy,
-    keyboard::{Key, ModifiersState, NamedKey},
-    window::{CursorIcon, WindowId},
-};
 use peniko::kurbo::{Affine, Point, Rect, Size, Vec2};
+use winit::{
+    dpi::{LogicalPosition, LogicalSize},
+    event::{ButtonSource, ElementState, Ime, MouseScrollDelta, TouchPhase},
+    keyboard::{Key, ModifiersState, NamedKey},
+    window::{CursorIcon, Window, WindowId},
+};
 
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::reactive::SignalWith;
@@ -40,7 +39,7 @@ use crate::{
     profiler::Profile,
     style::{CursorStyle, Style, StyleSelector},
     theme::{default_theme, Theme},
-    touchpad::TouchpadMagnifyEvent,
+    touchpad::PinchGestureEvent,
     update::{
         UpdateMessage, CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES,
         CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES,
@@ -49,6 +48,7 @@ use crate::{
     view_state::ChangeFlags,
     views::Decorators,
     window_tracking::{remove_window_id_mapping, store_window_id_mapping},
+    Application,
 };
 
 /// The top-level window handle that owns the winit Window.
@@ -58,18 +58,18 @@ use crate::{
 /// - processing all requests to update the animation state from the reactive system
 /// - requesting a new animation frame from the backend
 pub(crate) struct WindowHandle {
-    pub(crate) window: Option<Arc<floem_winit::window::Window>>,
+    pub(crate) window: Option<Arc<dyn winit::window::Window>>,
     window_id: WindowId,
     id: ViewId,
     main_view: ViewId,
     /// Reactive Scope for this WindowHandle
     scope: Scope,
-    app_state: AppState,
+    pub(crate) app_state: AppState,
     paint_state: PaintState,
     size: RwSignal<Size>,
     theme: Option<Theme>,
     pub(crate) profile: Option<Profile>,
-    os_theme: RwSignal<Option<floem_winit::window::Theme>>,
+    os_theme: RwSignal<Option<winit::window::Theme>>,
     is_maximized: bool,
     transparent: bool,
     pub(crate) scale: f64,
@@ -84,9 +84,8 @@ pub(crate) struct WindowHandle {
 
 impl WindowHandle {
     pub(crate) fn new(
-        window: floem_winit::window::Window,
-        event_proxy: EventLoopProxy<UserEvent>,
-        view_fn: impl FnOnce(floem_winit::window::WindowId) -> Box<dyn View> + 'static,
+        window: Box<dyn winit::window::Window>,
+        view_fn: impl FnOnce(winit::window::WindowId) -> Box<dyn View> + 'static,
         transparent: bool,
         apply_default_theme: bool,
         size: Option<LogicalSize<f64>>,
@@ -96,7 +95,7 @@ impl WindowHandle {
         let window_id = window.id();
         let id = ViewId::new();
         let scale = window.scale_factor();
-        let size: LogicalSize<f64> = size.unwrap_or(window.inner_size().to_logical(scale));
+        let size: LogicalSize<f64> = size.unwrap_or(window.surface_size().to_logical(scale));
         let size = Size::new(size.width, size.height);
         let size = scope.create_rw_signal(Size::new(size.width, size.height));
         let theme = scope.create_rw_signal(window.theme());
@@ -122,7 +121,7 @@ impl WindowHandle {
                 main_view_id,
                 stack((
                     container(main_view).style(|s| s.size(100.pct(), 100.pct())),
-                    context_menu_view(scope, window_id, context_menu, size),
+                    context_menu_view(scope, context_menu, size),
                 ))
                 .style(|s| s.size(100.pct(), 100.pct()))
                 .into_any(),
@@ -135,13 +134,11 @@ impl WindowHandle {
         let view = WindowView { id };
         id.set_view(view.into_any());
 
-        let window = Arc::new(window);
+        let window: Arc<dyn Window> = window.into();
         store_window_id_mapping(id, window_id, &window);
         let gpu_resources = GpuResources::request(
             move |window_id| {
-                event_proxy
-                    .send_event(UserEvent::GpuResourcesUpdate { window_id })
-                    .unwrap();
+                Application::send_proxy_event(UserEvent::GpuResourcesUpdate { window_id });
             },
             window.clone(),
         );
@@ -189,10 +186,16 @@ impl WindowHandle {
         // because the renderer is not initialized until now.
         #[cfg(target_arch = "wasm32")]
         {
-            use floem_winit::platform::web::WindowExtWebSys;
+            use winit::platform::web::WindowExtWeb;
 
-            let canvas = self.window.as_ref().unwrap().canvas().unwrap();
-            let rect = canvas.get_bounding_client_rect();
+            let rect = self
+                .window
+                .as_ref()
+                .unwrap()
+                .canvas()
+                .unwrap()
+                .get_bounding_client_rect();
+            // let rect = canvas.get_bounding_client_rect();
             let size = LogicalSize::new(rect.width(), rect.height());
             self.size(Size::new(size.width, size.height));
         }
@@ -242,6 +245,7 @@ impl WindowHandle {
                 if let Some(id) = cx.app_state.focus {
                     processed |= cx
                         .unconditional_view_event(id, event.clone(), true)
+                        .0
                         .is_processed();
                 }
 
@@ -392,7 +396,7 @@ impl WindowHandle {
         self.schedule_repaint();
     }
 
-    pub(crate) fn os_theme_changed(&mut self, theme: floem_winit::window::Theme) {
+    pub(crate) fn os_theme_changed(&mut self, theme: winit::window::Theme) {
         self.os_theme.set(Some(theme));
         self.event(Event::ThemeChanged(theme));
     }
@@ -424,7 +428,7 @@ impl WindowHandle {
         self.event(Event::WindowMoved(point));
     }
 
-    pub(crate) fn key_event(&mut self, key_event: floem_winit::event::KeyEvent) {
+    pub(crate) fn key_event(&mut self, key_event: winit::event::KeyEvent) {
         let event = KeyEvent {
             key: key_event,
             modifiers: self.modifiers,
@@ -502,7 +506,7 @@ impl WindowHandle {
         self.event(Event::PointerWheel(event));
     }
 
-    pub(crate) fn mouse_input(&mut self, button: MouseButton, state: ElementState) {
+    pub(crate) fn pointer_button(&mut self, button: ButtonSource, state: ElementState) {
         let button: PointerButton = button.into();
         let count = if state.is_pressed() && button.is_primary() {
             if let Some((count, last_pos, instant)) = self.last_pointer_down.as_mut() {
@@ -541,9 +545,9 @@ impl WindowHandle {
         }
     }
 
-    pub(crate) fn touchpad_magnify(&mut self, delta: f64, phase: TouchPhase) {
-        let event = TouchpadMagnifyEvent { delta, phase };
-        self.event(Event::TouchpadMagnify(event));
+    pub(crate) fn pinch_gesture(&mut self, delta: f64, phase: TouchPhase) {
+        let event = PinchGestureEvent { delta, phase };
+        self.event(Event::PinchGesture(event));
     }
 
     pub(crate) fn focused(&mut self, focused: bool) {
@@ -934,8 +938,8 @@ impl WindowHandle {
                     UpdateMessage::SetWindowDelta(delta) => {
                         if let Some(window) = self.window.as_ref() {
                             let pos = self.window_position + delta;
-                            window.set_outer_position(floem_winit::dpi::Position::Logical(
-                                floem_winit::dpi::LogicalPosition::new(pos.x, pos.y),
+                            window.set_outer_position(winit::dpi::Position::Logical(
+                                winit::dpi::LogicalPosition::new(pos.x, pos.y),
                             ));
                         }
                     }
@@ -947,15 +951,16 @@ impl WindowHandle {
                     }
                     UpdateMessage::ShowContextMenu { menu, pos } => {
                         let mut menu = menu.popup();
-                        let platform_menu = menu.platform_menu();
                         cx.app_state.context_menu.clear();
                         cx.app_state.update_context_menu(&mut menu);
-                        #[cfg(target_os = "macos")]
-                        self.show_context_menu(platform_menu, pos);
-                        #[cfg(target_os = "windows")]
-                        self.show_context_menu(platform_menu, pos);
+
+                        #[cfg(any(target_os = "windows", target_os = "macos"))]
+                        {
+                            let platform_menu = menu.platform_menu();
+                            self.show_context_menu(platform_menu, pos);
+                        }
                         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-                        self.show_context_menu(menu, platform_menu, pos);
+                        self.show_context_menu(menu, pos);
                     }
                     UpdateMessage::WindowMenu { menu } => {
                         // let platform_menu = menu.platform_menu();
@@ -975,18 +980,14 @@ impl WindowHandle {
                     UpdateMessage::SetImeCursorArea { position, size } => {
                         if let Some(window) = self.window.as_ref() {
                             window.set_ime_cursor_area(
-                                floem_winit::dpi::Position::Logical(
-                                    floem_winit::dpi::LogicalPosition::new(
-                                        position.x * self.app_state.scale,
-                                        position.y * self.app_state.scale,
-                                    ),
-                                ),
-                                floem_winit::dpi::Size::Logical(
-                                    floem_winit::dpi::LogicalSize::new(
-                                        size.width * self.app_state.scale,
-                                        size.height * self.app_state.scale,
-                                    ),
-                                ),
+                                winit::dpi::Position::Logical(winit::dpi::LogicalPosition::new(
+                                    position.x * self.app_state.scale,
+                                    position.y * self.app_state.scale,
+                                )),
+                                winit::dpi::Size::Logical(winit::dpi::LogicalSize::new(
+                                    size.width * self.app_state.scale,
+                                    size.height * self.app_state.scale,
+                                )),
                             );
                         }
                     }
@@ -1113,7 +1114,7 @@ impl WindowHandle {
         };
         if cursor != self.app_state.last_cursor {
             if let Some(window) = self.window.as_ref() {
-                window.set_cursor_icon(cursor);
+                window.set_cursor(cursor.into());
             }
             self.app_state.last_cursor = cursor;
         }
@@ -1132,60 +1133,70 @@ impl WindowHandle {
     }
 
     #[cfg(target_os = "macos")]
-    fn show_context_menu(&self, menu: floem_winit::menu::Menu, pos: Option<Point>) {
+    fn show_context_menu(&self, menu: muda::Menu, pos: Option<Point>) {
+        use muda::{
+            dpi::{LogicalPosition, Position},
+            ContextMenu,
+        };
+        use raw_window_handle::HasWindowHandle;
+        use raw_window_handle::RawWindowHandle;
+
         if let Some(window) = self.window.as_ref() {
-            {
-                use floem_winit::platform::macos::WindowExtMacOS;
-                window.show_context_menu(
-                    menu,
-                    pos.map(|pos| {
-                        floem_winit::dpi::Position::Logical(floem_winit::dpi::LogicalPosition::new(
-                            pos.x * self.app_state.scale,
-                            pos.y * self.app_state.scale,
-                        ))
-                    }),
-                );
+            if let RawWindowHandle::AppKit(handle) = window.window_handle().unwrap().as_raw() {
+                unsafe {
+                    menu.show_context_menu_for_nsview(
+                        handle.ns_view.as_ptr() as _,
+                        pos.map(|pos| {
+                            Position::Logical(LogicalPosition::new(
+                                pos.x * self.app_state.scale,
+                                (self.size.get_untracked().height - pos.y) * self.app_state.scale,
+                            ))
+                        }),
+                    )
+                };
             }
         }
     }
 
     #[cfg(target_os = "windows")]
-    fn show_context_menu(&self, menu: floem_winit::menu::Menu, pos: Option<Point>) {
-        use floem_winit::platform::windows::WindowExtWindows;
+    fn show_context_menu(&self, menu: muda::Menu, pos: Option<Point>) {
+        use muda::{
+            dpi::{LogicalPosition, Position},
+            ContextMenu,
+        };
+        use raw_window_handle::HasWindowHandle;
+        use raw_window_handle::RawWindowHandle;
 
         if let Some(window) = self.window.as_ref() {
-            {
-                window.show_context_menu(
-                    menu,
-                    pos.map(|pos| {
-                        floem_winit::dpi::Position::Logical(floem_winit::dpi::LogicalPosition::new(
-                            pos.x * self.app_state.scale,
-                            pos.y * self.app_state.scale,
-                        ))
-                    }),
-                );
+            if let RawWindowHandle::Win32(handle) = window.window_handle().unwrap().as_raw() {
+                unsafe {
+                    menu.show_context_menu_for_hwnd(
+                        isize::from(handle.hwnd),
+                        pos.map(|pos| {
+                            Position::Logical(LogicalPosition::new(
+                                pos.x * self.app_state.scale,
+                                pos.y * self.app_state.scale,
+                            ))
+                        }),
+                    );
+                }
             }
         }
     }
 
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-    fn show_context_menu(
-        &self,
-        menu: Menu,
-        _platform_menu: floem_winit::menu::Menu,
-        pos: Option<Point>,
-    ) {
+    fn show_context_menu(&self, menu: Menu, pos: Option<Point>) {
         let pos = pos.unwrap_or(self.cursor_position);
         let pos = Point::new(pos.x / self.app_state.scale, pos.y / self.app_state.scale);
         self.context_menu.set(Some((menu, pos)));
     }
 
-    pub(crate) fn menu_action(&mut self, id: usize) {
+    pub(crate) fn menu_action(&mut self, id: &str) {
         set_current_view(self.id);
-        if let Some(action) = self.app_state.window_menu.get(&id) {
+        if let Some(action) = self.app_state.window_menu.get(id) {
             (*action)();
             self.process_update();
-        } else if let Some(action) = self.app_state.context_menu.get(&id) {
+        } else if let Some(action) = self.app_state.context_menu.get(id) {
             (*action)();
             self.process_update();
         }
@@ -1231,7 +1242,6 @@ pub(crate) fn set_current_view(id: ViewId) {
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 fn context_menu_view(
     cx: Scope,
-    window_id: WindowId,
     context_menu: RwSignal<Option<(Menu, Point)>>,
     window_size: RwSignal<Size>,
 ) -> impl IntoView {
@@ -1247,7 +1257,7 @@ fn context_menu_view(
     enum MenuDisplay {
         Separator(usize),
         Item {
-            id: Option<u64>,
+            id: Option<String>,
             enabled: bool,
             title: String,
             children: Option<Vec<MenuDisplay>>,
@@ -1261,7 +1271,7 @@ fn context_menu_view(
             .map(|(s, e)| match e {
                 crate::menu::MenuEntry::Separator => MenuDisplay::Separator(s),
                 crate::menu::MenuEntry::Item(i) => MenuDisplay::Item {
-                    id: Some(i.id),
+                    id: Some(i.id.clone()),
                     enabled: i.enabled,
                     title: i.title.clone(),
                     children: None,
@@ -1286,7 +1296,6 @@ fn context_menu_view(
     let focus_count = cx.create_rw_signal(0);
 
     fn view_fn(
-        window_id: WindowId,
         menu: MenuDisplay,
         context_menu: RwSignal<Option<(Menu, Point)>>,
         focus_count: RwSignal<i32>,
@@ -1305,6 +1314,7 @@ fn context_menu_view(
                 let on_child_submenu = create_rw_signal(false);
                 let has_submenu = children.is_some();
                 let submenu_svg = r#"<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M10.072 8.024L5.715 3.667l.618-.62L11 7.716v.618L6.333 13l-.618-.619 4.357-4.357z"/></svg>"#;
+                let id_clone = id.clone();
                 container(
                     stack((
                         stack((
@@ -1336,21 +1346,15 @@ fn context_menu_view(
                         .on_click_stop(move |_| {
                             context_menu.set(None);
                             focus_count.set(0);
-                            if let Some(id) = id {
-                                add_app_update_event(AppUpdateEvent::MenuAction {
-                                    window_id,
-                                    action_id: id as usize,
-                                });
+                            if let Some(id) = id.clone() {
+                                add_app_update_event(AppUpdateEvent::MenuAction { action_id: id });
                             }
                         })
                         .on_secondary_click_stop(move |_| {
                             context_menu.set(None);
                             focus_count.set(0);
-                            if let Some(id) = id {
-                                add_app_update_event(AppUpdateEvent::MenuAction {
-                                    window_id,
-                                    action_id: id as usize,
-                                });
+                            if let Some(id) = id_clone.clone() {
+                                add_app_update_event(AppUpdateEvent::MenuAction { action_id: id });
                             }
                         })
                         .disabled(move || !enabled)
@@ -1371,15 +1375,7 @@ fn context_menu_view(
                         dyn_stack(
                             move || children.clone().unwrap_or_default(),
                             move |s| s.clone(),
-                            move |menu| {
-                                view_fn(
-                                    window_id,
-                                    menu,
-                                    context_menu,
-                                    focus_count,
-                                    on_child_submenu,
-                                )
-                            },
+                            move |menu| view_fn(menu, context_menu, focus_count, on_child_submenu),
                         )
                         .keyboard_navigable()
                         .on_event_stop(EventListener::FocusGained, move |_| {
@@ -1459,7 +1455,7 @@ fn context_menu_view(
     let view = dyn_stack(
         move || context_menu_items.get().unwrap_or_default(),
         move |s| s.clone(),
-        move |menu| view_fn(window_id, menu, context_menu, focus_count, on_child_submenu),
+        move |menu| view_fn(menu, context_menu, focus_count, on_child_submenu),
     )
     .on_resize(move |rect| {
         context_menu_size.set(rect.size());

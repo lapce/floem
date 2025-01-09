@@ -109,6 +109,7 @@ impl StylePropValue for Weight {
 }
 impl StylePropValue for crate::text::Style {}
 impl StylePropValue for TextOverflow {}
+impl StylePropValue for PointerEvents {}
 impl StylePropValue for LineHeightValue {
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         match (self, other) {
@@ -1451,6 +1452,12 @@ impl StyleSelectors {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PointerEvents {
+    Auto,
+    None,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextOverflow {
     Wrap,
     Clip,
@@ -1641,6 +1648,7 @@ define_builtin_props!(
     InsetTop inset_top: PxPctAuto {} = PxPctAuto::Auto,
     InsetRight inset_right: PxPctAuto {} = PxPctAuto::Auto,
     InsetBottom inset_bottom: PxPctAuto {} = PxPctAuto::Auto,
+    PointerEventsProp pointer_events: Option<PointerEvents> { inherited } = None,
     ZIndex z_index nocb: Option<i32> {} = None,
     Cursor cursor nocb: Option<CursorStyle> {} = None,
     TextColor color nocb: Option<Color> { inherited } = None,
@@ -2203,6 +2211,14 @@ impl Style {
 
     pub fn line_height(self, normal: f32) -> Self {
         self.set(LineHeight, Some(LineHeightValue::Normal(normal)))
+    }
+
+    pub fn pointer_events_auto(self) -> Self {
+        self.pointer_events(PointerEvents::Auto)
+    }
+
+    pub fn pointer_events_none(self) -> Self {
+        self.pointer_events(PointerEvents::None)
     }
 
     pub fn text_ellipsis(self) -> Self {

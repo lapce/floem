@@ -161,7 +161,10 @@ pub struct ViewState {
     pub(crate) animations: Stack<Animation>,
     pub(crate) classes: Vec<StyleClassRef>,
     pub(crate) dragging_style: Option<Style>,
+    /// Combine the stacked style into one style, and apply the interact state
     pub(crate) combined_style: Style,
+    /// The final style including inherited style from parent
+    pub(crate) computed_style: Style,
     pub(crate) taffy_style: taffy::style::Style,
     pub(crate) event_listeners: HashMap<EventListener, Vec<Rc<RefCell<EventCallback>>>>,
     pub(crate) context_menu: Option<Rc<MenuCallback>>,
@@ -174,7 +177,6 @@ pub struct ViewState {
     pub(crate) is_hidden_state: IsHiddenState,
     pub(crate) num_waiting_animations: u16,
     pub(crate) disable_default_events: HashSet<EventListener>,
-    pub(crate) pointer_events: bool,
     pub(crate) transform: Affine,
     pub(crate) debug_name: SmallVec<[String; 1]>,
 }
@@ -194,6 +196,7 @@ impl ViewState {
             animations: Default::default(),
             classes: Vec::new(),
             combined_style: Style::new(),
+            computed_style: Style::new(),
             taffy_style: taffy::style::Style::DEFAULT,
             dragging_style: None,
             event_listeners: HashMap::new(),
@@ -207,7 +210,6 @@ impl ViewState {
             is_hidden_state: IsHiddenState::None,
             num_waiting_animations: 0,
             disable_default_events: HashSet::new(),
-            pointer_events: true,
             transform: Affine::IDENTITY,
             debug_name: Default::default(),
         }

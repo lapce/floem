@@ -78,9 +78,7 @@ impl ExtEventHandler {
             // causes another trigger to be registered
             EXT_EVENT_HANDLER.queue.lock().push_back(trigger);
         }
-        Application::with_event_loop_proxy(|proxy| {
-            let _ = proxy.send_event(UserEvent::Idle);
-        });
+        Application::send_proxy_event(UserEvent::Idle);
     }
 }
 

@@ -7,6 +7,7 @@ use std::{
     rc::Rc,
     sync::Arc,
 };
+use winit::window::Window;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
@@ -18,7 +19,7 @@ use taffy::prelude::NodeId;
 use crate::animate::{AnimStateKind, RepeatMode};
 use crate::easing::{Easing, Linear};
 use crate::renderer::Renderer;
-use crate::style::DisplayProp;
+use crate::style::{DisplayProp, PointerEvents, PointerEventsProp};
 use crate::view_state::IsHiddenState;
 use crate::{
     action::{exec_after, show_context_menu},
@@ -60,6 +61,12 @@ pub(crate) enum FrameUpdate {
     Paint(ViewId),
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum PointerEventConsumed {
+    Yes,
+    No,
+}
+
 /// A bundle of helper methods to be used by `View::event` handlers
 pub struct EventCx<'a> {
     pub(crate) app_state: &'a mut AppState,
@@ -93,15 +100,15 @@ impl EventCx<'_> {
         view_id: ViewId,
         event: Event,
         directed: bool,
-    ) -> EventPropagation {
+    ) -> (EventPropagation, PointerEventConsumed) {
         if view_id.style_has_hidden() {
             // we don't process events for hidden view
-            return EventPropagation::Continue;
+            return (EventPropagation::Continue, PointerEventConsumed::No);
         }
         if self.app_state.is_disabled(&view_id) && !event.allow_disabled() {
             // if the view is disabled and the event is not processed
             // for disabled views
-            return EventPropagation::Continue;
+            return (EventPropagation::Continue, PointerEventConsumed::No);
         }
 
         // offset the event positions if the event has positions
@@ -137,8 +144,10 @@ impl EventCx<'_> {
                     }
                 }
             }
-            return EventPropagation::Stop;
+            return (EventPropagation::Stop, PointerEventConsumed::Yes);
         }
+
+        let mut view_pointer_event_consumed = PointerEventConsumed::No;
 
         if !directed {
             let children = view_id.children();
@@ -146,13 +155,17 @@ impl EventCx<'_> {
                 if !self.should_send(child, &event) {
                     continue;
                 }
-                if self
-                    .unconditional_view_event(child, event.clone(), false)
-                    .is_processed()
-                {
-                    return EventPropagation::Stop;
+                let (event_propagation, pointer_event_consumed) =
+                    self.unconditional_view_event(child, event.clone(), false);
+                if event_propagation.is_processed() {
+                    return (EventPropagation::Stop, PointerEventConsumed::Yes);
                 }
-                if event.is_pointer() {
+                if event.is_pointer() && pointer_event_consumed == PointerEventConsumed::Yes {
+                    // if a child's pointer event was consumed because pointer-events: auto
+                    // we don't pass the pionter event the next child
+                    // also, we mark pointer_event_consumed to be yes
+                    // so that it will be bublled up the parent
+                    view_pointer_event_consumed = PointerEventConsumed::Yes;
                     break;
                 }
             }
@@ -164,7 +177,15 @@ impl EventCx<'_> {
                 .event_after_children(self, &event)
                 .is_processed()
         {
-            return EventPropagation::Stop;
+            return (EventPropagation::Stop, PointerEventConsumed::Yes);
+        }
+
+        if event.is_pointer()
+            && view_state.borrow().computed_style.get(PointerEventsProp)
+                == Some(PointerEvents::None)
+        {
+            // if pointer-events: none, we don't handle the pointer event
+            return (EventPropagation::Continue, view_pointer_event_consumed);
         }
 
         // CLARIFY: should this be disabled when disable_default?
@@ -204,7 +225,7 @@ impl EventCx<'_> {
                             let popout_menu = view_state.borrow().popout_menu.clone();
                             if let Some(menu) = popout_menu {
                                 show_context_menu(menu(), Some(bottom_left));
-                                return EventPropagation::Stop;
+                                return (EventPropagation::Stop, PointerEventConsumed::Yes);
                             }
                             if self.app_state.draggable.contains(&view_id)
                                 && self.app_state.drag_start.is_none()
@@ -284,7 +305,7 @@ impl EventCx<'_> {
                         .apply_event(&EventListener::PointerMove, &event)
                         .is_some_and(|prop| prop.is_processed())
                     {
-                        return EventPropagation::Stop;
+                        return (EventPropagation::Stop, PointerEventConsumed::Yes);
                     }
                 }
                 Event::PointerUp(pointer_event) => {
@@ -334,7 +355,7 @@ impl EventCx<'_> {
                                     handled | (handler.borrow_mut())(&event).is_processed()
                                 })
                             {
-                                return EventPropagation::Stop;
+                                return (EventPropagation::Stop, PointerEventConsumed::Yes);
                             }
                         }
 
@@ -346,7 +367,7 @@ impl EventCx<'_> {
                                     handled | (handler.borrow_mut())(&event).is_processed()
                                 })
                             {
-                                return EventPropagation::Stop;
+                                return (EventPropagation::Stop, PointerEventConsumed::Yes);
                             }
                         }
 
@@ -354,7 +375,7 @@ impl EventCx<'_> {
                             .apply_event(&EventListener::PointerUp, &event)
                             .is_some_and(|prop| prop.is_processed())
                         {
-                            return EventPropagation::Stop;
+                            return (EventPropagation::Stop, PointerEventConsumed::Yes);
                         }
                     } else if pointer_event.button.is_secondary() {
                         let rect = view_id.get_size().unwrap_or_default().to_rect();
@@ -370,7 +391,7 @@ impl EventCx<'_> {
                                     handled | (handler.borrow_mut())(&event).is_processed()
                                 })
                             {
-                                return EventPropagation::Stop;
+                                return (EventPropagation::Stop, PointerEventConsumed::Yes);
                             }
                         }
 
@@ -384,7 +405,7 @@ impl EventCx<'_> {
                         let context_menu = view_state.borrow().context_menu.clone();
                         if let Some(menu) = context_menu {
                             show_context_menu(menu(), Some(viewport_event_position));
-                            return EventPropagation::Stop;
+                            return (EventPropagation::Stop, PointerEventConsumed::Yes);
                         }
                     }
                 }
@@ -417,13 +438,13 @@ impl EventCx<'_> {
                             handled | (handler.borrow_mut())(&event).is_processed()
                         })
                     {
-                        return EventPropagation::Stop;
+                        return (EventPropagation::Stop, PointerEventConsumed::Yes);
                     }
                 }
             }
         }
 
-        EventPropagation::Continue
+        (EventPropagation::Continue, PointerEventConsumed::Yes)
     }
 
     /// translate a window-positioned event to the local coordinate system of a view
@@ -454,10 +475,6 @@ impl EventCx<'_> {
         let Some(point) = event.point() else {
             return true;
         };
-
-        if !id.state().borrow().pointer_events {
-            return false;
-        }
 
         let layout_rect = id.layout_rect();
         let Some(layout) = id.get_layout() else {
@@ -579,7 +596,10 @@ impl<'a> StyleCx<'a> {
         let style = view_state.borrow().combined_style.clone();
         self.direct = style;
         Style::apply_only_inherited(&mut self.current, &self.direct);
-        CaptureState::capture_style(view_id, self);
+        let mut computed_style = (*self.current).clone();
+        computed_style.apply_mut(self.direct.clone());
+        CaptureState::capture_style(view_id, self, computed_style.clone());
+        view_state.borrow_mut().computed_style = computed_style;
 
         // This is used by the `request_transition` and `style` methods below.
         self.current_view = view_id;
@@ -1186,7 +1206,7 @@ impl PaintCx<'_> {
 pub enum PaintState {
     /// The renderer is not yet initialized. This state is used to wait for the GPU resources to be acquired.
     PendingGpuResources {
-        window: Arc<dyn wgpu::WindowHandle>,
+        window: Arc<dyn Window>,
         rx: crossbeam::channel::Receiver<Result<GpuResources, GpuResourceError>>,
         font_embolden: f32,
         /// This field holds an instance of `Renderer::Uninitialized` until the GPU resources are acquired,
@@ -1195,17 +1215,15 @@ pub enum PaintState {
         ///
         /// Previously, `PaintState::renderer` and `PaintState::renderer_mut` would panic if called when the renderer was uninitialized.
         /// However, this turned out to be hard to handle properly and led to panics, especially since the rest of the application code can't control when the renderer is initialized.
-        renderer: crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>>,
+        renderer: crate::renderer::Renderer,
     },
     /// The renderer is initialized and ready to paint.
-    Initialized {
-        renderer: crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>>,
-    },
+    Initialized { renderer: crate::renderer::Renderer },
 }
 
 impl PaintState {
     pub fn new(
-        window: Arc<dyn wgpu::WindowHandle>,
+        window: Arc<dyn Window>,
         rx: crossbeam::channel::Receiver<Result<GpuResources, GpuResourceError>>,
         scale: f64,
         size: Size,
@@ -1241,16 +1259,14 @@ impl PaintState {
         }
     }
 
-    pub(crate) fn renderer(&self) -> &crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>> {
+    pub(crate) fn renderer(&self) -> &crate::renderer::Renderer {
         match self {
             PaintState::PendingGpuResources { renderer, .. } => renderer,
             PaintState::Initialized { renderer } => renderer,
         }
     }
 
-    pub(crate) fn renderer_mut(
-        &mut self,
-    ) -> &mut crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>> {
+    pub(crate) fn renderer_mut(&mut self) -> &mut crate::renderer::Renderer {
         match self {
             PaintState::PendingGpuResources { renderer, .. } => renderer,
             PaintState::Initialized { renderer } => renderer,
@@ -1281,7 +1297,7 @@ impl UpdateCx<'_> {
 }
 
 impl Deref for PaintCx<'_> {
-    type Target = crate::renderer::Renderer<Arc<dyn wgpu::WindowHandle>>;
+    type Target = crate::renderer::Renderer;
 
     fn deref(&self) -> &Self::Target {
         self.paint_state.renderer()

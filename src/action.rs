@@ -9,8 +9,8 @@
 use std::sync::atomic::AtomicU64;
 
 use floem_reactive::SignalWith;
-use floem_winit::window::ResizeDirection;
 use peniko::kurbo::{Point, Size, Vec2};
+use winit::window::ResizeDirection;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};

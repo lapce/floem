@@ -46,30 +46,48 @@ impl Menu {
         self.entry(MenuEntry::Separator)
     }
 
-    pub(crate) fn platform_menu(&self) -> floem_winit::menu::Menu {
-        let mut menu = if self.popup {
-            floem_winit::menu::Menu::new_for_popup()
-        } else {
-            floem_winit::menu::Menu::new()
-        };
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    pub(crate) fn platform_menu(&self) -> muda::Menu {
+        let menu = muda::Menu::new();
         for entry in &self.children {
             match entry {
                 MenuEntry::Separator => {
-                    menu.add_separator();
+                    let _ = menu.append(&muda::PredefinedMenuItem::separator());
                 }
                 MenuEntry::Item(item) => {
-                    menu.add_item(
-                        item.id as u32,
-                        &item.title,
-                        // item.key.as_ref(),
-                        item.selected,
+                    let _ = menu.append(&muda::MenuItem::with_id(
+                        item.id.clone(),
+                        item.title.clone(),
                         item.enabled,
-                    );
+                        None,
+                    ));
                 }
-                MenuEntry::SubMenu(m) => {
-                    let enabled = m.item.enabled;
-                    let title = m.item.title.clone();
-                    menu.add_dropdown(m.platform_menu(), &title, enabled);
+                MenuEntry::SubMenu(floem_menu) => {
+                    let _ = menu.append(&floem_menu.platform_submenu());
+                }
+            }
+        }
+        menu
+    }
+
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    pub(crate) fn platform_submenu(&self) -> muda::Submenu {
+        let menu = muda::Submenu::new(self.item.title.clone(), self.item.enabled);
+        for entry in &self.children {
+            match entry {
+                MenuEntry::Separator => {
+                    let _ = menu.append(&muda::PredefinedMenuItem::separator());
+                }
+                MenuEntry::Item(item) => {
+                    let _ = menu.append(&muda::MenuItem::with_id(
+                        item.id.clone(),
+                        item.title.clone(),
+                        item.enabled,
+                        None,
+                    ));
+                }
+                MenuEntry::SubMenu(floem_menu) => {
+                    let _ = menu.append(&floem_menu.platform_submenu());
                 }
             }
         }
@@ -78,10 +96,8 @@ impl Menu {
 }
 
 pub struct MenuItem {
-    pub(crate) id: u64,
+    pub(crate) id: String,
     pub(crate) title: String,
-    // key: Option<HotKey>,
-    selected: Option<bool>,
     pub(crate) enabled: bool,
     pub(crate) action: Option<Box<dyn Fn()>>,
 }
@@ -97,10 +113,8 @@ impl MenuItem {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Self {
-            id,
+            id: id.to_string(),
             title: title.into(),
-            // key: None,
-            selected: None,
             enabled: true,
             action: None,
         }

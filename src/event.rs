@@ -1,14 +1,14 @@
-use floem_winit::{
+use peniko::kurbo::{Affine, Point, Size};
+use winit::{
     keyboard::{KeyCode, PhysicalKey},
     window::Theme,
 };
-use peniko::kurbo::{Affine, Point, Size};
 
 use crate::{
     dropped_file::DroppedFileEvent,
     keyboard::KeyEvent,
     pointer::{PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
-    touchpad::TouchpadMagnifyEvent,
+    touchpad::PinchGestureEvent,
 };
 
 /// Control whether an event will continue propagating or whether it should stop.
@@ -68,8 +68,8 @@ pub enum EventListener {
     PointerEnter,
     /// Receives [`Event::PointerLeave`]
     PointerLeave,
-    /// Receives [`Event::TouchpadMagnify`]
-    TouchpadMagnify,
+    /// Receives [`Event::PinchGesture`]
+    PinchGesture,
     /// Receives [`Event::ImeEnabled`]
     ImeEnabled,
     /// Receives [`Event::ImeDisabled`]
@@ -109,7 +109,7 @@ pub enum Event {
     PointerMove(PointerMoveEvent),
     PointerWheel(PointerWheelEvent),
     PointerLeave,
-    TouchpadMagnify(TouchpadMagnifyEvent),
+    PinchGesture(PinchGestureEvent),
     DroppedFile(DroppedFileEvent),
     KeyDown(KeyEvent),
     KeyUp(KeyEvent),
@@ -139,7 +139,7 @@ impl Event {
             | Event::PointerMove(_)
             | Event::PointerWheel(_)
             | Event::PointerLeave
-            | Event::TouchpadMagnify(..)
+            | Event::PinchGesture(..)
             | Event::FocusGained
             | Event::FocusLost
             | Event::ImeEnabled
@@ -165,7 +165,7 @@ impl Event {
             | Event::PointerMove(_)
             | Event::PointerWheel(_)
             | Event::PointerLeave => true,
-            Event::TouchpadMagnify(_)
+            Event::PinchGesture(_)
             | Event::KeyDown(_)
             | Event::KeyUp(_)
             | Event::FocusGained
@@ -213,7 +213,7 @@ impl Event {
             | Event::ImeCommit(_)
             | Event::KeyDown(_)
             | Event::KeyUp(_) => false,
-            Event::TouchpadMagnify(_)
+            Event::PinchGesture(_)
             | Event::PointerLeave
             | Event::PointerMove(_)
             | Event::ThemeChanged(_)
@@ -235,7 +235,7 @@ impl Event {
             Event::PointerMove(pointer_event) => Some(pointer_event.pos),
             Event::PointerWheel(pointer_event) => Some(pointer_event.pos),
             Event::DroppedFile(event) => Some(event.pos),
-            Event::TouchpadMagnify(_)
+            Event::PinchGesture(_)
             | Event::PointerLeave
             | Event::KeyDown(_)
             | Event::KeyUp(_)
@@ -255,6 +255,10 @@ impl Event {
         }
     }
 
+    pub fn offset(self, offset: (f64, f64)) -> Event {
+        self.transform(Affine::translate(offset))
+    }
+
     pub fn transform(mut self, transform: Affine) -> Event {
         match &mut self {
             Event::PointerDown(pointer_event) | Event::PointerUp(pointer_event) => {
@@ -269,7 +273,7 @@ impl Event {
             Event::DroppedFile(event) => {
                 event.pos = transform.inverse() * event.pos;
             }
-            Event::TouchpadMagnify(_)
+            Event::PinchGesture(_)
             | Event::PointerLeave
             | Event::KeyDown(_)
             | Event::KeyUp(_)
@@ -297,7 +301,7 @@ impl Event {
             Event::PointerMove(_) => Some(EventListener::PointerMove),
             Event::PointerWheel(_) => Some(EventListener::PointerWheel),
             Event::PointerLeave => Some(EventListener::PointerLeave),
-            Event::TouchpadMagnify(_) => Some(EventListener::TouchpadMagnify),
+            Event::PinchGesture(_) => Some(EventListener::PinchGesture),
             Event::KeyDown(_) => Some(EventListener::KeyDown),
             Event::KeyUp(_) => Some(EventListener::KeyUp),
             Event::ImeEnabled => Some(EventListener::ImeEnabled),

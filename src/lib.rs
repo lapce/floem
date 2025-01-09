@@ -179,6 +179,8 @@
 pub mod action;
 pub mod animate;
 mod app;
+#[cfg(target_os = "macos")]
+mod app_delegate;
 mod app_handle;
 pub(crate) mod app_state;
 mod clipboard;

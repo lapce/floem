@@ -7,7 +7,12 @@ use crate::{read::SignalTrack, RwSignal, SignalGet, SignalUpdate, SignalWith};
 /// This is useful when you want a single state variable and don't want to use effects to synchronize multiple signals.
 ///
 /// This is also useful when you want a derived signal that implements the [SignalGet], [SignalWith], etc. traits.
-pub struct DerivedRwSignal<T, O, GF: Fn(&T) -> O + Clone + 'static, UF: Fn(&O) -> T + 'static> {
+pub struct DerivedRwSignal<
+    T: 'static,
+    O,
+    GF: Fn(&T) -> O + Clone + 'static,
+    UF: Fn(&O) -> T + 'static,
+> {
     signal: RwSignal<T>,
     getter: RwSignal<Box<GF>>,
     setter: RwSignal<Box<UF>>,

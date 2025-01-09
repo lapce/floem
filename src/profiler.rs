@@ -7,12 +7,12 @@ use crate::views::{
     text, v_stack, v_stack_from_iter, Decorators,
 };
 use floem_reactive::{create_rw_signal, RwSignal, Scope, SignalGet, SignalUpdate};
-use floem_winit::window::WindowId;
 use peniko::Color;
 use std::fmt::Display;
 use std::mem;
 use std::rc::Rc;
 use taffy::style::FlexDirection;
+use winit::window::WindowId;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};

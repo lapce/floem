@@ -28,6 +28,39 @@ pub struct Svg {
 
 style_class!(pub SvgClass);
 
+pub struct SvgStrFn {
+    str_fn: Box<dyn Fn() -> String>,
+}
+
+impl<T, F> From<F> for SvgStrFn
+where
+    F: Fn() -> T + 'static,
+    T: Into<String>,
+{
+    fn from(value: F) -> Self {
+        SvgStrFn {
+            str_fn: Box::new(move || value().into()),
+        }
+    }
+}
+
+impl From<String> for SvgStrFn {
+    fn from(value: String) -> Self {
+        SvgStrFn {
+            str_fn: Box::new(move || value.clone()),
+        }
+    }
+}
+
+impl From<&str> for SvgStrFn {
+    fn from(value: &str) -> Self {
+        let value = value.to_string();
+        SvgStrFn {
+            str_fn: Box::new(move || value.clone()),
+        }
+    }
+}
+
 impl Svg {
     pub fn update_value<S: Into<String>>(self, svg_str: impl Fn() -> S + 'static) -> Self {
         let id = self.id;
@@ -39,9 +72,13 @@ impl Svg {
     }
 }
 
-pub fn svg(svg_str: impl Into<String> + 'static) -> Svg {
+pub fn svg(svg_str_fn: impl Into<SvgStrFn> + 'static) -> Svg {
     let id = ViewId::new();
-    id.update_state(svg_str.into());
+    let svg_str_fn: SvgStrFn = svg_str_fn.into();
+    create_effect(move |_| {
+        let new_svg_str = (svg_str_fn.str_fn)();
+        id.update_state(new_svg_str);
+    });
     Svg {
         id,
         svg_tree: None,

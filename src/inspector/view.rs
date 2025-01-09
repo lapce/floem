@@ -12,16 +12,15 @@ use crate::prelude::{
 use crate::profiler::profiler;
 use crate::views::Decorators;
 use crate::window::WindowConfig;
-use crate::{new_window, IntoView, View, ViewId};
+use crate::{keyboard, new_window, IntoView, View, ViewId};
 use floem_reactive::{
     create_effect, create_rw_signal, create_signal, RwSignal, SignalGet, SignalUpdate,
 };
-use floem_winit::keyboard;
-use floem_winit::keyboard::NamedKey;
-use floem_winit::window::WindowId;
 use peniko::Color;
 use slotmap::Key;
 use std::rc::Rc;
+use winit::keyboard::NamedKey;
+use winit::window::WindowId;
 
 pub fn capture(window_id: WindowId) {
     let capture = CAPTURE.with(|c| *c);
@@ -256,48 +255,46 @@ fn capture_view(
     });
 
     let capture_ = capture.clone();
-    let selected_overlay = empty()
-        .style(move |s| {
-            if let Some(view) = capture_view
-                .selected
-                .get()
-                .and_then(|id| capture_.root.find(id))
-            {
-                s.absolute()
-                    .margin_left(5.0 + view.layout.x0)
-                    .margin_top(5.0 + view.layout.y0)
-                    .width(view.layout.width())
-                    .height(view.layout.height())
-                    .background(Color::rgb8(186, 180, 216).multiply_alpha(0.5))
-                    .border_color(Color::rgb8(186, 180, 216).multiply_alpha(0.7))
-                    .border(1.)
-            } else {
-                s
-            }
-        })
-        .pointer_events(|| false);
+    let selected_overlay = empty().style(move |s| {
+        if let Some(view) = capture_view
+            .selected
+            .get()
+            .and_then(|id| capture_.root.find(id))
+        {
+            s.absolute()
+                .margin_left(5.0 + view.layout.x0)
+                .margin_top(5.0 + view.layout.y0)
+                .width(view.layout.width())
+                .height(view.layout.height())
+                .background(Color::rgb8(186, 180, 216).multiply_alpha(0.5))
+                .border_color(Color::rgb8(186, 180, 216).multiply_alpha(0.7))
+                .border(1.)
+        } else {
+            s
+        }
+        .pointer_events_none()
+    });
 
     let capture_ = capture.clone();
-    let highlighted_overlay = empty()
-        .style(move |s| {
-            if let Some(view) = capture_view
-                .highlighted
-                .get()
-                .and_then(|id| capture_.root.find(id))
-            {
-                s.absolute()
-                    .margin_left(5.0 + view.layout.x0)
-                    .margin_top(5.0 + view.layout.y0)
-                    .width(view.layout.width())
-                    .height(view.layout.height())
-                    .background(Color::rgba8(228, 237, 216, 120))
-                    .border_color(Color::rgba8(75, 87, 53, 120))
-                    .border(1.)
-            } else {
-                s
-            }
-        })
-        .pointer_events(|| false);
+    let highlighted_overlay = empty().style(move |s| {
+        if let Some(view) = capture_view
+            .highlighted
+            .get()
+            .and_then(|id| capture_.root.find(id))
+        {
+            s.absolute()
+                .margin_left(5.0 + view.layout.x0)
+                .margin_top(5.0 + view.layout.y0)
+                .width(view.layout.width())
+                .height(view.layout.height())
+                .background(Color::rgba8(228, 237, 216, 120))
+                .border_color(Color::rgba8(75, 87, 53, 120))
+                .border(1.)
+        } else {
+            s
+        }
+        .pointer_events_none()
+    });
 
     let image = stack((image, selected_overlay, highlighted_overlay));
 

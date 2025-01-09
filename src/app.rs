@@ -1,14 +1,15 @@
 use std::{cell::RefCell, rc::Rc};
 
+use crossbeam_channel::{Receiver, Sender};
 use floem_reactive::WriteSignal;
-use floem_winit::{
-    event_loop::{ControlFlow, EventLoop, EventLoopBuilder, EventLoopProxy},
-    monitor::MonitorHandle,
+use parking_lot::Mutex;
+use raw_window_handle::HasDisplayHandle;
+use winit::{
+    application::ApplicationHandler,
+    event::WindowEvent,
+    event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy},
     window::WindowId,
 };
-use parking_lot::Mutex;
-#[allow(deprecated)]
-use raw_window_handle::HasRawDisplayHandle;
 
 use crate::{
     action::{Timer, TimerToken},
@@ -16,13 +17,13 @@ use crate::{
     clipboard::Clipboard,
     inspector::Capture,
     profiler::Profile,
-    view::{IntoView, View},
-    window::WindowConfig,
+    view::IntoView,
+    window::{WindowConfig, WindowCreation},
 };
 
-type AppEventCallback = dyn Fn(AppEvent);
+pub(crate) type AppEventCallback = dyn Fn(AppEvent);
 
-static EVENT_LOOP_PROXY: Mutex<Option<EventLoopProxy<UserEvent>>> = Mutex::new(None);
+static EVENT_LOOP_PROXY: Mutex<Option<(EventLoopProxy, Sender<UserEvent>)>> = Mutex::new(None);
 
 thread_local! {
     pub(crate) static APP_UPDATE_EVENTS: RefCell<Vec<AppUpdateEvent>> = Default::default();
@@ -49,18 +50,22 @@ pub enum AppEvent {
     Reopen { has_visible_windows: bool },
 }
 
-#[derive(Debug)]
 pub(crate) enum UserEvent {
     AppUpdate,
     Idle,
     QuitApp,
-    GpuResourcesUpdate { window_id: WindowId },
+    #[allow(dead_code)]
+    Reopen {
+        has_visible_windows: bool,
+    },
+    GpuResourcesUpdate {
+        window_id: WindowId,
+    },
 }
 
 pub(crate) enum AppUpdateEvent {
     NewWindow {
-        view_fn: Box<dyn FnOnce(WindowId) -> Box<dyn View>>,
-        config: Option<WindowConfig>,
+        window_creation: WindowCreation,
     },
     CloseWindow {
         window_id: WindowId,
@@ -79,10 +84,8 @@ pub(crate) enum AppUpdateEvent {
     CancelTimer {
         timer: TimerToken,
     },
-    #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     MenuAction {
-        window_id: WindowId,
-        action_id: usize,
+        action_id: String,
     },
 }
 
@@ -90,17 +93,16 @@ pub(crate) fn add_app_update_event(event: AppUpdateEvent) {
     APP_UPDATE_EVENTS.with(|events| {
         events.borrow_mut().push(event);
     });
-    Application::with_event_loop_proxy(|proxy| {
-        let _ = proxy.send_event(UserEvent::AppUpdate);
-    });
+    Application::send_proxy_event(UserEvent::AppUpdate);
 }
 
 /// Floem top level application
 /// This is the entry point of the application.
 pub struct Application {
-    handle: Option<ApplicationHandle>,
-    event_listener: Option<Box<AppEventCallback>>,
-    event_loop: EventLoop<UserEvent>,
+    receiver: Receiver<UserEvent>,
+    handle: ApplicationHandle,
+    event_loop: Option<EventLoop>,
+    initial_windows: Vec<WindowCreation>,
 }
 
 impl Default for Application {
@@ -109,27 +111,79 @@ impl Default for Application {
     }
 }
 
+impl ApplicationHandler for Application {
+    fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
+        while let Some(window_creation) = self.initial_windows.pop() {
+            self.handle.new_window(
+                event_loop,
+                window_creation.view_fn,
+                window_creation.config.unwrap_or_default(),
+            );
+        }
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &dyn ActiveEventLoop,
+        window_id: WindowId,
+        event: WindowEvent,
+    ) {
+        self.handle.handle_timer(event_loop);
+        self.handle
+            .handle_window_event(window_id, event, event_loop);
+    }
+
+    fn proxy_wake_up(&mut self, event_loop: &dyn ActiveEventLoop) {
+        self.handle.handle_timer(event_loop);
+        for event in self.receiver.try_iter() {
+            self.handle.handle_user_event(event_loop, event);
+        }
+        self.handle.handle_updates_for_all_windows();
+    }
+
+    fn exiting(&mut self, _event_loop: &dyn ActiveEventLoop) {
+        if let Some(action) = self.handle.event_listener.as_ref() {
+            action(AppEvent::WillTerminate);
+        }
+    }
+
+    fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
+        self.handle.handle_timer(event_loop);
+    }
+}
+
 impl Application {
     pub fn new() -> Self {
-        let event_loop = EventLoopBuilder::with_user_event()
-            .build()
-            .expect("can't start the event loop");
+        let event_loop = EventLoop::new().expect("can't start the event loop");
+
+        #[cfg(target_os = "macos")]
+        crate::app_delegate::set_app_delegate();
+
         let event_loop_proxy = event_loop.create_proxy();
-        *EVENT_LOOP_PROXY.lock() = Some(event_loop_proxy.clone());
+        let (sender, receiver) = crossbeam_channel::unbounded();
+        *EVENT_LOOP_PROXY.lock() = Some((event_loop_proxy.clone(), sender));
         unsafe {
-            #[allow(deprecated)]
-            Clipboard::init(event_loop.raw_display_handle().unwrap());
+            Clipboard::init(event_loop.display_handle().unwrap().as_raw());
         }
         let handle = ApplicationHandle::new();
+
+        #[cfg(any(target_os = "windows", target_os = "macos"))]
+        muda::MenuEvent::set_event_handler(Some(move |event: muda::MenuEvent| {
+            add_app_update_event(AppUpdateEvent::MenuAction {
+                action_id: event.id.0,
+            });
+        }));
+
         Self {
-            handle: Some(handle),
-            event_listener: None,
-            event_loop,
+            receiver,
+            handle,
+            event_loop: Some(event_loop),
+            initial_windows: Vec::new(),
         }
     }
 
     pub fn on_event(mut self, action: impl Fn(AppEvent) + 'static) -> Self {
-        self.event_listener = Some(Box::new(action));
+        self.handle.event_listener = Some(Box::new(action));
         self
     }
 
@@ -145,58 +199,23 @@ impl Application {
         app_view: impl FnOnce(WindowId) -> V + 'static,
         config: Option<WindowConfig>,
     ) -> Self {
-        self.handle.as_mut().unwrap().new_window(
-            &self.event_loop,
-            self.event_loop.create_proxy(),
-            Box::new(|window_id| app_view(window_id).into_any()),
-            config.unwrap_or_default(),
-        );
+        self.initial_windows.push(WindowCreation {
+            view_fn: Box::new(move |window_id: WindowId| app_view(window_id).into_any()),
+            config,
+        });
         self
     }
 
     pub fn run(mut self) {
-        let mut handle = self.handle.take().unwrap();
-        handle.idle();
-        let event_loop_proxy = self.event_loop.create_proxy();
-        let _ = self.event_loop.run(|event, event_loop| {
-            event_loop.set_control_flow(ControlFlow::Wait);
-            handle.handle_timer(event_loop);
-
-            match event {
-                floem_winit::event::Event::NewEvents(_) => {}
-                floem_winit::event::Event::WindowEvent { window_id, event } => {
-                    handle.handle_window_event(window_id, event, event_loop);
-                }
-                floem_winit::event::Event::DeviceEvent { .. } => {}
-                floem_winit::event::Event::UserEvent(event) => {
-                    handle.handle_user_event(event_loop, event_loop_proxy.clone(), event);
-                }
-                floem_winit::event::Event::Suspended => {}
-                floem_winit::event::Event::Resumed => {}
-                floem_winit::event::Event::AboutToWait => {}
-                floem_winit::event::Event::LoopExiting => {
-                    if let Some(action) = self.event_listener.as_ref() {
-                        action(AppEvent::WillTerminate);
-                    }
-                }
-                floem_winit::event::Event::MemoryWarning => {}
-                floem_winit::event::Event::Reopen => {}
-            }
-        });
+        let event_loop = self.event_loop.take().unwrap();
+        let _ = event_loop.run_app(self);
     }
 
-    pub(crate) fn with_event_loop_proxy(f: impl FnOnce(&EventLoopProxy<UserEvent>)) {
-        if let Some(proxy) = EVENT_LOOP_PROXY.lock().as_ref() {
-            f(proxy);
+    pub(crate) fn send_proxy_event(event: UserEvent) {
+        if let Some((proxy, sender)) = EVENT_LOOP_PROXY.lock().as_ref() {
+            let _ = sender.send(event);
+            proxy.wake_up();
         }
-    }
-
-    pub fn available_monitors(&self) -> impl Iterator<Item = MonitorHandle> {
-        self.event_loop.available_monitors()
-    }
-
-    pub fn primary_monitor(&self) -> Option<MonitorHandle> {
-        self.event_loop.primary_monitor()
     }
 }
 
@@ -205,7 +224,5 @@ impl Application {
 /// This function sends a `QuitApp` event to the application's event loop,
 /// triggering the application to close gracefully.
 pub fn quit_app() {
-    Application::with_event_loop_proxy(|proxy| {
-        let _ = proxy.send_event(UserEvent::QuitApp);
-    });
+    Application::send_proxy_event(UserEvent::QuitApp);
 }

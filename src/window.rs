@@ -1,14 +1,20 @@
-pub use floem_winit::window::Fullscreen;
-pub use floem_winit::window::Icon;
-pub use floem_winit::window::ResizeDirection;
-pub use floem_winit::window::Theme;
-pub use floem_winit::window::WindowButtons;
-pub use floem_winit::window::WindowId;
-pub use floem_winit::window::WindowLevel;
 use peniko::kurbo::{Point, Size};
+pub use winit::window::Fullscreen;
+pub use winit::window::Icon;
+pub use winit::window::ResizeDirection;
+pub use winit::window::Theme;
+pub use winit::window::WindowButtons;
+pub use winit::window::WindowId;
+pub use winit::window::WindowLevel;
 
 use crate::app::{add_app_update_event, AppUpdateEvent};
 use crate::view::IntoView;
+use crate::AnyView;
+
+pub struct WindowCreation {
+    pub(crate) view_fn: Box<dyn FnOnce(WindowId) -> AnyView>,
+    pub(crate) config: Option<WindowConfig>,
+}
 
 /// Configures various attributes (e.g. size, position, transparency, etc.) of a window.
 #[derive(Debug)]
@@ -352,13 +358,13 @@ pub enum MacOsOptionAsAlt {
 }
 
 #[cfg(target_os = "macos")]
-impl From<MacOsOptionAsAlt> for floem_winit::platform::macos::OptionAsAlt {
-    fn from(opts: MacOsOptionAsAlt) -> floem_winit::platform::macos::OptionAsAlt {
+impl From<MacOsOptionAsAlt> for winit::platform::macos::OptionAsAlt {
+    fn from(opts: MacOsOptionAsAlt) -> winit::platform::macos::OptionAsAlt {
         match opts {
-            MacOsOptionAsAlt::OnlyLeft => floem_winit::platform::macos::OptionAsAlt::OnlyLeft,
-            MacOsOptionAsAlt::OnlyRight => floem_winit::platform::macos::OptionAsAlt::OnlyRight,
-            MacOsOptionAsAlt::Both => floem_winit::platform::macos::OptionAsAlt::Both,
-            MacOsOptionAsAlt::None => floem_winit::platform::macos::OptionAsAlt::None,
+            MacOsOptionAsAlt::OnlyLeft => winit::platform::macos::OptionAsAlt::OnlyLeft,
+            MacOsOptionAsAlt::OnlyRight => winit::platform::macos::OptionAsAlt::OnlyRight,
+            MacOsOptionAsAlt::Both => winit::platform::macos::OptionAsAlt::Both,
+            MacOsOptionAsAlt::None => winit::platform::macos::OptionAsAlt::None,
         }
     }
 }
@@ -385,8 +391,10 @@ pub fn new_window<V: IntoView + 'static>(
     config: Option<WindowConfig>,
 ) {
     add_app_update_event(AppUpdateEvent::NewWindow {
-        view_fn: Box::new(|window_id| app_view(window_id).into_any()),
-        config,
+        window_creation: WindowCreation {
+            view_fn: Box::new(|window_id| app_view(window_id).into_any()),
+            config,
+        },
     });
 }
 
