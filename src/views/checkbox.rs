@@ -195,8 +195,7 @@ pub fn labeled_checkbox<S: Display + 'static>(
     Checkbox::labeled(checked, label)
 }
 
-/// Renders a checkbox using the provided checked signal and a custom check. See also [`Checkbox::custom_labeled_rw`]
-/// and [`Checkbox::custom_labeled`].
+/// Renders a checkbox using the a `checked` signal and a custom SVG. See also [`Checkbox::custom_labeled_rw`]
 pub fn custom_labeled_checkbox<S: Display + 'static>(
     checked: impl Fn() -> bool + 'static,
     label: impl Fn() -> S + 'static,
