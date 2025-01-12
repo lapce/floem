@@ -251,8 +251,10 @@ pub struct MacOSWindowConfig {
     pub(crate) movable_by_window_background: Option<bool>,
     pub(crate) titlebar_transparent: Option<bool>,
     pub(crate) titlebar_hidden: Option<bool>,
+    pub(crate) title_hidden: Option<bool>,
     pub(crate) titlebar_buttons_hidden: Option<bool>,
     pub(crate) full_size_content_view: Option<bool>,
+    pub(crate) unified_titlebar: Option<bool>,
     pub(crate) movable: Option<bool>,
     pub(crate) traffic_lights_offset: Option<(f64, f64)>,
     pub(crate) accepts_first_mouse: Option<bool>,
@@ -260,6 +262,7 @@ pub struct MacOSWindowConfig {
     pub(crate) option_as_alt: Option<MacOsOptionAsAlt>,
     pub(crate) has_shadow: Option<bool>,
     pub(crate) disallow_high_dpi: Option<bool>,
+    pub(crate) panel: Option<bool>,
 }
 
 impl MacOSWindowConfig {
@@ -282,6 +285,12 @@ impl MacOSWindowConfig {
         self
     }
 
+    /// Hides the title.
+    pub fn hide_title(mut self, val: bool) -> Self {
+        self.title_hidden = Some(val);
+        self
+    }
+
     /// Hides the title bar buttons.
     pub fn hide_titlebar_buttons(mut self, val: bool) -> Self {
         self.titlebar_buttons_hidden = Some(val);
@@ -291,6 +300,12 @@ impl MacOSWindowConfig {
     /// Make the window content [use the full size of the window, including the title bar area](https://developer.apple.com/documentation/appkit/nswindow/stylemask/1644646-fullsizecontentview).
     pub fn full_size_content_view(mut self, val: bool) -> Self {
         self.full_size_content_view = Some(val);
+        self
+    }
+
+    /// unify the titlebar
+    pub fn unified_titlebar(mut self, val: bool) -> Self {
+        self.unified_titlebar = Some(val);
         self
     }
 
@@ -339,6 +354,12 @@ impl MacOSWindowConfig {
     /// be scaled for the display or pixel-accurate.
     pub fn disallow_high_dpi(mut self, val: bool) -> Self {
         self.disallow_high_dpi = Some(val);
+        self
+    }
+
+    /// Set whether the window is a panel
+    pub fn panel(mut self, val: bool) -> Self {
+        self.panel = Some(val);
         self
     }
 }
