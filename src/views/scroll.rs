@@ -425,14 +425,7 @@ impl Scroll {
     fn child_size(&self) -> Size {
         self.child
             .get_layout()
-            .map(|layout| {
-                // Whenever content overflows the container use content_size,
-                // otherwise just use size
-                Size::new(
-                    layout.size.width.max(layout.content_size.width) as f64,
-                    layout.size.height.max(layout.content_size.width) as f64,
-                )
-            })
+            .map(|layout| Size::new(layout.size.width as f64, layout.size.height as f64))
             .unwrap()
     }
 
