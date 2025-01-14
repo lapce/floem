@@ -202,7 +202,7 @@ pub fn create_signal_from_tokio_channel<T: Send + 'static>(
     mut rx: tokio::sync::mpsc::UnboundedReceiver<T>,
 ) -> ReadSignal<Option<T>> {
     let cx = Scope::new();
-    let trigger = cx.create_trigger();
+    let trigger = with_scope(cx, ExtSendTrigger::new);
 
     let channel_closed = cx.create_rw_signal(false);
     let (read, write) = cx.create_signal(None);
