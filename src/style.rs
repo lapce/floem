@@ -26,8 +26,8 @@ use taffy::{
     geometry::{MinMax, Size},
     prelude::{GridPlacement, Line, Rect},
     style::{
-        LengthPercentage, MaxTrackSizingFunction, MinTrackSizingFunction, Style as TaffyStyle,
-        TrackSizingFunction,
+        LengthPercentage, MaxTrackSizingFunction, MinTrackSizingFunction, Overflow,
+        Style as TaffyStyle, TrackSizingFunction,
     },
 };
 
@@ -74,6 +74,7 @@ impl StylePropValue for f64 {
         Some(*self * (1.0 - value) + *other * value)
     }
 }
+impl StylePropValue for Overflow {}
 impl StylePropValue for Display {}
 impl StylePropValue for Position {}
 impl StylePropValue for FlexDirection {}
@@ -1674,6 +1675,16 @@ define_builtin_props!(
     Rotation rotate: Px {} = Px(0.),
 );
 
+prop!(
+    /// How children overflowing their container in Y axis should affect layout
+    pub(crate) OverflowX: Overflow {} = Overflow::default()
+);
+
+prop!(
+    /// How children overflowing their container in X axis should affect layout
+    pub(crate) OverflowY: Overflow {} = Overflow::default()
+);
+
 prop_extractor! {
     pub FontProps {
         pub size: FontSize,
@@ -2357,6 +2368,10 @@ impl Style {
         let style = self.builtin();
         TaffyStyle {
             display: style.display(),
+            overflow: taffy::Point {
+                x: self.get(OverflowX),
+                y: self.get(OverflowY),
+            },
             position: style.position(),
             size: taffy::prelude::Size {
                 width: style.width().into(),

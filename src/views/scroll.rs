@@ -5,7 +5,7 @@ use floem_reactive::create_effect;
 use peniko::kurbo::{Point, Rect, Size, Stroke, Vec2};
 use peniko::{Brush, Color};
 
-use crate::style::CustomStylable;
+use crate::style::{CustomStylable, OverflowX, OverflowY};
 use crate::unit::PxPct;
 use crate::{
     app_state::AppState,
@@ -733,7 +733,12 @@ impl View for Scroll {
     }
 
     fn view_style(&self) -> Option<Style> {
-        Some(Style::new().items_start())
+        Some(
+            Style::new()
+                .items_start()
+                .set(OverflowX, taffy::Overflow::Scroll)
+                .set(OverflowY, taffy::Overflow::Scroll),
+        )
     }
 
     fn update(&mut self, cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {

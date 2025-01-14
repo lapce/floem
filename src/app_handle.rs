@@ -395,8 +395,14 @@ impl ApplicationHandle {
             if let Some(val) = mac.titlebar_hidden {
                 window_attributes = window_attributes.with_titlebar_hidden(val);
             }
+            if let Some(val) = mac.title_hidden {
+                window_attributes = window_attributes.with_title_hidden(val);
+            }
             if let Some(val) = mac.full_size_content_view {
                 window_attributes = window_attributes.with_fullsize_content_view(val);
+            }
+            if let Some(val) = mac.unified_titlebar {
+                window_attributes = window_attributes.with_unified_titlebar(val);
             }
             if let Some(val) = mac.movable {
                 window_attributes = window_attributes.with_movable_by_window_background(val);
@@ -422,6 +428,9 @@ impl ApplicationHandle {
             }
             if let Some(hide) = mac.titlebar_buttons_hidden {
                 window_attributes = window_attributes.with_titlebar_buttons_hidden(hide)
+            }
+            if let Some(panel) = mac.panel {
+                window_attributes = window_attributes.with_panel(panel)
             }
         }
 
