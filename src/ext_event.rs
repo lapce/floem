@@ -44,19 +44,9 @@ impl ExtSendTrigger {
     }
 }
 
-pub trait ExtEvent {
-    fn create_ext_send_trigger(self) -> ExtSendTrigger;
-}
-
 pub fn create_trigger() -> ExtSendTrigger {
     ExtSendTrigger {
         signal: create_rw_signal(()),
-    }
-}
-
-impl ExtEvent for Scope {
-    fn create_ext_send_trigger(self) -> ExtSendTrigger {
-        with_scope(self, create_trigger)
     }
 }
 
@@ -212,7 +202,7 @@ pub fn create_signal_from_tokio_channel<T: Send + 'static>(
     mut rx: tokio::sync::mpsc::UnboundedReceiver<T>,
 ) -> ReadSignal<Option<T>> {
     let cx = Scope::new();
-    let trigger = cx.create_ext_send_trigger();
+    let trigger = with_scope(cx, ExtSendTrigger::new);
 
     let channel_closed = cx.create_rw_signal(false);
     let (read, write) = cx.create_signal(None);
