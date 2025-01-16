@@ -1,36 +1,85 @@
-use floem::{
-    menu::{Menu, MenuItem},
-    views::{label, stack, Decorators},
-    IntoView,
-};
+use floem::{menu::*, prelude::ViewTuple, views::Decorators, IntoView};
 
 pub fn menu_view() -> impl IntoView {
-    stack({
-        (
-            label(|| "Click me (Popout menu)")
-                .style(|s| s.padding(10.0).margin_bottom(10.0).border(1.0))
-                .popout_menu(|| {
-                    Menu::new("")
-                        .entry(MenuItem::new("I am a menu item!"))
-                        .separator()
-                        .entry(MenuItem::new("I am another menu item"))
-                }),
-            label(|| "Right click me (Context menu)")
-                .style(|s| s.padding(10.0).border(1.0))
-                .context_menu(|| {
-                    Menu::new("")
-                        .entry(
-                            Menu::new("Sub Menu").entry(MenuItem::new("item 2").action(|| {
-                                println!("sub menu item 2");
-                            })),
-                        )
-                        .entry(
-                            MenuItem::new("Menu item with something on the\tright").action(|| {
-                                println!("menu item with something on the right");
-                            }),
-                        )
-                }),
-        )
-    })
-    .style(|s| s.flex_col())
+    let export_submenu = |m: MenuBuilder| {
+        m.item("PDF", |i| i.action(|| println!("Exporting as PDF...")))
+            .item("PNG", |i| i.action(|| println!("Exporting as PNG...")))
+            .item("SVG", |i| i.action(|| println!("Exporting as SVG...")))
+            .separator()
+            .item("HTML", |i| {
+                i.enabled(false)
+                    .action(|| println!("HTML export coming soon..."))
+            })
+    };
+    let popout_menu = move || {
+        menu()
+            .item("New Document", |i| {
+                i.action(|| println!("Creating new document..."))
+            })
+            .item("Open Recent", |i| {
+                i.action(|| println!("Opening recent files..."))
+            })
+            .separator()
+            .submenu("Export As", |s| s, export_submenu)
+            .separator()
+            .item("Auto Save", |i| {
+                i.checked(true).action(|| println!("Toggled auto save"))
+            })
+            .item("Show Grid", |i| {
+                i.checked(false)
+                    .action(|| println!("Toggled grid visibility"))
+            })
+            .separator()
+            .item("Preferences", |i| {
+                i.action(|| println!("Opening preferences..."))
+            })
+    };
+
+    let transform_submenu = |m: MenuBuilder| {
+        m.item("Rotate 90°", |i| {
+            i.action(|| println!("Rotating 90 degrees..."))
+        })
+        .item("Flip Horizontal", |i| {
+            i.action(|| println!("Flipping horizontally..."))
+        })
+        .item("Flip Vertical", |i| {
+            i.action(|| println!("Flipping vertically..."))
+        })
+        .separator()
+        .item("Reset Transform", |i| {
+            i.action(|| println!("Resetting transform..."))
+        })
+    };
+    let context_menu = move || {
+        menu()
+            .item("Cut", |i| i.action(|| println!("Cut to clipboard")))
+            .item("Copy", |i| i.action(|| println!("Copied to clipboard")))
+            .item("Paste", |i| {
+                i.enabled(false) // Simulate empty clipboard
+                    .action(|| println!("Pasted from clipboard"))
+            })
+            .separator()
+            .submenu("Transform", |s| s, transform_submenu)
+            .separator()
+            .item("Duplicate", |i| {
+                i.action(|| println!("Creating duplicate..."))
+            })
+            .item("Delete", |i| i.action(|| println!("Deleting item...")))
+            .separator()
+            .item("Properties", |i| {
+                i.action(|| println!("Opening properties panel..."))
+            })
+    };
+
+    let popout_button = "Click me (Popout menu)"
+        .style(|s| s.padding(10.0).margin_bottom(10.0).border(1.0))
+        .popout_menu(popout_menu);
+
+    let context_button = "Right click me (Context menu)"
+        .style(|s| s.padding(10.0).border(1.0))
+        .context_menu(context_menu);
+
+    (popout_button, context_button)
+        .v_stack()
+        .style(|s| s.selectable(false))
 }

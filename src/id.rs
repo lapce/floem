@@ -15,7 +15,7 @@ use crate::{
     animate::{AnimStateCommand, Animation},
     context::{EventCallback, ResizeCallback},
     event::{EventListener, EventPropagation},
-    menu::Menu,
+    menu::MenuBuilder,
     style::{DisplayProp, Style, StyleClassRef, StyleSelector},
     unit::PxPct,
     update::{UpdateMessage, CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES},
@@ -356,14 +356,14 @@ impl ViewId {
     }
 
     /// Set the system context menu that should be shown when this view is right-clicked
-    pub fn update_context_menu(&self, menu: impl Fn() -> Menu + 'static) {
+    pub fn update_context_menu(&self, menu: impl Fn() -> MenuBuilder + 'static) {
         self.state().borrow_mut().context_menu = Some(Rc::new(menu));
     }
 
     /// Set the system popout menu that should be shown when this view is clicked
     ///
     /// Adds a primary-click context menu, which opens below the view.
-    pub fn update_popout_menu(&self, menu: impl Fn() -> Menu + 'static) {
+    pub fn update_popout_menu(&self, menu: impl Fn() -> MenuBuilder + 'static) {
         self.state().borrow_mut().popout_menu = Some(Rc::new(menu));
     }
 

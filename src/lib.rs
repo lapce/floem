@@ -229,6 +229,7 @@ pub use floem_renderer::text;
 pub use floem_renderer::Renderer;
 pub use floem_renderer::Svg as RendererSvg;
 pub use id::ViewId;
+pub use muda;
 pub use peniko;
 pub use peniko::kurbo;
 pub use screen_layout::ScreenLayout;
