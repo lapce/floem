@@ -2,6 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 #[cfg(feature = "crossbeam")]
 use crossbeam::channel::{unbounded as channel, Receiver, Sender};
+use muda::MenuId;
 #[cfg(not(feature = "crossbeam"))]
 use std::sync::mpsc::{channel, Receiver, Sender};
 
@@ -120,7 +121,7 @@ pub(crate) enum AppUpdateEvent {
         timer: TimerToken,
     },
     MenuAction {
-        action_id: String,
+        action_id: MenuId,
     },
 }
 
@@ -209,7 +210,7 @@ impl Application {
         #[cfg(any(target_os = "windows", target_os = "macos"))]
         muda::MenuEvent::set_event_handler(Some(move |event: muda::MenuEvent| {
             add_app_update_event(AppUpdateEvent::MenuAction {
-                action_id: event.id.0,
+                action_id: event.id,
             });
         }));
 

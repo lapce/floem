@@ -1,5 +1,6 @@
 use std::{cell::RefCell, mem, path::PathBuf, rc::Rc, sync::Arc};
 
+use muda::MenuId;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
@@ -34,7 +35,6 @@ use crate::{
     id::ViewId,
     inspector::{self, Capture, CaptureState, CapturedView},
     keyboard::{KeyEvent, Modifiers},
-    menu::Menu,
     nav::view_arrow_navigation,
     pointer::{PointerButton, PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
     profiler::Profile,
@@ -1031,22 +1031,30 @@ impl WindowHandle {
                         self.paint_state.set_scale(scale);
                     }
                     UpdateMessage::ShowContextMenu { menu, pos } => {
-                        let mut menu = menu.popup();
+                        let (menu, registry) = menu.build();
                         cx.app_state.context_menu.clear();
-                        cx.app_state.update_context_menu(&mut menu);
+                        cx.app_state.update_context_menu(registry);
 
                         #[cfg(any(target_os = "windows", target_os = "macos"))]
                         {
-                            let platform_menu = menu.platform_menu();
-                            self.show_context_menu(platform_menu, pos);
+                            self.show_context_menu(menu, pos);
                         }
                         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
                         self.show_context_menu(menu, pos);
                     }
                     UpdateMessage::WindowMenu { menu } => {
-                        // let platform_menu = menu.platform_menu();
-                        self.update_window_menu(menu);
-                        // self.handle.set_menu(platform_menu);
+                        self.app_state.window_menu.clear();
+                        let (menu, registry) = menu.build();
+                        self.app_state.update_window_menu(registry);
+                        #[cfg(target_os = "macos")]
+                        {
+                            menu.init_for_nsapp();
+                        }
+                        #[cfg(target_os = "windows")]
+                        {
+                            self.init_menu_for_windows(menu);
+                        }
+                        self.app_state.window_menu_ref = Some(menu);
                     }
                     UpdateMessage::SetWindowTitle { title } => {
                         if let Some(window) = self.window.as_ref() {
@@ -1155,25 +1163,6 @@ impl WindowHandle {
         })
     }
 
-    fn update_window_menu(&mut self, _menu: Menu) {
-        // if let Some(action) = menu.item.action.take() {
-        //     self.window_menu.insert(menu.item.id as u32, action);
-        // }
-        // for child in menu.children {
-        //     match child {
-        //         crate::menu::MenuEntry::Separator => {}
-        //         crate::menu::MenuEntry::Item(mut item) => {
-        //             if let Some(action) = item.action.take() {
-        //                 self.window_menu.insert(item.id as u32, action);
-        //             }
-        //         }
-        //         crate::menu::MenuEntry::SubMenu(m) => {
-        //             self.update_window_menu(m);
-        //         }
-        //     }
-        // }
-    }
-
     fn set_cursor(&mut self) {
         let cursor = match self.app_state.cursor {
             Some(CursorStyle::Default) => CursorIcon::Default,
@@ -1271,19 +1260,37 @@ impl WindowHandle {
         }
     }
 
+    #[cfg(target_os = "windows")]
+    fn init_menu_for_windows(&self, menu: &muda::Menu) {
+        use muda::{
+            dpi::{LogicalPosition, Position},
+            ContextMenu,
+        };
+        use raw_window_handle::HasWindowHandle;
+        use raw_window_handle::RawWindowHandle;
+
+        if let Some(window) = self.window.as_ref() {
+            if let RawWindowHandle::Win32(handle) = window.window_handle().unwrap().as_raw() {
+                unsafe {
+                    menu.init_for_hwnd(isize::from(handle.hwnd));
+                }
+            }
+        }
+    }
+
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-    fn show_context_menu(&self, menu: Menu, pos: Option<Point>) {
+    fn show_context_menu(&self, menu: muda::Menu, pos: Option<Point>) {
         let pos = pos.unwrap_or(self.cursor_position);
         let pos = Point::new(pos.x / self.app_state.scale, pos.y / self.app_state.scale);
         self.context_menu.set(Some((menu, pos, false)));
     }
 
-    pub(crate) fn menu_action(&mut self, id: &str) {
+    pub(crate) fn menu_action(&mut self, id: &MenuId) {
         set_current_view(self.id);
-        if let Some(action) = self.app_state.window_menu.get(id) {
+        if let Some(action) = self.app_state.context_menu.get(id) {
             (*action)();
             self.process_update();
-        } else if let Some(action) = self.app_state.context_menu.get(id) {
+        } else if let Some(action) = self.app_state.window_menu.get(id) {
             (*action)();
             self.process_update();
         }
@@ -1336,7 +1343,7 @@ pub(crate) fn set_current_view(id: ViewId) {
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 fn context_menu_view(
     cx: Scope,
-    context_menu: RwSignal<Option<(Menu, Point, bool)>>,
+    context_menu: RwSignal<Option<(muda::Menu, Point, bool)>>,
     window_size: RwSignal<Size>,
 ) -> impl IntoView {
     use floem_reactive::{create_effect, create_rw_signal};
@@ -1358,23 +1365,70 @@ fn context_menu_view(
         },
     }
 
-    fn format_menu(menu: &Menu) -> Vec<MenuDisplay> {
-        menu.children
+    fn format_menu(menu: &MudaMenu) -> Vec<MenuDisplay> {
+        menu.items()
             .iter()
             .enumerate()
-            .map(|(s, e)| match e {
-                crate::menu::MenuEntry::Separator => MenuDisplay::Separator(s),
-                crate::menu::MenuEntry::Item(i) => MenuDisplay::Item {
-                    id: Some(i.id.clone()),
-                    enabled: i.enabled,
-                    title: i.title.clone(),
+            .map(|(s, item)| match item {
+                muda::MenuItemKind::MenuItem(menu_item) => MenuDisplay::Item {
+                    id: Some(menu_item.id().to_string()),
+                    enabled: menu_item.is_enabled(),
+                    title: menu_item.text().to_string(),
                     children: None,
                 },
-                crate::menu::MenuEntry::SubMenu(m) => MenuDisplay::Item {
+                muda::MenuItemKind::Submenu(submenu) => MenuDisplay::Item {
                     id: None,
-                    enabled: m.item.enabled,
-                    title: m.item.title.clone(),
-                    children: Some(format_menu(m)),
+                    enabled: submenu.is_enabled(),
+                    title: submenu.text().to_string(),
+                    children: Some(format_submenu(submenu)),
+                },
+                muda::MenuItemKind::Predefined(_) => MenuDisplay::Separator(s),
+                muda::MenuItemKind::Check(check_item) => MenuDisplay::Item {
+                    id: Some(check_item.id().to_string()),
+                    enabled: check_item.is_enabled(),
+                    title: check_item.text().to_string(),
+                    children: None,
+                },
+                muda::MenuItemKind::Icon(icon_item) => MenuDisplay::Item {
+                    id: Some(icon_item.id().to_string()),
+                    enabled: icon_item.is_enabled(),
+                    title: icon_item.text().to_string(),
+                    children: None,
+                },
+            })
+            .collect()
+    }
+
+    fn format_submenu(submenu: &muda::Submenu) -> Vec<MenuDisplay> {
+        submenu
+            .items()
+            .iter()
+            .enumerate()
+            .map(|(s, item)| match item {
+                muda::MenuItemKind::MenuItem(menu_item) => MenuDisplay::Item {
+                    id: Some(menu_item.id().to_string()),
+                    enabled: menu_item.is_enabled(),
+                    title: menu_item.text().to_string(),
+                    children: None,
+                },
+                muda::MenuItemKind::Submenu(nested_submenu) => MenuDisplay::Item {
+                    id: None,
+                    enabled: nested_submenu.is_enabled(),
+                    title: nested_submenu.text().to_string(),
+                    children: Some(format_submenu(nested_submenu)),
+                },
+                muda::MenuItemKind::Predefined(_) => MenuDisplay::Separator(s),
+                muda::MenuItemKind::Check(check_item) => MenuDisplay::Item {
+                    id: Some(check_item.id().to_string()),
+                    enabled: check_item.is_enabled(),
+                    title: check_item.text().to_string(),
+                    children: None,
+                },
+                muda::MenuItemKind::Icon(icon_item) => MenuDisplay::Item {
+                    id: Some(icon_item.id().to_string()),
+                    enabled: icon_item.is_enabled(),
+                    title: icon_item.text().to_string(),
+                    children: None,
                 },
             })
             .collect()
@@ -1383,14 +1437,14 @@ fn context_menu_view(
     let context_menu_items = cx.create_memo(move |_| {
         context_menu.with(|menu| {
             menu.as_ref()
-                .map(|(menu, _, _): &(Menu, Point, bool)| format_menu(menu))
+                .map(|(menu, _, _): &(MudaMenu, Point, bool)| format_menu(menu))
         })
     });
     let context_menu_size = cx.create_rw_signal(Size::ZERO);
 
     fn view_fn(
         menu: MenuDisplay,
-        context_menu: RwSignal<Option<(Menu, Point, bool)>>,
+        context_menu: RwSignal<Option<(MudaMenu, Point, bool)>>,
         on_child_submenu_for_parent: RwSignal<bool>,
     ) -> impl IntoView {
         match menu {

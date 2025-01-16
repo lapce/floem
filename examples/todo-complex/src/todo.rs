@@ -6,7 +6,8 @@ use floem::{
     event::{Event, EventListener},
     keyboard::{Modifiers, NamedKey},
     kurbo::Stroke,
-    menu::{Menu, MenuEntry, MenuItem},
+    menu::menu,
+    muda::{self, NativeIcon},
     prelude::*,
     reactive::{create_effect, create_memo, Trigger},
     style::{BoxShadowProp, CursorStyle, MinHeight, Transition},
@@ -83,25 +84,35 @@ impl IntoView for TodoState {
             // would be better to have actions that can operate on multiple selections.
             AppCommand::Escape.execute();
             AppCommand::InsertSelected(self).execute();
-            let delete = MenuItem::new("Delete").action(move || {
-                AppCommand::Delete(&[self]).execute();
-            });
+
             let done = self.done.get();
             let action_name = if done {
                 "Mark as Incomplete"
             } else {
                 "Mark as Complete"
             };
-            let toggle_done = MenuItem::new(action_name).action(move || {
-                if done {
-                    self.done.set(false);
-                } else {
-                    self.done.set(true);
-                }
-            });
-            Menu::new("todo action")
-                .entry(MenuEntry::Item(toggle_done))
-                .entry(MenuEntry::Item(delete))
+
+            menu()
+                .item(action_name, |i| {
+                    i.native_icon(if done {
+                        muda::NativeIcon::Remove
+                    } else {
+                        NativeIcon::Add
+                    })
+                    .action(move || {
+                        if done {
+                            self.done.set(false);
+                        } else {
+                            self.done.set(true);
+                        }
+                    })
+                })
+                .separator()
+                .item("Delete", |i| {
+                    i.native_icon(NativeIcon::TrashEmpty).action(move || {
+                        AppCommand::Delete(&[self]).execute();
+                    })
+                })
         };
 
         let input_focused = Trigger::new();
