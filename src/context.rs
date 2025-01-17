@@ -129,7 +129,12 @@ impl EventCx<'_> {
             false
         };
 
+        let is_pointer_none = event.is_pointer()
+            && view_state.borrow().computed_style.get(PointerEventsProp)
+                == Some(PointerEvents::None);
+
         if !disable_default
+            && !is_pointer_none
             && view
                 .borrow_mut()
                 .event_before_children(self, &event)
@@ -172,6 +177,7 @@ impl EventCx<'_> {
         }
 
         if !disable_default
+            && !is_pointer_none
             && view
                 .borrow_mut()
                 .event_after_children(self, &event)
@@ -180,10 +186,7 @@ impl EventCx<'_> {
             return (EventPropagation::Stop, PointerEventConsumed::Yes);
         }
 
-        if event.is_pointer()
-            && view_state.borrow().computed_style.get(PointerEventsProp)
-                == Some(PointerEvents::None)
-        {
+        if is_pointer_none {
             // if pointer-events: none, we don't handle the pointer event
             return (EventPropagation::Continue, view_pointer_event_consumed);
         }
