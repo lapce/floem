@@ -1344,6 +1344,10 @@ fn context_menu_view(
                             }
                         })
                         .on_click_stop(move |_| {
+                            if has_submenu {
+                                // don't handle the click if there's submenu
+                                return;
+                            }
                             context_menu.set(None);
                             focus_count.set(0);
                             if let Some(id) = id.clone() {
@@ -1351,6 +1355,10 @@ fn context_menu_view(
                             }
                         })
                         .on_secondary_click_stop(move |_| {
+                            if has_submenu {
+                                // don't handle the click if there's submenu
+                                return;
+                            }
                             context_menu.set(None);
                             focus_count.set(0);
                             if let Some(id) = id_clone.clone() {
