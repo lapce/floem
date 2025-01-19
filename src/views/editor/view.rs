@@ -724,6 +724,7 @@ impl EditorView {
 
     pub fn paint_text(
         cx: &mut PaintCx,
+        view_id: &ViewId,
         ed: &Editor,
         viewport: Rect,
         is_active: bool,
@@ -761,7 +762,10 @@ impl EditorView {
             }
         }
 
-        Self::paint_cursor_caret(cx, ed, is_active, screen_lines);
+        let is_cursor_visible = cx.app_state.is_focused(view_id);
+        if (is_cursor_visible) {
+            Self::paint_cursor_caret(cx, ed, is_active, screen_lines);
+        }
 
         for (line, y) in screen_lines.iter_lines_y() {
             let text_layout = ed.text_layout(line);
@@ -897,6 +901,7 @@ impl View for EditorView {
         let screen_lines = ed.screen_lines.get_untracked();
         EditorView::paint_text(
             cx,
+            &self.id(),
             &ed,
             viewport,
             self.is_active.get_untracked(),
