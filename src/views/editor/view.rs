@@ -724,6 +724,7 @@ impl EditorView {
 
     pub fn paint_text(
         cx: &mut PaintCx,
+        view_id: &ViewId,
         ed: &Editor,
         viewport: Rect,
         is_active: bool,
@@ -900,6 +901,7 @@ impl View for EditorView {
         let screen_lines = ed.screen_lines.get_untracked();
         EditorView::paint_text(
             cx,
+            &self.id(),
             &ed,
             viewport,
             self.is_active.get_untracked(),
