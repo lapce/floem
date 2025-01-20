@@ -1,4 +1,5 @@
 use floem::{
+    style::{StyleValue, TextColor},
     unit::UnitExt,
     views::{img, svg, Decorators},
     IntoView,
@@ -23,7 +24,11 @@ pub fn img_view() -> impl IntoView {
                 img(move || ferris_png.to_vec()).style(|s| s.width(230.px()).height(153.px()))
             }),
             form_item("SVG(from file):".to_string(), 120.0, move || {
-                svg(ferris_svg).style(|s| s.width(230.px()).height(153.px()))
+                svg(ferris_svg).style(|s| {
+                    s.set_style_value(TextColor, StyleValue::Unset)
+                        .width(230.px())
+                        .height(153.px())
+                })
             }),
             form_item("SVG(from string):".to_string(), 120.0, move || {
                 svg(svg_str).style(|s| s.width(100.px()).height(100.px()))

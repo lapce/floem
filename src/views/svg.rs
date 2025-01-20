@@ -3,7 +3,7 @@ use floem_renderer::{
     usvg::{self, Tree},
     Renderer,
 };
-use peniko::{kurbo::Size, Brush, Color};
+use peniko::{kurbo::Size, Brush};
 use sha2::{Digest, Sha256};
 
 use crate::{id::ViewId, prop, prop_extractor, style::TextColor, style_class, view::View};
@@ -119,9 +119,7 @@ impl View for Svg {
             let color = if let Some(brush) = self.svg_style.svg_color() {
                 Some(brush)
             } else {
-                Some(Brush::Solid(
-                    self.svg_style.text_color().unwrap_or(Color::BLACK),
-                ))
+                self.svg_style.text_color().map(Brush::Solid)
             };
             cx.draw_svg(floem_renderer::Svg { tree, hash }, rect, color.as_ref());
         }
