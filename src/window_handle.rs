@@ -78,7 +78,7 @@ pub(crate) struct WindowHandle {
     pub(crate) window_position: Point,
     pub(crate) last_pointer_down: Option<(u8, Point, Instant)>,
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-    pub(crate) context_menu: RwSignal<Option<(Menu, Point)>>,
+    pub(crate) context_menu: RwSignal<Option<(Menu, Point, bool)>>,
     dropper_file: Option<PathBuf>,
 }
 
@@ -378,7 +378,11 @@ impl WindowHandle {
             }
 
             #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-            if self.context_menu.with_untracked(|c| c.is_some()) {
+            if self.context_menu.with_untracked(|c| {
+                c.as_ref()
+                    .map(|(_, _, had_pointer_down)| !*had_pointer_down)
+                    .unwrap_or(false)
+            }) {
                 // we had a pointer down event
                 // if context menu is still shown
                 // we should hide it
@@ -392,6 +396,14 @@ impl WindowHandle {
                 }
             }
             cx.app_state.clicking.clear();
+
+            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+            if self.context_menu.with_untracked(|c| c.is_some()) {
+                // we had a pointer up event
+                // if context menu is still shown
+                // we should hide it
+                self.context_menu.set(None);
+            }
         }
 
         self.process_update();
@@ -1196,7 +1208,7 @@ impl WindowHandle {
     fn show_context_menu(&self, menu: Menu, pos: Option<Point>) {
         let pos = pos.unwrap_or(self.cursor_position);
         let pos = Point::new(pos.x / self.app_state.scale, pos.y / self.app_state.scale);
-        self.context_menu.set(Some((menu, pos)));
+        self.context_menu.set(Some((menu, pos, false)));
     }
 
     pub(crate) fn menu_action(&mut self, id: &str) {
@@ -1250,7 +1262,7 @@ pub(crate) fn set_current_view(id: ViewId) {
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 fn context_menu_view(
     cx: Scope,
-    context_menu: RwSignal<Option<(Menu, Point)>>,
+    context_menu: RwSignal<Option<(Menu, Point, bool)>>,
     window_size: RwSignal<Size>,
 ) -> impl IntoView {
     use floem_reactive::{create_effect, create_rw_signal};
@@ -1297,14 +1309,14 @@ fn context_menu_view(
     let context_menu_items = cx.create_memo(move |_| {
         context_menu.with(|menu| {
             menu.as_ref()
-                .map(|(menu, _): &(Menu, Point)| format_menu(menu))
+                .map(|(menu, _, _): &(Menu, Point, bool)| format_menu(menu))
         })
     });
     let context_menu_size = cx.create_rw_signal(Size::ZERO);
 
     fn view_fn(
         menu: MenuDisplay,
-        context_menu: RwSignal<Option<(Menu, Point)>>,
+        context_menu: RwSignal<Option<(Menu, Point, bool)>>,
         on_child_submenu_for_parent: RwSignal<bool>,
     ) -> impl IntoView {
         match menu {
@@ -1320,11 +1332,10 @@ fn context_menu_view(
                 let on_child_submenu = create_rw_signal(false);
                 let has_submenu = children.is_some();
                 let submenu_svg = r#"<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path fill-rule="evenodd" clip-rule="evenodd" d="M10.072 8.024L5.715 3.667l.618-.62L11 7.716v.618L6.333 13l-.618-.619 4.357-4.357z"/></svg>"#;
-                let id_clone = id.clone();
                 container(
                     stack((
                         stack((
-                            text(title),
+                            text(title).style(|s| s.selectable(false)),
                             svg(submenu_svg).style(move |s| {
                                 s.size(20.0, 20.0)
                                     .color(Color::rgb8(201, 201, 201))
@@ -1349,23 +1360,13 @@ fn context_menu_view(
                                 menu_width.set(width);
                             }
                         })
-                        .on_click_stop(move |_| {
+                        .on_event_stop(EventListener::PointerUp, move |_| {
                             if has_submenu {
                                 // don't handle the click if there's submenu
                                 return;
                             }
                             context_menu.set(None);
                             if let Some(id) = id.clone() {
-                                add_app_update_event(AppUpdateEvent::MenuAction { action_id: id });
-                            }
-                        })
-                        .on_secondary_click_stop(move |_| {
-                            if has_submenu {
-                                // don't handle the click if there's submenu
-                                return;
-                            }
-                            context_menu.set(None);
-                            if let Some(id) = id_clone.clone() {
                                 add_app_update_event(AppUpdateEvent::MenuAction { action_id: id });
                             }
                         })
@@ -1397,7 +1398,6 @@ fn context_menu_view(
                                 }
                             }
                         })
-                        .on_event_stop(EventListener::PointerDown, move |_| {})
                         .on_event_stop(EventListener::PointerEnter, move |_| {
                             if has_submenu {
                                 on_submenu.set(true);
@@ -1456,7 +1456,20 @@ fn context_menu_view(
     .on_resize(move |rect| {
         context_menu_size.set(rect.size());
     })
-    .on_event_stop(EventListener::PointerDown, move |_| {})
+    .on_event_stop(EventListener::PointerDown, move |_| {
+        context_menu.update(|context_menu| {
+            if let Some((_, _, had_pointer_down)) = context_menu.as_mut() {
+                *had_pointer_down = true;
+            }
+        });
+    })
+    .on_event_stop(EventListener::PointerUp, move |_| {
+        context_menu.update(|context_menu| {
+            if let Some((_, _, had_pointer_down)) = context_menu.as_mut() {
+                *had_pointer_down = false;
+            }
+        });
+    })
     .on_event_stop(EventListener::PointerMove, move |_| {})
     .keyboard_navigable()
     .on_event_stop(EventListener::KeyDown, move |event| {
@@ -1470,7 +1483,7 @@ fn context_menu_view(
         let window_size = window_size.get();
         let menu_size = context_menu_size.get();
         let is_active = context_menu.with(|m| m.is_some());
-        let mut pos = context_menu.with(|m| m.as_ref().map(|(_, pos)| *pos).unwrap_or_default());
+        let mut pos = context_menu.with(|m| m.as_ref().map(|(_, pos, _)| *pos).unwrap_or_default());
         if pos.x + menu_size.width > window_size.width {
             pos.x = window_size.width - menu_size.width;
         }
