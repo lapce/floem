@@ -376,6 +376,14 @@ impl WindowHandle {
                     id.request_style_recursive();
                 }
             }
+
+            #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+            if self.context_menu.with_untracked(|c| c.is_some()) {
+                // we had a pointer down event
+                // if context menu is still shown
+                // we should hide it
+                self.context_menu.set(None);
+            }
         }
         if matches!(&event, Event::PointerUp(_)) {
             for id in cx.app_state.clicking.clone() {
@@ -1293,12 +1301,10 @@ fn context_menu_view(
         })
     });
     let context_menu_size = cx.create_rw_signal(Size::ZERO);
-    let focus_count = cx.create_rw_signal(0);
 
     fn view_fn(
         menu: MenuDisplay,
         context_menu: RwSignal<Option<(Menu, Point)>>,
-        focus_count: RwSignal<i32>,
         on_child_submenu_for_parent: RwSignal<bool>,
     ) -> impl IntoView {
         match menu {
@@ -1349,7 +1355,6 @@ fn context_menu_view(
                                 return;
                             }
                             context_menu.set(None);
-                            focus_count.set(0);
                             if let Some(id) = id.clone() {
                                 add_app_update_event(AppUpdateEvent::MenuAction { action_id: id });
                             }
@@ -1360,7 +1365,6 @@ fn context_menu_view(
                                 return;
                             }
                             context_menu.set(None);
-                            focus_count.set(0);
                             if let Some(id) = id_clone.clone() {
                                 add_app_update_event(AppUpdateEvent::MenuAction { action_id: id });
                             }
@@ -1383,25 +1387,9 @@ fn context_menu_view(
                         dyn_stack(
                             move || children.clone().unwrap_or_default(),
                             move |s| s.clone(),
-                            move |menu| view_fn(menu, context_menu, focus_count, on_child_submenu),
+                            move |menu| view_fn(menu, context_menu, on_child_submenu),
                         )
                         .keyboard_navigable()
-                        .on_event_stop(EventListener::FocusGained, move |_| {
-                            focus_count.update(|count| {
-                                *count += 1;
-                            });
-                        })
-                        .on_event_stop(EventListener::FocusLost, move |_| {
-                            let count = focus_count
-                                .try_update(|count| {
-                                    *count -= 1;
-                                    *count
-                                })
-                                .unwrap();
-                            if count < 1 {
-                                context_menu.set(None);
-                            }
-                        })
                         .on_event_stop(EventListener::KeyDown, move |event| {
                             if let Event::KeyDown(event) = event {
                                 if event.key.logical_key == Key::Named(NamedKey::Escape) {
@@ -1463,7 +1451,7 @@ fn context_menu_view(
     let view = dyn_stack(
         move || context_menu_items.get().unwrap_or_default(),
         move |s| s.clone(),
-        move |menu| view_fn(menu, context_menu, focus_count, on_child_submenu),
+        move |menu| view_fn(menu, context_menu, on_child_submenu),
     )
     .on_resize(move |rect| {
         context_menu_size.set(rect.size());
@@ -1476,22 +1464,6 @@ fn context_menu_view(
             if event.key.logical_key == Key::Named(NamedKey::Escape) {
                 context_menu.set(None);
             }
-        }
-    })
-    .on_event_stop(EventListener::FocusGained, move |_| {
-        focus_count.update(|count| {
-            *count += 1;
-        });
-    })
-    .on_event_stop(EventListener::FocusLost, move |_| {
-        let count = focus_count
-            .try_update(|count| {
-                *count -= 1;
-                *count
-            })
-            .unwrap();
-        if count < 1 {
-            context_menu.set(None);
         }
     })
     .style(move |s| {
