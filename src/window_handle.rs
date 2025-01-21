@@ -1360,6 +1360,13 @@ fn context_menu_view(
                                 menu_width.set(width);
                             }
                         })
+                        .on_event_stop(EventListener::PointerDown, move |_| {
+                            context_menu.update(|context_menu| {
+                                if let Some((_, _, had_pointer_down)) = context_menu.as_mut() {
+                                    *had_pointer_down = true;
+                                }
+                            });
+                        })
                         .on_event_stop(EventListener::PointerUp, move |_| {
                             if has_submenu {
                                 // don't handle the click if there's submenu
