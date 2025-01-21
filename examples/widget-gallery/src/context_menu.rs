@@ -19,8 +19,16 @@ pub fn menu_view() -> impl IntoView {
                 .style(|s| s.padding(10.0).border(1.0))
                 .context_menu(|| {
                     Menu::new("")
-                        .entry(MenuItem::new("Menu item"))
-                        .entry(MenuItem::new("Menu item with something on the\tright"))
+                        .entry(
+                            Menu::new("Sub Menu").entry(MenuItem::new("item 2").action(|| {
+                                println!("sub menu item 2");
+                            })),
+                        )
+                        .entry(
+                            MenuItem::new("Menu item with something on the\tright").action(|| {
+                                println!("menu item with something on the right");
+                            }),
+                        )
                 }),
         )
     })
