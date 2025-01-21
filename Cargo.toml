@@ -34,7 +34,7 @@ strum_macros = { version = "0.26.2" }
 # Image format features are defined via new features
 image = { version = "0.25", default-features = false }
 im = { version = "15.1.0" }
-resvg = { version = "0.43.0" }
+resvg = { version = "0.44.0" }
 raw-window-handle = "0.6.0"
 wgpu = { version = "22.0.0" }
 parking_lot = { version = "0.12.1" }
