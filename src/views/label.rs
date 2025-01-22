@@ -18,8 +18,8 @@ use crate::{
 };
 use floem_reactive::create_updater;
 use floem_renderer::{text::Cursor, Renderer};
-use peniko::Color;
 use peniko::{
+    color::palette,
     kurbo::{Point, Rect},
     Brush,
 };
@@ -147,7 +147,7 @@ impl Label {
     }
 
     fn get_attrs_list(&self) -> AttrsList {
-        let mut attrs = Attrs::new().color(self.style.color().unwrap_or(Color::BLACK));
+        let mut attrs = Attrs::new().color(self.style.color().unwrap_or(palette::css::BLACK));
         if let Some(font_size) = self.font.size() {
             attrs = attrs.font_size(font_size);
         }

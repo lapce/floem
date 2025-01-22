@@ -81,19 +81,21 @@ fn app_view() -> impl IntoView {
                     .transition(Background, Transition::ease_in_out(100.millis()))
                     .items_center()
                     .border_bottom(1.)
-                    .border_color(Color::LIGHT_GRAY)
+                    .border_color(palette::css::LIGHT_GRAY)
                     .selected(|s| {
                         s.border(2.)
-                            .border_color(Color::BLUE)
-                            .background(Color::GRAY.multiply_alpha(0.6))
+                            .border_color(palette::css::BLUE)
+                            .background(palette::css::GRAY.with_alpha(0.6))
                     })
                     .hover(|s| {
-                        s.background(Color::LIGHT_GRAY)
-                            .apply_if(idx == active_tab.get(), |s| s.background(Color::GRAY))
+                        s.background(palette::css::LIGHT_GRAY)
+                            .apply_if(idx == active_tab.get(), |s| {
+                                s.background(palette::css::GRAY)
+                            })
                             .cursor(CursorStyle::Pointer)
                     })
             })
-            .dragging_style(|s| s.background(Color::GRAY.multiply_alpha(0.6)))
+            .dragging_style(|s| s.background(palette::css::GRAY.with_alpha(0.6)))
     }))
     .on_select(move |idx| {
         if let Some(idx) = idx {
@@ -108,7 +110,7 @@ fn app_view() -> impl IntoView {
     .style(|s| {
         s.border(1.)
             .padding(3.)
-            .border_color(Color::GRAY)
+            .border_color(palette::css::GRAY)
             .class(LabelClass, |s| s.selectable(false))
     });
 

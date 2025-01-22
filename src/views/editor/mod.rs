@@ -13,6 +13,7 @@ use crate::{
     action::{exec_after, TimerToken},
     keyboard::Modifiers,
     kurbo::{Point, Rect, Vec2},
+    peniko::color::palette,
     peniko::Color,
     pointer::{PointerInputEvent, PointerMoveEvent},
     prop, prop_extractor,
@@ -78,9 +79,9 @@ prop!(pub ShowIndentGuide: bool {} = false);
 prop!(pub Modal: bool {} = false);
 prop!(pub ModalRelativeLine: bool {} = false);
 prop!(pub SmartTab: bool {} = false);
-prop!(pub PhantomColor: Color {} = Color::DIM_GRAY);
-prop!(pub PlaceholderColor: Color {} = Color::DIM_GRAY);
-prop!(pub PreeditUnderlineColor: Color {} = Color::WHITE);
+prop!(pub PhantomColor: Color {} = palette::css::DIM_GRAY);
+prop!(pub PlaceholderColor: Color {} = palette::css::DIM_GRAY);
+prop!(pub PreeditUnderlineColor: Color {} = palette::css::WHITE);
 prop!(pub RenderWhitespaceProp: RenderWhitespace {} = RenderWhitespace::None);
 impl StylePropValue for RenderWhitespace {
     fn debug_view(&self) -> Option<Box<dyn View>> {
@@ -94,13 +95,13 @@ impl StylePropValue for IndentStyle {
     }
 }
 prop!(pub DropdownShadow: Option<Color> {} = None);
-prop!(pub Foreground: Color { inherited } = Color::rgb8(0x38, 0x3A, 0x42));
+prop!(pub Foreground: Color { inherited } = Color::from_rgb8(0x38, 0x3A, 0x42));
 prop!(pub Focus: Option<Color> {} = None);
-prop!(pub SelectionColor: Color {} = Color::BLACK.multiply_alpha(0.5));
+prop!(pub SelectionColor: Color {} = palette::css::BLACK.with_alpha(0.5));
 prop!(pub CurrentLineColor: Option<Color> {  } = None);
 prop!(pub Link: Option<Color> {} = None);
-prop!(pub VisibleWhitespaceColor: Color {} = Color::TRANSPARENT);
-prop!(pub IndentGuideColor: Color {} = Color::TRANSPARENT);
+prop!(pub VisibleWhitespaceColor: Color {} = palette::css::TRANSPARENT);
+prop!(pub IndentGuideColor: Color {} = palette::css::TRANSPARENT);
 prop!(pub StickyHeaderBackground: Option<Color> {} = None);
 
 prop_extractor! {
@@ -130,7 +131,7 @@ prop_extractor! {
 }
 impl EditorStyle {
     pub fn ed_text_color(&self) -> Color {
-        self.text_color().unwrap_or(Color::BLACK)
+        self.text_color().unwrap_or(palette::css::BLACK)
     }
 }
 impl EditorStyle {

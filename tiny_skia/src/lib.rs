@@ -9,6 +9,7 @@ use floem_renderer::Img;
 use floem_renderer::Renderer;
 use peniko::kurbo::{self, PathEl, Size, Vec2};
 use peniko::{
+    color::palette,
     kurbo::{Affine, Point, Rect, Shape},
     BrushRef, Color, GradientKind,
 };
@@ -51,8 +52,9 @@ pub struct TinySkiaRenderer<W> {
     cache_color: CacheColor,
 
     image_cache: HashMap<Vec<u8>, (CacheColor, Rc<Pixmap>)>,
+    // The `u32` is a color encoded as a u32 so that it is hashable and eq.
     #[allow(clippy::type_complexity)]
-    glyph_cache: HashMap<(CacheKey, Color), (CacheColor, Option<Rc<Glyph>>)>,
+    glyph_cache: HashMap<(CacheKey, u32), (CacheColor, Option<Rc<Glyph>>)>,
     swash_scaler: SwashScaler,
 }
 
@@ -122,7 +124,8 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
 }
 
 fn to_color(color: Color) -> tiny_skia::Color {
-    tiny_skia::Color::from_rgba8(color.r, color.g, color.b, color.a)
+    let c = color.to_rgba8();
+    tiny_skia::Color::from_rgba8(c.r, c.g, c.b, c.a)
 }
 
 fn to_point(point: Point) -> tiny_skia::Point {
@@ -160,7 +163,7 @@ impl<W> TinySkiaRenderer<W> {
                 let stops = g
                     .stops
                     .iter()
-                    .map(|s| GradientStop::new(s.offset, to_color(s.color)))
+                    .map(|s| GradientStop::new(s.offset, to_color(s.color.to_alpha_color())))
                     .collect();
                 match g.kind {
                     GradientKind::Linear { start, end } => LinearGradient::new(
@@ -322,7 +325,8 @@ impl<W> TinySkiaRenderer<W> {
     }
 
     fn cache_glyph(&mut self, cache_key: CacheKey, color: Color) -> Option<Rc<Glyph>> {
-        if let Some((color, glyph)) = self.glyph_cache.get_mut(&(cache_key, color)) {
+        let c = color.to_rgba8();
+        if let Some((color, glyph)) = self.glyph_cache.get_mut(&(cache_key, c.to_u32())) {
             *color = self.cache_color;
             return glyph.clone();
         }
@@ -337,7 +341,7 @@ impl<W> TinySkiaRenderer<W> {
 
             if image.content == SwashContent::Mask {
                 for (a, &alpha) in pixmap.pixels_mut().iter_mut().zip(image.data.iter()) {
-                    *a = tiny_skia::Color::from_rgba8(color.r, color.g, color.b, alpha)
+                    *a = tiny_skia::Color::from_rgba8(c.r, c.g, c.b, alpha)
                         .premultiply()
                         .to_color_u8();
                 }
@@ -359,7 +363,7 @@ impl<W> TinySkiaRenderer<W> {
         };
 
         self.glyph_cache
-            .insert((cache_key, color), (self.cache_color, result.clone()));
+            .insert((cache_key, c.to_u32()), (self.cache_color, result.clone()));
 
         result
     }
@@ -475,9 +479,9 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
                     glyph_run.cache_key_flags,
                 );
 
-                let color = glyph_run
-                    .color_opt
-                    .map_or(Color::BLACK, |c| Color::rgba8(c.r(), c.g(), c.b(), c.a()));
+                let color = glyph_run.color_opt.map_or(palette::css::BLACK, |c| {
+                    Color::from_rgba8(c.r(), c.g(), c.b(), c.a())
+                });
 
                 let pixmap = self.cache_glyph(cache_key, color);
                 if let Some(glyph) = pixmap {

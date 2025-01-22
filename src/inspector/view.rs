@@ -16,6 +16,7 @@ use crate::{keyboard, new_window, IntoView, View, ViewId};
 use floem_reactive::{
     create_effect, create_rw_signal, create_signal, RwSignal, SignalGet, SignalUpdate,
 };
+use peniko::color::palette;
 use peniko::Color;
 use slotmap::Key;
 use std::rc::Rc;
@@ -37,21 +38,21 @@ pub fn capture(window_id: WindowId) {
                         .style(move |s| {
                             s.padding(5.0)
                                 .border_right(1.)
-                                .border_color(Color::BLACK.multiply_alpha(0.2))
+                                .border_color(palette::css::BLACK.with_alpha(0.2))
                                 .hover(move |s| {
-                                    s.background(Color::rgba8(228, 237, 216, 160))
+                                    s.background(Color::from_rgba8(228, 237, 216, 160))
                                         .apply_if(selected.get() == index, |s| {
-                                            s.background(Color::rgb8(186, 180, 216))
+                                            s.background(Color::from_rgb8(186, 180, 216))
                                         })
                                 })
                                 .apply_if(selected.get() == index, |s| {
-                                    s.background(Color::rgb8(213, 208, 216))
+                                    s.background(Color::from_rgb8(213, 208, 216))
                                 })
                         })
                 };
 
                 let tabs = h_stack((tab_item("Views", 0), tab_item("Profiler", 1)))
-                    .style(|s| s.background(Color::WHITE));
+                    .style(|s| s.background(palette::css::WHITE));
 
                 let tab = tab(
                     move || selected.get(),
@@ -75,7 +76,7 @@ pub fn capture(window_id: WindowId) {
                 let separator = empty().style(move |s| {
                     s.width_full()
                         .min_height(1.0)
-                        .background(Color::BLACK.multiply_alpha(0.2))
+                        .background(palette::css::BLACK.with_alpha(0.2))
                 });
 
                 let stack = v_stack((tabs, separator, tab));
@@ -124,17 +125,17 @@ fn inspector_view(
         .style(|s| {
             s.width_full()
                 .height_full()
-                .background(Color::WHITE)
+                .background(palette::css::WHITE)
                 .class(scroll::Handle, |s| {
                     s.border_radius(4.0)
-                        .background(Color::rgba8(166, 166, 166, 140))
+                        .background(Color::from_rgba8(166, 166, 166, 140))
                         .set(scroll::Thickness, 16.0)
                         .set(scroll::Rounded, false)
-                        .active(|s| s.background(Color::rgb8(166, 166, 166)))
-                        .hover(|s| s.background(Color::rgb8(184, 184, 184)))
+                        .active(|s| s.background(Color::from_rgb8(166, 166, 166)))
+                        .hover(|s| s.background(Color::from_rgb8(184, 184, 184)))
                 })
                 .class(scroll::Track, |s| {
-                    s.hover(|s| s.background(Color::rgba8(166, 166, 166, 30)))
+                    s.hover(|s| s.background(Color::from_rgba8(166, 166, 166, 30)))
                 })
         })
 }
@@ -177,7 +178,7 @@ fn capture_view(
     .style(move |s| {
         s.margin(5.0)
             .border(1.)
-            .border_color(Color::BLACK.multiply_alpha(0.5))
+            .border_color(palette::css::BLACK.with_alpha(0.5))
             .width(image_width + 2.0)
             .height(image_height + 2.0)
             .margin_bottom(21.0)
@@ -266,8 +267,8 @@ fn capture_view(
                 .margin_top(5.0 + view.layout.y0)
                 .width(view.layout.width())
                 .height(view.layout.height())
-                .background(Color::rgb8(186, 180, 216).multiply_alpha(0.5))
-                .border_color(Color::rgb8(186, 180, 216).multiply_alpha(0.7))
+                .background(Color::from_rgb8(186, 180, 216).with_alpha(0.5))
+                .border_color(Color::from_rgb8(186, 180, 216).with_alpha(0.7))
                 .border(1.)
         } else {
             s
@@ -287,8 +288,8 @@ fn capture_view(
                 .margin_top(5.0 + view.layout.y0)
                 .width(view.layout.width())
                 .height(view.layout.height())
-                .background(Color::rgba8(228, 237, 216, 120))
-                .border_color(Color::rgba8(75, 87, 53, 120))
+                .background(Color::from_rgba8(228, 237, 216, 120))
+                .border_color(Color::from_rgba8(75, 87, 53, 120))
                 .border(1.)
         } else {
             s
@@ -326,7 +327,7 @@ fn capture_view(
     let separator = empty().style(move |s| {
         s.width_full()
             .min_height(1.0)
-            .background(Color::BLACK.multiply_alpha(0.2))
+            .background(palette::css::BLACK.with_alpha(0.2))
     });
 
     let left = v_stack((
@@ -400,7 +401,7 @@ fn capture_view(
     let separator = empty().style(move |s| {
         s.height_full()
             .min_width(1.0)
-            .background(Color::BLACK.multiply_alpha(0.2))
+            .background(palette::css::BLACK.with_alpha(0.2))
     });
 
     h_stack((left, separator, tree)).style(|s| s.height_full().width_full().max_width_full())
@@ -460,20 +461,20 @@ fn tree_node(
     let row = container(name)
         .style(move |s| {
             s.hover(move |s| {
-                s.background(Color::rgba8(228, 237, 216, 160))
+                s.background(Color::from_rgba8(228, 237, 216, 160))
                     .apply_if(selected.get() == Some(id), |s| {
-                        s.background(Color::rgb8(186, 180, 216))
+                        s.background(Color::from_rgb8(186, 180, 216))
                     })
             })
             .height(height)
             .apply_if(highlighted.get() == Some(id), |s| {
-                s.background(Color::rgba8(228, 237, 216, 160))
+                s.background(Color::from_rgba8(228, 237, 216, 160))
             })
             .apply_if(selected.get() == Some(id), |s| {
                 if highlighted.get() == Some(id) {
-                    s.background(Color::rgb8(186, 180, 216))
+                    s.background(Color::from_rgb8(186, 180, 216))
                 } else {
-                    s.background(Color::rgb8(213, 208, 216))
+                    s.background(Color::from_rgb8(213, 208, 216))
                 }
             })
         })
@@ -512,38 +513,38 @@ fn tree_node_name(view: &CapturedData, marge_left: f64) -> impl IntoView {
     let name = static_label(view.view_conf.name.clone());
     let id = text(view.id.data().as_ffi()).style(|s| {
         s.margin_right(5.0)
-            .background(Color::BLACK.multiply_alpha(0.02))
+            .background(palette::css::BLACK.with_alpha(0.02))
             .border(1.)
             .border_radius(5.0)
-            .border_color(Color::BLACK.multiply_alpha(0.07))
+            .border_color(palette::css::BLACK.with_alpha(0.07))
             .padding(3.0)
             .padding_top(0.0)
             .padding_bottom(0.0)
             .font_size(12.0)
-            .color(Color::BLACK.multiply_alpha(0.6))
+            .color(palette::css::BLACK.with_alpha(0.6))
     });
     let tab = if view.view_conf.focused {
         text("Focus")
             .style(|s| {
                 s.margin_right(5.0)
-                    .background(Color::rgb8(63, 81, 101).multiply_alpha(0.6))
+                    .background(Color::from_rgb8(63, 81, 101).with_alpha(0.6))
                     .border_radius(5.0)
                     .padding(1.0)
                     .font_size(10.0)
-                    .color(Color::WHITE.multiply_alpha(0.8))
+                    .color(palette::css::WHITE.with_alpha(0.8))
             })
             .into_any()
     } else if view.view_conf.keyboard_navigable {
         text("Tab")
             .style(|s| {
                 s.margin_right(5.0)
-                    .background(Color::rgb8(204, 217, 221).multiply_alpha(0.4))
+                    .background(Color::from_rgb8(204, 217, 221).with_alpha(0.4))
                     .border(1.)
                     .border_radius(5.0)
-                    .border_color(Color::BLACK.multiply_alpha(0.07))
+                    .border_color(palette::css::BLACK.with_alpha(0.07))
                     .padding(1.0)
                     .font_size(10.0)
-                    .color(Color::BLACK.multiply_alpha(0.4))
+                    .color(palette::css::BLACK.with_alpha(0.4))
             })
             .into_any()
     } else {
@@ -556,32 +557,32 @@ fn tree_node_name(view: &CapturedData, marge_left: f64) -> impl IntoView {
             Some(expanded) => {
                 let expanded = expanded.get();
                 s.background(if !expanded {
-                    Color::BLACK.multiply_alpha(0.3)
+                    palette::css::BLACK.with_alpha(0.3)
                 } else {
-                    Color::WHITE.multiply_alpha(0.3)
+                    palette::css::WHITE.with_alpha(0.3)
                 })
                 .width(12.0)
                 .height(12.0)
                 .margin_right(4.0)
                 .hover(move |s| {
-                    s.border_color(Color::BLACK.multiply_alpha(0.6))
+                    s.border_color(palette::css::BLACK.with_alpha(0.6))
                         .background(if expanded {
-                            Color::WHITE.multiply_alpha(0.5)
+                            palette::css::WHITE.with_alpha(0.5)
                         } else {
-                            Color::BLACK.multiply_alpha(0.5)
+                            palette::css::BLACK.with_alpha(0.5)
                         })
                 })
                 .border(1.0)
                 .border_radius(4.0)
-                .border_color(Color::BLACK.multiply_alpha(0.4))
+                .border_color(palette::css::BLACK.with_alpha(0.4))
             }
             None => s
-                // .background(Color::WHITE.multiply_alpha(0.3))
+                // .background(palette::css::WHITE.with_alpha(0.3))
                 .width(12.0)
                 .height(12.0)
                 .margin_right(4.0), // .border(1.0)
                                     // .border_radius(4.0)
-                                    // .border_color(Color::WHITE.multiply_alpha(0.4)),
+                                    // .border_color(palette::css::WHITE.with_alpha(0.4)),
         })
         .on_click_stop(move |_| {
             if let Some(expanded) = ty {

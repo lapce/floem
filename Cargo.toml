@@ -26,7 +26,7 @@ rust-version = "1.80"
 license.workspace = true
 
 [workspace.dependencies]
-peniko = { version = "0.2.0" }
+peniko = { version = "0.3.1" }
 serde = { version = "1.0" }
 lapce-xi-rope = { version = "0.3.2" }
 strum = { version = "0.26.2", features = ["derive"] }

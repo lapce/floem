@@ -1,5 +1,6 @@
 use floem::{
     event::{Event, EventListener, EventPropagation},
+    peniko::color::palette,
     peniko::Color,
     reactive::{create_rw_signal, create_signal, SignalGet, SignalUpdate},
     style::{CursorStyle, Position},
@@ -34,7 +35,7 @@ pub fn draggable_sidebar_view() -> impl IntoView {
                         .width(sidebar_width.get())
                         .items_start()
                         .border_bottom(1.0)
-                        .border_color(Color::rgb8(205, 205, 205))
+                        .border_color(Color::from_rgb8(205, 205, 205))
                 })
             },
         )
@@ -44,7 +45,7 @@ pub fn draggable_sidebar_view() -> impl IntoView {
         s.width(sidebar_width.get())
             .border_right(1.0)
             .border_top(1.0)
-            .border_color(Color::rgb8(205, 205, 205))
+            .border_color(Color::from_rgb8(205, 205, 205))
     });
 
     let main_window = scroll(
@@ -60,7 +61,7 @@ pub fn draggable_sidebar_view() -> impl IntoView {
             .min_width(0)
             .flex_grow(1.0)
             .border_top(1.0)
-            .border_color(Color::rgb8(205, 205, 205))
+            .border_color(Color::from_rgb8(205, 205, 205))
     });
 
     let dragger = label(|| "")
@@ -71,18 +72,18 @@ pub fn draggable_sidebar_view() -> impl IntoView {
                 .inset_left(sidebar_width.get())
                 .width(10)
                 .border_left(1)
-                .border_color(Color::rgb8(205, 205, 205))
+                .border_color(Color::from_rgb8(205, 205, 205))
                 .hover(|s| {
                     s.border_left(2)
-                        .border_color(Color::rgb8(41, 98, 218))
+                        .border_color(Color::from_rgb8(41, 98, 218))
                         .cursor(CursorStyle::ColResize)
                 })
                 .apply_if(is_sidebar_dragging.get(), |s| {
-                    s.border_left(2).border_color(Color::rgb8(41, 98, 218))
+                    s.border_left(2).border_color(Color::from_rgb8(41, 98, 218))
                 })
         })
         .draggable()
-        .dragging_style(|s| s.border_color(Color::TRANSPARENT))
+        .dragging_style(|s| s.border_color(palette::css::TRANSPARENT))
         .on_event(EventListener::DragStart, move |_| {
             is_sidebar_dragging.set(true);
             EventPropagation::Continue

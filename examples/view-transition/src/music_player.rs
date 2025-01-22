@@ -1,5 +1,6 @@
 use floem::{
     animate::Animation,
+    peniko::color::palette,
     peniko::{Brush, Color},
     reactive::{RwSignal, SignalGet, SignalUpdate},
     style::{ScaleX, ScaleY, Style, Transition},
@@ -15,11 +16,11 @@ use floem::{
 use crate::box_shadow;
 
 const FONT_SIZE: f32 = 12.;
-const BACKGROUND: Color = Color::rgb8(235, 235, 240);
-const SLIDER: Color = Color::rgb8(210, 209, 216);
-const ICON: Color = Color::rgb8(120, 120, 127); // medium gray - icons and accent bar and image
-const MUSIC_ICON: Color = Color::rgb8(11, 11, 21);
-const TEXT_COLOR: Color = Color::rgb8(48, 48, 54);
+const BACKGROUND: Color = Color::from_rgb8(235, 235, 240);
+const SLIDER: Color = Color::from_rgb8(210, 209, 216);
+const ICON: Color = Color::from_rgb8(120, 120, 127); // medium gray - icons and accent bar and image
+const MUSIC_ICON: Color = Color::from_rgb8(11, 11, 21);
+const TEXT_COLOR: Color = Color::from_rgb8(48, 48, 54);
 
 mod svg;
 
@@ -43,7 +44,7 @@ impl IntoView for SongInfo {
         let song_artist = v_stack((
             self.title.style(|s| s.font_weight(Weight::MEDIUM)),
             self.artist
-                .style(|s| s.font_size(FONT_SIZE * 0.8).color(Color::GRAY)),
+                .style(|s| s.font_size(FONT_SIZE * 0.8).color(palette::css::GRAY)),
         ))
         .style(|s| s.gap(5.));
 
@@ -114,7 +115,7 @@ pub fn music_player() -> impl IntoView {
                     .accent_bar_height(3.)
                     .bar_color(SLIDER)
                     .accent_bar_color(ICON)
-                    .handle_color(Brush::Solid(Color::TRANSPARENT))
+                    .handle_color(Brush::Solid(palette::css::TRANSPARENT))
                     .handle_radius(0)
             }),
         media_buttons,
@@ -134,7 +135,7 @@ pub fn music_player() -> impl IntoView {
             .padding(5)
             .items_center()
             .justify_center()
-            .background(Color::TRANSPARENT)
+            .background(palette::css::TRANSPARENT)
             .hover(|s| s.background(SLIDER))
             .active(|s| {
                 s.class(SvgClass, |s| {

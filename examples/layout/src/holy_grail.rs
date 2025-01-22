@@ -36,7 +36,7 @@ pub fn holy_grail_view() -> impl IntoView {
                         .height(SIDEBAR_ITEM_HEIGHT)
                         .items_start()
                         .border_bottom(1.0)
-                        .border_color(Color::rgb8(205, 205, 205))
+                        .border_color(Color::from_rgb8(205, 205, 205))
                 })
             },
         )
@@ -46,7 +46,7 @@ pub fn holy_grail_view() -> impl IntoView {
         s.width(SIDEBAR_WIDTH)
             .border_left(1.0)
             .border_top(1.0)
-            .border_color(Color::rgb8(205, 205, 205))
+            .border_color(Color::from_rgb8(205, 205, 205))
     });
 
     let side_bar_left = scroll({
@@ -64,7 +64,7 @@ pub fn holy_grail_view() -> impl IntoView {
                         .height(SIDEBAR_ITEM_HEIGHT)
                         .items_start()
                         .border_bottom(1.0)
-                        .border_color(Color::rgb8(205, 205, 205))
+                        .border_color(Color::from_rgb8(205, 205, 205))
                 })
             },
         )
@@ -74,7 +74,7 @@ pub fn holy_grail_view() -> impl IntoView {
         s.width(SIDEBAR_WIDTH)
             .border_right(1.0)
             .border_top(1.0)
-            .border_color(Color::rgb8(205, 205, 205))
+            .border_color(Color::from_rgb8(205, 205, 205))
     });
 
     let main_window = scroll(
@@ -84,7 +84,7 @@ pub fn holy_grail_view() -> impl IntoView {
     .style(|s| s.flex_col().flex_basis(0).min_width(0).flex_grow(1.0))
     .style(|s| {
         s.border_top(1.0)
-            .border_color(Color::rgb8(205, 205, 205))
+            .border_color(Color::from_rgb8(205, 205, 205))
             .width_full()
             .min_width(150.0)
     });

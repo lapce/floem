@@ -13,6 +13,7 @@ use crate::views::{
 };
 use crate::{keyboard, style, Clipboard};
 use floem_reactive::{batch, RwSignal, Scope, SignalGet, SignalUpdate};
+use peniko::color::palette;
 use peniko::kurbo::{Point, Rect, Size};
 use peniko::Color;
 use slotmap::Key;
@@ -234,11 +235,11 @@ fn add_event(
 pub(crate) fn header(label: impl Display) -> Label {
     text(label).style(|s| {
         s.padding(5.0)
-            .background(Color::WHITE_SMOKE)
+            .background(palette::css::WHITE_SMOKE)
             .width_full()
             .height(27.0)
             .border_bottom(1.)
-            .border_color(Color::LIGHT_GRAY)
+            .border_color(palette::css::LIGHT_GRAY)
     })
 }
 
@@ -248,14 +249,16 @@ fn info(name: impl Display, value: String) -> impl IntoView {
 
 fn info_row(name: String, view: impl View + 'static) -> impl View {
     stack((
-        stack((static_label(name)
-            .style(|s| s.margin_right(5.0).color(Color::BLACK.multiply_alpha(0.6))),))
+        stack((static_label(name).style(|s| {
+            s.margin_right(5.0)
+                .color(palette::css::BLACK.with_alpha(0.6))
+        }),))
         .style(|s| s.min_width(150.0).flex_direction(FlexDirection::RowReverse)),
         view,
     ))
     .style(|s| {
         s.padding(5.0)
-            .hover(|s| s.background(Color::rgba8(228, 237, 216, 160)))
+            .hover(|s| s.background(Color::from_rgba8(228, 237, 216, 160)))
     })
 }
 
@@ -440,13 +443,13 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<ViewId>>) -> i
                             stack((
                                 text("Inherited").style(|s| {
                                     s.margin_right(5.0)
-                                        .background(Color::WHITE_SMOKE.multiply_alpha(0.6))
+                                        .background(palette::css::WHITE_SMOKE.with_alpha(0.6))
                                         .border(1.)
                                         .border_radius(5.0)
-                                        .border_color(Color::WHITE_SMOKE)
+                                        .border_color(palette::css::WHITE_SMOKE)
                                         .padding(1.0)
                                         .font_size(10.0)
-                                        .color(Color::BLACK.multiply_alpha(0.4))
+                                        .color(palette::css::BLACK.with_alpha(0.4))
                                 }),
                                 text(name),
                             ))
@@ -464,13 +467,13 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<ViewId>>) -> i
                                 text("Transition").style(|s| {
                                     s.margin_top(5.0)
                                         .margin_right(5.0)
-                                        .background(Color::WHITE_SMOKE.multiply_alpha(0.6))
+                                        .background(palette::css::WHITE_SMOKE.with_alpha(0.6))
                                         .border(1.)
                                         .border_radius(5.0)
-                                        .border_color(Color::WHITE_SMOKE)
+                                        .border_color(palette::css::WHITE_SMOKE)
                                         .padding(1.0)
                                         .font_size(10.0)
-                                        .color(Color::BLACK.multiply_alpha(0.4))
+                                        .color(palette::css::BLACK.with_alpha(0.4))
                                 }),
                                 static_label(format!("{transition:?}")),
                             ))
@@ -479,7 +482,8 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<ViewId>>) -> i
                         }
                         stack((
                             stack((name.style(|s| {
-                                s.margin_right(5.0).color(Color::BLACK.multiply_alpha(0.6))
+                                s.margin_right(5.0)
+                                    .color(palette::css::BLACK.with_alpha(0.6))
                             }),))
                             .style(|s| {
                                 s.min_width(150.0).flex_direction(FlexDirection::RowReverse)
@@ -489,7 +493,7 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<ViewId>>) -> i
                         .style(|s| {
                             s.padding(5.0)
                                 .items_center()
-                                .hover(|s| s.background(Color::rgba8(228, 237, 216, 160)))
+                                .hover(|s| s.background(Color::from_rgba8(228, 237, 216, 160)))
                         })
                     }))
                     .style(|s| s.width_full());

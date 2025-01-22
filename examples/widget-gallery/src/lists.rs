@@ -1,5 +1,5 @@
 use floem::{
-    peniko::Color,
+    peniko::color::palette,
     reactive::{create_signal, RwSignal, SignalGet, SignalUpdate},
     style::JustifyContent,
     text::Weight,
@@ -76,12 +76,15 @@ fn enhanced_list() -> impl IntoView {
                                     .style(|s| {
                                         s.height(18.0)
                                             .font_weight(Weight::BOLD)
-                                            .color(Color::RED)
+                                            .color(palette::css::RED)
                                             .border(1.0)
-                                            .border_color(Color::RED)
+                                            .border_color(palette::css::RED)
                                             .border_radius(16.0)
                                             .margin_right(20.0)
-                                            .hover(|s| s.color(Color::WHITE).background(Color::RED))
+                                            .hover(|s| {
+                                                s.color(palette::css::WHITE)
+                                                    .background(palette::css::RED)
+                                            })
                                     })
                             })
                             .style(|s| {
@@ -98,7 +101,7 @@ fn enhanced_list() -> impl IntoView {
                         .items_center()
                         .height(item_height)
                         .apply_if(index != 0, |s| {
-                            s.border_top(1.0).border_color(Color::LIGHT_GRAY)
+                            s.border_top(1.0).border_color(palette::css::LIGHT_GRAY)
                         })
                 })
             },

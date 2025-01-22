@@ -8,6 +8,7 @@ use web_time::{Duration, Instant};
 use floem_reactive::{with_scope, RwSignal, Scope, SignalGet, SignalUpdate};
 use floem_renderer::gpu_resources::GpuResources;
 use floem_renderer::Renderer;
+use peniko::color::palette;
 use peniko::kurbo::{Affine, Point, Rect, Size, Vec2};
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
@@ -650,7 +651,7 @@ impl WindowHandle {
                 .theme
                 .as_ref()
                 .map(|theme| theme.background)
-                .unwrap_or(peniko::Color::WHITE);
+                .unwrap_or(palette::css::WHITE);
             // fill window with default white background if it's not transparent
             cx.fill(
                 &self
@@ -1338,7 +1339,7 @@ fn context_menu_view(
                             text(title).style(|s| s.selectable(false)),
                             svg(submenu_svg).style(move |s| {
                                 s.size(20.0, 20.0)
-                                    .color(Color::rgb8(201, 201, 201))
+                                    .color(Color::from_rgb8(201, 201, 201))
                                     .margin_right(10.0)
                                     .margin_left(20.0)
                                     .apply_if(!has_submenu, |s| s.hide())
@@ -1385,12 +1386,14 @@ fn context_menu_view(
                                 .justify_between()
                                 .items_center()
                                 .hover(|s| {
-                                    s.border_radius(10.0).background(Color::rgb8(65, 65, 65))
+                                    s.border_radius(10.0)
+                                        .background(Color::from_rgb8(65, 65, 65))
                                 })
                                 .active(|s| {
-                                    s.border_radius(10.0).background(Color::rgb8(92, 92, 92))
+                                    s.border_radius(10.0)
+                                        .background(Color::from_rgb8(92, 92, 92))
                                 })
-                                .disabled(|s| s.color(Color::rgb8(92, 92, 92)))
+                                .disabled(|s| s.color(Color::from_rgb8(92, 92, 92)))
                         }),
                         dyn_stack(
                             move || children.clone().unwrap_or_default(),
@@ -1424,11 +1427,11 @@ fn context_menu_view(
                                 .margin_left(menu_width.get() as f32)
                                 .flex_col()
                                 .border_radius(10.0)
-                                .background(Color::rgb8(44, 44, 44))
+                                .background(Color::from_rgb8(44, 44, 44))
                                 .padding(5.0)
                                 .cursor(CursorStyle::Default)
                                 .box_shadow_blur(5.0)
-                                .box_shadow_color(Color::BLACK)
+                                .box_shadow_color(palette::css::BLACK)
                                 .apply_if(
                                     !show_submenu.get()
                                         && !on_submenu.get()
@@ -1447,7 +1450,7 @@ fn context_menu_view(
                 s.width(100.pct())
                     .height(1.0)
                     .margin_vert(5.0)
-                    .background(Color::rgb8(92, 92, 92))
+                    .background(Color::from_rgb8(92, 92, 92))
             }))
             .style(|s| s.min_width(100.pct()).padding_horiz(20.0))
             .into_any(),
@@ -1501,8 +1504,8 @@ fn context_menu_view(
             .min_width(200.0)
             .flex_col()
             .border_radius(10.0)
-            .background(Color::rgb8(44, 44, 44))
-            .color(Color::rgb8(201, 201, 201))
+            .background(Color::from_rgb8(44, 44, 44))
+            .color(Color::from_rgb8(201, 201, 201))
             .z_index(999)
             .line_height(2.0)
             .padding(5.0)
@@ -1511,7 +1514,7 @@ fn context_menu_view(
             .cursor(CursorStyle::Default)
             .apply_if(!is_active, |s| s.hide())
             .box_shadow_blur(5.0)
-            .box_shadow_color(Color::BLACK)
+            .box_shadow_color(palette::css::BLACK)
     });
 
     let id = view.id();

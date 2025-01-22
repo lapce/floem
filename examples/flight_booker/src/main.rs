@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use floem::views::StackExt;
 use floem::{
-    peniko::Color,
+    peniko::color::palette,
     reactive::{create_rw_signal, RwSignal, SignalGet, SignalUpdate},
     unit::UnitExt,
     views::{button, dyn_container, empty, text, text_input, v_stack, Decorators, RadioButton},
@@ -70,10 +70,10 @@ pub fn app_view() -> impl IntoView {
 
     let start_date_input = text_input(start_text)
         .placeholder("Start date")
-        .style(move |s| s.apply_if(!start_date_is_valid(), |s| s.background(Color::RED)));
+        .style(move |s| s.apply_if(!start_date_is_valid(), |s| s.background(palette::css::RED)));
     let return_date_input = text_input(return_text)
         .placeholder("Return date")
-        .style(move |s| s.apply_if(!return_date_is_valid(), |s| s.background(Color::RED)))
+        .style(move |s| s.apply_if(!return_date_is_valid(), |s| s.background(palette::css::RED)))
         .disabled(move || !return_text_is_enabled());
 
     let book_button = button("Book")

@@ -1,5 +1,6 @@
 use floem::{
     keyboard::{Key, NamedKey},
+    peniko::color::palette,
     peniko::Color,
     reactive::{create_rw_signal, RwSignal, SignalGet, SignalUpdate},
     style::CursorStyle,
@@ -15,17 +16,17 @@ fn sortable_item(
 ) -> impl IntoView {
     let name = String::from(name);
     let colors = [
-        Color::WHITE,
-        Color::BEIGE,
-        Color::REBECCA_PURPLE,
-        Color::TEAL,
-        Color::PALE_GREEN,
-        Color::YELLOW,
-        Color::DODGER_BLUE,
-        Color::KHAKI,
-        Color::WHEAT,
-        Color::DARK_SALMON,
-        Color::HOT_PINK,
+        palette::css::WHITE,
+        palette::css::BEIGE,
+        palette::css::REBECCA_PURPLE,
+        palette::css::TEAL,
+        palette::css::PALE_GREEN,
+        palette::css::YELLOW,
+        palette::css::DODGER_BLUE,
+        palette::css::KHAKI,
+        palette::css::WHEAT,
+        palette::css::DARK_SALMON,
+        palette::css::HOT_PINK,
     ];
 
     (
@@ -68,7 +69,7 @@ fn sortable_item(
         })
         .dragging_style(|s| {
             s.box_shadow_blur(3)
-                .box_shadow_color(Color::rgb8(100, 100, 100))
+                .box_shadow_color(Color::from_rgb8(100, 100, 100))
                 .box_shadow_spread(2)
         })
         .style(move |s| {
@@ -77,7 +78,7 @@ fn sortable_item(
                 .row_gap(5)
                 .items_center()
                 .border(2)
-                .border_color(Color::RED)
+                .border_color(palette::css::RED)
         })
 }
 

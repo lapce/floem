@@ -6,6 +6,7 @@ use floem_renderer::{
     Renderer,
 };
 use peniko::{
+    color::palette,
     kurbo::{Point, Rect},
     Color,
 };
@@ -227,7 +228,7 @@ impl IntoView for RichSpanOwned {
 
     fn into_view(self) -> Self::V {
         let mut layout = TextLayout::new();
-        let mut attrs_list = AttrsList::new(Attrs::new().color(Color::BLACK));
+        let mut attrs_list = AttrsList::new(Attrs::new().color(palette::css::BLACK));
         for span in self.spans {
             attrs_list.add_span(span.0, span.1.as_attrs());
         }
@@ -274,7 +275,7 @@ impl<'a> std::ops::Add<&'a str> for RichSpan<'a> {
                 (0..self_len, AttrsOwned::new(self.attrs)),
                 (
                     self_len..self_len + rhs_len,
-                    AttrsOwned::new(Attrs::new().color(Color::BLACK))
+                    AttrsOwned::new(Attrs::new().color(palette::css::BLACK))
                 ),
             ],
         }
@@ -292,7 +293,7 @@ impl std::ops::Add<String> for RichSpan<'_> {
                 (0..self_len, AttrsOwned::new(self.attrs)),
                 (
                     self_len..self_len + rhs_len,
-                    AttrsOwned::new(Attrs::new().color(Color::BLACK))
+                    AttrsOwned::new(Attrs::new().color(palette::css::BLACK))
                 ),
             ],
         }
@@ -324,7 +325,7 @@ impl std::ops::Add<&str> for RichSpanOwned {
         let new_text = self.text + rhs;
         self.spans.push((
             self_len..new_text.len(),
-            AttrsOwned::new(Attrs::new().color(Color::BLACK)),
+            AttrsOwned::new(Attrs::new().color(palette::css::BLACK)),
         ));
         Self {
             text: new_text,
@@ -340,7 +341,7 @@ impl std::ops::Add<String> for RichSpanOwned {
         let new_text = self.text + &rhs;
         self.spans.push((
             self_len..new_text.len(),
-            AttrsOwned::new(Attrs::new().color(Color::BLACK)),
+            AttrsOwned::new(Attrs::new().color(palette::css::BLACK)),
         ));
         Self {
             text: new_text,
@@ -375,50 +376,50 @@ where
         span.color(color)
     }
     fn red(self) -> RichSpan<'a> {
-        self.color(Color::RED)
+        self.color(palette::css::RED)
     }
     fn blue(self) -> RichSpan<'a> {
-        self.color(Color::BLUE)
+        self.color(palette::css::BLUE)
     }
 
     fn green(self) -> RichSpan<'a> {
-        self.color(Color::GREEN)
+        self.color(palette::css::GREEN)
     }
 
     fn yellow(self) -> RichSpan<'a> {
-        self.color(Color::YELLOW)
+        self.color(palette::css::YELLOW)
     }
 
     fn black(self) -> RichSpan<'a> {
-        self.color(Color::BLACK)
+        self.color(palette::css::BLACK)
     }
 
     fn white(self) -> RichSpan<'a> {
-        self.color(Color::WHITE)
+        self.color(palette::css::WHITE)
     }
 
     fn gray(self) -> RichSpan<'a> {
-        self.color(Color::GRAY)
+        self.color(palette::css::GRAY)
     }
 
     fn cyan(self) -> RichSpan<'a> {
-        self.color(Color::CYAN)
+        self.color(palette::css::CYAN)
     }
 
     fn magenta(self) -> RichSpan<'a> {
-        self.color(Color::MAGENTA)
+        self.color(palette::css::MAGENTA)
     }
 
     fn orange(self) -> RichSpan<'a> {
-        self.color(Color::ORANGE)
+        self.color(palette::css::ORANGE)
     }
 
     fn purple(self) -> RichSpan<'a> {
-        self.color(Color::PURPLE)
+        self.color(palette::css::PURPLE)
     }
 
     fn pink(self) -> RichSpan<'a> {
-        self.color(Color::PINK)
+        self.color(palette::css::PINK)
     }
 
     fn family(self, family: &'a [crate::text::FamilyOwned]) -> RichSpan<'a> {
@@ -491,7 +492,7 @@ impl<'a, S: AsRef<str> + 'a> From<&'a S> for RichSpan<'a> {
     fn from(value: &'a S) -> Self {
         RichSpan {
             text: value.as_ref(),
-            attrs: Attrs::new().color(Color::BLACK),
+            attrs: Attrs::new().color(palette::css::BLACK),
         }
     }
 }

@@ -133,17 +133,20 @@ impl IntoView for TodoState {
             .style(move |s| {
                 s.width_full()
                     .apply_if(!is_active.get(), |s| s.cursor(CursorStyle::Default))
-                    .background(Color::TRANSPARENT)
+                    .background(palette::css::TRANSPARENT)
                     .transition_background(Transition::ease_in_out(600.millis()))
                     .border(0)
-                    .hover(|s| s.background(Color::TRANSPARENT))
+                    .hover(|s| s.background(palette::css::TRANSPARENT))
                     .focus(|s| {
-                        s.hover(|s| s.background(Color::TRANSPARENT))
+                        s.hover(|s| s.background(palette::css::TRANSPARENT))
                             .border(0.)
-                            .border_color(Color::TRANSPARENT)
+                            .border_color(palette::css::TRANSPARENT)
                     })
-                    .disabled(|s| s.background(Color::TRANSPARENT).color(Color::BLACK))
-                    .class(PlaceholderTextClass, |s| s.color(Color::GRAY))
+                    .disabled(|s| {
+                        s.background(palette::css::TRANSPARENT)
+                            .color(palette::css::BLACK)
+                    })
+                    .class(PlaceholderTextClass, |s| s.color(palette::css::GRAY))
             })
             .on_key_down(
                 floem::keyboard::Key::Named(NamedKey::Enter),
@@ -221,18 +224,18 @@ impl IntoView for TodoState {
                     .border_radius(5.)
                     .transition(MinHeight, Transition::new(600.millis(), Spring::snappy()))
                     .box_shadow_blur(0.)
-                    .box_shadow_color(Color::BLACK.multiply_alpha(0.0))
+                    .box_shadow_color(palette::css::BLACK.with_alpha(0.0))
                     .box_shadow_h_offset(0.)
                     .box_shadow_v_offset(0.)
-                    .background(Color::TRANSPARENT)
+                    .background(palette::css::TRANSPARENT)
                     .apply_if(is_selected.get(), |s| {
-                        s.background(Color::LIGHT_BLUE.multiply_alpha(0.7))
+                        s.background(palette::css::LIGHT_BLUE.with_alpha(0.7))
                     })
                     .apply_if(is_active.get(), |s| {
                         s.min_height(100)
-                            .background(Color::WHITE_SMOKE)
+                            .background(palette::css::WHITE_SMOKE)
                             .box_shadow_blur(2.)
-                            .box_shadow_color(Color::BLACK.multiply_alpha(0.7))
+                            .box_shadow_color(palette::css::BLACK.with_alpha(0.7))
                             .box_shadow_h_offset(1.)
                             .box_shadow_v_offset(2.)
                             .transition(

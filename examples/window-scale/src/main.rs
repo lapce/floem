@@ -1,6 +1,7 @@
 use floem::{
     event::{Event, EventListener},
     keyboard::{Key, NamedKey},
+    peniko::color::palette,
     peniko::Color,
     reactive::{create_rw_signal, create_signal, SignalGet, SignalUpdate},
     style_class,
@@ -31,8 +32,8 @@ fn app_view() -> impl IntoView {
                     })
                     .style(|s| {
                         s.margin_left(10.0)
-                            .hover(|s| s.background(Color::rgb8(244, 67, 54)))
-                            .active(|s| s.background(Color::RED))
+                            .hover(|s| s.background(Color::from_rgb8(244, 67, 54)))
+                            .active(|s| s.background(palette::css::RED))
                     })
                     .keyboard_navigable(),
                 label(|| "Reset to 0")
@@ -44,9 +45,9 @@ fn app_view() -> impl IntoView {
                     .disabled(move || counter.get() == 0)
                     .style(|s| {
                         s.margin_left(10.0)
-                            .background(Color::LIGHT_BLUE)
-                            .hover(|s| s.background(Color::LIGHT_YELLOW))
-                            .active(|s| s.background(Color::YELLOW_GREEN))
+                            .background(palette::css::LIGHT_BLUE)
+                            .hover(|s| s.background(palette::css::LIGHT_YELLOW))
+                            .active(|s| s.background(palette::css::YELLOW_GREEN))
                     })
                     .keyboard_navigable(),
             )
@@ -91,10 +92,13 @@ fn app_view() -> impl IntoView {
                 s.border(1.0)
                     .border_radius(10.0)
                     .padding(10.0)
-                    .focus_visible(|s| s.border(2.).border_color(Color::BLUE))
-                    .disabled(|s| s.background(Color::LIGHT_GRAY))
-                    .hover(|s| s.background(Color::LIGHT_GREEN))
-                    .active(|s| s.color(Color::WHITE).background(Color::DARK_GREEN))
+                    .focus_visible(|s| s.border(2.).border_color(palette::css::BLUE))
+                    .disabled(|s| s.background(palette::css::LIGHT_GRAY))
+                    .hover(|s| s.background(palette::css::LIGHT_GREEN))
+                    .active(|s| {
+                        s.color(palette::css::WHITE)
+                            .background(palette::css::DARK_GREEN)
+                    })
             })
     });
 

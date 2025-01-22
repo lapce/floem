@@ -140,7 +140,7 @@ impl Styling for SyntaxHighlightingStyle<'_> {
                             if style.font_style.contains(FontStyle::BOLD) {
                                 attr = attr.weight(Weight::BOLD);
                             }
-                            attr = attr.color(Color::rgba8(
+                            attr = attr.color(Color::from_rgba8(
                                 style.foreground.r,
                                 style.foreground.g,
                                 style.foreground.b,

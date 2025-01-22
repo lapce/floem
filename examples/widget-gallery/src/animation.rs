@@ -1,7 +1,7 @@
 use floem::{
     animate::Animation,
     event::EventListener as EL,
-    peniko::Color,
+    peniko::color::palette,
     reactive::{RwSignal, SignalGet, Trigger},
     unit::DurationUnitExt,
     views::{empty, h_stack, Decorators},
@@ -14,11 +14,11 @@ pub fn animation_view() -> impl IntoView {
             .duration(5.seconds())
             .keyframe(0, |f| f.computed_style())
             .keyframe(50, |f| {
-                f.style(|s| s.background(Color::BLACK).size(30, 30))
+                f.style(|s| s.background(palette::css::BLACK).size(30, 30))
                     .ease_in()
             })
             .keyframe(100, |f| {
-                f.style(|s| s.background(Color::AQUAMARINE).size(10, 300))
+                f.style(|s| s.background(palette::css::AQUAMARINE).size(10, 300))
                     .ease_out()
             })
             .repeat(true)
@@ -30,27 +30,27 @@ pub fn animation_view() -> impl IntoView {
 
     h_stack((
         empty()
-            .style(|s| s.background(Color::RED).size(500, 100))
+            .style(|s| s.background(palette::css::RED).size(500, 100))
             .animation(move |_| animation.get().duration(10.seconds())),
         empty()
             .style(|s| {
-                s.background(Color::BLUE)
+                s.background(palette::css::BLUE)
                     .size(50, 100)
                     .border(5.)
-                    .border_color(Color::GREEN)
+                    .border_color(palette::css::GREEN)
             })
             .animation(move |_| animation.get())
             .animation(move |a| {
                 a.keyframe(0, |f| f.computed_style())
                     .keyframe(100, |f| {
-                        f.style(|s| s.border(5.).border_color(Color::PURPLE))
+                        f.style(|s| s.border(5.).border_color(palette::css::PURPLE))
                     })
                     .duration(5.seconds())
                     .repeat(true)
                     .auto_reverse(true)
             }),
         empty()
-            .style(|s| s.background(Color::GREEN).size(100, 300))
+            .style(|s| s.background(palette::css::GREEN).size(100, 300))
             .animation(move |_| {
                 animation
                     .get()

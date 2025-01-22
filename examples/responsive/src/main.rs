@@ -1,5 +1,5 @@
 use floem::{
-    peniko::Color,
+    peniko::color::palette,
     reactive::{create_signal, SignalGet, SignalUpdate},
     responsive::{range, ScreenSize},
     style::TextOverflow,
@@ -18,12 +18,12 @@ fn app_view() -> impl IntoView {
                     .border_radius(10.0)
                     .padding(10.0)
                     .margin_horiz(10.0)
-                    .responsive(ScreenSize::XS, |s| s.background(Color::CYAN))
-                    .responsive(ScreenSize::SM, |s| s.background(Color::PURPLE))
-                    .responsive(ScreenSize::MD, |s| s.background(Color::ORANGE))
-                    .responsive(ScreenSize::LG, |s| s.background(Color::GREEN))
-                    .responsive(ScreenSize::XL, |s| s.background(Color::PINK))
-                    .responsive(ScreenSize::XXL, |s| s.background(Color::RED))
+                    .responsive(ScreenSize::XS, |s| s.background(palette::css::CYAN))
+                    .responsive(ScreenSize::SM, |s| s.background(palette::css::PURPLE))
+                    .responsive(ScreenSize::MD, |s| s.background(palette::css::ORANGE))
+                    .responsive(ScreenSize::LG, |s| s.background(palette::css::GREEN))
+                    .responsive(ScreenSize::XL, |s| s.background(palette::css::PINK))
+                    .responsive(ScreenSize::XXL, |s| s.background(palette::css::RED))
                     .responsive(range(ScreenSize::XS..ScreenSize::LG), |s| {
                         s.width(90.0.pct()).max_width(500.0)
                     })
@@ -40,9 +40,9 @@ fn app_view() -> impl IntoView {
                 set_is_text_overflown.update(|overflown| *overflown = is_overflown);
             })
             .style(move |s| {
-                s.background(Color::DIM_GRAY)
+                s.background(palette::css::DIM_GRAY)
                     .padding(10.0)
-                    .color(Color::WHITE_SMOKE)
+                    .color(palette::css::WHITE_SMOKE)
                     .margin_top(30.)
                     .width_pct(70.0)
                     .font_size(20.0)
@@ -54,9 +54,9 @@ fn app_view() -> impl IntoView {
                 label(move || if is_text_overflown.get() { "No" } else { "Yes" }.to_string())
                     .style(move |s| {
                         s.color(if is_text_overflown.get() {
-                            Color::RED
+                            palette::css::RED
                         } else {
-                            Color::GREEN
+                            palette::css::GREEN
                         })
                         .font_bold()
                     }),

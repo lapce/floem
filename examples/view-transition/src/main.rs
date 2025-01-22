@@ -51,7 +51,7 @@ fn app_view() -> impl IntoView {
                     s.size(100, 100)
                         .scale(100.pct())
                         .border_radius(5)
-                        .background(Color::RED)
+                        .background(palette::css::RED)
                         .apply_if(state.get() == ViewSwitcher::Two, |s| s.hide())
                         .apply(box_shadow())
                 }),
@@ -84,7 +84,7 @@ fn view_two(view: RwSignal<ViewSwitcher>) -> impl IntoView {
 
 fn box_shadow() -> Style {
     Style::new()
-        .box_shadow_color(Color::BLACK.multiply_alpha(0.5))
+        .box_shadow_color(palette::css::BLACK.with_alpha(0.5))
         .box_shadow_h_offset(5.)
         .box_shadow_v_offset(10.)
         // .box_shadow_spread(1)
