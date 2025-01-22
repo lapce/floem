@@ -36,7 +36,7 @@ image = { version = "0.25", default-features = false }
 im = { version = "15.1.0" }
 resvg = { version = "0.44.0" }
 raw-window-handle = "0.6.0"
-wgpu = { version = "22.0.0" }
+wgpu = { version = "23.0.1" }
 parking_lot = { version = "0.12.1" }
 swash = { version = "0.1.17" }
 muda = { version = "0.15.3" }
