@@ -296,7 +296,9 @@ impl StylePropValue for Gradient {
         )
     }
 
-    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+    fn interpolate(&self, _other: &Self, _value: f64) -> Option<Self> {
+        None
+        /*
         let mut interpolated_stops = ColorStops::new();
 
         let mut i = 0;
@@ -369,6 +371,7 @@ impl StylePropValue for Gradient {
             extend: self.extend,
             stops: interpolated_stops,
         })
+        */
     }
 }
 
@@ -428,44 +431,57 @@ impl StylePropValue for Brush {
 
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         match (self, other) {
-            (Brush::Solid(color), Brush::Solid(other)) => {
-                color.interpolate(other, value).map(Self::Solid)
-            }
+            (Brush::Solid(color), Brush::Solid(other)) => Some(Self::Solid(color.lerp(
+                *other,
+                value as f32,
+                HueDirection::default(),
+            ))),
             (Brush::Gradient(gradient), Brush::Solid(solid)) => {
-                let interpolated_stops: ColorStops = gradient
+                let interpolated_stops: Vec<ColorStop> = gradient
                     .stops
                     .iter()
                     .map(|stop| {
-                        let interpolated_color = stop.color.interpolate(solid, value).unwrap();
+                        let interpolated_color = stop.color.to_alpha_color().lerp(
+                            *solid,
+                            value as f32,
+                            HueDirection::default(),
+                        );
                         ColorStop::from((stop.offset, interpolated_color))
                     })
                     .collect();
                 Some(Brush::Gradient(Gradient {
                     kind: gradient.kind,
                     extend: gradient.extend,
-                    stops: interpolated_stops,
+                    interpolation_cs: gradient.interpolation_cs,
+                    hue_direction: gradient.hue_direction,
+                    stops: ColorStops::from(&*interpolated_stops),
                 }))
             }
             (Brush::Solid(solid), Brush::Gradient(gradient)) => {
-                let interpolated_stops: ColorStops = gradient
+                let interpolated_stops: Vec<ColorStop> = gradient
                     .stops
                     .iter()
                     .map(|stop| {
-                        let interpolated_color = solid.interpolate(&stop.color, value).unwrap();
+                        let interpolated_color = solid.lerp(
+                            stop.color.to_alpha_color(),
+                            value as f32,
+                            HueDirection::default(),
+                        );
                         ColorStop::from((stop.offset, interpolated_color))
                     })
                     .collect();
                 Some(Brush::Gradient(Gradient {
                     kind: gradient.kind,
                     extend: gradient.extend,
-                    stops: interpolated_stops,
+                    interpolation_cs: gradient.interpolation_cs,
+                    hue_direction: gradient.hue_direction,
+                    stops: ColorStops::from(&*interpolated_stops),
                 }))
             }
 
             (Brush::Gradient(gradient1), Brush::Gradient(gradient2)) => {
                 gradient1.interpolate(gradient2, value).map(Brush::Gradient)
             }
-
             _ => None,
         }
     }
