@@ -10,4 +10,4 @@ Filing bugs with clear, reproducible steps is a great way to contribute as well.
 
 It's not a good library if there isn't good documentation. So, all contributions to the documentation are very appreciated!
 
-If you would like a conversation with the devlopers of Floem, you can join in the #floem channel on this [Discord](https://discord.gg/RB6cRYerXX).
+If you would like a conversation with the developers of Floem, you can join in the #floem channel on this [Discord](https://discord.gg/RB6cRYerXX).
