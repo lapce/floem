@@ -41,12 +41,8 @@ fn create_color_display(
         })
         .style(|s| s.width(50).font_size(18)),
         empty().style(move |s| {
-            s.background(Color::rgb(
-                red.get() as f64,
-                green.get() as f64,
-                blue.get() as f64,
-            ))
-            .size(310, 75)
+            s.background(Color::new([red.get(), green.get(), blue.get(), 1.0]))
+                .size(310, 75)
         }),
     )
         .style(|s| s.flex_col().gap(10))
