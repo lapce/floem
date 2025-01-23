@@ -167,7 +167,7 @@ impl EventCx<'_> {
                 }
                 if event.is_pointer() && pointer_event_consumed == PointerEventConsumed::Yes {
                     // if a child's pointer event was consumed because pointer-events: auto
-                    // we don't pass the pionter event the next child
+                    // we don't pass the pointer event the next child
                     // also, we mark pointer_event_consumed to be yes
                     // so that it will be bublled up the parent
                     view_pointer_event_consumed = PointerEventConsumed::Yes;

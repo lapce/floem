@@ -15,7 +15,7 @@ use crate::{
 #[derive(Debug)]
 /// # SAFETY
 ///
-/// **DO NOT USE THIS** trigger except for when using with `create_ext_action` or when you guarentee that
+/// **DO NOT USE THIS** trigger except for when using with `create_ext_action` or when you guarantee that
 /// the signal is never used from a different thread than it was created on.
 pub struct ExtSendTrigger {
     signal: RwSignal<()>,

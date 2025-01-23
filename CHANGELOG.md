@@ -83,7 +83,7 @@
 - Rename Tabs to Tab for clarity in the `tab` argument [#593](https://github.com/lapce/floem/pull/593)
 - Make add and remove class on ViewId public [#601](https://github.com/lapce/floem/pull/601)
 - rename window scale action to be consistent [#639](https://github.com/lapce/floem/pull/639)
-- change on_key_* fns to provide acess to the modifiers [#642](https://github.com/lapce/floem/pull/642)
+- change on_key_* fns to provide access to the modifiers [#642](https://github.com/lapce/floem/pull/642)
 - event pass through [#667](https://github.com/lapce/floem/pull/667)
 
 ### Bug Fixes
