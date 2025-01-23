@@ -1,7 +1,7 @@
 use floem::{
     event::{Event, EventListener},
     keyboard::{Key, NamedKey},
-    peniko::Color,
+    peniko::color::palette,
     reactive::{create_rw_signal, SignalGet, SignalUpdate},
     views::{dyn_view, label, Decorators},
     IntoView, View,
@@ -20,9 +20,9 @@ pub fn dropped_file_view() -> impl IntoView {
             form_item("".to_string(), 80.0, move || {
                 let view = dyn_view(move || "dropped file".to_string()).style(|s| {
                     s.size(200.0, 50.0)
-                        .background(Color::GRAY)
+                        .background(palette::css::GRAY)
                         .border(5.)
-                        .border_color(Color::BLACK)
+                        .border_color(palette::css::BLACK)
                         .flex_col()
                         .items_center()
                         .justify_center()

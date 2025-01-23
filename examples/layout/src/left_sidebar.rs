@@ -36,7 +36,7 @@ pub fn left_sidebar_view() -> impl IntoView {
                         .height(SIDEBAR_ITEM_HEIGHT)
                         .items_start()
                         .border_bottom(1.0)
-                        .border_color(Color::rgb8(205, 205, 205))
+                        .border_color(Color::from_rgb8(205, 205, 205))
                 })
             },
         )
@@ -46,7 +46,7 @@ pub fn left_sidebar_view() -> impl IntoView {
         s.width(SIDEBAR_WIDTH)
             .border_right(1.0)
             .border_top(1.0)
-            .border_color(Color::rgb8(205, 205, 205))
+            .border_color(Color::from_rgb8(205, 205, 205))
     });
 
     let main_window = scroll(
@@ -59,7 +59,7 @@ pub fn left_sidebar_view() -> impl IntoView {
             .min_width(0)
             .flex_grow(1.0)
             .border_top(1.0)
-            .border_color(Color::rgb8(205, 205, 205))
+            .border_color(Color::from_rgb8(205, 205, 205))
     });
 
     let content = h_stack((side_bar, main_window)).style(|s| {

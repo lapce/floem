@@ -22,11 +22,11 @@ readme = "README.md"
 repository = "https://github.com/lapce/floem"
 description = "A native Rust UI library with fine-grained reactivity"
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.82"
 license.workspace = true
 
 [workspace.dependencies]
-peniko = { version = "0.2.0" }
+peniko = { version = "0.3.1" }
 serde = { version = "1.0" }
 lapce-xi-rope = { version = "0.3.2" }
 strum = { version = "0.26.2", features = ["derive"] }
@@ -36,7 +36,7 @@ image = { version = "0.25", default-features = false }
 im = { version = "15.1.0" }
 resvg = { version = "0.44.0" }
 raw-window-handle = "0.6.0"
-wgpu = { version = "22.0.0" }
+wgpu = { version = "23.0.1" }
 parking_lot = { version = "0.12.1" }
 swash = { version = "0.1.17" }
 muda = { version = "0.15.3" }

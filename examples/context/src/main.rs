@@ -1,5 +1,6 @@
 use floem::{
     keyboard::{Key, NamedKey},
+    peniko::color::palette,
     peniko::Color,
     reactive::{provide_context, use_context},
     views::{empty, label, v_stack, Decorators},
@@ -28,15 +29,19 @@ fn context_container<V: IntoView + 'static>(
 }
 
 fn app_view() -> impl IntoView {
-    provide_context(Color::BLACK);
+    provide_context(palette::css::BLACK);
 
     let view = v_stack((
         colored_label(String::from("app_view")),
-        context_container(Color::HOT_PINK, String::from("Nested context 1"), || {
-            context_container(Color::BLUE, String::from("Nested context 2"), || {
-                context_container(Color::GREEN, String::from("Nested context 3"), empty)
-            })
-        }),
+        context_container(
+            palette::css::HOT_PINK,
+            String::from("Nested context 1"),
+            || {
+                context_container(palette::css::BLUE, String::from("Nested context 2"), || {
+                    context_container(palette::css::GREEN, String::from("Nested context 3"), empty)
+                })
+            },
+        ),
     ))
     .style(|s| {
         s.width_full()

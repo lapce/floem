@@ -7,6 +7,7 @@ use crate::views::{
     text, v_stack, v_stack_from_iter, Decorators,
 };
 use floem_reactive::{create_rw_signal, RwSignal, Scope, SignalGet, SignalUpdate};
+use peniko::color::palette;
 use peniko::Color;
 use std::fmt::Display;
 use std::mem;
@@ -56,14 +57,16 @@ fn info(name: impl Display, value: String) -> impl IntoView {
 
 fn info_row(name: String, view: impl IntoView + 'static) -> impl IntoView {
     stack((
-        stack((static_label(name)
-            .style(|s| s.margin_right(5.0).color(Color::BLACK.multiply_alpha(0.6))),))
+        stack((static_label(name).style(|s| {
+            s.margin_right(5.0)
+                .color(palette::css::BLACK.with_alpha(0.6))
+        }),))
         .style(|s| s.min_width(80.0).flex_direction(FlexDirection::RowReverse)),
         view,
     ))
     .style(|s| {
         s.padding(5.0)
-            .hover(|s| s.background(Color::rgba8(228, 237, 216, 160)))
+            .hover(|s| s.background(Color::from_rgba8(228, 237, 216, 160)))
     })
 }
 
@@ -117,10 +120,10 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                     .map(|selected| Rc::ptr_eq(&selected, &frame_))
                     .unwrap_or(false);
                 s.padding(5.0)
-                    .apply_if(selected, |s| s.background(Color::rgb8(213, 208, 216)))
+                    .apply_if(selected, |s| s.background(Color::from_rgb8(213, 208, 216)))
                     .hover(move |s| {
-                        s.background(Color::rgba8(228, 237, 216, 160))
-                            .apply_if(selected, |s| s.background(Color::rgb8(186, 180, 216)))
+                        s.background(Color::from_rgba8(228, 237, 216, 160))
+                            .apply_if(selected, |s| s.background(Color::from_rgb8(186, 180, 216)))
                     })
             })
         })
@@ -153,7 +156,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
     let frames = v_stack((
         header("Frames"),
         scroll(v_stack_from_iter(frames).style(|s| s.width_full())).style(|s| {
-            s.background(Color::WHITE)
+            s.background(palette::css::WHITE)
                 .flex_basis(0)
                 .min_height(0)
                 .flex_grow(1.0)
@@ -166,7 +169,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
     let separator = empty().style(move |s| {
         s.height_full()
             .min_width(1.0)
-            .background(Color::BLACK.multiply_alpha(0.2))
+            .background(palette::css::BLACK.with_alpha(0.2))
     });
 
     let timeline = dyn_container(
@@ -195,12 +198,12 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                             .absolute()
                             .inset_left_pct(left * 100.0)
                             .border(0.3)
-                            .border_color(Color::rgb8(129, 164, 192))
-                            .background(Color::rgb8(209, 222, 233).multiply_alpha(0.6))
+                            .border_color(Color::from_rgb8(129, 164, 192))
+                            .background(Color::from_rgb8(209, 222, 233).with_alpha(0.6))
                             .text_clip()
                             .hover(|s| {
-                                s.color(Color::WHITE)
-                                    .background(Color::BLACK.multiply_alpha(0.6))
+                                s.color(palette::css::WHITE)
+                                    .background(palette::css::BLACK.with_alpha(0.6))
                             })
                     })
                     .on_event_cont(EventListener::PointerEnter, move |_| {
@@ -233,7 +236,7 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
             .min_height(0)
             .flex_basis(0)
             .flex_grow(1.0)
-            .background(Color::WHITE)
+            .background(palette::css::WHITE)
     });
 
     let timeline = v_stack((header("Timeline"), timeline))
@@ -279,7 +282,7 @@ pub fn profiler(window_id: WindowId) -> impl IntoView {
     let separator = empty().style(move |s| {
         s.width_full()
             .min_height(1.0)
-            .background(Color::BLACK.multiply_alpha(0.2))
+            .background(palette::css::BLACK.with_alpha(0.2))
     });
 
     let lower = dyn_container(

@@ -1,6 +1,7 @@
 use std::ops::Range;
 
 use floem::{
+    peniko::color::palette,
     peniko::Color,
     text::{Attrs, AttrsList, Style, TextLayout},
     views::{rich_text, scroll, v_stack, Decorators, RichTextExt},
@@ -21,43 +22,43 @@ pub fn rich_text_view() -> impl IntoView {
     scroll({
         v_stack((
             rich_text(move || {
-                let attrs = Attrs::new().color(Color::BLACK);
+                let attrs = Attrs::new().color(palette::css::BLACK);
 
                 let mut attrs_list = AttrsList::new(attrs);
 
                 attrs_list.add_span(
                     Range { start: 5, end: 66 },
-                    Attrs::new().color(Color::GRAY).style(Style::Italic),
+                    Attrs::new().color(palette::css::GRAY).style(Style::Italic),
                 );
 
                 attrs_list.add_span(
                     Range { start: 36, end: 66 },
-                    Attrs::new().color(Color::BLUE),
+                    Attrs::new().color(palette::css::BLUE),
                 );
 
                 attrs_list.add_span(
                     Range { start: 71, end: 73 },
-                    Attrs::new().color(Color::PURPLE),
+                    Attrs::new().color(palette::css::PURPLE),
                 );
 
                 attrs_list.add_span(
                     Range { start: 74, end: 78 },
-                    Attrs::new().color(Color::SKY_BLUE),
+                    Attrs::new().color(palette::css::SKY_BLUE),
                 );
 
                 attrs_list.add_span(
                     Range { start: 78, end: 80 },
-                    Attrs::new().color(Color::GOLDENROD),
+                    Attrs::new().color(palette::css::GOLDENROD),
                 );
 
                 attrs_list.add_span(
                     Range { start: 91, end: 98 },
-                    Attrs::new().color(Color::GOLD),
+                    Attrs::new().color(palette::css::GOLD),
                 );
 
                 attrs_list.add_span(
                     Range { start: 98, end: 99 },
-                    Attrs::new().color(Color::PURPLE),
+                    Attrs::new().color(palette::css::PURPLE),
                 );
 
                 attrs_list.add_span(
@@ -65,7 +66,7 @@ pub fn rich_text_view() -> impl IntoView {
                         start: 100,
                         end: 113,
                     },
-                    Attrs::new().color(Color::DARK_GREEN),
+                    Attrs::new().color(palette::css::DARK_GREEN),
                 );
 
                 attrs_list.add_span(
@@ -73,7 +74,7 @@ pub fn rich_text_view() -> impl IntoView {
                         start: 113,
                         end: 114,
                     },
-                    Attrs::new().color(Color::PURPLE),
+                    Attrs::new().color(palette::css::PURPLE),
                 );
 
                 attrs_list.add_span(
@@ -81,7 +82,7 @@ pub fn rich_text_view() -> impl IntoView {
                         start: 114,
                         end: 115,
                     },
-                    Attrs::new().color(Color::GRAY),
+                    Attrs::new().color(palette::css::GRAY),
                 );
 
                 let mut text_layout = TextLayout::new();

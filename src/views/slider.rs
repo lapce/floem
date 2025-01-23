@@ -1,8 +1,9 @@
 //! A toggle button widget. An example can be found in widget-gallery/button in the floem examples.
 
 use floem_reactive::{create_updater, SignalGet, SignalUpdate};
+use peniko::color::palette;
 use peniko::kurbo::{Circle, Point, RoundedRect};
-use peniko::{Brush, Color};
+use peniko::Brush;
 use winit::keyboard::{Key, NamedKey};
 
 use crate::unit::Pct;
@@ -76,9 +77,9 @@ prop_extractor! {
 ///     .slider_style(|s| {
 ///         s.edge_align(true)
 ///             .handle_radius(50.pct())
-///             .bar_color(Color::BLACK)
+///             .bar_color(palette::css::BLACK)
 ///             .bar_radius(100.pct())
-///             .accent_bar_color(Color::GREEN)
+///             .accent_bar_color(palette::css::GREEN)
 ///             .accent_bar_radius(100.pct())
 ///             .accent_bar_height(100.pct())
 ///     });
@@ -271,7 +272,10 @@ impl View for Slider {
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         cx.fill(
             &self.base_bar,
-            &self.base_bar_style.color().unwrap_or(Color::BLACK.into()),
+            &self
+                .base_bar_style
+                .color()
+                .unwrap_or(palette::css::BLACK.into()),
             0.,
         );
         cx.save();
@@ -282,7 +286,7 @@ impl View for Slider {
             &self
                 .accent_bar_style
                 .color()
-                .unwrap_or(Color::TRANSPARENT.into()),
+                .unwrap_or(palette::css::TRANSPARENT.into()),
             0.,
         );
         cx.restore();

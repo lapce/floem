@@ -15,7 +15,7 @@ use floem_renderer::{text::Cursor, Renderer};
 use unicode_segmentation::UnicodeSegmentation;
 use winit::keyboard::{Key, NamedKey, SmolStr};
 
-use crate::{peniko::Color, style::Style, view::View};
+use crate::{peniko::color::palette, style::Style, view::View};
 
 use std::{any::Any, ops::Range};
 
@@ -529,7 +529,11 @@ impl TextInput {
     }
 
     pub fn get_placeholder_text_attrs(&self) -> AttrsList {
-        let mut attrs = Attrs::new().color(self.placeholder_style.color().unwrap_or(Color::BLACK));
+        let mut attrs = Attrs::new().color(
+            self.placeholder_style
+                .color()
+                .unwrap_or(palette::css::BLACK),
+        );
 
         //TODO:
         // self.placeholder_style
@@ -574,7 +578,7 @@ impl TextInput {
     }
 
     pub fn get_text_attrs(&self) -> AttrsList {
-        let mut attrs = Attrs::new().color(self.style.color().unwrap_or(Color::BLACK));
+        let mut attrs = Attrs::new().color(self.style.color().unwrap_or(palette::css::BLACK));
 
         attrs = attrs.font_size(self.font_size());
 

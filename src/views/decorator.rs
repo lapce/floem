@@ -29,17 +29,17 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     ///
     /// Earlier applications of `style` have lower priority than later calls.
     /// ```rust
-    /// # use floem::{peniko::Color, View, views::{Decorators, label, stack}};
+    /// # use floem::{peniko::color::palette, View, views::{Decorators, label, stack}};
     /// fn view() -> impl View {
     ///     label(|| "Hello".to_string())
-    ///         .style(|s| s.font_size(20.0).color(Color::RED))
+    ///         .style(|s| s.font_size(20.0).color(palette::css::RED))
     /// }
     ///
     /// fn other() -> impl View {
     ///     stack((
     ///         view(), // will be red and size 20
     ///         // will be green and default size due to the previous style being overwritten
-    ///         view().style(|s| s.color(Color::GREEN)),
+    ///         view().style(|s| s.color(palette::css::GREEN)),
     ///     ))
     /// }
     /// ```

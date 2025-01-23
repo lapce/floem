@@ -3,6 +3,7 @@
 use floem_reactive::create_updater;
 use floem_renderer::text::{LineHeightValue, Weight};
 use im_rc::hashmap::Entry;
+use peniko::color::{palette, HueDirection};
 use peniko::kurbo::{Point, Stroke};
 use peniko::{Brush, Color, ColorStop, ColorStops, Gradient, GradientKind};
 use rustc_hash::FxHasher;
@@ -219,12 +220,12 @@ impl StylePropValue for Color {
                 .width(22.0)
                 .height(14.0)
                 .border(1.)
-                .border_color(Color::WHITE.multiply_alpha(0.5))
+                .border_color(palette::css::WHITE.with_alpha(0.5))
                 .border_radius(5.0)
         });
         let color = stack((color,)).style(|s| {
             s.border(1.)
-                .border_color(Color::BLACK.multiply_alpha(0.5))
+                .border_color(palette::css::BLACK.with_alpha(0.5))
                 .border_radius(5.0)
                 .margin_left(6.0)
         });
@@ -236,19 +237,7 @@ impl StylePropValue for Color {
     }
 
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
-        let r = f64::interpolate(&(self.r as f64), &(other.r as f64), value)
-            .unwrap()
-            .round() as u8;
-        let g = f64::interpolate(&(self.g as f64), &(other.g as f64), value)
-            .unwrap()
-            .round() as u8;
-        let b = f64::interpolate(&(self.b as f64), &(other.b as f64), value)
-            .unwrap()
-            .round() as u8;
-        let a = f64::interpolate(&(self.a as f64), &(other.a as f64), value)
-            .unwrap()
-            .round() as u8;
-        Some(Color { r, g, b, a })
+        Some(self.lerp(*other, value as f32, HueDirection::default()))
     }
 }
 
@@ -291,12 +280,12 @@ impl StylePropValue for Gradient {
                 .width(box_width)
                 .height(box_height)
                 .border(1.)
-                .border_color(Color::WHITE.multiply_alpha(0.5))
+                .border_color(palette::css::WHITE.with_alpha(0.5))
                 .border_radius(5.0)
         });
         let color = stack((color,)).style(|s| {
             s.border(1.)
-                .border_color(Color::BLACK.multiply_alpha(0.5))
+                .border_color(palette::css::BLACK.with_alpha(0.5))
                 .border_radius(5.0)
                 .margin_left(6.0)
         });
@@ -307,7 +296,9 @@ impl StylePropValue for Gradient {
         )
     }
 
-    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+    fn interpolate(&self, _other: &Self, _value: f64) -> Option<Self> {
+        None
+        /*
         let mut interpolated_stops = ColorStops::new();
 
         let mut i = 0;
@@ -380,6 +371,7 @@ impl StylePropValue for Gradient {
             extend: self.extend,
             stops: interpolated_stops,
         })
+        */
     }
 }
 
@@ -439,44 +431,57 @@ impl StylePropValue for Brush {
 
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         match (self, other) {
-            (Brush::Solid(color), Brush::Solid(other)) => {
-                color.interpolate(other, value).map(Self::Solid)
-            }
+            (Brush::Solid(color), Brush::Solid(other)) => Some(Self::Solid(color.lerp(
+                *other,
+                value as f32,
+                HueDirection::default(),
+            ))),
             (Brush::Gradient(gradient), Brush::Solid(solid)) => {
-                let interpolated_stops: ColorStops = gradient
+                let interpolated_stops: Vec<ColorStop> = gradient
                     .stops
                     .iter()
                     .map(|stop| {
-                        let interpolated_color = stop.color.interpolate(solid, value).unwrap();
+                        let interpolated_color = stop.color.to_alpha_color().lerp(
+                            *solid,
+                            value as f32,
+                            HueDirection::default(),
+                        );
                         ColorStop::from((stop.offset, interpolated_color))
                     })
                     .collect();
                 Some(Brush::Gradient(Gradient {
                     kind: gradient.kind,
                     extend: gradient.extend,
-                    stops: interpolated_stops,
+                    interpolation_cs: gradient.interpolation_cs,
+                    hue_direction: gradient.hue_direction,
+                    stops: ColorStops::from(&*interpolated_stops),
                 }))
             }
             (Brush::Solid(solid), Brush::Gradient(gradient)) => {
-                let interpolated_stops: ColorStops = gradient
+                let interpolated_stops: Vec<ColorStop> = gradient
                     .stops
                     .iter()
                     .map(|stop| {
-                        let interpolated_color = solid.interpolate(&stop.color, value).unwrap();
+                        let interpolated_color = solid.lerp(
+                            stop.color.to_alpha_color(),
+                            value as f32,
+                            HueDirection::default(),
+                        );
                         ColorStop::from((stop.offset, interpolated_color))
                     })
                     .collect();
                 Some(Brush::Gradient(Gradient {
                     kind: gradient.kind,
                     extend: gradient.extend,
-                    stops: interpolated_stops,
+                    interpolation_cs: gradient.interpolation_cs,
+                    hue_direction: gradient.hue_direction,
+                    stops: ColorStops::from(&*interpolated_stops),
                 }))
             }
 
             (Brush::Gradient(gradient1), Brush::Gradient(gradient2)) => {
                 gradient1.interpolate(gradient2, value).map(Brush::Gradient)
             }
-
             _ => None,
         }
     }
@@ -1497,7 +1502,7 @@ impl Default for BoxShadow {
     fn default() -> Self {
         Self {
             blur_radius: PxPct::Px(0.),
-            color: Color::BLACK,
+            color: palette::css::BLACK,
             spread: PxPct::Px(0.),
             h_offset: PxPct::Px(0.),
             v_offset: PxPct::Px(0.),
@@ -1634,9 +1639,9 @@ define_builtin_props!(
     BorderRight border_right nocb: StrokeWrap {} = StrokeWrap::new(0.0),
     BorderBottom border_bottom nocb: StrokeWrap {} = StrokeWrap::new(0.0),
     BorderRadius border_radius: PxPct {} = PxPct::Px(0.0),
-    OutlineColor outline_color: Brush {} = Brush::Solid(Color::TRANSPARENT),
+    OutlineColor outline_color: Brush {} = Brush::Solid(palette::css::TRANSPARENT),
     Outline outline nocb: StrokeWrap {} = StrokeWrap::new(0.),
-    BorderColor border_color: Brush {} = Brush::Solid(Color::BLACK),
+    BorderColor border_color: Brush {} = Brush::Solid(palette::css::BLACK),
     PaddingLeft padding_left: PxPct {} = PxPct::Px(0.0),
     PaddingTop padding_top: PxPct {} = PxPct::Px(0.0),
     PaddingRight padding_right: PxPct {} = PxPct::Px(0.0),
@@ -1660,7 +1665,7 @@ define_builtin_props!(
     FontFamily font_family nocb: Option<String> { inherited } = None,
     FontWeight font_weight nocb: Option<Weight> { inherited } = None,
     FontStyle font_style nocb: Option<crate::text::Style> { inherited } = None,
-    CursorColor cursor_color nocb: Brush {} = Brush::Solid(Color::BLACK.multiply_alpha(0.3)),
+    CursorColor cursor_color nocb: Brush {} = Brush::Solid(palette::css::BLACK.with_alpha(0.3)),
     SelectionCornerRadius selection_corer_radius nocb: f64 {} = 1.,
     Selectable selectable: bool {} = true,
     TextOverflowProp text_overflow: TextOverflow {} = TextOverflow::Wrap,

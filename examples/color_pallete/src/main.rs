@@ -41,12 +41,8 @@ fn create_color_display(
         })
         .style(|s| s.width(50).font_size(18)),
         empty().style(move |s| {
-            s.background(Color::rgb(
-                red.get() as f64,
-                green.get() as f64,
-                blue.get() as f64,
-            ))
-            .size(310, 75)
+            s.background(Color::new([red.get(), green.get(), blue.get(), 1.0]))
+                .size(310, 75)
         }),
     )
         .style(|s| s.flex_col().gap(10))
@@ -199,8 +195,12 @@ fn rgb_view() -> impl IntoView {
             dyn_view(move || format!("rgb: ({}, {}, {})", r.get(), g.get(), b.get(),))
                 .style(|s| s.width(50).font_size(18)),
             empty().style(move |s| {
-                s.background(Color::rgb8(r.get() as u8, g.get() as u8, b.get() as u8))
-                    .size(310, 75)
+                s.background(Color::from_rgb8(
+                    r.get() as u8,
+                    g.get() as u8,
+                    b.get() as u8,
+                ))
+                .size(310, 75)
             }),
         )
             .style(|s| s.flex_col().gap(10)),
@@ -214,7 +214,7 @@ fn palette() -> impl IntoView {
             (
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(194, 255, 199))
+                        s.background(Color::from_rgb8(194, 255, 199))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -224,7 +224,7 @@ fn palette() -> impl IntoView {
                     .style(|s| s.flex_col().items_center().gap(2)),
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(158, 223, 156))
+                        s.background(Color::from_rgb8(158, 223, 156))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -234,7 +234,7 @@ fn palette() -> impl IntoView {
                     .style(|s| s.flex_col().items_center().gap(2)),
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(98, 130, 93))
+                        s.background(Color::from_rgb8(98, 130, 93))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -244,7 +244,7 @@ fn palette() -> impl IntoView {
                     .style(|s| s.flex_col().items_center().gap(2)),
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(82, 110, 72))
+                        s.background(Color::from_rgb8(82, 110, 72))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -257,7 +257,7 @@ fn palette() -> impl IntoView {
             (
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(223, 242, 235))
+                        s.background(Color::from_rgb8(223, 242, 235))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -267,7 +267,7 @@ fn palette() -> impl IntoView {
                     .style(|s| s.flex_col().items_center().gap(2)),
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(185, 229, 232))
+                        s.background(Color::from_rgb8(185, 229, 232))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -277,7 +277,7 @@ fn palette() -> impl IntoView {
                     .style(|s| s.flex_col().items_center().gap(2)),
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(122, 178, 211))
+                        s.background(Color::from_rgb8(122, 178, 211))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -287,7 +287,7 @@ fn palette() -> impl IntoView {
                     .style(|s| s.flex_col().items_center().gap(2)),
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(74, 98, 138))
+                        s.background(Color::from_rgb8(74, 98, 138))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -300,7 +300,7 @@ fn palette() -> impl IntoView {
             (
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(116, 9, 56))
+                        s.background(Color::from_rgb8(116, 9, 56))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -310,7 +310,7 @@ fn palette() -> impl IntoView {
                     .style(|s| s.flex_col().items_center().gap(2)),
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(175, 23, 64))
+                        s.background(Color::from_rgb8(175, 23, 64))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -320,7 +320,7 @@ fn palette() -> impl IntoView {
                     .style(|s| s.flex_col().items_center().gap(2)),
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(204, 43, 82))
+                        s.background(Color::from_rgb8(204, 43, 82))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -330,7 +330,7 @@ fn palette() -> impl IntoView {
                     .style(|s| s.flex_col().items_center().gap(2)),
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(222, 124, 125))
+                        s.background(Color::from_rgb8(222, 124, 125))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -343,7 +343,7 @@ fn palette() -> impl IntoView {
             (
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(255, 245, 228))
+                        s.background(Color::from_rgb8(255, 245, 228))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -353,7 +353,7 @@ fn palette() -> impl IntoView {
                     .style(|s| s.flex_col().items_center().gap(2)),
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(255, 227, 225))
+                        s.background(Color::from_rgb8(255, 227, 225))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -363,7 +363,7 @@ fn palette() -> impl IntoView {
                     .style(|s| s.flex_col().items_center().gap(2)),
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(255, 209, 209))
+                        s.background(Color::from_rgb8(255, 209, 209))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -373,7 +373,7 @@ fn palette() -> impl IntoView {
                     .style(|s| s.flex_col().items_center().gap(2)),
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(255, 148, 148))
+                        s.background(Color::from_rgb8(255, 148, 148))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -389,7 +389,7 @@ fn palette() -> impl IntoView {
             (
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(203, 157, 240))
+                        s.background(Color::from_rgb8(203, 157, 240))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -399,7 +399,7 @@ fn palette() -> impl IntoView {
                     .style(|s| s.flex_col().items_center().gap(2)),
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(240, 193, 225))
+                        s.background(Color::from_rgb8(240, 193, 225))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -409,7 +409,7 @@ fn palette() -> impl IntoView {
                     .style(|s| s.flex_col().items_center().gap(2)),
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(253, 219, 187))
+                        s.background(Color::from_rgb8(253, 219, 187))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -419,7 +419,7 @@ fn palette() -> impl IntoView {
                     .style(|s| s.flex_col().items_center().gap(2)),
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(255, 249, 191))
+                        s.background(Color::from_rgb8(255, 249, 191))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -432,7 +432,7 @@ fn palette() -> impl IntoView {
             (
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(46, 7, 63))
+                        s.background(Color::from_rgb8(46, 7, 63))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -442,7 +442,7 @@ fn palette() -> impl IntoView {
                     .style(|s| s.flex_col().items_center().gap(2)),
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(122, 28, 172))
+                        s.background(Color::from_rgb8(122, 28, 172))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -452,7 +452,7 @@ fn palette() -> impl IntoView {
                     .style(|s| s.flex_col().items_center().gap(2)),
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(173, 73, 225))
+                        s.background(Color::from_rgb8(173, 73, 225))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -462,7 +462,7 @@ fn palette() -> impl IntoView {
                     .style(|s| s.flex_col().items_center().gap(2)),
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(235, 211, 248))
+                        s.background(Color::from_rgb8(235, 211, 248))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -475,7 +475,7 @@ fn palette() -> impl IntoView {
             (
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(111, 78, 55))
+                        s.background(Color::from_rgb8(111, 78, 55))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -485,7 +485,7 @@ fn palette() -> impl IntoView {
                     .style(|s| s.flex_col().items_center().gap(2)),
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(166, 123, 91))
+                        s.background(Color::from_rgb8(166, 123, 91))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -495,7 +495,7 @@ fn palette() -> impl IntoView {
                     .style(|s| s.flex_col().items_center().gap(2)),
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(236, 177, 118))
+                        s.background(Color::from_rgb8(236, 177, 118))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -505,7 +505,7 @@ fn palette() -> impl IntoView {
                     .style(|s| s.flex_col().items_center().gap(2)),
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(254, 216, 177))
+                        s.background(Color::from_rgb8(254, 216, 177))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -518,7 +518,7 @@ fn palette() -> impl IntoView {
             (
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(204, 213, 174))
+                        s.background(Color::from_rgb8(204, 213, 174))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -528,7 +528,7 @@ fn palette() -> impl IntoView {
                     .style(|s| s.flex_col().items_center().gap(2)),
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(224, 229, 182))
+                        s.background(Color::from_rgb8(224, 229, 182))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -538,7 +538,7 @@ fn palette() -> impl IntoView {
                     .style(|s| s.flex_col().items_center().gap(2)),
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(250, 237, 206))
+                        s.background(Color::from_rgb8(250, 237, 206))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),
@@ -548,7 +548,7 @@ fn palette() -> impl IntoView {
                     .style(|s| s.flex_col().items_center().gap(2)),
                 (
                     empty().style(|s| {
-                        s.background(Color::rgb8(254, 250, 224))
+                        s.background(Color::from_rgb8(254, 250, 224))
                             .size(235, 185)
                             .position(Position::Relative)
                     }),

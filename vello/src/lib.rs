@@ -10,6 +10,7 @@ use floem_renderer::text::{LayoutGlyph, LayoutRun, FONT_SYSTEM};
 use floem_renderer::{Img, Renderer};
 use peniko::kurbo::Size;
 use peniko::{
+    color::palette,
     kurbo::{Affine, Point, Rect, Shape},
     Blob, BrushRef, Color,
 };
@@ -252,9 +253,9 @@ impl Renderer for VelloRenderer {
             let mut current_run: Option<GlyphRun> = None;
 
             for glyph in line.glyphs {
-                let color = glyph
-                    .color_opt
-                    .map_or(Color::BLACK, |c| Color::rgba8(c.r(), c.g(), c.b(), c.a()));
+                let color = glyph.color_opt.map_or(palette::css::BLACK, |c| {
+                    Color::from_rgba8(c.r(), c.g(), c.b(), c.a())
+                });
                 let font_size = glyph.font_size;
                 let font_id = glyph.font_id;
                 let metadata = glyph.metadata;
@@ -395,7 +396,7 @@ impl Renderer for VelloRenderer {
                         &self.scene,
                         &frame,
                         &vello::RenderParams {
-                            base_color: Color::BLACK, // Background color
+                            base_color: palette::css::BLACK, // Background color
                             width: self.config.width,
                             height: self.config.height,
                             antialiasing_method: vello::AaConfig::Area,
@@ -450,7 +451,7 @@ impl VelloRenderer {
                 &self.scene,
                 &view,
                 &vello::RenderParams {
-                    base_color: Color::BLACK, // Background color
+                    base_color: palette::css::BLACK, // Background color
                     width: self.config.width * self.window_scale as u32,
                     height: self.config.height * self.window_scale as u32,
                     antialiasing_method: AaConfig::Area,
@@ -516,7 +517,7 @@ impl VelloRenderer {
 
         Some(vello::peniko::Image::new(
             Blob::new(Arc::new(cropped_buffer)),
-            vello::peniko::Format::Rgba8,
+            vello::peniko::ImageFormat::Rgba8,
             self.config.width,
             height,
         ))

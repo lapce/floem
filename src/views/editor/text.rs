@@ -2,6 +2,7 @@ use std::{borrow::Cow, fmt::Debug, ops::Range, rc::Rc};
 
 use crate::{
     keyboard::Modifiers,
+    peniko::color::palette,
     peniko::Color,
     reactive::{RwSignal, Scope},
     text::{Attrs, AttrsList, FamilyOwned, Stretch, Weight},
@@ -366,15 +367,15 @@ pub trait Styling {
 }
 
 pub fn default_light_theme(mut style: EditorCustomStyle) -> EditorCustomStyle {
-    let fg = Color::rgb8(0x38, 0x3A, 0x42);
-    let bg = Color::rgb8(0xFA, 0xFA, 0xFA);
-    let blue = Color::rgb8(0x40, 0x78, 0xF2);
-    let grey = Color::rgb8(0xE5, 0xE5, 0xE6);
-    let _scroll_bar = Color::rgba8(0xB4, 0xB4, 0xB4, 0xBB);
-    let dim = Color::rgb8(0xA0, 0xA1, 0xA7);
-    let cursor = Color::rgb8(0x52, 0x6F, 0xFF);
-    let current_line = Color::rgb8(0xF2, 0xF2, 0xF2);
-    let _dropdown_shadow = Color::rgb8(0xB4, 0xB4, 0xB4);
+    let fg = Color::from_rgb8(0x38, 0x3A, 0x42);
+    let bg = Color::from_rgb8(0xFA, 0xFA, 0xFA);
+    let blue = Color::from_rgb8(0x40, 0x78, 0xF2);
+    let grey = Color::from_rgb8(0xE5, 0xE5, 0xE6);
+    let _scroll_bar = Color::from_rgba8(0xB4, 0xB4, 0xB4, 0xBB);
+    let dim = Color::from_rgb8(0xA0, 0xA1, 0xA7);
+    let cursor = Color::from_rgb8(0x52, 0x6F, 0xFF);
+    let current_line = Color::from_rgb8(0xF2, 0xF2, 0xF2);
+    let _dropdown_shadow = Color::from_rgb8(0xB4, 0xB4, 0xB4);
     let _link = blue;
     let _sticky_header_background = bg;
 
@@ -396,15 +397,15 @@ pub fn default_light_theme(mut style: EditorCustomStyle) -> EditorCustomStyle {
 }
 
 pub fn default_dark_color(mut style: EditorCustomStyle) -> EditorCustomStyle {
-    let fg = Color::rgb8(0xAB, 0xB2, 0xBF);
-    let bg = Color::rgb8(0x28, 0x2C, 0x34);
-    let blue = Color::rgb8(0x61, 0xAF, 0xEF);
-    let grey = Color::rgb8(0x3E, 0x44, 0x51);
-    let _scroll_bar = Color::rgba8(0x3E, 0x44, 0x51, 0xBB);
-    let dim = Color::rgb8(0x5C, 0x63, 0x70);
-    let cursor = Color::rgb8(0x52, 0x8B, 0xFF);
-    let current_line = Color::rgb8(0x2C, 0x31, 0x3c);
-    let _dropdown_shadow = Color::BLACK;
+    let fg = Color::from_rgb8(0xAB, 0xB2, 0xBF);
+    let bg = Color::from_rgb8(0x28, 0x2C, 0x34);
+    let blue = Color::from_rgb8(0x61, 0xAF, 0xEF);
+    let grey = Color::from_rgb8(0x3E, 0x44, 0x51);
+    let _scroll_bar = Color::from_rgba8(0x3E, 0x44, 0x51, 0xBB);
+    let dim = Color::from_rgb8(0x5C, 0x63, 0x70);
+    let cursor = Color::from_rgb8(0x52, 0x8B, 0xFF);
+    let current_line = Color::from_rgb8(0x2C, 0x31, 0x3c);
+    let _dropdown_shadow = palette::css::BLACK;
     let _link = blue;
     let _sticky_header_background = bg;
 

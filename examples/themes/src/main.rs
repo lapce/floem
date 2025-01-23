@@ -1,6 +1,7 @@
 use floem::{
     event::{Event, EventListener},
     keyboard::{Key, NamedKey},
+    peniko::color::palette,
     peniko::Color,
     reactive::{create_signal, SignalGet, SignalUpdate},
     style::{Background, BorderColor, Outline, OutlineColor, Style, TextColor, Transition},
@@ -16,32 +17,32 @@ style_class!(pub Frame);
 
 fn app_view() -> impl IntoView {
     let blue_button = Style::new()
-        .background(Color::rgb8(137, 145, 160))
-        .color(Color::WHITE)
+        .background(Color::from_rgb8(137, 145, 160))
+        .color(palette::css::WHITE)
         .border(1.0)
-        .border_color(Color::rgb8(109, 121, 135))
-        .hover(|s| s.background(Color::rgb8(170, 175, 187)))
+        .border_color(Color::from_rgb8(109, 121, 135))
+        .hover(|s| s.background(Color::from_rgb8(170, 175, 187)))
         .transition(TextColor, Transition::ease_in_out(60.millis()))
         .transition(BorderColor, Transition::ease_in_out(60.millis()))
         .transition(Background, Transition::ease_in_out(60.millis()))
         .transition(Outline, Transition::ease_in_out(100.millis()))
         .focus_visible(|s| {
             s.outline(2.0)
-                .outline_color(Color::WHITE.multiply_alpha(0.7))
+                .outline_color(palette::css::WHITE.with_alpha(0.7))
         })
         .disabled(|s| {
-            s.background(Color::DARK_GRAY.multiply_alpha(0.1))
-                .border_color(Color::BLACK.multiply_alpha(0.2))
+            s.background(palette::css::DARK_GRAY.with_alpha(0.1))
+                .border_color(palette::css::BLACK.with_alpha(0.2))
         })
-        .active(|s| s.background(Color::BLACK.multiply_alpha(0.4)))
+        .active(|s| s.background(palette::css::BLACK.with_alpha(0.4)))
         .padding(5.0)
         .margin(3.0)
         .border_radius(5.0);
     let blue_theme = Style::new()
-        .background(Color::rgb8(95, 102, 118))
+        .background(Color::from_rgb8(95, 102, 118))
         .transition(Background, Transition::ease_in_out(500.millis()))
         .transition(TextColor, Transition::ease_in_out(500.millis()))
-        .color(Color::WHITE)
+        .color(palette::css::WHITE)
         .class(Button, move |_| blue_button)
         .class(Label, |s| {
             s.margin(4.0)
@@ -50,32 +51,35 @@ fn app_view() -> impl IntoView {
         .font_size(12.0);
 
     let green_button = Style::new()
-        .background(Color::rgb8(180, 188, 175))
+        .background(Color::from_rgb8(180, 188, 175))
         .disabled(|s| {
-            s.background(Color::rgb8(180, 188, 175).multiply_alpha(0.3))
-                .border_color(Color::rgb8(131, 145, 123).multiply_alpha(0.3))
-                .color(Color::GRAY)
+            s.background(Color::from_rgb8(180, 188, 175).with_alpha(0.3))
+                .border_color(Color::from_rgb8(131, 145, 123).with_alpha(0.3))
+                .color(palette::css::GRAY)
         })
-        .active(|s| s.background(Color::rgb8(95, 105, 88)).color(Color::WHITE))
-        .color(Color::BLACK.multiply_alpha(0.7))
+        .active(|s| {
+            s.background(Color::from_rgb8(95, 105, 88))
+                .color(palette::css::WHITE)
+        })
+        .color(palette::css::BLACK.with_alpha(0.7))
         .border(2.0)
         .transition(TextColor, Transition::ease_in_out(300.millis()))
         .transition(BorderColor, Transition::ease_in_out(300.millis()))
         .transition(Background, Transition::ease_in_out(300.millis()))
         .transition(Outline, Transition::ease_in_out(200.millis()))
         .transition(OutlineColor, Transition::ease_in_out(200.millis()))
-        .outline_color(Color::rgba8(131, 145, 123, 0))
+        .outline_color(Color::from_rgba8(131, 145, 123, 0))
         .focus_visible(|s| {
             s.outline(10.0)
-                .outline_color(Color::rgb8(131, 145, 123).multiply_alpha(0.3))
+                .outline_color(Color::from_rgb8(131, 145, 123).with_alpha(0.3))
         })
-        .border_color(Color::rgb8(131, 145, 123))
-        .hover(|s| s.background(Color::rgb8(204, 209, 201)))
+        .border_color(Color::from_rgb8(131, 145, 123))
+        .hover(|s| s.background(Color::from_rgb8(204, 209, 201)))
         .padding(8.0)
         .border_radius(8.0)
         .margin(6.0);
     let green_theme = Style::new()
-        .background(Color::rgb8(227, 231, 226))
+        .background(Color::from_rgb8(227, 231, 226))
         .transition(Background, Transition::ease_in_out(500.millis()))
         .class(Button, move |_| green_button)
         .class(Label, |s| {
@@ -84,12 +88,12 @@ fn app_view() -> impl IntoView {
         })
         .class(Frame, |s| {
             s.border(2.0)
-                .border_color(Color::rgb8(131, 145, 123).multiply_alpha(0.2))
+                .border_color(Color::from_rgb8(131, 145, 123).with_alpha(0.2))
                 .border_radius(8.0)
-                .background(Color::WHITE.multiply_alpha(0.1))
+                .background(palette::css::WHITE.with_alpha(0.1))
                 .padding(12.0)
         })
-        .color(Color::BLACK.multiply_alpha(0.5))
+        .color(palette::css::BLACK.with_alpha(0.5))
         .font_size(16.0);
 
     let (counter, set_counter) = create_signal(0);

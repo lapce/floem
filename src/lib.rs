@@ -104,14 +104,14 @@
 //!
 //! Example:
 //! ```
-//! #  use floem::peniko::Color;
+//! #  use floem::peniko::color::palette;
 //! #  use floem::reactive::*;
 //! #  use floem::style::Style;
 //! #  use floem::unit::UnitExt;
 //! #  use floem::View;
 //! #  use floem::views::{text, Decorators};
 //! #
-//! text("Some text").style(|s| s.font_size(21.).color(Color::DARK_GRAY));
+//! text("Some text").style(|s| s.font_size(21.).color(palette::css::DARK_GRAY));
 //! ```
 //!
 //! The text view is styled by calling the [`style`](crate::views::Decorators::style) method (you'll need to import the
@@ -142,7 +142,7 @@
 //! #### Example: Rectangle to Square
 //!
 //! ```
-//! #  use floem::peniko::Color;
+//! #  use floem::peniko::color::palette;
 //! #  use floem::reactive::*;
 //! #  use floem::style::Style;
 //! #  use floem::unit::{UnitExt, DurationUnitExt};
@@ -150,16 +150,16 @@
 //! #  use floem::views::*;
 //! #
 //! empty()
-//!     .style(|s| s.background(Color::RED).size(500, 100))
+//!     .style(|s| s.background(palette::css::RED).size(500, 100))
 //!     .animation(move |a| {
 //!         a.duration(5.seconds())
 //!             .keyframe(0, |f| f.computed_style())
 //!             .keyframe(50, |f| {
-//!                 f.style(|s| s.background(Color::BLACK).size(30, 30))
+//!                 f.style(|s| s.background(palette::css::BLACK).size(30, 30))
 //!                     .ease_in()
 //!             })
 //!             .keyframe(100, |f| {
-//!                 f.style(|s| s.background(Color::AQUAMARINE).size(10, 300))
+//!                 f.style(|s| s.background(palette::css::AQUAMARINE).size(10, 300))
 //!                     .ease_out()
 //!             })
 //!             .auto_reverse(true)
@@ -240,5 +240,6 @@ pub mod prelude {
     pub use floem_reactive::{
         create_rw_signal, create_signal, RwSignal, SignalGet, SignalTrack, SignalUpdate, SignalWith,
     };
+    pub use peniko::color::palette;
     pub use peniko::Color;
 }

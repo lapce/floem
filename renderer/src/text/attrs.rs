@@ -105,9 +105,10 @@ impl<'a> Attrs<'a> {
 
     /// Set [Color]
     pub fn color(mut self, color: Color) -> Self {
+        let c = color.to_rgba8();
         self.attrs = self
             .attrs
-            .color(cosmic_text::Color::rgba(color.r, color.g, color.b, color.a));
+            .color(cosmic_text::Color::rgba(c.r, c.g, c.b, c.a));
         self
     }
 

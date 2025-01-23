@@ -12,6 +12,7 @@ use image::EncodableLayout;
 use peniko::kurbo::{Size, Stroke};
 use peniko::Blob;
 use peniko::{
+    color::palette,
     kurbo::{Affine, Point, Rect, Shape},
     BrushRef, Color, GradientKind,
 };
@@ -134,8 +135,8 @@ impl VgerRenderer {
                     let mut stops = g.stops.iter();
                     let first_stop = stops.next()?;
                     let second_stop = stops.next()?;
-                    let inner_color = vger_color(first_stop.color);
-                    let outer_color = vger_color(second_stop.color);
+                    let inner_color = vger_color(first_stop.color.to_alpha_color());
+                    let outer_color = vger_color(second_stop.color.to_alpha_color());
                     let start = floem_vger_rs::defs::LocalPoint::new(
                         start.x as f32 * first_stop.offset,
                         start.y as f32 * first_stop.offset,
@@ -267,7 +268,7 @@ impl VgerRenderer {
 
         Some(peniko::Image::new(
             Blob::new(Arc::new(cropped_buffer)),
-            peniko::Format::Rgba8,
+            peniko::ImageFormat::Rgba8,
             self.config.width,
             height,
         ))
@@ -470,8 +471,8 @@ impl Renderer for VgerRenderer {
                 // }
 
                 let color = match glyph_run.color_opt {
-                    Some(c) => Color::rgba8(c.r(), c.g(), c.b(), c.a()),
-                    None => Color::BLACK,
+                    Some(c) => Color::from_rgba8(c.r(), c.g(), c.b(), c.a()),
+                    None => palette::css::BLACK,
                 };
                 if let Some(paint) = self.brush_to_paint(color) {
                     let glyph_x = x * self.scale as f32;
@@ -660,9 +661,9 @@ impl Renderer for VgerRenderer {
 
 fn vger_color(color: Color) -> floem_vger_rs::Color {
     floem_vger_rs::Color {
-        r: color.r as f32 / 255.0,
-        g: color.g as f32 / 255.0,
-        b: color.b as f32 / 255.0,
-        a: color.a as f32 / 255.0,
+        r: color.components[0],
+        g: color.components[1],
+        b: color.components[2],
+        a: color.components[3],
     }
 }

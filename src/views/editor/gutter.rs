@@ -12,6 +12,7 @@ use crate::{
 };
 use floem_editor_core::{cursor::CursorMode, mode::Mode};
 use floem_reactive::{RwSignal, SignalGet, SignalWith};
+use peniko::color::palette;
 use peniko::kurbo::Rect;
 use peniko::Color;
 
@@ -32,7 +33,7 @@ prop_extractor! {
 }
 impl GutterStyle {
     fn gs_accent_color(&self) -> Color {
-        self.accent_color().unwrap_or(Color::BLACK)
+        self.accent_color().unwrap_or(palette::css::BLACK)
     }
 
     fn gs_dim_color(&self) -> Color {

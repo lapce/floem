@@ -1,4 +1,5 @@
 use floem::{
+    peniko::color::palette,
     peniko::Color,
     style::CursorStyle,
     views::{button, toggle_button, Decorators, ToggleHandleBehavior},
@@ -21,12 +22,12 @@ pub fn button_view() -> impl IntoView {
                             .border_radius(10.0)
                             .padding(10.0)
                             .margin_left(10.0)
-                            .background(Color::YELLOW_GREEN)
-                            .color(Color::DARK_GREEN)
+                            .background(palette::css::YELLOW_GREEN)
+                            .color(palette::css::DARK_GREEN)
                             .cursor(CursorStyle::Pointer)
-                            .active(|s| s.color(Color::WHITE).background(Color::RED))
-                            .hover(|s| s.background(Color::rgb8(244, 67, 54)))
-                            .focus_visible(|s| s.border(2.).border_color(Color::BLUE))
+                            .active(|s| s.color(palette::css::WHITE).background(palette::css::RED))
+                            .hover(|s| s.background(Color::from_rgb8(244, 67, 54)))
+                            .focus_visible(|s| s.border(2.).border_color(palette::css::BLUE))
                     })
             }),
             form_item("Disabled Button:".to_string(), 120.0, || {

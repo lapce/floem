@@ -1,5 +1,5 @@
 use floem::{
-    peniko::Color,
+    peniko::color::palette,
     reactive::{RwSignal, SignalGet},
     views::{
         checkbox, custom_checkbox, custom_labeled_checkbox, labeled_checkbox, Checkbox,
@@ -49,14 +49,14 @@ pub fn checkbox_view() -> impl IntoView {
             ),
             form_item("Custom Checkbox 1:".to_string(), width, move || {
                 custom_checkbox(move || is_checked.get(), CUSTOM_CHECK_SVG)
-                    .style(|s| s.margin(5.0).color(Color::GREEN))
+                    .style(|s| s.margin(5.0).color(palette::css::GREEN))
             }),
             form_item("Custom Checkbox 2:".to_string(), width, move || {
                 custom_labeled_checkbox(move || is_checked.get(), move || "Custom Label", CROSS_SVG)
                     .style(|s| {
                         s.margin(5.0)
                             .margin_left(0.)
-                            .class(CheckboxClass, |s| s.color(Color::RED))
+                            .class(CheckboxClass, |s| s.color(palette::css::RED))
                     })
             }),
         )

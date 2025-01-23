@@ -119,7 +119,7 @@ prop_extractor!(ScrollStyle {
     overflow_clip: OverflowClip,
 });
 
-const HANDLE_COLOR: Brush = Brush::Solid(Color::rgba8(0, 0, 0, 120));
+const HANDLE_COLOR: Brush = Brush::Solid(Color::from_rgba8(0, 0, 0, 120));
 
 style_class!(
     /// Style class that is applied to every scroll view

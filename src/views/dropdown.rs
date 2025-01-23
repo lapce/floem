@@ -10,8 +10,8 @@ use floem_reactive::{
     as_child_of_current_scope, create_effect, create_updater, Scope, SignalGet, SignalUpdate,
 };
 use peniko::{
+    color::palette,
     kurbo::{Point, Rect},
-    Color,
 };
 use winit::keyboard::{Key, NamedKey};
 
@@ -297,12 +297,13 @@ impl<T: Clone> Dropdown<T> {
         // TODO: this should be more customizable
         stack((
             text(item),
-            container(svg(CHEVRON_DOWN).style(|s| s.size(12, 12).color(Color::BLACK))).style(|s| {
-                s.items_center()
-                    .padding(3.)
-                    .border_radius(5)
-                    .hover(move |s| s.background(Color::LIGHT_GRAY))
-            }),
+            container(svg(CHEVRON_DOWN).style(|s| s.size(12, 12).color(palette::css::BLACK)))
+                .style(|s| {
+                    s.items_center()
+                        .padding(3.)
+                        .border_radius(5)
+                        .hover(move |s| s.background(palette::css::LIGHT_GRAY))
+                }),
         ))
         .style(|s| s.items_center().justify_between().size_full())
         .into_any()

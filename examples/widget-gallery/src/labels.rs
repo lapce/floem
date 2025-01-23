@@ -1,5 +1,5 @@
 use floem::{
-    peniko::Color,
+    peniko::color::palette,
     text::{Style as FontStyle, Weight},
     views::{label, static_label, tooltip, Decorators},
     IntoView,
@@ -17,9 +17,9 @@ pub fn label_view() -> impl IntoView {
             }),
             form_item("Styled Label:".to_string(), 120.0, || {
                 label(move || "This is a styled label".to_owned()).style(|s| {
-                    s.background(Color::YELLOW)
+                    s.background(palette::css::YELLOW)
                         .padding(10.0)
-                        .color(Color::GREEN)
+                        .color(palette::css::GREEN)
                         .font_weight(Weight::BOLD)
                         .font_style(FontStyle::Italic)
                         .font_size(24.0)
