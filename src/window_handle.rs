@@ -752,30 +752,34 @@ impl WindowHandle {
     /// Returns `true` if painting is required.
     pub(crate) fn process_update_no_paint(&mut self) -> bool {
         let mut paint = false;
+
         loop {
-            self.process_update_messages();
-            if !self.needs_layout()
-                && !self.needs_style()
-                && !self.has_deferred_update_messages()
-                && !self.app_state.request_compute_layout
-            {
+            loop {
+                self.process_update_messages();
+                if !self.needs_layout()
+                    && !self.needs_style()
+                    && !self.app_state.request_compute_layout
+                {
+                    break;
+                }
+
+                if self.needs_style() {
+                    paint = true;
+                    self.style();
+                }
+
+                if self.needs_layout() {
+                    paint = true;
+                    self.layout();
+                }
+
+                if self.app_state.request_compute_layout {
+                    self.compute_layout();
+                }
+            }
+            if !self.has_deferred_update_messages() {
                 break;
             }
-
-            if self.needs_style() {
-                paint = true;
-                self.style();
-            }
-
-            if self.needs_layout() {
-                paint = true;
-                self.layout();
-            }
-
-            if self.app_state.request_compute_layout {
-                self.compute_layout();
-            }
-
             self.process_deferred_update_messages();
         }
 
