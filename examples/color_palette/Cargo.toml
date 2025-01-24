@@ -1,5 +1,5 @@
 [package]
-name = "color_pallete"
+name = "color_palette"
 edition = "2021"
 license.workspace = true
 version.workspace = true
