@@ -1677,12 +1677,12 @@ define_builtin_props!(
 
 prop!(
     /// How children overflowing their container in Y axis should affect layout
-    pub(crate) OverflowX: Overflow {} = Overflow::default()
+    pub OverflowX: Overflow {} = Overflow::default()
 );
 
 prop!(
     /// How children overflowing their container in X axis should affect layout
-    pub(crate) OverflowY: Overflow {} = Overflow::default()
+    pub OverflowY: Overflow {} = Overflow::default()
 );
 
 prop_extractor! {

@@ -405,6 +405,12 @@ impl<'a> From<&'a Rope> for RopeTextRef<'a> {
     }
 }
 
+impl RopeText for Rope {
+    fn text(&self) -> &Rope {
+        self
+    }
+}
+
 /// Joins an iterator of iterators over char indices `(usize, char)` into one
 /// as if they were from a single long string
 /// Assumes the iterators end after the first `None` value

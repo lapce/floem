@@ -258,6 +258,18 @@ impl Selection {
         self.regions.iter().all(|region| region.is_caret())
     }
 
+    pub fn current_caret(&self) -> Option<usize> {
+        if self.regions.len() == 1 {
+            if self.regions[0].is_caret() {
+                Some(self.regions[0].start)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
     /// Returns `true` if `self` has zero [`SelRegion`]
     pub fn is_empty(&self) -> bool {
         self.len() == 0

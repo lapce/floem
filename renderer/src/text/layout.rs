@@ -278,6 +278,10 @@ impl TextLayout {
             .set_size(&mut font_system, Some(width), Some(height));
     }
 
+    pub fn metrics(&self) -> Metrics {
+        self.buffer.metrics()
+    }
+
     pub fn lines(&self) -> &[BufferLine] {
         &self.buffer.lines
     }
