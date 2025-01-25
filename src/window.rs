@@ -6,6 +6,7 @@ pub use winit::window::Theme;
 pub use winit::window::WindowButtons;
 pub use winit::window::WindowId;
 pub use winit::window::WindowLevel;
+#[cfg(windows)]
 pub use winit::platform::windows::IconExtWindows;
 
 use crate::app::{add_app_update_event, AppUpdateEvent};
