@@ -1,28 +1,29 @@
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
-use objc2::{declare_class, msg_send_id, mutability, ClassType, DeclaredClass};
+use objc2::{define_class, msg_send, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{NSApplication, NSApplicationDelegate};
-use objc2_foundation::{MainThreadMarker, NSObject, NSObjectProtocol};
+use objc2_foundation::{NSObject, NSObjectProtocol};
 
 use crate::app::UserEvent;
 
-declare_class!(
+define_class!(
+    #[unsafe(super(NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "MyAppDelegate"]
     struct AppDelegate;
-
-    unsafe impl ClassType for AppDelegate {
-        type Super = NSObject;
-        type Mutability = mutability::MainThreadOnly;
-        const NAME: &'static str = "MyAppDelegate";
-    }
-
-    impl DeclaredClass for AppDelegate {}
 
     unsafe impl NSObjectProtocol for AppDelegate {}
 
     unsafe impl NSApplicationDelegate for AppDelegate {
-        #[method(applicationShouldHandleReopen:hasVisibleWindows:)]
-        fn should_handle_reopen(&self, _sender: &Option<&AnyObject>, has_visible_windows: bool) -> bool {
-            crate::Application::send_proxy_event(UserEvent::Reopen { has_visible_windows });
+        #[unsafe(method(applicationShouldHandleReopen:hasVisibleWindows:))]
+        fn should_handle_reopen(
+            &self,
+            _sender: &Option<&AnyObject>,
+            has_visible_windows: bool,
+        ) -> bool {
+            crate::Application::send_proxy_event(UserEvent::Reopen {
+                has_visible_windows,
+            });
             // return true to preserve the default behavior, such as showing the minimized window.
             true
         }
@@ -31,7 +32,7 @@ declare_class!(
 
 impl AppDelegate {
     fn new(mtm: MainThreadMarker) -> Retained<Self> {
-        unsafe { msg_send_id![super(mtm.alloc().set_ivars(())), init] }
+        unsafe { msg_send![super(mtm.alloc().set_ivars(())), init] }
     }
 }
 
