@@ -602,12 +602,6 @@ impl WindowHandle {
 
         self.compute_layout();
 
-        // Mouse move with current pos, just to update which views are hovered
-        self.event(Event::PointerMove(PointerMoveEvent {
-            pos: self.cursor_position,
-            modifiers: self.modifiers,
-        }));
-
         taffy_duration
     }
 
