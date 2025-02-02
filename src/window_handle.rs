@@ -771,6 +771,10 @@ impl WindowHandle {
                 if self.needs_layout() {
                     paint = true;
                     self.layout();
+                    self.event(Event::PointerMove(PointerMoveEvent {
+                        pos: self.cursor_position,
+                        modifiers: self.modifiers,
+                    }));
                 }
 
                 if self.app_state.request_compute_layout {
