@@ -1,4 +1,6 @@
 use peniko::kurbo::{Point, Size};
+#[cfg(windows)]
+pub use winit::platform::windows::IconExtWindows;
 pub use winit::window::Fullscreen;
 pub use winit::window::Icon;
 pub use winit::window::ResizeDirection;
@@ -6,8 +8,6 @@ pub use winit::window::Theme;
 pub use winit::window::WindowButtons;
 pub use winit::window::WindowId;
 pub use winit::window::WindowLevel;
-#[cfg(windows)]
-pub use winit::platform::windows::IconExtWindows;
 
 use crate::app::{add_app_update_event, AppUpdateEvent};
 use crate::view::IntoView;
