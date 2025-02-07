@@ -1,4 +1,6 @@
 use peniko::kurbo::{Point, Size};
+#[cfg(windows)]
+pub use winit::platform::windows::IconExtWindows;
 pub use winit::window::Fullscreen;
 pub use winit::window::Icon;
 pub use winit::window::ResizeDirection;
