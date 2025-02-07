@@ -121,7 +121,7 @@ pub enum Movement {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum Direction {
+pub enum TextDirection {
     Left,
     Right,
 }
@@ -250,9 +250,9 @@ impl TextInput {
 }
 
 impl TextInput {
-    fn move_cursor(&mut self, move_kind: Movement, direction: Direction) -> bool {
+    fn move_cursor(&mut self, move_kind: Movement, direction: TextDirection) -> bool {
         match (move_kind, direction) {
-            (Movement::Glyph, Direction::Left) => {
+            (Movement::Glyph, TextDirection::Left) => {
                 if let Some(ref selection) = self.selection {
                     self.cursor_glyph_idx = selection.start;
                     return true;
@@ -267,7 +267,7 @@ impl TextInput {
                     }
                 }
             }
-            (Movement::Glyph, Direction::Right) => {
+            (Movement::Glyph, TextDirection::Right) => {
                 let untracked_buffer = self.buffer.get_untracked();
                 if let Some(ref selection) = self.selection {
                     self.cursor_glyph_idx = selection.end;
@@ -282,21 +282,21 @@ impl TextInput {
                     }
                 }
             }
-            (Movement::Line, Direction::Right) => {
+            (Movement::Line, TextDirection::Right) => {
                 if self.cursor_glyph_idx < self.buffer.with_untracked(|buff| buff.len()) {
                     self.cursor_glyph_idx = self.buffer.with_untracked(|buff| buff.len());
                     return true;
                 }
                 false
             }
-            (Movement::Line, Direction::Left) => {
+            (Movement::Line, TextDirection::Left) => {
                 if self.cursor_glyph_idx > 0 {
                     self.cursor_glyph_idx = 0;
                     return true;
                 }
                 false
             }
-            (Movement::Word, Direction::Right) => self.buffer.with_untracked(|buff| {
+            (Movement::Word, TextDirection::Right) => self.buffer.with_untracked(|buff| {
                 for (idx, word) in buff.unicode_word_indices() {
                     let word_end_idx = idx + word.len();
                     if word_end_idx > self.cursor_glyph_idx {
@@ -306,7 +306,7 @@ impl TextInput {
                 }
                 false
             }),
-            (Movement::Word, Direction::Left) if self.cursor_glyph_idx > 0 => {
+            (Movement::Word, TextDirection::Left) if self.cursor_glyph_idx > 0 => {
                 self.buffer.with_untracked(|buff| {
                     let mut prev_word_idx = 0;
                     for (idx, _) in buff.unicode_word_indices() {
@@ -715,7 +715,7 @@ impl TextInput {
                     self.buffer
                         .update(|buf| buf.insert(self.cursor_glyph_idx, ' '));
                 }
-                self.move_cursor(Movement::Glyph, Direction::Right)
+                self.move_cursor(Movement::Glyph, TextDirection::Right)
             }
             Key::Named(NamedKey::Backspace) => {
                 let selection = self.selection.clone();
@@ -730,7 +730,7 @@ impl TextInput {
 
                     self.move_cursor(
                         get_word_based_motion(event).unwrap_or(Movement::Glyph),
-                        Direction::Left,
+                        TextDirection::Left,
                     );
 
                     if self.cursor_glyph_idx == prev_cursor_idx {
@@ -757,7 +757,7 @@ impl TextInput {
 
                 self.move_cursor(
                     get_word_based_motion(event).unwrap_or(Movement::Glyph),
-                    Direction::Right,
+                    TextDirection::Right,
                 );
 
                 if self.cursor_glyph_idx == prev_cursor_idx {
@@ -790,7 +790,7 @@ impl TextInput {
                 } else {
                     self.selection = None;
                 }
-                self.move_cursor(Movement::Line, Direction::Right)
+                self.move_cursor(Movement::Line, TextDirection::Right)
             }
             Key::Named(NamedKey::Home) => {
                 if event.modifiers.contains(Modifiers::SHIFT) {
@@ -801,14 +801,14 @@ impl TextInput {
                 } else {
                     self.selection = None;
                 }
-                self.move_cursor(Movement::Line, Direction::Left)
+                self.move_cursor(Movement::Line, TextDirection::Left)
             }
             Key::Named(NamedKey::ArrowLeft) => {
                 let old_glyph_idx = self.cursor_glyph_idx;
 
                 let cursor_moved = self.move_cursor(
                     get_word_based_motion(event).unwrap_or(Movement::Glyph),
-                    Direction::Left,
+                    TextDirection::Left,
                 );
 
                 if cursor_moved {
@@ -816,7 +816,7 @@ impl TextInput {
                         old_glyph_idx,
                         self.cursor_glyph_idx,
                         event.modifiers,
-                        Direction::Left,
+                        TextDirection::Left,
                     );
                 } else if !event.modifiers.contains(Modifiers::SHIFT) && self.selection.is_some() {
                     self.selection = None;
@@ -829,7 +829,7 @@ impl TextInput {
 
                 let cursor_moved = self.move_cursor(
                     get_word_based_motion(event).unwrap_or(Movement::Glyph),
-                    Direction::Right,
+                    TextDirection::Right,
                 );
 
                 if cursor_moved {
@@ -837,7 +837,7 @@ impl TextInput {
                         old_glyph_idx,
                         self.cursor_glyph_idx,
                         event.modifiers,
-                        Direction::Right,
+                        TextDirection::Right,
                     );
                 } else if !event.modifiers.contains(Modifiers::SHIFT) && self.selection.is_some() {
                     self.selection = None;
@@ -878,7 +878,7 @@ impl TextInput {
 
         self.buffer
             .update(|buf| buf.insert_str(self.cursor_glyph_idx, &ch.clone()));
-        self.move_cursor(Movement::Glyph, Direction::Right)
+        self.move_cursor(Movement::Glyph, TextDirection::Right)
     }
 
     fn move_selection(
@@ -886,7 +886,7 @@ impl TextInput {
         old_glyph_idx: usize,
         curr_glyph_idx: usize,
         modifiers: Modifiers,
-        direction: Direction,
+        direction: TextDirection,
     ) {
         if !modifiers.contains(Modifiers::SHIFT) {
             if self.selection.is_some() {
@@ -897,17 +897,17 @@ impl TextInput {
 
         let new_selection = if let Some(selection) = &self.selection {
             match (direction, selection.contains(&curr_glyph_idx)) {
-                (Direction::Left, true) | (Direction::Right, false) => {
+                (TextDirection::Left, true) | (TextDirection::Right, false) => {
                     selection.start..curr_glyph_idx
                 }
-                (Direction::Right, true) | (Direction::Left, false) => {
+                (TextDirection::Right, true) | (TextDirection::Left, false) => {
                     curr_glyph_idx..selection.end
                 }
             }
         } else {
             match direction {
-                Direction::Left => curr_glyph_idx..old_glyph_idx,
-                Direction::Right => old_glyph_idx..curr_glyph_idx,
+                TextDirection::Left => curr_glyph_idx..old_glyph_idx,
+                TextDirection::Right => old_glyph_idx..curr_glyph_idx,
             }
         };
         // when we move in the opposite direction and end up in the same selection range,

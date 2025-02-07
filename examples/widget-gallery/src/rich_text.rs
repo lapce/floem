@@ -2,7 +2,6 @@ use std::ops::Range;
 
 use floem::{
     peniko::color::palette,
-    peniko::Color,
     text::{Attrs, AttrsList, Style, TextLayout},
     views::{rich_text, scroll, v_stack, Decorators, RichTextExt},
     IntoView,

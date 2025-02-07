@@ -3,10 +3,7 @@ use floem::{
     peniko::Color,
     reactive::{create_rw_signal, SignalGet},
     style::Position,
-    views::{
-        container, h_stack, label, scroll, v_stack, virtual_stack, Decorators, VirtualDirection,
-        VirtualItemSize,
-    },
+    views::{container, h_stack, label, scroll, v_stack, virtual_stack, Decorators},
     IntoView, View,
 };
 
@@ -23,8 +20,6 @@ pub fn left_sidebar_view() -> impl IntoView {
 
     let side_bar = scroll({
         virtual_stack(
-            VirtualDirection::Vertical,
-            VirtualItemSize::Fixed(Box::new(|| SIDEBAR_ITEM_HEIGHT)),
             move || long_list.get(),
             move |item| *item,
             move |item| {

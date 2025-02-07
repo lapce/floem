@@ -1,46 +1,34 @@
 use floem::{
     event::{Event, EventListener, EventPropagation},
-    peniko::color::palette,
-    peniko::Color,
-    reactive::{create_rw_signal, create_signal, SignalGet, SignalUpdate},
-    style::{CursorStyle, Position},
-    views::{
-        container, h_stack, label, scroll, virtual_stack, Decorators, VirtualDirection,
-        VirtualItemSize,
-    },
-    IntoView, View,
+    prelude::*,
+    style::CursorStyle,
+    taffy::Position,
 };
 
 const SIDEBAR_WIDTH: f64 = 100.0;
 
 pub fn draggable_sidebar_view() -> impl IntoView {
-    let long_list: im::Vector<i32> = (0..100).collect();
-    let (long_list, _set_long_list) = create_signal(long_list);
     let sidebar_width = create_rw_signal(SIDEBAR_WIDTH);
     let is_sidebar_dragging = create_rw_signal(false);
 
-    let side_bar = scroll({
-        virtual_stack(
-            VirtualDirection::Vertical,
-            VirtualItemSize::Fixed(Box::new(|| 22.0)),
-            move || long_list.get(),
-            move |item| *item,
-            move |item| {
-                label(move || format!("Item {} with long lines", item)).style(move |s| {
-                    s.text_ellipsis()
-                        .height(22)
-                        .padding(10.0)
-                        .padding_top(3.0)
-                        .padding_bottom(3.0)
-                        .width(sidebar_width.get())
-                        .items_start()
-                        .border_bottom(1.0)
-                        .border_color(Color::from_rgb8(205, 205, 205))
-                })
-            },
-        )
-        .style(move |s| s.flex_col().width(sidebar_width.get() - 1.0))
-    })
+    let side_bar = VirtualStack::with_view(
+        || 0..100,
+        move |item| {
+            label(move || format!("Item {} with long lines", item)).style(move |s| {
+                s.text_ellipsis()
+                    .height(22)
+                    .padding(10.0)
+                    .padding_top(3.0)
+                    .padding_bottom(3.0)
+                    .width(sidebar_width.get())
+                    .items_start()
+                    .border_bottom(1.0)
+                    .border_color(Color::from_rgb8(205, 205, 205))
+            })
+        },
+    )
+    .style(move |s| s.flex_col().width(sidebar_width.get() - 1.0))
+    .scroll()
     .style(move |s| {
         s.width(sidebar_width.get())
             .border_right(1.0)
@@ -64,7 +52,7 @@ pub fn draggable_sidebar_view() -> impl IntoView {
             .border_color(Color::from_rgb8(205, 205, 205))
     });
 
-    let dragger = label(|| "")
+    let dragger = ""
         .style(move |s| {
             s.position(Position::Absolute)
                 .inset_top(0)

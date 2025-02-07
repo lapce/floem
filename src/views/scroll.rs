@@ -288,6 +288,61 @@ impl Scroll {
         self.clamp_child_viewport(app_state, self.child_viewport.with_origin(origin));
     }
 
+    /// Ensure that an entire area is visible in the scroll view.
+    // TODO: remove duplilcation between this method and pan_to_visible
+    pub fn ensure_area_visible(&mut self, app_state: &mut AppState, rect: Rect) {
+        /// Given a position and the min and max edges of an axis,
+        /// return a delta by which to adjust that axis such that the value
+        /// falls between its edges.
+        ///
+        /// if the value already falls between the two edges, return 0.0.
+        fn closest_on_axis(val: f64, min: f64, max: f64) -> f64 {
+            assert!(min <= max);
+            if val > min && val < max {
+                0.0
+            } else if val <= min {
+                val - min
+            } else {
+                val - max
+            }
+        }
+
+        // clamp the target region size to our own size.
+        // this means we will show the portion of the target region that
+        // includes the origin.
+        let target_size = Size::new(
+            rect.width().min(self.child_viewport.width()),
+            rect.height().min(self.child_viewport.height()),
+        );
+        let rect = rect.with_size(target_size);
+
+        let x0 = closest_on_axis(
+            rect.min_x(),
+            self.child_viewport.min_x(),
+            self.child_viewport.max_x(),
+        );
+        let x1 = closest_on_axis(
+            rect.max_x(),
+            self.child_viewport.min_x(),
+            self.child_viewport.max_x(),
+        );
+        let y0 = closest_on_axis(
+            rect.min_y(),
+            self.child_viewport.min_y(),
+            self.child_viewport.max_y(),
+        );
+        let y1 = closest_on_axis(
+            rect.max_y(),
+            self.child_viewport.min_y(),
+            self.child_viewport.max_y(),
+        );
+
+        let delta_x = if x0.abs() > x1.abs() { x0 } else { x1 };
+        let delta_y = if y0.abs() > y1.abs() { y0 } else { y1 };
+        let new_origin = self.child_viewport.origin() + Vec2::new(delta_x, delta_y);
+        self.clamp_child_viewport(app_state, self.child_viewport.with_origin(new_origin));
+    }
+
     /// Pan the smallest distance that makes the target [`Rect`] visible.
     ///
     /// If the target rect is larger than viewport size, we will prioritize
@@ -305,18 +360,11 @@ impl Scroll {
             {
                 return;
             }
-        } else {
+        } else if rect.area() > 0. {
             // For smaller elements, check if at least 50% is visible
-            let intersection = Rect::new(
-                rect.min_x().max(self.child_viewport.min_x()),
-                rect.min_y().max(self.child_viewport.min_y()),
-                rect.max_x().min(self.child_viewport.max_x()),
-                rect.max_y().min(self.child_viewport.max_y()),
-            );
+            let intersection = rect.intersect(self.child_viewport);
 
-            let intersection_area = intersection.width() * intersection.height();
-            let rect_area = rect.width() * rect.height();
-            if intersection_area >= rect_area * 0.5 {
+            if intersection.area() >= rect.area() * 0.5 {
                 return;
             }
         }
@@ -521,7 +569,6 @@ impl Scroll {
         let content_size = self.child_size;
         let scroll_offset = self.child_viewport.origin().to_vec2();
 
-        // dbg!(viewport_size.height, content_size.height);
         if viewport_size.height >= content_size.height - 1. {
             return None;
         }
@@ -745,7 +792,7 @@ impl View for Scroll {
         if let Ok(state) = state.downcast::<ScrollState>() {
             match *state {
                 ScrollState::EnsureVisible(rect) => {
-                    self.pan_to_visible(cx.app_state, rect);
+                    self.ensure_area_visible(cx.app_state, rect);
                 }
                 ScrollState::ScrollDelta(delta) => {
                     self.do_scroll_delta(cx.app_state, delta);
@@ -983,7 +1030,7 @@ impl View for Scroll {
         }
     }
 }
-/// Represents a custom style for a `Label`.
+/// Represents a custom style for a `Scroll`.
 #[derive(Default, Debug, Clone)]
 pub struct ScrollCustomStyle(Style);
 impl From<ScrollCustomStyle> for Style {
