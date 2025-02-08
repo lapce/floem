@@ -101,7 +101,7 @@ where
                     current += size_fn(&item);
                 }
             }
-        };
+        }
 
         new_offsets.push(current);
 

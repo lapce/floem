@@ -71,7 +71,7 @@ impl KeyFrame {
         match &mut self.style {
             cs @ KeyFrameStyle::Computed => *cs = style.into(),
             KeyFrameStyle::Style(s) => s.apply_mut(style),
-        };
+        }
         self
     }
 
@@ -204,7 +204,7 @@ impl PropCache {
             im_rc::hashmap::Entry::Vacant(ve) => {
                 ve.insert(smallvec![idx]);
             }
-        };
+        }
     }
 
     fn insert_computed_prop(&mut self, prop: StylePropRef, idx: PropFrameKind) {
@@ -216,7 +216,7 @@ impl PropCache {
             } else {
                 unreachable!("this should err because a computed prop shouldn't be inserted more than once. ")
             }
-        };
+        }
     }
 
     fn remove_prop(&mut self, prop: StylePropRef, idx: u16) {
@@ -224,7 +224,7 @@ impl PropCache {
             if let Ok(pos) = oe.get().binary_search(&PropFrameKind::Normal(idx)) {
                 oe.get_mut().remove(pos);
             }
-        };
+        }
     }
 
     // mark a frame id as for a computed style
@@ -482,7 +482,7 @@ impl Animation {
                     (KeyFrameStyle::Style(s), KeyFrameStyle::Style(ns)) => {
                         s.apply_mut(ns);
                     }
-                };
+                }
                 e_frame.easing = frame.easing;
             }
             im_rc::hashmap::Entry::Vacant(ve) => {
@@ -728,7 +728,7 @@ impl Animation {
                 inner_desc.push_str(&description.into())
             }
             val @ None => *val = Some(description.into()),
-        };
+        }
         self
     }
 
