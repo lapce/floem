@@ -26,6 +26,10 @@ impl View for Container {
         self.id
     }
 
+    fn view_style(&self) -> Option<crate::style::Style> {
+        Some(crate::style::Style::new().pointer_events_auto())
+    }
+
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
         "Container".into()
     }

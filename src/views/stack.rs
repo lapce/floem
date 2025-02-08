@@ -105,8 +105,11 @@ impl View for Stack {
     }
 
     fn view_style(&self) -> Option<crate::style::Style> {
-        self.direction
-            .map(|direction| Style::new().flex_direction(direction))
+        Some(if let Some(direction) = self.direction {
+            Style::new().flex_direction(direction).pointer_events_auto()
+        } else {
+            Style::new().pointer_events_auto()
+        })
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {

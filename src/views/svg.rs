@@ -93,6 +93,10 @@ impl View for Svg {
         self.id
     }
 
+    fn view_style(&self) -> Option<crate::style::Style> {
+        Some(crate::style::Style::new().pointer_events_auto())
+    }
+
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         self.svg_style.read(cx);
     }
