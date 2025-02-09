@@ -447,7 +447,7 @@ impl EventCx<'_> {
             }
         }
 
-        (EventPropagation::Continue, PointerEventConsumed::Yes)
+        (EventPropagation::Continue, PointerEventConsumed::No)
     }
 
     /// translate a window-positioned event to the local coordinate system of a view
