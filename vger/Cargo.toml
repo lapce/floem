@@ -10,11 +10,8 @@ license.workspace = true
 image = { workspace = true }
 resvg = { workspace = true }
 peniko = { workspace = true }
-raw-window-handle = { workspace = true }
 wgpu = { workspace = true }
 
-futures = "0.3.26"
 anyhow = "1.0.69"
-swash = "0.1.8"
 floem-vger-rs = { git = "https://github.com/lapce/vger-rs.git", rev = "b2441cc85b1d555a3c74e2cdced08382460759df", version = "0.3.1", package = "floem-vger" }
 floem_renderer = { path = "../renderer", version = "0.2.0" }

@@ -79,7 +79,6 @@ copypasta = { version = "0.10.0", default-features = false, features = [
 parking_lot = { workspace = true }
 image = { workspace = true }
 im = { workspace = true }
-wgpu = { workspace = true }
 winit = { workspace = true }
 futures = { version = "0.3.30", optional = true }
 crossbeam = "0.8"
@@ -90,6 +89,7 @@ muda = { workspace = true }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = { version = "0.4" }
 web-time = "1"
+wgpu = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 clipboard-win = "3.1.1"
