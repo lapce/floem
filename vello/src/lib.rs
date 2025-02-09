@@ -153,7 +153,7 @@ impl Renderer for VelloRenderer {
             }
             self.scene.reset();
             mem::swap(&mut self.scene, self.alt_scene.as_mut().unwrap());
-        };
+        }
         self.transform = Affine::IDENTITY;
     }
 

@@ -199,7 +199,7 @@ impl View for ToggleButton {
                 }
             }
             _ => {}
-        };
+        }
         EventPropagation::Continue
     }
 

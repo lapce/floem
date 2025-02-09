@@ -180,7 +180,7 @@ where
                     }
                 }
             }
-        };
+        }
 
         let hashed_items = items.iter().map(&key_fn).collect::<FxIndexSet<_>>();
         let (prev_before_size, prev_content_size, diff) =
