@@ -1,4 +1,4 @@
-use super::{container, v_stack_from_iter, Decorators};
+use super::{v_stack_from_iter, Decorators};
 use crate::context::StyleCx;
 use crate::event::EventPropagation;
 use crate::id::ViewId;
@@ -81,7 +81,7 @@ where
     });
     let stack = v_stack_from_iter(iterator.into_iter().enumerate().map(move |(index, v)| {
         let id = ViewId::new();
-        let v = container(v).class(ListItemClass);
+        let v = v.into_view().class(ListItemClass);
         let child = v.id();
         id.set_children(vec![v]);
         Item {
@@ -224,5 +224,14 @@ impl View for Item {
         } else {
             cx.style_view(self.child);
         }
+    }
+}
+
+pub trait ListExt {
+    fn list(self) -> List;
+}
+impl<V: IntoView + 'static, T: IntoIterator<Item = V> + 'static> ListExt for T {
+    fn list(self) -> List {
+        list(self)
     }
 }

@@ -7,7 +7,7 @@ use crate::inspector::{
 };
 use crate::prelude::{
     button, container, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label,
-    tab, text, text_input, v_stack, virtual_stack, VirtualDirection, VirtualItemSize,
+    tab, text, text_input, v_stack, virtual_stack,
 };
 use crate::profiler::profiler;
 use crate::views::Decorators;
@@ -416,8 +416,6 @@ fn view_tree(
     let focus_line = datas.get_untracked().focus_line;
     scroll(
         virtual_stack(
-            VirtualDirection::Vertical,
-            VirtualItemSize::Fixed(Box::new(move || 20.0)),
             move || datas.get(),
             move |(_, _, data)| data.id,
             move |(_, level, rw_data)| {

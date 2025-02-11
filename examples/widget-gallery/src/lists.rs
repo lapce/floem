@@ -1,12 +1,12 @@
 use floem::{
     peniko::color::palette,
-    reactive::{create_signal, RwSignal, SignalGet, SignalUpdate},
+    prelude::ViewTuple,
+    reactive::{create_effect, RwSignal, SignalGet, SignalUpdate},
     style::JustifyContent,
     text::Weight,
     views::{
-        button, container, h_stack, h_stack_from_iter, label, list, scroll, stack, v_stack,
-        v_stack_from_iter, virtual_list, Checkbox, Decorators, VirtualDirection, VirtualItemSize,
-        VirtualVector,
+        button, h_stack, h_stack_from_iter, v_stack, v_stack_from_iter, Checkbox, Decorators,
+        LabelClass, ListExt, ScrollExt, VirtualStack, VirtualVector,
     },
     IntoView,
 };
@@ -35,79 +35,79 @@ pub fn virt_list_view() -> impl IntoView {
 }
 
 fn simple_list() -> impl IntoView {
-    scroll(
-        list(
-            (0..100).map(|i| label(move || i.to_string()).style(|s| s.height(24.0).items_center())),
-        )
-        .style(|s| s.width_full()),
-    )
-    .style(|s| s.width(100.0).height(200.0).border(1.0))
+    (0..100)
+        .list()
+        .style(|s| {
+            s.width_full()
+                .class(LabelClass, |s| s.height(24).items_center())
+        })
+        .scroll()
+        .style(|s| s.width(100.0).height(200.0).border(1.0))
 }
 
 fn enhanced_list() -> impl IntoView {
-    let long_list: im::Vector<i32> = (0..100).collect();
-    let (long_list, set_long_list) = create_signal(long_list);
+    let long_list: im::Vector<(bool, i32)> = (0..10000).map(|v| (true, v)).collect();
+    let long_list = RwSignal::new(long_list);
 
     let list_width = 180.0;
     let item_height = 32.0;
-    scroll(
-        virtual_list(
-            VirtualDirection::Vertical,
-            VirtualItemSize::Fixed(Box::new(|| 32.0)),
-            move || long_list.get().enumerate(),
-            move |(_, item)| *item,
-            move |(index, item)| {
-                let checkbox_state = RwSignal::new(true);
-                container({
-                    stack({
-                        (
-                            Checkbox::new_rw(checkbox_state).style(|s| s.margin_left(6)),
-                            label(move || item.to_string()).style(|s| {
-                                s.margin_left(6).height(32.0).font_size(22.0).items_center()
-                            }),
-                            container({
-                                label(move || " X ")
-                                    .on_click_stop(move |_| {
-                                        print!("Item Removed");
-                                        set_long_list.update(|x| {
-                                            x.remove(index);
-                                        });
-                                    })
-                                    .style(|s| {
-                                        s.height(18.0)
-                                            .font_weight(Weight::BOLD)
-                                            .color(palette::css::RED)
-                                            .border(1.0)
-                                            .border_color(palette::css::RED)
-                                            .border_radius(16.0)
-                                            .margin_right(20.0)
-                                            .hover(|s| {
-                                                s.color(palette::css::WHITE)
-                                                    .background(palette::css::RED)
-                                            })
-                                    })
-                            })
-                            .style(|s| {
-                                s.flex_basis(0)
-                                    .flex_grow(1.0)
-                                    .justify_content(Some(JustifyContent::FlexEnd))
-                            }),
-                        )
-                    })
-                    .style(move |s| s.height_full().width_full().items_center())
-                })
+
+    let checkmark = |checkbox_state| Checkbox::new_rw(checkbox_state).style(|s| s.margin_left(6));
+
+    let label =
+        |item: i32| item.style(|s| s.margin_left(6).height(32.0).font_size(22.0).items_center());
+
+    let x_mark = move |index| {
+        " X "
+            .on_click_stop(move |_| {
+                print!("Item Removed");
+                long_list.update(|x| {
+                    x.remove(index);
+                });
+            })
+            .style(|s| {
+                s.height(18.0)
+                    .font_weight(Weight::BOLD)
+                    .color(palette::css::RED)
+                    .border(1.0)
+                    .border_color(palette::css::RED)
+                    .border_radius(16.0)
+                    .margin_right(20.0)
+                    .hover(|s| s.color(palette::css::WHITE).background(palette::css::RED))
+            })
+            .style(|s| {
+                s.flex_basis(0)
+                    .justify_content(Some(JustifyContent::FlexEnd))
+            })
+    };
+
+    VirtualStack::list_with_view(
+        move || long_list.get().enumerate(),
+        move |(index, (state, item))| {
+            let checkbox_state = RwSignal::new(state);
+            create_effect(move |_| {
+                let state = checkbox_state.get();
+                long_list.update(|x| {
+                    // because this is an immutable vector, getting the index will always result in the correct item even if we remove elements.
+                    if let Some((s, _v)) = x.get_mut(index) {
+                        *s = state;
+                    };
+                });
+            });
+
+            (checkmark(checkbox_state), label(item), x_mark(index))
+                .h_stack()
                 .style(move |s| {
-                    s.flex_row()
-                        .items_center()
+                    s.items_center()
                         .height(item_height)
                         .apply_if(index != 0, |s| {
                             s.border_top(1.0).border_color(palette::css::LIGHT_GRAY)
                         })
                 })
-            },
-        )
-        .style(move |s| s.flex_col().flex_grow(1.0)),
+        },
     )
+    .style(move |s| s.flex_col().flex_grow(1.0))
+    .scroll()
     .style(move |s| s.width(list_width).height(200.0).border(1.0))
 }
 

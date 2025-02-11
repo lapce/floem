@@ -2,8 +2,7 @@ use crate::{
     style::{Background, CursorStyle, Foreground, Style, Transition},
     unit::{DurationUnitExt, UnitExt},
     views::{
-        dropdown::{self},
-        scroll,
+        dropdown, scroll,
         slider::{self, SliderClass},
         ButtonClass, CheckboxClass, LabelClass, LabelCustomStyle, LabeledCheckboxClass,
         LabeledRadioButtonClass, ListClass, ListItemClass, PlaceholderTextClass, RadioButtonClass,

@@ -175,8 +175,8 @@ impl<V> Diff<V> {
 
 #[derive(Debug)]
 pub(crate) struct DiffOpMove {
-    from: usize,
-    to: usize,
+    pub(crate) from: usize,
+    pub(crate) to: usize,
 }
 
 #[derive(Debug)]
@@ -187,7 +187,7 @@ pub(crate) struct DiffOpAdd<V> {
 
 #[derive(Debug)]
 pub(crate) struct DiffOpRemove {
-    at: usize,
+    pub(crate) at: usize,
 }
 
 /// Calculates the operations need to get from `a` to `b`.
