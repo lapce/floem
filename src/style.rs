@@ -14,6 +14,7 @@ use std::hash::Hasher;
 use std::hash::{BuildHasherDefault, Hash};
 use std::ptr;
 use std::rc::Rc;
+use taffy::{BoxSizing, JustifyItems};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
@@ -81,6 +82,7 @@ impl StylePropValue for Position {}
 impl StylePropValue for FlexDirection {}
 impl StylePropValue for FlexWrap {}
 impl StylePropValue for AlignItems {}
+impl StylePropValue for BoxSizing {}
 impl StylePropValue for AlignContent {}
 impl StylePropValue for TrackSizingFunction {}
 impl StylePropValue for MinTrackSizingFunction {}
@@ -1624,6 +1626,8 @@ define_builtin_props!(
     FlexShrink flex_shrink: f32 {} = 1.0,
     FlexBasis flex_basis: PxPctAuto {} = PxPctAuto::Auto,
     JustifyContentProp justify_content: Option<JustifyContent> {} = None,
+    JustifyItemsProp justify_items: Option<JustifyItems> {} = None,
+    BoxSizingProp box_sizing: Option<BoxSizing> {} = None,
     JustifySelf justify_self: Option<AlignItems> {} = None,
     AlignItemsProp align_items: Option<AlignItems> {} = None,
     AlignContentProp align_content: Option<AlignContent> {} = None,
@@ -2396,6 +2400,7 @@ impl Style {
             flex_basis: style.flex_basis().into(),
             flex_wrap: style.flex_wrap(),
             justify_content: style.justify_content(),
+            justify_items: style.justify_items(),
             justify_self: style.justify_self(),
             align_items: style.align_items(),
             align_content: style.align_content(),
@@ -2426,8 +2431,8 @@ impl Style {
                 bottom: style.inset_bottom().into(),
             },
             gap: Size {
-                width: style.row_gap().into(),
-                height: style.col_gap().into(),
+                width: style.col_gap().into(),
+                height: style.row_gap().into(),
             },
             grid_template_rows: style.grid_template_rows(),
             grid_template_columns: style.grid_template_columns(),
