@@ -184,24 +184,18 @@ impl Label {
     }
 
     fn get_hit_point(&self, point: Point) -> Option<Cursor> {
-        let layout = self.id.get_layout().unwrap_or_default();
-        let view_state = self.id.state();
-        let view_state = view_state.borrow();
-        let style = view_state.combined_style.builtin();
-
-        let padding_left = match style.padding_left() {
-            PxPct::Px(padding) => padding as f32,
-            PxPct::Pct(pct) => (pct / 100.) as f32 * layout.size.width,
-        };
-        let padding_top = match style.padding_top() {
-            PxPct::Px(padding) => padding as f32,
-            PxPct::Pct(pct) => (pct / 100.) as f32 * layout.size.width,
-        };
+        let text_node = self.text_node?;
+        let location = self
+            .id
+            .taffy()
+            .borrow()
+            .layout(text_node)
+            .map_or(taffy::Layout::new().location, |layout| layout.location);
         self.effectve_text_layout().hit(
-            point.x as f32 - padding_left,
+            point.x as f32 - location.x,
             // TODO: prevent cursor incorrectly going to end of buffer when clicking
             // slightly below the text
-            point.y as f32 - padding_top,
+            point.y as f32 - location.y,
         )
     }
 
