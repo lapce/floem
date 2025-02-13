@@ -45,24 +45,27 @@ fn app_view() -> impl IntoView {
         "Files",
     ];
 
-    let create_view = |it: &str| match it {
-        "Label" => labels::label_view().into_any(),
-        "Button" => buttons::button_view().into_any(),
-        "Checkbox" => checkbox::checkbox_view().into_any(),
-        "Radio" => radio_buttons::radio_buttons_view().into_any(),
-        "Input" => inputs::text_input_view().into_any(),
-        "List" => lists::virt_list_view().into_any(),
-        "Menu" => context_menu::menu_view().into_any(),
-        "RichText" => rich_text::rich_text_view().into_any(),
-        "Image" => images::img_view().into_any(),
-        "Clipboard" => clipboard::clipboard_view().into_any(),
-        "Slider" => slider::slider_view().into_any(),
-        "Dropdown" => dropdown::dropdown_view().into_any(),
-        "Animation" => animation::animation_view().into_any(),
-        "Draggable" => draggable::draggable_view().into_any(),
-        "DroppedFile" => dropped_file::dropped_file_view().into_any(),
-        "Files" => files::files_view().into_any(),
-        _ => label(|| "Not implemented".to_owned()).into_any(),
+    let create_view = |it: &str| {
+        match it {
+            "Label" => labels::label_view().into_any(),
+            "Button" => buttons::button_view().into_any(),
+            "Checkbox" => checkbox::checkbox_view().into_any(),
+            "Radio" => radio_buttons::radio_buttons_view().into_any(),
+            "Input" => inputs::text_input_view().into_any(),
+            "List" => lists::virt_list_view().into_any(),
+            "Menu" => context_menu::menu_view().into_any(),
+            "RichText" => rich_text::rich_text_view().into_any(),
+            "Image" => images::img_view().into_any(),
+            "Clipboard" => clipboard::clipboard_view().into_any(),
+            "Slider" => slider::slider_view().into_any(),
+            "Dropdown" => dropdown::dropdown_view().into_any(),
+            "Animation" => animation::animation_view().into_any(),
+            "Draggable" => draggable::draggable_view().into_any(),
+            "DroppedFile" => dropped_file::dropped_file_view().into_any(),
+            "Files" => files::files_view().into_any(),
+            _ => label(|| "Not implemented".to_owned()).into_any(),
+        }
+        .debug_name(it.to_string())
     };
 
     let tabs = RwSignal::new(tabs);
@@ -122,7 +125,11 @@ fn app_view() -> impl IntoView {
     let new_window = button("Open In Window").action(move || {
         let name = tabs.with(|tabs| tabs.get(active_tab.get()).copied());
         new_window(
-            move |_| create_view(name.unwrap_or_default()),
+            move |_| {
+                create_view(name.unwrap_or_default())
+                    .scroll()
+                    .style(|s| s.size_full())
+            },
             Some(
                 WindowConfig::default()
                     .size(Size::new(700.0, 400.0))
@@ -145,7 +152,7 @@ fn app_view() -> impl IntoView {
     .debug_name("Active Tab")
     .style(|s| s.flex_col().items_start());
 
-    let tab = scroll(tab).scroll_style(|s| s.shrink_to_fit());
+    let tab = tab.scroll().style(|s| s.size_full());
 
     let view = (left_side_bar, tab)
         .h_stack()

@@ -27,9 +27,8 @@ pub fn dropdown_view() -> impl IntoView {
         println!("Selected: {active_item}");
     });
 
-    form::form({
-        (form_item("Dropdown".to_string(), 120.0, move || {
-            Dropdown::new_rw(dropdown_active_item, Values::iter())
-        }),)
-    })
+    form::form((form_item(
+        "Dropdown",
+        Dropdown::new_rw(dropdown_active_item, Values::iter()),
+    ),))
 }

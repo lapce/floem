@@ -307,7 +307,7 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<ViewId>>) -> i
         move |selected_value| {
             if let Some(view) = selected_value.and_then(|id| capture.root.find(id)) {
                 let name = info("Type", view.name.clone());
-                let id = info("Id", view.id.data().as_ffi().to_string());
+                let id = info("Id", format!("{:?}", view.id));
                 let count = info("Child Count", format!("{}", view.children.len()));
                 let beyond = |view: f64, window| {
                     if view > window {

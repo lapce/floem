@@ -14,7 +14,6 @@ use std::hash::Hasher;
 use std::hash::{BuildHasherDefault, Hash};
 use std::ptr;
 use std::rc::Rc;
-use taffy::{BoxSizing, JustifyItems};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
@@ -22,7 +21,8 @@ use std::time::{Duration, Instant};
 use web_time::{Duration, Instant};
 
 pub use taffy::style::{
-    AlignContent, AlignItems, Dimension, Display, FlexDirection, FlexWrap, JustifyContent, Position,
+    AlignContent, AlignItems, BoxSizing, Dimension, Display, FlexDirection, FlexWrap,
+    JustifyContent, JustifyItems, Position,
 };
 use taffy::{
     geometry::{MinMax, Size},
@@ -2400,8 +2400,8 @@ impl Style {
             flex_basis: style.flex_basis().into(),
             flex_wrap: style.flex_wrap(),
             justify_content: style.justify_content(),
-            justify_items: style.justify_items(),
             justify_self: style.justify_self(),
+            justify_items: style.justify_items(),
             align_items: style.align_items(),
             align_content: style.align_content(),
             align_self: style.align_self(),

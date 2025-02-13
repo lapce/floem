@@ -1,37 +1,40 @@
 use floem::{
-    peniko::color::palette,
-    prelude::ViewTuple,
-    reactive::{create_effect, RwSignal, SignalGet, SignalUpdate},
-    style::JustifyContent,
+    prelude::*,
+    reactive::create_effect,
+    taffy::{prelude::*, Line},
     text::Weight,
-    views::{
-        button, h_stack, h_stack_from_iter, v_stack, v_stack_from_iter, Checkbox, Decorators,
-        LabelClass, ListExt, ScrollExt, VirtualStack, VirtualVector,
-    },
-    IntoView,
 };
 
-use crate::form::{form, form_item};
+use crate::{
+    checkbox::CROSS_SVG,
+    form::{form, form_item},
+};
 
 pub fn virt_list_view() -> impl IntoView {
-    v_stack((
-        h_stack({
-            (
-                form((form_item("Simple List".to_string(), 100.0, simple_list),)),
-                form((form_item("Enhanced List".to_string(), 120.0, enhanced_list),)),
-            )
-        }),
-        form((form_item(
-            "Horizontal Stack from Iterator".to_string(),
-            200.0,
-            h_buttons_from_iter,
-        ),)),
-        form((form_item(
-            "Vertical Stack from Iterator".to_string(),
-            200.0,
-            v_buttons_from_iter,
-        ),)),
+    form((
+        form_item(
+            "Simple List".style(|s| s.grid_row(Line::from_line_index(1))),
+            simple_list().style(|s| s.grid_row(Line::from_line_index(2))),
+        ),
+        form_item(
+            "Enhanced List".style(|s| s.grid_row(Line::from_line_index(1))),
+            enhanced_list().style(|s| s.grid_row(Line::from_line_index(2))),
+        ),
+        form_item(
+            "Horizontal Stack from Iterator".style(|s| s.grid_row(Line::from_line_index(4))),
+            h_buttons_from_iter().style(|s| s.grid_row(Line::from_line_index(5))),
+        ),
+        form_item(
+            "Vertical Stack from Iterator".style(|s| s.grid_row(Line::from_line_index(4))),
+            v_buttons_from_iter().style(|s| s.grid_row(Line::from_line_index(5))),
+        ),
     ))
+    .style(|s| {
+        s.grid_template_columns([fr(1.), fr(1.), fr(1.), fr(1.)])
+            .grid_template_rows([auto(), auto(), length(20.), auto(), auto()])
+            .column_gap(20)
+            .justify_items(JustifyItems::Center)
+    })
 }
 
 fn simple_list() -> impl IntoView {
@@ -46,7 +49,7 @@ fn simple_list() -> impl IntoView {
 }
 
 fn enhanced_list() -> impl IntoView {
-    let long_list: im::Vector<(bool, i32)> = (0..10000).map(|v| (true, v)).collect();
+    let long_list: im::Vector<(bool, i32)> = (0..1000).map(|v| (true, v)).collect();
     let long_list = RwSignal::new(long_list);
 
     let list_width = 180.0;
@@ -58,7 +61,7 @@ fn enhanced_list() -> impl IntoView {
         |item: i32| item.style(|s| s.margin_left(6).height(32.0).font_size(22.0).items_center());
 
     let x_mark = move |index| {
-        " X "
+        svg(CROSS_SVG)
             .on_click_stop(move |_| {
                 print!("Item Removed");
                 long_list.update(|x| {
@@ -66,19 +69,17 @@ fn enhanced_list() -> impl IntoView {
                 });
             })
             .style(|s| {
-                s.height(18.0)
+                s.size(18.0, 18.)
                     .font_weight(Weight::BOLD)
                     .color(palette::css::RED)
                     .border(1.0)
                     .border_color(palette::css::RED)
                     .border_radius(16.0)
+                    .padding(2.)
                     .margin_right(20.0)
                     .hover(|s| s.color(palette::css::WHITE).background(palette::css::RED))
             })
-            .style(|s| {
-                s.flex_basis(0)
-                    .justify_content(Some(JustifyContent::FlexEnd))
-            })
+            .style(|s| s.justify_content(Some(JustifyContent::FlexEnd)))
     };
 
     VirtualStack::list_with_view(
@@ -99,6 +100,7 @@ fn enhanced_list() -> impl IntoView {
                 .h_stack()
                 .style(move |s| {
                     s.items_center()
+                        .gap(5)
                         .height(item_height)
                         .apply_if(index != 0, |s| {
                             s.border_top(1.0).border_color(palette::css::LIGHT_GRAY)
@@ -113,10 +115,10 @@ fn enhanced_list() -> impl IntoView {
 
 fn h_buttons_from_iter() -> impl IntoView {
     let button_iter = (0..3).map(|i| button(format!("Button {i}")));
-    h_stack_from_iter(button_iter)
+    h_stack_from_iter(button_iter).style(|s| s.gap(5))
 }
 
 fn v_buttons_from_iter() -> impl IntoView {
     let button_iter = (0..3).map(|i| button(format!("Button {i}")));
-    v_stack_from_iter(button_iter)
+    v_stack_from_iter(button_iter).style(|s| s.gap(5))
 }

@@ -1,12 +1,4 @@
-use floem::{
-    peniko::color::palette,
-    reactive::{RwSignal, SignalGet},
-    views::{
-        checkbox, custom_checkbox, custom_labeled_checkbox, labeled_checkbox, Checkbox,
-        CheckboxClass, Decorators,
-    },
-    IntoView,
-};
+use floem::prelude::*;
 
 use crate::form::{form, form_item};
 
@@ -18,47 +10,38 @@ const CUSTOM_CHECK_SVG: &str = r##"
 "##;
 
 // Source: https://www.svgrepo.com/svg/505349/cross | License: MIT
-const CROSS_SVG: &str = r##"
+pub const CROSS_SVG: &str = r##"
 <svg width="800px" height="800px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
 <path d="M19 5L5 19M5.00001 5L19 19" stroke="#000000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
 "##;
 
 pub fn checkbox_view() -> impl IntoView {
-    let width = 160.0;
+    // let width = 160.0;
     let is_checked = RwSignal::new(true);
-    form({
-        (
-            form_item("Checkbox:".to_string(), width, move || {
-                Checkbox::new_rw(is_checked).style(|s| s.margin(5.0))
-            }),
-            form_item("Disabled Checkbox:".to_string(), width, move || {
-                checkbox(move || is_checked.get())
-                    .style(|s| s.margin(5.0))
-                    .disabled(|| true)
-            }),
-            form_item("Labelled Checkbox:".to_string(), width, move || {
-                Checkbox::labeled_rw(is_checked, || "Check me!")
-            }),
-            form_item(
-                "Disabled Labelled Checkbox:".to_string(),
-                width,
-                move || {
-                    labeled_checkbox(move || is_checked.get(), || "Check me!").disabled(|| true)
-                },
-            ),
-            form_item("Custom Checkbox 1:".to_string(), width, move || {
-                custom_checkbox(move || is_checked.get(), CUSTOM_CHECK_SVG)
-                    .style(|s| s.margin(5.0).color(palette::css::GREEN))
-            }),
-            form_item("Custom Checkbox 2:".to_string(), width, move || {
-                custom_labeled_checkbox(move || is_checked.get(), move || "Custom Label", CROSS_SVG)
-                    .style(|s| {
-                        s.margin(5.0)
-                            .margin_left(0.)
-                            .class(CheckboxClass, |s| s.color(palette::css::RED))
-                    })
-            }),
-        )
-    })
+    form((
+        form_item("Checkbox:", Checkbox::new_rw(is_checked)),
+        form_item(
+            "Custom Checkbox 1:",
+            Checkbox::new_rw_custom(is_checked, CUSTOM_CHECK_SVG)
+                .style(|s| s.color(palette::css::GREEN)),
+        ),
+        form_item(
+            "Disabled Checkbox:",
+            checkbox(move || is_checked.get()).disabled(|| true),
+        ),
+        form_item(
+            "Labeled Checkbox:",
+            Checkbox::labeled_rw(is_checked, || "Check me!"),
+        ),
+        form_item(
+            "Custom Checkbox 2:",
+            Checkbox::custom_labeled_rw(is_checked, move || "Custom Check Mark", CROSS_SVG)
+                .style(|s| s.class(CheckboxClass, |s| s.color(palette::css::RED))),
+        ),
+        form_item(
+            "Disabled Labeled Checkbox:",
+            labeled_checkbox(move || is_checked.get(), || "Check me!").disabled(|| true),
+        ),
+    ))
 }

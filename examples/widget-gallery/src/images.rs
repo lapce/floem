@@ -1,8 +1,6 @@
 use floem::{
+    prelude::*,
     style::{StyleValue, TextColor},
-    unit::UnitExt,
-    views::{img, svg, Decorators},
-    IntoView,
 };
 
 use crate::form::{form, form_item};
@@ -15,37 +13,38 @@ pub fn img_view() -> impl IntoView {
     </svg>"##;
     let sunflower = include_bytes!("./../assets/sunflower.jpg");
 
-    form({
-        (
-            form_item("PNG:".to_string(), 120.0, move || {
-                img(move || ferris_png.to_vec())
+    form((
+        form_item(
+            "PNG:",
+            img(move || ferris_png.to_vec()).style(|s| s.aspect_ratio(1.5)),
+        ),
+        form_item(
+            "PNG(resized):",
+            img(move || ferris_png.to_vec()).style(|s| s.width(230.px()).height(153.px())),
+        ),
+        form_item(
+            "SVG(from file):",
+            svg(ferris_svg).style(|s| {
+                s.set_style_value(TextColor, StyleValue::Unset)
+                    .width(230.px())
+                    .height(153.px())
             }),
-            form_item("PNG(resized):".to_string(), 120.0, move || {
-                img(move || ferris_png.to_vec()).style(|s| s.width(230.px()).height(153.px()))
-            }),
-            form_item("SVG(from file):".to_string(), 120.0, move || {
-                svg(ferris_svg).style(|s| {
-                    s.set_style_value(TextColor, StyleValue::Unset)
-                        .width(230.px())
-                        .height(153.px())
-                })
-            }),
-            form_item("SVG(from string):".to_string(), 120.0, move || {
-                svg(svg_str).style(|s| s.width(100.px()).height(100.px()))
-            }),
-            form_item("JPG:".to_string(), 120.0, move || {
-                img(move || sunflower.to_vec())
-            }),
-            form_item("JPG(resized):".to_string(), 120.0, move || {
-                img(move || sunflower.to_vec()).style(|s| s.width(320.px()).height(490.px()))
-            }),
-            //TODO: support percentages for width/height
-            //     img(move || ferris_png.to_vec()).style(|s| s.width(90.pct()).height(90.pct()))
-            //
-            //TODO: object fit and object position
-            //     img(move || ferris_png.to_vec())
-            //     .object_fit(ObjectFit::Contain).object_position(VertPosition::Top, HorizPosition::Left))
-            //
-        )
-    })
+        ),
+        form_item(
+            "SVG(from string):",
+            svg(svg_str).style(|s| s.width(100.px()).height(100.px())),
+        ),
+        form_item("JPG:", img(move || sunflower.to_vec())),
+        form_item(
+            "JPG(resized):",
+            img(move || sunflower.to_vec()).style(|s| s.width(320.px()).height(490.px())),
+        ),
+        //TODO: support percentages for width/height
+        //     img(move || ferris_png.to_vec()).style(|s| s.width(90.pct()).height(90.pct()))
+        //
+        //TODO: object fit and object position
+        //     img(move || ferris_png.to_vec())
+        //     .object_fit(ObjectFit::Contain).object_position(VertPosition::Top, HorizPosition::Left))
+        //
+    ))
 }
