@@ -135,7 +135,10 @@ impl Checkbox {
 
         value_container(
             h_stack((
-                checkbox_svg(inbound_signal.read_only(), custom_check),
+                checkbox_svg(inbound_signal.read_only(), custom_check).on_click_stop(move |_| {
+                    let checked = inbound_signal.get_untracked();
+                    outbound_signal.set(!checked);
+                }),
                 views::label(label),
             ))
             .class(LabeledCheckboxClass)
@@ -143,7 +146,7 @@ impl Checkbox {
                 let checked = inbound_signal.get_untracked();
                 outbound_signal.set(!checked);
             })
-            .style(|s| s.items_center().justify_center()),
+            .style(|s| s.items_center()),
             move || outbound_signal.get(),
         )
     }
@@ -168,12 +171,17 @@ impl Checkbox {
         label: impl Fn() -> S + 'static,
         custom_check: impl Into<String> + Clone + 'static,
     ) -> impl IntoView {
-        h_stack((checkbox_svg(checked, custom_check), views::label(label)))
-            .class(LabeledCheckboxClass)
-            .style(|s| s.items_center().justify_center())
-            .on_click_stop(move |_| {
+        h_stack((
+            checkbox_svg(checked, custom_check).on_click_stop(move |_| {
                 checked.update(|val| *val = !*val);
-            })
+            }),
+            views::label(label),
+        ))
+        .on_click_stop(move |_| {
+            checked.update(|val| *val = !*val);
+        })
+        .class(LabeledCheckboxClass)
+        .style(|s| s.items_center())
     }
 }
 
