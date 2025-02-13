@@ -1,7 +1,9 @@
 use std::marker::PhantomData;
 
 use crate::{
-    id::Id, signal::Signal, ReadSignal, RwSignal, SignalGet, SignalUpdate, SignalWith, WriteSignal,
+    id::Id,
+    signal::{NotThreadSafe, Signal},
+    ReadSignal, RwSignal, SignalGet, SignalUpdate, SignalWith, WriteSignal,
 };
 
 /// BaseSignal gives you another way to control the lifetime of a Signal
@@ -14,6 +16,7 @@ use crate::{
 pub struct BaseSignal<T> {
     id: Id,
     ty: PhantomData<T>,
+    pub(crate) ts: PhantomData<NotThreadSafe>,
 }
 
 impl<T> Eq for BaseSignal<T> {}
@@ -35,6 +38,7 @@ pub fn create_base_signal<T: 'static>(value: T) -> BaseSignal<T> {
     BaseSignal {
         id,
         ty: PhantomData,
+        ts: PhantomData,
     }
 }
 
@@ -44,6 +48,7 @@ impl<T> BaseSignal<T> {
         RwSignal {
             id: self.id,
             ty: PhantomData,
+            ts: PhantomData,
         }
     }
 
@@ -52,6 +57,7 @@ impl<T> BaseSignal<T> {
         ReadSignal {
             id: self.id,
             ty: PhantomData,
+            ts: PhantomData,
         }
     }
 
@@ -60,6 +66,7 @@ impl<T> BaseSignal<T> {
         WriteSignal {
             id: self.id,
             ty: PhantomData,
+            ts: PhantomData,
         }
     }
 }
