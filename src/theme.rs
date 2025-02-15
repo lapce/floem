@@ -97,7 +97,7 @@ pub(crate) fn default_theme() -> Theme {
         });
 
     let labeled_checkbox_style = Style::new()
-        .row_gap(padding)
+        .col_gap(padding)
         .hover(|s| s.background(hover_bg_color))
         .padding(padding)
         .transition(Background, Transition::linear(100.millis()))
@@ -146,7 +146,7 @@ pub(crate) fn default_theme() -> Theme {
         });
 
     let labeled_radio_button_style = Style::new()
-        .row_gap(padding)
+        .col_gap(padding)
         .hover(|s| s.background(hover_bg_color))
         .padding(padding)
         .transition(Background, Transition::linear(100.millis()))

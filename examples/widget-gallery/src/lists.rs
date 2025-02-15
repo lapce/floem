@@ -32,7 +32,7 @@ pub fn virt_list_view() -> impl IntoView {
     .style(|s| {
         s.grid_template_columns([fr(1.), fr(1.), fr(1.), fr(1.)])
             .grid_template_rows([auto(), auto(), length(20.), auto(), auto()])
-            .column_gap(20)
+            .row_gap(20)
             .justify_items(JustifyItems::Center)
     })
 }
@@ -64,8 +64,8 @@ fn enhanced_list() -> impl IntoView {
         svg(CROSS_SVG)
             .on_click_stop(move |_| {
                 print!("Item Removed");
-                long_list.update(|x| {
-                    x.remove(index);
+                long_list.update(|list| {
+                    list.remove(index);
                 });
             })
             .style(|s| {
@@ -79,38 +79,36 @@ fn enhanced_list() -> impl IntoView {
                     .margin_right(20.0)
                     .hover(|s| s.color(palette::css::WHITE).background(palette::css::RED))
             })
-            .style(|s| s.justify_content(Some(JustifyContent::FlexEnd)))
     };
 
-    VirtualStack::list_with_view(
-        move || long_list.get().enumerate(),
-        move |(index, (state, item))| {
-            let checkbox_state = RwSignal::new(state);
-            create_effect(move |_| {
-                let state = checkbox_state.get();
-                long_list.update(|x| {
-                    // because this is an immutable vector, getting the index will always result in the correct item even if we remove elements.
-                    if let Some((s, _v)) = x.get_mut(index) {
-                        *s = state;
-                    };
-                });
+    let item_view = move |(index, (state, item))| {
+        let checkbox_state = RwSignal::new(state);
+        create_effect(move |_| {
+            let state = checkbox_state.get();
+            long_list.update(|list| {
+                // because this is an immutable vector, getting the index will always result in the correct item even if we remove elements.
+                if let Some((s, _v)) = list.get_mut(index) {
+                    *s = state;
+                };
             });
+        });
 
-            (checkmark(checkbox_state), label(item), x_mark(index))
-                .h_stack()
-                .style(move |s| {
-                    s.items_center()
-                        .gap(5)
-                        .height(item_height)
-                        .apply_if(index != 0, |s| {
-                            s.border_top(1.0).border_color(palette::css::LIGHT_GRAY)
-                        })
-                })
-        },
-    )
-    .style(move |s| s.flex_col().flex_grow(1.0))
-    .scroll()
-    .style(move |s| s.width(list_width).height(200.0).border(1.0))
+        (checkmark(checkbox_state), label(item), x_mark(index))
+            .h_stack()
+            .style(move |s| {
+                s.items_center()
+                    .gap(5)
+                    .height(item_height)
+                    .apply_if(index != 0, |s| {
+                        s.border_top(1.0).border_color(palette::css::LIGHT_GRAY)
+                    })
+            })
+    };
+
+    VirtualStack::list_with_view(move || long_list.get().enumerate(), item_view)
+        .style(move |s| s.flex_col().flex_grow(1.0))
+        .scroll()
+        .style(move |s| s.width(list_width).height(200.0).border(1.0))
 }
 
 fn h_buttons_from_iter() -> impl IntoView {

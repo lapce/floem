@@ -72,55 +72,56 @@ fn app_view() -> impl IntoView {
 
     let (active_tab, set_active_tab) = create_signal(0);
 
-    let side_tab_bar = list(tabs.get().into_iter().enumerate().map(move |(idx, item)| {
-        label(move || item)
-            .draggable()
-            .style(move |s| {
-                s.flex_row()
-                    .font_size(18.)
-                    .padding(5.0)
-                    .width(100.pct())
-                    .height(36.0)
-                    .transition(Background, Transition::ease_in_out(100.millis()))
-                    .items_center()
-                    .border_bottom(1.)
-                    .border_color(palette::css::LIGHT_GRAY)
-                    .selected(|s| {
-                        s.border(2.)
-                            .border_color(palette::css::BLUE)
-                            .background(palette::css::GRAY.with_alpha(0.6))
-                    })
-                    .hover(|s| {
-                        s.background(palette::css::LIGHT_GRAY)
-                            .apply_if(idx == active_tab.get(), |s| {
-                                s.background(palette::css::GRAY)
-                            })
-                            .cursor(CursorStyle::Pointer)
-                    })
-            })
-            .dragging_style(|s| s.background(palette::css::GRAY.with_alpha(0.6)))
-    }))
-    .on_select(move |idx| {
-        if let Some(idx) = idx {
-            set_active_tab.set(idx);
-        }
-    })
-    .keyboard_navigable()
-    .style(|s| s.flex_col().width(140.0))
-    .scroll()
-    .debug_name("Side Tab Bar")
-    .scroll_style(|s| s.shrink_to_fit())
-    .style(|s| {
-        s.border(1.)
-            .padding(3.)
-            .border_color(palette::css::GRAY)
-            .class(LabelClass, |s| s.selectable(false))
-    });
+    let side_tab_bar = tabs
+        .get()
+        .into_iter()
+        .enumerate()
+        .map(move |(idx, item)| {
+            item.draggable()
+                .style(move |s| {
+                    s.flex_row()
+                        .font_size(18.)
+                        .padding(5.0)
+                        .width(100.pct())
+                        .height(36.0)
+                        .transition(Background, Transition::ease_in_out(100.millis()))
+                        .items_center()
+                        .border_bottom(1.)
+                        .border_color(palette::css::LIGHT_GRAY)
+                        .selected(|s| {
+                            s.border(2.)
+                                .border_color(palette::css::BLUE)
+                                .background(palette::css::GRAY.with_alpha(0.6))
+                        })
+                        .hover(|s| {
+                            s.background(palette::css::LIGHT_GRAY)
+                                .apply_if(idx == active_tab.get(), |s| {
+                                    s.background(palette::css::GRAY)
+                                })
+                                .cursor(CursorStyle::Pointer)
+                        })
+                })
+                .dragging_style(|s| s.background(palette::css::GRAY.with_alpha(0.6)))
+        })
+        .list()
+        .on_select(move |idx| {
+            if let Some(idx) = idx {
+                set_active_tab.set(idx);
+            }
+        })
+        .keyboard_navigable()
+        .style(|s| s.flex_col().width(140.0))
+        .scroll()
+        .debug_name("Side Tab Bar")
+        .scroll_style(|s| s.shrink_to_fit())
+        .style(|s| {
+            s.border(1.)
+                .padding(3.)
+                .border_color(palette::css::GRAY)
+                .class(LabelClass, |s| s.selectable(false))
+        });
 
-    let id = side_tab_bar.id();
-    let inspector = button("Open Inspector")
-        .action(move || id.inspect())
-        .style(|s| s);
+    let inspector = button("Open Inspector").action(move || floem::action::inspect());
 
     let new_window = button("Open In Window").action(move || {
         let name = tabs.with(|tabs| tabs.get(active_tab.get()).copied());
@@ -141,7 +142,7 @@ fn app_view() -> impl IntoView {
     let left_side_bar = (side_tab_bar, new_window, inspector)
         .v_stack()
         .debug_name("Left Side Bar")
-        .style(|s| s.height_full().column_gap(5.0));
+        .style(|s| s.height_full().row_gap(5.0));
 
     let tab = tab(
         move || active_tab.get(),
@@ -156,14 +157,13 @@ fn app_view() -> impl IntoView {
 
     let view = (left_side_bar, tab)
         .h_stack()
-        .style(|s| s.padding(5.0).width_full().height_full().row_gap(5.0))
+        .style(|s| s.padding(5.0).width_full().height_full().col_gap(5.0))
         .window_title(|| "Widget Gallery".to_owned());
 
-    let id = view.id();
     view.on_event_stop(EventListener::KeyUp, move |e| {
         if let Event::KeyUp(e) = e {
             if e.key.logical_key == Key::Named(NamedKey::F11) {
-                id.inspect();
+                floem::action::inspect();
             }
         }
     })

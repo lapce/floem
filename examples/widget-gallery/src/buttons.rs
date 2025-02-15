@@ -22,7 +22,6 @@ pub fn button_view() -> impl IntoView {
                     s.border(1.0)
                         .border_radius(10.0)
                         .padding(10.0)
-                        .margin_left(10.0)
                         .background(palette::css::YELLOW_GREEN)
                         .color(palette::css::DARK_GREEN)
                         .cursor(CursorStyle::Pointer)
