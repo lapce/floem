@@ -52,10 +52,10 @@ use crate::{
     Application,
 };
 
-/// The top-level window handle that owns the winit Window.
+/// The top-level window handle that owns the winit `Window`.
 /// Meant only for use with the root view of the application.
-/// Owns the `AppState` and is responsible for
-/// - processing all requests to update the AppState from the reactive system
+/// Owns the [`AppState`] and is responsible for
+/// - processing all requests to update the [`AppState`] from the reactive system
 /// - processing all requests to update the animation state from the reactive system
 /// - requesting a new animation frame from the backend
 pub(crate) struct WindowHandle {
@@ -63,7 +63,7 @@ pub(crate) struct WindowHandle {
     window_id: WindowId,
     id: ViewId,
     main_view: ViewId,
-    /// Reactive Scope for this WindowHandle
+    /// Reactive Scope for this `WindowHandle`
     scope: Scope,
     pub(crate) app_state: AppState,
     paint_state: PaintState,

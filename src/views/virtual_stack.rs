@@ -80,7 +80,7 @@ where
     pub(crate) direction: RwSignal<FlexDirection>,
     item_size: RwSignal<VirtualItemSize<T>>,
     children: Vec<Option<(ViewId, Scope)>>,
-    /// the index out of all of the items that is the first in the virtualized set. This is used to map an index to a ViewId
+    /// the index out of all of the items that is the first in the virtualized set. This is used to map an index to a [`ViewId`].
     first_child_idx: usize,
     pending_idx: Option<usize>,
     selected: HashSet<ViewId>,

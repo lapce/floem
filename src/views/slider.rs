@@ -66,7 +66,7 @@ prop_extractor! {
 /// You can also disable event handling [`Decorators::disabled`]. If you want to use this slider as a progress bar this may be useful.
 ///
 /// **Styling**:
-/// You can use the [Slider::slider_style] method to get access to a [SliderCustomStyle] which has convenient functions with documentation for styling all of the properties of the slider.
+/// You can use the [`Slider::slider_style`] method to get access to a [`SliderCustomStyle`] which has convenient functions with documentation for styling all of the properties of the slider.
 ///
 /// Styling Example:
 /// ```rust
@@ -300,9 +300,9 @@ impl Slider {
     /// Create a new reactive slider.
     ///
     /// This does **not** automatically hook up any `on_update` logic.
-    /// You will need to manually call [Slider::on_change_pct] or [Slider::on_change_px] in order to respond to updates from the slider.
+    /// You will need to manually call [`Slider::on_change_pct`] or [`Slider::on_change_px`] in order to respond to updates from the slider.
     ///
-    /// You might want to use the simpler constructor [Slider::new_rw] which will automatically hook up the on_update logic for updating a signal directly.
+    /// You might want to use the simpler constructor [`Slider::new_rw`] which will automatically hook up the `on_update` logic for updating a signal directly.
     ///
     /// # Example
     /// ```rust
@@ -352,7 +352,7 @@ impl Slider {
     ///
     /// This automatically hooks up the `on_update` logic and keeps the signal up to date.
     ///
-    /// If you need more control over the getting and setting of the value you will want to use [Slider::new] which gives you more control but does not automatically keep a signal up to date.
+    /// If you need more control over the getting and setting of the value you will want to use [`Slider::new`] which gives you more control but does not automatically keep a signal up to date.
     ///
     /// # Example
     /// ```rust
@@ -385,7 +385,7 @@ impl Slider {
     /// Only one callback of pct can be set on this view.
     /// Calling it again will clear the previously set callback.
     ///
-    /// You can set both an `on_change_pct` and [Slider::on_change_px] callbacks at the same time and both will be called on change.
+    /// You can set both an `on_change_pct` and [`Slider::on_change_px`] callbacks at the same time and both will be called on change.
     pub fn on_change_pct(mut self, onchangepct: impl Fn(Pct) + 'static) -> Self {
         self.onchangepct = Some(Box::new(onchangepct));
         self
@@ -395,7 +395,7 @@ impl Slider {
     /// Only one callback of px can be set on this view.
     /// Calling it again will clear the previously set callback.
     ///
-    /// You can set both an [Slider::on_change_pct] and `on_change_px` callbacks at the same time and both will be called on change.
+    /// You can set both an [`Slider::on_change_pct`] and `on_change_px` callbacks at the same time and both will be called on change.
     pub fn on_change_px(mut self, onchangepx: impl Fn(f64) + 'static) -> Self {
         self.onchangepx = Some(Box::new(onchangepx));
         self

@@ -36,7 +36,7 @@
 //!
 //! ### Composition and Flexibility
 //! Views in Floem are composable, allowing for the construction of complex user interfaces by integrating simpler components.
-//! In the counter example, label and button views were combined within vertical (v_stack) and horizontal (h_stack) layouts to create a more intricate interface.
+//! In the counter example, label and button views were combined within vertical (`v_stack`) and horizontal (`h_stack`) layouts to create a more intricate interface.
 //!
 //! This compositional approach provides the following benefits:
 //! - Reusable UI components
@@ -167,11 +167,11 @@
 //!     });
 //! ```
 //! - The first keyframe will use the computed style, which will include the red background with size of 500x100.
-//! - At 50%, the animation will animate to a black square of 30x30 with a bezier easing of ease_in.
-//! - At 100% the animation will animate to an aquamarine rectangle of 10x300 with an bezier easing of ease_out.
+//! - At 50%, the animation will animate to a black square of 30x30 with a bezier easing of `ease_in`.
+//! - At 100% the animation will animate to an aquamarine rectangle of 10x300 with an bezier easing of `ease_out`.
 //! - The animation is also set to automatically reverse (the animation will run and reverse in 5 seconds) and repeat forever.
 //!
-//! You can add aninimations to a View instance by calling the [`animation`](crate::views::Decorators::animation) method from the `Decorators` trait.
+//! You can add animations to a `View` instance by calling the [`animation`](crate::views::Decorators::animation) method from the `Decorators` trait.
 //! The `animation` method takes a closure that takes and returns an [`Animation`](crate::animate::Animation) value using the builder pattern.
 //!
 //! For additional information about animation, [see here](crate::animate::Animation).

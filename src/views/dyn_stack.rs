@@ -59,7 +59,7 @@ where
 /// );
 /// ```
 /// This will only work if all of the items in the list are unique.
-/// If all of the items are not unique, you can choose some other value to hash. It is common to use an AtomicU32 to accomplish this.
+/// If all of the items are not unique, you can choose some other value to hash. It is common to use an [`AtomicU32`](std::sync::atomic::AtomicU32) to accomplish this.
 ///
 /// ## Example
 /// ```

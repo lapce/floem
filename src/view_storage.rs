@@ -15,7 +15,7 @@ pub(crate) struct ViewStorage {
     pub(crate) children: SecondaryMap<ViewId, Vec<ViewId>>,
     // the parent of a View
     pub(crate) parent: SecondaryMap<ViewId, Option<ViewId>>,
-    /// Cache the root ViewId for a view
+    /// Cache the root [`ViewId`] for a view
     pub(crate) root: SecondaryMap<ViewId, Option<ViewId>>,
     pub(crate) states: SecondaryMap<ViewId, Rc<RefCell<ViewState>>>,
     pub(crate) stale_view_state: Rc<RefCell<ViewState>>,

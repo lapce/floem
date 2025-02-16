@@ -4,8 +4,8 @@
 //!
 //! ## Composing Views
 //! The views in this module are the main building blocks for composing UIs in Floem.
-//! There is a collection of different `stacks` and `lists` that can be used to build collections of Views.
-//! There are also basic widgets such as [text_inputs](text_input::text_input), [labels](label::label), [images](img::img), and [svgs](svg::svg).
+//! There is a collection of different `stacks` and `lists` that can be used to build collections of views.
+//! There are also basic widgets such as [text inputs](text_input::text_input), [labels](label::label), [images](img::img), and [svgs](svg::svg).
 //!
 //! ## Example: Counter
 //! ```rust
@@ -57,7 +57,7 @@
 //! You could build this manually yourself using stacks but it is common enough that it is built-in as a list.
 //!
 //! ## View Trait
-//! The [View](crate::View) trait is the trait that Floem uses to build and display elements.
+//! The [`View`](crate::View) trait is the trait that Floem uses to build and display elements.
 //! The trait contains the methods for implementing updates, styling, layout, events, and painting.
 //!
 //! Views are types that implement `View`.

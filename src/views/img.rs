@@ -122,7 +122,7 @@ pub struct Img {
 /// ```
 /// # Reactivity
 /// The `img` function is not reactive, so to make it change on event, wrap it
-/// with [dyn_view](crate::views::dyn_view::dyn_view).
+/// with [`dyn_view`](crate::views::dyn_view::dyn_view).
 ///
 /// ### Example with reactive updates:
 /// ```rust
@@ -164,7 +164,7 @@ pub fn img(image: impl Fn() -> Vec<u8> + 'static) -> Img {
 
 /// A view that can display an image and controls its position.
 ///
-/// It takes function that returns [PathBuf] and will convert it into [Image](peniko::Image).
+/// It takes function that returns [`PathBuf`] and will convert it into [`Image`](peniko::Image).
 ///
 /// ### Example:
 /// ```rust
@@ -179,7 +179,7 @@ pub fn img(image: impl Fn() -> Vec<u8> + 'static) -> Img {
 /// ```
 /// # Reactivity
 /// The `img` function is not reactive, so to make it change on event, wrap it
-/// with [dyn_view](crate::views::dyn_view::dyn_view).
+/// with [`dyn_view`](crate::views::dyn_view::dyn_view).
 pub fn img_from_path(image: impl Fn() -> PathBuf + 'static) -> Img {
     let image = image::open(image()).ok();
     let width = image.as_ref().map_or(0, |img| img.width());

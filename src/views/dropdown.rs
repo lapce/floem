@@ -1,9 +1,9 @@
 #![deny(missing_docs)]
 //! A view that allows the user to select an item from a list of items.
 //!
-//! The [Dropdown] struct provides several constructors, each offering different levels of customization and ease of use.
+//! The [`Dropdown`] struct provides several constructors, each offering different levels of customization and ease of use.
 //!
-//! The [DropdownCustomStyle] struct allows for easy and advanced customization of the dropdown's appearance.
+//! The [`DropdownCustomStyle`] struct allows for easy and advanced customization of the dropdown's appearance.
 use std::{any::Any, rc::Rc};
 
 use floem_reactive::{
@@ -311,7 +311,7 @@ impl<T: Clone> Dropdown<T> {
 
     /// Creates a new customizable dropdown.
     ///
-    /// You might want to use some of the simpler constructors like [Dropdown::new] or [Dropdown::new_rw].
+    /// You might want to use some of the simpler constructors like [`Dropdown::new`] or [`Dropdown::new_rw`].
     ///
     /// # Example
     /// ```rust
@@ -426,7 +426,7 @@ impl<T: Clone> Dropdown<T> {
     /// This function is a convenience wrapper around `Dropdown::new` that uses default views
     /// for the main and list items.
     ///
-    /// See also [Dropdown::new_rw].
+    /// See also [`Dropdown::new_rw`].
     ///
     /// # Arguments
     ///
@@ -591,7 +591,7 @@ impl<T: Clone> Dropdown<T> {
 }
 
 #[derive(Debug, Clone, Default)]
-/// A struct that allows for easy custom styling of the `Dropdown` using the [Dropdown::dropdown_style] method or the [Style::custom_style](crate::style::CustomStylable::custom_style) method.
+/// A struct that allows for easy custom styling of the `Dropdown` using the [`Dropdown::dropdown_style`] method or the [`Style::custom_style`](crate::style::CustomStylable::custom_style) method.
 pub struct DropdownCustomStyle(Style);
 impl From<DropdownCustomStyle> for Style {
     fn from(val: DropdownCustomStyle) -> Self {

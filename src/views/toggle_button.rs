@@ -17,7 +17,7 @@ use crate::{
     Renderer,
 };
 
-/// Controls the switching behavior of the switch. The corresponding style prop is [ToggleButtonBehavior]
+/// Controls the switching behavior of the switch. The corresponding style prop is [`ToggleButtonBehavior`]
 #[derive(Debug, Clone, PartialEq)]
 pub enum ToggleHandleBehavior {
     /// The switch foreground item will follow the position of the cursor. The toggle event happens when the cursor passes the 50% threshold.
@@ -64,21 +64,21 @@ pub struct ToggleButton {
 /// A reactive toggle button
 ///
 /// When the button is toggled by clicking or dragging the widget an update will be
-/// sent to the [ToggleButton::on_toggle] handler.
-/// See also [ToggleButtonClass], [ToggleHandleBehavior] and the other toggle button styles that can be applied.
+/// sent to the [`ToggleButton::on_toggle`] handler.
+/// See also [`ToggleButtonClass`], [`ToggleHandleBehavior`] and the other toggle button styles that can be applied.
 ///
-/// By default this toggle button has a style class of [ToggleButtonClass] applied with a default style provided.
+/// By default this toggle button has a style class of [`ToggleButtonClass`] applied with a default style provided.
 ///
 /// Styles:
-/// background color: [style::Background]
+/// background color: [`style::Background`]
 ///
-/// Toggle color: [style::Foreground]
+/// Toggle color: [`style::Foreground`]
 ///
-/// inner switch inset: [ToggleButtonInset]
+/// inner switch inset: [`ToggleButtonInset`]
 ///
-/// inner switch (circle) size/radius: [ToggleButtonCircleRad]
+/// inner switch (circle) size/radius: [`ToggleButtonCircleRad`]
 ///
-/// toggle button switch behavior: [ToggleButtonBehavior] / [ToggleHandleBehavior]
+/// toggle button switch behavior: [`ToggleButtonBehavior`] / [`ToggleHandleBehavior`]
 ///
 /// An example using [`RwSignal`](floem_reactive::RwSignal):
 /// ```rust

@@ -49,7 +49,7 @@ fn checkbox_svg(
 /// # A customizable checkbox view for boolean selection.
 ///
 /// The `Checkbox` struct provides several constructors, each offering different levels of
-/// customization and ease of use. The simplest is the [Checkbox::new_rw] constructor, which gets direct access to a signal and will update it when the checkbox is clicked.
+/// customization and ease of use. The simplest is the [`Checkbox::new_rw`] constructor, which gets direct access to a signal and will update it when the checkbox is clicked.
 ///
 /// Choose the constructor that best fits your needs based on whether you require labeling
 /// and how you prefer to manage the checkbox's state (via closure or direct signal manipulation).
@@ -61,7 +61,7 @@ impl Checkbox {
     /// This method is useful when you want to create a checkbox whose state is determined by a closure.
     /// The state can be dynamically updated by the closure, and the checkbox will reflect these changes.
     ///
-    /// You can add an `on_update` handler to the returned `ValueContainer` to handle changes.
+    /// You can add an `on_update` handler to the returned [`ValueContainer`] to handle changes.
     #[allow(clippy::new_ret_no_self)]
     #[inline]
     pub fn new(checked: impl Fn() -> bool + 'static) -> ValueContainer<bool> {
@@ -72,7 +72,7 @@ impl Checkbox {
     ///
     /// The semantics are the same as [`Checkbox::new`].
     ///
-    /// You can add an `on_update` handler to the returned `ValueContainer` to handle changes.
+    /// You can add an `on_update` handler to the returned [`ValueContainer`] to handle changes.
     pub fn new_custom(
         checked: impl Fn() -> bool + 'static,
         custom_check: impl Into<String> + Clone + 'static,
