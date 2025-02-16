@@ -54,7 +54,8 @@ impl ViewId {
         });
     }
 
-    pub(crate) fn taffy(&self) -> Rc<RefCell<TaffyTree>> {
+    /// Get access to the taffy tree
+    pub fn taffy(&self) -> Rc<RefCell<TaffyTree>> {
         VIEW_STORAGE.with_borrow(|s| s.taffy.clone())
     }
 
@@ -99,6 +100,7 @@ impl ViewId {
         })
     }
 
+    /// Get access to the View
     pub(crate) fn view(&self) -> Rc<RefCell<Box<dyn View>>> {
         VIEW_STORAGE.with_borrow(|s| {
             s.views
@@ -247,6 +249,27 @@ impl ViewId {
 
             node = parent?;
 
+            layout.location = layout.location + taffy.borrow().layout(node).ok()?.location;
+        }
+
+        Some(layout)
+    }
+
+    /// Get the taffy layout of this id relative to a parent/ancestor ID
+    pub fn get_layout_relative_to(&self, relative_to: ViewId) -> Option<Layout> {
+        let taffy = self.taffy();
+        let target_node = relative_to.state().borrow().node;
+        let mut node = self.state().borrow().node;
+        let mut layout = *taffy.borrow().layout(node).ok()?;
+
+        loop {
+            let parent = taffy.borrow().parent(node);
+            if parent == Some(target_node) {
+                break;
+            }
+
+            // If we've reached the root without finding the target, return None
+            node = parent?;
             layout.location = layout.location + taffy.borrow().layout(node).ok()?.location;
         }
 
