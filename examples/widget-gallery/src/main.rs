@@ -121,7 +121,7 @@ fn app_view() -> impl IntoView {
                 .class(LabelClass, |s| s.selectable(false))
         });
 
-    let inspector = button("Open Inspector").action(move || floem::action::inspect());
+    let inspector = button("Open Inspector").action(floem::action::inspect);
 
     let new_window = button("Open In Window").action(move || {
         let name = tabs.with(|tabs| tabs.get(active_tab.get()).copied());

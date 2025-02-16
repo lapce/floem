@@ -1645,7 +1645,9 @@ define_builtin_props!(
     BorderRadius border_radius: PxPct {} = PxPct::Px(0.0),
     OutlineColor outline_color: Brush {} = Brush::Solid(palette::css::TRANSPARENT),
     Outline outline nocb: StrokeWrap {} = StrokeWrap::new(0.),
+    OutlineProgress outline_progress: Pct {} = Pct(100.),
     BorderColor border_color: Brush {} = Brush::Solid(palette::css::BLACK),
+    BorderProgress border_progress: Pct {} = Pct(100.),
     PaddingLeft padding_left: PxPct {} = PxPct::Px(0.0),
     PaddingTop padding_top: PxPct {} = PxPct::Px(0.0),
     PaddingRight padding_right: PxPct {} = PxPct::Px(0.0),
@@ -1709,6 +1711,7 @@ prop_extractor! {
         pub border_top: BorderTop,
         pub border_right: BorderRight,
         pub border_bottom: BorderBottom,
+
 
         pub padding_left: PaddingLeft,
         pub padding_top: PaddingTop,

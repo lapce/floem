@@ -44,8 +44,11 @@
 //!
 
 use floem_reactive::{ReadSignal, RwSignal, SignalGet};
-use peniko::kurbo::{Circle, Insets, Line, Point, Rect, RoundedRect, Size};
-use std::any::Any;
+use peniko::kurbo::{
+    Arc, BezPath, Circle, Insets, Line, ParamCurve, ParamCurveArclen, PathEl, PathSeg, Point, Rect,
+    RoundedRect, RoundedRectRadii, Shape, Size, Stroke, Vec2,
+};
+use std::{any::Any, f64::consts::FRAC_PI_2, iter::Peekable, ops::Range};
 use taffy::tree::NodeId;
 
 use crate::{
@@ -54,6 +57,7 @@ use crate::{
     event::{Event, EventPropagation},
     id::ViewId,
     style::{LayoutProps, Style, StyleClassRef},
+    unit::Pct,
     view_state::ViewStyleProps,
     views::{dyn_view, DynamicView},
     Renderer,
@@ -497,22 +501,75 @@ fn paint_box_shadow(
 pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, size: Size) {
     let outline = &style.outline().0;
     if outline.width == 0. {
-        // TODO: we should warn! when outline is < 0
         return;
     }
+
     let half = outline.width / 2.0;
     let rect = size.to_rect().inflate(half, half);
     let border_radius = match style.border_radius() {
         crate::unit::PxPct::Px(px) => px,
         crate::unit::PxPct::Pct(pct) => size.min_side() * (pct / 100.),
     };
-    cx.stroke(
-        &rect.to_rounded_rect(border_radius + half),
-        &style.outline_color(),
-        outline,
-    );
+    let Pct(outline_progress) = style.outline_progress();
+
+    // Fast path for complete outline
+    if outline_progress >= 100.0 {
+        cx.stroke(
+            &rect.to_rounded_rect(border_radius + half),
+            &style.outline_color(),
+            outline,
+        );
+        return;
+    }
+
+    // Create the path with explicit move_to
+    let mut path = BezPath::new();
+    let rounded_rect = rect.to_rounded_rect(border_radius + half);
+    path.move_to(rounded_rect.origin());
+    for seg in rounded_rect.path_segments(0.1) {
+        path.push(seg.as_path_el());
+    }
+
+    let segments: Vec<_> = path.path_segments(0.1).collect();
+    let segment_lengths: Vec<_> = segments.iter().map(|seg| seg.perimeter(0.1)).collect();
+    let total_length: f64 = segment_lengths.iter().sum();
+    let target_length = total_length * (outline_progress / 100.0);
+
+    let mut result_path = BezPath::new();
+    let mut current_length = 0.0;
+
+    // Handle first segment to ensure proper move_to
+    if let Some((first_seg, &first_len)) = segments.iter().zip(&segment_lengths).next() {
+        if first_len <= target_length {
+            result_path.move_to(first_seg.start());
+            result_path.push(first_seg.as_path_el());
+            current_length = first_len;
+        } else {
+            let t = target_length / first_len;
+            let partial = first_seg.subsegment(0.0..t);
+            result_path.move_to(first_seg.start());
+            result_path.push(partial.as_path_el());
+            return cx.stroke(&result_path, &style.outline_color(), outline);
+        }
+    }
+
+    // Handle remaining segments
+    for (seg, &seg_length) in segments.iter().zip(&segment_lengths).skip(1) {
+        if current_length + seg_length <= target_length {
+            result_path.push(seg.as_path_el());
+            current_length += seg_length;
+        } else {
+            let t = (target_length - current_length) / seg_length;
+            let partial = seg.subsegment(0.0..t);
+            result_path.push(partial.as_path_el());
+            break;
+        }
+    }
+
+    cx.stroke(&result_path, &style.outline_color(), outline);
 }
 
+#[cfg(not(feature = "vello"))]
 pub(crate) fn paint_border(
     cx: &mut PaintCx,
     layout_style: &LayoutProps,
@@ -582,6 +639,85 @@ pub(crate) fn paint_border(
                 &border_color,
                 &bottom,
             );
+        }
+    }
+}
+
+#[cfg(feature = "vello")]
+pub(crate) fn paint_border(
+    cx: &mut PaintCx,
+    layout_style: &LayoutProps,
+    style: &ViewStyleProps,
+    size: Size,
+) {
+    let borders = [
+        layout_style.border_left().0,
+        layout_style.border_top().0,
+        layout_style.border_right().0,
+        layout_style.border_bottom().0,
+    ];
+
+    // Early return if no borders
+    if borders.iter().all(|b| b.width == 0.0) {
+        return;
+    }
+
+    let border_color = style.border_color();
+    let Pct(border_progress) = style.border_progress();
+
+    // Check if borders match before doing any other work
+    let borders_match = borders
+        .windows(2)
+        .all(|s| s[0].width == s[1].width && s[0].dash_pattern == s[1].dash_pattern);
+
+    // For the simple case, we don't need to calculate radii unless we have to
+    if borders_match && border_progress >= 100. {
+        let half_width = borders[0].width / 2.0;
+        let rect = size.to_rect().inflate(-half_width, -half_width);
+
+        let radius = match style.border_radius() {
+            crate::unit::PxPct::Px(px) => px,
+            crate::unit::PxPct::Pct(pct) => size.min_side() * (pct / 100.),
+        };
+        let adjusted_radius = (radius - half_width).max(0.0);
+
+        return cx.stroke(
+            &rect.to_rounded_rect(adjusted_radius),
+            &border_color,
+            &borders[0],
+        );
+    }
+
+    // For complex cases, now we need to set up the border path
+    let half_width = borders[0].width / 2.0;
+    let rect = size.to_rect().inflate(-half_width, -half_width);
+
+    let radius = match style.border_radius() {
+        crate::unit::PxPct::Px(px) => px,
+        crate::unit::PxPct::Pct(pct) => size.min_side() * (pct / 100.),
+    };
+    let adjusted_radius = (radius - half_width).max(0.0);
+    let radii = RoundedRectRadii::from_single_radius(adjusted_radius);
+
+    let mut border_path = BorderPath::new(rect, radii);
+
+    // Only create subsegment if needed
+    if border_progress < 100. {
+        border_path.subsegment(0.0..(border_progress / 100.));
+    }
+
+    let mut current_path = Vec::new();
+    for event in border_path.path_elements(&borders, 0.1) {
+        match event {
+            BorderPathEvent::PathElement(el) => current_path.push(el),
+            BorderPathEvent::NewStroke(stroke) => {
+                // Render current path with previous stroke if any
+                if !current_path.is_empty() {
+                    cx.stroke(&current_path.as_slice(), &border_color, &stroke);
+                    current_path.clear();
+                } else {
+                }
+            }
         }
     }
 }
@@ -713,5 +849,365 @@ pub(crate) fn view_debug_tree(root_view: ViewId) {
                 .rev()
                 .map(|child| (child, [active_lines.as_slice(), &[true]].concat())),
         );
+    }
+}
+
+pub struct BorderPath {
+    path_iter: RoundedRectPathIter,
+    range: Range<f64>,
+    // segment_lengths: [f64; 8],
+    // total_length: f64,
+}
+
+impl BorderPath {
+    pub fn new(rect: Rect, radii: RoundedRectRadii) -> Self {
+        let rounded_path = RectPathIter {
+            idx: 0,
+            rect,
+            radii,
+        }
+        .rounded_rect_path();
+
+        Self {
+            path_iter: rounded_path,
+            range: 0.0..1.0,
+        }
+    }
+
+    pub fn subsegment(&mut self, range: Range<f64>) {
+        self.range = range;
+    }
+
+    pub fn path_elements<'a>(
+        &'a mut self,
+        strokes: &'a [Stroke; 4],
+        tolerance: f64,
+    ) -> BorderPathIter<'a> {
+        let total_len = self.path_iter.rect.total_len(tolerance);
+        BorderPathIter {
+            border_path: self,
+            tolerance,
+            current_len: 0.,
+            current_iter: None,
+            stroke_iter: strokes.iter().peekable(),
+            current_stroke: strokes.get(0).unwrap(),
+            emitted_finished: false,
+            already_did_normalized: false,
+            total_len,
+        }
+    }
+}
+
+/// Returns a new Arc that represents a subsegment of this arc.
+/// The range should be between 0.0 and 1.0, where:
+/// - 0.0 represents the start of the original arc
+/// - 1.0 represents the end of the original arc
+pub fn arc_subsegment(arc: &Arc, range: Range<f64>) -> Arc {
+    // Clamp the range to ensure it's within [0.0, 1.0]
+    let start = range.start.clamp(0.0, 1.0);
+    let end = range.end.clamp(0.0, 1.0);
+
+    // Calculate the new start and sweep angles
+    let total_sweep = arc.sweep_angle;
+    let new_start_angle = arc.start_angle + total_sweep * start;
+    let new_sweep_angle = total_sweep * (end - start);
+
+    Arc {
+        // These properties remain unchanged
+        center: arc.center,
+        radii: arc.radii,
+        x_rotation: arc.x_rotation,
+        // These are adjusted for the subsegment
+        start_angle: new_start_angle,
+        sweep_angle: new_sweep_angle,
+    }
+}
+
+// First define the enum for our iterator output
+pub enum BorderPathEvent<'a> {
+    PathElement(PathEl),
+    NewStroke(&'a Stroke),
+}
+
+pub struct BorderPathIter<'a> {
+    border_path: &'a mut BorderPath,
+    tolerance: f64,
+    current_len: f64,
+    current_iter: Option<Box<dyn Iterator<Item = PathEl> + 'a>>,
+    stroke_iter: Peekable<std::slice::Iter<'a, Stroke>>,
+    current_stroke: &'a Stroke,
+    emitted_finished: bool,
+    already_did_normalized: bool,
+    total_len: f64,
+}
+
+impl<'a> Iterator for BorderPathIter<'a> {
+    type Item = BorderPathEvent<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let end = self.border_path.range.end; // This is now 0.0..1.0
+
+        if (self.current_len / self.total_len) >= end {
+            if self.emitted_finished {
+                return None;
+            } else {
+                self.emitted_finished = true;
+                return self.stroke_iter.next().map(BorderPathEvent::NewStroke);
+            }
+        }
+
+        // Handle current iterator if it exists
+        if let Some(iter) = &mut self.current_iter {
+            if let Some(element) = iter.next() {
+                return Some(BorderPathEvent::PathElement(element));
+            }
+            self.current_iter = None;
+        }
+
+        if self.already_did_normalized {
+            if self.emitted_finished {
+                return None;
+            } else {
+                self.emitted_finished = true;
+                return self.stroke_iter.next().map(BorderPathEvent::NewStroke);
+            }
+        }
+
+        let next_seg = self.border_path.path_iter.next();
+        match next_seg {
+            Some(ArcOrPath::Arc(arc)) => {
+                let arc_len = arc.perimeter(self.tolerance);
+                let normalized_current = self.current_len / self.total_len;
+                let normalized_seg_len = arc_len / self.total_len;
+
+                if normalized_current + normalized_seg_len > end {
+                    self.already_did_normalized = true;
+                    // Need to subsegment
+                    let remaining_percentage = end - normalized_current;
+                    let t = remaining_percentage / normalized_seg_len;
+                    let subseg = arc_subsegment(&arc, 0.0..t);
+                    self.current_len += subseg.perimeter(self.tolerance);
+                    self.current_iter = Some(Box::new(subseg.path_elements(self.tolerance)));
+                } else {
+                    self.current_len += arc_len;
+                    self.current_iter = Some(Box::new(arc.path_elements(self.tolerance)))
+                }
+            }
+            Some(ArcOrPath::Path(path_seg)) => {
+                let seg_len = path_seg.arclen(self.tolerance);
+                let normalized_current = self.current_len / self.total_len;
+                let normalized_seg_len = seg_len / self.total_len;
+
+                if normalized_current + normalized_seg_len > end {
+                    self.already_did_normalized = true;
+                    // Need to subsegment
+                    let remaining_percentage = end - normalized_current;
+                    let t = remaining_percentage / normalized_seg_len;
+                    let subseg = path_seg.subsegment(0.0..t);
+                    self.current_len += subseg.arclen(self.tolerance);
+                    self.current_iter = Some(Box::new(std::iter::once(subseg.as_path_el())));
+                } else {
+                    self.current_len += seg_len;
+                    self.current_iter = Some(Box::new(std::iter::once(path_seg.as_path_el())));
+                }
+            }
+            None => {}
+        }
+
+        let next_stroke = self.stroke_iter.peek().unwrap();
+        let current_stroke = self.current_stroke;
+        if current_stroke.width != next_stroke.width
+            || current_stroke.dash_pattern != next_stroke.dash_pattern
+        {
+            self.current_stroke = self.stroke_iter.next().unwrap();
+            return Some(BorderPathEvent::NewStroke(&current_stroke));
+        }
+
+        // Get first element from new iterator
+        if let Some(iter) = &mut self.current_iter {
+            let el = iter.next().unwrap();
+            Some(BorderPathEvent::PathElement(el))
+        } else {
+            None
+        }
+    }
+}
+
+// Taken from kurbo
+struct RectPathIter {
+    rect: Rect,
+    radii: RoundedRectRadii,
+    idx: usize,
+}
+
+// This is clockwise in a y-down coordinate system for positive area.
+impl Iterator for RectPathIter {
+    type Item = PathSeg;
+    fn next(&mut self) -> Option<PathSeg> {
+        self.idx += 1;
+        match self.idx {
+            1 => Some(PathSeg::Line(Line::new(
+                // Top edge - horizontal line
+                Point::new(self.rect.x0 + self.radii.top_left, self.rect.y0), // Start after top-left corner
+                Point::new(self.rect.x1 - self.radii.top_right, self.rect.y0), // End before top-right corner
+            ))),
+            2 => Some(PathSeg::Line(Line::new(
+                // Right edge - vertical line
+                Point::new(self.rect.x1, self.rect.y0 + self.radii.top_right), // Start after top-right corner
+                Point::new(self.rect.x1, self.rect.y1 - self.radii.bottom_right), // End before bottom-right corner
+            ))),
+            3 => Some(PathSeg::Line(Line::new(
+                // Bottom edge - horizontal line
+                Point::new(self.rect.x1 - self.radii.bottom_right, self.rect.y1), // Start after bottom-right corner
+                Point::new(self.rect.x0 + self.radii.bottom_left, self.rect.y1), // End before bottom-left corner
+            ))),
+            4 => Some(PathSeg::Line(Line::new(
+                // Left edge - vertical line
+                Point::new(self.rect.x0, self.rect.y1 - self.radii.bottom_left), // Start after bottom-left corner
+                Point::new(self.rect.x0, self.rect.y0 + self.radii.top_left), // End before top-left corner
+            ))),
+            _ => None,
+        }
+    }
+}
+
+impl RectPathIter {
+    fn build_corner_arc(&self, corner_idx: usize) -> Arc {
+        let (center, radius) = match corner_idx {
+            0 => (
+                // top-left
+                Point {
+                    x: self.rect.x0 + self.radii.top_left,
+                    y: self.rect.y0 + self.radii.top_left,
+                },
+                self.radii.top_left,
+            ),
+            1 => (
+                // top-right
+                Point {
+                    x: self.rect.x1 - self.radii.top_right,
+                    y: self.rect.y0 + self.radii.top_right,
+                },
+                self.radii.top_right,
+            ),
+            2 => (
+                // bottom-right
+                Point {
+                    x: self.rect.x1 - self.radii.bottom_right,
+                    y: self.rect.y1 - self.radii.bottom_right,
+                },
+                self.radii.bottom_right,
+            ),
+            3 => (
+                // bottom-left
+                Point {
+                    x: self.rect.x0 + self.radii.bottom_left,
+                    y: self.rect.y1 - self.radii.bottom_left,
+                },
+                self.radii.bottom_left,
+            ),
+            _ => unreachable!(),
+        };
+
+        Arc {
+            center,
+            radii: Vec2 {
+                x: radius,
+                y: radius,
+            },
+            start_angle: FRAC_PI_2 * ((corner_idx + 2) % 4) as f64,
+            sweep_angle: FRAC_PI_2,
+            x_rotation: 0.0,
+        }
+    }
+
+    fn total_len(&self, tolerance: f64) -> f64 {
+        // Calculate arc lengths - one for each corner
+        let arc_lengths: f64 = (0..4)
+            .map(|i| self.build_corner_arc(i).perimeter(tolerance))
+            .sum();
+
+        // Calculate straight segment lengths
+        let straight_lengths = {
+            let rect = self.rect;
+            let radii = self.radii;
+            // Top edge (minus the arc segments)
+            let top = rect.x1 - rect.x0 - radii.top_left - radii.top_right;
+            // Right edge
+            let right = rect.y1 - rect.y0 - radii.top_right - radii.bottom_right;
+            // Bottom edge
+            let bottom = rect.x1 - rect.x0 - radii.bottom_left - radii.bottom_right;
+            // Left edge
+            let left = rect.y1 - rect.y0 - radii.top_left - radii.bottom_left;
+
+            top + right + bottom + left
+        };
+
+        arc_lengths + straight_lengths
+    }
+
+    fn rounded_rect_path(&self) -> RoundedRectPathIter {
+        // Note: order follows the rectangle path iterator.
+        let arcs = [
+            self.build_corner_arc(0),
+            self.build_corner_arc(1),
+            self.build_corner_arc(2),
+            self.build_corner_arc(3),
+        ];
+
+        let rect = RectPathIter {
+            rect: self.rect,
+            idx: 0,
+            radii: self.radii,
+        };
+
+        RoundedRectPathIter { idx: 0, rect, arcs }
+    }
+}
+
+pub struct RoundedRectPathIter {
+    idx: usize,
+    rect: RectPathIter,
+    arcs: [Arc; 4],
+}
+#[derive(Debug)]
+pub enum ArcOrPath {
+    Arc(Arc),
+    Path(PathSeg),
+}
+// This is clockwise in a y-down coordinate system for positive area.
+impl Iterator for RoundedRectPathIter {
+    type Item = ArcOrPath;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // The total sequence is:
+        // 0. First arc (idx = 0)
+        // 1. LineTo from rect
+        // 2. Second arc (idx = 1)
+        // 3. LineTo from rect
+        // 4. Third arc (idx = 2)
+        // 5. LineTo from rect
+        // 6. Fourth arc (idx = 3)
+        // 7. Final LineTo from rect
+
+        if self.idx >= 9 {
+            return None;
+        }
+
+        // Odd indices (1, 3, 5, 7) are from rect iterator
+        if self.idx % 2 != 0 {
+            let path_el = self.rect.next().map(ArcOrPath::Path);
+            self.idx += 1;
+            return path_el;
+        }
+
+        // Even indices (0, 2, 4, 6) are from arc iterators
+        let arc_idx = self.idx / 2;
+        if arc_idx < self.arcs.len() {
+            self.idx += 1;
+            Some(ArcOrPath::Arc(self.arcs[arc_idx].clone()))
+        } else {
+            None
+        }
     }
 }
