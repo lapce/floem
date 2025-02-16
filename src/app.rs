@@ -1,7 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 #[cfg(feature = "crossbeam")]
-use crossbeam::channel::{unbounded, Receiver, Sender};
+use crossbeam::channel::{unbounded as channel, Receiver, Sender};
 #[cfg(not(feature = "crossbeam"))]
 use std::sync::mpsc::{channel, Receiver, Sender};
 
@@ -164,12 +164,8 @@ impl Application {
         crate::app_delegate::set_app_delegate();
 
         let event_loop_proxy = event_loop.create_proxy();
-
-        #[cfg(feature = "crossbeam")]
-        let (sender, receiver) = unbounded();
-
-        #[cfg(not(feature = "crossbeam"))]
         let (sender, receiver) = channel();
+
         *EVENT_LOOP_PROXY.lock() = Some((event_loop_proxy.clone(), sender));
         unsafe {
             Clipboard::init(event_loop.display_handle().unwrap().as_raw());
