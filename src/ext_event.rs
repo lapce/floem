@@ -121,6 +121,8 @@ pub fn create_ext_action<T: Send + 'static>(
     }
 }
 
+
+#[cfg(feature = "crossbeam")]
 pub fn update_signal_from_channel<T: Send + 'static>(
     writer: WriteSignal<Option<T>>,
     rx: crossbeam_channel::Receiver<T>,
@@ -158,8 +160,89 @@ pub fn update_signal_from_channel<T: Send + 'static>(
     });
 }
 
+
+#[cfg(feature = "crossbeam")]
 pub fn create_signal_from_channel<T: Send + 'static>(
     rx: crossbeam_channel::Receiver<T>,
+) -> ReadSignal<Option<T>> {
+    let cx = Scope::new();
+    let trigger = with_scope(cx, ExtSendTrigger::new);
+
+    let channel_closed = cx.create_rw_signal(false);
+    let (read, write) = cx.create_signal(None);
+    let data = Arc::new(Mutex::new(VecDeque::new()));
+
+    {
+        let data = data.clone();
+        cx.create_effect(move |_| {
+            trigger.track();
+            while let Some(value) = data.lock().pop_front() {
+                write.set(value);
+            }
+
+            if channel_closed.get() {
+                cx.dispose();
+            }
+        });
+    }
+
+    let send = create_ext_action(cx, move |_| {
+        channel_closed.set(true);
+    });
+
+    std::thread::spawn(move || {
+        while let Ok(event) = rx.recv() {
+            data.lock().push_back(Some(event));
+            EXT_EVENT_HANDLER.add_trigger(trigger);
+        }
+        send(());
+    });
+
+    read
+}
+
+
+#[cfg(not(feature = "crossbeam"))]
+pub fn update_signal_from_channel<T: Send + 'static>(
+    writer: WriteSignal<Option<T>>,
+    rx: std::sync::mpsc::Receiver<T>,
+) {
+    let cx = Scope::new();
+    let trigger = with_scope(cx, ExtSendTrigger::new);
+
+    let channel_closed = cx.create_rw_signal(false);
+    let data = Arc::new(Mutex::new(VecDeque::new()));
+
+    {
+        let data = data.clone();
+        cx.create_effect(move |_| {
+            trigger.track();
+            while let Some(value) = data.lock().pop_front() {
+                writer.set(value);
+            }
+
+            if channel_closed.get() {
+                cx.dispose();
+            }
+        });
+    }
+
+    let send = create_ext_action(cx, move |_| {
+        channel_closed.set(true);
+    });
+
+    std::thread::spawn(move || {
+        while let Ok(event) = rx.recv() {
+            data.lock().push_back(Some(event));
+            EXT_EVENT_HANDLER.add_trigger(trigger);
+        }
+        send(());
+    });
+}
+
+#[cfg(not(feature = "crossbeam"))]
+pub fn create_signal_from_channel<T: Send + 'static>(
+    rx: std::sync::mpsc::Receiver<T>,
 ) -> ReadSignal<Option<T>> {
     let cx = Scope::new();
     let trigger = with_scope(cx, ExtSendTrigger::new);
