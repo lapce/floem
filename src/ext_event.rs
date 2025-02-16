@@ -121,7 +121,6 @@ pub fn create_ext_action<T: Send + 'static>(
     }
 }
 
-
 #[cfg(feature = "crossbeam")]
 pub fn update_signal_from_channel<T: Send + 'static>(
     writer: WriteSignal<Option<T>>,
@@ -159,7 +158,6 @@ pub fn update_signal_from_channel<T: Send + 'static>(
         send(());
     });
 }
-
 
 #[cfg(feature = "crossbeam")]
 pub fn create_signal_from_channel<T: Send + 'static>(
@@ -200,7 +198,6 @@ pub fn create_signal_from_channel<T: Send + 'static>(
 
     read
 }
-
 
 #[cfg(not(feature = "crossbeam"))]
 pub fn update_signal_from_channel<T: Send + 'static>(
