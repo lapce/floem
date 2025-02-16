@@ -14,6 +14,11 @@ use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
 use web_time::{Duration, Instant};
 
+#[cfg(feature = "crossbeam")]
+use crossbeam::channel::Receiver;
+#[cfg(not(feature = "crossbeam"))]
+use std::sync::mpsc::Receiver;
+
 use taffy::prelude::NodeId;
 
 use crate::animate::{AnimStateKind, RepeatMode};
@@ -1210,7 +1215,7 @@ pub enum PaintState {
     /// The renderer is not yet initialized. This state is used to wait for the GPU resources to be acquired.
     PendingGpuResources {
         window: Arc<dyn Window>,
-        rx: crossbeam::channel::Receiver<Result<GpuResources, GpuResourceError>>,
+        rx: Receiver<Result<GpuResources, GpuResourceError>>,
         font_embolden: f32,
         /// This field holds an instance of `Renderer::Uninitialized` until the GPU resources are acquired,
         /// which will be returned in `PaintState::renderer` and `PaintState::renderer_mut`.
@@ -1227,7 +1232,7 @@ pub enum PaintState {
 impl PaintState {
     pub fn new(
         window: Arc<dyn Window>,
-        rx: crossbeam::channel::Receiver<Result<GpuResources, GpuResourceError>>,
+        rx: Receiver<Result<GpuResources, GpuResourceError>>,
         scale: f64,
         size: Size,
         font_embolden: f32,
