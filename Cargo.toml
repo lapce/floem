@@ -147,4 +147,4 @@ rfd-async-std = ["dep:rfd", "rfd/async-std"]
 rfd-tokio = ["dep:rfd", "rfd/tokio"]
 futures = ["dep:futures"]
 
-crossbeam = [ "dep:crossbeam" ]
+crossbeam = [ "dep:crossbeam", "floem_renderer/crossbeam" ]
