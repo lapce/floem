@@ -803,7 +803,7 @@ impl<'a> ComputeLayoutCx<'a> {
     /// It's responsible for:
     /// - calculating and setting the view's origin (local coordinates and window coordinates)
     /// - calculating and setting the view's viewport
-    /// - invoking any attached context::ResizeListeners
+    /// - invoking any attached `context::ResizeListener`s
     ///
     /// Returns the bounding rect that encompasses this view and its children
     pub fn compute_view_layout(&mut self, id: ViewId) -> Option<Rect> {

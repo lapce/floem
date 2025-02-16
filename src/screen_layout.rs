@@ -10,9 +10,9 @@ use crate::window_tracking::{
     monitor_bounds_for_monitor, rect_from_physical_bounds_for_window, with_window_id_and_window,
 };
 
-/// Create a ScreenLayout for a view.  This can fail if the view or an
+/// Create a `ScreenLayout` for a view.  This can fail if the view or an
 /// ancestor of it has no parent and is not realized on-screen, or if the
-/// platform does not support reading window inner or outer bounds.  ScreenLayout
+/// platform does not support reading window inner or outer bounds.  `ScreenLayout`
 /// is useful when needing to convert locations within a view into absolute
 /// positions on-screen, such as for creating a window at position relative
 /// to that view.
@@ -86,7 +86,7 @@ pub fn screen_layout_for_window(
     })
 }
 
-/// A ScreenLayout is a snapshot of the layout of a view within a window
+/// A `ScreenLayout` is a snapshot of the layout of a view within a window
 ///
 /// Relates a realized `View` to the bounds of the window that contains it,
 /// and the window to the bounds of the monitor that contains it.  All fields
@@ -108,7 +108,7 @@ pub struct ScreenLayout {
     pub window_content_bounds: Rect,
     /// The bounds of the window within the monitor's bounds
     pub window_bounds: Rect,
-    /// The origin of the view within the window, if this ScreenLayout was
+    /// The origin of the view within the window, if this `ScreenLayout` was
     /// created from a `View` rather than a `WindowId` - needed for computing
     /// relative offsets from, e.g., the location of a mouse click within
     /// a `View`.

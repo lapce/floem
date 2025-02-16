@@ -167,7 +167,7 @@ impl PhantomTextLine {
         text
     }
 
-    /// Iterator over (col_shift, size, hint, pre_column)
+    /// Iterator over `(col_shift, size, hint, pre_column)`
     /// Note that this only iterates over the ordered text, since those depend on the text for where
     /// they'll be positioned
     pub fn offset_size_iter(

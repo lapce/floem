@@ -102,8 +102,8 @@ pub trait Document: DocumentPhantom + Downcast {
     fn cache_rev(&self) -> RwSignal<u64>;
 
     /// Find the next/previous offset of the match of the given character.  
-    /// This is intended for use by the [Movement::NextUnmatched](floem_editor_core::movement::Movement::NextUnmatched) and
-    /// [Movement::PreviousUnmatched](floem_editor_core::movement::Movement::PreviousUnmatched) commands.
+    /// This is intended for use by the [`Movement::NextUnmatched`](floem_editor_core::movement::Movement::NextUnmatched) and
+    /// [`Movement::PreviousUnmatched`](floem_editor_core::movement::Movement::PreviousUnmatched) commands.
     fn find_unmatched(&self, offset: usize, previous: bool, ch: char) -> usize {
         let text = self.text();
         let mut cursor = WordCursor::new(&text, offset);
@@ -117,7 +117,7 @@ pub trait Document: DocumentPhantom + Downcast {
     }
 
     /// Find the offset of the matching pair character.  
-    /// This is intended for use by the [Movement::MatchPairs](floem_editor_core::movement::Movement::MatchPairs) command.
+    /// This is intended for use by the [`Movement::MatchPairs`](floem_editor_core::movement::Movement::MatchPairs) command.
     fn find_matching_pair(&self, offset: usize) -> usize {
         WordCursor::new(&self.text(), offset)
             .match_pairs()

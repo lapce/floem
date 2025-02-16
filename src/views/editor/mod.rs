@@ -196,8 +196,8 @@ pub struct Editor {
 }
 impl Editor {
     /// Create a new editor into the given document, using the styling.  
-    /// `doc`: The backing [`Document`], such as [TextDocument](self::text_document::TextDocument)
-    /// `style`: How the editor should be styled, such as [SimpleStyling](self::text::SimpleStyling)
+    /// `doc`: The backing [`Document`], such as [`TextDocument`](self::text_document::TextDocument)
+    /// `style`: How the editor should be styled, such as [`SimpleStyling`](self::text::SimpleStyling)
     pub fn new(cx: Scope, doc: Rc<dyn Document>, style: Rc<dyn Styling>, modal: bool) -> Editor {
         let id = EditorId::next();
         Editor::new_id(cx, id, doc, style, modal)
@@ -205,8 +205,8 @@ impl Editor {
 
     /// Create a new editor into the given document, using the styling.  
     /// `id` should typically be constructed by [`EditorId::next`]  
-    /// `doc`: The backing [`Document`], such as [TextDocument](self::text_document::TextDocument)
-    /// `style`: How the editor should be styled, such as [SimpleStyling](self::text::SimpleStyling)
+    /// `doc`: The backing [`Document`], such as [`TextDocument`](self::text_document::TextDocument)
+    /// `style`: How the editor should be styled, such as [`SimpleStyling`](self::text::SimpleStyling)
     pub fn new_id(
         cx: Scope,
         id: EditorId,
@@ -227,8 +227,8 @@ impl Editor {
 
     /// Create a new editor into the given document, using the styling.  
     /// `id` should typically be constructed by [`EditorId::next`]  
-    /// `doc`: The backing [`Document`], such as [TextDocument](self::text_document::TextDocument)
-    /// `style`: How the editor should be styled, such as [SimpleStyling](self::text::SimpleStyling)
+    /// `doc`: The backing [`Document`], such as [`TextDocument`](self::text_document::TextDocument)
+    /// `style`: How the editor should be styled, such as [`SimpleStyling`](self::text::SimpleStyling)
     /// This does *not* create the view effects. Use this if you're creating an editor and then
     /// replacing signals. Invoke [`Editor::recreate_view_effects`] when you are done.
     /// ```rust,ignore

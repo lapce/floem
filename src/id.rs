@@ -1,5 +1,5 @@
 #![deny(missing_docs)]
-//! # ViewIds
+//! # `ViewId`s
 //!
 //! [`ViewId`]s are unique identifiers for views.
 //! They're used to identify views in the view tree.
@@ -161,12 +161,12 @@ impl ViewId {
         });
     }
 
-    /// Get the list of ViewIds that are associated with the children views of this ViewId
+    /// Get the list of `ViewId`s that are associated with the children views of this `ViewId`
     pub fn children(&self) -> Vec<ViewId> {
         VIEW_STORAGE.with_borrow(|s| s.children.get(*self).cloned().unwrap_or_default())
     }
 
-    /// Get the ViewId that has been set as this ViewId's parent
+    /// Get the `ViewId` that has been set as this `ViewId`'s parent
     pub fn parent(&self) -> Option<ViewId> {
         VIEW_STORAGE.with_borrow(|s| s.parent.get(*self).cloned().flatten())
     }
@@ -253,7 +253,7 @@ impl ViewId {
         Some(layout)
     }
 
-    /// Returns true if the computed style for this view is marked as hidden (Display::None)
+    /// Returns true if the computed style for this view is marked as hidden (`Display::None`)
     pub fn style_has_hidden(&self) -> bool {
         let state = self.state();
         let state = state.borrow();
@@ -442,14 +442,14 @@ impl ViewId {
         self.state().borrow().combined_style.clone()
     }
 
-    /// Add a class to the list of style classes that are associated with this ViewId
+    /// Add a class to the list of style classes that are associated with this `ViewId`
     pub fn add_class(&self, class: StyleClassRef) {
         let state = self.state();
         state.borrow_mut().classes.push(class);
         self.request_style_recursive();
     }
 
-    /// Remove a class from the list of style classes that are associated with this ViewId
+    /// Remove a class from the list of style classes that are associated with this `ViewId`
     pub fn remove_class(&self, class: StyleClassRef) {
         let state = self.state();
         state.borrow_mut().classes.retain_mut(|c| *c != class);

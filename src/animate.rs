@@ -349,7 +349,7 @@ type EffectStateVec = SmallVec<[RwSignal<SmallVec<[(ViewId, StackOffset<Animatio
 
 /// The main animation struct
 ///
-/// Use [Animation::new] or the [Decorators::animation](crate::views::Decorators::animation) method to build an animation.
+/// Use [`Animation::new`] or the [`Decorators::animation`](crate::views::Decorators::animation) method to build an animation.
 #[derive(Debug, Clone)]
 pub struct Animation {
     pub(crate) state: AnimState,
@@ -377,7 +377,7 @@ pub struct Animation {
     /// Animations are allowed to go on for longer than their duration, until the easing reports finished.
     /// When waiting for the completion of an animation (such as to remove a view), this trigger should be preferred.
     pub(crate) on_visual_complete: Trigger,
-    /// This trigger will fire at the total compltetion of an animation when the easing function of all props report 'finished`.
+    /// This trigger will fire at the total completion of an animation when the easing function of all props report finished.
     pub(crate) on_complete: Trigger,
     pub(crate) debug_description: Option<String>,
 }
@@ -449,10 +449,10 @@ impl Animation {
 
 /// # Methods for setting properties on an `Animation`
 impl Animation {
-    /// Build a KeyFrame
+    /// Build a [`KeyFrame`]
     ///
     /// If there is a matching keyframe id, the style in this keyframe will only override the style values in the new style.
-    /// If you want the style to completely override style see [Animation::keyframe_override].
+    /// If you want the style to completely override style see [`Animation::keyframe_override`].
     pub fn keyframe(mut self, frame_id: u16, key_frame: impl Fn(KeyFrame) -> KeyFrame) -> Self {
         let frame = key_frame(KeyFrame::new(frame_id));
         if let KeyFrameStyle::Style(ref style) = frame.style {
@@ -492,10 +492,10 @@ impl Animation {
         self
     }
 
-    /// Build and overwrite a [KeyFrame]
+    /// Build and overwrite a [`KeyFrame`]
     ///
     /// If there is a matching keyframe id, the style in this keyframe will completely override the style in the frame that already exists.
-    /// If you want the style to only override the new values see [Animation::keyframe].
+    /// If you want the style to only override the new values see [`Animation::keyframe`].
     pub fn keyframe_override(
         mut self,
         frame_id: u16,
@@ -942,7 +942,7 @@ impl Animation {
         }
     }
 
-    /// Get the lower and upper keyframe ids from the cache for a prop and then resolve those id's into a pair of KeyFrameProps that contain the prop value and easing function
+    /// Get the lower and upper keyframe ids from the cache for a prop and then resolve those id's into a pair of `KeyFrameProp`s that contain the prop value and easing function
     pub(crate) fn get_current_kf_props(
         &self,
         prop: StylePropRef,

@@ -14,20 +14,20 @@
 //!
 //! #### Event handling -> reactive system updates
 //! Event handling is a common place for reactive state changes to occur. E.g., on the counter example, when you click increment,
-//! it updates the counter and because the label has an effect that is subscribed to those changes (see [floem_reactive::create_effect]), the label will update the text it presents.
+//! it updates the counter and because the label has an effect that is subscribed to those changes (see [`floem_reactive::create_effect`]), the label will update the text it presents.
 //!
 //! #### Update
 //! The update of states on the Views could cause some of them to need a new layout recalculation, because the size might have changed etc.
-//! The reactive system can't directly manipulate the view state of the label because the AppState owns all the views. And instead, it will send the update to a message queue via [ViewId::update_state](crate::ViewId::update_state)
+//! The reactive system can't directly manipulate the view state of the label because the `AppState` owns all the views. And instead, it will send the update to a message queue via [`ViewId::update_state`](crate::ViewId::update_state)
 //! After the event propagation is done, Floem will process all the update messages in the queue, and it can manipulate the state of a particular view through the update method.
 //!
 //!
 //! #### Layout
 //! The layout method is called from the root view to re-layout the views that have requested a layout call.
-//! The layout call is to change the layout properties at Taffy, and after the layout call is done, compute_layout is called to calculate the sizes and positions of each view.
+//! The layout call is to change the layout properties at Taffy, and after the layout call is done, `compute_layout` is called to calculate the sizes and positions of each view.
 //!
 //! #### Paint
-//! And in the end, paint is called to render all the views to the screen.
+//! And in the end, `paint` is called to render all the views to the screen.
 //!
 //!
 //! ## Terminology
@@ -36,11 +36,11 @@
 //!
 //! #### Active view
 //!
-//! Affects pointer events. Pointer events will only be sent to the active View. The View will continue to receive pointer events even if the mouse is outside its bounds.
-//! It is useful when you drag things, e.g. the scroll bar, you set the scroll bar active after pointer down, then when you drag, the `PointerMove` will always be sent to the View, even if your mouse is outside of the view.
+//! Affects pointer events. Pointer events will only be sent to the active view. The view will continue to receive pointer events even if the mouse is outside its bounds.
+//! It is useful when you drag things, e.g. the scroll bar, you set the scroll bar active after pointer down, then when you drag, the `PointerMove` will always be sent to the view, even if your mouse is outside of the view.
 //!
 //! #### Focused view
-//! Affects keyboard events. Keyboard events will only be sent to the focused View. The View will continue to receive keyboard events even if it's not the active View.
+//! Affects keyboard events. Keyboard events will only be sent to the focused view. The view will continue to receive keyboard events even if it's not the active view.
 //!
 //! ## Notable invariants and tolerances
 //! - There can be only one root `View`

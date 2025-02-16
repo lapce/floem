@@ -184,7 +184,7 @@ impl TextLayoutCache {
             .and_then(|c| c.get_mut(&line))
     }
 
-    /// Get the (start, end) columns of the (line, line_index)
+    /// Get the `(start, end)` columns of the `line` and `line_index`
     pub fn get_layout_col(
         &self,
         text_prov: &impl TextLayoutProvider,
@@ -1009,7 +1009,7 @@ fn get_init_text_layout(
         .unwrap()
 }
 
-/// Returns (visual line, line_index)
+/// Returns `(visual line, line_index)`
 fn find_vline_of_offset(
     lines: &Lines,
     text_prov: &impl TextLayoutProvider,

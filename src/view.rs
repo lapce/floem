@@ -2,19 +2,19 @@
 //! Views are self-contained components that can be composed together to create complex UIs.
 //! Views are the main building blocks of Floem.
 //!
-//! Views are structs that implement the View and widget traits. Many of these structs will also contain a child field that also implements View. In this way, views can be composed together easily to create complex UIs. This is the most common way to build UIs in Floem. For more information on how to compose views check out the [Views](crate::views) module.
+//! Views are structs that implement the [`View`] and [`Widget`] traits. Many of these structs will also contain a child field that also implements [`View`]. In this way, views can be composed together easily to create complex UIs. This is the most common way to build UIs in Floem. For more information on how to compose views check out the [views](crate::views) module.
 //!
-//! Creating a struct and manually implementing the View and Widget traits is typically only needed for building new widgets and for special cases. The rest of this module documentation is for help when manually implementing View and Widget on your own types.
+//! Creating a struct and manually implementing the [`View`] and [`Widget`] traits is typically only needed for building new widgets and for special cases. The rest of this module documentation is for help when manually implementing [`View`] and [`Widget`] on your own types.
 //!
 //!
 //! ## The View and Widget Traits
 //! The [`View`] trait is the trait that Floem uses to build  and display elements, and it builds on the [`Widget`] trait. The [`Widget`] trait contains the methods for implementing updates, styling, layout, events, and painting.
-//! Eventually, the goal is for Floem to integrate the Widget trait with other rust UI libraries so that the widget layer can be shared among all compatible UI libraries.
+//! Eventually, the goal is for Floem to integrate the [`Widget`] trait with other rust UI libraries so that the widget layer can be shared among all compatible UI libraries.
 //!
 //! ## State management
 //!
 //! For all reactive state that your type contains, either in the form of signals or derived signals, you need to process the changes within an effect.
-//! The most common pattern is to [get](floem_reactive::ReadSignal::get) the data in an effect and pass it in to `id.update_state()` and then handle that data in the `update` method of the View trait.
+//! The most common pattern is to [`get`](floem_reactive::ReadSignal::get) the data in an effect and pass it in to `id.update_state()` and then handle that data in the `update` method of the View trait.
 //!
 //! For example a minimal slider might look like the following. First, we define the struct with the [`ViewData`] that contains the [`Id`].
 //! Then, we use a function to construct the slider. As part of this function we create an effect that will be re-run every time the signals in the  `percent` closure change.
@@ -61,7 +61,7 @@ use crate::{
 
 /// type erased [`View`]
 ///
-/// Views in Floem are strongly typed. [`AnyView`] allows you to escape the strong typing by converting any type implementing [View] into the [AnyView] type.
+/// Views in Floem are strongly typed. [`AnyView`] allows you to escape the strong typing by converting any type implementing [`View`] into the [`AnyView`] type.
 ///
 /// ## Bad Example
 ///```compile_fail
@@ -78,7 +78,7 @@ use crate::{
 /// });
 /// ```
 /// The above example will fail to compile because `container` is expecting a single type implementing `View` so the if and
-/// the else must return the same type. However the branches return different types. The solution to this is to use the [IntoView::into_any] method
+/// the else must return the same type. However the branches return different types. The solution to this is to use the [`IntoView::into_any`] method
 /// to escape the strongly typed requirement.
 ///
 /// ```
@@ -211,16 +211,16 @@ pub fn recursively_layout_view(id: ViewId, cx: &mut LayoutCx) -> NodeId {
 
 /// The View trait contains the methods for implementing updates, styling, layout, events, and painting.
 ///
-/// The [id](View::id) method must be implemented.
+/// The [`id`](View::id) method must be implemented.
 /// The other methods may be implemented as necessary to implement the functionality of the View.
 /// ## State Management in a Custom View
 ///
 /// For all reactive state that your type contains, either in the form of signals or derived signals, you need to process the changes within an effect.
-/// The most common pattern is to [get](floem_reactive::SignalGet::get) the data in an effect and pass it in to `id.update_state()` and then handle that data in the `update` method of the View trait.
+/// The most common pattern is to [`get`](floem_reactive::SignalGet::get) the data in an effect and pass it in to `id.update_state()` and then handle that data in the `update` method of the `View` trait.
 ///
-/// For example a minimal slider might look like the following. First, we define the struct that contains the [ViewId](crate::ViewId).
+/// For example a minimal slider might look like the following. First, we define the struct that contains the [`ViewId`](crate::ViewId).
 /// Then, we use a function to construct the slider. As part of this function we create an effect that will be re-run every time the signals in the  `percent` closure change.
-/// In the effect we send the change to the associated [ViewId](crate::ViewId). This change can then be handled in the [View::update](crate::View::update) method.
+/// In the effect we send the change to the associated [`ViewId`](crate::ViewId). This change can then be handled in the [`View::update`](crate::View::update) method.
 /// ```rust
 /// # use floem::{*, views::*, reactive::*};
 ///
@@ -296,7 +296,7 @@ pub trait View {
     }
 
     /// Use this method to layout the view's children.
-    /// Usually you'll do this by calling `LayoutCx::layout_node`.
+    /// Usually you'll do this by calling [`LayoutCx::layout_node`].
     ///
     /// If the layout changes needs other passes to run you're expected to call
     /// `cx.app_state_mut().request_changes`.

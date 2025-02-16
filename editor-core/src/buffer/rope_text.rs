@@ -219,7 +219,7 @@ pub trait RopeText {
         indent.to_string()
     }
 
-    /// Get the content of the rope as a Cow string, for 'nice' ranges (small, and at the right
+    /// Get the content of the rope as a [`Cow`] string, for 'nice' ranges (small, and at the right
     /// offsets) this will be a reference to the rope's data. Otherwise, it allocates a new string.
     /// You should be somewhat wary of requesting large parts of the rope, as it will allocate
     /// a new string since it isn't contiguous in memory for large chunks.
@@ -229,9 +229,9 @@ pub trait RopeText {
     }
 
     // TODO(minor): Once you can have an `impl Trait` return type in a trait, this could use that.
-    /// Iterate over (utf8_offset, char) values in the given range
+    /// Iterate over `(utf8_offset, char)` values in the given range.
     #[allow(clippy::type_complexity)]
-    /// This uses `iter_chunks` and so does not allocate, compared to `slice_to_cow` which can
+    /// This uses `iter_chunks` and so does not allocate, compared to [`Self::slice_to_cow`] which can
     fn char_indices_iter<'a, T: IntervalBounds>(
         &'a self,
         range: T,

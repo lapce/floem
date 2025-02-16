@@ -238,7 +238,7 @@ const CURSOR_BLINK_INTERVAL_MS: u64 = 500;
 /// Specifies approximately how many characters wide the input field should be
 /// (i.e., how many characters can be seen at a time), when the width is not set in the styles.
 /// Since character widths vary(depending on the font), may not be exact and should not be relied upon to be so.
-/// See https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/text#size
+/// See <https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/text#size>
 // TODO: allow this to be set in the styles
 const APPROX_VISIBLE_CHARS_TARGET: f32 = 10.0;
 

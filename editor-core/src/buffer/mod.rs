@@ -49,7 +49,7 @@ enum Contents {
         /// Just the `symmetric_difference` (XOR) of the two sets.
         toggled_groups: BTreeSet<usize>, // set of undo_group id's
         /// Used to store a reversible difference between the old
-        /// and new deletes_from_union
+        /// and new `deletes_from_union`
         deletes_bitxor: Subset,
     },
 }
