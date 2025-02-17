@@ -156,16 +156,3 @@ pub use checkbox::*;
 
 mod toggle_button;
 pub use toggle_button::*;
-
-// pub mod shapes {
-//     use crate::prelude::*;
-//     use peniko::kurbo;
-//     impl IntoView for kurbo::Rect {
-//         type V = Empty;
-
-//         fn into_view(self) -> Self::V {
-
-//             empty().container().style(|s| s.size(self.x0 + self.width(), self.y0 + self.height()))
-//         }
-//     }
-// }

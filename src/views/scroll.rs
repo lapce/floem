@@ -5,7 +5,7 @@ use floem_reactive::create_effect;
 use peniko::kurbo::{Point, Rect, Size, Stroke, Vec2};
 use peniko::{Brush, Color};
 
-use crate::style::{CustomStylable, OverflowX, OverflowY};
+use crate::style::{BorderRightColor, CustomStylable, OverflowX, OverflowY};
 use crate::unit::PxPct;
 use crate::{
     app_state::AppState,
@@ -13,7 +13,7 @@ use crate::{
     event::{Event, EventPropagation},
     id::ViewId,
     prop, prop_extractor,
-    style::{Background, BorderColor, BorderRadius, Style, StyleSelector},
+    style::{Background, BorderRadius, Style, StyleSelector},
     style_class,
     unit::Px,
     view::{IntoView, View},
@@ -73,7 +73,7 @@ prop_extractor! {
     ScrollTrackStyle {
         color: Background,
         border_radius: BorderRadius,
-        border_color: BorderColor,
+        border_color: BorderRightColor,
         border: Border,
         rounded: Rounded,
         thickness: Thickness,

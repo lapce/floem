@@ -1646,7 +1646,10 @@ define_builtin_props!(
     OutlineColor outline_color: Brush {} = Brush::Solid(palette::css::TRANSPARENT),
     Outline outline nocb: StrokeWrap {} = StrokeWrap::new(0.),
     OutlineProgress outline_progress: Pct {} = Pct(100.),
-    BorderColor border_color: Brush {} = Brush::Solid(palette::css::BLACK),
+    BorderLeftColor border_left_color: Brush {} = Brush::Solid(palette::css::BLACK),
+    BorderTopColor border_top_color: Brush {} = Brush::Solid(palette::css::BLACK),
+    BorderRightColor border_right_color: Brush {} = Brush::Solid(palette::css::BLACK),
+    BorderBottomColor border_bottom_color: Brush {} = Brush::Solid(palette::css::BLACK),
     BorderProgress border_progress: Pct {} = Pct(100.),
     PaddingLeft padding_left: PxPct {} = PxPct::Px(0.0),
     PaddingTop padding_top: PxPct {} = PxPct::Px(0.0),
@@ -1981,6 +1984,14 @@ impl Style {
 
     pub fn max_size_pct(self, max_width: f64, max_height: f64) -> Self {
         self.max_size(max_width.pct(), max_height.pct())
+    }
+
+    pub fn border_color(self, color: impl Into<Brush>) -> Self {
+        let color = color.into();
+        self.border_left_color(color.clone())
+            .border_top_color(color.clone())
+            .border_right_color(color.clone())
+            .border_bottom_color(color.clone())
     }
 
     pub fn border(self, border: impl Into<StrokeWrap>) -> Self {
