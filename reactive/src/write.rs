@@ -1,14 +1,16 @@
 use std::{
     cell::{RefCell, RefMut},
+    marker::PhantomData,
     rc::Rc,
 };
 
-use crate::id::Id;
+use crate::{id::Id, signal::NotThreadSafe};
 
 #[derive(Clone)]
 pub struct WriteSignalValue<T> {
     pub(crate) id: Id,
     pub(crate) value: Rc<RefCell<T>>,
+    pub(crate) ts: PhantomData<NotThreadSafe>,
 }
 
 impl<T> Drop for WriteSignalValue<T> {
@@ -91,6 +93,7 @@ pub trait SignalWrite<T> {
                     .clone()
                     .downcast::<RefCell<T>>()
                     .expect("to downcast signal type"),
+                ts: PhantomData,
             })
         } else {
             None

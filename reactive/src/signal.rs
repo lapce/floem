@@ -16,10 +16,16 @@ use crate::{
     SignalGet, SignalUpdate,
 };
 
+/// Marker type explaining why something can't be sent across threads
+/// If you need to synchronize data into a signal from another thread, use `create_signal_from_channel` or a similar constructor.
+#[allow(dead_code)]
+pub struct NotThreadSafe(*const ());
+
 /// A read write Signal which can act as both a Getter and a Setter
 pub struct RwSignal<T> {
     pub(crate) id: Id,
     pub(crate) ty: PhantomData<T>,
+    pub(crate) ts: PhantomData<NotThreadSafe>,
 }
 
 impl<T> Copy for RwSignal<T> {}
@@ -53,6 +59,7 @@ impl<T> RwSignal<T> {
         ReadSignal {
             id: self.id,
             ty: PhantomData,
+            ts: PhantomData,
         }
     }
 
@@ -61,6 +68,7 @@ impl<T> RwSignal<T> {
         WriteSignal {
             id: self.id,
             ty: PhantomData,
+            ts: PhantomData,
         }
     }
 }
@@ -89,6 +97,7 @@ where
     RwSignal {
         id,
         ty: PhantomData,
+        ts: PhantomData,
     }
 }
 
@@ -96,6 +105,7 @@ where
 pub struct ReadSignal<T> {
     pub(crate) id: Id,
     pub(crate) ty: PhantomData<T>,
+    pub(crate) ts: PhantomData<NotThreadSafe>,
 }
 
 impl<T> Copy for ReadSignal<T> {}
@@ -118,6 +128,7 @@ impl<T> PartialEq for ReadSignal<T> {
 pub struct WriteSignal<T> {
     pub(crate) id: Id,
     pub(crate) ty: PhantomData<T>,
+    pub(crate) ts: PhantomData<NotThreadSafe>,
 }
 
 impl<T> Copy for WriteSignal<T> {}
@@ -155,6 +166,7 @@ pub(crate) struct Signal {
     pub(crate) id: Id,
     pub(crate) value: Rc<dyn Any>,
     pub(crate) subscribers: Rc<RefCell<HashMap<Id, Rc<dyn EffectTrait>>>>,
+    pub(crate) ts: PhantomData<NotThreadSafe>,
 }
 
 impl Signal {
@@ -168,6 +180,7 @@ impl Signal {
             id,
             subscribers: Rc::new(RefCell::new(HashMap::new())),
             value: Rc::new(value),
+            ts: PhantomData,
         };
         id.add_signal(signal);
         id

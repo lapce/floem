@@ -1,11 +1,13 @@
-use std::{any::Any, cell::RefCell, collections::HashMap, fmt, rc::Rc};
+use std::{any::Any, cell::RefCell, collections::HashMap, fmt, marker::PhantomData, rc::Rc};
 
 use crate::{
     create_effect, create_updater,
     id::Id,
     memo::{create_memo, Memo},
     runtime::RUNTIME,
-    signal::{create_rw_signal, create_signal, ReadSignal, RwSignal, Signal, WriteSignal},
+    signal::{
+        create_rw_signal, create_signal, NotThreadSafe, ReadSignal, RwSignal, Signal, WriteSignal,
+    },
     trigger::{create_trigger, Trigger},
 };
 
@@ -15,7 +17,7 @@ use crate::{
 /// and when you Dispose the Scope, it will clean up all the Signals
 /// that belong to the Scope and all the child Scopes
 #[derive(Clone, Copy)]
-pub struct Scope(pub(crate) Id);
+pub struct Scope(pub(crate) Id, pub(crate) PhantomData<NotThreadSafe>);
 
 impl Default for Scope {
     fn default() -> Self {
@@ -34,13 +36,13 @@ impl fmt::Debug for Scope {
 impl Scope {
     /// Create a new Scope that isn't a child or parent of any scope
     pub fn new() -> Self {
-        Self(Id::next())
+        Self(Id::next(), PhantomData)
     }
 
     /// The current Scope in the Runtime. Any Signal/Effect/Memo created with
     /// implicitly Scope will be under this Scope
     pub fn current() -> Scope {
-        RUNTIME.with(|runtime| Scope(*runtime.current_scope.borrow()))
+        RUNTIME.with(|runtime| Scope(*runtime.current_scope.borrow(), PhantomData))
     }
 
     /// Create a child Scope of this Scope
@@ -51,7 +53,7 @@ impl Scope {
             let children = children.entry(self.0).or_default();
             children.insert(child);
         });
-        Scope(child)
+        Scope(child, PhantomData)
     }
 
     /// Create a new Signal under this Scope
@@ -113,6 +115,7 @@ impl Scope {
                 id: self.0,
                 subscribers: Rc::new(RefCell::new(HashMap::new())),
                 value: Rc::new(RefCell::new(())),
+                ts: PhantomData,
             };
             self.0.add_signal(signal.clone());
             signal

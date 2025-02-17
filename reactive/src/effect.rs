@@ -1,9 +1,10 @@
-use std::{any::Any, cell::RefCell, collections::HashSet, mem, rc::Rc};
+use std::{any::Any, cell::RefCell, collections::HashSet, marker::PhantomData, mem, rc::Rc};
 
 use crate::{
     id::Id,
     runtime::RUNTIME,
     scope::{with_scope, Scope},
+    signal::NotThreadSafe,
 };
 
 pub(crate) trait EffectTrait {
@@ -22,6 +23,7 @@ where
     f: F,
     value: RefCell<Option<T>>,
     observers: RefCell<HashSet<Id>>,
+    ts: PhantomData<NotThreadSafe>,
 }
 
 impl<T, F> Drop for Effect<T, F>
@@ -51,6 +53,7 @@ where
         f,
         value: RefCell::new(None),
         observers: RefCell::new(HashSet::default()),
+        ts: PhantomData,
     });
     id.set_scope();
 
@@ -148,7 +151,7 @@ pub(crate) fn run_initial_effect(effect: Rc<dyn EffectTrait>) {
     RUNTIME.with(|runtime| {
         *runtime.current_effect.borrow_mut() = Some(effect.clone());
 
-        let effect_scope = Scope(effect_id);
+        let effect_scope = Scope(effect_id, PhantomData);
         with_scope(effect_scope, || {
             effect_scope.track();
             effect.run();
@@ -167,7 +170,7 @@ pub(crate) fn run_effect(effect: Rc<dyn EffectTrait>) {
     RUNTIME.with(|runtime| {
         *runtime.current_effect.borrow_mut() = Some(effect.clone());
 
-        let effect_scope = Scope(effect_id);
+        let effect_scope = Scope(effect_id, PhantomData);
         with_scope(effect_scope, move || {
             effect_scope.track();
             effect.run();
@@ -189,7 +192,7 @@ where
     let result = RUNTIME.with(|runtime| {
         *runtime.current_effect.borrow_mut() = Some(effect.clone());
 
-        let effect_scope = Scope(effect_id);
+        let effect_scope = Scope(effect_id, PhantomData);
         let (result, new_value) = with_scope(effect_scope, || {
             effect_scope.track();
             (effect.compute)(None)

@@ -4,7 +4,7 @@ use crate::{
     effect::create_effect,
     read::{SignalRead, SignalTrack},
     scope::Scope,
-    signal::{create_signal, ReadSignal},
+    signal::{create_signal, NotThreadSafe, ReadSignal},
     SignalGet, SignalUpdate, SignalWith,
 };
 
@@ -16,6 +16,7 @@ use crate::{
 pub struct Memo<T> {
     getter: ReadSignal<T>,
     ty: PhantomData<T>,
+    pub(crate) ts: PhantomData<NotThreadSafe>,
 }
 
 impl<T> Copy for Memo<T> {}
@@ -69,5 +70,6 @@ where
     Memo {
         getter,
         ty: PhantomData,
+        ts: PhantomData,
     }
 }

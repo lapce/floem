@@ -1,6 +1,8 @@
 use std::marker::PhantomData;
 
-use crate::{read::SignalTrack, RwSignal, SignalGet, SignalUpdate, SignalWith};
+use crate::{
+    read::SignalTrack, signal::NotThreadSafe, RwSignal, SignalGet, SignalUpdate, SignalWith,
+};
 
 /// A signal that is derived from an [RwSignal](super::RwSignal) but lets you specify getters and setters for the signal.
 ///
@@ -17,6 +19,7 @@ pub struct DerivedRwSignal<
     getter: RwSignal<Box<GF>>,
     setter: RwSignal<Box<UF>>,
     ty: PhantomData<T>,
+    ts: PhantomData<NotThreadSafe>,
 }
 
 impl<T, O, GF: Fn(&T) -> O + Copy, UF: Fn(&O) -> T + Copy> Clone for DerivedRwSignal<T, O, GF, UF> {
@@ -191,6 +194,7 @@ where
             getter,
             setter,
             ty: PhantomData,
+            ts: PhantomData,
         }
     }
 }
@@ -211,5 +215,6 @@ where
         getter,
         setter,
         ty: PhantomData,
+        ts: PhantomData,
     }
 }
