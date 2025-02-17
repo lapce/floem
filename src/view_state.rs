@@ -8,8 +8,9 @@ use crate::{
     prop_extractor,
     responsive::ScreenSizeBp,
     style::{
-        Background, BorderColor, BorderRadius, BoxShadowProp, LayoutProps, Outline, OutlineColor,
-        Style, StyleClassRef, StyleSelectors,
+        Background, BorderBottomColor, BorderLeftColor, BorderRadius, BorderRightColor,
+        BorderTopColor, BoxShadowProp, LayoutProps, Outline, OutlineColor, Style, StyleClassRef,
+        StyleSelectors,
     },
 };
 use bitflags::bitflags;
@@ -65,13 +66,35 @@ impl<T> Stack<T> {
     }
 }
 
+#[cfg(feature = "vello")]
+prop_extractor! {
+    pub(crate) ViewStyleProps {
+        pub border_radius: BorderRadius,
+        pub border_progress: crate::style::BorderProgress,
+
+        pub outline: Outline,
+        pub outline_color: OutlineColor,
+        pub outline_progress: crate::style::OutlineProgress,
+        pub border_left_color: BorderLeftColor,
+        pub border_top_color: BorderTopColor,
+        pub border_right_color: BorderRightColor,
+        pub border_bottom_color: BorderBottomColor,
+        pub background: Background,
+        pub shadow: BoxShadowProp,
+    }
+}
+// removing outlines to make clippy happy about progress fields not being read
+#[cfg(not(feature = "vello"))]
 prop_extractor! {
     pub(crate) ViewStyleProps {
         pub border_radius: BorderRadius,
 
         pub outline: Outline,
         pub outline_color: OutlineColor,
-        pub border_color: BorderColor,
+        pub border_left_color: BorderLeftColor,
+        pub border_top_color: BorderTopColor,
+        pub border_right_color: BorderRightColor,
+        pub border_bottom_color: BorderBottomColor,
         pub background: Background,
         pub shadow: BoxShadowProp,
     }

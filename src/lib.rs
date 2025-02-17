@@ -183,6 +183,8 @@ mod app;
 mod app_delegate;
 mod app_handle;
 pub(crate) mod app_state;
+#[cfg(feature = "vello")]
+mod border_path_iter;
 mod clipboard;
 pub mod context;
 pub mod dropped_file;

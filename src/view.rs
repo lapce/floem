@@ -44,7 +44,7 @@
 //!
 
 use floem_reactive::{ReadSignal, RwSignal, SignalGet};
-use peniko::kurbo::{Circle, Insets, Line, Point, Rect, RoundedRect, Size};
+use peniko::kurbo::*;
 use std::any::Any;
 use taffy::tree::NodeId;
 
@@ -493,7 +493,81 @@ fn paint_box_shadow(
         }
     }
 }
+#[cfg(feature = "vello")]
+pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, size: Size) {
+    use crate::{
+        border_path_iter::{BorderPath, BorderPathEvent},
+        unit::Pct,
+    };
 
+    let outlines = [
+        (style.outline().0, style.outline_color()),
+        (style.outline().0, style.outline_color()),
+        (style.outline().0, style.outline_color()),
+        (style.outline().0, style.outline_color()),
+    ];
+
+    // Early return if no outlines
+    if outlines.iter().any(|o| o.0.width == 0.0) {
+        return;
+    }
+
+    let outline_color = style.outline_color();
+    let Pct(outline_progress) = style.outline_progress();
+
+    // For the simple case, we don't need to calculate radii unless we have to
+    if outline_progress >= 100. {
+        let half_width = outlines[0].0.width / 2.0;
+        let rect = size.to_rect().inflate(half_width, half_width);
+
+        let radius = match style.border_radius() {
+            crate::unit::PxPct::Px(px) => px,
+            crate::unit::PxPct::Pct(pct) => size.min_side() * (pct / 100.),
+        };
+        let adjusted_radius = (radius + half_width).max(0.0);
+
+        return cx.stroke(
+            &rect.to_rounded_rect(adjusted_radius),
+            &outline_color,
+            &outlines[0].0,
+        );
+    }
+
+    // For complex cases, now we need to set up the border path
+    let half_width = outlines[0].0.width / 2.0;
+    let rect = size.to_rect().inflate(half_width, half_width);
+
+    let radius = match style.border_radius() {
+        crate::unit::PxPct::Px(px) => px,
+        crate::unit::PxPct::Pct(pct) => size.min_side() * (pct / 100.),
+    };
+    let adjusted_radius = (radius + half_width).max(0.0);
+    let radii = RoundedRectRadii::from_single_radius(adjusted_radius);
+
+    let mut outline_path = BorderPath::new(rect, radii);
+
+    // Only create subsegment if needed
+    if outline_progress < 100. {
+        outline_path.subsegment(0.0..(outline_progress.clamp(0.0, 100.) / 100.));
+    }
+
+    let mut current_path = Vec::new();
+    for event in outline_path.path_elements(&outlines, 0.1) {
+        match event {
+            BorderPathEvent::PathElement(el) => current_path.push(el),
+            BorderPathEvent::NewStroke(stroke) => {
+                // Render current path with previous stroke if any
+                if !current_path.is_empty() {
+                    cx.stroke(&current_path.as_slice(), &outline_color, &stroke.0);
+                    current_path.clear();
+                }
+            }
+        }
+    }
+    assert!(current_path.is_empty());
+}
+
+#[cfg(not(feature = "vello"))]
 pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, size: Size) {
     let outline = &style.outline().0;
     if outline.width == 0. {
@@ -513,6 +587,7 @@ pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, size: Size
     );
 }
 
+#[cfg(not(feature = "vello"))]
 pub(crate) fn paint_border(
     cx: &mut PaintCx,
     layout_style: &LayoutProps,
@@ -524,12 +599,14 @@ pub(crate) fn paint_border(
     let right = layout_style.border_right().0;
     let bottom = layout_style.border_bottom().0;
 
-    let border_color = style.border_color();
     if left.width == top.width
         && top.width == right.width
         && right.width == bottom.width
         && bottom.width == left.width
         && left.width > 0.0
+        && style.border_left_color() == style.border_top_color()
+        && style.border_top_color() == style.border_right_color()
+        && style.border_right_color() == style.border_bottom_color()
     {
         let half = left.width / 2.0;
         let rect = size.to_rect().inflate(-half, -half);
@@ -539,9 +616,13 @@ pub(crate) fn paint_border(
         };
         if radius > 0.0 {
             let radius = (radius - half).max(0.0);
-            cx.stroke(&rect.to_rounded_rect(radius), &border_color, &left);
+            cx.stroke(
+                &rect.to_rounded_rect(radius),
+                &style.border_left_color(),
+                &left,
+            );
         } else {
-            cx.stroke(&rect, &border_color, &left);
+            cx.stroke(&rect, &style.border_left_color(), &left);
         }
     } else {
         // TODO: now with vello should we do this left.width > 0. check?
@@ -549,7 +630,7 @@ pub(crate) fn paint_border(
             let half = left.width / 2.0;
             cx.stroke(
                 &Line::new(Point::new(half, 0.0), Point::new(half, size.height)),
-                &border_color,
+                &style.border_left_color(),
                 &left,
             );
         }
@@ -560,7 +641,7 @@ pub(crate) fn paint_border(
                     Point::new(size.width - half, 0.0),
                     Point::new(size.width - half, size.height),
                 ),
-                &border_color,
+                &style.border_right_color(),
                 &right,
             );
         }
@@ -568,7 +649,7 @@ pub(crate) fn paint_border(
             let half = top.width / 2.0;
             cx.stroke(
                 &Line::new(Point::new(0.0, half), Point::new(size.width, half)),
-                &border_color,
+                &style.border_top_color(),
                 &top,
             );
         }
@@ -579,11 +660,96 @@ pub(crate) fn paint_border(
                     Point::new(0.0, size.height - half),
                     Point::new(size.width, size.height - half),
                 ),
-                &border_color,
+                &style.border_bottom_color(),
                 &bottom,
             );
         }
     }
+}
+
+#[cfg(feature = "vello")]
+pub(crate) fn paint_border(
+    cx: &mut PaintCx,
+    layout_style: &LayoutProps,
+    style: &ViewStyleProps,
+    size: Size,
+) {
+    use crate::{
+        border_path_iter::{BorderPath, BorderPathEvent},
+        unit::Pct,
+    };
+
+    let borders = [
+        (layout_style.border_top().0, style.border_top_color()),
+        (layout_style.border_right().0, style.border_right_color()),
+        (layout_style.border_bottom().0, style.border_bottom_color()),
+        (layout_style.border_left().0, style.border_left_color()),
+    ];
+
+    // Early return if no borders
+    if borders.iter().all(|b| b.0.width == 0.0) {
+        return;
+    }
+
+    let Pct(border_progress) = style.border_progress();
+
+    // Check if borders match before doing any other work
+    let borders_match = borders.windows(2).all(|b| {
+        b[0].0.width == b[1].0.width
+            && b[0].0.dash_pattern == b[1].0.dash_pattern
+            && b[0].1 == b[1].1
+    });
+
+    // For the simple case, we don't need to calculate radii unless we have to
+    if borders_match && border_progress >= 100. {
+        let half_width = borders[0].0.width / 2.0;
+        let rect = size.to_rect().inflate(-half_width, -half_width);
+
+        let radius = match style.border_radius() {
+            crate::unit::PxPct::Px(px) => px,
+            crate::unit::PxPct::Pct(pct) => size.min_side() * (pct / 100.),
+        };
+        let adjusted_radius = (radius - half_width).max(0.0);
+
+        return cx.stroke(
+            &rect.to_rounded_rect(adjusted_radius),
+            &borders[0].1,
+            &borders[0].0,
+        );
+    }
+
+    // For complex cases, now we need to set up the border path
+    let half_width = borders[0].0.width / 2.0;
+    let rect = size.to_rect().inflate(-half_width, -half_width);
+
+    let radius = match style.border_radius() {
+        crate::unit::PxPct::Px(px) => px,
+        crate::unit::PxPct::Pct(pct) => size.min_side() * (pct / 100.),
+    };
+    let adjusted_radius = (radius - half_width).max(0.0);
+    let radii = RoundedRectRadii::from_single_radius(adjusted_radius);
+
+    let mut border_path = BorderPath::new(rect, radii);
+
+    // Only create subsegment if needed
+    if border_progress < 100. {
+        border_path.subsegment(0.0..(border_progress.clamp(0.0, 100.) / 100.));
+    }
+
+    let mut current_path = Vec::new();
+    for event in border_path.path_elements(&borders, 0.1) {
+        match event {
+            BorderPathEvent::PathElement(el) => current_path.push(el),
+            BorderPathEvent::NewStroke(stroke) => {
+                // Render current path with previous stroke if any
+                if !current_path.is_empty() {
+                    cx.stroke(&current_path.as_slice(), &stroke.1, &stroke.0);
+                    current_path.clear();
+                }
+            }
+        }
+    }
+    assert!(current_path.is_empty());
 }
 
 /// Tab navigation finds the next or previous view with the `keyboard_navigatable` status in the tree.
