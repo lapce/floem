@@ -515,25 +515,6 @@ pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, size: Size
     let outline_color = style.outline_color();
     let Pct(outline_progress) = style.outline_progress();
 
-    // For the simple case, we don't need to calculate radii unless we have to
-    if outline_progress >= 100. {
-        let half_width = outlines[0].0.width / 2.0;
-        let rect = size.to_rect().inflate(half_width, half_width);
-
-        let radius = match style.border_radius() {
-            crate::unit::PxPct::Px(px) => px,
-            crate::unit::PxPct::Pct(pct) => size.min_side() * (pct / 100.),
-        };
-        let adjusted_radius = (radius + half_width).max(0.0);
-
-        return cx.stroke(
-            &rect.to_rounded_rect(adjusted_radius),
-            &outline_color,
-            &outlines[0].0,
-        );
-    }
-
-    // For complex cases, now we need to set up the border path
     let half_width = outlines[0].0.width / 2.0;
     let rect = size.to_rect().inflate(half_width, half_width);
 
@@ -693,32 +674,6 @@ pub(crate) fn paint_border(
 
     let Pct(border_progress) = style.border_progress();
 
-    // Check if borders match before doing any other work
-    let borders_match = borders.windows(2).all(|b| {
-        b[0].0.width == b[1].0.width
-            && b[0].0.dash_pattern == b[1].0.dash_pattern
-            && b[0].1 == b[1].1
-    });
-
-    // For the simple case, we don't need to calculate radii unless we have to
-    if borders_match && border_progress >= 100. {
-        let half_width = borders[0].0.width / 2.0;
-        let rect = size.to_rect().inflate(-half_width, -half_width);
-
-        let radius = match style.border_radius() {
-            crate::unit::PxPct::Px(px) => px,
-            crate::unit::PxPct::Pct(pct) => size.min_side() * (pct / 100.),
-        };
-        let adjusted_radius = (radius - half_width).max(0.0);
-
-        return cx.stroke(
-            &rect.to_rounded_rect(adjusted_radius),
-            &borders[0].1,
-            &borders[0].0,
-        );
-    }
-
-    // For complex cases, now we need to set up the border path
     let half_width = borders[0].0.width / 2.0;
     let rect = size.to_rect().inflate(-half_width, -half_width);
 
