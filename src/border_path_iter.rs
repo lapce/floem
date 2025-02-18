@@ -38,7 +38,7 @@ impl BorderPath {
             tolerance,
             current_len: 0.,
             current_iter: None,
-            stroke_iter: strokes.iter(),
+            stroke_iter: strokes.iter().peekable(),
             emitted_last_stroke: false,
             total_len,
         }
@@ -81,10 +81,8 @@ pub struct BorderPathIter<'a> {
     tolerance: f64,
     current_len: f64,
     current_iter: Option<Box<dyn Iterator<Item = PathEl> + 'a>>,
-    stroke_iter: std::slice::Iter<'a, (Stroke, Brush)>,
-    // current_stroke: &'a Stroke,
+    stroke_iter: std::iter::Peekable<std::slice::Iter<'a, (Stroke, Brush)>>,
     emitted_last_stroke: bool,
-    // already_did_normalized: bool,
     total_len: f64,
 }
 
@@ -101,6 +99,15 @@ impl<'a> Iterator for BorderPathIter<'a> {
         let end = self.border_path.range.end;
         assert!(end <= 1.0, "Range end must be <= 1.0");
         assert!(end >= 0.0, "Range end must be >= 0.0");
+
+        // Handle current iterator if it exists
+        if let Some(iter) = &mut self.current_iter {
+            if let Some(element) = iter.next() {
+                return Some(BorderPathEvent::PathElement(element));
+            }
+            self.current_iter = None;
+        }
+        assert!(self.current_iter.is_none());
 
         const EPSILON: f64 = 1e-4;
 
@@ -122,81 +129,95 @@ impl<'a> Iterator for BorderPathIter<'a> {
             };
         }
 
-        // Handle current iterator if it exists
-        if let Some(iter) = &mut self.current_iter {
-            if let Some(element) = iter.next() {
-                return Some(BorderPathEvent::PathElement(element));
-            }
-            self.current_iter = None;
-        }
-        assert!(self.current_iter.is_none());
+        loop {
+            let next_seg = self.border_path.path_iter.next();
 
-        let next_seg = self.border_path.path_iter.next();
+            match next_seg {
+                Some(ArcOrPath::Arc(arc)) => {
+                    // Set corner flag based on arc transition
+                    let arc_len = arc.perimeter(self.tolerance);
+                    let normalized_current = self.current_len / self.total_len;
+                    let normalized_seg_len = arc_len / self.total_len;
 
-        match next_seg {
-            Some(ArcOrPath::Arc(arc)) => {
-                // Set corner flag based on arc transition
-                let arc_len = arc.perimeter(self.tolerance);
-                let normalized_current = self.current_len / self.total_len;
-                let normalized_seg_len = arc_len / self.total_len;
+                    assert!(
+                        normalized_seg_len > 0.0,
+                        "Arc segment length must be positive"
+                    );
 
-                assert!(
-                    normalized_seg_len > 0.0,
-                    "Arc segment length must be positive"
-                );
+                    if normalized_current + normalized_seg_len > end {
+                        // Need to subsegment
+                        let remaining_percentage = end - normalized_current;
+                        let t = remaining_percentage / normalized_seg_len;
+                        assert!(t > 0.0 && t <= 1.0, "Invalid subsegment parameter");
 
-                if normalized_current + normalized_seg_len > end {
-                    // Need to subsegment
-                    let remaining_percentage = end - normalized_current;
-                    let t = remaining_percentage / normalized_seg_len;
-                    assert!(t > 0.0 && t <= 1.0, "Invalid subsegment parameter");
-
-                    let subseg = arc_subsegment(&arc, 0.0..t);
-                    self.current_len += subseg.perimeter(self.tolerance);
-                    self.current_iter = Some(Box::new(subseg.path_elements(self.tolerance)));
-                } else {
-                    self.current_len += arc_len;
-                    self.current_iter = Some(Box::new(arc.path_elements(self.tolerance)))
+                        let subseg = arc_subsegment(&arc, 0.0..t);
+                        self.current_len += subseg.perimeter(self.tolerance);
+                        self.current_iter = Some(Box::new(subseg.path_elements(self.tolerance)));
+                    } else {
+                        self.current_len += arc_len;
+                        self.current_iter = Some(Box::new(arc.path_elements(self.tolerance)))
+                    }
+                    break;
                 }
-            }
-            Some(ArcOrPath::Path(path_seg)) => {
-                let seg_len = path_seg.arclen(self.tolerance);
-                let normalized_current = self.current_len / self.total_len;
-                let normalized_seg_len = seg_len / self.total_len;
+                Some(ArcOrPath::Path(path_seg)) => {
+                    let seg_len = path_seg.arclen(self.tolerance);
+                    let normalized_current = self.current_len / self.total_len;
+                    let normalized_seg_len = seg_len / self.total_len;
 
-                assert!(
-                    normalized_seg_len > 0.0,
-                    "Path segment length must be positive"
-                );
+                    assert!(
+                        normalized_seg_len > 0.0,
+                        "Path segment length must be positive"
+                    );
 
-                if normalized_current + normalized_seg_len > end {
-                    let remaining_percentage = end - normalized_current;
-                    let t = remaining_percentage / normalized_seg_len;
-                    assert!(t > 0.0 && t <= 1.0, "Invalid subsegment parameter");
+                    if normalized_current + normalized_seg_len > end {
+                        let remaining_percentage = end - normalized_current;
+                        let t = remaining_percentage / normalized_seg_len;
+                        assert!(t > 0.0 && t <= 1.0, "Invalid subsegment parameter");
 
-                    let subseg = path_seg.subsegment(0.0..t);
-                    self.current_len += subseg.arclen(self.tolerance);
-                    self.current_iter = Some(Box::new(std::iter::once(subseg.as_path_el())));
-                } else {
-                    self.current_len += seg_len;
-                    self.current_iter = Some(Box::new(std::iter::once(path_seg.as_path_el())));
+                        let subseg = path_seg.subsegment(0.0..t);
+                        self.current_len += subseg.arclen(self.tolerance);
+                        self.current_iter = Some(Box::new(std::iter::once(subseg.as_path_el())));
+                    } else {
+                        self.current_len += seg_len;
+                        self.current_iter = Some(Box::new(std::iter::once(path_seg.as_path_el())));
+                    }
+                    break;
                 }
-            }
-            Some(ArcOrPath::Corner) => {
-                assert!(
-                    self.stroke_iter.size_hint().0 > 0,
-                    "Missing stroke at corner between arcs"
-                );
-                let next_stroke = self.stroke_iter.next().unwrap();
-                if self.stroke_iter.size_hint().0 == 0 {
-                    self.emitted_last_stroke = true;
+                Some(ArcOrPath::Corner) => {
+                    assert!(
+                        self.stroke_iter.size_hint().0 > 0,
+                        "Missing stroke at corner between arcs"
+                    );
+
+                    // Get the current stroke (advances iterator)
+                    let current_stroke =
+                        self.stroke_iter.next().expect("Another stroke is present");
+
+                    // Peek at the next one (doesn't advance)
+                    let next_stroke = self.stroke_iter.peek();
+
+                    if let Some(&next) = next_stroke {
+                        if current_stroke.0.width != next.0.width
+                            || current_stroke.1 != next.1
+                            || current_stroke.0.dash_pattern != next.0.dash_pattern
+                        {
+                            // Strokes are different, emit the current one
+                            return Some(BorderPathEvent::NewStroke(current_stroke));
+                        } else {
+                            // need to return the next path element here without returning none so we let the loop go again.
+                            // This is the only condition where the loop runs again
+                        }
+                    } else {
+                        // No next stroke, we're at the end
+                        self.emitted_last_stroke = true;
+                        return Some(BorderPathEvent::NewStroke(current_stroke));
+                    }
                 }
-                return Some(BorderPathEvent::NewStroke(next_stroke));
-            }
-            None => {
-                // at this point the *full* path has been emitted with all corners.
-                // If this occurs then the epsilon is too small. but honestly we can just return none and everything will be fine
-                return None;
+                None => {
+                    // at this point the *full* path has been emitted with all corners.
+                    // If this occurs then the epsilon is too small. but honestly we can just return none and everything will be fine
+                    return None;
+                }
             }
         }
 
