@@ -691,10 +691,17 @@ pub(crate) fn paint_border(
         border_path.subsegment(0.0..(border_progress.clamp(0.0, 100.) / 100.));
     }
 
-    let mut current_path = Vec::new();
+    // optimize for maximum which is 12 paths and a single move to
+    let mut current_path = smallvec::SmallVec::<[_; 13]>::new();
     for event in border_path.path_elements(&borders, 0.1) {
         match event {
-            BorderPathEvent::PathElement(el) => current_path.push(el),
+            BorderPathEvent::PathElement(el) => {
+                if !current_path.is_empty() && matches!(el, PathEl::MoveTo(_)) {
+                    // extra move to's will mess up dashed patterns
+                    continue;
+                }
+                current_path.push(el)
+            }
             BorderPathEvent::NewStroke(stroke) => {
                 // Render current path with previous stroke if any
                 if !current_path.is_empty() {
