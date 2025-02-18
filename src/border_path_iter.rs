@@ -10,6 +10,9 @@ pub struct BorderPath {
 
 impl BorderPath {
     pub fn new(rect: Rect, radii: RoundedRectRadii) -> Self {
+        let rect = rect.abs();
+        let shortest_side_length = (rect.width()).min(rect.height());
+        let radii = radii.abs().clamp(shortest_side_length / 2.0);
         let rounded_path = RectPathIter {
             idx: 0,
             rect,
@@ -90,7 +93,11 @@ impl<'a> Iterator for BorderPathIter<'a> {
     type Item = BorderPathEvent<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        assert!(self.total_len > 0.0, "Total length must be positive");
+        assert!(
+            self.total_len >= 0.0,
+            "Total length must be positive. Total_len: {}",
+            self.total_len
+        );
         assert!(
             self.current_len <= self.total_len,
             "Current length cannot exceed total length"
@@ -100,6 +107,9 @@ impl<'a> Iterator for BorderPathIter<'a> {
         assert!(end <= 1.0, "Range end must be <= 1.0");
         assert!(end >= 0.0, "Range end must be >= 0.0");
 
+        // this large-ish epsilon value is necessary. If we check numbers too small then we have weird behavior where we don't properly check our end conditions when we reasonably should.
+        const EPSILON: f64 = 1e-4;
+
         // Handle current iterator if it exists
         if let Some(iter) = &mut self.current_iter {
             if let Some(element) = iter.next() {
@@ -108,8 +118,6 @@ impl<'a> Iterator for BorderPathIter<'a> {
             self.current_iter = None;
         }
         assert!(self.current_iter.is_none());
-
-        const EPSILON: f64 = 1e-4;
 
         // end condition: we have reached the target percentage
         if (self.current_len / self.total_len - end).abs() <= EPSILON
@@ -136,6 +144,9 @@ impl<'a> Iterator for BorderPathIter<'a> {
                 Some(ArcOrPath::Arc(arc)) => {
                     // Set corner flag based on arc transition
                     let arc_len = arc.perimeter(self.tolerance);
+                    if arc_len < EPSILON {
+                        continue;
+                    }
                     let normalized_current = self.current_len / self.total_len;
                     let normalized_seg_len = arc_len / self.total_len;
 
@@ -151,7 +162,11 @@ impl<'a> Iterator for BorderPathIter<'a> {
                         assert!(t > 0.0 && t <= 1.0, "Invalid subsegment parameter");
 
                         let subseg = arc_subsegment(&arc, 0.0..t);
-                        self.current_len += subseg.perimeter(self.tolerance);
+                        let seg_len = subseg.perimeter(self.tolerance);
+                        if seg_len < EPSILON {
+                            continue;
+                        }
+                        self.current_len += seg_len;
                         self.current_iter = Some(Box::new(subseg.path_elements(self.tolerance)));
                     } else {
                         self.current_len += arc_len;
@@ -161,6 +176,9 @@ impl<'a> Iterator for BorderPathIter<'a> {
                 }
                 Some(ArcOrPath::Path(path_seg)) => {
                     let seg_len = path_seg.arclen(self.tolerance);
+                    if seg_len < EPSILON {
+                        continue;
+                    }
                     let normalized_current = self.current_len / self.total_len;
                     let normalized_seg_len = seg_len / self.total_len;
 
@@ -175,11 +193,16 @@ impl<'a> Iterator for BorderPathIter<'a> {
                         assert!(t > 0.0 && t <= 1.0, "Invalid subsegment parameter");
 
                         let subseg = path_seg.subsegment(0.0..t);
-                        self.current_len += subseg.arclen(self.tolerance);
-                        self.current_iter = Some(Box::new(std::iter::once(subseg.as_path_el())));
+
+                        let seg_len = subseg.arclen(self.tolerance);
+                        if seg_len < f64::EPSILON {
+                            continue;
+                        }
+                        self.current_len += seg_len;
+                        self.current_iter = Some(Box::new(subseg.path_elements(self.tolerance)));
                     } else {
                         self.current_len += seg_len;
-                        self.current_iter = Some(Box::new(std::iter::once(path_seg.as_path_el())));
+                        self.current_iter = Some(Box::new(path_seg.path_elements(self.tolerance)));
                     }
                     break;
                 }
@@ -324,23 +347,24 @@ impl RectPathIter {
     }
 
     fn total_len(&self, tolerance: f64) -> f64 {
-        // Calculate arc lengths - one for each corner
+        // Calculate arc lengths with clamped radii
         let arc_lengths: f64 = (0..4)
             .map(|i| self.build_corner_arc(i).perimeter(tolerance))
             .sum();
 
-        // Calculate straight segment lengths
+        // Calculate straight segment lengths with clamped radii
         let straight_lengths = {
-            let rect = self.rect;
-            let radii = self.radii;
+            let width = self.rect.width();
+            let height = self.rect.height();
+            let radii = &self.radii;
             // Top edge (minus the arc segments)
-            let top = rect.x1 - rect.x0 - radii.top_left - radii.top_right;
+            let top = width - radii.top_left - radii.top_right;
             // Right edge
-            let right = rect.y1 - rect.y0 - radii.top_right - radii.bottom_right;
+            let right = height - radii.top_right - radii.bottom_right;
             // Bottom edge
-            let bottom = rect.x1 - rect.x0 - radii.bottom_left - radii.bottom_right;
+            let bottom = width - radii.bottom_left - radii.bottom_right;
             // Left edge
-            let left = rect.y1 - rect.y0 - radii.top_left - radii.bottom_left;
+            let left = height - radii.top_left - radii.bottom_left;
 
             top + right + bottom + left
         };
@@ -383,6 +407,7 @@ pub struct RoundedRectPathIter {
     rect: RectPathIter,
     arcs: [Arc; 8],
 }
+
 #[derive(Debug)]
 pub enum ArcOrPath {
     Arc(Arc),
