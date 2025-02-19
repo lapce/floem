@@ -310,6 +310,7 @@ pub(crate) enum AnimState {
     // NOTE: If animation has `RepeatMode::LoopForever`, this state will never be reached.
     Completed {
         elapsed: Option<Duration>,
+        was_reversing: bool,
     },
 }
 
@@ -343,6 +344,8 @@ pub enum AnimStateCommand {
     Start,
     /// Stop the animation
     Stop,
+    /// Start the animation in reverse
+    Reverse,
 }
 
 type EffectStateVec = SmallVec<[RwSignal<SmallVec<[(ViewId, StackOffset<Animation>); 1]>>; 1]>;
@@ -709,6 +712,19 @@ impl Animation {
         )
     }
 
+    /// The animation will receive a reverse command any time the trigger function tracks any reactive updates.
+    ///
+    /// This will start the animation in reverse
+    pub fn reverse(self, trigger: impl Fn() + 'static) -> Self {
+        self.state(
+            move || {
+                trigger();
+                AnimStateCommand::Reverse
+            },
+            false,
+        )
+    }
+
     /// The animation will receive a stop command any time the trigger function tracks any reactive updates.
     pub fn stop(self, trigger: impl Fn() + 'static) -> Self {
         self.state(
@@ -744,6 +760,10 @@ impl Animation {
 
     pub(crate) fn start_mut(&mut self) {
         self.transition(AnimStateCommand::Start)
+    }
+
+    pub(crate) fn reverse_mut(&mut self) {
+        self.transition(AnimStateCommand::Reverse)
     }
 
     #[allow(unused)]
@@ -844,6 +864,11 @@ impl Animation {
                 was_in_ext,
             } => match self.repeat_mode {
                 RepeatMode::LoopForever => {
+                    if self.reverse_once.is_rev() {
+                        self.reverse_once.set(false);
+                    } else if self.auto_reverse {
+                        self.reverse_once.set(true);
+                    }
                     self.state = AnimState::PassInProgress {
                         started_on: Instant::now(),
                         elapsed: Duration::ZERO,
@@ -852,6 +877,7 @@ impl Animation {
                 RepeatMode::Times(times) => {
                     self.repeat_count += 1;
                     if self.repeat_count >= times {
+                        let was_reversing = self.reverse_once.is_rev();
                         self.reverse_once.set(false);
                         self.on_complete.notify();
                         if !*was_in_ext {
@@ -859,6 +885,7 @@ impl Animation {
                         }
                         self.state = AnimState::Completed {
                             elapsed: Some(*elapsed),
+                            was_reversing,
                         }
                     } else {
                         self.state = AnimState::PassInProgress {
@@ -874,7 +901,13 @@ impl Animation {
             AnimState::Stopped => {
                 debug_assert!(false, "Tried to advance a stopped animation")
             }
-            AnimState::Completed { .. } => {}
+            AnimState::Completed { was_reversing, .. } => {
+                if self.auto_reverse && !*was_reversing {
+                    self.reverse_mut();
+                } else {
+                    self.state = AnimState::Stopped;
+                }
+            }
         }
     }
 
@@ -894,6 +927,16 @@ impl Animation {
                 }
             }
             AnimStateCommand::Start => {
+                self.reverse_once.set(false);
+                self.folded_style.map.clear();
+                self.repeat_count = 0;
+                self.state = AnimState::PassInProgress {
+                    started_on: Instant::now(),
+                    elapsed: Duration::ZERO,
+                }
+            }
+            AnimStateCommand::Reverse => {
+                self.reverse_once.set(true);
                 self.folded_style.map.clear();
                 self.repeat_count = 0;
                 self.state = AnimState::PassInProgress {
@@ -913,9 +956,7 @@ impl Animation {
         if self.duration == Duration::ZERO {
             return 0.;
         }
-
         let mut elapsed = self.elapsed().unwrap_or(Duration::ZERO);
-
         // don't account for delay when reversing
         if !self.reverse_once.is_rev() && elapsed < self.delay {
             // The animation hasn't started yet
@@ -924,22 +965,17 @@ impl Animation {
         if !self.reverse_once.is_rev() {
             elapsed -= self.delay;
         }
-
-        let mut percent = elapsed.as_secs_f64() / self.duration.as_secs_f64();
-
-        if self.auto_reverse {
-            // If the animation should auto-reverse, adjust the percent accordingly
-            if percent > 0.5 {
-                percent = 1.0 - percent;
-            }
-            percent *= 2.0; // Normalize to [0.0, 1.0] range after reversal adjustment
-        }
+        let percent = elapsed.as_secs_f64() / self.duration.as_secs_f64();
 
         if self.reverse_once.is_rev() {
             1. - percent
         } else {
             percent
         }
+    }
+
+    fn is_reversing(&self) -> bool {
+        self.reverse_once.is_rev()
     }
 
     /// Get the lower and upper keyframe ids from the cache for a prop and then resolve those id's into a pair of `KeyFrameProp`s that contain the prop value and easing function
@@ -1019,7 +1055,7 @@ impl Animation {
             }
         };
 
-        if self.reverse_once.is_rev() {
+        if self.is_reversing() {
             Some((upper, lower))
         } else {
             Some((lower, upper))
@@ -1081,24 +1117,24 @@ impl Animation {
             if self.props_in_ext_progress.contains_key(prop) {
                 continue;
             }
-            let Some((lower, upper)) =
+            let Some((prev, target)) =
                 self.get_current_kf_props(*prop, frame_target, computed_style)
             else {
                 continue;
             };
-            let local_percent = self.get_local_percent(lower.id, upper.id);
-            let easing = upper.easing.clone();
+            let local_percent = self.get_local_percent(prev.id, target.id);
+            let easing = target.easing.clone();
             // TODO: Find a better way to find when an animation should enter ext mode rather than just starting to check after 97%.
             // this could miss getting a prop into ext mode
             if (local_percent > 0.97) && !easing.finished(local_percent) {
                 self.props_in_ext_progress
-                    .insert(*prop, (lower.clone(), upper.clone()));
+                    .insert(*prop, (prev.clone(), target.clone()));
             } else {
                 self.props_in_ext_progress.remove(prop);
             }
             let eased_time = easing.eval(local_percent);
             if let Some(interpolated) =
-                (prop.info().interpolate)(&*lower.val.clone(), &*upper.val.clone(), eased_time)
+                (prop.info().interpolate)(&*prev.val.clone(), &*target.val.clone(), eased_time)
             {
                 self.folded_style.map.insert(prop.key, interpolated);
             }
@@ -1115,21 +1151,21 @@ impl Animation {
     }
 
     /// For a given pair of frame ids, find where the full animation progress is within the subrange of the frame id pair.
-    pub(crate) fn get_local_percent(&self, low_frame: u16, high_frame: u16) -> f64 {
-        let (low_frame, high_frame) = if self.reverse_once.is_rev() {
-            (high_frame as f64, low_frame as f64)
+    pub(crate) fn get_local_percent(&self, prev_frame: u16, target_frame: u16) -> f64 {
+        // undo the frame change that get current key_frame props does so that low is actually lower
+        let (low_frame, high_frame) = if self.is_reversing() {
+            (target_frame as f64, prev_frame as f64)
         } else {
-            (low_frame as f64, high_frame as f64)
+            (prev_frame as f64, target_frame as f64)
         };
         let total_num_frames = self.max_key_frame_num as f64;
-
         let low_frame_percent = low_frame / total_num_frames;
         let high_frame_percent = high_frame / total_num_frames;
         let keyframe_range = (high_frame_percent.max(0.001) - low_frame_percent.max(0.001)).abs();
-
         let total_time_percent = self.total_time_percent();
         let local = (total_time_percent - low_frame_percent) / keyframe_range;
-        if self.reverse_once.is_rev() {
+
+        if self.is_reversing() {
             1. - local
         } else {
             local
@@ -1159,10 +1195,11 @@ impl Animation {
     /// returns true if the animation can advance, which either means the animation will transition states, or properties can be animated and updated
     pub const fn can_advance(&self) -> bool {
         match self.state_kind() {
-            AnimStateKind::PassFinished | AnimStateKind::PassInProgress | AnimStateKind::Idle => {
-                true
-            }
-            AnimStateKind::Paused | AnimStateKind::Stopped | AnimStateKind::Completed => false,
+            AnimStateKind::PassFinished
+            | AnimStateKind::PassInProgress
+            | AnimStateKind::Idle
+            | AnimStateKind::Completed => true,
+            AnimStateKind::Paused | AnimStateKind::Stopped => false,
         }
     }
 
