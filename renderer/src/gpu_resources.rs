@@ -10,7 +10,10 @@
 
 use std::{future::Future, sync::Arc};
 
-use crossbeam::channel::{self, Receiver};
+#[cfg(feature = "crossbeam")]
+use crossbeam::channel::{bounded as sync_channel, Receiver};
+#[cfg(not(feature = "crossbeam"))]
+use std::sync::mpsc::{sync_channel, Receiver};
 use wgpu::Backends;
 
 use winit::window::{Window, WindowId};
@@ -53,7 +56,8 @@ impl GpuResources {
         });
         // Channel passing to do async out-of-band within the winit event_loop since wasm can't
         // execute futures with a return value
-        let (tx, rx) = channel::bounded(1);
+        let (tx, rx) = sync_channel(1);
+
         spawn({
             async move {
                 let surface = match instance.create_surface(Arc::clone(&window)) {

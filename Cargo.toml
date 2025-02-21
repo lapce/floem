@@ -58,7 +58,6 @@ tokio = { version = "1", features = ["sync", "rt"], optional = true }
 raw-window-handle = { workspace = true }
 unicode-segmentation = "1.10.0"
 peniko = { workspace = true }
-crossbeam-channel = "0.5.6"
 im-rc = "15.1.0"
 serde = { workspace = true, optional = true }
 lapce-xi-rope = { workspace = true, optional = true }
@@ -81,7 +80,7 @@ image = { workspace = true }
 im = { workspace = true }
 winit = { workspace = true }
 futures = { version = "0.3.30", optional = true }
-crossbeam = "0.8"
+crossbeam = { version = "0.8", optional = true }
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
 muda = { workspace = true }
@@ -147,3 +146,5 @@ tokio = ["dep:tokio"]
 rfd-async-std = ["dep:rfd", "rfd/async-std"]
 rfd-tokio = ["dep:rfd", "rfd/tokio"]
 futures = ["dep:futures"]
+
+crossbeam = [ "dep:crossbeam", "floem_renderer/crossbeam" ]

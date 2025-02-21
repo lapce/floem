@@ -12,11 +12,16 @@ use crate::{
     Application,
 };
 
-#[derive(Debug)]
+#[cfg(feature = "crossbeam")]
+use crossbeam::channel::Receiver;
+#[cfg(not(feature = "crossbeam"))]
+use std::sync::mpsc::Receiver;
+
 /// # SAFETY
 ///
 /// **DO NOT USE THIS** trigger except for when using with `create_ext_action` or when you guarantee that
 /// the signal is never used from a different thread than it was created on.
+#[derive(Debug)]
 pub struct ExtSendTrigger {
     signal: RwSignal<()>,
 }
@@ -123,7 +128,7 @@ pub fn create_ext_action<T: Send + 'static>(
 
 pub fn update_signal_from_channel<T: Send + 'static>(
     writer: WriteSignal<Option<T>>,
-    rx: crossbeam_channel::Receiver<T>,
+    rx: Receiver<T>,
 ) {
     let cx = Scope::new();
     let trigger = with_scope(cx, ExtSendTrigger::new);
@@ -158,9 +163,7 @@ pub fn update_signal_from_channel<T: Send + 'static>(
     });
 }
 
-pub fn create_signal_from_channel<T: Send + 'static>(
-    rx: crossbeam_channel::Receiver<T>,
-) -> ReadSignal<Option<T>> {
+pub fn create_signal_from_channel<T: Send + 'static>(rx: Receiver<T>) -> ReadSignal<Option<T>> {
     let cx = Scope::new();
     let trigger = with_scope(cx, ExtSendTrigger::new);
 
