@@ -359,6 +359,7 @@ pub struct Animation {
     pub(crate) effect_states: EffectStateVec,
     pub(crate) auto_reverse: bool,
     pub(crate) delay: Duration,
+    pub(crate) delay_on_reverse: bool,
     pub(crate) duration: Duration,
     pub(crate) repeat_mode: RepeatMode,
     /// How many times the animation has been repeated so far
@@ -391,6 +392,7 @@ impl Default for Animation {
             effect_states: SmallVec::new(),
             auto_reverse: false,
             delay: Duration::ZERO,
+            delay_on_reverse: false,
             duration: Duration::from_millis(200),
             repeat_mode: RepeatMode::Times(1),
             repeat_count: 0,
@@ -625,6 +627,12 @@ impl Animation {
         self
     }
 
+    /// Sets whether the animation should delay when reversing.
+    pub const fn delay_on_reverse(mut self, on_reverse: bool) -> Self {
+        self.delay_on_reverse = on_reverse;
+        self
+    }
+
     /// Sets if the animation should the repeat forever.
     pub const fn repeat(mut self, repeat: bool) -> Self {
         self.repeat_mode = if repeat {
@@ -808,6 +816,7 @@ impl Animation {
 
     /// Advance the animation.
     pub fn advance(&mut self) {
+        let use_delay = self.use_delay();
         match &mut self.state {
             AnimState::Idle => {
                 self.start_mut();
@@ -822,11 +831,13 @@ impl Animation {
                 let og_elapsed = elapsed;
                 elapsed = duration;
 
-                let temp_elapsed = if elapsed <= self.delay {
+                let temp_elapsed = if elapsed <= self.delay && use_delay {
                     // The animation hasn't started yet
                     Duration::ZERO
-                } else {
+                } else if use_delay {
                     elapsed - self.delay
+                } else {
+                    elapsed
                 };
 
                 if temp_elapsed >= self.duration {
@@ -957,13 +968,8 @@ impl Animation {
             return 0.;
         }
         let mut elapsed = self.elapsed().unwrap_or(Duration::ZERO);
-        // don't account for delay when reversing
-        if !self.reverse_once.is_rev() && elapsed < self.delay {
-            // The animation hasn't started yet
-            return 0.0;
-        }
-        if !self.reverse_once.is_rev() {
-            elapsed -= self.delay;
+        if self.use_delay() {
+            elapsed = elapsed.saturating_sub(self.delay);
         }
         let percent = elapsed.as_secs_f64() / self.duration.as_secs_f64();
 
@@ -976,6 +982,11 @@ impl Animation {
 
     fn is_reversing(&self) -> bool {
         self.reverse_once.is_rev()
+    }
+
+    fn use_delay(&self) -> bool {
+        // going forward or if we are still supposed to delay on reverse
+        !self.is_reversing() || self.delay_on_reverse
     }
 
     /// Get the lower and upper keyframe ids from the cache for a prop and then resolve those id's into a pair of `KeyFrameProp`s that contain the prop value and easing function

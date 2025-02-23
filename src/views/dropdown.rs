@@ -336,12 +336,12 @@ impl<T: Clone> Dropdown<T> {
     /// * `active_item` - A function that returns the currently selected item.
     ///
     /// * `main_view` - A function that takes a value of type `T` and returns an `AnyView`
-    ///                 to be used as the main dropdown display.
+    ///   to be used as the main dropdown display.
     ///
     /// * `iterator` - An iterator that provides the items to be displayed in the dropdown list.
     ///
     /// * `list_item_fn` - A function that takes a value of type `T` and returns an `AnyView`
-    ///                    to be used for each item in the dropdown list.
+    ///   to be used for each item in the dropdown list.
     pub fn custom<MF, I, LF, AIF>(
         active_item: AIF,
         main_view: MF,
@@ -461,7 +461,7 @@ impl<T: Clone> Dropdown<T> {
     /// # Arguments
     ///
     /// * `active_item` - A read-write signal representing the currently selected item.
-    ///                   It must implement `SignalGet<T>` and `SignalUpdate<T>`.
+    ///   It must implement `SignalGet<T>` and `SignalUpdate<T>`.
     ///
     /// * `iterator` - An iterator that provides the items to be displayed in the dropdown list.
     pub fn new_rw<AI, I>(active_item: AI, iterator: I) -> Dropdown<T>

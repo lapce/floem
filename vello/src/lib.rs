@@ -260,7 +260,7 @@ impl Renderer for VelloRenderer {
                 let font_id = glyph.font_id;
                 let metadata = glyph.metadata;
 
-                if current_run.as_ref().map_or(true, |run| {
+                if current_run.as_ref().is_none_or(|run| {
                     run.color != color
                         || run.font_size != font_size
                         || run.font_id != font_id
