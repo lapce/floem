@@ -14,6 +14,7 @@ pub mod lists;
 pub mod radio_buttons;
 pub mod rich_text;
 pub mod slider;
+pub mod table;
 
 use floem::{
     event::{Event, EventListener},
@@ -33,6 +34,7 @@ fn app_view() -> impl IntoView {
         "Radio",
         "Input",
         "List",
+        "Table",
         "Menu",
         "RichText",
         "Image",
@@ -53,6 +55,7 @@ fn app_view() -> impl IntoView {
             "Radio" => radio_buttons::radio_buttons_view().into_any(),
             "Input" => inputs::text_input_view().into_any(),
             "List" => lists::virt_list_view().into_any(),
+            "Table" => table::table_view().into_any(),
             "Menu" => context_menu::menu_view().into_any(),
             "RichText" => rich_text::rich_text_view().into_any(),
             "Image" => images::img_view().into_any(),
