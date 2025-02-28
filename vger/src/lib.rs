@@ -16,7 +16,10 @@ use peniko::{
     kurbo::{Affine, Point, Rect, Shape},
     BrushRef, Color, GradientKind,
 };
-use wgpu::{Device, DeviceType, Queue, StoreOp, Surface, SurfaceConfiguration, TextureFormat};
+use wgpu::{
+    CompositeAlphaMode, Device, DeviceType, Queue, StoreOp, Surface, SurfaceConfiguration,
+    TextureFormat,
+};
 
 pub struct VgerRenderer {
     device: Arc<Device>,
@@ -74,6 +77,19 @@ impl VgerRenderer {
             .into_iter()
             .find(|it| matches!(it, TextureFormat::Rgba8Unorm | TextureFormat::Bgra8Unorm))
             .ok_or_else(|| anyhow::anyhow!("surface should support Rgba8Unorm or Bgra8Unorm"))?;
+        let alpha_mode = if surface_caps
+            .alpha_modes
+            .contains(&CompositeAlphaMode::PreMultiplied)
+        {
+            CompositeAlphaMode::PreMultiplied
+        } else if surface_caps
+            .alpha_modes
+            .contains(&CompositeAlphaMode::PostMultiplied)
+        {
+            CompositeAlphaMode::PostMultiplied
+        } else {
+            CompositeAlphaMode::Auto
+        };
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -81,7 +97,7 @@ impl VgerRenderer {
             width,
             height,
             present_mode: wgpu::PresentMode::Fifo,
-            alpha_mode: wgpu::CompositeAlphaMode::Auto,
+            alpha_mode,
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
         };
