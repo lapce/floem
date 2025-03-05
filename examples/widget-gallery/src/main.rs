@@ -73,7 +73,7 @@ fn app_view() -> impl IntoView {
 
     let tabs = RwSignal::new(tabs);
 
-    let (active_tab, set_active_tab) = create_signal(0);
+    let (active_tab, set_active_tab) = create_signal(5);
 
     let side_tab_bar = tabs
         .get()

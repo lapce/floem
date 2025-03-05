@@ -4,7 +4,7 @@ pub mod text;
 use crate::text::LayoutRun;
 use peniko::{
     kurbo::{Affine, Point, Rect, Shape, Stroke},
-    BrushRef,
+    BlendMode, BrushRef,
 };
 pub use resvg::tiny_skia;
 pub use resvg::usvg;
@@ -46,6 +46,18 @@ pub trait Renderer {
     ///
     /// [non-zero fill rule]: https://en.wikipedia.org/wiki/Nonzero-rule
     fn fill<'b>(&mut self, path: &impl Shape, brush: impl Into<BrushRef<'b>>, blur_radius: f64);
+
+    /// Push a layer (This is not supported with Vger)
+    fn push_layer(
+        &mut self,
+        blend: impl Into<BlendMode>,
+        alpha: f32,
+        transform: Affine,
+        clip: &impl Shape,
+    );
+
+    /// Pop a layer (This is not supported with Vger)
+    fn pop_layer(&mut self);
 
     /// Draw a [`TextLayout`].
     ///

@@ -657,6 +657,17 @@ impl Renderer for VgerRenderer {
             None
         }
     }
+
+    fn push_layer(
+        &mut self,
+        _blend: impl Into<peniko::BlendMode>,
+        _alpha: f32,
+        _transform: Affine,
+        _clip: &impl Shape,
+    ) {
+    }
+
+    fn pop_layer(&mut self) {}
 }
 
 fn vger_color(color: Color) -> floem_vger_rs::Color {

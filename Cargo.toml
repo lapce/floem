@@ -81,6 +81,7 @@ im = { workspace = true }
 winit = { workspace = true }
 futures = { version = "0.3.30", optional = true }
 crossbeam = { version = "0.8", optional = true }
+eval-macro = "0.5"
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
 muda = { workspace = true }

@@ -104,3 +104,33 @@ impl_view_tuple!(13, A, B, C, D, E, F, G, H, I, J, K, L, M);
 impl_view_tuple!(14, A, B, C, D, E, F, G, H, I, J, K, L, M, N);
 impl_view_tuple!(15, A, B, C, D, E, F, G, H, I, J, K, L, M, N, O);
 impl_view_tuple!(16, A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
+
+// eval_macro::eval! {
+//     for i in 1..16 {
+//         let items = 1..i.map(|v| char::from_u32(v + 64).unwrap()).join(",");
+//         let tuple = format!("({items})");
+
+//         output!{
+//             impl ViewTuple for {{tuple}} {
+//                 fn into_views(self) -> Vec<Box<dyn View>> {
+//                     let {{tuple}} = self;
+//                     vec![
+//                         {{items}}
+//                     ]
+//                 }
+//                 fn stack(self, direction: FlexDirection) -> Stack {
+//                     crate::views::create_stack(self.into_views(), Some(direction))
+//                 }
+//             }
+
+//             impl IntoView for {{tuple}} {
+//                 type V = crate::views::Stack;
+
+//                 fn into_view(self) -> Self::V {
+//                     let views = self.into_views();
+//                     crate::views::create_stack(views, None)
+//                 }
+//             }
+//         }
+//     }
+// }
