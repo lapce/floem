@@ -124,6 +124,9 @@ pub use text_input::*;
 mod empty;
 pub use empty::*;
 
+mod canvas;
+pub use canvas::*;
+
 mod drag_window_area;
 pub use drag_window_area::*;
 
