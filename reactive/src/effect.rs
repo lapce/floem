@@ -280,3 +280,79 @@ where
         mem::take(&mut *self.observers.borrow_mut())
     }
 }
+
+pub struct SignalTracker {
+    id: Id,
+    on_change: Rc<dyn Fn()>,
+}
+
+impl Drop for SignalTracker {
+    fn drop(&mut self) {
+        self.id.dispose();
+    }
+}
+
+pub fn create_tracker(on_change: impl Fn() + 'static) -> SignalTracker {
+    let id = Id::next();
+
+    SignalTracker {
+        id,
+        on_change: Rc::new(on_change),
+    }
+}
+
+impl SignalTracker {
+    pub fn track<T: 'static>(&self, f: impl FnOnce() -> T) -> T {
+        // Clear any previous tracking by disposing the old effect
+        self.id.dispose();
+
+        let prev_effect = RUNTIME.with(|runtime| runtime.current_effect.borrow_mut().take());
+
+        let tracking_effect = Rc::new(TrackingEffect {
+            id: self.id,
+            observers: RefCell::new(HashSet::default()),
+            on_change: self.on_change.clone(),
+        });
+
+        RUNTIME.with(|runtime| {
+            *runtime.current_effect.borrow_mut() = Some(tracking_effect.clone());
+        });
+
+        let effect_scope = Scope(self.id, PhantomData);
+        let result = with_scope(effect_scope, || {
+            effect_scope.track();
+            f()
+        });
+
+        RUNTIME.with(|runtime| {
+            *runtime.current_effect.borrow_mut() = prev_effect;
+        });
+
+        result
+    }
+}
+
+struct TrackingEffect {
+    id: Id,
+    observers: RefCell<HashSet<Id>>,
+    on_change: Rc<dyn Fn()>,
+}
+
+impl EffectTrait for TrackingEffect {
+    fn id(&self) -> Id {
+        self.id
+    }
+
+    fn run(&self) -> bool {
+        (self.on_change)();
+        true
+    }
+
+    fn add_observer(&self, id: Id) {
+        self.observers.borrow_mut().insert(id);
+    }
+
+    fn clear_observers(&self) -> HashSet<Id> {
+        mem::take(&mut *self.observers.borrow_mut())
+    }
+}

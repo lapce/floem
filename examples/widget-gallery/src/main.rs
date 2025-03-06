@@ -1,5 +1,6 @@
 pub mod animation;
 pub mod buttons;
+pub mod canvas;
 pub mod checkbox;
 pub mod clipboard;
 pub mod context_menu;
@@ -32,6 +33,7 @@ fn app_view() -> impl IntoView {
         "Checkbox",
         "Radio",
         "Input",
+        "Canvas",
         "List",
         "Menu",
         "RichText",
@@ -52,6 +54,7 @@ fn app_view() -> impl IntoView {
             "Checkbox" => checkbox::checkbox_view().into_any(),
             "Radio" => radio_buttons::radio_buttons_view().into_any(),
             "Input" => inputs::text_input_view().into_any(),
+            "Canvas" => canvas::canvas_view().into_any(),
             "List" => lists::virt_list_view().into_any(),
             "Menu" => context_menu::menu_view().into_any(),
             "RichText" => rich_text::rich_text_view().into_any(),
