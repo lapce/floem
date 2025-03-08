@@ -25,7 +25,7 @@ pub struct Img<'a> {
 pub trait Renderer {
     fn begin(&mut self, capture: bool);
 
-    fn transform(&mut self, transform: Affine);
+    fn set_transform(&mut self, transform: Affine);
 
     fn set_z_index(&mut self, z_index: i32);
 

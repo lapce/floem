@@ -1,6 +1,6 @@
 use floem::{
     context::PaintCx,
-    event::Event,
+    event::{Event, EventPropagation},
     kurbo::{Affine, Circle, Point, Rect, Shape, Size, Stroke},
     peniko::{
         color::{AlphaColor, ColorSpaceTag::LinearSrgb, Hsl},
@@ -178,7 +178,7 @@ impl View for SatValuePicker {
         &mut self,
         _cx: &mut floem::context::EventCx,
         event: &Event,
-    ) -> floem::event::EventPropagation {
+    ) -> EventPropagation {
         if let Some(on_change) = &self.on_change {
             match event {
                 Event::PointerDown(pe) => {
@@ -199,10 +199,12 @@ impl View for SatValuePicker {
                         on_change(self.current_color.convert());
                     }
                 }
-                _ => {}
+                _ => {
+                    return EventPropagation::Continue;
+                }
             }
         }
-        floem::event::EventPropagation::Stop
+        EventPropagation::Stop
     }
 
     fn paint(&mut self, cx: &mut PaintCx) {
@@ -297,7 +299,7 @@ impl View for HuePicker {
         &mut self,
         _cx: &mut floem::context::EventCx,
         event: &Event,
-    ) -> floem::event::EventPropagation {
+    ) -> EventPropagation {
         if let Some(on_change) = &self.on_change {
             match event {
                 Event::PointerDown(pe) => {
@@ -318,10 +320,12 @@ impl View for HuePicker {
                         on_change(self.current_color.convert());
                     }
                 }
-                _ => {}
+                _ => {
+                    return EventPropagation::Continue;
+                }
             }
         }
-        floem::event::EventPropagation::Stop
+        EventPropagation::Stop
     }
 
     fn paint(&mut self, cx: &mut PaintCx) {
@@ -417,7 +421,7 @@ impl View for OpacityPicker {
         &mut self,
         _cx: &mut floem::context::EventCx,
         event: &Event,
-    ) -> floem::event::EventPropagation {
+    ) -> EventPropagation {
         if let Some(on_change) = &self.on_change {
             match event {
                 Event::PointerDown(pe) => {
@@ -438,10 +442,12 @@ impl View for OpacityPicker {
                         on_change(self.current_color);
                     }
                 }
-                _ => {}
+                _ => {
+                    return EventPropagation::Continue;
+                }
             }
         }
-        floem::event::EventPropagation::Stop
+        EventPropagation::Stop
     }
 
     fn paint(&mut self, cx: &mut PaintCx) {

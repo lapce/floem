@@ -589,7 +589,7 @@ impl Renderer for VgerRenderer {
         );
     }
 
-    fn transform(&mut self, transform: Affine) {
+    fn set_transform(&mut self, transform: Affine) {
         self.transform = transform;
     }
 

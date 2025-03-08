@@ -980,7 +980,9 @@ impl PaintCx<'_> {
         self.transform = self.saved_transforms.pop().unwrap_or_default();
         self.clip = self.saved_clips.pop().unwrap_or_default();
         self.z_index = self.saved_z_indexes.pop().unwrap_or_default();
-        self.paint_state.renderer_mut().transform(self.transform);
+        self.paint_state
+            .renderer_mut()
+            .set_transform(self.transform);
         if let Some(z_index) = self.z_index {
             self.paint_state.renderer_mut().set_z_index(z_index);
         } else {
@@ -1086,7 +1088,9 @@ impl PaintCx<'_> {
                 if let Some(transform) = transform {
                     self.save();
                     self.transform = transform;
-                    self.paint_state.renderer_mut().transform(self.transform);
+                    self.paint_state
+                        .renderer_mut()
+                        .set_transform(self.transform);
                     self.set_z_index(1000);
                     self.clear_clip();
 
@@ -1165,7 +1169,9 @@ impl PaintCx<'_> {
         new[4] += offset.0;
         new[5] += offset.1;
         self.transform = Affine::new(new);
-        self.paint_state.renderer_mut().transform(self.transform);
+        self.paint_state
+            .renderer_mut()
+            .set_transform(self.transform);
         if let Some(rect) = self.clip.as_mut() {
             let raidus = rect.radii();
             *rect = rect
@@ -1184,7 +1190,9 @@ impl PaintCx<'_> {
             });
             self.transform *= id.state().borrow().transform;
 
-            self.paint_state.renderer_mut().transform(self.transform);
+            self.paint_state
+                .renderer_mut()
+                .set_transform(self.transform);
 
             if let Some(rect) = self.clip.as_mut() {
                 let raidus = rect.radii();

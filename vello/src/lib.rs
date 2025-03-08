@@ -380,7 +380,7 @@ impl Renderer for VelloRenderer {
         );
     }
 
-    fn transform(&mut self, transform: Affine) {
+    fn set_transform(&mut self, transform: Affine) {
         self.transform = transform;
     }
 

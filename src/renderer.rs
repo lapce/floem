@@ -384,18 +384,18 @@ impl floem_renderer::Renderer for Renderer {
         }
     }
 
-    fn transform(&mut self, transform: Affine) {
+    fn set_transform(&mut self, transform: Affine) {
         match self {
             #[cfg(feature = "vello")]
             Renderer::Vello(v) => {
-                v.transform(transform);
+                v.set_transform(transform);
             }
             #[cfg(not(feature = "vello"))]
             Renderer::Vger(v) => {
-                v.transform(transform);
+                v.set_transform(transform);
             }
             Renderer::TinySkia(v) => {
-                v.transform(transform);
+                v.set_transform(transform);
             }
             Renderer::Uninitialized { .. } => {}
         }

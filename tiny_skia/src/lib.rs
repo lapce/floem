@@ -7,12 +7,14 @@ use floem_renderer::tiny_skia::{
 };
 use floem_renderer::Img;
 use floem_renderer::Renderer;
-use peniko::kurbo::{self, PathEl, Size, Vec2};
+use peniko::kurbo::{PathEl, Size};
 use peniko::{
     color::palette,
     kurbo::{Affine, Point, Rect, Shape},
     BrushRef, Color, GradientKind,
 };
+use peniko::{BlendMode, Compose, Mix};
+use resvg::tiny_skia::StrokeDash;
 use softbuffer::{Context, Surface};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -21,6 +23,7 @@ use std::rc::Rc;
 use tiny_skia::{LineCap, LineJoin};
 
 thread_local! {
+    #[allow(clippy::type_complexity)]
     static IMAGE_CACHE: RefCell<HashMap<Vec<u8>, (CacheColor, Rc<Pixmap>)>> = RefCell::new(HashMap::new());
     #[allow(clippy::type_complexity)]
     // The `u32` is a color encoded as a u32 so that it is hashable and eq.
@@ -100,70 +103,167 @@ struct CacheColor(bool);
 
 struct Layer {
     pixmap: Pixmap,
-    mask: Mask,
+    /// clip is stored with the transform at the time clip is called
     clip: Option<Rect>,
+    mask: Mask,
+    /// this transform should generally only be used when making a draw call to skia
     transform: Affine,
-    bounds: Rect,
+    // the transform that the layer was pushed with that will be used when applying the layer
+    combine_transform: Affine,
+    blend_mode: BlendMode,
     alpha: f32,
-    blend_mode: tiny_skia::BlendMode,
     window_scale: f64,
     cache_color: CacheColor,
 }
 impl Layer {
-    fn current_transform(&self) -> Transform {
-        let transform = self.transform.as_coeffs();
-        let scale = self.window_scale as f32;
-        Transform::from_row(
+    fn clip_rect(&self, img_rect: Rect) -> Option<tiny_skia::Rect> {
+        if let Some(clip) = self.clip {
+            let clip = clip.intersect(img_rect);
+            to_skia_rect(clip)
+        } else {
+            to_skia_rect(img_rect)
+        }
+    }
+
+    /// Renders the pixmap at the position and transforms it with the given transform.
+    /// x and y should have already been scaled by the window scale
+    fn render_pixmap_direct(&mut self, img_pixmap: &Pixmap, x: f32, y: f32, transform: Affine) {
+        let img_rect = Rect::from_origin_size(
+            (x, y),
+            (img_pixmap.width() as f64, img_pixmap.height() as f64),
+        );
+        let paint = Paint {
+            shader: Pattern::new(
+                img_pixmap.as_ref(),
+                SpreadMode::Pad,
+                FilterQuality::Nearest,
+                1.0,
+                Transform::from_translate(x, y),
+            ),
+            ..Default::default()
+        };
+
+        let transform = transform.as_coeffs();
+        let transform = Transform::from_row(
             transform[0] as f32,
             transform[1] as f32,
             transform[2] as f32,
             transform[3] as f32,
             transform[4] as f32,
             transform[5] as f32,
-        )
-        .post_scale(scale, scale)
+        );
+        if let Some(rect) = self.clip_rect(img_rect) {
+            self.pixmap.fill_rect(rect, &paint, transform, None);
+        }
+    }
+
+    fn render_pixmap_rect(&mut self, pixmap: &Pixmap, rect: tiny_skia::Rect) {
+        let paint = Paint {
+            shader: Pattern::new(
+                pixmap.as_ref(),
+                SpreadMode::Pad,
+                FilterQuality::Bilinear,
+                1.0,
+                Transform::from_scale(
+                    rect.width() / pixmap.width() as f32,
+                    rect.height() / pixmap.height() as f32,
+                ),
+            ),
+            ..Default::default()
+        };
+
+        self.pixmap.fill_rect(
+            rect,
+            &paint,
+            self.skia_transform(),
+            self.clip.is_some().then_some(&self.mask),
+        );
+    }
+
+    fn render_pixmap_with_paint(
+        &mut self,
+        pixmap: &Pixmap,
+        rect: tiny_skia::Rect,
+        paint: Option<Paint<'static>>,
+    ) {
+        let paint = if let Some(paint) = paint {
+            paint
+        } else {
+            return self.render_pixmap_rect(pixmap, rect);
+        };
+
+        let mut colored_bg = try_ret!(Pixmap::new(pixmap.width(), pixmap.height()));
+        colored_bg.fill_rect(
+            try_ret!(tiny_skia::Rect::from_xywh(
+                0.0,
+                0.0,
+                pixmap.width() as f32,
+                pixmap.height() as f32
+            )),
+            &paint,
+            Transform::identity(),
+            None,
+        );
+
+        let mask = Mask::from_pixmap(pixmap.as_ref(), MaskType::Alpha);
+        colored_bg.apply_mask(&mask);
+
+        self.render_pixmap_rect(&colored_bg, rect);
+    }
+
+    fn skia_transform(&self) -> Transform {
+        skia_transform(self.transform, self.window_scale as f32)
     }
 }
-impl Renderer for Layer {
-    fn begin(&mut self, _capture: bool) {
-        self.transform = Affine::IDENTITY;
-        self.pixmap.fill(tiny_skia::Color::WHITE);
-        self.clip = None;
+impl Layer {
+    /// The combine transform should be the transform that the layer is pushed with without combining with the previous transform. It will be used when combining layers to offset/transform this layer into the parent with the parent transform
+    fn new(
+        blend: impl Into<peniko::BlendMode>,
+        alpha: f32,
+        combine_transform: Affine,
+        clip: &impl Shape,
+        window_scale: f64,
+        cache_color: CacheColor,
+    ) -> Result<Self, anyhow::Error> {
+        let transform = Affine::IDENTITY;
+        let bbox = clip.bounding_box();
+        let scaled_box = Affine::scale(window_scale).transform_rect_bbox(bbox);
+        let width = scaled_box.width() as u32;
+        let height = scaled_box.height() as u32;
+        let mut mask = Mask::new(width, height).ok_or_else(|| anyhow!("unable to create mask"))?;
+        mask.fill_path(
+            &shape_to_path(clip).ok_or_else(|| anyhow!("unable to create clip shape"))?,
+            FillRule::Winding,
+            false,
+            Transform::from_scale(window_scale as f32, window_scale as f32),
+        );
+        Ok(Self {
+            pixmap: Pixmap::new(width, height).ok_or_else(|| anyhow!("unable to create pixmap"))?,
+            mask,
+            clip: Some(bbox),
+            transform,
+            combine_transform,
+            blend_mode: blend.into(),
+            alpha,
+            window_scale,
+            cache_color,
+        })
     }
 
     fn transform(&mut self, transform: Affine) {
-        self.transform = transform;
-    }
-
-    fn set_z_index(&mut self, _z_index: i32) {
-        // Not supported
+        self.transform *= transform;
     }
 
     fn clip(&mut self, shape: &impl Shape) {
-        let rect = if let Some(rect) = shape.as_rect() {
-            rect
-        } else if let Some(rect) = shape.as_rounded_rect() {
-            rect.rect()
-        } else {
-            shape.bounding_box()
-        };
-
-        let p0 = self.transform * Point::new(rect.x0, rect.y0);
-        let p1 = self.transform * Point::new(rect.x1, rect.y0);
-        let p2 = self.transform * Point::new(rect.x0, rect.y1);
-        let p3 = self.transform * Point::new(rect.x1, rect.y1);
-        // Find the bounding box of transformed points
-        let x0 = p0.x.min(p1.x).min(p2.x).min(p3.x);
-        let y0 = p0.y.min(p1.y).min(p2.y).min(p3.y);
-        let x1 = p0.x.max(p1.x).max(p2.x).max(p3.x);
-        let y1 = p0.y.max(p1.y).max(p2.y).max(p3.y);
-
-        self.clip = Some(Rect::new(x0, y0, x1, y1));
-
-        self.mask.clear();
+        self.clip = Some(
+            self.transform
+                .then_scale(self.window_scale)
+                .transform_rect_bbox(shape.bounding_box()),
+        );
         let path = try_ret!(shape_to_path(shape));
+        self.mask.clear();
         self.mask
-            .fill_path(&path, FillRule::Winding, false, self.current_transform());
+            .fill_path(&path, FillRule::Winding, false, self.skia_transform());
     }
 
     fn clear_clip(&mut self) {
@@ -188,19 +288,23 @@ impl Renderer for Layer {
             peniko::kurbo::Join::Miter => LineJoin::Miter,
             peniko::kurbo::Join::Round => LineJoin::Round,
         };
-        // TODO: Finish dash
         let stroke = Stroke {
             width: stroke.width as f32,
             miter_limit: stroke.miter_limit as f32,
             line_cap,
             line_join,
-            dash: None,
+            dash: (!stroke.dash_pattern.is_empty())
+                .then_some(StrokeDash::new(
+                    stroke.dash_pattern.iter().map(|v| *v as f32).collect(),
+                    stroke.dash_offset as f32,
+                ))
+                .flatten(),
         };
         self.pixmap.stroke_path(
             &path,
             &paint,
             &stroke,
-            self.current_transform(),
+            self.skia_transform(),
             self.clip.is_some().then_some(&self.mask),
         );
     }
@@ -211,32 +315,22 @@ impl Renderer for Layer {
         let paint = try_ret!(brush_to_paint(brush));
         if let Some(rect) = shape.as_rect() {
             let rect = try_ret!(to_skia_rect(rect));
-            self.pixmap
-                .fill_rect(rect, &paint, self.current_transform(), None);
+            self.pixmap.fill_rect(
+                rect,
+                &paint,
+                self.skia_transform(),
+                self.clip.is_some().then_some(&self.mask),
+            );
         } else {
             let path = try_ret!(shape_to_path(shape));
             self.pixmap.fill_path(
                 &path,
                 &paint,
                 FillRule::Winding,
-                self.current_transform(),
+                self.skia_transform(),
                 self.clip.is_some().then_some(&self.mask),
             );
         }
-    }
-
-    fn push_layer(
-        &mut self,
-        blend: impl Into<peniko::BlendMode>,
-        alpha: f32,
-        transform: Affine,
-        clip: &impl Shape,
-    ) {
-        todo!()
-    }
-
-    fn pop_layer(&mut self) {
-        todo!()
     }
 
     fn draw_text_with_layout<'b>(
@@ -244,16 +338,17 @@ impl Renderer for Layer {
         layout: impl Iterator<Item = LayoutRun<'b>>,
         pos: impl Into<Point>,
     ) {
-        let offset = self.transform.translation();
         let pos: Point = pos.into();
         let clip = self.clip;
+        let undo_transform = |r| self.transform.inverse().transform_rect_bbox(r);
+        let scaled_clip = clip.map(undo_transform);
 
-        let transform = self.transform
-            * Affine::translate(Vec2::new(-offset.x, -offset.y))
-            * Affine::scale(1.0 / self.window_scale);
+        // we manually handle the offset so that the glyph_x and y can be scaled by the window_scale
+        let offset = self.transform.translation();
+        let transform = self.transform * Affine::translate((-offset.x, -offset.y));
 
         for line in layout {
-            if let Some(rect) = clip {
+            if let Some(rect) = scaled_clip {
                 let y = pos.y + offset.y + line.line_y as f64;
                 if y + (line.line_height as f64) < rect.y0 {
                     continue;
@@ -265,7 +360,7 @@ impl Renderer for Layer {
             'line_loop: for glyph_run in line.glyphs {
                 let x = glyph_run.x + pos.x as f32 + offset.x as f32;
                 let y = line.line_y + pos.y as f32 + offset.y as f32;
-                if let Some(rect) = clip {
+                if let Some(rect) = scaled_clip {
                     if ((x + glyph_run.w) as f64) < rect.x0 {
                         continue;
                     } else if x as f64 > rect.x1 {
@@ -274,13 +369,13 @@ impl Renderer for Layer {
                 }
 
                 let glyph_x = x * self.window_scale as f32;
-                let glyph_y = (y * self.window_scale as f32).round();
-                let font_size = (glyph_run.font_size * self.window_scale as f32).round() as u32;
+                let glyph_y = y * self.window_scale as f32;
+                let font_size = glyph_run.font_size * self.window_scale as f32;
 
                 let (cache_key, new_x, new_y) = CacheKey::new(
                     glyph_run.font_id,
                     glyph_run.glyph_id,
-                    font_size as f32,
+                    font_size,
                     (glyph_x, glyph_y),
                     glyph_run.cache_key_flags,
                 );
@@ -289,16 +384,13 @@ impl Renderer for Layer {
                     Color::from_rgba8(c.r(), c.g(), c.b(), c.a())
                 });
 
-                let pixmap = cache_glyph(self.cache_color, cache_key, color);
-                if let Some(glyph) = pixmap {
-                    render_pixmap_direct(
+                let glyph = cache_glyph(self.cache_color, cache_key, color);
+                if let Some(glyph) = glyph {
+                    self.render_pixmap_direct(
                         &glyph.pixmap,
-                        &mut self.pixmap,
                         new_x as f32 + glyph.left,
                         new_y as f32 - glyph.top,
                         transform,
-                        self.clip,
-                        self.window_scale,
                     );
                 }
             }
@@ -319,17 +411,10 @@ impl Renderer for Layer {
         let paint = brush.and_then(|brush| brush_to_paint(brush));
 
         if IMAGE_CACHE.with_borrow_mut(|ic| {
-            if let Some((color, pixmap)) = ic.get_mut(svg.hash) {
+            if let Some((color, non_colored_svg_pixmap)) = ic.get_mut(svg.hash) {
                 *color = self.cache_color;
-                let pixmap = pixmap.clone();
-                render_pixmap_paint(
-                    &pixmap,
-                    &mut self.pixmap,
-                    rect,
-                    paint.clone(),
-                    self.clip,
-                    self.window_scale,
-                );
+                let pixmap = non_colored_svg_pixmap.clone();
+                self.render_pixmap_with_paint(&pixmap, rect, paint.clone());
                 // return
                 true
             } else {
@@ -340,255 +425,21 @@ impl Renderer for Layer {
             return;
         };
 
-        let mut pixmap = try_ret!(tiny_skia::Pixmap::new(width, height));
+        let mut non_colored_svg = try_ret!(tiny_skia::Pixmap::new(width, height));
         let svg_transform = tiny_skia::Transform::from_scale(
             width as f32 / svg.tree.size().width(),
             height as f32 / svg.tree.size().height(),
         );
-        resvg::render(svg.tree, svg_transform, &mut pixmap.as_mut());
+        resvg::render(svg.tree, svg_transform, &mut non_colored_svg.as_mut());
 
-        self.render_pixmap_paint(&pixmap, rect, paint);
+        self.render_pixmap_with_paint(&non_colored_svg, rect, paint);
 
         IMAGE_CACHE.with_borrow_mut(|ic| {
-            ic.insert(svg.hash.to_owned(), (self.cache_color, Rc::new(pixmap)))
-        });
-    }
-
-    fn draw_img(&mut self, img: Img<'_>, rect: Rect) {
-        todo!()
-    }
-
-    fn finish(&mut self) -> Option<peniko::Image> {
-        todo!()
-    }
-}
-
-pub struct TinySkiaRenderer<W> {
-    #[allow(unused)]
-    context: Context<W>,
-    surface: Surface<W, W>,
-    pixmap: Pixmap,
-    mask: Mask,
-    window_scale: f64,
-    transform: Affine,
-    clip: Option<Rect>,
-
-    /// The cache color value set for cache entries accessed this frame.
-    cache_color: CacheColor,
-}
-
-impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle>
-    TinySkiaRenderer<W>
-{
-    pub fn new(window: W, width: u32, height: u32, scale: f64, font_embolden: f32) -> Result<Self>
-    where
-        W: Clone,
-    {
-        let context = Context::new(window.clone())
-            .map_err(|err| anyhow!("unable to create context: {}", err))?;
-        let mut surface = Surface::new(&context, window)
-            .map_err(|err| anyhow!("unable to create surface: {}", err))?;
-        surface
-            .resize(
-                NonZeroU32::new(width).unwrap_or(NonZeroU32::new(1).unwrap()),
-                NonZeroU32::new(height).unwrap_or(NonZeroU32::new(1).unwrap()),
+            ic.insert(
+                svg.hash.to_owned(),
+                (self.cache_color, Rc::new(non_colored_svg)),
             )
-            .map_err(|_| anyhow!("failed to resize surface"))?;
-
-        let pixmap =
-            Pixmap::new(width, height).ok_or_else(|| anyhow!("unable to create pixmap"))?;
-
-        let mask = Mask::new(width, height).ok_or_else(|| anyhow!("unable to create mask"))?;
-
-        Ok(Self {
-            context,
-            surface,
-            pixmap,
-            mask,
-            window_scale: scale,
-            transform: Affine::IDENTITY,
-            clip: None,
-            cache_color: CacheColor(false),
-        })
-    }
-
-    pub fn resize(&mut self, width: u32, height: u32, scale: f64) {
-        if width != self.pixmap.width() || height != self.pixmap.width() {
-            self.surface
-                .resize(
-                    NonZeroU32::new(width).unwrap_or(NonZeroU32::new(1).unwrap()),
-                    NonZeroU32::new(height).unwrap_or(NonZeroU32::new(1).unwrap()),
-                )
-                .expect("failed to resize surface");
-            self.pixmap = Pixmap::new(width, height).expect("unable to create pixmap");
-            self.mask = Mask::new(width, height).expect("unable to create mask");
-        }
-        self.window_scale = scale;
-    }
-
-    pub fn set_scale(&mut self, scale: f64) {
-        self.window_scale = scale;
-    }
-
-    pub const fn scale(&self) -> f64 {
-        self.window_scale
-    }
-
-    pub fn size(&self) -> Size {
-        Size::new(self.pixmap.width() as f64, self.pixmap.height() as f64)
-    }
-}
-
-fn to_color(color: Color) -> tiny_skia::Color {
-    let c = color.to_rgba8();
-    tiny_skia::Color::from_rgba8(c.r, c.g, c.b, c.a)
-}
-
-fn to_point(point: Point) -> tiny_skia::Point {
-    tiny_skia::Point::from_xy(point.x as f32, point.y as f32)
-}
-
-impl<W> TinySkiaRenderer<W> {
-    fn current_transform(&self) -> Transform {
-        let transform = self.transform.as_coeffs();
-        let scale = self.window_scale as f32;
-        Transform::from_row(
-            transform[0] as f32,
-            transform[1] as f32,
-            transform[2] as f32,
-            transform[3] as f32,
-            transform[4] as f32,
-            transform[5] as f32,
-        )
-        .post_scale(scale, scale)
-    }
-}
-
-impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle> Renderer
-    for TinySkiaRenderer<W>
-{
-    fn begin(&mut self, _capture: bool) {
-        self.transform = Affine::IDENTITY;
-        self.pixmap.fill(tiny_skia::Color::WHITE);
-        self.clip = None;
-    }
-
-    fn stroke<'b, 's>(
-        &mut self,
-        shape: &impl Shape,
-        brush: impl Into<BrushRef<'b>>,
-        stroke: &'s peniko::kurbo::Stroke,
-    ) {
-        let paint = try_ret!(brush_to_paint(brush));
-        let path = try_ret!(shape_to_path(shape));
-        let line_cap = match stroke.end_cap {
-            peniko::kurbo::Cap::Butt => LineCap::Butt,
-            peniko::kurbo::Cap::Square => LineCap::Square,
-            peniko::kurbo::Cap::Round => LineCap::Round,
-        };
-        let line_join = match stroke.join {
-            peniko::kurbo::Join::Bevel => LineJoin::Bevel,
-            peniko::kurbo::Join::Miter => LineJoin::Miter,
-            peniko::kurbo::Join::Round => LineJoin::Round,
-        };
-        // TODO: Finish dash
-        let stroke = Stroke {
-            width: stroke.width as f32,
-            miter_limit: stroke.miter_limit as f32,
-            line_cap,
-            line_join,
-            dash: None,
-        };
-        self.pixmap.stroke_path(
-            &path,
-            &paint,
-            &stroke,
-            self.current_transform(),
-            self.clip.is_some().then_some(&self.mask),
-        );
-    }
-
-    fn fill<'b>(&mut self, shape: &impl Shape, brush: impl Into<BrushRef<'b>>, _blur_radius: f64) {
-        // FIXME: Handle _blur_radius
-
-        let paint = try_ret!(brush_to_paint(brush));
-        if let Some(rect) = shape.as_rect() {
-            let rect = try_ret!(to_skia_rect(rect));
-            self.pixmap
-                .fill_rect(rect, &paint, self.current_transform(), None);
-        } else {
-            let path = try_ret!(shape_to_path(shape));
-            self.pixmap.fill_path(
-                &path,
-                &paint,
-                FillRule::Winding,
-                self.current_transform(),
-                self.clip.is_some().then_some(&self.mask),
-            );
-        }
-    }
-
-    fn draw_text_with_layout<'b>(
-        &mut self,
-        layout: impl Iterator<Item = LayoutRun<'b>>,
-        pos: impl Into<Point>,
-    ) {
-        let offset = self.transform.translation();
-        let pos: Point = pos.into();
-        let clip = self.clip;
-
-        let transform = self.transform
-            * Affine::translate(Vec2::new(-offset.x, -offset.y))
-            * Affine::scale(1.0 / self.window_scale);
-
-        for line in layout {
-            if let Some(rect) = clip {
-                let y = pos.y + offset.y + line.line_y as f64;
-                if y + (line.line_height as f64) < rect.y0 {
-                    continue;
-                }
-                if y - (line.line_height as f64) > rect.y1 {
-                    break;
-                }
-            }
-            'line_loop: for glyph_run in line.glyphs {
-                let x = glyph_run.x + pos.x as f32 + offset.x as f32;
-                let y = line.line_y + pos.y as f32 + offset.y as f32;
-                if let Some(rect) = clip {
-                    if ((x + glyph_run.w) as f64) < rect.x0 {
-                        continue;
-                    } else if x as f64 > rect.x1 {
-                        break 'line_loop;
-                    }
-                }
-
-                let glyph_x = x * self.window_scale as f32;
-                let glyph_y = (y * self.window_scale as f32).round();
-                let font_size = (glyph_run.font_size * self.window_scale as f32).round() as u32;
-
-                let (cache_key, new_x, new_y) = CacheKey::new(
-                    glyph_run.font_id,
-                    glyph_run.glyph_id,
-                    font_size as f32,
-                    (glyph_x, glyph_y),
-                    glyph_run.cache_key_flags,
-                );
-
-                let color = glyph_run.color_opt.map_or(palette::css::BLACK, |c| {
-                    Color::from_rgba8(c.r(), c.g(), c.b(), c.a())
-                });
-
-                let pixmap = cache_glyph(self.cache_color, cache_key, color);
-                if let Some(glyph) = pixmap {
-                    self.render_pixmap_direct(
-                        &glyph.pixmap,
-                        new_x as f32 + glyph.left,
-                        new_y as f32 - glyph.top,
-                        transform,
-                    );
-                }
-            }
-        }
+        });
     }
 
     fn draw_img(&mut self, img: Img<'_>, rect: Rect) {
@@ -626,6 +477,147 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
             ic.insert(img.hash.to_owned(), (self.cache_color, Rc::new(pixmap)))
         });
     }
+}
+
+pub struct TinySkiaRenderer<W> {
+    #[allow(unused)]
+    context: Context<W>,
+    surface: Surface<W, W>,
+    cache_color: CacheColor,
+    transform: Affine,
+    window_scale: f64,
+    layers: Vec<Layer>,
+}
+
+impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle>
+    TinySkiaRenderer<W>
+{
+    pub fn new(window: W, width: u32, height: u32, scale: f64, font_embolden: f32) -> Result<Self>
+    where
+        W: Clone,
+    {
+        let context = Context::new(window.clone())
+            .map_err(|err| anyhow!("unable to create context: {}", err))?;
+        let mut surface = Surface::new(&context, window)
+            .map_err(|err| anyhow!("unable to create surface: {}", err))?;
+        surface
+            .resize(
+                NonZeroU32::new(width).unwrap_or(NonZeroU32::new(1).unwrap()),
+                NonZeroU32::new(height).unwrap_or(NonZeroU32::new(1).unwrap()),
+            )
+            .map_err(|_| anyhow!("failed to resize surface"))?;
+
+        let pixmap =
+            Pixmap::new(width, height).ok_or_else(|| anyhow!("unable to create pixmap"))?;
+
+        let mask = Mask::new(width, height).ok_or_else(|| anyhow!("unable to create mask"))?;
+
+        // this is fine to modify the embolden here but it shouldn't be modified any other time
+        SWASH_SCALER.with_borrow_mut(|s| s.font_embolden = font_embolden);
+
+        let main_layer = Layer {
+            pixmap,
+            mask,
+            clip: None,
+            alpha: 1.,
+            transform: Affine::IDENTITY,
+            combine_transform: Affine::IDENTITY,
+            blend_mode: Mix::Normal.into(),
+            window_scale: scale,
+            cache_color: CacheColor(false),
+        };
+        Ok(Self {
+            context,
+            surface,
+            transform: Affine::IDENTITY,
+            window_scale: scale,
+            cache_color: CacheColor(false),
+            layers: vec![main_layer],
+        })
+    }
+
+    pub fn resize(&mut self, width: u32, height: u32, scale: f64) {
+        if width != self.layers[0].pixmap.width() || height != self.layers[0].pixmap.width() {
+            self.surface
+                .resize(
+                    NonZeroU32::new(width).unwrap_or(NonZeroU32::new(1).unwrap()),
+                    NonZeroU32::new(height).unwrap_or(NonZeroU32::new(1).unwrap()),
+                )
+                .expect("failed to resize surface");
+            self.layers[0].pixmap = Pixmap::new(width, height).expect("unable to create pixmap");
+            self.layers[0].mask = Mask::new(width, height).expect("unable to create mask");
+        }
+        self.layers[0].window_scale = scale;
+        self.window_scale = scale;
+    }
+
+    pub fn set_scale(&mut self, scale: f64) {
+        self.layers[0].window_scale = scale;
+        self.window_scale = scale;
+    }
+
+    pub fn scale(&self) -> f64 {
+        self.window_scale
+    }
+
+    pub fn size(&self) -> Size {
+        Size::new(
+            self.layers[0].pixmap.width() as f64,
+            self.layers[0].pixmap.height() as f64,
+        )
+    }
+}
+
+fn to_color(color: Color) -> tiny_skia::Color {
+    let c = color.to_rgba8();
+    tiny_skia::Color::from_rgba8(c.r, c.g, c.b, c.a)
+}
+
+fn to_point(point: Point) -> tiny_skia::Point {
+    tiny_skia::Point::from_xy(point.x as f32, point.y as f32)
+}
+
+impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle> Renderer
+    for TinySkiaRenderer<W>
+{
+    fn begin(&mut self, _capture: bool) {
+        assert!(self.layers.len() == 1);
+        let first_layer = self.layers.last_mut().unwrap();
+        first_layer.pixmap.fill(tiny_skia::Color::WHITE);
+        first_layer.clip = None;
+        first_layer.transform = Affine::IDENTITY;
+    }
+
+    fn stroke<'b, 's>(
+        &mut self,
+        shape: &impl Shape,
+        brush: impl Into<BrushRef<'b>>,
+        stroke: &'s peniko::kurbo::Stroke,
+    ) {
+        self.layers.last_mut().unwrap().stroke(shape, brush, stroke);
+    }
+
+    fn fill<'b>(&mut self, shape: &impl Shape, brush: impl Into<BrushRef<'b>>, blur_radius: f64) {
+        self.layers
+            .last_mut()
+            .unwrap()
+            .fill(shape, brush, blur_radius);
+    }
+
+    fn draw_text_with_layout<'b>(
+        &mut self,
+        layout: impl Iterator<Item = LayoutRun<'b>>,
+        pos: impl Into<Point>,
+    ) {
+        self.layers
+            .last_mut()
+            .unwrap()
+            .draw_text_with_layout(layout, pos);
+    }
+
+    fn draw_img(&mut self, img: Img<'_>, rect: Rect) {
+        self.layers.last_mut().unwrap().draw_img(img, rect);
+    }
 
     fn draw_svg<'b>(
         &mut self,
@@ -633,44 +625,13 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
         rect: Rect,
         brush: Option<impl Into<BrushRef<'b>>>,
     ) {
-        let width = (rect.width() * self.window_scale).round() as u32;
-        let height = (rect.height() * self.window_scale).round() as u32;
-
-        let rect = try_ret!(to_skia_rect(rect));
-
-        let paint = brush.and_then(|brush| brush_to_paint(brush));
-
-        if IMAGE_CACHE.with_borrow_mut(|ic| {
-            if let Some((color, pixmap)) = ic.get_mut(svg.hash) {
-                *color = self.cache_color;
-                let pixmap = pixmap.clone();
-                self.render_pixmap_paint(&pixmap, rect, paint.clone());
-                // return
-                true
-            } else {
-                // continue
-                false
-            }
-        }) {
-            return;
-        };
-
-        let mut pixmap = try_ret!(tiny_skia::Pixmap::new(width, height));
-        let svg_transform = tiny_skia::Transform::from_scale(
-            width as f32 / svg.tree.size().width(),
-            height as f32 / svg.tree.size().height(),
-        );
-        resvg::render(svg.tree, svg_transform, &mut pixmap.as_mut());
-
-        self.render_pixmap_paint(&pixmap, rect, paint);
-
-        IMAGE_CACHE.with_borrow_mut(|ic| {
-            ic.insert(svg.hash.to_owned(), (self.cache_color, Rc::new(pixmap)))
-        });
+        self.layers.last_mut().unwrap().draw_svg(svg, rect, brush);
     }
 
-    fn transform(&mut self, transform: Affine) {
-        self.transform = transform;
+    fn set_transform(&mut self, cumulative_transform: Affine) {
+        let uncombined = self.transform.inverse() * cumulative_transform;
+        self.transform = cumulative_transform;
+        self.layers.last_mut().unwrap().transform(uncombined);
     }
 
     fn set_z_index(&mut self, _z_index: i32) {
@@ -678,34 +639,11 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
     }
 
     fn clip(&mut self, shape: &impl Shape) {
-        let rect = if let Some(rect) = shape.as_rect() {
-            rect
-        } else if let Some(rect) = shape.as_rounded_rect() {
-            rect.rect()
-        } else {
-            shape.bounding_box()
-        };
-
-        let p0 = self.transform * Point::new(rect.x0, rect.y0);
-        let p1 = self.transform * Point::new(rect.x1, rect.y0);
-        let p2 = self.transform * Point::new(rect.x0, rect.y1);
-        let p3 = self.transform * Point::new(rect.x1, rect.y1);
-        // Find the bounding box of transformed points
-        let x0 = p0.x.min(p1.x).min(p2.x).min(p3.x);
-        let y0 = p0.y.min(p1.y).min(p2.y).min(p3.y);
-        let x1 = p0.x.max(p1.x).max(p2.x).max(p3.x);
-        let y1 = p0.y.max(p1.y).max(p2.y).max(p3.y);
-
-        self.clip = Some(Rect::new(x0, y0, x1, y1));
-
-        self.mask.clear();
-        let path = try_ret!(shape_to_path(shape));
-        self.mask
-            .fill_path(&path, FillRule::Winding, false, self.current_transform());
+        self.layers.iter_mut().for_each(|l| l.clip(shape));
     }
 
     fn clear_clip(&mut self) {
-        self.clip = None;
+        self.layers.iter_mut().for_each(|l| l.clear_clip());
     }
 
     fn finish(&mut self) -> Option<peniko::Image> {
@@ -722,7 +660,9 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
             .expect("failed to get the surface buffer");
 
         // Copy from `tiny_skia::Pixmap` to the format specified by `softbuffer::Buffer`.
-        for (out_pixel, pixel) in (buffer.iter_mut()).zip(self.pixmap.pixels().iter()) {
+        for (out_pixel, pixel) in
+            (buffer.iter_mut()).zip(self.layers.last().unwrap().pixmap.pixels().iter())
+        {
             *out_pixel = ((pixel.red() as u32) << 16)
                 | ((pixel.green() as u32) << 8)
                 | (pixel.blue() as u32);
@@ -742,57 +682,28 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
         transform: Affine,
         clip: &impl Shape,
     ) {
-        todo!()
+        if let Ok(res) = Layer::new(
+            blend,
+            alpha,
+            transform,
+            clip,
+            self.window_scale,
+            self.cache_color,
+        ) {
+            self.layers.push(res);
+        }
     }
 
     fn pop_layer(&mut self) {
-        todo!()
-    }
-}
+        if self.layers.len() <= 1 {
+            // Don't pop the main layer
+            return;
+        }
 
-/// Converts a peniko BlendMode to a tiny_skia BlendMode
-fn convert_blend_mode(blend: impl Into<peniko::BlendMode>) -> tiny_skia::BlendMode {
-    let peniko_blend = blend.into();
+        let layer = self.layers.pop().unwrap();
+        let parent = self.layers.last_mut().unwrap();
 
-    match (peniko_blend.mix, peniko_blend.compose) {
-        // Map standard Porter-Duff compositing operations
-        (peniko::Mix::Normal, peniko::Compose::Clear) => tiny_skia::BlendMode::Clear,
-        (peniko::Mix::Normal, peniko::Compose::Copy) => tiny_skia::BlendMode::Source,
-        (peniko::Mix::Normal, peniko::Compose::Dest) => tiny_skia::BlendMode::Destination,
-        (peniko::Mix::Normal, peniko::Compose::SrcOver) => tiny_skia::BlendMode::SourceOver,
-        (peniko::Mix::Clip, peniko::Compose::SrcOver) => tiny_skia::BlendMode::SourceOver,
-        (peniko::Mix::Normal, peniko::Compose::DestOver) => tiny_skia::BlendMode::DestinationOver,
-        (peniko::Mix::Normal, peniko::Compose::SrcIn) => tiny_skia::BlendMode::SourceIn,
-        (peniko::Mix::Normal, peniko::Compose::DestIn) => tiny_skia::BlendMode::DestinationIn,
-        (peniko::Mix::Normal, peniko::Compose::SrcOut) => tiny_skia::BlendMode::SourceOut,
-        (peniko::Mix::Normal, peniko::Compose::DestOut) => tiny_skia::BlendMode::DestinationOut,
-        (peniko::Mix::Normal, peniko::Compose::SrcAtop) => tiny_skia::BlendMode::SourceAtop,
-        (peniko::Mix::Normal, peniko::Compose::DestAtop) => tiny_skia::BlendMode::DestinationAtop,
-        (peniko::Mix::Normal, peniko::Compose::Xor) => tiny_skia::BlendMode::Xor,
-        (peniko::Mix::Normal, peniko::Compose::Plus) => tiny_skia::BlendMode::Plus,
-
-        // Map blend modes with SrcOver composition
-        (peniko::Mix::Multiply, peniko::Compose::SrcOver) => tiny_skia::BlendMode::Multiply,
-        (peniko::Mix::Screen, peniko::Compose::SrcOver) => tiny_skia::BlendMode::Screen,
-        (peniko::Mix::Overlay, peniko::Compose::SrcOver) => tiny_skia::BlendMode::Overlay,
-        (peniko::Mix::Darken, peniko::Compose::SrcOver) => tiny_skia::BlendMode::Darken,
-        (peniko::Mix::Lighten, peniko::Compose::SrcOver) => tiny_skia::BlendMode::Lighten,
-        (peniko::Mix::ColorDodge, peniko::Compose::SrcOver) => tiny_skia::BlendMode::ColorDodge,
-        (peniko::Mix::ColorBurn, peniko::Compose::SrcOver) => tiny_skia::BlendMode::ColorBurn,
-        (peniko::Mix::HardLight, peniko::Compose::SrcOver) => tiny_skia::BlendMode::HardLight,
-        (peniko::Mix::SoftLight, peniko::Compose::SrcOver) => tiny_skia::BlendMode::SoftLight,
-        (peniko::Mix::Difference, peniko::Compose::SrcOver) => tiny_skia::BlendMode::Difference,
-        (peniko::Mix::Exclusion, peniko::Compose::SrcOver) => tiny_skia::BlendMode::Exclusion,
-        (peniko::Mix::Hue, peniko::Compose::SrcOver) => tiny_skia::BlendMode::Hue,
-        (peniko::Mix::Saturation, peniko::Compose::SrcOver) => tiny_skia::BlendMode::Saturation,
-        (peniko::Mix::Color, peniko::Compose::SrcOver) => tiny_skia::BlendMode::Color,
-        (peniko::Mix::Luminosity, peniko::Compose::SrcOver) => tiny_skia::BlendMode::Luminosity,
-
-        // Special cases
-        (_, peniko::Compose::PlusLighter) => tiny_skia::BlendMode::Plus,
-
-        // Default to SourceOver for unmatched combinations
-        _ => tiny_skia::BlendMode::SourceOver,
+        apply_layer(&layer, parent);
     }
 }
 
@@ -863,8 +774,6 @@ fn brush_to_paint<'b>(brush: impl Into<BrushRef<'b>>) -> Option<Paint<'static>> 
     })
 }
 
-/// Transform a `Rect`, applying `self.transform`, into a `tiny_skia::Rect` and
-/// residual transform.
 fn to_skia_rect(rect: Rect) -> Option<tiny_skia::Rect> {
     tiny_skia::Rect::from_ltrb(
         rect.x0 as f32,
@@ -874,50 +783,190 @@ fn to_skia_rect(rect: Rect) -> Option<tiny_skia::Rect> {
     )
 }
 
-fn clip_rect(
-    clip: Option<Rect>,
-    rect: tiny_skia::Rect,
-    window_scale: f64,
-) -> Option<tiny_skia::Rect> {
-    let clip = if let Some(clip) = clip {
-        clip
-    } else {
-        return Some(rect);
-    };
-    let clip = to_skia_rect(clip.scale_from_origin(window_scale))?;
-    clip.intersect(&rect)
+type TinyBlendMode = tiny_skia::BlendMode;
+
+enum BlendStrategy {
+    /// Can be directly mapped to a tiny-skia blend mode
+    SinglePass(TinyBlendMode),
+    /// Requires multiple operations
+    MultiPass {
+        first_pass: TinyBlendMode,
+        second_pass: TinyBlendMode,
+    },
 }
 
-/// Renders the pixmap at the position and transforms it with the given transform.
-fn render_pixmap_direct(
-    from_pixmap: &Pixmap,
-    into_pixmap: &mut Pixmap,
-    x: f32,
-    y: f32,
-    transform: kurbo::Affine,
-    clip: Option<Rect>,
-    window_scale: f64,
-) {
-    let rect = try_ret!(tiny_skia::Rect::from_xywh(
-        x,
-        y,
-        from_pixmap.width() as f32,
-        from_pixmap.height() as f32,
-    ));
-    let paint = Paint {
-        shader: Pattern::new(
-            from_pixmap.as_ref(),
-            SpreadMode::Pad,
-            FilterQuality::Nearest,
-            1.0,
-            Transform::from_translate(x, y),
-        ),
-        ..Default::default()
-    };
+fn determine_blend_strategy(peniko_mode: &BlendMode) -> BlendStrategy {
+    match (peniko_mode.mix, peniko_mode.compose) {
+        (Mix::Normal, compose) => BlendStrategy::SinglePass(compose_to_tiny_blend_mode(compose)),
+        (Mix::Clip, compose) => BlendStrategy::MultiPass {
+            first_pass: compose_to_tiny_blend_mode(compose),
+            second_pass: TinyBlendMode::Source,
+        },
 
-    let transform = transform.as_coeffs();
-    let scale = window_scale as f32;
-    let transform = Transform::from_row(
+        (mix, Compose::SrcOver) => BlendStrategy::SinglePass(mix_to_tiny_blend_mode(mix)),
+
+        (mix, compose) => BlendStrategy::MultiPass {
+            first_pass: compose_to_tiny_blend_mode(compose),
+            second_pass: mix_to_tiny_blend_mode(mix),
+        },
+    }
+}
+
+fn compose_to_tiny_blend_mode(compose: Compose) -> TinyBlendMode {
+    match compose {
+        Compose::Clear => TinyBlendMode::Clear,
+        Compose::Copy => TinyBlendMode::Source,
+        Compose::Dest => TinyBlendMode::Destination,
+        Compose::SrcOver => TinyBlendMode::SourceOver,
+        Compose::DestOver => TinyBlendMode::DestinationOver,
+        Compose::SrcIn => TinyBlendMode::SourceIn,
+        Compose::DestIn => TinyBlendMode::DestinationIn,
+        Compose::SrcOut => TinyBlendMode::SourceOut,
+        Compose::DestOut => TinyBlendMode::DestinationOut,
+        Compose::SrcAtop => TinyBlendMode::SourceAtop,
+        Compose::DestAtop => TinyBlendMode::DestinationAtop,
+        Compose::Xor => TinyBlendMode::Xor,
+        Compose::Plus => TinyBlendMode::Plus,
+        Compose::PlusLighter => TinyBlendMode::Plus, // ??
+    }
+}
+
+fn mix_to_tiny_blend_mode(mix: Mix) -> TinyBlendMode {
+    match mix {
+        Mix::Normal => TinyBlendMode::SourceOver,
+        Mix::Multiply => TinyBlendMode::Multiply,
+        Mix::Screen => TinyBlendMode::Screen,
+        Mix::Overlay => TinyBlendMode::Overlay,
+        Mix::Darken => TinyBlendMode::Darken,
+        Mix::Lighten => TinyBlendMode::Lighten,
+        Mix::ColorDodge => TinyBlendMode::ColorDodge,
+        Mix::ColorBurn => TinyBlendMode::ColorBurn,
+        Mix::HardLight => TinyBlendMode::HardLight,
+        Mix::SoftLight => TinyBlendMode::SoftLight,
+        Mix::Difference => TinyBlendMode::Difference,
+        Mix::Exclusion => TinyBlendMode::Exclusion,
+        Mix::Hue => TinyBlendMode::Hue,
+        Mix::Saturation => TinyBlendMode::Saturation,
+        Mix::Color => TinyBlendMode::Color,
+        Mix::Luminosity => TinyBlendMode::Luminosity,
+        Mix::Clip => TinyBlendMode::SourceOver,
+    }
+}
+
+fn apply_layer(layer: &Layer, parent: &mut Layer) {
+    match determine_blend_strategy(&layer.blend_mode) {
+        BlendStrategy::SinglePass(blend_mode) => {
+            let mut paint = Paint {
+                blend_mode,
+                anti_alias: true,
+                ..Default::default()
+            };
+
+            let transform = skia_transform_with_scaled_translation(
+                parent.transform * layer.combine_transform,
+                layer.window_scale as f32,
+                1.,
+            );
+
+            let layer_pattern = Pattern::new(
+                layer.pixmap.as_ref(),
+                SpreadMode::Pad,
+                FilterQuality::Bilinear,
+                layer.alpha,
+                Transform::identity(),
+            );
+
+            paint.shader = layer_pattern;
+
+            let layer_rect = try_ret!(tiny_skia::Rect::from_xywh(
+                0.0,
+                0.0,
+                layer.pixmap.width() as f32,
+                layer.pixmap.height() as f32,
+            ));
+
+            parent.pixmap.fill_rect(
+                layer_rect,
+                &paint,
+                transform,
+                parent.clip.is_some().then_some(&parent.mask),
+            );
+        }
+        BlendStrategy::MultiPass {
+            first_pass,
+            second_pass,
+        } => {
+            let original_parent = parent.pixmap.clone();
+
+            let mut paint = Paint {
+                blend_mode: first_pass,
+                anti_alias: true,
+                ..Default::default()
+            };
+
+            let transform = skia_transform_with_scaled_translation(
+                parent.transform * layer.combine_transform,
+                layer.window_scale as f32,
+                1.,
+            );
+            let layer_pattern = Pattern::new(
+                layer.pixmap.as_ref(),
+                SpreadMode::Pad,
+                FilterQuality::Bilinear,
+                1.0,
+                Transform::identity(),
+            );
+
+            paint.shader = layer_pattern;
+
+            let layer_rect = try_ret!(tiny_skia::Rect::from_xywh(
+                0.0,
+                0.0,
+                layer.pixmap.width() as f32,
+                layer.pixmap.height() as f32,
+            ));
+
+            parent.pixmap.fill_rect(
+                layer_rect,
+                &paint,
+                transform,
+                parent.clip.is_some().then_some(&parent.mask),
+            );
+
+            let intermediate = parent.pixmap.clone();
+
+            parent.pixmap = original_parent;
+
+            let mut paint = Paint {
+                blend_mode: second_pass,
+                anti_alias: true,
+                ..Default::default()
+            };
+
+            let intermediate_pattern = Pattern::new(
+                intermediate.as_ref(),
+                SpreadMode::Pad,
+                FilterQuality::Bilinear,
+                1.0,
+                Transform::identity(),
+            );
+
+            paint.shader = intermediate_pattern;
+
+            parent.pixmap.fill_rect(
+                layer_rect,
+                &paint,
+                transform,
+                parent.clip.is_some().then_some(&parent.mask),
+            )
+        }
+    }
+    parent.transform *= layer.transform;
+}
+
+fn skia_transform(affine: Affine, window_scale: f32) -> Transform {
+    let transform = affine.as_coeffs();
+    Transform::from_row(
         transform[0] as f32,
         transform[1] as f32,
         transform[2] as f32,
@@ -925,63 +974,22 @@ fn render_pixmap_direct(
         transform[4] as f32,
         transform[5] as f32,
     )
-    .post_scale(scale, scale);
-    if let Some(rect) = clip_rect(clip, rect, window_scale) {
-        into_pixmap.fill_rect(rect, &paint, transform, None);
-    }
+    .post_scale(window_scale, window_scale)
 }
 
-fn render_pixmap_paint(
-    &mut self,
-    from_pixmap: &Pixmap,
-    into_pixmap: &mut Pixmap,
-    rect: tiny_skia::Rect,
-    paint: Option<Paint<'static>>,
-) {
-    let paint = if let Some(paint) = paint {
-        paint
-    } else {
-        return self.render_pixmap_rect(from_pixmap, rect);
-    };
-
-    let mut fill = try_ret!(Pixmap::new(from_pixmap.width(), from_pixmap.height()));
-    fill.fill_rect(
-        try_ret!(tiny_skia::Rect::from_xywh(
-            0.0,
-            0.0,
-            from_pixmap.width() as f32,
-            from_pixmap.height() as f32
-        )),
-        &paint,
-        Transform::identity(),
-        None,
-    );
-
-    let mask = Mask::from_pixmap(from_pixmap.as_ref(), MaskType::Alpha);
-    fill.apply_mask(&mask);
-
-    self.render_pixmap_rect(&fill, rect);
-}
-
-fn render_pixmap_rect(from_pixmap: &Pixmap, into_pixmap: &mut Pixmap, rect: tiny_skia::Rect) {
-    let paint = Paint {
-        shader: Pattern::new(
-            from_pixmap.as_ref(),
-            SpreadMode::Pad,
-            FilterQuality::Bilinear,
-            1.0,
-            Transform::from_scale(
-                rect.width() / from_pixmap.width() as f32,
-                rect.height() / from_pixmap.height() as f32,
-            ),
-        ),
-        ..Default::default()
-    };
-
-    into_pixmap.fill_rect(
-        rect,
-        &paint,
-        self.current_transform(),
-        self.clip.is_some().then_some(&self.mask),
-    );
+fn skia_transform_with_scaled_translation(
+    affine: Affine,
+    translation_scale: f32,
+    render_scale: f32,
+) -> Transform {
+    let transform = affine.as_coeffs();
+    Transform::from_row(
+        transform[0] as f32,
+        transform[1] as f32,
+        transform[2] as f32,
+        transform[3] as f32,
+        transform[4] as f32 * translation_scale,
+        transform[5] as f32 * translation_scale,
+    )
+    .post_scale(render_scale, render_scale)
 }

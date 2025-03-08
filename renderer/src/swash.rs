@@ -10,7 +10,7 @@ const IS_MACOS: bool = cfg!(target_os = "macos");
 
 pub struct SwashScaler {
     context: ScaleContext,
-    font_embolden: f32,
+    pub font_embolden: f32,
 }
 
 impl Default for SwashScaler {
@@ -46,22 +46,14 @@ impl SwashScaler {
             .hint(!IS_MACOS)
             .build();
 
-        // Compute the fractional offset-- you'll likely want to quantize this
-        // in a real renderer
         let offset = Vector::new(cache_key.x_bin.as_float(), cache_key.y_bin.as_float());
 
-        // Select our source order
         Render::new(&[
-            // Color outline with the first palette
             Source::ColorOutline(0),
-            // Color bitmap with best fit selection mode
             Source::ColorBitmap(StrikeWith::BestFit),
-            // Standard scalable outline
             Source::Outline,
         ])
-        // Select a subpixel format
         .format(Format::Alpha)
-        // Apply the fractional offset
         .offset(offset)
         .embolden(self.font_embolden)
         .transform(if cache_key.flags.contains(CacheKeyFlags::FAKE_ITALIC) {
@@ -72,7 +64,6 @@ impl SwashScaler {
         } else {
             None
         })
-        // Render the image
         .render(&mut scaler, cache_key.glyph_id)
     }
 }
