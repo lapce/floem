@@ -30,7 +30,7 @@ pub struct AppState {
     pub(crate) scheduled_updates: Vec<FrameUpdate>,
     pub(crate) request_compute_layout: bool,
     pub(crate) request_paint: bool,
-    // the bool idicates if this item is the root of the disabled item
+    // the bool indicates if this item is the root of the disabled item
     pub(crate) disabled: HashSet<(ViewId, bool)>,
     pub(crate) keyboard_navigable: HashSet<ViewId>,
     pub(crate) draggable: HashSet<ViewId>,

@@ -179,7 +179,7 @@ pub(crate) struct VirtualStackState<T> {
 /// This virtualization/lazy loading is done for performance and allows for lists of millions of items to be used with very high performance.
 ///
 /// By default, this view tries to calculate and assume the size of the items in the list by calculating the size of the first item that is loaded.
-/// If all of your items are not of a consistent size in the relevent axis (ie a consistent width when flex_row or a consistent height when in flex_col) you will need to specify the size of the items using [`item_size_fixed`](VirtualStack::item_size_fixed) or [`item_size_fn`](VirtualStack::item_size_fn).
+/// If all of your items are not of a consistent size in the relevant axis (ie a consistent width when flex_row or a consistent height when in flex_col) you will need to specify the size of the items using [`item_size_fixed`](VirtualStack::item_size_fixed) or [`item_size_fn`](VirtualStack::item_size_fn).
 ///
 /// ## Example
 /// ```
@@ -521,11 +521,11 @@ impl<T> View for VirtualStack<T> {
                         .map(|layout| layout.size)
                         .unwrap_or_default();
                     let rect = Size::new(size.width as f64, size.height as f64).to_rect();
-                    let relevent_size = match self.direction.get_untracked() {
+                    let relevant_size = match self.direction.get_untracked() {
                         FlexDirection::Column | FlexDirection::ColumnReverse => rect.height(),
                         FlexDirection::Row | FlexDirection::RowReverse => rect.width(),
                     };
-                    Some(relevent_size)
+                    Some(relevant_size)
                 } else {
                     None
                 }
