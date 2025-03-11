@@ -583,7 +583,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
     fn begin(&mut self, _capture: bool) {
         assert!(self.layers.len() == 1);
         let first_layer = self.layers.last_mut().unwrap();
-        first_layer.pixmap.fill(tiny_skia::Color::WHITE);
+        first_layer.pixmap.fill(tiny_skia::Color::TRANSPARENT);
         first_layer.clip = None;
         first_layer.transform = Affine::IDENTITY;
     }
@@ -665,7 +665,8 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
         {
             *out_pixel = ((pixel.red() as u32) << 16)
                 | ((pixel.green() as u32) << 8)
-                | (pixel.blue() as u32);
+                | (pixel.blue() as u32)
+                | ((pixel.alpha() as u32) << 24);
         }
 
         buffer
