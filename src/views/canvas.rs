@@ -1,9 +1,15 @@
 #![deny(missing_docs)]
-
+#![cfg_attr(not(feature = "vello"), allow(unused_imports))]
 use floem_reactive::{create_tracker, SignalTracker};
-use peniko::kurbo::Size;
+use floem_renderer::Renderer;
+use peniko::{
+    kurbo::{Affine, Rect, Size},
+    Mix,
+};
 
 use crate::{context::PaintCx, id::ViewId, view::View};
+
+use super::{text, Decorators};
 
 /// A canvas view
 #[allow(clippy::type_complexity)]

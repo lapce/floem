@@ -203,39 +203,60 @@ impl Renderer for VelloRenderer {
 
     fn fill<'b>(&mut self, path: &impl Shape, brush: impl Into<BrushRef<'b>>, blur_radius: f64) {
         let brush: BrushRef<'b> = brush.into();
-        if let Some(rounded) = path.as_rounded_rect() {
-            let BrushRef::Solid(color) = brush else {
-                return;
-            };
-            let rect_radius = rounded.radii().top_left;
-            let rect = rounded.rect();
-            self.scene.draw_blurred_rounded_rect(
-                self.transform.then_scale(self.window_scale),
-                rect,
-                color,
-                rect_radius,
-                blur_radius,
-            );
-        } else if let Some(rect) = path.as_rect() {
-            let BrushRef::Solid(color) = brush else {
-                return;
-            };
-            self.scene.draw_blurred_rounded_rect(
-                self.transform.then_scale(self.window_scale),
-                rect,
-                color,
-                0.,
-                blur_radius,
-            );
-        } else {
-            self.scene.fill(
-                vello::peniko::Fill::NonZero,
-                self.transform.then_scale(self.window_scale),
-                brush,
-                None,
-                path,
-            );
+
+        // For solid colors with specific shapes, use optimized methods
+        if blur_radius > 0.0 {
+            if let BrushRef::Solid(color) = brush {
+                if let Some(rounded) = path.as_rounded_rect() {
+                    let rect_radius = rounded.radii().top_left;
+                    let rect = rounded.rect();
+                    self.scene.draw_blurred_rounded_rect(
+                        self.transform.then_scale(self.window_scale),
+                        rect,
+                        color,
+                        rect_radius,
+                        blur_radius,
+                    );
+                    return;
+                } else if let Some(rect) = path.as_rect() {
+                    self.scene.draw_blurred_rounded_rect(
+                        self.transform.then_scale(self.window_scale),
+                        rect,
+                        color,
+                        0.,
+                        blur_radius,
+                    );
+                    return;
+                }
+            }
         }
+
+        self.scene.fill(
+            vello::peniko::Fill::NonZero,
+            self.transform.then_scale(self.window_scale),
+            brush,
+            None,
+            path,
+        );
+    }
+
+    fn push_layer(
+        &mut self,
+        blend: impl Into<peniko::BlendMode>,
+        alpha: f32,
+        transform: Affine,
+        clip: &impl Shape,
+    ) {
+        self.scene.push_layer(
+            blend,
+            alpha,
+            self.transform.then_scale(self.window_scale) * transform,
+            clip,
+        );
+    }
+
+    fn pop_layer(&mut self) {
+        self.scene.pop_layer();
     }
 
     fn draw_text_with_layout<'b>(
@@ -359,7 +380,7 @@ impl Renderer for VelloRenderer {
         );
     }
 
-    fn transform(&mut self, transform: Affine) {
+    fn set_transform(&mut self, transform: Affine) {
         self.transform = transform;
     }
 

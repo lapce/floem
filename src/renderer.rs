@@ -288,6 +288,42 @@ impl floem_renderer::Renderer for Renderer {
         }
     }
 
+    fn push_layer(
+        &mut self,
+        blend: impl Into<peniko::BlendMode>,
+        alpha: f32,
+        transform: Affine,
+        clip: &impl Shape,
+    ) {
+        match self {
+            #[cfg(feature = "vello")]
+            Renderer::Vello(v) => {
+                v.push_layer(blend, alpha, transform, clip);
+            }
+            #[cfg(not(feature = "vello"))]
+            Renderer::Vger(v) => {
+                v.push_layer(blend, alpha, transform, clip);
+            }
+            Renderer::TinySkia(v) => v.push_layer(blend, alpha, transform, clip),
+            Renderer::Uninitialized { .. } => {}
+        }
+    }
+
+    fn pop_layer(&mut self) {
+        match self {
+            #[cfg(feature = "vello")]
+            Renderer::Vello(v) => {
+                v.pop_layer();
+            }
+            #[cfg(not(feature = "vello"))]
+            Renderer::Vger(v) => {
+                v.pop_layer();
+            }
+            Renderer::TinySkia(v) => v.pop_layer(),
+            Renderer::Uninitialized { .. } => {}
+        }
+    }
+
     fn draw_text_with_layout<'b>(
         &mut self,
         layout: impl Iterator<Item = LayoutRun<'b>>,
@@ -348,18 +384,18 @@ impl floem_renderer::Renderer for Renderer {
         }
     }
 
-    fn transform(&mut self, transform: Affine) {
+    fn set_transform(&mut self, transform: Affine) {
         match self {
             #[cfg(feature = "vello")]
             Renderer::Vello(v) => {
-                v.transform(transform);
+                v.set_transform(transform);
             }
             #[cfg(not(feature = "vello"))]
             Renderer::Vger(v) => {
-                v.transform(transform);
+                v.set_transform(transform);
             }
             Renderer::TinySkia(v) => {
-                v.transform(transform);
+                v.set_transform(transform);
             }
             Renderer::Uninitialized { .. } => {}
         }
