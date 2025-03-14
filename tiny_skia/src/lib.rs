@@ -116,6 +116,7 @@ struct Layer {
     cache_color: CacheColor,
 }
 impl Layer {
+    /// the img_rect should already be in the correct transformed space along with the window_scale applied
     fn clip_rect(&self, img_rect: Rect) -> Option<tiny_skia::Rect> {
         if let Some(clip) = self.clip {
             let clip = clip.intersect(img_rect);
@@ -338,9 +339,15 @@ impl Layer {
         layout: impl Iterator<Item = LayoutRun<'b>>,
         pos: impl Into<Point>,
     ) {
+        // this pos is relative to the current transform, but not the current window scale.
+        // That is why we remove the window scale from the clip below
         let pos: Point = pos.into();
         let clip = self.clip;
-        let undo_transform = |r| self.transform.inverse().transform_rect_bbox(r);
+        let undo_transform = |r| {
+            Affine::scale(self.window_scale)
+                .inverse()
+                .transform_rect_bbox(r)
+        };
         let scaled_clip = clip.map(undo_transform);
 
         // we manually handle the offset so that the glyph_x and y can be scaled by the window_scale
