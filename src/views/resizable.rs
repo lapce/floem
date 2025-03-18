@@ -1,0 +1,525 @@
+use crate::{
+    context::{ComputeLayoutCx, EventCx, PaintCx, UpdateCx},
+    event::{Event, EventPropagation},
+    pointer::{MouseButton, PointerButton, PointerInputEvent, PointerMoveEvent},
+    prelude::*,
+    prop, prop_extractor,
+    style::{CursorStyle, CustomStylable, FlexDirectionProp, Style, StyleSelector},
+    unit::{Px, PxPct},
+    view_state::StackOffset,
+    ViewId,
+};
+use floem_reactive::create_effect;
+use peniko::{
+    kurbo::{self, Point, Rect, Stroke},
+    Brush,
+};
+use taffy::FlexDirection;
+
+pub(crate) fn create_resizable(children: Vec<Box<dyn View>>) -> ResizableStack {
+    let id = ViewId::new();
+    let offsets = children
+        .iter()
+        .map(|c| {
+            let state = c.id().state();
+            let offset = state.borrow_mut().style.next_offset();
+            state.borrow_mut().style.push(Style::new());
+            offset
+        })
+        .collect();
+    id.set_children(children);
+
+    ResizableStack {
+        id,
+        style: Default::default(),
+        re_style: ReStyle::default(),
+        handle_style: Default::default(),
+        cursor_pos: Point::ZERO,
+        should_clear_on_up: None,
+        layouts: Vec::new(),
+        handle_state: HandleState::None,
+        style_offsets: offsets,
+    }
+}
+pub fn resizable<VT: ViewTuple + 'static>(children: VT) -> ResizableStack {
+    create_resizable(children.into_views())
+}
+
+prop!(
+    /// The color of the handle
+    pub HandleColor: Option<Brush> {} = None
+);
+prop!(
+    /// The width of the handle
+    pub HandleThickness: Px {} = Px(10.)
+);
+prop!(
+    /// The height of the handle
+    pub HandleHeight: PxPct {} = PxPct::Pct(100.)
+);
+prop!(
+    /// The cursor style over the handle.
+    /// Defaults to automatically handling the style for you.
+    pub HandleCursorStyle: Option<CursorStyle> {} = None
+);
+
+prop_extractor! {
+    ReStyle {
+        direction: FlexDirectionProp,
+    }
+}
+prop_extractor! {
+    HandleStyle {
+        color: HandleColor,
+        thickness: HandleThickness,
+        length: HandleHeight,
+        cursor: HandleCursorStyle,
+    }
+}
+
+enum HandleState {
+    None,
+    Hovered(usize),
+    Active(usize),
+}
+
+pub struct ResizableStack {
+    id: ViewId,
+    style: Style,
+    handle_style: HandleStyle,
+    re_style: ReStyle,
+    cursor_pos: Point,
+    should_clear_on_up: Option<usize>,
+    layouts: Vec<Rect>,
+    handle_state: HandleState,
+    style_offsets: Vec<StackOffset<Style>>,
+}
+
+impl View for ResizableStack {
+    fn id(&self) -> ViewId {
+        self.id
+    }
+
+    fn view_style(&self) -> Option<Style> {
+        Some(self.style.clone())
+    }
+
+    fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+        self.re_style.read(cx);
+        let style = cx.style();
+        let handle_style = match self.handle_state {
+            HandleState::None => style,
+            HandleState::Hovered(_) => style.apply_selectors(&[StyleSelector::Hover]),
+            HandleState::Active(_) => style.apply_selectors(&[StyleSelector::Active]),
+        };
+        self.handle_style.read_style(cx, &handle_style);
+        for child in self.id().children() {
+            cx.style_view(child);
+        }
+    }
+
+    fn update(&mut self, _cx: &mut UpdateCx, state: Box<dyn std::any::Any>) {
+        if let Ok(state) = state.downcast::<Vec<(usize, f64)>>() {
+            for (idx, size) in *state {
+                let child = self.id.with_children(|c| c[idx]);
+                let offset = self.style_offsets[idx];
+                match self.re_style.direction() {
+                    FlexDirection::Row | FlexDirection::RowReverse => {
+                        child.update_style(
+                            offset,
+                            Style::new().width(size).max_width(size).min_width(20.),
+                        );
+                    }
+                    FlexDirection::Column | FlexDirection::ColumnReverse => {
+                        child.update_style(
+                            offset,
+                            Style::new().height(size).max_height(size).min_height(20.),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<kurbo::Rect> {
+        self.layouts.clear();
+        let mut layout_rect: Option<Rect> = None;
+        for child in self.id.children().iter() {
+            if !child.style_has_hidden() {
+                let child_layout = cx.compute_view_layout(*child);
+                if let Some(child_layout) = child_layout {
+                    let layout = child.get_layout().map(|v| {
+                        Rect::from_origin_size(
+                            (v.location.x, v.location.y),
+                            (v.size.width as f64, v.size.height as f64),
+                        )
+                    });
+                    self.layouts.push(layout.unwrap());
+                    if let Some(rect) = layout_rect {
+                        layout_rect = Some(rect.union(child_layout));
+                    } else {
+                        layout_rect = Some(child_layout);
+                    }
+                }
+            }
+        }
+        layout_rect
+    }
+
+    fn event_before_children(&mut self, _cx: &mut EventCx, event: &Event) -> EventPropagation {
+        match event {
+            Event::PointerDown(PointerInputEvent {
+                pos,
+                button: PointerButton::Mouse(MouseButton::Primary),
+                count,
+                ..
+            }) => {
+                if let Some(handle_idx) = self.find_handle_at_position(*pos) {
+                    if *count == 2 {
+                        self.should_clear_on_up = Some(handle_idx);
+                    }
+                    self.id.request_active();
+                    self.handle_state = HandleState::Active(handle_idx);
+                    self.id.request_all();
+                    {
+                        let cursor = if let Some(cursor) = self.handle_style.cursor() {
+                            cursor
+                        } else {
+                            match self.re_style.direction() {
+                                FlexDirection::Row | FlexDirection::RowReverse => {
+                                    CursorStyle::ColResize
+                                }
+                                FlexDirection::Column | FlexDirection::ColumnReverse => {
+                                    CursorStyle::RowResize
+                                }
+                            }
+                        };
+                        self.id.request_style();
+                        self.style = self.style.clone().cursor(cursor);
+                    };
+
+                    return EventPropagation::Stop;
+                }
+            }
+            Event::PointerUp(PointerInputEvent {
+                button: PointerButton::Mouse(MouseButton::Primary),
+                ..
+            }) => {
+                if let Some(idx) = self.should_clear_on_up {
+                    // Reset the handle positions on double-click
+                    self.clear_handle_pos(idx);
+                    self.should_clear_on_up = None;
+                }
+                if let HandleState::Active(_) | HandleState::Hovered(_) = self.handle_state {
+                    self.id.clear_active();
+                    self.handle_state = HandleState::None;
+                    self.id.request_all();
+                    let cursor = CursorStyle::Default;
+                    self.id.request_style();
+                    self.style = self.style.clone().cursor(cursor);
+                    return EventPropagation::Stop;
+                }
+            }
+            Event::PointerMove(PointerMoveEvent { pos, .. }) => {
+                self.cursor_pos = *pos;
+                if let HandleState::Active(handle_idx) = self.handle_state {
+                    self.update_handle_position(handle_idx, *pos);
+                    let cursor = match self.re_style.direction() {
+                        FlexDirection::Row | FlexDirection::RowReverse => CursorStyle::ColResize,
+                        FlexDirection::Column | FlexDirection::ColumnReverse => {
+                            CursorStyle::RowResize
+                        }
+                    };
+                    self.style = self.style.clone().cursor(cursor);
+                    self.id.request_style();
+                    self.id.request_layout();
+                    return EventPropagation::Stop;
+                } else if let Some(handle_idx) = self.find_handle_at_position(*pos) {
+                    self.handle_state = HandleState::Hovered(handle_idx);
+                    let cursor = match self.re_style.direction() {
+                        FlexDirection::Row | FlexDirection::RowReverse => CursorStyle::ColResize,
+                        FlexDirection::Column | FlexDirection::ColumnReverse => {
+                            CursorStyle::RowResize
+                        }
+                    };
+                    self.style = self.style.clone().cursor(cursor);
+                    self.id.request_style();
+                    return EventPropagation::Stop;
+                } else {
+                    self.handle_state = HandleState::None;
+                    let cursor = CursorStyle::default();
+                    self.style = self.style.clone().cursor(cursor);
+                    self.id.request_style();
+                }
+            }
+            _ => {}
+        }
+
+        EventPropagation::Continue
+    }
+
+    fn paint(&mut self, cx: &mut PaintCx) {
+        cx.paint_children(self.id());
+
+        let color = self.handle_style.color();
+        if let Some(color) = color {
+            match self.handle_state {
+                HandleState::Hovered(idx) | HandleState::Active(idx) => {
+                    let handle_rect = self.get_handle_rect(idx);
+                    let shape = Rect::new(
+                        handle_rect.x0,
+                        handle_rect.y0,
+                        handle_rect.x1,
+                        handle_rect.y1,
+                    )
+                    .to_rounded_rect(2.);
+                    cx.fill(&shape, &color, 3.0);
+
+                    let border_color = color.with_alpha(0.8);
+                    cx.stroke(&shape, &border_color, &Stroke::new(1.));
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+impl ResizableStack {
+    pub fn custom_sizes(&self, sizes: impl Fn() -> Vec<(usize, f64)> + 'static) {
+        let id = self.id;
+        create_effect(move |_| {
+            let sizes = sizes();
+            id.update_state(sizes);
+        });
+    }
+    fn get_handle_rect(&self, handle_idx: usize) -> Rect {
+        if handle_idx >= self.layouts.len() - 1 {
+            return Rect::ZERO;
+        }
+
+        let current_layout = self.layouts[handle_idx];
+        let next_layout = self.layouts[handle_idx + 1];
+
+        match self.re_style.direction() {
+            FlexDirection::Row | FlexDirection::RowReverse => {
+                let x = current_layout.x1;
+                let thickness = self.handle_style.thickness().0;
+                let min_y = current_layout.y0.min(next_layout.y0);
+                let max_y = current_layout.y1.max(next_layout.y1);
+                let (min_y, max_y) = match self.handle_style.length() {
+                    PxPct::Px(px) => (min_y, min_y + px),
+                    PxPct::Pct(pct) => (min_y * pct / 100., max_y * pct / 100.),
+                };
+
+                Rect::new(x - thickness / 2.0, min_y, x + thickness / 2.0, max_y)
+            }
+            FlexDirection::Column | FlexDirection::ColumnReverse => {
+                let y = current_layout.y1;
+                let thickness = self.handle_style.thickness().0;
+                let min_x = current_layout.x0.min(next_layout.x0);
+                let max_x = current_layout.x1.max(next_layout.x1);
+                let (min_x, max_x) = match self.handle_style.length() {
+                    PxPct::Px(px) => (min_x, min_x + px),
+                    PxPct::Pct(pct) => (min_x * pct / 100., max_x * pct / 100.),
+                };
+                Rect::new(min_x, y - thickness / 2.0, max_x, y + thickness / 2.0)
+            }
+        }
+    }
+
+    fn find_handle_at_position(&self, pos: Point) -> Option<usize> {
+        for i in 0..self.layouts.len() - 1 {
+            let handle_rect = self.get_handle_rect(i);
+            if handle_rect.contains(pos) {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    fn update_handle_position(&mut self, handle_idx: usize, pos: Point) {
+        if handle_idx >= self.layouts.len() - 1 {
+            return;
+        }
+        let current_layout = self.layouts[handle_idx];
+        let next_layout = self.layouts[handle_idx + 1];
+
+        match self.re_style.direction() {
+            FlexDirection::Row | FlexDirection::RowReverse => {
+                // Calculate potential new width
+                let mut new_width = pos.x - current_layout.x0;
+
+                // Apply minimum constraint to current element
+                new_width = new_width.max(20.);
+
+                // Calculate available space in next element
+                let available_space = next_layout.width() - 20.0; // Reserve minimum 20px
+                let diff = new_width - current_layout.width();
+
+                // If requested change exceeds available space, limit the change
+                if diff > available_space {
+                    new_width = current_layout.width() + available_space;
+                }
+
+                // Only proceed if there's an actual change
+                if (new_width - current_layout.width()).abs() < 0.1 {
+                    return;
+                }
+
+                let child = self.id.with_children(|c| c[handle_idx]);
+                let offset = self.style_offsets[handle_idx];
+                child.update_style(
+                    offset,
+                    Style::new()
+                        .width(new_width)
+                        .max_width(new_width)
+                        .min_width(20.),
+                );
+
+                // Calculate next width based on actual applied change
+                let actual_diff = new_width - current_layout.width();
+                let next_width = next_layout.width() - actual_diff;
+
+                let child = self.id.with_children(|c| c[handle_idx + 1]);
+                let offset = self.style_offsets[handle_idx + 1];
+                child.update_style(
+                    offset,
+                    Style::new()
+                        .width(next_width)
+                        .max_width(next_width)
+                        .min_width(20.),
+                );
+            }
+            FlexDirection::Column | FlexDirection::ColumnReverse => {
+                // Calculate potential new height
+                let mut new_height = pos.y - current_layout.y0;
+
+                // Apply minimum constraint to current element
+                new_height = new_height.max(20.);
+
+                // Calculate available space in next element
+                let available_space = next_layout.height() - 20.0; // Reserve minimum 20px
+                let diff = new_height - current_layout.height();
+
+                // If requested change exceeds available space, limit the change
+                if diff > available_space {
+                    new_height = current_layout.height() + available_space;
+                }
+
+                // Only proceed if there's an actual change
+                if (new_height - current_layout.height()).abs() < 0.1 {
+                    return;
+                }
+
+                let child = self.id.with_children(|c| c[handle_idx]);
+                let offset = self.style_offsets[handle_idx];
+                child.update_style(
+                    offset,
+                    Style::new()
+                        .height(new_height)
+                        .max_height(new_height)
+                        .min_height(20.),
+                );
+
+                // Calculate next height based on actual applied change
+                let actual_diff = new_height - current_layout.height();
+                let next_height = next_layout.height() - actual_diff;
+
+                let child = self.id.with_children(|c| c[handle_idx + 1]);
+                let offset = self.style_offsets[handle_idx + 1];
+                child.update_style(
+                    offset,
+                    Style::new()
+                        .height(next_height)
+                        .max_height(next_height)
+                        .min_height(20.),
+                );
+            }
+        }
+    }
+
+    fn clear_handle_pos(&mut self, handle_idx: usize) {
+        if handle_idx >= self.layouts.len() - 1 {
+            return;
+        }
+
+        let child = self.id.with_children(|c| c[handle_idx]);
+        let offset = self.style_offsets[handle_idx];
+        child.update_style(offset, Style::new());
+
+        let child = self.id.with_children(|c| c[handle_idx + 1]);
+        let offset = self.style_offsets[handle_idx + 1];
+        child.update_style(offset, Style::new());
+
+        self.id.request_layout();
+    }
+
+    /// Sets the custom style properties of the `ResizableStack`.
+    pub fn resizable_style(
+        self,
+        style: impl Fn(ResizableCustomStyle) -> ResizableCustomStyle + 'static,
+    ) -> Self {
+        self.custom_style(style)
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct ResizableCustomStyle(Style);
+impl From<ResizableCustomStyle> for Style {
+    fn from(val: ResizableCustomStyle) -> Self {
+        val.0
+    }
+}
+impl From<Style> for ResizableCustomStyle {
+    fn from(val: Style) -> Self {
+        Self(val)
+    }
+}
+
+impl CustomStylable<ResizableCustomStyle> for ResizableStack {
+    type DV = Self;
+}
+
+impl ResizableCustomStyle {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the color of the handle handle.
+    ///
+    /// # Arguments
+    /// * `color` - An optional `Brush` that sets the handle's color. If `None` is provided, the handle color is not set.
+    pub fn handle_color(mut self, color: impl Into<Brush>) -> Self {
+        let color = color.into();
+        self = ResizableCustomStyle(self.0.set(HandleColor, Some(color)));
+        self
+    }
+
+    /// Sets the thickness of the handle.
+    ///
+    /// # Arguments
+    /// * `Thickness` - A `Px` value that sets the handle's thickness.
+    pub fn handle_thickness(mut self, width: impl Into<Px>) -> Self {
+        self = ResizableCustomStyle(self.0.set(HandleThickness, width));
+        self
+    }
+
+    /// Sets the length of the handle.
+    ///
+    /// # Arguments
+    /// * `length` - A `PxPct` value that sets the handle's length relative to the min height of the views next to the handle.
+    pub fn handle_length(mut self, height: PxPct) -> Self {
+        self = ResizableCustomStyle(self.0.set(HandleHeight, height));
+        self
+    }
+
+    /// Sets the cursor style over the handle.
+    ///
+    /// # Arguments
+    /// * `cursor_style` - An optional `CursorStyle` that sets the handle's cursor style.
+    ///   If `None` is provided, default automatic cursor style is used.
+    pub fn handle_cursor_style(mut self, cursor_style: impl Into<Option<CursorStyle>>) -> Self {
+        self = ResizableCustomStyle(self.0.set(HandleCursorStyle, cursor_style));
+        self
+    }
+}

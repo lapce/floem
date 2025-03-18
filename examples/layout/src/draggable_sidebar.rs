@@ -1,16 +1,10 @@
 use floem::{
-    event::{Event, EventListener, EventPropagation},
+    event::EventListener,
     prelude::*,
-    style::CursorStyle,
-    taffy::Position,
+    style::{CustomStylable, CustomStyle},
 };
 
-const SIDEBAR_WIDTH: f64 = 100.0;
-
 pub fn draggable_sidebar_view() -> impl IntoView {
-    let sidebar_width = create_rw_signal(SIDEBAR_WIDTH);
-    let is_sidebar_dragging = create_rw_signal(false);
-
     let side_bar = VirtualStack::with_view(
         || 0..100,
         move |item| {
@@ -20,18 +14,17 @@ pub fn draggable_sidebar_view() -> impl IntoView {
                     .padding(10.0)
                     .padding_top(3.0)
                     .padding_bottom(3.0)
-                    .width(sidebar_width.get())
+                    .width_full()
                     .items_start()
                     .border_bottom(1.0)
                     .border_color(Color::from_rgb8(205, 205, 205))
             })
         },
     )
-    .style(move |s| s.flex_col().width(sidebar_width.get() - 1.0))
+    .style(move |s| s.flex_col().width_full())
     .scroll()
     .style(move |s| {
-        s.width(sidebar_width.get())
-            .border_right(1.0)
+        s.border_right(1.0)
             .border_top(1.0)
             .border_color(Color::from_rgb8(205, 205, 205))
     });
@@ -52,52 +45,15 @@ pub fn draggable_sidebar_view() -> impl IntoView {
             .border_color(Color::from_rgb8(205, 205, 205))
     });
 
-    let dragger = ""
-        .style(move |s| {
-            s.position(Position::Absolute)
-                .inset_top(0)
-                .inset_bottom(0)
-                .inset_left(sidebar_width.get())
-                .width(10)
-                .border_left(1)
-                .border_color(Color::from_rgb8(205, 205, 205))
-                .hover(|s| {
-                    s.border_left(2)
-                        .border_color(Color::from_rgb8(41, 98, 218))
-                        .cursor(CursorStyle::ColResize)
-                })
-                .apply_if(is_sidebar_dragging.get(), |s| {
-                    s.border_left(2).border_color(Color::from_rgb8(41, 98, 218))
-                })
-        })
-        .draggable()
-        .dragging_style(|s| s.border_color(palette::css::TRANSPARENT))
-        .on_event(EventListener::DragStart, move |_| {
-            is_sidebar_dragging.set(true);
-            EventPropagation::Continue
-        })
-        .on_event(EventListener::DragEnd, move |_| {
-            is_sidebar_dragging.set(false);
-            EventPropagation::Continue
-        })
-        .on_event(EventListener::DoubleClick, move |_| {
-            sidebar_width.set(SIDEBAR_WIDTH);
-            EventPropagation::Continue
+    let dragger_color = Color::from_rgb8(205, 205, 205);
+    let active_dragger_color = Color::from_rgb8(41, 98, 218);
+
+    let view = resizable::resizable((side_bar, main_window))
+        .style(|s| s.width_full().height_full())
+        .custom_style(move |s| {
+            s.handle_color(dragger_color)
+                .active(|s| s.handle_color(active_dragger_color))
         });
-
-    let view = h_stack((side_bar, main_window, dragger))
-        .on_event(EventListener::PointerMove, move |event| {
-            let pos = match event {
-                Event::PointerMove(p) => p.pos,
-                _ => (0.0, 0.0).into(),
-            };
-
-            if is_sidebar_dragging.get() {
-                sidebar_width.set(pos.x);
-            }
-            EventPropagation::Continue
-        })
-        .style(|s| s.width_full().height_full());
 
     let id = view.id();
     view.on_event_stop(EventListener::KeyUp, move |e| {

@@ -417,6 +417,11 @@ impl From<SliderCustomStyle> for Style {
         val.0
     }
 }
+impl From<Style> for SliderCustomStyle {
+    fn from(val: Style) -> Self {
+        Self(val)
+    }
+}
 
 impl CustomStylable<SliderCustomStyle> for Slider {
     type DV = Self;

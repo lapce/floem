@@ -154,6 +154,15 @@ impl EventCx<'_> {
                     }
                 }
             }
+            if let Event::PointerMove(_event) = &event {
+                let view_state = view_state.borrow();
+                let style = view_state.combined_style.builtin();
+                if let Some(cursor) = style.cursor() {
+                    if self.app_state.cursor.is_none() {
+                        self.app_state.cursor = Some(cursor);
+                    }
+                }
+            }
             return (EventPropagation::Stop, PointerEventConsumed::Yes);
         }
 

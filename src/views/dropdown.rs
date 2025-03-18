@@ -598,6 +598,11 @@ impl From<DropdownCustomStyle> for Style {
         val.0
     }
 }
+impl From<Style> for DropdownCustomStyle {
+    fn from(val: Style) -> Self {
+        Self(val)
+    }
+}
 impl<T: Clone> CustomStylable<DropdownCustomStyle> for Dropdown<T> {
     type DV = Self;
 }

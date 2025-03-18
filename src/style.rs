@@ -1472,8 +1472,9 @@ pub enum TextOverflow {
     Ellipsis,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum CursorStyle {
+    #[default]
     Default,
     Pointer,
     Text,
@@ -2459,9 +2460,59 @@ impl Style {
     }
 }
 
-pub trait CustomStylable<S: Default + Into<Style> + 'static>:
-    IntoView<V = Self::DV> + Sized
-{
+pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
+    fn hover(self, style: impl FnOnce(Self) -> Self) -> Self {
+        let self_style: Style = self.into();
+        let new = self_style.selector(StyleSelector::Hover, |_| style(Self::default()).into());
+        new.into()
+    }
+
+    fn focus(self, style: impl FnOnce(Self) -> Self) -> Self {
+        let self_style: Style = self.into();
+        let new = self_style.selector(StyleSelector::Focus, |_| style(Self::default()).into());
+        new.into()
+    }
+
+    /// Similar to the `:focus-visible` css selector, this style only activates when tab navigation is used.
+    fn focus_visible(self, style: impl FnOnce(Self) -> Self) -> Self {
+        let self_style: Style = self.into();
+        let new = self_style.selector(StyleSelector::FocusVisible, |_| {
+            style(Self::default()).into()
+        });
+        new.into()
+    }
+
+    fn selected(self, style: impl FnOnce(Self) -> Self) -> Self {
+        let self_style: Style = self.into();
+        let new = self_style.selector(StyleSelector::Selected, |_| style(Self::default()).into());
+        new.into()
+    }
+
+    fn disabled(self, style: impl FnOnce(Self) -> Self) -> Self {
+        let self_style: Style = self.into();
+        let new = self_style.selector(StyleSelector::Disabled, |_| style(Self::default()).into());
+        new.into()
+    }
+
+    fn active(self, style: impl FnOnce(Self) -> Self) -> Self {
+        let self_style: Style = self.into();
+        let new = self_style.selector(StyleSelector::Active, |_| style(Self::default()).into());
+        new.into()
+    }
+
+    fn responsive(self, size: ScreenSize, style: impl FnOnce(Self) -> Self) -> Self {
+        let over = style(Self::default());
+        let over_style: Style = over.into();
+        let mut self_style: Style = self.into();
+        for breakpoint in size.breakpoints() {
+            self_style.set_breakpoint(breakpoint, over_style.clone());
+        }
+        self_style.into()
+    }
+}
+impl<T> CustomStyle for T where T: Default + Clone + Into<Style> + From<Style> {}
+
+pub trait CustomStylable<S: CustomStyle + 'static>: IntoView<V = Self::DV> + Sized {
     type DV: View;
 
     /// #  Add a custom style to the view with access to this view's specialized custom style.
