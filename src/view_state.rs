@@ -249,16 +249,24 @@ impl ViewState {
         context: &Style,
     ) -> bool {
         let mut new_frame = false;
-        let mut computed_style = Style::new();
+        // we are just using the combined style and then clearing here to avoid creating an entirely new style map
+        // because the clone is cheap, this is fine
+        let mut computed_style = self.combined_style.clone();
+        computed_style.clear();
+        // we will apply the views style to the context so that if a style class is used on a view, that class will be directly applied instead of only applying to children
+        let mut context = context.clone();
         if let Some(view_style) = view_style {
+            context.apply_mut(view_style.clone());
             computed_style.apply_mut(view_style);
         }
+        // self.style has precedence over the supplied view style so it comes after
+        let self_style = self.style();
+        context.apply_mut(self_style.clone());
+        computed_style.apply_mut(self_style);
         if let Some(view_class) = view_class {
-            computed_style = computed_style.apply_classes_from_context(&[view_class], context);
+            computed_style = computed_style.apply_classes_from_context(&[view_class], &context);
         }
-        computed_style = computed_style
-            .apply_classes_from_context(&self.classes, context)
-            .apply(self.style());
+        computed_style = computed_style.apply_classes_from_context(&self.classes, &context);
 
         self.has_style_selectors = computed_style.selectors();
 

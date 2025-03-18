@@ -130,7 +130,7 @@ impl WindowHandle {
         });
 
         let (main_view_id, widget) = view;
-        id.set_children(vec![widget]);
+        id.set_children([widget]);
 
         let view = WindowView { id };
         id.set_view(view.into_any());
@@ -1048,7 +1048,7 @@ impl WindowHandle {
 
                         let view = with_scope(scope, view);
                         let child = view.id();
-                        id.set_children(vec![view]);
+                        id.set_children([view]);
 
                         let view = OverlayView {
                             id,

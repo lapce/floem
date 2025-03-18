@@ -6,6 +6,7 @@ use peniko::kurbo::{Circle, Point, RoundedRect};
 use peniko::Brush;
 use winit::keyboard::{Key, NamedKey};
 
+use crate::style::CustomStyle;
 use crate::unit::Pct;
 use crate::{
     event::EventPropagation,
@@ -421,6 +422,9 @@ impl From<Style> for SliderCustomStyle {
     fn from(val: Style) -> Self {
         Self(val)
     }
+}
+impl CustomStyle for SliderCustomStyle {
+    type StyleClass = SliderClass;
 }
 
 impl CustomStylable<SliderCustomStyle> for Slider {

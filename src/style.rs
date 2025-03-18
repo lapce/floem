@@ -89,6 +89,7 @@ impl StylePropValue for MinTrackSizingFunction {}
 impl StylePropValue for MaxTrackSizingFunction {}
 impl<T: StylePropValue, M: StylePropValue> StylePropValue for MinMax<T, M> {}
 impl<T: StylePropValue> StylePropValue for Line<T> {}
+impl StylePropValue for taffy::GridAutoFlow {}
 impl StylePropValue for GridPlacement {}
 impl StylePropValue for CursorStyle {}
 impl StylePropValue for BoxShadow {
@@ -1195,7 +1196,7 @@ impl Style {
         self
     }
 
-    fn get_nested_map(&self, key: StyleKey) -> Option<Style> {
+    pub(crate) fn get_nested_map(&self, key: StyleKey) -> Option<Style> {
         self.map
             .get(&key)
             .map(|map| map.downcast_ref::<Style>().unwrap().clone())
@@ -1354,6 +1355,10 @@ impl Style {
     /// Later styles take precedence over earlier styles.
     pub fn apply_overriding_styles(self, overrides: impl Iterator<Item = Style>) -> Style {
         overrides.fold(self, |acc, x| acc.apply(x))
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.map.clear();
     }
 }
 
@@ -1636,6 +1641,7 @@ define_builtin_props!(
     GridTemplateColumns grid_template_columns: Vec<TrackSizingFunction> {} = Vec::new(),
     GridAutoRows grid_auto_rows: Vec<MinMax<MinTrackSizingFunction, MaxTrackSizingFunction>> {} = Vec::new(),
     GridAutoColumns grid_auto_columns: Vec<MinMax<MinTrackSizingFunction, MaxTrackSizingFunction>> {} = Vec::new(),
+    GridAutoFlow grid_auto_flow: taffy::GridAutoFlow {} = taffy::GridAutoFlow::Row,
     GridRow grid_row: Line<GridPlacement> {} = Line::default(),
     GridColumn grid_column: Line<GridPlacement> {} = Line::default(),
     AlignSelf align_self: Option<AlignItems> {} = None,
@@ -1875,6 +1881,30 @@ impl Style {
     pub fn class<C: StyleClass>(mut self, _class: C, style: impl FnOnce(Style) -> Style) -> Self {
         let over = style(Style::default());
         self.set_class(C::class_ref(), over);
+        self
+    }
+
+    /// Applies a `CustomStyle` type to the `CustomStyle`'s associated style class.
+    ///
+    /// For example: if the `CustomStyle` you use is `DropdownCustomStyle` then it
+    /// will apply the custom style to that custom style type's associated style class
+    /// which, in this example, is `DropdownClass`.
+    ///
+    /// This is especially useful when building a stylesheet or targeting a child view.
+    ///
+    /// # Examples
+    /// ```
+    /// // In a style sheet or on a parent view
+    /// use floem::prelude::*;
+    /// use floem::style::Style;
+    /// Style::new().custom_style_class(|s: dropdown::DropdownCustomStyle| s.close_on_accept(false));
+    /// // This property is now set on the `DropdownClass` class and will be applied to any dropdowns that are children of this view.
+    /// ```
+    ///
+    /// See also: [`Style::custom`](Self::custom) and [`Style::apply_custom`](Self::apply_custom).
+    pub fn custom_style_class<CS: CustomStyle>(mut self, style: impl FnOnce(CS) -> CS) -> Self {
+        let over = style(CS::default());
+        self.set_class(CS::StyleClass::class_ref(), over.into());
         self
     }
 
@@ -2362,6 +2392,28 @@ impl Style {
         }
     }
 
+    /// Applies a `CustomStyle` type into this style.
+    ///
+    /// # Examples
+    /// ```
+    /// use floem::prelude::*;
+    /// text("test").style(|s| s.custom(|s: LabelCustomStyle| s.selectable(false)));
+    /// ```
+    ///
+    /// See also: [`apply_custom`](Self::apply_custom), [`custom_style_class`](Self::custom_style_class)
+    pub fn custom<CS: CustomStyle>(self, custom: impl FnOnce(CS) -> CS) -> Self {
+        self.apply(custom(CS::default()).into())
+    }
+
+    /// Applies a `CustomStyle` type into this style.
+    ///
+    /// # Examples
+    /// ```
+    /// use floem::prelude::*;
+    /// text("test").style(|s| s.apply_custom(LabelCustomStyle::new().selectable(false)));
+    /// ```
+    ///
+    /// See also: [`custom`](Self::custom), [`custom_style_class`](Self::custom_style_class)
     pub fn apply_custom<CS: Into<Style>>(self, custom_style: CS) -> Self {
         self.apply(custom_style.into())
     }
@@ -2455,12 +2507,22 @@ impl Style {
             grid_column: style.grid_column(),
             grid_auto_rows: style.grid_auto_rows(),
             grid_auto_columns: style.grid_auto_columns(),
+            grid_auto_flow: style.grid_auto_flow(),
             ..Default::default()
         }
     }
 }
 
 pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
+    type StyleClass: StyleClass;
+
+    /// Get access to a normal style
+    fn style(self, style: impl FnOnce(Style) -> Style) -> Self {
+        let self_style = self.into();
+        let new = style(self_style);
+        new.into()
+    }
+
     fn hover(self, style: impl FnOnce(Self) -> Self) -> Self {
         let self_style: Style = self.into();
         let new = self_style.selector(StyleSelector::Hover, |_| style(Self::default()).into());
@@ -2510,7 +2572,6 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
         self_style.into()
     }
 }
-impl<T> CustomStyle for T where T: Default + Clone + Into<Style> + From<Style> {}
 
 pub trait CustomStylable<S: CustomStyle + 'static>: IntoView<V = Self::DV> + Sized {
     type DV: View;

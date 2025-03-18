@@ -102,7 +102,7 @@ pub fn dyn_container<CF: Fn(T) -> IV + 'static, T: 'static, IV: IntoView>(
     let child_fn = Box::new(as_child_of_current_scope(move |e| child_fn(e).into_any()));
     let (child, child_scope) = child_fn(initial);
     let child_id = child.id();
-    id.set_children(vec![child]);
+    id.set_children([child]);
     DynamicContainer {
         id,
         child_scope,
@@ -182,7 +182,7 @@ impl<T> DynamicContainer<T> {
         let (val, old_child_id, old_child_scope) = next_val_state;
         let (new_child, new_child_scope) = (self.child_fn)(val);
         self.child_id = new_child.id();
-        self.id.set_children(vec![new_child]);
+        self.id.set_children([new_child]);
         self.child_scope = new_child_scope;
         cx.app_state_mut().remove_view(old_child_id);
         old_child_scope.dispose();

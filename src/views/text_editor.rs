@@ -59,7 +59,7 @@ pub fn text_editor(text: impl Into<Rope>) -> TextEditor {
     .into_view();
 
     let child_id = child.id();
-    id.set_children(vec![child]);
+    id.set_children([child]);
 
     TextEditor {
         id,
@@ -91,7 +91,7 @@ pub fn text_editor_keys(
     .into_view();
 
     let child_id = child.id();
-    id.set_children(vec![child]);
+    id.set_children([child]);
 
     TextEditor {
         id,
@@ -434,7 +434,7 @@ impl TextEditor {
         .into_view();
 
         let child_id = child.id();
-        id.set_children(vec![child]);
+        id.set_children([child]);
 
         TextEditor {
             id,

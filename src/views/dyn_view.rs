@@ -24,12 +24,12 @@ where
         move || view_fn(()),
         move |(new_view, new_scope)| {
             let current_children = id.children();
-            id.set_children(vec![new_view]);
+            id.set_children([new_view]);
             id.update_state((current_children, new_scope));
         },
     );
 
-    id.set_children(vec![child]);
+    id.set_children([child]);
     DynamicView { id, child_scope }
 }
 

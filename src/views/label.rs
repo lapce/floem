@@ -7,8 +7,8 @@ use crate::{
     keyboard::KeyEvent,
     prop_extractor,
     style::{
-        CursorColor, CustomStylable, FontProps, LineHeight, Selectable, SelectionCornerRadius,
-        SelectionStyle, Style, TextColor, TextOverflow, TextOverflowProp,
+        CursorColor, CustomStylable, CustomStyle, FontProps, LineHeight, Selectable,
+        SelectionCornerRadius, SelectionStyle, Style, TextColor, TextOverflow, TextOverflowProp,
     },
     style_class,
     text::{Attrs, AttrsList, FamilyOwned, TextLayout},
@@ -528,6 +528,9 @@ impl From<Style> for LabelCustomStyle {
     fn from(value: Style) -> Self {
         Self(value)
     }
+}
+impl CustomStyle for LabelCustomStyle {
+    type StyleClass = LabelClass;
 }
 
 impl CustomStylable<LabelCustomStyle> for Label {

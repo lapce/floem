@@ -4,7 +4,11 @@ use crate::{
     pointer::{MouseButton, PointerButton, PointerInputEvent, PointerMoveEvent},
     prelude::*,
     prop, prop_extractor,
-    style::{CursorStyle, CustomStylable, FlexDirectionProp, Style, StyleSelector},
+    style::{
+        CursorStyle, CustomStylable, CustomStyle, FlexDirectionProp, Style, StyleClass,
+        StyleSelector,
+    },
+    style_class,
     unit::{Px, PxPct},
     view_state::StackOffset,
     ViewId,
@@ -15,6 +19,8 @@ use peniko::{
     Brush,
 };
 use taffy::FlexDirection;
+
+style_class!(pub ResizableClass);
 
 pub(crate) fn create_resizable(children: Vec<Box<dyn View>>) -> ResizableStack {
     let id = ViewId::new();
@@ -27,7 +33,7 @@ pub(crate) fn create_resizable(children: Vec<Box<dyn View>>) -> ResizableStack {
             offset
         })
         .collect();
-    id.set_children(children);
+    id.set_children_vec(children);
 
     ResizableStack {
         id,
@@ -98,6 +104,10 @@ pub struct ResizableStack {
 impl View for ResizableStack {
     fn id(&self) -> ViewId {
         self.id
+    }
+
+    fn view_class(&self) -> Option<crate::style::StyleClassRef> {
+        Some(ResizableClass::class_ref())
     }
 
     fn view_style(&self) -> Option<Style> {
@@ -285,13 +295,15 @@ impl View for ResizableStack {
 }
 
 impl ResizableStack {
-    pub fn custom_sizes(&self, sizes: impl Fn() -> Vec<(usize, f64)> + 'static) {
+    pub fn custom_sizes(self, sizes: impl Fn() -> Vec<(usize, f64)> + 'static) -> Self {
         let id = self.id;
         create_effect(move |_| {
             let sizes = sizes();
             id.update_state(sizes);
         });
+        self
     }
+
     fn get_handle_rect(&self, handle_idx: usize) -> Rect {
         if handle_idx >= self.layouts.len() - 1 {
             return Rect::ZERO;
@@ -474,6 +486,9 @@ impl From<Style> for ResizableCustomStyle {
     fn from(val: Style) -> Self {
         Self(val)
     }
+}
+impl CustomStyle for ResizableCustomStyle {
+    type StyleClass = ResizableClass;
 }
 
 impl CustomStylable<ResizableCustomStyle> for ResizableStack {

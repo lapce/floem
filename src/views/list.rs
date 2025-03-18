@@ -83,7 +83,7 @@ where
         let id = ViewId::new();
         let v = v.into_view().class(ListItemClass);
         let child = v.id();
-        id.set_children(vec![v]);
+        id.set_children([v]);
         Item {
             id,
             selection,
@@ -101,7 +101,7 @@ where
     .style(|s| s.width_full().height_full());
     let length = stack.id().children().len();
     let child = stack.id();
-    list_id.set_children(vec![stack]);
+    list_id.set_children([stack]);
     List {
         id: list_id,
         selection,

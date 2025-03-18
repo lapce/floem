@@ -16,7 +16,7 @@ pub struct Container {
 /// set of styles completely separate from the child View that is being wrapped.
 pub fn container<V: IntoView + 'static>(child: V) -> Container {
     let id = ViewId::new();
-    id.set_children(vec![child.into_view()]);
+    id.set_children([child.into_view()]);
 
     Container { id }
 }

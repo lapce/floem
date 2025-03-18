@@ -31,7 +31,7 @@ pub fn drag_resize_window_area<V: IntoView + 'static>(
     child: V,
 ) -> DragResizeWindowArea {
     let id = ViewId::new();
-    id.set_children(vec![child.into_view()]);
+    id.set_children([child.into_view()]);
     DragResizeWindowArea { id }
         .on_event_stop(EventListener::PointerDown, move |_| {
             drag_resize_window(direction)

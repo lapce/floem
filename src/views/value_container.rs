@@ -55,7 +55,7 @@ pub fn value_container<T: 'static, V: IntoView + 'static>(
 ) -> ValueContainer<T> {
     let id = ViewId::new();
     let child = child.into_view();
-    id.set_children(vec![child]);
+    id.set_children([child]);
     create_updater(value_update, move |new_value| id.update_state(new_value));
     ValueContainer {
         id,
