@@ -1038,6 +1038,11 @@ impl From<ScrollCustomStyle> for Style {
         value.0
     }
 }
+impl From<Style> for ScrollCustomStyle {
+    fn from(value: Style) -> Self {
+        Self(value)
+    }
+}
 
 impl CustomStylable<ScrollCustomStyle> for Scroll {
     type DV = Self;

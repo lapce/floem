@@ -524,6 +524,11 @@ impl From<LabelCustomStyle> for Style {
         value.0
     }
 }
+impl From<Style> for LabelCustomStyle {
+    fn from(value: Style) -> Self {
+        Self(value)
+    }
+}
 
 impl CustomStylable<LabelCustomStyle> for Label {
     type DV = Self;

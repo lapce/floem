@@ -166,6 +166,11 @@ impl ViewId {
         VIEW_STORAGE.with_borrow(|s| s.children.get(*self).cloned().unwrap_or_default())
     }
 
+    /// Get access to the list of `ViewId`s that are associated with the children views of this `ViewId`
+    pub fn with_children<R>(&self, children: impl Fn(&[ViewId]) -> R) -> R {
+        VIEW_STORAGE.with_borrow(|s| children(s.children.get(*self).map_or(&[], |v| v)))
+    }
+
     /// Get the `ViewId` that has been set as this `ViewId`'s parent
     pub fn parent(&self) -> Option<ViewId> {
         VIEW_STORAGE.with_borrow(|s| s.parent.get(*self).cloned().flatten())

@@ -151,6 +151,8 @@ pub mod dropdown;
 
 pub mod slider;
 
+pub mod resizable;
+
 mod radio_button;
 pub use radio_button::*;
 
