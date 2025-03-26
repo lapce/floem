@@ -17,7 +17,7 @@ pub struct DragWindowArea {
 /// This can be useful when the window has the title bar turned off and you want to be able to still drag the window.
 pub fn drag_window_area<V: IntoView + 'static>(child: V) -> DragWindowArea {
     let id = ViewId::new();
-    id.set_children(vec![child]);
+    id.set_children([child]);
     DragWindowArea { id }
         .on_event_stop(EventListener::PointerDown, |e| {
             if let Event::PointerDown(input_event) = e {

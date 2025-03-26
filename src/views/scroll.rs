@@ -5,7 +5,7 @@ use floem_reactive::create_effect;
 use peniko::kurbo::{Point, Rect, Size, Stroke, Vec2};
 use peniko::{Brush, Color};
 
-use crate::style::{BorderRightColor, CustomStylable, OverflowX, OverflowY};
+use crate::style::{BorderRightColor, CustomStylable, CustomStyle, OverflowX, OverflowY};
 use crate::unit::PxPct;
 use crate::{
     app_state::AppState,
@@ -165,7 +165,7 @@ pub fn scroll<V: IntoView + 'static>(child: V) -> Scroll {
     let id = ViewId::new();
     let child = child.into_view();
     let child_id = child.id();
-    id.set_children(vec![child]);
+    id.set_children([child]);
 
     Scroll {
         id,
@@ -1042,6 +1042,9 @@ impl From<Style> for ScrollCustomStyle {
     fn from(value: Style) -> Self {
         Self(value)
     }
+}
+impl CustomStyle for ScrollCustomStyle {
+    type StyleClass = ScrollClass;
 }
 
 impl CustomStylable<ScrollCustomStyle> for Scroll {

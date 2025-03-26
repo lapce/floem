@@ -48,7 +48,7 @@ pub fn tooltip<V: IntoView + 'static, T: IntoView + 'static>(
 ) -> Tooltip {
     let id = ViewId::new();
     let child = child.into_view();
-    id.set_children(vec![child]);
+    id.set_children([child]);
     let overlay = Rc::new(RefCell::new(None));
     Tooltip {
         id,

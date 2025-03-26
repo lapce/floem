@@ -18,7 +18,7 @@ pub struct Clip {
 pub fn clip<V: IntoView + 'static>(child: V) -> Clip {
     let child = child.into_view();
     let id = ViewId::new();
-    id.set_children(vec![child]);
+    id.set_children([child]);
     Clip { id }
 }
 

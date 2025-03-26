@@ -20,7 +20,7 @@ use crate::{
     event::{Event, EventListener, EventPropagation},
     id::ViewId,
     prop, prop_extractor,
-    style::{CustomStylable, Style, StyleClass, Width},
+    style::{CustomStylable, CustomStyle, Style, StyleClass, Width},
     style_class,
     unit::PxPctAuto,
     view::{default_compute_layout, IntoView, View},
@@ -202,9 +202,9 @@ impl<T: 'static + Clone> View for Dropdown<T> {
             cx.app_state_mut().request_paint(self.id);
         }
         self.list_style = cx
-            .indirect_style()
-            .clone()
-            .apply_classes_from_context(&[scroll::ScrollClass::class_ref()], cx.indirect_style());
+            .style()
+            .get_nested_map(scroll::ScrollClass::key())
+            .unwrap_or_default();
 
         for child in self.id.children() {
             cx.style_view(child);
@@ -239,7 +239,7 @@ impl<T: 'static + Clone> View for Dropdown<T> {
                         let old_main_view = self.main_view;
                         let (main_view, main_view_scope) = (self.main_fn)(*val);
                         let main_view_id = main_view.id();
-                        self.id.set_children(vec![main_view]);
+                        self.id.set_children([main_view]);
                         self.main_view = main_view_id;
                         self.main_view_scope = main_view_scope;
 
@@ -374,7 +374,8 @@ impl<T: Clone> Dropdown<T> {
                 .keyboard_navigable()
                 .on_event_stop(EventListener::FocusLost, move |_| {
                     dropdown_id.update_state(Message::ListFocusLost);
-                });
+                })
+                .on_event_stop(EventListener::PointerMove, |_| {});
             let inner_list_id = inner_list.id();
             scroll(inner_list)
                 .on_event_stop(EventListener::FocusGained, move |_| {
@@ -392,7 +393,7 @@ impl<T: Clone> Dropdown<T> {
         let (child, main_view_scope) = main_fn(initial.clone());
         let main_view = child.id();
 
-        dropdown_id.set_children(vec![child]);
+        dropdown_id.set_children([child]);
 
         Self {
             id: dropdown_id,
@@ -486,7 +487,7 @@ impl<T: Clone> Dropdown<T> {
         let main_view = child.id();
         self.main_view_scope = main_view_scope;
         self.main_view = main_view;
-        self.id.set_children(vec![child]);
+        self.id.set_children([child]);
         self
     }
 
@@ -603,6 +604,10 @@ impl From<Style> for DropdownCustomStyle {
         Self(val)
     }
 }
+impl CustomStyle for DropdownCustomStyle {
+    type StyleClass = DropdownClass;
+}
+
 impl<T: Clone> CustomStylable<DropdownCustomStyle> for Dropdown<T> {
     type DV = Self;
 }

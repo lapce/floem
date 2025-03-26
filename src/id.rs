@@ -119,7 +119,25 @@ impl ViewId {
     }
 
     /// Set the children views of this Id
-    pub fn set_children(&self, children: Vec<impl IntoView>) {
+    /// See also [`Self::set_children_vec`]
+    pub fn set_children<const N: usize, V: IntoView>(&self, children: [V; N]) {
+        VIEW_STORAGE.with_borrow_mut(|s| {
+            let mut children_ids = Vec::new();
+            for child in children {
+                let child_view = child.into_view();
+                let child_view_id = child_view.id();
+                children_ids.push(child_view_id);
+                s.parent.insert(child_view_id, Some(*self));
+                s.views
+                    .insert(child_view_id, Rc::new(RefCell::new(child_view.into_any())));
+            }
+            s.children.insert(*self, children_ids);
+        });
+    }
+
+    /// Set the children views of this Id using a Vector
+    /// See also [`Self::set_children`]
+    pub fn set_children_vec(&self, children: Vec<impl IntoView>) {
         VIEW_STORAGE.with_borrow_mut(|s| {
             let mut children_ids = Vec::new();
             for child in children {

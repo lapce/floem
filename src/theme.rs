@@ -1,13 +1,11 @@
 use crate::{
-    style::{Background, CursorStyle, Foreground, Style, Transition},
+    style::{Background, CursorStyle, CustomStyle, Foreground, Style, Transition},
     unit::{DurationUnitExt, UnitExt},
     views::{
-        dropdown, scroll,
-        slider::{self, SliderClass},
-        ButtonClass, CheckboxClass, LabelClass, LabelCustomStyle, LabeledCheckboxClass,
-        LabeledRadioButtonClass, ListClass, ListItemClass, PlaceholderTextClass, RadioButtonClass,
-        RadioButtonDotClass, TextInputClass, ToggleButtonCircleRad, ToggleButtonClass,
-        ToggleButtonInset, TooltipClass,
+        dropdown, scroll, slider, ButtonClass, CheckboxClass, LabelCustomStyle,
+        LabeledCheckboxClass, LabeledRadioButtonClass, ListClass, ListItemClass,
+        PlaceholderTextClass, RadioButtonClass, RadioButtonDotClass, TextInputClass,
+        ToggleButtonCircleRad, ToggleButtonClass, ToggleButtonInset, TooltipClass,
     },
 };
 use peniko::color::palette;
@@ -57,10 +55,7 @@ pub(crate) fn default_theme() -> Theme {
         .apply(focus_style.clone());
 
     let button_style = Style::new()
-        .apply(LabelCustomStyle::new().selectable(false).style())
-        .class(LabelClass, |s| {
-            s.apply(LabelCustomStyle::new().selectable(false).style())
-        })
+        .custom_style_class(|s: LabelCustomStyle| s.selectable(false))
         .background(Color::from_rgb8(240, 240, 240))
         .disabled(|s| {
             s.background(Color::from_rgb8(180, 188, 175).with_alpha(0.3))
@@ -228,13 +223,12 @@ pub(crate) fn default_theme() -> Theme {
         .class(LabeledRadioButtonClass, |_| labeled_radio_button_style)
         .class(TextInputClass, |_| input_style)
         .class(ButtonClass, |_| button_style)
-        .apply_custom(
-            scroll::ScrollCustomStyle::new()
-                .handle_border_radius(4.0)
+        .custom_style_class(|s: scroll::ScrollCustomStyle| {
+            s.handle_border_radius(4.0)
                 .handle_background(Color::from_rgba8(166, 166, 166, 140))
                 .handle_thickness(16.0)
-                .handle_rounded(false),
-        )
+                .handle_rounded(false)
+        })
         .class(scroll::Handle, |s| {
             s.active(|s| s.background(Color::from_rgb8(166, 166, 166)))
                 .hover(|s| s.background(Color::from_rgb8(184, 184, 184)))
@@ -243,19 +237,15 @@ pub(crate) fn default_theme() -> Theme {
             s.hover(|s| s.background(Color::from_rgba8(166, 166, 166, 30)))
         })
         .class(ToggleButtonClass, |_| toggle_button_style)
-        .class(SliderClass, |s| {
-            s.apply_custom(
-                slider::SliderCustomStyle::new()
-                    .bar_color(palette::css::BLACK)
-                    .bar_radius(100.pct())
-                    .accent_bar_color(palette::css::GREEN)
-                    .accent_bar_radius(100.pct())
-                    .handle_color(Brush::Solid(palette::css::DARK_GRAY))
-                    .handle_radius(100.pct())
-                    .edge_align(true),
-            )
-            .height(15)
-            .width(100)
+        .custom_style_class(|s: slider::SliderCustomStyle| {
+            s.bar_color(palette::css::BLACK)
+                .bar_radius(100.pct())
+                .accent_bar_color(palette::css::GREEN)
+                .accent_bar_radius(100.pct())
+                .handle_color(Brush::Solid(palette::css::DARK_GRAY))
+                .handle_radius(100.pct())
+                .edge_align(true)
+                .style(|s| s.size(100, 15))
         })
         .class(PlaceholderTextClass, |s| {
             s.color(Color::from_rgba8(158, 158, 158, 30))
