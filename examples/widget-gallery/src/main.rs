@@ -173,5 +173,10 @@ fn app_view() -> impl IntoView {
 }
 
 fn main() {
-    floem::launch(app_view);
+    floem::Application::new()
+        .window(
+            |_| app_view(),
+            Some(WindowConfig::default().with_transparent(true)),
+        )
+        .run();
 }
