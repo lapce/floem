@@ -255,12 +255,11 @@ impl ViewState {
         computed_style.clear();
         // we will apply the views style to the context so that if a style class is used on a view, that class will be directly applied instead of only applying to children
         let mut context = context.clone();
-
         if let Some(view_class) = view_class {
             computed_style = computed_style.apply_classes_from_context(&[view_class], &context);
         }
         computed_style = computed_style.apply_classes_from_context(&self.classes, &context);
-        
+
         if let Some(view_style) = view_style {
             context.apply_mut(view_style.clone());
             computed_style.apply_mut(view_style);
