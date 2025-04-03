@@ -2593,6 +2593,21 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
         }
         self_style.into()
     }
+
+    fn apply_if(self, cond: bool, style: impl FnOnce(Self) -> Self) -> Self {
+        if cond {
+            style(self)
+        } else {
+            self
+        }
+    }
+    fn transition<P: StyleProp>(self, _prop: P, transition: Transition) -> Self {
+        let mut self_style: Style = self.into();
+        self_style
+            .map
+            .insert(P::prop_ref().info().transition_key, Rc::new(transition));
+        self_style.into()
+    }
 }
 
 pub trait CustomStylable<S: CustomStyle + 'static>: IntoView<V = Self::DV> + Sized {

@@ -556,11 +556,6 @@ impl LabelCustomStyle {
         self = Self(self.0.set(CursorColor, color));
         self
     }
-
-    /// Get the inner style
-    pub fn style(self) -> Style {
-        self.0
-    }
 }
 impl Default for LabelCustomStyle {
     fn default() -> Self {
