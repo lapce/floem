@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use peniko::kurbo::{Point, Size};
 use taffy::{AvailableSpace, NodeId};
-use winit::window::CursorIcon;
+use winit::window::{CursorIcon, Theme};
 
 use crate::{
     context::{DragState, FrameUpdate, InteractionState},
@@ -41,6 +41,7 @@ pub struct AppState {
     pub(crate) grid_bps: GridBreakpoints,
     pub(crate) clicking: HashSet<ViewId>,
     pub(crate) hovered: HashSet<ViewId>,
+    pub(crate) os_theme: Option<winit::window::Theme>,
     /// This keeps track of all views that have an animation,
     /// regardless of the status of the animation
     pub(crate) cursor: Option<CursorStyle>,
@@ -76,6 +77,7 @@ impl AppState {
             dragging_over: HashSet::new(),
             clicking: HashSet::new(),
             hovered: HashSet::new(),
+            os_theme: None,
             cursor: None,
             last_cursor: CursorIcon::Default,
             last_cursor_location: Default::default(),
@@ -159,6 +161,10 @@ impl AppState {
 
     pub fn is_clicking(&self, id: &ViewId) -> bool {
         self.clicking.contains(id)
+    }
+
+    pub fn is_dark_mode(&self) -> bool {
+        self.os_theme == Some(Theme::Dark)
     }
 
     pub fn is_dragging(&self) -> bool {
