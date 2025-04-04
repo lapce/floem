@@ -72,11 +72,7 @@ fn app_view() -> impl IntoView {
                 })
                 .keyboard_navigable(),
         )
-            .style(|s| {
-                s.class(LabelClass, |s| {
-                    s.apply(LabelCustomStyle::new().selectable(false).style())
-                })
-            }),
+            .style(|s| s.custom_style_class(|s: LabelCustomStyle| s.selectable(false))),
     )
         .style(|s| {
             s.size(100.pct(), 100.pct())
