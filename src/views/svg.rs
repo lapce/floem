@@ -9,7 +9,13 @@ use peniko::{
 };
 use sha2::{Digest, Sha256};
 
-use crate::{id::ViewId, prop, prop_extractor, style::TextColor, style_class, view::View};
+use crate::{
+    id::ViewId,
+    prop, prop_extractor,
+    style::{Style, TextColor},
+    style_class,
+    view::View,
+};
 
 use super::Decorators;
 
@@ -30,6 +36,7 @@ pub struct Svg {
     svg_string: String,
     svg_css: Option<String>,
     css_prop: Option<Box<dyn SvgCssPropExtractor>>,
+    aspect_ratio: f32,
 }
 
 style_class!(pub SvgClass);
@@ -109,6 +116,7 @@ pub fn svg(svg_str_fn: impl Into<SvgStrFn> + 'static) -> Svg {
         svg_string: Default::default(),
         css_prop: None,
         svg_css: None,
+        aspect_ratio: 1.,
     }
     .class(SvgClass)
 }
@@ -118,8 +126,24 @@ impl View for Svg {
         self.id
     }
 
+    fn view_style(&self) -> Option<crate::style::Style> {
+        if !self.aspect_ratio.is_nan() {
+            Some(Style::new().aspect_ratio(self.aspect_ratio))
+        } else {
+            None
+        }
+    }
+
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         self.svg_style.read(cx);
+        if let Some(tree) = &self.svg_tree {
+            let size = tree.size();
+            let aspect_ratio = size.width() / size.height();
+            if self.aspect_ratio != aspect_ratio {
+                self.aspect_ratio = aspect_ratio;
+                self.id.request_style();
+            }
+        }
         if let Some(prop_reader) = &mut self.css_prop {
             if prop_reader.read_custom(cx) {
                 self.id
