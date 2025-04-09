@@ -380,12 +380,14 @@ impl ResizableStack {
 
                 let child = self.id.with_children(|c| c[handle_idx]);
                 let offset = self.style_offsets[handle_idx];
+                let is_last = handle_idx == self.style_offsets.len() - 1;
                 child.update_style(
                     offset,
                     Style::new()
                         .width(new_width)
-                        .max_width(new_width)
-                        .min_width(20.),
+                        .min_width(20.)
+                        .apply_if(!is_last, |s| s.max_width(new_width))
+                        .apply_if(is_last, |s| s.flex_grow(1.)),
                 );
 
                 // Calculate next width based on actual applied change
@@ -394,12 +396,14 @@ impl ResizableStack {
 
                 let child = self.id.with_children(|c| c[handle_idx + 1]);
                 let offset = self.style_offsets[handle_idx + 1];
+                let is_last = handle_idx + 1 == self.style_offsets.len() - 1;
                 child.update_style(
                     offset,
                     Style::new()
                         .width(next_width)
-                        .max_width(next_width)
-                        .min_width(20.),
+                        .min_width(20.)
+                        .apply_if(!is_last, |s| s.max_width(next_width))
+                        .apply_if(is_last, |s| s.flex_grow(1.)),
                 );
             }
             FlexDirection::Column | FlexDirection::ColumnReverse => {
@@ -425,12 +429,14 @@ impl ResizableStack {
 
                 let child = self.id.with_children(|c| c[handle_idx]);
                 let offset = self.style_offsets[handle_idx];
+                let is_last = handle_idx == self.style_offsets.len() - 1;
                 child.update_style(
                     offset,
                     Style::new()
                         .height(new_height)
-                        .max_height(new_height)
-                        .min_height(20.),
+                        .min_height(20.)
+                        .apply_if(!is_last, |s| s.max_height(new_height))
+                        .apply_if(is_last, |s| s.flex_grow(1.)),
                 );
 
                 // Calculate next height based on actual applied change
@@ -439,12 +445,14 @@ impl ResizableStack {
 
                 let child = self.id.with_children(|c| c[handle_idx + 1]);
                 let offset = self.style_offsets[handle_idx + 1];
+                let is_last = handle_idx + 1 == self.style_offsets.len() - 1;
                 child.update_style(
                     offset,
                     Style::new()
                         .height(next_height)
-                        .max_height(next_height)
-                        .min_height(20.),
+                        .min_height(20.)
+                        .apply_if(!is_last, |s| s.max_height(next_height))
+                        .apply_if(is_last, |s| s.flex_grow(1.)),
                 );
             }
         }
