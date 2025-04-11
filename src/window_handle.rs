@@ -81,6 +81,7 @@ pub(crate) struct WindowHandle {
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     pub(crate) context_menu: RwSignal<Option<(Menu, Point, bool)>>,
     dropper_file: Option<PathBuf>,
+    has_pending_redraw: bool,
 }
 
 impl WindowHandle {
@@ -172,6 +173,7 @@ impl WindowHandle {
             context_menu,
             last_pointer_down: None,
             dropper_file: None,
+            has_pending_redraw: false,
         };
         window_handle.app_state.set_root_size(size.get_untracked());
         window_handle.app_state.os_theme = os_theme;
@@ -636,6 +638,7 @@ impl WindowHandle {
     }
 
     pub fn paint(&mut self) -> Option<peniko::Image> {
+        self.has_pending_redraw = false;
         let mut cx = PaintCx {
             app_state: &mut self.app_state,
             paint_state: &mut self.paint_state,
@@ -747,7 +750,8 @@ impl WindowHandle {
     }
 
     pub(crate) fn process_update(&mut self) {
-        if self.process_update_no_paint() {
+        if !self.has_pending_redraw && self.process_update_no_paint() {
+            self.has_pending_redraw = true;
             self.schedule_repaint();
         }
     }
