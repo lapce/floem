@@ -339,7 +339,7 @@ impl ViewId {
     }
 
     /// Requests style for this view and all direct and indirect children.
-    pub(crate) fn request_style_recursive(&self) {
+    pub fn request_style_recursive(&self) {
         let state = self.state();
         state.borrow_mut().request_style_recursive = true;
         self.request_style();
