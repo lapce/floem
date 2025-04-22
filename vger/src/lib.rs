@@ -16,7 +16,9 @@ use peniko::{
     kurbo::{Affine, Point, Rect, Shape},
     BrushRef, Color, GradientKind,
 };
-use wgpu::{Device, DeviceType, Queue, StoreOp, Surface, SurfaceConfiguration, TextureFormat};
+use wgpu::{
+    Adapter, Device, DeviceType, Queue, StoreOp, Surface, SurfaceConfiguration, TextureFormat,
+};
 
 pub struct VgerRenderer {
     device: Arc<Device>,
@@ -31,6 +33,7 @@ pub struct VgerRenderer {
     clip: Option<Rect>,
     capture: bool,
     swash_scaler: SwashScaler,
+    adapter: Adapter,
 }
 
 impl VgerRenderer {
@@ -101,6 +104,7 @@ impl VgerRenderer {
             clip: None,
             capture: false,
             swash_scaler: SwashScaler::new(font_embolden),
+            adapter,
         })
     }
 
@@ -668,6 +672,16 @@ impl Renderer for VgerRenderer {
     }
 
     fn pop_layer(&mut self) {}
+
+    fn debug_info(&self) -> String {
+        use std::fmt::Write;
+
+        let mut out = String::new();
+        writeln!(out, "name: Vger").ok();
+        writeln!(out, "info: {:#?}", self.adapter.get_info()).ok();
+
+        out
+    }
 }
 
 fn vger_color(color: Color) -> floem_vger_rs::Color {

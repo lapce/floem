@@ -190,6 +190,19 @@ impl Renderer {
             Renderer::Uninitialized { size, .. } => *size,
         }
     }
+
+    pub(crate) fn debug_info(&self) -> String {
+        use crate::Renderer;
+
+        match self {
+            #[cfg(feature = "vello")]
+            Self::Vello(r) => r.debug_info(),
+            #[cfg(not(feature = "vello"))]
+            Self::Vger(r) => r.debug_info(),
+            Self::TinySkia(r) => r.debug_info(),
+            Self::Uninitialized { .. } => "Uninitialized".to_string(),
+        }
+    }
 }
 
 impl floem_renderer::Renderer for Renderer {

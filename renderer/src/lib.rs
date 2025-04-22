@@ -78,4 +78,8 @@ pub trait Renderer {
     fn draw_img(&mut self, img: Img<'_>, rect: Rect);
 
     fn finish(&mut self) -> Option<peniko::Image>;
+
+    fn debug_info(&self) -> String {
+        "Unknown".into()
+    }
 }

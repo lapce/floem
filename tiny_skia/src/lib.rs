@@ -712,6 +712,10 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
 
         apply_layer(&layer, parent);
     }
+
+    fn debug_info(&self) -> String {
+        "name: tiny_skia".into()
+    }
 }
 
 fn shape_to_path(shape: &impl Shape) -> Option<Path> {
