@@ -126,7 +126,7 @@ where
                     Key::Named(NamedKey::Home) => {
                         if length.get_untracked() > 0 {
                             selection.set(Some(0));
-                            stack_id.update_state(0);
+                            stack_id.update_state(0_usize); // Must be usize to match state type
                         }
                         EventPropagation::Stop
                     }
