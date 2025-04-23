@@ -18,7 +18,7 @@ use peniko::{Compose, Fill, Mix};
 use vello::kurbo::Stroke;
 use vello::{AaConfig, RendererOptions, Scene};
 use wgpu::{
-    Device, DeviceType, Queue, Surface, SurfaceConfiguration, TextureAspect, TextureFormat,
+    Adapter, Device, DeviceType, Queue, Surface, SurfaceConfiguration, TextureAspect, TextureFormat,
 };
 
 pub struct VelloRenderer {
@@ -34,6 +34,7 @@ pub struct VelloRenderer {
     transform: Affine,
     capture: bool,
     font_cache: HashMap<ID, vello::peniko::Font>,
+    adapter: Adapter,
 }
 
 impl VelloRenderer {
@@ -114,6 +115,7 @@ impl VelloRenderer {
             transform: Affine::IDENTITY,
             capture: false,
             font_cache: HashMap::new(),
+            adapter,
         })
     }
 
@@ -429,6 +431,16 @@ impl Renderer for VelloRenderer {
             }
             None
         }
+    }
+
+    fn debug_info(&self) -> String {
+        use std::fmt::Write;
+
+        let mut out = String::new();
+        writeln!(out, "name: Vello").ok();
+        writeln!(out, "info: {:#?}", self.adapter.get_info()).ok();
+
+        out
     }
 }
 

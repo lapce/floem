@@ -165,6 +165,7 @@ fn capture_view(
         })
         .unwrap_or_default();
     let size = capture_.window_size;
+    let renderer = capture_.renderer.clone();
 
     let contain_ids = create_rw_signal((0, Vec::<ViewId>::new()));
 
@@ -305,6 +306,8 @@ fn capture_view(
             selected_view(capture, capture_view.selected),
             header("Stats"),
             stats(capture),
+            header("Renderer"),
+            text(renderer).style(|s| s.padding(5.0)),
             button("Recapture")
                 .style(|s| s.margin(5.0))
                 .on_click_stop(move |_| {

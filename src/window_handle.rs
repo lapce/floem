@@ -739,6 +739,7 @@ impl WindowHandle {
             scale: self.scale * self.app_state.scale,
             root: Rc::new(root),
             state: self.app_state.capture.take().unwrap(),
+            renderer: self.paint_state.renderer().debug_info(),
         };
         // Process any updates produced by capturing
         self.process_update();

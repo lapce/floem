@@ -154,6 +154,7 @@ pub struct Capture {
     pub window_size: Size,
     pub scale: f64,
     pub state: CaptureState,
+    pub renderer: String,
 }
 
 #[derive(Default)]
