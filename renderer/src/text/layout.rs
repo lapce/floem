@@ -188,6 +188,8 @@ pub struct HitPoint {
     pub line: usize,
     /// First-byte-index of glyph at cursor (will insert behind this glyph)
     pub index: usize,
+    /// Code-point index of glyph at cursor (use with String::chars())
+    pub char_index: usize,
     /// Whether or not the point was inside the bounds of the layout object.
     ///
     /// A click outside the layout object will still resolve to a position in the
@@ -354,15 +356,32 @@ impl TextLayout {
         if let Some(cursor) = self.hit(point.x as f32, point.y as f32) {
             let size = self.size();
             let is_inside = point.x <= size.width && point.y <= size.height;
+
+            // FIXME: It seems that there is no API to get the char-point index of the text directly
+            // So it have to calculate it manually.
+            let char_index = {
+                let mut byte_index = 0;
+                self.buffer
+                    .lines
+                    .iter()
+                    .flat_map(|x| x.text().chars())
+                    .take_while(|x| {
+                        byte_index += x.len_utf8();
+                        byte_index <= cursor.index
+                    })
+                    .count()
+            };
             HitPoint {
                 line: cursor.line,
                 index: cursor.index,
+                char_index,
                 is_inside,
             }
         } else {
             HitPoint {
                 line: 0,
                 index: 0,
+                char_index: 0,
                 is_inside: false,
             }
         }

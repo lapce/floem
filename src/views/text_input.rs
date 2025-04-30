@@ -356,10 +356,12 @@ impl TextInput {
         }
         self.cursor_x = cursor_x;
 
-        let clip_start = virt_text.hit_point(Point::new(clip_start_x, 0.0)).index;
+        let clip_start = virt_text
+            .hit_point(Point::new(clip_start_x, 0.0))
+            .char_index;
         let clip_end = virt_text
             .hit_point(Point::new(clip_start_x + node_width, 0.0))
-            .index;
+            .char_index;
 
         let new_text = self
             .buffer
