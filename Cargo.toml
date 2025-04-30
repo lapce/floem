@@ -39,7 +39,7 @@ raw-window-handle = "0.6.0"
 wgpu = { version = "23.0.1" }
 parking_lot = { version = "0.12.1" }
 swash = { version = "0.1.17" }
-muda = { version = "0.15.3" }
+muda = { git = "https://github.com/tauri-apps/muda", rev = "8e986af3cea96a729413abc75c3702dec3990bd2", default-features = false }
 winit = { git = "https://github.com/rust-windowing/winit", rev = "ee245c569d65fdeacf705ee5eedb564508d10ebe" }
 
 [dependencies]
