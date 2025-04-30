@@ -878,7 +878,10 @@ impl TextInput {
 
         self.buffer
             .update(|buf| buf.insert_str(self.cursor_glyph_idx, &ch.clone()));
-        self.move_cursor(Movement::Glyph, TextDirection::Right)
+
+        // FIXME: any way to improve performance?
+        // but string commited by ime should be not too long, is it necessary to optimize?
+        (0.. ch.chars().count()).all(|_| self.move_cursor(Movement::Glyph, TextDirection::Right))
     }
 
     fn move_selection(
@@ -1106,6 +1109,7 @@ impl View for TextInput {
                 false
             }
             Event::KeyDown(event) => self.handle_key_down(cx, event),
+            Event::ImeCommit(str) => self.insert_text(&SmolStr::from(str.as_str())),
             _ => false,
         };
 

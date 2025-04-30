@@ -437,6 +437,9 @@ impl ApplicationHandle {
         let Ok(window) = event_loop.create_window(window_attributes) else {
             return;
         };
+
+        window.set_ime_allowed(true);
+
         let window_id = window.id();
         let window_handle = WindowHandle::new(
             window,
