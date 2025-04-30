@@ -1,4 +1,4 @@
-use crate::action::exec_after;
+use crate::action::{exec_after, set_ime_allowed, set_ime_cursor_area};
 use crate::event::{EventListener, EventPropagation};
 use crate::id::ViewId;
 use crate::keyboard::{self, KeyEvent, Modifiers};
@@ -134,7 +134,15 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
     {
         create_effect(move |_| {
             let text = buffer.get();
-            id.update_state((text, is_focused.get()));
+            let is_focused = is_focused.get();
+            id.update_state((text, is_focused));
+            set_ime_allowed(is_focused);
+
+            let rect = id.layout_rect();
+            set_ime_cursor_area(
+                Point::new(rect.x0, rect.y0),
+                id.get_size().unwrap_or(Size::ZERO),
+            );
         });
     }
 
@@ -881,7 +889,7 @@ impl TextInput {
 
         // FIXME: any way to improve performance?
         // but string commited by ime should be not too long, is it necessary to optimize?
-        (0.. ch.chars().count()).all(|_| self.move_cursor(Movement::Glyph, TextDirection::Right))
+        (0..ch.chars().count()).all(|_| self.move_cursor(Movement::Glyph, TextDirection::Right))
     }
 
     fn move_selection(
@@ -1109,7 +1117,13 @@ impl View for TextInput {
                 false
             }
             Event::KeyDown(event) => self.handle_key_down(cx, event),
-            Event::ImeCommit(str) => self.insert_text(&SmolStr::from(str.as_str())),
+            Event::ImeCommit(str) => {
+                if self.is_focused {
+                    self.insert_text(&SmolStr::from(str.as_str()))
+                } else {
+                    false
+                }
+            }
             _ => false,
         };
 
