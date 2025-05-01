@@ -337,7 +337,14 @@ impl TextInput {
         let node_width = node_layout.size.width as f64;
         let cursor_text_loc = Cursor::new(0, self.cursor_glyph_idx);
         let layout_cursor = virt_text.layout_cursor(cursor_text_loc);
-        let cursor_glyph_pos = virt_text.hit_position(layout_cursor.glyph);
+        let cursor_glyph_pos = virt_text.hit_position(
+            self.buffer
+                .get_untracked()
+                .chars()
+                .take(layout_cursor.glyph)
+                .map(|x| x.len_utf8())
+                .sum(),
+        );
         let cursor_x = cursor_glyph_pos.point.x;
 
         let mut clip_start_x = self.clip_start_x;
@@ -356,25 +363,24 @@ impl TextInput {
         }
         self.cursor_x = cursor_x;
 
-        let clip_start = virt_text
-            .hit_point(Point::new(clip_start_x, 0.0))
-            .char_index;
+        let clip_start = virt_text.hit_point(Point::new(clip_start_x, 0.0)).index;
         let clip_end = virt_text
             .hit_point(Point::new(clip_start_x + node_width, 0.0))
-            .char_index;
+            .index;
 
-        let new_text = self
+        let text_bytes = self
             .buffer
             .get_untracked()
-            .chars()
+            .bytes()
             .skip(clip_start)
             .take(clip_end - clip_start)
-            .collect();
+            .collect::<Vec<u8>>();
+        let new_text = String::from_utf8_lossy(&text_bytes);
 
         self.cursor_x -= clip_start_x;
         self.clip_start_idx = clip_start;
         self.clip_start_x = clip_start_x;
-        self.clipped_text = Some(new_text);
+        self.clipped_text = Some(new_text.into());
 
         self.update_text_layout();
         match clip_dir {
