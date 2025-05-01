@@ -443,7 +443,6 @@ impl ApplicationHandle {
             view_fn,
             transparent,
             apply_default_theme,
-            logical_size,
             font_embolden,
         );
         self.window_handles.insert(window_id, window_handle);

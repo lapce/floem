@@ -89,14 +89,13 @@ impl WindowHandle {
         view_fn: impl FnOnce(winit::window::WindowId) -> Box<dyn View> + 'static,
         transparent: bool,
         apply_default_theme: bool,
-        size: Option<LogicalSize<f64>>,
         font_embolden: f32,
     ) -> Self {
         let scope = Scope::new();
         let window_id = window.id();
         let id = ViewId::new();
         let scale = window.scale_factor();
-        let size: LogicalSize<f64> = size.unwrap_or(window.surface_size().to_logical(scale));
+        let size: LogicalSize<f64> = window.surface_size().to_logical(scale);
         let size = Size::new(size.width, size.height);
         let size = scope.create_rw_signal(Size::new(size.width, size.height));
         let os_theme = window.theme();
@@ -178,6 +177,7 @@ impl WindowHandle {
         if let Some(theme) = os_theme {
             window_handle.event(Event::ThemeChanged(theme));
         }
+        window_handle.size(size.get_untracked());
         window_handle
     }
 
