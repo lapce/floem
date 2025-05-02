@@ -135,7 +135,8 @@ impl View for Svg {
     }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
-        self.svg_style.read(cx);
+        let style = cx.direct_style().clone();
+        self.svg_style.read_style(cx, &style);
         if let Some(tree) = &self.svg_tree {
             let size = tree.size();
             let aspect_ratio = size.width() / size.height();
