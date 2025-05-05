@@ -80,6 +80,7 @@ pub struct TextInput {
     id: ViewId,
     buffer: BufferState,
     pub(crate) placeholder_text: Option<String>,
+    on_enter: Option<Box<dyn Fn()>>,
     placeholder_buff: Option<TextLayout>,
     placeholder_style: PlaceholderStyle,
     selection_style: SelectionStyle,
@@ -167,6 +168,7 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         is_focused: false,
         last_pointer_down: Point::ZERO,
         last_cursor_action_on: Instant::now(),
+        on_enter: None,
     }
     .keyboard_navigable()
     .on_event_stop(EventListener::FocusGained, move |_| {
@@ -243,8 +245,15 @@ const CURSOR_BLINK_INTERVAL_MS: u64 = 500;
 const APPROX_VISIBLE_CHARS_TARGET: f32 = 10.0;
 
 impl TextInput {
+    /// Add placeholder text visible when buffer is empty.
     pub fn placeholder(mut self, text: impl Into<String>) -> Self {
         self.placeholder_text = Some(text.into());
+        self
+    }
+
+    /// Add action that will run on `Enter` key press.
+    pub fn on_enter(mut self, action: impl Fn() + 'static) -> Self {
+        self.on_enter = Some(Box::new(action));
         self
     }
 }
@@ -773,6 +782,12 @@ impl TextInput {
             }
             Key::Named(NamedKey::Escape) => {
                 cx.app_state.clear_focus();
+                true
+            }
+            Key::Named(NamedKey::Enter) => {
+                if let Some(action) = &self.on_enter {
+                    action();
+                }
                 true
             }
             Key::Named(NamedKey::End) => {
