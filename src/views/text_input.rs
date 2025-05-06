@@ -1,4 +1,4 @@
-use crate::action::exec_after;
+use crate::action::{exec_after, set_ime_allowed, set_ime_cursor_area};
 use crate::event::{EventListener, EventPropagation};
 use crate::id::ViewId;
 use crate::keyboard::{self, KeyEvent, Modifiers};
@@ -135,7 +135,15 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
     {
         create_effect(move |_| {
             let text = buffer.get();
-            id.update_state((text, is_focused.get()));
+            let is_focused = is_focused.get();
+            id.update_state((text, is_focused));
+            set_ime_allowed(is_focused);
+
+            let rect = id.layout_rect();
+            set_ime_cursor_area(
+                Point::new(rect.x0, rect.y0),
+                id.get_size().unwrap_or(Size::ZERO),
+            );
         });
     }
 
@@ -338,7 +346,14 @@ impl TextInput {
         let node_width = node_layout.size.width as f64;
         let cursor_text_loc = Cursor::new(0, self.cursor_glyph_idx);
         let layout_cursor = virt_text.layout_cursor(cursor_text_loc);
-        let cursor_glyph_pos = virt_text.hit_position(layout_cursor.glyph);
+        let cursor_glyph_pos = virt_text.hit_position(
+            self.buffer
+                .get_untracked()
+                .chars()
+                .take(layout_cursor.glyph)
+                .map(|x| x.len_utf8())
+                .sum(),
+        );
         let cursor_x = cursor_glyph_pos.point.x;
 
         let mut clip_start_x = self.clip_start_x;
@@ -362,18 +377,19 @@ impl TextInput {
             .hit_point(Point::new(clip_start_x + node_width, 0.0))
             .index;
 
-        let new_text = self
+        let text_bytes = self
             .buffer
             .get_untracked()
-            .chars()
+            .bytes()
             .skip(clip_start)
             .take(clip_end - clip_start)
-            .collect();
+            .collect::<Vec<u8>>();
+        let new_text = String::from_utf8_lossy(&text_bytes);
 
         self.cursor_x -= clip_start_x;
         self.clip_start_idx = clip_start;
         self.clip_start_x = clip_start_x;
-        self.clipped_text = Some(new_text);
+        self.clipped_text = Some(new_text.into());
 
         self.update_text_layout();
         match clip_dir {
@@ -893,7 +909,10 @@ impl TextInput {
 
         self.buffer
             .update(|buf| buf.insert_str(self.cursor_glyph_idx, &ch.clone()));
-        self.move_cursor(Movement::Glyph, TextDirection::Right)
+
+        // FIXME: any way to improve performance?
+        // but string commited by ime should be not too long, is it necessary to optimize?
+        (0..ch.chars().count()).all(|_| self.move_cursor(Movement::Glyph, TextDirection::Right))
     }
 
     fn move_selection(
@@ -1121,6 +1140,13 @@ impl View for TextInput {
                 false
             }
             Event::KeyDown(event) => self.handle_key_down(cx, event),
+            Event::ImeCommit(str) => {
+                if self.is_focused {
+                    self.insert_text(&SmolStr::from(str.as_str()))
+                } else {
+                    false
+                }
+            }
             _ => false,
         };
 
