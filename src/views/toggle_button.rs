@@ -1,11 +1,13 @@
 //! A toggle button widget. An example can be found in widget-gallery/button in the floem examples.
 
-use floem_reactive::{create_effect, SignalGet, SignalUpdate};
-use peniko::kurbo::{Point, Size};
+use floem_reactive::{SignalGet, SignalUpdate, create_effect};
 use peniko::Brush;
-use winit::keyboard::{Key, NamedKey};
+use peniko::kurbo::{Point, Size};
+use ui_events::keyboard::{Key, KeyState, KeyboardEvent, NamedKey};
+use ui_events::pointer::PointerEvent;
 
 use crate::{
+    Renderer,
     event::EventPropagation,
     id::ViewId,
     prop, prop_extractor,
@@ -14,7 +16,6 @@ use crate::{
     unit::PxPct,
     view::View,
     views::Decorators,
-    Renderer,
 };
 
 /// Controls the switching behavior of the switch. The corresponding style prop is [`ToggleButtonBehavior`]
@@ -117,11 +118,11 @@ impl View for ToggleButton {
         event: &crate::event::Event,
     ) -> EventPropagation {
         match event {
-            crate::event::Event::PointerDown(_event) => {
+            crate::event::Event::Pointer(PointerEvent::Down { .. }) => {
                 cx.update_active(self.id);
                 self.held = ToggleState::Held;
             }
-            crate::event::Event::PointerUp(_event) => {
+            crate::event::Event::Pointer(PointerEvent::Up { .. }) => {
                 self.id.request_layout();
 
                 // if held and pointer up. toggle the position (toggle state drag already changed the position)
@@ -148,12 +149,12 @@ impl View for ToggleButton {
                 }
                 self.held = ToggleState::Nothing;
             }
-            crate::event::Event::PointerMove(event) => {
+            crate::event::Event::Pointer(PointerEvent::Move(pu)) => {
                 if self.held == ToggleState::Held || self.held == ToggleState::Drag {
                     self.held = ToggleState::Drag;
                     match self.style.switch_behavior() {
                         ToggleHandleBehavior::Follow => {
-                            self.position = event.pos.x as f32;
+                            self.position = pu.current.position.x as f32;
                             if self.position > self.width / 2. && !self.state {
                                 self.state = true;
                                 if let Some(ontoggle) = &self.ontoggle {
@@ -168,14 +169,15 @@ impl View for ToggleButton {
                             self.id.request_layout();
                         }
                         ToggleHandleBehavior::Snap => {
-                            if event.pos.x as f32 > self.width / 2. && !self.state {
+                            if pu.current.position.x as f32 > self.width / 2. && !self.state {
                                 self.position = self.width;
                                 self.id.request_layout();
                                 self.state = true;
                                 if let Some(ontoggle) = &self.ontoggle {
                                     ontoggle(true);
                                 }
-                            } else if (event.pos.x as f32) < self.width / 2. && self.state {
+                            } else if (pu.current.position.x as f32) < self.width / 2. && self.state
+                            {
                                 self.position = 0.;
                                 // self.held = ToggleState::Nothing;
                                 self.id.request_layout();
@@ -191,8 +193,12 @@ impl View for ToggleButton {
             crate::event::Event::FocusLost => {
                 self.held = ToggleState::Nothing;
             }
-            crate::event::Event::KeyDown(event) => {
-                if event.key.logical_key == Key::Named(NamedKey::Enter) {
+            crate::event::Event::Key(KeyboardEvent {
+                state: KeyState::Down,
+                key,
+                ..
+            }) => {
+                if *key == Key::Named(NamedKey::Enter) {
                     if let Some(ontoggle) = &self.ontoggle {
                         ontoggle(!self.state);
                     }

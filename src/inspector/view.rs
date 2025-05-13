@@ -1,9 +1,9 @@
-use crate::app::{add_app_update_event, AppUpdateEvent};
+use crate::app::{AppUpdateEvent, add_app_update_event};
 use crate::event::{Event, EventListener, EventPropagation};
 use crate::inspector::data::{CapturedData, CapturedDatas};
 use crate::inspector::{
-    add_event, find_view, header, selected_view, stats, update_select_view_id, Capture,
-    CaptureView, CAPTURE, RUNNING,
+    CAPTURE, Capture, CaptureView, RUNNING, add_event, find_view, header, selected_view, stats,
+    update_select_view_id,
 };
 use crate::prelude::{
     button, container, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label,
@@ -12,15 +12,16 @@ use crate::prelude::{
 use crate::profiler::profiler;
 use crate::views::Decorators;
 use crate::window::WindowConfig;
-use crate::{keyboard, new_window, IntoView, View, ViewId};
+use crate::{IntoView, View, ViewId, new_window};
 use floem_reactive::{
-    create_effect, create_rw_signal, create_signal, RwSignal, SignalGet, SignalUpdate,
+    RwSignal, SignalGet, SignalUpdate, create_effect, create_rw_signal, create_signal,
 };
-use peniko::color::palette;
 use peniko::Color;
+use peniko::color::palette;
 use slotmap::Key;
 use std::rc::Rc;
-use winit::keyboard::NamedKey;
+use ui_events::keyboard::{self, KeyState, KeyboardEvent, NamedKey};
+use ui_events::pointer::{PointerEvent, PointerUpdate};
 use winit::window::WindowId;
 
 pub fn capture(window_id: WindowId) {
@@ -84,10 +85,8 @@ pub fn capture(window_id: WindowId) {
                 stack
                     .style(|s| s.width_full().height_full())
                     .on_event(EventListener::KeyUp, move |e| {
-                        if let Event::KeyUp(e) = e {
-                            if e.key.logical_key == keyboard::Key::Named(NamedKey::F11)
-                                && e.modifiers.shift()
-                            {
+                        if let Event::Key(e) = e {
+                            if e.key == keyboard::Key::Named(NamedKey::F11) && e.modifiers.shift() {
                                 id.inspect();
                                 return EventPropagation::Stop;
                             }
@@ -115,7 +114,7 @@ fn inspector_view(
     capture: &Option<Rc<Capture>>,
 ) -> impl IntoView {
     let view = if let Some(capture) = capture {
-        capture_view(window_id, capture_s, capture).into_any()
+        capture_view(window_id, capture_s, capture.clone()).into_any()
     } else {
         text("No capture").into_any()
     };
@@ -143,7 +142,7 @@ fn inspector_view(
 fn capture_view(
     window_id: WindowId,
     capture_s: RwSignal<Option<Rc<Capture>>>,
-    capture: &Rc<Capture>,
+    capture: Rc<Capture>,
 ) -> impl IntoView {
     let capture_view = CaptureView {
         expanding_selection: create_rw_signal(None),
@@ -188,8 +187,13 @@ fn capture_view(
     .keyboard_navigable()
     .on_event_stop(EventListener::KeyUp, {
         move |event: &Event| {
-            if let Event::KeyUp(key) = event {
-                match key.key.logical_key {
+            if let Event::Key(KeyboardEvent {
+                state: KeyState::Up,
+                key,
+                ..
+            }) = event
+            {
+                match key {
                     keyboard::Key::Named(NamedKey::ArrowUp) => {
                         let id = contain_ids.try_update(|(match_index, ids)| {
                             if !ids.is_empty() {
@@ -224,8 +228,10 @@ fn capture_view(
     .on_event_stop(EventListener::PointerUp, {
         let capture_ = capture_.clone();
         move |event: &Event| {
-            if let Event::PointerUp(e) = event {
-                let find_ids = capture_.root.find_all_by_pos(e.pos);
+            if let Event::Pointer(PointerEvent::Up { state, .. }) = event {
+                let find_ids = capture_
+                    .root
+                    .find_all_by_pos((state.position.x, state.position.y).into());
                 if !find_ids.is_empty() {
                     let first = contain_ids.try_update(|(index, ids)| {
                         *index = 0;
@@ -241,8 +247,11 @@ fn capture_view(
     })
     .on_event_stop(EventListener::PointerMove, {
         move |event: &Event| {
-            if let Event::PointerMove(e) = event {
-                if let Some(view) = capture_.root.find_by_pos(e.pos) {
+            if let Event::Pointer(PointerEvent::Move(PointerUpdate { current: e, .. })) = event {
+                if let Some(view) = capture_
+                    .root
+                    .find_by_pos((e.position.x, e.position.y).into())
+                {
                     if capture_view.highlighted.get() != Some(view.id) {
                         capture_view.highlighted.set(Some(view.id));
                     }
@@ -303,9 +312,9 @@ fn capture_view(
     let left_scroll = scroll(
         v_stack((
             header("Selected View"),
-            selected_view(capture, capture_view.selected),
+            selected_view(capture.clone(), capture_view.selected),
             header("Stats"),
-            stats(capture),
+            stats(&capture),
             header("Renderer"),
             text(renderer).style(|s| s.padding(5.0)),
             button("Recapture")
@@ -350,8 +359,8 @@ fn capture_view(
 
     let search =
         text_input(search_str).on_event_stop(EventListener::KeyUp, move |event: &Event| {
-            if let Event::KeyUp(key) = event {
-                match key.key.logical_key {
+            if let Event::Key(KeyboardEvent { key, .. }) = event {
+                match key {
                     keyboard::Key::Named(NamedKey::ArrowUp) => {
                         let id = match_ids.try_update(|(match_index, ids)| {
                             if !ids.is_empty() {
@@ -451,7 +460,7 @@ fn tree_node(
     capture: Rc<Capture>,
     level: usize,
     datas: RwSignal<CapturedDatas>,
-) -> impl IntoView {
+) -> impl IntoView + use<> {
     let name = tree_node_name(view, level as f64 * 10.0).into_view();
     let name_id = name.id();
     let height = 20.0;
@@ -488,7 +497,7 @@ fn tree_node(
         view.view_conf.custom_name.clone(),
         id,
         capture_signal,
-        &capture,
+        capture.clone(),
         datas,
     );
     let row_id = row.id();

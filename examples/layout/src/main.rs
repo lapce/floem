@@ -3,6 +3,7 @@ use floem::{
     keyboard::{Key, NamedKey},
     kurbo::Size,
     style::AlignContent,
+    ui_events::keyboard::{KeyState, KeyboardEvent},
     views::{button, container, h_stack, label, v_stack, Decorators},
     window::{new_window, WindowConfig},
     IntoView, View,
@@ -99,8 +100,13 @@ fn app_view() -> impl IntoView {
 
     let id = view.id();
     view.on_event_stop(EventListener::KeyUp, move |e| {
-        if let Event::KeyUp(e) = e {
-            if e.key.logical_key == Key::Named(NamedKey::F11) {
+        if let Event::Key(KeyboardEvent {
+            state: KeyState::Up,
+            key,
+            ..
+        }) = e
+        {
+            if *key == Key::Named(NamedKey::F11) {
                 id.inspect();
             }
         }

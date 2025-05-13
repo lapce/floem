@@ -1,6 +1,7 @@
 use peniko::kurbo::Point;
 use std::cell::RefCell;
 use std::rc::Rc;
+use ui_events::pointer::PointerEvent;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
@@ -10,12 +11,12 @@ use web_time::Duration;
 use crate::style::{Style, StyleClass as _};
 use crate::views::Decorators;
 use crate::{
-    action::{add_overlay, exec_after, remove_overlay, TimerToken},
+    action::{TimerToken, add_overlay, exec_after, remove_overlay},
     context::{EventCx, UpdateCx},
     event::{Event, EventPropagation},
     id::ViewId,
     prop, prop_extractor, style_class,
-    view::{default_compute_layout, IntoView, View},
+    view::{IntoView, View, default_compute_layout},
 };
 
 style_class!(pub TooltipClass);
@@ -107,21 +108,16 @@ impl View for Tooltip {
 
     fn event_before_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
         match &event {
-            Event::PointerMove(e) => {
+            Event::Pointer(PointerEvent::Move(pu)) => {
                 if self.overlay.borrow().is_none() && cx.app_state.dragging.is_none() {
                     let id = self.id();
                     let token = exec_after(self.style.delay(), move |token| {
                         id.update_state(token);
                     });
-                    self.hover = Some((e.pos, token));
+                    self.hover = Some((pu.current.position, token));
                 }
             }
-            Event::PointerLeave
-            | Event::PointerDown(_)
-            | Event::PointerUp(_)
-            | Event::PointerWheel(_)
-            | Event::KeyUp(_)
-            | Event::KeyDown(_) => {
+            Event::Pointer(_) | Event::Key(_) => {
                 self.hover = None;
                 if let Some(id) = self.overlay.borrow_mut().take() {
                     remove_overlay(id);

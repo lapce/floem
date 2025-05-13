@@ -21,8 +21,8 @@ authors = ["The Floem contributors"]
 readme = "README.md"
 repository = "https://github.com/lapce/floem"
 description = "A native Rust UI library with fine-grained reactivity"
-edition = "2021"
-rust-version = "1.86"
+edition = "2024"
+rust-version = "1.87"
 license.workspace = true
 
 [workspace.dependencies]
@@ -40,7 +40,10 @@ wgpu = { version = "24.0.5" }
 parking_lot = { version = "0.12" }
 swash = { version = "0.2.5" }
 muda = { git = "https://github.com/tauri-apps/muda", rev = "8e986af3cea96a729413abc75c3702dec3990bd2", default-features = false }
-winit = { git = "https://github.com/rust-windowing/winit", rev = "ee245c569d65fdeacf705ee5eedb564508d10ebe" }
+# winit = { git = "https://github.com/rust-windowing/winit", rev = "ee245c569d65fdeacf705ee5eedb564508d10ebe" }
+winit = { git = "https://github.com/rust-windowing/winit"  }
+ui-events = "*"
+ui-events-winit = "*"
 
 [dependencies]
 slotmap = "1.0"
@@ -79,6 +82,8 @@ im = { workspace = true }
 winit = { workspace = true }
 futures = { version = "0.3.31", optional = true }
 crossbeam = { version = "0.8", optional = true }
+ui-events.workspace = true
+ui-events-winit.workspace = true
 wgpu.workspace = true
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
@@ -146,3 +151,12 @@ rfd-tokio = ["dep:rfd", "rfd/tokio"]
 futures = ["dep:futures"]
 
 crossbeam = [ "dep:crossbeam", "floem_renderer/crossbeam" ]
+
+
+[patch.crates-io]
+ui-events = { path = "../ui-events/ui-events" }
+ui-events-winit = { path = "../ui-events/ui-events-winit" }
+keyboard-types = { git = "https://github.com/rust-windowing/keyboard-types" }
+winit = { git = "https://github.com/rust-windowing/winit" }
+dpi = {git = "https://github.com/rust-windowing/winit"}
+

@@ -2,6 +2,7 @@ use floem::{
     event::EventListener,
     prelude::*,
     style::{CustomStylable, CustomStyle},
+    ui_events::keyboard::{KeyState, KeyboardEvent},
 };
 
 pub fn draggable_sidebar_view() -> impl IntoView {
@@ -57,8 +58,13 @@ pub fn draggable_sidebar_view() -> impl IntoView {
 
     let id = view.id();
     view.on_event_stop(EventListener::KeyUp, move |e| {
-        if let floem::event::Event::KeyUp(e) = e {
-            if e.key.logical_key == floem::keyboard::Key::Named(floem::keyboard::NamedKey::F11) {
+        if let floem::event::Event::Key(KeyboardEvent {
+            state: KeyState::Up,
+            key,
+            ..
+        }) = e
+        {
+            if *key == floem::keyboard::Key::Named(floem::keyboard::NamedKey::F11) {
                 id.inspect();
             }
         }

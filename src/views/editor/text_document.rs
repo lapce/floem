@@ -20,8 +20,7 @@ use floem_reactive::{
 };
 use lapce_xi_rope::{Rope, RopeDelta};
 use smallvec::{smallvec, SmallVec};
-
-use crate::keyboard::Modifiers;
+use ui_events::keyboard::Modifiers;
 
 use super::{
     actions::{handle_command_default, CommonAction},

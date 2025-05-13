@@ -1,36 +1,35 @@
 use std::rc::Rc;
 
 use floem_editor_core::{buffer::rope_text::RopeTextVal, indent::IndentStyle};
-use floem_reactive::{create_updater, with_scope, RwSignal, Scope, SignalUpdate, SignalWith};
+use floem_reactive::{RwSignal, Scope, SignalUpdate, SignalWith, create_updater, with_scope};
 use peniko::Color;
 
 use lapce_xi_rope::Rope;
+use ui_events::keyboard::{KeyboardEvent, Modifiers};
 
 use crate::{
     id::ViewId,
-    keyboard::Modifiers,
     style::{CursorColor, Style},
     view::{IntoView, View},
     views::editor::{
+        Editor,
         command::CommandExecuted,
         id::EditorId,
         keypress::default_key_handler,
         text::{Document, SimpleStyling, Styling},
         text_document::{OnUpdate, PreCommand, TextDocument},
         view::editor_container_view,
-        Editor,
     },
 };
 
 use super::editor::{
-    gutter::{DimColor, GutterClass, LeftOfCenterPadding, RightOfCenterPadding},
-    keypress::press::KeyPress,
-    text::{RenderWhitespace, WrapMethod},
-    view::EditorViewClass,
     CurrentLineColor, CursorSurroundingLines, IndentGuideColor, IndentStyleProp, Modal,
     ModalRelativeLine, PhantomColor, PlaceholderColor, PreeditUnderlineColor, RenderWhitespaceProp,
     ScrollBeyondLastLine, SelectionColor, ShowIndentGuide, SmartTab, VisibleWhitespaceColor,
     WrapProp,
+    gutter::{DimColor, GutterClass, LeftOfCenterPadding, RightOfCenterPadding},
+    text::{RenderWhitespace, WrapMethod},
+    view::EditorViewClass,
 };
 
 /// A text editor view.
@@ -71,7 +70,7 @@ pub fn text_editor(text: impl Into<Rope>) -> TextEditor {
 
 pub fn text_editor_keys(
     text: impl Into<Rope>,
-    handle_key_event: impl Fn(RwSignal<Editor>, &KeyPress, Modifiers) -> CommandExecuted + 'static,
+    handle_key_event: impl Fn(RwSignal<Editor>, &KeyboardEvent, Modifiers) -> CommandExecuted + 'static,
 ) -> TextEditor {
     let id = ViewId::new();
     let cx = Scope::current();

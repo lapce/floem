@@ -1,17 +1,17 @@
 use peniko::kurbo::{Point, Size};
+pub use winit::icon::{Icon, IconProvider, RgbaIcon};
+use winit::monitor::Fullscreen;
 #[cfg(windows)]
 pub use winit::platform::windows::IconExtWindows;
-pub use winit::window::Fullscreen;
-pub use winit::window::Icon;
 pub use winit::window::ResizeDirection;
 pub use winit::window::Theme;
 pub use winit::window::WindowButtons;
 pub use winit::window::WindowId;
 pub use winit::window::WindowLevel;
 
-use crate::app::{add_app_update_event, AppUpdateEvent};
-use crate::view::IntoView;
 use crate::AnyView;
+use crate::app::{AppUpdateEvent, add_app_update_event};
+use crate::view::IntoView;
 
 pub struct WindowCreation {
     pub(crate) view_fn: Box<dyn FnOnce(WindowId) -> AnyView>,

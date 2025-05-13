@@ -23,6 +23,7 @@ use floem::{
     new_window,
     prelude::*,
     style::{Background, CursorStyle, Transition},
+    ui_events::keyboard::{KeyState, KeyboardEvent},
     window::WindowConfig,
 };
 
@@ -164,8 +165,13 @@ fn app_view() -> impl IntoView {
         .window_title(|| "Widget Gallery".to_owned());
 
     view.on_event_stop(EventListener::KeyUp, move |e| {
-        if let Event::KeyUp(e) = e {
-            if e.key.logical_key == Key::Named(NamedKey::F11) {
+        if let Event::Key(KeyboardEvent {
+            state: KeyState::Up,
+            key,
+            ..
+        }) = e
+        {
+            if *key == Key::Named(NamedKey::F11) {
                 floem::action::inspect();
             }
         }

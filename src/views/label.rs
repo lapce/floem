@@ -1,10 +1,10 @@
 use std::{any::Any, fmt::Display, mem::swap};
 
 use crate::{
+    Clipboard,
     context::{PaintCx, UpdateCx},
     event::{Event, EventListener, EventPropagation},
     id::ViewId,
-    keyboard::KeyEvent,
     prop_extractor,
     style::{
         CursorColor, CustomStylable, CustomStyle, FontProps, LineHeight, Selectable,
@@ -15,17 +15,19 @@ use crate::{
     text::{Attrs, AttrsList, FamilyOwned, TextLayout},
     unit::PxPct,
     view::View,
-    Clipboard,
 };
 use floem_reactive::create_updater;
-use floem_renderer::{text::Cursor, Renderer};
+use floem_renderer::{Renderer, text::Cursor};
 use peniko::{
+    Brush,
     color::palette,
     kurbo::{Point, Rect},
-    Brush,
 };
 use taffy::tree::NodeId;
-use winit::keyboard::{Key, SmolStr};
+use ui_events::{
+    keyboard::{Key, KeyState, KeyboardEvent},
+    pointer::PointerEvent,
+};
 
 use super::{Decorators, TextCommand};
 
@@ -224,7 +226,7 @@ impl Label {
         }
     }
 
-    fn handle_modifier_cmd(&mut self, event: &KeyEvent, character: &SmolStr) -> bool {
+    fn handle_modifier_cmd(&mut self, event: &KeyboardEvent, character: &str) -> bool {
         if event.modifiers.is_empty() {
             return false;
         }
@@ -248,8 +250,8 @@ impl Label {
             _ => false,
         }
     }
-    fn handle_key_down(&mut self, event: &KeyEvent) -> bool {
-        match event.key.logical_key {
+    fn handle_key_down(&mut self, event: &KeyboardEvent) -> bool {
+        match event.key {
             Key::Character(ref ch) => self.handle_modifier_cmd(event, ch),
             _ => false,
         }
@@ -316,14 +318,14 @@ impl View for Label {
         event: &Event,
     ) -> crate::event::EventPropagation {
         match event {
-            Event::PointerDown(pe) => {
+            Event::Pointer(PointerEvent::Down { state, .. }) => {
                 if self.style.text_selectable() {
                     self.selection_range = None;
-                    self.selection_state = SelectionState::Ready(pe.pos);
+                    self.selection_state = SelectionState::Ready(state.position);
                     self.id.request_layout();
                 }
             }
-            Event::PointerMove(pme) => {
+            Event::Pointer(PointerEvent::Move(pu)) => {
                 if !self.style.text_selectable() {
                     if self.selection_range.is_some() {
                         self.selection_state = SelectionState::None;
@@ -337,15 +339,16 @@ impl View for Label {
                         return EventPropagation::Continue;
                     };
                     // this check is here to make it so that text selection doesn't eat pointer events on very small move events
-                    if start.distance(pme.pos).abs() > 2. {
-                        self.selection_state = SelectionState::Selecting(start, pme.pos);
+                    if start.distance(pu.current.position).abs() > 2. {
+                        self.selection_state =
+                            SelectionState::Selecting(start, pu.current.position);
                         self.id.request_active();
                         self.id.request_focus();
                         self.id.request_layout();
                     }
                 }
             }
-            Event::PointerUp(_) => {
+            Event::Pointer(PointerEvent::Up { .. }) => {
                 if let SelectionState::Selecting(start, end) = self.selection_state {
                     self.selection_state = SelectionState::Selected(start, end);
                 } else {
@@ -354,7 +357,12 @@ impl View for Label {
                 self.id.clear_active();
                 self.id.request_layout();
             }
-            Event::KeyDown(ke) => {
+            Event::Key(
+                ke @ KeyboardEvent {
+                    state: KeyState::Down,
+                    ..
+                },
+            ) => {
                 if self.handle_key_down(ke) {
                     return EventPropagation::Stop;
                 }

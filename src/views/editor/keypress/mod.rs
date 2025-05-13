@@ -3,25 +3,24 @@ pub mod press;
 
 use std::{collections::HashMap, str::FromStr};
 
-use crate::{keyboard::Modifiers, reactive::RwSignal};
+use crate::reactive::RwSignal;
 use floem_editor_core::{
     command::{EditCommand, MoveCommand, MultiSelectionCommand, ScrollCommand},
     mode::Mode,
 };
 use floem_reactive::{SignalGet, SignalWith};
+use ui_events::keyboard::{Key, KeyboardEvent, Modifiers};
 
 use super::{
     command::{Command, CommandExecuted},
     Editor,
 };
 
-use self::{key::KeyInput, press::KeyPress};
-
 /// The default keymap handler does not have modal-mode specific
 /// keybindings.
 #[derive(Clone)]
 pub struct KeypressMap {
-    pub keymaps: HashMap<KeyPress, Command>,
+    pub keymaps: HashMap<KeyboardEvent, Command>,
 }
 impl KeypressMap {
     pub fn default_windows() -> Self {
@@ -55,15 +54,19 @@ impl Default for KeypressMap {
     }
 }
 
-fn key(s: &str, m: Modifiers) -> KeyPress {
-    KeyPress::new(KeyInput::from_str(s).unwrap(), m)
+fn key(s: &str, m: Modifiers) -> KeyboardEvent {
+    KeyboardEvent {
+        key: Key::from_str(s).unwrap(),
+        modifiers: m,
+        ..Default::default()
+    }
 }
 
-fn key_d(s: &str) -> KeyPress {
+fn key_d(s: &str) -> KeyboardEvent {
     key(s, Modifiers::default())
 }
 
-fn add_default_common(c: &mut HashMap<KeyPress, Command>) {
+fn add_default_common(c: &mut HashMap<KeyboardEvent, Command>) {
     // Note: this should typically be kept in sync with Lapce's
     // `defaults/keymaps-common.toml`
 
@@ -133,11 +136,11 @@ fn add_default_common(c: &mut HashMap<KeyPress, Command>) {
     );
 }
 
-fn add_default_windows(c: &mut HashMap<KeyPress, Command>) {
+fn add_default_windows(c: &mut HashMap<KeyboardEvent, Command>) {
     add_default_nonmacos(c);
 }
 
-fn add_default_macos(c: &mut HashMap<KeyPress, Command>) {
+fn add_default_macos(c: &mut HashMap<KeyboardEvent, Command>) {
     // Note: this should typically be kept in sync with Lapce's
     // `defaults/keymaps-macos.toml`
 
@@ -261,11 +264,11 @@ fn add_default_macos(c: &mut HashMap<KeyPress, Command>) {
     );
 }
 
-fn add_default_linux(c: &mut HashMap<KeyPress, Command>) {
+fn add_default_linux(c: &mut HashMap<KeyboardEvent, Command>) {
     add_default_nonmacos(c);
 }
 
-fn add_default_nonmacos(c: &mut HashMap<KeyPress, Command>) {
+fn add_default_nonmacos(c: &mut HashMap<KeyboardEvent, Command>) {
     // Note: this should typically be kept in sync with Lapce's
     // `defaults/keymaps-nonmacos.toml`
 
@@ -376,14 +379,14 @@ fn add_default_nonmacos(c: &mut HashMap<KeyPress, Command>) {
 
 pub fn default_key_handler(
     editor: RwSignal<Editor>,
-) -> impl Fn(&KeyPress, Modifiers) -> CommandExecuted + 'static {
+) -> impl Fn(&KeyboardEvent, Modifiers) -> CommandExecuted + 'static {
     let keypress_map = KeypressMap::default();
     move |keypress, modifiers| {
         let command = keypress_map.keymaps.get(keypress).or_else(|| {
             let mode = editor.get_untracked().cursor.get_untracked().get_mode();
             if mode == Mode::Insert {
                 let mut keypress = keypress.clone();
-                keypress.mods.set(Modifiers::SHIFT, false);
+                keypress.modifiers.set(Modifiers::SHIFT, false);
                 keypress_map.keymaps.get(&keypress)
             } else {
                 None

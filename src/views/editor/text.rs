@@ -1,7 +1,6 @@
 use std::{borrow::Cow, fmt::Debug, ops::Range, rc::Rc};
 
 use crate::{
-    keyboard::Modifiers,
     peniko::color::palette,
     peniko::Color,
     reactive::{RwSignal, Scope},
@@ -23,6 +22,7 @@ use floem_reactive::SignalGet;
 use lapce_xi_rope::Rope;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use ui_events::keyboard::Modifiers;
 
 use super::{
     actions::CommonAction,

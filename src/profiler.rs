@@ -1,18 +1,19 @@
-use crate::app::{add_app_update_event, AppUpdateEvent};
+use crate::app::{AppUpdateEvent, add_app_update_event};
 use crate::event::{Event, EventListener, EventPropagation};
 use crate::inspector::header;
 use crate::view::IntoView;
 use crate::views::{
-    button, clip, container, dyn_container, empty, h_stack, label, scroll, stack, static_label,
-    text, v_stack, v_stack_from_iter, Decorators,
+    Decorators, button, clip, container, dyn_container, empty, h_stack, label, scroll, stack,
+    static_label, text, v_stack, v_stack_from_iter,
 };
-use floem_reactive::{create_rw_signal, RwSignal, Scope, SignalGet, SignalUpdate};
-use peniko::color::palette;
+use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate, create_rw_signal};
 use peniko::Color;
+use peniko::color::palette;
 use std::fmt::Display;
 use std::mem;
 use std::rc::Rc;
 use taffy::style::FlexDirection;
+use ui_events::pointer::PointerEvent;
 use winit::window::WindowId;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -216,8 +217,8 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                 )
                 .style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0))
                 .on_event(EventListener::PointerWheel, move |e| {
-                    if let Event::PointerWheel(e) = e {
-                        zoom.set(zoom.get() * (1.0 - e.delta.y / 400.0));
+                    if let Event::Pointer(PointerEvent::Scroll { delta, .. }) = e {
+                        zoom.set(zoom.get() * (1.0 - delta.y() / 400.0));
                         EventPropagation::Stop
                     } else {
                         EventPropagation::Continue

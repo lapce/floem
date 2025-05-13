@@ -1,3 +1,5 @@
+use ui_events::pointer::PointerEvent;
+
 use crate::{
     action::{drag_window, toggle_window_maximized},
     event::{Event, EventListener},
@@ -20,8 +22,8 @@ pub fn drag_window_area<V: IntoView + 'static>(child: V) -> DragWindowArea {
     id.set_children([child]);
     DragWindowArea { id }
         .on_event_stop(EventListener::PointerDown, |e| {
-            if let Event::PointerDown(input_event) = e {
-                if input_event.button.is_primary() {
+            if let Event::Pointer(PointerEvent::Down { button, .. }) = e {
+                if button.is_some_and(|b| b.is_primary()) {
                     drag_window();
                 }
             }

@@ -1,9 +1,9 @@
 use floem_reactive::create_effect;
 use taffy::FlexDirection;
-use winit::keyboard::{Key, NamedKey};
+use ui_events::keyboard::{Key, KeyState, KeyboardEvent, NamedKey};
 
 use crate::event::{Event, EventListener, EventPropagation};
-use crate::{prelude::*, ViewId};
+use crate::{ViewId, prelude::*};
 
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::{Deref, DerefMut};

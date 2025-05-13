@@ -1,9 +1,9 @@
 use std::{cell::RefCell, rc::Rc};
 
 #[cfg(feature = "crossbeam")]
-use crossbeam::channel::{unbounded as channel, Receiver, Sender};
+use crossbeam::channel::{Receiver, Sender, unbounded as channel};
 #[cfg(not(feature = "crossbeam"))]
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender, channel};
 
 use floem_reactive::WriteSignal;
 use parking_lot::Mutex;
@@ -149,23 +149,13 @@ impl Default for Application {
 impl ApplicationHandler for Application {
     fn can_create_surfaces(&mut self, event_loop: &dyn ActiveEventLoop) {
         while let Some(window_creation) = self.initial_windows.pop() {
-            self.handle.new_window(
-                event_loop,
-                window_creation.view_fn,
-                window_creation.config.unwrap_or_default(),
-            );
+            self.handle.new_window(event_loop, window_creation.view_fn, window_creation.config.unwrap_or_default());
         }
     }
 
-    fn window_event(
-        &mut self,
-        event_loop: &dyn ActiveEventLoop,
-        window_id: WindowId,
-        event: WindowEvent,
-    ) {
+    fn window_event(&mut self, event_loop: &dyn ActiveEventLoop, window_id: WindowId, event: WindowEvent) {
         self.handle.handle_timer(event_loop);
-        self.handle
-            .handle_window_event(window_id, event, event_loop);
+        self.handle.handle_window_event(window_id, event, event_loop);
     }
 
     fn proxy_wake_up(&mut self, event_loop: &dyn ActiveEventLoop) {
@@ -176,7 +166,7 @@ impl ApplicationHandler for Application {
         self.handle.handle_updates_for_all_windows();
     }
 
-    fn exiting(&mut self, _event_loop: &dyn ActiveEventLoop) {
+    fn destroy_surfaces(&mut self, _event_loop: &dyn ActiveEventLoop) {
         if let Some(action) = self.handle.event_listener.as_ref() {
             action(AppEvent::WillTerminate);
         }
@@ -208,9 +198,7 @@ impl Application {
 
         #[cfg(any(target_os = "windows", target_os = "macos"))]
         muda::MenuEvent::set_event_handler(Some(move |event: muda::MenuEvent| {
-            add_app_update_event(AppUpdateEvent::MenuAction {
-                action_id: event.id.0,
-            });
+            add_app_update_event(AppUpdateEvent::MenuAction { action_id: event.id.0 });
         }));
 
         Self {
@@ -233,11 +221,7 @@ impl Application {
     ///
     /// Using `None` as a configuration argument is equivalent to using
     /// `WindowConfig::default()`.
-    pub fn window<V: IntoView + 'static>(
-        mut self,
-        app_view: impl FnOnce(WindowId) -> V + 'static,
-        config: Option<WindowConfig>,
-    ) -> Self {
+    pub fn window<V: IntoView + 'static>(mut self, app_view: impl FnOnce(WindowId) -> V + 'static, config: Option<WindowConfig>) -> Self {
         self.initial_windows.push(WindowCreation {
             view_fn: Box::new(move |window_id: WindowId| app_view(window_id).into_any()),
             config,

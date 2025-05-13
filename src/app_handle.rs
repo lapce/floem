@@ -1,6 +1,7 @@
 use floem_renderer::gpu_resources::GpuResources;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
+use ui_events_winit::WindowEventTranslation;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
@@ -19,8 +20,10 @@ use winit::{
 
 use crate::app::AppConfig;
 use crate::{
+    AppEvent,
     action::{Timer, TimerToken},
-    app::{AppEventCallback, AppUpdateEvent, UserEvent, APP_UPDATE_EVENTS},
+    app::{APP_UPDATE_EVENTS, AppEventCallback, AppUpdateEvent, UserEvent},
+    dropped_file::FileDragEvent::{self, DragDropped},
     context::PaintState,
     ext_event::EXT_EVENT_HANDLER,
     inspector::Capture,
@@ -29,7 +32,6 @@ use crate::{
     window::WindowConfig,
     window_handle::WindowHandle,
     window_id::process_window_updates,
-    AppEvent,
 };
 
 pub(crate) struct ApplicationHandle {
@@ -172,9 +174,10 @@ impl ApplicationHandle {
                 WindowEvent::Moved(..) => "Moved",
                 WindowEvent::CloseRequested => "CloseRequested",
                 WindowEvent::Destroyed => "Destroyed",
-                WindowEvent::DroppedFile(_) => "DroppedFile",
-                WindowEvent::HoveredFile(_) => "HoveredFile",
-                WindowEvent::HoveredFileCancelled => "HoveredFileCancelled",
+                WindowEvent::DragEntered { .. } => "DragEntered",
+                WindowEvent::DragMoved { .. } => "HoveredFile",
+                WindowEvent::DragLeft { .. } => "DragLeft",
+                WindowEvent::DragDropped { .. } => "DragDropped",
                 WindowEvent::Focused(..) => "Focused",
                 WindowEvent::KeyboardInput { .. } => "KeyboardInput",
                 WindowEvent::ModifiersChanged(..) => "ModifiersChanged",
@@ -202,6 +205,23 @@ impl ApplicationHandle {
             )
         });
 
+        match window_handle
+            .event_reducer
+            .reduce(&event, window_handle.scale)
+        {
+            Some(WindowEventTranslation::Keyboard(ke)) => {
+                if let WindowEvent::KeyboardInput { is_synthetic, .. } = event {
+                    if !is_synthetic {
+                        window_handle.key_event(ke)
+                    }
+                }
+            }
+            Some(WindowEventTranslation::Pointer(pe)) => {
+                window_handle.pointer_event(pe);
+            }
+            None => {}
+        }
+
         match event {
             WindowEvent::ActivationTokenDone { .. } => {}
             WindowEvent::SurfaceResized(size) => {
@@ -220,47 +240,50 @@ impl ApplicationHandle {
             WindowEvent::Destroyed => {
                 self.close_window(window_id, event_loop);
             }
-            WindowEvent::DroppedFile(path) => {
-                window_handle.dropped_file(path);
+            WindowEvent::DragDropped { paths, position } => {
+                let pos = position.to_logical::<f64>(window_handle.scale);
+                window_handle.file_drag_event(DragDropped {
+                    paths,
+                    position: (pos.x, pos.y).into(),
+                });
             }
-            WindowEvent::HoveredFile(_) => {}
-            WindowEvent::HoveredFileCancelled => {}
+            WindowEvent::DragEntered { paths, position } => {
+                let pos = position.to_logical::<f64>(window_handle.scale);
+                window_handle.file_drag_event(FileDragEvent::DragEntered {
+                    paths,
+                    position: (pos.x, pos.y).into(),
+                });
+            }
+            WindowEvent::DragMoved { position } => {
+                let pos = position.to_logical::<f64>(window_handle.scale);
+                window_handle.file_drag_event(FileDragEvent::DragMoved {
+                    position: (pos.x, pos.y).into(),
+                });
+            }
+            WindowEvent::DragLeft { position } => {
+                let pos = position
+                    .map(|p| p.to_logical::<f64>(window_handle.scale))
+                    .map(|p| (p.x, p.y).into());
+                window_handle.file_drag_event(FileDragEvent::DragLeft { position: pos });
+            }
             WindowEvent::Focused(focused) => {
                 window_handle.focused(focused);
             }
-            WindowEvent::KeyboardInput {
-                event,
-                is_synthetic,
-                ..
-            } => {
-                if !is_synthetic {
-                    window_handle.key_event(event);
-                }
+            WindowEvent::KeyboardInput { .. } => {
+                // already handled by the ui-events reducer
             }
             WindowEvent::ModifiersChanged(modifiers) => {
-                window_handle.modifiers_changed(modifiers.state());
+                window_handle.modifiers_changed(
+                    ui_events_winit::keyboard::from_winit_modifier_state(modifiers.state()),
+                );
             }
             WindowEvent::Ime(ime) => {
                 window_handle.ime(ime);
             }
-            WindowEvent::PointerMoved { position, .. } => {
-                let position: LogicalPosition<f64> = position.to_logical(window_handle.scale);
-                let point = Point::new(position.x, position.y);
-                window_handle.pointer_move(point);
-            }
-            WindowEvent::PointerEntered { .. } => {}
-            WindowEvent::PointerLeft { .. } => {
-                window_handle.pointer_leave();
-            }
-            WindowEvent::MouseWheel { delta, .. } => {
-                window_handle.mouse_wheel(delta);
-            }
-            WindowEvent::PointerButton { state, button, .. } => {
-                window_handle.pointer_button(button, state);
-            }
-            WindowEvent::PinchGesture { delta, phase, .. } => {
-                window_handle.pinch_gesture(delta, phase);
-            }
+            WindowEvent::MouseWheel { .. } => {}
+            WindowEvent::PinchGesture {
+                delta: _, phase: _, ..
+            } => {}
             WindowEvent::TouchpadPressure { .. } => {}
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 window_handle.scale(scale_factor);
@@ -274,9 +297,19 @@ impl ApplicationHandle {
             }
             WindowEvent::PanGesture { .. } => {}
             WindowEvent::DoubleTapGesture { .. } => {}
-            WindowEvent::RotationGesture { .. } => {} // WindowEvent::MenuAction(id) => {
-                                                      //     window_handle.menu_action(id);
-                                                      // }
+            WindowEvent::RotationGesture { .. } => {}
+            WindowEvent::PointerMoved { .. } => {
+                //already handled by the ui-events reducer
+            }
+            WindowEvent::PointerEntered { .. } => {
+                //already handled by the ui-events reducer
+            }
+            WindowEvent::PointerLeft { .. } => {
+                //already handled by the ui-events reducer
+            }
+            WindowEvent::PointerButton { .. } => {
+                //already handled by the ui-events reducer
+            }
         }
 
         if let Some((name, start, new_frame)) = start {
@@ -389,71 +422,75 @@ impl ApplicationHandle {
 
         #[cfg(target_os = "macos")]
         if !show_titlebar {
-            use winit::platform::macos::WindowAttributesExtMacOS;
-            window_attributes = window_attributes
-                .with_movable_by_window_background(false)
-                .with_title_hidden(true)
-                .with_titlebar_transparent(true)
-                .with_fullsize_content_view(true);
+            let mac_attr = winit::platform::macos::WindowAttributesMacOS::default();
+            window_attributes = window_attributes.with_platform_attributes(Box::new(
+                mac_attr
+                    .with_movable_by_window_background(false)
+                    .with_title_hidden(true)
+                    .with_titlebar_transparent(true)
+                    .with_fullsize_content_view(true),
+            ));
             // .with_traffic_lights_offset(11.0, 16.0);
         }
 
         #[cfg(target_os = "macos")]
         if undecorated {
-            use winit::platform::macos::WindowAttributesExtMacOS;
+            let mac_attr = winit::platform::macos::WindowAttributesMacOS::default();
             // A palette-style window that will only obtain window focus but
             // not actually propagate the first mouse click it receives is
             // very unlikely to be expected behavior - these typically are
             // used for something that offers a quick choice and are closed
             // in a single pointer gesture.
-            window_attributes = window_attributes.with_accepts_first_mouse(true);
+            window_attributes = window_attributes
+                .with_platform_attributes(Box::new(mac_attr.with_accepts_first_mouse(true)));
         }
 
         #[cfg(target_os = "macos")]
         if let Some(mac) = &mac_os_config {
             use winit::platform::macos::WindowAttributesExtMacOS;
             if let Some(val) = mac.movable_by_window_background {
-                window_attributes = window_attributes.with_movable_by_window_background(val);
+                mac_attr = mac_attr.with_movable_by_window_background(val);
             }
             if let Some(val) = mac.titlebar_transparent {
-                window_attributes = window_attributes.with_titlebar_transparent(val);
+                mac_attr = mac_attr.with_titlebar_transparent(val);
             }
             if let Some(val) = mac.titlebar_hidden {
-                window_attributes = window_attributes.with_titlebar_hidden(val);
+                mac_attr = mac_attr.with_titlebar_hidden(val);
             }
             if let Some(val) = mac.title_hidden {
-                window_attributes = window_attributes.with_title_hidden(val);
+                mac_attr = mac_attr.with_title_hidden(val);
             }
             if let Some(val) = mac.full_size_content_view {
-                window_attributes = window_attributes.with_fullsize_content_view(val);
+                mac_attr = mac_attr.with_fullsize_content_view(val);
             }
             if let Some(val) = mac.unified_titlebar {
-                window_attributes = window_attributes.with_unified_titlebar(val);
+                mac_attr = mac_attr.with_unified_titlebar(val);
             }
             if let Some(val) = mac.movable {
-                window_attributes = window_attributes.with_movable_by_window_background(val);
+                mac_attr = mac_attr.with_movable_by_window_background(val);
             }
             if let Some(val) = mac.accepts_first_mouse {
-                window_attributes = window_attributes.with_accepts_first_mouse(val);
+                mac_attr = mac_attr.with_accepts_first_mouse(val);
             }
             if let Some(val) = mac.option_as_alt {
-                window_attributes = window_attributes.with_option_as_alt(val.into());
+                mac_attr = mac_attr.with_option_as_alt(val.into());
             }
             if let Some(title) = &mac.tabbing_identifier {
                 window_attributes = window_attributes.with_tabbing_identifier(title.as_str());
             }
             if let Some(disallow_hidpi) = mac.disallow_high_dpi {
-                window_attributes = window_attributes.with_disallow_hidpi(disallow_hidpi);
+                mac_attr = mac_attr.with_disallow_hidpi(disallow_hidpi);
             }
             if let Some(shadow) = mac.has_shadow {
-                window_attributes = window_attributes.with_has_shadow(shadow);
+                mac_attr = mac_attr.with_has_shadow(shadow);
             }
             if let Some(hide) = mac.titlebar_buttons_hidden {
-                window_attributes = window_attributes.with_titlebar_buttons_hidden(hide)
+                mac_attr = mac_attr.with_titlebar_buttons_hidden(hide)
             }
             if let Some(panel) = mac.panel {
-                window_attributes = window_attributes.with_panel(panel)
+                mac_attr = mac_attr.with_panel(panel)
             }
+            window_attributes = window_attributes.with_platform_attributes(Box::new(mac_attr));
         }
 
         let Ok(window) = event_loop.create_window(window_attributes) else {

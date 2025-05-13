@@ -4,8 +4,9 @@ use floem::{
     keyboard::{Key, NamedKey},
     kurbo::Size,
     new_window,
+    ui_events::keyboard::{KeyState, KeyboardEvent},
     views::{button, label, v_stack, Decorators},
-    window::{Icon, WindowConfig, WindowId},
+    window::{Icon, RgbaIcon, WindowConfig, WindowId},
     Application, IntoView, View,
 };
 use std::path::Path;
@@ -54,8 +55,13 @@ fn app_view() -> impl IntoView {
 
     let id = view.id();
     view.on_event_stop(EventListener::KeyUp, move |e| {
-        if let Event::KeyUp(e) = e {
-            if e.key.logical_key == Key::Named(NamedKey::F11) {
+        if let Event::Key(KeyboardEvent {
+            state: KeyState::Up,
+            key,
+            ..
+        }) = e
+        {
+            if *key == Key::Named(NamedKey::F11) {
                 id.inspect();
             }
         }
@@ -88,11 +94,15 @@ fn load_png_icon(path: &Path) -> Icon {
         let rgba = image.into_raw();
         (rgba, width, height)
     };
-    Icon::from_rgba(icon_rgba, icon_width, icon_height).expect("Failed to open icon")
+    RgbaIcon::new(icon_rgba, icon_width, icon_height)
+        .expect("Failed to open icon")
+        .into()
 }
 
 fn load_svg_icon(svg: &str) -> Icon {
     let svg = nsvg::parse_str(svg, nsvg::Units::Pixel, 96.0).unwrap();
     let (icon_width, icon_height, icon_rgba) = svg.rasterize_to_raw_rgba(1.0).unwrap();
-    Icon::from_rgba(icon_rgba, icon_width, icon_height).expect("Failed to open icon")
+    RgbaIcon::new(icon_rgba, icon_width, icon_height)
+        .expect("Failed to open icon")
+        .into()
 }
