@@ -1,12 +1,4 @@
-use floem::{
-    event::EventListener,
-    im_rc,
-    peniko::Color,
-    reactive::{create_rw_signal, SignalGet},
-    style::Position,
-    views::{container, h_stack, label, scroll, v_stack, virtual_stack, Decorators},
-    IntoView, View,
-};
+use floem::{event::EventListener, im_rc, prelude::*, style::Position};
 
 const SIDEBAR_WIDTH: f64 = 140.0;
 const TOPBAR_HEIGHT: f64 = 30.0;
@@ -69,8 +61,13 @@ pub fn left_sidebar_view() -> impl IntoView {
 
     let id = view.id();
     view.on_event_stop(EventListener::KeyUp, move |e| {
-        if let floem::event::Event::KeyUp(e) = e {
-            if e.key.logical_key == floem::keyboard::Key::Named(floem::keyboard::NamedKey::F11) {
+        if let floem::event::Event::Key(KeyboardEvent {
+            state: KeyState::Up,
+            key,
+            ..
+        }) = e
+        {
+            if *key == Key::Named(NamedKey::F11) {
                 id.inspect();
             }
         }

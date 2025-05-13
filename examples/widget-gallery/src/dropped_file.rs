@@ -1,9 +1,10 @@
 use crate::form::{form, form_item};
 use floem::{
+    dropped_file::FileDragEvent,
     event::{Event, EventListener},
-    keyboard::{Key, NamedKey},
     prelude::*,
     theme::HoverTargetClass,
+    ui_events::keyboard::{Key, NamedKey},
 };
 
 pub fn dropped_file_view() -> impl IntoView {
@@ -22,10 +23,13 @@ pub fn dropped_file_view() -> impl IntoView {
             |m| m.is_empty(),
             move |_| floem::action::inspect(),
         )
-        .on_event_stop(EventListener::DroppedFile, move |e| {
-            if let Event::DroppedFiles(e) = e {
-                println!("DroppedFile(s) {e:?}");
-                filename.set(format!("{:?}", e.path));
+        .on_event_stop(EventListener::DroppedFiles, move |e| {
+            if let Event::FileDrag(e @ FileDragEvent::DragDropped { paths, .. }) = e {
+                println!("DroppedFile {e:?}");
+                filename.set(format!(
+                    "{:?}",
+                    paths.first().expect("at least one to start a drag")
+                ));
             }
         });
 

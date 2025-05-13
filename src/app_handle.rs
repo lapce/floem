@@ -1,6 +1,8 @@
+use dpi::PhysicalPosition;
 use floem_renderer::gpu_resources::GpuResources;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
+use ui_events_winit::WindowEventTranslation;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
@@ -23,6 +25,7 @@ use crate::{
     action::{Timer, TimerToken},
     app::{APP_UPDATE_EVENTS, AppEventCallback, AppUpdateEvent, UserEvent},
     context::PaintState,
+    dropped_file::FileDragEvent::{self, DragDropped},
     ext_event::EXT_EVENT_HANDLER,
     inspector::Capture,
     profiler::{Profile, ProfileEvent},
@@ -202,6 +205,23 @@ impl ApplicationHandle {
             )
         });
 
+        match window_handle
+            .event_reducer
+            .reduce(window_handle.scale, &event)
+        {
+            Some(WindowEventTranslation::Keyboard(ke)) => {
+                if let WindowEvent::KeyboardInput { is_synthetic, .. } = event {
+                    if !is_synthetic {
+                        window_handle.key_event(ke)
+                    }
+                }
+            }
+            Some(WindowEventTranslation::Pointer(pe)) => {
+                window_handle.pointer_event(pe);
+            }
+            None => {}
+        }
+
         match event {
             WindowEvent::ActivationTokenDone { .. } => {}
             WindowEvent::SurfaceResized(size) => {
@@ -220,54 +240,51 @@ impl ApplicationHandle {
             WindowEvent::Destroyed => {
                 self.close_window(window_id, event_loop);
             }
-            WindowEvent::DragDropped { paths, .. } => {
-                window_handle.dropped_files(paths);
+            WindowEvent::DragDropped { paths, position } => {
+                window_handle.file_drag_event(DragDropped {
+                    paths,
+                    position: PhysicalPosition::new(position.x, position.y),
+                    scale_factor: window_handle.scale,
+                });
             }
-            WindowEvent::DragEntered { .. } => {
-                // TODO!
+            WindowEvent::DragEntered { paths, position } => {
+                window_handle.file_drag_event(FileDragEvent::DragEntered {
+                    paths,
+                    position: PhysicalPosition::new(position.x, position.y),
+                    scale_factor: window_handle.scale,
+                });
             }
-            WindowEvent::DragLeft { .. } => {
-                // TODO!
+            WindowEvent::DragMoved { position } => {
+                window_handle.file_drag_event(FileDragEvent::DragMoved {
+                    position: PhysicalPosition::new(position.x, position.y),
+                    scale_factor: window_handle.scale,
+                });
             }
-            WindowEvent::DragMoved { .. } => {
-                // TODO!
+            WindowEvent::DragLeft { position } => {
+                let pos = position.map(|p| PhysicalPosition::new(p.x, p.y));
+                window_handle.file_drag_event(FileDragEvent::DragLeft {
+                    position: pos,
+                    scale_factor: window_handle.scale,
+                });
             }
             WindowEvent::Focused(focused) => {
                 window_handle.focused(focused);
             }
-            WindowEvent::KeyboardInput {
-                event,
-                is_synthetic,
-                ..
-            } => {
-                if !is_synthetic {
-                    window_handle.key_event(event);
-                }
+            WindowEvent::KeyboardInput { .. } => {
+                // already handled by the ui-events reducer
             }
             WindowEvent::ModifiersChanged(modifiers) => {
-                window_handle.modifiers_changed(modifiers.state());
+                window_handle.modifiers_changed(
+                    ui_events_winit::keyboard::from_winit_modifier_state(modifiers.state()),
+                );
             }
             WindowEvent::Ime(ime) => {
                 window_handle.ime(ime);
             }
-            WindowEvent::PointerMoved { position, .. } => {
-                let position: LogicalPosition<f64> = position.to_logical(window_handle.scale);
-                let point = Point::new(position.x, position.y);
-                window_handle.pointer_move(point);
-            }
-            WindowEvent::PointerEntered { .. } => {}
-            WindowEvent::PointerLeft { .. } => {
-                window_handle.pointer_leave();
-            }
-            WindowEvent::MouseWheel { delta, .. } => {
-                window_handle.mouse_wheel(delta);
-            }
-            WindowEvent::PointerButton { state, button, .. } => {
-                window_handle.pointer_button(button, state);
-            }
-            WindowEvent::PinchGesture { delta, phase, .. } => {
-                window_handle.pinch_gesture(delta, phase);
-            }
+            WindowEvent::MouseWheel { .. } => {}
+            WindowEvent::PinchGesture {
+                delta: _, phase: _, ..
+            } => {}
             WindowEvent::TouchpadPressure { .. } => {}
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 window_handle.scale(scale_factor);
@@ -281,9 +298,19 @@ impl ApplicationHandle {
             }
             WindowEvent::PanGesture { .. } => {}
             WindowEvent::DoubleTapGesture { .. } => {}
-            WindowEvent::RotationGesture { .. } => {} // WindowEvent::MenuAction(id) => {
-                                                      //     window_handle.menu_action(id);
-                                                      // }
+            WindowEvent::RotationGesture { .. } => {}
+            WindowEvent::PointerMoved { .. } => {
+                //already handled by the ui-events reducer
+            }
+            WindowEvent::PointerEntered { .. } => {
+                //already handled by the ui-events reducer
+            }
+            WindowEvent::PointerLeft { .. } => {
+                //already handled by the ui-events reducer
+            }
+            WindowEvent::PointerButton { .. } => {
+                //already handled by the ui-events reducer
+            }
         }
 
         if let Some((name, start, new_frame)) = start {
@@ -474,12 +501,9 @@ impl ApplicationHandle {
             if let Some(hide) = mac.titlebar_buttons_hidden {
                 mac_attrs = mac_attrs.with_titlebar_buttons_hidden(hide)
             }
-            if let Some(panel) = mac.panel {
-                mac_attrs = mac_attrs.with_panel(panel)
-            }
-        }
-        #[cfg(target_os = "macos")]
-        {
+            // if let Some(panel) = mac.panel {
+            //     window_attributes = window_attributes.with_panel(panel)
+            // }
             window_attributes = window_attributes.with_platform_attributes(Box::new(mac_attrs));
         }
 

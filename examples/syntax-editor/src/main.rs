@@ -1,25 +1,17 @@
-use floem::peniko::Color;
-use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
-use floem::text::{Attrs, AttrsList, Stretch, Style, Weight};
-use floem::views::button;
-use floem::views::editor::core::buffer::rope_text::RopeText;
-use floem::views::editor::core::cursor::CursorAffinity;
-use floem::views::editor::id::EditorId;
-use floem::views::editor::layout::TextLayoutLine;
-use floem::views::editor::text::{default_dark_color, Document, SimpleStylingBuilder, Styling};
-use floem::views::editor::EditorStyle;
 use floem::{
-    keyboard::{Key, NamedKey},
-    text::FamilyOwned,
-    views::{
-        editor::{
-            core::{editor::EditType, selection::Selection},
-            text::WrapMethod,
+    prelude::*,
+    text::{Attrs, AttrsList, FamilyOwned, Stretch, Style, Weight},
+    views::editor::{
+        core::{
+            buffer::rope_text::RopeText, cursor::CursorAffinity, editor::EditType,
+            selection::Selection,
         },
-        stack, text_editor, Decorators,
+        id::EditorId,
+        layout::TextLayoutLine,
+        text::{default_dark_color, Document, SimpleStylingBuilder, Styling, WrapMethod},
+        EditorStyle,
     },
 };
-use floem::{IntoView, View};
 use lazy_static::lazy_static;
 use std::borrow::Cow;
 use std::cell::RefCell;

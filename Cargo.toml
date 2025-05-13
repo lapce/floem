@@ -8,21 +8,25 @@ members = [
   "reactive",
   "editor-core",
   "examples/*",
+  "ui-events-winit",
 ]
 
 [workspace.package]
 license = "MIT"
 version = "0.2.0"
+edition = "2024"
+rust-version = "1.87"
+repository = "https://github.com/lapce/floem"
 
 [package]
 name = "floem"
 version.workspace = true
 authors = ["The Floem contributors"]
 readme = "README.md"
-repository = "https://github.com/lapce/floem"
+repository.workspace = true
 description = "A native Rust UI library with fine-grained reactivity"
-edition = "2024"
-rust-version = "1.87"
+edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [workspace.dependencies]
@@ -41,7 +45,10 @@ wgpu = { version = "26.0" }
 parking_lot = { version = "0.12" }
 swash = { version = "0.2" }
 muda = { version = "0.17.1", default-features = false }
-winit = { git = "https://github.com/lapce/winit", rev = "133268de675a4fda70816d78a7a1435eb972fea1", package = "floem-winit" }
+winit = { git = "https://github.com/lapce/winit", rev = "262a8c661e4e1e782410a5903564e0a66c3c095e", package = "floem-winit" }
+ui-events = {version = "0.2", features = ["kurbo"]}
+ui-events-winit = {path = "./ui-events-winit", package = "ui-events-floem-winit"}
+dpi = { version = "0.1.2", default-features = false }
 
 [dependencies]
 slotmap = "1.0"
@@ -79,6 +86,9 @@ image = { workspace = true }
 winit = { workspace = true }
 futures = { version = "0.3.31" }
 crossbeam = { version = "0.8", optional = true }
+ui-events.workspace = true
+ui-events-winit.workspace = true
+dpi.workspace = true
 wgpu.workspace = true
 fluent-bundle = { version = "0.16", optional = true }
 unic-langid = { version = "0.9", optional = true }

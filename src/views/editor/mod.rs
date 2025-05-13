@@ -11,10 +11,8 @@ use std::{
 
 use crate::{
     action::{TimerToken, exec_after, set_ime_allowed},
-    keyboard::Modifiers,
     kurbo::{Point, Rect, Size, Vec2},
     peniko::{Brush, Color, color::palette},
-    pointer::{PointerInputEvent, PointerMoveEvent},
     prop, prop_extractor,
     reactive::{ReadSignal, RwSignal, Scope, batch, untrack},
     style::{CursorColor, StylePropValue, TextColor},
@@ -53,6 +51,7 @@ pub mod view;
 pub mod visual_line;
 
 pub use floem_editor_core as core;
+use ui_events::{keyboard::Modifiers, pointer::PointerState};
 
 use self::{
     command::Command,
@@ -540,35 +539,32 @@ impl Editor {
     }
 
     /// Default handler for `PointerDown` event
-    pub fn pointer_down(&self, pointer_event: &PointerInputEvent) {
-        if pointer_event.button.is_primary() {
-            self.active.set(true);
-            self.left_click(pointer_event);
-        } else if pointer_event.button.is_secondary() {
-            self.right_click(pointer_event);
-        }
+    pub fn pointer_down_primary(&self, state: &PointerState) {
+        self.active.set(true);
+        self.left_click(state);
     }
 
-    pub fn left_click(&self, pointer_event: &PointerInputEvent) {
-        match pointer_event.count {
+    pub fn left_click(&self, state: &PointerState) {
+        match state.count {
             1 => {
-                self.single_click(pointer_event);
+                self.single_click(state);
             }
             2 => {
-                self.double_click(pointer_event);
+                self.double_click(state);
             }
             3 => {
-                self.triple_click(pointer_event);
+                self.triple_click(state);
             }
             _ => {}
         }
     }
 
-    pub fn single_click(&self, pointer_event: &PointerInputEvent) {
+    pub fn single_click(&self, pointer_event: &PointerState) {
         self.commit_preedit();
 
         let mode = self.cursor.with_untracked(|c| c.get_mode());
-        let (new_offset, _, mut affinity) = self.offset_of_point(mode, pointer_event.pos);
+        let (new_offset, _, mut affinity) =
+            self.offset_of_point(mode, pointer_event.logical_point());
 
         if self.preedit().preedit.with_untracked(|p| p.is_some()) {
             // change affinity to display caret after preedit
@@ -585,11 +581,11 @@ impl Editor {
         });
     }
 
-    pub fn double_click(&self, pointer_event: &PointerInputEvent) {
+    pub fn double_click(&self, pointer_event: &PointerState) {
         self.commit_preedit();
 
         let mode = self.cursor.with_untracked(|c| c.get_mode());
-        let (mouse_offset, ..) = self.offset_of_point(mode, pointer_event.pos);
+        let (mouse_offset, ..) = self.offset_of_point(mode, pointer_event.logical_point());
         let (start, end) = self.select_word(mouse_offset);
 
         self.cursor.update(|cursor| {
@@ -603,11 +599,11 @@ impl Editor {
         });
     }
 
-    pub fn triple_click(&self, pointer_event: &PointerInputEvent) {
+    pub fn triple_click(&self, pointer_event: &PointerState) {
         self.commit_preedit();
 
         let mode = self.cursor.with_untracked(|c| c.get_mode());
-        let (mouse_offset, ..) = self.offset_of_point(mode, pointer_event.pos);
+        let (mouse_offset, ..) = self.offset_of_point(mode, pointer_event.logical_point());
         let line = self.line_of_offset(mouse_offset);
         let start = self.offset_of_line(line);
         let end = self.offset_of_line(line + 1);
@@ -623,9 +619,9 @@ impl Editor {
         });
     }
 
-    pub fn pointer_move(&self, pointer_event: &PointerMoveEvent) {
+    pub fn pointer_move(&self, pointer_event: &PointerState) {
         let mode = self.cursor.with_untracked(|c| c.get_mode());
-        let (offset, _, affinity) = self.offset_of_point(mode, pointer_event.pos);
+        let (offset, _, affinity) = self.offset_of_point(mode, pointer_event.logical_point());
         if self.active.get_untracked() && self.cursor.with_untracked(|c| c.offset()) != offset {
             self.commit_preedit();
 
@@ -635,13 +631,13 @@ impl Editor {
         }
     }
 
-    pub fn pointer_up(&self, _pointer_event: &PointerInputEvent) {
+    pub fn pointer_up(&self, _pointer_event: &PointerState) {
         self.active.set(false);
     }
 
-    fn right_click(&self, pointer_event: &PointerInputEvent) {
+    fn right_click(&self, pointer_event: &PointerState) {
         let mode = self.cursor.with_untracked(|c| c.get_mode());
-        let (offset, ..) = self.offset_of_point(mode, pointer_event.pos);
+        let (offset, ..) = self.offset_of_point(mode, pointer_event.logical_point());
         let doc = self.doc();
         let pointer_inside_selection = self
             .cursor

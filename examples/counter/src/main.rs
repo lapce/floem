@@ -1,12 +1,4 @@
-use floem::{
-    keyboard::{Key, NamedKey},
-    peniko::color::palette,
-    peniko::Color,
-    reactive::{create_signal, SignalGet, SignalUpdate},
-    unit::UnitExt,
-    views::{dyn_view, Decorators, LabelCustomStyle},
-    IntoView, View,
-};
+use floem::{prelude::*, unit::UnitExt};
 
 fn app_view() -> impl IntoView {
     let (counter, set_counter) = create_signal(0);

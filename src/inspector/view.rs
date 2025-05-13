@@ -18,12 +18,13 @@ use crate::views::{
     TooltipExt, resizable,
 };
 use crate::window::WindowConfig;
-use crate::{IntoView, View, ViewId, keyboard, new_window};
+use crate::{IntoView, View, ViewId, new_window};
 use floem_reactive::{RwSignal, SignalGet, SignalUpdate, create_effect, create_rw_signal};
 use peniko::Color;
 use peniko::color::palette;
 use std::rc::Rc;
-use winit::keyboard::NamedKey;
+use ui_events::keyboard::{self, KeyState, KeyboardEvent, NamedKey};
+use ui_events::pointer::{PointerButtonEvent, PointerEvent, PointerUpdate};
 use winit::window::WindowId;
 
 pub fn capture(window_id: WindowId) {
@@ -75,10 +76,8 @@ pub fn capture(window_id: WindowId) {
                 stack
                     .style(|s| s.width_full().height_full())
                     .on_event(EventListener::KeyUp, move |e| {
-                        if let Event::KeyUp(e) = e {
-                            if e.key.logical_key == keyboard::Key::Named(NamedKey::F11)
-                                && e.modifiers.shift()
-                            {
+                        if let Event::Key(e) = e {
+                            if e.key == keyboard::Key::Named(NamedKey::F11) && e.modifiers.shift() {
                                 id.inspect();
                                 return EventPropagation::Stop;
                             }
@@ -106,7 +105,7 @@ fn inspector_view(
     capture: &Option<Rc<Capture>>,
 ) -> impl IntoView {
     let view = if let Some(capture) = capture {
-        capture_view(window_id, capture_s, capture).into_any()
+        capture_view(window_id, capture_s, capture.clone()).into_any()
     } else {
         text("No capture").into_any()
     };
@@ -134,7 +133,7 @@ fn inspector_view(
 fn capture_view(
     window_id: WindowId,
     capture_s: RwSignal<Option<Rc<Capture>>>,
-    capture: &Rc<Capture>,
+    capture: Rc<Capture>,
 ) -> impl IntoView {
     let capture_view = CaptureView {
         expanding_selection: create_rw_signal(None),
@@ -179,8 +178,13 @@ fn capture_view(
     })
     .on_event_stop(EventListener::KeyUp, {
         move |event: &Event| {
-            if let Event::KeyUp(key) = event {
-                match key.key.logical_key {
+            if let Event::Key(KeyboardEvent {
+                state: KeyState::Up,
+                key,
+                ..
+            }) = event
+            {
+                match key {
                     keyboard::Key::Named(NamedKey::ArrowUp) => {
                         let id = contain_ids.try_update(|(match_index, ids)| {
                             if !ids.is_empty() {
@@ -215,10 +219,10 @@ fn capture_view(
     .on_event_stop(EventListener::PointerUp, {
         let capture_ = capture_.clone();
         move |event: &Event| {
-            if let Event::PointerUp(e) = event {
+            if let Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) = event {
                 let find_ids = capture_
                     .root
-                    .find_all_by_pos(e.pos)
+                    .find_all_by_pos(state.logical_point())
                     .iter()
                     .filter(|id| !id.is_hidden())
                     .cloned()
@@ -238,10 +242,11 @@ fn capture_view(
     })
     .on_event_stop(EventListener::PointerMove, {
         move |event: &Event| {
-            if let Event::PointerMove(e) = event {
+            if let Event::Pointer(PointerEvent::Move(PointerUpdate { current: state, .. })) = event
+            {
                 let find_ids = capture_
                     .root
-                    .find_all_by_pos(e.pos)
+                    .find_all_by_pos(state.logical_point())
                     .iter()
                     .filter(|id| !id.is_hidden())
                     .cloned()
@@ -404,8 +409,8 @@ fn capture_view(
         .style(|s| s.width_full())
         .placeholder("View Search...")
         .on_event_stop(EventListener::KeyUp, move |event: &Event| {
-            if let Event::KeyUp(key) = event {
-                match key.key.logical_key {
+            if let Event::Key(KeyboardEvent { key, .. }) = event {
+                match key {
                     keyboard::Key::Named(NamedKey::ArrowUp) => {
                         let id = match_ids.try_update(|(match_index, ids)| {
                             if !ids.is_empty() {
@@ -547,7 +552,7 @@ fn tree_node(
         view.view_conf.custom_name.clone(),
         id,
         capture_signal,
-        &capture,
+        capture.clone(),
         datas,
     );
     let row_id = row.id();

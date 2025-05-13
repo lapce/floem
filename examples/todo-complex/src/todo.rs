@@ -4,7 +4,6 @@ use floem::{
     action::{debounce_action, exec_after},
     easing::Spring,
     event::{Event, EventListener},
-    keyboard::{Modifiers, NamedKey},
     kurbo::Stroke,
     menu::Menu,
     muda::{self, NativeIcon},
@@ -12,7 +11,6 @@ use floem::{
     reactive::{create_effect, create_memo, Trigger},
     style::{BoxShadowProp, CursorStyle, MinHeight, Transition},
     taffy::AlignItems,
-    views::Checkbox,
     AnyView,
 };
 
@@ -128,11 +126,7 @@ impl IntoView for TodoState {
                     )
                     .class(SvgClass, |s| s.size_pct(50., 50.))
             })
-            .on_key_down(
-                floem::keyboard::Key::Named(NamedKey::Enter),
-                |_| true,
-                |_| {},
-            )
+            .on_key_down(Key::Named(NamedKey::Enter), |_| true, |_| {})
             .on_event_stop(EventListener::PointerDown, move |_| {});
 
         let input = text_input(self.description)
@@ -160,7 +154,7 @@ impl IntoView for TodoState {
                     .class(PlaceholderTextClass, |s| s.color(palette::css::GRAY))
             })
             .on_key_down(
-                floem::keyboard::Key::Named(NamedKey::Enter),
+                Key::Named(NamedKey::Enter),
                 |m| m.is_empty(),
                 move |_| {
                     AppCommand::Escape.execute();
@@ -197,12 +191,12 @@ impl IntoView for TodoState {
                 AppCommand::SetActive(self).execute();
             })
             .on_click_stop(move |e| {
-                let Event::PointerUp(e) = e else {
+                let Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) = e else {
                     return;
                 };
-                if e.modifiers == OS_MOD {
+                if state.modifiers == OS_MOD {
                     AppCommand::ToggleSelected(self).execute();
-                } else if e.modifiers.contains(Modifiers::SHIFT) {
+                } else if state.modifiers.contains(Modifiers::SHIFT) {
                     AppCommand::SelectRange(self).execute();
                 } else {
                     AppCommand::SetSelected(self).execute();

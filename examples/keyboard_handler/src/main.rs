@@ -1,6 +1,6 @@
 use floem::{
     event::{Event, EventListener},
-    keyboard::Key,
+    prelude::*,
     unit::UnitExt,
     views::{ContainerExt, Decorators},
     IntoView,
@@ -18,12 +18,18 @@ fn app_view() -> impl IntoView {
                 .focusable(true) // Focusable is needed for a view to be able to receive keyboard events
         });
     view.on_event_stop(EventListener::KeyDown, move |e| {
-        if let Event::KeyDown(e) = e {
-            if e.key.logical_key == Key::Character("q".into()) {
+        if let Event::Key(KeyboardEvent {
+            state: KeyState::Down,
+            code,
+            key,
+            ..
+        }) = e
+        {
+            if *key == Key::Character("q".into()) {
                 println!("Goodbye :)");
                 std::process::exit(0)
             }
-            println!("Key pressed in KeyCode: {:?}", e.key.physical_key);
+            println!("Key pressed in KeyCode: {:?}", code);
         }
     })
 }

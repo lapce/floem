@@ -1,12 +1,10 @@
 use floem::{
-    event::EventListener,
+    event::{Event, EventListener},
     im_rc,
-    peniko::Color,
-    reactive::{create_signal, ReadSignal, SignalGet, SignalUpdate, WriteSignal},
+    prelude::*,
+    reactive::{ReadSignal, WriteSignal},
     style::{CursorStyle, Position},
     text::Weight,
-    views::{container, h_stack, label, scroll, tab, text, v_stack, ButtonExt as _, Decorators},
-    IntoView, View,
 };
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
@@ -106,8 +104,13 @@ pub fn tab_navigation_view() -> impl IntoView {
 
     let id = settings_view.id();
     settings_view.on_event_stop(EventListener::KeyUp, move |e| {
-        if let floem::event::Event::KeyUp(e) = e {
-            if e.key.logical_key == floem::keyboard::Key::Named(floem::keyboard::NamedKey::F11) {
+        if let Event::Key(KeyboardEvent {
+            state: KeyState::Up,
+            key,
+            ..
+        }) = e
+        {
+            if *key == Key::Named(NamedKey::F11) {
                 id.inspect();
             }
         }

@@ -82,9 +82,13 @@ pub fn holy_grail_view() -> impl IntoView {
         .v_stack()
         .style(|s| s.width_full().height_full())
         .on_event_stop(EventListener::KeyUp, move |e| {
-            if let floem::event::Event::KeyUp(e) = e {
-                if e.key.logical_key == floem::keyboard::Key::Named(floem::keyboard::NamedKey::F11)
-                {
+            if let floem::event::Event::Key(KeyboardEvent {
+                state: KeyState::Up,
+                key,
+                ..
+            }) = e
+            {
+                if *key == Key::Named(NamedKey::F11) {
                     floem::action::inspect();
                 }
             }

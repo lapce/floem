@@ -5,10 +5,10 @@ use floem_reactive::{RwSignal, Scope, SignalUpdate, SignalWith, create_updater, 
 use peniko::Color;
 
 use lapce_xi_rope::Rope;
+use ui_events::keyboard::{KeyboardEvent, Modifiers};
 
 use crate::{
     id::ViewId,
-    keyboard::Modifiers,
     style::{CursorColor, Style},
     view::{IntoView, View},
     views::editor::{
@@ -28,7 +28,6 @@ use super::editor::{
     ScrollBeyondLastLine, SelectionColor, ShowIndentGuide, SmartTab, VisibleWhitespaceColor,
     WrapProp,
     gutter::{DimColor, GutterClass, LeftOfCenterPadding, RightOfCenterPadding},
-    keypress::press::KeyPress,
     text::{RenderWhitespace, WrapMethod},
     view::EditorViewClass,
 };
@@ -108,7 +107,7 @@ pub fn text_editor(text: impl Into<Rope>) -> TextEditor {
 /// See [`text_editor`] for a list of the default keymaps that you will need to handle yourself if using this function.
 pub fn text_editor_keys(
     text: impl Into<Rope>,
-    handle_key_event: impl Fn(RwSignal<Editor>, &KeyPress, Modifiers) -> CommandExecuted + 'static,
+    handle_key_event: impl Fn(RwSignal<Editor>, &KeyboardEvent, Modifiers) -> CommandExecuted + 'static,
 ) -> TextEditor {
     let id = ViewId::new();
     let cx = Scope::current();
