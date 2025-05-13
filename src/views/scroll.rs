@@ -4,6 +4,7 @@
 use floem_reactive::create_effect;
 use peniko::kurbo::{Point, Rect, RoundedRectRadii, Size, Stroke, Vec2};
 use peniko::{Brush, Color};
+use ui_events::pointer::{PointerButton, PointerButtonEvent, PointerEvent, PointerScrollEvent};
 
 use crate::style::{
     BorderBottomLeftRadius, BorderBottomRightRadius, BorderRightColor, BorderTopLeftRadius,
@@ -11,6 +12,7 @@ use crate::style::{
 };
 use crate::unit::PxPct;
 use crate::{
+    Renderer,
     app_state::AppState,
     context::{ComputeLayoutCx, PaintCx},
     event::{Event, EventPropagation},
@@ -20,7 +22,6 @@ use crate::{
     style_class,
     unit::Px,
     view::{IntoView, View},
-    Renderer,
 };
 
 use super::Decorators;
@@ -879,17 +880,19 @@ impl View for Scroll {
         let content_size = self.child_size;
 
         match &event {
-            Event::PointerDown(event) => {
-                if !self.scroll_style.hide_bar() && event.button.is_primary() {
+            Event::Pointer(PointerEvent::Down(PointerButtonEvent { button, state, .. })) => {
+                if !self.scroll_style.hide_bar()
+                    && button.is_some_and(|b| b == PointerButton::Primary)
+                {
                     self.held = BarHeldState::None;
 
-                    let pos = event.pos + scroll_offset;
+                    let pos = state.point() + scroll_offset;
 
                     if self.point_hits_vertical_bar(cx.app_state, pos) {
                         if self.point_hits_vertical_handle(cx.app_state, pos) {
                             self.held = BarHeldState::Vertical(
                                 // The bounds must be non-empty, because the point hits the scrollbar.
-                                event.pos.y,
+                                state.point().y,
                                 scroll_offset,
                             );
                             cx.update_active(self.id());
@@ -897,11 +900,11 @@ impl View for Scroll {
                             self.id.request_paint();
                             return EventPropagation::Stop;
                         }
-                        self.click_vertical_bar_area(cx.app_state, event.pos);
+                        self.click_vertical_bar_area(cx.app_state, state.point());
                         let scroll_offset = self.child_viewport.origin().to_vec2();
                         self.held = BarHeldState::Vertical(
                             // The bounds must be non-empty, because the point hits the scrollbar.
-                            event.pos.y,
+                            state.point().y,
                             scroll_offset,
                         );
                         cx.update_active(self.id());
@@ -910,7 +913,7 @@ impl View for Scroll {
                         if self.point_hits_horizontal_handle(cx.app_state, pos) {
                             self.held = BarHeldState::Horizontal(
                                 // The bounds must be non-empty, because the point hits the scrollbar.
-                                event.pos.x,
+                                state.point().x,
                                 scroll_offset,
                             );
                             cx.update_active(self.id());
@@ -918,11 +921,11 @@ impl View for Scroll {
                             cx.app_state.request_paint(self.id());
                             return EventPropagation::Stop;
                         }
-                        self.click_horizontal_bar_area(cx.app_state, event.pos);
+                        self.click_horizontal_bar_area(cx.app_state, state.point());
                         let scroll_offset = self.child_viewport.origin().to_vec2();
                         self.held = BarHeldState::Horizontal(
                             // The bounds must be non-empty, because the point hits the scrollbar.
-                            event.pos.x,
+                            state.point().x,
                             scroll_offset,
                         );
                         cx.update_active(self.id());
@@ -930,23 +933,24 @@ impl View for Scroll {
                     }
                 }
             }
-            Event::PointerUp(_event) => {
+            Event::Pointer(PointerEvent::Up { .. }) => {
                 if self.are_bars_held() {
                     self.held = BarHeldState::None;
                     // Force a repaint.
                     cx.app_state.request_paint(self.id());
                 }
             }
-            Event::PointerMove(event) => {
+            Event::Pointer(PointerEvent::Move(pu)) => {
                 if !self.scroll_style.hide_bar() {
-                    let pos = event.pos + scroll_offset;
-                    self.update_hover_states(cx.app_state, event.pos);
+                    let pos = pu.current.point() + scroll_offset;
+                    self.update_hover_states(cx.app_state, pu.current.point());
 
                     if self.are_bars_held() {
                         match self.held {
                             BarHeldState::Vertical(offset, initial_scroll_offset) => {
                                 let scale_y = viewport_size.height / content_size.height;
-                                let y = initial_scroll_offset.y + (event.pos.y - offset) / scale_y;
+                                let y = initial_scroll_offset.y
+                                    + (pu.current.point().y - offset) / scale_y;
                                 self.clamp_child_viewport(
                                     cx.app_state,
                                     self.child_viewport
@@ -955,7 +959,8 @@ impl View for Scroll {
                             }
                             BarHeldState::Horizontal(offset, initial_scroll_offset) => {
                                 let scale_x = viewport_size.width / content_size.width;
-                                let x = initial_scroll_offset.x + (event.pos.x - offset) / scale_x;
+                                let x = initial_scroll_offset.x
+                                    + (pu.current.point().x - offset) / scale_x;
                                 self.clamp_child_viewport(
                                     cx.app_state,
                                     self.child_viewport
@@ -971,7 +976,7 @@ impl View for Scroll {
                     }
                 }
             }
-            Event::PointerLeave => {
+            Event::Pointer(PointerEvent::Leave(_)) => {
                 self.v_handle_hover = false;
                 self.h_handle_hover = false;
                 self.v_track_hover = false;
@@ -988,7 +993,7 @@ impl View for Scroll {
         cx: &mut crate::context::EventCx,
         event: &Event,
     ) -> EventPropagation {
-        if let Event::PointerWheel(pointer_event) = &event {
+        if let Event::Pointer(PointerEvent::Scroll(PointerScrollEvent { state, .. })) = &event {
             if let Some(listener) = event.listener() {
                 if self
                     .id
@@ -998,25 +1003,27 @@ impl View for Scroll {
                     return EventPropagation::Stop;
                 }
             }
-            let delta = pointer_event.delta;
-            let delta = if self.scroll_style.vertical_scroll_as_horizontal()
-                && delta.x == 0.0
-                && delta.y != 0.0
-            {
-                Vec2::new(delta.y, delta.x)
-            } else {
-                delta
-            };
-            let any_change = self.clamp_child_viewport(cx.app_state, self.child_viewport + delta);
+            if let Some(delta) = event.pixel_scroll_delta_vec2() {
+                let delta = -if self.scroll_style.vertical_scroll_as_horizontal()
+                    && delta.x == 0.0
+                    && delta.y != 0.0
+                {
+                    Vec2::new(delta.y, delta.x)
+                } else {
+                    delta
+                };
+                let any_change =
+                    self.clamp_child_viewport(cx.app_state, self.child_viewport + delta);
 
-            // Check if the scroll bars now hover
-            self.update_hover_states(cx.app_state, pointer_event.pos);
+                // Check if the scroll bars now hover
+                self.update_hover_states(cx.app_state, state.point());
 
-            return if self.scroll_style.propagate_pointer_wheel() && any_change.is_none() {
-                EventPropagation::Continue
-            } else {
-                EventPropagation::Stop
-            };
+                return if self.scroll_style.propagate_pointer_wheel() && any_change.is_none() {
+                    EventPropagation::Continue
+                } else {
+                    EventPropagation::Stop
+                };
+            }
         }
 
         EventPropagation::Continue

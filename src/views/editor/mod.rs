@@ -2,7 +2,7 @@ use core::indent::IndentStyle;
 use std::{
     cell::{Cell, RefCell},
     cmp::Ordering,
-    collections::{hash_map::DefaultHasher, HashMap},
+    collections::{HashMap, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
     rc::Rc,
     sync::Arc,
@@ -10,14 +10,11 @@ use std::{
 };
 
 use crate::{
-    action::{exec_after, TimerToken},
-    keyboard::Modifiers,
+    action::{TimerToken, exec_after},
     kurbo::{Point, Rect, Vec2},
-    peniko::color::palette,
-    peniko::Color,
-    pointer::{PointerInputEvent, PointerMoveEvent},
+    peniko::{Color, color::palette},
     prop, prop_extractor,
-    reactive::{batch, untrack, ReadSignal, RwSignal, Scope},
+    reactive::{ReadSignal, RwSignal, Scope, batch, untrack},
     style::{CursorColor, StylePropValue, TextColor},
     text::{Attrs, AttrsList, LineHeightValue, TextLayout, Wrap},
     view::{IntoView, View},
@@ -31,7 +28,7 @@ use floem_editor_core::{
     movement::Movement,
     register::Register,
     selection::Selection,
-    soft_tab::{snap_to_soft_tab_line_col, SnapDirection},
+    soft_tab::{SnapDirection, snap_to_soft_tab_line_col},
     word::WordCursor,
 };
 use floem_reactive::{SignalGet, SignalTrack, SignalUpdate, SignalWith, Trigger};
@@ -55,6 +52,7 @@ pub mod visual_line;
 
 pub use floem_editor_core as core;
 use peniko::Brush;
+use ui_events::{keyboard::Modifiers, pointer::PointerState};
 
 use self::{
     command::Command,
@@ -64,8 +62,8 @@ use self::{
     text::{Document, Preedit, PreeditData, RenderWhitespace, Styling, WrapMethod},
     view::{LineInfo, ScreenLines, ScreenLinesBase},
     visual_line::{
-        hit_position_aff, ConfigId, FontSizeCacheId, LayoutEvent, LineFontSizeProvider, Lines,
-        RVLine, ResolvedWrap, TextLayoutProvider, VLine, VLineInfo,
+        ConfigId, FontSizeCacheId, LayoutEvent, LineFontSizeProvider, Lines, RVLine, ResolvedWrap,
+        TextLayoutProvider, VLine, VLineInfo, hit_position_aff,
     },
 };
 
@@ -507,33 +505,29 @@ impl Editor {
     }
 
     /// Default handler for `PointerDown` event
-    pub fn pointer_down(&self, pointer_event: &PointerInputEvent) {
-        if pointer_event.button.is_primary() {
-            self.active.set(true);
-            self.left_click(pointer_event);
-        } else if pointer_event.button.is_secondary() {
-            self.right_click(pointer_event);
-        }
+    pub fn pointer_down_primary(&self, state: &PointerState) {
+        self.active.set(true);
+        self.left_click(state);
     }
 
-    pub fn left_click(&self, pointer_event: &PointerInputEvent) {
-        match pointer_event.count {
+    pub fn left_click(&self, state: &PointerState) {
+        match state.count {
             1 => {
-                self.single_click(pointer_event);
+                self.single_click(state);
             }
             2 => {
-                self.double_click(pointer_event);
+                self.double_click(state);
             }
             3 => {
-                self.triple_click(pointer_event);
+                self.triple_click(state);
             }
             _ => {}
         }
     }
 
-    pub fn single_click(&self, pointer_event: &PointerInputEvent) {
+    pub fn single_click(&self, pointer_event: &PointerState) {
         let mode = self.cursor.with_untracked(|c| c.get_mode());
-        let (new_offset, _, mut affinity) = self.offset_of_point(mode, pointer_event.pos);
+        let (new_offset, _, mut affinity) = self.offset_of_point(mode, pointer_event.point());
 
         if self.preedit().preedit.with_untracked(|p| p.is_some()) {
             // change affinity to display caret after preedit
@@ -552,9 +546,9 @@ impl Editor {
         self.set_preedit_offset(new_offset);
     }
 
-    pub fn double_click(&self, pointer_event: &PointerInputEvent) {
+    pub fn double_click(&self, pointer_event: &PointerState) {
         let mode = self.cursor.with_untracked(|c| c.get_mode());
-        let (mouse_offset, ..) = self.offset_of_point(mode, pointer_event.pos);
+        let (mouse_offset, ..) = self.offset_of_point(mode, pointer_event.point());
         let (start, end) = self.select_word(mouse_offset);
 
         self.cursor.update(|cursor| {
@@ -568,9 +562,9 @@ impl Editor {
         });
     }
 
-    pub fn triple_click(&self, pointer_event: &PointerInputEvent) {
+    pub fn triple_click(&self, pointer_event: &PointerState) {
         let mode = self.cursor.with_untracked(|c| c.get_mode());
-        let (mouse_offset, ..) = self.offset_of_point(mode, pointer_event.pos);
+        let (mouse_offset, ..) = self.offset_of_point(mode, pointer_event.point());
         let line = self.line_of_offset(mouse_offset);
         let start = self.offset_of_line(line);
         let end = self.offset_of_line(line + 1);
@@ -586,9 +580,9 @@ impl Editor {
         });
     }
 
-    pub fn pointer_move(&self, pointer_event: &PointerMoveEvent) {
+    pub fn pointer_move(&self, pointer_event: &PointerState) {
         let mode = self.cursor.with_untracked(|c| c.get_mode());
-        let (offset, _, affinity) = self.offset_of_point(mode, pointer_event.pos);
+        let (offset, _, affinity) = self.offset_of_point(mode, pointer_event.point());
         if self.active.get_untracked() && self.cursor.with_untracked(|c| c.offset()) != offset {
             self.cursor.update(|cursor| {
                 cursor.set_offset(offset, affinity, true, pointer_event.modifiers.alt())
@@ -596,13 +590,13 @@ impl Editor {
         }
     }
 
-    pub fn pointer_up(&self, _pointer_event: &PointerInputEvent) {
+    pub fn pointer_up(&self, _pointer_event: &PointerState) {
         self.active.set(false);
     }
 
-    fn right_click(&self, pointer_event: &PointerInputEvent) {
+    fn right_click(&self, pointer_event: &PointerState) {
         let mode = self.cursor.with_untracked(|c| c.get_mode());
-        let (offset, ..) = self.offset_of_point(mode, pointer_event.pos);
+        let (offset, ..) = self.offset_of_point(mode, pointer_event.point());
         let doc = self.doc();
         let pointer_inside_selection = self
             .cursor

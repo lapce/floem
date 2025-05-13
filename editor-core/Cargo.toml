@@ -10,6 +10,7 @@ description = "The core of the floem text editor"
 serde = { workspace = true, optional = true }
 strum = { workspace = true }
 strum_macros = { workspace = true }
+ui-events.workspace = true
 
 lapce-xi-rope = { workspace = true }
 

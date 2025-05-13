@@ -1,4 +1,4 @@
-use crate::{style_class, views::Decorators, IntoView, View, ViewId};
+use crate::{IntoView, View, ViewId, style_class, views::Decorators};
 use core::ops::FnMut;
 
 style_class!(

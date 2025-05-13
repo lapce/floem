@@ -9,20 +9,20 @@ use crate::style::{Style, StyleClassRef, StylePropRef, Transition};
 use crate::view::{IntoView, View};
 use crate::view_state::ChangeFlags;
 use crate::views::{
-    button, dyn_container, stack, static_label, text, v_stack, v_stack_from_iter, Decorators, Label,
+    Decorators, Label, button, dyn_container, stack, static_label, text, v_stack, v_stack_from_iter,
 };
-use crate::{keyboard, style, Clipboard};
-use floem_reactive::{batch, RwSignal, Scope, SignalGet, SignalUpdate};
+use crate::{Clipboard, style};
+use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate, batch};
+use peniko::Color;
 use peniko::color::palette;
 use peniko::kurbo::{Point, Rect, Size};
-use peniko::Color;
 use slotmap::Key;
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::rc::Rc;
+use ui_events::keyboard::{self, KeyState, KeyboardEvent, NamedKey};
 pub use view::capture;
-use winit::keyboard::NamedKey;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
@@ -181,7 +181,7 @@ fn add_event(
     name: String,
     id: ViewId,
     capture_view: CaptureView,
-    capture: &Rc<Capture>,
+    capture: Rc<Capture>,
     datas: RwSignal<CapturedDatas>,
 ) -> impl View {
     let capture = capture.clone();
@@ -199,14 +199,20 @@ fn add_event(
         .on_event_stop(EventListener::KeyUp, {
             let capture = capture.clone();
             move |event| {
-                if let Event::KeyUp(key) = event {
-                    match key.key.logical_key {
+                if let Event::Key(KeyboardEvent {
+                    state: KeyState::Up,
+                    modifiers,
+                    key,
+                    ..
+                }) = event
+                {
+                    match key {
                         keyboard::Key::Named(NamedKey::ArrowUp) => {
                             let rs = find_relative_view_by_id_with_self(id, &capture.root);
                             let Some(ids) = rs else {
                                 return;
                             };
-                            if !key.modifiers.control() {
+                            if !modifiers.ctrl() {
                                 if let Some(id) = ids.big_brother_id {
                                     update_select_view_id(id, &capture_view, true, datas);
                                 }
@@ -219,7 +225,7 @@ fn add_event(
                             let Some(ids) = rs else {
                                 return;
                             };
-                            if !key.modifiers.control() {
+                            if !modifiers.ctrl() {
                                 if let Some(id) = ids.next_brother_id {
                                     update_select_view_id(id, &capture_view, true, datas);
                                 }
@@ -264,7 +270,7 @@ fn info_row(name: String, view: impl View + 'static) -> impl View {
     })
 }
 
-fn stats(capture: &Capture) -> impl IntoView {
+fn stats(capture: &Capture) -> impl IntoView + use<> {
     let style_time = capture.post_style.saturating_duration_since(capture.start);
     let layout_time = capture
         .post_layout
@@ -302,7 +308,7 @@ fn stats(capture: &Capture) -> impl IntoView {
     ))
 }
 
-fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<ViewId>>) -> impl IntoView {
+fn selected_view(capture: Rc<Capture>, selected: RwSignal<Option<ViewId>>) -> impl IntoView {
     let capture = capture.clone();
     dyn_container(
         move || selected.get(),
@@ -424,7 +430,7 @@ fn selected_view(capture: &Rc<Capture>, selected: RwSignal<Option<ViewId>>) -> i
                     .map(|(p, v)| ((p, format!("{:?}", p.key)), v))
                     .collect::<Vec<_>>();
 
-                style_list.sort_unstable_by(|a, b| a.0 .1.cmp(&b.0 .1));
+                style_list.sort_unstable_by(|a, b| a.0.1.cmp(&b.0.1));
 
                 let mut class_list = view
                     .classes
@@ -561,11 +567,7 @@ fn find_view(name: &str, views: &Rc<CapturedView>) -> Vec<ViewId> {
         .iter()
         .filter_map(|x| {
             let ids = find_view(name, x);
-            if ids.is_empty() {
-                None
-            } else {
-                Some(ids)
-            }
+            if ids.is_empty() { None } else { Some(ids) }
         })
         .fold(ids, |mut init, mut item| {
             init.append(&mut item);

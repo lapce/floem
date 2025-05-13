@@ -8,6 +8,7 @@ use floem::{
     },
     prelude::*,
     reactive::create_updater,
+    ui_events::pointer::{PointerButtonEvent, PointerEvent},
     ViewId,
 };
 use palette::css;
@@ -181,21 +182,21 @@ impl View for SatValuePicker {
     ) -> EventPropagation {
         if let Some(on_change) = &self.on_change {
             match event {
-                Event::PointerDown(pe) => {
-                    self.current_color = self.position_to_hsl(pe.pos);
+                Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
+                    self.current_color = self.position_to_hsl(state.point());
                     on_change(self.current_color.convert());
                     self.track = true;
                     self.id.request_active();
                 }
-                Event::PointerUp(pe) => {
-                    self.current_color = self.position_to_hsl(pe.pos);
+                Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) => {
+                    self.current_color = self.position_to_hsl(state.point());
                     on_change(self.current_color.convert());
                     self.id.clear_active();
                     self.track = false;
                 }
-                Event::PointerMove(pe) => {
+                Event::Pointer(PointerEvent::Move(pu)) => {
                     if self.track {
-                        self.current_color = self.position_to_hsl(pe.pos);
+                        self.current_color = self.position_to_hsl(pu.current.point());
                         on_change(self.current_color.convert());
                     }
                 }
@@ -302,21 +303,21 @@ impl View for HuePicker {
     ) -> EventPropagation {
         if let Some(on_change) = &self.on_change {
             match event {
-                Event::PointerDown(pe) => {
-                    self.current_color = self.position_to_hsl(pe.pos);
+                Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
+                    self.current_color = self.position_to_hsl(state.point());
                     on_change(self.current_color.convert());
                     self.track = true;
                     self.id.request_active();
                 }
-                Event::PointerUp(pe) => {
-                    self.current_color = self.position_to_hsl(pe.pos);
+                Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) => {
+                    self.current_color = self.position_to_hsl(state.point());
                     on_change(self.current_color.convert());
                     self.id.clear_active();
                     self.track = false;
                 }
-                Event::PointerMove(pe) => {
+                Event::Pointer(PointerEvent::Move(pu)) => {
                     if self.track {
-                        self.current_color = self.position_to_hsl(pe.pos);
+                        self.current_color = self.position_to_hsl(pu.current.point());
                         on_change(self.current_color.convert());
                     }
                 }
@@ -424,21 +425,21 @@ impl View for OpacityPicker {
     ) -> EventPropagation {
         if let Some(on_change) = &self.on_change {
             match event {
-                Event::PointerDown(pe) => {
-                    self.current_color = self.position_to_alpha(pe.pos);
+                Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
+                    self.current_color = self.position_to_alpha(state.point());
                     on_change(self.current_color);
                     self.track = true;
                     self.id.request_active();
                 }
-                Event::PointerUp(pe) => {
-                    self.current_color = self.position_to_alpha(pe.pos);
+                Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) => {
+                    self.current_color = self.position_to_alpha(state.point());
                     on_change(self.current_color);
                     self.id.clear_active();
                     self.track = false;
                 }
-                Event::PointerMove(pe) => {
+                Event::Pointer(PointerEvent::Move(pu)) => {
                     if self.track {
-                        self.current_color = self.position_to_alpha(pe.pos);
+                        self.current_color = self.position_to_alpha(pu.current.point());
                         on_change(self.current_color);
                     }
                 }

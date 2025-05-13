@@ -2,8 +2,9 @@ use std::time::Instant;
 
 use floem::{
     action::{exec_after, inspect},
-    keyboard::{Key, Modifiers, NamedKey},
+    keyboard::{Key, NamedKey},
     prelude::*,
+    ui_events::keyboard::Modifiers,
 };
 use todo::TodoState;
 use todo_state::TODOS_STATE;

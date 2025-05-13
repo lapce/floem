@@ -2,10 +2,10 @@ use crate::{
     style::{Background, CursorStyle, CustomStyle, Foreground, Style, Transition},
     unit::{DurationUnitExt, UnitExt},
     views::{
-        dropdown, scroll, slider, ButtonClass, CheckboxClass, LabelCustomStyle,
-        LabeledCheckboxClass, LabeledRadioButtonClass, ListClass, ListItemClass,
-        PlaceholderTextClass, RadioButtonClass, RadioButtonDotClass, TextInputClass,
-        ToggleButtonCircleRad, ToggleButtonClass, ToggleButtonInset, TooltipClass,
+        ButtonClass, CheckboxClass, LabelCustomStyle, LabeledCheckboxClass,
+        LabeledRadioButtonClass, ListClass, ListItemClass, PlaceholderTextClass, RadioButtonClass,
+        RadioButtonDotClass, TextInputClass, ToggleButtonCircleRad, ToggleButtonClass,
+        ToggleButtonInset, TooltipClass, dropdown, scroll, slider,
     },
 };
 use peniko::color::palette::{self, css};

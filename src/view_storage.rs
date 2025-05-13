@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use slotmap::{SecondaryMap, SlotMap};
 
-use crate::{id::ViewId, view::AnyView, view_state::ViewState, IntoView};
+use crate::{IntoView, id::ViewId, view::AnyView, view_state::ViewState};
 
 thread_local! {
     pub(crate) static VIEW_STORAGE: RefCell<ViewStorage> = Default::default();

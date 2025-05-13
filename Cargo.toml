@@ -8,21 +8,25 @@ members = [
   "reactive",
   "editor-core",
   "examples/*",
+  "ui-events-winit",
 ]
 
 [workspace.package]
 license = "MIT"
 version = "0.2.0"
+edition = "2024"
+rust-version = "1.87"
+repository = "https://github.com/lapce/floem"
 
 [package]
 name = "floem"
 version.workspace = true
 authors = ["The Floem contributors"]
 readme = "README.md"
-repository = "https://github.com/lapce/floem"
+repository.workspace = true
 description = "A native Rust UI library with fine-grained reactivity"
-edition = "2021"
-rust-version = "1.86"
+edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 
 [workspace.dependencies]
@@ -40,7 +44,10 @@ wgpu = { version = "26.0" }
 parking_lot = { version = "0.12" }
 swash = { version = "0.2" }
 muda = { version = "0.17.1", default-features = false }
-winit = { git = "https://github.com/lapce/winit", rev = "133268de675a4fda70816d78a7a1435eb972fea1", package = "floem-winit" }
+winit = { git = "https://github.com/lapce/winit", rev = "262a8c661e4e1e782410a5903564e0a66c3c095e", package = "floem-winit" }
+ui-events = {git = "https://github.com/jrmoulton/ui-events", branch = "state-scale-factor", features = ["kurbo"]}
+ui-events-winit = {path = "./ui-events-winit", package = "ui-events-floem-winit"}
+dpi = { version = "0.1.2", default-features = false }
 
 [dependencies]
 slotmap = "1.0"
@@ -79,6 +86,9 @@ im = { workspace = true }
 winit = { workspace = true }
 futures = { version = "0.3.31" }
 crossbeam = { version = "0.8", optional = true }
+ui-events.workspace = true
+ui-events-winit.workspace = true
+dpi.workspace = true
 wgpu.workspace = true
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
@@ -148,3 +158,12 @@ rfd-async-std = ["dep:rfd", "rfd/async-std"]
 rfd-tokio = ["dep:rfd", "rfd/tokio"]
 
 crossbeam = [ "dep:crossbeam", "floem_renderer/crossbeam" ]
+
+
+[patch.crates-io]
+# ui-events = { path = "../ui-events/ui-events" }
+# ui-events-winit = { path = "../ui-events/ui-events-winit" }
+# keyboard-types = { git = "https://github.com/rust-windowing/keyboard-types" }
+# winit = { git = "https://github.com/rust-windowing/winit" }
+# dpi = {git = "https://github.com/rust-windowing/winit"}
+

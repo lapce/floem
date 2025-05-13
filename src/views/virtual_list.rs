@@ -1,9 +1,9 @@
 use floem_reactive::create_effect;
 use taffy::FlexDirection;
-use winit::keyboard::{Key, NamedKey};
+use ui_events::keyboard::{Key, NamedKey};
 
 use crate::event::{Event, EventListener, EventPropagation};
-use crate::{prelude::*, ViewId};
+use crate::{ViewId, prelude::*};
 
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::{Deref, DerefMut};
@@ -193,9 +193,9 @@ where
             .class(ListClass)
             .keyboard_navigable()
             .on_event(EventListener::KeyDown, move |e| {
-                if let Event::KeyDown(key_event) = e {
+                if let Event::Key(key_event) = e {
                     stack_id.request_style_recursive();
-                    match key_event.key.logical_key {
+                    match key_event.key {
                         Key::Named(NamedKey::Home) => {
                             if length.get_untracked() > 0 {
                                 selection.set(Some(0));

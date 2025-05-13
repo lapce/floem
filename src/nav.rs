@@ -1,5 +1,5 @@
 use peniko::kurbo::{Point, Rect};
-use winit::keyboard::NamedKey;
+use ui_events::keyboard::NamedKey;
 
 use crate::{app_state::AppState, id::ViewId, view::view_tab_navigation};
 

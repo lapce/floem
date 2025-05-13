@@ -50,16 +50,16 @@
 use std::sync::Arc;
 
 use crate::kurbo::Point;
+use floem_renderer::Img;
 use floem_renderer::gpu_resources::GpuResources;
 use floem_renderer::text::LayoutRun;
-use floem_renderer::Img;
 use floem_tiny_skia_renderer::TinySkiaRenderer;
 #[cfg(feature = "vello")]
 use floem_vello_renderer::VelloRenderer;
 #[cfg(not(feature = "vello"))]
 use floem_vger_renderer::VgerRenderer;
-use peniko::kurbo::{Affine, Rect, Shape, Size, Stroke};
 use peniko::BrushRef;
+use peniko::kurbo::{Affine, Rect, Shape, Size, Stroke};
 use winit::window::Window;
 
 #[allow(clippy::large_enum_variant)]
@@ -139,7 +139,10 @@ impl Renderer {
         };
 
         if !force_tiny_skia {
-            panic!("Failed to create VgerRenderer: {}\nFailed to create TinySkiaRenderer: {tiny_skia_err}", vger_err.unwrap());
+            panic!(
+                "Failed to create VgerRenderer: {}\nFailed to create TinySkiaRenderer: {tiny_skia_err}",
+                vger_err.unwrap()
+            );
         } else {
             panic!("Failed to create TinySkiaRenderer: {tiny_skia_err}");
         }

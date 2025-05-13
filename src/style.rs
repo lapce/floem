@@ -4,7 +4,7 @@
 use floem_reactive::create_updater;
 use floem_renderer::text::{LineHeightValue, Weight};
 use im_rc::hashmap::Entry;
-use peniko::color::{palette, HueDirection};
+use peniko::color::{HueDirection, palette};
 use peniko::kurbo::{Point, Stroke};
 use peniko::{
     Brush, Color, ColorStop, ColorStops, Gradient, GradientKind, InterpolationAlphaSpace,
@@ -12,7 +12,7 @@ use peniko::{
 };
 use rustc_hash::FxHasher;
 use smallvec::SmallVec;
-use std::any::{type_name, Any};
+use std::any::{Any, type_name};
 use std::collections::HashMap;
 use std::fmt::{self, Debug};
 use std::hash::Hasher;
@@ -43,7 +43,7 @@ use crate::easing::*;
 use crate::responsive::{ScreenSize, ScreenSizeBp};
 use crate::unit::{Pct, Px, PxPct, PxPctAuto, UnitExt};
 use crate::view::{IntoView, View};
-use crate::views::{empty, stack, text, Decorators};
+use crate::views::{Decorators, empty, stack, text};
 
 pub trait StylePropValue: Clone + PartialEq + Debug {
     fn debug_view(&self) -> Option<Box<dyn View>> {
@@ -2678,11 +2678,7 @@ impl Style {
     ///     .border_left(5.0); // ran, obviously
     /// ```
     pub fn apply_opt<T>(self, opt: Option<T>, f: impl FnOnce(Self, T) -> Self) -> Self {
-        if let Some(t) = opt {
-            f(self, t)
-        } else {
-            self
-        }
+        if let Some(t) = opt { f(self, t) } else { self }
     }
 
     /// Allow the application of a function if the condition holds.
@@ -2694,11 +2690,7 @@ impl Style {
     ///     .apply_if(false, |s| s.margin(5.0)); // not ran
     /// ```
     pub fn apply_if(self, cond: bool, f: impl FnOnce(Self) -> Self) -> Self {
-        if cond {
-            f(self)
-        } else {
-            self
-        }
+        if cond { f(self) } else { self }
     }
 
     /// Applies a `CustomStyle` type into this style.
@@ -2888,11 +2880,7 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
     }
 
     fn apply_if(self, cond: bool, style: impl FnOnce(Self) -> Self) -> Self {
-        if cond {
-            style(self)
-        } else {
-            self
-        }
+        if cond { style(self) } else { self }
     }
     fn transition<P: StyleProp>(self, _prop: P, transition: Transition) -> Self {
         let mut self_style: Style = self.into();

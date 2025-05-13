@@ -7,12 +7,12 @@ use std::{
 };
 
 use floem_reactive::{
-    as_child_of_current_scope, create_effect, create_signal, ReadSignal, RwSignal, Scope,
-    SignalGet, SignalTrack, SignalUpdate, SignalWith, WriteSignal,
+    ReadSignal, RwSignal, Scope, SignalGet, SignalTrack, SignalUpdate, SignalWith, WriteSignal,
+    as_child_of_current_scope, create_effect, create_signal,
 };
 use peniko::kurbo::{Rect, Size};
 use smallvec::SmallVec;
-use taffy::{style::Dimension, tree::NodeId, FlexDirection};
+use taffy::{FlexDirection, style::Dimension, tree::NodeId};
 
 use crate::{
     context::ComputeLayoutCx,
@@ -22,7 +22,7 @@ use crate::{
     view::{self, IntoView, View},
 };
 
-use super::{apply_diff, diff, Diff, DiffOpAdd, FxIndexSet, HashRun};
+use super::{Diff, DiffOpAdd, FxIndexSet, HashRun, apply_diff, diff};
 
 pub type VirtViewFn<T> = Box<dyn Fn(T) -> (Box<dyn View>, Scope)>;
 

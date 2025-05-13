@@ -3,8 +3,7 @@ use std::collections::{HashMap, HashSet};
 use muda::MenuId;
 use peniko::kurbo::{Point, Size};
 use taffy::{AvailableSpace, NodeId};
-use winit::cursor::CursorIcon;
-use winit::window::Theme;
+use winit::{cursor::CursorIcon, window::Theme};
 
 use crate::{
     context::{DragState, FrameUpdate, InteractionState},
@@ -189,14 +188,14 @@ impl AppState {
     ) -> bool {
         let screen_size_bp = self.screen_size_bp;
         let view_state = view_id.state();
-        let request_new_frame = view_state.borrow_mut().compute_style(
+
+        view_state.borrow_mut().compute_style(
             view_style,
             view_interact_state,
             screen_size_bp,
             view_class,
             context,
-        );
-        request_new_frame
+        )
     }
 
     pub fn compute_layout(&mut self) {

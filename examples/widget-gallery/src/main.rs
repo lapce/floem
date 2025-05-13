@@ -19,13 +19,14 @@ pub mod slider;
 use floem::{
     action::set_window_menu,
     event::{Event, EventListener},
-    keyboard::{Key, Modifiers, NamedKey},
+    keyboard::{Key, NamedKey},
     kurbo::Size,
     menu::*,
     muda::{AboutMetadataBuilder, PredefinedMenuItem},
     new_window,
     prelude::*,
     style::{Background, CursorStyle, Transition},
+    ui_events::keyboard::{KeyState, KeyboardEvent, Modifiers},
     window::{WindowConfig, WindowId},
 };
 
@@ -305,16 +306,18 @@ fn app_view(window_id: WindowId) -> impl IntoView {
     );
 
     view.on_event_stop(EventListener::KeyUp, move |e| {
-        if let Event::KeyUp(e) = e {
-            if e.key.logical_key == Key::Named(NamedKey::F11) {
+        if let Event::Key(KeyboardEvent {
+            state: KeyState::Up,
+            key,
+            modifiers,
+            ..
+        }) = e
+        {
+            if *key == Key::Named(NamedKey::F11) {
                 floem::action::inspect();
-            } else if e.key.logical_key == Key::Character("q".into())
-                && e.modifiers.contains(Modifiers::META)
-            {
+            } else if *key == Key::Character("q".into()) && modifiers.contains(Modifiers::META) {
                 floem::quit_app();
-            } else if e.key.logical_key == Key::Character("w".into())
-                && e.modifiers.contains(Modifiers::META)
-            {
+            } else if *key == Key::Character("w".into()) && modifiers.contains(Modifiers::META) {
                 floem::close_window(window_id);
             }
         }

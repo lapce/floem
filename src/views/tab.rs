@@ -1,6 +1,6 @@
 use std::{hash::Hash, marker::PhantomData};
 
-use floem_reactive::{as_child_of_current_scope, create_effect, Scope};
+use floem_reactive::{Scope, as_child_of_current_scope, create_effect};
 use smallvec::SmallVec;
 use taffy::style::Display;
 
@@ -11,7 +11,7 @@ use crate::{
     view::{IntoView, View},
 };
 
-use super::{apply_diff, diff, Diff, DiffOpAdd, FxIndexSet, HashRun};
+use super::{Diff, DiffOpAdd, FxIndexSet, HashRun, apply_diff, diff};
 
 type ViewFn<T> = Box<dyn Fn(T) -> (Box<dyn View>, Scope)>;
 

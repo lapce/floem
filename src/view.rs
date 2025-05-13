@@ -49,6 +49,7 @@ use std::any::Any;
 use taffy::tree::NodeId;
 
 use crate::{
+    Renderer,
     app_state::AppState,
     context::{ComputeLayoutCx, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx},
     event::{Event, EventPropagation},
@@ -58,8 +59,7 @@ use crate::{
         LayoutProps, Style, StyleClassRef,
     },
     view_state::ViewStyleProps,
-    views::{dyn_view, DynamicView},
-    Renderer,
+    views::{DynamicView, dyn_view},
 };
 
 /// type erased [`View`]
