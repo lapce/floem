@@ -200,6 +200,46 @@ pub fn create_signal_from_channel<T: Send + 'static>(rx: Receiver<T>) -> ReadSig
     read
 }
 
+/// this might miss values
+pub fn create_nonblocking_signal_from_channel<T: Send + 'static>(
+    rx: Receiver<T>,
+) -> ReadSignal<Option<T>> {
+    let cx = Scope::new();
+    let trigger = with_scope(cx, ExtSendTrigger::new);
+
+    let channel_closed = cx.create_rw_signal(false);
+    let (read, write) = cx.create_signal(None);
+    let data = Arc::new(Mutex::new(VecDeque::new()));
+
+    {
+        let data = data.clone();
+        cx.create_effect(move |_| {
+            trigger.track();
+            while let Some(Some(value)) = data.try_lock().map(|mut i| i.pop_front()) {
+                write.set(value);
+            }
+
+            if channel_closed.get() {
+                cx.dispose();
+            }
+        });
+    }
+
+    let send = create_ext_action(cx, move |_| {
+        channel_closed.set(true);
+    });
+
+    std::thread::spawn(move || {
+        while let Ok(event) = rx.recv() {
+            data.lock().push_back(Some(event));
+            EXT_EVENT_HANDLER.add_trigger(trigger);
+        }
+        send(());
+    });
+
+    read
+}
+
 #[cfg(feature = "tokio")]
 pub fn create_signal_from_tokio_channel<T: Send + 'static>(
     mut rx: tokio::sync::mpsc::UnboundedReceiver<T>,

@@ -27,6 +27,7 @@ pub(crate) struct Runtime {
     pub(crate) contexts: RefCell<HashMap<TypeId, Box<dyn Any>>>,
     pub(crate) batching: Cell<bool>,
     pub(crate) pending_effects: RefCell<SmallVec<[Rc<dyn EffectTrait>; 10]>>,
+    pub(crate) hot_patched_effects: RefCell<HashMap<Id, u64>>,
 }
 
 impl Default for Runtime {
@@ -45,6 +46,7 @@ impl Runtime {
             contexts: Default::default(),
             batching: Cell::new(false),
             pending_effects: RefCell::new(SmallVec::new()),
+            hot_patched_effects: RefCell::new(HashMap::new()),
         }
     }
 
@@ -65,4 +67,47 @@ impl Runtime {
             run_effect(effect);
         }
     }
+}
+
+pub(crate) fn register_effect<T: EffectTrait + 'static>(effect: Rc<T>) {
+    RUNTIME.with(|runtime| {
+        let Ok(mut hot_patched_effects) = runtime.hot_patched_effects.try_borrow_mut() else {
+            return;
+        };
+        let effect_id = effect.id();
+        let current_ptr = effect.hot_fn_ptr();
+        hot_patched_effects.insert(effect_id, current_ptr);
+    });
+}
+
+pub fn hotpatch() {
+    RUNTIME.with(|runtime| {
+        let Ok(mut hot_patched_effects) = runtime.hot_patched_effects.try_borrow_mut() else {
+            return;
+        };
+        println!("Starting hotpatch");
+        let mut effects = HashMap::new();
+        for signal in runtime.signals.borrow().values() {
+            for effect in signal.subscribers.borrow().values() {
+                if Some(effect.id()) != runtime.current_effect.borrow().as_ref().map(|v| v.id()) {
+                    effects.insert(effect.id(), effect.clone());
+                }
+            }
+        }
+        for effect in effects.values() {
+            let effect_id = effect.id();
+            let new_ptr = effect.hot_fn_ptr();
+            if let Some(current_ptr) = hot_patched_effects.get(&effect_id) {
+                if new_ptr != *current_ptr {
+                    dbg!("different pointer");
+                    hot_patched_effects.insert(effect_id, new_ptr);
+                    effect.run();
+                } else {
+                }
+            } else {
+                hot_patched_effects.insert(effect_id, new_ptr);
+            }
+        }
+        println!("Finished hotpatch");
+    });
 }

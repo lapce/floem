@@ -41,6 +41,7 @@ parking_lot = { version = "0.12.1" }
 swash = { version = "0.1.17" }
 muda = { git = "https://github.com/tauri-apps/muda", rev = "8e986af3cea96a729413abc75c3702dec3990bd2", default-features = false }
 winit = { git = "https://github.com/rust-windowing/winit", rev = "ee245c569d65fdeacf705ee5eedb564508d10ebe" }
+dioxus-devtools = "=0.7.0-alpha.0"
 
 [dependencies]
 slotmap = "1.0.7"
@@ -81,6 +82,9 @@ im = { workspace = true }
 winit = { workspace = true }
 futures = { version = "0.3.30", optional = true }
 crossbeam = { version = "0.8", optional = true }
+tungstenite = "0.26.2"
+serde_json = "1.0.140"
+dioxus-devtools = {workspace = true}
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
 muda = { workspace = true }
@@ -148,3 +152,21 @@ rfd-tokio = ["dep:rfd", "rfd/tokio"]
 futures = ["dep:futures"]
 
 crossbeam = [ "dep:crossbeam", "floem_renderer/crossbeam" ]
+
+[patch.crates-io]
+vello = { path = "../vello/vello" }
+vello_svg = {path = "../vello_svg"}
+dioxus-devtools = {path = "../dioxus/packages/devtools"}
+
+
+[profile]
+
+[profile.wasm-dev]
+inherits = "dev"
+opt-level = 1
+
+[profile.server-dev]
+inherits = "dev"
+
+[profile.android-dev]
+inherits = "dev"
