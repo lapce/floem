@@ -333,10 +333,13 @@ impl View for Label {
                     else {
                         return EventPropagation::Continue;
                     };
-                    self.selection_state = SelectionState::Selecting(start, pme.pos);
-                    self.id.request_active();
-                    self.id.request_focus();
-                    self.id.request_layout();
+                    // this check is here to make it so that text selection doesn't eat pointer events on very small move events
+                    if start.distance(pme.pos).abs() > 2. {
+                        self.selection_state = SelectionState::Selecting(start, pme.pos);
+                        self.id.request_active();
+                        self.id.request_focus();
+                        self.id.request_layout();
+                    }
                 }
             }
             Event::PointerUp(_) => {
