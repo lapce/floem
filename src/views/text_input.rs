@@ -138,11 +138,13 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
             id.update_state((text, is_focused));
             set_ime_allowed(is_focused);
 
-            let rect = id.layout_rect();
-            set_ime_cursor_area(
-                Point::new(rect.x0, rect.y0),
-                id.get_size().unwrap_or(Size::ZERO),
-            );
+            if is_focused {
+                let rect = id.layout_rect();
+                set_ime_cursor_area(
+                    Point::new(rect.x0, rect.y0),
+                    id.get_size().unwrap_or(Size::ZERO),
+                );
+            }
         });
     }
 
