@@ -704,8 +704,10 @@ pub(crate) fn paint_border(
             }
             BorderPathEvent::NewStroke(stroke) => {
                 // Render current path with previous stroke if any
-                if !current_path.is_empty() {
+                if !current_path.is_empty() && stroke.0.width > 0. {
                     cx.stroke(&current_path.as_slice(), &stroke.1, &stroke.0);
+                    current_path.clear();
+                } else if stroke.0.width == 0. {
                     current_path.clear();
                 }
             }
