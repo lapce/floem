@@ -67,6 +67,7 @@ pub(crate) enum UserEvent {
     },
 }
 
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum AppUpdateEvent {
     NewWindow {
         window_creation: WindowCreation,

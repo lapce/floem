@@ -656,11 +656,7 @@ impl Editor {
 
         let new_line = if (line + 1) as f64 * line_height + line_height > bottom {
             let line = (bottom / line_height).floor() as usize;
-            if line > 2 {
-                line - 2
-            } else {
-                0
-            }
+            line.saturating_sub(2)
         } else if line as f64 * line_height - line_height < top {
             let line = (top / line_height).ceil() as usize;
             line + 1
