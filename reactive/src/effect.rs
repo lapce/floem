@@ -1,8 +1,11 @@
-use std::{any::Any, cell::RefCell, collections::HashSet, marker::PhantomData, mem, rc::Rc};
+use std::{
+    any::Any, cell::RefCell, collections::HashSet, marker::PhantomData, mem, rc::Rc,
+    sync::atomic::AtomicU64,
+};
 
 use crate::{
     id::Id,
-    runtime::RUNTIME,
+    runtime::{register_effect, RUNTIME},
     scope::{with_scope, Scope},
     signal::NotThreadSafe,
 };
@@ -12,6 +15,8 @@ pub(crate) trait EffectTrait {
     fn run(&self) -> bool;
     fn add_observer(&self, id: Id);
     fn clear_observers(&self) -> HashSet<Id>;
+    fn hot_fn_ptr(&self) -> u64;
+    fn name(&self) -> &'static str;
 }
 
 struct Effect<T, F>
@@ -55,6 +60,7 @@ where
         observers: RefCell::new(HashSet::default()),
         ts: PhantomData,
     });
+    register_effect(effect.clone());
     id.set_scope();
 
     run_initial_effect(effect);
@@ -109,6 +115,7 @@ where
         value: RefCell::new(None),
         observers: RefCell::new(HashSet::default()),
     });
+    register_effect(effect.clone());
     id.set_scope();
 
     run_initial_updater_effect(effect)
@@ -195,10 +202,13 @@ where
         let effect_scope = Scope(effect_id, PhantomData);
         let (result, new_value) = with_scope(effect_scope, || {
             effect_scope.track();
-            (effect.compute)(None)
+            // Wrap the compute function in HotFn for hot-reloading
+            let compute_fn = &effect.compute;
+            let mut hot_fn = dioxus_devtools::subsecond::HotFn::current(|| compute_fn(None));
+            hot_fn.call(())
         });
 
-        // set new value
+        // Set new value
         *effect.value.borrow_mut() = Some(new_value);
 
         *runtime.current_effect.borrow_mut() = None;
@@ -227,18 +237,21 @@ where
     T: 'static,
     F: Fn(Option<T>) -> T,
 {
+    fn name(&self) -> &'static str {
+        "Effect"
+    }
+
     fn id(&self) -> Id {
         self.id
     }
 
     fn run(&self) -> bool {
+        // Wrap the effect's function in HotFn for hot-reloading
+        let compute_fn = &self.f;
+        let mut hot_fn = dioxus_devtools::subsecond::HotFn::current(compute_fn);
         let curr_value = self.value.borrow_mut().take();
-
-        // run the effect
-        let new_value = (self.f)(curr_value);
-
+        let new_value = hot_fn.call((curr_value,)); // Execute the hot-reloadable function
         *self.value.borrow_mut() = Some(new_value);
-
         true
     }
 
@@ -248,6 +261,12 @@ where
 
     fn clear_observers(&self) -> HashSet<Id> {
         mem::take(&mut *self.observers.borrow_mut())
+    }
+
+    fn hot_fn_ptr(&self) -> u64 {
+        let compute_fn = &self.f;
+        let hot_fn = dioxus_devtools::subsecond::HotFn::current(compute_fn);
+        hot_fn.ptr_address()
     }
 }
 
@@ -257,17 +276,21 @@ where
     C: Fn(Option<T>) -> (I, T),
     U: Fn(I, T) -> T,
 {
+    fn name(&self) -> &'static str {
+        "UpdaterEffect"
+    }
+
     fn id(&self) -> Id {
         self.id
     }
 
     fn run(&self) -> bool {
+        // Wrap the compute function in HotFn for hot-reloading
+        let compute_fn = &self.compute;
+        let mut hot_fn = dioxus_devtools::subsecond::HotFn::current(compute_fn);
         let curr_value = self.value.borrow_mut().take();
-
-        // run the effect
-        let (i, t) = (self.compute)(curr_value);
-        let new_value = (self.on_change)(i, t);
-
+        let (i, t) = hot_fn.call((curr_value,)); // Execute the hot-reloadable function
+        let new_value = (self.on_change)(i, t); // Apply the update
         *self.value.borrow_mut() = Some(new_value);
         true
     }
@@ -278,6 +301,14 @@ where
 
     fn clear_observers(&self) -> HashSet<Id> {
         mem::take(&mut *self.observers.borrow_mut())
+    }
+
+    fn hot_fn_ptr(&self) -> u64 {
+        let compute_fn = &self.compute;
+        let hot_fn = dioxus_devtools::subsecond::HotFn::current(compute_fn);
+        hot_fn.ptr_address()
+        // static COUNT: AtomicU64 = AtomicU64::new(0);
+        // COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     }
 }
 
@@ -313,6 +344,7 @@ impl SignalTracker {
             observers: RefCell::new(HashSet::default()),
             on_change: self.on_change.clone(),
         });
+        register_effect(tracking_effect.clone());
 
         RUNTIME.with(|runtime| {
             *runtime.current_effect.borrow_mut() = Some(tracking_effect.clone());
@@ -339,12 +371,19 @@ struct TrackingEffect {
 }
 
 impl EffectTrait for TrackingEffect {
+    fn name(&self) -> &'static str {
+        "TrackingEffect"
+    }
+
     fn id(&self) -> Id {
         self.id
     }
 
     fn run(&self) -> bool {
-        (self.on_change)();
+        // Wrap the on_change function in HotFn for hot-reloading
+        let on_change_fn = &self.on_change;
+        let mut hot_fn = dioxus_devtools::subsecond::HotFn::current(|| on_change_fn());
+        hot_fn.call(());
         true
     }
 
@@ -354,5 +393,10 @@ impl EffectTrait for TrackingEffect {
 
     fn clear_observers(&self) -> HashSet<Id> {
         mem::take(&mut *self.observers.borrow_mut())
+    }
+
+    fn hot_fn_ptr(&self) -> u64 {
+        let on_change_fn = &self.on_change;
+        dioxus_devtools::subsecond::HotFn::current(|| on_change_fn()).ptr_address()
     }
 }
