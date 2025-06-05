@@ -93,7 +93,7 @@ impl ApplicationHandle {
                     self.request_timer(timer, event_loop);
                 }
                 AppUpdateEvent::CancelTimer { timer } => {
-                    self.remove_timer(&timer);
+                    self.remove_timer(&timer, event_loop);
                 }
                 AppUpdateEvent::CaptureWindow { window_id, capture } => {
                     capture.set(self.capture_window(window_id).map(Rc::new));
@@ -493,12 +493,16 @@ impl ApplicationHandle {
         self.fire_timer(event_loop);
     }
 
-    fn remove_timer(&mut self, timer: &TimerToken) {
+    fn remove_timer(&mut self, timer: &TimerToken, event_loop: &dyn ActiveEventLoop) {
         self.timers.remove(timer);
+        if self.timers.is_empty() {
+            event_loop.set_control_flow(ControlFlow::Wait);
+        }
     }
 
     fn fire_timer(&mut self, event_loop: &dyn ActiveEventLoop) {
         if self.timers.is_empty() {
+            event_loop.set_control_flow(ControlFlow::Wait);
             return;
         }
 
