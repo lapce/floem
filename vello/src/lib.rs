@@ -18,12 +18,10 @@ use peniko::{
 use peniko::{Compose, Fill, Mix};
 use vello::kurbo::Stroke;
 use vello::util::RenderSurface;
-use vello::{AaConfig, RendererOptions, Scene};
 use vello::wgpu::Device;
+use vello::{AaConfig, RendererOptions, Scene};
 use wgpu::util::TextureBlitter;
-use wgpu::{
-    Adapter, DeviceType, Queue, TextureAspect, TextureFormat
-};
+use wgpu::{Adapter, DeviceType, Queue, TextureAspect, TextureFormat};
 
 pub struct VelloRenderer {
     device: Device,
@@ -92,7 +90,7 @@ impl VelloRenderer {
             view_formats: vec![],
             desired_maximum_frame_latency: 1,
         };
-        
+
         surface.configure(&device, &config);
 
         let target_texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -109,9 +107,9 @@ impl VelloRenderer {
             format: TextureFormat::Rgba8Unorm,
             view_formats: &[],
         });
-        
+
         let target_view = target_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        
+
         let render_surface = RenderSurface {
             surface,
             config,
@@ -119,7 +117,7 @@ impl VelloRenderer {
             format: texture_format,
             target_texture,
             target_view,
-            blitter: TextureBlitter::new(&device, texture_format)
+            blitter: TextureBlitter::new(&device, texture_format),
         };
 
         let scene = Scene::new();
@@ -170,7 +168,9 @@ impl VelloRenderer {
             self.surface.target_view = target_view;
             self.surface.config.width = width;
             self.surface.config.height = height;
-            self.surface.surface.configure(&self.device, &self.surface.config);
+            self.surface
+                .surface
+                .configure(&self.device, &self.surface.config);
         }
         self.window_scale = scale;
     }
@@ -184,7 +184,10 @@ impl VelloRenderer {
     }
 
     pub const fn size(&self) -> Size {
-        Size::new(self.surface.config.width as f64, self.surface.config.height as f64)
+        Size::new(
+            self.surface.config.width as f64,
+            self.surface.config.height as f64,
+        )
     }
 }
 
@@ -457,26 +460,27 @@ impl Renderer for VelloRenderer {
             self.render_capture_image()
         } else {
             if let Ok(surface_texture) = self.surface.surface.get_current_texture() {
-                
-                self.renderer.render_to_texture(
-                    &self.device,
-                    &self.queue,
-                    &self.scene,
-                    &self.surface.target_view,
-                    &vello::RenderParams {
-                        base_color: palette::css::TRANSPARENT, // Background color
-                        width: self.surface.config.width,
-                        height: self.surface.config.height,
-                        antialiasing_method: vello::AaConfig::Msaa16,
-                    },
-                )
-                .unwrap();
+                self.renderer
+                    .render_to_texture(
+                        &self.device,
+                        &self.queue,
+                        &self.scene,
+                        &self.surface.target_view,
+                        &vello::RenderParams {
+                            base_color: palette::css::TRANSPARENT, // Background color
+                            width: self.surface.config.width,
+                            height: self.surface.config.height,
+                            antialiasing_method: vello::AaConfig::Msaa16,
+                        },
+                    )
+                    .unwrap();
 
                 // Perform the copy
-                let mut encoder = self.device
-                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                        label: Some("Surface Blit"),
-                    });
+                let mut encoder =
+                    self.device
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("Surface Blit"),
+                        });
 
                 self.surface.blitter.copy(
                     &self.device,
@@ -538,7 +542,7 @@ impl VelloRenderer {
             mip_level_count: None,
             base_array_layer: 0,
             array_layer_count: None,
-            usage: None // TODO
+            usage: None, // TODO
         });
 
         self.renderer
