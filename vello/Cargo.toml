@@ -11,6 +11,6 @@ peniko = { workspace = true }
 wgpu = { workspace = true }
 
 anyhow = "1.0.69"
-vello = "0.4.0"
-vello_svg = "0.6.0"
+vello = "0.5.0"
+vello_svg = "0.7.0"
 floem_renderer = { path = "../renderer", version = "0.2.0" }

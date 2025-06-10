@@ -4,7 +4,7 @@ use floem::{
     peniko::Color,
     reactive::{create_signal, SignalGet, SignalUpdate},
     unit::UnitExt,
-    views::{dyn_view, Decorators, LabelClass, LabelCustomStyle},
+    views::{dyn_view, Decorators, LabelCustomStyle},
     IntoView, View,
 };
 
