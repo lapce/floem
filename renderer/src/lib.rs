@@ -38,7 +38,7 @@ pub trait Renderer {
     fn stroke<'b, 's>(
         &mut self,
         shape: &impl Shape,
-        brush: impl Into<BrushRef<'b>>,
+        brush: impl Into<peniko::BrushRef<'b>>,
         stroke: &'s Stroke,
     );
 

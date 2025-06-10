@@ -13,5 +13,5 @@ peniko = { workspace = true }
 wgpu = { workspace = true }
 
 anyhow = "1.0.69"
-floem-vger-rs = { git = "https://github.com/lapce/vger-rs.git", rev = "b2441cc85b1d555a3c74e2cdced08382460759df", version = "0.3.1", package = "floem-vger" }
+floem-vger-rs = { git = "D:/tests/vger-rs", rev = "b6d3277bd58ddfcee4d55dbaba268c17f79f708e", package = "floem-vger" }
 floem_renderer = { path = "../renderer", version = "0.2.0" }

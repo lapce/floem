@@ -17,16 +17,20 @@ use peniko::{
 };
 use peniko::{Compose, Fill, Mix};
 use vello::kurbo::Stroke;
-use vello::{AaConfig, RendererOptions, Scene};
+// use vello::util::RenderSurface;
+use vello::{AaConfig, Error, RendererOptions, Scene};
+use vello::wgpu::Device;
+use wgpu::util::TextureBlitter;
 use wgpu::{
-    Adapter, Device, DeviceType, Queue, Surface, SurfaceConfiguration, TextureAspect, TextureFormat,
+    Adapter, DeviceType, Queue, Surface, SurfaceConfiguration, TextureAspect, TextureFormat
 };
 
 pub struct VelloRenderer {
-    device: Arc<Device>,
+    device: Device,
     #[allow(unused)]
     queue: Arc<Queue>,
     surface: Surface<'static>,
+    // rsurface: RenderSurface<'static>,
     renderer: vello::Renderer,
     scene: Scene,
     alt_scene: Option<Scene>,
@@ -70,7 +74,6 @@ impl VelloRenderer {
             ));
         }
 
-        let device = Arc::new(device);
         let queue = Arc::new(queue);
 
         let surface_caps = surface.get_capabilities(&adapter);
@@ -82,6 +85,7 @@ impl VelloRenderer {
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            //  | TextureUsages::TEXTURE_BINDING,
             format: texture_format,
             width,
             height,
@@ -96,7 +100,8 @@ impl VelloRenderer {
         let renderer = vello::Renderer::new(
             &device,
             RendererOptions {
-                surface_format: Some(texture_format),
+                // surface_format: Some(texture_format),
+                pipeline_cache: None,
                 use_cpu: false,
                 antialiasing_support: vello::AaSupport::all(),
                 num_init_threads: Some(NonZero::new(1).unwrap()),
@@ -411,24 +416,108 @@ impl Renderer for VelloRenderer {
         if self.capture {
             self.render_capture_image()
         } else {
-            if let Ok(frame) = self.surface.get_current_texture() {
-                // Render the scene using Vello's `render_to_surface` function
-                self.renderer
-                    .render_to_surface(
-                        &self.device,
-                        &self.queue,
-                        &self.scene,
-                        &frame,
-                        &vello::RenderParams {
-                            base_color: palette::css::BLACK, // Background color
-                            width: self.config.width,
-                            height: self.config.height,
-                            antialiasing_method: vello::AaConfig::Area,
-                        },
-                    )
-                    .unwrap();
+            if let Ok(surface_texture) = self.surface.get_current_texture() {
 
-                frame.present();
+                let texture_desc = wgpu::TextureDescriptor {
+                    size: wgpu::Extent3d {
+                        width: self.config.width,
+                        height: self.config.height,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::TEXTURE_BINDING
+                        // | wgpu::TextureUsages::COPY_SRC
+                        | wgpu::TextureUsages::STORAGE_BINDING,
+                    label: Some("render_texture"),
+                    view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
+                };
+                
+                let texture = self.device.create_texture(&texture_desc);
+
+                let view = texture.create_view(&wgpu::TextureViewDescriptor {
+                    label: Some("texture_view"),
+                    format: Some(TextureFormat::Rgba8Unorm),
+                    dimension: Some(wgpu::TextureViewDimension::D2),
+                    aspect: TextureAspect::default(),
+                    base_mip_level: 0,
+                    mip_level_count: None,
+                    base_array_layer: 0,
+                    array_layer_count: None,
+                    usage: None // TODO
+                });
+                
+                self.renderer.render_to_texture(
+                    &self.device,
+                    &self.queue,
+                    &self.scene,
+                    &view,
+                    &vello::RenderParams {
+                        base_color: palette::css::TRANSPARENT, // Background color
+                        width: self.config.width,
+                        height: self.config.height,
+                        antialiasing_method: vello::AaConfig::Msaa16,
+                    },
+                )
+                .unwrap();
+                
+                // frame.present();
+
+                //  // Get a handle to the device
+                // let device_handle = &self.context.devices[surface.dev_id];
+
+                // // Render to a texture, which we will later copy into the surface
+                // self.renderers[surface.dev_id]
+                //     .as_mut()
+                //     .unwrap()
+                //     .render_to_texture(
+                //         &device_handle.device,
+                //         &device_handle.queue,
+                //         &self.scene,
+                //         &surface.target_view,
+                //         &vello::RenderParams {
+                //             base_color: palette::css::BLACK, // Background color
+                //             width,
+                //             height,
+                //             antialiasing_method: AaConfig::Msaa16,
+                //         },
+                //     )
+                //     .expect("failed to render to surface");
+                let capabilities = self.surface.get_capabilities(&self.adapter);
+                let format = capabilities
+                    .formats
+                    .into_iter()
+                    .find(|it| matches!(it, TextureFormat::Rgba8Unorm | TextureFormat::Bgra8Unorm))
+                    .ok_or(Error::UnsupportedSurfaceFormat).unwrap();
+
+                let blitter = TextureBlitter::new(&self.device, format);
+
+                // // Get the surface's texture
+                // let surface_texture = self.surface
+                //     .get_current_texture()
+                //     .expect("failed to get surface texture");
+
+                // Perform the copy
+                let mut encoder = self.device
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        label: Some("Surface Blit"),
+                    });
+                blitter.copy(
+                    &self.device,
+                    &mut encoder,
+                    &view,
+                    &surface_texture
+                        .texture
+                        .create_view(&wgpu::TextureViewDescriptor::default()),
+                );
+                self.queue.submit([encoder.finish()]);
+                // // Queue the texture to be presented on the surface
+                surface_texture.present();
+
+                self.device.poll(wgpu::Maintain::Poll);
             }
             None
         }
@@ -476,6 +565,7 @@ impl VelloRenderer {
             mip_level_count: None,
             base_array_layer: 0,
             array_layer_count: None,
+            usage: None // TODO
         });
 
         self.renderer
@@ -508,9 +598,9 @@ impl VelloRenderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         encoder.copy_texture_to_buffer(
             texture.as_image_copy(),
-            wgpu::ImageCopyBuffer {
+            wgpu::TexelCopyBufferInfo {
                 buffer: &buffer,
-                layout: wgpu::ImageDataLayout {
+                layout: wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(bytes_per_row),
                     rows_per_image: None,
