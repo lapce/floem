@@ -286,8 +286,7 @@ impl<T: Clone> Dropdown<T> {
     where
         T: std::fmt::Display,
     {
-        const CHEVRON_DOWN: &str =
-r##"
+        const CHEVRON_DOWN: &str = r##"
 <svg
    width="12"
    height="12"
