@@ -26,12 +26,11 @@ use wgpu::{Adapter, DeviceType, Queue, TextureAspect, TextureFormat};
 pub struct VelloRenderer {
     device: Device,
     #[allow(unused)]
-    queue: Arc<Queue>,
+    queue: Queue,
     surface: RenderSurface<'static>,
     renderer: vello::Renderer,
     scene: Scene,
     alt_scene: Option<Scene>,
-    // config: SurfaceConfiguration,
     window_scale: f64,
     transform: Affine,
     capture: bool,
@@ -70,8 +69,6 @@ impl VelloRenderer {
                 "adapter doesn't support required downlevel flags"
             ));
         }
-
-        let queue = Arc::new(queue);
 
         let surface_caps = surface.get_capabilities(&adapter);
         let texture_format = surface_caps
@@ -493,8 +490,6 @@ impl Renderer for VelloRenderer {
                 self.queue.submit([encoder.finish()]);
                 // Queue the texture to be presented on the surface
                 surface_texture.present();
-
-                self.device.poll(wgpu::Maintain::Poll);
             }
             None
         }
@@ -542,7 +537,7 @@ impl VelloRenderer {
             mip_level_count: None,
             base_array_layer: 0,
             array_layer_count: None,
-            usage: None, // TODO
+            ..Default::default()
         });
 
         self.renderer
