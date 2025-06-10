@@ -17,7 +17,7 @@ cosmic-text = { version = "0.12.1", features = ["shape-run-cache"] }
 winit = { workspace = true }
 wgpu = { workspace = true }
 crossbeam = { version = "0.8", optional = true }
-futures = "0.3.26"
+futures = "0.3.31"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = { version = "0.4" }

@@ -17,24 +17,23 @@ use peniko::{
 };
 use peniko::{Compose, Fill, Mix};
 use vello::kurbo::Stroke;
-// use vello::util::RenderSurface;
-use vello::{AaConfig, Error, RendererOptions, Scene};
+use vello::util::RenderSurface;
+use vello::{AaConfig, RendererOptions, Scene};
 use vello::wgpu::Device;
 use wgpu::util::TextureBlitter;
 use wgpu::{
-    Adapter, DeviceType, Queue, Surface, SurfaceConfiguration, TextureAspect, TextureFormat
+    Adapter, DeviceType, Queue, TextureAspect, TextureFormat
 };
 
 pub struct VelloRenderer {
     device: Device,
     #[allow(unused)]
     queue: Arc<Queue>,
-    surface: Surface<'static>,
-    // rsurface: RenderSurface<'static>,
+    surface: RenderSurface<'static>,
     renderer: vello::Renderer,
     scene: Scene,
     alt_scene: Option<Scene>,
-    config: SurfaceConfiguration,
+    // config: SurfaceConfiguration,
     window_scale: f64,
     transform: Affine,
     capture: bool,
@@ -85,7 +84,6 @@ impl VelloRenderer {
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            //  | TextureUsages::TEXTURE_BINDING,
             format: texture_format,
             width,
             height,
@@ -94,13 +92,40 @@ impl VelloRenderer {
             view_formats: vec![],
             desired_maximum_frame_latency: 1,
         };
+        
         surface.configure(&device, &config);
+
+        let target_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
+            format: TextureFormat::Rgba8Unorm,
+            view_formats: &[],
+        });
+        
+        let target_view = target_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        
+        let render_surface = RenderSurface {
+            surface,
+            config,
+            dev_id: 0,
+            format: texture_format,
+            target_texture,
+            target_view,
+            blitter: TextureBlitter::new(&device, texture_format)
+        };
 
         let scene = Scene::new();
         let renderer = vello::Renderer::new(
             &device,
             RendererOptions {
-                // surface_format: Some(texture_format),
                 pipeline_cache: None,
                 use_cpu: false,
                 antialiasing_support: vello::AaSupport::all(),
@@ -112,12 +137,11 @@ impl VelloRenderer {
         Ok(Self {
             device,
             queue,
-            surface,
+            surface: render_surface,
             renderer,
             scene,
             alt_scene: None,
             window_scale: scale,
-            config,
             transform: Affine::IDENTITY,
             capture: false,
             font_cache: HashMap::new(),
@@ -126,15 +150,32 @@ impl VelloRenderer {
     }
 
     pub fn resize(&mut self, width: u32, height: u32, scale: f64) {
-        if width != self.config.width || height != self.config.height {
-            self.config.width = width;
-            self.config.height = height;
-            self.surface.configure(&self.device, &self.config);
+        if width != self.surface.config.width || height != self.surface.config.height {
+            let target_texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: None,
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
+                format: TextureFormat::Rgba8Unorm,
+                view_formats: &[],
+            });
+            let target_view = target_texture.create_view(&wgpu::TextureViewDescriptor::default());
+            self.surface.target_texture = target_texture;
+            self.surface.target_view = target_view;
+            self.surface.config.width = width;
+            self.surface.config.height = height;
+            self.surface.surface.configure(&self.device, &self.surface.config);
         }
         self.window_scale = scale;
     }
 
-    pub fn set_scale(&mut self, scale: f64) {
+    pub const fn set_scale(&mut self, scale: f64) {
         self.window_scale = scale;
     }
 
@@ -143,7 +184,7 @@ impl VelloRenderer {
     }
 
     pub const fn size(&self) -> Size {
-        Size::new(self.config.width as f64, self.config.height as f64)
+        Size::new(self.surface.config.width as f64, self.surface.config.height as f64)
     }
 }
 
@@ -402,7 +443,6 @@ impl Renderer for VelloRenderer {
         self.scene.push_layer(
             vello::peniko::BlendMode::default(),
             1.,
-            // Affine::IDENTITY,
             self.transform.then_scale(self.window_scale),
             shape,
         );
@@ -416,105 +456,38 @@ impl Renderer for VelloRenderer {
         if self.capture {
             self.render_capture_image()
         } else {
-            if let Ok(surface_texture) = self.surface.get_current_texture() {
-
-                let texture_desc = wgpu::TextureDescriptor {
-                    size: wgpu::Extent3d {
-                        width: self.config.width,
-                        height: self.config.height,
-                        depth_or_array_layers: 1,
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format: wgpu::TextureFormat::Rgba8Unorm,
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                        | wgpu::TextureUsages::TEXTURE_BINDING
-                        // | wgpu::TextureUsages::COPY_SRC
-                        | wgpu::TextureUsages::STORAGE_BINDING,
-                    label: Some("render_texture"),
-                    view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
-                };
-                
-                let texture = self.device.create_texture(&texture_desc);
-
-                let view = texture.create_view(&wgpu::TextureViewDescriptor {
-                    label: Some("texture_view"),
-                    format: Some(TextureFormat::Rgba8Unorm),
-                    dimension: Some(wgpu::TextureViewDimension::D2),
-                    aspect: TextureAspect::default(),
-                    base_mip_level: 0,
-                    mip_level_count: None,
-                    base_array_layer: 0,
-                    array_layer_count: None,
-                    usage: None // TODO
-                });
+            if let Ok(surface_texture) = self.surface.surface.get_current_texture() {
                 
                 self.renderer.render_to_texture(
                     &self.device,
                     &self.queue,
                     &self.scene,
-                    &view,
+                    &self.surface.target_view,
                     &vello::RenderParams {
                         base_color: palette::css::TRANSPARENT, // Background color
-                        width: self.config.width,
-                        height: self.config.height,
+                        width: self.surface.config.width,
+                        height: self.surface.config.height,
                         antialiasing_method: vello::AaConfig::Msaa16,
                     },
                 )
                 .unwrap();
-                
-                // frame.present();
-
-                //  // Get a handle to the device
-                // let device_handle = &self.context.devices[surface.dev_id];
-
-                // // Render to a texture, which we will later copy into the surface
-                // self.renderers[surface.dev_id]
-                //     .as_mut()
-                //     .unwrap()
-                //     .render_to_texture(
-                //         &device_handle.device,
-                //         &device_handle.queue,
-                //         &self.scene,
-                //         &surface.target_view,
-                //         &vello::RenderParams {
-                //             base_color: palette::css::BLACK, // Background color
-                //             width,
-                //             height,
-                //             antialiasing_method: AaConfig::Msaa16,
-                //         },
-                //     )
-                //     .expect("failed to render to surface");
-                let capabilities = self.surface.get_capabilities(&self.adapter);
-                let format = capabilities
-                    .formats
-                    .into_iter()
-                    .find(|it| matches!(it, TextureFormat::Rgba8Unorm | TextureFormat::Bgra8Unorm))
-                    .ok_or(Error::UnsupportedSurfaceFormat).unwrap();
-
-                let blitter = TextureBlitter::new(&self.device, format);
-
-                // // Get the surface's texture
-                // let surface_texture = self.surface
-                //     .get_current_texture()
-                //     .expect("failed to get surface texture");
 
                 // Perform the copy
                 let mut encoder = self.device
                     .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                         label: Some("Surface Blit"),
                     });
-                blitter.copy(
+
+                self.surface.blitter.copy(
                     &self.device,
                     &mut encoder,
-                    &view,
+                    &self.surface.target_view,
                     &surface_texture
                         .texture
                         .create_view(&wgpu::TextureViewDescriptor::default()),
                 );
                 self.queue.submit([encoder.finish()]);
-                // // Queue the texture to be presented on the surface
+                // Queue the texture to be presented on the surface
                 surface_texture.present();
 
                 self.device.poll(wgpu::Maintain::Poll);
@@ -537,11 +510,11 @@ impl Renderer for VelloRenderer {
 impl VelloRenderer {
     fn render_capture_image(&mut self) -> Option<peniko::Image> {
         let width_align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT - 1;
-        let width = (self.config.width + width_align) & !width_align;
-        let height = self.config.height;
+        let width = (self.surface.config.width + width_align) & !width_align;
+        let height = self.surface.config.height;
         let texture_desc = wgpu::TextureDescriptor {
             size: wgpu::Extent3d {
-                width: self.config.width,
+                width: self.surface.config.width,
                 height,
                 depth_or_array_layers: 1,
             },
@@ -576,8 +549,8 @@ impl VelloRenderer {
                 &view,
                 &vello::RenderParams {
                     base_color: palette::css::BLACK, // Background color
-                    width: self.config.width * self.window_scale as u32,
-                    height: self.config.height * self.window_scale as u32,
+                    width: self.surface.config.width * self.window_scale as u32,
+                    height: self.surface.config.height * self.window_scale as u32,
                     antialiasing_method: AaConfig::Area,
                 },
             )
@@ -633,7 +606,7 @@ impl VelloRenderer {
         let buffer: Vec<u8> = slice.get_mapped_range().to_owned();
 
         let mut cursor = 0;
-        let row_size = self.config.width as usize * bytes_per_pixel as usize;
+        let row_size = self.surface.config.width as usize * bytes_per_pixel as usize;
         for _ in 0..height {
             cropped_buffer.extend_from_slice(&buffer[cursor..(cursor + row_size)]);
             cursor += bytes_per_row as usize;
@@ -642,7 +615,7 @@ impl VelloRenderer {
         Some(vello::peniko::Image::new(
             Blob::new(Arc::new(cropped_buffer)),
             vello::peniko::ImageFormat::Rgba8,
-            self.config.width,
+            self.surface.config.width,
             height,
         ))
     }

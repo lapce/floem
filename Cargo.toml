@@ -37,7 +37,7 @@ im = { version = "15.1.0" }
 resvg = { version = "0.45.1" }
 raw-window-handle = "0.6.0"
 wgpu = { version = "24.0.5" }
-parking_lot = { version = "0.12.1" }
+parking_lot = { version = "0.12.4" }
 swash = { version = "0.1.17" }
 muda = { git = "https://github.com/tauri-apps/muda", rev = "8e986af3cea96a729413abc75c3702dec3990bd2", default-features = false }
 winit = { git = "https://github.com/rust-windowing/winit", rev = "ee245c569d65fdeacf705ee5eedb564508d10ebe" }
