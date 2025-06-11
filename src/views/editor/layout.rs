@@ -43,7 +43,7 @@ impl TextLayoutLine {
         self.text
             .lines()
             .iter()
-            .flat_map(|l| l.layout_opt().as_deref())
+            .flat_map(|l| l.layout_opt())
             .flat_map(|ls| ls.iter())
             .filter(|l| !l.glyphs.is_empty())
     }
@@ -74,9 +74,7 @@ impl TextLayoutLine {
             .iter()
             .zip(self.text.lines_range().iter())
             .filter_map(|(line, line_range)| {
-                line.layout_opt()
-                    .as_deref()
-                    .map(|ls| (line, line_range, ls))
+                line.layout_opt().map(|ls| (line, line_range, ls))
             })
             .flat_map(|(line, line_range, ls)| ls.iter().map(move |l| (line, line_range, l)))
             .filter(|(_, _, l)| !l.glyphs.is_empty())

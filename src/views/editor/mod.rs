@@ -1256,10 +1256,10 @@ impl TextLayoutProvider for Editor {
             .family(&family)
             .font_size(font_size as f32)
             .line_height(LineHeightValue::Px(style.line_height(edid, line)));
-        let mut attrs_list = AttrsList::new(attrs);
+        let mut attrs_list = AttrsList::new(attrs.clone());
 
         self.es.with_untracked(|es| {
-            style.apply_attr_styles(edid, es, line, attrs, &mut attrs_list);
+            style.apply_attr_styles(edid, es, line, attrs.clone(), &mut attrs_list);
         });
 
         // Apply phantom text specific styling
@@ -1267,7 +1267,7 @@ impl TextLayoutProvider for Editor {
             let start = col + offset;
             let end = start + size;
 
-            let mut attrs = attrs;
+            let mut attrs = attrs.clone();
             if let Some(fg) = phantom.fg {
                 attrs = attrs.color(fg);
             } else {

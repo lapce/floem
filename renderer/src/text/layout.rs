@@ -127,8 +127,8 @@ impl<'b> Iterator for LayoutRunIter<'b> {
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(line) = self.text_layout.buffer.lines.get(self.line_i) {
-            let shape = line.shape_opt().as_ref()?;
-            let layout = line.layout_opt().as_ref()?;
+            let shape = line.shape_opt()?;
+            let layout = line.layout_opt()?;
             while let Some(layout_line) = layout.get(self.layout_i) {
                 self.layout_i += 1;
 

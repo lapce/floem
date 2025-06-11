@@ -162,7 +162,7 @@ impl View for RichText {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct RichSpan<'a> {
     text: &'a str,
     attrs: Attrs<'a>,

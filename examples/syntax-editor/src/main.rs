@@ -133,7 +133,7 @@ impl Styling for SyntaxHighlightingStyle<'_> {
                             &text,
                             &self.highlighter,
                         ) {
-                            let mut attr = default;
+                            let mut attr = default.clone();
                             if style.font_style.contains(FontStyle::ITALIC) {
                                 attr = attr.style(Style::Italic);
                             }

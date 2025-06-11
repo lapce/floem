@@ -148,7 +148,7 @@ impl View for EditorGutterView {
             .family(&family)
             .color(dim_color)
             .font_size(style.font_size(edid, 0) as f32);
-        let attrs_list = AttrsList::new(attrs);
+        let attrs_list = AttrsList::new(attrs.clone());
         let current_line_attrs_list = AttrsList::new(attrs.color(accent_color));
         let show_relative = editor.es.with_untracked(|es| es.modal())
             && editor.es.with_untracked(|es| es.modal_relative_line())
