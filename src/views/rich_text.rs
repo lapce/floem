@@ -167,6 +167,7 @@ pub struct RichSpan<'a> {
     text: &'a str,
     attrs: Attrs<'a>,
 }
+#[allow(clippy::wrong_self_convention)]
 impl<'a> RichSpan<'a> {
     fn to_owned(self) -> RichSpanOwned {
         let len = self.text.len();
