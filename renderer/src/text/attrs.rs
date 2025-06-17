@@ -156,7 +156,7 @@ impl<'a> Attrs<'a> {
     pub fn font_size(mut self, font_size: f32) -> Self {
         self.font_size = font_size;
         let metrics = self.get_metrics();
-        self.attrs = self.attrs.metrics(metrics).into();
+        self.attrs = self.attrs.metrics(metrics);
         self
     }
 
