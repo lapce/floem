@@ -2147,7 +2147,7 @@ mod tests {
             let attrs = Attrs::new()
                 .family(&self.font_family)
                 .font_size(font_size as f32);
-            let mut attrs_list = AttrsList::new(attrs);
+            let mut attrs_list = AttrsList::new(attrs.clone());
 
             // We don't do line styles, since they aren't relevant
 
@@ -2156,7 +2156,7 @@ mod tests {
                 let start = col + offset;
                 let end = start + size;
 
-                let mut attrs = attrs;
+                let mut attrs = attrs.clone();
                 if let Some(fg) = phantom.fg {
                     attrs = attrs.color(fg);
                 }
@@ -2263,7 +2263,7 @@ mod tests {
         for line in 0..rope_text.num_lines() {
             if let Some(text_layout) = layouts.get(font_size, line) {
                 for line in text_layout.text.lines() {
-                    let layouts = line.layout_opt().as_deref().unwrap();
+                    let layouts = line.layout_opt().unwrap();
                     for layout in layouts {
                         // Spacing
                         if layout.glyphs.is_empty() {

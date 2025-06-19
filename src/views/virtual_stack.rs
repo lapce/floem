@@ -485,13 +485,13 @@ impl<T> View for VirtualStack<T> {
                     size: match self.direction.get_untracked() {
                         FlexDirection::Column | FlexDirection::ColumnReverse => {
                             taffy::prelude::Size {
-                                width: Dimension::Auto,
-                                height: Dimension::Length(self.before_size as f32),
+                                width: Dimension::auto(),
+                                height: Dimension::length(self.before_size as f32),
                             }
                         }
                         FlexDirection::Row | FlexDirection::RowReverse => taffy::prelude::Size {
-                            width: Dimension::Length(self.before_size as f32),
-                            height: Dimension::Auto,
+                            width: Dimension::length(self.before_size as f32),
+                            height: Dimension::auto(),
                         },
                     },
                     ..Default::default()

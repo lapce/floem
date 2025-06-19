@@ -12,7 +12,7 @@ peniko = { workspace = true }
 resvg = { workspace = true }
 swash = { workspace = true }
 
-cosmic-text = { version = "0.12.1", features = ["shape-run-cache"] }
+cosmic-text = { version = "0.14.2", features = ["shape-run-cache"] }
 
 winit = { workspace = true }
 wgpu = { workspace = true }

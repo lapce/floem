@@ -62,7 +62,7 @@ pub struct AttrsOwned {
 impl AttrsOwned {
     pub fn new(attrs: Attrs) -> Self {
         Self {
-            attrs: cosmic_text::AttrsOwned::new(attrs.attrs),
+            attrs: cosmic_text::AttrsOwned::new(&attrs.attrs),
             font_size: attrs.font_size,
             line_height: attrs.line_height,
         }
@@ -78,7 +78,7 @@ impl AttrsOwned {
 }
 
 /// Text attributes
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Attrs<'a> {
     attrs: cosmic_text::Attrs<'a>,
     pub font_size: f32,
@@ -155,14 +155,16 @@ impl<'a> Attrs<'a> {
     /// Set font size
     pub fn font_size(mut self, font_size: f32) -> Self {
         self.font_size = font_size;
-        self.attrs = self.attrs.metrics(self.get_metrics());
+        let metrics = self.get_metrics();
+        self.attrs = self.attrs.metrics(metrics);
         self
     }
 
     /// Set line height
     pub fn line_height(mut self, line_height: LineHeightValue) -> Self {
         self.line_height = line_height;
-        self.attrs = self.attrs.metrics(self.get_metrics());
+        let metrics = self.get_metrics();
+        self.attrs = self.attrs.metrics(metrics);
         self
     }
 
@@ -189,7 +191,7 @@ pub struct AttrsList(pub cosmic_text::AttrsList);
 impl AttrsList {
     /// Create a new attributes list with a set of default [Attrs]
     pub fn new(defaults: Attrs) -> Self {
-        Self(cosmic_text::AttrsList::new(defaults.attrs))
+        Self(cosmic_text::AttrsList::new(&defaults.attrs))
     }
 
     /// Get the default [Attrs]
@@ -204,7 +206,7 @@ impl AttrsList {
 
     /// Add an attribute span, removes any previous matching parts of spans
     pub fn add_span(&mut self, range: Range<usize>, attrs: Attrs) {
-        self.0.add_span(range, attrs.attrs);
+        self.0.add_span(range, &attrs.attrs);
     }
 
     /// Get the attribute span for an index

@@ -192,12 +192,13 @@ impl PhantomTextLine {
             let start = col + offset;
             let end = start + size;
 
-            let mut attrs = default;
+            let mut attrs = default.clone();
             if let Some(fg) = phantom.fg {
                 attrs = attrs.color(fg);
             }
             if let Some(phantom_font_size) = phantom.font_size {
-                attrs = attrs.font_size((phantom_font_size as f32).min(attrs.font_size));
+                let font_size = attrs.font_size;
+                attrs = attrs.font_size((phantom_font_size as f32).min(font_size));
             }
 
             attrs_list.add_span(start..end, attrs);

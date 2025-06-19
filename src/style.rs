@@ -2494,10 +2494,10 @@ impl Style {
             align_self: style.align_self(),
             aspect_ratio: style.aspect_ratio(),
             border: Rect {
-                left: LengthPercentage::Length(style.border_left().0.width as f32),
-                top: LengthPercentage::Length(style.border_top().0.width as f32),
-                right: LengthPercentage::Length(style.border_right().0.width as f32),
-                bottom: LengthPercentage::Length(style.border_bottom().0.width as f32),
+                left: LengthPercentage::length(style.border_left().0.width as f32),
+                top: LengthPercentage::length(style.border_top().0.width as f32),
+                right: LengthPercentage::length(style.border_right().0.width as f32),
+                bottom: LengthPercentage::length(style.border_bottom().0.width as f32),
             },
             padding: Rect {
                 left: style.padding_left().into(),
