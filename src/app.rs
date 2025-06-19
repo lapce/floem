@@ -5,7 +5,7 @@ use crossbeam::channel::{unbounded as channel, Receiver, Sender};
 #[cfg(not(feature = "crossbeam"))]
 use std::sync::mpsc::{channel, Receiver, Sender};
 
-use floem_reactive::WriteSignal;
+use floem_reactive::{hotpatch, SignalTrack, WriteSignal};
 use parking_lot::Mutex;
 use raw_window_handle::HasDisplayHandle;
 use winit::{
@@ -19,6 +19,7 @@ use crate::{
     action::{Timer, TimerToken},
     app_handle::ApplicationHandle,
     clipboard::Clipboard,
+    ext_event::create_nonblocking_signal_from_channel,
     inspector::Capture,
     profiler::Profile,
     view::IntoView,
@@ -160,6 +161,7 @@ impl ApplicationHandler for Application {
 impl Application {
     pub fn new() -> Self {
         let event_loop = EventLoop::new().expect("can't start the event loop");
+        initialize_hot_reload();
 
         #[cfg(target_os = "macos")]
         crate::app_delegate::set_app_delegate();
@@ -231,4 +233,38 @@ impl Application {
 /// triggering the application to close gracefully.
 pub fn quit_app() {
     Application::send_proxy_event(UserEvent::QuitApp);
+}
+
+static INIT: std::sync::Once = std::sync::Once::new();
+pub fn initialize_hot_reload() {
+    use crate::reactive::create_updater;
+    use dioxus_devtools::{connect, subsecond::apply_patch, DevserverMsg};
+    INIT.call_once(|| {
+        let (tx, rx) = channel::<()>();
+        let update = create_nonblocking_signal_from_channel(rx);
+
+        connect(move |msg| {
+            if let DevserverMsg::HotReload(hot_reload_msg) = msg {
+                if let Some(jumptable) = hot_reload_msg.jump_table {
+                    unsafe {
+                        if let Err(e) = apply_patch(jumptable) {
+                            eprintln!("Hot patch application failed: {:?}", e);
+                            return;
+                        }
+                    }
+                    println!("Hot patch applied successfully!");
+                    tx.send(()).unwrap();
+                }
+            } else {
+                dbg!(msg);
+            }
+        });
+
+        create_updater(
+            move || update.track(),
+            move |_| {
+                hotpatch();
+            },
+        );
+    });
 }
