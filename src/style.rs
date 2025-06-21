@@ -1498,7 +1498,13 @@ pub enum CursorStyle {
     #[default]
     Default,
     Pointer,
+    Progress,
+    Wait,
+    Crosshair,
     Text,
+    Move,
+    Grab,
+    Grabbing,
     ColResize,
     RowResize,
     WResize,
