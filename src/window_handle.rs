@@ -1151,7 +1151,13 @@ impl WindowHandle {
         let cursor = match self.app_state.cursor {
             Some(CursorStyle::Default) => CursorIcon::Default,
             Some(CursorStyle::Pointer) => CursorIcon::Pointer,
+            Some(CursorStyle::Progress) => CursorIcon::Progress,
+            Some(CursorStyle::Wait) => CursorIcon::Wait,
+            Some(CursorStyle::Crosshair) => CursorIcon::Crosshair,
             Some(CursorStyle::Text) => CursorIcon::Text,
+            Some(CursorStyle::Move) => CursorIcon::Move,
+            Some(CursorStyle::Grab) => CursorIcon::Grab,
+            Some(CursorStyle::Grabbing) => CursorIcon::Grabbing,
             Some(CursorStyle::ColResize) => CursorIcon::ColResize,
             Some(CursorStyle::RowResize) => CursorIcon::RowResize,
             Some(CursorStyle::WResize) => CursorIcon::WResize,
