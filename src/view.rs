@@ -162,6 +162,22 @@ impl IntoView for i32 {
     }
 }
 
+impl IntoView for f32 {
+    type V = crate::views::Label;
+
+    fn into_view(self) -> Self::V {
+        crate::views::text(self)
+    }
+}
+
+impl IntoView for f64 {
+    type V = crate::views::Label;
+
+    fn into_view(self) -> Self::V {
+        crate::views::text(self)
+    }
+}
+
 impl IntoView for usize {
     type V = crate::views::Label;
 
