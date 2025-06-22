@@ -257,16 +257,21 @@ impl Renderer for VelloRenderer {
         if blur_radius > 0.0 {
             if let BrushRef::Solid(color) = brush {
                 if let Some(rounded) = path.as_rounded_rect() {
-                    let rect_radius = rounded.radii().top_left;
-                    let rect = rounded.rect();
-                    self.scene.draw_blurred_rounded_rect(
-                        self.transform.then_scale(self.window_scale),
-                        rect,
-                        color,
-                        rect_radius,
-                        blur_radius,
-                    );
-                    return;
+                    if rounded.radii().top_left == rounded.radii().top_right
+                        && rounded.radii().top_left == rounded.radii().bottom_left
+                        && rounded.radii().top_left == rounded.radii().bottom_right
+                    {
+                        let rect_radius = rounded.radii().top_left;
+                        let rect = rounded.rect();
+                        self.scene.draw_blurred_rounded_rect(
+                            self.transform.then_scale(self.window_scale),
+                            rect,
+                            color,
+                            rect_radius,
+                            blur_radius,
+                        );
+                        return;
+                    }
                 } else if let Some(rect) = path.as_rect() {
                     self.scene.draw_blurred_rounded_rect(
                         self.transform.then_scale(self.window_scale),
