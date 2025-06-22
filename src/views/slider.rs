@@ -2,17 +2,20 @@
 
 use floem_reactive::{create_updater, SignalGet, SignalUpdate};
 use peniko::color::palette;
-use peniko::kurbo::{Circle, Point, RoundedRect};
+use peniko::kurbo::{Circle, Point, RoundedRect, RoundedRectRadii};
 use peniko::Brush;
 use winit::keyboard::{Key, NamedKey};
 
-use crate::style::CustomStyle;
+use crate::style::{
+    BorderBottomLeftRadius, BorderBottomRightRadius, BorderTopLeftRadius, BorderTopRightRadius,
+    CustomStyle,
+};
 use crate::unit::Pct;
 use crate::{
     event::EventPropagation,
     id::ViewId,
     prop, prop_extractor,
-    style::{Background, BorderRadius, CustomStylable, Foreground, Height, Style},
+    style::{Background, CustomStylable, Foreground, Height, Style},
     style_class,
     unit::{PxPct, PxPctAuto},
     view::View,
@@ -46,10 +49,22 @@ style_class!(pub AccentBarClass);
 
 prop_extractor! {
     BarStyle {
-        border_radius: BorderRadius,
+        border_top_left_radius: BorderTopLeftRadius,
+        border_top_right_radius: BorderTopRightRadius,
+        border_bottom_left_radius: BorderBottomLeftRadius,
+        border_bottom_right_radius: BorderBottomRightRadius,
         color: Background,
         height: Height
 
+    }
+}
+
+fn border_radius(style: &BarStyle, size: f64) -> RoundedRectRadii {
+    RoundedRectRadii {
+        top_left: crate::view::border_radius(style.border_top_left_radius(), size),
+        top_right: crate::view::border_radius(style.border_top_right_radius(), size),
+        bottom_left: crate::view::border_radius(style.border_bottom_left_radius(), size),
+        bottom_right: crate::view::border_radius(style.border_bottom_right_radius(), size),
     }
 }
 
@@ -227,14 +242,8 @@ impl View for Slider {
             PxPctAuto::Auto => self.size.height as f64,
         };
 
-        let base_bar_radius = match self.base_bar_style.border_radius() {
-            PxPct::Px(px) => px,
-            PxPct::Pct(pct) => base_bar_height / 2. * (pct / 100.),
-        };
-        let accent_bar_radius = match self.accent_bar_style.border_radius() {
-            PxPct::Px(px) => px,
-            PxPct::Pct(pct) => accent_bar_height / 2. * (pct / 100.),
-        };
+        let base_bar_radii = border_radius(&self.base_bar_style, base_bar_height / 2.);
+        let accent_bar_radii = border_radius(&self.accent_bar_style, accent_bar_height / 2.);
 
         let mut base_bar_length = self.size.width as f64;
         if !self.style.edge_align() {
@@ -256,14 +265,14 @@ impl View for Slider {
             bar_x_start + base_bar_length,
             base_bar_y_start + base_bar_height,
         )
-        .to_rounded_rect(base_bar_radius);
+        .to_rounded_rect(base_bar_radii);
         self.accent_bar = peniko::kurbo::Rect::new(
             bar_x_start,
             accent_bar_y_start,
             self.handle_center(),
             accent_bar_y_start + accent_bar_height,
         )
-        .to_rounded_rect(accent_bar_radius);
+        .to_rounded_rect(accent_bar_radii);
 
         self.prev_percent = self.percent;
 

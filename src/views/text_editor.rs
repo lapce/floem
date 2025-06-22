@@ -116,13 +116,6 @@ impl View for TextEditor {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         cx.save();
-        let border_radius = self
-            .id
-            .state()
-            .borrow()
-            .combined_style
-            .builtin()
-            .border_radius();
         let size = self
             .id
             .get_layout()
@@ -130,13 +123,11 @@ impl View for TextEditor {
                 peniko::kurbo::Size::new(layout.size.width as f64, layout.size.height as f64)
             })
             .unwrap_or_default();
+        let border_radii =
+            crate::view::border_to_radii(&self.id.state().borrow().combined_style, size);
 
-        let radius = match border_radius {
-            crate::unit::PxPct::Px(px) => px,
-            crate::unit::PxPct::Pct(pct) => size.min_side() * (pct / 100.),
-        };
-        if radius > 0.0 {
-            let rect = size.to_rect().to_rounded_rect(radius);
+        if crate::view::radii_max(border_radii) > 0.0 {
+            let rect = size.to_rect().to_rounded_rect(border_radii);
             cx.clip(&rect);
         } else {
             cx.clip(&size.to_rect());
