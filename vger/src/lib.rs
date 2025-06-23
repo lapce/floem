@@ -354,7 +354,7 @@ impl Renderer for VgerRenderer {
                 paint,
             );
         } else {
-            for segment in shape.path_segments(0.0) {
+            for segment in shape.path_segments(0.001) {
                 match segment {
                     peniko::kurbo::PathSeg::Line(ln) => self.vger.stroke_segment(
                         self.vger_point(ln.p0),
@@ -372,7 +372,21 @@ impl Renderer for VgerRenderer {
                         );
                     }
 
-                    peniko::kurbo::PathSeg::Cubic(_) => todo!(),
+                    peniko::kurbo::PathSeg::Cubic(cubic) => {
+                        // Approximates the cubic curve (p0, p1, p2, p3) with a quadratic curve (p0, q1, p3)
+                        let q1 = ((cubic.p1.to_vec2() + cubic.p2.to_vec2()) * 3.0
+                            - cubic.p0.to_vec2()
+                            - cubic.p3.to_vec2())
+                            / 4.0;
+
+                        self.vger.stroke_bezier(
+                            self.vger_point(cubic.p0),
+                            self.vger_point(q1.to_point()),
+                            self.vger_point(cubic.p3),
+                            width,
+                            paint,
+                        );
+                    }
                 }
             }
         }
