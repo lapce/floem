@@ -466,7 +466,7 @@ impl Renderer for VgerRenderer {
     ) {
         let coeffs = self.transform.as_coeffs();
         let pos: Point = pos.into();
-        let pos = self.transform * pos;
+        let pos = Affine::scale(self.scale) * self.transform * pos;
         let scale = (coeffs[0] + coeffs[3]) / 2. * self.scale;
 
         let clip = self.clip;
