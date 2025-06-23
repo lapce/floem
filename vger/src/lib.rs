@@ -464,35 +464,34 @@ impl Renderer for VgerRenderer {
         layout: impl Iterator<Item = LayoutRun<'b>>,
         pos: impl Into<Point>,
     ) {
-        let transform = self.transform.as_coeffs();
-
-        let pos: Point = pos.into();
-        let transformed_x = transform[0] * pos.x + transform[2] * pos.y + transform[4];
-        let transformed_y = transform[1] * pos.x + transform[3] * pos.y + transform[5];
-        let pos = Point::new(transformed_x, transformed_y);
-
         let coeffs = self.transform.as_coeffs();
+        let pos: Point = pos.into();
+        let pos = self.transform * pos;
         let scale = (coeffs[0] + coeffs[3]) / 2. * self.scale;
 
         let clip = self.clip;
         for line in layout {
             if let Some(rect) = clip {
-                let y = pos.y + line.line_y as f64;
-                if y + (line.line_height as f64) < rect.y0 {
+                let y_top = pos.y + (line.line_y as f64) * scale;
+                let y_bot = y_top + (line.line_height as f64) * scale;
+                if y_bot < rect.y0 {
                     continue;
                 }
-                if y - (line.line_height as f64) > rect.y1 {
+                if y_top > rect.y1 {
                     break;
                 }
             }
+
             'line_loop: for glyph_run in line.glyphs {
-                let x = glyph_run.x + pos.x as f32;
-                let y = line.line_y + pos.y as f32;
+                let x = pos.x + (glyph_run.x as f64) * scale;
+                let y = pos.y + (line.line_y as f64) * scale;
 
                 if let Some(rect) = clip {
-                    if ((x + glyph_run.w) as f64) < rect.x0 {
+                    let w = (glyph_run.w as f64) * scale;
+                    if x + w < rect.x0 {
                         continue;
-                    } else if x as f64 > rect.x1 {
+                    }
+                    if x > rect.x1 {
                         break 'line_loop;
                     }
                 }
@@ -506,9 +505,9 @@ impl Renderer for VgerRenderer {
                     None => palette::css::BLACK,
                 };
                 if let Some(paint) = self.brush_to_paint(color) {
-                    let glyph_x = x * self.scale as f32;
-                    let glyph_y = (y * self.scale as f32).round();
-                    let font_size = (glyph_run.font_size * scale as f32).round() as u32;
+                    let glyph_x = x as f32;
+                    let glyph_y = y.round() as f32;
+                    let font_size = (glyph_run.font_size * (scale as f32)).round() as u32;
                     let (cache_key, new_x, new_y) = CacheKey::new(
                         glyph_run.font_id,
                         glyph_run.glyph_id,
@@ -640,16 +639,9 @@ impl Renderer for VgerRenderer {
         self.vger
             .scissor(self.vger_rect(rect), (radius * self.scale) as f32);
 
-        let transform = self.transform.as_coeffs();
-
-        let rect_origin = rect.origin();
-        let rect_top_left_x =
-            transform[0] * rect_origin.x + transform[2] * rect_origin.y + transform[4];
-        let rect_top_left_y =
-            transform[1] * rect_origin.x + transform[3] * rect_origin.y + transform[5];
-        let transformed_origin = Point::new(rect_top_left_x, rect_top_left_y);
-
-        let transformed_rect = rect.with_origin(transformed_origin);
+        let p0 = Point::new(rect.x0, rect.y0);
+        let p1 = Point::new(rect.x1, rect.y1);
+        let transformed_rect = Rect::from_points(self.transform * p0, self.transform * p1);
 
         self.clip = Some(transformed_rect);
     }
