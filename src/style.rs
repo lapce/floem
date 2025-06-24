@@ -1671,7 +1671,10 @@ define_builtin_props!(
     BorderTop border_top nocb: StrokeWrap {} = StrokeWrap::new(0.0),
     BorderRight border_right nocb: StrokeWrap {} = StrokeWrap::new(0.0),
     BorderBottom border_bottom nocb: StrokeWrap {} = StrokeWrap::new(0.0),
-    BorderRadius border_radius: PxPct {} = PxPct::Px(0.0),
+    BorderTopLeftRadius border_top_left_radius: PxPct {} = PxPct::Px(0.0),
+    BorderTopRightRadius border_top_right_radius: PxPct {} = PxPct::Px(0.0),
+    BorderBottomLeftRadius border_bottom_left_radius: PxPct {} = PxPct::Px(0.0),
+    BorderBottomRightRadius border_bottom_right_radius: PxPct {} = PxPct::Px(0.0),
     OutlineColor outline_color: Brush {} = Brush::Solid(palette::css::TRANSPARENT),
     Outline outline nocb: StrokeWrap {} = StrokeWrap::new(0.),
     OutlineProgress outline_progress: Pct {} = Pct(100.),
@@ -2198,6 +2201,14 @@ impl Style {
     pub fn margin_vert_pct(self, margin: f64) -> Self {
         let margin = margin.pct();
         self.margin_top(margin).margin_bottom(margin)
+    }
+
+    pub fn border_radius(self, radius: impl Into<PxPct>) -> Self {
+        let radius = radius.into();
+        self.border_top_left_radius(radius)
+            .border_top_right_radius(radius)
+            .border_bottom_left_radius(radius)
+            .border_bottom_right_radius(radius)
     }
 
     pub fn inset_left_pct(self, inset: f64) -> Self {

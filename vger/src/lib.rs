@@ -326,17 +326,24 @@ impl Renderer for VgerRenderer {
                 width,
                 paint,
             );
+            return;
         } else if let Some(rect) = shape.as_rounded_rect() {
-            let min = rect.origin();
-            let max = min + rect.rect().size().to_vec2();
-            let radius = (rect.radii().top_left * scale) as f32;
-            self.vger.stroke_rect(
-                self.vger_point(min),
-                self.vger_point(max),
-                radius,
-                width,
-                paint,
-            );
+            if rect.radii().top_left == rect.radii().top_right
+                && rect.radii().top_left == rect.radii().bottom_left
+                && rect.radii().top_left == rect.radii().bottom_right
+            {
+                let min = rect.origin();
+                let max = min + rect.rect().size().to_vec2();
+                let radius = (rect.radii().top_left * scale) as f32;
+                self.vger.stroke_rect(
+                    self.vger_point(min),
+                    self.vger_point(max),
+                    radius,
+                    width,
+                    paint,
+                );
+                return;
+            }
         } else if let Some(line) = shape.as_line() {
             self.vger.stroke_segment(
                 self.vger_point(line.p0),
@@ -344,6 +351,7 @@ impl Renderer for VgerRenderer {
                 width,
                 paint,
             );
+            return;
         } else if let Some(circle) = shape.as_circle() {
             self.vger.stroke_arc(
                 self.vger_point(circle.center),
@@ -353,40 +361,41 @@ impl Renderer for VgerRenderer {
                 std::f32::consts::PI,
                 paint,
             );
-        } else {
-            for segment in shape.path_segments(0.001) {
-                match segment {
-                    peniko::kurbo::PathSeg::Line(ln) => self.vger.stroke_segment(
-                        self.vger_point(ln.p0),
-                        self.vger_point(ln.p1),
+            return;
+        }
+
+        for segment in shape.path_segments(0.001) {
+            match segment {
+                peniko::kurbo::PathSeg::Line(ln) => self.vger.stroke_segment(
+                    self.vger_point(ln.p0),
+                    self.vger_point(ln.p1),
+                    width,
+                    paint,
+                ),
+                peniko::kurbo::PathSeg::Quad(bez) => {
+                    self.vger.stroke_bezier(
+                        self.vger_point(bez.p0),
+                        self.vger_point(bez.p1),
+                        self.vger_point(bez.p2),
                         width,
                         paint,
-                    ),
-                    peniko::kurbo::PathSeg::Quad(bez) => {
-                        self.vger.stroke_bezier(
-                            self.vger_point(bez.p0),
-                            self.vger_point(bez.p1),
-                            self.vger_point(bez.p2),
-                            width,
-                            paint,
-                        );
-                    }
+                    );
+                }
 
-                    peniko::kurbo::PathSeg::Cubic(cubic) => {
-                        // Approximates the cubic curve (p0, p1, p2, p3) with a quadratic curve (p0, q1, p3)
-                        let q1 = ((cubic.p1.to_vec2() + cubic.p2.to_vec2()) * 3.0
-                            - cubic.p0.to_vec2()
-                            - cubic.p3.to_vec2())
-                            / 4.0;
+                peniko::kurbo::PathSeg::Cubic(cubic) => {
+                    // Approximates the cubic curve (p0, p1, p2, p3) with a quadratic curve (p0, q1, p3)
+                    let q1 = ((cubic.p1.to_vec2() + cubic.p2.to_vec2()) * 3.0
+                        - cubic.p0.to_vec2()
+                        - cubic.p3.to_vec2())
+                        / 4.0;
 
-                        self.vger.stroke_bezier(
-                            self.vger_point(cubic.p0),
-                            self.vger_point(q1.to_point()),
-                            self.vger_point(cubic.p3),
-                            width,
-                            paint,
-                        );
-                    }
+                    self.vger.stroke_bezier(
+                        self.vger_point(cubic.p0),
+                        self.vger_point(q1.to_point()),
+                        self.vger_point(cubic.p3),
+                        width,
+                        paint,
+                    );
                 }
             }
         }
@@ -406,57 +415,66 @@ impl Renderer for VgerRenderer {
                 paint,
                 (blur_radius * scale) as f32,
             );
+            return;
         } else if let Some(rect) = path.as_rounded_rect() {
-            self.vger.fill_rect(
-                self.vger_rect(rect.rect()),
-                (rect.radii().top_left * scale) as f32,
-                paint,
-                (blur_radius * scale) as f32,
-            );
+            if rect.radii().top_left == rect.radii().top_right
+                && rect.radii().top_left == rect.radii().bottom_left
+                && rect.radii().top_left == rect.radii().bottom_right
+            {
+                // Use `fill_rect` for uniform radii
+                self.vger.fill_rect(
+                    self.vger_rect(rect.rect()),
+                    (rect.radii().top_left * scale) as f32,
+                    paint,
+                    (blur_radius * scale) as f32,
+                );
+                return;
+            }
         } else if let Some(circle) = path.as_circle() {
             self.vger.fill_circle(
                 self.vger_point(circle.center),
                 (circle.radius * scale) as f32,
                 paint,
-            )
-        } else {
-            let mut first = true;
-            for segment in path.path_segments(0.001) {
-                match segment {
-                    peniko::kurbo::PathSeg::Line(line) => {
-                        if first {
-                            first = false;
-                            self.vger.move_to(self.vger_point(line.p0));
-                        }
-                        self.vger
-                            .quad_to(self.vger_point(line.p1), self.vger_point(line.p1));
-                    }
-                    peniko::kurbo::PathSeg::Quad(quad) => {
-                        if first {
-                            first = false;
-                            self.vger.move_to(self.vger_point(quad.p0));
-                        }
-                        self.vger
-                            .quad_to(self.vger_point(quad.p1), self.vger_point(quad.p2));
-                    }
-                    peniko::kurbo::PathSeg::Cubic(cubic) => {
-                        if first {
-                            first = false;
-                            self.vger.move_to(self.vger_point(cubic.p0));
-                        }
+            );
+            return;
+        }
 
-                        // Approximates the cubic curve (p0, p1, p2, p3) with a quadratic curve (p0, q1, p3)
-                        let q1 = ((cubic.p1.to_vec2() + cubic.p2.to_vec2()) * 3.0
-                            - cubic.p0.to_vec2()
-                            - cubic.p3.to_vec2())
-                            / 4.0;
-                        self.vger
-                            .quad_to(self.vger_point(q1.to_point()), self.vger_point(cubic.p3));
+        let mut first = true;
+        for segment in path.path_segments(0.001) {
+            match segment {
+                peniko::kurbo::PathSeg::Line(line) => {
+                    if first {
+                        first = false;
+                        self.vger.move_to(self.vger_point(line.p0));
                     }
+                    self.vger
+                        .quad_to(self.vger_point(line.p1), self.vger_point(line.p1));
+                }
+                peniko::kurbo::PathSeg::Quad(quad) => {
+                    if first {
+                        first = false;
+                        self.vger.move_to(self.vger_point(quad.p0));
+                    }
+                    self.vger
+                        .quad_to(self.vger_point(quad.p1), self.vger_point(quad.p2));
+                }
+                peniko::kurbo::PathSeg::Cubic(cubic) => {
+                    if first {
+                        first = false;
+                        self.vger.move_to(self.vger_point(cubic.p0));
+                    }
+
+                    // Approximates the cubic curve (p0, p1, p2, p3) with a quadratic curve (p0, q1, p3)
+                    let q1 = ((cubic.p1.to_vec2() + cubic.p2.to_vec2()) * 3.0
+                        - cubic.p0.to_vec2()
+                        - cubic.p3.to_vec2())
+                        / 4.0;
+                    self.vger
+                        .quad_to(self.vger_point(q1.to_point()), self.vger_point(cubic.p3));
                 }
             }
-            self.vger.fill(paint);
         }
+        self.vger.fill(paint);
     }
 
     fn draw_text_with_layout<'b>(

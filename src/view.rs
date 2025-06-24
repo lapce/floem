@@ -53,7 +53,10 @@ use crate::{
     context::{ComputeLayoutCx, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx},
     event::{Event, EventPropagation},
     id::ViewId,
-    style::{LayoutProps, Style, StyleClassRef},
+    style::{
+        BorderBottomLeftRadius, BorderBottomRightRadius, BorderTopLeftRadius, BorderTopRightRadius,
+        LayoutProps, Style, StyleClassRef,
+    },
     view_state::ViewStyleProps,
     views::{dyn_view, DynamicView},
     Renderer,
@@ -418,16 +421,38 @@ pub fn default_compute_layout(id: ViewId, cx: &mut ComputeLayoutCx) -> Option<Re
     layout_rect
 }
 
-pub(crate) fn paint_bg(cx: &mut PaintCx, style: &ViewStyleProps, size: Size) {
-    let radius = match style.border_radius() {
+pub(crate) fn border_radius(radius: crate::unit::PxPct, size: f64) -> f64 {
+    match radius {
         crate::unit::PxPct::Px(px) => px,
-        crate::unit::PxPct::Pct(pct) => size.min_side() * (pct / 100.),
-    };
-    if radius > 0.0 {
+        crate::unit::PxPct::Pct(pct) => size * (pct / 100.),
+    }
+}
+
+fn border_to_radii_view(style: &ViewStyleProps, size: Size) -> RoundedRectRadii {
+    RoundedRectRadii {
+        top_left: border_radius(style.border_top_left_radius(), size.min_side()),
+        top_right: border_radius(style.border_top_right_radius(), size.min_side()),
+        bottom_left: border_radius(style.border_bottom_left_radius(), size.min_side()),
+        bottom_right: border_radius(style.border_bottom_right_radius(), size.min_side()),
+    }
+}
+
+pub(crate) fn border_to_radii(style: &Style, size: Size) -> RoundedRectRadii {
+    RoundedRectRadii {
+        top_left: border_radius(style.get(BorderTopLeftRadius), size.min_side()),
+        top_right: border_radius(style.get(BorderTopRightRadius), size.min_side()),
+        bottom_left: border_radius(style.get(BorderBottomLeftRadius), size.min_side()),
+        bottom_right: border_radius(style.get(BorderBottomRightRadius), size.min_side()),
+    }
+}
+
+pub(crate) fn paint_bg(cx: &mut PaintCx, style: &ViewStyleProps, size: Size) {
+    let radii = border_to_radii_view(style, size);
+    if radii_max(radii) > 0.0 {
         let rect = size.to_rect();
         let width = rect.width();
         let height = rect.height();
-        if width > 0.0 && height > 0.0 && radius > width.max(height) / 2.0 {
+        if width > 0.0 && height > 0.0 && radii_min(radii) > width.max(height) / 2.0 {
             let radius = width.max(height) / 2.0;
             let circle = Circle::new(rect.center(), radius);
             let bg = match style.background() {
@@ -436,12 +461,12 @@ pub(crate) fn paint_bg(cx: &mut PaintCx, style: &ViewStyleProps, size: Size) {
             };
             cx.fill(&circle, &bg, 0.0);
         } else {
-            paint_box_shadow(cx, style, rect, Some(radius));
+            paint_box_shadow(cx, style, rect, Some(radii));
             let bg = match style.background() {
                 Some(color) => color,
                 None => return,
             };
-            let rounded_rect = rect.to_rounded_rect(radius);
+            let rounded_rect = rect.to_rounded_rect(radii);
             cx.fill(&rounded_rect, &bg, 0.0);
         }
     } else {
@@ -458,7 +483,7 @@ fn paint_box_shadow(
     cx: &mut PaintCx,
     style: &ViewStyleProps,
     rect: Rect,
-    rect_radius: Option<f64>,
+    rect_radius: Option<RoundedRectRadii>,
 ) {
     if let Some(shadow) = &style.shadow() {
         let min = rect.size().min_side();
@@ -486,7 +511,7 @@ fn paint_box_shadow(
         );
         let rect = rect.inflate(spread, spread).inset(inset);
         if let Some(radii) = rect_radius {
-            let rounded_rect = RoundedRect::from_rect(rect, radii + spread);
+            let rounded_rect = RoundedRect::from_rect(rect, radii_add(radii, spread));
             cx.fill(&rounded_rect, shadow.color, blur_radius);
         } else {
             cx.fill(&rect, shadow.color, blur_radius);
@@ -518,12 +543,9 @@ pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, size: Size
     let half_width = outlines[0].0.width / 2.0;
     let rect = size.to_rect().inflate(half_width, half_width);
 
-    let radius = match style.border_radius() {
-        crate::unit::PxPct::Px(px) => px,
-        crate::unit::PxPct::Pct(pct) => size.min_side() * (pct / 100.),
-    };
-    let adjusted_radius = (radius + half_width).max(0.0);
-    let radii = RoundedRectRadii::from_single_radius(adjusted_radius);
+    let radii = radii_map(border_to_radii_view(style, size), |r| {
+        (r + half_width).max(0.0)
+    });
 
     let mut outline_path = BorderPath::new(rect, radii);
 
@@ -557,12 +579,9 @@ pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, size: Size
     }
     let half = outline.width / 2.0;
     let rect = size.to_rect().inflate(half, half);
-    let border_radius = match style.border_radius() {
-        crate::unit::PxPct::Px(px) => px,
-        crate::unit::PxPct::Pct(pct) => size.min_side() * (pct / 100.),
-    };
+    let border_radii = border_to_radii_view(style, size);
     cx.stroke(
-        &rect.to_rounded_rect(border_radius + half),
+        &rect.to_rounded_rect(radii_add(border_radii, half)),
         &style.outline_color(),
         outline,
     );
@@ -591,14 +610,11 @@ pub(crate) fn paint_border(
     {
         let half = left.width / 2.0;
         let rect = size.to_rect().inflate(-half, -half);
-        let radius = match style.border_radius() {
-            crate::unit::PxPct::Px(px) => px,
-            crate::unit::PxPct::Pct(pct) => size.min_side() * (pct / 100.),
-        };
-        if radius > 0.0 {
-            let radius = (radius - half).max(0.0);
+        let radii = border_to_radii_view(style, size);
+        if radii_max(radii) > 0.0 {
+            let radii = radii_map(radii, |r| (r - half).max(0.0));
             cx.stroke(
-                &rect.to_rounded_rect(radius),
+                &rect.to_rounded_rect(radii),
                 &style.border_left_color(),
                 &left,
             );
@@ -677,12 +693,9 @@ pub(crate) fn paint_border(
     let half_width = borders[0].0.width / 2.0;
     let rect = size.to_rect().inflate(-half_width, -half_width);
 
-    let radius = match style.border_radius() {
-        crate::unit::PxPct::Px(px) => px,
-        crate::unit::PxPct::Pct(pct) => size.min_side() * (pct / 100.),
-    };
-    let adjusted_radius = (radius - half_width).max(0.0);
-    let radii = RoundedRectRadii::from_single_radius(adjusted_radius);
+    let radii = radii_map(border_to_radii_view(style, size), |r| {
+        (r - half_width).max(0.0)
+    });
 
     let mut border_path = BorderPath::new(rect, radii);
 
@@ -844,4 +857,35 @@ pub(crate) fn view_debug_tree(root_view: ViewId) {
                 .map(|child| (child, [active_lines.as_slice(), &[true]].concat())),
         );
     }
+}
+
+// Helper functions for futzing with RoundedRectRadii. These should probably be in kurbo.
+
+fn radii_map(radii: RoundedRectRadii, f: impl Fn(f64) -> f64) -> RoundedRectRadii {
+    RoundedRectRadii {
+        top_left: f(radii.top_left),
+        top_right: f(radii.top_right),
+        bottom_left: f(radii.bottom_left),
+        bottom_right: f(radii.bottom_right),
+    }
+}
+
+pub(crate) const fn radii_min(radii: RoundedRectRadii) -> f64 {
+    radii
+        .top_left
+        .min(radii.top_right)
+        .min(radii.bottom_left)
+        .min(radii.bottom_right)
+}
+
+pub(crate) const fn radii_max(radii: RoundedRectRadii) -> f64 {
+    radii
+        .top_left
+        .max(radii.top_right)
+        .max(radii.bottom_left)
+        .max(radii.bottom_right)
+}
+
+fn radii_add(radii: RoundedRectRadii, offset: f64) -> RoundedRectRadii {
+    radii_map(radii, |r| r + offset)
 }

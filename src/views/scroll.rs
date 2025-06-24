@@ -2,10 +2,13 @@
 //! Scroll View
 
 use floem_reactive::create_effect;
-use peniko::kurbo::{Point, Rect, Size, Stroke, Vec2};
+use peniko::kurbo::{Point, Rect, RoundedRectRadii, Size, Stroke, Vec2};
 use peniko::{Brush, Color};
 
-use crate::style::{BorderRightColor, CustomStylable, CustomStyle, OverflowX, OverflowY};
+use crate::style::{
+    BorderBottomLeftRadius, BorderBottomRightRadius, BorderRightColor, BorderTopLeftRadius,
+    BorderTopRightRadius, CustomStylable, CustomStyle, OverflowX, OverflowY,
+};
 use crate::unit::PxPct;
 use crate::{
     app_state::AppState,
@@ -13,7 +16,7 @@ use crate::{
     event::{Event, EventPropagation},
     id::ViewId,
     prop, prop_extractor,
-    style::{Background, BorderRadius, Style, StyleSelector},
+    style::{Background, Style, StyleSelector},
     style_class,
     unit::Px,
     view::{IntoView, View},
@@ -72,7 +75,10 @@ prop!(
 prop_extractor! {
     ScrollTrackStyle {
         color: Background,
-        border_radius: BorderRadius,
+        border_top_left_radius: BorderTopLeftRadius,
+        border_top_right_radius: BorderTopRightRadius,
+        border_bottom_left_radius: BorderBottomLeftRadius,
+        border_bottom_right_radius: BorderBottomRightRadius,
         border_color: BorderRightColor,
         border: Border,
         rounded: Rounded,
@@ -502,14 +508,23 @@ impl Scroll {
         let radius = |style: &ScrollTrackStyle, rect: Rect, vertical| {
             if style.rounded() {
                 if vertical {
-                    (rect.x1 - rect.x0) / 2.
+                    RoundedRectRadii::from_single_radius((rect.x1 - rect.x0) / 2.)
                 } else {
-                    (rect.y1 - rect.y0) / 2.
+                    RoundedRectRadii::from_single_radius((rect.y1 - rect.y0) / 2.)
                 }
             } else {
-                match style.border_radius() {
-                    crate::unit::PxPct::Px(px) => px,
-                    crate::unit::PxPct::Pct(pct) => rect.size().min_side() * (pct / 100.),
+                let size = rect.size().min_side();
+                RoundedRectRadii {
+                    top_left: crate::view::border_radius(style.border_top_left_radius(), size),
+                    top_right: crate::view::border_radius(style.border_top_right_radius(), size),
+                    bottom_left: crate::view::border_radius(
+                        style.border_bottom_left_radius(),
+                        size,
+                    ),
+                    bottom_right: crate::view::border_radius(
+                        style.border_bottom_right_radius(),
+                        size,
+                    ),
                 }
             }
         };
@@ -1009,13 +1024,13 @@ impl View for Scroll {
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         cx.save();
-        let radius = match self.id.state().borrow().combined_style.get(BorderRadius) {
-            crate::unit::PxPct::Px(px) => px,
-            crate::unit::PxPct::Pct(pct) => self.total_rect.size().min_side() * (pct / 100.),
-        };
+        let radii = crate::view::border_to_radii(
+            &self.id.state().borrow().combined_style,
+            self.total_rect.size(),
+        );
         if self.scroll_style.overflow_clip() {
-            if radius > 0.0 {
-                let rect = self.total_rect.to_rounded_rect(radius);
+            if crate::view::radii_max(radii) > 0.0 {
+                let rect = self.total_rect.to_rounded_rect(radii);
                 cx.clip(&rect);
             } else {
                 cx.clip(&self.total_rect);

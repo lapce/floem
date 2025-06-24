@@ -34,19 +34,16 @@ impl View for Clip {
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
         cx.save();
         let view_state = self.id.state();
-        let border_radius = view_state.borrow().combined_style.builtin().border_radius();
         let size = self
             .id
             .get_layout()
             .map(|layout| Size::new(layout.size.width as f64, layout.size.height as f64))
             .unwrap_or_default();
 
-        let radius = match border_radius {
-            crate::unit::PxPct::Px(px) => px,
-            crate::unit::PxPct::Pct(pct) => size.min_side() * (pct / 100.),
-        };
-        if radius > 0.0 {
-            let rect = size.to_rect().to_rounded_rect(radius);
+        let radii = crate::view::border_to_radii(&view_state.borrow().combined_style, size);
+
+        if crate::view::radii_max(radii) > 0.0 {
+            let rect = size.to_rect().to_rounded_rect(radii);
             cx.clip(&rect);
         } else {
             cx.clip(&size.to_rect());

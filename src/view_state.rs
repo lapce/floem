@@ -8,9 +8,10 @@ use crate::{
     prop_extractor,
     responsive::ScreenSizeBp,
     style::{
-        Background, BorderBottomColor, BorderLeftColor, BorderRadius, BorderRightColor,
-        BorderTopColor, BoxShadowProp, LayoutProps, Outline, OutlineColor, Style, StyleClassRef,
-        StyleSelectors,
+        Background, BorderBottomColor, BorderBottomLeftRadius, BorderBottomRightRadius,
+        BorderLeftColor, BorderRightColor, BorderTopColor, BorderTopLeftRadius,
+        BorderTopRightRadius, BoxShadowProp, LayoutProps, Outline, OutlineColor, Style,
+        StyleClassRef, StyleSelectors,
     },
 };
 use bitflags::bitflags;
@@ -69,7 +70,10 @@ impl<T> Stack<T> {
 #[cfg(feature = "vello")]
 prop_extractor! {
     pub(crate) ViewStyleProps {
-        pub border_radius: BorderRadius,
+        pub border_top_left_radius: BorderTopLeftRadius,
+        pub border_top_right_radius: BorderTopRightRadius,
+        pub border_bottom_left_radius: BorderBottomLeftRadius,
+        pub border_bottom_right_radius: BorderBottomRightRadius,
         pub border_progress: crate::style::BorderProgress,
 
         pub outline: Outline,
@@ -87,7 +91,10 @@ prop_extractor! {
 #[cfg(not(feature = "vello"))]
 prop_extractor! {
     pub(crate) ViewStyleProps {
-        pub border_radius: BorderRadius,
+        pub border_top_left_radius: BorderTopLeftRadius,
+        pub border_top_right_radius: BorderTopRightRadius,
+        pub border_bottom_left_radius: BorderBottomLeftRadius,
+        pub border_bottom_right_radius: BorderBottomRightRadius,
 
         pub outline: Outline,
         pub outline_color: OutlineColor,
