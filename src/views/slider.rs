@@ -89,6 +89,7 @@ pub struct Slider {
     id: ViewId,
     onchangepx: Option<Box<dyn Fn(f64)>>,
     onchangepct: Option<Box<dyn Fn(Pct)>>,
+    onhover: Option<Box<dyn Fn(Pct)>>,
     held: bool,
     percent: f64,
     prev_percent: f64,
@@ -146,6 +147,11 @@ impl View for Slider {
                     self.percent = event.pos.x / self.size.width as f64 * 100.;
                     true
                 } else {
+                    // Call hover callback with the percentage at the current position
+                    if let Some(onhover) = &self.onhover {
+                        let hover_percent = (event.pos.x / self.size.width as f64 * 100.).clamp(0., 100.);
+                        onhover(Pct(hover_percent));
+                    }
                     false
                 }
             }
@@ -334,6 +340,7 @@ impl Slider {
             id,
             onchangepx: None,
             onchangepct: None,
+            onhover: None,
             held: false,
             percent,
             prev_percent: 0.0,
@@ -399,6 +406,16 @@ impl Slider {
     /// You can set both an [`Slider::on_change_pct`] and `on_change_px` callbacks at the same time and both will be called on change.
     pub fn on_change_px(mut self, onchangepx: impl Fn(f64) + 'static) -> Self {
         self.onchangepx = Some(Box::new(onchangepx));
+        self
+    }
+
+    /// Add an event handler to be run when the mouse hovers over the slider.
+    ///
+    /// The callback receives the percentage value at the current hover position.
+    /// Only one hover callback can be set on this view.
+    /// Calling it again will clear the previously set callback.
+    pub fn on_hover(mut self, onhover: impl Fn(Pct) + 'static) -> Self {
+        self.onhover = Some(Box::new(onhover));
         self
     }
 
