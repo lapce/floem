@@ -126,7 +126,7 @@ impl View for Slider {
                 cx.update_active(self.id());
                 self.id.request_layout();
                 self.held = true;
-                self.percent = event.pos.x / self.size.width as f64 * 100.;
+                self.percent = self.mouse_pos_to_percent(event.pos.x);
                 true
             }
             crate::event::Event::PointerUp(event) => {
@@ -135,7 +135,7 @@ impl View for Slider {
                 // set the state based on the position of the slider
                 let changed = self.held;
                 if self.held {
-                    self.percent = event.pos.x / self.size.width as f64 * 100.;
+                    self.percent = self.mouse_pos_to_percent(event.pos.x);
                     self.update_restrict_position();
                 }
                 self.held = false;
@@ -144,12 +144,12 @@ impl View for Slider {
             crate::event::Event::PointerMove(event) => {
                 self.id.request_layout();
                 if self.held {
-                    self.percent = event.pos.x / self.size.width as f64 * 100.;
+                    self.percent = self.mouse_pos_to_percent(event.pos.x);
                     true
                 } else {
                     // Call hover callback with the percentage at the current position
                     if let Some(onhover) = &self.onhover {
-                        let hover_percent = (event.pos.x / self.size.width as f64 * 100.).clamp(0., 100.);
+                        let hover_percent = self.mouse_pos_to_percent(event.pos.x);
                         onhover(Pct(hover_percent));
                     }
                     false
@@ -213,10 +213,7 @@ impl View for Slider {
 
         self.size = layout.size;
 
-        let circle_radius = match self.style.handle_radius() {
-            PxPct::Px(px) => px,
-            PxPct::Pct(pct) => self.size.width.min(self.size.height) as f64 / 2. * (pct / 100.),
-        };
+        let circle_radius = self.calculate_handle_radius();
         let width = self.size.width as f64 - circle_radius * 2.;
         let center = width * (self.percent / 100.) + circle_radius;
         let circle_point = Point::new(center, (self.size.height / 2.) as f64);
@@ -386,6 +383,35 @@ impl Slider {
     fn handle_center(&self) -> f64 {
         let width = self.size.width as f64 - self.handle.radius * 2.;
         width * (self.percent / 100.) + self.handle.radius
+    }
+
+    /// Calculate the handle radius based on current size and style
+    fn calculate_handle_radius(&self) -> f64 {
+        match self.style.handle_radius() {
+            PxPct::Px(px) => px,
+            PxPct::Pct(pct) => self.size.width.min(self.size.height) as f64 / 2. * (pct / 100.),
+        }
+    }
+
+    /// Convert mouse x position to percentage, taking handle radius into account
+    fn mouse_pos_to_percent(&self, mouse_x: f64) -> f64 {
+        if self.size.width == 0.0 {
+            return 0.0;
+        }
+
+        let handle_radius = self.calculate_handle_radius();
+
+        // Clamp mouse position to handle center bounds
+        let clamped_x = mouse_x.clamp(handle_radius, self.size.width as f64 - handle_radius);
+
+        // Convert to percentage within the available range
+        let available_width = self.size.width as f64 - handle_radius * 2.;
+        if available_width <= 0.0 {
+            return 0.0;
+        }
+
+        let relative_pos = clamped_x - handle_radius;
+        (relative_pos / available_width * 100.0).clamp(0.0, 100.0)
     }
 
     /// Add an event handler to be run when the slider is moved.
@@ -606,10 +632,11 @@ mod test {
             height: 20.0,
         };
 
-        // Test pointer down at 75%
+        // Test pointer down at 75% position
+        let mouse_x = 75.0;
         let pointer_down = Event::PointerDown(PointerInputEvent {
             count: 1,
-            pos: Point::new(75.0, 10.0),
+            pos: Point::new(mouse_x, 10.0),
             button: PointerButton::Mouse(MouseButton::Primary),
             modifiers: Default::default(),
         });
@@ -617,7 +644,14 @@ mod test {
         slider.event_before_children(&mut cx, &pointer_down);
         slider.update_restrict_position();
 
-        assert_eq!(slider.percent, 75.0);
+        // Calculate expected percentage using the same logic as the slider
+        let handle_radius = slider.calculate_handle_radius();
+        let available_width = slider.size.width as f64 - handle_radius * 2.0;
+        let clamped_x = mouse_x.clamp(handle_radius, slider.size.width as f64 - handle_radius);
+        let relative_pos = clamped_x - handle_radius;
+        let expected_percent = (relative_pos / available_width * 100.0).clamp(0.0, 100.0);
+
+        assert_eq!(slider.percent, expected_percent);
         assert!(slider.held);
         assert_eq!(cx.app_state.active, Some(slider.id()));
     }
@@ -645,13 +679,22 @@ mod test {
         assert_eq!(cx.app_state.active, Some(slider.id()));
 
         // Move while dragging
+        let move_mouse_x = 75.0;
         let pointer_move = Event::PointerMove(PointerMoveEvent {
-            pos: Point::new(75.0, 10.0),
+            pos: Point::new(move_mouse_x, 10.0),
             modifiers: Default::default(),
         });
 
         slider.event_before_children(&mut cx, &pointer_move);
-        assert_eq!(slider.percent, 75.0);
+
+        // Calculate expected percentage using the same logic as the slider
+        let handle_radius = slider.calculate_handle_radius();
+        let available_width = slider.size.width as f64 - handle_radius * 2.0;
+        let clamped_x = move_mouse_x.clamp(handle_radius, slider.size.width as f64 - handle_radius);
+        let relative_pos = clamped_x - handle_radius;
+        let expected_percent = (relative_pos / available_width * 100.0).clamp(0.0, 100.0);
+
+        assert_eq!(slider.percent, expected_percent);
 
         // End drag
         let pointer_up = Event::PointerUp(PointerInputEvent {
@@ -695,5 +738,62 @@ mod test {
         slider.update_restrict_position();
 
         assert!(callback_called.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn test_handle_positioning_edge_cases() {
+        let mut slider = Slider::new(|| 0.0);
+        let mut cx = create_test_event_cx(slider.id());
+
+        slider.size = taffy::prelude::Size {
+            width: 100.0,
+            height: 20.0,
+        };
+
+        let handle_radius = slider.calculate_handle_radius();
+
+        // Test mouse at far left (should result in 0%)
+        let pointer_left = Event::PointerDown(PointerInputEvent {
+            pos: Point::new(0.0, 10.0),
+            button: PointerButton::Mouse(MouseButton::Primary),
+            count: 1,
+            modifiers: Default::default(),
+        });
+
+        slider.event_before_children(&mut cx, &pointer_left);
+        assert_eq!(slider.percent, 0.0);
+
+        // Test mouse at far right (should result in 100%)
+        let pointer_right = Event::PointerDown(PointerInputEvent {
+            pos: Point::new(100.0, 10.0),
+            button: PointerButton::Mouse(MouseButton::Primary),
+            count: 1,
+            modifiers: Default::default(),
+        });
+
+        slider.event_before_children(&mut cx, &pointer_right);
+        assert_eq!(slider.percent, 100.0);
+
+        // Test mouse exactly at handle radius (should result in 0%)
+        let pointer_at_radius = Event::PointerDown(PointerInputEvent {
+            pos: Point::new(handle_radius, 10.0),
+            button: PointerButton::Mouse(MouseButton::Primary),
+            count: 1,
+            modifiers: Default::default(),
+        });
+
+        slider.event_before_children(&mut cx, &pointer_at_radius);
+        assert_eq!(slider.percent, 0.0);
+
+        // Test mouse at width - handle_radius (should result in 100%)
+        let pointer_at_end = Event::PointerDown(PointerInputEvent {
+            pos: Point::new(slider.size.width as f64 - handle_radius, 10.0),
+            button: PointerButton::Mouse(MouseButton::Primary),
+            count: 1,
+            modifiers: Default::default(),
+        });
+
+        slider.event_before_children(&mut cx, &pointer_at_end);
+        assert_eq!(slider.percent, 100.0);
     }
 }
