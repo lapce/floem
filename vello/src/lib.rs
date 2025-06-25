@@ -41,16 +41,17 @@ pub struct VelloRenderer {
 impl VelloRenderer {
     pub fn new(
         gpu_resources: GpuResources,
+        surface: wgpu::Surface<'static>,
         width: u32,
         height: u32,
         scale: f64,
         _font_embolden: f32,
     ) -> Result<Self> {
         let GpuResources {
-            surface,
             adapter,
             device,
             queue,
+            ..
         } = gpu_resources;
 
         if adapter.get_info().device_type == DeviceType::Cpu {

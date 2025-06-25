@@ -81,6 +81,7 @@ impl Renderer {
     pub fn new(
         window: Arc<dyn Window>,
         gpu_resources: GpuResources,
+        surface: wgpu::Surface<'static>,
         scale: f64,
         size: Size,
         font_embolden: f32,
@@ -96,6 +97,7 @@ impl Renderer {
         let vger_err = if !force_tiny_skia {
             match VelloRenderer::new(
                 gpu_resources,
+                surface,
                 size.width as u32,
                 size.height as u32,
                 scale,
@@ -112,6 +114,7 @@ impl Renderer {
         let vger_err = if !force_tiny_skia {
             match VgerRenderer::new(
                 gpu_resources,
+                surface,
                 size.width as u32,
                 size.height as u32,
                 scale,

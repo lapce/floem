@@ -66,7 +66,7 @@ pub(crate) struct WindowHandle {
     /// Reactive Scope for this `WindowHandle`
     scope: Scope,
     pub(crate) app_state: AppState,
-    paint_state: PaintState,
+    pub(crate) paint_state: PaintState,
     size: RwSignal<Size>,
     theme: Option<Theme>,
     pub(crate) profile: Option<Profile>,
@@ -86,6 +86,8 @@ pub(crate) struct WindowHandle {
 impl WindowHandle {
     pub(crate) fn new(
         window: Box<dyn winit::window::Window>,
+        gpu_resources: Option<GpuResources>,
+        required_features: wgpu::Features,
         view_fn: impl FnOnce(winit::window::WindowId) -> Box<dyn View> + 'static,
         transparent: bool,
         apply_default_theme: bool,
@@ -136,19 +138,39 @@ impl WindowHandle {
 
         let window: Arc<dyn Window> = window.into();
         store_window_id_mapping(id, window_id, &window);
-        let gpu_resources = GpuResources::request(
-            move |window_id| {
-                Application::send_proxy_event(UserEvent::GpuResourcesUpdate { window_id });
-            },
-            window.clone(),
-        );
-        let paint_state = PaintState::new(
-            window.clone(),
-            gpu_resources,
-            scale,
-            size.get_untracked() * scale,
-            font_embolden,
-        );
+
+        let paint_state = if let Some(resources) = gpu_resources.clone() {
+            let surface = resources
+                .instance
+                .create_surface(Arc::clone(&window))
+                .expect("can create second window");
+            PaintState::new(
+                window.clone(),
+                surface,
+                resources,
+                scale,
+                size.get_untracked() * scale,
+                font_embolden,
+            )
+        } else {
+            let gpu_resources_rx = GpuResources::request(
+                move |window_id| {
+                    Application::send_proxy_event(UserEvent::GpuResourcesUpdate { window_id });
+                },
+                required_features,
+                window.clone(),
+            );
+            PaintState::new_pending(
+                window.clone(),
+                gpu_resources_rx,
+                scale,
+                size.get_untracked() * scale,
+                font_embolden,
+            )
+        };
+
+        let paint_state_initialized = matches!(paint_state, PaintState::Initialized { .. });
+
         let mut window_handle = Self {
             window: Some(window),
             window_id,
@@ -172,6 +194,9 @@ impl WindowHandle {
             last_pointer_down: None,
             dropper_file: None,
         };
+        if paint_state_initialized {
+            window_handle.init_renderer(gpu_resources);
+        }
         window_handle.app_state.set_root_size(size.get_untracked());
         window_handle.app_state.os_theme = os_theme;
         if let Some(theme) = os_theme {
@@ -181,8 +206,7 @@ impl WindowHandle {
         window_handle
     }
 
-    pub(crate) fn init_renderer(&mut self) {
-        self.paint_state.init_renderer();
+    pub(crate) fn init_renderer(&mut self, gpu_resources: Option<GpuResources>) {
         // On the web, we need to get the canvas size once. The size will be updated automatically
         // when the canvas element is resized subsequently. This is the correct place to do so
         // because the renderer is not initialized until now.
@@ -202,7 +226,7 @@ impl WindowHandle {
             self.size(Size::new(size.width, size.height));
         }
         // Now that the renderer is initialized, draw the first frame
-        self.render_frame();
+        self.render_frame(gpu_resources);
         if let Some(window) = self.window.as_ref() {
             window.set_visible(true);
         }
@@ -616,7 +640,7 @@ impl WindowHandle {
         cx.compute_view_layout(self.id);
     }
 
-    pub(crate) fn render_frame(&mut self) {
+    pub(crate) fn render_frame(&mut self, gpu_resources: Option<GpuResources>) {
         // Processes updates scheduled on this frame.
         for update in mem::take(&mut self.app_state.scheduled_updates) {
             match update {
@@ -627,7 +651,7 @@ impl WindowHandle {
         }
 
         self.process_update_no_paint();
-        self.paint();
+        self.paint(gpu_resources);
 
         // Request a new frame if there's any scheduled updates.
         if !self.app_state.scheduled_updates.is_empty() {
@@ -635,7 +659,7 @@ impl WindowHandle {
         }
     }
 
-    pub fn paint(&mut self) -> Option<peniko::Image> {
+    pub fn paint(&mut self, gpu_resources: Option<GpuResources>) -> Option<peniko::Image> {
         let mut cx = PaintCx {
             app_state: &mut self.app_state,
             paint_state: &mut self.paint_state,
@@ -645,6 +669,8 @@ impl WindowHandle {
             saved_transforms: Vec::new(),
             saved_clips: Vec::new(),
             saved_z_indexes: Vec::new(),
+            gpu_resources,
+            window: self.window.clone(),
         };
         cx.paint_state
             .renderer_mut()
@@ -677,7 +703,7 @@ impl WindowHandle {
         cx.paint_state.renderer_mut().finish()
     }
 
-    pub(crate) fn capture(&mut self) -> Capture {
+    pub(crate) fn capture(&mut self, gpu_resources: Option<GpuResources>) -> Capture {
         // Capture the view before we run `style` and `layout` to catch missing `request_style`` or
         // `request_layout` flags.
         let root_layout = self.id.layout_rect();
@@ -687,7 +713,7 @@ impl WindowHandle {
 
         // Trigger painting to create a Vger renderer which can capture the output.
         // This can be expensive so it could skew the paint time measurement.
-        self.paint();
+        self.paint(gpu_resources.clone());
 
         // Ensure we run layout and styling again for accurate timing. We also need to ensure
         // styles are recomputed to capture them.
@@ -723,7 +749,7 @@ impl WindowHandle {
         let taffy_root_node = self.id.state().borrow().node;
         let taffy_duration = self.layout();
         let post_layout = Instant::now();
-        let window = self.paint();
+        let window = self.paint(gpu_resources);
         let end = Instant::now();
 
         let capture = Capture {

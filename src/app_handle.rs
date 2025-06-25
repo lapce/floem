@@ -1,3 +1,4 @@
+use floem_renderer::gpu_resources::GpuResources;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 #[cfg(target_arch = "wasm32")]
@@ -19,6 +20,7 @@ use winit::{
 use crate::{
     action::{Timer, TimerToken},
     app::{AppEventCallback, AppUpdateEvent, UserEvent, APP_UPDATE_EVENTS},
+    context::PaintState,
     ext_event::EXT_EVENT_HANDLER,
     inspector::Capture,
     profiler::{Profile, ProfileEvent},
@@ -33,14 +35,18 @@ pub(crate) struct ApplicationHandle {
     window_handles: HashMap<winit::window::WindowId, WindowHandle>,
     timers: HashMap<TimerToken, Timer>,
     pub(crate) event_listener: Option<Box<AppEventCallback>>,
+    pub(crate) gpu_resources: Option<GpuResources>,
+    pub(crate) required_features: wgpu::Features,
 }
 
 impl ApplicationHandle {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(required_features: wgpu::Features) -> Self {
         Self {
             window_handles: HashMap::new(),
             timers: HashMap::new(),
             event_listener: None,
+            gpu_resources: None,
+            required_features,
         }
     }
 
@@ -65,10 +71,29 @@ impl ApplicationHandle {
                 }
             }
             UserEvent::GpuResourcesUpdate { window_id } => {
-                self.window_handles
-                    .get_mut(&window_id)
-                    .unwrap()
-                    .init_renderer();
+                let handle = self.window_handles.get_mut(&window_id).unwrap();
+                if let PaintState::PendingGpuResources {
+                    window,
+                    rx,
+                    font_embolden,
+                    renderer,
+                } = &handle.paint_state
+                {
+                    let (gpu_resources, surface) = rx.recv().unwrap().unwrap();
+                    let renderer = crate::renderer::Renderer::new(
+                        window.clone(),
+                        gpu_resources.clone(),
+                        surface,
+                        renderer.scale(),
+                        renderer.size(),
+                        *font_embolden,
+                    );
+                    self.gpu_resources = Some(gpu_resources);
+                    handle.paint_state = PaintState::Initialized { renderer };
+                    handle.init_renderer(self.gpu_resources.clone());
+                } else {
+                    panic!("Sent a gpu resource update after it had already been initialized");
+                }
             }
         }
     }
@@ -244,7 +269,7 @@ impl ApplicationHandle {
             }
             WindowEvent::Occluded(_) => {}
             WindowEvent::RedrawRequested => {
-                window_handle.render_frame();
+                window_handle.render_frame(self.gpu_resources.clone());
             }
             WindowEvent::PanGesture { .. } => {}
             WindowEvent::DoubleTapGesture { .. } => {}
@@ -440,6 +465,8 @@ impl ApplicationHandle {
         let window_id = window.id();
         let window_handle = WindowHandle::new(
             window,
+            self.gpu_resources.clone(),
+            self.required_features,
             view_fn,
             transparent,
             apply_default_theme,
@@ -468,7 +495,7 @@ impl ApplicationHandle {
     fn capture_window(&mut self, window_id: WindowId) -> Option<Capture> {
         self.window_handles
             .get_mut(&window_id)
-            .map(|handle| handle.capture())
+            .map(|handle| handle.capture(self.gpu_resources.clone()))
     }
 
     pub(crate) fn idle(&mut self) {
