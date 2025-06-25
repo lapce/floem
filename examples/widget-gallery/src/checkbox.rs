@@ -23,8 +23,10 @@ pub fn checkbox_view() -> impl IntoView {
         form_item("Checkbox:", Checkbox::new_rw(is_checked)),
         form_item(
             "Custom Checkbox 1:",
-            Checkbox::new_rw_custom(is_checked, CUSTOM_CHECK_SVG)
-                .style(|s| s.color(palette::css::GREEN)),
+            Checkbox::new_rw_custom(is_checked, CUSTOM_CHECK_SVG).style(|s| {
+                dbg!("again");
+                s.color(palette::css::GREEN)
+            }),
         ),
         form_item(
             "Disabled Checkbox:",
