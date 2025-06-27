@@ -22,7 +22,7 @@ readme = "README.md"
 repository = "https://github.com/lapce/floem"
 description = "A native Rust UI library with fine-grained reactivity"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.86"
 license.workspace = true
 
 [workspace.dependencies]
@@ -63,8 +63,6 @@ serde = { workspace = true, optional = true }
 lapce-xi-rope = { workspace = true, optional = true }
 strum = { workspace = true, optional = true }
 strum_macros = { workspace = true, optional = true }
-# TODO: once https://github.com/rust-lang/rust/issues/65991 is stabilized we don't need this
-downcast-rs = { version = "2.0", optional = true }
 floem_renderer = { path = "renderer", version = "0.2.0" }
 floem_vello_renderer = { path = "vello", version = "0.2.0", optional = true }
 floem_vger_renderer = { path = "vger", version = "0.2.0", optional = true }
@@ -119,7 +117,6 @@ editor = [
   "dep:lapce-xi-rope",
   "dep:strum",
   "dep:strum_macros",
-  "dep:downcast-rs",
 ]
 
 # Image support
