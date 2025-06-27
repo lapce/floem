@@ -2424,10 +2424,10 @@ mod tests {
             let line_offset = rope_text.offset_of_line(line);
 
             let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
+            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {line}");
 
             let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
+            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {line}");
         }
 
         assert_eq!(ffvline_info(&lines, &text_prov, VLine(20)), None);
@@ -2444,9 +2444,9 @@ mod tests {
             let line_offset = rope_text.offset_of_line(line);
 
             let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
+            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {line}");
             let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
+            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {line}");
         }
 
         assert_eq!(ffvline_info(&lines, &text_prov, VLine(20)), None);
@@ -2479,10 +2479,10 @@ mod tests {
             let line_offset = rope_text.offset_of_line(line);
 
             let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
+            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {line}");
 
             let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
+            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {line}");
         }
 
         lines.init_all(0, ConfigId::new(0, 0), &text_prov, true);
@@ -2493,10 +2493,10 @@ mod tests {
             let line_offset = rope_text.offset_of_line(line);
 
             let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
+            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {line}");
 
             let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
+            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {line}");
         }
 
         // Multiple lines with too large width and a phantom text that takes up multiple lines.
@@ -2515,10 +2515,10 @@ mod tests {
             let line_offset = rope_text.offset_of_line(line);
 
             let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
+            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {line}");
 
             let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
+            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {line}");
         }
 
         lines.init_all(0, ConfigId::new(0, 0), &text_prov, true);
@@ -2553,15 +2553,13 @@ mod tests {
             assert_eq!(
                 info,
                 (line_offset, RVLine::new(line - 1, 0)),
-                "vline {}",
-                line
+                "vline {line}"
             );
             let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
             assert_eq!(
                 info,
                 (line_offset, RVLine::new(line - 1, 0)),
-                "vline {}",
-                line
+                "vline {line}"
             );
         }
 
@@ -2601,7 +2599,7 @@ mod tests {
 
             let line_offset = rope_text.offset_of_line(line);
 
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
+            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {line}");
         }
 
         lines.init_all(0, ConfigId::new(0, 0), &text_prov, true);
@@ -2624,10 +2622,10 @@ mod tests {
             let line_offset = rope_text.offset_of_line(line);
 
             let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
+            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {line}");
 
             let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {}", line);
+            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "vline {line}");
         }
 
         // ' end'
@@ -2657,10 +2655,10 @@ mod tests {
             let line_offset = rope_text.offset_of_line(line);
 
             let info = ffvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "line {}", line);
+            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "line {line}");
 
             let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
-            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "line {}", line);
+            assert_eq!(info, (line_offset, RVLine::new(line, 0)), "line {line}");
         }
 
         assert_eq!(ffvline_info(&lines, &text_prov, VLine(20)), None);
@@ -2702,15 +2700,13 @@ mod tests {
             assert_eq!(
                 (info.0, info.1.line, info.1.line_index),
                 line_data[line],
-                "vline {}",
-                line
+                "vline {line}"
             );
             let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
             assert_eq!(
                 (info.0, info.1.line, info.1.line_index),
                 line_data[line],
-                "vline {}",
-                line
+                "vline {line}"
             );
         }
 
@@ -2772,15 +2768,13 @@ mod tests {
             assert_eq!(
                 (info.0, info.1.line, info.1.line_index),
                 line_data[vline],
-                "vline {}",
-                vline
+                "vline {vline}"
             );
             let info = fbvline_info(&lines, &text_prov, VLine(vline)).unwrap();
             assert_eq!(
                 (info.0, info.1.line, info.1.line_index),
                 line_data[vline],
-                "vline {}",
-                vline
+                "vline {vline}"
             );
         }
 
@@ -2831,16 +2825,14 @@ mod tests {
             assert_eq!(
                 info,
                 Some((line_offset, RVLine::new(line, 0))),
-                "line {}",
-                line
+                "line {line}"
             );
 
             let info = fbvline_info(&lines, &text_prov, VLine(line));
             assert_eq!(
                 info,
                 Some((line_offset, RVLine::new(line, 0))),
-                "line {}",
-                line
+                "line {line}"
             );
         }
 
@@ -2883,16 +2875,14 @@ mod tests {
             assert_eq!(
                 (info.0, info.1.line, info.1.line_index),
                 line_data[line],
-                "vline {}",
-                line
+                "vline {line}"
             );
 
             let info = fbvline_info(&lines, &text_prov, VLine(line)).unwrap();
             assert_eq!(
                 (info.0, info.1.line, info.1.line_index),
                 line_data[line],
-                "vline {}",
-                line
+                "vline {line}"
             );
         }
 
@@ -2976,11 +2966,7 @@ mod tests {
             let line_offset = lines.offset_of_vline(&text_prov, line);
             assert!(
                 line_offset <= offset,
-                "{} <= {} L{:?} O{}",
-                line_offset,
-                offset,
-                line,
-                offset
+                "{line_offset} <= {offset} L{line:?} O{offset}"
             );
         }
 
@@ -3149,11 +3135,7 @@ mod tests {
             let line_offset = lines.offset_of_vline(&text_prov, line);
             assert!(
                 line_offset <= offset,
-                "{} <= {} L{:?} O{}",
-                line_offset,
-                offset,
-                line,
-                offset
+                "{line_offset} <= {offset} L{line:?} O{offset}"
             );
         }
 
@@ -3200,11 +3182,7 @@ mod tests {
             let line_offset = lines.offset_of_vline(&text_prov, line);
             assert!(
                 line_offset <= offset,
-                "{} <= {} L{:?} O{}",
-                line_offset,
-                offset,
-                line,
-                offset
+                "{line_offset} <= {offset} L{line:?} O{offset}"
             );
         }
     }
