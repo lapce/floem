@@ -181,8 +181,8 @@ impl StylePropValue for Pct {
 impl StylePropValue for PxPctAuto {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let label = match self {
-            Self::Px(v) => format!("{} px", v),
-            Self::Pct(v) => format!("{}%", v),
+            Self::Px(v) => format!("{v} px"),
+            Self::Pct(v) => format!("{v}%"),
             Self::Auto => "auto".to_string(),
         };
         Some(text(label).into_any())
@@ -200,8 +200,8 @@ impl StylePropValue for PxPctAuto {
 impl StylePropValue for PxPct {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let label = match self {
-            Self::Px(v) => format!("{} px", v),
-            Self::Pct(v) => format!("{}%", v),
+            Self::Px(v) => format!("{v} px"),
+            Self::Pct(v) => format!("{v}%"),
         };
         Some(text(label).into_any())
     }
@@ -590,7 +590,7 @@ impl StylePropInfo {
             debug_any: |val| {
                 if let Some(v) = val.downcast_ref::<StyleMapValue<T>>() {
                     match v {
-                        StyleMapValue::Val(v) | StyleMapValue::Animated(v) => format!("{:?}", v),
+                        StyleMapValue::Val(v) | StyleMapValue::Animated(v) => format!("{v:?}"),
                         StyleMapValue::Unset => "Unset".to_owned(),
                     }
                 } else {

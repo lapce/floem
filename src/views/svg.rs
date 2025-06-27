@@ -208,9 +208,9 @@ pub fn brush_to_css_string(brush: &Brush) -> String {
             let a = color.components[3];
 
             if a < 1.0 {
-                format!("rgba({}, {}, {}, {})", r, g, b, a)
+                format!("rgba({r}, {g}, {b}, {a})")
             } else {
-                format!("#{:02x}{:02x}{:02x}", r, g, b)
+                format!("#{r:02x}{g:02x}{b:02x}")
             }
         }
         Brush::Gradient(gradient) => {
@@ -218,7 +218,7 @@ pub fn brush_to_css_string(brush: &Brush) -> String {
                 GradientKind::Linear { start, end } => {
                     let angle_degrees = calculate_angle(start, end);
 
-                    let mut css = format!("linear-gradient({}deg, ", angle_degrees);
+                    let mut css = format!("linear-gradient({angle_degrees}deg, ");
 
                     for (i, stop) in gradient.stops.iter().enumerate() {
                         let color = &stop.color;
@@ -228,9 +228,9 @@ pub fn brush_to_css_string(brush: &Brush) -> String {
                         let a = color.components[3];
 
                         let color_str = if a < 1.0 {
-                            format!("rgba({}, {}, {}, {})", r, g, b, a)
+                            format!("rgba({r}, {g}, {b}, {a})")
                         } else {
-                            format!("#{:02x}{:02x}{:02x}", r, g, b)
+                            format!("#{r:02x}{g:02x}{b:02x}")
                         };
 
                         css.push_str(&format!("{} {}%", color_str, (stop.offset * 100.0).round()));

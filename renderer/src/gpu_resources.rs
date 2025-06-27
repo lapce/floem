@@ -124,12 +124,12 @@ impl std::fmt::Display for GpuResourceError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             GpuResourceError::SurfaceCreationError(err) => {
-                write!(f, "Surface creation error: {}", err)
+                write!(f, "Surface creation error: {err}")
             }
             GpuResourceError::AdapterNotFoundError => {
                 write!(f, "Failed to find a suitable GPU adapter")
             }
-            GpuResourceError::DeviceRequestError(err) => write!(f, "Device request error: {}", err),
+            GpuResourceError::DeviceRequestError(err) => write!(f, "Device request error: {err}"),
         }
     }
 }

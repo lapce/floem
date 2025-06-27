@@ -70,7 +70,7 @@ impl GridBreakpoints {
         }
 
         // This can only happen if breakpoint ranges are incorrect and have a gap
-        panic!("Width {} did not match any breakpoint", width);
+        panic!("Width {width} did not match any breakpoint");
     }
 }
 
