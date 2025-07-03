@@ -55,6 +55,12 @@ impl AppConfig {
         self.exit_on_close = exit_on_close;
         self
     }
+    /// Sets the WGPU features to be used by the application.
+    #[inline]
+    pub fn wgpu_features(mut self, features: wgpu::Features) -> Self {
+        self.wgpu_features = features;
+        self
+    }
 }
 
 /// Initializes and runs an application with a single window.
