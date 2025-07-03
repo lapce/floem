@@ -33,6 +33,30 @@ thread_local! {
     pub(crate) static APP_UPDATE_EVENTS: RefCell<Vec<AppUpdateEvent>> = Default::default();
 }
 
+#[derive(Debug)]
+pub struct AppConfig {
+    pub(crate) exit_on_close: bool,
+    pub(crate) wgpu_features: wgpu::Features,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            exit_on_close: if cfg!(target_os = "macos") { false } else { true },
+            wgpu_features: wgpu::Features::default(),
+        }
+    }
+}
+
+impl AppConfig {
+    /// Sets whether the application should exit when the last window is closed.
+    #[inline]
+    pub fn exit_on_close(mut self, exit_on_close: bool) -> Self {
+        self.exit_on_close = exit_on_close;
+        self
+    }
+}
+
 /// Initializes and runs an application with a single window.
 ///
 /// This function creates a new `Application`, sets up a window with the provided view,
@@ -159,28 +183,9 @@ impl ApplicationHandler for Application {
 
 impl Application {
     pub fn new() -> Self {
-        let event_loop = EventLoop::new().expect("can't start the event loop");
-
-        #[cfg(target_os = "macos")]
-        crate::app_delegate::set_app_delegate();
-
-        let event_loop_proxy = event_loop.create_proxy();
-        let (sender, receiver) = channel();
-
-        *EVENT_LOOP_PROXY.lock() = Some((event_loop_proxy.clone(), sender));
-        unsafe {
-            Clipboard::init(event_loop.display_handle().unwrap().as_raw());
-        }
-        let handle = ApplicationHandle::new(wgpu::Features::default());
-
-        Self {
-            receiver,
-            handle,
-            event_loop: Some(event_loop),
-            initial_windows: Vec::new(),
-        }
+        Self::new_with_config(AppConfig::default())
     }
-    pub fn new_with_features(required_features: wgpu::Features) -> Self {
+    pub fn new_with_config(config: AppConfig) -> Self {
         let event_loop = EventLoop::new().expect("can't start the event loop");
 
         #[cfg(target_os = "macos")]
@@ -193,7 +198,7 @@ impl Application {
         unsafe {
             Clipboard::init(event_loop.display_handle().unwrap().as_raw());
         }
-        let handle = ApplicationHandle::new(required_features);
+        let handle = ApplicationHandle::new(config);
 
         #[cfg(any(target_os = "windows", target_os = "macos"))]
         muda::MenuEvent::set_event_handler(Some(move |event: muda::MenuEvent| {
