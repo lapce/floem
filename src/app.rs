@@ -42,7 +42,7 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            exit_on_close: if cfg!(target_os = "macos") { false } else { true },
+            exit_on_close: !cfg!(target_os = "macos"),
             wgpu_features: wgpu::Features::default(),
         }
     }
