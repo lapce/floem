@@ -17,6 +17,7 @@ use winit::{
     window::WindowId,
 };
 
+use crate::app::AppConfig;
 use crate::{
     action::{Timer, TimerToken},
     app::{AppEventCallback, AppUpdateEvent, UserEvent, APP_UPDATE_EVENTS},
@@ -30,14 +31,13 @@ use crate::{
     window_id::process_window_updates,
     AppEvent,
 };
-use crate::app::AppConfig;
 
 pub(crate) struct ApplicationHandle {
     window_handles: HashMap<winit::window::WindowId, WindowHandle>,
     timers: HashMap<TimerToken, Timer>,
     pub(crate) event_listener: Option<Box<AppEventCallback>>,
     pub(crate) gpu_resources: Option<GpuResources>,
-    pub(crate) config: AppConfig
+    pub(crate) config: AppConfig,
 }
 
 impl ApplicationHandle {
@@ -476,11 +476,7 @@ impl ApplicationHandle {
         self.window_handles.insert(window_id, window_handle);
     }
 
-    fn close_window(
-        &mut self,
-        window_id: WindowId,
-        event_loop: &dyn ActiveEventLoop,
-    ) {
+    fn close_window(&mut self, window_id: WindowId, event_loop: &dyn ActiveEventLoop) {
         if let Some(handle) = self.window_handles.get_mut(&window_id) {
             handle.window = None;
             handle.destroy();
