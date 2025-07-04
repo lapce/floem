@@ -17,6 +17,7 @@ use winit::{
     window::WindowId,
 };
 
+use crate::app::AppConfig;
 use crate::{
     action::{Timer, TimerToken},
     app::{AppEventCallback, AppUpdateEvent, UserEvent, APP_UPDATE_EVENTS},
@@ -36,17 +37,17 @@ pub(crate) struct ApplicationHandle {
     timers: HashMap<TimerToken, Timer>,
     pub(crate) event_listener: Option<Box<AppEventCallback>>,
     pub(crate) gpu_resources: Option<GpuResources>,
-    pub(crate) required_features: wgpu::Features,
+    pub(crate) config: AppConfig,
 }
 
 impl ApplicationHandle {
-    pub(crate) fn new(required_features: wgpu::Features) -> Self {
+    pub(crate) fn new(config: AppConfig) -> Self {
         Self {
             window_handles: HashMap::new(),
             timers: HashMap::new(),
             event_listener: None,
             gpu_resources: None,
-            required_features,
+            config,
         }
     }
 
@@ -466,7 +467,7 @@ impl ApplicationHandle {
         let window_handle = WindowHandle::new(
             window,
             self.gpu_resources.clone(),
-            self.required_features,
+            self.config.wgpu_features,
             view_fn,
             transparent,
             apply_default_theme,
@@ -475,19 +476,13 @@ impl ApplicationHandle {
         self.window_handles.insert(window_id, window_handle);
     }
 
-    fn close_window(
-        &mut self,
-        window_id: WindowId,
-        #[cfg(target_os = "macos")] _event_loop: &dyn ActiveEventLoop,
-        #[cfg(not(target_os = "macos"))] event_loop: &dyn ActiveEventLoop,
-    ) {
+    fn close_window(&mut self, window_id: WindowId, event_loop: &dyn ActiveEventLoop) {
         if let Some(handle) = self.window_handles.get_mut(&window_id) {
             handle.window = None;
             handle.destroy();
         }
         self.window_handles.remove(&window_id);
-        #[cfg(not(target_os = "macos"))]
-        if self.window_handles.is_empty() {
+        if self.window_handles.is_empty() && self.config.exit_on_close {
             event_loop.exit();
         }
     }
