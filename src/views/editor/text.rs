@@ -8,7 +8,6 @@ use crate::{
     text::{Attrs, AttrsList, FamilyOwned, Stretch, Weight},
     views::EditorCustomStyle,
 };
-use downcast_rs::{impl_downcast, Downcast};
 use floem_editor_core::{
     buffer::rope_text::{RopeText, RopeTextVal},
     command::EditCommand,
@@ -89,7 +88,7 @@ impl PreeditData {
 }
 
 /// A document. This holds text.  
-pub trait Document: DocumentPhantom + Downcast {
+pub trait Document: DocumentPhantom + ::std::any::Any {
     /// Get the text of the document  
     /// Note: typically you should call [`Document::rope_text`] as that provides more checks and
     /// utility functions.
@@ -199,8 +198,6 @@ pub trait Document: DocumentPhantom + Downcast {
     /// ```
     fn edit(&self, iter: &mut dyn Iterator<Item = (Selection, &str)>, edit_type: EditType);
 }
-
-impl_downcast!(Document);
 
 pub trait DocumentPhantom {
     fn phantom_text(&self, edid: EditorId, styling: &EditorStyle, line: usize) -> PhantomTextLine;
