@@ -48,7 +48,7 @@ pub struct PanZoomView {
     id: floem::ViewId,
     /// Callback to be called when the view is panned/zoomed and therefore the requested viewport changed.
     onpanzoom: Option<Box<dyn Fn(kurbo::Affine)>>,
-    /// The affine transformaton (scale, rotation, translation) that represents the current viewport.
+    /// The affine transformation (scale, rotation, translation) that represents the current viewport.
     /// In particular, this represents the viewport-to-world transformation.
     /// To transform a point from world space to viewport space, use `view_transform.inverse() * point`.
     view_transform: kurbo::Affine,
