@@ -219,7 +219,7 @@ mod window_handle;
 mod window_id;
 mod window_tracking;
 
-pub use app::{launch, quit_app, AppEvent, Application};
+pub use app::{launch, quit_app, AppConfig, AppEvent, Application};
 pub use app_state::AppState;
 pub use clipboard::{Clipboard, ClipboardError};
 pub use floem_reactive as reactive;
