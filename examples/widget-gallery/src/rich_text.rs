@@ -83,7 +83,7 @@ pub fn rich_text_view() -> impl IntoView {
                 );
 
                 let mut text_layout = TextLayout::new();
-                text_layout.set_text(text, attrs_list);
+                text_layout.set_text(text, attrs_list, None);
                 text_layout
             }),
             builder.style(|s| s.padding_left(15)),

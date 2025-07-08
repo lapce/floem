@@ -8,7 +8,8 @@ use crate::{
     prop_extractor,
     style::{
         CursorColor, CustomStylable, CustomStyle, FontProps, LineHeight, Selectable,
-        SelectionCornerRadius, SelectionStyle, Style, TextColor, TextOverflow, TextOverflowProp,
+        SelectionCornerRadius, SelectionStyle, Style, TextAlignProp, TextColor, TextOverflow,
+        TextOverflowProp,
     },
     style_class,
     text::{Attrs, AttrsList, FamilyOwned, TextLayout},
@@ -34,6 +35,7 @@ prop_extractor! {
         text_overflow: TextOverflowProp,
         line_height: LineHeight,
         text_selectable: Selectable,
+        text_align: TextAlignProp,
     }
 }
 
@@ -173,12 +175,13 @@ impl Label {
     fn set_text_layout(&mut self) {
         let mut text_layout = TextLayout::new();
         let attrs_list = self.get_attrs_list();
-        text_layout.set_text(self.label.as_str(), attrs_list.clone());
+        let align = self.style.text_align();
+        text_layout.set_text(self.label.as_str(), attrs_list.clone(), align);
         self.text_layout = Some(text_layout);
 
         if let Some(new_text) = self.available_text.as_ref() {
             let mut text_layout = TextLayout::new();
-            text_layout.set_text(new_text, attrs_list);
+            text_layout.set_text(new_text, attrs_list, align);
             self.available_text_layout = Some(text_layout);
         }
     }
@@ -442,7 +445,7 @@ impl View for Label {
             if width > available_width {
                 if self.available_width != Some(available_width) {
                     let mut dots_text = TextLayout::new();
-                    dots_text.set_text("...", self.get_attrs_list());
+                    dots_text.set_text("...", self.get_attrs_list(), self.style.text_align());
 
                     let dots_width = dots_text.size().width as f32;
                     let width_left = available_width - dots_width;

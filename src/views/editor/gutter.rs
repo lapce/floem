@@ -178,7 +178,7 @@ impl View for EditorGutterView {
 
                 let mut text_layout = TextLayout::new();
                 if line == current_line {
-                    text_layout.set_text(&text, current_line_attrs_list.clone());
+                    text_layout.set_text(&text, current_line_attrs_list.clone(), None);
                     if let Some(current_line_color) = self.gutter_style.current_line_color() {
                         cursor.with_untracked(|cursor| {
                             let highlight_current_line = match cursor.mode {
@@ -210,7 +210,7 @@ impl View for EditorGutterView {
                         })
                     }
                 } else {
-                    text_layout.set_text(&text, attrs_list.clone());
+                    text_layout.set_text(&text, attrs_list.clone(), None);
                 }
                 let size = text_layout.size();
                 let height = size.height;
@@ -230,7 +230,7 @@ impl EditorGutterView {
     fn compute_widest_text_width(&mut self, attrs_list: &AttrsList) -> f64 {
         let last_line = self.editor.get_untracked().last_line() + 1;
         let mut text = TextLayout::new();
-        text.set_text(&last_line.to_string(), attrs_list.clone());
+        text.set_text(&last_line.to_string(), attrs_list.clone(), None);
         text.size().width
     }
 }
