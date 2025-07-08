@@ -1267,7 +1267,7 @@ fn find_vline_init_info(
         return None;
     }
 
-    if vline.get() < last_vline.get() / 2 {
+    if vline.get() > last_vline.get() / 2 {
         let last_rvline = lines.last_rvline(text_prov);
         find_vline_init_info_rv_backward(lines, text_prov, (last_vline, last_rvline), vline)
     } else {
