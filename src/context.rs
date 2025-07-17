@@ -120,7 +120,9 @@ impl EventCx<'_> {
         // e.g. pointer events, so that the position is relative
         // to the view, taking into account of the layout location
         // of the view and the viewport of the view if it's in a scroll.
+        let original_event = event.clone();
         let event = self.offset_event(view_id, event);
+        let event_no_transform = self.offset_event_no_transform(view_id, original_event);
 
         let view = view_id.view();
         let view_state = view_id.state();
@@ -327,10 +329,9 @@ impl EventCx<'_> {
                 }
                 Event::PointerUp(pointer_event) => {
                     if pointer_event.button.is_primary() {
-                        let rect = view_id.get_size().unwrap_or_default().to_rect();
-                        let on_view = rect.contains(pointer_event.pos);
+                        let rect_no_transform = view_id.get_size().unwrap_or_default().to_rect();
+                        let on_view = rect_no_transform.contains(pointer_event.pos);
 
-                        // if id_path.is_none() {
                         if !directed {
                             if on_view {
                                 if let Some(dragging) = self.app_state.dragging.as_mut() {
@@ -377,7 +378,11 @@ impl EventCx<'_> {
                         }
 
                         if let Some(handlers) = event_listeners.get(&EventListener::Click) {
-                            if on_view
+                            // we need to check if it is on the view,
+                            // or if it `was` on the view or would have
+                            // been on the view before a transform was applied to offset/scale the event
+                            if (on_view
+                                || rect_no_transform.contains(event_no_transform.point().unwrap()))
                                 && self.app_state.is_clicking(&view_id)
                                 && last_pointer_down.is_some()
                                 && handlers.iter().fold(false, |handled, handler| {
@@ -477,6 +482,21 @@ impl EventCx<'_> {
                     layout.location.y as f64 - viewport.map(|rect| rect.y0).unwrap_or(0.0),
                 )) * transform,
             )
+        } else {
+            event
+        }
+    }
+
+    /// translate a window-positioned event to the local coordinate system of a view without a view transform
+    pub(crate) fn offset_event_no_transform(&self, id: ViewId, event: Event) -> Event {
+        let state = id.state();
+        let viewport = state.borrow().viewport;
+
+        if let Some(layout) = id.get_layout() {
+            event.transform(Affine::translate((
+                layout.location.x as f64 - viewport.map(|rect| rect.x0).unwrap_or(0.0),
+                layout.location.y as f64 - viewport.map(|rect| rect.y0).unwrap_or(0.0),
+            )))
         } else {
             event
         }
