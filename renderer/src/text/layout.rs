@@ -375,6 +375,7 @@ impl TextLayout {
         if let Some(cursor) = self.hit(point.x as f32, point.y as f32) {
             let size = self.size();
             let is_inside = point.x <= size.width && point.y <= size.height;
+
             HitPoint {
                 line: cursor.line,
                 index: cursor.index,
