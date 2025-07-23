@@ -20,7 +20,7 @@
 //! let selected = RwSignal::new("A".to_string());
 //! labeled_radio_button("A".to_string(), move || selected.get(), || "Option A");
 //! ```
-
+#[deny(missing_docs)]
 use crate::{
     style_class,
     view::View,
