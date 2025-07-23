@@ -1,3 +1,26 @@
+//! Module for creating and managing radio buttons with optional labels, reactivity, and styling.
+//!
+//! This module includes [`RadioButton`] and helper functions for building both standalone and labeled radio buttons.
+//!
+//! It supports multiple levels of reactivity using closures or reactive signals (`RwSignal`, etc.).
+//!
+//! # Usage
+//!
+//! ```rust
+//! # use floem::views::radio_button;
+//! use floem_reactive::{RwSignal, SignalGet};
+//! let selected = RwSignal::new("A".to_string());
+//! radio_button("A".to_string(), move || selected.get());
+//! ```
+//!
+//! For labels:
+//! ```rust
+//! # use floem::views::labeled_radio_button;
+//! use floem_reactive::{RwSignal, SignalGet};
+//! let selected = RwSignal::new("A".to_string());
+//! labeled_radio_button("A".to_string(), move || selected.get(), || "Option A");
+//! ```
+
 use crate::{
     style_class,
     view::View,
@@ -13,6 +36,9 @@ style_class!(pub RadioButtonDotClass);
 style_class!(pub RadioButtonDotSelectedClass);
 style_class!(pub LabeledRadioButtonClass);
 
+/// Internal helper to create the visual representation of a radio button.
+///
+/// Conditionally shows the selection dot based on whether `actual_value == represented_value`.
 fn radio_button_svg<T>(represented_value: T, actual_value: impl SignalGet<T> + 'static) -> impl View
 where
     T: Eq + PartialEq + Clone + 'static,
@@ -25,19 +51,32 @@ where
     .class(RadioButtonClass)
 }
 
-/// The `RadioButton` struct provides various methods to create and manage radio buttons.
+/// A struct for building radio buttons using different data update strategies.
 ///
-/// # Related Functions
-/// - [`radio_button`]
-/// - [`labeled_radio_button`]
+/// The radio button is visually selectable and supports keyboard navigation.
+///
+/// # Reactivity Options
+///
+/// - [`RadioButton::new`] – for closures returning a value.
+/// - [`RadioButton::new_get`] – for read-only reactive signals.
+/// - [`RadioButton::new_rw`] – for read-write reactive signals.
+///
+/// # Related
+/// See [`radio_button`] and [`labeled_radio_button`] for simplified constructors.
 pub struct RadioButton;
 
 impl RadioButton {
-    /// Creates a new radio button with a closure that determines its selected state.
+    /// Creates a new radio button using a closure for its current value.
     ///
-    /// This method is useful when you want a radio button whose state is determined by a closure.
-    /// The state can be dynamically updated by the closure, and the radio button will reflect these changes.
-    #[allow(clippy::new_ret_no_self)]
+    /// The returned value is wrapped in a [`ValueContainer`] so it can be managed declaratively.
+    ///
+    /// # Example
+    /// ```rust
+    /// use floem::views::RadioButton;
+    /// use floem_reactive::{RwSignal, SignalGet};
+    /// let selected = RwSignal::new("A".to_string());
+    /// RadioButton::new("A".to_string(), move || selected.get());
+    /// ```
     pub fn new<T>(represented_value: T, actual_value: impl Fn() -> T + 'static) -> ValueContainer<T>
     where
         T: Eq + PartialEq + Clone + 'static,
@@ -54,10 +93,9 @@ impl RadioButton {
         )
     }
 
-    /// Creates a new radio button with a signal that provides its selected state.
+    /// Creates a read-only reactive radio button.
     ///
-    /// Use this method when you have a signal that provides the current state of the radio button.
-    /// The radio button will automatically update its state based on the signal.
+    /// Useful for when the button state is externally managed and shouldn't be changed by the user.
     pub fn new_get<T>(
         represented_value: T,
         actual_value: impl SignalGet<T> + 'static,
@@ -68,10 +106,17 @@ impl RadioButton {
         radio_button_svg(represented_value, actual_value).keyboard_navigable()
     }
 
-    /// Creates a new radio button with a signal that provides and updates its selected state.
+    /// Creates a reactive radio button with two-way binding.
     ///
-    /// This method is ideal when you need a radio button that not only reflects a signal's state but also updates it.
-    /// Clicking the radio button will set the signal to the represented value.
+    /// When selected, the radio button will set the underlying signal to its represented value.
+    ///
+    /// # Example
+    /// ```rust
+    /// use floem::views::RadioButton;
+    /// use floem_reactive::RwSignal;
+    /// let selected = RwSignal::new("Option1".to_string());
+    /// RadioButton::new_rw("Option2".to_string(), selected);
+    /// ```
     pub fn new_rw<T>(
         represented_value: T,
         actual_value: impl SignalGet<T> + SignalUpdate<T> + Copy + 'static,
@@ -88,10 +133,7 @@ impl RadioButton {
             })
     }
 
-    /// Creates a new labeled radio button with a closure that determines its selected state.
-    ///
-    /// This method is useful when you want a labeled radio button whose state is determined by a closure.
-    /// The label is also provided by a closure, allowing for dynamic updates.
+    /// Creates a new **labeled** radio button from a closure and label generator.
     pub fn new_labeled<S: std::fmt::Display + 'static, T>(
         represented_value: T,
         actual_value: impl Fn() -> T + 'static,
@@ -117,10 +159,7 @@ impl RadioButton {
         )
     }
 
-    /// Creates a new labeled radio button with a signal that provides its selected state.
-    ///
-    /// Use this method when you have a signal that provides the current state of the radio button and you also want a label.
-    /// The radio button and label will automatically update based on the signal.
+    /// Creates a read-only **labeled** radio button from a signal and label.
     pub fn new_labeled_get<S: std::fmt::Display + 'static, T>(
         represented_value: T,
         actual_value: impl SignalGet<T> + 'static,
@@ -138,10 +177,7 @@ impl RadioButton {
         .keyboard_navigable()
     }
 
-    /// Creates a new labeled radio button with a signal that provides and updates its selected state.
-    ///
-    /// This method is ideal when you need a labeled radio button that not only reflects a signal's state but also updates it.
-    /// Clicking the radio button will set the signal to the represented value.
+    /// Creates a reactive **labeled** radio button with two-way binding and dynamic label.
     pub fn new_labeled_rw<S: std::fmt::Display + 'static, T>(
         represented_value: T,
         actual_value: impl SignalGet<T> + SignalUpdate<T> + Copy + 'static,
@@ -165,8 +201,7 @@ impl RadioButton {
     }
 }
 
-/// Renders a radio button that appears as selected if the signal equals the given enum value.
-/// Can be combined with a label and a stack with a click event (as in `examples/widget-gallery`).
+/// Shorthand for [`RadioButton::new`] to create a reactive radio button.
 pub fn radio_button<T>(
     represented_value: T,
     actual_value: impl Fn() -> T + 'static,
@@ -177,7 +212,7 @@ where
     RadioButton::new(represented_value, actual_value)
 }
 
-/// Renders a radio button that appears as selected if the signal equals the given enum value.
+/// Shorthand for [`RadioButton::new_labeled`] to create a reactive labeled radio button.
 pub fn labeled_radio_button<S: std::fmt::Display + 'static, T>(
     represented_value: T,
     actual_value: impl Fn() -> T + 'static,

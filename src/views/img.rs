@@ -223,7 +223,7 @@ impl View for Img {
         }
     }
 
-    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::tree::NodeId {
+    fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> NodeId {
         cx.layout_node(self.id(), true, |_cx| {
             if self.content_node.is_none() {
                 self.content_node = Some(
