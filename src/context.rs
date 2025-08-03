@@ -207,54 +207,63 @@ impl EventCx<'_> {
 
         // CLARIFY: should this be disabled when disable_default?
         if !disable_default {
-            match &event {
-                Event::PointerDown(event) => {
-                    self.app_state.clicking.insert(view_id);
-                    if event.button.is_primary() {
-                        let rect = view_id.get_size().unwrap_or_default().to_rect();
-                        let now_focused = rect.contains(event.pos);
+            let popout_menu = || {
+                let bottom_left = {
+                    let layout = view_state.borrow().layout_rect;
+                    Point::new(layout.x0, layout.y1)
+                };
 
-                        if now_focused {
+                let popout_menu = view_state.borrow().popout_menu.clone();
+                show_context_menu(popout_menu?(), Some(bottom_left));
+                Some((EventPropagation::Stop, PointerEventConsumed::Yes))
+            };
+
+            match &event {
+                Event::PointerDown(pointer_event) => {
+                    self.app_state.clicking.insert(view_id);
+                    if pointer_event.button.is_primary() {
+                        let rect = view_id.get_size().unwrap_or_default().to_rect();
+                        let on_view = rect.contains(pointer_event.pos);
+
+                        if on_view {
                             if self.app_state.keyboard_navigable.contains(&view_id) {
                                 // if the view can be focused, we update the focus
                                 self.app_state.update_focus(view_id, false);
                             }
-                            if event.count == 2
+                            if pointer_event.count == 2
                                 && view_state
                                     .borrow()
                                     .event_listeners
                                     .contains_key(&EventListener::DoubleClick)
                             {
-                                view_state.borrow_mut().last_pointer_down = Some(event.clone());
+                                view_state.borrow_mut().last_pointer_down =
+                                    Some(pointer_event.clone());
                             }
                             if view_state
                                 .borrow()
                                 .event_listeners
                                 .contains_key(&EventListener::Click)
                             {
-                                view_state.borrow_mut().last_pointer_down = Some(event.clone());
+                                view_state.borrow_mut().last_pointer_down =
+                                    Some(pointer_event.clone());
                             }
 
-                            let bottom_left = {
-                                let layout = view_state.borrow().layout_rect;
-                                Point::new(layout.x0, layout.y1)
+                            #[cfg(target_os = "macos")]
+                            if let Some((ep, pec)) = popout_menu() {
+                                return (ep, pec);
                             };
-                            let popout_menu = view_state.borrow().popout_menu.clone();
-                            if let Some(menu) = popout_menu {
-                                show_context_menu(menu(), Some(bottom_left));
-                                return (EventPropagation::Stop, PointerEventConsumed::Yes);
-                            }
+
                             if self.app_state.draggable.contains(&view_id)
                                 && self.app_state.drag_start.is_none()
                             {
-                                self.app_state.drag_start = Some((view_id, event.pos));
+                                self.app_state.drag_start = Some((view_id, pointer_event.pos));
                             }
                         }
-                    } else if event.button.is_secondary() {
+                    } else if pointer_event.button.is_secondary() {
                         let rect = view_id.get_size().unwrap_or_default().to_rect();
-                        let now_focused = rect.contains(event.pos);
+                        let on_view = rect.contains(pointer_event.pos);
 
-                        if now_focused {
+                        if on_view {
                             if self.app_state.keyboard_navigable.contains(&view_id) {
                                 // if the view can be focused, we update the focus
                                 self.app_state.update_focus(view_id, false);
@@ -264,7 +273,8 @@ impl EventCx<'_> {
                                 .event_listeners
                                 .contains_key(&EventListener::SecondaryClick)
                             {
-                                view_state.borrow_mut().last_pointer_down = Some(event.clone());
+                                view_state.borrow_mut().last_pointer_down =
+                                    Some(pointer_event.clone());
                             }
                         }
                     }
@@ -329,6 +339,13 @@ impl EventCx<'_> {
                     if pointer_event.button.is_primary() {
                         let rect = view_id.get_size().unwrap_or_default().to_rect();
                         let on_view = rect.contains(pointer_event.pos);
+
+                        #[cfg(not(target_os = "macos"))]
+                        if on_view {
+                            if let Some((ep, pec)) = popout_menu() {
+                                return (ep, pec);
+                            };
+                        }
 
                         // if id_path.is_none() {
                         if !directed {
