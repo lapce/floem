@@ -9,6 +9,6 @@ pub fn stack_from_iter_view() -> impl IntoView {
 
     let collection: Vec<usize> = (0..10).collect();
 
-    stack_from_iter(collection.iter().map(|val| format!("Item {}", val)))
+    stack_from_iter(collection.iter().map(|val| format!("Item {val}")))
         .style(|s| s.flex_col().row_gap(5).margin_top(10))
 }

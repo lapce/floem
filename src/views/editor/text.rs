@@ -299,7 +299,7 @@ pub trait Styling {
         (1.5 * font_size).round().max(font_size)
     }
 
-    fn font_family(&self, _edid: EditorId, _line: usize) -> Cow<[FamilyOwned]> {
+    fn font_family(&self, _edid: EditorId, _line: usize) -> Cow<'_, [FamilyOwned]> {
         Cow::Borrowed(&[FamilyOwned::SansSerif])
     }
 
@@ -671,7 +671,7 @@ impl Styling for SimpleStyling {
         (line_height.round() as usize).max(self.font_size) as f32
     }
 
-    fn font_family(&self, _edid: EditorId, _line: usize) -> Cow<[FamilyOwned]> {
+    fn font_family(&self, _edid: EditorId, _line: usize) -> Cow<'_, [FamilyOwned]> {
         Cow::Borrowed(&self.font_family)
     }
 

@@ -333,13 +333,13 @@ impl<T> ArcRwSignal<T> {
 
     /// Get a read guard to the data (like Arc<RwLock<T>>::read())
     /// This does NOT subscribe to reactive effects.
-    pub fn read(&self) -> RwLockReadGuard<T> {
+    pub fn read(&self) -> RwLockReadGuard<'_, T> {
         self.inner.data.read()
     }
 
     /// Get a write guard to the data (like Arc<RwLock<T>>::write())
     /// This will notify reactive effects when the guard is dropped.
-    pub fn write(&self) -> ArcRwSignalWriteGuard<T> {
+    pub fn write(&self) -> ArcRwSignalWriteGuard<'_, T> {
         let guard = self.inner.data.write();
         ArcRwSignalWriteGuard {
             guard,
@@ -348,12 +348,12 @@ impl<T> ArcRwSignal<T> {
     }
 
     /// Try to get a read guard without blocking
-    pub fn try_read(&self) -> Option<RwLockReadGuard<T>> {
+    pub fn try_read(&self) -> Option<RwLockReadGuard<'_, T>> {
         self.inner.data.try_read()
     }
 
     /// Try to get a write guard without blocking
-    pub fn try_write(&self) -> Option<ArcRwSignalWriteGuard<T>> {
+    pub fn try_write(&self) -> Option<ArcRwSignalWriteGuard<'_, T>> {
         self.inner
             .data
             .try_write()

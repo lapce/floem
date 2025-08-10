@@ -7,7 +7,7 @@ use floem::{
     reactive::{create_effect, create_rw_signal, create_signal, SignalGet, SignalUpdate},
     style_class,
     unit::UnitExt,
-    views::{label, stack, Decorators},
+    views::{label, Decorators},
     IntoView, View,
 };
 

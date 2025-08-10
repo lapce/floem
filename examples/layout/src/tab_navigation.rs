@@ -88,7 +88,7 @@ pub fn tab_navigation_view() -> impl IntoView {
                 move || active_tab.get(),
                 move || tabs.get(),
                 |it| *it,
-                |it| container(label(move || format!("{}", it))),
+                |it| container(label(move || format!("{it}"))),
             )
             .style(|s| s.padding(CONTENT_PADDING).padding_bottom(10.0)),
         )

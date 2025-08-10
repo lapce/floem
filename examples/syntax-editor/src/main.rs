@@ -74,7 +74,7 @@ impl Styling for SyntaxHighlightingStyle<'_> {
         self.style.line_height(edid, line)
     }
 
-    fn font_family(&self, edid: EditorId, line: usize) -> Cow<[FamilyOwned]> {
+    fn font_family(&self, edid: EditorId, line: usize) -> Cow<'_, [FamilyOwned]> {
         self.style.font_family(edid, line)
     }
 
