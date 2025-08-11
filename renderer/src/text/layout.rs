@@ -311,7 +311,7 @@ impl TextLayout {
         &self.lines_range
     }
 
-    pub fn layout_runs(&self) -> LayoutRunIter {
+    pub fn layout_runs(&self) -> LayoutRunIter<'_> {
         LayoutRunIter::new(self)
     }
 

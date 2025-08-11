@@ -25,7 +25,7 @@ pub fn dropped_file_view() -> impl IntoView {
         )
         .on_event_stop(EventListener::DroppedFile, move |e| {
             if let Event::DroppedFile(e) = e {
-                println!("DroppedFile {:?}", e);
+                println!("DroppedFile {e:?}");
                 filename.set(format!("{:?}", e.path));
             }
         });

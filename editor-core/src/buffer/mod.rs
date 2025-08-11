@@ -430,11 +430,11 @@ impl Buffer {
         )
     }
 
-    fn deletes_from_union_for_index(&self, rev_index: usize) -> Cow<Subset> {
+    fn deletes_from_union_for_index(&self, rev_index: usize) -> Cow<'_, Subset> {
         self.deletes_from_union_before_index(rev_index + 1, true)
     }
 
-    fn deletes_from_cur_union_for_index(&self, rev_index: usize) -> Cow<Subset> {
+    fn deletes_from_cur_union_for_index(&self, rev_index: usize) -> Cow<'_, Subset> {
         let mut deletes_from_union = self.deletes_from_union_for_index(rev_index);
         for rev in &self.revs[rev_index + 1..] {
             if let Contents::Edit { ref inserts, .. } = rev.edit {
@@ -446,7 +446,11 @@ impl Buffer {
         deletes_from_union
     }
 
-    fn deletes_from_union_before_index(&self, rev_index: usize, invert_undos: bool) -> Cow<Subset> {
+    fn deletes_from_union_before_index(
+        &self,
+        rev_index: usize,
+        invert_undos: bool,
+    ) -> Cow<'_, Subset> {
         let mut deletes_from_union = Cow::Borrowed(&self.deletes_from_union);
         let mut undone_groups = Cow::Borrowed(&self.undone_groups);
 
