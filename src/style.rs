@@ -2337,6 +2337,10 @@ impl Style {
         self.position(taffy::style::Position::Absolute)
     }
 
+    pub fn items_stretch(self) -> Self {
+        self.align_items(Some(taffy::style::AlignItems::Stretch))
+    }
+
     pub fn items_start(self) -> Self {
         self.align_items(Some(taffy::style::AlignItems::FlexStart))
     }
@@ -2350,21 +2354,33 @@ impl Style {
         self.align_items(Some(taffy::style::AlignItems::FlexEnd))
     }
 
-    /// Defines the alignment along the main axis as Centered
-    pub fn justify_center(self) -> Self {
-        self.justify_content(Some(taffy::style::JustifyContent::Center))
-    }
-
-    pub fn justify_end(self) -> Self {
-        self.justify_content(Some(taffy::style::JustifyContent::FlexEnd))
+    pub fn items_baseline(self) -> Self {
+        self.align_items(Some(taffy::style::AlignItems::Baseline))
     }
 
     pub fn justify_start(self) -> Self {
         self.justify_content(Some(taffy::style::JustifyContent::FlexStart))
     }
 
+    pub fn justify_end(self) -> Self {
+        self.justify_content(Some(taffy::style::JustifyContent::FlexEnd))
+    }
+
+    /// Defines the alignment along the main axis as Centered
+    pub fn justify_center(self) -> Self {
+        self.justify_content(Some(taffy::style::JustifyContent::Center))
+    }
+
     pub fn justify_between(self) -> Self {
         self.justify_content(Some(taffy::style::JustifyContent::SpaceBetween))
+    }
+
+    pub fn justify_around(self) -> Self {
+        self.justify_content(Some(taffy::style::JustifyContent::SpaceAround))
+    }
+
+    pub fn justify_evenly(self) -> Self {
+        self.justify_content(Some(taffy::style::JustifyContent::SpaceEvenly))
     }
 
     pub fn hide(self) -> Self {
