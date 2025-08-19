@@ -10,7 +10,6 @@ use ui_events::pointer::PointerEvent;
 use winit::keyboard::NamedKey;
 
 use crate::{
-    Renderer,
     event::EventPropagation,
     id::ViewId,
     prop, prop_extractor,

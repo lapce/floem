@@ -7,6 +7,7 @@ use crate::{
         StylePropValue, Transition,
     },
     style_class,
+    text::Weight,
     unit::{DurationUnitExt, UnitExt},
     views::{
         ButtonClass, CheckboxClass, LabelClass, LabelCustomStyle, LabeledCheckboxClass,
@@ -18,7 +19,6 @@ use crate::{
         slider::{SliderClass, SliderCustomStyle},
     },
 };
-use floem_renderer::text::Weight;
 use peniko::{Brush, Color, color::palette::css};
 use smallvec::smallvec;
 

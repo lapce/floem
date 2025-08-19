@@ -1,5 +1,4 @@
 use dpi::PhysicalPosition;
-use floem_renderer::gpu_resources::GpuResources;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 use ui_events_winit::WindowEventTranslation;
@@ -12,6 +11,7 @@ use wgpu::web_sys;
 use floem_reactive::SignalUpdate;
 use peniko::kurbo::{Point, Size};
 use std::{collections::HashMap, rc::Rc};
+use wgpu::{Device, Instance, Queue};
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::WindowEvent,
@@ -19,21 +19,10 @@ use winit::{
     window::{Theme, WindowId},
 };
 
-use crate::app::AppConfig;
 use crate::{
-    AppEvent,
-    action::{Timer, TimerToken},
-    app::{APP_UPDATE_EVENTS, AppEventCallback, AppUpdateEvent, UserEvent},
-    context::PaintState,
-    dropped_file::FileDragEvent::{self, DragDropped},
-    ext_event::EXT_EVENT_HANDLER,
-    inspector::Capture,
-    profiler::{Profile, ProfileEvent},
-    view::View,
-    window::WindowConfig,
-    window_handle::WindowHandle,
-    window_id::process_window_updates,
+    action::{Timer, TimerToken}, app::{AppEventCallback, AppUpdateEvent, UserEvent, APP_UPDATE_EVENTS}, context::PaintState, dropped_file::FileDragEvent::{self, DragDropped}, ext_event::EXT_EVENT_HANDLER, inspector::Capture, profiler::{Profile, ProfileEvent}, renderer::AnyWindowRenderer, view::View, window::WindowConfig, window_handle::WindowHandle, window_id::process_window_updates, AppEvent
 };
+use crate::{app::AppConfig, gpu_resources::GpuResources};
 
 pub(crate) struct ApplicationHandle {
     window_handles: HashMap<winit::window::WindowId, WindowHandle>,
@@ -84,7 +73,7 @@ impl ApplicationHandle {
                 } = &handle.paint_state
                 {
                     let (gpu_resources, surface) = rx.recv().unwrap().unwrap();
-                    let renderer = crate::renderer::Renderer::new(
+                    let renderer = AnyWindowRenderer::VelloWindowRenderer::new(
                         window.clone(),
                         gpu_resources.clone(),
                         surface,

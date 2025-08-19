@@ -1,6 +1,6 @@
+use crate::gpu_resources::{GpuResourceError, GpuResources};
+use anyrender::WindowRenderer;
 use floem_reactive::Scope;
-use floem_renderer::Renderer as FloemRenderer;
-use floem_renderer::gpu_resources::{GpuResourceError, GpuResources};
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Shape, Size, Vec2};
 use std::{
     ops::{Deref, DerefMut},
@@ -27,7 +27,6 @@ use crate::animate::{AnimStateKind, RepeatMode};
 use crate::dropped_file::FileDragEvent;
 use crate::easing::{Easing, Linear};
 use crate::menu::Menu;
-use crate::renderer::Renderer;
 use crate::style::{Disabled, DisplayProp, Focusable, Hidden, PointerEvents, PointerEventsProp};
 use crate::view_state::IsHiddenState;
 use crate::{
@@ -1058,61 +1057,11 @@ std::thread_local! {
 pub struct PaintCx<'a> {
     pub window_state: &'a mut WindowState,
     pub(crate) paint_state: &'a mut PaintState,
-    pub(crate) transform: Affine,
-    pub(crate) clip: Option<RoundedRect>,
-    pub(crate) z_index: Option<i32>,
-    pub(crate) saved_transforms: Vec<Affine>,
-    pub(crate) saved_clips: Vec<Option<RoundedRect>>,
-    pub(crate) saved_z_indexes: Vec<Option<i32>>,
     pub gpu_resources: Option<GpuResources>,
     pub window: Arc<dyn Window>,
-    #[cfg(feature = "vello")]
-    pub layer_count: usize,
-    #[cfg(feature = "vello")]
-    pub saved_layer_counts: Vec<usize>,
 }
 
 impl PaintCx<'_> {
-    pub fn save(&mut self) {
-        self.saved_transforms.push(self.transform);
-        self.saved_clips.push(self.clip);
-        self.saved_z_indexes.push(self.z_index);
-        #[cfg(feature = "vello")]
-        self.saved_layer_counts.push(self.layer_count);
-    }
-
-    pub fn restore(&mut self) {
-        #[cfg(feature = "vello")]
-        {
-            let saved_count = self.saved_layer_counts.pop().unwrap_or_default();
-            while self.layer_count > saved_count {
-                self.pop_layer();
-                self.layer_count -= 1;
-            }
-        }
-
-        self.transform = self.saved_transforms.pop().unwrap_or_default();
-        self.clip = self.saved_clips.pop().unwrap_or_default();
-        self.z_index = self.saved_z_indexes.pop().unwrap_or_default();
-        self.paint_state
-            .renderer_mut()
-            .set_transform(self.transform);
-        if let Some(z_index) = self.z_index {
-            self.paint_state.renderer_mut().set_z_index(z_index);
-        } else {
-            self.paint_state.renderer_mut().set_z_index(0);
-        }
-
-        #[cfg(not(feature = "vello"))]
-        {
-            if let Some(rect) = self.clip {
-                self.paint_state.renderer_mut().clip(&rect);
-            } else {
-                self.paint_state.renderer_mut().clear_clip();
-            }
-        }
-    }
-
     /// Allows a `View` to determine if it is being called in order to
     /// paint a *draggable* image of itself during a drag (likely
     /// `draggable()` was called on the `View` or `ViewId`) as opposed
@@ -1254,47 +1203,6 @@ impl PaintCx<'_> {
         self.restore();
     }
 
-    /// Clip the drawing area to the given shape.
-    pub fn clip(&mut self, shape: &impl Shape) {
-        #[cfg(feature = "vello")]
-        {
-            use peniko::Mix;
-
-            self.push_layer(Mix::Normal, 1.0, Affine::IDENTITY, shape);
-            self.layer_count += 1;
-            self.clip = Some(shape.bounding_box().to_rounded_rect(0.0));
-        }
-
-        #[cfg(not(feature = "vello"))]
-        {
-            let rect = if let Some(rect) = shape.as_rect() {
-                rect.to_rounded_rect(0.0)
-            } else if let Some(rect) = shape.as_rounded_rect() {
-                rect
-            } else {
-                let rect = shape.bounding_box();
-                rect.to_rounded_rect(0.0)
-            };
-
-            let rect = if let Some(existing) = self.clip {
-                let rect = existing.rect().intersect(rect.rect());
-                self.paint_state.renderer_mut().clip(&rect);
-                rect.to_rounded_rect(0.0)
-            } else {
-                self.paint_state.renderer_mut().clip(&shape);
-                rect
-            };
-
-            self.clip = Some(rect);
-        }
-    }
-
-    /// Remove clipping so the entire window can be rendered to.
-    pub fn clear_clip(&mut self) {
-        self.clip = None;
-        self.paint_state.renderer_mut().clear_clip();
-    }
-
     pub fn offset(&mut self, offset: (f64, f64)) {
         let mut new = self.transform.as_coeffs();
         new[4] += offset.0;
@@ -1338,34 +1246,10 @@ impl PaintCx<'_> {
             Size::ZERO
         }
     }
-
-    pub(crate) fn set_z_index(&mut self, z_index: i32) {
-        self.z_index = Some(z_index);
-        self.paint_state.renderer_mut().set_z_index(z_index);
-    }
-
-    pub fn is_focused(&self, id: ViewId) -> bool {
-        self.window_state.is_focused(&id)
-    }
 }
 
-// TODO: should this be private?
-pub enum PaintState {
-    /// The renderer is not yet initialized. This state is used to wait for the GPU resources to be acquired.
-    PendingGpuResources {
-        window: Arc<dyn Window>,
-        rx: Receiver<Result<(GpuResources, wgpu::Surface<'static>), GpuResourceError>>,
-        font_embolden: f32,
-        /// This field holds an instance of `Renderer::Uninitialized` until the GPU resources are acquired,
-        /// which will be returned in `PaintState::renderer` and `PaintState::renderer_mut`.
-        /// All calls to renderer methods will be no-ops until the renderer is initialized.
-        ///
-        /// Previously, `PaintState::renderer` and `PaintState::renderer_mut` would panic if called when the renderer was uninitialized.
-        /// However, this turned out to be hard to handle properly and led to panics, especially since the rest of the application code can't control when the renderer is initialized.
-        renderer: crate::renderer::Renderer,
-    },
-    /// The renderer is initialized and ready to paint.
-    Initialized { renderer: crate::renderer::Renderer },
+pub struct PaintState {
+    // renderer: Box<dyn WindowRenderer>,
 }
 
 impl PaintState {

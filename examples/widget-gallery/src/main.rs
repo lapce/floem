@@ -130,7 +130,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                     .scroll()
                     .style(|s| s.size_full())
             },
-            Some(
+           Some(
                 WindowConfig::default()
                     .size(Size::new(700.0, 400.0))
                     .title(name.unwrap_or_default()),

@@ -16,7 +16,7 @@ use crate::{
     prop, prop_extractor,
     reactive::{ReadSignal, RwSignal, Scope, batch, untrack},
     style::{CursorColor, StylePropValue, TextColor},
-    text::{Attrs, AttrsList, LineHeightValue, TextLayout, Wrap},
+    text::{Affinity, Attrs, AttrsList, LineHeightValue, TextLayout, Wrap},
     view::{IntoView, View},
     views::text,
 };
@@ -32,7 +32,6 @@ use floem_editor_core::{
     word::WordCursor,
 };
 use floem_reactive::{SignalGet, SignalTrack, SignalUpdate, SignalWith, Trigger};
-use floem_renderer::text::Affinity;
 use lapce_xi_rope::Rope;
 
 pub mod actions;

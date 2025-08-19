@@ -13,7 +13,6 @@ use winit::keyboard::NamedKey;
 use crate::style::{BorderRadiusProp, CustomStyle};
 use crate::unit::Pct;
 use crate::{
-    Renderer,
     event::EventPropagation,
     id::ViewId,
     prop, prop_extractor,

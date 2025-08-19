@@ -49,7 +49,6 @@ use std::any::Any;
 use taffy::tree::NodeId;
 
 use crate::{
-    Renderer,
     context::{ComputeLayoutCx, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx},
     event::{Event, EventPropagation},
     id::ViewId,
@@ -550,7 +549,7 @@ fn paint_box_shadow(
         }
     }
 }
-#[cfg(feature = "vello")]
+
 pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, size: Size) {
     use crate::{
         border_path_iter::{BorderPath, BorderPathEvent},
@@ -602,113 +601,6 @@ pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, size: Size
     assert!(current_path.is_empty());
 }
 
-#[cfg(not(feature = "vello"))]
-pub(crate) fn paint_outline(cx: &mut PaintCx, style: &ViewStyleProps, size: Size) {
-    let outline = &style.outline().0;
-    if outline.width == 0. {
-        // TODO: we should warn! when outline is < 0
-        return;
-    }
-    let half = outline.width / 2.0;
-    let rect = size.to_rect().inflate(half, half);
-    let border_radii = border_to_radii_view(style, size);
-    cx.stroke(
-        &rect.to_rounded_rect(radii_add(border_radii, half)),
-        &style.outline_color(),
-        outline,
-    );
-}
-
-#[cfg(not(feature = "vello"))]
-pub(crate) fn paint_border(
-    cx: &mut PaintCx,
-    layout_style: &LayoutProps,
-    style: &ViewStyleProps,
-    size: Size,
-) {
-    let border = layout_style.border();
-
-    let left = border.left.map(|v| v.0).unwrap_or(Stroke::new(0.));
-    let top = border.top.map(|v| v.0).unwrap_or(Stroke::new(0.));
-    let right = border.right.map(|v| v.0).unwrap_or(Stroke::new(0.));
-    let bottom = border.bottom.map(|v| v.0).unwrap_or(Stroke::new(0.));
-
-    if left.width == top.width
-        && top.width == right.width
-        && right.width == bottom.width
-        && bottom.width == left.width
-        && left.width > 0.0
-        && style.border_color().left.is_some()
-        && style.border_color().top.is_some()
-        && style.border_color().right.is_some()
-        && style.border_color().bottom.is_some()
-        && style.border_color().left == style.border_color().top
-        && style.border_color().top == style.border_color().right
-        && style.border_color().right == style.border_color().bottom
-    {
-        let half = left.width / 2.0;
-        let rect = size.to_rect().inflate(-half, -half);
-        let radii = border_to_radii_view(style, size);
-        if let Some(color) = style.border_color().left {
-            if radii_max(radii) > 0.0 {
-                let radii = radii_map(radii, |r| (r - half).max(0.0));
-                cx.stroke(&rect.to_rounded_rect(radii), &color, &left);
-            } else {
-                cx.stroke(&rect, &color, &left);
-            }
-        }
-    } else {
-        // TODO: now with vello should we do this left.width > 0. check?
-        if left.width > 0.0
-            && let Some(color) = style.border_color().left
-        {
-            let half = left.width / 2.0;
-            cx.stroke(
-                &Line::new(Point::new(half, 0.0), Point::new(half, size.height)),
-                &color,
-                &left,
-            );
-        }
-        if right.width > 0.0
-            && let Some(color) = style.border_color().right
-        {
-            let half = right.width / 2.0;
-            cx.stroke(
-                &Line::new(
-                    Point::new(size.width - half, 0.0),
-                    Point::new(size.width - half, size.height),
-                ),
-                &color,
-                &right,
-            );
-        }
-        if top.width > 0.0
-            && let Some(color) = style.border_color().top
-        {
-            let half = top.width / 2.0;
-            cx.stroke(
-                &Line::new(Point::new(0.0, half), Point::new(size.width, half)),
-                &color,
-                &top,
-            );
-        }
-        if bottom.width > 0.0
-            && let Some(color) = style.border_color().bottom
-        {
-            let half = bottom.width / 2.0;
-            cx.stroke(
-                &Line::new(
-                    Point::new(0.0, size.height - half),
-                    Point::new(size.width, size.height - half),
-                ),
-                &color,
-                &bottom,
-            );
-        }
-    }
-}
-
-#[cfg(feature = "vello")]
 pub(crate) fn paint_border(
     cx: &mut PaintCx,
     layout_style: &LayoutProps,

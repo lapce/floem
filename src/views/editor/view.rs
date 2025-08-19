@@ -1,7 +1,6 @@
 use std::{collections::HashMap, ops::RangeInclusive, rc::Rc};
 
 use crate::{
-    Renderer,
     action::{set_ime_allowed, set_ime_cursor_area},
     context::{LayoutCx, PaintCx, UpdateCx},
     event::{Event, EventListener, EventPropagation},

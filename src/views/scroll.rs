@@ -11,7 +11,6 @@ use crate::style::{
 };
 use crate::unit::PxPct;
 use crate::{
-    Renderer,
     context::{ComputeLayoutCx, PaintCx},
     event::{Event, EventPropagation},
     id::ViewId,

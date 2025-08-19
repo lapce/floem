@@ -4,12 +4,15 @@ use std::borrow::Cow;
 use std::pin::Pin;
 use std::rc::Rc;
 
-use crate::style::{CustomStylable, CustomStyle, Style, StylePropValue};
-use crate::view_state::{Stack, StackOffset};
-use crate::views::{Decorators, static_label};
-use crate::{AnyView, IntoView, View, ViewId, prop, prop_extractor, style_class};
+use crate::{
+    AnyView, IntoView, View, ViewId, prop, prop_extractor,
+    style::{CustomStylable, CustomStyle, Style, StylePropValue},
+    style_class,
+    text::{Align, Weight},
+    view_state::{Stack, StackOffset},
+    views::{Decorators, static_label},
+};
 use floem_reactive::create_updater;
-use floem_renderer::text::Align;
 use fluent_bundle::{FluentBundle, FluentResource};
 
 pub use fluent_bundle::FluentArgs;
@@ -65,10 +68,8 @@ impl StylePropValue for LocaleMap {
         let count = languages.len();
 
         let view = stack((
-            format!("Languages ({count})").style(|s| {
-                s.font_size(12.0)
-                    .font_weight(floem_renderer::text::Weight::SEMIBOLD)
-            }),
+            format!("Languages ({count})")
+                .style(|s| s.font_size(12.0).font_weight(Weight::SEMIBOLD)),
             v_stack_from_iter(languages.into_iter().map(|lang| {
                 lang.style(|s| {
                     s.font_size(11.0)

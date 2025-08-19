@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use crate::text::{fontdb, Family, Stretch, Style, Weight};
+pub use cosmic_text::{Family, Stretch, Style, Weight, fontdb};
 use peniko::Color;
 
 /// An owned version of [`Family`]

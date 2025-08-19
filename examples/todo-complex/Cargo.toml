@@ -7,7 +7,6 @@ edition = "2021"
 confy = "1.0.0"
 floem = { path = "../..", features = [
   "serde",
-  "vello",
 ], default-features = false }
 rusqlite = { version = "0.37.0", features = ["bundled"] }
 serde = { workspace = true }

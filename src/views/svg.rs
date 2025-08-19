@@ -1,13 +1,10 @@
 use floem_reactive::create_effect;
-use floem_renderer::{
-    Renderer,
-    usvg::{self, Tree},
-};
 use peniko::{
     Brush, GradientKind, LinearGradientPosition,
     kurbo::{Point, Size},
 };
 use sha2::{Digest, Sha256};
+use usvg::{self, Tree};
 
 use crate::{
     id::ViewId,
@@ -194,7 +191,8 @@ impl View for Svg {
             } else {
                 self.svg_style.text_color().map(Brush::Solid)
             };
-            cx.draw_svg(crate::RendererSvg { tree, hash }, rect, color.as_ref());
+            // TODO need to move svg caching to this module
+            // cx.draw_svg(crate::RendererSvg { tree, hash }, rect, color.as_ref());
         }
     }
 }

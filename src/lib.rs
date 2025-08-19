@@ -182,7 +182,6 @@ mod app;
 #[cfg(target_os = "macos")]
 mod app_delegate;
 mod app_handle;
-#[cfg(feature = "vello")]
 mod border_path_iter;
 mod clipboard;
 pub mod context;
@@ -193,15 +192,22 @@ pub mod ext_event;
 pub mod file;
 #[cfg(any(feature = "rfd-async-std", feature = "rfd-tokio"))]
 pub mod file_action;
+pub mod gpu_resources;
 pub(crate) mod id;
 mod inspector;
 pub mod menu;
 mod nav;
 mod profiler;
-mod renderer;
+pub mod renderer;
 pub mod responsive;
 mod screen_layout;
 pub mod style;
+pub mod text {
+    pub mod attrs;
+    pub mod layout;
+    pub use attrs::*;
+    pub use layout::*;
+}
 pub mod theme;
 pub mod unit;
 mod update;
@@ -232,10 +238,6 @@ pub mod receiver_signal {
 pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};
 pub use clipboard::{Clipboard, ClipboardError};
 pub use floem_reactive as reactive;
-pub use floem_renderer::Renderer;
-pub use floem_renderer::Svg as RendererSvg;
-pub use floem_renderer::gpu_resources::GpuResources;
-pub use floem_renderer::text;
 pub use id::ViewId;
 pub use imbl;
 pub use muda;
@@ -251,7 +253,6 @@ pub use window_id::{Urgency, WindowIdExt};
 pub use window_state::WindowState;
 
 pub mod prelude {
-    pub use crate::Renderer;
     pub use crate::unit::{DurationUnitExt, UnitExt};
     pub use crate::view_tuple::ViewTuple;
     pub use crate::views::*;

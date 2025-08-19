@@ -1,5 +1,4 @@
 use crate::{
-    Renderer,
     context::PaintCx,
     id::ViewId,
     peniko::kurbo::Point,

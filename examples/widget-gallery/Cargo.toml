@@ -4,12 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-floem = { path = "../..", features = ["rfd-async-std", "vello"] }
+floem = { path = "../..", features = ["rfd-async-std"] }
 strum = { workspace = true }
 files = { path = "../files/", optional = true }
 stacks = { path = "../stacks/", optional = true }
 
-[features]
-default = ["full"]
-vello = ["floem/vello"]
-full = ["dep:files", "dep:stacks"]
