@@ -184,7 +184,7 @@ pub(crate) struct VirtualStackState<T> {
 /// ```
 /// use floem::prelude::*;
 ///
-/// VirtualStack::list_new(move || 1..=1000000)
+/// VirtualStack::new(move || 1..=1000000)
 ///     .style(|s| {
 ///         s.flex_col().class(LabelClass, |s| {
 ///             // give each of the numbers some vertical padding and make them take up the full width of the stack
