@@ -105,7 +105,7 @@ fn enhanced_list() -> impl IntoView {
             })
     };
 
-    VirtualStack::list_with_view(move || long_list.get().enumerate(), item_view)
+    VirtualList::with_view(move || long_list.get().enumerate(), item_view)
         .style(move |s| s.flex_col().flex_grow(1.0))
         .scroll()
         .style(move |s| s.width(list_width).height(200.0).border(1.0))

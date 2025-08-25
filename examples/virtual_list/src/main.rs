@@ -1,7 +1,7 @@
 use floem::prelude::*;
 
 fn app_view() -> impl IntoView {
-    VirtualStack::list_new(move || 1..=1000000)
+    VirtualList::new(move || 1..=1000000)
         .style(|s| {
             s.flex_col().items_center().class(LabelClass, |s| {
                 s.padding_vert(2.5).width_full().justify_center()

@@ -1,3 +1,4 @@
+use floem_reactive::create_effect;
 use taffy::FlexDirection;
 use winit::keyboard::{Key, NamedKey};
 
@@ -5,63 +6,69 @@ use crate::event::{Event, EventListener, EventPropagation};
 use crate::{prelude::*, ViewId};
 
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::ops::{Deref, DerefMut};
 
-impl<T> VirtualStack<(usize, T)> {
+pub struct VirtualList<T: 'static> {
+    stack: VirtualStack<(usize, T)>,
+    selection: RwSignal<Option<usize>>,
+}
+
+impl<T> VirtualList<T> {
     // For types that implement all constraints
-    pub fn list_new<DF, I>(data_fn: DF) -> Self
+    pub fn new<DF, I>(data_fn: DF) -> Self
     where
         DF: Fn() -> I + 'static,
         I: VirtualVector<T>,
         T: Hash + Eq + IntoView + 'static,
     {
-        Self::list_full(
+        Self::full(
             data_fn,
             |item| {
                 let mut hasher = DefaultHasher::new();
                 item.hash(&mut hasher);
                 hasher.finish()
             },
-            |item| item.into_view(),
+            |_index, item| item.into_view(),
         )
     }
 
     // For types that are hashable but need custom view
-    pub fn list_with_view<DF, I, V>(data_fn: DF, view_fn: impl Fn(T) -> V + 'static) -> Self
+    pub fn with_view<DF, I, V>(data_fn: DF, view_fn: impl Fn(T) -> V + 'static) -> Self
     where
         DF: Fn() -> I + 'static,
         I: VirtualVector<T>,
         T: Hash + Eq + 'static,
         V: IntoView,
     {
-        Self::list_full(
+        Self::full(
             data_fn,
             |item| {
                 let mut hasher = DefaultHasher::new();
                 item.hash(&mut hasher);
                 hasher.finish()
             },
-            move |item| view_fn(item).into_view(),
+            move |_index, item| view_fn(item).into_view(),
         )
     }
 
     // For types that implement IntoView but need custom keys
-    pub fn list_with_key<DF, I, K>(data_fn: DF, key_fn: impl Fn(&T) -> K + 'static) -> Self
+    pub fn with_key<DF, I, K>(data_fn: DF, key_fn: impl Fn(&T) -> K + 'static) -> Self
     where
         DF: Fn() -> I + 'static,
         I: VirtualVector<T>,
         T: IntoView + 'static,
         K: Hash + Eq + 'static,
     {
-        Self::list_full(data_fn, key_fn, |item| item.into_view())
+        Self::full(data_fn, key_fn, |_index, item| item.into_view())
     }
 
-    pub fn list_full<DF, I, KF, K, VF, V>(data_fn: DF, key_fn: KF, view_fn: VF) -> Self
+    pub fn full<DF, I, KF, K, VF, V>(data_fn: DF, key_fn: KF, view_fn: VF) -> Self
     where
         DF: Fn() -> I + 'static,
         I: VirtualVector<T>,
         KF: Fn(&T) -> K + 'static,
         K: Eq + Hash + 'static,
-        VF: Fn(T) -> V + 'static,
+        VF: Fn(usize, T) -> V + 'static,
         V: IntoView + 'static,
         T: 'static,
     {
@@ -69,19 +76,78 @@ impl<T> VirtualStack<(usize, T)> {
     }
 }
 
+impl<T: 'static> Deref for VirtualList<T> {
+    type Target = VirtualStack<(usize, T)>;
+    fn deref(&self) -> &VirtualStack<(usize, T)> {
+        &self.stack
+    }
+}
+
+impl<T: 'static> DerefMut for VirtualList<T> {
+    fn deref_mut(&mut self) -> &mut VirtualStack<(usize, T)> {
+        &mut self.stack
+    }
+}
+
+impl<T: 'static> VirtualList<T> {
+    pub fn selection(&self) -> RwSignal<Option<usize>> {
+        self.selection
+    }
+
+    /// Sets a callback function to be called whenever the selection changes in the virtual list.
+    ///
+    /// The callback function receives an `Option<usize>` parameter representing the currently
+    /// selected item index. When `None`, no item is selected. When `Some(index)`, the item
+    /// at that index is currently selected.
+    ///
+    /// This is a convenience helper that creates a new effect internally. Calling this method
+    /// multiple times will not override previous `on_select` calls - each call creates a separate
+    /// effect that will all be triggered on selection changes. For more control, you can manually
+    /// create effects using the selection signal returned by [`selection()`](Self::selection).
+    ///
+    /// # Parameters
+    ///
+    /// * `on_select` - A function that takes `Option<usize>` and will be called on selection changes
+    ///
+    /// # Returns
+    ///
+    /// Returns `self` to allow method chaining.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use floem::prelude::*;
+    ///
+    /// virtual_list(
+    ///     move || 1..=1000000,
+    ///     |item| *item,
+    ///     |index, item| format!("{index}: {item}")
+    /// )
+    /// .on_select(|selection| {
+    ///     match selection {
+    ///         Some(index) => println!("Selected item at index: {index}"),
+    ///         None => println!("No item selected"),
+    ///     }
+    /// });
+    /// ```
+    pub fn on_select(self, on_select: impl Fn(Option<usize>) + 'static) -> Self {
+        create_effect(move |_| {
+            let selection = self.selection.get();
+            on_select(selection);
+        });
+        self
+    }
+}
+
 /// A view that supports virtual scrolling with item selection.
 /// Selection is done using arrow keys, home/end for top/bottom.
-pub fn virtual_list<T, DF, I, KF, K, VF, V>(
-    data_fn: DF,
-    key_fn: KF,
-    view_fn: VF,
-) -> VirtualStack<(usize, T)>
+pub fn virtual_list<T, DF, I, KF, K, VF, V>(data_fn: DF, key_fn: KF, view_fn: VF) -> VirtualList<T>
 where
     DF: Fn() -> I + 'static,
     I: VirtualVector<T>,
     KF: Fn(&T) -> K + 'static,
     K: Eq + Hash + 'static,
-    VF: Fn(T) -> V + 'static,
+    VF: Fn(usize, T) -> V + 'static,
     V: IntoView + 'static,
 {
     let selection = RwSignal::new(None::<usize>);
@@ -95,7 +161,7 @@ where
         },
         move |(_i, d)| key_fn(d),
         move |(index, e)| {
-            let child = view_fn(e).class(ListItemClass);
+            let child = view_fn(index, e).class(ListItemClass);
             let child_id = child.id();
             child.on_click_stop(move |_| {
                 if selection.get_untracked() != Some(index) {
@@ -116,46 +182,48 @@ where
 
     let direction = stack.direction;
 
-    stack
-        .class(ListClass)
-        .keyboard_navigable()
-        .on_event(EventListener::KeyDown, move |e| {
-            if let Event::KeyDown(key_event) = e {
-                stack_id.request_style_recursive();
-                match key_event.key.logical_key {
-                    Key::Named(NamedKey::Home) => {
-                        if length.get_untracked() > 0 {
-                            selection.set(Some(0));
-                            stack_id.update_state(0_usize); // Must be usize to match state type
+    let stack =
+        stack
+            .class(ListClass)
+            .keyboard_navigable()
+            .on_event(EventListener::KeyDown, move |e| {
+                if let Event::KeyDown(key_event) = e {
+                    stack_id.request_style_recursive();
+                    match key_event.key.logical_key {
+                        Key::Named(NamedKey::Home) => {
+                            if length.get_untracked() > 0 {
+                                selection.set(Some(0));
+                                stack_id.update_state(0_usize); // Must be usize to match state type
+                            }
+                            EventPropagation::Stop
                         }
-                        EventPropagation::Stop
-                    }
-                    Key::Named(NamedKey::End) => {
-                        let len = length.get_untracked();
-                        if len > 0 {
-                            selection.set(Some(len - 1));
-                            stack_id.update_state(len - 1);
+                        Key::Named(NamedKey::End) => {
+                            let len = length.get_untracked();
+                            if len > 0 {
+                                selection.set(Some(len - 1));
+                                stack_id.update_state(len - 1);
+                            }
+                            EventPropagation::Stop
                         }
-                        EventPropagation::Stop
+                        Key::Named(
+                            named_key @ (NamedKey::ArrowUp
+                            | NamedKey::ArrowDown
+                            | NamedKey::ArrowLeft
+                            | NamedKey::ArrowRight),
+                        ) => handle_arrow_key(
+                            selection,
+                            length.get_untracked(),
+                            direction.get_untracked(),
+                            stack_id,
+                            named_key,
+                        ),
+                        _ => EventPropagation::Continue,
                     }
-                    Key::Named(
-                        named_key @ (NamedKey::ArrowUp
-                        | NamedKey::ArrowDown
-                        | NamedKey::ArrowLeft
-                        | NamedKey::ArrowRight),
-                    ) => handle_arrow_key(
-                        selection,
-                        length.get_untracked(),
-                        direction.get_untracked(),
-                        stack_id,
-                        named_key,
-                    ),
-                    _ => EventPropagation::Continue,
+                } else {
+                    EventPropagation::Continue
                 }
-            } else {
-                EventPropagation::Continue
-            }
-        })
+            });
+    VirtualList { stack, selection }
 }
 
 fn handle_arrow_key(
@@ -219,4 +287,12 @@ fn handle_arrow_key(
         }
     }
     EventPropagation::Stop
+}
+
+impl<T: 'static> IntoView for VirtualList<T> {
+    type V = VirtualStack<(usize, T)>;
+
+    fn into_view(self) -> Self::V {
+        self.stack
+    }
 }
