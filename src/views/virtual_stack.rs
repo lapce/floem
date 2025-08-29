@@ -82,8 +82,7 @@ where
     children: Vec<Option<(ViewId, Scope)>>,
     /// the index out of all of the items that is the first in the virtualized set. This is used to map an index to a [`ViewId`].
     first_child_idx: usize,
-    pending_idx: Option<usize>,
-    selected: HashSet<ViewId>,
+    selected_idx: HashSet<usize>,
     viewport: Rect,
     set_viewport: WriteSignal<Rect>,
     view_fn: VirtViewFn<T>,
@@ -361,9 +360,8 @@ where
         direction,
         item_size,
         children: Vec::new(),
-        selected: HashSet::with_capacity(1),
+        selected_idx: HashSet::with_capacity(1),
         first_child_idx: 0,
-        pending_idx: None,
         viewport: Rect::ZERO,
         set_viewport,
         view_fn,
@@ -401,29 +399,13 @@ impl<T> View for VirtualStack<T> {
                     &mut self.children,
                     &self.view_fn,
                 );
-                if let Some(idx) = self.pending_idx.take() {
-                    if let Some(child_id_index) = idx.checked_sub(self.first_child_idx) {
-                        if let Some(Some(child_id)) = self.children.get(child_id_index) {
-                            self.selected.clear();
-                            self.selected.insert(child_id.0);
-                        }
-                    }
-                }
                 self.id.request_all();
             }
         } else if state.is::<usize>() {
             if let Ok(idx) = state.downcast::<usize>() {
                 self.scroll_to_idx(*idx);
-                self.selected.clear();
-                if let Some(child_id_index) = idx.checked_sub(self.first_child_idx) {
-                    if let Some(Some(child_id)) = self.children.get(child_id_index) {
-                        self.selected.insert(child_id.0);
-                    } else {
-                        self.pending_idx = Some(*idx);
-                    }
-                } else {
-                    self.pending_idx = Some(*idx);
-                }
+                self.selected_idx.clear();
+                self.selected_idx.insert(*idx);
             }
         }
     }
@@ -433,8 +415,11 @@ impl<T> View for VirtualStack<T> {
             cx.app_state_mut().request_paint(self.id);
             self.direction.set(self.style.direction());
         }
-        for child in self.id.children() {
-            if self.selected.contains(&child) {
+        for (child_id_index, child) in self.id.children().into_iter().enumerate() {
+            if self
+                .selected_idx
+                .contains(&(child_id_index + self.first_child_idx))
+            {
                 cx.save();
                 cx.selected();
                 cx.style_view(child);
