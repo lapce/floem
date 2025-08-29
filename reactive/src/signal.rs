@@ -53,6 +53,12 @@ impl<T> fmt::Debug for RwSignal<T> {
     }
 }
 
+impl<T: Default + 'static> Default for RwSignal<T> {
+    fn default() -> Self {
+        RwSignal::new(T::default())
+    }
+}
+
 impl<T> RwSignal<T> {
     /// Create a Getter of this Signal
     pub fn read_only(&self) -> ReadSignal<T> {
