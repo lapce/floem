@@ -483,11 +483,18 @@ impl Renderer for VgerRenderer {
         layout: impl Iterator<Item = LayoutRun<'b>>,
         pos: impl Into<Point>,
     ) {
+        // Drawing text happens in the final coordinate space,
+        // i.e. with all transforms and the window scale factor (self.scale) being applied.
         let coeffs = self.transform.as_coeffs();
         let pos: Point = pos.into();
         let pos = Affine::scale(self.scale) * self.transform * pos;
+        // This assumes that the text is axis-aligned.
+        // We currently make this assumption in the entirety of this module.
         let scale = (coeffs[0] + coeffs[3]) / 2. * self.scale;
 
+        // Assumption: The clipped rectangle lives in the final coordinate space,
+        // i.e. with all transforms and the window scale factor (self.scale) being applied.
+        // This needs to be kept in sync with `VgerRenderer::clip`.
         let clip = self.clip;
         for line in layout {
             if let Some(rect) = clip {
@@ -658,9 +665,13 @@ impl Renderer for VgerRenderer {
         self.vger
             .scissor(self.vger_rect(rect), (radius * self.scale) as f32);
 
-        let p0 = Point::new(rect.x0, rect.y0);
-        let p1 = Point::new(rect.x1, rect.y1);
-        let transformed_rect = Rect::from_points(self.transform * p0, self.transform * p1);
+        // Assumption: The clipped rectangle lives in the final coordinate space,
+        // i.e. with all transforms and the window scale factor (self.scale) being applied.
+        // This needs to be kept in sync with `VgerRenderer::draw_text_with_layout`.
+        let transformed_rect = self
+            .transform
+            .then_scale(self.scale)
+            .transform_rect_bbox(rect);
 
         self.clip = Some(transformed_rect);
     }
