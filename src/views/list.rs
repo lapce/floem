@@ -18,7 +18,6 @@ style_class!(pub ListItemClass);
 
 enum ListUpdate {
     SelectionChanged,
-    ScrollToSelected,
     Accept,
 }
 
@@ -94,7 +93,6 @@ where
             if selection.get_untracked() != Some(index) {
                 selection.set(Some(index));
                 list_id.update_state(ListUpdate::Accept);
-                list_id.update_state(ListUpdate::ScrollToSelected);
             }
         })
     }))
@@ -115,14 +113,12 @@ where
                 Key::Named(NamedKey::Home) => {
                     if length > 0 {
                         selection.set(Some(0));
-                        list_id.update_state(ListUpdate::ScrollToSelected);
                     }
                     EventPropagation::Stop
                 }
                 Key::Named(NamedKey::End) => {
                     if length > 0 {
                         selection.set(Some(length - 1));
-                        list_id.update_state(ListUpdate::ScrollToSelected);
                     }
                     EventPropagation::Stop
                 }
@@ -132,13 +128,11 @@ where
                         Some(i) => {
                             if i > 0 {
                                 selection.set(Some(i - 1));
-                                list_id.update_state(ListUpdate::ScrollToSelected);
                             }
                         }
                         None => {
                             if length > 0 {
                                 selection.set(Some(length - 1));
-                                list_id.update_state(ListUpdate::ScrollToSelected);
                             }
                         }
                     }
@@ -154,13 +148,11 @@ where
                         Some(i) => {
                             if i < length - 1 {
                                 selection.set(Some(i + 1));
-                                list_id.update_state(ListUpdate::ScrollToSelected);
                             }
                         }
                         None => {
                             if length > 0 {
                                 selection.set(Some(0));
-                                list_id.update_state(ListUpdate::ScrollToSelected);
                             }
                         }
                     }
@@ -185,8 +177,6 @@ impl View for List {
             match *change {
                 ListUpdate::SelectionChanged => {
                     self.id.request_style_recursive();
-                }
-                ListUpdate::ScrollToSelected => {
                     if let Some(index) = self.selection.get_untracked() {
                         self.child.children()[index].scroll_to(None);
                     }
