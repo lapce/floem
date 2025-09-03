@@ -180,6 +180,12 @@ where
 
     let stack_id = stack.id();
 
+    create_effect(move |_| {
+        if let Some(idx) = selection.get() {
+            stack_id.update_state(idx);
+        }
+    });
+
     let direction = stack.direction;
 
     let stack =
