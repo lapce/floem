@@ -163,7 +163,7 @@ where
         move |(index, e)| {
             let child = view_fn(index, e).class(ListItemClass);
             let child_id = child.id();
-            child.on_click_stop(move |_| {
+            child.on_click_cont(move |_| {
                 if selection.get_untracked() != Some(index) {
                     selection.set(Some(index));
                     child_id.scroll_to(None);
