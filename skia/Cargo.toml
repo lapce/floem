@@ -1,0 +1,18 @@
+[package]
+name = "floem_skia_renderer"
+version.workspace = true
+edition = "2021"
+repository = "https://github.com/lapce/floem"
+description = "A native Rust UI library with fine-grained reactivity"
+license.workspace = true
+
+[dependencies]
+peniko = { workspace = true }
+
+skia-safe = { version = "0.88.0", features = ["gl", "textlayout", "svg", "webp"]}
+anyhow = "1.0.69"
+floem_renderer = { path = "../renderer", version = "0.2.0" }
+raw-window-handle = "0.6.2"
+glutin-winit = "0.5.0"
+glutin = "0.32.3"
+gl = "0.14.0"
