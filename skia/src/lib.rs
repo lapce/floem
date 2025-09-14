@@ -15,10 +15,10 @@ use skia_safe::canvas::{GlyphPositions, SaveLayerRec, SetMatrix};
 use skia_safe::gpu::gl::FramebufferInfo;
 use skia_safe::gpu::{backend_render_targets, SurfaceOrigin};
 use skia_safe::image_filters::{blur, CropRect};
-use skia_safe::ClipOp;
 use std::collections::HashMap;
 use std::ffi::CString;
 use std::num::NonZeroU32;
+use skia_safe::ClipOp;
 
 pub struct SkiaRenderer<W> {
     surface: skia_safe::Surface,
@@ -184,6 +184,14 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
         // ToDo: implement debug info
         String::new()
     }
+
+    pub fn save(&mut self) {
+        self.surface.canvas().save();
+    }
+
+    pub fn restore(&mut self) {
+        self.surface.canvas().restore();
+    }
 }
 
 impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle> Renderer
@@ -191,7 +199,6 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
 {
     fn begin(&mut self, _capture: bool) {
         self.gl_context.make_current(&self.gl_surface).unwrap();
-        self.surface.canvas().restore_to_count(1);
         self.surface.canvas().clear(skia_safe::Color::WHITE);
     }
 
@@ -208,8 +215,6 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
     }
 
     fn clip(&mut self, shape: &impl Shape) {
-        self.surface.canvas().save();
-
         if let Some(rect) = shape.as_rect() {
             self.surface.canvas().clip_rect(
                 skia_safe::Rect::new(
@@ -219,7 +224,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
                     rect.y1 as f32,
                 ),
                 ClipOp::Intersect,
-                None,
+                true
             );
         } else if let Some(rrect) = shape.as_rounded_rect() {
             let rect = skia_safe::Rect::new(
@@ -236,20 +241,19 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
                     rrect.radii().top_right as f32,
                     rrect.radii().bottom_right as f32,
                 ),
-                None,
-                None,
+                ClipOp::Intersect,
+                true
             );
         } else {
             self.surface.canvas().clip_path(
                 &kurbo_shape_to_skia_path(shape),
-                skia_safe::ClipOp::Intersect,
-                None,
+                ClipOp::Intersect,
+                true
             );
         }
     }
 
     fn clear_clip(&mut self) {
-        self.surface.canvas().restore_to_count(1);
     }
 
     fn stroke<'b, 's>(
@@ -274,7 +278,7 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
                 (blur_radius as f32, blur_radius as f32),
                 None,
                 None,
-                CropRect::default(),
+                CropRect::NO_CROP_RECT,
             );
             paint.set_image_filter(image_filter);
         }
@@ -289,8 +293,6 @@ impl<W: raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle
         transform: Affine,
         clip: &impl Shape,
     ) {
-        self.surface.canvas().save();
-
         let clip_path: skia_safe::Path = kurbo_shape_to_skia_path(clip);
         self.surface.canvas().clip_path(&clip_path, None, None);
 
@@ -413,8 +415,8 @@ fn draw_kurbo_shape_to_skia_canvas(
         );
     } else if let Some(line) = shape.as_line() {
         canvas.draw_line(
-            (line.p0.x as f32, line.p1.x as f32),
-            (line.p1.x as f32, line.p1.x as f32),
+            (line.p0.x as f32, line.p0.y as f32),
+            (line.p1.x as f32, line.p1.y as f32),
             paint,
         );
     } else if let Some(circle) = shape.as_circle() {

@@ -19,8 +19,6 @@ use crossbeam::channel::Receiver;
 #[cfg(not(feature = "crossbeam"))]
 use std::sync::mpsc::Receiver;
 
-use taffy::prelude::NodeId;
-
 use crate::animate::{AnimStateKind, RepeatMode};
 use crate::easing::{Easing, Linear};
 use crate::renderer::Renderer;
@@ -37,6 +35,7 @@ use crate::{
     view::{paint_bg, paint_border, paint_outline, View},
     view_state::ChangeFlags,
 };
+use taffy::prelude::NodeId;
 
 pub type EventCallback = dyn FnMut(&Event) -> EventPropagation;
 pub type ResizeCallback = dyn Fn(Rect);
@@ -1004,25 +1003,37 @@ impl PaintCx<'_> {
         self.saved_transforms.push(self.transform);
         self.saved_clips.push(self.clip);
         self.saved_z_indexes.push(self.z_index);
+
+        self.paint_state
+            .renderer_mut()
+            .save()
     }
 
     pub fn restore(&mut self) {
         self.transform = self.saved_transforms.pop().unwrap_or_default();
         self.clip = self.saved_clips.pop().unwrap_or_default();
         self.z_index = self.saved_z_indexes.pop().unwrap_or_default();
+
+        #[cfg(not(feature = "skia"))]
+        {
+            self.paint_state
+                .renderer_mut()
+                .set_transform(self.transform);
+            if let Some(z_index) = self.z_index {
+                self.paint_state.renderer_mut().set_z_index(z_index);
+            } else {
+                self.paint_state.renderer_mut().set_z_index(0);
+            }
+            if let Some(rect) = self.clip {
+                self.paint_state.renderer_mut().clip(&rect);
+            } else {
+                self.paint_state.renderer_mut().clear_clip();
+            }
+        }
+
         self.paint_state
             .renderer_mut()
-            .set_transform(self.transform);
-        if let Some(z_index) = self.z_index {
-            self.paint_state.renderer_mut().set_z_index(z_index);
-        } else {
-            self.paint_state.renderer_mut().set_z_index(0);
-        }
-        if let Some(rect) = self.clip {
-            self.paint_state.renderer_mut().clip(&rect);
-        } else {
-            self.paint_state.renderer_mut().clear_clip();
-        }
+            .restore()
     }
 
     /// Allows a `View` to determine if it is being called in order to
@@ -1178,8 +1189,9 @@ impl PaintCx<'_> {
         };
 
         let rect = if let Some(existing) = self.clip {
-            let rect = existing.rect().intersect(rect.rect());
-            self.paint_state.renderer_mut().clip(&rect);
+            let original = rect.rect();
+            let rect = existing.rect().intersect(original);
+            self.paint_state.renderer_mut().clip(&original);
             rect.to_rounded_rect(0.0)
         } else {
             self.paint_state.renderer_mut().clip(&shape);

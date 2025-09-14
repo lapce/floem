@@ -159,6 +159,20 @@ impl Renderer {
         }
     }
 
+    pub fn save(&mut self) {
+        #[cfg(feature = "skia")]
+        if let Self::Skia(ref mut renderer) = self {
+            renderer.save();
+        }
+    }
+
+    pub fn restore(&mut self) {
+        #[cfg(feature = "skia")]
+        if let Self::Skia(ref mut renderer) = self {
+            renderer.restore();
+        }
+    }
+
     pub fn resize(&mut self, scale: f64, size: Size) {
         let size = Size::new(size.width.max(1.0), size.height.max(1.0));
         match self {
