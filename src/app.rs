@@ -265,3 +265,13 @@ impl Application {
 pub fn quit_app() {
     Application::send_proxy_event(UserEvent::QuitApp);
 }
+
+/// Signals the application to reopen.
+///
+/// This function sends a `Reopen` event to the application's event loop.
+/// It is safe to call from any thread.
+pub fn reopen() {
+    Application::send_proxy_event(UserEvent::Reopen {
+        has_visible_windows: false,
+    });
+}
