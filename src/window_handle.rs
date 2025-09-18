@@ -1052,7 +1052,7 @@ impl WindowHandle {
                         }
                         #[cfg(target_os = "windows")]
                         {
-                            self.init_menu_for_windows(menu);
+                            self.init_menu_for_windows(&menu);
                         }
                         self.app_state.window_menu_ref = Some(menu);
                     }
@@ -1262,10 +1262,6 @@ impl WindowHandle {
 
     #[cfg(target_os = "windows")]
     fn init_menu_for_windows(&self, menu: &muda::Menu) {
-        use muda::{
-            dpi::{LogicalPosition, Position},
-            ContextMenu,
-        };
         use raw_window_handle::HasWindowHandle;
         use raw_window_handle::RawWindowHandle;
 
