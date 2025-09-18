@@ -23,6 +23,7 @@ use taffy::prelude::NodeId;
 
 use crate::animate::{AnimStateKind, RepeatMode};
 use crate::easing::{Easing, Linear};
+use crate::menu::MenuBuilder;
 use crate::renderer::Renderer;
 use crate::style::{DisplayProp, PointerEvents, PointerEventsProp};
 use crate::view_state::IsHiddenState;
@@ -32,7 +33,6 @@ use crate::{
     event::{Event, EventListener, EventPropagation},
     id::ViewId,
     inspector::CaptureState,
-    menu::Menu,
     style::{Style, StyleProp, ZIndex},
     view::{paint_bg, paint_border, paint_outline, View},
     view_state::ChangeFlags,
@@ -40,7 +40,7 @@ use crate::{
 
 pub type EventCallback = dyn FnMut(&Event) -> EventPropagation;
 pub type ResizeCallback = dyn Fn(Rect);
-pub type MenuCallback = dyn Fn() -> Menu;
+pub type MenuCallback = dyn Fn() -> MenuBuilder;
 
 pub(crate) struct ResizeListener {
     pub(crate) rect: Rect,

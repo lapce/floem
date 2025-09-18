@@ -1709,7 +1709,7 @@ define_builtin_props!(
     FontStyle font_style nocb: Option<crate::text::Style> { inherited } = None,
     CursorColor cursor_color nocb: Brush {} = Brush::Solid(palette::css::BLACK.with_alpha(0.3)),
     SelectionCornerRadius selection_corer_radius nocb: f64 {} = 1.,
-    Selectable selectable: bool {} = true,
+    Selectable selectable: bool { inherited } = true,
     TextOverflowProp text_overflow: TextOverflow {} = TextOverflow::Wrap,
     TextAlignProp text_align: Option<crate::text::Align> {} = None,
     LineHeight line_height nocb: Option<LineHeightValue> { inherited } = None,

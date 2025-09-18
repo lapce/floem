@@ -3,7 +3,7 @@ use std::{any::Any, cell::RefCell, collections::HashMap};
 use peniko::kurbo::{Point, Rect, Size, Vec2};
 use winit::window::ResizeDirection;
 
-use crate::{id::ViewId, menu::Menu, view::View};
+use crate::{id::ViewId, menu::MenuBuilder, view::View};
 
 thread_local! {
     /// Stores all the update message with their original `ViewId`
@@ -58,11 +58,11 @@ pub(crate) enum UpdateMessage {
     DragResizeWindow(ResizeDirection),
     SetWindowDelta(Vec2),
     ShowContextMenu {
-        menu: Menu,
+        menu: MenuBuilder,
         pos: Option<Point>,
     },
     WindowMenu {
-        menu: Menu,
+        menu: MenuBuilder,
     },
     SetWindowTitle {
         title: String,

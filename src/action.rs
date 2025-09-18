@@ -20,7 +20,7 @@ use web_time::{Duration, Instant};
 use crate::{
     app::{add_app_update_event, AppUpdateEvent},
     id::ViewId,
-    menu::Menu,
+    menu::MenuBuilder,
     update::{UpdateMessage, UPDATE_MESSAGES},
     view::View,
     window_handle::{get_current_view, set_current_view},
@@ -180,17 +180,17 @@ where
 /// - Windows: Yes
 /// - macOS: Yes
 /// - Linux: Uses a custom Floem View
-pub fn show_context_menu(menu: Menu, pos: Option<Point>) {
+pub fn show_context_menu(menu: MenuBuilder, pos: Option<Point>) {
     add_update_message(UpdateMessage::ShowContextMenu { menu, pos });
 }
 
 /// Set the system window menu
 ///
 /// Platform support:
-/// - Windows: No
-/// - macOS: Yes (not currently implemented)
+/// - Windows: Yes
+/// - macOS: Yes
 /// - Linux: No
-pub fn set_window_menu(menu: Menu) {
+pub fn set_window_menu(menu: MenuBuilder) {
     add_update_message(UpdateMessage::WindowMenu { menu });
 }
 
