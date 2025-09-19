@@ -119,7 +119,7 @@ pub struct Slider {
     size: taffy::prelude::Size<f32>,
     style: SliderStyle,
     range: RangeInclusive<f64>,
-    step: f64,
+    step: Option<f64>,
 }
 
 impl View for Slider {
@@ -206,9 +206,13 @@ impl View for Slider {
             }
             if let Some(onchangevalue) = &self.onchangevalue {
                 let value_range = self.range.end() - self.range.start();
-                let new_value = self.range.start() + (value_range * (self.percent / 100.0));
-                let stepped_value = (new_value / self.step).round() * self.step;
-                onchangevalue(stepped_value);
+                let mut new_value = self.range.start() + (value_range * (self.percent / 100.0));
+
+                if let Some(step) = self.step {
+                    new_value = (new_value / step).round() * step;
+                }
+
+                onchangevalue(new_value);
             }
         }
 
@@ -370,7 +374,7 @@ impl Slider {
             size: Default::default(),
             style: Default::default(),
             range: 0.0..=100.0,
-            step: 1.0,
+            step: None,
         }
         .class(SliderClass)
         .keyboard_navigable()
@@ -451,7 +455,7 @@ impl Slider {
             size: Default::default(),
             style: Default::default(),
             range: cloned_range,
-            step: 1.0,
+            step: None,
         }
         .class(SliderClass)
         .keyboard_navigable()
@@ -549,7 +553,7 @@ impl Slider {
 
     /// Sets the step spacing of the `Slider`.
     pub fn step(mut self, step: f64) -> Self {
-        self.step = step;
+        self.step = Some(step);
         self
     }
 }
