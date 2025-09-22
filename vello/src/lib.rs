@@ -569,7 +569,7 @@ impl VelloRenderer {
             mapped_at_creation: false,
         });
         let bytes_per_row = width * bytes_per_pixel as u32;
-        assert!(bytes_per_row % wgpu::COPY_BYTES_PER_ROW_ALIGNMENT == 0);
+        assert!(bytes_per_row.is_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT));
 
         let mut encoder = self
             .device

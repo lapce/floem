@@ -1,5 +1,7 @@
 //! A toggle button widget. An example can be found in widget-gallery/button in the floem examples.
 
+use std::ops::RangeInclusive;
+
 use floem_reactive::{create_updater, SignalGet, SignalUpdate};
 use peniko::color::palette;
 use peniko::kurbo::{Circle, Point, RoundedRect, RoundedRectRadii};
@@ -104,6 +106,7 @@ pub struct Slider {
     id: ViewId,
     onchangepx: Option<Box<dyn Fn(f64)>>,
     onchangepct: Option<Box<dyn Fn(Pct)>>,
+    onchangevalue: Option<Box<dyn Fn(f64)>>,
     onhover: Option<Box<dyn Fn(Pct)>>,
     held: bool,
     percent: f64,
@@ -115,6 +118,8 @@ pub struct Slider {
     accent_bar: RoundedRect,
     size: taffy::prelude::Size<f32>,
     style: SliderStyle,
+    range: RangeInclusive<f64>,
+    step: Option<f64>,
 }
 
 impl View for Slider {
@@ -198,6 +203,16 @@ impl View for Slider {
             }
             if let Some(onchangepct) = &self.onchangepct {
                 onchangepct(Pct(self.percent))
+            }
+            if let Some(onchangevalue) = &self.onchangevalue {
+                let value_range = self.range.end() - self.range.start();
+                let mut new_value = self.range.start() + (value_range * (self.percent / 100.0));
+
+                if let Some(step) = self.step {
+                    new_value = (new_value / step).round() * step;
+                }
+
+                onchangevalue(new_value);
             }
         }
 
@@ -346,6 +361,7 @@ impl Slider {
             id,
             onchangepx: None,
             onchangepct: None,
+            onchangevalue: None,
             onhover: None,
             held: false,
             percent,
@@ -357,6 +373,8 @@ impl Slider {
             accent_bar: Default::default(),
             size: Default::default(),
             style: Default::default(),
+            range: 0.0..=100.0,
+            step: None,
         }
         .class(SliderClass)
         .keyboard_navigable()
@@ -383,6 +401,64 @@ impl Slider {
     /// ```
     pub fn new_rw(percent: impl SignalGet<Pct> + SignalUpdate<Pct> + Copy + 'static) -> Self {
         Self::new(move || percent.get()).on_change_pct(move |pct| percent.set(pct))
+    }
+
+    /// Create a new reactive, ranged slider.
+    ///
+    /// This does **not** automatically hook up any `on_update` logic.
+    /// You will need to manually call [`Slider::on_change_value`] in order to respond to updates from the slider.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use floem::prelude::*;
+    /// let value = RwSignal::new(-25.0);
+    /// let range = -50.0..=100.0;
+    ///
+    /// slider::Slider::new_ranged(move || value.get(), range)
+    ///     .step(5.0)
+    ///     .on_change_value(move |new_value| value.set(new_value))
+    ///     .slider_style(|s| {
+    ///         s.handle_radius(0)
+    ///             .bar_radius(25.pct())
+    ///             .accent_bar_radius(25.pct())
+    ///     })
+    ///     .style(|s| s.width(200));
+    /// ```
+    pub fn new_ranged(value: impl Fn() -> f64 + 'static, range: RangeInclusive<f64>) -> Self {
+        let id = ViewId::new();
+
+        let cloned_range = range.clone();
+
+        let percent = create_updater(
+            move || {
+                let value_range = range.end() - range.start();
+                ((value() - range.start()) / value_range) * 100.0
+            },
+            move |percent| {
+                id.update_state(SliderUpdate::Percent(percent));
+            },
+        );
+        Slider {
+            id,
+            onchangepx: None,
+            onchangepct: None,
+            onchangevalue: None,
+            onhover: None,
+            held: false,
+            percent,
+            prev_percent: 0.0,
+            handle: Default::default(),
+            base_bar_style: Default::default(),
+            accent_bar_style: Default::default(),
+            base_bar: Default::default(),
+            accent_bar: Default::default(),
+            size: Default::default(),
+            style: Default::default(),
+            range: cloned_range,
+            step: None,
+        }
+        .class(SliderClass)
+        .keyboard_navigable()
     }
 
     fn update_restrict_position(&mut self) {
@@ -428,7 +504,7 @@ impl Slider {
     /// Only one callback of pct can be set on this view.
     /// Calling it again will clear the previously set callback.
     ///
-    /// You can set both an `on_change_pct` and [`Slider::on_change_px`] callbacks at the same time and both will be called on change.
+    /// You can set [`Slider::on_change_px`], [`Slider::on_change_value`]  and `on_change_pct` callbacks at the same time and both will be called on change.
     pub fn on_change_pct(mut self, onchangepct: impl Fn(Pct) + 'static) -> Self {
         self.onchangepct = Some(Box::new(onchangepct));
         self
@@ -438,9 +514,22 @@ impl Slider {
     /// Only one callback of px can be set on this view.
     /// Calling it again will clear the previously set callback.
     ///
-    /// You can set both an [`Slider::on_change_pct`] and `on_change_px` callbacks at the same time and both will be called on change.
+    /// You can set [`Slider::on_change_pct`], [`Slider::on_change_value`]  and `on_change_px` callbacks at the same time and both will be called on change.
     pub fn on_change_px(mut self, onchangepx: impl Fn(f64) + 'static) -> Self {
         self.onchangepx = Some(Box::new(onchangepx));
+        self
+    }
+
+    /// Add an event handler to be run when the slider is moved.
+    ///
+    /// This will emit the actual value of the slider according to the current range and step.
+    ///
+    /// Only one callback of value can be set on this view.
+    /// Calling it again will clear the previously set callback.
+    ///
+    /// You can set [`Slider::on_change_pct`], [`Slider::on_change_px`]  and `on_change_value` callbacks at the same time and both will be called on change.
+    pub fn on_change_value(mut self, onchangevalue: impl Fn(f64) + 'static) -> Self {
+        self.onchangevalue = Some(Box::new(onchangevalue));
         self
     }
 
@@ -460,6 +549,12 @@ impl Slider {
         style: impl Fn(SliderCustomStyle) -> SliderCustomStyle + 'static,
     ) -> Self {
         self.custom_style(style)
+    }
+
+    /// Sets the step spacing of the `Slider`.
+    pub fn step(mut self, step: f64) -> Self {
+        self.step = Some(step);
+        self
     }
 }
 
