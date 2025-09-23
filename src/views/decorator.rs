@@ -13,7 +13,7 @@ use crate::{
     animate::Animation,
     event::{Event, EventListener, EventPropagation},
     keyboard::Modifiers,
-    menu::Menu,
+    menu::MenuBuilder,
     style::{Style, StyleClass, StyleSelector},
     view::{IntoView, View},
 };
@@ -469,7 +469,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     ///
     /// # Reactivity
     /// The menu function is reactive and will rereun in response to any signal changes in the function.
-    fn window_menu(self, menu_fn: impl Fn() -> Menu + 'static) -> Self {
+    fn window_menu(self, menu_fn: impl Fn() -> MenuBuilder + 'static) -> Self {
         create_effect(move |_| {
             let menu = menu_fn();
             set_window_menu(menu);
@@ -481,7 +481,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     ///
     /// # Reactivity
     /// The menu function is not reactive and will not rerun automatically in response to signal changes while the menu is showing and will only update the menu items each time that it is created
-    fn context_menu(self, menu: impl Fn() -> Menu + 'static) -> Self::DV {
+    fn context_menu(self, menu: impl Fn() -> MenuBuilder + 'static) -> Self::DV {
         let view = self.into_view();
         let id = view.id();
         id.update_context_menu(menu);
@@ -492,7 +492,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     ///
     /// # Reactivity
     /// The menu function is not reactive and will not rerun automatically in response to signal changes while the menu is showing and will only update the menu items each time that it is created
-    fn popout_menu(self, menu: impl Fn() -> Menu + 'static) -> Self::DV {
+    fn popout_menu(self, menu: impl Fn() -> MenuBuilder + 'static) -> Self::DV {
         let view = self.into_view();
         let id = view.id();
         id.update_popout_menu(menu);
