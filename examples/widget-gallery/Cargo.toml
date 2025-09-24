@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 im.workspace = true
 floem = { path = "../..", features = ["rfd-async-std", "vello"] }
-strum = { version = "0.27.1", features = ["derive"] }
+strum = { workspace = true }
 files = { path = "../files/" }
 
 [features]
