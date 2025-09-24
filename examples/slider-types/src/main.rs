@@ -3,7 +3,6 @@ use std::ops::RangeInclusive;
 use floem::{
     prelude::{SignalGet, SignalUpdate},
     reactive::create_rw_signal,
-    style::CustomStyle,
     unit::{Pct, UnitExt},
     views::{container, h_stack, label, slider, v_stack, Decorators},
     IntoView,
