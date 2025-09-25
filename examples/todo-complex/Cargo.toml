@@ -10,6 +10,6 @@ floem = { path = "../..", features = [
   "vello",
 ], default-features = false }
 im.workspace = true
-rusqlite = { version = "0.32.1", features = ["bundled"] }
+rusqlite = { version = "0.37.0", features = ["bundled"] }
 serde = { workspace = true }
 # serde = { version = "1.0.210", features = ["derive"] }
