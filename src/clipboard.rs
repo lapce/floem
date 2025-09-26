@@ -15,6 +15,7 @@ pub struct Clipboard {
 pub enum ClipboardError {
     NotAvailable,
     ProviderError(String),
+    PathError(String),
 }
 
 impl Clipboard {
@@ -45,9 +46,16 @@ impl Clipboard {
 
     #[cfg(windows)]
     pub fn get_file_list() -> Result<Vec<std::path::PathBuf>, ClipboardError> {
-        clipboard_win::Clipboard::new_attempts(10)
-            .and_then(|x| x.get_file_list())
-            .map_err(|e| ClipboardError::ProviderError(e.to_string()))
+        use std::{path::PathBuf, str::FromStr};
+
+        let mut out: Vec<String> = Vec::new();
+        clipboard_win::raw::get_file_list(&mut out)
+            .map_err(|e| ClipboardError::ProviderError(e.to_string()))?;
+        let out = out
+            .iter()
+            .map(|s| PathBuf::from_str(s).map_err(|e| ClipboardError::PathError(e.to_string())))
+            .collect();
+        out
     }
 
     pub(crate) unsafe fn init(display: RawDisplayHandle) {

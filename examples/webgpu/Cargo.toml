@@ -7,12 +7,12 @@ version.workspace = true
 [dependencies]
 im.workspace = true
 floem = { path = "../.." }
-cosmic-text = { version = "0.12.1", features = ["shape-run-cache"] }
+cosmic-text = { version = "0.14.2", features = ["shape-run-cache"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.6"
 console_log = "1.0"
-wgpu = { version = "23.0.1" }
+wgpu = { workspace = true }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4.30"
 web-sys = { version = "0.3.69", features = ["Document", "Window", "Element"] }

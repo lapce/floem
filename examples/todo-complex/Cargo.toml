@@ -4,12 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-confy = "0.6.1"
+confy = "1.0.0"
 floem = { path = "../..", features = [
   "serde",
   "vello",
 ], default-features = false }
 im.workspace = true
-rusqlite = { version = "0.32.1", features = ["bundled"] }
+rusqlite = { version = "0.37.0", features = ["bundled"] }
 serde = { workspace = true }
 # serde = { version = "1.0.210", features = ["derive"] }
