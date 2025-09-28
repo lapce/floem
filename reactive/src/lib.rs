@@ -25,6 +25,7 @@ pub use effect::{
     batch, create_effect, create_stateful_updater, create_tracker, create_updater, untrack,
     SignalTracker,
 };
+pub use id::Id as ReactiveId;
 pub use memo::{create_memo, Memo};
 pub use read::{ReadSignalValue, SignalGet, SignalRead, SignalTrack, SignalWith};
 pub use scope::{as_child_of_current_scope, with_scope, Scope};
