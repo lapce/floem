@@ -19,6 +19,8 @@ use winit::{
 };
 
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+use crate::menu::MudaMenu;
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::reactive::SignalWith;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::unit::UnitExt;
@@ -78,7 +80,7 @@ pub(crate) struct WindowHandle {
     pub(crate) window_position: Point,
     pub(crate) last_pointer_down: Option<(u8, Point, Instant)>,
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-    pub(crate) context_menu: RwSignal<Option<(Menu, Point, bool)>>,
+    pub(crate) context_menu: RwSignal<Option<(muda::Menu, Point, bool)>>,
     dropper_file: Option<PathBuf>,
 }
 
@@ -1347,7 +1349,7 @@ fn context_menu_view(
             .enumerate()
             .map(|(s, item)| match item {
                 muda::MenuItemKind::MenuItem(menu_item) => MenuDisplay::Item {
-                    id: Some(menu_item.id().to_string()),
+                    id: Some(menu_item.id().as_ref().to_string()),
                     enabled: menu_item.is_enabled(),
                     title: menu_item.text().to_string(),
                     children: None,
@@ -1360,13 +1362,13 @@ fn context_menu_view(
                 },
                 muda::MenuItemKind::Predefined(_) => MenuDisplay::Separator(s),
                 muda::MenuItemKind::Check(check_item) => MenuDisplay::Item {
-                    id: Some(check_item.id().to_string()),
+                    id: Some(check_item.id().as_ref().to_string()),
                     enabled: check_item.is_enabled(),
                     title: check_item.text().to_string(),
                     children: None,
                 },
                 muda::MenuItemKind::Icon(icon_item) => MenuDisplay::Item {
-                    id: Some(icon_item.id().to_string()),
+                    id: Some(icon_item.id().as_ref().to_string()),
                     enabled: icon_item.is_enabled(),
                     title: icon_item.text().to_string(),
                     children: None,
@@ -1382,7 +1384,7 @@ fn context_menu_view(
             .enumerate()
             .map(|(s, item)| match item {
                 muda::MenuItemKind::MenuItem(menu_item) => MenuDisplay::Item {
-                    id: Some(menu_item.id().to_string()),
+                    id: Some(menu_item.id().as_ref().to_string()),
                     enabled: menu_item.is_enabled(),
                     title: menu_item.text().to_string(),
                     children: None,
@@ -1395,13 +1397,13 @@ fn context_menu_view(
                 },
                 muda::MenuItemKind::Predefined(_) => MenuDisplay::Separator(s),
                 muda::MenuItemKind::Check(check_item) => MenuDisplay::Item {
-                    id: Some(check_item.id().to_string()),
+                    id: Some(check_item.id().as_ref().to_string()),
                     enabled: check_item.is_enabled(),
                     title: check_item.text().to_string(),
                     children: None,
                 },
                 muda::MenuItemKind::Icon(icon_item) => MenuDisplay::Item {
-                    id: Some(icon_item.id().to_string()),
+                    id: Some(icon_item.id().as_ref().to_string()),
                     enabled: icon_item.is_enabled(),
                     title: icon_item.text().to_string(),
                     children: None,
@@ -1478,7 +1480,9 @@ fn context_menu_view(
                             }
                             context_menu.set(None);
                             if let Some(id) = id.clone() {
-                                add_app_update_event(AppUpdateEvent::MenuAction { action_id: id });
+                                add_app_update_event(AppUpdateEvent::MenuAction {
+                                    action_id: id.into(),
+                                });
                             }
                         })
                         .disabled(move || !enabled)

@@ -1,10 +1,12 @@
 use muda::IsMenuItem;
 use muda::{
-    accelerator::Accelerator, CheckMenuItem, IconMenuItem, Menu as MudaMenu, MenuId,
+    accelerator::Accelerator, CheckMenuItem, IconMenuItem, MenuId,
     MenuItem as MudaMenuItem, NativeIcon, PredefinedMenuItem, Submenu as MudaSubmenu,
 };
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
+
+pub use muda::Menu as MudaMenu;
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 

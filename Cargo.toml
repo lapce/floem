@@ -84,6 +84,9 @@ wgpu.workspace = true
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
 muda = { workspace = true }
 
+[target.'cfg(any(target_os = "linux"))'.dependencies]
+muda = { workspace = true, features = ["gtk", "libxdo"] }
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = { version = "0.4" }
 web-time = "1"
