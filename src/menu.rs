@@ -1,7 +1,7 @@
 use muda::IsMenuItem;
 use muda::{
-    accelerator::Accelerator, CheckMenuItem, IconMenuItem, MenuId,
-    MenuItem as MudaMenuItem, NativeIcon, PredefinedMenuItem, Submenu as MudaSubmenu,
+    accelerator::Accelerator, CheckMenuItem, IconMenuItem, MenuId, MenuItem as MudaMenuItem,
+    NativeIcon, PredefinedMenuItem, Submenu as MudaSubmenu,
 };
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
