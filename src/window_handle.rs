@@ -1250,7 +1250,7 @@ impl WindowHandle {
         if let Some(window) = self.window.as_ref() {
             if let RawWindowHandle::Win32(handle) = window.window_handle().unwrap().as_raw() {
                 unsafe {
-                    menu.init_for_hwnd(isize::from(handle.hwnd));
+                    let _ = menu.init_for_hwnd(isize::from(handle.hwnd));
                 }
             }
         }
