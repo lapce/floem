@@ -1,9 +1,8 @@
 use std::time::Duration;
 
-use floem::ext_event::create_signal_from_stream;
-use floem::prelude::*;
-use floem::reactive::DerivedRwSignal;
+use floem::reactive::{create_memo, DerivedRwSignal};
 use floem::unit::Pct;
+use floem::{async_signal::StreamSignal, prelude::*};
 use tokio::runtime::Runtime;
 use tokio::time::Instant;
 use tokio_stream::wrappers::IntervalStream;
@@ -20,45 +19,61 @@ fn main() {
 fn app_view() -> impl IntoView {
     // We take maximum duration as 100s for convenience so that
     // one percent represents one second.
-    let target_duration = create_rw_signal(100.pct());
-    let duration_slider = thin_slider(target_duration);
+    let target_pct = RwSignal::new(100.pct());
 
-    let stream = IntervalStream::new(tokio::time::interval(Duration::from_millis(100)));
+    let stream = IntervalStream::new(tokio::time::interval(Duration::from_millis(4)));
     let now = Instant::now();
-    let started_at = create_rw_signal(now);
-    let current_instant = create_signal_from_stream(now, stream);
-    let elapsed_time = move || current_instant.get().duration_since(started_at.get());
-    let is_active = move || elapsed_time().as_secs_f64() < target_duration.get().0;
+    let started_at = RwSignal::new(now);
+    let current_instant = StreamSignal::on_event_loop(stream);
+    let elapsed_time = create_memo(move |_| {
+        current_instant
+            .get()
+            .unwrap_or(Instant::now())
+            .duration_since(started_at.get())
+            .as_secs_f64()
+            .min(target_pct.get().0)
+    });
+    let is_active = move || elapsed_time.get() < target_pct.get().0;
+
+    let progress = DerivedRwSignal::new(
+        target_pct,
+        move |val| Pct(elapsed_time.get() / val.0 * 100.),
+        |val| *val,
+    );
 
     let elapsed_time_label = label(move || {
         format!(
             "{:.1}s",
             if is_active() {
-                elapsed_time().as_secs_f64()
+                elapsed_time.get()
             } else {
-                target_duration.get().0
+                target_pct.get().0
             }
         )
     });
 
-    let progress = DerivedRwSignal::new(
-        target_duration,
-        move |val| Pct(elapsed_time().as_secs_f64() / val.0 * 100.),
-        |val| *val,
-    );
     let elapsed_time_bar = gauge(progress);
+    let el_label_bar = ("Elapsed Time: ", elapsed_time_bar)
+        .h_stack()
+        .style(|s| s.justify_between());
+
+    let duration_slider = thin_slider(target_pct);
+    let dur_label_slider = ("Duration: ", duration_slider)
+        .h_stack()
+        .style(|s| s.justify_between());
 
     let reset_button = button("Reset").action(move || started_at.set(Instant::now()));
 
-    let view = v_stack((
-        stack((text("Elapsed Time: "), elapsed_time_bar)).style(|s| s.justify_between()),
+    let view = (
+        el_label_bar,
         elapsed_time_label,
-        stack((text("Duration: "), duration_slider)).style(|s| s.justify_between()),
+        dur_label_slider,
         reset_button,
-    ))
-    .style(|s| s.gap(5));
+    )
+        .v_stack()
+        .style(|s| s.gap(5));
 
-    container(view).style(|s| {
+    view.container().style(|s| {
         s.size(100.pct(), 100.pct())
             .flex_col()
             .items_center()

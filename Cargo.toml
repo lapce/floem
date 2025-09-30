@@ -77,7 +77,7 @@ parking_lot = { workspace = true }
 image = { workspace = true }
 im = { workspace = true }
 winit = { workspace = true }
-futures = { version = "0.3.31", optional = true }
+futures = { version = "0.3.31" }
 crossbeam = { version = "0.8", optional = true }
 wgpu.workspace = true
 
@@ -146,6 +146,5 @@ tokio = ["dep:tokio"]
 # rfd (file dialog) async runtime
 rfd-async-std = ["dep:rfd", "rfd/async-std"]
 rfd-tokio = ["dep:rfd", "rfd/tokio"]
-futures = ["dep:futures"]
 
 crossbeam = [ "dep:crossbeam", "floem_renderer/crossbeam" ]
