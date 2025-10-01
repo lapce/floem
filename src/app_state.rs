@@ -48,8 +48,6 @@ pub struct AppState {
     pub(crate) last_cursor: CursorIcon,
     pub(crate) last_cursor_location: Point,
     pub(crate) keyboard_navigation: bool,
-    pub(crate) window_menu: HashMap<MenuId, Box<dyn Fn()>>,
-    pub(crate) window_menu_ref: Option<muda::Menu>,
     pub(crate) context_menu: HashMap<MenuId, Box<dyn Fn()>>,
 
     /// This is set if we're currently capturing the window for the inspector.
@@ -84,8 +82,6 @@ impl AppState {
             last_cursor_location: Default::default(),
             keyboard_navigation: false,
             grid_bps: GridBreakpoints::default(),
-            window_menu: HashMap::new(),
-            window_menu_ref: None,
             context_menu: HashMap::new(),
             capture: None,
         }
@@ -305,10 +301,6 @@ impl AppState {
         actions: HashMap<MenuId, Box<dyn Fn() + 'static>>,
     ) {
         self.context_menu = actions;
-    }
-
-    pub(crate) fn update_window_menu(&mut self, actions: HashMap<MenuId, Box<dyn Fn() + 'static>>) {
-        self.window_menu = actions;
     }
 
     pub(crate) fn focus_changed(&mut self, old: Option<ViewId>, new: Option<ViewId>) {

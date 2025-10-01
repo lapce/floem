@@ -143,7 +143,7 @@ impl ApplicationHandle {
                 AppUpdateEvent::MenuAction { action_id } => {
                     for (_, handle) in self.window_handles.iter_mut() {
                         if handle.app_state.context_menu.contains_key(&action_id)
-                            || handle.app_state.window_menu.contains_key(&action_id)
+                            || handle.window_menu_actions.contains_key(&action_id)
                         {
                             handle.menu_action(&action_id);
                             break;
@@ -488,7 +488,6 @@ impl ApplicationHandle {
 
     fn close_window(&mut self, window_id: WindowId, event_loop: &dyn ActiveEventLoop) {
         if let Some(handle) = self.window_handles.get_mut(&window_id) {
-            handle.window = None;
             handle.destroy();
         }
         self.window_handles.remove(&window_id);

@@ -23,7 +23,7 @@ use taffy::prelude::NodeId;
 
 use crate::animate::{AnimStateKind, RepeatMode};
 use crate::easing::{Easing, Linear};
-use crate::menu::MenuBuilder;
+use crate::menu::Menu;
 use crate::renderer::Renderer;
 use crate::style::{DisplayProp, PointerEvents, PointerEventsProp};
 use crate::view_state::IsHiddenState;
@@ -40,7 +40,7 @@ use crate::{
 
 pub type EventCallback = dyn FnMut(&Event) -> EventPropagation;
 pub type ResizeCallback = dyn Fn(Rect);
-pub type MenuCallback = dyn Fn() -> MenuBuilder;
+pub type MenuCallback = dyn Fn() -> Menu;
 
 pub(crate) struct ResizeListener {
     pub(crate) rect: Rect,
@@ -996,7 +996,7 @@ pub struct PaintCx<'a> {
     pub(crate) saved_clips: Vec<Option<RoundedRect>>,
     pub(crate) saved_z_indexes: Vec<Option<i32>>,
     pub gpu_resources: Option<GpuResources>,
-    pub window: Option<Arc<dyn Window>>,
+    pub window: Arc<dyn Window>,
 }
 
 impl PaintCx<'_> {

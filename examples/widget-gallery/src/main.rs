@@ -22,6 +22,7 @@ use floem::{
     keyboard::{Key, Modifiers, NamedKey},
     kurbo::Size,
     menu::*,
+    muda::{AboutMetadataBuilder, PredefinedMenuItem},
     new_window,
     prelude::*,
     style::{Background, CursorStyle, Transition},
@@ -48,10 +49,6 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         "DroppedFile",
         "Files",
     ];
-
-    set_window_menu(
-        menu(), // build here
-    );
 
     let create_view = |it: &str| {
         match it {
@@ -169,7 +166,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         .style(|s| s.padding(5.0).width_full().height_full().col_gap(5.0))
         .window_title(|| "Widget Gallery".to_owned());
 
-    let file_submenu = |m: MenuBuilder| {
+    let file_submenu = |m: SubMenu| {
         m.item("New Window", |i| {
             i.action(move || {
                 new_window(app_view, None);
@@ -188,7 +185,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         })
     };
 
-    let widget_submenu = |m: MenuBuilder| {
+    let widget_submenu = |m: SubMenu| {
         m.item("Labels", |i| i.action(move || set_active_tab.set(0)))
             .item("Buttons", |i| i.action(move || set_active_tab.set(1)))
             .item("Checkboxes", |i| i.action(move || set_active_tab.set(2)))
@@ -213,14 +210,14 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             .item("File Browser", |i| i.action(move || set_active_tab.set(16)))
     };
 
-    let view_submenu = |m: MenuBuilder| {
+    let view_submenu = |m: SubMenu| {
         m.item("Inspector", |i| {
             i.action(|| {
                 floem::action::inspect();
             })
         })
         .separator()
-        .submenu("Navigate to Widget", |s| s, widget_submenu)
+        .submenu("Navigate to Widget", widget_submenu)
         .separator()
         .item("Next Tab", |i| {
             i.action(move || {
@@ -242,7 +239,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         })
     };
 
-    let window_submenu = |m: MenuBuilder| {
+    let window_submenu = |m: SubMenu| {
         m.item("Open Current Tab in New Window", |i| {
             i.action(move || {
                 let name = tabs.with(|tabs| tabs.get(active_tab.get()).copied());
@@ -268,7 +265,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         })
     };
 
-    let help_submenu = |m: MenuBuilder| {
+    let help_submenu = |m: SubMenu| {
         m.item("About Widget Gallery", |i| {
             i.action(|| {
                 println!("Floem Widget Gallery - A showcase of UI components built with Floem");
@@ -287,11 +284,24 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         })
     };
     set_window_menu(
-        menu()
-            .submenu("File", |s| s, file_submenu)
-            .submenu("View", |s| s, view_submenu)
-            .submenu("Window", |s| s, window_submenu)
-            .submenu("Help", |s| s, help_submenu),
+        Menu::new()
+            .submenu("File", file_submenu)
+            .submenu("View", view_submenu)
+            .submenu("Window", window_submenu)
+            .submenu("Help", help_submenu)
+            .submenu("About", |s| {
+                s.predefined(&PredefinedMenuItem::about(
+                    Some("widget-gallery"),
+                    Some(
+                        AboutMetadataBuilder::new()
+                            .name(Some("widget-gallery"))
+                            .license(Some("MIT"))
+                            .version(Some("0.1.0"))
+                            .copyright(Some("Floem Authors"))
+                            .build(),
+                    ),
+                ))
+            }),
     );
 
     view.on_event_stop(EventListener::KeyUp, move |e| {

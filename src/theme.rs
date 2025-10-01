@@ -8,7 +8,7 @@ use crate::{
         ToggleButtonCircleRad, ToggleButtonClass, ToggleButtonInset, TooltipClass,
     },
 };
-use peniko::color::palette;
+use peniko::color::palette::{self, css};
 use peniko::{Brush, Color};
 use std::rc::Rc;
 use taffy::style::AlignItems;
@@ -248,8 +248,7 @@ pub(crate) fn default_theme() -> Theme {
                 .style(|s| s.size(100, 15))
         })
         .class(PlaceholderTextClass, |s| {
-            s.color(Color::from_rgba8(158, 158, 158, 30))
-                .font_size(FONT_SIZE)
+            s.color(css::BLACK.with_alpha(0.3)).font_size(FONT_SIZE)
         })
         .class(TooltipClass, |s| {
             s.border(0.5)

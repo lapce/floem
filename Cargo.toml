@@ -39,7 +39,7 @@ raw-window-handle = "0.6.0"
 wgpu = { version = "24.0.5" }
 parking_lot = { version = "0.12" }
 swash = { version = "0.2.5" }
-muda = { git = "https://github.com/tauri-apps/muda", rev = "cb2c3a523761dc922b8be7e0e722e787c5f05fa8", default-features = false }
+muda = { version = "0.17.1", default-features = false }
 winit = { git = "https://github.com/rust-windowing/winit", rev = "ee245c569d65fdeacf705ee5eedb564508d10ebe" }
 
 [dependencies]
@@ -85,7 +85,7 @@ wgpu.workspace = true
 muda = { workspace = true }
 
 [target.'cfg(any(target_os = "linux"))'.dependencies]
-muda = { workspace = true, features = ["gtk", "libxdo"] }
+muda = { workspace = true, default-features = false, features = ["gtk"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = { version = "0.4" }

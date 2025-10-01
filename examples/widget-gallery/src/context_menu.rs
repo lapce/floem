@@ -1,7 +1,7 @@
 use floem::{menu::*, prelude::ViewTuple, views::Decorators, IntoView};
 
 pub fn menu_view() -> impl IntoView {
-    let export_submenu = |m: MenuBuilder| {
+    let export_submenu = |m: SubMenu| {
         m.item("PDF", |i| i.action(|| println!("Exporting as PDF...")))
             .item("PNG", |i| i.action(|| println!("Exporting as PNG...")))
             .item("SVG", |i| i.action(|| println!("Exporting as SVG...")))
@@ -12,7 +12,7 @@ pub fn menu_view() -> impl IntoView {
             })
     };
     let popout_menu = move || {
-        menu()
+        Menu::new()
             .item("New Document", |i| {
                 i.action(|| println!("Creating new document..."))
             })
@@ -20,7 +20,7 @@ pub fn menu_view() -> impl IntoView {
                 i.action(|| println!("Opening recent files..."))
             })
             .separator()
-            .submenu("Export As", |s| s, export_submenu)
+            .submenu("Export As", export_submenu)
             .separator()
             .item("Auto Save", |i| {
                 i.checked(true).action(|| println!("Toggled auto save"))
@@ -35,7 +35,7 @@ pub fn menu_view() -> impl IntoView {
             })
     };
 
-    let transform_submenu = |m: MenuBuilder| {
+    let transform_submenu = |m: SubMenu| {
         m.item("Rotate 90°", |i| {
             i.action(|| println!("Rotating 90 degrees..."))
         })
@@ -51,7 +51,7 @@ pub fn menu_view() -> impl IntoView {
         })
     };
     let context_menu = move || {
-        menu()
+        Menu::new()
             .item("Cut", |i| i.action(|| println!("Cut to clipboard")))
             .item("Copy", |i| i.action(|| println!("Copied to clipboard")))
             .item("Paste", |i| {
@@ -59,7 +59,7 @@ pub fn menu_view() -> impl IntoView {
                     .action(|| println!("Pasted from clipboard"))
             })
             .separator()
-            .submenu("Transform", |s| s, transform_submenu)
+            .submenu("Transform", transform_submenu)
             .separator()
             .item("Duplicate", |i| {
                 i.action(|| println!("Creating duplicate..."))

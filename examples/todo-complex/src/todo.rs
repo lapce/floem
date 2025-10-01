@@ -6,7 +6,7 @@ use floem::{
     event::{Event, EventListener},
     keyboard::{Modifiers, NamedKey},
     kurbo::Stroke,
-    menu::menu,
+    menu::Menu,
     muda::{self, NativeIcon},
     prelude::*,
     reactive::{create_effect, create_memo, Trigger},
@@ -92,7 +92,7 @@ impl IntoView for TodoState {
                 "Mark as Complete"
             };
 
-            menu()
+            Menu::new()
                 .item(action_name, |i| {
                     i.native_icon(if done {
                         muda::NativeIcon::Remove
