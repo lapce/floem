@@ -967,7 +967,7 @@ impl View for Scroll {
                     } else if self.point_hits_vertical_bar(cx.app_state, pos)
                         || self.point_hits_horizontal_bar(cx.app_state, pos)
                     {
-                        return EventPropagation::Continue;
+                        return EventPropagation::Stop;
                     }
                 }
             }
