@@ -17,6 +17,8 @@ use crossbeam::channel::Receiver;
 #[cfg(not(feature = "crossbeam"))]
 use std::sync::mpsc::Receiver;
 
+pub(crate) mod resource;
+
 /// # SAFETY
 ///
 /// **DO NOT USE THIS** trigger except for when using with `create_ext_action` or when you guarantee that
