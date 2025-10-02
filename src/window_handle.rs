@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::{cell::RefCell, mem, path::PathBuf, rc::Rc, sync::Arc};
 
+use muda::MenuId;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
@@ -18,6 +20,8 @@ use winit::{
 };
 
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+use crate::menu::MudaMenu;
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::reactive::SignalWith;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::unit::UnitExt;
@@ -34,7 +38,6 @@ use crate::{
     id::ViewId,
     inspector::{self, Capture, CaptureState, CapturedView},
     keyboard::{KeyEvent, Modifiers},
-    menu::Menu,
     nav::view_arrow_navigation,
     pointer::{PointerButton, PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
     profiler::Profile,
@@ -58,7 +61,7 @@ use crate::{
 /// - processing all requests to update the animation state from the reactive system
 /// - requesting a new animation frame from the backend
 pub(crate) struct WindowHandle {
-    pub(crate) window: Option<Arc<dyn winit::window::Window>>,
+    pub(crate) window: Arc<dyn winit::window::Window>,
     window_id: WindowId,
     id: ViewId,
     main_view: ViewId,
@@ -78,7 +81,9 @@ pub(crate) struct WindowHandle {
     pub(crate) window_position: Point,
     pub(crate) last_pointer_down: Option<(u8, Point, Instant)>,
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-    pub(crate) context_menu: RwSignal<Option<(Menu, Point, bool)>>,
+    pub(crate) context_menu: RwSignal<Option<(muda::Menu, Point, bool)>>,
+    pub(crate) window_menu_actions: HashMap<MenuId, Box<dyn Fn()>>,
+    pub(crate) window_menu: Option<muda::Menu>,
     dropper_file: Option<PathBuf>,
 }
 
@@ -171,7 +176,7 @@ impl WindowHandle {
         let paint_state_initialized = matches!(paint_state, PaintState::Initialized { .. });
 
         let mut window_handle = Self {
-            window: Some(window),
+            window,
             window_id,
             id,
             main_view: main_view_id,
@@ -190,6 +195,8 @@ impl WindowHandle {
             window_position: Point::ZERO,
             #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             context_menu,
+            window_menu_actions: HashMap::new(),
+            window_menu: None,
             last_pointer_down: None,
             dropper_file: None,
         };
@@ -226,9 +233,7 @@ impl WindowHandle {
         }
         // Now that the renderer is initialized, draw the first frame
         self.render_frame(gpu_resources);
-        if let Some(window) = self.window.as_ref() {
-            window.set_visible(true);
-        }
+        self.window.set_visible(true);
     }
 
     pub fn event(&mut self, event: Event) {
@@ -458,12 +463,10 @@ impl WindowHandle {
         self.paint_state.resize(scale, size * self.scale);
         self.app_state.set_root_size(size);
 
-        if let Some(window) = self.window.as_ref() {
-            let is_maximized = window.is_maximized();
-            if is_maximized != self.is_maximized {
-                self.is_maximized = is_maximized;
-                self.event(Event::WindowMaximizeChanged(is_maximized));
-            }
+        let is_maximized = self.window.is_maximized();
+        if is_maximized != self.is_maximized {
+            self.is_maximized = is_maximized;
+            self.event(Event::WindowMaximizeChanged(is_maximized));
         }
 
         self.style();
@@ -601,6 +604,10 @@ impl WindowHandle {
 
     pub(crate) fn focused(&mut self, focused: bool) {
         if focused {
+            #[cfg(target_os = "macos")]
+            if let Some(window_menu) = &self.window_menu {
+                window_menu.init_for_nsapp();
+            }
             self.event(Event::WindowGotFocus);
         } else {
             self.event(Event::WindowLostFocus);
@@ -695,10 +702,8 @@ impl WindowHandle {
             );
         }
         cx.paint_view(self.id);
-        if let Some(window) = self.window.as_ref() {
-            if cx.app_state.capture.is_none() {
-                window.pre_present_notify();
-            }
+        if cx.app_state.capture.is_none() {
+            self.window.pre_present_notify();
         }
         cx.paint_state.renderer_mut().finish()
     }
@@ -986,42 +991,29 @@ impl WindowHandle {
                         cx.app_state.draggable.insert(id);
                     }
                     UpdateMessage::DragWindow => {
-                        if let Some(window) = self.window.as_ref() {
-                            let _ = window.drag_window();
-                        }
+                        let _ = self.window.drag_window();
                     }
                     UpdateMessage::FocusWindow => {
-                        if let Some(window) = self.window.as_ref() {
-                            window.focus_window();
-                        }
+                        self.window.focus_window();
                     }
                     UpdateMessage::DragResizeWindow(direction) => {
-                        if let Some(window) = self.window.as_ref() {
-                            let _ = window.drag_resize_window(direction);
-                        }
+                        let _ = self.window.drag_resize_window(direction);
                     }
                     UpdateMessage::ToggleWindowMaximized => {
-                        if let Some(window) = self.window.as_ref() {
-                            window.set_maximized(!window.is_maximized());
-                        }
+                        self.window.set_maximized(!self.window.is_maximized());
                     }
                     UpdateMessage::SetWindowMaximized(maximized) => {
-                        if let Some(window) = self.window.as_ref() {
-                            window.set_maximized(maximized);
-                        }
+                        self.window.set_maximized(maximized);
                     }
                     UpdateMessage::MinimizeWindow => {
-                        if let Some(window) = self.window.as_ref() {
-                            window.set_minimized(true);
-                        }
+                        self.window.set_minimized(true);
                     }
                     UpdateMessage::SetWindowDelta(delta) => {
-                        if let Some(window) = self.window.as_ref() {
-                            let pos = self.window_position + delta;
-                            window.set_outer_position(winit::dpi::Position::Logical(
+                        let pos = self.window_position + delta;
+                        self.window
+                            .set_outer_position(winit::dpi::Position::Logical(
                                 winit::dpi::LogicalPosition::new(pos.x, pos.y),
                             ));
-                        }
                     }
                     UpdateMessage::WindowScale(scale) => {
                         cx.app_state.scale = scale;
@@ -1030,46 +1022,48 @@ impl WindowHandle {
                         self.paint_state.set_scale(scale);
                     }
                     UpdateMessage::ShowContextMenu { menu, pos } => {
-                        let mut menu = menu.popup();
+                        let (menu, registry) = menu.build();
                         cx.app_state.context_menu.clear();
-                        cx.app_state.update_context_menu(&mut menu);
+                        cx.app_state.update_context_menu(registry);
 
                         #[cfg(any(target_os = "windows", target_os = "macos"))]
                         {
-                            let platform_menu = menu.platform_menu();
-                            self.show_context_menu(platform_menu, pos);
+                            self.show_context_menu(menu, pos);
                         }
                         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
                         self.show_context_menu(menu, pos);
                     }
                     UpdateMessage::WindowMenu { menu } => {
-                        // let platform_menu = menu.platform_menu();
-                        self.update_window_menu(menu);
-                        // self.handle.set_menu(platform_menu);
+                        self.window_menu_actions.clear();
+                        let (menu, registry) = menu.build();
+                        self.window_menu_actions = registry;
+                        #[cfg(target_os = "macos")]
+                        {
+                            menu.init_for_nsapp();
+                        }
+                        #[cfg(target_os = "windows")]
+                        {
+                            self.init_menu_for_windows(&menu);
+                        }
+                        self.window_menu = Some(menu);
                     }
                     UpdateMessage::SetWindowTitle { title } => {
-                        if let Some(window) = self.window.as_ref() {
-                            window.set_title(&title);
-                        }
+                        self.window.set_title(&title);
                     }
                     UpdateMessage::SetImeAllowed { allowed } => {
-                        if let Some(window) = self.window.as_ref() {
-                            window.set_ime_allowed(allowed);
-                        }
+                        self.window.set_ime_allowed(allowed);
                     }
                     UpdateMessage::SetImeCursorArea { position, size } => {
-                        if let Some(window) = self.window.as_ref() {
-                            window.set_ime_cursor_area(
-                                winit::dpi::Position::Logical(winit::dpi::LogicalPosition::new(
-                                    position.x * self.app_state.scale,
-                                    position.y * self.app_state.scale,
-                                )),
-                                winit::dpi::Size::Logical(winit::dpi::LogicalSize::new(
-                                    size.width * self.app_state.scale,
-                                    size.height * self.app_state.scale,
-                                )),
-                            );
-                        }
+                        self.window.set_ime_cursor_area(
+                            winit::dpi::Position::Logical(winit::dpi::LogicalPosition::new(
+                                position.x * self.app_state.scale,
+                                position.y * self.app_state.scale,
+                            )),
+                            winit::dpi::Size::Logical(winit::dpi::LogicalSize::new(
+                                size.width * self.app_state.scale,
+                                size.height * self.app_state.scale,
+                            )),
+                        );
                     }
                     UpdateMessage::Inspect => {
                         inspector::capture(self.window_id);
@@ -1083,9 +1077,7 @@ impl WindowHandle {
                         self.id.request_all();
                     }
                     UpdateMessage::WindowVisible(visible) => {
-                        if let Some(window) = self.window.as_ref() {
-                            window.set_visible(visible);
-                        }
+                        self.window.set_visible(visible);
                     }
                     UpdateMessage::ViewTransitionAnimComplete(id) => {
                         let num_waiting =
@@ -1135,25 +1127,6 @@ impl WindowHandle {
         })
     }
 
-    fn update_window_menu(&mut self, _menu: Menu) {
-        // if let Some(action) = menu.item.action.take() {
-        //     self.window_menu.insert(menu.item.id as u32, action);
-        // }
-        // for child in menu.children {
-        //     match child {
-        //         crate::menu::MenuEntry::Separator => {}
-        //         crate::menu::MenuEntry::Item(mut item) => {
-        //             if let Some(action) = item.action.take() {
-        //                 self.window_menu.insert(item.id as u32, action);
-        //             }
-        //         }
-        //         crate::menu::MenuEntry::SubMenu(m) => {
-        //             self.update_window_menu(m);
-        //         }
-        //     }
-        // }
-    }
-
     fn set_cursor(&mut self) {
         let cursor = match self.app_state.cursor {
             Some(CursorStyle::Default) => CursorIcon::Default,
@@ -1180,17 +1153,13 @@ impl WindowHandle {
             None => CursorIcon::Default,
         };
         if cursor != self.app_state.last_cursor {
-            if let Some(window) = self.window.as_ref() {
-                window.set_cursor(cursor.into());
-            }
+            self.window.set_cursor(cursor.into());
             self.app_state.last_cursor = cursor;
         }
     }
 
     fn schedule_repaint(&self) {
-        if let Some(window) = self.window.as_ref() {
-            window.request_redraw();
-        }
+        self.window.request_redraw();
     }
 
     pub(crate) fn destroy(&mut self) {
@@ -1208,20 +1177,18 @@ impl WindowHandle {
         use raw_window_handle::HasWindowHandle;
         use raw_window_handle::RawWindowHandle;
 
-        if let Some(window) = self.window.as_ref() {
-            if let RawWindowHandle::AppKit(handle) = window.window_handle().unwrap().as_raw() {
-                unsafe {
-                    menu.show_context_menu_for_nsview(
-                        handle.ns_view.as_ptr() as _,
-                        pos.map(|pos| {
-                            Position::Logical(LogicalPosition::new(
-                                pos.x * self.app_state.scale,
-                                (self.size.get_untracked().height - pos.y) * self.app_state.scale,
-                            ))
-                        }),
-                    )
-                };
-            }
+        if let RawWindowHandle::AppKit(handle) = self.window.window_handle().unwrap().as_raw() {
+            unsafe {
+                menu.show_context_menu_for_nsview(
+                    handle.ns_view.as_ptr() as _,
+                    pos.map(|pos| {
+                        Position::Logical(LogicalPosition::new(
+                            pos.x * self.app_state.scale,
+                            (self.size.get_untracked().height - pos.y) * self.app_state.scale,
+                        ))
+                    }),
+                )
+            };
         }
     }
 
@@ -1234,36 +1201,47 @@ impl WindowHandle {
         use raw_window_handle::HasWindowHandle;
         use raw_window_handle::RawWindowHandle;
 
-        if let Some(window) = self.window.as_ref() {
-            if let RawWindowHandle::Win32(handle) = window.window_handle().unwrap().as_raw() {
-                unsafe {
-                    menu.show_context_menu_for_hwnd(
-                        isize::from(handle.hwnd),
-                        pos.map(|pos| {
-                            Position::Logical(LogicalPosition::new(
-                                pos.x * self.app_state.scale,
-                                pos.y * self.app_state.scale,
-                            ))
-                        }),
-                    );
-                }
+        if let RawWindowHandle::Win32(handle) = self.window.window_handle().unwrap().as_raw() {
+            unsafe {
+                menu.show_context_menu_for_hwnd(
+                    isize::from(handle.hwnd),
+                    pos.map(|pos| {
+                        Position::Logical(LogicalPosition::new(
+                            pos.x * self.app_state.scale,
+                            pos.y * self.app_state.scale,
+                        ))
+                    }),
+                );
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn init_menu_for_windows(&self, menu: &muda::Menu) {
+        use raw_window_handle::HasWindowHandle;
+        use raw_window_handle::RawWindowHandle;
+
+        if let RawWindowHandle::Win32(handle) = self.window.window_handle().unwrap().as_raw() {
+            unsafe {
+                let _ = menu.init_for_hwnd(isize::from(handle.hwnd));
+                let _ = menu.show_for_hwnd(isize::from(handle.hwnd));
             }
         }
     }
 
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-    fn show_context_menu(&self, menu: Menu, pos: Option<Point>) {
+    fn show_context_menu(&self, menu: muda::Menu, pos: Option<Point>) {
         let pos = pos.unwrap_or(self.cursor_position);
         let pos = Point::new(pos.x / self.app_state.scale, pos.y / self.app_state.scale);
         self.context_menu.set(Some((menu, pos, false)));
     }
 
-    pub(crate) fn menu_action(&mut self, id: &str) {
+    pub(crate) fn menu_action(&mut self, id: &MenuId) {
         set_current_view(self.id);
-        if let Some(action) = self.app_state.window_menu.get(id) {
+        if let Some(action) = self.app_state.context_menu.get(id) {
             (*action)();
             self.process_update();
-        } else if let Some(action) = self.app_state.context_menu.get(id) {
+        } else if let Some(action) = self.window_menu_actions.get(id) {
             (*action)();
             self.process_update();
         }
@@ -1316,7 +1294,7 @@ pub(crate) fn set_current_view(id: ViewId) {
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 fn context_menu_view(
     cx: Scope,
-    context_menu: RwSignal<Option<(Menu, Point, bool)>>,
+    context_menu: RwSignal<Option<(muda::Menu, Point, bool)>>,
     window_size: RwSignal<Size>,
 ) -> impl IntoView {
     use floem_reactive::{create_effect, create_rw_signal};
@@ -1338,23 +1316,70 @@ fn context_menu_view(
         },
     }
 
-    fn format_menu(menu: &Menu) -> Vec<MenuDisplay> {
-        menu.children
+    fn format_menu(menu: &MudaMenu) -> Vec<MenuDisplay> {
+        menu.items()
             .iter()
             .enumerate()
-            .map(|(s, e)| match e {
-                crate::menu::MenuEntry::Separator => MenuDisplay::Separator(s),
-                crate::menu::MenuEntry::Item(i) => MenuDisplay::Item {
-                    id: Some(i.id.clone()),
-                    enabled: i.enabled,
-                    title: i.title.clone(),
+            .map(|(s, item)| match item {
+                muda::MenuItemKind::MenuItem(menu_item) => MenuDisplay::Item {
+                    id: Some(menu_item.id().as_ref().to_string()),
+                    enabled: menu_item.is_enabled(),
+                    title: menu_item.text().to_string(),
                     children: None,
                 },
-                crate::menu::MenuEntry::SubMenu(m) => MenuDisplay::Item {
+                muda::MenuItemKind::Submenu(submenu) => MenuDisplay::Item {
                     id: None,
-                    enabled: m.item.enabled,
-                    title: m.item.title.clone(),
-                    children: Some(format_menu(m)),
+                    enabled: submenu.is_enabled(),
+                    title: submenu.text().to_string(),
+                    children: Some(format_submenu(submenu)),
+                },
+                muda::MenuItemKind::Predefined(_) => MenuDisplay::Separator(s),
+                muda::MenuItemKind::Check(check_item) => MenuDisplay::Item {
+                    id: Some(check_item.id().as_ref().to_string()),
+                    enabled: check_item.is_enabled(),
+                    title: check_item.text().to_string(),
+                    children: None,
+                },
+                muda::MenuItemKind::Icon(icon_item) => MenuDisplay::Item {
+                    id: Some(icon_item.id().as_ref().to_string()),
+                    enabled: icon_item.is_enabled(),
+                    title: icon_item.text().to_string(),
+                    children: None,
+                },
+            })
+            .collect()
+    }
+
+    fn format_submenu(submenu: &muda::Submenu) -> Vec<MenuDisplay> {
+        submenu
+            .items()
+            .iter()
+            .enumerate()
+            .map(|(s, item)| match item {
+                muda::MenuItemKind::MenuItem(menu_item) => MenuDisplay::Item {
+                    id: Some(menu_item.id().as_ref().to_string()),
+                    enabled: menu_item.is_enabled(),
+                    title: menu_item.text().to_string(),
+                    children: None,
+                },
+                muda::MenuItemKind::Submenu(nested_submenu) => MenuDisplay::Item {
+                    id: None,
+                    enabled: nested_submenu.is_enabled(),
+                    title: nested_submenu.text().to_string(),
+                    children: Some(format_submenu(nested_submenu)),
+                },
+                muda::MenuItemKind::Predefined(_) => MenuDisplay::Separator(s),
+                muda::MenuItemKind::Check(check_item) => MenuDisplay::Item {
+                    id: Some(check_item.id().as_ref().to_string()),
+                    enabled: check_item.is_enabled(),
+                    title: check_item.text().to_string(),
+                    children: None,
+                },
+                muda::MenuItemKind::Icon(icon_item) => MenuDisplay::Item {
+                    id: Some(icon_item.id().as_ref().to_string()),
+                    enabled: icon_item.is_enabled(),
+                    title: icon_item.text().to_string(),
+                    children: None,
                 },
             })
             .collect()
@@ -1363,14 +1388,14 @@ fn context_menu_view(
     let context_menu_items = cx.create_memo(move |_| {
         context_menu.with(|menu| {
             menu.as_ref()
-                .map(|(menu, _, _): &(Menu, Point, bool)| format_menu(menu))
+                .map(|(menu, _, _): &(MudaMenu, Point, bool)| format_menu(menu))
         })
     });
     let context_menu_size = cx.create_rw_signal(Size::ZERO);
 
     fn view_fn(
         menu: MenuDisplay,
-        context_menu: RwSignal<Option<(Menu, Point, bool)>>,
+        context_menu: RwSignal<Option<(MudaMenu, Point, bool)>>,
         on_child_submenu_for_parent: RwSignal<bool>,
     ) -> impl IntoView {
         match menu {
@@ -1428,7 +1453,9 @@ fn context_menu_view(
                             }
                             context_menu.set(None);
                             if let Some(id) = id.clone() {
-                                add_app_update_event(AppUpdateEvent::MenuAction { action_id: id });
+                                add_app_update_event(AppUpdateEvent::MenuAction {
+                                    action_id: id.into(),
+                                });
                             }
                         })
                         .disabled(move || !enabled)

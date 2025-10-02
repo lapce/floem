@@ -23,6 +23,7 @@ use taffy::prelude::NodeId;
 
 use crate::animate::{AnimStateKind, RepeatMode};
 use crate::easing::{Easing, Linear};
+use crate::menu::Menu;
 use crate::renderer::Renderer;
 use crate::style::{DisplayProp, PointerEvents, PointerEventsProp};
 use crate::view_state::IsHiddenState;
@@ -32,7 +33,6 @@ use crate::{
     event::{Event, EventListener, EventPropagation},
     id::ViewId,
     inspector::CaptureState,
-    menu::Menu,
     style::{Style, StyleProp, ZIndex},
     view::{paint_bg, paint_border, paint_outline, View},
     view_state::ChangeFlags,
@@ -996,7 +996,7 @@ pub struct PaintCx<'a> {
     pub(crate) saved_clips: Vec<Option<RoundedRect>>,
     pub(crate) saved_z_indexes: Vec<Option<i32>>,
     pub gpu_resources: Option<GpuResources>,
-    pub window: Option<Arc<dyn Window>>,
+    pub window: Arc<dyn Window>,
 }
 
 impl PaintCx<'_> {
