@@ -22,7 +22,7 @@ use crate::reactive::SignalWith;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::unit::UnitExt;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-use crate::views::{container, stack};
+use crate::views::{container, stack, Decorators};
 use crate::{
     app::UserEvent,
     app_state::AppState,
@@ -47,7 +47,6 @@ use crate::{
     },
     view::{view_tab_navigation, IntoView, View},
     view_state::ChangeFlags,
-    views::Decorators,
     window_tracking::{remove_window_id_mapping, store_window_id_mapping},
     Application,
 };
