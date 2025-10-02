@@ -68,9 +68,7 @@ pub(crate) enum UpdateMessage {
         title: String,
     },
     AddOverlay {
-        id: ViewId,
-        position: Point,
-        view: Box<dyn FnOnce() -> Box<dyn View>>,
+        view: Box<dyn View>,
     },
     RemoveOverlay {
         id: ViewId,

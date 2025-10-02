@@ -23,6 +23,7 @@ use crate::{
     menu::Menu,
     update::{UpdateMessage, UPDATE_MESSAGES},
     view::View,
+    views::Decorators,
     window_handle::{get_current_view, set_current_view},
 };
 
@@ -220,15 +221,12 @@ pub fn set_ime_cursor_area(position: Point, size: Size) {
 }
 
 /// Creates a new overlay on the current window.
-pub fn add_overlay<V: View + 'static>(
-    position: Point,
-    view: impl FnOnce(ViewId) -> V + 'static,
-) -> ViewId {
-    let id = ViewId::new();
+pub fn add_overlay<V: View + 'static>(position: Point, view: V) -> ViewId {
+    let id = view.id();
+    let view = view.style(move |s| s.absolute().inset_left(position.x).inset_top(position.y));
+
     add_update_message(UpdateMessage::AddOverlay {
-        id,
-        position,
-        view: Box::new(move || Box::new(view(id))),
+        view: Box::new(view),
     });
     id
 }
