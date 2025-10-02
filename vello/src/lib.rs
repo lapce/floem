@@ -411,13 +411,16 @@ impl Renderer for VelloRenderer {
             || vello_svg::render_tree(svg.tree),
             |brush| {
                 let brush = brush.into();
+                let size = Size::new(svg_size.width() as _, svg_size.height() as _);
+                let fill_rect = Rect::from_origin_size(Point::ZERO, size);
+
                 alpha_mask_scene(
-                    rect.size(),
+                    size,
                     |scene| {
                         scene.append(&vello_svg::render_tree(svg.tree), None);
                     },
                     move |scene| {
-                        scene.fill(Fill::NonZero, Affine::IDENTITY, brush, None, &rect);
+                        scene.fill(Fill::NonZero, Affine::IDENTITY, brush, None, &fill_rect);
                     },
                 )
             },
