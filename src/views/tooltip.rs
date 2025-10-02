@@ -84,7 +84,7 @@ impl View for Tooltip {
                         window_origin
                             + self.hover.unwrap().0.to_vec2()
                             + (10. / self.scale, 10. / self.scale),
-                        move |_| tip().style(move |_| tip_style.clone()),
+                        ToolTipOverlay::new(tip().style(move |_| tip_style.clone())),
                     );
                     // overlay_id.request_all();
                     *self.overlay.borrow_mut() = Some(overlay_id);
@@ -148,5 +148,59 @@ pub trait TooltipExt {
 impl<T: IntoView + 'static> TooltipExt for T {
     fn tooltip<V: IntoView + 'static>(self, tip: impl Fn() -> V + 'static) -> Tooltip {
         tooltip(self, tip)
+    }
+}
+
+struct ToolTipOverlay {
+    id: ViewId,
+    offset: Point,
+}
+
+impl ToolTipOverlay {
+    fn new<V: IntoView + 'static>(child: V) -> Self {
+        let id = ViewId::new();
+        let child = child.into_view();
+        id.set_children([child]);
+
+        Self {
+            id,
+            offset: Point::ZERO,
+        }
+    }
+}
+
+impl View for ToolTipOverlay {
+    fn id(&self) -> ViewId {
+        self.id
+    }
+
+    fn view_style(&self) -> Option<Style> {
+        Some(
+            Style::new()
+                .translate_x(self.offset.x)
+                .translate_y(self.offset.y),
+        )
+    }
+
+    fn compute_layout(
+        &mut self,
+        cx: &mut crate::context::ComputeLayoutCx,
+    ) -> Option<peniko::kurbo::Rect> {
+        if let (Some(parent_size), Some(layout)) = (self.id.parent_size(), self.id.get_layout()) {
+            use crate::kurbo::Size;
+
+            let bottom_right = taffy::Size::from(layout.location) + layout.size;
+            let bottom_right = Size::new(bottom_right.width as _, bottom_right.height as _);
+
+            let new_offset = (parent_size - bottom_right).min(Size::ZERO);
+            let new_offset = Point::new(new_offset.width, new_offset.height);
+
+            if self.offset != new_offset {
+                self.offset = new_offset;
+                self.id().request_style();
+            }
+        }
+
+        default_compute_layout(self.id, cx)
     }
 }
