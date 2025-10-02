@@ -370,7 +370,7 @@ impl<T: Clone> Dropdown<T> {
         let list_view = Rc::new(move |list_item_fn: &dyn Fn(T) -> AnyView| {
             let iterator = iterator.clone();
             let iter_clone = iterator.clone();
-            let inner_list = list(iterator.into_iter().map(list_item_fn))
+            list(iterator.into_iter().map(list_item_fn))
                 .on_accept(move |opt_idx| {
                     if let Some(idx) = opt_idx {
                         let val = iter_clone.clone().into_iter().nth(idx).unwrap();
@@ -378,17 +378,12 @@ impl<T: Clone> Dropdown<T> {
                         dropdown_id.update_state(Message::ListSelect(Box::new(val)));
                     }
                 })
-                .style(|s| s.size_full())
+                .style(|s| s.width_full())
                 .keyboard_navigable()
                 .on_event_stop(EventListener::FocusLost, move |_| {
                     dropdown_id.update_state(Message::ListFocusLost);
                 })
-                .on_event_stop(EventListener::PointerMove, |_| {});
-            let inner_list_id = inner_list.id();
-            scroll(inner_list)
-                .on_event_stop(EventListener::FocusGained, move |_| {
-                    inner_list_id.request_focus();
-                })
+                .on_event_stop(EventListener::PointerMove, |_| {})
                 .into_any()
         });
 
@@ -580,13 +575,27 @@ impl<T: Clone> Dropdown<T> {
         let list = self.list_view.clone();
         let list_style = self.list_style.clone();
         let list_item_fn = self.list_item_fn.clone();
-        self.overlay_id = Some(add_overlay(point, move |_| {
-            let list = list(&*list_item_fn.clone())
-                .style(move |s| s.apply(list_style.clone()))
-                .into_view();
+        self.overlay_id = Some(add_overlay(Point::ZERO, {
+            let list = list(&*list_item_fn.clone());
+
             let list_id = list.id();
             list_id.request_focus();
-            list
+
+            container(scroll(list).style(move |s| {
+                s.flex_col()
+                    .pointer_events_auto()
+                    .flex_shrink(1.0)
+                    .apply(list_style.clone())
+            }))
+            .style(move |s| {
+                s.absolute()
+                    .max_size_full()
+                    .padding_left(point.x)
+                    .padding_top(point.y)
+                    .padding_bottom(5)
+                    .padding_right(5)
+                    .pointer_events_none()
+            })
         }));
     }
 

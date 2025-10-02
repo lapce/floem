@@ -33,61 +33,28 @@ pub(crate) enum UpdateMessage {
     Active(ViewId),
     ClearActive(ViewId),
     WindowScale(f64),
-    Disabled {
-        id: ViewId,
-        is_disabled: bool,
-    },
+    Disabled { id: ViewId, is_disabled: bool },
     RequestPaint,
-    State {
-        id: ViewId,
-        state: Box<dyn Any>,
-    },
-    KeyboardNavigable {
-        id: ViewId,
-    },
-    RemoveKeyboardNavigable {
-        id: ViewId,
-    },
-    Draggable {
-        id: ViewId,
-    },
+    State { id: ViewId, state: Box<dyn Any> },
+    KeyboardNavigable { id: ViewId },
+    RemoveKeyboardNavigable { id: ViewId },
+    Draggable { id: ViewId },
     ToggleWindowMaximized,
     SetWindowMaximized(bool),
     MinimizeWindow,
     DragWindow,
     DragResizeWindow(ResizeDirection),
     SetWindowDelta(Vec2),
-    ShowContextMenu {
-        menu: Menu,
-        pos: Option<Point>,
-    },
-    WindowMenu {
-        menu: Menu,
-    },
-    SetWindowTitle {
-        title: String,
-    },
-    AddOverlay {
-        id: ViewId,
-        position: Point,
-        view: Box<dyn FnOnce() -> Box<dyn View>>,
-    },
-    RemoveOverlay {
-        id: ViewId,
-    },
+    ShowContextMenu { menu: Menu, pos: Option<Point> },
+    WindowMenu { menu: Menu },
+    SetWindowTitle { title: String },
+    AddOverlay { view: Box<dyn View> },
+    RemoveOverlay { id: ViewId },
     Inspect,
-    ScrollTo {
-        id: ViewId,
-        rect: Option<Rect>,
-    },
+    ScrollTo { id: ViewId, rect: Option<Rect> },
     FocusWindow,
-    SetImeAllowed {
-        allowed: bool,
-    },
-    SetImeCursorArea {
-        position: Point,
-        size: Size,
-    },
+    SetImeAllowed { allowed: bool },
+    SetImeCursorArea { position: Point, size: Size },
     WindowVisible(bool),
     ViewTransitionAnimComplete(ViewId),
 }

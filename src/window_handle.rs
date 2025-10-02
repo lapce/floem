@@ -9,7 +9,7 @@ use floem_reactive::{with_scope, RwSignal, Scope, SignalGet, SignalUpdate};
 use floem_renderer::gpu_resources::GpuResources;
 use floem_renderer::Renderer;
 use peniko::color::palette;
-use peniko::kurbo::{Affine, Point, Rect, Size, Vec2};
+use peniko::kurbo::{Affine, Point, Size, Vec2};
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
     event::{ButtonSource, ElementState, Ime, MouseScrollDelta, TouchPhase},
@@ -22,7 +22,7 @@ use crate::reactive::SignalWith;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::unit::UnitExt;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-use crate::views::{container, stack};
+use crate::views::{container, stack, Decorators};
 use crate::{
     app::UserEvent,
     app_state::AppState,
@@ -45,9 +45,8 @@ use crate::{
         UpdateMessage, CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES,
         CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES,
     },
-    view::{default_compute_layout, view_tab_navigation, IntoView, View},
+    view::{view_tab_navigation, IntoView, View},
     view_state::ChangeFlags,
-    views::Decorators,
     window_tracking::{remove_window_id_mapping, store_window_id_mapping},
     Application,
 };
@@ -1075,27 +1074,8 @@ impl WindowHandle {
                     UpdateMessage::Inspect => {
                         inspector::capture(self.window_id);
                     }
-                    UpdateMessage::AddOverlay { id, position, view } => {
-                        let scope = self.scope.create_child();
-
-                        let view = with_scope(scope, view);
-                        let child = view.id();
-                        id.set_children([view]);
-
-                        let view = OverlayView {
-                            id,
-                            position,
-                            child,
-                            size: Size::ZERO,
-                            parent_size: Size::ZERO,
-                            window_origin: Point::ZERO,
-                        };
-                        self.id.add_child(
-                            view.on_cleanup(move || {
-                                scope.dispose();
-                            })
-                            .into_any(),
-                        );
+                    UpdateMessage::AddOverlay { view } => {
+                        self.id.add_child(view);
                         self.id.request_all();
                     }
                     UpdateMessage::RemoveOverlay { id } => {
@@ -1599,62 +1579,6 @@ fn context_menu_view(
     });
 
     view
-}
-
-struct OverlayView {
-    id: ViewId,
-    child: ViewId,
-    position: Point,
-    window_origin: Point,
-    parent_size: Size,
-    size: Size,
-}
-
-impl View for OverlayView {
-    fn id(&self) -> ViewId {
-        self.id
-    }
-
-    fn view_style(&self) -> Option<crate::style::Style> {
-        Some(
-            Style::new()
-                .absolute()
-                .inset_left(self.position.x)
-                .inset_top(self.position.y),
-        )
-    }
-
-    fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        "Overlay".into()
-    }
-
-    fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
-        self.window_origin = cx.window_origin;
-        if let Some(parent_size) = self.id.parent_size() {
-            self.parent_size = parent_size;
-        }
-        if let Some(layout) = self.id.get_layout() {
-            self.size = Size::new(layout.size.width as f64, layout.size.height as f64);
-        }
-        default_compute_layout(self.id, cx)
-    }
-
-    fn paint(&mut self, cx: &mut PaintCx) {
-        cx.save();
-        let x = if (self.window_origin.x + self.size.width) > self.parent_size.width - 5.0 {
-            (self.window_origin.x + self.size.width) - (self.parent_size.width - 5.0)
-        } else {
-            0.0
-        };
-        let y = if (self.window_origin.y + self.size.height) > self.parent_size.height - 5.0 {
-            (self.window_origin.y + self.size.height) - (self.parent_size.height - 5.0)
-        } else {
-            0.0
-        };
-        cx.offset((-x, -y));
-        cx.paint_view(self.child);
-        cx.restore();
-    }
 }
 
 /// A view representing a window which manages the main window view and any overlays.
