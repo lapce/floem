@@ -274,14 +274,7 @@ fn move_right(
         }
     }
 
-    let (rvline, col) = view.rvline_col_of_offset(offset, *affinity);
-    let info = view.rvline_info(rvline);
-
-    *affinity = if col == info.last_col(&view.text_prov(), false) {
-        CursorAffinity::Forward
-    } else {
-        CursorAffinity::Backward
-    };
+    *affinity = CursorAffinity::Backward;
 
     new_offset
 }
