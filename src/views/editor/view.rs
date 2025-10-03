@@ -373,6 +373,11 @@ impl EditorView {
 
             let line_height = f64::from(ed.line_height(line));
 
+            // Skip over empty selections within wrapped lines
+            if left_col == right_col && info.line_count > 1 && left_col != ed.last_col(info, true) {
+                continue;
+            }
+
             // TODO: What affinity should these use?
             let x0 = ed
                 .line_point_of_line_col(line, left_col, CursorAffinity::Forward, true)
