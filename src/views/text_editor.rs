@@ -392,13 +392,12 @@ impl TextEditor {
         self
     }
 
-    /// Returns the [ViewId] of the underlying [Editor].
+    /// Returns the [EditorId] of the underlying [Editor].
     pub fn editor_id(&self) -> EditorId {
         self.editor.id()
     }
 
     /// Opens the `TextEditor` with the provided [`Document`].
-    /// Note: This requires that the document underlying it is a [TextDocument] for the use of some logic.
     /// You should usually not swap this out without good reason.
     pub fn with_doc(self, f: impl FnOnce(&dyn Document)) -> Self {
         self.editor.doc.with_untracked(|doc| {

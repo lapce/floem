@@ -176,8 +176,6 @@
 //!
 //! For additional information about animation, [see here](crate::animate::Animation).
 
-//#![warn(missing_docs)]
-
 pub mod action;
 pub mod animate;
 mod app;
@@ -221,34 +219,34 @@ mod window_handle;
 mod window_id;
 mod window_tracking;
 
-pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};
+pub use app::{launch, quit_app, reopen, AppConfig, AppEvent, Application};
 pub use app_state::AppState;
 pub use clipboard::{Clipboard, ClipboardError};
 pub use ext_event::resource::Resource;
 pub use floem_reactive as reactive;
-pub use floem_renderer::Renderer;
-pub use floem_renderer::Svg as RendererSvg;
 pub use floem_renderer::gpu_resources::GpuResources;
 pub use floem_renderer::text;
+pub use floem_renderer::Renderer;
+pub use floem_renderer::Svg as RendererSvg;
 pub use id::ViewId;
 pub use muda;
 pub use peniko;
 pub use peniko::kurbo;
 pub use screen_layout::ScreenLayout;
 pub use taffy;
-pub use view::{AnyView, IntoView, View, recursively_layout_view};
+pub use view::{recursively_layout_view, AnyView, IntoView, View};
 pub use window::{close_window, new_window};
 pub use window_id::{Urgency, WindowIdExt};
 
 pub mod prelude {
-    pub use crate::Renderer;
     pub use crate::unit::{DurationUnitExt, UnitExt};
     pub use crate::view_tuple::ViewTuple;
     pub use crate::views::*;
+    pub use crate::Renderer;
     pub use crate::{IntoView, View};
     pub use floem_reactive::{
-        RwSignal, SignalGet, SignalTrack, SignalUpdate, SignalWith, create_rw_signal, create_signal,
+        create_rw_signal, create_signal, RwSignal, SignalGet, SignalTrack, SignalUpdate, SignalWith,
     };
-    pub use peniko::Color;
     pub use peniko::color::palette;
+    pub use peniko::Color;
 }
