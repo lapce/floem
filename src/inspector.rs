@@ -118,6 +118,7 @@ impl CapturedView {
         let mut match_ids = self
             .children
             .iter()
+            .rev()
             .filter_map(|child| {
                 let child_ids = child.find_all_by_pos(pos);
                 if child_ids.is_empty() {
