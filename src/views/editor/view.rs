@@ -1201,6 +1201,7 @@ fn editor_content(
                     }
                 }
             })
+            .style(|s| s.min_size_full())
     })
     .on_move(move |point| {
         window_origin.set(point);
