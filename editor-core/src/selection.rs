@@ -402,8 +402,8 @@ impl Selection {
         remove_n_at(&mut self.regions, first, last - first);
     }
 
-    /// Add a regions to [`self`]. Note that if provided region overlap
-    /// on of the selection regions they will be merged in a single region.
+    /// Add a regions to [`self`]. Note that if provided region overlaps
+    /// one of the selection regions they will be merged in a single region.
     ///
     /// **Example:**
     ///
@@ -446,11 +446,11 @@ impl Selection {
         }
         if ix == end_ix {
             self.regions.insert(ix, region);
-            self.last_inserted = ix;
         } else {
             self.regions[ix] = region;
             remove_n_at(&mut self.regions, ix + 1, end_ix - ix - 1);
         }
+        self.last_inserted = ix;
     }
 
     /// Add a region to the selection. This method does not merge regions and does not allow
