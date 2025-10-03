@@ -571,7 +571,8 @@ impl ViewId {
     }
 
     fn add_update_message(&self, msg: UpdateMessage) {
-        CENTRAL_UPDATE_MESSAGES.with_borrow_mut(|msgs| {
+        let _ = CENTRAL_UPDATE_MESSAGES.try_with(|msgs| {
+            let mut msgs = msgs.borrow_mut();
             msgs.push((*self, msg));
         });
     }
