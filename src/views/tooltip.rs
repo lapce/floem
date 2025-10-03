@@ -141,6 +141,7 @@ impl View for Tooltip {
     }
 }
 
+/// Adds a [tooltip] function to a type that implements [`IntoView`].
 pub trait TooltipExt {
     fn tooltip<V: IntoView + 'static>(self, tip: impl Fn() -> V + 'static) -> Tooltip;
 }

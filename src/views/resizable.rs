@@ -20,7 +20,10 @@ use peniko::{
 };
 use taffy::FlexDirection;
 
-style_class!(pub ResizableClass);
+style_class!(
+    /// The style class that is applied to all [`ResizableStack`] views.
+    pub ResizableClass
+);
 
 pub(crate) fn create_resizable(children: Vec<Box<dyn View>>) -> ResizableStack {
     let id = ViewId::new();
@@ -47,6 +50,7 @@ pub(crate) fn create_resizable(children: Vec<Box<dyn View>>) -> ResizableStack {
         style_offsets: offsets,
     }
 }
+/// Creates a [ResizableStack] from a group of `Views`.
 pub fn resizable<VT: ViewTuple + 'static>(children: VT) -> ResizableStack {
     create_resizable(children.into_views())
 }
@@ -89,6 +93,7 @@ enum HandleState {
     Active(usize),
 }
 
+/// A container View around other Views that allows for resizing with a handle.
 pub struct ResizableStack {
     id: ViewId,
     style: Style,

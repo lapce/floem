@@ -12,7 +12,7 @@ pub struct Container {
 
 /// A simple wrapper around another View
 ///
-/// A [`Container`] is useful for wrapping another [View](crate::view::View). This is often useful for allowing another
+/// Wrapping a [View](crate::view::View) with a [`Container`] allows using another
 /// set of styles completely separate from the child View that is being wrapped.
 pub fn container<V: IntoView + 'static>(child: V) -> Container {
     let id = ViewId::new();

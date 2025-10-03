@@ -1,12 +1,17 @@
 use crate::{style_class, views::Decorators, IntoView, View, ViewId};
 use core::ops::FnMut;
 
-style_class!(pub ButtonClass);
+style_class!(
+    /// The style class that is applied to buttons.
+    pub ButtonClass
+);
 
+/// Creates a new simple [Button] view with the default [ButtonClass] style.
 pub fn button<V: IntoView + 'static>(child: V) -> Button {
     Button::new(child)
 }
 
+/// A simple Button view. See [`button`].
 pub struct Button {
     id: ViewId,
 }
@@ -29,6 +34,7 @@ impl Button {
     }
 }
 
+/// A trait that adds a `button` method to any type that implements `IntoView`.
 pub trait ButtonExt {
     fn button(self) -> Button;
 }

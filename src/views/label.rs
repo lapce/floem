@@ -39,7 +39,10 @@ prop_extractor! {
     }
 }
 
-style_class!(pub LabelClass);
+style_class!(
+    /// The style class that is applied to labels.
+    pub LabelClass
+);
 
 struct TextOverflowListener {
     last_is_overflown: Option<bool>,

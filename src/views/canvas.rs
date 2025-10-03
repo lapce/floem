@@ -3,7 +3,7 @@ use peniko::kurbo::Size;
 
 use crate::{context::PaintCx, id::ViewId, view::View};
 
-/// A canvas view
+/// A Canvas view. See the docs for [canvas()].
 #[allow(clippy::type_complexity)]
 pub struct Canvas {
     id: ViewId,

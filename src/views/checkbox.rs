@@ -13,12 +13,12 @@ use floem_reactive::{SignalGet, SignalUpdate};
 use std::fmt::Display;
 
 style_class!(
-    /// The style class that is applied to the checkbox.
+    /// The style class that is applied to checkboxs.
     pub CheckboxClass
 );
 
 style_class!(
-    /// The style class that is applied to the labeled checkbox stack.
+    /// The style class that is applied to all labeled checkbox stacks.
     pub LabeledCheckboxClass
 );
 

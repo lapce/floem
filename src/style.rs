@@ -1,4 +1,5 @@
 //! # Style
+//! Traits and functions that allow for styling `Views`.
 
 use floem_reactive::create_updater;
 use floem_renderer::text::{LineHeightValue, Weight};

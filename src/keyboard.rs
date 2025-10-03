@@ -5,6 +5,7 @@ pub use winit::keyboard::{
 #[cfg(not(any(target_arch = "wasm32", target_os = "ios", target_os = "android")))]
 pub use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 
+/// Represents a single keyboard input with it's modifier key.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct KeyEvent {
     pub key: winit::event::KeyEvent,

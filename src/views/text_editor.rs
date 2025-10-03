@@ -33,7 +33,7 @@ use super::editor::{
     WrapProp,
 };
 
-/// A text editor view.
+/// A text editor view built on top of [Editor](super::editor::Editor). See [`text_editor`].
 /// Note: this requires that the document underlying it is a [`TextDocument`] for the use of some
 /// logic.
 pub struct TextEditor {
@@ -44,6 +44,39 @@ pub struct TextEditor {
     editor: Editor,
 }
 
+// Note: this should typically be kept in sync with Lapce's
+// `defaults/keymaps-common.toml`
+//
+/// A text editor view built on top of [Editor](super::editor::Editor). This is the main editor view used in the
+/// [Lapce](https://lap.dev/lapce/) code editor. The default keymap includes the standard editing keys, for using your
+/// own keymap use [`text_editor_keys`].
+///
+/// ## Default Keymaps
+/// ### Basic Editing
+/// Up + ALT => Move Line Up
+/// Down + ALT => Move Line Down
+///
+/// Delete => Delete Forward
+/// Backspace => Delete Backward
+/// Backspace + Shift => Delete Forward
+///
+/// Home => Move to the start of the file
+/// End => Move to the end of the file
+///
+/// PageUp => Scroll up by a page
+/// PageDown => Scroll down by a page
+///
+/// PageUp + CTRL => Scroll up
+/// PageDown + CTRL => Scroll down
+///
+/// Enter => Insert New Line
+/// Tab => Insert Tab
+///
+/// Up + ALT, Up + SHIFT => Duplicate line up
+/// Down + ALT, Down + SHIFT => Duplicate line down
+///
+/// ### Multi Cursor
+/// i + ALT, i + SHIFT => Insert Cursor at the end of the line
 pub fn text_editor(text: impl Into<Rope>) -> TextEditor {
     let id = ViewId::new();
     let cx = Scope::current();
@@ -69,6 +102,8 @@ pub fn text_editor(text: impl Into<Rope>) -> TextEditor {
     }
 }
 
+/// A text editor view built on top of [Editor](super::editor::Editor) that allows providing your own keymap callback.
+/// See [`text_editor`] for a list of the default keymaps that you will need to handle yourself if using this function.
 pub fn text_editor_keys(
     text: impl Into<Rope>,
     handle_key_event: impl Fn(RwSignal<Editor>, &KeyPress, Modifiers) -> CommandExecuted + 'static,
@@ -137,6 +172,7 @@ impl View for TextEditor {
     }
 }
 
+/// The custom style elements that are specific to an [Editor].
 pub struct EditorCustomStyle(pub(crate) Style);
 
 impl EditorCustomStyle {
@@ -204,6 +240,7 @@ impl EditorCustomStyle {
         self
     }
 
+    /// Sets the color of the indent guide.
     pub fn indent_guide_color(mut self, color: Color) -> Self {
         self.0 = self
             .0
@@ -338,30 +375,31 @@ impl TextEditor {
         self
     }
 
-    /// Note: this requires that the document underlying it is a [`TextDocument`] for the use of
-    /// some logic. You should usually not swap this out without good reason.
+    /// Return a reference to the underlying [Editor].
     pub fn editor(&self) -> &Editor {
         &self.editor
     }
 
-    /// Note: this requires that the document underlying it is a [`TextDocument`] for the use of
-    /// some logic. You should usually not swap this out without good reason.
+    /// Allows for creation of a [TextEditor] with an existing [Editor].
     pub fn with_editor(self, f: impl FnOnce(&Editor)) -> Self {
         f(&self.editor);
         self
     }
 
-    /// Note: this requires that the document underlying it is a [`TextDocument`] for the use of
-    /// some logic. You should usually not swap this out without good reason.
+    /// Allows for creation of a [TextEditor] with an existing mutable [Editor].
     pub fn with_editor_mut(mut self, f: impl FnOnce(&mut Editor)) -> Self {
         f(&mut self.editor);
         self
     }
 
+    /// Returns the [ViewId] of the underlying [Editor].
     pub fn editor_id(&self) -> EditorId {
         self.editor.id()
     }
 
+    /// Opens the `TextEditor` with the provided [`Document`].
+    /// Note: This requires that the document underlying it is a [TextDocument] for the use of some logic.
+    /// You should usually not swap this out without good reason.
     pub fn with_doc(self, f: impl FnOnce(&dyn Document)) -> Self {
         self.editor.doc.with_untracked(|doc| {
             f(doc.as_ref());
@@ -369,11 +407,12 @@ impl TextEditor {
         self
     }
 
+    /// Returns a reference to the underlying [Document]. This should usually be a [TextDocument].
     pub fn doc(&self) -> Rc<dyn Document> {
         self.editor.doc()
     }
 
-    /// Try downcasting the document to a [`TextDocument`].  
+    /// Try downcasting the document to a [`TextDocument`].
     /// Returns `None` if the document is not a [`TextDocument`].
     fn text_doc(&self) -> Option<Rc<TextDocument>> {
         (self.doc() as Rc<dyn ::std::any::Any>).downcast().ok()
@@ -384,13 +423,13 @@ impl TextEditor {
         self.editor.rope_text()
     }
 
-    /// Use a different document in the text editor  
+    /// Use a different document in the text editor
     pub fn use_doc(self, doc: Rc<dyn Document>) -> Self {
         self.editor.update_doc(doc, None);
         self
     }
 
-    /// Use the same document as another text editor view.  
+    /// Use the same document as another text editor view.
     /// ```rust,ignore
     /// let primary = text_editor();
     /// let secondary = text_editor().share_document(&primary);
@@ -399,7 +438,7 @@ impl TextEditor {
     ///     primary,
     ///     secondary,
     /// ))
-    /// ```  
+    /// ```
     /// If you wish for it to also share the styling, consider using [`TextEditor::shared_editor`]
     /// instead.
     pub fn share_doc(self, other: &TextEditor) -> Self {
@@ -411,6 +450,7 @@ impl TextEditor {
     /// let primary = text_editor();
     /// let secondary = primary.shared_editor();
     /// ```
+    /// Also see the [Editor example](https://github.com/lapce/floem/tree/main/examples/editor).
     pub fn shared_editor(&self) -> TextEditor {
         let id = ViewId::new();
 
@@ -435,7 +475,7 @@ impl TextEditor {
         }
     }
 
-    /// Change the [`Styling`] used for the editor.  
+    /// Change the [`Styling`] used for the editor.
     /// ```rust,ignore
     /// let styling = SimpleStyling::builder()
     ///     .font_size(12)
@@ -475,9 +515,9 @@ impl TextEditor {
         self
     }
 
-    /// When commands are run on the document, this function is called.  
+    /// When commands are run on the document, this function is called.
     /// If it returns [`CommandExecuted::Yes`] then further handlers after it, including the
-    /// default handler, are not executed.  
+    /// default handler, are not executed.
     /// ```rust
     /// use floem::views::editor::command::{Command, CommandExecuted};
     /// use floem::views::text_editor::text_editor;
@@ -485,7 +525,7 @@ impl TextEditor {
     /// text_editor("Hello")
     ///     .pre_command(|ev| {
     ///         if matches!(ev.cmd, Command::Edit(EditCommand::Undo)) {
-    ///             // Sorry, no undoing allowed   
+    ///             // Sorry, no undoing allowed
     ///             CommandExecuted::Yes
     ///         } else {
     ///             CommandExecuted::No
@@ -500,8 +540,8 @@ impl TextEditor {
     ///         CommandExecuted::No
     ///     });
     /// ```
-    /// Note that these are specific to each text editor view.  
-    ///   
+    /// Note that these are specific to each text editor view.
+    ///
     /// Note: only works for the default backing [`TextDocument`] doc
     pub fn pre_command(self, f: impl Fn(PreCommand) -> CommandExecuted + 'static) -> Self {
         if let Some(doc) = self.text_doc() {
@@ -510,9 +550,9 @@ impl TextEditor {
         self
     }
 
-    /// Listen for deltas applied to the editor.  
+    /// Listen for deltas applied to the editor.
     /// Useful for anything that has positions based in the editor that can be updated after
-    /// typing, such as syntax highlighting.  
+    /// typing, such as syntax highlighting.
     /// Note: only works for the default backing [`TextDocument`] doc
     pub fn update(self, f: impl Fn(OnUpdate) + 'static) -> Self {
         if let Some(doc) = self.text_doc() {

@@ -1,4 +1,5 @@
-//! A toggle button widget. An example can be found in widget-gallery/button in the floem examples.
+//! A toggle button widget. An example can be found in [widget-gallery/button](https://github.com/lapce/floem/tree/main/examples/widget-gallery)
+//! in the floem examples.
 
 use floem_reactive::{create_effect, SignalGet, SignalUpdate};
 use peniko::kurbo::{Point, Size};
