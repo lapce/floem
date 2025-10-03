@@ -968,6 +968,8 @@ pub fn editor_view(
         }
     });
 
+    let has_focus = RwSignal::new(false);
+
     EditorView {
         id,
         editor,
@@ -975,8 +977,16 @@ pub fn editor_view(
         inner_node: None,
     }
     .keyboard_navigable()
+    .on_event(EventListener::FocusGained, move |_| {
+        has_focus.set(true);
+        EventPropagation::Continue
+    })
+    .on_event(EventListener::FocusLost, move |_| {
+        has_focus.set(false);
+        EventPropagation::Continue
+    })
     .on_event(EventListener::ImePreedit, move |event| {
-        if !is_active.get_untracked() {
+        if !is_active.get_untracked() || !has_focus {
             return EventPropagation::Continue;
         }
 
@@ -993,7 +1003,7 @@ pub fn editor_view(
         EventPropagation::Stop
     })
     .on_event(EventListener::ImeCommit, move |event| {
-        if !is_active.get_untracked() {
+        if !is_active.get_untracked() || !has_focus {
             return EventPropagation::Continue;
         }
 
