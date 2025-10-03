@@ -1039,9 +1039,7 @@ pub fn cursor_caret(
         .filter(|(preedit_line, _)| *preedit_line == info.rvline.line)
         .map(|(_, (start, _))| start);
 
-    let (_, col) = ed.offset_to_line_col(offset);
-
-    let point = ed.line_point_of_line_col(info.rvline.line, col, CursorAffinity::Forward, false);
+    let point = ed.line_point_of_line_col(info.rvline.line, col, affinity, false);
 
     let rvline = if preedit_start.is_some() {
         // If there's an IME edit, then we need to use the point's y to get the actual y position
