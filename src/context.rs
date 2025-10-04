@@ -637,6 +637,8 @@ impl<'a> StyleCx<'a> {
         CaptureState::capture_style(view_id, self, computed_style.clone());
         view_state.borrow_mut().computed_style = computed_style;
 
+        let old_view_style_props = view_state.borrow().view_style_props.clone();
+
         // This is used by the `request_transition` and `style` methods below.
         self.current_view = view_id;
 
@@ -657,8 +659,14 @@ impl<'a> StyleCx<'a> {
                 &self.now,
                 &mut new_frame,
             );
+
+            if view_state.view_style_props != old_view_style_props {
+                self.app_state.request_paint = true;
+            }
+
             if new_frame {
                 self.app_state.schedule_style(view_id);
+                self.app_state.request_paint = true;
             }
         }
         // If there's any changes to the Taffy style, request layout.
@@ -688,9 +696,6 @@ impl<'a> StyleCx<'a> {
             },
             || view_state.borrow().num_waiting_animations,
         );
-        // if request_layout {
-        //     view_id.request_layout();
-        // }
 
         view_state.borrow_mut().is_hidden_state = is_hidden_state;
         let modified = view_state

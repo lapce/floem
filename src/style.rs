@@ -848,7 +848,7 @@ macro_rules! prop_extractor {
             $(,)?
         }
     ) => {
-        #[derive(Debug, Clone)]
+        #[derive(Debug, Clone, PartialEq)]
         $(#[$attrs])?
         $vis struct $name {
             $(

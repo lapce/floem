@@ -1092,7 +1092,6 @@ impl View for TextInput {
                 },
             ) => {
                 cx.update_active(self.id);
-                self.id.request_layout();
                 self.last_pointer_down = event.pos;
 
                 if event.count == 2 {
@@ -1106,8 +1105,9 @@ impl View for TextInput {
                 true
             }
             Event::PointerMove(event) => {
-                self.id.request_layout();
                 if cx.is_active(self.id) {
+                    self.id.request_layout();
+                    self.id.request_paint();
                     if event.pos.x < 0. && event.pos.x < self.last_pointer_down.x {
                         self.scroll(event.pos.x);
                     } else if event.pos.x > self.width as f64
@@ -1127,6 +1127,7 @@ impl View for TextInput {
 
         if is_handled {
             self.id.request_layout();
+            self.id.request_paint();
             self.last_cursor_action_on = Instant::now();
         }
 
