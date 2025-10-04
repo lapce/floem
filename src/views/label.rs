@@ -424,6 +424,7 @@ impl View for Label {
         if self.label.is_empty() {
             return None;
         }
+        self.id.request_paint();
 
         let layout = self.id.get_layout().unwrap_or_default();
         let (text_overflow, padding) = {
