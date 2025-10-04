@@ -195,6 +195,7 @@ pub struct HitPoint {
     /// end of that line, and a click below the last line will resolve to a
     /// position in that line.
     pub is_inside: bool,
+    pub affinity: Affinity,
 }
 
 #[derive(Clone, Debug)]
@@ -379,12 +380,14 @@ impl TextLayout {
                 line: cursor.line,
                 index: cursor.index,
                 is_inside,
+                affinity: cursor.affinity,
             }
         } else {
             HitPoint {
                 line: 0,
                 index: 0,
                 is_inside: false,
+                affinity: Affinity::Before,
             }
         }
     }

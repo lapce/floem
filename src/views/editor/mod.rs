@@ -34,6 +34,7 @@ use floem_editor_core::{
     soft_tab::{snap_to_soft_tab_line_col, SnapDirection},
 };
 use floem_reactive::{SignalGet, SignalTrack, SignalUpdate, SignalWith, Trigger};
+use floem_renderer::text::Affinity;
 use lapce_xi_rope::Rope;
 
 pub mod actions;
@@ -510,19 +511,21 @@ impl Editor {
 
     pub fn single_click(&self, pointer_event: &PointerInputEvent) {
         let mode = self.cursor.with_untracked(|c| c.get_mode());
-        let (new_offset, _) = self.offset_of_point(mode, pointer_event.pos);
+        let (new_offset, _, affinity) = self.offset_of_point(mode, pointer_event.pos);
+
         self.cursor.update(|cursor| {
             cursor.set_offset(
                 new_offset,
                 pointer_event.modifiers.shift(),
                 pointer_event.modifiers.alt(),
-            )
+            );
+            cursor.affinity = affinity;
         });
     }
 
     pub fn double_click(&self, pointer_event: &PointerInputEvent) {
         let mode = self.cursor.with_untracked(|c| c.get_mode());
-        let (mouse_offset, _) = self.offset_of_point(mode, pointer_event.pos);
+        let (mouse_offset, ..) = self.offset_of_point(mode, pointer_event.pos);
         let (start, end) = self.select_word(mouse_offset);
 
         self.cursor.update(|cursor| {
@@ -531,13 +534,14 @@ impl Editor {
                 end,
                 pointer_event.modifiers.shift(),
                 pointer_event.modifiers.alt(),
-            )
+            );
+            cursor.affinity = CursorAffinity::Backward;
         });
     }
 
     pub fn triple_click(&self, pointer_event: &PointerInputEvent) {
         let mode = self.cursor.with_untracked(|c| c.get_mode());
-        let (mouse_offset, _) = self.offset_of_point(mode, pointer_event.pos);
+        let (mouse_offset, ..) = self.offset_of_point(mode, pointer_event.pos);
         let line = self.line_of_offset(mouse_offset);
         let start = self.offset_of_line(line);
         let end = self.offset_of_line(line + 1);
@@ -554,7 +558,7 @@ impl Editor {
 
     pub fn pointer_move(&self, pointer_event: &PointerMoveEvent) {
         let mode = self.cursor.with_untracked(|c| c.get_mode());
-        let (offset, _is_inside) = self.offset_of_point(mode, pointer_event.pos);
+        let (offset, ..) = self.offset_of_point(mode, pointer_event.pos);
         if self.active.get_untracked() && self.cursor.with_untracked(|c| c.offset()) != offset {
             self.cursor
                 .update(|cursor| cursor.set_offset(offset, true, pointer_event.modifiers.alt()));
@@ -567,7 +571,7 @@ impl Editor {
 
     fn right_click(&self, pointer_event: &PointerInputEvent) {
         let mode = self.cursor.with_untracked(|c| c.get_mode());
-        let (offset, _) = self.offset_of_point(mode, pointer_event.pos);
+        let (offset, ..) = self.offset_of_point(mode, pointer_event.pos);
         let doc = self.doc();
         let pointer_inside_selection = self
             .cursor
@@ -951,9 +955,9 @@ impl Editor {
     /// The boolean indicates whether the point is inside the text or not
     /// Points outside of vertical bounds will return the last line.
     /// Points outside of horizontal bounds will return the last column on the line.
-    pub fn offset_of_point(&self, mode: Mode, point: Point) -> (usize, bool) {
-        let ((line, col), is_inside) = self.line_col_of_point(mode, point);
-        (self.offset_of_line_col(line, col), is_inside)
+    pub fn offset_of_point(&self, mode: Mode, point: Point) -> (usize, bool, CursorAffinity) {
+        let ((line, col), is_inside, affinity) = self.line_col_of_point(mode, point);
+        (self.offset_of_line_col(line, col), is_inside, affinity)
     }
 
     /// Get the actual (line, col) of a particular point within the editor.
@@ -995,7 +999,11 @@ impl Editor {
     /// The boolean indicates whether the point is within the text bounds.
     /// Points outside of vertical bounds will return the last line.
     /// Points outside of horizontal bounds will return the last column on the line.
-    pub fn line_col_of_point(&self, mode: Mode, point: Point) -> ((usize, usize), bool) {
+    pub fn line_col_of_point(
+        &self,
+        mode: Mode,
+        point: Point,
+    ) -> ((usize, usize), bool, CursorAffinity) {
         // TODO: this assumes that line height is constant!
         let line_height = f64::from(self.style().line_height(self.id(), 0));
         let info = if point.y <= 0.0 {
@@ -1027,6 +1035,10 @@ impl Editor {
         let y = text_layout.get_layout_y(rvline.line_index).unwrap_or(0.0);
 
         let hit_point = text_layout.text.hit_point(Point::new(point.x, y as f64));
+        let mut affinity = match hit_point.affinity {
+            Affinity::Before => CursorAffinity::Backward,
+            Affinity::After => CursorAffinity::Forward,
+        };
         // We have to unapply the phantom text shifting in order to get back to the column in
         // the actual buffer
         let col = text_layout.phantom_text.before_col(hit_point.index);
@@ -1034,9 +1046,6 @@ impl Editor {
         // right end will just go to the end of the line.
         let max_col = self.line_end_col(line, mode != Mode::Normal);
         let mut col = col.min(max_col);
-
-        // TODO: we need to handle affinity. Clicking at end of a wrapped line should give it a
-        // backwards affinity, while being at the start of the next line should be a forwards aff
 
         // TODO: this is a hack to get around text layouts not including spaces at the end of
         // wrapped lines, but we want to be able to click on them
@@ -1054,9 +1063,10 @@ impl Editor {
                 SnapDirection::Nearest,
                 tab_width,
             );
+            affinity = CursorAffinity::Forward;
         }
 
-        ((line, col), hit_point.is_inside)
+        ((line, col), hit_point.is_inside, affinity)
     }
 
     // TODO: colposition probably has issues with wrapping?
