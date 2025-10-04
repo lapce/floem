@@ -95,6 +95,7 @@ impl SelRegion {
     ///
     /// ```rust
     /// # use floem_editor_core::selection::SelRegion;
+    /// # use floem_editor_core::cursor::CursorAffinity;
     /// let  region = SelRegion::new(1, 10, CursorAffinity::Backward, None);
     /// assert_eq!(region.min(), region.start);
     /// let  region = SelRegion::new(42, 1, CursorAffinity::Backward, None);
@@ -110,6 +111,7 @@ impl SelRegion {
     ///
     /// ```rust
     /// # use floem_editor_core::selection::SelRegion;
+    /// # use floem_editor_core::cursor::CursorAffinity;
     /// let  region = SelRegion::new(1, 10, CursorAffinity::Backward, None);
     /// assert_eq!(region.max(), region.end);
     /// let  region = SelRegion::new(42, 1, CursorAffinity::Backward, None);
@@ -125,6 +127,7 @@ impl SelRegion {
     ///
     /// ```rust
     /// # use floem_editor_core::selection::SelRegion;
+    /// # use floem_editor_core::cursor::CursorAffinity;
     /// let  region = SelRegion::new(1, 1, CursorAffinity::Backward, None);
     /// assert!(region.is_caret());
     /// ```
@@ -138,6 +141,7 @@ impl SelRegion {
     ///
     /// ```rust
     /// # use floem_editor_core::selection::SelRegion;
+    /// # use floem_editor_core::cursor::CursorAffinity;
     /// let  region = SelRegion::new(1, 2, CursorAffinity::Backward, None);
     /// let  other = SelRegion::new(3, 4, CursorAffinity::Backward, None);
     /// assert_eq!(region.merge_with(other), SelRegion::new(1, 4, CursorAffinity::Backward, None));
@@ -216,7 +220,8 @@ impl Selection {
     ///
     /// ```rust
     /// # use floem_editor_core::selection::Selection;
-    /// let  selection = Selection::region(0, 2);
+    /// # use floem_editor_core::cursor::CursorAffinity;
+    /// let  selection = Selection::region(0, 2, CursorAffinity::Backward);
     /// assert!(selection.contains(0));
     /// assert!(selection.contains(1));
     /// assert!(selection.contains(2));
@@ -248,6 +253,7 @@ impl Selection {
     ///
     /// ```rust
     /// # use floem_editor_core::selection::{Selection, SelRegion};
+    /// # use floem_editor_core::cursor::CursorAffinity;
     /// let mut selection = Selection::new();
     /// selection.add_region(SelRegion::new(1, 3, CursorAffinity::Backward, None));
     /// selection.add_region(SelRegion::new(6, 12, CursorAffinity::Backward, None));
@@ -324,10 +330,11 @@ impl Selection {
     ///
     /// ```rust
     /// # use floem_editor_core::selection::{Selection, SelRegion};
+    /// # use floem_editor_core::cursor::CursorAffinity;
     /// let mut selection = Selection::new();
-    /// selection.add_region(SelRegion::caret(4));
-    /// selection.add_region(SelRegion::new(0, 12, None));
-    /// selection.add_region(SelRegion::new(24, 48, None));
+    /// selection.add_region(SelRegion::caret(4, CursorAffinity::Backward));
+    /// selection.add_region(SelRegion::new(0, 12, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(24, 48, CursorAffinity::Backward, None));
     /// assert_eq!(selection.min_offset(), 0);
     /// ```
     pub fn min_offset(&self) -> usize {
@@ -346,10 +353,11 @@ impl Selection {
     ///
     /// ```rust
     /// # use floem_editor_core::selection::{Selection, SelRegion};
+    /// # use floem_editor_core::cursor::CursorAffinity;
     /// let mut selection = Selection::new();
-    /// selection.add_region(SelRegion::caret(4));
-    /// selection.add_region(SelRegion::new(0, 12, None));
-    /// selection.add_region(SelRegion::new(24, 48, None));
+    /// selection.add_region(SelRegion::caret(4, CursorAffinity::Backward));
+    /// selection.add_region(SelRegion::new(0, 12, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(24, 48, CursorAffinity::Backward, None));
     /// assert_eq!(selection.max_offset(), 48);
     /// ```
     pub fn max_offset(&self) -> usize {
@@ -367,16 +375,17 @@ impl Selection {
     ///
     /// ```rust
     /// # use floem_editor_core::selection::{Selection, SelRegion};
+    /// # use floem_editor_core::cursor::CursorAffinity;
     /// let mut selection = Selection::new();
-    /// selection.add_region(SelRegion::new(0, 3, None));
-    /// selection.add_region(SelRegion::new(3, 6, None));
-    /// selection.add_region(SelRegion::new(7, 8, None));
-    /// selection.add_region(SelRegion::new(9, 11, None));
+    /// selection.add_region(SelRegion::new(0, 3, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(3, 6, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(7, 8, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(9, 11, CursorAffinity::Backward, None));
     /// let regions = selection.regions_in_range(5, 10);
     /// assert_eq!(regions, vec![
-    ///     SelRegion::new(3, 6, None),
-    ///     SelRegion::new(7, 8, None),
-    ///     SelRegion::new(9, 11, None)
+    ///     SelRegion::new(3, 6, CursorAffinity::Backward, None),
+    ///     SelRegion::new(7, 8, CursorAffinity::Backward, None),
+    ///     SelRegion::new(9, 11, CursorAffinity::Backward, None)
     /// ]);
     /// ```
     pub fn regions_in_range(&self, start: usize, end: usize) -> &[SelRegion] {
@@ -394,15 +403,16 @@ impl Selection {
     ///
     /// ```rust
     /// # use floem_editor_core::selection::{Selection, SelRegion};
+    /// # use floem_editor_core::cursor::CursorAffinity;
     /// let mut selection = Selection::new();
-    /// selection.add_region(SelRegion::new(0, 3, None));
-    /// selection.add_region(SelRegion::new(3, 6, None));
-    /// selection.add_region(SelRegion::new(7, 8, None));
-    /// selection.add_region(SelRegion::new(9, 11, None));
+    /// selection.add_region(SelRegion::new(0, 3, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(3, 6, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(7, 8, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(9, 11, CursorAffinity::Backward, None));
     /// let regions = selection.full_regions_in_range(5, 10);
     /// assert_eq!(regions, vec![
-    ///     SelRegion::new(7, 8, None),
-    ///     SelRegion::new(9, 11, None)
+    ///     SelRegion::new(7, 8, CursorAffinity::Backward, None),
+    ///     SelRegion::new(9, 11, CursorAffinity::Backward, None)
     /// ]);
     /// ```
     pub fn full_regions_in_range(&self, start: usize, end: usize) -> &[SelRegion] {
@@ -420,13 +430,14 @@ impl Selection {
     ///
     /// ```rust
     /// # use floem_editor_core::selection::{Selection, SelRegion};
+    /// # use floem_editor_core::cursor::CursorAffinity;
     /// let mut selection = Selection::new();
-    /// selection.add_region(SelRegion::new(0, 3, None));
-    /// selection.add_region(SelRegion::new(3, 6, None));
-    /// selection.add_region(SelRegion::new(7, 8, None));
-    /// selection.add_region(SelRegion::new(9, 11, None));
+    /// selection.add_region(SelRegion::new(0, 3, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(3, 6, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(7, 8, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(9, 11, CursorAffinity::Backward, None));
     /// selection.delete_range(5, 10);
-    /// assert_eq!(selection.regions(), vec![SelRegion::new(0, 3, None)]);
+    /// assert_eq!(selection.regions(), vec![SelRegion::new(0, 3, CursorAffinity::Backward, None)]);
     /// ```
     pub fn delete_range(&mut self, start: usize, end: usize) {
         let mut first = self.search(start);
@@ -450,18 +461,19 @@ impl Selection {
     ///
     /// ```rust
     /// # use floem_editor_core::selection::{Selection, SelRegion};
+    /// # use floem_editor_core::cursor::CursorAffinity;
     /// let mut selection = Selection::new();
     /// // Overlapping
-    /// selection.add_region(SelRegion::new(0, 4, None));
-    /// selection.add_region(SelRegion::new(3, 6, None));
-    /// assert_eq!(selection.regions(), vec![SelRegion::new(0, 6, None)]);
+    /// selection.add_region(SelRegion::new(0, 4, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(3, 6, CursorAffinity::Backward, None));
+    /// assert_eq!(selection.regions(), vec![SelRegion::new(0, 6, CursorAffinity::Backward, None)]);
     /// // Non-overlapping
     /// let mut selection = Selection::new();
-    /// selection.add_region(SelRegion::new(0, 3, None));
-    /// selection.add_region(SelRegion::new(3, 6, None));
+    /// selection.add_region(SelRegion::new(0, 3, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(3, 6, CursorAffinity::Backward, None));
     /// assert_eq!(selection.regions(), vec![
-    ///     SelRegion::new(0, 3, None),
-    ///     SelRegion::new(3, 6, None)
+    ///     SelRegion::new(0, 3, CursorAffinity::Backward, None),
+    ///     SelRegion::new(3, 6, CursorAffinity::Backward, None)
     /// ]);
     /// ```
     pub fn add_region(&mut self, region: SelRegion) {
