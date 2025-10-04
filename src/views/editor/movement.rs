@@ -23,7 +23,6 @@ use super::{
 fn move_region(
     view: &Editor,
     region: &SelRegion,
-    affinity: &mut CursorAffinity,
     count: usize,
     modify: bool,
     movement: &Movement,
@@ -38,13 +37,16 @@ fn move_region(
         match movement {
             Movement::Left | Movement::Up => {
                 let leftmost = region.min();
-                (count - 1, SelRegion::new(leftmost, leftmost, region.horiz))
+                (
+                    count - 1,
+                    SelRegion::new(leftmost, leftmost, region.affinity, region.horiz),
+                )
             }
             Movement::Right | Movement::Down => {
                 let rightmost = region.max();
                 (
                     count - 1,
-                    SelRegion::new(rightmost, rightmost, region.horiz),
+                    SelRegion::new(rightmost, rightmost, region.affinity, region.horiz),
                 )
             }
             _ => (count, *region),
@@ -53,11 +55,13 @@ fn move_region(
         (count, *region)
     };
 
+    let mut affinity = region.affinity;
+
     let (end, horiz) = move_offset(
         view,
         region.end,
         region.horiz.as_ref(),
-        affinity,
+        &mut affinity,
         count,
         movement,
         mode,
@@ -66,13 +70,12 @@ fn move_region(
         true => region.start,
         false => end,
     };
-    SelRegion::new(start, end, horiz)
+    SelRegion::new(start, end, affinity, horiz)
 }
 
 pub fn move_selection(
     view: &Editor,
     selection: &Selection,
-    affinity: &mut CursorAffinity,
     count: usize,
     modify: bool,
     movement: &Movement,
@@ -80,9 +83,7 @@ pub fn move_selection(
 ) -> Selection {
     let mut new_selection = Selection::new();
     for region in selection.regions() {
-        new_selection.add_region(move_region(
-            view, region, affinity, count, modify, movement, mode,
-        ));
+        new_selection.add_region(move_region(view, region, count, modify, movement, mode));
     }
     new_selection
 }
@@ -568,7 +569,10 @@ pub fn move_cursor(
     register: &mut Register,
 ) {
     match cursor.mode {
-        CursorMode::Normal(offset) => {
+        CursorMode::Normal {
+            offset,
+            mut affinity,
+        } => {
             let count = if let Some(motion_mode) = cursor.motion_mode.as_ref() {
                 count.max(motion_mode.count())
             } else {
@@ -578,7 +582,7 @@ pub fn move_cursor(
                 ed,
                 offset,
                 cursor.horiz.as_ref(),
-                &mut cursor.affinity,
+                &mut affinity,
                 count,
                 movement,
                 Mode::Normal,
@@ -588,7 +592,7 @@ pub fn move_cursor(
                     ed,
                     new_offset,
                     None,
-                    &mut cursor.affinity,
+                    &mut affinity,
                     1,
                     &Movement::Right,
                     Mode::Insert,
@@ -614,16 +618,24 @@ pub fn move_cursor(
                 );
                 cursor.motion_mode = None;
             } else {
-                cursor.mode = CursorMode::Normal(new_offset);
+                cursor.mode = CursorMode::Normal {
+                    offset: new_offset,
+                    affinity,
+                };
                 cursor.horiz = horiz;
             }
         }
-        CursorMode::Visual { start, end, mode } => {
+        CursorMode::Visual {
+            start,
+            end,
+            mode,
+            mut affinity,
+        } => {
             let (new_offset, horiz) = move_offset(
                 ed,
                 end,
                 cursor.horiz.as_ref(),
-                &mut cursor.affinity,
+                &mut affinity,
                 count,
                 movement,
                 Mode::Visual(VisualMode::Normal),
@@ -632,19 +644,12 @@ pub fn move_cursor(
                 start,
                 end: new_offset,
                 mode,
+                affinity,
             };
             cursor.horiz = horiz;
         }
         CursorMode::Insert(ref selection) => {
-            let selection = move_selection(
-                ed,
-                selection,
-                &mut cursor.affinity,
-                count,
-                modify,
-                movement,
-                Mode::Insert,
-            );
+            let selection = move_selection(ed, selection, count, modify, movement, Mode::Insert);
             cursor.set_insert(selection);
         }
     }
@@ -665,36 +670,44 @@ pub fn do_multi_selection(view: &Editor, cursor: &mut Cursor, cmd: &MultiSelecti
         }
         InsertCursorAbove => {
             if let CursorMode::Insert(mut selection) = cursor.mode.clone() {
-                let offset = selection.first().map(|s| s.end).unwrap_or(0);
+                let (offset, mut affinity) = selection
+                    .last()
+                    .map(|s| (s.end, s.affinity))
+                    .unwrap_or((0, CursorAffinity::Backward));
+
                 let (new_offset, _) = move_offset(
                     view,
                     offset,
                     cursor.horiz.as_ref(),
-                    &mut cursor.affinity,
+                    &mut affinity,
                     1,
                     &Movement::Up,
                     Mode::Insert,
                 );
                 if new_offset != offset {
-                    selection.add_region(SelRegion::new(new_offset, new_offset, None));
+                    selection.add_region(SelRegion::new(new_offset, new_offset, affinity, None));
                 }
                 cursor.set_insert(selection);
             }
         }
         InsertCursorBelow => {
             if let CursorMode::Insert(mut selection) = cursor.mode.clone() {
-                let offset = selection.last().map(|s| s.end).unwrap_or(0);
+                let (offset, mut affinity) = selection
+                    .last()
+                    .map(|s| (s.end, s.affinity))
+                    .unwrap_or((0, CursorAffinity::Backward));
+
                 let (new_offset, _) = move_offset(
                     view,
                     offset,
                     cursor.horiz.as_ref(),
-                    &mut cursor.affinity,
+                    &mut affinity,
                     1,
                     &Movement::Down,
                     Mode::Insert,
                 );
                 if new_offset != offset {
-                    selection.add_region(SelRegion::new(new_offset, new_offset, None));
+                    selection.add_region(SelRegion::new(new_offset, new_offset, affinity, None));
                 }
                 cursor.set_insert(selection);
             }
@@ -711,7 +724,12 @@ pub fn do_multi_selection(view: &Editor, cursor: &mut Cursor, cmd: &MultiSelecti
                         } else {
                             rope_text.line_end_offset(line, true)
                         };
-                        new_selection.add_region(SelRegion::new(offset, offset, None));
+                        new_selection.add_region(SelRegion::new(
+                            offset,
+                            offset,
+                            CursorAffinity::Backward,
+                            None,
+                        ));
                     }
                 }
                 cursor.set_insert(new_selection);
@@ -725,7 +743,12 @@ pub fn do_multi_selection(view: &Editor, cursor: &mut Cursor, cmd: &MultiSelecti
                     let start = rope_text.offset_of_line(start_line);
                     let end_line = rope_text.line_of_offset(region.max());
                     let end = rope_text.offset_of_line(end_line + 1);
-                    new_selection.add_region(SelRegion::new(start, end, None));
+                    new_selection.add_region(SelRegion::new(
+                        start,
+                        end,
+                        CursorAffinity::Backward,
+                        None,
+                    ));
                 }
                 cursor.set_insert(new_selection);
             }
@@ -737,7 +760,7 @@ pub fn do_multi_selection(view: &Editor, cursor: &mut Cursor, cmd: &MultiSelecti
             // However, we haven't included a `find` in floem-editor
         }
         SelectAll => {
-            let new_selection = Selection::region(0, rope_text.len());
+            let new_selection = Selection::region(0, rope_text.len(), CursorAffinity::Forward);
             cursor.set_insert(new_selection);
         }
     }
