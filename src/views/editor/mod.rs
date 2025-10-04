@@ -248,9 +248,12 @@ impl Editor {
 
         let viewport = cx.create_rw_signal(Rect::ZERO);
         let cursor_mode = if modal {
-            CursorMode::Normal(0)
+            CursorMode::Normal {
+                offset: 0,
+                affinity: CursorAffinity::Backward,
+            }
         } else {
-            CursorMode::Insert(Selection::caret(0))
+            CursorMode::Insert(Selection::caret(0, CursorAffinity::Backward))
         };
         let cursor = Cursor::new(cursor_mode, None, None);
         let cursor = cx.create_rw_signal(cursor);
@@ -516,10 +519,10 @@ impl Editor {
         self.cursor.update(|cursor| {
             cursor.set_offset(
                 new_offset,
+                affinity,
                 pointer_event.modifiers.shift(),
                 pointer_event.modifiers.alt(),
             );
-            cursor.affinity = affinity;
         });
     }
 
@@ -532,10 +535,10 @@ impl Editor {
             cursor.add_region(
                 start,
                 end,
+                CursorAffinity::Backward,
                 pointer_event.modifiers.shift(),
                 pointer_event.modifiers.alt(),
             );
-            cursor.affinity = CursorAffinity::Backward;
         });
     }
 
@@ -550,6 +553,7 @@ impl Editor {
             cursor.add_region(
                 start,
                 end,
+                CursorAffinity::Backward,
                 pointer_event.modifiers.shift(),
                 pointer_event.modifiers.alt(),
             )
@@ -558,10 +562,11 @@ impl Editor {
 
     pub fn pointer_move(&self, pointer_event: &PointerMoveEvent) {
         let mode = self.cursor.with_untracked(|c| c.get_mode());
-        let (offset, ..) = self.offset_of_point(mode, pointer_event.pos);
+        let (offset, _, affinity) = self.offset_of_point(mode, pointer_event.pos);
         if self.active.get_untracked() && self.cursor.with_untracked(|c| c.offset()) != offset {
-            self.cursor
-                .update(|cursor| cursor.set_offset(offset, true, pointer_event.modifiers.alt()));
+            self.cursor.update(|cursor| {
+                cursor.set_offset(offset, affinity, true, pointer_event.modifiers.alt())
+            });
         }
     }
 

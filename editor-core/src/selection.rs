@@ -4,7 +4,7 @@ use lapce_xi_rope::{RopeDelta, Transformer};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::cursor::ColPosition;
+use crate::cursor::{ColPosition, CursorAffinity};
 
 /// Indicate whether a delta should be applied inside, outside non-caret selection or
 /// after a caret selection (see [`Selection::apply_delta`].
@@ -25,6 +25,8 @@ pub struct SelRegion {
     pub start: usize,
     /// Region end offset
     pub end: usize,
+    /// The placement preference for rendering the cursor at wrapped lines
+    pub affinity: CursorAffinity,
     /// Horizontal rules for multiple selection
     pub horiz: Option<ColPosition>,
 }
@@ -46,18 +48,45 @@ impl AsRef<Selection> for Selection {
 
 impl SelRegion {
     /// Creates new [`SelRegion`] from `start` and `end` offset.
-    pub fn new(start: usize, end: usize, horiz: Option<ColPosition>) -> SelRegion {
-        SelRegion { start, end, horiz }
+    pub fn new(
+        start: usize,
+        end: usize,
+        affinity: CursorAffinity,
+        horiz: Option<ColPosition>,
+    ) -> SelRegion {
+        SelRegion {
+            start,
+            end,
+            affinity,
+            horiz,
+        }
     }
 
     /// Creates a caret [`SelRegion`],
     /// i.e. `start` and `end` position are both set to `offset` value.
-    pub fn caret(offset: usize) -> SelRegion {
+    pub fn caret(offset: usize, affinity: CursorAffinity) -> SelRegion {
         SelRegion {
             start: offset,
             end: offset,
+            affinity,
             horiz: None,
         }
+    }
+
+    /// Creates a new [`SelRegion`] with meaningless visual properties for passing to buffer edits.
+    pub(crate) fn imaginary_region(start: usize, end: usize) -> SelRegion {
+        SelRegion {
+            start,
+            end,
+            affinity: CursorAffinity::Backward,
+            horiz: None,
+        }
+    }
+
+    /// Creates a caret [`SelRegion`] with meaningless visual properties for passing to buffer edits.
+    /// i.e. `start` and `end` position are both set to `offset` value.
+    pub(crate) fn imaginary_caret(offset: usize) -> SelRegion {
+        SelRegion::imaginary_region(offset, offset)
     }
 
     /// Return the minimum value between region's start and end position
@@ -66,9 +95,10 @@ impl SelRegion {
     ///
     /// ```rust
     /// # use floem_editor_core::selection::SelRegion;
-    /// let  region = SelRegion::new(1, 10, None);
+    /// # use floem_editor_core::cursor::CursorAffinity;
+    /// let  region = SelRegion::new(1, 10, CursorAffinity::Backward, None);
     /// assert_eq!(region.min(), region.start);
-    /// let  region = SelRegion::new(42, 1, None);
+    /// let  region = SelRegion::new(42, 1, CursorAffinity::Backward, None);
     /// assert_eq!(region.min(), region.end);
     /// ```
     pub fn min(self) -> usize {
@@ -81,9 +111,10 @@ impl SelRegion {
     ///
     /// ```rust
     /// # use floem_editor_core::selection::SelRegion;
-    /// let  region = SelRegion::new(1, 10, None);
+    /// # use floem_editor_core::cursor::CursorAffinity;
+    /// let  region = SelRegion::new(1, 10, CursorAffinity::Backward, None);
     /// assert_eq!(region.max(), region.end);
-    /// let  region = SelRegion::new(42, 1, None);
+    /// let  region = SelRegion::new(42, 1, CursorAffinity::Backward, None);
     /// assert_eq!(region.max(), region.start);
     /// ```
     pub fn max(self) -> usize {
@@ -96,7 +127,8 @@ impl SelRegion {
     ///
     /// ```rust
     /// # use floem_editor_core::selection::SelRegion;
-    /// let  region = SelRegion::new(1, 1, None);
+    /// # use floem_editor_core::cursor::CursorAffinity;
+    /// let  region = SelRegion::new(1, 1, CursorAffinity::Backward, None);
     /// assert!(region.is_caret());
     /// ```
     pub fn is_caret(self) -> bool {
@@ -109,9 +141,10 @@ impl SelRegion {
     ///
     /// ```rust
     /// # use floem_editor_core::selection::SelRegion;
-    /// let  region = SelRegion::new(1, 2, None);
-    /// let  other = SelRegion::new(3, 4, None);
-    /// assert_eq!(region.merge_with(other), SelRegion::new(1, 4, None));
+    /// # use floem_editor_core::cursor::CursorAffinity;
+    /// let  region = SelRegion::new(1, 2, CursorAffinity::Backward, None);
+    /// let  other = SelRegion::new(3, 4, CursorAffinity::Backward, None);
+    /// assert_eq!(region.merge_with(other), SelRegion::new(1, 4, CursorAffinity::Backward, None));
     /// ```
     pub fn merge_with(self, other: SelRegion) -> SelRegion {
         let is_forward = self.end >= self.start;
@@ -122,7 +155,7 @@ impl SelRegion {
         } else {
             (new_max, new_min)
         };
-        SelRegion::new(start, end, None)
+        SelRegion::new(start, end, self.affinity, None)
     }
 
     fn should_merge(self, other: SelRegion) -> bool {
@@ -145,19 +178,20 @@ impl Selection {
     }
 
     /// Creates a caret [`Selection`], i.e. a selection with a single caret [`SelRegion`]
-    pub fn caret(offset: usize) -> Selection {
+    pub fn caret(offset: usize, affinity: CursorAffinity) -> Selection {
         Selection {
-            regions: vec![SelRegion::caret(offset)],
+            regions: vec![SelRegion::caret(offset, affinity)],
             last_inserted: 0,
         }
     }
 
     /// Creates a region [`Selection`], i.e. a selection with a single [`SelRegion`]
     /// from `start` to `end` position
-    pub fn region(start: usize, end: usize) -> Self {
+    pub fn region(start: usize, end: usize, affinity: CursorAffinity) -> Self {
         Self::sel_region(SelRegion {
             start,
             end,
+            affinity,
             horiz: None,
         })
     }
@@ -170,13 +204,24 @@ impl Selection {
         }
     }
 
+    /// Creates a [`Selection`] with meaningless visual properties for passing to buffer edits.
+    pub(crate) fn imaginary_region(start: usize, end: usize) -> Self {
+        Self::sel_region(SelRegion::imaginary_region(start, end))
+    }
+
+    /// Creates a [`Selection`] with meaningless visual properties for passing to buffer edits.
+    pub(crate) fn imaginary_caret(offset: usize) -> Self {
+        Self::sel_region(SelRegion::imaginary_caret(offset))
+    }
+
     /// Returns whether this [`Selection`], contains the given `offset` position or not.
     ///
     /// **Example:**
     ///
     /// ```rust
     /// # use floem_editor_core::selection::Selection;
-    /// let  selection = Selection::region(0, 2);
+    /// # use floem_editor_core::cursor::CursorAffinity;
+    /// let  selection = Selection::region(0, 2, CursorAffinity::Backward);
     /// assert!(selection.contains(0));
     /// assert!(selection.contains(1));
     /// assert!(selection.contains(2));
@@ -208,20 +253,22 @@ impl Selection {
     ///
     /// ```rust
     /// # use floem_editor_core::selection::{Selection, SelRegion};
+    /// # use floem_editor_core::cursor::CursorAffinity;
     /// let mut selection = Selection::new();
-    /// selection.add_region(SelRegion::new(1, 3, None));
-    /// selection.add_region(SelRegion::new(6, 12, None));
-    /// selection.add_region(SelRegion::new(24, 48, None));
+    /// selection.add_region(SelRegion::new(1, 3, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(6, 12, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(24, 48, CursorAffinity::Backward, None));
     ///
     /// assert_eq!(selection.min().regions(), vec![
-    ///     SelRegion::caret(1),
-    ///     SelRegion::caret(6),
-    ///     SelRegion::caret(24)
+    ///     SelRegion::caret(1, CursorAffinity::Backward),
+    ///     SelRegion::caret(6, CursorAffinity::Backward),
+    ///     SelRegion::caret(24, CursorAffinity::Backward)
     /// ]);
     pub fn min(&self) -> Selection {
         let mut selection = Self::new();
         for region in &self.regions {
-            let new_region = SelRegion::new(region.min(), region.min(), None);
+            let new_region =
+                SelRegion::new(region.min(), region.min(), CursorAffinity::Backward, None);
             selection.add_region(new_region);
         }
         selection
@@ -283,10 +330,11 @@ impl Selection {
     ///
     /// ```rust
     /// # use floem_editor_core::selection::{Selection, SelRegion};
+    /// # use floem_editor_core::cursor::CursorAffinity;
     /// let mut selection = Selection::new();
-    /// selection.add_region(SelRegion::caret(4));
-    /// selection.add_region(SelRegion::new(0, 12, None));
-    /// selection.add_region(SelRegion::new(24, 48, None));
+    /// selection.add_region(SelRegion::caret(4, CursorAffinity::Backward));
+    /// selection.add_region(SelRegion::new(0, 12, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(24, 48, CursorAffinity::Backward, None));
     /// assert_eq!(selection.min_offset(), 0);
     /// ```
     pub fn min_offset(&self) -> usize {
@@ -305,10 +353,11 @@ impl Selection {
     ///
     /// ```rust
     /// # use floem_editor_core::selection::{Selection, SelRegion};
+    /// # use floem_editor_core::cursor::CursorAffinity;
     /// let mut selection = Selection::new();
-    /// selection.add_region(SelRegion::caret(4));
-    /// selection.add_region(SelRegion::new(0, 12, None));
-    /// selection.add_region(SelRegion::new(24, 48, None));
+    /// selection.add_region(SelRegion::caret(4, CursorAffinity::Backward));
+    /// selection.add_region(SelRegion::new(0, 12, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(24, 48, CursorAffinity::Backward, None));
     /// assert_eq!(selection.max_offset(), 48);
     /// ```
     pub fn max_offset(&self) -> usize {
@@ -326,16 +375,17 @@ impl Selection {
     ///
     /// ```rust
     /// # use floem_editor_core::selection::{Selection, SelRegion};
+    /// # use floem_editor_core::cursor::CursorAffinity;
     /// let mut selection = Selection::new();
-    /// selection.add_region(SelRegion::new(0, 3, None));
-    /// selection.add_region(SelRegion::new(3, 6, None));
-    /// selection.add_region(SelRegion::new(7, 8, None));
-    /// selection.add_region(SelRegion::new(9, 11, None));
+    /// selection.add_region(SelRegion::new(0, 3, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(3, 6, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(7, 8, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(9, 11, CursorAffinity::Backward, None));
     /// let regions = selection.regions_in_range(5, 10);
     /// assert_eq!(regions, vec![
-    ///     SelRegion::new(3, 6, None),
-    ///     SelRegion::new(7, 8, None),
-    ///     SelRegion::new(9, 11, None)
+    ///     SelRegion::new(3, 6, CursorAffinity::Backward, None),
+    ///     SelRegion::new(7, 8, CursorAffinity::Backward, None),
+    ///     SelRegion::new(9, 11, CursorAffinity::Backward, None)
     /// ]);
     /// ```
     pub fn regions_in_range(&self, start: usize, end: usize) -> &[SelRegion] {
@@ -353,15 +403,16 @@ impl Selection {
     ///
     /// ```rust
     /// # use floem_editor_core::selection::{Selection, SelRegion};
+    /// # use floem_editor_core::cursor::CursorAffinity;
     /// let mut selection = Selection::new();
-    /// selection.add_region(SelRegion::new(0, 3, None));
-    /// selection.add_region(SelRegion::new(3, 6, None));
-    /// selection.add_region(SelRegion::new(7, 8, None));
-    /// selection.add_region(SelRegion::new(9, 11, None));
+    /// selection.add_region(SelRegion::new(0, 3, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(3, 6, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(7, 8, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(9, 11, CursorAffinity::Backward, None));
     /// let regions = selection.full_regions_in_range(5, 10);
     /// assert_eq!(regions, vec![
-    ///     SelRegion::new(7, 8, None),
-    ///     SelRegion::new(9, 11, None)
+    ///     SelRegion::new(7, 8, CursorAffinity::Backward, None),
+    ///     SelRegion::new(9, 11, CursorAffinity::Backward, None)
     /// ]);
     /// ```
     pub fn full_regions_in_range(&self, start: usize, end: usize) -> &[SelRegion] {
@@ -379,13 +430,14 @@ impl Selection {
     ///
     /// ```rust
     /// # use floem_editor_core::selection::{Selection, SelRegion};
+    /// # use floem_editor_core::cursor::CursorAffinity;
     /// let mut selection = Selection::new();
-    /// selection.add_region(SelRegion::new(0, 3, None));
-    /// selection.add_region(SelRegion::new(3, 6, None));
-    /// selection.add_region(SelRegion::new(7, 8, None));
-    /// selection.add_region(SelRegion::new(9, 11, None));
+    /// selection.add_region(SelRegion::new(0, 3, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(3, 6, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(7, 8, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(9, 11, CursorAffinity::Backward, None));
     /// selection.delete_range(5, 10);
-    /// assert_eq!(selection.regions(), vec![SelRegion::new(0, 3, None)]);
+    /// assert_eq!(selection.regions(), vec![SelRegion::new(0, 3, CursorAffinity::Backward, None)]);
     /// ```
     pub fn delete_range(&mut self, start: usize, end: usize) {
         let mut first = self.search(start);
@@ -409,18 +461,19 @@ impl Selection {
     ///
     /// ```rust
     /// # use floem_editor_core::selection::{Selection, SelRegion};
+    /// # use floem_editor_core::cursor::CursorAffinity;
     /// let mut selection = Selection::new();
     /// // Overlapping
-    /// selection.add_region(SelRegion::new(0, 4, None));
-    /// selection.add_region(SelRegion::new(3, 6, None));
-    /// assert_eq!(selection.regions(), vec![SelRegion::new(0, 6, None)]);
+    /// selection.add_region(SelRegion::new(0, 4, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(3, 6, CursorAffinity::Backward, None));
+    /// assert_eq!(selection.regions(), vec![SelRegion::new(0, 6, CursorAffinity::Backward, None)]);
     /// // Non-overlapping
     /// let mut selection = Selection::new();
-    /// selection.add_region(SelRegion::new(0, 3, None));
-    /// selection.add_region(SelRegion::new(3, 6, None));
+    /// selection.add_region(SelRegion::new(0, 3, CursorAffinity::Backward, None));
+    /// selection.add_region(SelRegion::new(3, 6, CursorAffinity::Backward, None));
     /// assert_eq!(selection.regions(), vec![
-    ///     SelRegion::new(0, 3, None),
-    ///     SelRegion::new(3, 6, None)
+    ///     SelRegion::new(0, 3, CursorAffinity::Backward, None),
+    ///     SelRegion::new(3, 6, CursorAffinity::Backward, None)
     /// ]);
     /// ```
     pub fn add_region(&mut self, region: SelRegion) {
@@ -514,6 +567,7 @@ impl Selection {
             let new_region = SelRegion::new(
                 transformer.transform(region.start, start_after),
                 transformer.transform(region.end, end_after),
+                region.affinity,
                 None,
             );
             result.add_region(new_region);
@@ -527,6 +581,14 @@ impl Selection {
             return 0;
         }
         self.regions[self.last_inserted].end
+    }
+
+    /// Returns cursor affinity, which corresponds to last inserted region `affinity`,
+    pub fn get_cursor_affinity(&self) -> CursorAffinity {
+        if self.is_empty() {
+            return CursorAffinity::Backward;
+        }
+        self.regions[self.last_inserted].affinity
     }
 
     /// Replaces last inserted [`SelRegion`] of this selection with the provided one.
@@ -586,85 +648,98 @@ fn remove_n_at<T>(v: &mut Vec<T>, index: usize, n: usize) {
 mod test {
     use crate::{
         buffer::Buffer,
+        cursor::CursorAffinity,
         editor::EditType,
         selection::{InsertDrift, SelRegion, Selection},
     };
 
     #[test]
     fn should_return_selection_region_min() {
-        let region = SelRegion::new(1, 10, None);
+        let region = SelRegion::new(1, 10, CursorAffinity::Backward, None);
         assert_eq!(region.min(), region.start);
 
-        let region = SelRegion::new(42, 1, None);
+        let region = SelRegion::new(42, 1, CursorAffinity::Backward, None);
         assert_eq!(region.min(), region.end);
     }
 
     #[test]
     fn should_return_selection_region_max() {
-        let region = SelRegion::new(1, 10, None);
+        let region = SelRegion::new(1, 10, CursorAffinity::Backward, None);
         assert_eq!(region.max(), region.end);
 
-        let region = SelRegion::new(42, 1, None);
+        let region = SelRegion::new(42, 1, CursorAffinity::Backward, None);
         assert_eq!(region.max(), region.start);
     }
 
     #[test]
     fn is_caret_should_return_true() {
-        let region = SelRegion::new(1, 10, None);
+        let region = SelRegion::new(1, 10, CursorAffinity::Backward, None);
         assert!(!region.is_caret());
     }
 
     #[test]
     fn is_caret_should_return_false() {
-        let region = SelRegion::new(1, 1, None);
+        let region = SelRegion::new(1, 1, CursorAffinity::Backward, None);
         assert!(region.is_caret());
     }
 
     #[test]
     fn should_merge_regions() {
-        let region = SelRegion::new(1, 2, None);
-        let other = SelRegion::new(3, 4, None);
-        assert_eq!(region.merge_with(other), SelRegion::new(1, 4, None));
+        let region = SelRegion::new(1, 2, CursorAffinity::Backward, None);
+        let other = SelRegion::new(3, 4, CursorAffinity::Backward, None);
+        assert_eq!(
+            region.merge_with(other),
+            SelRegion::new(1, 4, CursorAffinity::Backward, None)
+        );
 
-        let region = SelRegion::new(2, 1, None);
-        let other = SelRegion::new(4, 3, None);
-        assert_eq!(region.merge_with(other), SelRegion::new(4, 1, None));
+        let region = SelRegion::new(2, 1, CursorAffinity::Backward, None);
+        let other = SelRegion::new(4, 3, CursorAffinity::Backward, None);
+        assert_eq!(
+            region.merge_with(other),
+            SelRegion::new(4, 1, CursorAffinity::Backward, None)
+        );
 
-        let region = SelRegion::new(1, 1, None);
-        let other = SelRegion::new(6, 6, None);
-        assert_eq!(region.merge_with(other), SelRegion::new(1, 6, None));
+        let region = SelRegion::new(1, 1, CursorAffinity::Backward, None);
+        let other = SelRegion::new(6, 6, CursorAffinity::Backward, None);
+        assert_eq!(
+            region.merge_with(other),
+            SelRegion::new(1, 6, CursorAffinity::Backward, None)
+        );
     }
 
     #[test]
     fn selection_should_be_caret() {
         let mut selection = Selection::new();
-        selection.add_region(SelRegion::caret(1));
-        selection.add_region(SelRegion::caret(6));
+        selection.add_region(SelRegion::caret(1, CursorAffinity::Backward));
+        selection.add_region(SelRegion::caret(6, CursorAffinity::Backward));
         assert!(selection.is_caret());
     }
 
     #[test]
     fn selection_should_not_be_caret() {
         let mut selection = Selection::new();
-        selection.add_region(SelRegion::caret(1));
-        selection.add_region(SelRegion::new(4, 6, None));
+        selection.add_region(SelRegion::caret(1, CursorAffinity::Backward));
+        selection.add_region(SelRegion::new(4, 6, CursorAffinity::Backward, None));
         assert!(!selection.is_caret());
     }
 
     #[test]
     fn should_return_min_selection() {
         let mut selection = Selection::new();
-        selection.add_region(SelRegion::new(1, 3, None));
-        selection.add_region(SelRegion::new(4, 6, None));
+        selection.add_region(SelRegion::new(1, 3, CursorAffinity::Backward, None));
+        selection.add_region(SelRegion::new(4, 6, CursorAffinity::Backward, None));
         assert_eq!(
             selection.min().regions,
-            vec![SelRegion::caret(1), SelRegion::caret(4)]
+            vec![
+                SelRegion::caret(1, CursorAffinity::Backward),
+                SelRegion::caret(4, CursorAffinity::Backward)
+            ]
         );
     }
 
     #[test]
     fn selection_should_contains_region() {
-        let selection = Selection::region(0, 2);
+        let selection = Selection::region(0, 2, CursorAffinity::Backward);
         assert!(selection.contains(0));
         assert!(selection.contains(1));
         assert!(selection.contains(2));
@@ -673,41 +748,50 @@ mod test {
 
     #[test]
     fn should_return_last_inserted_region() {
-        let mut selection = Selection::region(5, 6);
-        selection.add_region(SelRegion::caret(1));
-        assert_eq!(selection.last_inserted(), Some(&SelRegion::caret(1)));
+        let mut selection = Selection::region(5, 6, CursorAffinity::Backward);
+        selection.add_region(SelRegion::caret(1, CursorAffinity::Backward));
+        assert_eq!(
+            selection.last_inserted(),
+            Some(&SelRegion::caret(1, CursorAffinity::Backward))
+        );
     }
 
     #[test]
     fn should_return_last_region() {
-        let mut selection = Selection::region(5, 6);
-        selection.add_region(SelRegion::caret(1));
-        assert_eq!(selection.last(), Some(&SelRegion::new(5, 6, None)));
+        let mut selection = Selection::region(5, 6, CursorAffinity::Backward);
+        selection.add_region(SelRegion::caret(1, CursorAffinity::Backward));
+        assert_eq!(
+            selection.last(),
+            Some(&SelRegion::new(5, 6, CursorAffinity::Backward, None))
+        );
     }
 
     #[test]
     fn should_return_first_region() {
-        let mut selection = Selection::region(5, 6);
-        selection.add_region(SelRegion::caret(1));
-        assert_eq!(selection.first(), Some(&SelRegion::caret(1)));
+        let mut selection = Selection::region(5, 6, CursorAffinity::Backward);
+        selection.add_region(SelRegion::caret(1, CursorAffinity::Backward));
+        assert_eq!(
+            selection.first(),
+            Some(&SelRegion::caret(1, CursorAffinity::Backward))
+        );
     }
 
     #[test]
     fn should_return_regions_in_range() {
         let mut selection = Selection::new();
-        selection.add_region(SelRegion::new(0, 3, None));
-        selection.add_region(SelRegion::new(3, 6, None));
-        selection.add_region(SelRegion::new(7, 8, None));
-        selection.add_region(SelRegion::new(9, 11, None));
+        selection.add_region(SelRegion::new(0, 3, CursorAffinity::Backward, None));
+        selection.add_region(SelRegion::new(3, 6, CursorAffinity::Backward, None));
+        selection.add_region(SelRegion::new(7, 8, CursorAffinity::Backward, None));
+        selection.add_region(SelRegion::new(9, 11, CursorAffinity::Backward, None));
 
         let regions = selection.regions_in_range(5, 10);
 
         assert_eq!(
             regions,
             vec![
-                SelRegion::new(3, 6, None),
-                SelRegion::new(7, 8, None),
-                SelRegion::new(9, 11, None),
+                SelRegion::new(3, 6, CursorAffinity::Backward, None),
+                SelRegion::new(7, 8, CursorAffinity::Backward, None),
+                SelRegion::new(9, 11, CursorAffinity::Backward, None),
             ]
         );
     }
@@ -715,38 +799,47 @@ mod test {
     #[test]
     fn should_return_regions_in_full_range() {
         let mut selection = Selection::new();
-        selection.add_region(SelRegion::new(0, 3, None));
-        selection.add_region(SelRegion::new(3, 6, None));
-        selection.add_region(SelRegion::new(7, 8, None));
-        selection.add_region(SelRegion::new(9, 11, None));
+        selection.add_region(SelRegion::new(0, 3, CursorAffinity::Backward, None));
+        selection.add_region(SelRegion::new(3, 6, CursorAffinity::Backward, None));
+        selection.add_region(SelRegion::new(7, 8, CursorAffinity::Backward, None));
+        selection.add_region(SelRegion::new(9, 11, CursorAffinity::Backward, None));
 
         let regions = selection.full_regions_in_range(5, 10);
 
         assert_eq!(
             regions,
-            vec![SelRegion::new(7, 8, None), SelRegion::new(9, 11, None),]
+            vec![
+                SelRegion::new(7, 8, CursorAffinity::Backward, None),
+                SelRegion::new(9, 11, CursorAffinity::Backward, None),
+            ]
         );
     }
 
     #[test]
     fn should_delete_regions() {
         let mut selection = Selection::new();
-        selection.add_region(SelRegion::new(0, 3, None));
-        selection.add_region(SelRegion::new(3, 6, None));
-        selection.add_region(SelRegion::new(7, 8, None));
-        selection.add_region(SelRegion::new(9, 11, None));
+        selection.add_region(SelRegion::new(0, 3, CursorAffinity::Backward, None));
+        selection.add_region(SelRegion::new(3, 6, CursorAffinity::Backward, None));
+        selection.add_region(SelRegion::new(7, 8, CursorAffinity::Backward, None));
+        selection.add_region(SelRegion::new(9, 11, CursorAffinity::Backward, None));
         selection.delete_range(5, 10);
-        assert_eq!(selection.regions(), vec![SelRegion::new(0, 3, None)]);
+        assert_eq!(
+            selection.regions(),
+            vec![SelRegion::new(0, 3, CursorAffinity::Backward, None)]
+        );
     }
 
     #[test]
     fn should_add_regions() {
         let mut selection = Selection::new();
-        selection.add_region(SelRegion::new(0, 3, None));
-        selection.add_region(SelRegion::new(3, 6, None));
+        selection.add_region(SelRegion::new(0, 3, CursorAffinity::Backward, None));
+        selection.add_region(SelRegion::new(3, 6, CursorAffinity::Backward, None));
         assert_eq!(
             selection.regions(),
-            vec![SelRegion::new(0, 3, None), SelRegion::new(3, 6, None),]
+            vec![
+                SelRegion::new(0, 3, CursorAffinity::Backward, None),
+                SelRegion::new(3, 6, CursorAffinity::Backward, None),
+            ]
         );
     }
 
@@ -754,14 +847,17 @@ mod test {
     fn should_add_and_merge_regions() {
         let mut selection = Selection::new();
 
-        selection.add_region(SelRegion::new(0, 4, None));
-        selection.add_region(SelRegion::new(3, 6, None));
-        assert_eq!(selection.regions(), vec![SelRegion::new(0, 6, None)]);
+        selection.add_region(SelRegion::new(0, 4, CursorAffinity::Backward, None));
+        selection.add_region(SelRegion::new(3, 6, CursorAffinity::Backward, None));
+        assert_eq!(
+            selection.regions(),
+            vec![SelRegion::new(0, 6, CursorAffinity::Backward, None)]
+        );
     }
 
     #[test]
     fn should_apply_delta_after_insertion() {
-        let selection = Selection::caret(0);
+        let selection = Selection::caret(0, CursorAffinity::Backward);
 
         let (_, mock_delta, _) = {
             let mut buffer = Buffer::new("");
@@ -770,7 +866,7 @@ mod test {
 
         assert_eq!(
             selection.apply_delta(&mock_delta, true, InsertDrift::Inside),
-            Selection::caret(5)
+            Selection::caret(5, CursorAffinity::Backward)
         );
     }
 }

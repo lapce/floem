@@ -161,16 +161,16 @@ impl View for EditorGutterView {
                 cursor.with_untracked(|cursor| {
                     let highlight_current_line = match cursor.mode {
                         // TODO: check if shis should be 0 or 1
-                        CursorMode::Normal(size) => size == 0,
+                        CursorMode::Normal { offset: size, .. } => size == 0,
                         CursorMode::Insert(ref sel) => sel.is_caret(),
                         CursorMode::Visual { .. } => false,
                     };
 
                     // Highlight the current line
                     if highlight_current_line {
-                        for (_, end) in cursor.regions_iter() {
+                        for (_, end, affinity) in cursor.regions_iter() {
                             // TODO: unsure if this is correct for wrapping lines
-                            let rvline = editor.rvline_of_offset(end, cursor.affinity);
+                            let rvline = editor.rvline_of_offset(end, affinity);
 
                             if let Some(info) = screen_lines.info(rvline) {
                                 let line_height = editor.line_height(info.vline_info.rvline.line);
