@@ -5,6 +5,7 @@ use crate::{
     views::{create_stack, Stack},
 };
 
+/// Adds the `flatten` function to turn a tuple of [View]'s into a [Vec] of View trait objects.
 pub trait ViewTupleFlat {
     fn flatten(self) -> Vec<Box<dyn View>>;
 }

@@ -14,7 +14,7 @@ pub struct DragWindowArea {
 
 /// A view that will move the window when the mouse is dragged.
 ///
-/// This can be useful when the window has the title bar turned off and you want to be able to still drag the window.
+/// This can be used to allow dragging the window when the title bar is disabled.
 pub fn drag_window_area<V: IntoView + 'static>(child: V) -> DragWindowArea {
     let id = ViewId::new();
     id.set_children([child]);

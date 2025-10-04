@@ -36,13 +36,12 @@ where
     }
 }
 
-/// Create an Effect that runs the given function whenever the Signals that subscribed
-/// to it in the function.
+/// Create an Effect that runs the given function whenever the subscribed Signals in that
+/// function are updated.
 ///
-/// The given function will be run immediately once, and tracks all the signals that
-/// subscribed in that run. And when these Signals update, it will rerun the function.
-/// And the effect re-tracks the signals in each run, so that it will only be re-run
-/// by the Signals that actually ran in the last effect run.
+/// The given function will be run immediately once and will track all signals that are
+/// subscribed in that run. On each subsequent run the list is cleared and then
+/// reconstructed based on the Signals that are subscribed during that run.
 pub fn create_effect<T>(f: impl Fn(Option<T>) -> T + 'static)
 where
     T: Any + 'static,
@@ -82,8 +81,9 @@ where
     }
 }
 
-/// Create an effect updater that runs `on_change` when any signals `compute` subscribes to
-/// changes. `compute` is immediately run and its return value is returned from `create_updater`.
+/// Create an effect updater that runs `on_change` when any signals that subscribe during the
+/// run of `compute` are updated. `compute` is immediately run only once, and its value is returned
+/// from the call to `create_updater`.
 pub fn create_updater<R>(compute: impl Fn() -> R + 'static, on_change: impl Fn(R) + 'static) -> R
 where
     R: 'static,
@@ -91,7 +91,7 @@ where
     create_stateful_updater(move |_| (compute(), ()), move |r, _| on_change(r))
 }
 
-/// Create an effect updater that runs `on_change` when any signals `compute` subscribes to
+/// Create an effect updater that runs `on_change` when any signals within `compute` subscribe to
 /// changes. `compute` is immediately run and its return value is returned from `create_updater`.
 pub fn create_stateful_updater<T, R>(
     compute: impl Fn(Option<T>) -> (R, T) + 'static,
@@ -114,7 +114,7 @@ where
     run_initial_updater_effect(effect)
 }
 
-/// Signals that's wrapped this untrack will not subscribe to any effect
+/// Signals that are wrapped with `untrack` will not subscribe to any effect.
 pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
     let prev_effect = RUNTIME.with(|runtime| runtime.current_effect.borrow_mut().take());
     let result = f();
@@ -292,6 +292,7 @@ impl Drop for SignalTracker {
     }
 }
 
+/// Creates a [SignalTracker] that subscribes to any changes in signals used within `on_change`.
 pub fn create_tracker(on_change: impl Fn() + 'static) -> SignalTracker {
     let id = Id::next();
 
@@ -302,6 +303,7 @@ pub fn create_tracker(on_change: impl Fn() + 'static) -> SignalTracker {
 }
 
 impl SignalTracker {
+    /// Updates the tracking function used for [SignalTracker].
     pub fn track<T: 'static>(&self, f: impl FnOnce() -> T) -> T {
         // Clear any previous tracking by disposing the old effect
         self.id.dispose();

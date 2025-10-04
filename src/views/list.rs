@@ -37,10 +37,12 @@ pub struct List {
 }
 
 impl List {
+    /// Returns the index of the current selection (if any).
     pub fn selection(&self) -> RwSignal<Option<usize>> {
         self.selection
     }
 
+    /// Adds a callback to the [List] that is updated when the current selected item changes.
     pub fn on_select(self, on_select: impl Fn(Option<usize>) + 'static) -> Self {
         create_effect(move |_| {
             let selection = self.selection.get();
@@ -49,6 +51,7 @@ impl List {
         self
     }
 
+    /// Adds a callback for user list selection with the `Enter` key.
     pub fn on_accept(mut self, on_accept: impl Fn(Option<usize>) + 'static) -> Self {
         self.onaccept = Some(Box::new(on_accept));
         self
@@ -57,7 +60,9 @@ impl List {
 
 /// A list of views built from an iterator which remains static and always contains the same elements in the same order.
 ///
-/// A list is like a [stack](super::stack()) but also has built-in support for the selection of items: up and down using arrow keys, top and bottom control using the home and end keys, and for the "acceptance" of an item using the Enter key.
+/// A list is like a [stack](super::stack()) but also has built-in support for the selection of items:
+/// up and down using arrow keys, top and bottom control using the home and end keys,
+/// and "acceptance" of an item using the Enter key.
 ///
 /// ## Example
 /// ```rust
@@ -217,6 +222,8 @@ impl View for Item {
     }
 }
 
+/// A trait that adds a `list` method to any generic type `T` that implements [`IntoIterator`] where
+/// `T::Item` implements [IntoView].
 pub trait ListExt {
     fn list(self) -> List;
 }

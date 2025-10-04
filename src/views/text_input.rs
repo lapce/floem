@@ -34,7 +34,10 @@ use crate::{
 
 use super::Decorators;
 
-style_class!(pub TextInputClass);
+style_class!(
+    /// The style class that is applied to all TextInput views.
+    pub TextInputClass
+);
 style_class!(pub PlaceholderTextClass);
 
 prop_extractor! {
@@ -129,7 +132,7 @@ pub enum TextDirection {
     Right,
 }
 
-/// Text Input View
+/// Creates a [TextInput] view. This can be used for basic text input, for more advanced editing see [super::text_editor::TextEditor].
 pub fn text_input(buffer: RwSignal<String>) -> TextInput {
     let id = ViewId::new();
     let is_focused = create_rw_signal(false);
