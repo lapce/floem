@@ -7,11 +7,12 @@
 use std::{any::Any, rc::Rc};
 
 use floem_reactive::{
-    as_child_of_current_scope, create_effect, create_updater, Scope, SignalGet, SignalUpdate,
+    as_child_of_current_scope, create_effect, create_updater, RwSignal, Scope, SignalGet,
+    SignalUpdate,
 };
 use peniko::{
     color::palette,
-    kurbo::{Point, Rect},
+    kurbo::{Point, Rect, Size},
 };
 use winit::keyboard::{Key, NamedKey};
 
@@ -576,24 +577,73 @@ impl<T: Clone> Dropdown<T> {
         let list_style = self.list_style.clone();
         let list_item_fn = self.list_item_fn.clone();
         self.overlay_id = Some(add_overlay(Point::ZERO, {
-            let list = list(&*list_item_fn.clone());
+            const DEFAULT_PADDING: f64 = 5.0;
+            let list_size = RwSignal::new(None);
+            let overlay_size = RwSignal::new(None);
+            let initial_padding = Size::new(point.x, point.y);
+            let top_left_padding = RwSignal::new(initial_padding);
 
+            create_effect(move |_| {
+                let (Some(list_size), Some(overlay_size)) = (list_size.get(), overlay_size.get())
+                else {
+                    return;
+                };
+
+                let default_padding_size = Size::new(DEFAULT_PADDING, DEFAULT_PADDING);
+                let new_padding = initial_padding
+                    .min(overlay_size - list_size - default_padding_size)
+                    .max(default_padding_size);
+
+                if new_padding != top_left_padding.get_untracked() {
+                    top_left_padding.set(new_padding);
+                }
+            });
+
+            let list = list(&*list_item_fn.clone());
             let list_id = list.id();
+
+            let list = list.on_resize(move |rect| {
+                if let Some(parent_layout) = list_id.parent().and_then(|p| p.get_layout()) {
+                    // resolve size of the scroll view if it wasn't squished
+                    let margin = parent_layout.margin;
+                    let padding = parent_layout.padding;
+                    let border = parent_layout.border;
+
+                    let indent_size = Size::new(
+                        (margin.horizontal_components().sum()
+                            + border.horizontal_components().sum()
+                            + padding.horizontal_components().sum()) as _,
+                        (margin.vertical_components().sum()
+                            + padding.vertical_components().sum()
+                            + border.vertical_components().sum()) as _,
+                    );
+                    let size = rect.size() + indent_size;
+
+                    list_size.set(Some(size));
+                }
+            });
+
             list_id.request_focus();
 
             container(scroll(list).style(move |s| {
                 s.flex_col()
                     .pointer_events_auto()
+                    .flex_grow(0.0)
                     .flex_shrink(1.0)
                     .apply(list_style.clone())
             }))
+            .on_resize(move |rect| {
+                overlay_size.set(Some(rect.size()));
+            })
             .style(move |s| {
+                let padding = top_left_padding.get();
                 s.absolute()
-                    .max_size_full()
-                    .padding_left(point.x)
-                    .padding_top(point.y)
-                    .padding_bottom(5)
-                    .padding_right(5)
+                    .flex_col()
+                    .size_full()
+                    .padding_left(padding.width)
+                    .padding_top(padding.height)
+                    .padding_bottom(DEFAULT_PADDING)
+                    .padding_right(DEFAULT_PADDING)
                     .pointer_events_none()
             })
         }));
