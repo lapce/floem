@@ -1,14 +1,15 @@
 use std::time::Duration;
 
 use floem::{
-    Resource,
     action::debounce_action,
+    async_signal::Resource,
     prelude::{palette::css, *},
     reactive::Trigger,
     style::{Background, CursorStyle, Transition},
     text::Weight,
 };
 use serde::Deserialize;
+use tokio::runtime::Runtime;
 
 #[derive(Debug, Clone, Deserialize)]
 struct GitHubUser {
@@ -294,12 +295,8 @@ fn app_view() -> impl IntoView {
         token_changed.notify()
     });
 
-    let user_resource = Resource::new(
-        move || {
-            get_username.track();
-            token_changed.track(); // Also track token changes
-            (username.get_untracked(), token.get_untracked())
-        },
+    let user_resource = Resource::on_event_loop(
+        move || (username.get(), token.get()),
         |(username, token): (String, String)| async move {
             if username.trim().is_empty() {
                 return Err(ApiError::Http {
@@ -447,7 +444,11 @@ fn app_view() -> impl IntoView {
         })
 }
 
-#[tokio::main]
-async fn main() {
-    floem::launch(app_view);
+fn main() {
+    // Multi threaded runtime is required because the main thread is not a real tokio task
+    let runtime = Runtime::new().expect("Could not start tokio runtime");
+
+    // We must make it so that the main task is under the tokio runtime so that APIs like
+    // tokio::spawn work
+    runtime.block_on(async { tokio::task::block_in_place(|| floem::launch(app_view)) })
 }

@@ -222,7 +222,7 @@ mod window_tracking;
 pub use app::{launch, quit_app, reopen, AppConfig, AppEvent, Application};
 pub use app_state::AppState;
 pub use clipboard::{Clipboard, ClipboardError};
-pub use ext_event::resource::Resource;
+pub use ext_event::async_signal;
 pub use floem_reactive as reactive;
 pub use floem_renderer::gpu_resources::GpuResources;
 pub use floem_renderer::text;
