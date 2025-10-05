@@ -379,8 +379,14 @@ impl EditorView {
             }
 
             // TODO: What affinity should these use?
+            let left_affinity = if rvline == start_rvline && left_col == ed.last_col(info, true) {
+                CursorAffinity::Backward
+            } else {
+                CursorAffinity::Forward
+            };
+
             let x0 = ed
-                .line_point_of_line_col(line, left_col, CursorAffinity::Forward, true)
+                .line_point_of_line_col(line, left_col, left_affinity, true)
                 .x;
             let x1 = ed
                 .line_point_of_line_col(line, right_col, CursorAffinity::Backward, true)
