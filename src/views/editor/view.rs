@@ -385,8 +385,10 @@ impl EditorView {
             let x1 = ed
                 .line_point_of_line_col(line, right_col, CursorAffinity::Backward, true)
                 .x;
+
+            // Resolving width for displaying the newline character selection
             // TODO(minor): Should this be line != end_line?
-            let x1 = if rvline != end_rvline {
+            let x1 = if rvline != end_rvline && rvline.line_index + 1 == info.line_count {
                 x1 + CHAR_WIDTH
             } else {
                 x1
