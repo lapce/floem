@@ -538,6 +538,17 @@ impl TextInput {
 
             self.clip_txt_buf = Some(clp_txt_lay);
         }
+
+        if let Some(placeholder_text) = &self.placeholder_text {
+            let mut placeholder_buff = TextLayout::new();
+            let attrs_list = self.get_placeholder_text_attrs();
+            placeholder_buff.set_text(
+                placeholder_text,
+                attrs_list,
+                self.placeholder_style.text_align(),
+            );
+            self.placeholder_buff = Some(placeholder_buff);
+        }
     }
 
     fn font_size(&self) -> f32 {
@@ -1139,6 +1150,10 @@ impl View for TextInput {
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         let style = cx.style();
+
+        let placeholder_style = style.clone().apply_class(PlaceholderTextClass);
+        self.placeholder_style.read_style(cx, &placeholder_style);
+
         if self.font.read(cx) || self.text_buf.is_none() {
             self.update_text_layout();
             self.id.request_layout();
@@ -1148,9 +1163,6 @@ impl View for TextInput {
         }
 
         self.selection_style.read_style(cx, &style);
-
-        let placeholder_style = style.clone().apply_class(PlaceholderTextClass);
-        self.placeholder_style.read_style(cx, &placeholder_style);
     }
 
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::tree::NodeId {
@@ -1180,19 +1192,6 @@ impl View for TextInput {
             let view_state = view_state.borrow();
             let style = view_state.combined_style.builtin();
             let node_width = layout.size.width;
-
-            if self.placeholder_buff.is_none() {
-                if let Some(placeholder_text) = &self.placeholder_text {
-                    let mut placeholder_buff = TextLayout::new();
-                    let attrs_list = self.get_placeholder_text_attrs();
-                    placeholder_buff.set_text(
-                        placeholder_text,
-                        attrs_list,
-                        self.placeholder_style.text_align(),
-                    );
-                    self.placeholder_buff = Some(placeholder_buff);
-                }
-            }
 
             let style_width = style.width();
             let width_px = match style_width {
