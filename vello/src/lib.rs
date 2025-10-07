@@ -620,15 +620,13 @@ impl VelloRenderer {
             cursor += bytes_per_row as usize;
         }
 
-        Some(vello::peniko::ImageBrush::new(
-            ImageData {
-                data: Blob::new(Arc::new(cropped_buffer)),
-                format: vello::peniko::ImageFormat::Rgba8,
-                alpha_type: ImageAlphaType::AlphaPremultiplied,
-                width: self.surface.config.width,
-                height,
-            }
-        ))
+        Some(vello::peniko::ImageBrush::new(ImageData {
+            data: Blob::new(Arc::new(cropped_buffer)),
+            format: vello::peniko::ImageFormat::Rgba8,
+            alpha_type: ImageAlphaType::AlphaPremultiplied,
+            width: self.surface.config.width,
+            height,
+        }))
     }
 }
 

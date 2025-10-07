@@ -6,7 +6,10 @@ use floem_renderer::text::{LineHeightValue, Weight};
 use im_rc::hashmap::Entry;
 use peniko::color::{palette, HueDirection};
 use peniko::kurbo::{Point, Stroke};
-use peniko::{Brush, Color, ColorStop, ColorStops, Gradient, GradientKind, InterpolationAlphaSpace, LinearGradientPosition};
+use peniko::{
+    Brush, Color, ColorStop, ColorStops, Gradient, GradientKind, InterpolationAlphaSpace,
+    LinearGradientPosition,
+};
 use rustc_hash::FxHasher;
 use std::any::{type_name, Any};
 use std::collections::HashMap;
