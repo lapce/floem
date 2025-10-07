@@ -226,13 +226,11 @@ impl Application {
     pub fn run(mut self) {
         let event_loop = self.event_loop.take().unwrap();
         event_loop.run_app(&mut self).unwrap();
-        println!("run: event loop");
     }
 
     pub(crate) fn send_proxy_event(event: UserEvent) {
         if let Some((_proxy, sender)) = EVENT_LOOP_PROXY.lock().as_ref() {
             let _ = sender.send(event);
-            println!("send_proxy_event");
             // proxy.proxy_wake_up();
         }
     }
