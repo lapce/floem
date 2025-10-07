@@ -171,7 +171,6 @@ impl Application {
     }
     pub fn new_with_config(config: AppConfig) -> Self {
         let event_loop = EventLoop::with_user_event().build().expect("can't start the event loop");
-        println!("created event loop");
         #[cfg(target_os = "macos")]
         crate::app_delegate::set_app_delegate();
 
