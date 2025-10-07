@@ -159,8 +159,8 @@ fn capture_view(
         .as_ref()
         .map(|img| {
             (
-                img.width as f64 / capture.scale,
-                img.height as f64 / capture.scale,
+                img.image.width as f64 / capture.scale,
+                img.image.height as f64 / capture.scale,
             )
         })
         .unwrap_or_default();

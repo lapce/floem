@@ -10,12 +10,12 @@ use floem_renderer::{tiny_skia, Img, Renderer};
 use floem_vger_rs::{Image, PaintIndex, PixelFormat, Vger};
 use image::EncodableLayout;
 use peniko::kurbo::{Size, Stroke};
-use peniko::Blob;
 use peniko::{
     color::palette,
     kurbo::{Affine, Point, Rect, Shape},
     BrushRef, Color, GradientKind,
 };
+use peniko::{Blob, ImageData, LinearGradientPosition};
 use wgpu::{
     Adapter, Device, DeviceType, Queue, StoreOp, Surface, SurfaceConfiguration, TextureFormat,
 };
@@ -136,7 +136,7 @@ impl VgerRenderer {
         let paint = match brush.into() {
             BrushRef::Solid(color) => self.vger.color_paint(vger_color(color)),
             BrushRef::Gradient(g) => match g.kind {
-                GradientKind::Linear { start, end } => {
+                GradientKind::Linear(LinearGradientPosition { start, end }) => {
                     let mut stops = g.stops.iter();
                     let first_stop = stops.next()?;
                     let second_stop = stops.next()?;
@@ -184,7 +184,7 @@ impl VgerRenderer {
         floem_vger_rs::defs::LocalRect::new(origin, size)
     }
 
-    fn render_image(&mut self) -> Option<peniko::Image> {
+    fn render_image(&mut self) -> Option<peniko::ImageBrush> {
         let width_align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT - 1;
         let width = (self.config.width + width_align) & !width_align;
         let height = self.config.height;
@@ -212,6 +212,7 @@ impl VgerRenderer {
                     load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                     store: StoreOp::Store,
                 },
+                depth_slice: None,
             })],
             ..Default::default()
         };
@@ -245,7 +246,7 @@ impl VgerRenderer {
         );
         let command_buffer = encoder.finish();
         self.queue.submit(Some(command_buffer));
-        self.device.poll(wgpu::Maintain::Wait);
+        self.device.poll(wgpu::PollType::Wait).ok()?;
 
         let slice = buffer.slice(..);
         let (tx, rx) = sync_channel(1);
@@ -255,7 +256,7 @@ impl VgerRenderer {
             if let Ok(r) = rx.try_recv() {
                 break r.ok()?;
             }
-            if let wgpu::MaintainResult::Ok = self.device.poll(wgpu::MaintainBase::Wait) {
+            if let wgpu::PollStatus::WaitSucceeded = self.device.poll(wgpu::PollType::Wait).ok()? {
                 rx.recv().ok()?.ok()?;
                 break;
             }
@@ -271,12 +272,13 @@ impl VgerRenderer {
             cursor += bytes_per_row as usize;
         }
 
-        Some(peniko::Image::new(
-            Blob::new(Arc::new(cropped_buffer)),
-            peniko::ImageFormat::Rgba8,
-            self.config.width,
+        Some(peniko::ImageBrush::new(ImageData {
+            data: Blob::new(Arc::new(cropped_buffer)),
+            format: peniko::ImageFormat::Rgba8,
+            alpha_type: peniko::ImageAlphaType::AlphaPremultiplied,
+            width: self.config.width,
             height,
-        ))
+        }))
         // RgbaImage::from_raw(self.config.width, height, cropped_buffer).map(DynamicImage::ImageRgba8)
     }
 }
@@ -581,10 +583,10 @@ impl Renderer for VgerRenderer {
         let height = (rect.height() * scale_y).round().max(1.0) as u32;
 
         self.vger.render_image(x, y, img.hash, width, height, || {
-            let rgba = img.img.data.data();
+            let rgba = img.img.image.data.data();
             let data = rgba.as_bytes().to_vec();
 
-            let (width, height) = (img.img.width, img.img.height);
+            let (width, height) = (img.img.image.width, img.img.image.height);
 
             Image {
                 width,
@@ -681,7 +683,7 @@ impl Renderer for VgerRenderer {
         self.clip = None;
     }
 
-    fn finish(&mut self) -> Option<peniko::Image> {
+    fn finish(&mut self) -> Option<peniko::ImageBrush> {
         if self.capture {
             self.render_image()
         } else {
@@ -698,6 +700,7 @@ impl Renderer for VgerRenderer {
                             load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                             store: StoreOp::Store,
                         },
+                        depth_slice: None,
                     })],
                     depth_stencil_attachment: None,
                     timestamp_writes: None,

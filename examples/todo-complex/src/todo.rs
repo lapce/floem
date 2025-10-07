@@ -77,7 +77,7 @@ impl IntoView for TodoState {
         });
 
         let (active, selected) = TODOS_STATE.with(|s| (s.active, s.selected));
-        let is_active = create_memo(move |_| active.with(|a| (a.active == Some(self))));
+        let is_active = create_memo(move |_| active.with(|a| a.active == Some(self)));
         let is_selected = create_memo(move |_| selected.with(|s| s.contains(&self)));
 
         let todo_action_menu = move || {
