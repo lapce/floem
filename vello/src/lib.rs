@@ -646,15 +646,9 @@ fn common_alpha_mask_scene(
 
     alpha_mask(&mut scene);
 
-    // TODO: change it to `push_clip_layer` once working
-    // scene.push_clip_layer(
-    //     Affine::IDENTITY,
-    //     &Rect::from_origin_size((0., 0.), size)
-    // );
-    #[expect(deprecated, reason = "`push_clip_layer is not working for svgs`")]
     scene.push_layer(
         vello::peniko::BlendMode {
-            mix: Mix::Clip,
+            mix: Mix::Normal,
             compose: compose_mode,
         },
         1.,
