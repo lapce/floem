@@ -5,7 +5,7 @@ use floem_renderer::{
 };
 use peniko::{
     kurbo::{Point, Size},
-    Brush, GradientKind,
+    Brush, GradientKind, LinearGradientPosition,
 };
 use sha2::{Digest, Sha256};
 
@@ -215,7 +215,7 @@ pub fn brush_to_css_string(brush: &Brush) -> String {
         }
         Brush::Gradient(gradient) => {
             match &gradient.kind {
-                GradientKind::Linear { start, end } => {
+                GradientKind::Linear(LinearGradientPosition { start, end }) => {
                     let angle_degrees = calculate_angle(start, end);
 
                     let mut css = format!("linear-gradient({angle_degrees}deg, ");

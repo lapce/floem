@@ -70,7 +70,7 @@ impl GpuResources {
                     }
                 };
 
-                let Some(adapter) = instance
+                let Ok(adapter) = instance
                     .request_adapter(&wgpu::RequestAdapterOptions {
                         power_preference: wgpu::PowerPreference::default(),
                         compatible_surface: Some(&surface),
@@ -91,8 +91,7 @@ impl GpuResources {
                                 label: None,
                                 required_features,
                                 ..Default::default()
-                            },
-                            None,
+                            }
                         )
                         .await
                         .map_err(GpuResourceError::DeviceRequestError)

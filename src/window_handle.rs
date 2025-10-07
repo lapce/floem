@@ -666,7 +666,7 @@ impl WindowHandle {
         }
     }
 
-    pub fn paint(&mut self, gpu_resources: Option<GpuResources>) -> Option<peniko::Image> {
+    pub fn paint(&mut self, gpu_resources: Option<GpuResources>) -> Option<peniko::ImageBrush> {
         let mut cx = PaintCx {
             app_state: &mut self.app_state,
             paint_state: &mut self.paint_state,

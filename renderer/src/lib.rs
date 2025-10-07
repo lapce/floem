@@ -18,7 +18,7 @@ pub struct Svg<'a> {
 }
 
 pub struct Img<'a> {
-    pub img: peniko::Image,
+    pub img: peniko::ImageBrush,
     pub hash: &'a [u8],
 }
 
@@ -77,7 +77,7 @@ pub trait Renderer {
 
     fn draw_img(&mut self, img: Img<'_>, rect: Rect);
 
-    fn finish(&mut self) -> Option<peniko::Image>;
+    fn finish(&mut self) -> Option<peniko::ImageBrush>;
 
     fn debug_info(&self) -> String {
         "Unknown".into()

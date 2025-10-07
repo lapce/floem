@@ -6,7 +6,7 @@ use floem_renderer::text::{LineHeightValue, Weight};
 use im_rc::hashmap::Entry;
 use peniko::color::{palette, HueDirection};
 use peniko::kurbo::{Point, Stroke};
-use peniko::{Brush, Color, ColorStop, ColorStops, Gradient, GradientKind};
+use peniko::{Brush, Color, ColorStop, ColorStops, Gradient, GradientKind, InterpolationAlphaSpace, LinearGradientPosition};
 use rustc_hash::FxHasher;
 use std::any::{type_name, Any};
 use std::collections::HashMap;
@@ -252,7 +252,7 @@ impl StylePropValue for Gradient {
         let box_height = 14.;
         let mut grad = self.clone();
         grad.kind = match grad.kind {
-            GradientKind::Linear { start, end } => {
+            GradientKind::Linear(LinearGradientPosition { start, end }) => {
                 let dx = end.x - start.x;
                 let dy = end.y - start.y;
 
@@ -273,10 +273,10 @@ impl StylePropValue for Gradient {
                     y: new_start.y + new_dy,
                 };
 
-                GradientKind::Linear {
+                GradientKind::Linear(LinearGradientPosition {
                     start: new_start,
                     end: new_end,
-                }
+                })
             }
             _ => grad.kind,
         };
@@ -460,6 +460,7 @@ impl StylePropValue for Brush {
                     interpolation_cs: gradient.interpolation_cs,
                     hue_direction: gradient.hue_direction,
                     stops: ColorStops::from(&*interpolated_stops),
+                    interpolation_alpha_space: InterpolationAlphaSpace::Premultiplied,
                 }))
             }
             (Brush::Solid(solid), Brush::Gradient(gradient)) => {
@@ -481,6 +482,7 @@ impl StylePropValue for Brush {
                     interpolation_cs: gradient.interpolation_cs,
                     hue_direction: gradient.hue_direction,
                     stops: ColorStops::from(&*interpolated_stops),
+                    interpolation_alpha_space: InterpolationAlphaSpace::Premultiplied,
                 }))
             }
 
