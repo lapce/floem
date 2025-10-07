@@ -21,7 +21,7 @@ static WINDOW_FOR_WINDOW_AND_ROOT_IDS: OnceLock<RwLock<WindowMapping>> = OnceLoc
 pub fn store_window_id_mapping(
     root_id: ViewId,
     window_id: WindowId,
-    window: &Arc<dyn winit::window::Window>,
+    window: &Arc<winit::window::Window>,
 ) {
     with_window_map_mut(move |m| m.add(root_id, window_id, window.clone()));
 }
@@ -35,12 +35,12 @@ pub fn remove_window_id_mapping(root_id: &ViewId, window_id: &WindowId) {
 /// from that locate the window-id (if any) that it belongs to.
 #[derive(Default)]
 struct WindowMapping {
-    window_for_window_id: HashMap<WindowId, Arc<dyn Window>>,
+    window_for_window_id: HashMap<WindowId, Arc<Window>>,
     window_id_for_root_view_id: HashMap<ViewId, WindowId>,
 }
 
 impl WindowMapping {
-    fn add(&mut self, root: ViewId, window_id: WindowId, window: Arc<dyn Window>) {
+    fn add(&mut self, root: ViewId, window_id: WindowId, window: Arc<Window>) {
         self.window_for_window_id.insert(window_id, window);
         self.window_id_for_root_view_id.insert(root, window_id);
     }
@@ -52,7 +52,7 @@ impl WindowMapping {
             "Window mapping state inconsistent. Remove root {root:?} success was {root_found} but remove {window_id:?} success was {window_found}");
     }
 
-    fn with_window_id_and_window<F: FnOnce(&WindowId, &Arc<dyn Window>) -> T, T>(
+    fn with_window_id_and_window<F: FnOnce(&WindowId, &Arc<Window>) -> T, T>(
         &self,
         root_view_id: ViewId,
         f: F,
@@ -66,7 +66,7 @@ impl WindowMapping {
             })
     }
 
-    fn with_window<F: FnOnce(&Arc<dyn Window>) -> T, T>(
+    fn with_window<F: FnOnce(&Arc<Window>) -> T, T>(
         &self,
         window: &WindowId,
         f: F,
@@ -88,7 +88,7 @@ impl WindowMapping {
     }
 }
 
-pub fn with_window_id_and_window<F: FnOnce(&WindowId, &Arc<dyn Window>) -> T, T>(
+pub fn with_window_id_and_window<F: FnOnce(&WindowId, &Arc<Window>) -> T, T>(
     view: &ViewId,
     f: F,
 ) -> Option<T> {
@@ -120,7 +120,7 @@ fn with_window_map<F: FnOnce(&WindowMapping) -> T, T>(f: F) -> Option<T> {
     }
 }
 
-pub fn with_window<F: FnOnce(&Arc<dyn Window>) -> T, T>(window: &WindowId, f: F) -> Option<T> {
+pub fn with_window<F: FnOnce(&Arc<Window>) -> T, T>(window: &WindowId, f: F) -> Option<T> {
     with_window_map(|m| m.with_window(window, |w| f(w))).unwrap_or(None)
 }
 
@@ -155,13 +155,14 @@ pub fn monitor_bounds(id: &WindowId) -> Option<Rect> {
     .unwrap_or(None)
 }
 
-pub fn monitor_bounds_for_monitor(window: &Arc<dyn Window>, monitor: &MonitorHandle) -> Rect {
+pub fn monitor_bounds_for_monitor(window: &Arc<Window>, monitor: &MonitorHandle) -> Rect {
     let scale = 1.0 / window.scale_factor();
-    let pos = monitor.position().unwrap_or_default();
-    let sz = monitor
-        .current_video_mode()
-        .map(|h| h.size())
-        .unwrap_or_default();
+    let pos = monitor.position();
+    let sz = monitor.size(); // TODO: check it!
+        // .video_modes()
+        // .current_video_mode()
+        // .map(|h| h.size())
+        // .unwrap_or_default;
     let x = pos.x as f64 * scale;
     let y = pos.y as f64 * scale;
     Rect::new(
@@ -172,7 +173,7 @@ pub fn monitor_bounds_for_monitor(window: &Arc<dyn Window>, monitor: &MonitorHan
     )
 }
 
-fn scale_rect(window: &Arc<dyn Window>, mut rect: Rect) -> Rect {
+fn scale_rect(window: &Arc<Window>, mut rect: Rect) -> Rect {
     let scale = 1.0 / window.scale_factor();
     rect.x0 *= scale;
     rect.y0 *= scale;
@@ -181,7 +182,7 @@ fn scale_rect(window: &Arc<dyn Window>, mut rect: Rect) -> Rect {
     rect
 }
 
-fn scale_point(window: &Arc<dyn Window>, mut rect: Point) -> Point {
+fn scale_point(window: &Arc<Window>, mut rect: Point) -> Point {
     let scale = 1.0 / window.scale_factor();
     rect.x *= scale;
     rect.y *= scale;
@@ -191,8 +192,8 @@ fn scale_point(window: &Arc<dyn Window>, mut rect: Point) -> Point {
 pub fn window_inner_screen_position(id: &WindowId) -> Option<Point> {
     with_window_map(|m| {
         m.with_window(id, |window| {
-            let pos = window.surface_position();
-            scale_point(window, Point::new(pos.x as f64, pos.y as f64))
+            let pos = window.inner_size();
+            scale_point(window, Point::new(pos.width as f64, pos.height as f64))
         })
     })
     .unwrap_or(None)
@@ -201,15 +202,16 @@ pub fn window_inner_screen_position(id: &WindowId) -> Option<Point> {
 pub fn window_inner_screen_bounds(id: &WindowId) -> Option<Rect> {
     with_window_map(|m| {
         m.with_window(id, |window| {
-            let pos = window.surface_position();
-            rect_from_physical_bounds_for_window(window, pos, window.surface_size())
+            let pos = window.inner_size();
+            let pos = PhysicalPosition { x: pos.width as i32, y: pos.height as i32 };
+            rect_from_physical_bounds_for_window(window, pos, window.inner_size())
         })
     })
     .unwrap_or(None)
 }
 
 pub fn rect_from_physical_bounds_for_window(
-    window: &Arc<dyn Window>,
+    window: &Arc<Window>,
     pos: PhysicalPosition<i32>,
     sz: PhysicalSize<u32>,
 ) -> Rect {

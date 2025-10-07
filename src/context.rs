@@ -996,7 +996,7 @@ pub struct PaintCx<'a> {
     pub(crate) saved_clips: Vec<Option<RoundedRect>>,
     pub(crate) saved_z_indexes: Vec<Option<i32>>,
     pub gpu_resources: Option<GpuResources>,
-    pub window: Arc<dyn Window>,
+    pub window: Arc<Window>,
 }
 
 impl PaintCx<'_> {
@@ -1252,7 +1252,7 @@ impl PaintCx<'_> {
 pub enum PaintState {
     /// The renderer is not yet initialized. This state is used to wait for the GPU resources to be acquired.
     PendingGpuResources {
-        window: Arc<dyn Window>,
+        window: Arc<Window>,
         rx: Receiver<Result<(GpuResources, wgpu::Surface<'static>), GpuResourceError>>,
         font_embolden: f32,
         /// This field holds an instance of `Renderer::Uninitialized` until the GPU resources are acquired,
@@ -1269,7 +1269,7 @@ pub enum PaintState {
 
 impl PaintState {
     pub fn new_pending(
-        window: Arc<dyn Window>,
+        window: Arc<Window>,
         rx: Receiver<Result<(GpuResources, wgpu::Surface<'static>), GpuResourceError>>,
         scale: f64,
         size: Size,
@@ -1284,7 +1284,7 @@ impl PaintState {
     }
 
     pub fn new(
-        window: Arc<dyn Window>,
+        window: Arc<Window>,
         surface: wgpu::Surface<'static>,
         gpu_resources: GpuResources,
         scale: f64,

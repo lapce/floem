@@ -51,7 +51,7 @@ impl ApplicationHandle {
         }
     }
 
-    pub(crate) fn handle_user_event(&mut self, event_loop: &dyn ActiveEventLoop, event: UserEvent) {
+    pub(crate) fn handle_user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
         match event {
             UserEvent::AppUpdate => {
                 self.handle_update_event(event_loop);
@@ -99,7 +99,7 @@ impl ApplicationHandle {
         }
     }
 
-    pub(crate) fn handle_update_event(&mut self, event_loop: &dyn ActiveEventLoop) {
+    pub(crate) fn handle_update_event(&mut self, event_loop: &ActiveEventLoop) {
         let events = APP_UPDATE_EVENTS.with(|events| {
             let mut events = events.borrow_mut();
             std::mem::take(&mut *events)
@@ -158,7 +158,7 @@ impl ApplicationHandle {
         &mut self,
         window_id: winit::window::WindowId,
         event: WindowEvent,
-        event_loop: &dyn ActiveEventLoop,
+        event_loop: &ActiveEventLoop,
     ) {
         let window_handle = match self.window_handles.get_mut(&window_id) {
             Some(window_handle) => window_handle,
@@ -168,7 +168,7 @@ impl ApplicationHandle {
         let start = window_handle.profile.is_some().then(|| {
             let name = match event {
                 WindowEvent::ActivationTokenDone { .. } => "ActivationTokenDone",
-                WindowEvent::SurfaceResized(..) => "Resized",
+                WindowEvent::Resized(..) => "Resized",
                 WindowEvent::Moved(..) => "Moved",
                 WindowEvent::CloseRequested => "CloseRequested",
                 WindowEvent::Destroyed => "Destroyed",
@@ -179,11 +179,11 @@ impl ApplicationHandle {
                 WindowEvent::KeyboardInput { .. } => "KeyboardInput",
                 WindowEvent::ModifiersChanged(..) => "ModifiersChanged",
                 WindowEvent::Ime(..) => "Ime",
-                WindowEvent::PointerMoved { .. } => "PointerMoved",
-                WindowEvent::PointerEntered { .. } => "PointerEntered",
-                WindowEvent::PointerLeft { .. } => "PointerLeft",
+                WindowEvent::CursorMoved { .. } => "CursorMoved",
+                WindowEvent::CursorEntered { .. } => "CursorEntered",
+                WindowEvent::CursorLeft { .. } => "CursorLeft",
                 WindowEvent::MouseWheel { .. } => "MouseWheel",
-                WindowEvent::PointerButton { .. } => "PointerButton",
+                WindowEvent::MouseInput { .. } => "MouseInput",
                 WindowEvent::TouchpadPressure { .. } => "TouchpadPressure",
                 WindowEvent::ScaleFactorChanged { .. } => "ScaleFactorChanged",
                 WindowEvent::ThemeChanged(..) => "ThemeChanged",
@@ -193,7 +193,8 @@ impl ApplicationHandle {
                 WindowEvent::PanGesture { .. } => "PanGesture",
                 WindowEvent::DoubleTapGesture { .. } => "DoubleTapGesture",
                 WindowEvent::RotationGesture { .. } => "RotationGesture",
-                // WindowEvent::MenuAction(..) => "MenuAction",
+                WindowEvent::AxisMotion { .. } => "AxisMotion",
+                WindowEvent::Touch(_) => "Touch"
             };
             (
                 name,
@@ -204,7 +205,7 @@ impl ApplicationHandle {
 
         match event {
             WindowEvent::ActivationTokenDone { .. } => {}
-            WindowEvent::SurfaceResized(size) => {
+            WindowEvent::Resized(size) => {
                 let size: LogicalSize<f64> = size.to_logical(window_handle.scale);
                 let size = Size::new(size.width, size.height);
                 window_handle.size(size);
@@ -243,19 +244,19 @@ impl ApplicationHandle {
             WindowEvent::Ime(ime) => {
                 window_handle.ime(ime);
             }
-            WindowEvent::PointerMoved { position, .. } => {
+            WindowEvent::CursorMoved { position, .. } => {
                 let position: LogicalPosition<f64> = position.to_logical(window_handle.scale);
                 let point = Point::new(position.x, position.y);
                 window_handle.pointer_move(point);
             }
-            WindowEvent::PointerEntered { .. } => {}
-            WindowEvent::PointerLeft { .. } => {
+            WindowEvent::CursorEntered { .. } => {}
+            WindowEvent::CursorLeft { .. } => {
                 window_handle.pointer_leave();
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 window_handle.mouse_wheel(delta);
             }
-            WindowEvent::PointerButton { state, button, .. } => {
+            WindowEvent::MouseInput { state, button, .. } => {
                 window_handle.pointer_button(button, state);
             }
             WindowEvent::PinchGesture { delta, phase, .. } => {
@@ -274,9 +275,12 @@ impl ApplicationHandle {
             }
             WindowEvent::PanGesture { .. } => {}
             WindowEvent::DoubleTapGesture { .. } => {}
-            WindowEvent::RotationGesture { .. } => {} // WindowEvent::MenuAction(id) => {
-                                                      //     window_handle.menu_action(id);
-                                                      // }
+            WindowEvent::RotationGesture { .. } => {}
+            WindowEvent::AxisMotion { .. } => {}
+            WindowEvent::Touch(_) => {}
+            // WindowEvent::MenuAction(id) => {
+            //     window_handle.menu_action(id);
+            // }
         }
 
         if let Some((name, start, new_frame)) = start {
@@ -300,7 +304,7 @@ impl ApplicationHandle {
 
     pub(crate) fn new_window(
         &mut self,
-        event_loop: &dyn ActiveEventLoop,
+        event_loop: &ActiveEventLoop,
         view_fn: Box<dyn FnOnce(WindowId) -> Box<dyn View>>,
         #[allow(unused_variables)] WindowConfig {
             size,
@@ -367,13 +371,13 @@ impl ApplicationHandle {
         }
 
         if let Some(logical_size) = logical_size {
-            window_attributes = window_attributes.with_surface_size(logical_size);
+            window_attributes = window_attributes.with_inner_size(logical_size);
         }
         if let Some(logical_min_size) = logical_min_size {
-            window_attributes = window_attributes.with_min_surface_size(logical_min_size);
+            window_attributes = window_attributes.with_min_inner_size(logical_min_size);
         }
         if let Some(logical_max_size) = logical_max_size {
-            window_attributes = window_attributes.with_max_surface_size(logical_max_size);
+            window_attributes = window_attributes.with_max_inner_size(logical_max_size);
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -475,7 +479,7 @@ impl ApplicationHandle {
         }
         let window_id = window.id();
         let window_handle = WindowHandle::new(
-            window,
+            window.into(),
             self.gpu_resources.clone(),
             self.config.wgpu_features,
             view_fn,
@@ -486,7 +490,7 @@ impl ApplicationHandle {
         self.window_handles.insert(window_id, window_handle);
     }
 
-    fn close_window(&mut self, window_id: WindowId, event_loop: &dyn ActiveEventLoop) {
+    fn close_window(&mut self, window_id: WindowId, event_loop: &ActiveEventLoop) {
         if let Some(handle) = self.window_handles.get_mut(&window_id) {
             handle.destroy();
         }
@@ -519,19 +523,19 @@ impl ApplicationHandle {
         }
     }
 
-    fn request_timer(&mut self, timer: Timer, event_loop: &dyn ActiveEventLoop) {
+    fn request_timer(&mut self, timer: Timer, event_loop: &ActiveEventLoop) {
         self.timers.insert(timer.token, timer);
         self.fire_timer(event_loop);
     }
 
-    fn remove_timer(&mut self, timer: &TimerToken, event_loop: &dyn ActiveEventLoop) {
+    fn remove_timer(&mut self, timer: &TimerToken, event_loop: &ActiveEventLoop) {
         self.timers.remove(timer);
         if self.timers.is_empty() {
             event_loop.set_control_flow(ControlFlow::Wait);
         }
     }
 
-    fn fire_timer(&mut self, event_loop: &dyn ActiveEventLoop) {
+    fn fire_timer(&mut self, event_loop: &ActiveEventLoop) {
         if self.timers.is_empty() {
             event_loop.set_control_flow(ControlFlow::Wait);
             return;
@@ -543,7 +547,7 @@ impl ApplicationHandle {
         }
     }
 
-    pub(crate) fn handle_timer(&mut self, event_loop: &dyn ActiveEventLoop) {
+    pub(crate) fn handle_timer(&mut self, event_loop: &ActiveEventLoop) {
         let now = Instant::now();
         let tokens: Vec<TimerToken> = self
             .timers

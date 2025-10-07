@@ -48,7 +48,7 @@ impl GpuResources {
     pub fn request<F: Fn(WindowId) + 'static>(
         on_result: F,
         required_features: wgpu::Features,
-        window: Arc<dyn Window>,
+        window: Arc<Window>,
     ) -> Receiver<Result<(Self, wgpu::Surface<'static>), GpuResourceError>> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: Backends::from_env().unwrap_or(Backends::all()),

@@ -19,19 +19,19 @@ use crate::window_tracking::{
 pub fn try_create_screen_layout(view: &ViewId) -> Option<ScreenLayout> {
     with_window_id_and_window(view, |window_id, window| {
         window.current_monitor().and_then(|monitor| {
-            let inner_position = window.surface_position();
+            let inner_position = window.inner_position();
             window
                 .outer_position()
                 .map(|outer_position| {
                     let monitor_bounds = monitor_bounds_for_monitor(window, &monitor);
-                    let inner_size = window.surface_size();
+                    let inner_size = window.inner_size();
                     let outer_size = window.outer_size();
 
                     let window_bounds =
                         rect_from_physical_bounds_for_window(window, outer_position, outer_size);
 
                     let window_content_bounds =
-                        rect_from_physical_bounds_for_window(window, inner_position, inner_size);
+                        rect_from_physical_bounds_for_window(window, inner_position.unwrap_or_default(), inner_size);
 
                     let view_origin_in_window = find_window_origin(view);
                     let monitor_scale = window.scale_factor();
@@ -53,22 +53,22 @@ pub fn try_create_screen_layout(view: &ViewId) -> Option<ScreenLayout> {
 
 pub fn screen_layout_for_window(
     window_id: WindowId,
-    window: &Arc<dyn Window>,
+    window: &Arc<Window>,
 ) -> Option<ScreenLayout> {
     window.current_monitor().and_then(|monitor| {
-        let inner_position = window.surface_position();
+        let inner_position = window.inner_position();
         window
             .outer_position()
             .map(|outer_position| {
                 let monitor_bounds = monitor_bounds_for_monitor(window, &monitor);
-                let inner_size = window.surface_size();
+                let inner_size = window.inner_size();
                 let outer_size = window.outer_size();
 
                 let window_bounds =
                     rect_from_physical_bounds_for_window(window, outer_position, outer_size);
 
                 let window_content_bounds =
-                    rect_from_physical_bounds_for_window(window, inner_position, inner_size);
+                    rect_from_physical_bounds_for_window(window, inner_position.unwrap_or_default(), inner_size);
 
                 let view_origin_in_window = None;
                 let monitor_scale = window.scale_factor();

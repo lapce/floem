@@ -1,11 +1,12 @@
 use std::hash::{Hash, Hasher};
-
-use winit::event::ButtonSource;
-pub use winit::event::{FingerId, Force};
-
+// use winit::event::ButtonSource;
+// use winit::event::MouseButton as WinitMouseButton;
+use winit::event::Touch; // FingerId
 use peniko::kurbo::{Point, Vec2};
 
 use crate::keyboard::Modifiers;
+
+pub use winit::event::Force;
 
 #[derive(Debug, Clone)]
 pub struct PointerWheelEvent {
@@ -18,7 +19,7 @@ pub struct PointerWheelEvent {
 pub enum PointerButton {
     Mouse(MouseButton),
     Touch {
-        finger_id: FingerId,
+        finger_id: u64,
         force: Option<Force>,
     },
     Unknown(u16),
@@ -36,12 +37,17 @@ impl Hash for PointerButton {
     }
 }
 
-impl From<ButtonSource> for PointerButton {
-    fn from(value: ButtonSource) -> Self {
-        match value {
-            ButtonSource::Mouse(mouse_button) => PointerButton::Mouse(mouse_button.into()),
-            ButtonSource::Touch { finger_id, force } => PointerButton::Touch { finger_id, force },
-            ButtonSource::Unknown(n) => PointerButton::Unknown(n),
+impl From<MouseButton> for PointerButton {
+    fn from(value: MouseButton) -> Self {
+        PointerButton::Mouse(value)
+    }
+}
+
+impl From<Touch> for PointerButton {
+    fn from(value: Touch) -> Self {
+        PointerButton::Touch {
+            finger_id: value.id,
+            force: value.force,
         }
     }
 }

@@ -68,7 +68,7 @@ pub enum Renderer {
     Vello(VelloRenderer),
     #[cfg(not(feature = "vello"))]
     Vger(VgerRenderer),
-    TinySkia(TinySkiaRenderer<Arc<dyn Window>>),
+    TinySkia(TinySkiaRenderer<Arc<Window>>),
     /// Uninitialized renderer, used to allow the renderer to be created lazily
     /// All operations on this renderer are no-ops
     Uninitialized {
@@ -79,7 +79,7 @@ pub enum Renderer {
 
 impl Renderer {
     pub fn new(
-        window: Arc<dyn Window>,
+        window: Arc<Window>,
         gpu_resources: GpuResources,
         surface: wgpu::Surface<'static>,
         scale: f64,

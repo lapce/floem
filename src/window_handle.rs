@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::{cell::RefCell, mem, path::PathBuf, rc::Rc, sync::Arc};
 
 use muda::MenuId;
+use winit::event::MouseButton as WinitMouseButton;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
@@ -14,7 +15,7 @@ use peniko::color::palette;
 use peniko::kurbo::{Affine, Point, Size, Vec2};
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
-    event::{ButtonSource, ElementState, Ime, MouseScrollDelta, TouchPhase},
+    event::{ElementState, Ime, MouseScrollDelta, TouchPhase},
     keyboard::{Key, ModifiersState, NamedKey},
     window::{CursorIcon, Window, WindowId},
 };
@@ -61,7 +62,7 @@ use crate::{
 /// - processing all requests to update the animation state from the reactive system
 /// - requesting a new animation frame from the backend
 pub(crate) struct WindowHandle {
-    pub(crate) window: Arc<dyn winit::window::Window>,
+    pub(crate) window: Arc<winit::window::Window>,
     window_id: WindowId,
     id: ViewId,
     main_view: ViewId,
@@ -89,7 +90,7 @@ pub(crate) struct WindowHandle {
 
 impl WindowHandle {
     pub(crate) fn new(
-        window: Box<dyn winit::window::Window>,
+        window: Box<winit::window::Window>,
         gpu_resources: Option<GpuResources>,
         required_features: wgpu::Features,
         view_fn: impl FnOnce(winit::window::WindowId) -> Box<dyn View> + 'static,
@@ -101,7 +102,7 @@ impl WindowHandle {
         let window_id = window.id();
         let id = ViewId::new();
         let scale = window.scale_factor();
-        let size: LogicalSize<f64> = window.surface_size().to_logical(scale);
+        let size: LogicalSize<f64> = window.inner_size().to_logical(scale);
         let size = Size::new(size.width, size.height);
         let size = scope.create_rw_signal(Size::new(size.width, size.height));
         let os_theme = window.theme();
@@ -140,7 +141,7 @@ impl WindowHandle {
         let view = WindowView { id };
         id.set_view(view.into_any());
 
-        let window: Arc<dyn Window> = window.into();
+        let window: Arc<Window> = window.into();
         store_window_id_mapping(id, window_id, &window);
 
         let paint_state = if let Some(resources) = gpu_resources.clone() {
@@ -558,8 +559,8 @@ impl WindowHandle {
         self.event(Event::PointerWheel(event));
     }
 
-    pub(crate) fn pointer_button(&mut self, button: ButtonSource, state: ElementState) {
-        let button: PointerButton = button.into();
+    pub(crate) fn pointer_button(&mut self, button: WinitMouseButton, state: ElementState) {
+        let button = PointerButton::Mouse(button.into());
         let count = if state.is_pressed() && button.is_primary() {
             if let Some((count, last_pos, instant)) = self.last_pointer_down.as_mut() {
                 if *count == 4 {
@@ -1153,7 +1154,7 @@ impl WindowHandle {
             None => CursorIcon::Default,
         };
         if cursor != self.app_state.last_cursor {
-            self.window.set_cursor(cursor.into());
+            self.window.set_cursor(cursor);
             self.app_state.last_cursor = cursor;
         }
     }
