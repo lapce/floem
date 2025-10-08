@@ -3,6 +3,7 @@ use floem::reactive::{RwSignal, SignalGet, SignalUpdate};
 use floem::text::{Attrs, AttrsList, Stretch, Style, Weight};
 use floem::views::button;
 use floem::views::editor::core::buffer::rope_text::RopeText;
+use floem::views::editor::core::cursor::CursorAffinity;
 use floem::views::editor::id::EditorId;
 use floem::views::editor::layout::TextLayoutLine;
 use floem::views::editor::text::{default_dark_color, Document, SimpleStylingBuilder, Styling};
@@ -229,7 +230,7 @@ mod tests {
         stack((
             button("Clear").action(move || {
                 doc.edit_single(
-                    Selection::region(0, doc.text().len()),
+                    Selection::region(0, doc.text().len(), CursorAffinity::Backward),
                     "",
                     EditType::DeleteSelection,
                 );

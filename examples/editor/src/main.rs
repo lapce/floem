@@ -5,7 +5,10 @@ use floem::{
         button,
         editor::{
             command::{Command, CommandExecuted},
-            core::{command::EditCommand, editor::EditType, selection::Selection},
+            core::{
+                command::EditCommand, cursor::CursorAffinity, editor::EditType,
+                selection::Selection,
+            },
             text::{default_dark_color, SimpleStyling},
         },
         stack, text_editor, Decorators,
@@ -52,7 +55,7 @@ fn app_view() -> impl IntoView {
         stack((
             button("Clear").action(move || {
                 doc.edit_single(
-                    Selection::region(0, doc.text().len()),
+                    Selection::region(0, doc.text().len(), CursorAffinity::Backward),
                     "",
                     EditType::DeleteSelection,
                 );

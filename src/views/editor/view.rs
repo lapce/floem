@@ -522,7 +522,7 @@ impl EditorView {
         cursor.with_untracked(|cursor| {
             let highlight_current_line = match cursor.mode {
                 // TODO: check if shis should be 0 or 1
-                CursorMode::Normal(size) => size == 0,
+                CursorMode::Normal { offset: size, .. } => size == 0,
                 CursorMode::Insert(ref sel) => sel.is_caret(),
                 CursorMode::Visual { .. } => false,
             };
@@ -530,9 +530,9 @@ impl EditorView {
             if let Some(current_line_color) = current_line_color {
                 // Highlight the current line
                 if highlight_current_line {
-                    for (_, end) in cursor.regions_iter() {
+                    for (_, end, affinity) in cursor.regions_iter() {
                         // TODO: unsure if this is correct for wrapping lines
-                        let rvline = ed.rvline_of_offset(end, cursor.affinity);
+                        let rvline = ed.rvline_of_offset(end, affinity);
 
                         if let Some(info) = screen_lines.info(rvline) {
                             let line_height = ed.line_height(info.vline_info.rvline.line);
@@ -557,11 +557,12 @@ impl EditorView {
         let selection_color = ed.es.with_untracked(|es| es.selection());
 
         cursor.with_untracked(|cursor| match cursor.mode {
-            CursorMode::Normal(_) => {}
+            CursorMode::Normal { .. } => {}
             CursorMode::Visual {
                 start,
                 end,
                 mode: VisualMode::Normal,
+                affinity,
             } => {
                 let start_offset = start.min(end);
                 let end_offset = ed.move_right(start.max(end), Mode::Insert, 1);
@@ -573,13 +574,14 @@ impl EditorView {
                     screen_lines,
                     start_offset,
                     end_offset,
-                    cursor.affinity,
+                    affinity,
                 );
             }
             CursorMode::Visual {
                 start,
                 end,
                 mode: VisualMode::Linewise,
+                affinity,
             } => {
                 EditorView::paint_linewise_selection(
                     cx,
@@ -588,13 +590,14 @@ impl EditorView {
                     screen_lines,
                     start.min(end),
                     start.max(end),
-                    cursor.affinity,
+                    affinity,
                 );
             }
             CursorMode::Visual {
                 start,
                 end,
                 mode: VisualMode::Blockwise,
+                affinity,
             } => {
                 EditorView::paint_blockwise_selection(
                     cx,
@@ -603,12 +606,14 @@ impl EditorView {
                     screen_lines,
                     start.min(end),
                     start.max(end),
-                    cursor.affinity,
+                    affinity,
                     cursor.horiz,
                 );
             }
             CursorMode::Insert(_) => {
-                for (start, end) in cursor.regions_iter().filter(|(start, end)| start != end) {
+                for (start, end, affinity) in
+                    cursor.regions_iter().filter(|(start, end, _)| start != end)
+                {
                     EditorView::paint_normal_selection(
                         cx,
                         ed,
@@ -616,7 +621,7 @@ impl EditorView {
                         screen_lines,
                         start.min(end),
                         start.max(end),
-                        cursor.affinity,
+                        affinity,
                     );
                 }
             }
@@ -639,13 +644,12 @@ impl EditorView {
 
         cursor.with_untracked(|cursor| {
             let style = ed.style();
-            for (_, end) in cursor.regions_iter() {
+            for (_, end, affinity) in cursor.regions_iter() {
                 let is_block = match cursor.mode {
-                    CursorMode::Normal(_) | CursorMode::Visual { .. } => true,
+                    CursorMode::Normal { .. } | CursorMode::Visual { .. } => true,
                     CursorMode::Insert(_) => false,
                 };
-                let LineRegion { x, width, rvline } =
-                    cursor_caret(ed, end, is_block, cursor.affinity);
+                let LineRegion { x, width, rvline } = cursor_caret(ed, end, is_block, affinity);
 
                 if let Some(info) = screen_lines.info(rvline) {
                     if !style.paint_caret(ed.id(), rvline.line) {
@@ -965,7 +969,7 @@ pub fn editor_view(
                     ime_allowed.set(true);
                     set_ime_allowed(true);
                 }
-                let (offset, affinity) = cursor.with(|c| (c.offset(), c.affinity));
+                let (offset, affinity) = cursor.with(|c| (c.offset(), c.affinity()));
                 let (_, point_below) = ed.points_of_offset(offset, affinity);
                 let window_origin = editor_window_origin.get();
                 let viewport = editor_viewport.get();
@@ -1227,7 +1231,7 @@ fn editor_content(
         // editor.kind.track();
 
         let LineRegion { x, width, rvline } =
-            cursor_caret(&editor, offset, !cursor.is_insert(), cursor.affinity);
+            cursor_caret(&editor, offset, !cursor.is_insert(), cursor.affinity());
 
         // TODO: don't assume line-height is constant
         let line_height = f64::from(editor.line_height(0));

@@ -4,14 +4,20 @@ mod editing {
     use lapce_xi_rope::Rope;
 
     use super::*;
-    use crate::{editor::EditType, selection::Selection};
+    use crate::{cursor::CursorAffinity, editor::EditType, selection::Selection};
 
     #[test]
     fn is_pristine() {
         let mut buffer = Buffer::new("");
         buffer.init_content(Rope::from("abc"));
-        buffer.edit(&[(Selection::caret(0), "d")], EditType::InsertChars);
-        buffer.edit(&[(Selection::caret(0), "e")], EditType::InsertChars);
+        buffer.edit(
+            &[(Selection::caret(0, CursorAffinity::Backward), "d")],
+            EditType::InsertChars,
+        );
+        buffer.edit(
+            &[(Selection::caret(0, CursorAffinity::Backward), "e")],
+            EditType::InsertChars,
+        );
         buffer.do_undo();
         buffer.do_undo();
         assert!(buffer.is_pristine());
