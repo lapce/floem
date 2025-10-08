@@ -326,7 +326,6 @@ impl ApplicationHandle {
             window_level,
             apply_default_theme,
             mac_os_config,
-            #[cfg(target_os = "windows")]
             win_os_config,
             web_config,
             font_embolden,
