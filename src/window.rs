@@ -1,8 +1,7 @@
 use peniko::kurbo::{Point, Size};
+use peniko::Color;
 pub use winit::icon::{Icon, RgbaIcon};
 pub use winit::monitor::Fullscreen;
-#[cfg(target_os = "windows")]
-use winit::platform::windows::{BackdropType, Color, CornerPreference};
 pub use winit::window::ResizeDirection;
 pub use winit::window::Theme;
 pub use winit::window::WindowButtons;
@@ -404,28 +403,27 @@ impl From<MacOsOptionAsAlt> for winit::platform::macos::OptionAsAlt {
 #[derive(Debug, Clone)]
 pub struct WinOSWindowConfig {
     // pub(crate) top_resize_border: bool,
-    pub(crate) corner_preference: CornerPreference,
+    pub(crate) corner_preference: WinOsCornerPreference,
     pub(crate) set_enable: bool,
     pub(crate) set_skip_taskbar: bool,
     // /// Shows or hides the background drop shadow for undecorated windows.
     // ///
     // /// Enabling the shadow causes a thin 1px line to appear on the top of the window.
     // pub(crate) set_undecorated_shadow: bool,
-    pub(crate) set_system_backdrop: BackdropType,
+    pub(crate) set_system_backdrop: WinOsBackdropType,
     pub(crate) set_border_color: Option<Color>,
     pub(crate) set_title_background_color: Option<Color>,
     pub(crate) set_title_text_color: Option<Color>,
 }
 
-#[cfg(target_os = "windows")]
 impl Default for WinOSWindowConfig {
     fn default() -> Self {
         Self {
             // top_resize_border: true,
-            corner_preference: CornerPreference::Default,
+            corner_preference: WinOsCornerPreference::Default,
             set_enable: true,
             set_skip_taskbar: false,
-            set_system_backdrop: BackdropType::Auto,
+            set_system_backdrop: WinOsBackdropType::Auto,
             set_border_color: None,
             set_title_background_color: None,
             set_title_text_color: None,
@@ -433,7 +431,6 @@ impl Default for WinOSWindowConfig {
     }
 }
 
-#[cfg(target_os = "windows")]
 impl WinOSWindowConfig {
     // TODO: need to patch winit first
     // /// Turn window top resize border on or off (for windows without a title bar).
@@ -446,7 +443,7 @@ impl WinOSWindowConfig {
     /// Sets the preferred style of the window corners.
     ///
     /// Supported starting with Windows 11 Build 22000.
-    pub fn corner_preference(mut self, corner_preference: CornerPreference) -> Self {
+    pub fn corner_preference(mut self, corner_preference: WinOsCornerPreference) -> Self {
         self.corner_preference = corner_preference;
         self
     }
@@ -478,7 +475,7 @@ impl WinOSWindowConfig {
     /// Sets system-drawn backdrop type.
     ///
     /// Requires Windows 11 build 22523+.
-    pub fn set_system_backdrop(mut self, set_system_backdrop: BackdropType) -> Self {
+    pub fn set_system_backdrop(mut self, set_system_backdrop: WinOsBackdropType) -> Self {
         self.set_system_backdrop = set_system_backdrop;
         self
     }
@@ -486,25 +483,121 @@ impl WinOSWindowConfig {
     /// Sets the color of the window border.
     ///
     /// Supported starting with Windows 11 Build 22000.
-    pub fn set_border_color(mut self, set_border_color: Option<Color>) -> Self {
-        self.set_border_color = set_border_color;
+    pub fn set_border_color(mut self, set_border_color: Color) -> Self {
+        self.set_border_color = Some(set_border_color);
         self
     }
 
     /// Sets the background color of the title bar.
     ///
     /// Supported starting with Windows 11 Build 22000.
-    pub fn set_title_background_color(mut self, set_title_background_color: Option<Color>) -> Self {
-        self.set_title_background_color = set_title_background_color;
+    pub fn set_title_background_color(mut self, set_title_background_color: Color) -> Self {
+        self.set_title_background_color = Some(set_title_background_color);
         self
     }
 
     /// Sets the color of the window title.
     ///
     /// Supported starting with Windows 11 Build 22000.
-    pub fn set_title_text_color(mut self, set_title_text_color: Option<Color>) -> Self {
-        self.set_title_text_color = set_title_text_color;
+    pub fn set_title_text_color(mut self, set_title_text_color: Color) -> Self {
+        self.set_title_text_color = Some(set_title_text_color);
         self
+    }
+}
+
+/// Describes how the corners of a window should look like.
+///
+/// For a detailed explanation, see [`DWM_WINDOW_CORNER_PREFERENCE docs`].
+///
+/// [`DWM_WINDOW_CORNER_PREFERENCE docs`]: https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwm_window_corner_preference
+#[derive(Debug, Clone)]
+pub enum WinOsCornerPreference {
+    /// Corresponds to `DWMWCP_DEFAULT`.
+    ///
+    /// Let the system decide when to round window corners.
+    Default,
+
+    /// Corresponds to `DWMWCP_DONOTROUND`.
+    ///
+    /// Never round window corners.
+    DoNotRound,
+
+    /// Corresponds to `DWMWCP_ROUND`.
+    ///
+    /// Round the corners, if appropriate.
+    Round,
+
+    /// Corresponds to `DWMWCP_ROUNDSMALL`.
+    ///
+    /// Round the corners if appropriate, with a small radius.
+    RoundSmall
+}
+
+#[cfg(target_os = "windows")]
+impl From<WinOsCornerPreference> for winit::platform::windows::CornerPreference {
+    fn from(value: WinOsCornerPreference) -> Self {
+        use winit::platform::windows::CornerPreference;
+        match value {
+            WinOsCornerPreference::Default => CornerPreference::Default,
+            WinOsCornerPreference::DoNotRound => CornerPreference::DoNotRound,
+            WinOsCornerPreference::Round => CornerPreference::Round,
+            WinOsCornerPreference::RoundSmall => CornerPreference::RoundSmall,
+        }
+    }
+}
+
+/// Describes a system-drawn backdrop material of a window.
+///
+/// For a detailed explanation, see [`DWM_SYSTEMBACKDROP_TYPE docs`].
+///
+/// [`DWM_SYSTEMBACKDROP_TYPE docs`]: https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwm_systembackdrop_type
+#[derive(Debug, Clone)]
+pub enum WinOsBackdropType {
+    /// Corresponds to `DWMSBT_AUTO`.
+    ///
+    /// Usually draws a default backdrop effect on the title bar.
+    Auto,
+
+    /// Corresponds to `DWMSBT_NONE`.
+    None,
+
+    /// Corresponds to `DWMSBT_MAINWINDOW`.
+    ///
+    /// Draws the Mica backdrop material.
+    MainWindow,
+
+    /// Corresponds to `DWMSBT_TRANSIENTWINDOW`.
+    ///
+    /// Draws the Background Acrylic backdrop material.
+    TransientWindow,
+
+    /// Corresponds to `DWMSBT_TABBEDWINDOW`.
+    ///
+    /// Draws the Alt Mica backdrop material.
+    TabbedWindow,
+}
+
+#[cfg(target_os = "windows")]
+impl From<WinOsBackdropType> for winit::platform::windows::BackdropType {
+    fn from(value: WinOsBackdropType) -> Self {
+        use winit::platform::windows::BackdropType;
+        match value {
+            WinOsBackdropType::Auto => BackdropType::Auto,
+            WinOsBackdropType::None => BackdropType::None,
+            WinOsBackdropType::MainWindow => BackdropType::MainWindow,
+            WinOsBackdropType::TransientWindow => BackdropType::TransientWindow,
+            WinOsBackdropType::TabbedWindow => BackdropType::TabbedWindow,
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub(super) fn convert_to_win(c: Option<peniko::Color>) -> Option<winit::platform::windows::Color> {
+    if let Some(c) = c {
+        let c = c.to_rgba8();
+        Some(winit::platform::windows::Color::from_rgb(c.r, c.g, c.b))
+    } else {
+        None
     }
 }
 
