@@ -406,7 +406,9 @@ impl ApplicationHandle {
                     .with_skip_taskbar(cfg.set_skip_taskbar)
                     .with_corner_preference(cfg.corner_preference.into())
                     .with_system_backdrop(cfg.set_system_backdrop.into())
-                    .with_title_text_color(convert_to_win(cfg.set_title_text_color).unwrap_or_default());
+                    .with_title_text_color(
+                        convert_to_win(cfg.set_title_text_color).unwrap_or_default(),
+                    );
             }
             window_attributes = window_attributes.with_platform_attributes(Box::new(win));
         }

@@ -38,7 +38,6 @@ pub struct WindowConfig {
     pub(crate) font_embolden: f32,
     #[allow(dead_code)]
     pub(crate) mac_os_config: Option<MacOSWindowConfig>,
-    #[cfg(target_os = "windows")]
     pub(crate) win_os_config: Option<WinOSWindowConfig>,
     pub(crate) web_config: Option<WebWindowConfig>,
 }
@@ -66,7 +65,6 @@ impl Default for WindowConfig {
             apply_default_theme: true,
             font_embolden: if cfg!(target_os = "macos") { 0.2 } else { 0. },
             mac_os_config: None,
-            #[cfg(target_os = "windows")]
             win_os_config: None,
             web_config: None,
         }
@@ -399,7 +397,6 @@ impl From<MacOsOptionAsAlt> for winit::platform::macos::OptionAsAlt {
 }
 
 // Windows specific window configuration properties.
-#[cfg(target_os = "windows")]
 #[derive(Debug, Clone)]
 pub struct WinOSWindowConfig {
     // pub(crate) top_resize_border: bool,
@@ -530,7 +527,7 @@ pub enum WinOsCornerPreference {
     /// Corresponds to `DWMWCP_ROUNDSMALL`.
     ///
     /// Round the corners if appropriate, with a small radius.
-    RoundSmall
+    RoundSmall,
 }
 
 #[cfg(target_os = "windows")]
