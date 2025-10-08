@@ -590,12 +590,11 @@ impl From<WinOsBackdropType> for winit::platform::windows::BackdropType {
 
 #[cfg(target_os = "windows")]
 pub(super) fn convert_to_win(c: Option<peniko::Color>) -> Option<winit::platform::windows::Color> {
-    if let Some(c) = c {
+    let c = c.map(|c| {
         let c = c.to_rgba8();
-        Some(winit::platform::windows::Color::from_rgb(c.r, c.g, c.b))
-    } else {
-        None
-    }
+        winit::platform::windows::Color::from_rgb(c.r, c.g, c.b)
+    });
+    c
 }
 
 /// Web specific window (canvas) configuration properties, accessible via `WindowConfig::with_web_config( WebWindowConfig )`.
