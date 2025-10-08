@@ -191,9 +191,9 @@ impl ApplicationHandle {
                 WindowEvent::DoubleTapGesture { .. } => "DoubleTapGesture",
                 WindowEvent::RotationGesture { .. } => "RotationGesture",
                 WindowEvent::DragDropped { .. } => "DroppedFile",
-                WindowEvent::DragEntered { .. } => todo!(),
-                WindowEvent::DragLeft { .. } => todo!(),
-                WindowEvent::DragMoved { .. } => todo!(),
+                WindowEvent::DragEntered { .. } => "DragEntered",
+                WindowEvent::DragLeft { .. } => "DragLeft",
+                WindowEvent::DragMoved { .. } => "DragMoved",
             };
             (
                 name,

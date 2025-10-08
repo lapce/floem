@@ -2,7 +2,6 @@ use bitflags::bitflags;
 pub use winit::keyboard::{
     Key, KeyCode, KeyLocation, ModifiersState, NamedKey, NativeKey, PhysicalKey,
 };
-// #[cfg(not(any(target_arch = "wasm32", target_os = "ios", target_os = "android")))]
 
 /// Represents a single keyboard input with any active modifier keys.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]

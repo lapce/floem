@@ -106,8 +106,8 @@ impl KeyInput {
             "shift" => (Key::Named(Shift), PhysicalKey::Code(KeyCode::ShiftLeft)),
             "symbol" => (Key::Named(Symbol), PhysicalKey::Code(KeyCode::Fn)),
             "symbollock" => (Key::Named(SymbolLock), PhysicalKey::Code(KeyCode::Fn)),
-            "hyper" => (Key::Named(Meta), PhysicalKey::Code(KeyCode::MetaLeft)), // FIXME!
-            "super" => (Key::Named(Meta), PhysicalKey::Code(KeyCode::MetaLeft)), // FIXME!
+            "hyper" => (Key::Named(Meta), PhysicalKey::Code(KeyCode::MetaLeft)),
+            "super" => (Key::Named(Meta), PhysicalKey::Code(KeyCode::MetaLeft)),
             "enter" => (Key::Named(Enter), PhysicalKey::Code(KeyCode::Enter)),
             "tab" => (Key::Named(Tab), PhysicalKey::Code(KeyCode::Tab)),
             "arrowdown" => (Key::Named(ArrowDown), PhysicalKey::Code(KeyCode::ArrowDown)),
@@ -720,9 +720,6 @@ impl Display for KeyInput {
                 PhysicalKey::Code(KeyCode::AudioVolumeMute) => f.write_str("AudioVolumeMute"),
                 PhysicalKey::Code(KeyCode::AudioVolumeUp) => f.write_str("AudioVolumeUp"),
                 PhysicalKey::Code(KeyCode::WakeUp) => f.write_str("WakeUp"),
-
-                // PhysicalKey::Code(KeyCode::Hyper) => f.write_str("Hyper"),
-                // PhysicalKey::Code(KeyCode::Turbo) => f.write_str("Turbo"),
                 PhysicalKey::Code(KeyCode::Abort) => f.write_str("Abort"),
                 PhysicalKey::Code(KeyCode::Resume) => f.write_str("Resume"),
                 PhysicalKey::Code(KeyCode::Suspend) => f.write_str("Suspend"),
