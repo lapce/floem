@@ -390,9 +390,9 @@ impl ApplicationHandle {
 
         #[cfg(target_os = "windows")]
         {
-            // use winit::platform::windows::WindowAttributesExtWindows;
+            use winit::platform::windows::WindowAttributesWindows;
             // use winit::platform::windows::WindowExtWindows;
-            // window_attributes = window_attributes.with_decorations(undecorated_shadow);
+            window_attributes = window_attributes.with_decorations(undecorated_shadow);
             // window_attributes = window_attributes.with_platform_attributes();
             // window_attributes = window_attributes.platform.with_undecorated_shadow(undecorated_shadow);
         }
