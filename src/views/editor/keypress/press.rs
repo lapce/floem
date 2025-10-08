@@ -43,9 +43,8 @@ impl KeyPress {
         if let KeyInput::Keyboard(_, scancode) = &self.key {
             matches!(
                 scancode,
-                PhysicalKey::Code(KeyCode::Meta)
-                    | PhysicalKey::Code(KeyCode::SuperLeft)
-                    | PhysicalKey::Code(KeyCode::SuperRight)
+                PhysicalKey::Code(KeyCode::MetaLeft)
+                    | PhysicalKey::Code(KeyCode::MetaRight)
                     | PhysicalKey::Code(KeyCode::ShiftLeft)
                     | PhysicalKey::Code(KeyCode::ShiftRight)
                     | PhysicalKey::Code(KeyCode::ControlLeft)

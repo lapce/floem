@@ -732,7 +732,7 @@ impl TextInput {
                 .text
                 .as_ref()
                 .is_some_and(|ch| self.insert_text(ch)),
-            Key::Named(NamedKey::Space) => {
+            Key::Character(ref c) if c == " " => {
                 if let Some(selection) = &self.selection {
                     self.buffer
                         .update(|buf| replace_range(buf, selection.clone(), None));

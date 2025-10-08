@@ -40,7 +40,7 @@ wgpu = { version = "26.0" }
 parking_lot = { version = "0.12" }
 swash = { version = "0.2" }
 muda = { version = "0.17.1", default-features = false }
-winit = { git = "https://github.com/rust-windowing/winit", rev = "ee245c569d65fdeacf705ee5eedb564508d10ebe" }
+winit = { git = "https://github.com/lapce/winit", rev = "262a8c661e4e1e782410a5903564e0a66c3c095e", package = "floem-winit" }
 
 [dependencies]
 slotmap = "1.0"

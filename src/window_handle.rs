@@ -6,6 +6,9 @@ use muda::MenuId;
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
 use web_time::{Duration, Instant};
+use winit::window::{
+    ImeCapabilities, ImeEnableRequest, ImeHint, ImePurpose, ImeRequest, ImeRequestData,
+};
 
 use floem_reactive::{with_scope, RwSignal, Scope, SignalGet, SignalUpdate};
 use floem_renderer::gpu_resources::GpuResources;
@@ -13,10 +16,11 @@ use floem_renderer::Renderer;
 use peniko::color::palette;
 use peniko::kurbo::{Affine, Point, Size, Vec2};
 use winit::{
+    cursor::CursorIcon,
     dpi::{LogicalPosition, LogicalSize},
     event::{ButtonSource, ElementState, Ime, MouseScrollDelta, TouchPhase},
     keyboard::{Key, ModifiersState, NamedKey},
-    window::{CursorIcon, Window, WindowId},
+    window::{Window, WindowId},
 };
 
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
@@ -33,7 +37,7 @@ use crate::{
     context::{
         ComputeLayoutCx, EventCx, FrameUpdate, LayoutCx, PaintCx, PaintState, StyleCx, UpdateCx,
     },
-    dropped_file::DroppedFileEvent,
+    dropped_file::DroppedFilesEvent,
     event::{Event, EventListener},
     id::ViewId,
     inspector::{self, Capture, CaptureState, CapturedView},
@@ -84,7 +88,7 @@ pub(crate) struct WindowHandle {
     pub(crate) context_menu: RwSignal<Option<(muda::Menu, Point, bool)>>,
     pub(crate) window_menu_actions: HashMap<MenuId, Box<dyn Fn()>>,
     pub(crate) window_menu: Option<muda::Menu>,
-    dropper_file: Option<PathBuf>,
+    dropper_files: Option<Vec<PathBuf>>,
 }
 
 impl WindowHandle {
@@ -198,7 +202,7 @@ impl WindowHandle {
             window_menu_actions: HashMap::new(),
             window_menu: None,
             last_pointer_down: None,
-            dropper_file: None,
+            dropper_files: None,
         };
         if paint_state_initialized {
             window_handle.init_renderer(gpu_resources);
@@ -499,13 +503,13 @@ impl WindowHandle {
         }
     }
 
-    pub(crate) fn dropped_file(&mut self, path: PathBuf) {
-        self.dropper_file = Some(path.clone());
+    pub(crate) fn dropped_files(&mut self, paths: Vec<PathBuf>) {
+        self.dropper_files = Some(paths);
     }
 
     pub(crate) fn pointer_move(&mut self, pos: Point) {
-        if let Some(path) = self.dropper_file.take() {
-            self.event(Event::DroppedFile(DroppedFileEvent { path, pos }));
+        if let Some(path) = self.dropper_files.take() {
+            self.event(Event::DroppedFiles(DroppedFilesEvent { path, pos }));
         }
         if self.cursor_position != pos {
             self.cursor_position = pos;
@@ -1051,19 +1055,50 @@ impl WindowHandle {
                         self.window.set_title(&title);
                     }
                     UpdateMessage::SetImeAllowed { allowed } => {
-                        self.window.set_ime_allowed(allowed);
+                        let ime = match allowed {
+                            true => {
+                                let position = LogicalPosition::new(0, 0);
+                                let size = LogicalSize::new(0, 0);
+                                let request_data = ImeRequestData::default()
+                                    .with_cursor_area(position.into(), size.into())
+                                    .with_hint_and_purpose(ImeHint::NONE, ImePurpose::Normal);
+                                ImeRequest::Enable(
+                                    ImeEnableRequest::new(
+                                        ImeCapabilities::new()
+                                            .without_hint_and_purpose()
+                                            .with_cursor_area(),
+                                        request_data,
+                                    )
+                                    .unwrap(),
+                                ) // FIXME
+                            }
+                            false => ImeRequest::Disable,
+                        };
+                        // self.window.set_ime_allowed(allowed);
+                        self.window.request_ime_update(ime).unwrap();
                     }
                     UpdateMessage::SetImeCursorArea { position, size } => {
-                        self.window.set_ime_cursor_area(
-                            winit::dpi::Position::Logical(winit::dpi::LogicalPosition::new(
-                                position.x * self.app_state.scale,
-                                position.y * self.app_state.scale,
-                            )),
-                            winit::dpi::Size::Logical(winit::dpi::LogicalSize::new(
+                        if self
+                            .window
+                            .ime_capabilities()
+                            .map(|caps| caps.cursor_area())
+                            .unwrap_or(false)
+                        {
+                            let position =
+                                winit::dpi::Position::Logical(winit::dpi::LogicalPosition::new(
+                                    position.x * self.app_state.scale,
+                                    position.y * self.app_state.scale,
+                                ));
+                            let size = winit::dpi::Size::Logical(winit::dpi::LogicalSize::new(
                                 size.width * self.app_state.scale,
                                 size.height * self.app_state.scale,
-                            )),
-                        );
+                            ));
+                            self.window
+                                .request_ime_update(ImeRequest::Update(
+                                    ImeRequestData::default().with_cursor_area(position, size),
+                                ))
+                                .unwrap();
+                        }
                     }
                     UpdateMessage::Inspect => {
                         inspector::capture(self.window_id);
@@ -1260,6 +1295,9 @@ impl WindowHandle {
             }
             Ime::Disabled => {
                 self.event(Event::ImeDisabled);
+            }
+            Ime::DeleteSurrounding { .. } => {
+                // TODO?
             }
         }
     }

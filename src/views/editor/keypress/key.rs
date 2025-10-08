@@ -4,6 +4,8 @@ use std::{
     str::FromStr,
 };
 
+use winit::keyboard::SmolStr;
+
 use crate::{
     keyboard::{Key, KeyCode, NativeKey, PhysicalKey},
     pointer::{MouseButton, PointerButton},
@@ -95,7 +97,7 @@ impl KeyInput {
             "control" => (Key::Named(Control), PhysicalKey::Code(KeyCode::ControlLeft)),
             "fn" => (Key::Named(Fn), PhysicalKey::Code(KeyCode::Fn)),
             "fnlock" => (Key::Named(FnLock), PhysicalKey::Code(KeyCode::FnLock)),
-            "meta" => (Key::Named(Meta), PhysicalKey::Code(KeyCode::Meta)),
+            "meta" => (Key::Named(Meta), PhysicalKey::Code(KeyCode::MetaLeft)),
             "numlock" => (Key::Named(NumLock), PhysicalKey::Code(KeyCode::NumLock)),
             "scrolllock" => (
                 Key::Named(ScrollLock),
@@ -104,8 +106,8 @@ impl KeyInput {
             "shift" => (Key::Named(Shift), PhysicalKey::Code(KeyCode::ShiftLeft)),
             "symbol" => (Key::Named(Symbol), PhysicalKey::Code(KeyCode::Fn)),
             "symbollock" => (Key::Named(SymbolLock), PhysicalKey::Code(KeyCode::Fn)),
-            "hyper" => (Key::Named(Hyper), PhysicalKey::Code(KeyCode::Hyper)),
-            "super" => (Key::Named(Super), PhysicalKey::Code(KeyCode::Meta)),
+            "hyper" => (Key::Named(Meta), PhysicalKey::Code(KeyCode::MetaLeft)),
+            "super" => (Key::Named(Meta), PhysicalKey::Code(KeyCode::MetaLeft)),
             "enter" => (Key::Named(Enter), PhysicalKey::Code(KeyCode::Enter)),
             "tab" => (Key::Named(Tab), PhysicalKey::Code(KeyCode::Tab)),
             "arrowdown" => (Key::Named(ArrowDown), PhysicalKey::Code(KeyCode::ArrowDown)),
@@ -531,7 +533,10 @@ impl KeyInput {
 
             // Custom key name mappings
             "esc" => (Key::Named(Escape), PhysicalKey::Code(KeyCode::Escape)),
-            "space" => (Key::Named(Space), PhysicalKey::Code(KeyCode::Space)),
+            "space" => (
+                Key::Character(SmolStr::new(" ")),
+                PhysicalKey::Code(KeyCode::Space),
+            ),
             "bs" => (Key::Named(Backspace), PhysicalKey::Code(KeyCode::Backspace)),
             "up" => (Key::Named(ArrowUp), PhysicalKey::Code(KeyCode::ArrowUp)),
             "down" => (Key::Named(ArrowDown), PhysicalKey::Code(KeyCode::ArrowDown)),
@@ -621,12 +626,12 @@ impl Display for KeyInput {
                 PhysicalKey::Code(KeyCode::ControlLeft) => f.write_str("Ctrl"),
                 PhysicalKey::Code(KeyCode::ControlRight) => f.write_str("Ctrl"),
                 PhysicalKey::Code(KeyCode::Enter) => f.write_str("Enter"),
-                PhysicalKey::Code(KeyCode::SuperLeft) => match std::env::consts::OS {
+                PhysicalKey::Code(KeyCode::MetaLeft) => match std::env::consts::OS {
                     "macos" => f.write_str("Cmd"),
                     "windows" => f.write_str("Win"),
                     _ => f.write_str("Meta"),
                 },
-                PhysicalKey::Code(KeyCode::SuperRight) => match std::env::consts::OS {
+                PhysicalKey::Code(KeyCode::MetaRight) => match std::env::consts::OS {
                     "macos" => f.write_str("Cmd"),
                     "windows" => f.write_str("Win"),
                     _ => f.write_str("Meta"),
@@ -715,13 +720,6 @@ impl Display for KeyInput {
                 PhysicalKey::Code(KeyCode::AudioVolumeMute) => f.write_str("AudioVolumeMute"),
                 PhysicalKey::Code(KeyCode::AudioVolumeUp) => f.write_str("AudioVolumeUp"),
                 PhysicalKey::Code(KeyCode::WakeUp) => f.write_str("WakeUp"),
-                PhysicalKey::Code(KeyCode::Meta) => match std::env::consts::OS {
-                    "macos" => f.write_str("Cmd"),
-                    "windows" => f.write_str("Win"),
-                    _ => f.write_str("Meta"),
-                },
-                PhysicalKey::Code(KeyCode::Hyper) => f.write_str("Hyper"),
-                PhysicalKey::Code(KeyCode::Turbo) => f.write_str("Turbo"),
                 PhysicalKey::Code(KeyCode::Abort) => f.write_str("Abort"),
                 PhysicalKey::Code(KeyCode::Resume) => f.write_str("Resume"),
                 PhysicalKey::Code(KeyCode::Suspend) => f.write_str("Suspend"),

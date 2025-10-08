@@ -5,7 +5,7 @@ use crate::{
     context::{LayoutCx, PaintCx, UpdateCx},
     event::{Event, EventListener, EventPropagation},
     id::ViewId,
-    keyboard::{Key, Modifiers, NamedKey},
+    keyboard::{Key, Modifiers},
     kurbo::{BezPath, Line, Point, Rect, Size, Vec2},
     peniko::Color,
     reactive::{batch, create_effect, create_memo, create_rw_signal, Memo, RwSignal, Scope},
@@ -1204,9 +1204,6 @@ fn editor_content(
                 if mods.is_empty() {
                     if let KeyInput::Keyboard(Key::Character(c), _) = keypress.key {
                         editor.get_untracked().receive_char(&c);
-                    } else if let KeyInput::Keyboard(Key::Named(NamedKey::Space), _) = keypress.key
-                    {
-                        editor.get_untracked().receive_char(" ");
                     } else if let KeyInput::Keyboard(Key::Unidentified(_), _) = keypress.key {
                         if let Some(text) = key_text {
                             editor.get_untracked().receive_char(&text);

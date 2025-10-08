@@ -264,10 +264,11 @@ impl<T: 'static + Clone> View for Dropdown<T> {
                 return EventPropagation::Stop;
             }
             Event::KeyUp(ref key_event)
-                if matches!(
-                    key_event.key.logical_key,
-                    Key::Named(NamedKey::Enter) | Key::Named(NamedKey::Space)
-                ) =>
+                if matches!(key_event.key.logical_key, Key::Named(NamedKey::Enter))
+                    | matches!(
+                        key_event.key.logical_key,
+                        Key::Character(ref c) if c == " "
+                    ) =>
             {
                 self.swap_state()
             }

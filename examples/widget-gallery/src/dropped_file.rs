@@ -8,7 +8,7 @@ use floem::{
 pub fn dropped_file_view() -> impl IntoView {
     let filename = RwSignal::new("".to_string());
 
-    let dropped_view = dyn_view(move || "dropped file".to_string())
+    let dropped_view = dyn_view(move || "dropped file(s)".to_string())
         .style(|s| {
             s.size(200.0, 50.0)
                 .background(palette::css::GRAY)
@@ -24,14 +24,14 @@ pub fn dropped_file_view() -> impl IntoView {
             move |_| floem::action::inspect(),
         )
         .on_event_stop(EventListener::DroppedFile, move |e| {
-            if let Event::DroppedFile(e) = e {
-                println!("DroppedFile {e:?}");
+            if let Event::DroppedFiles(e) = e {
+                println!("DroppedFile(s) {e:?}");
                 filename.set(format!("{:?}", e.path));
             }
         });
 
     form((
-        form_item("File:", label(move || filename.get())),
+        form_item("Files:", label(move || filename.get())),
         form_item("", dropped_view),
     ))
 }
