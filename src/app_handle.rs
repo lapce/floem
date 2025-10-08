@@ -334,6 +334,9 @@ impl ApplicationHandle {
         let logical_min_size = min_size.map(|size| LogicalSize::new(size.width, size.height));
         let logical_max_size = max_size.map(|size| LogicalSize::new(size.width, size.height));
 
+        #[cfg(target_os = "macos")]
+        let mut mac_attrs = winit::platform::macos::WindowAttributesMacOS::default();
+
         let mut window_attributes = winit::window::WindowAttributes::default()
             .with_visible(false)
             .with_title(title)
@@ -399,8 +402,7 @@ impl ApplicationHandle {
 
         #[cfg(target_os = "macos")]
         if !show_titlebar {
-            use winit::platform::macos::WindowAttributesExtMacOS;
-            window_attributes = window_attributes
+            mac_attrs = mac_attrs
                 .with_movable_by_window_background(false)
                 .with_title_hidden(true)
                 .with_titlebar_transparent(true)
@@ -410,60 +412,62 @@ impl ApplicationHandle {
 
         #[cfg(target_os = "macos")]
         if undecorated {
-            use winit::platform::macos::WindowAttributesExtMacOS;
             // A palette-style window that will only obtain window focus but
             // not actually propagate the first mouse click it receives is
             // very unlikely to be expected behavior - these typically are
             // used for something that offers a quick choice and are closed
             // in a single pointer gesture.
-            window_attributes = window_attributes.with_accepts_first_mouse(true);
+            mac_attrs = mac_attrs.with_accepts_first_mouse(true);
         }
 
         #[cfg(target_os = "macos")]
         if let Some(mac) = &mac_os_config {
-            use winit::platform::macos::WindowAttributesExtMacOS;
             if let Some(val) = mac.movable_by_window_background {
-                window_attributes = window_attributes.with_movable_by_window_background(val);
+                mac_attrs = mac_attrs.with_movable_by_window_background(val);
             }
             if let Some(val) = mac.titlebar_transparent {
-                window_attributes = window_attributes.with_titlebar_transparent(val);
+                mac_attrs = mac_attrs.with_titlebar_transparent(val);
             }
             if let Some(val) = mac.titlebar_hidden {
-                window_attributes = window_attributes.with_titlebar_hidden(val);
+                mac_attrs = mac_attrs.with_titlebar_hidden(val);
             }
             if let Some(val) = mac.title_hidden {
-                window_attributes = window_attributes.with_title_hidden(val);
+                mac_attrs = mac_attrs.with_title_hidden(val);
             }
             if let Some(val) = mac.full_size_content_view {
-                window_attributes = window_attributes.with_fullsize_content_view(val);
+                mac_attrs = mac_attrs.with_fullsize_content_view(val);
             }
             if let Some(val) = mac.unified_titlebar {
-                window_attributes = window_attributes.with_unified_titlebar(val);
+                mac_attrs = mac_attrs.with_unified_titlebar(val);
             }
             if let Some(val) = mac.movable {
-                window_attributes = window_attributes.with_movable_by_window_background(val);
+                mac_attrs = mac_attrs.with_movable_by_window_background(val);
             }
             if let Some(val) = mac.accepts_first_mouse {
-                window_attributes = window_attributes.with_accepts_first_mouse(val);
+                mac_attrs = mac_attrs.with_accepts_first_mouse(val);
             }
             if let Some(val) = mac.option_as_alt {
-                window_attributes = window_attributes.with_option_as_alt(val.into());
+                mac_attrs = mac_attrs.with_option_as_alt(val.into());
             }
             if let Some(title) = &mac.tabbing_identifier {
-                window_attributes = window_attributes.with_tabbing_identifier(title.as_str());
+                mac_attrs = mac_attrs.with_tabbing_identifier(title.as_str());
             }
             if let Some(disallow_hidpi) = mac.disallow_high_dpi {
-                window_attributes = window_attributes.with_disallow_hidpi(disallow_hidpi);
+                mac_attrs = mac_attrs.with_disallow_hidpi(disallow_hidpi);
             }
             if let Some(shadow) = mac.has_shadow {
-                window_attributes = window_attributes.with_has_shadow(shadow);
+                mac_attrs = mac_attrs.with_has_shadow(shadow);
             }
             if let Some(hide) = mac.titlebar_buttons_hidden {
-                window_attributes = window_attributes.with_titlebar_buttons_hidden(hide)
+                mac_attrs = mac_attrs.with_titlebar_buttons_hidden(hide)
             }
             if let Some(panel) = mac.panel {
-                window_attributes = window_attributes.with_panel(panel)
+                mac_attrs = mac_attrs.with_panel(panel)
             }
+        }
+        #[cfg(target_os = "macos")]
+        {
+            window_attributes = window_attributes.with_platform_attributes(Box::new(mac_attrs));
         }
 
         let Ok(window) = event_loop.create_window(window_attributes) else {
