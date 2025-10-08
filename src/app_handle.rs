@@ -316,9 +316,9 @@ impl ApplicationHandle {
             position,
             show_titlebar,
             transparent,
-            fullscreen,
-            window_icon,
-            title,
+            fullscreen,  //
+            window_icon, //
+            title,       //
             enabled_buttons,
             resizable,
             undecorated,
@@ -387,6 +387,25 @@ impl ApplicationHandle {
         #[cfg(not(target_os = "macos"))]
         if !show_titlebar {
             window_attributes = window_attributes.with_decorations(false);
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            use winit::platform::windows::WindowAttributesWindows;
+            let mut win =
+                WindowAttributesWindows::default().with_undecorated_shadow(undecorated_shadow);
+            if let Some(cfg) = win_os_config {
+                win = win
+                    .with_title_background_color(cfg.set_title_background_color)
+                    .with_border_color(cfg.set_border_color)
+                    .with_skip_taskbar(cfg.set_skip_taskbar)
+                    .with_corner_preference(cfg.corner_preference)
+                    .with_system_backdrop(cfg.set_system_backdrop);
+                if let Some(color) = cfg.set_title_text_color {
+                    win = win.with_title_text_color(color);
+                }
+            }
+            window_attributes = window_attributes.with_platform_attributes(Box::new(win));
         }
 
         #[cfg(target_os = "macos")]
