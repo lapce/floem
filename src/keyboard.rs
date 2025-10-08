@@ -2,8 +2,7 @@ use bitflags::bitflags;
 pub use winit::keyboard::{
     Key, KeyCode, KeyLocation, ModifiersState, NamedKey, NativeKey, PhysicalKey,
 };
-#[cfg(not(any(target_arch = "wasm32", target_os = "ios", target_os = "android")))]
-pub use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+// #[cfg(not(any(target_arch = "wasm32", target_os = "ios", target_os = "android")))]
 
 /// Represents a single keyboard input with any active modifier keys.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -66,7 +65,7 @@ impl From<ModifiersState> for Modifiers {
         if value.control_key() {
             modifiers.set(Modifiers::CONTROL, true);
         }
-        if value.super_key() {
+        if value.meta_key() {
             modifiers.set(Modifiers::META, true);
         }
         modifiers

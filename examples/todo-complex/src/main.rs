@@ -93,7 +93,7 @@ fn app_view() -> impl IntoView {
             },
         )
         .on_key_down(
-            Key::Named(NamedKey::Space),
+            Key::Character(" ".into()),
             |m| m.is_empty(),
             |_| {
                 AppCommand::AppAction.execute();

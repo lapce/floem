@@ -143,7 +143,11 @@ where
                     }
                     EventPropagation::Stop
                 }
-                Key::Named(NamedKey::Enter) | Key::Named(NamedKey::Space) => {
+                Key::Named(NamedKey::Enter) => {
+                    list_id.update_state(ListUpdate::Accept);
+                    EventPropagation::Stop
+                }
+                Key::Character(ref c) if c == " " => {
                     list_id.update_state(ListUpdate::Accept);
                     EventPropagation::Stop
                 }

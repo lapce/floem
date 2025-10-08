@@ -177,11 +177,11 @@ impl ApplicationHandler for Application {
         self.handle.handle_updates_for_all_windows();
     }
 
-    fn exiting(&mut self, _event_loop: &dyn ActiveEventLoop) {
-        if let Some(action) = self.handle.event_listener.as_ref() {
-            action(AppEvent::WillTerminate);
-        }
-    }
+    // fn exiting(&mut self, _event_loop: &dyn ActiveEventLoop) {
+    //     if let Some(action) = self.handle.event_listener.as_ref() {
+    //         action(AppEvent::WillTerminate);
+    //     }
+    // }
 
     fn about_to_wait(&mut self, event_loop: &dyn ActiveEventLoop) {
         self.handle.handle_timer(event_loop);

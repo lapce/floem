@@ -5,7 +5,7 @@ use winit::{
 };
 
 use crate::{
-    dropped_file::DroppedFileEvent,
+    dropped_file::DroppedFilesEvent,
     keyboard::KeyEvent,
     pointer::{PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
     touchpad::PinchGestureEvent,
@@ -112,7 +112,7 @@ pub enum Event {
     PointerWheel(PointerWheelEvent),
     PointerLeave,
     PinchGesture(PinchGestureEvent),
-    DroppedFile(DroppedFileEvent),
+    DroppedFiles(DroppedFilesEvent),
     KeyDown(KeyEvent),
     KeyUp(KeyEvent),
     ImeEnabled,
@@ -157,7 +157,7 @@ impl Event {
             | Event::WindowScaleChanged(_)
             | Event::WindowGotFocus
             | Event::WindowLostFocus
-            | Event::DroppedFile(_) => false,
+            | Event::DroppedFiles(_) => false,
             Event::KeyDown(_) | Event::KeyUp(_) => true,
         }
     }
@@ -186,7 +186,7 @@ impl Event {
             | Event::WindowScaleChanged(_)
             | Event::WindowGotFocus
             | Event::WindowLostFocus
-            | Event::DroppedFile(_) => false,
+            | Event::DroppedFiles(_) => false,
         }
     }
 
@@ -229,7 +229,7 @@ impl Event {
             | Event::WindowMaximizeChanged(_)
             | Event::WindowScaleChanged(_)
             | Event::WindowLostFocus
-            | Event::DroppedFile(_) => true,
+            | Event::DroppedFiles(_) => true,
         }
     }
 
@@ -240,7 +240,7 @@ impl Event {
             }
             Event::PointerMove(pointer_event) => Some(pointer_event.pos),
             Event::PointerWheel(pointer_event) => Some(pointer_event.pos),
-            Event::DroppedFile(event) => Some(event.pos),
+            Event::DroppedFiles(event) => Some(event.pos),
             Event::PinchGesture(_)
             | Event::PointerLeave
             | Event::KeyDown(_)
@@ -277,7 +277,7 @@ impl Event {
             Event::PointerWheel(pointer_event) => {
                 pointer_event.pos = transform.inverse() * pointer_event.pos;
             }
-            Event::DroppedFile(event) => {
+            Event::DroppedFiles(event) => {
                 event.pos = transform.inverse() * event.pos;
             }
             Event::PinchGesture(_)
@@ -326,7 +326,7 @@ impl Event {
             Event::FocusLost => Some(EventListener::FocusLost),
             Event::FocusGained => Some(EventListener::FocusGained),
             Event::ThemeChanged(_) => Some(EventListener::ThemeChanged),
-            Event::DroppedFile(_) => Some(EventListener::DroppedFile),
+            Event::DroppedFiles(_) => Some(EventListener::DroppedFile),
         }
     }
 }

@@ -1,8 +1,9 @@
 use peniko::kurbo::{Point, Size};
+pub use winit::icon::{Icon, RgbaIcon};
+pub use winit::monitor::Fullscreen;
+pub use winit::platform::windows::WinIcon;
 #[cfg(windows)]
-pub use winit::platform::windows::IconExtWindows;
-pub use winit::window::Fullscreen;
-pub use winit::window::Icon;
+pub use winit::platform::windows::WindowExtWindows;
 pub use winit::window::ResizeDirection;
 pub use winit::window::Theme;
 pub use winit::window::WindowButtons;

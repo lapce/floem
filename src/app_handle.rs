@@ -172,9 +172,6 @@ impl ApplicationHandle {
                 WindowEvent::Moved(..) => "Moved",
                 WindowEvent::CloseRequested => "CloseRequested",
                 WindowEvent::Destroyed => "Destroyed",
-                WindowEvent::DroppedFile(_) => "DroppedFile",
-                WindowEvent::HoveredFile(_) => "HoveredFile",
-                WindowEvent::HoveredFileCancelled => "HoveredFileCancelled",
                 WindowEvent::Focused(..) => "Focused",
                 WindowEvent::KeyboardInput { .. } => "KeyboardInput",
                 WindowEvent::ModifiersChanged(..) => "ModifiersChanged",
@@ -193,7 +190,10 @@ impl ApplicationHandle {
                 WindowEvent::PanGesture { .. } => "PanGesture",
                 WindowEvent::DoubleTapGesture { .. } => "DoubleTapGesture",
                 WindowEvent::RotationGesture { .. } => "RotationGesture",
-                // WindowEvent::MenuAction(..) => "MenuAction",
+                WindowEvent::DragDropped { .. } => "DroppedFile",
+                WindowEvent::DragEntered { .. } => todo!(),
+                WindowEvent::DragLeft { .. } => todo!(),
+                WindowEvent::DragMoved { .. } => todo!(),
             };
             (
                 name,
@@ -220,11 +220,18 @@ impl ApplicationHandle {
             WindowEvent::Destroyed => {
                 self.close_window(window_id, event_loop);
             }
-            WindowEvent::DroppedFile(path) => {
-                window_handle.dropped_file(path);
+            WindowEvent::DragDropped { paths, .. } => {
+                window_handle.dropped_files(paths);
             }
-            WindowEvent::HoveredFile(_) => {}
-            WindowEvent::HoveredFileCancelled => {}
+            WindowEvent::DragEntered { .. } => {
+                // TODO!
+            }
+            WindowEvent::DragLeft { .. } => {
+                // TODO!
+            }
+            WindowEvent::DragMoved { .. } => {
+                // TODO!
+            }
             WindowEvent::Focused(focused) => {
                 window_handle.focused(focused);
             }
@@ -383,8 +390,11 @@ impl ApplicationHandle {
 
         #[cfg(target_os = "windows")]
         {
-            use winit::platform::windows::WindowAttributesExtWindows;
-            window_attributes = window_attributes.with_undecorated_shadow(undecorated_shadow);
+            // use winit::platform::windows::WindowAttributesExtWindows;
+            // use winit::platform::windows::WindowExtWindows;
+            // window_attributes = window_attributes.with_decorations(undecorated_shadow);
+            // window_attributes = window_attributes.with_platform_attributes();
+            // window_attributes = window_attributes.platform.with_undecorated_shadow(undecorated_shadow);
         }
 
         #[cfg(target_os = "macos")]
