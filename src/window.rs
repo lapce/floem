@@ -1,6 +1,8 @@
 use peniko::kurbo::{Point, Size};
+use peniko::Color;
 pub use winit::icon::{Icon, RgbaIcon};
 pub use winit::monitor::Fullscreen;
+use winit::platform::windows::{BackdropType, CornerPreference};
 pub use winit::platform::windows::WinIcon;
 #[cfg(windows)]
 pub use winit::platform::windows::WindowExtWindows;
@@ -67,6 +69,7 @@ impl Default for WindowConfig {
             apply_default_theme: true,
             font_embolden: if cfg!(target_os = "macos") { 0.2 } else { 0. },
             mac_os_config: None,
+            win_os_config: None,
             web_config: None,
         }
     }
@@ -394,6 +397,119 @@ impl From<MacOsOptionAsAlt> for winit::platform::macos::OptionAsAlt {
             MacOsOptionAsAlt::Both => winit::platform::macos::OptionAsAlt::Both,
             MacOsOptionAsAlt::None => winit::platform::macos::OptionAsAlt::None,
         }
+    }
+}
+
+// Windows specific window configuration properties.
+#[derive(Debug, Clone)]
+pub struct WinOSWindowConfig {
+    pub(crate) top_resize_border: bool,
+    pub(crate) corner_preference: CornerPreference,
+    pub(crate) set_enable: bool,
+    pub(crate) set_taskbar_icon: Option<Icon>,
+    pub(crate) set_skip_taskbar: bool,
+    // /// Shows or hides the background drop shadow for undecorated windows.
+    // ///
+    // /// Enabling the shadow causes a thin 1px line to appear on the top of the window.
+    // pub(crate) set_undecorated_shadow: bool,
+    pub(crate) set_system_backdrop: BackdropType,
+    pub(crate) set_border_color: Option<Color>,
+    pub(crate) set_title_background_color: Option<Color>,
+    pub(crate) set_title_text_color: Option<Color>,
+}
+
+impl Default for WinOSWindowConfig {
+    fn default() -> Self {
+        Self {
+            top_resize_border: true,
+            corner_preference: CornerPreference::Default,
+            set_enable: true,
+            set_taskbar_icon: None,
+            set_skip_taskbar: false,
+            set_system_backdrop: BackdropType::Auto,
+            set_border_color: None,
+            set_title_background_color: None,
+            set_title_text_color: None,
+        }
+    }
+}
+
+impl WinOSWindowConfig {    
+    /// Turn window top resize border on or off (for windows without a title bar).
+    /// By default this is enabled.
+    pub fn top_resize_border(mut self, top_resize_border: bool) -> Self {
+        self.top_resize_border = top_resize_border;
+        self
+    }
+
+    /// Sets the preferred style of the window corners.
+    ///
+    /// Supported starting with Windows 11 Build 22000.
+    pub fn corner_preference(mut self, corner_preference: CornerPreference) -> Self {
+        self.corner_preference = corner_preference;
+        self
+    }
+
+    /// Enables or disables mouse and keyboard input to the specified window.
+    ///
+    /// A window must be enabled before it can be activated.
+    /// If an application has create a modal dialog box by disabling its owner window
+    /// (as described in [`WindowAttributesExtWindows::with_owner_window`]), the application must
+    /// enable the owner window before destroying the dialog box.
+    /// Otherwise, another window will receive the keyboard focus and be activated.
+    ///
+    /// If a child window is disabled, it is ignored when the system tries to determine which
+    /// window should receive mouse messages.
+    ///
+    /// For more information, see <https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-enablewindow#remarks>
+    /// and <https://docs.microsoft.com/en-us/windows/win32/winmsg/window-features#disabled-windows>.
+    pub fn set_enable(mut self, set_enable: bool) -> Self {
+        self.set_enable = set_enable;
+        self
+    }
+
+    /// This sets `ICON_BIG`. A good ceiling here is 256x256.
+    pub fn set_taskbar_icon(mut self, set_taskbar_icon: Option<Icon>) -> Self {
+        self.set_taskbar_icon = set_taskbar_icon;
+        self
+    }
+    
+    /// Whether to show or hide the window icon in the taskbar.
+    pub fn set_skip_taskbar(mut self, set_skip_taskbar: bool) -> Self {
+        self.set_skip_taskbar = set_skip_taskbar;
+        self
+    }
+    
+    /// Sets system-drawn backdrop type.
+    ///
+    /// Requires Windows 11 build 22523+.
+    pub fn set_system_backdrop(mut self, set_system_backdrop: BackdropType) -> Self {
+        self.set_system_backdrop = set_system_backdrop;
+        self
+    }
+   
+    /// Sets the color of the window border.
+    ///
+    /// Supported starting with Windows 11 Build 22000.
+    pub fn set_border_color(mut self, set_border_color: Option<Color>) -> Self {
+        self.set_border_color = set_border_color;
+        self
+    }
+    
+    /// Sets the background color of the title bar.
+    ///
+    /// Supported starting with Windows 11 Build 22000.
+    pub fn set_title_background_color(mut self, set_title_background_color: Option<Color>) -> Self {
+        self.set_title_background_color = set_title_background_color;
+        self
+    }
+    
+    /// Sets the color of the window title.
+    ///
+    /// Supported starting with Windows 11 Build 22000.
+    pub fn set_title_text_color(mut self, set_title_text_color: Option<Color>) -> Self {
+        self.set_title_text_color = set_title_text_color;
+        self
     }
 }
 

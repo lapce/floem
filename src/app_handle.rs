@@ -326,6 +326,7 @@ impl ApplicationHandle {
             window_level,
             apply_default_theme,
             mac_os_config,
+            win_os_config,
             web_config,
             font_embolden,
         }: WindowConfig,
@@ -383,18 +384,42 @@ impl ApplicationHandle {
             window_attributes = window_attributes.with_max_surface_size(logical_max_size);
         }
 
-        #[cfg(not(target_os = "macos"))]
-        if !show_titlebar {
-            window_attributes = window_attributes.with_decorations(false);
-        }
+        // #[cfg(not(target_os = "macos"))]
+        // if !show_titlebar {
+        //     window_attributes = window_attributes.with_decorations(false);
+        // }
 
-        #[cfg(target_os = "windows")]
+       #[cfg(target_os = "windows")]
         {
-            use winit::platform::windows::WindowAttributesWindows;
+            // use winit::platform::windows::WindowAttributesWindows;
             // use winit::platform::windows::WindowExtWindows;
-            window_attributes = window_attributes.with_decorations(undecorated_shadow);
-            // window_attributes = window_attributes.with_platform_attributes();
-            // window_attributes = window_attributes.platform.with_undecorated_shadow(undecorated_shadow);
+            if !show_titlebar {
+                window_attributes = window_attributes
+                    // .with_titlebar(false)
+                    .with_top_resize_border(false);
+            }
+                // .with_undecorated_shadow(undecorated_shadow)
+            if let Some(win_os) = win_os_config {
+                window_attributes = window_attributes
+                    // .with_corner_preference(win_os.corner_preference)
+                    .with_top_resize_border(win_os.top_resize_border)
+                    .with_taskbar_icon(win_os.set_taskbar_icon)
+                    .with_skip_taskbar(win_os.set_skip_taskbar)
+                    .with_system_backdrop(win_os.set_system_backdrop)
+                    .with_border_color(win_os.set_border_color)
+                    .with_title_background_color(win_os.set_title_background_color);
+                if let Some(c) = win_os.set_title_text_color {
+                    // window_attributes = window_attributes.with_title_text_color(c);
+                }
+                // TODO: set_enable
+            }
+            // .with_decorations(decorations)
+            // window.set_titlebar(false);
+            // window.set_system_backdrop(winit::platform::windows::BackdropType::None);
+            // window.set_top_resize_border(false);
+            // // window.set_enabled_buttons(WindowButtons::all());
+            // window.set_corner_preference(winit::platform::windows::CornerPreference::Round)
+            // ;
         }
 
         #[cfg(target_os = "macos")]
