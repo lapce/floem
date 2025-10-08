@@ -326,7 +326,6 @@ impl ApplicationHandle {
             window_level,
             apply_default_theme,
             mac_os_config,
-            #[cfg(target_os = "windows")]
             win_os_config,
             web_config,
             font_embolden,
@@ -399,15 +398,16 @@ impl ApplicationHandle {
             let mut win =
                 WindowAttributesWindows::default().with_undecorated_shadow(undecorated_shadow);
             if let Some(cfg) = win_os_config {
+                use crate::window::convert_to_win;
                 win = win
-                    .with_title_background_color(cfg.set_title_background_color)
-                    .with_border_color(cfg.set_border_color)
+                    .with_title_background_color(convert_to_win(cfg.set_title_background_color))
+                    .with_border_color(convert_to_win(cfg.set_border_color))
                     .with_skip_taskbar(cfg.set_skip_taskbar)
-                    .with_corner_preference(cfg.corner_preference)
-                    .with_system_backdrop(cfg.set_system_backdrop);
-                if let Some(color) = cfg.set_title_text_color {
-                    win = win.with_title_text_color(color);
-                }
+                    .with_corner_preference(cfg.corner_preference.into())
+                    .with_system_backdrop(cfg.set_system_backdrop.into())
+                    .with_title_text_color(
+                        convert_to_win(cfg.set_title_text_color).unwrap_or_default(),
+                    );
             }
             window_attributes = window_attributes.with_platform_attributes(Box::new(win));
         }
