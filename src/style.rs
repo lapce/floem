@@ -1632,8 +1632,6 @@ impl Default for BoxShadow {
             right_offset: PxPct::Px(0.),
             top_offset: PxPct::Px(0.),
             bottom_offset: PxPct::Px(0.),
-            // h_offset: PxPct::Px(0.),
-            // v_offset: PxPct::Px(0.),
         }
     }
 }
@@ -1641,13 +1639,13 @@ impl Default for BoxShadow {
 /// The value for a [`Style`] property
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StyleValue<T> {
-    // a value that has been inserted into the map by an animation
+    // A value that has been inserted into the map by an animation.
     Animated(T),
     Val(T),
-    /// Use the default value for the style, typically from the underlying `ComputedStyle`
+    /// Use the default value for the style, typically from the underlying `ComputedStyle`.
     Unset,
     /// Use whatever the base style is. For an overriding style like hover, this uses the base
-    /// style. For the base style, this is equivalent to `Unset`
+    /// style. For the base style, this is equivalent to `Unset`.
     Base,
 }
 
