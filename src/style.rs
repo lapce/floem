@@ -1540,6 +1540,7 @@ pub enum CursorStyle {
     NwseResize,
 }
 
+/// Structure holding data about the shadow.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BoxShadow {
     pub blur_radius: PxPct,
@@ -1553,15 +1554,20 @@ pub struct BoxShadow {
 }
 
 impl BoxShadow {
+    /// Create new default shadow.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Specifies shadow blur. The larger this value, the bigger the blur,
+    /// so the shadow becomes bigger and lighter.
     pub fn blur_radius(mut self, radius: impl Into<PxPct>) -> Self {
         self.blur_radius = radius.into();
         self
     }
 
+    /// Specifies shadow blur spread. Positive values will cause the shadow
+    /// to expand and grow bigger, negative values will cause the shadow to shrink.
     pub fn spread(mut self, spread: impl Into<PxPct>) -> Self {
         self.spread = spread.into();
         self
@@ -1573,26 +1579,32 @@ impl BoxShadow {
         self
     }
 
+    /// Specifies the offset of the left edge.
     pub fn left_offset(mut self, left_offset: impl Into<PxPct>) -> Self {
         self.left_offset = left_offset.into();
         self
     }
 
+    /// Specifies the offset of the right edge.
     pub fn right_offset(mut self, right_offset: impl Into<PxPct>) -> Self {
         self.right_offset = right_offset.into();
         self
     }
 
+    /// Specifies the offset of the top edge.
     pub fn top_offset(mut self, top_offset: impl Into<PxPct>) -> Self {
         self.top_offset = top_offset.into();
         self
     }
 
+    /// Specifies the offset of the bottom edge.
     pub fn bottom_offset(mut self, bottom_offset: impl Into<PxPct>) -> Self {
         self.bottom_offset = bottom_offset.into();
         self
     }
 
+    /// Specifies the offset on vertical axis.
+    /// Negative offset value places the shadow above the element.
     pub fn v_offset(mut self, v_offset: impl Into<PxPct>) -> Self {
         let offset = v_offset.into();
         self.top_offset = -offset;
@@ -1600,6 +1612,8 @@ impl BoxShadow {
         self
     }
 
+    /// Specifies the offset on horizontal axis.
+    /// Negative offset value places the shadow to the left of the element.
     pub fn h_offset(mut self, h_offset: impl Into<PxPct>) -> Self {
         let offset = h_offset.into();
         self.left_offset = -offset;
