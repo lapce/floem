@@ -1055,27 +1055,29 @@ impl WindowHandle {
                         self.window.set_title(&title);
                     }
                     UpdateMessage::SetImeAllowed { allowed } => {
-                        let ime = match allowed {
-                            true => {
+                        if self.window.ime_capabilities().is_some() != allowed {
+                            let ime = if allowed {
                                 let position = LogicalPosition::new(0, 0);
                                 let size = LogicalSize::new(0, 0);
                                 let request_data = ImeRequestData::default()
                                     .with_cursor_area(position.into(), size.into())
                                     .with_hint_and_purpose(ImeHint::NONE, ImePurpose::Normal);
+
                                 ImeRequest::Enable(
                                     ImeEnableRequest::new(
                                         ImeCapabilities::new()
-                                            .without_hint_and_purpose()
+                                            .with_hint_and_purpose()
                                             .with_cursor_area(),
                                         request_data,
                                     )
                                     .unwrap(),
-                                ) // FIXME
-                            }
-                            false => ImeRequest::Disable,
-                        };
-                        // self.window.set_ime_allowed(allowed);
-                        self.window.request_ime_update(ime).unwrap();
+                                )
+                            } else {
+                                ImeRequest::Disable
+                            };
+
+                            self.window.request_ime_update(ime).unwrap();
+                        }
                     }
                     UpdateMessage::SetImeCursorArea { position, size } => {
                         if self
