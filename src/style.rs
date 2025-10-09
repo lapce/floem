@@ -11,6 +11,7 @@ use peniko::{
     LinearGradientPosition,
 };
 use rustc_hash::FxHasher;
+use smallvec::SmallVec;
 use std::any::{type_name, Any};
 use std::collections::HashMap;
 use std::fmt::{self, Debug};
@@ -122,6 +123,21 @@ impl StylePropValue for BoxShadow {
                 .interpolate(&other.bottom_offset, value)
                 .unwrap(),
         })
+    }
+}
+impl StylePropValue for SmallVec<[BoxShadow; 2]> {
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        self.iter().zip(other.iter()).try_fold(
+            SmallVec::with_capacity(self.len()),
+            |mut acc, (v1, v2)| {
+                if let Some(interpolated) = v1.interpolate(v2, value) {
+                    acc.push(interpolated);
+                    Some(acc)
+                } else {
+                    None
+                }
+            },
+        )
     }
 }
 impl StylePropValue for String {}
@@ -1797,7 +1813,7 @@ define_builtin_props!(
     TextColor color nocb: Option<Color> { inherited } = None,
     Background background nocb: Option<Brush> {} = None,
     Foreground foreground nocb: Option<Brush> {} = None,
-    BoxShadowProp box_shadow nocb: Vec<BoxShadow> {} = vec!(),
+    BoxShadowProp box_shadow nocb: SmallVec<[BoxShadow; 2]> {} = SmallVec::new(),
     FontSize font_size nocb: Option<f32> { inherited } = None,
     FontFamily font_family nocb: Option<String> { inherited } = None,
     FontWeight font_weight nocb: Option<Weight> { inherited } = None,
@@ -2430,7 +2446,7 @@ impl Style {
     ///     .box_shadow_blur(3.)
     /// );
     /// ```
-    pub fn apply_box_shadows(self, shadows: impl Into<Vec<BoxShadow>>) -> Self {
+    pub fn apply_box_shadows(self, shadows: impl Into<SmallVec<[BoxShadow; 2]>>) -> Self {
         let mut value = self.get(BoxShadowProp);
         let mut others = shadows.into();
         value.append(&mut others);
