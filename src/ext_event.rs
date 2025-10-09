@@ -179,6 +179,7 @@ pub fn update_signal_from_channel<T: Send + 'static>(
     });
 }
 
+#[derive(Clone)]
 pub struct ArcRwSignal<T> {
     inner: Arc<ArcRwSignalInner<T>>,
 }
