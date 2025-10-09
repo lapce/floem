@@ -485,13 +485,21 @@ fn paint_box_shadow(
     rect: Rect,
     rect_radius: Option<RoundedRectRadii>,
 ) {
-    if let Some(shadow) = &style.shadow() {
+    for shadow in &style.shadow() {
         let min = rect.size().min_side();
-        let h_offset = match shadow.h_offset {
+        let left_offset = match shadow.left_offset {
             crate::unit::PxPct::Px(px) => px,
             crate::unit::PxPct::Pct(pct) => min * (pct / 100.),
         };
-        let v_offset = match shadow.v_offset {
+        let right_offset = match shadow.right_offset {
+            crate::unit::PxPct::Px(px) => px,
+            crate::unit::PxPct::Pct(pct) => min * (pct / 100.),
+        };
+        let top_offset = match shadow.top_offset {
+            crate::unit::PxPct::Px(px) => px,
+            crate::unit::PxPct::Pct(pct) => min * (pct / 100.),
+        };
+        let bottom_offset = match shadow.bottom_offset {
             crate::unit::PxPct::Px(px) => px,
             crate::unit::PxPct::Pct(pct) => min * (pct / 100.),
         };
@@ -504,10 +512,10 @@ fn paint_box_shadow(
             crate::unit::PxPct::Pct(pct) => min * (pct / 100.),
         };
         let inset = Insets::new(
-            -h_offset / 2.0,
-            -v_offset / 2.0,
-            h_offset / 2.0,
-            v_offset / 2.0,
+            left_offset / 2.0,
+            top_offset / 2.0,
+            right_offset / 2.0,
+            bottom_offset / 2.0,
         );
         let rect = rect.inflate(spread, spread).inset(inset);
         if let Some(radii) = rect_radius {

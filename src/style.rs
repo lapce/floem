@@ -105,8 +105,22 @@ impl StylePropValue for BoxShadow {
                 .unwrap(),
             color: self.color.interpolate(&other.color, value).unwrap(),
             spread: self.spread.interpolate(&other.spread, value).unwrap(),
-            h_offset: self.h_offset.interpolate(&other.h_offset, value).unwrap(),
-            v_offset: self.v_offset.interpolate(&other.v_offset, value).unwrap(),
+            left_offset: self
+                .left_offset
+                .interpolate(&other.left_offset, value)
+                .unwrap(),
+            right_offset: self
+                .right_offset
+                .interpolate(&other.right_offset, value)
+                .unwrap(),
+            top_offset: self
+                .top_offset
+                .interpolate(&other.top_offset, value)
+                .unwrap(),
+            bottom_offset: self
+                .bottom_offset
+                .interpolate(&other.bottom_offset, value)
+                .unwrap(),
         })
     }
 }
@@ -1531,8 +1545,67 @@ pub struct BoxShadow {
     pub blur_radius: PxPct,
     pub color: Color,
     pub spread: PxPct,
-    pub h_offset: PxPct,
-    pub v_offset: PxPct,
+
+    pub left_offset: PxPct,
+    pub right_offset: PxPct,
+    pub top_offset: PxPct,
+    pub bottom_offset: PxPct,
+}
+
+impl BoxShadow {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn blur_radius(mut self, radius: impl Into<PxPct>) -> Self {
+        self.blur_radius = radius.into();
+        self
+    }
+
+    pub fn spread(mut self, spread: impl Into<PxPct>) -> Self {
+        self.spread = spread.into();
+        self
+    }
+
+    /// Specifies color for the current shadow.
+    pub fn color(mut self, color: impl Into<Color>) -> Self {
+        self.color = color.into();
+        self
+    }
+
+    pub fn left_offset(mut self, left_offset: impl Into<PxPct>) -> Self {
+        self.left_offset = left_offset.into();
+        self
+    }
+
+    pub fn right_offset(mut self, right_offset: impl Into<PxPct>) -> Self {
+        self.right_offset = right_offset.into();
+        self
+    }
+
+    pub fn top_offset(mut self, top_offset: impl Into<PxPct>) -> Self {
+        self.top_offset = top_offset.into();
+        self
+    }
+
+    pub fn bottom_offset(mut self, bottom_offset: impl Into<PxPct>) -> Self {
+        self.bottom_offset = bottom_offset.into();
+        self
+    }
+
+    pub fn v_offset(mut self, v_offset: impl Into<PxPct>) -> Self {
+        let offset = v_offset.into();
+        self.top_offset = -offset;
+        self.bottom_offset = offset;
+        self
+    }
+
+    pub fn h_offset(mut self, h_offset: impl Into<PxPct>) -> Self {
+        let offset = h_offset.into();
+        self.left_offset = -offset;
+        self.right_offset = offset;
+        self
+    }
 }
 
 impl Default for BoxShadow {
@@ -1541,8 +1614,12 @@ impl Default for BoxShadow {
             blur_radius: PxPct::Px(0.),
             color: palette::css::BLACK,
             spread: PxPct::Px(0.),
-            h_offset: PxPct::Px(0.),
-            v_offset: PxPct::Px(0.),
+            left_offset: PxPct::Px(0.),
+            right_offset: PxPct::Px(0.),
+            top_offset: PxPct::Px(0.),
+            bottom_offset: PxPct::Px(0.),
+            // h_offset: PxPct::Px(0.),
+            // v_offset: PxPct::Px(0.),
         }
     }
 }
@@ -1708,7 +1785,7 @@ define_builtin_props!(
     TextColor color nocb: Option<Color> { inherited } = None,
     Background background nocb: Option<Brush> {} = None,
     Foreground foreground nocb: Option<Brush> {} = None,
-    BoxShadowProp box_shadow nocb: Option<BoxShadow> {} = None,
+    BoxShadowProp box_shadow nocb: Vec<BoxShadow> {} = vec!(),
     FontSize font_size nocb: Option<f32> { inherited } = None,
     FontFamily font_family nocb: Option<String> { inherited } = None,
     FontWeight font_weight nocb: Option<Weight> { inherited } = None,
@@ -1755,7 +1832,6 @@ prop_extractor! {
         pub border_right: BorderRight,
         pub border_bottom: BorderBottom,
 
-
         pub padding_left: PaddingLeft,
         pub padding_top: PaddingTop,
         pub padding_right: PaddingRight,
@@ -1794,7 +1870,6 @@ prop_extractor! {
         pub translate_y: TranslateY,
 
         pub rotation: Rotation,
-
     }
 }
 
@@ -2255,6 +2330,7 @@ impl Style {
         self.set_style_value(Cursor, cursor.into().map(Some))
     }
 
+    /// Specifies text color for the element.
     pub fn color(self, color: impl Into<StyleValue<Color>>) -> Self {
         self.set_style_value(TextColor, color.into().map(Some))
     }
@@ -2264,34 +2340,176 @@ impl Style {
         self.set_style_value(Background, brush)
     }
 
+    /// Specifies shadow blur. The larger this value, the bigger the blur,
+    /// so the shadow becomes bigger and lighter.
     pub fn box_shadow_blur(self, blur_radius: impl Into<PxPct>) -> Self {
-        let mut value = self.get(BoxShadowProp).unwrap_or_default();
-        value.blur_radius = blur_radius.into();
-        self.set(BoxShadowProp, Some(value))
+        let mut value = self.get(BoxShadowProp);
+        if let Some(v) = value.first_mut() {
+            v.blur_radius = blur_radius.into();
+        } else {
+            value.push(BoxShadow {
+                blur_radius: blur_radius.into(),
+                ..Default::default()
+            });
+        }
+        self.set(BoxShadowProp, value)
     }
 
+    /// Specifies color for the shadow.
     pub fn box_shadow_color(self, color: Color) -> Self {
-        let mut value = self.get(BoxShadowProp).unwrap_or_default();
-        value.color = color;
-        self.set(BoxShadowProp, Some(value))
+        let mut value = self.get(BoxShadowProp);
+        if let Some(v) = value.first_mut() {
+            v.color = color;
+        } else {
+            value.push(BoxShadow {
+                color,
+                ..Default::default()
+            });
+        }
+        self.set(BoxShadowProp, value)
     }
 
+    /// Specifies shadow blur spread. Positive values will cause the shadow
+    /// to expand and grow bigger, negative values will cause the shadow to shrink.
     pub fn box_shadow_spread(self, spread: impl Into<PxPct>) -> Self {
-        let mut value = self.get(BoxShadowProp).unwrap_or_default();
-        value.spread = spread.into();
-        self.set(BoxShadowProp, Some(value))
+        let mut value = self.get(BoxShadowProp);
+        if let Some(v) = value.first_mut() {
+            v.spread = spread.into();
+        } else {
+            value.push(BoxShadow {
+                spread: spread.into(),
+                ..Default::default()
+            });
+        }
+        self.set(BoxShadowProp, value)
     }
 
+    /// Applies one or more shadows for the stylized element. Use [BoxShadow] builder
+    /// to construct each shadow.
+    /// ```rust
+    /// empty().style(|s| s.apply_box_shadows(
+    ///     [
+    ///        BoxShadow::new()
+    ///            .color(css::BLACK)
+    ///            .top_offset(5.)
+    ///            .bottom_offset(-30.)
+    ///            .right_offset(-20.)
+    ///            .left_offset(10.)
+    ///            .blur_radius(5.)
+    ///            .spread(10.)
+    ///    ]
+    /// ))
+    /// ```
+    /// ### Info
+    /// If you only specify one shadow on the element, use standard style methods directly
+    /// on [Style] struct:
+    /// ```rust
+    /// empty().style(|s| s
+    ///     .box_shadow_top_offset(-5.)
+    ///     .box_shadow_bottom_offset(30.)
+    ///     .box_shadow_right_offset(20.)
+    ///     .box_shadow_left_offset(-10.)
+    ///     .box_shadow_spread(1.)
+    ///     .box_shadow_blur(3.)
+    /// )
+    /// ```
+    pub fn apply_box_shadows(self, shadows: impl Into<Vec<BoxShadow>>) -> Self {
+        let mut value = self.get(BoxShadowProp);
+        let mut others = shadows.into();
+        value.append(&mut others);
+        self.set(BoxShadowProp, value)
+    }
+
+    /// Specifies the offset on horizontal axis.
+    /// Negative offset value places the shadow to the left of the element.
     pub fn box_shadow_h_offset(self, h_offset: impl Into<PxPct>) -> Self {
-        let mut value = self.get(BoxShadowProp).unwrap_or_default();
-        value.h_offset = h_offset.into();
-        self.set(BoxShadowProp, Some(value))
+        let mut value = self.get(BoxShadowProp);
+        let offset = h_offset.into();
+        if let Some(v) = value.first_mut() {
+            v.left_offset = -offset;
+            v.right_offset = offset;
+        } else {
+            value.push(BoxShadow {
+                left_offset: -offset,
+                right_offset: offset,
+                ..Default::default()
+            });
+        }
+        self.set(BoxShadowProp, value)
     }
 
+    /// Specifies the offset on vertical axis.
+    /// Negative offset value places the shadow above the element.
     pub fn box_shadow_v_offset(self, v_offset: impl Into<PxPct>) -> Self {
-        let mut value = self.get(BoxShadowProp).unwrap_or_default();
-        value.v_offset = v_offset.into();
-        self.set(BoxShadowProp, Some(value))
+        let mut value = self.get(BoxShadowProp);
+        let offset = v_offset.into();
+        if let Some(v) = value.first_mut() {
+            v.top_offset = -offset;
+            v.bottom_offset = offset;
+        } else {
+            value.push(BoxShadow {
+                top_offset: -offset,
+                bottom_offset: offset,
+                ..Default::default()
+            });
+        }
+        self.set(BoxShadowProp, value)
+    }
+
+    /// Specifies the offset of the left edge.
+    pub fn box_shadow_left_offset(self, left_offset: impl Into<PxPct>) -> Self {
+        let mut value = self.get(BoxShadowProp);
+        if let Some(v) = value.first_mut() {
+            v.left_offset = left_offset.into();
+        } else {
+            value.push(BoxShadow {
+                left_offset: left_offset.into(),
+                ..Default::default()
+            });
+        }
+        self.set(BoxShadowProp, value)
+    }
+
+    /// Specifies the offset of the right edge.
+    pub fn box_shadow_right_offset(self, right_offset: impl Into<PxPct>) -> Self {
+        let mut value = self.get(BoxShadowProp);
+        if let Some(v) = value.first_mut() {
+            v.right_offset = right_offset.into();
+        } else {
+            value.push(BoxShadow {
+                right_offset: right_offset.into(),
+                ..Default::default()
+            });
+        }
+        self.set(BoxShadowProp, value)
+    }
+
+    /// Specifies the offset of the top edge.
+    pub fn box_shadow_top_offset(self, top_offset: impl Into<PxPct>) -> Self {
+        let mut value = self.get(BoxShadowProp);
+        if let Some(v) = value.first_mut() {
+            v.top_offset = top_offset.into();
+        } else {
+            value.push(BoxShadow {
+                top_offset: top_offset.into(),
+                ..Default::default()
+            });
+        }
+        self.set(BoxShadowProp, value)
+    }
+
+    /// Specifies the offset of the bottom edge.
+    pub fn box_shadow_bottom_offset(self, bottom_offset: impl Into<PxPct>) -> Self {
+        let mut value = self.get(BoxShadowProp);
+        if let Some(v) = value.first_mut() {
+            v.bottom_offset = bottom_offset.into();
+        } else {
+            value.push(BoxShadow {
+                bottom_offset: bottom_offset.into(),
+                ..Default::default()
+            });
+        }
+        self.set(BoxShadowProp, value)
     }
 
     pub fn font_size(self, size: impl Into<Px>) -> Self {

@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{ops::Neg, time::Duration};
 
 use taffy::style::{Dimension, LengthPercentage, LengthPercentageAuto};
 
@@ -80,6 +80,17 @@ impl From<Pct> for PxPctAuto {
 impl From<Auto> for PxPctAuto {
     fn from(_: Auto) -> Self {
         PxPctAuto::Auto
+    }
+}
+
+impl Neg for PxPct {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        match self {
+            PxPct::Px(px) => PxPct::Px(-px),
+            PxPct::Pct(pct) => PxPct::Pct(-pct),
+        }
     }
 }
 
