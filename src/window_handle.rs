@@ -791,8 +791,6 @@ impl WindowHandle {
     /// Processes updates and runs style and layout if needed.
     /// Returns `true` if painting is required.
     pub(crate) fn process_update_no_paint(&mut self) -> bool {
-        let mut paint = false;
-
         loop {
             loop {
                 self.process_update_messages();
@@ -804,12 +802,10 @@ impl WindowHandle {
                 }
 
                 if self.needs_style() {
-                    paint = true;
                     self.style();
                 }
 
                 if self.needs_layout() {
-                    paint = true;
                     self.layout();
                 }
 
@@ -825,8 +821,7 @@ impl WindowHandle {
 
         self.set_cursor();
 
-        // TODO: This should only use `self.app_state.request_paint)`
-        paint || mem::take(&mut self.app_state.request_paint)
+        mem::take(&mut self.app_state.request_paint)
     }
 
     fn process_central_messages(&self) {
