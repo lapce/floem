@@ -522,9 +522,29 @@ impl Cursor {
                 if new_cursor {
                     let mut new_selection = selection.clone();
                     if modify {
-                        if let Some(region) = new_selection.last_inserted_mut() {
+                        if let Some(mut region) = new_selection.last_inserted().cloned() {
                             region.end = offset;
                             region.affinity = affinity;
+
+                            // remove overlapping selections
+                            new_selection.delete_range(region.min(), region.max());
+
+                            // remove carets on the edges
+                            let left = region.min().saturating_sub(1);
+                            let right = region.max() + 1;
+                            let neighbors = new_selection.regions_in_range(left, right);
+                            let left_has_caret = neighbors.first().is_some_and(|r| r.is_caret());
+                            let right_has_caret = neighbors.last().is_some_and(|r| r.is_caret());
+
+                            if region.is_caret() || left_has_caret {
+                                new_selection.delete_range(left, left + 2);
+                            }
+
+                            if region.is_caret() || right_has_caret {
+                                new_selection.delete_range(left + 1, right);
+                            }
+
+                            new_selection.add_region(region);
                         } else {
                             new_selection.add_region(SelRegion::caret(offset, affinity));
                         }
