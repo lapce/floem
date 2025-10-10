@@ -442,7 +442,7 @@ impl Selection {
     pub fn delete_range(&mut self, start: usize, end: usize) {
         let mut first = self.search(start);
         let mut last = self.search(end);
-        if first >= self.regions.len() {
+        if first >= self.regions.len() || first == last {
             return;
         }
         if self.regions[first].max() == start {
