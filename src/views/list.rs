@@ -1,4 +1,4 @@
-use super::{v_stack_from_iter, Decorators};
+use super::{Decorators, v_stack_from_iter};
 use crate::context::StyleCx;
 use crate::event::EventPropagation;
 use crate::id::ViewId;
@@ -8,10 +8,10 @@ use crate::style_class;
 use crate::view::IntoView;
 use crate::{
     event::{Event, EventListener},
-    keyboard::{Key, NamedKey},
     view::View,
 };
-use floem_reactive::{create_rw_signal, RwSignal, SignalGet, SignalTrack, SignalUpdate};
+use floem_reactive::{RwSignal, SignalGet, SignalTrack, SignalUpdate, create_rw_signal};
+use ui_events::keyboard::{Key, KeyState, KeyboardEvent, NamedKey};
 
 style_class!(pub ListClass);
 style_class!(pub ListItemClass);
@@ -113,8 +113,13 @@ where
     }
     .keyboard_navigable()
     .on_event(EventListener::KeyDown, move |e| {
-        if let Event::KeyDown(key_event) = e {
-            match key_event.key.logical_key {
+        if let Event::Key(KeyboardEvent {
+            state: KeyState::Down,
+            key,
+            ..
+        }) = e
+        {
+            match key {
                 Key::Named(NamedKey::Home) => {
                     if length > 0 {
                         selection.set(Some(0));
@@ -147,7 +152,7 @@ where
                     list_id.update_state(ListUpdate::Accept);
                     EventPropagation::Stop
                 }
-                Key::Character(ref c) if c == " " => {
+                Key::Character(c) if c == " " => {
                     list_id.update_state(ListUpdate::Accept);
                     EventPropagation::Stop
                 }

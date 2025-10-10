@@ -1,7 +1,7 @@
 use core::ops::Range;
 use std::f64::consts::FRAC_PI_2;
 
-use peniko::{kurbo::*, Brush};
+use peniko::{Brush, kurbo::*};
 
 pub struct BorderPath {
     path_iter: RoundedRectPathIter,

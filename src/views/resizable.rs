@@ -1,7 +1,7 @@
 use crate::{
+    ViewId,
     context::{ComputeLayoutCx, EventCx, PaintCx, UpdateCx},
     event::{Event, EventPropagation},
-    pointer::{MouseButton, PointerButton, PointerInputEvent, PointerMoveEvent},
     prelude::*,
     prop, prop_extractor,
     style::{
@@ -11,14 +11,16 @@ use crate::{
     style_class,
     unit::{Px, PxPct},
     view_state::StackOffset,
-    ViewId,
 };
 use floem_reactive::create_effect;
 use peniko::{
-    kurbo::{self, Point, Rect, Stroke},
     Brush,
+    kurbo::{self, Point, Rect, Stroke},
 };
 use taffy::FlexDirection;
+use ui_events::pointer::{
+    PointerButton, PointerButtonEvent, PointerEvent, PointerState, PointerUpdate,
+};
 
 style_class!(
     /// The style class that is applied to all [`ResizableStack`] views.
@@ -183,13 +185,13 @@ impl View for ResizableStack {
 
     fn event_before_children(&mut self, _cx: &mut EventCx, event: &Event) -> EventPropagation {
         match event {
-            Event::PointerDown(PointerInputEvent {
-                pos,
-                button: PointerButton::Mouse(MouseButton::Primary),
-                count,
+            Event::Pointer(PointerEvent::Down(PointerButtonEvent {
+                button: Some(PointerButton::Primary),
+                state: state @ PointerState { count, .. },
                 ..
-            }) => {
-                if let Some(handle_idx) = self.find_handle_at_position(*pos) {
+            })) => {
+                let point = state.point();
+                if let Some(handle_idx) = self.find_handle_at_position(point) {
                     if *count == 2 {
                         self.should_clear_on_up = Some(handle_idx);
                     }
@@ -216,10 +218,10 @@ impl View for ResizableStack {
                     return EventPropagation::Stop;
                 }
             }
-            Event::PointerUp(PointerInputEvent {
-                button: PointerButton::Mouse(MouseButton::Primary),
+            Event::Pointer(PointerEvent::Up(PointerButtonEvent {
+                button: Some(PointerButton::Primary),
                 ..
-            }) => {
+            })) => {
                 if let Some(idx) = self.should_clear_on_up {
                     // Reset the handle positions on double-click
                     self.clear_handle_pos(idx);
@@ -235,10 +237,11 @@ impl View for ResizableStack {
                     return EventPropagation::Stop;
                 }
             }
-            Event::PointerMove(PointerMoveEvent { pos, .. }) => {
-                self.cursor_pos = *pos;
+            Event::Pointer(PointerEvent::Move(PointerUpdate { current, .. })) => {
+                let point = current.point();
+                self.cursor_pos = point;
                 if let HandleState::Active(handle_idx) = self.handle_state {
-                    self.update_handle_position(handle_idx, *pos);
+                    self.update_handle_position(handle_idx, point);
                     let cursor = match self.re_style.direction() {
                         FlexDirection::Row | FlexDirection::RowReverse => CursorStyle::ColResize,
                         FlexDirection::Column | FlexDirection::ColumnReverse => {
@@ -249,7 +252,7 @@ impl View for ResizableStack {
                     self.id.request_style();
                     self.id.request_layout();
                     return EventPropagation::Stop;
-                } else if let Some(handle_idx) = self.find_handle_at_position(*pos) {
+                } else if let Some(handle_idx) = self.find_handle_at_position(point) {
                     self.handle_state = HandleState::Hovered(handle_idx);
                     let cursor = match self.re_style.direction() {
                         FlexDirection::Row | FlexDirection::RowReverse => CursorStyle::ColResize,

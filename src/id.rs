@@ -12,18 +12,18 @@ use taffy::{Display, Layout, NodeId, TaffyTree};
 use winit::window::WindowId;
 
 use crate::{
+    ScreenLayout,
     animate::{AnimStateCommand, Animation},
     context::{EventCallback, ResizeCallback},
     event::{EventListener, EventPropagation},
     menu::Menu,
     style::{DisplayProp, Style, StyleClassRef, StyleSelector},
     unit::PxPct,
-    update::{UpdateMessage, CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES},
+    update::{CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, UpdateMessage},
     view::{IntoView, View},
     view_state::{ChangeFlags, StackOffset, ViewState},
     view_storage::VIEW_STORAGE,
     window_tracking::{is_known_root, window_id_for_root},
-    ScreenLayout,
 };
 
 new_key_type! {

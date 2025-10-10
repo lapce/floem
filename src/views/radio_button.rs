@@ -1,12 +1,11 @@
 use crate::{
-    style_class,
+    IntoView, style_class,
     view::View,
-    views::{self, container, empty, h_stack, Decorators},
-    IntoView,
+    views::{self, Decorators, container, empty, h_stack},
 };
 use floem_reactive::{SignalGet, SignalUpdate};
 
-use super::{create_value_container_signals, value_container, ValueContainer};
+use super::{ValueContainer, create_value_container_signals, value_container};
 
 style_class!(pub RadioButtonClass);
 style_class!(pub RadioButtonDotClass);
@@ -192,7 +191,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use floem_reactive::{create_rw_signal, SignalGet, SignalUpdate};
+    use floem_reactive::{SignalGet, SignalUpdate, create_rw_signal};
 
     #[test]
     fn test_radio_button_new_initial_value() {
@@ -212,10 +211,11 @@ mod test {
     #[test]
     fn test_labeled_radio_button_initial_value() {
         let actual_value = create_rw_signal(String::from("OptionA"));
-        let _labeled_radio_button =
-            RadioButton::new_labeled_rw("OptionA".to_string(), actual_value, || {
-                "Label for Option A"
-            });
+        let _labeled_radio_button = RadioButton::new_labeled_rw(
+            "OptionA".to_string(),
+            actual_value,
+            || "Label for Option A",
+        );
 
         assert_eq!(actual_value.get(), "OptionA");
     }
@@ -223,10 +223,11 @@ mod test {
     #[test]
     fn test_labeled_radio_button_changes_state() {
         let actual_value = create_rw_signal(String::from("OptionA"));
-        let _labeled_radio_button =
-            RadioButton::new_labeled_rw("OptionB".to_string(), actual_value, || {
-                "Label for Option B"
-            });
+        let _labeled_radio_button = RadioButton::new_labeled_rw(
+            "OptionB".to_string(),
+            actual_value,
+            || "Label for Option B",
+        );
 
         actual_value.set("OptionB".to_string());
 
@@ -243,10 +244,11 @@ mod test {
     #[test]
     fn test_radio_button_new_labeled_get() {
         let actual_value = create_rw_signal(String::from("OptionA"));
-        let _labeled_radio_button =
-            RadioButton::new_labeled_get("OptionA".to_string(), actual_value, || {
-                "Label for Option A"
-            });
+        let _labeled_radio_button = RadioButton::new_labeled_get(
+            "OptionA".to_string(),
+            actual_value,
+            || "Label for Option A",
+        );
 
         assert_eq!(actual_value.get(), "OptionA");
     }

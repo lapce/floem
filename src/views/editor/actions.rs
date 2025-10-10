@@ -1,6 +1,5 @@
 use std::ops::Range;
 
-use crate::keyboard::Modifiers;
 use floem_editor_core::{
     command::{EditCommand, MotionModeCommand, MultiSelectionCommand, ScrollCommand},
     cursor::Cursor,
@@ -9,10 +8,12 @@ use floem_editor_core::{
     register::Register,
 };
 use floem_reactive::{SignalGet, SignalUpdate, SignalWith};
+use ui_events::keyboard::Modifiers;
 
 use super::{
+    Editor,
     command::{Command, CommandExecuted},
-    movement, Editor,
+    movement,
 };
 
 pub fn handle_command_default(

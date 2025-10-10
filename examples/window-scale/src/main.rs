@@ -6,6 +6,7 @@ use floem::{
     prelude::ViewTuple,
     reactive::{create_effect, create_rw_signal, create_signal, SignalGet, SignalUpdate},
     style_class,
+    ui_events::keyboard::{KeyState, KeyboardEvent},
     unit::UnitExt,
     views::{label, Decorators},
     IntoView, View,
@@ -103,8 +104,13 @@ fn app_view() -> impl IntoView {
 
     let id = view.id();
     view.on_event_stop(EventListener::KeyUp, move |e| {
-        if let Event::KeyUp(e) = e {
-            if e.key.logical_key == Key::Named(NamedKey::F11) {
+        if let Event::Key(KeyboardEvent {
+            state: KeyState::Up,
+            key,
+            ..
+        }) = e
+        {
+            if *key == Key::Named(NamedKey::F11) {
                 id.inspect();
             }
         }

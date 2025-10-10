@@ -4,15 +4,14 @@
 //!
 //! The decorator trait is the primary interface for extending the appearance and functionality of ['View']s.
 
-use floem_reactive::{create_effect, create_updater, SignalUpdate};
+use floem_reactive::{SignalUpdate, create_effect, create_updater};
 use peniko::kurbo::{Point, Rect};
-use winit::keyboard::Key;
+use ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers};
 
 use crate::{
     action::{set_window_menu, set_window_scale, set_window_title},
     animate::Animation,
     event::{Event, EventListener, EventPropagation},
-    keyboard::Modifiers,
     menu::Menu,
     style::{Style, StyleClass, StyleSelector},
     view::{IntoView, View},
@@ -212,8 +211,14 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         action: impl Fn(&Event) + 'static,
     ) -> Self::DV {
         self.on_event(EventListener::KeyDown, move |e| {
-            if let Event::KeyDown(ke) = e {
-                if ke.key.logical_key == key && cmp(ke.modifiers) {
+            if let Event::Key(KeyboardEvent {
+                state: KeyState::Down,
+                key: event_key,
+                modifiers,
+                ..
+            }) = e
+            {
+                if *event_key == key && cmp(*modifiers) {
                     action(e);
                     return EventPropagation::Stop;
                 }
@@ -232,8 +237,14 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         action: impl Fn(&Event) + 'static,
     ) -> Self::DV {
         self.on_event(EventListener::KeyUp, move |e| {
-            if let Event::KeyUp(ke) = e {
-                if ke.key.logical_key == key && cmp(ke.modifiers) {
+            if let Event::Key(KeyboardEvent {
+                state: KeyState::Up,
+                key: event_key,
+                modifiers,
+                ..
+            }) = e
+            {
+                if *event_key == key && cmp(*modifiers) {
                     action(e);
                     return EventPropagation::Stop;
                 }

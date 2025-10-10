@@ -7,16 +7,20 @@
 use std::{any::Any, rc::Rc};
 
 use floem_reactive::{
-    as_child_of_current_scope, create_effect, create_updater, RwSignal, Scope, SignalGet,
-    SignalUpdate,
+    RwSignal, Scope, SignalGet, SignalUpdate, as_child_of_current_scope, create_effect,
+    create_updater,
 };
 use peniko::{
     color::palette,
     kurbo::{Point, Rect, Size},
 };
-use winit::keyboard::{Key, NamedKey};
+use ui_events::{
+    keyboard::{Key, KeyState, KeyboardEvent, NamedKey},
+    pointer::PointerEvent,
+};
 
 use crate::{
+    AnyView,
     action::{add_overlay, remove_overlay},
     event::{Event, EventListener, EventPropagation},
     id::ViewId,
@@ -24,9 +28,8 @@ use crate::{
     style::{CustomStylable, CustomStyle, Style, StyleClass, Width},
     style_class,
     unit::PxPctAuto,
-    view::{default_compute_layout, IntoView, View},
-    views::{container, scroll, stack, svg, text, Decorators},
-    AnyView,
+    view::{IntoView, View, default_compute_layout},
+    views::{Decorators, container, scroll, stack, svg, text},
 };
 
 use super::list;
@@ -259,16 +262,16 @@ impl<T: 'static + Clone> View for Dropdown<T> {
         event: &Event,
     ) -> EventPropagation {
         match event {
-            Event::PointerDown(_) => {
+            Event::Pointer(PointerEvent::Down { .. }) => {
                 self.swap_state();
                 return EventPropagation::Stop;
             }
-            Event::KeyUp(ref key_event)
-                if matches!(key_event.key.logical_key, Key::Named(NamedKey::Enter))
-                    | matches!(
-                        key_event.key.logical_key,
-                        Key::Character(ref c) if c == " "
-                    ) =>
+            Event::Key(KeyboardEvent {
+                state: KeyState::Up,
+                key,
+                ..
+            }) if *key == Key::Named(NamedKey::Enter)
+                || matches!(key,  Key::Character(c) if c == " ") =>
             {
                 self.swap_state()
             }

@@ -1,4 +1,4 @@
-use crate::ext_event::{register_ext_trigger, ExtSendTrigger};
+use crate::ext_event::{ExtSendTrigger, register_ext_trigger};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
@@ -334,7 +334,7 @@ pub fn event_loop_future<T: 'static>(
     trigger: ExtSendTrigger,
 ) {
     use floem_reactive::*;
-    use futures::task::{waker, ArcWake};
+    use futures::task::{ArcWake, waker};
     use std::{
         cell::RefCell,
         task::{Context, Poll},
@@ -380,7 +380,7 @@ pub fn event_loop_stream<T: 'static>(
     trigger: ExtSendTrigger,
 ) {
     use floem_reactive::*;
-    use futures::task::{waker, ArcWake};
+    use futures::task::{ArcWake, waker};
     use std::{
         cell::RefCell,
         task::{Context, Poll},
@@ -435,7 +435,7 @@ pub fn event_loop_receiver<T: 'static, E: 'static>(
     trigger: ExtSendTrigger,
 ) {
     use floem_reactive::*;
-    use futures::task::{waker, ArcWake};
+    use futures::task::{ArcWake, waker};
     use std::{
         cell::RefCell,
         task::{Context, Poll},

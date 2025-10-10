@@ -8,13 +8,13 @@ use floem_editor_core::{
     movement::{LinePosition, Movement},
     register::Register,
     selection::{SelRegion, Selection},
-    soft_tab::{snap_to_soft_tab, SnapDirection},
+    soft_tab::{SnapDirection, snap_to_soft_tab},
 };
 
 use super::{
+    Editor,
     actions::CommonAction,
     visual_line::{RVLine, VLineInfo},
-    Editor,
 };
 
 /// Move a selection region by a given movement.  

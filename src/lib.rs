@@ -196,17 +196,14 @@ pub mod file;
 pub mod file_action;
 pub(crate) mod id;
 mod inspector;
-pub mod keyboard;
 pub mod menu;
 mod nav;
-pub mod pointer;
 mod profiler;
 mod renderer;
 pub mod responsive;
 mod screen_layout;
 pub mod style;
 pub(crate) mod theme;
-pub mod touchpad;
 pub mod unit;
 mod update;
 pub(crate) mod view;
@@ -219,34 +216,39 @@ mod window_handle;
 mod window_id;
 mod window_tracking;
 
-pub use app::{launch, quit_app, reopen, AppConfig, AppEvent, Application};
+pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};
 pub use app_state::AppState;
 pub use clipboard::{Clipboard, ClipboardError};
 pub use ext_event::async_signal;
 pub use floem_reactive as reactive;
-pub use floem_renderer::gpu_resources::GpuResources;
-pub use floem_renderer::text;
 pub use floem_renderer::Renderer;
 pub use floem_renderer::Svg as RendererSvg;
+pub use floem_renderer::gpu_resources::GpuResources;
+pub use floem_renderer::text;
 pub use id::ViewId;
 pub use muda;
 pub use peniko;
 pub use peniko::kurbo;
 pub use screen_layout::ScreenLayout;
 pub use taffy;
-pub use view::{recursively_layout_view, AnyView, IntoView, View};
+pub use ui_events;
+pub use view::{AnyView, IntoView, View, recursively_layout_view};
 pub use window::{close_window, new_window};
 pub use window_id::{Urgency, WindowIdExt};
 
+pub mod keyboard {
+    pub use ui_events::keyboard::{Key, NamedKey};
+}
+
 pub mod prelude {
+    pub use crate::Renderer;
     pub use crate::unit::{DurationUnitExt, UnitExt};
     pub use crate::view_tuple::ViewTuple;
     pub use crate::views::*;
-    pub use crate::Renderer;
     pub use crate::{IntoView, View};
     pub use floem_reactive::{
-        create_rw_signal, create_signal, RwSignal, SignalGet, SignalTrack, SignalUpdate, SignalWith,
+        RwSignal, SignalGet, SignalTrack, SignalUpdate, SignalWith, create_rw_signal, create_signal,
     };
-    pub use peniko::color::palette;
     pub use peniko::Color;
+    pub use peniko::color::palette;
 }

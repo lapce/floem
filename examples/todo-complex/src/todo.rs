@@ -4,7 +4,7 @@ use floem::{
     action::{debounce_action, exec_after},
     easing::Spring,
     event::{Event, EventListener},
-    keyboard::{Modifiers, NamedKey},
+    keyboard::NamedKey,
     kurbo::Stroke,
     menu::Menu,
     muda::{self, NativeIcon},
@@ -12,6 +12,10 @@ use floem::{
     reactive::{create_effect, create_memo, Trigger},
     style::{BoxShadowProp, CursorStyle, MinHeight, Transition},
     taffy::AlignItems,
+    ui_events::{
+        keyboard::Modifiers,
+        pointer::{PointerButtonEvent, PointerEvent},
+    },
     views::Checkbox,
     AnyView,
 };
@@ -197,12 +201,12 @@ impl IntoView for TodoState {
                 AppCommand::SetActive(self).execute();
             })
             .on_click_stop(move |e| {
-                let Event::PointerUp(e) = e else {
+                let Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. })) = e else {
                     return;
                 };
-                if e.modifiers == OS_MOD {
+                if state.modifiers == OS_MOD {
                     AppCommand::ToggleSelected(self).execute();
-                } else if e.modifiers.contains(Modifiers::SHIFT) {
+                } else if state.modifiers.contains(Modifiers::SHIFT) {
                     AppCommand::SelectRange(self).execute();
                 } else {
                     AppCommand::SetSelected(self).execute();

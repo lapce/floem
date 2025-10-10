@@ -1,8 +1,7 @@
 use floem::{
-    keyboard::{Key, NamedKey},
-    peniko::color::palette,
-    peniko::Color,
+    peniko::{color::palette, Color},
     reactive::{provide_context, use_context},
+    ui_events::keyboard::{Key, NamedKey},
     views::{empty, label, v_stack, Decorators},
     IntoView, View,
 };

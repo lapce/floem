@@ -1,0 +1,26 @@
+[package]
+name = "ui-events-floem-winit"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+description = "A library for bridging ui-events and winit"
+keywords = ["windowing", "input", "pointer"]
+categories = ["graphics", "gui"]
+repository.workspace = true
+rust-version.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+# There are no platform specific docs.
+default-target = "x86_64-unknown-linux-gnu"
+targets = []
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+ui-events = { workspace = true, features = ["std"] }
+winit.workspace = true
+dpi.workspace = true
+

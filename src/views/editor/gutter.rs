@@ -1,4 +1,5 @@
 use crate::{
+    Renderer,
     context::PaintCx,
     id::ViewId,
     peniko::kurbo::Point,
@@ -8,13 +9,12 @@ use crate::{
     text::{Attrs, AttrsList, TextLayout},
     view::View,
     views::Decorators,
-    Renderer,
 };
 use floem_editor_core::{cursor::CursorMode, mode::Mode};
 use floem_reactive::{RwSignal, SignalGet, SignalWith};
+use peniko::Color;
 use peniko::color::palette;
 use peniko::kurbo::Rect;
-use peniko::Color;
 
 use super::{CurrentLineColor, Editor};
 

@@ -1,9 +1,11 @@
 use floem::{
-    event::EventListener,
+    event::{Event, EventListener},
+    keyboard::{Key, NamedKey},
     peniko::Color,
     reactive::{create_signal, ReadSignal, SignalGet, SignalUpdate, WriteSignal},
     style::{CursorStyle, Position},
     text::Weight,
+    ui_events::keyboard::{KeyState, KeyboardEvent},
     views::{container, h_stack, label, scroll, tab, v_stack, Decorators},
     IntoView, View,
 };
@@ -105,8 +107,13 @@ pub fn tab_navigation_view() -> impl IntoView {
 
     let id = settings_view.id();
     settings_view.on_event_stop(EventListener::KeyUp, move |e| {
-        if let floem::event::Event::KeyUp(e) = e {
-            if e.key.logical_key == floem::keyboard::Key::Named(floem::keyboard::NamedKey::F11) {
+        if let Event::Key(KeyboardEvent {
+            state: KeyState::Up,
+            key,
+            ..
+        }) = e
+        {
+            if *key == Key::Named(NamedKey::F11) {
                 id.inspect();
             }
         }

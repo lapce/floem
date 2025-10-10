@@ -3,18 +3,18 @@
 //! Animations
 
 use crate::{
+    ViewId,
     easing::*,
     style::{Style, StylePropRef},
     unit::UnitExt,
     view_state::StackOffset,
-    ViewId,
 };
 
 use std::any::Any;
 use std::rc::Rc;
 
-use floem_reactive::{create_updater, RwSignal, SignalGet, Trigger};
-use smallvec::{smallvec, SmallVec};
+use floem_reactive::{RwSignal, SignalGet, Trigger, create_updater};
+use smallvec::{SmallVec, smallvec};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
@@ -214,7 +214,9 @@ impl PropCache {
             if let Err(pos) = oe.get().binary_search(&idx) {
                 oe.get_mut().insert(pos, idx)
             } else {
-                unreachable!("this should err because a computed prop shouldn't be inserted more than once. ")
+                unreachable!(
+                    "this should err because a computed prop shouldn't be inserted more than once. "
+                )
             }
         }
     }
@@ -544,11 +546,7 @@ impl Animation {
 
     /// Conditionally apply properties to this animation if the condition is `true`.
     pub fn apply_if(self, cond: bool, f: impl FnOnce(Self) -> Self) -> Self {
-        if cond {
-            f(self)
-        } else {
-            self
-        }
+        if cond { f(self) } else { self }
     }
 
     /// Provides access to the on create trigger by calling the closure in once and then returning self.
@@ -824,26 +822,26 @@ impl Animation {
             }
             AnimState::PassInProgress {
                 started_on,
-                mut elapsed,
+                elapsed,
             } => {
                 let now = Instant::now();
                 let duration = now - *started_on;
-                let og_elapsed = elapsed;
-                elapsed = duration;
+                let og_elapsed = *elapsed;
+                *elapsed = duration;
 
-                let temp_elapsed = if elapsed <= self.delay && use_delay {
+                let temp_elapsed = if *elapsed <= self.delay && use_delay {
                     // The animation hasn't started yet
                     Duration::ZERO
                 } else if use_delay {
-                    elapsed - self.delay
+                    *elapsed - self.delay
                 } else {
-                    elapsed
+                    *elapsed
                 };
 
                 if temp_elapsed >= self.duration {
                     if self.props_in_ext_progress.is_empty() {
                         self.state = AnimState::PassFinished {
-                            elapsed,
+                            elapsed: *elapsed,
                             was_in_ext: false,
                         };
                     } else {
@@ -857,15 +855,15 @@ impl Animation {
             }
             AnimState::ExtMode {
                 started_on,
-                mut elapsed,
+                elapsed,
             } => {
                 let now = Instant::now();
                 let duration = now - *started_on;
-                elapsed = duration;
+                *elapsed = duration;
 
                 if self.props_in_ext_progress.is_empty() {
                     self.state = AnimState::PassFinished {
-                        elapsed,
+                        elapsed: *elapsed,
                         was_in_ext: true,
                     };
                 }

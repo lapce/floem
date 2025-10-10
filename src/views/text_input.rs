@@ -1,19 +1,18 @@
 use crate::action::exec_after;
 use crate::event::{EventListener, EventPropagation};
 use crate::id::ViewId;
-use crate::keyboard::{self, KeyEvent, Modifiers};
-use crate::pointer::{MouseButton, PointerButton, PointerInputEvent};
-use crate::reactive::{create_effect, RwSignal};
+use crate::reactive::{RwSignal, create_effect};
 use crate::style::{FontFamily, FontProps, PaddingLeft, SelectionStyle, TextAlignProp};
 use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
-use crate::{prop_extractor, style_class, Clipboard};
-use floem_reactive::{create_rw_signal, SignalGet, SignalUpdate, SignalWith};
+use crate::{Clipboard, prop_extractor, style_class};
+use floem_reactive::{SignalGet, SignalUpdate, SignalWith, create_rw_signal};
 use taffy::prelude::{Layout, NodeId};
 
-use floem_renderer::{text::Cursor, Renderer};
+use floem_renderer::{Renderer, text::Cursor};
+use ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey};
+use ui_events::pointer::{PointerButton, PointerButtonEvent, PointerEvent};
 use unicode_segmentation::UnicodeSegmentation;
-use winit::keyboard::{Key, NamedKey, SmolStr};
 
 use crate::{peniko::color::palette, style::Style, view::View};
 
@@ -200,11 +199,11 @@ pub(crate) enum TextCommand {
     None,
 }
 
-impl From<(&KeyEvent, &SmolStr)> for TextCommand {
-    fn from(val: (&keyboard::KeyEvent, &SmolStr)) -> Self {
+impl From<(&KeyboardEvent, &str)> for TextCommand {
+    fn from(val: (&KeyboardEvent, &str)) -> Self {
         let (event, ch) = val;
         #[cfg(target_os = "macos")]
-        match (event.modifiers, ch.as_str()) {
+        match (event.modifiers, ch) {
             (Modifiers::META, "a") => Self::SelectAll,
             (Modifiers::META, "c") => Self::Copy,
             (Modifiers::META, "x") => Self::Cut,
@@ -212,7 +211,7 @@ impl From<(&KeyEvent, &SmolStr)> for TextCommand {
             _ => Self::None,
         }
         #[cfg(not(target_os = "macos"))]
-        match (event.modifiers, ch.as_str()) {
+        match (event.modifiers, ch) {
             (Modifiers::CONTROL, "a") => Self::SelectAll,
             (Modifiers::CONTROL, "c") => Self::Copy,
             (Modifiers::CONTROL, "x") => Self::Cut,
@@ -222,7 +221,7 @@ impl From<(&KeyEvent, &SmolStr)> for TextCommand {
     }
 }
 
-fn get_word_based_motion(event: &KeyEvent) -> Option<Movement> {
+fn get_word_based_motion(event: &KeyboardEvent) -> Option<Movement> {
     #[cfg(not(target_os = "macos"))]
     return event
         .modifiers
@@ -640,7 +639,7 @@ impl TextInput {
         self.selection = Some(0..len);
     }
 
-    fn handle_modifier_cmd(&mut self, event: &KeyEvent, character: &SmolStr) -> bool {
+    fn handle_modifier_cmd(&mut self, event: &KeyboardEvent, character: &str) -> bool {
         if event.modifiers.is_empty() || event.modifiers == Modifiers::SHIFT {
             return false;
         }
@@ -717,13 +716,8 @@ impl TextInput {
         }
     }
 
-    fn handle_key_down(&mut self, cx: &mut EventCx, event: &KeyEvent) -> bool {
-        let handled = match event.key.logical_key {
-            Key::Unidentified(_) => event
-                .key
-                .text
-                .as_ref()
-                .is_some_and(|ch| self.insert_text(ch)),
+    fn handle_key_down(&mut self, cx: &mut EventCx, event: &KeyboardEvent) -> bool {
+        let handled = match event.key {
             Key::Character(ref c) if c == " " => {
                 if let Some(selection) = &self.selection {
                     self.buffer
@@ -868,7 +862,7 @@ impl TextInput {
             return true;
         }
 
-        match event.key.logical_key {
+        match event.key {
             Key::Character(ref ch) => {
                 let handled_modifier_cmd = self.handle_modifier_cmd(event, ch);
                 if handled_modifier_cmd {
@@ -884,7 +878,7 @@ impl TextInput {
         }
     }
 
-    fn insert_text(&mut self, ch: &SmolStr) -> bool {
+    fn insert_text(&mut self, ch: &str) -> bool {
         let selection = self.selection.clone();
         if let Some(selection) = selection {
             self.buffer
@@ -894,7 +888,7 @@ impl TextInput {
         }
 
         self.buffer
-            .update(|buf| buf.insert_str(self.cursor_glyph_idx, &ch.clone()));
+            .update(|buf| buf.insert_str(self.cursor_glyph_idx, ch));
         self.move_cursor(Movement::Glyph, TextDirection::Right)
     }
 
@@ -1067,43 +1061,47 @@ impl View for TextInput {
 
         let is_handled = match &event {
             // match on pointer primary button press
-            Event::PointerDown(
-                event @ PointerInputEvent {
-                    button: PointerButton::Mouse(MouseButton::Primary),
-                    ..
-                },
-            ) => {
+            Event::Pointer(PointerEvent::Down(PointerButtonEvent {
+                button: Some(PointerButton::Primary),
+                state,
+                ..
+            })) => {
                 cx.update_active(self.id);
                 self.id.request_layout();
-                self.last_pointer_down = event.pos;
+                let point = state.point();
+                self.last_pointer_down = point;
 
-                if event.count == 2 {
-                    self.handle_double_click(event.pos.x, event.pos.y);
-                } else if event.count == 3 {
+                if state.count == 2 {
+                    self.handle_double_click(point.x, point.y);
+                } else if state.count == 3 {
                     self.handle_triple_click();
                 } else {
-                    self.cursor_glyph_idx = self.get_box_position(event.pos.x, event.pos.y);
+                    self.cursor_glyph_idx = self.get_box_position(point.x, point.y);
                     self.selection = None;
                 }
                 true
             }
-            Event::PointerMove(event) => {
+            Event::Pointer(PointerEvent::Move(pu)) => {
                 self.id.request_layout();
+                let pos = pu.current.point();
                 if cx.is_active(self.id) {
-                    if event.pos.x < 0. && event.pos.x < self.last_pointer_down.x {
-                        self.scroll(event.pos.x);
-                    } else if event.pos.x > self.width as f64
-                        && event.pos.x > self.last_pointer_down.x
-                    {
-                        self.scroll(event.pos.x - self.width as f64);
+                    if pos.x < 0. && pos.x < self.last_pointer_down.x {
+                        self.scroll(pos.x);
+                    } else if pos.x > self.width as f64 && pos.x > self.last_pointer_down.x {
+                        self.scroll(pos.x - self.width as f64);
                     }
 
-                    let selection_stop = self.get_box_position(event.pos.x, event.pos.y);
+                    let selection_stop = self.get_box_position(pos.x, pos.y);
                     self.update_selection(self.cursor_glyph_idx, selection_stop);
                 }
                 false
             }
-            Event::KeyDown(event) => self.handle_key_down(cx, event),
+            Event::Key(
+                ke @ KeyboardEvent {
+                    state: KeyState::Down,
+                    ..
+                },
+            ) => self.handle_key_down(cx, ke),
             _ => false,
         };
 
@@ -1273,8 +1271,7 @@ impl View for TextInput {
             && self.selection.is_none()
             && (self.last_cursor_action_on.elapsed().as_millis()
                 / CURSOR_BLINK_INTERVAL_MS as u128)
-                % 2
-                == 0;
+                .is_multiple_of(2);
 
         if is_cursor_visible {
             let cursor_color = self
