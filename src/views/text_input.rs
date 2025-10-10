@@ -1300,8 +1300,7 @@ impl View for TextInput {
             && self.selection.is_none()
             && (self.last_cursor_action_on.elapsed().as_millis()
                 / CURSOR_BLINK_INTERVAL_MS as u128)
-                % 2
-                == 0;
+                .is_multiple_of(2);
 
         if is_cursor_visible {
             let cursor_color = self

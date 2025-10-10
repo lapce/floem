@@ -1474,8 +1474,8 @@ fn context_menu_view(
                         )
                         .keyboard_navigable()
                         .on_event_stop(EventListener::KeyDown, move |event| {
-                            if let Event::KeyDown(event) = event {
-                                if event.key.logical_key == Key::Named(NamedKey::Escape) {
+                            if let Event::Key(KeyboardEvent { key, .. }) = event {
+                                if *key == Key::Named(NamedKey::Escape) {
                                     context_menu.set(None);
                                 }
                             }
@@ -1555,8 +1555,8 @@ fn context_menu_view(
     .on_event_stop(EventListener::PointerMove, move |_| {})
     .keyboard_navigable()
     .on_event_stop(EventListener::KeyDown, move |event| {
-        if let Event::KeyDown(event) = event {
-            if event.key.logical_key == Key::Named(NamedKey::Escape) {
+        if let Event::Key(KeyboardEvent { key, .. }) = event {
+            if *key == Key::Named(NamedKey::Escape) {
                 context_menu.set(None);
             }
         }
