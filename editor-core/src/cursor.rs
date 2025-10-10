@@ -215,6 +215,22 @@ impl Cursor {
         self.mode.affinity()
     }
 
+    pub fn set_latest_affinity(&mut self, affinity: CursorAffinity) {
+        match &mut self.mode {
+            CursorMode::Normal { affinity: aff, .. } => {
+                *aff = affinity;
+            }
+            CursorMode::Visual { affinity: aff, .. } => {
+                *aff = affinity;
+            }
+            CursorMode::Insert(selection) => {
+                if let Some(region) = selection.last_inserted_mut() {
+                    region.affinity = affinity;
+                }
+            }
+        }
+    }
+
     pub fn regions_iter(
         &self,
     ) -> impl ExactSizeIterator<Item = (usize, usize, CursorAffinity)> + '_ {
