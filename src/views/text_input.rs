@@ -267,10 +267,6 @@ impl TextInput {
     fn move_cursor(&mut self, move_kind: Movement, direction: TextDirection) -> bool {
         match (move_kind, direction) {
             (Movement::Glyph, TextDirection::Left) => {
-                if let Some(ref selection) = self.selection {
-                    self.cursor_glyph_idx = selection.start;
-                    return true;
-                }
                 let untracked_buffer = self.buffer.get_untracked();
                 let mut grapheme_iter = untracked_buffer[..self.cursor_glyph_idx].graphemes(true);
                 match grapheme_iter.next_back() {
@@ -283,10 +279,6 @@ impl TextInput {
             }
             (Movement::Glyph, TextDirection::Right) => {
                 let untracked_buffer = self.buffer.get_untracked();
-                if let Some(ref selection) = self.selection {
-                    self.cursor_glyph_idx = selection.end;
-                    return true;
-                }
                 let mut grapheme_iter = untracked_buffer[self.cursor_glyph_idx..].graphemes(true);
                 match grapheme_iter.next() {
                     None => false,
@@ -839,20 +831,16 @@ impl TextInput {
             Key::Named(NamedKey::ArrowLeft) => {
                 let old_glyph_idx = self.cursor_glyph_idx;
 
-                let cursor_moved = self.move_cursor(
-                    get_word_based_motion(event).unwrap_or(Movement::Glyph),
-                    TextDirection::Left,
-                );
+                let move_kind = get_word_based_motion(event).unwrap_or(Movement::Glyph);
+                let cursor_moved = self.move_cursor(move_kind, TextDirection::Left);
 
-                if cursor_moved {
-                    self.move_selection(
-                        old_glyph_idx,
-                        self.cursor_glyph_idx,
-                        event.modifiers,
-                        TextDirection::Left,
-                    );
-                } else if !event.modifiers.contains(Modifiers::SHIFT) && self.selection.is_some() {
-                    self.selection = None;
+                if event.modifiers.contains(Modifiers::SHIFT) {
+                    self.move_selection(old_glyph_idx, self.cursor_glyph_idx);
+                } else if let Some(selection) = self.selection.take() {
+                    // clear and jump to the start of the selection
+                    if matches!(move_kind, Movement::Glyph) {
+                        self.cursor_glyph_idx = selection.start;
+                    }
                 }
 
                 cursor_moved
@@ -860,20 +848,16 @@ impl TextInput {
             Key::Named(NamedKey::ArrowRight) => {
                 let old_glyph_idx = self.cursor_glyph_idx;
 
-                let cursor_moved = self.move_cursor(
-                    get_word_based_motion(event).unwrap_or(Movement::Glyph),
-                    TextDirection::Right,
-                );
+                let move_kind = get_word_based_motion(event).unwrap_or(Movement::Glyph);
+                let cursor_moved = self.move_cursor(move_kind, TextDirection::Right);
 
-                if cursor_moved {
-                    self.move_selection(
-                        old_glyph_idx,
-                        self.cursor_glyph_idx,
-                        event.modifiers,
-                        TextDirection::Right,
-                    );
-                } else if !event.modifiers.contains(Modifiers::SHIFT) && self.selection.is_some() {
-                    self.selection = None;
+                if event.modifiers.contains(Modifiers::SHIFT) {
+                    self.move_selection(old_glyph_idx, self.cursor_glyph_idx);
+                } else if let Some(selection) = self.selection.take() {
+                    // clear and jump to the end of the selection
+                    if matches!(move_kind, Movement::Glyph) {
+                        self.cursor_glyph_idx = selection.end;
+                    }
                 }
 
                 cursor_moved
@@ -914,46 +898,33 @@ impl TextInput {
         self.move_cursor(Movement::Glyph, TextDirection::Right)
     }
 
-    fn move_selection(
-        &mut self,
-        old_glyph_idx: usize,
-        curr_glyph_idx: usize,
-        modifiers: Modifiers,
-        direction: TextDirection,
-    ) {
-        if !modifiers.contains(Modifiers::SHIFT) {
-            if self.selection.is_some() {
-                self.selection = None;
-            }
-            return;
-        }
-
+    fn move_selection(&mut self, old_glyph_idx: usize, curr_glyph_idx: usize) {
         let new_selection = if let Some(selection) = &self.selection {
-            match (direction, selection.contains(&curr_glyph_idx)) {
-                (TextDirection::Left, true) | (TextDirection::Right, false) => {
-                    selection.start..curr_glyph_idx
-                }
-                (TextDirection::Right, true) | (TextDirection::Left, false) => {
-                    curr_glyph_idx..selection.end
-                }
+            // we're making an assumption that the caret is at the selection's edge
+            // the opposite edge will be our anchor
+            let anchor = if selection.start == old_glyph_idx {
+                selection.end
+            } else {
+                selection.start
+            };
+
+            if anchor < curr_glyph_idx {
+                anchor..curr_glyph_idx
+            } else {
+                curr_glyph_idx..anchor
             }
+        } else if old_glyph_idx < curr_glyph_idx {
+            old_glyph_idx..curr_glyph_idx
         } else {
-            match direction {
-                TextDirection::Left => curr_glyph_idx..old_glyph_idx,
-                TextDirection::Right => old_glyph_idx..curr_glyph_idx,
-            }
+            curr_glyph_idx..old_glyph_idx
         };
-        // when we move in the opposite direction and end up in the same selection range,
-        // the selection should be cancelled out
-        if self
-            .selection
-            .as_ref()
-            .is_some_and(|sel| sel == &new_selection)
-        {
-            self.selection = None;
+
+        // avoid empty selection
+        self.selection = if new_selection.is_empty() {
+            None
         } else {
-            self.selection = Some(new_selection);
-        }
+            Some(new_selection)
+        };
     }
 
     fn paint_placeholder_text(
