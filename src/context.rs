@@ -997,6 +997,10 @@ pub struct PaintCx<'a> {
     pub(crate) saved_z_indexes: Vec<Option<i32>>,
     pub gpu_resources: Option<GpuResources>,
     pub window: Arc<dyn Window>,
+    #[cfg(feature = "vello")]
+    pub layer_count: usize,
+    #[cfg(feature = "vello")]
+    pub saved_layer_counts: Vec<usize>,
 }
 
 impl PaintCx<'_> {
@@ -1004,9 +1008,20 @@ impl PaintCx<'_> {
         self.saved_transforms.push(self.transform);
         self.saved_clips.push(self.clip);
         self.saved_z_indexes.push(self.z_index);
+        #[cfg(feature = "vello")]
+        self.saved_layer_counts.push(self.layer_count);
     }
 
     pub fn restore(&mut self) {
+        #[cfg(feature = "vello")]
+        {
+            let saved_count = self.saved_layer_counts.pop().unwrap_or_default();
+            while self.layer_count > saved_count {
+                self.pop_layer();
+                self.layer_count -= 1;
+            }
+        }
+
         self.transform = self.saved_transforms.pop().unwrap_or_default();
         self.clip = self.saved_clips.pop().unwrap_or_default();
         self.z_index = self.saved_z_indexes.pop().unwrap_or_default();
@@ -1018,10 +1033,14 @@ impl PaintCx<'_> {
         } else {
             self.paint_state.renderer_mut().set_z_index(0);
         }
-        if let Some(rect) = self.clip {
-            self.paint_state.renderer_mut().clip(&rect);
-        } else {
-            self.paint_state.renderer_mut().clear_clip();
+
+        #[cfg(not(feature = "vello"))]
+        {
+            if let Some(rect) = self.clip {
+                self.paint_state.renderer_mut().clip(&rect);
+            } else {
+                self.paint_state.renderer_mut().clear_clip();
+            }
         }
     }
 
@@ -1168,24 +1187,37 @@ impl PaintCx<'_> {
 
     /// Clip the drawing area to the given shape.
     pub fn clip(&mut self, shape: &impl Shape) {
-        let rect = if let Some(rect) = shape.as_rect() {
-            rect.to_rounded_rect(0.0)
-        } else if let Some(rect) = shape.as_rounded_rect() {
-            rect
-        } else {
-            let rect = shape.bounding_box();
-            rect.to_rounded_rect(0.0)
-        };
+        #[cfg(feature = "vello")]
+        {
+            use peniko::Mix;
 
-        let rect = if let Some(existing) = self.clip {
-            let rect = existing.rect().intersect(rect.rect());
-            self.paint_state.renderer_mut().clip(&rect);
-            rect.to_rounded_rect(0.0)
-        } else {
-            self.paint_state.renderer_mut().clip(&shape);
-            rect
-        };
-        self.clip = Some(rect);
+            self.push_layer(Mix::Normal, 1.0, Affine::IDENTITY, shape);
+            self.layer_count += 1;
+            self.clip = Some(shape.bounding_box().to_rounded_rect(0.0));
+        }
+
+        #[cfg(not(feature = "vello"))]
+        {
+            let rect = if let Some(rect) = shape.as_rect() {
+                rect.to_rounded_rect(0.0)
+            } else if let Some(rect) = shape.as_rounded_rect() {
+                rect
+            } else {
+                let rect = shape.bounding_box();
+                rect.to_rounded_rect(0.0)
+            };
+
+            let rect = if let Some(existing) = self.clip {
+                let rect = existing.rect().intersect(rect.rect());
+                self.paint_state.renderer_mut().clip(&rect);
+                rect.to_rounded_rect(0.0)
+            } else {
+                self.paint_state.renderer_mut().clip(&shape);
+                rect
+            };
+
+            self.clip = Some(rect);
+        }
     }
 
     /// Remove clipping so the entire window can be rendered to.
