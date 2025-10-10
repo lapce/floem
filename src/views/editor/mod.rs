@@ -32,6 +32,7 @@ use floem_editor_core::{
     register::Register,
     selection::Selection,
     soft_tab::{snap_to_soft_tab_line_col, SnapDirection},
+    word::WordCursor,
 };
 use floem_reactive::{SignalGet, SignalTrack, SignalUpdate, SignalWith, Trigger};
 use floem_renderer::text::Affinity;
@@ -1095,12 +1096,9 @@ impl Editor {
 
     /// Advance to the right in the manner of the given mode.
     /// Get the column from a horizontal at a specific line index (in a text layout)
-    pub fn rvline_horiz_col(
-        &self,
-        RVLine { line, line_index }: RVLine,
-        horiz: &ColPosition,
-        caret: bool,
-    ) -> usize {
+    pub fn rvline_horiz_col(&self, rvline: RVLine, horiz: &ColPosition, caret: bool) -> usize {
+        let RVLine { line, line_index } = rvline;
+
         match *horiz {
             ColPosition::Col(x) => {
                 let text_layout = self.text_layout(line);
@@ -1117,8 +1115,22 @@ impl Editor {
 
                 col.min(self.line_end_col(line, caret))
             }
-            // Otherwise it is the same as the other function
-            _ => self.line_horiz_col(line, horiz, caret),
+            ColPosition::End => {
+                let info = self.rvline_info(rvline);
+                self.last_col(info, caret)
+            }
+            ColPosition::Start => {
+                let info = self.rvline_info(rvline);
+                self.first_col(info)
+            }
+            ColPosition::FirstNonBlank => {
+                let info = self.rvline_info(rvline);
+                let rope_text = self.text_prov().rope_text();
+                let next_offset =
+                    WordCursor::new(rope_text.text(), info.interval.start).next_non_blank_char();
+
+                next_offset - info.interval.start + self.first_col(info)
+            }
         }
     }
 
