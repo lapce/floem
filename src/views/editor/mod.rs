@@ -463,6 +463,24 @@ impl Editor {
         });
     }
 
+    pub fn set_preedit_offset(&self, offset: usize) {
+        if self.preedit().preedit.get_untracked().is_none() {
+            return;
+        }
+
+        batch(|| {
+            self.preedit().preedit.update(|preedit| {
+                if let Some(preedit) = preedit {
+                    preedit.offset = offset;
+                }
+            });
+
+            self.doc().cache_rev().update(|cache_rev| {
+                *cache_rev += 1;
+            });
+        });
+    }
+
     pub fn clear_preedit(&self) {
         let preedit = self.preedit();
         if preedit.preedit.with_untracked(|preedit| preedit.is_none()) {
@@ -515,7 +533,12 @@ impl Editor {
 
     pub fn single_click(&self, pointer_event: &PointerInputEvent) {
         let mode = self.cursor.with_untracked(|c| c.get_mode());
-        let (new_offset, _, affinity) = self.offset_of_point(mode, pointer_event.pos);
+        let (new_offset, _, mut affinity) = self.offset_of_point(mode, pointer_event.pos);
+
+        if self.preedit().preedit.with_untracked(|p| p.is_some()) {
+            // change affinity to display caret after preedit
+            affinity = CursorAffinity::Forward;
+        }
 
         self.cursor.update(|cursor| {
             cursor.set_offset(
@@ -525,6 +548,8 @@ impl Editor {
                 pointer_event.modifiers.alt(),
             );
         });
+
+        self.set_preedit_offset(new_offset);
     }
 
     pub fn double_click(&self, pointer_event: &PointerInputEvent) {

@@ -1008,6 +1008,11 @@ pub fn editor_view(
                     ed.clear_preedit();
                 } else {
                     let offset = ed.cursor.with_untracked(|c| c.offset());
+
+                    // update affinity to display caret after preedit
+                    ed.cursor
+                        .update(|c| c.set_latest_affinity(CursorAffinity::Forward));
+
                     ed.set_preedit(text.clone(), *cursor, offset);
                 }
             });
