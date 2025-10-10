@@ -344,15 +344,15 @@ fn move_up(
     let horiz =
         horiz.unwrap_or_else(|| ColPosition::Col(view.line_point_of_offset(offset, *affinity).x));
     let col = view.rvline_horiz_col(rvline, &horiz, mode != Mode::Normal);
+    let new_offset = view.offset_of_line_col(rvline.line, col);
 
-    // TODO: this should maybe be doing `new_offset == info.interval.start`?
-    *affinity = if col == 0 {
+    let info = view.rvline_info(rvline);
+
+    *affinity = if new_offset == info.interval.start {
         CursorAffinity::Forward
     } else {
         CursorAffinity::Backward
     };
-
-    let new_offset = view.offset_of_line_col(rvline.line, col);
 
     (new_offset, horiz)
 }
@@ -402,7 +402,7 @@ fn find_next_rvline_info(
             continue;
         }
 
-        if next_info.interval.start <= offset {
+        if next_info.interval.start < offset || next_info.rvline == start {
             // If we're on or before our current visual line then we skip it
             continue;
         }
