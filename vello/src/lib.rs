@@ -213,48 +213,18 @@ impl Renderer for VelloRenderer {
         brush: impl Into<BrushRef<'b>>,
         stroke: &'s Stroke,
     ) {
-        if stroke.width * self.window_scale < 2. {
-            let brush: BrushRef = brush.into();
-            match &brush {
-                BrushRef::Solid(color) => {
-                    let mut stroke = stroke.clone();
-                    // this special handling is done to make thin strokes look better
-                    stroke.width *= 1.5;
-                    let color = color.multiply_alpha(0.5);
-                    self.scene.stroke(
-                        &stroke,
-                        self.transform.then_scale(self.window_scale),
-                        BrushRef::Solid(color),
-                        None,
-                        shape,
-                    );
-                }
-
-                _ => {
-                    self.scene.stroke(
-                        stroke,
-                        self.transform.then_scale(self.window_scale),
-                        brush,
-                        None,
-                        shape,
-                    );
-                }
-            }
-        } else {
-            self.scene.stroke(
-                stroke,
-                self.transform.then_scale(self.window_scale),
-                brush,
-                None,
-                shape,
-            );
-        }
+        self.scene.stroke(
+            stroke,
+            self.transform.then_scale(self.window_scale),
+            brush,
+            None,
+            shape,
+        );
     }
 
     fn fill<'b>(&mut self, path: &impl Shape, brush: impl Into<BrushRef<'b>>, blur_radius: f64) {
         let brush: BrushRef<'b> = brush.into();
 
-        // For solid colors with specific shapes, use optimized methods
         if blur_radius > 0.0 {
             if let BrushRef::Solid(color) = brush {
                 if let Some(rounded) = path.as_rounded_rect() {
@@ -444,21 +414,21 @@ impl Renderer for VelloRenderer {
 
     fn set_z_index(&mut self, _z_index: i32) {}
 
-    fn clip(&mut self, shape: &impl Shape) {
-        if shape.bounding_box().is_zero_area() {
-            return;
-        }
-        self.scene.pop_layer();
-        self.scene.push_layer(
-            vello::peniko::BlendMode::default(),
-            1.,
-            self.transform.then_scale(self.window_scale),
-            shape,
-        );
+    fn clip(&mut self, _shape: &impl Shape) {
+        // if shape.bounding_box().is_zero_area() {
+        //     return;
+        // }
+        // self.scene.pop_layer();
+        // self.scene.push_layer(
+        //     vello::peniko::BlendMode::default(),
+        //     1.,
+        //     self.transform.then_scale(self.window_scale),
+        //     shape,
+        // );
     }
 
     fn clear_clip(&mut self) {
-        self.scene.pop_layer();
+        // self.scene.pop_layer();
     }
 
     fn finish(&mut self) -> Option<vello::peniko::ImageBrush> {

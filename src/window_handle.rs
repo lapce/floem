@@ -682,6 +682,10 @@ impl WindowHandle {
             saved_z_indexes: Vec::new(),
             gpu_resources,
             window: self.window.clone(),
+            #[cfg(feature = "vello")]
+            saved_layer_counts: Vec::new(),
+            #[cfg(feature = "vello")]
+            layer_count: 0,
         };
         cx.paint_state
             .renderer_mut()
