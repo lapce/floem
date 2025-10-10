@@ -1,4 +1,4 @@
-use super::{v_stack_from_iter, Decorators};
+use super::{Decorators, v_stack_from_iter};
 use crate::context::StyleCx;
 use crate::event::EventPropagation;
 use crate::id::ViewId;
@@ -11,7 +11,7 @@ use crate::{
     keyboard::{Key, NamedKey},
     view::View,
 };
-use floem_reactive::{create_rw_signal, RwSignal, SignalGet, SignalTrack, SignalUpdate};
+use floem_reactive::{RwSignal, SignalGet, SignalTrack, SignalUpdate, create_rw_signal};
 
 style_class!(pub ListClass);
 style_class!(pub ListItemClass);
@@ -78,7 +78,7 @@ where
     V: IntoView + 'static,
 {
     let list_id = ViewId::new();
-    let selection = create_rw_signal(None);
+    let selection = create_rw_signal(Some(0));
     create_effect(move |_| {
         selection.track();
         list_id.update_state(ListUpdate::SelectionChanged);
@@ -111,7 +111,6 @@ where
         child,
         onaccept: None,
     }
-    .keyboard_navigable()
     .on_event(EventListener::KeyDown, move |e| {
         if let Event::KeyDown(key_event) = e {
             match key_event.key.logical_key {
@@ -210,7 +209,7 @@ impl View for Item {
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        "Item".into()
+        "List Item".into()
     }
 
     fn style_pass(&mut self, cx: &mut StyleCx<'_>) {

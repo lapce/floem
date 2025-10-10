@@ -4,7 +4,7 @@
 //!
 //! The decorator trait is the primary interface for extending the appearance and functionality of ['View']s.
 
-use floem_reactive::{create_effect, create_updater, SignalUpdate};
+use floem_reactive::{SignalUpdate, create_effect, create_updater};
 use peniko::kurbo::{Point, Rect};
 use winit::keyboard::Key;
 
@@ -139,10 +139,9 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     }
 
     /// Allows the element to be navigated to with the keyboard. Similar to setting tabindex="0" in html.
+    #[deprecated(note = "Set this property using `Style::focusable` instead")]
     fn keyboard_navigable(self) -> Self::DV {
-        let view = self.into_view();
-        view.id().keyboard_navigable();
-        view
+        self.style(|s| s.focusable(true))
     }
 
     /// Dynamically controls whether the default view behavior for an event should be disabled.
@@ -179,16 +178,9 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     ///
     /// # Reactivity
     /// The `disabled_fn` is reactive.
+    #[deprecated(note = "use `Style::set_disabled` directly instead")]
     fn disabled(self, disabled_fn: impl Fn() -> bool + 'static) -> Self::DV {
-        let view = self.into_view();
-        let id = view.id();
-
-        create_effect(move |_| {
-            let is_disabled = disabled_fn();
-            id.update_disabled(is_disabled);
-        });
-
-        view
+        self.style(move |s| s.set_disabled(disabled_fn()))
     }
 
     /// Add an event handler for the given [`EventListener`].

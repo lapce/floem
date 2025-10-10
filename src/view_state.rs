@@ -246,39 +246,40 @@ impl ViewState {
     }
 
     /// Returns `true` if a new frame is requested.
+    ///
+    // The context has the nested maps of classes and inherited properties
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn compute_style(
+    pub(crate) fn compute_combined(
         &mut self,
         view_style: Option<Style>,
         interact_state: InteractionState,
         screen_size_bp: ScreenSizeBp,
         view_class: Option<StyleClassRef>,
         context: &Style,
+        cx_hidden: bool,
     ) -> bool {
         let mut new_frame = false;
-        // we are just using the combined style and then clearing here to avoid creating an entirely new style map
-        // because the clone is cheap, this is fine
-        let mut computed_style = self.combined_style.clone();
-        computed_style.clear();
-        // we will apply the views style to the context so that if a style class is used on a view, that class will be directly applied instead of only applying to children
-        let mut context = context.clone();
+        let mut combined_style = Style::new();
+
         if let Some(view_class) = view_class {
-            computed_style = computed_style.apply_classes_from_context(&[view_class], &context);
+            combined_style = combined_style.apply_classes_from_context(&[view_class], context);
         }
-        computed_style = computed_style.apply_classes_from_context(&self.classes, &context);
+        combined_style = combined_style.apply_classes_from_context(&self.classes, context);
 
         if let Some(view_style) = view_style {
-            context.apply_mut(view_style.clone());
-            computed_style.apply_mut(view_style);
+            combined_style = combined_style.apply_context_mappings(context);
+            combined_style.apply_mut(view_style);
         }
-        // self.style has precedence over the supplied view style so it comes after
+
         let self_style = self.style();
-        context.apply_mut(self_style.clone());
-        computed_style.apply_mut(self_style);
+        combined_style = combined_style.apply_context_mappings(context);
+        combined_style.apply_mut(self_style.clone());
 
-        self.has_style_selectors = computed_style.selectors();
-
-        computed_style.apply_interact_state(&interact_state, screen_size_bp);
+        self.has_style_selectors = combined_style.selectors();
+        combined_style.apply_interact_state(&interact_state, screen_size_bp);
+        combined_style = combined_style.apply_context_mappings(context);
+        combined_style.apply_interact_state(&interact_state, screen_size_bp);
+        // TODO: recursively resolve nested maps
 
         for animation in self
             .animations
@@ -288,18 +289,19 @@ impl ViewState {
         {
             if animation.can_advance() {
                 new_frame = true;
-
-                animation.animate_into(&mut computed_style);
-
+                animation.animate_into(&mut combined_style);
                 animation.advance();
             } else {
-                animation.apply_folded(&mut computed_style)
+                animation.apply_folded(&mut combined_style)
             }
             debug_assert!(!animation.is_idle());
         }
 
-        self.combined_style = computed_style;
+        if cx_hidden {
+            combined_style = combined_style.hide();
+        }
 
+        self.combined_style = combined_style;
         new_frame
     }
 

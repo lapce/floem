@@ -5,8 +5,8 @@ use crate::{
     style_class,
     view::IntoView,
     views::{
-        self, create_value_container_signals, h_stack, svg, value_container, Decorators,
-        ValueContainer,
+        self, Decorators, ValueContainer, create_value_container_signals, h_stack, svg,
+        value_container,
     },
 };
 use floem_reactive::{SignalGet, SignalUpdate};
@@ -43,7 +43,7 @@ fn checkbox_svg(
     svg(check_svg)
         .update_value(update_svg)
         .class(CheckboxClass)
-        .keyboard_navigable()
+        .style(|s| s.focusable(true))
 }
 
 /// # A customizable checkbox view for boolean selection.

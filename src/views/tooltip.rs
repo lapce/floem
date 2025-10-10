@@ -80,11 +80,12 @@ impl View for Tooltip {
                     let tip = self.tip.clone();
 
                     let tip_style = self.tip_style.clone();
+                    let point = window_origin
+                        + self.hover.unwrap().0.to_vec2()
+                        + (10. / self.scale, 10. / self.scale);
                     let overlay_id = add_overlay(
-                        window_origin
-                            + self.hover.unwrap().0.to_vec2()
-                            + (10. / self.scale, 10. / self.scale),
-                        ToolTipOverlay::new(tip().style(move |_| tip_style.clone())),
+                        ToolTipOverlay::new(tip().style(move |_| tip_style.clone()))
+                            .style(move |s| s.inset_left(point.x).inset_top(point.y)),
                     );
                     // overlay_id.request_all();
                     *self.overlay.borrow_mut() = Some(overlay_id);

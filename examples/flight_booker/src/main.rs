@@ -73,12 +73,16 @@ pub fn app_view() -> impl IntoView {
         .style(move |s| s.apply_if(!start_date_is_valid(), |s| s.background(palette::css::RED)));
     let return_date_input = text_input(return_text)
         .placeholder("Return date")
-        .style(move |s| s.apply_if(!return_date_is_valid(), |s| s.background(palette::css::RED)))
-        .disabled(move || !return_text_is_enabled());
+        .style(move |s| {
+            s.set_disabled(!return_text_is_enabled())
+                .apply_if(!return_date_is_valid(), |s| s.background(palette::css::RED))
+        });
 
     let book_button = button("Book")
-        .disabled(move || {
-            !(dates_are_chronological() && start_date_is_valid() && return_date_is_valid())
+        .style(move |s| {
+            s.set_disabled(
+                !(dates_are_chronological() && start_date_is_valid() && return_date_is_valid()),
+            )
         })
         .action(move || did_booking.set(true));
 

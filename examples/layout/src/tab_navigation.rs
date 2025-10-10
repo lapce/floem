@@ -4,7 +4,7 @@ use floem::{
     reactive::{create_signal, ReadSignal, SignalGet, SignalUpdate, WriteSignal},
     style::{CursorStyle, Position},
     text::Weight,
-    views::{container, h_stack, label, scroll, tab, v_stack, Decorators},
+    views::{container, h_stack, label, scroll, tab, text, v_stack, ButtonExt as _, Decorators},
     IntoView, View,
 };
 
@@ -31,9 +31,9 @@ fn tab_button(
     set_active_tab: WriteSignal<usize>,
     active_tab: ReadSignal<usize>,
 ) -> impl IntoView {
-    label(move || this_tab)
-        .keyboard_navigable()
-        .on_click_stop(move |_| {
+    text(this_tab)
+        .button() // by making this a button, the button class from the default theme will be applied and the focusable property will be set
+        .action(move || {
             set_active_tab.update(|v: &mut usize| {
                 *v = tabs
                     .get_untracked()

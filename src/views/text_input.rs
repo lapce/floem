@@ -4,15 +4,15 @@ use crate::event::{EventListener, EventPropagation};
 use crate::id::ViewId;
 use crate::keyboard::{self, KeyEvent, Modifiers};
 use crate::pointer::{MouseButton, PointerButton, PointerInputEvent};
-use crate::reactive::{create_effect, RwSignal};
+use crate::reactive::{RwSignal, create_effect};
 use crate::style::{FontFamily, FontProps, PaddingLeft, SelectionStyle, TextAlignProp};
 use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
-use crate::{prop_extractor, style_class, Clipboard};
-use floem_reactive::{create_rw_signal, SignalGet, SignalUpdate, SignalWith};
+use crate::{Clipboard, prop_extractor, style_class};
+use floem_reactive::{SignalGet, SignalUpdate, SignalWith, create_rw_signal};
 use taffy::prelude::{Layout, NodeId};
 
-use floem_renderer::{text::Cursor, Renderer};
+use floem_renderer::{Renderer, text::Cursor};
 use unicode_segmentation::UnicodeSegmentation;
 use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey, SmolStr};
 
@@ -238,7 +238,6 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         last_cursor_action_on: Instant::now(),
         on_enter: None,
     }
-    .keyboard_navigable()
     .on_event_stop(EventListener::FocusGained, move |_| {
         is_focused.set(true);
     })
@@ -1367,8 +1366,7 @@ impl View for TextInput {
             && self.selection.is_none()
             && (self.last_cursor_action_on.elapsed().as_millis()
                 / CURSOR_BLINK_INTERVAL_MS as u128)
-                % 2
-                == 0;
+                .is_multiple_of(2);
 
         if is_cursor_visible {
             let cursor_color = self

@@ -15,16 +15,22 @@ pub(crate) fn view_arrow_navigation(key: NamedKey, app_state: &mut AppState, vie
             return;
         }
     };
+
+    // Get the rectangle of the focused element with a small padding
     let rect = focused.layout_rect().inflate(10.0, 10.0);
     let center = rect.center();
-    let intersect_target = match key {
-        NamedKey::ArrowUp => Rect::new(rect.x0, f64::NEG_INFINITY, rect.x1, center.y),
-        NamedKey::ArrowDown => Rect::new(rect.x0, center.y, rect.x1, f64::INFINITY),
-        NamedKey::ArrowLeft => Rect::new(f64::NEG_INFINITY, rect.y0, center.x, rect.y1),
-        NamedKey::ArrowRight => Rect::new(center.x, rect.y0, f64::INFINITY, rect.y1),
-        _ => panic!(),
+
+    // Create a narrow ray extending from the center in the direction of navigation
+    let ray_target = match key {
+        NamedKey::ArrowUp => Rect::new(rect.x0, f64::NEG_INFINITY, rect.x1, rect.y0),
+        NamedKey::ArrowDown => Rect::new(rect.x0, rect.y1, rect.x1, f64::INFINITY),
+        NamedKey::ArrowLeft => Rect::new(f64::NEG_INFINITY, rect.y0, rect.x0, rect.y1),
+        NamedKey::ArrowRight => Rect::new(rect.x1, rect.y0, f64::INFINITY, rect.y1),
+        _ => panic!("Unexpected key for arrow navigation"),
     };
-    let center_target = match key {
+
+    // Create a wider area representing the general direction
+    let direction_target = match key {
         NamedKey::ArrowUp => {
             Rect::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::INFINITY, rect.y0)
         }
@@ -33,41 +39,54 @@ pub(crate) fn view_arrow_navigation(key: NamedKey, app_state: &mut AppState, vie
             Rect::new(f64::NEG_INFINITY, f64::NEG_INFINITY, rect.x0, f64::INFINITY)
         }
         NamedKey::ArrowRight => Rect::new(rect.x1, f64::NEG_INFINITY, f64::INFINITY, f64::INFINITY),
-        _ => panic!(),
+        _ => panic!("Unexpected key for arrow navigation"),
     };
-    let mut keyboard_navigable: Vec<ViewId> =
-        app_state.keyboard_navigable.iter().copied().collect();
-    keyboard_navigable.retain(|id| {
-        let layout = id.layout_rect();
 
-        !layout.intersect(intersect_target).is_zero_area()
-            && center_target.contains(layout.center())
-            && app_state.can_focus(*id)
-            && *id != focused
+    // Collect all focusable elements
+    let mut focusable: Vec<ViewId> = app_state.focusable.iter().copied().collect();
+    focusable.retain(|id| {
+        let layout = id.layout_rect();
+        direction_target.contains(layout.center()) && *id != focused
     });
 
-    let mut new_focus = None;
-    for id in keyboard_navigable {
+    // Find the best target in a single pass with a priority scoring system
+    let mut best_target: Option<(ViewId, f64, bool)> = None; // (id, distance, in_ray)
+
+    for id in focusable {
         let id_rect = id.layout_rect();
         let id_center = id_rect.center();
+
+        // Calculate the edge point of the target element closest to the current element
         let id_edge = match key {
             NamedKey::ArrowUp => Point::new(id_center.x, id_rect.y1),
             NamedKey::ArrowDown => Point::new(id_center.x, id_rect.y0),
             NamedKey::ArrowLeft => Point::new(id_rect.x1, id_center.y),
             NamedKey::ArrowRight => Point::new(id_rect.x0, id_center.y),
-            _ => panic!(),
+            _ => panic!("Unexpected key for arrow navigation"),
         };
+
         let id_distance = center.distance_squared(id_edge);
-        if let Some((_, distance)) = new_focus {
-            if id_distance < distance {
-                new_focus = Some((id, id_distance));
+        let is_in_ray = !id_rect.intersect(ray_target).is_zero_area();
+
+        // Update best target using the following rules:
+        // 1. Always prefer elements in the ray over elements not in the ray
+        // 2. Within each category, prefer the closest element
+        if let Some((_, current_distance, current_in_ray)) = best_target {
+            if is_in_ray && !current_in_ray {
+                // This element is in the ray but current best isn't, so this is better
+                best_target = Some((id, id_distance, is_in_ray));
+            } else if is_in_ray == current_in_ray && id_distance < current_distance {
+                // Both elements are in the same category (ray or not), pick the closer one
+                best_target = Some((id, id_distance, is_in_ray));
             }
         } else {
-            new_focus = Some((id, id_distance));
+            // First valid target found
+            best_target = Some((id, id_distance, is_in_ray));
         }
     }
 
-    if let Some((id, _)) = new_focus {
+    // Update focus to the best target if found
+    if let Some((id, _, _)) = best_target {
         app_state.clear_focus();
         app_state.update_focus(id, true);
     }

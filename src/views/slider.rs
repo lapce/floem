@@ -2,10 +2,10 @@
 
 use std::ops::RangeInclusive;
 
-use floem_reactive::{create_updater, SignalGet, SignalUpdate};
+use floem_reactive::{SignalGet, SignalUpdate, create_updater};
+use peniko::Brush;
 use peniko::color::palette;
 use peniko::kurbo::{Circle, Point, RoundedRect, RoundedRectRadii};
-use peniko::Brush;
 use winit::keyboard::{Key, NamedKey};
 
 use crate::style::{
@@ -14,6 +14,7 @@ use crate::style::{
 };
 use crate::unit::Pct;
 use crate::{
+    Renderer,
     event::EventPropagation,
     id::ViewId,
     prop, prop_extractor,
@@ -22,7 +23,6 @@ use crate::{
     unit::{PxPct, PxPctAuto},
     view::View,
     views::Decorators,
-    Renderer,
 };
 
 /// Creates a new [Slider] with a function that returns a percentage value.
@@ -377,7 +377,6 @@ impl Slider {
             step: None,
         }
         .class(SliderClass)
-        .keyboard_navigable()
     }
 
     /// Create a new reactive slider.
@@ -458,7 +457,6 @@ impl Slider {
             step: None,
         }
         .class(SliderClass)
-        .keyboard_navigable()
     }
 
     fn update_restrict_position(&mut self) {
@@ -669,10 +667,10 @@ impl SliderCustomStyle {
 mod test {
 
     use crate::{
+        AppState,
         context::{EventCx, UpdateCx},
         event::Event,
         pointer::{MouseButton, PointerButton, PointerInputEvent, PointerMoveEvent},
-        AppState,
     };
 
     use super::*;
@@ -814,8 +812,8 @@ mod test {
 
     #[test]
     fn test_callback_handling() {
-        use std::sync::atomic::{AtomicBool, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
 
         let callback_called = Arc::new(AtomicBool::new(false));
         let callback_called_clone = callback_called.clone();

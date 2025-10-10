@@ -9,7 +9,7 @@ use floem::{
     },
     style_class,
     unit::DurationUnitExt,
-    views::{label, stack, text, Decorators},
+    views::{label, stack, ContainerExt, Decorators},
     IntoView, View,
 };
 
@@ -106,46 +106,37 @@ fn app_view() -> impl IntoView {
 
     let (counter, set_counter) = create_signal(0);
     let (theme, set_theme) = create_signal(false);
-    let view = stack((stack((
-        text("Toggle Theme")
-            .class(Button)
-            .on_click_stop({
-                move |_| {
-                    set_theme.update(|theme| *theme = !*theme);
-                }
-            })
-            .keyboard_navigable(),
+    let view = stack((
+        "Toggle Theme".class(Button).on_click_stop({
+            move |_| {
+                set_theme.update(|theme| *theme = !*theme);
+            }
+        }),
         stack((
             label(move || format!("Value: {}", counter.get())).class(Label),
-            text("Increment")
-                .class(Button)
-                .on_click_stop({
-                    move |_| {
-                        set_counter.update(|value| *value += 1);
-                    }
-                })
-                .keyboard_navigable(),
-            text("Decrement")
-                .class(Button)
-                .on_click_stop({
-                    move |_| {
-                        set_counter.update(|value| *value -= 1);
-                    }
-                })
-                .keyboard_navigable(),
-            text("Reset to 0")
+            "Increment".class(Button).on_click_stop({
+                move |_| {
+                    set_counter.update(|value| *value += 1);
+                }
+            }),
+            "Decrement".class(Button).on_click_stop({
+                move |_| {
+                    set_counter.update(|value| *value -= 1);
+                }
+            }),
+            "Reset to 0"
                 .class(Button)
                 .on_click_stop(move |_| {
                     println!("Reset counter pressed"); // will not fire if button is disabled
                     set_counter.update(|value| *value = 0);
                 })
-                .disabled(move || counter.get() == 0)
-                .keyboard_navigable(),
+                .style(move |s| s.set_disabled(counter.get() == 0)),
         ))
         .class(Frame)
         .style(|s| s.items_center()),
     ))
-    .style(|s| s.items_center()),))
+    .style(|s| s.items_center())
+    .container()
     .style(move |_| {
         if theme.get() {
             blue_theme.clone()

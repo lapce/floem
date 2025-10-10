@@ -23,12 +23,9 @@ fn app_view() -> impl IntoView {
 
     let value_label = label(move || format!("Value: {}", counter.get())).style(|s| s.padding(10.0));
 
-    let increment_button = "Increment"
-        .class(Button)
-        .on_click_stop(move |_| {
-            set_counter.update(|value| *value += 1);
-        })
-        .keyboard_navigable();
+    let increment_button = "Increment".class(Button).on_click_stop(move |_| {
+        set_counter.update(|value| *value += 1);
+    });
     let decrement_button = "Decrement"
         .class(Button)
         .on_click_stop(move |_| {
@@ -38,22 +35,20 @@ fn app_view() -> impl IntoView {
             s.margin_left(10.0)
                 .hover(|s| s.background(Color::from_rgb8(244, 67, 54)))
                 .active(|s| s.background(palette::css::RED))
-        })
-        .keyboard_navigable();
+        });
     let reset_to_zero_button = "Reset to 0"
         .class(Button)
         .on_click_stop(move |_| {
             println!("Reset counter pressed"); // will not fire if button is disabled
             set_counter.update(|value| *value = 0);
         })
-        .disabled(move || counter.get() == 0)
-        .style(|s| {
+        .style(move |s| {
             s.margin_left(10.0)
                 .background(palette::css::LIGHT_BLUE)
                 .hover(|s| s.background(palette::css::LIGHT_YELLOW))
                 .active(|s| s.background(palette::css::YELLOW_GREEN))
-        })
-        .keyboard_navigable();
+                .set_disabled(counter.get() == 0)
+        });
 
     let counter_buttons = (increment_button, decrement_button, reset_to_zero_button).h_stack();
 
@@ -71,11 +66,14 @@ fn app_view() -> impl IntoView {
         .style(|s| s.margin_top(10.0).margin_right(10.0));
     let zoom_reset_button = "Zoom Reset"
         .class(Button)
-        .disabled(move || window_scale.get() == 1.0)
         .on_click_stop(move |_| {
             window_scale.set(1.0);
         })
-        .style(|s| s.margin_top(10.0).margin_right(10.0));
+        .style(move |s| {
+            s.margin_top(10.0)
+                .margin_right(10.0)
+                .set_disabled(window_scale.get() == 1.0)
+        });
 
     let scale_buttons = (zoom_in_button, zoom_out_button, zoom_reset_button)
         .h_stack()

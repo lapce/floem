@@ -3,17 +3,16 @@ use floem::{
     event::{Event, EventListener},
     keyboard::{Key, NamedKey},
     prelude::*,
+    theme::HoverTargetClass,
 };
 
 pub fn dropped_file_view() -> impl IntoView {
     let filename = RwSignal::new("".to_string());
 
-    let dropped_view = dyn_view(move || "dropped file(s)".to_string())
+    let dropped_view = "dropped file(s)"
+        .class(HoverTargetClass)
         .style(|s| {
             s.size(200.0, 50.0)
-                .background(palette::css::GRAY)
-                .border(5.)
-                .border_color(palette::css::BLACK)
                 .flex_col()
                 .items_center()
                 .justify_center()

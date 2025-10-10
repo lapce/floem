@@ -20,6 +20,7 @@ fn app_view() -> impl IntoView {
                         .padding(10.0)
                         .background(palette::css::WHITE)
                         .box_shadow_blur(5.0)
+                        .focusable(true)
                         .focus_visible(|s| s.outline(2.).outline_color(palette::css::BLUE))
                         .hover(|s| s.background(palette::css::LIGHT_GREEN))
                         .active(|s| {
@@ -31,8 +32,7 @@ fn app_view() -> impl IntoView {
                     move |_| {
                         set_counter.update(|value| *value += 1);
                     }
-                })
-                .keyboard_navigable(),
+                }),
             "Decrement"
                 .on_click_stop({
                     move |_| {
@@ -45,32 +45,32 @@ fn app_view() -> impl IntoView {
                         .border_radius(10.0)
                         .padding(10.0)
                         .margin_left(10.0)
+                        .focusable(true)
                         .focus_visible(|s| s.outline(2.).outline_color(palette::css::BLUE))
                         .hover(|s| s.background(Color::from_rgb8(244, 67, 54)))
                         .active(|s| s.color(palette::css::WHITE).background(palette::css::RED))
-                })
-                .keyboard_navigable(),
+                }),
             "Reset to 0"
                 .on_click_stop(move |_| {
                     println!("Reset counter pressed"); // will not fire if button is disabled
                     set_counter.update(|value| *value = 0);
                 })
-                .disabled(move || counter.get() == 0)
-                .style(|s| {
+                .style(move |s| {
                     s.box_shadow_blur(5.0)
                         .border_radius(10.0)
                         .padding(10.0)
                         .margin_left(10.0)
                         .background(palette::css::LIGHT_BLUE)
+                        .focusable(true)
                         .focus_visible(|s| s.outline(2.).outline_color(palette::css::BLUE))
+                        .set_disabled(counter.get() == 0)
                         .disabled(|s| s.background(palette::css::LIGHT_GRAY))
                         .hover(|s| s.background(palette::css::LIGHT_YELLOW))
                         .active(|s| {
                             s.color(palette::css::WHITE)
                                 .background(palette::css::YELLOW_GREEN)
                         })
-                })
-                .keyboard_navigable(),
+                }),
         )
             .style(|s| s.custom_style_class(|s: LabelCustomStyle| s.selectable(false))),
     )

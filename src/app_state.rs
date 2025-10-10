@@ -7,12 +7,12 @@ use winit::cursor::CursorIcon;
 use winit::window::Theme;
 
 use crate::{
-    context::{DragState, FrameUpdate, InteractionState},
+    context::{DragState, FrameUpdate},
     event::{Event, EventListener},
     id::ViewId,
     inspector::CaptureState,
     responsive::{GridBreakpoints, ScreenSizeBp},
-    style::{CursorStyle, Style, StyleClassRef, StyleSelector},
+    style::{CursorStyle, StyleSelector},
     view_storage::VIEW_STORAGE,
 };
 
@@ -31,9 +31,6 @@ pub struct AppState {
     pub(crate) scheduled_updates: Vec<FrameUpdate>,
     pub(crate) request_compute_layout: bool,
     pub(crate) request_paint: bool,
-    // the bool indicates if this item is the root of the disabled item
-    pub(crate) disabled: HashSet<(ViewId, bool)>,
-    pub(crate) keyboard_navigable: HashSet<ViewId>,
     pub(crate) draggable: HashSet<ViewId>,
     pub(crate) dragging: Option<DragState>,
     pub(crate) drag_start: Option<(ViewId, Point)>,
@@ -42,6 +39,8 @@ pub struct AppState {
     pub(crate) grid_bps: GridBreakpoints,
     pub(crate) clicking: HashSet<ViewId>,
     pub(crate) hovered: HashSet<ViewId>,
+    pub(crate) focusable: HashSet<ViewId>,
+    pub(crate) file_hovered: HashSet<ViewId>,
     pub(crate) os_theme: Option<winit::window::Theme>,
     /// This keeps track of all views that have an animation,
     /// regardless of the status of the animation
@@ -69,14 +68,14 @@ impl AppState {
             scheduled_updates: Vec::new(),
             request_paint: false,
             request_compute_layout: false,
-            disabled: HashSet::new(),
-            keyboard_navigable: HashSet::new(),
             draggable: HashSet::new(),
             dragging: None,
             drag_start: None,
             dragging_over: HashSet::new(),
             clicking: HashSet::new(),
             hovered: HashSet::new(),
+            focusable: HashSet::new(),
+            file_hovered: HashSet::new(),
             os_theme: None,
             cursor: None,
             last_cursor: CursorIcon::Default,
@@ -118,14 +117,13 @@ impl AppState {
         }
         let _ = taffy.remove(node);
         id.remove();
-        self.disabled.remove(&(id, true));
-        self.disabled.remove(&(id, false));
-        self.keyboard_navigable.remove(&id);
         self.draggable.remove(&id);
         self.dragging_over.remove(&id);
         self.clicking.remove(&id);
         self.hovered.remove(&id);
+        self.file_hovered.remove(&id);
         self.clicking.remove(&id);
+        self.focusable.remove(&id);
         if self.focus == Some(id) {
             self.focus = None;
         }
@@ -138,16 +136,8 @@ impl AppState {
         }
     }
 
-    pub(crate) fn can_focus(&self, id: ViewId) -> bool {
-        self.keyboard_navigable.contains(&id) && !self.is_disabled(&id) && !id.is_hidden_recursive()
-    }
-
     pub fn is_hovered(&self, id: &ViewId) -> bool {
         self.hovered.contains(id)
-    }
-
-    pub fn is_disabled(&self, id: &ViewId) -> bool {
-        self.disabled.contains(&(*id, true)) || self.disabled.contains(&(*id, false))
     }
 
     pub fn is_focused(&self, id: &ViewId) -> bool {
@@ -166,6 +156,10 @@ impl AppState {
         self.os_theme == Some(Theme::Dark)
     }
 
+    pub fn is_file_hover(&self, id: &ViewId) -> bool {
+        self.file_hovered.contains(id)
+    }
+
     pub fn is_dragging(&self) -> bool {
         self.dragging
             .as_ref()
@@ -176,27 +170,6 @@ impl AppState {
     pub fn set_root_size(&mut self, size: Size) {
         self.root_size = size;
         self.compute_layout();
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn compute_style(
-        &mut self,
-        view_id: ViewId,
-        view_style: Option<Style>,
-        view_interact_state: InteractionState,
-        view_class: Option<StyleClassRef>,
-        context: &Style,
-    ) -> bool {
-        let screen_size_bp = self.screen_size_bp;
-        let view_state = view_id.state();
-        let request_new_frame = view_state.borrow_mut().compute_style(
-            view_style,
-            view_interact_state,
-            screen_size_bp,
-            view_class,
-            context,
-        );
-        request_new_frame
     }
 
     pub fn compute_layout(&mut self) {

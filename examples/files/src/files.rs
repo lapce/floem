@@ -85,7 +85,7 @@ pub fn files_view() -> impl IntoView {
             );
         }),
     ))
-    .style(|s| s.justify_center());
+    .style(|s| s.justify_center().gap(10));
 
     v_stack((
         view,
@@ -95,7 +95,8 @@ pub fn files_view() -> impl IntoView {
         )),
     ))
     .style(|s| {
-        s.col_gap(5)
+        s.row_gap(5)
+            .padding(10)
             .width_full()
             .height_full()
             .items_center()
