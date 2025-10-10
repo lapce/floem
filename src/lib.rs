@@ -205,7 +205,7 @@ mod renderer;
 pub mod responsive;
 mod screen_layout;
 pub mod style;
-pub(crate) mod theme;
+pub mod theme;
 pub mod touchpad;
 pub mod unit;
 mod update;

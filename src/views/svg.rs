@@ -1,11 +1,11 @@
 use floem_reactive::create_effect;
 use floem_renderer::{
-    usvg::{self, Tree},
     Renderer,
+    usvg::{self, Tree},
 };
 use peniko::{
-    kurbo::{Point, Size},
     Brush, GradientKind, LinearGradientPosition,
+    kurbo::{Point, Size},
 };
 use sha2::{Digest, Sha256};
 
@@ -135,7 +135,7 @@ impl View for Svg {
     }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
-        let style = cx.direct_style().clone();
+        let style = cx.style();
         self.svg_style.read_style(cx, &style);
         if let Some(tree) = &self.svg_tree {
             let size = tree.size();

@@ -1,6 +1,6 @@
 use floem_reactive::Scope;
-use floem_renderer::gpu_resources::{GpuResourceError, GpuResources};
 use floem_renderer::Renderer as FloemRenderer;
+use floem_renderer::gpu_resources::{GpuResourceError, GpuResources};
 use peniko::kurbo::{Affine, Point, Rect, RoundedRect, Shape, Size, Vec2};
 use std::{
     ops::{Deref, DerefMut},
@@ -25,7 +25,7 @@ use crate::animate::{AnimStateKind, RepeatMode};
 use crate::easing::{Easing, Linear};
 use crate::menu::Menu;
 use crate::renderer::Renderer;
-use crate::style::{DisplayProp, PointerEvents, PointerEventsProp};
+use crate::style::{Disabled, DisplayProp, Focusable, Hidden, PointerEvents, PointerEventsProp};
 use crate::view_state::IsHiddenState;
 use crate::{
     action::{exec_after, show_context_menu},
@@ -34,7 +34,7 @@ use crate::{
     id::ViewId,
     inspector::CaptureState,
     style::{Style, StyleProp, ZIndex},
-    view::{paint_bg, paint_border, paint_outline, View},
+    view::{View, paint_bg, paint_border, paint_outline},
     view_state::ChangeFlags,
 };
 
@@ -106,15 +106,17 @@ impl EventCx<'_> {
         event: Event,
         directed: bool,
     ) -> (EventPropagation, PointerEventConsumed) {
-        if view_id.style_has_hidden() {
+        if view_id.is_hidden() {
             // we don't process events for hidden view
             return (EventPropagation::Continue, PointerEventConsumed::No);
         }
-        if self.app_state.is_disabled(&view_id) && !event.allow_disabled() {
+        if view_id.is_disabled() && !event.allow_disabled() {
             // if the view is disabled and the event is not processed
             // for disabled views
             return (EventPropagation::Continue, PointerEventConsumed::No);
         }
+
+        // TODO! Handle file hover
 
         // offset the event positions if the event has positions
         // e.g. pointer events, so that the position is relative
@@ -146,7 +148,7 @@ impl EventCx<'_> {
                 .is_processed()
         {
             if let Event::PointerDown(event) = &event {
-                if self.app_state.keyboard_navigable.contains(&view_id) {
+                if view_state.borrow().computed_style.get(Focusable) {
                     let rect = view_id.get_size().unwrap_or_default().to_rect();
                     let now_focused = rect.contains(event.pos);
                     if now_focused {
@@ -226,7 +228,7 @@ impl EventCx<'_> {
                         let on_view = rect.contains(pointer_event.pos);
 
                         if on_view {
-                            if self.app_state.keyboard_navigable.contains(&view_id) {
+                            if view_state.borrow().computed_style.get(Focusable) {
                                 // if the view can be focused, we update the focus
                                 self.app_state.update_focus(view_id, false);
                             }
@@ -264,7 +266,7 @@ impl EventCx<'_> {
                         let on_view = rect.contains(pointer_event.pos);
 
                         if on_view {
-                            if self.app_state.keyboard_navigable.contains(&view_id) {
+                            if view_state.borrow().computed_style.get(Focusable) {
                                 // if the view can be focused, we update the focus
                                 self.app_state.update_focus(view_id, false);
                             }
@@ -502,7 +504,7 @@ impl EventCx<'_> {
     /// Used to determine if you should send an event to another view. This is basically a check for pointer events to see if the pointer is inside a child view and to make sure the current view isn't hidden or disabled.
     /// Usually this is used if you want to propagate an event to a child view
     pub fn should_send(&mut self, id: ViewId, event: &Event) -> bool {
-        if id.style_has_hidden() || (self.app_state.is_disabled(&id) && !event.allow_disabled()) {
+        if id.is_hidden() || (id.is_disabled() && !event.allow_disabled()) {
             return false;
         }
 
@@ -537,19 +539,23 @@ pub struct InteractionState {
     pub(crate) is_focused: bool,
     pub(crate) is_clicking: bool,
     pub(crate) is_dark_mode: bool,
+    pub(crate) is_file_hover: bool,
     pub(crate) using_keyboard_navigation: bool,
 }
 
 pub struct StyleCx<'a> {
     pub(crate) app_state: &'a mut AppState,
     pub(crate) current_view: ViewId,
+    /// current is used as context for carrying inherited properties between views
     pub(crate) current: Rc<Style>,
     pub(crate) direct: Style,
     saved: Vec<Rc<Style>>,
     pub(crate) now: Instant,
     saved_disabled: Vec<bool>,
     saved_selected: Vec<bool>,
+    saved_hidden: Vec<bool>,
     disabled: bool,
+    hidden: bool,
     selected: bool,
 }
 
@@ -564,7 +570,9 @@ impl<'a> StyleCx<'a> {
             now: Instant::now(),
             saved_disabled: Default::default(),
             saved_selected: Default::default(),
+            saved_hidden: Default::default(),
             disabled: false,
+            hidden: false,
             selected: false,
         }
     }
@@ -574,14 +582,19 @@ impl<'a> StyleCx<'a> {
         self.selected = true;
     }
 
+    pub fn hidden(&mut self) {
+        self.hidden = true;
+    }
+
     fn get_interact_state(&self, id: &ViewId) -> InteractionState {
         InteractionState {
-            is_selected: self.selected,
+            is_selected: self.selected || id.is_selected(),
             is_hovered: self.app_state.is_hovered(id),
-            is_disabled: self.app_state.is_disabled(id),
+            is_disabled: id.is_disabled() || self.disabled,
             is_focused: self.app_state.is_focused(id),
             is_clicking: self.app_state.is_clicking(id),
             is_dark_mode: self.app_state.is_dark_mode(),
+            is_file_hover: self.app_state.is_file_hover(id),
             using_keyboard_navigation: self.app_state.keyboard_navigation,
         }
     }
@@ -618,24 +631,33 @@ impl<'a> StyleCx<'a> {
             }
         }
 
-        let mut view_interact_state = self.get_interact_state(&view_id);
-        view_interact_state.is_disabled |= self.disabled;
+        let view_interact_state = self.get_interact_state(&view_id);
         self.disabled = view_interact_state.is_disabled;
-        let mut new_frame = self.app_state.compute_style(
-            view_id,
+        let mut new_frame = view_id.state().borrow_mut().compute_combined(
             view_style,
             view_interact_state,
+            self.app_state.screen_size_bp,
             view_class,
             &self.current,
+            self.hidden,
         );
 
-        let style = view_state.borrow().combined_style.clone();
-        self.direct = style;
+        self.direct = view_state.borrow().combined_style.clone();
         Style::apply_only_inherited(&mut self.current, &self.direct);
         let mut computed_style = (*self.current).clone();
         computed_style.apply_mut(self.direct.clone());
         CaptureState::capture_style(view_id, self, computed_style.clone());
+        if computed_style.get(Focusable)
+            && !computed_style.get(Disabled)
+            && !computed_style.get(Hidden)
+            && computed_style.get(DisplayProp) != taffy::Display::None
+        {
+            self.app_state.focusable.insert(view_id);
+        } else {
+            self.app_state.focusable.remove(&view_id);
+        }
         view_state.borrow_mut().computed_style = computed_style;
+        self.hidden |= view_id.is_hidden();
 
         // This is used by the `request_transition` and `style` methods below.
         self.current_view = view_id;
@@ -657,7 +679,7 @@ impl<'a> StyleCx<'a> {
                 &self.now,
                 &mut new_frame,
             );
-            if new_frame {
+            if new_frame && !self.hidden {
                 self.app_state.schedule_style(view_id);
             }
         }
@@ -688,9 +710,6 @@ impl<'a> StyleCx<'a> {
             },
             || view_state.borrow().num_waiting_animations,
         );
-        // if request_layout {
-        //     view_id.request_layout();
-        // }
 
         view_state.borrow_mut().is_hidden_state = is_hidden_state;
         let modified = view_state
@@ -746,12 +765,14 @@ impl<'a> StyleCx<'a> {
         self.saved.push(self.current.clone());
         self.saved_disabled.push(self.disabled);
         self.saved_selected.push(self.selected);
+        self.saved_hidden.push(self.hidden);
     }
 
     pub fn restore(&mut self) {
         self.current = self.saved.pop().unwrap_or_default();
         self.disabled = self.saved_disabled.pop().unwrap_or_default();
         self.selected = self.saved_selected.pop().unwrap_or_default();
+        self.hidden = self.saved_hidden.pop().unwrap_or_default();
     }
 
     pub fn get_prop<P: StyleProp>(&self, _prop: P) -> Option<P::Type> {
@@ -1074,7 +1095,7 @@ impl PaintCx<'_> {
     /// - clipping
     /// - painting computed styles like background color, border, font-styles, and z-index and handling painting requirements of drag and drop
     pub fn paint_view(&mut self, id: ViewId) {
-        if id.style_has_hidden() {
+        if id.is_hidden() {
             return;
         }
         let view = id.view();

@@ -362,8 +362,11 @@ impl View for HuePicker {
                 size.height,
             );
 
+            cx.save();
+            cx.clip(&rect_path);
             cx.stroke(&indicator_rect, css::WHITE, &Stroke::new(2.0));
             cx.fill(&indicator_rect, css::BLACK, 0.);
+            cx.restore();
         }
     }
 }
@@ -480,8 +483,11 @@ impl View for OpacityPicker {
                 size.height,
             );
 
+            cx.save();
+            cx.clip(&rect_path);
             cx.stroke(&indicator_rect, css::WHITE, &Stroke::new(2.0));
             cx.fill(&indicator_rect, css::BLACK, 0.);
+            cx.restore();
         }
     }
 }

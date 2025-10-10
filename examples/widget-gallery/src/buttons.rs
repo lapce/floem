@@ -36,8 +36,8 @@ pub fn button_view() -> impl IntoView {
         ),
         form_item(
             "Disabled Button:",
-            button("Click me")
-                .disabled(|| true)
+            button("Unclickable")
+                .style(|s| s.set_disabled(true))
                 .action(|| println!("Button clicked")),
         ),
         form_item(

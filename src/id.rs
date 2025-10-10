@@ -12,18 +12,18 @@ use taffy::{Display, Layout, NodeId, TaffyTree};
 use winit::window::WindowId;
 
 use crate::{
+    ScreenLayout,
     animate::{AnimStateCommand, Animation},
     context::{EventCallback, ResizeCallback},
     event::{EventListener, EventPropagation},
     menu::Menu,
-    style::{DisplayProp, Style, StyleClassRef, StyleSelector},
+    style::{Disabled, DisplayProp, Focusable, Hidden, Style, StyleClassRef, StyleSelector},
     unit::PxPct,
-    update::{UpdateMessage, CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES},
+    update::{CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, UpdateMessage},
     view::{IntoView, View},
     view_state::{ChangeFlags, StackOffset, ViewState},
     view_storage::VIEW_STORAGE,
     window_tracking::{is_known_root, window_id_for_root},
-    ScreenLayout,
 };
 
 new_key_type! {
@@ -276,28 +276,36 @@ impl ViewId {
         Some(layout)
     }
 
-    /// Returns true if the computed style for this view is marked as hidden (`Display::None`)
-    pub fn style_has_hidden(&self) -> bool {
+    /// Returns true if the computed style for this view is marked as hidden by setting in this view, or any parent, `Hidden` to true. For hiding views, you should prefer to set `Hidden` to true rather than using `Display::None` as checking for `Hidden` is cheaper, more correct, and used for optimizations in Floem
+    pub fn is_hidden(&self) -> bool {
         let state = self.state();
         let state = state.borrow();
-        state.combined_style.get(DisplayProp) == Display::None
+        state.combined_style.get(Hidden) || state.combined_style.get(DisplayProp) == Display::None
     }
 
-    /// Is this view, or any parent view, marked as hidden
-    pub fn is_hidden_recursive(&self) -> bool {
-        if self.style_has_hidden() {
-            return true;
-        }
+    /// Returns true if the view is disabled
+    ///
+    /// This is done by checking if the style for this view has `Disabled` set to true.
+    pub fn is_disabled(&self) -> bool {
+        let state = self.state();
+        let state = state.borrow();
+        state.combined_style.get(Disabled)
+    }
 
-        let mut parent = self.parent();
-        while let Some(id) = parent {
-            if id.style_has_hidden() {
-                return true;
-            }
-            parent = id.parent();
-        }
+    /// Returns true if the view is selected
+    ///
+    /// This is done by checking if the style for this view has `Selected` set to true.
+    pub fn is_selected(&self) -> bool {
+        let state = self.state();
+        let state = state.borrow();
+        state.combined_style.get(Disabled)
+    }
 
-        false
+    /// Check if this id can be focused.
+    ///
+    /// This is done by checking if the style for this view has `Focusable` set to true.
+    pub fn can_focus(&self) -> bool {
+        self.state().borrow().combined_style.get(Focusable)
     }
 
     /// Request that this the `id` view be styled, laid out and painted again.
@@ -517,26 +525,6 @@ impl ViewId {
         } else {
             Some(EventPropagation::Continue)
         }
-    }
-
-    /// Set whether this view should be marked as disabled or not.
-    ///
-    /// When a view is disabled it will not receive events and it can be styled with the disabled style.
-    pub fn update_disabled(&self, is_disabled: bool) {
-        self.add_update_message(UpdateMessage::Disabled {
-            id: *self,
-            is_disabled,
-        });
-    }
-
-    /// Mark this view as a view that can be navigated to using the keyboard
-    pub fn keyboard_navigable(&self) {
-        self.add_update_message(UpdateMessage::KeyboardNavigable { id: *self });
-    }
-
-    /// Mark this view as a view that can **not** be navigated to using the keyboard
-    pub fn remove_keyboard_navigatable(&self) {
-        self.add_update_message(UpdateMessage::RemoveKeyboardNavigable { id: *self });
     }
 
     /// Disables the default view behavior for the specified event.

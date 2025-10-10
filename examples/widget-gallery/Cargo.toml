@@ -8,6 +8,7 @@ im.workspace = true
 floem = { path = "../..", features = ["rfd-async-std", "vello"] }
 strum = { workspace = true }
 files = { path = "../files/" }
+stacks = { path = "../stacks/" }
 
 [features]
 vello = ["floem/vello"]

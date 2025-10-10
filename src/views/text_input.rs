@@ -4,13 +4,13 @@ use crate::event::{EventListener, EventPropagation};
 use crate::id::ViewId;
 use crate::keyboard::{self, KeyEvent, Modifiers};
 use crate::pointer::{MouseButton, PointerButton, PointerInputEvent};
-use crate::reactive::{create_effect, RwSignal};
+use crate::reactive::{RwSignal, create_effect};
 use crate::style::{FontFamily, FontProps, PaddingLeft, SelectionStyle, TextAlignProp};
 use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
 use crate::views::editor::text::Preedit;
-use crate::{prop_extractor, style_class, Clipboard};
-use floem_reactive::{create_rw_signal, SignalGet, SignalUpdate, SignalWith};
+use crate::{Clipboard, prop_extractor, style_class};
+use floem_reactive::{SignalGet, SignalUpdate, SignalWith, create_rw_signal};
 use taffy::prelude::{Layout, NodeId};
 
 use floem_renderer::Renderer;
@@ -234,7 +234,6 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         window_origin: None,
         last_ime_cursor_area: None,
     }
-    .keyboard_navigable()
     .on_event_stop(EventListener::FocusGained, move |_| {
         is_focused.set(true);
         set_ime_allowed(true);

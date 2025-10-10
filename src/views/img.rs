@@ -164,7 +164,8 @@ pub fn img(image: impl Fn() -> Vec<u8> + 'static) -> Img {
         alpha_type: ImageAlphaType::AlphaPremultiplied,
         width,
         height,
-    });
+    })
+    .with_quality(peniko::ImageQuality::High);
     img_dynamic(move || image.clone())
 }
 

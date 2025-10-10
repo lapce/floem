@@ -7,32 +7,31 @@
 use std::{any::Any, rc::Rc};
 
 use floem_reactive::{
-    as_child_of_current_scope, create_effect, create_updater, RwSignal, Scope, SignalGet,
-    SignalUpdate,
+    RwSignal, Scope, SignalGet, SignalUpdate, as_child_of_current_scope, create_effect,
+    create_updater,
 };
-use peniko::{
-    color::palette,
-    kurbo::{Point, Rect, Size},
-};
+use im_rc::OrdMap;
+use peniko::kurbo::{Point, Rect, Size};
 use winit::keyboard::{Key, NamedKey};
 
 use crate::{
+    AnyView,
     action::{add_overlay, remove_overlay},
     event::{Event, EventListener, EventPropagation},
     id::ViewId,
+    prelude::ViewTuple,
     prop, prop_extractor,
     style::{CustomStylable, CustomStyle, Style, StyleClass, Width},
     style_class,
     unit::PxPctAuto,
-    view::{default_compute_layout, IntoView, View},
-    views::{container, scroll, stack, svg, text, Decorators},
-    AnyView,
+    view::{IntoView, View, default_compute_layout},
+    views::{ContainerExt, Decorators, ScrollExt, scroll, svg, text},
 };
 
 use super::list;
 
 type ChildFn<T> = dyn Fn(T) -> (AnyView, Scope);
-type ListViewFn<T> = Rc<dyn Fn(&dyn Fn(T) -> AnyView) -> AnyView>;
+type ListViewFn<T> = Rc<dyn Fn(&dyn Fn(&T) -> AnyView, Option<usize>) -> AnyView>;
 
 style_class!(
     /// A Style class that is applied to all dropdowns.
@@ -173,13 +172,14 @@ pub struct Dropdown<T: 'static> {
     main_view_scope: Scope,
     main_fn: Box<ChildFn<T>>,
     list_view: ListViewFn<T>,
-    list_item_fn: Rc<dyn Fn(T) -> AnyView>,
+    list_item_fn: Rc<dyn Fn(&T) -> AnyView>,
     list_style: Style,
     overlay_id: Option<ViewId>,
     window_origin: Option<Point>,
     on_accept: Option<Box<dyn Fn(T)>>,
     on_open: Option<Box<dyn Fn(bool)>>,
     style: DropdownStyle,
+    index_to_item: OrdMap<usize, T>,
 }
 
 enum Message {
@@ -189,7 +189,7 @@ enum Message {
     ListSelect(Box<dyn Any>),
 }
 
-impl<T: 'static + Clone> View for Dropdown<T> {
+impl<T: 'static + Clone + PartialEq> View for Dropdown<T> {
     fn id(&self) -> ViewId {
         self.id
     }
@@ -238,6 +238,7 @@ impl<T: 'static + Clone> View for Dropdown<T> {
                     if let Ok(val) = val.downcast::<T>() {
                         let old_child_scope = self.main_view_scope;
                         let old_main_view = self.main_view;
+                        self.current_value = *val.clone();
                         let (main_view, main_view_scope) = (self.main_fn)(*val);
                         let main_view_id = main_view.id();
                         self.id.set_children([main_view]);
@@ -263,7 +264,7 @@ impl<T: 'static + Clone> View for Dropdown<T> {
                 self.swap_state();
                 return EventPropagation::Stop;
             }
-            Event::KeyUp(ref key_event)
+            Event::KeyUp(key_event)
                 if matches!(key_event.key.logical_key, Key::Named(NamedKey::Enter))
                     | matches!(
                         key_event.key.logical_key,
@@ -279,7 +280,7 @@ impl<T: 'static + Clone> View for Dropdown<T> {
     }
 }
 
-impl<T: Clone> Dropdown<T> {
+impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
     /// Creates a default main view for the dropdown.
     ///
     /// This function generates a view that displays the given item as text,
@@ -289,34 +290,18 @@ impl<T: Clone> Dropdown<T> {
         T: std::fmt::Display,
     {
         const CHEVRON_DOWN: &str = r##"
-<svg
-   width="12"
-   height="12"
-   viewBox="0 0 12 12"
-   version="1.1"
-   xmlns:svg="http://www.w3.org/2000/svg">
-  <g
-     style="display:inline;opacity:1;mix-blend-mode:normal"
-     transform="translate(-42.144408,-102.78125)">
-    <path
-       style="fill:none;stroke:#333333;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none"
-       d="m 43.978404,107.53126 4.194255,2.5 4.137753,-2.5" />
-  </g>
-</svg>"##;
+            <svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" viewBox="-46.336 -46.336 278.016 278.016">
+                <path fill="#010002" d="M92.672 144.373a10.707 10.707 0 0 1-7.593-3.138L3.145 59.301c-4.194-4.199
+                -4.194-10.992 0-15.18a10.72 10.72 0 0 1 15.18 0l74.347 74.341 74.347-74.341a10.72 10.72 0 0 1
+                15.18 0c4.194 4.194 4.194 10.981 0 15.18l-81.939 81.934a10.694 10.694 0 0 1-7.588 3.138z"/>
+            </svg>
+        "##;
 
         // TODO: this should be more customizable
-        stack((
-            text(item),
-            container(svg(CHEVRON_DOWN).style(|s| s.size(12, 12).color(palette::css::BLACK)))
-                .style(|s| {
-                    s.items_center()
-                        .padding(3.)
-                        .border_radius(5)
-                        .hover(move |s| s.background(palette::css::LIGHT_GRAY))
-                }),
-        ))
-        .style(|s| s.items_center().justify_between().size_full())
-        .into_any()
+        (text(item), svg(CHEVRON_DOWN).style(|s| s.items_center()))
+            .h_stack()
+            .style(|s| s.items_center().justify_between().size_full())
+            .into_any()
     }
 
     /// Creates a new customizable dropdown.
@@ -360,41 +345,58 @@ impl<T: Clone> Dropdown<T> {
     ) -> Dropdown<T>
     where
         MF: Fn(T) -> AnyView + 'static,
-        I: IntoIterator<Item = T> + Clone + 'static,
-        LF: Fn(T) -> AnyView + Clone + 'static,
-        T: Clone + 'static,
+        I: IntoIterator<Item = T> + 'static,
+        LF: Fn(&T) -> AnyView + Clone + 'static,
+        T: PartialEq + Clone + 'static,
         AIF: Fn() -> T + 'static,
     {
         let dropdown_id = ViewId::new();
 
+        // Process the iterator once, building a map from indices to items
+        let mut index_to_item = OrdMap::new();
+
+        for (idx, item) in iterator.into_iter().enumerate() {
+            index_to_item.insert(idx, item);
+        }
+
         let list_item_fn = Rc::new(list_item_fn);
 
-        let list_view = Rc::new(move |list_item_fn: &dyn Fn(T) -> AnyView| {
-            let iterator = iterator.clone();
-            let iter_clone = iterator.clone();
-            list(iterator.into_iter().map(list_item_fn))
-                .on_accept(move |opt_idx| {
-                    if let Some(idx) = opt_idx {
-                        let val = iter_clone.clone().into_iter().nth(idx).unwrap();
-                        dropdown_id.update_state(Message::ActiveElement(Box::new(val.clone())));
-                        dropdown_id.update_state(Message::ListSelect(Box::new(val)));
-                    }
-                })
-                .style(|s| s.width_full())
-                .keyboard_navigable()
-                .on_event_stop(EventListener::FocusLost, move |_| {
-                    dropdown_id.update_state(Message::ListFocusLost);
-                })
-                .on_event_stop(EventListener::PointerMove, |_| {})
-                .into_any()
-        });
+        let index_to_item_clone = index_to_item.clone();
+        let index_to_item_clone_ = index_to_item.clone();
+        let list_view = Rc::new(
+            move |list_item_fn: &dyn Fn(&T) -> AnyView, active: Option<usize>| {
+                let index_to_item_clone = index_to_item_clone.clone();
+                let items_view = index_to_item_clone_.values().map(list_item_fn);
+
+                let list = list(items_view)
+                    .on_accept(move |opt_idx| {
+                        if let Some(idx) = opt_idx {
+                            let val = index_to_item_clone
+                                .get(&idx)
+                                .expect("Index should exist in the map")
+                                .clone();
+
+                            dropdown_id.update_state(Message::ActiveElement(Box::new(val.clone())));
+                            dropdown_id.update_state(Message::ListSelect(Box::new(val)));
+                        }
+                    })
+                    .style(|s| s.width_full())
+                    .on_event_stop(EventListener::FocusLost, move |_| {
+                        dropdown_id.update_state(Message::ListFocusLost);
+                    })
+                    .on_event_stop(EventListener::PointerMove, |_| {});
+
+                list.selection().set(active);
+
+                list.into_any()
+            },
+        );
 
         let initial = create_updater(active_item, move |new_state| {
             dropdown_id.update_state(Message::ActiveElement(Box::new(new_state)));
         });
 
         let main_fn = Box::new(as_child_of_current_scope(main_view));
-
         let (child, main_view_scope) = main_fn(initial.clone());
         let main_view = child.id();
 
@@ -408,6 +410,7 @@ impl<T: Clone> Dropdown<T> {
             main_fn,
             list_view,
             list_item_fn,
+            index_to_item,
             list_style: Style::new(),
             overlay_id: None,
             window_origin: None,
@@ -442,8 +445,8 @@ impl<T: Clone> Dropdown<T> {
     pub fn new<AIF, I>(active_item: AIF, iterator: I) -> Dropdown<T>
     where
         AIF: Fn() -> T + 'static,
-        I: IntoIterator<Item = T> + Clone + 'static,
-        T: Clone + std::fmt::Display + 'static,
+        I: IntoIterator<Item = T> + 'static,
+        T: Clone + PartialEq + std::fmt::Display + 'static,
     {
         Self::custom(active_item, Self::default_main_view, iterator, |v| {
             crate::views::text(v).into_any()
@@ -473,8 +476,8 @@ impl<T: Clone> Dropdown<T> {
     pub fn new_rw<AI, I>(active_item: AI, iterator: I) -> Dropdown<T>
     where
         AI: SignalGet<T> + SignalUpdate<T> + Copy + 'static,
-        I: IntoIterator<Item = T> + Clone + 'static,
-        T: Clone + std::fmt::Display + 'static,
+        I: IntoIterator<Item = T> + 'static,
+        T: Clone + PartialEq + std::fmt::Display + 'static,
     {
         Self::custom(
             move || active_item.get(),
@@ -497,7 +500,7 @@ impl<T: Clone> Dropdown<T> {
     }
 
     /// Overrides the list view for each item in the dropdown list.
-    pub fn list_item_view(mut self, list_item_fn: impl Fn(T) -> Box<dyn View> + 'static) -> Self {
+    pub fn list_item_view(mut self, list_item_fn: impl Fn(&T) -> Box<dyn View> + 'static) -> Self {
         self.list_item_fn = Rc::new(list_item_fn);
         self
     }
@@ -577,12 +580,12 @@ impl<T: Clone> Dropdown<T> {
         let list = self.list_view.clone();
         let list_style = self.list_style.clone();
         let list_item_fn = self.list_item_fn.clone();
-        self.overlay_id = Some(add_overlay(Point::ZERO, {
+        self.overlay_id = Some(add_overlay({
             const DEFAULT_PADDING: f64 = 5.0;
             let list_size = RwSignal::new(None);
             let overlay_size = RwSignal::new(None);
-            let initial_padding = Size::new(point.x, point.y);
-            let top_left_padding = RwSignal::new(initial_padding);
+            let initial_inset = Size::new(point.x, point.y);
+            let inset = RwSignal::new(initial_inset);
 
             create_effect(move |_| {
                 let (Some(list_size), Some(overlay_size)) = (list_size.get(), overlay_size.get())
@@ -590,17 +593,22 @@ impl<T: Clone> Dropdown<T> {
                     return;
                 };
 
-                let default_padding_size = Size::new(DEFAULT_PADDING, DEFAULT_PADDING);
-                let new_padding = initial_padding
-                    .min(overlay_size - list_size - default_padding_size)
-                    .max(default_padding_size);
+                let default_inset_size = Size::new(DEFAULT_PADDING, DEFAULT_PADDING);
+                let new_inset = initial_inset
+                    .min(overlay_size - list_size - default_inset_size)
+                    .max(default_inset_size);
 
-                if new_padding != top_left_padding.get_untracked() {
-                    top_left_padding.set(new_padding);
+                if new_inset != inset.get_untracked() {
+                    inset.set(new_inset);
                 }
             });
 
-            let list = list(&*list_item_fn.clone());
+            let list = list(
+                &*list_item_fn.clone(),
+                self.index_to_item
+                    .values()
+                    .position(|v| *v == self.current_value),
+            );
             let list_id = list.id();
 
             let list = list.on_resize(move |rect| {
@@ -626,27 +634,27 @@ impl<T: Clone> Dropdown<T> {
 
             list_id.request_focus();
 
-            container(scroll(list).style(move |s| {
-                s.flex_col()
-                    .pointer_events_auto()
-                    .flex_grow(0.0)
-                    .flex_shrink(1.0)
-                    .apply(list_style.clone())
-            }))
-            .on_resize(move |rect| {
-                overlay_size.set(Some(rect.size()));
-            })
-            .style(move |s| {
-                let padding = top_left_padding.get();
-                s.absolute()
-                    .flex_col()
-                    .size_full()
-                    .padding_left(padding.width)
-                    .padding_top(padding.height)
-                    .padding_bottom(DEFAULT_PADDING)
-                    .padding_right(DEFAULT_PADDING)
-                    .pointer_events_none()
-            })
+            list.scroll()
+                .style(move |s| {
+                    s.flex_col()
+                        .pointer_events_auto()
+                        .flex_grow(0.0)
+                        .flex_shrink(1.0)
+                        .apply(list_style.clone())
+                })
+                .container()
+                .on_resize(move |rect| {
+                    overlay_size.set(Some(rect.size()));
+                })
+                .style(move |s| {
+                    let inset = inset.get();
+                    s.absolute()
+                        .flex_col()
+                        .size_full()
+                        .inset_left(inset.width)
+                        .inset_top(inset.height)
+                        .pointer_events_none()
+                })
         }));
     }
 
@@ -676,7 +684,7 @@ impl CustomStyle for DropdownCustomStyle {
     type StyleClass = DropdownClass;
 }
 
-impl<T: Clone> CustomStylable<DropdownCustomStyle> for Dropdown<T> {
+impl<T: Clone + PartialEq> CustomStylable<DropdownCustomStyle> for Dropdown<T> {
     type DV = Self;
 }
 

@@ -3,14 +3,14 @@ use taffy::FlexDirection;
 use winit::keyboard::{Key, NamedKey};
 
 use crate::event::{Event, EventListener, EventPropagation};
-use crate::{prelude::*, ViewId};
+use crate::{ViewId, prelude::*};
 
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::ops::{Deref, DerefMut};
 
 pub struct VirtualList<T: 'static> {
     stack: VirtualStack<(usize, T)>,
-    selection: RwSignal<Option<usize>>,
+    pub selection: RwSignal<Option<usize>>,
 }
 
 impl<T> VirtualList<T> {
@@ -188,47 +188,45 @@ where
 
     let direction = stack.direction;
 
-    let stack =
-        stack
-            .class(ListClass)
-            .keyboard_navigable()
-            .on_event(EventListener::KeyDown, move |e| {
-                if let Event::KeyDown(key_event) = e {
-                    stack_id.request_style_recursive();
-                    match key_event.key.logical_key {
-                        Key::Named(NamedKey::Home) => {
-                            if length.get_untracked() > 0 {
-                                selection.set(Some(0));
-                                stack_id.update_state(0_usize); // Must be usize to match state type
-                            }
-                            EventPropagation::Stop
+    let stack = stack
+        .class(ListClass)
+        .on_event(EventListener::KeyDown, move |e| {
+            if let Event::KeyDown(key_event) = e {
+                stack_id.request_style_recursive();
+                match key_event.key.logical_key {
+                    Key::Named(NamedKey::Home) => {
+                        if length.get_untracked() > 0 {
+                            selection.set(Some(0));
+                            stack_id.update_state(0_usize); // Must be usize to match state type
                         }
-                        Key::Named(NamedKey::End) => {
-                            let len = length.get_untracked();
-                            if len > 0 {
-                                selection.set(Some(len - 1));
-                                stack_id.update_state(len - 1);
-                            }
-                            EventPropagation::Stop
-                        }
-                        Key::Named(
-                            named_key @ (NamedKey::ArrowUp
-                            | NamedKey::ArrowDown
-                            | NamedKey::ArrowLeft
-                            | NamedKey::ArrowRight),
-                        ) => handle_arrow_key(
-                            selection,
-                            length.get_untracked(),
-                            direction.get_untracked(),
-                            stack_id,
-                            named_key,
-                        ),
-                        _ => EventPropagation::Continue,
+                        EventPropagation::Stop
                     }
-                } else {
-                    EventPropagation::Continue
+                    Key::Named(NamedKey::End) => {
+                        let len = length.get_untracked();
+                        if len > 0 {
+                            selection.set(Some(len - 1));
+                            stack_id.update_state(len - 1);
+                        }
+                        EventPropagation::Stop
+                    }
+                    Key::Named(
+                        named_key @ (NamedKey::ArrowUp
+                        | NamedKey::ArrowDown
+                        | NamedKey::ArrowLeft
+                        | NamedKey::ArrowRight),
+                    ) => handle_arrow_key(
+                        selection,
+                        length.get_untracked(),
+                        direction.get_untracked(),
+                        stack_id,
+                        named_key,
+                    ),
+                    _ => EventPropagation::Continue,
                 }
-            });
+            } else {
+                EventPropagation::Continue
+            }
+        });
     VirtualList { stack, selection }
 }
 

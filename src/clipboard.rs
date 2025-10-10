@@ -59,7 +59,7 @@ impl Clipboard {
     }
 
     pub(crate) unsafe fn init(display: RawDisplayHandle) {
-        *CLIPBOARD.lock() = Some(Self::new(display));
+        *CLIPBOARD.lock() = Some(unsafe { Self::new(display) });
     }
 
     /// # Safety

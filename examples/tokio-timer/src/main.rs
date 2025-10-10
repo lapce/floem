@@ -93,11 +93,10 @@ fn thin_slider(
 /// A non-interactive slider that has been repurposed into a progress bar.
 fn gauge(fill_percent: impl SignalGet<Pct> + 'static) -> slider::Slider {
     slider::Slider::new(move || fill_percent.get())
-        .disabled(|| true)
         .slider_style(|s| {
             s.handle_radius(0)
                 .bar_radius(25.pct())
                 .accent_bar_radius(25.pct())
         })
-        .style(|s| s.width(200))
+        .style(|s| s.width(200).set_disabled(true))
 }
