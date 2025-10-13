@@ -7,6 +7,7 @@ use cosmic_text::{
 };
 use parking_lot::Mutex;
 use peniko::kurbo::{Point, Size};
+use unicode_segmentation::UnicodeSegmentation;
 
 pub static FONT_SYSTEM: LazyLock<Mutex<FontSystem>> = LazyLock::new(|| {
     let mut font_system = FontSystem::new();
@@ -341,10 +342,6 @@ impl TextLayout {
                 offset += last_end + 1;
             }
             for glyph in run.glyphs {
-                if glyph.start + offset > idx {
-                    last_position.point.x += last_glyph_width as f64;
-                    return last_position;
-                }
                 last_end = glyph.end;
                 last_glyph_width = glyph.w;
                 last_position = HitPosition {
@@ -353,7 +350,29 @@ impl TextLayout {
                     glyph_ascent: run.max_ascent as f64,
                     glyph_descent: run.max_descent as f64,
                 };
-                if (glyph.start + offset..glyph.end + offset).contains(&idx) {
+                if (glyph.start + offset..=glyph.end + offset).contains(&idx) {
+                    // possibly inside ligature, need to resolve glyph internal offset
+
+                    let glyph_str = &run.text[glyph.start..glyph.end];
+                    let relative_idx = idx - offset - glyph.start;
+                    let mut total_graphemes = 0;
+                    let mut grapheme_i = 0;
+
+                    for (i, _) in glyph_str.grapheme_indices(true) {
+                        if relative_idx > i {
+                            grapheme_i += 1;
+                        }
+
+                        total_graphemes += 1;
+                    }
+
+                    if glyph.level.is_rtl() {
+                        grapheme_i = total_graphemes - grapheme_i;
+                    }
+
+                    last_position.point.x +=
+                        (grapheme_i as f64 / total_graphemes as f64) * glyph.w as f64;
+
                     return last_position;
                 }
             }
