@@ -11,9 +11,8 @@ parking_lot = { workspace = true }
 peniko = { workspace = true }
 resvg = { workspace = true }
 swash = { workspace = true }
-
 cosmic-text = { version = "0.14.2", features = ["shape-run-cache"] }
-
+unicode-segmentation = { workspace = true }
 winit = { workspace = true }
 wgpu = { workspace = true }
 crossbeam = { version = "0.8", optional = true }
@@ -23,4 +22,4 @@ futures = "0.3.31"
 wasm-bindgen-futures = { version = "0.4" }
 
 [features]
-crossbeam = [ "dep:crossbeam" ]
+crossbeam = ["dep:crossbeam"]

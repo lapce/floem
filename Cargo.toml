@@ -36,6 +36,7 @@ image = { version = "0.25", default-features = false }
 im = { version = "15.1.0" }
 resvg = { version = "0.45" }
 raw-window-handle = "0.6.0"
+unicode-segmentation = "1.10"
 wgpu = { version = "26.0" }
 parking_lot = { version = "0.12" }
 swash = { version = "0.2" }
@@ -56,7 +57,7 @@ rfd = { version = "0.15", default-features = false, features = [
 ], optional = true }
 tokio = { version = "1", features = ["sync", "rt"], optional = true }
 raw-window-handle = { workspace = true }
-unicode-segmentation = "1.10"
+unicode-segmentation = { workspace = true }
 peniko = { workspace = true }
 im-rc = "15.1.0"
 serde = { workspace = true, optional = true }
@@ -98,14 +99,16 @@ clipboard-win = "5.4"
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { version = "0.6", default-features = false }
 objc2-foundation = { version = "0.3", default-features = false }
-objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSResponder", "NSView"] }
+objc2-app-kit = { version = "0.3", features = [
+  "NSApplication",
+  "NSResponder",
+  "NSView"
+] }
 
 [features]
 default = ["editor", "default-image-formats", "vger"]
-
 vello = ["dep:floem_vello_renderer"]
 vger = ["dep:floem_vger_renderer"]
-
 serde = [
   "dep:serde",
   "winit/serde",
@@ -114,14 +117,12 @@ serde = [
   "smallvec/serde",
   "floem-editor-core?/serde"
 ]
-
 editor = [
   "floem-editor-core",
   "dep:lapce-xi-rope",
   "dep:strum",
   "dep:strum_macros",
 ]
-
 # Image support
 # From: https://github.com/image-rs/image/blob/main/Cargo.toml
 default-image-formats = ["image-jpeg", "image-ico", "image-png", "image-webp"]
@@ -140,11 +141,8 @@ image-qoi = ["image/qoi"]
 image-tga = ["image/tga"]
 image-tiff = ["image/tiff"]
 image-webp = ["image/webp"]
-
 tokio = ["dep:tokio"]
-
 # rfd (file dialog) async runtime
 rfd-async-std = ["dep:rfd", "rfd/async-std"]
 rfd-tokio = ["dep:rfd", "rfd/tokio"]
-
-crossbeam = [ "dep:crossbeam", "floem_renderer/crossbeam" ]
+crossbeam = ["dep:crossbeam", "floem_renderer/crossbeam"]
