@@ -686,10 +686,13 @@ impl TextInput {
                 true
             }
             TextCommand::Paste => {
-                let clipboard_content = match Clipboard::get_contents() {
+                let mut clipboard_content = match Clipboard::get_contents() {
                     Ok(content) => content,
                     Err(_) => return false,
                 };
+
+                clipboard_content.retain(|c| c != '\r' && c != '\n');
+
                 if clipboard_content.is_empty() {
                     return false;
                 }
