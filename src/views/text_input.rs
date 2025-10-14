@@ -13,8 +13,7 @@ use taffy::prelude::{Layout, NodeId};
 
 use floem_renderer::{text::Cursor, Renderer};
 use unicode_segmentation::UnicodeSegmentation;
-use winit::keyboard::{Key, NamedKey, SmolStr};
-use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey, SmolStr};
 
 use crate::{peniko::color::palette, style::Style, view::View};
 
