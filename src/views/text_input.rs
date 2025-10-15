@@ -12,7 +12,7 @@ use crate::{prop_extractor, style_class, Clipboard};
 use floem_reactive::{create_rw_signal, SignalGet, SignalUpdate, SignalWith};
 use taffy::prelude::{Layout, NodeId};
 
-use floem_renderer::{text::Cursor, Renderer};
+use floem_renderer::Renderer;
 use unicode_segmentation::UnicodeSegmentation;
 use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey, SmolStr};
 
@@ -90,28 +90,20 @@ pub struct TextInput {
     id: ViewId,
     buffer: BufferState,
     /// Optional text shown when the text input buffer is empty.
-    pub(crate) placeholder_text: Option<String>,
+    placeholder_text: Option<String>,
     on_enter: Option<Box<dyn Fn()>>,
-    placeholder_buff: Option<TextLayout>,
     placeholder_style: PlaceholderStyle,
     selection_style: SelectionStyle,
     // Index of where are we in the main buffer.
     cursor_glyph_idx: usize,
     // This can be retrieved from the glyph, but we store it for efficiency.
     cursor_x: f64,
-    text_buf: Option<TextLayout>,
+    text_buf: TextLayout,
     text_node: Option<NodeId>,
-    // Shown when the width exceeds node width for single line input.
-    clipped_text: Option<String>,
-    // Glyph index from which we started clipping.
-    clip_start_idx: usize,
-    // This can be retrieved from the clip start glyph, but we store it for efficiency.
-    clip_start_x: f64,
-    clip_txt_buf: Option<TextLayout>,
     // When the visible range changes, we also may need to have a small offset depending on the direction we moved.
     // This makes sure character under the cursor is always fully visible and correctly aligned,
     // and may cause the last character in the opposite direction to be "cut".
-    clip_offset_x: f64,
+    clip_start_x: f64,
     selection: Option<Range<usize>>,
     width: f32,
     height: f32,
@@ -211,24 +203,19 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         id,
         cursor_glyph_idx: 0,
         placeholder_text: None,
-        placeholder_buff: None,
         placeholder_style: Default::default(),
         selection_style: Default::default(),
         buffer: BufferState {
             buffer,
             last_buffer: buffer.get_untracked(),
         },
-        text_buf: None,
+        text_buf: TextLayout::new(),
         text_node: None,
-        clipped_text: None,
-        clip_txt_buf: None,
         style: Default::default(),
         font: FontProps::default(),
         cursor_x: 0.0,
         selection: None,
         glyph_max_size: Size::ZERO,
-        clip_start_idx: 0,
-        clip_offset_x: 0.0,
         clip_start_x: 0.0,
         cursor_width: 1.0,
         width: 0.0,
@@ -248,14 +235,6 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
     .class(TextInputClass)
 }
 
-#[derive(Copy, Clone, Debug)]
-enum ClipDirection {
-    None,
-    Forward,
-    Backward,
-}
-
-/// Available text commands.
 pub(crate) enum TextCommand {
     SelectAll,
     Copy,
@@ -418,56 +397,23 @@ impl TextInput {
         }
     }
 
-    fn clip_text(&mut self, node_layout: &Layout) {
-        let virt_text = self.text_buf.as_mut().unwrap();
+    fn calculate_clip_offset(&mut self, node_layout: &Layout) {
         let node_width = node_layout.size.width as f64;
-        let cursor_text_loc = Cursor::new(0, self.cursor_glyph_idx);
-        let layout_cursor = virt_text.layout_cursor(cursor_text_loc);
-        let cursor_glyph_pos = virt_text.hit_position(layout_cursor.glyph);
+        let cursor_glyph_pos = self.text_buf.hit_position(self.cursor_glyph_idx);
         let cursor_x = cursor_glyph_pos.point.x;
 
         let mut clip_start_x = self.clip_start_x;
 
-        let visible_range = clip_start_x..=clip_start_x + node_width;
-
-        let mut clip_dir = ClipDirection::None;
-        if !visible_range.contains(&cursor_glyph_pos.point.x) && self.selection.is_none() {
-            if cursor_x < *visible_range.start() {
-                clip_start_x = cursor_x;
-                clip_dir = ClipDirection::Backward;
-            } else {
-                clip_dir = ClipDirection::Forward;
-                clip_start_x = cursor_x - node_width;
-            }
+        if cursor_x < clip_start_x {
+            clip_start_x = cursor_x;
+        } else if cursor_x > clip_start_x + node_width {
+            clip_start_x = cursor_x - node_width;
         }
+
         self.cursor_x = cursor_x;
-
-        let clip_start = virt_text.hit_point(Point::new(clip_start_x, 0.0)).index;
-        let clip_end = virt_text
-            .hit_point(Point::new(clip_start_x + node_width, 0.0))
-            .index;
-
-        let new_text = self
-            .buffer
-            .get_untracked()
-            .chars()
-            .skip(clip_start)
-            .take(clip_end - clip_start)
-            .collect();
-
-        self.cursor_x -= clip_start_x;
-        self.clip_start_idx = clip_start;
         self.clip_start_x = clip_start_x;
-        self.clipped_text = Some(new_text);
 
         self.update_text_layout();
-        match clip_dir {
-            ClipDirection::None => {}
-            ClipDirection::Forward => {
-                self.clip_offset_x = self.clip_txt_buf.as_ref().unwrap().size().width - node_width
-            }
-            ClipDirection::Backward => self.clip_offset_x = 0.0,
-        }
     }
 
     fn get_cursor_rect(&self, node_layout: &Layout) -> Rect {
@@ -476,7 +422,7 @@ impl TextInput {
         let text_height = self.height as f64;
 
         let cursor_start = Point::new(
-            self.cursor_x + node_location.x as f64,
+            self.cursor_x - self.clip_start_x + node_location.x as f64,
             node_location.y as f64,
         );
 
@@ -492,12 +438,9 @@ impl TextInput {
     fn scroll(&mut self, offset: f64) {
         self.clip_start_x += offset;
         self.clip_start_x = self.clip_start_x.max(0.);
-        self.clip_start_x = self.clip_start_x.min(
-            self.text_buf
-                .as_ref()
-                .map(|l| l.size().width - self.width as f64)
-                .unwrap_or(self.width as f64),
-        );
+        self.clip_start_x = self
+            .clip_start_x
+            .min(self.text_buf.size().width - self.width as f64);
     }
 
     fn handle_double_click(&mut self, pos_x: f64, pos_y: f64) {
@@ -531,8 +474,6 @@ impl TextInput {
             PxPct::Pct(pct) => pct as f32 * layout.size.width,
         };
         self.text_buf
-            .as_ref()
-            .unwrap()
             .hit_point(Point::new(
                 pos_x + self.clip_start_x - padding_left as f64,
                 // TODO: prevent cursor incorrectly going to end of buffer when clicking
@@ -549,15 +490,14 @@ impl TextInput {
             return Rect::ZERO;
         };
 
-        let virtual_text = self.text_buf.as_ref().unwrap();
         let text_height = self.height;
 
         let selection_start_x =
-            virtual_text.hit_position(selection.start).point.x - self.clip_start_x;
+            self.text_buf.hit_position(selection.start).point.x - self.clip_start_x;
         let selection_start_x = selection_start_x.max(node_layout.location.x as f64 - left_padding);
 
         let selection_end_x =
-            virtual_text.hit_position(selection.end).point.x + left_padding - self.clip_start_x;
+            self.text_buf.hit_position(selection.end).point.x + left_padding - self.clip_start_x;
         let selection_end_x =
             selection_end_x.min(selection_start_x + self.width as f64 + left_padding);
 
@@ -598,36 +538,25 @@ impl TextInput {
     }
 
     fn update_text_layout(&mut self) {
-        let mut text_layout = TextLayout::new();
-        let attrs_list = self.get_text_attrs();
-        let align = self.style.text_align();
-
-        self.buffer
-            .with_untracked(|buff| text_layout.set_text(buff, attrs_list.clone(), align));
-
         let glyph_max_size = self.get_font_glyph_max_size();
         self.height = glyph_max_size.height as f32;
         self.glyph_max_size = glyph_max_size;
 
-        // main buff should always get updated
-        self.text_buf = Some(text_layout.clone());
+        let buffer_is_empty = self.buffer.with_untracked(|buff| buff.is_empty());
 
-        if let Some(cr_text) = self.clipped_text.clone().as_ref() {
-            let mut clp_txt_lay = text_layout;
-            clp_txt_lay.set_text(cr_text, attrs_list, align);
-
-            self.clip_txt_buf = Some(clp_txt_lay);
-        }
-
-        if let Some(placeholder_text) = &self.placeholder_text {
-            let mut placeholder_buff = TextLayout::new();
+        if let (Some(placeholder_text), true) = (&self.placeholder_text, buffer_is_empty) {
             let attrs_list = self.get_placeholder_text_attrs();
-            placeholder_buff.set_text(
+            self.text_buf.set_text(
                 placeholder_text,
                 attrs_list,
                 self.placeholder_style.text_align(),
             );
-            self.placeholder_buff = Some(placeholder_buff);
+        } else {
+            let attrs_list = self.get_text_attrs();
+            let align = self.style.text_align();
+            self.buffer.with_untracked(|buff| {
+                self.text_buf.set_text(buff, attrs_list.clone(), align);
+            });
         }
     }
 
@@ -709,6 +638,12 @@ impl TextInput {
 
     /// Select all text in the buffer.
     fn select_all(&mut self) {
+        let len = self.buffer.with_untracked(|val| val.len());
+
+        if len == 0 {
+            return;
+        }
+
         let text_node = self.text_node.unwrap();
         let node_layout = self
             .id
@@ -717,15 +652,13 @@ impl TextInput {
             .layout(text_node)
             .cloned()
             .unwrap_or_default();
-        let len = self.buffer.with_untracked(|val| val.len());
         self.cursor_glyph_idx = len;
 
-        let text_buf = self.text_buf.as_ref().unwrap();
-        let buf_width = text_buf.size().width;
+        let buf_width = self.text_buf.size().width;
         let node_width = node_layout.size.width as f64;
 
         if buf_width > node_width {
-            self.clip_text(&node_layout);
+            self.calculate_clip_offset(&node_layout);
         }
 
         self.selection = Some(0..len);
@@ -1021,24 +954,6 @@ impl TextInput {
         };
     }
 
-    fn paint_placeholder_text(
-        &self,
-        placeholder_buff: &TextLayout,
-        cx: &mut crate::context::PaintCx,
-    ) {
-        let text_node = self.text_node.unwrap();
-        let layout = self
-            .id
-            .taffy()
-            .borrow()
-            .layout(text_node)
-            .cloned()
-            .unwrap_or_default();
-        let node_location = layout.location;
-        let text_start_point = Point::new(node_location.x as f64, node_location.y as f64);
-        cx.draw_text(placeholder_buff, text_start_point);
-    }
-
     fn paint_selection_rect(&self, &node_layout: &Layout, cx: &mut crate::context::PaintCx<'_>) {
         let view_state = self.id.state();
         let view_state = view_state.borrow();
@@ -1171,19 +1086,22 @@ impl View for TextInput {
                 self.id.request_layout();
                 self.last_pointer_down = event.pos;
 
-                if event.count == 2 {
-                    self.handle_double_click(event.pos.x, event.pos.y);
-                } else if event.count == 3 {
-                    self.handle_triple_click();
-                } else {
-                    self.cursor_glyph_idx = self.get_box_position(event.pos.x, event.pos.y);
-                    self.selection = None;
+                if self.buffer.with_untracked(|buff| !buff.is_empty()) {
+                    if event.count == 2 {
+                        self.handle_double_click(event.pos.x, event.pos.y);
+                    } else if event.count == 3 {
+                        self.handle_triple_click();
+                    } else {
+                        self.cursor_glyph_idx = self.get_box_position(event.pos.x, event.pos.y);
+                        self.selection = None;
+                    }
                 }
                 true
             }
             Event::PointerMove(event) => {
-                self.id.request_layout();
-                if cx.is_active(self.id) {
+                if cx.is_active(self.id) && self.buffer.with_untracked(|buff| !buff.is_empty()) {
+                    self.id.request_layout();
+
                     if event.pos.x < 0. && event.pos.x < self.last_pointer_down.x {
                         self.scroll(event.pos.x);
                     } else if event.pos.x > self.width as f64
@@ -1219,7 +1137,7 @@ impl View for TextInput {
         let placeholder_style = style.clone().apply_class(PlaceholderTextClass);
         self.placeholder_style.read_style(cx, &placeholder_style);
 
-        if self.font.read(cx) || self.text_buf.is_none() {
+        if self.font.read(cx) {
             self.update_text_layout();
             self.id.request_layout();
         }
@@ -1304,8 +1222,7 @@ impl View for TextInput {
     fn compute_layout(&mut self, _cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
         self.update_text_layout();
 
-        let text_buf = self.text_buf.as_ref().unwrap();
-        let buf_width = text_buf.size().width;
+        let buf_width = self.text_buf.size().width;
         let text_node = self.text_node.unwrap();
         let node_layout = self
             .id
@@ -1317,16 +1234,10 @@ impl View for TextInput {
         let node_width = node_layout.size.width as f64;
 
         if buf_width > node_width {
-            self.clip_text(&node_layout);
+            self.calculate_clip_offset(&node_layout);
         } else {
-            self.clip_txt_buf = None;
-            self.clip_start_idx = 0;
             self.clip_start_x = 0.0;
-            let hit_pos = self
-                .text_buf
-                .as_ref()
-                .unwrap()
-                .hit_position(self.cursor_glyph_idx);
+            let hit_pos = self.text_buf.hit_position(self.cursor_glyph_idx);
             self.cursor_x = hit_pos.point.x;
         }
 
@@ -1334,12 +1245,6 @@ impl View for TextInput {
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        if self.buffer.with_untracked(|buff| buff.is_empty()) {
-            if let Some(placeholder_buff) = &self.placeholder_buff {
-                self.paint_placeholder_text(placeholder_buff, cx);
-            }
-        }
-
         let text_node = self.text_node.unwrap();
         let node_layout = self
             .id
@@ -1352,16 +1257,13 @@ impl View for TextInput {
         let location = node_layout.location;
         let text_start_point = Point::new(location.x as f64, location.y as f64);
 
-        if self.buffer.with_untracked(|b| !b.is_empty()) {
-            if let Some(clip_txt) = self.clip_txt_buf.as_mut() {
-                cx.draw_text(
-                    clip_txt,
-                    Point::new(text_start_point.x - self.clip_offset_x, text_start_point.y),
-                );
-            } else {
-                cx.draw_text(self.text_buf.as_ref().unwrap(), text_start_point);
-            }
-        }
+        cx.save();
+        cx.clip(&self.id.get_content_rect());
+        cx.draw_text(
+            &self.text_buf,
+            Point::new(text_start_point.x - self.clip_start_x, text_start_point.y),
+        );
+        cx.restore();
 
         let is_cursor_visible = cx.app_state.is_focused(&self.id())
             && self.selection.is_none()
