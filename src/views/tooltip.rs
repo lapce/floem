@@ -1,3 +1,4 @@
+#![deny(missing_docs)]
 use peniko::kurbo::Point;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -18,8 +19,14 @@ use crate::{
     view::{default_compute_layout, IntoView, View},
 };
 
-style_class!(pub TooltipClass);
-style_class!(pub TooltipContainerClass);
+style_class!(
+    /// A class for the tooltip views.
+    pub TooltipClass
+);
+style_class!(
+    /// A class for the tooltip container view.
+    pub TooltipContainerClass
+);
 
 prop!(pub Delay: Duration {} = Duration::from_millis(600));
 
@@ -32,9 +39,14 @@ prop_extractor! {
 /// A view that displays a tooltip for its child.
 pub struct Tooltip {
     id: ViewId,
+    /// Holds the hover point and time token needed to
+    /// evaluate if - or when and where - display tooltip.
     hover: Option<(Point, TimerToken)>,
+    /// Tooltip overlay view id.
     overlay: Rc<RefCell<Option<ViewId>>>,
+    /// Provided by user function that dislays tooltip content.
     tip: Rc<dyn Fn() -> Box<dyn View>>,
+    /// A tooltip specific styles (currently its just a delay).
     style: TooltipStyle,
     tip_style: Style,
     scale: f64,
@@ -143,6 +155,26 @@ impl View for Tooltip {
 
 /// Adds a [tooltip] function to a type that implements [`IntoView`].
 pub trait TooltipExt {
+    /// Adds a tooltip to the view.
+    ///
+    /// ### Examples
+    /// ```rust
+    /// # use floem::views::TooltipExt;
+    /// # use floem::views::{text, Decorators};
+    /// # use floem::prelude::{RwSignal, SignalGet};
+    /// // Simple usage:
+    /// let simple = text("A text with tooltip")
+    ///     .tooltip(|| "This is a tooltip.");
+    /// // More complex usage:
+    /// let mut click_counter = RwSignal::new(0);
+    /// let complex = text("A text with a tooltip that changes on click")
+    ///     .on_click_stop(move|_| click_counter += 1)
+    ///     .tooltip(move || format!("Clicked {} times on the label", click_counter.get()));
+    /// ```
+    /// ### Reactivity
+    /// This function is not reactive, but it is computing its result on every tooltip trigger.
+    /// It is possible then to have different tooltip output, but the output it will **not** change
+    /// once while displaying a hover.
     fn tooltip<V: IntoView + 'static>(self, tip: impl Fn() -> V + 'static) -> Tooltip;
 }
 
