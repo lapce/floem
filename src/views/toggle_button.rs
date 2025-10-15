@@ -414,7 +414,7 @@ impl ToggleButtonCustomStyle {
     /// Sets the accent color of the toggle button.
     ///
     /// # Arguments
-    /// **color** - A `StyleValue<Color>` that sets the toggle button's accent color.
+    /// **color** - A `Brush` that sets the toggle button's accent color.
     /// This is the same as the background color.
     pub fn accent_color(mut self, color: impl Into<Brush>) -> Self {
         self = Self(self.0.background(color));
