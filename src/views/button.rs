@@ -12,11 +12,11 @@ style_class!(
 /// ### Examples
 /// ```rust
 /// # use floem::views::button;
-/// # use floem::prelude::*;
+/// # use floem::prelude::{*, palette::css};
 /// # use floem::views::Decorators;
 /// # use floem::style::CursorStyle;
 /// // Basic usage
-/// let button1 = button"Click me").action(move || println!("Button1 clicked!"));
+/// let button1 = button("Click me").action(move || println!("Button1 clicked!"));
 /// let button2 = button("Click me").action(move || println!("Button2 clicked!"));
 /// // Apply styles for the button
 /// let styled = button("Click me")
@@ -53,11 +53,11 @@ impl Button {
     /// ### Examples
     /// ```rust
     /// # use floem::views::button;
-    /// # use floem::prelude::{palette::css, Color};
-    /// # use floem::views::{Decorators, ButtonExt};
+    /// # use floem::prelude::{*, palette::css};
+    /// # use floem::views::Decorators;
     /// # use floem::style::CursorStyle;
     /// // Basic usage
-    /// let button1 = "Click me".button().action(move || println!("Button1 clicked!"));
+    /// let button1 = button("Click me").action(move || println!("Button1 clicked!"));
     /// let button2 = button("Click me").action(move || println!("Button2 clicked!"));
     /// // Apply styles for the button
     /// let styled = button("Click me")
