@@ -13,7 +13,7 @@ use taffy::prelude::{Layout, NodeId};
 
 use floem_renderer::{text::Cursor, Renderer};
 use unicode_segmentation::UnicodeSegmentation;
-use winit::keyboard::{Key, NamedKey, SmolStr};
+use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey, SmolStr};
 
 use crate::{peniko::color::palette, style::Style, view::View};
 
@@ -200,23 +200,22 @@ pub(crate) enum TextCommand {
     None,
 }
 
-impl From<(&KeyEvent, &SmolStr)> for TextCommand {
-    fn from(val: (&keyboard::KeyEvent, &SmolStr)) -> Self {
-        let (event, ch) = val;
+impl From<&keyboard::KeyEvent> for TextCommand {
+    fn from(event: &keyboard::KeyEvent) -> Self {
         #[cfg(target_os = "macos")]
-        match (event.modifiers, ch.as_str()) {
-            (Modifiers::META, "a") => Self::SelectAll,
-            (Modifiers::META, "c") => Self::Copy,
-            (Modifiers::META, "x") => Self::Cut,
-            (Modifiers::META, "v") => Self::Paste,
+        match (event.modifiers, event.key.physical_key) {
+            (Modifiers::META, PhysicalKey::Code(KeyCode::KeyA)) => Self::SelectAll,
+            (Modifiers::META, PhysicalKey::Code(KeyCode::KeyC)) => Self::Copy,
+            (Modifiers::META, PhysicalKey::Code(KeyCode::KeyX)) => Self::Cut,
+            (Modifiers::META, PhysicalKey::Code(KeyCode::KeyV)) => Self::Paste,
             _ => Self::None,
         }
         #[cfg(not(target_os = "macos"))]
-        match (event.modifiers, ch.as_str()) {
-            (Modifiers::CONTROL, "a") => Self::SelectAll,
-            (Modifiers::CONTROL, "c") => Self::Copy,
-            (Modifiers::CONTROL, "x") => Self::Cut,
-            (Modifiers::CONTROL, "v") => Self::Paste,
+        match (event.modifiers, event.key.physical_key) {
+            (Modifiers::CONTROL, PhysicalKey::Code(KeyCode::KeyA)) => Self::SelectAll,
+            (Modifiers::CONTROL, PhysicalKey::Code(KeyCode::KeyC)) => Self::Copy,
+            (Modifiers::CONTROL, PhysicalKey::Code(KeyCode::KeyX)) => Self::Cut,
+            (Modifiers::CONTROL, PhysicalKey::Code(KeyCode::KeyV)) => Self::Paste,
             _ => Self::None,
         }
     }
@@ -640,12 +639,12 @@ impl TextInput {
         self.selection = Some(0..len);
     }
 
-    fn handle_modifier_cmd(&mut self, event: &KeyEvent, character: &SmolStr) -> bool {
+    fn handle_modifier_cmd(&mut self, event: &KeyEvent) -> bool {
         if event.modifiers.is_empty() || event.modifiers == Modifiers::SHIFT {
             return false;
         }
 
-        let command = (event, character).into();
+        let command = event.into();
 
         match command {
             TextCommand::SelectAll => {
@@ -870,7 +869,7 @@ impl TextInput {
 
         match event.key.logical_key {
             Key::Character(ref ch) => {
-                let handled_modifier_cmd = self.handle_modifier_cmd(event, ch);
+                let handled_modifier_cmd = self.handle_modifier_cmd(event);
                 if handled_modifier_cmd {
                     return true;
                 }

@@ -25,7 +25,6 @@ use peniko::{
     Brush,
 };
 use taffy::tree::NodeId;
-use winit::keyboard::{Key, SmolStr};
 
 use super::{Decorators, TextCommand};
 
@@ -227,12 +226,12 @@ impl Label {
         }
     }
 
-    fn handle_modifier_cmd(&mut self, event: &KeyEvent, character: &SmolStr) -> bool {
+    fn handle_modifier_cmd(&mut self, event: &KeyEvent) -> bool {
         if event.modifiers.is_empty() {
             return false;
         }
 
-        let command = (event, character).into();
+        let command = event.into();
 
         match command {
             TextCommand::Copy => {
@@ -251,11 +250,9 @@ impl Label {
             _ => false,
         }
     }
+
     fn handle_key_down(&mut self, event: &KeyEvent) -> bool {
-        match event.key.logical_key {
-            Key::Character(ref ch) => self.handle_modifier_cmd(event, ch),
-            _ => false,
-        }
+        self.handle_modifier_cmd(event)
     }
 
     fn paint_selection(&self, text_layout: &TextLayout, paint_cx: &mut PaintCx) {
