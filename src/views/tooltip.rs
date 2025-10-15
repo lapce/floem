@@ -160,14 +160,14 @@ pub trait TooltipExt {
     /// ### Examples
     /// ```rust
     /// # use floem::views::TooltipExt;
-    /// # use floem::views::{label, Decorators};
+    /// # use floem::views::{text, Decorators};
     /// # use floem::prelude::{RwSignal, SignalGet};
     /// // Simple usage:
-    /// let simple = label(move || "A text with tooltip")
+    /// let simple = text("A text with tooltip")
     ///     .tooltip(|| "This is a tooltip.");
     /// // More complex usage:
     /// let mut click_counter = RwSignal::new(0);
-    /// let complex = label(move || "A text with a tooltip that changes on click")
+    /// let complex = text("A text with a tooltip that changes on click")
     ///     .on_click_stop(move|_| click_counter += 1)
     ///     .tooltip(move || format!("Clicked {} times on the label", click_counter.get()));
     /// ```
