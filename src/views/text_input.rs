@@ -1,3 +1,4 @@
+#![deny(missing_docs)]
 use crate::action::exec_after;
 use crate::event::{EventListener, EventPropagation};
 use crate::id::ViewId;
@@ -35,10 +36,13 @@ use crate::{
 use super::Decorators;
 
 style_class!(
-    /// The style class that is applied to all TextInput views.
+    /// The style class that is applied to all `TextInput` views.
     pub TextInputClass
 );
-style_class!(pub PlaceholderTextClass);
+style_class!(
+    /// The style class that is applied to the placeholder `TextInput` text.
+    pub PlaceholderTextClass
+);
 
 prop_extractor! {
     Extractor {
@@ -58,6 +62,7 @@ prop_extractor! {
     }
 }
 
+/// Holds text buffer of InputText view.
 struct BufferState {
     buffer: RwSignal<String>,
     last_buffer: String,
@@ -80,31 +85,32 @@ impl BufferState {
     }
 }
 
-/// Text Input View
+/// Text Input View.
 pub struct TextInput {
     id: ViewId,
     buffer: BufferState,
+    /// Optional text shown when the text input buffer is empty.
     pub(crate) placeholder_text: Option<String>,
     on_enter: Option<Box<dyn Fn()>>,
     placeholder_buff: Option<TextLayout>,
     placeholder_style: PlaceholderStyle,
     selection_style: SelectionStyle,
-    // Where are we in the main buffer
+    // Index of where are we in the main buffer.
     cursor_glyph_idx: usize,
-    // This can be retrieved from the glyph, but we store it for efficiency
+    // This can be retrieved from the glyph, but we store it for efficiency.
     cursor_x: f64,
     text_buf: Option<TextLayout>,
     text_node: Option<NodeId>,
-    // Shown when the width exceeds node width for single line input
+    // Shown when the width exceeds node width for single line input.
     clipped_text: Option<String>,
-    // Glyph index from which we started clipping
+    // Glyph index from which we started clipping.
     clip_start_idx: usize,
-    // This can be retrieved from the clip start glyph, but we store it for efficiency
+    // This can be retrieved from the clip start glyph, but we store it for efficiency.
     clip_start_x: f64,
     clip_txt_buf: Option<TextLayout>,
     // When the visible range changes, we also may need to have a small offset depending on the direction we moved.
     // This makes sure character under the cursor is always fully visible and correctly aligned,
-    // and may cause the last character in the opposite direction to be "cut"
+    // and may cause the last character in the opposite direction to be "cut".
     clip_offset_x: f64,
     selection: Option<Range<usize>>,
     width: f32,
@@ -119,20 +125,77 @@ pub struct TextInput {
     last_cursor_action_on: Instant,
 }
 
+/// Type of cursor movement in navigation.
 #[derive(Clone, Copy, Debug)]
 pub enum Movement {
+    /// Move by a glyph.
     Glyph,
+    /// Move by a word.
     Word,
+    /// Move by a line.
     Line,
 }
 
+/// Type of text direction in the file.
 #[derive(Clone, Copy, Debug)]
 pub enum TextDirection {
+    /// Text direction from left to right.
     Left,
+    /// Text direction from right to left.
     Right,
 }
 
-/// Creates a [TextInput] view. This can be used for basic text input, for more advanced editing see [super::text_editor::TextEditor].
+/// Creates a [TextInput] view. This can be used for basic text input.
+/// ### Examples
+/// ```rust
+/// # use floem::prelude::*;
+/// # use floem::prelude::palette::css;
+/// # use floem::text::Weight;
+/// # use floem::style::SelectionCornerRadius;
+/// // Create empty `String` as a text buffer in the read-write signal
+/// let text = RwSignal::new(String::new());
+/// // Create simple text imput from it
+/// let simple = text_input(text)
+///     // Optional placeholder text
+///     .placeholder("Placeholder text")
+///     // Width of the text widget
+///     .style(|s| s.width(250.))
+///     // Enable keyboard navigation on the widget
+///     .keyboard_navigable();
+///
+/// // Stylized text example:
+/// let stylized = text_input(text)
+///     .placeholder("Placeholder text")
+///     .style(|s| s
+///         .border(1.5)
+///         .width(250.0)
+///         .background(css::LIGHT_GRAY)
+///         .border_radius(15.0)
+///         .border_color(css::DIM_GRAY)
+///         .padding(10.0)
+///         // Styles applied on widget pointer hover.
+///         .hover(|s| s.background(css::LIGHT_GRAY.multiply_alpha(0.5)).border_color(css::DARK_GRAY))
+///         .set(SelectionCornerRadius, 4.0)
+///         // Styles applied when widget holds the focus.
+///         .focus(|s| s
+///             .border_color(css::SKY_BLUE)
+///             // Styles applied on widget pointer hover when focused.
+///             .hover(|s| s.border_color(css::SKY_BLUE))
+///         )
+///         // Apply class and override some of its styles.
+///         .class(PlaceholderTextClass, |s| s
+///             .color(css::SKY_BLUE)
+///             .font_style(floem::text::Style::Italic)
+///             .font_weight(Weight::BOLD)
+///         )
+///         .font_family("monospace".to_owned())
+///     )
+///     .keyboard_navigable();
+/// ```
+/// ### Reactivity
+/// The view is reactive and will track updates on buffer signal.
+/// ### Info
+/// For more advanced editing see [TextEditor](super::text_editor::TextEditor).
 pub fn text_input(buffer: RwSignal<String>) -> TextInput {
     let id = ViewId::new();
     let is_focused = create_rw_signal(false);
@@ -192,6 +255,7 @@ enum ClipDirection {
     Backward,
 }
 
+/// Available text commands.
 pub(crate) enum TextCommand {
     SelectAll,
     Copy,
@@ -221,6 +285,7 @@ impl From<&keyboard::KeyEvent> for TextCommand {
     }
 }
 
+/// Determines if motion should be word based.
 fn get_word_based_motion(event: &KeyEvent) -> Option<Movement> {
     #[cfg(not(target_os = "macos"))]
     return event
@@ -250,12 +315,36 @@ const APPROX_VISIBLE_CHARS_TARGET: f32 = 10.0;
 
 impl TextInput {
     /// Add placeholder text visible when buffer is empty.
+    /// ```
+    /// # use floem::views::text_input;
+    /// # use floem_reactive::RwSignal;
+    /// let text = RwSignal::new(String::new());
+    /// let simple = text_input(text)
+    ///     // Optional placeholder text
+    ///     .placeholder("Placeholder text");
+    /// ```
+    /// ### Reactivity
+    /// This method is not reactive.
     pub fn placeholder(mut self, text: impl Into<String>) -> Self {
         self.placeholder_text = Some(text.into());
         self
     }
 
     /// Add action that will run on `Enter` key press.
+    ///
+    /// Useful for submitting forms using a keyboard.
+    /// ```
+    /// # use floem::views::text_input;
+    /// # use floem_reactive::RwSignal;
+    /// # use floem_reactive::SignalGet;
+    /// let form = RwSignal::new(String::new());
+    /// text_input(form)
+    ///     .placeholder("fill the form")
+    ///     .on_enter(move || { format!("Form {} submitted!", form.get_untracked()); });
+    /// ``````
+    /// ### Reactivity
+    /// This method is not reactive, but will always run provided function
+    /// when pressed `Enter`.
     pub fn on_enter(mut self, action: impl Fn() + 'static) -> Self {
         self.on_enter = Some(Box::new(action));
         self
@@ -546,6 +635,7 @@ impl TextInput {
         self.font.size().unwrap_or(DEFAULT_FONT_SIZE)
     }
 
+    /// Retrieve attributes for the placeholder text.
     pub fn get_placeholder_text_attrs(&self) -> AttrsList {
         let mut attrs = Attrs::new().color(
             self.placeholder_style
@@ -595,6 +685,7 @@ impl TextInput {
         AttrsList::new(attrs)
     }
 
+    /// Retrieve attributes for the text.
     pub fn get_text_attrs(&self) -> AttrsList {
         let mut attrs = Attrs::new().color(self.style.color().unwrap_or(palette::css::BLACK));
 
@@ -616,6 +707,7 @@ impl TextInput {
         AttrsList::new(attrs)
     }
 
+    /// Select all text in the buffer.
     fn select_all(&mut self) {
         let text_node = self.text_node.unwrap();
         let node_layout = self

@@ -3,7 +3,7 @@ use floem::{prelude::*, style::SelectionCornerRadius, text::Weight};
 use crate::form::{form, form_item};
 
 pub fn text_input_view() -> impl IntoView {
-    let text = RwSignal::new("".to_string());
+    let text = RwSignal::new(String::new());
 
     const LIGHT_GRAY_224: Color = Color::from_rgb8(224, 224, 224);
     const MEDIUM_GRAY_189: Color = Color::from_rgb8(189, 189, 189);
