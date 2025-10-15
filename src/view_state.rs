@@ -256,12 +256,9 @@ impl ViewState {
         context: &Style,
     ) -> bool {
         let mut new_frame = false;
-        // we are just using the combined style and then clearing here to avoid creating an entirely new style map
-        // because the clone is cheap, this is fine
-        let mut computed_style = self.combined_style.clone();
-        computed_style.clear();
-        // we will apply the views style to the context so that if a style class is used on a view, that class will be directly applied instead of only applying to children
+        let mut computed_style = Style::new();
         let mut context = context.clone();
+
         if let Some(view_class) = view_class {
             computed_style = computed_style.apply_classes_from_context(&[view_class], &context);
         }
@@ -271,13 +268,22 @@ impl ViewState {
             context.apply_mut(view_style.clone());
             computed_style.apply_mut(view_style);
         }
-        // self.style has precedence over the supplied view style so it comes after
+
         let self_style = self.style();
         context.apply_mut(self_style.clone());
+        computed_style.apply_mut(self_style.clone());
+
+        // Give mappings access to all props by copying computed_style to context
+        context.apply_mut(computed_style.clone());
+
+        // Apply context mappings - they read from context (which now has everything)
+        computed_style = computed_style.apply_context_mappings(&context);
+
+        // self_style has final priority, overriding mapping results
+
         computed_style.apply_mut(self_style);
 
         self.has_style_selectors = computed_style.selectors();
-
         computed_style.apply_interact_state(&interact_state, screen_size_bp);
 
         for animation in self
@@ -288,9 +294,7 @@ impl ViewState {
         {
             if animation.can_advance() {
                 new_frame = true;
-
                 animation.animate_into(&mut computed_style);
-
                 animation.advance();
             } else {
                 animation.apply_folded(&mut computed_style)
@@ -299,7 +303,6 @@ impl ViewState {
         }
 
         self.combined_style = computed_style;
-
         new_frame
     }
 

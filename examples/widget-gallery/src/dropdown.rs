@@ -1,7 +1,9 @@
 use dropdown::Dropdown;
 use strum::IntoEnumIterator;
 
-use floem::{prelude::*, reactive::create_effect};
+use floem::{
+    prelude::*, reactive::create_effect, theme::StyleThemeExt, views::scroll::ScrollClass,
+};
 
 use crate::form::{self, form_item};
 
@@ -29,6 +31,13 @@ pub fn dropdown_view() -> impl IntoView {
 
     form::form((form_item(
         "Dropdown",
-        Dropdown::new_rw(dropdown_active_item, Values::iter()),
+        Dropdown::new_rw(dropdown_active_item, Values::iter()).style(|s| {
+            s.font_size(15).class(ScrollClass, |s| {
+                s.font_size(15).with_theme(|s, t| {
+                    s.padding(t.padding())
+                    // .class(ListItemClass, |s| s.padding(t.padding()))
+                })
+            })
+        }),
     ),))
 }

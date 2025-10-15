@@ -1,4 +1,12 @@
-use floem::{prelude::*, style::SelectionCornerRadius, text::Weight};
+use std::time::Duration;
+
+use floem::{
+    kurbo::Stroke,
+    prelude::*,
+    style::{SelectionCornerRadius, Transition},
+    text::Weight,
+    theme::StyleThemeExt,
+};
 
 use crate::form::{form, form_item};
 
@@ -27,9 +35,10 @@ pub fn text_input_view() -> impl IntoView {
             text_input(text)
                 .placeholder("Placeholder text")
                 .style(|s| {
-                    s.border(1.5)
+                    s.border(Stroke::new(1.5).with_dashes(0., [5., 5.]))
                         .width(250.0)
                         .background(LIGHT_GRAY_BG)
+                        .transition_background(Transition::spring(Duration::from_millis(300)))
                         .border_radius(15.0)
                         .border_color(MEDIUM_GRAY_189)
                         .padding(10.0)
@@ -40,7 +49,7 @@ pub fn text_input_view() -> impl IntoView {
                                 .hover(|s| s.border_color(SKY_BLUE))
                         })
                         .class(PlaceholderTextClass, |s| {
-                            s.color(SKY_BLUE)
+                            s.with_theme(|s, t| s.color(t.primary_muted()))
                                 .font_style(floem::text::Style::Italic)
                                 .font_weight(Weight::BOLD)
                         })
@@ -48,6 +57,11 @@ pub fn text_input_view() -> impl IntoView {
                 })
                 .keyboard_navigable(),
         ),
-        form_item("Disabled Input:", text_input(text).disabled(|| true)),
+        form_item(
+            "Disabled Input:",
+            text_input(text)
+                .placeholder("Disabled input")
+                .disabled(|| true),
+        ),
     ))
 }

@@ -4,7 +4,7 @@ use crate::inspector::header;
 use crate::view::IntoView;
 use crate::views::{
     button, clip, container, dyn_container, empty, h_stack, label, scroll, stack, static_label,
-    text, v_stack, v_stack_from_iter, Decorators,
+    text, v_stack, v_stack_from_iter, ContainerExt, Decorators,
 };
 use floem_reactive::{create_rw_signal, RwSignal, Scope, SignalGet, SignalUpdate};
 use peniko::color::palette;
@@ -57,11 +57,13 @@ fn info(name: impl Display, value: String) -> impl IntoView {
 
 fn info_row(name: String, view: impl IntoView + 'static) -> impl IntoView {
     stack((
-        stack((static_label(name).style(|s| {
-            s.margin_right(5.0)
-                .color(palette::css::BLACK.with_alpha(0.6))
-        }),))
-        .style(|s| s.min_width(80.0).flex_direction(FlexDirection::RowReverse)),
+        static_label(name)
+            .style(|s| {
+                s.margin_right(5.0)
+                    .color(palette::css::BLACK.with_alpha(0.6))
+            })
+            .container()
+            .style(|s| s.min_width(80.0).flex_direction(FlexDirection::RowReverse)),
         view,
     ))
     .style(|s| {

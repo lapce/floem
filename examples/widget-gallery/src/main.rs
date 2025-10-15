@@ -17,15 +17,16 @@ pub mod rich_text;
 pub mod slider;
 
 use floem::{
-    action::set_window_menu,
+    action::{add_overlay, set_window_menu},
     event::{Event, EventListener},
     keyboard::{Key, Modifiers, NamedKey},
-    kurbo::Size,
+    kurbo::{Point, Size},
     menu::*,
     muda::{AboutMetadataBuilder, PredefinedMenuItem},
     new_window,
     prelude::*,
-    style::{Background, CursorStyle, Transition},
+    style::{Background, CursorStyle, TextColor, Transition},
+    theme::{self, hover_style, StyleThemeExt},
     window::{WindowConfig, WindowId},
 };
 
@@ -83,7 +84,8 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         .into_iter()
         .enumerate()
         .map(move |(idx, item)| {
-            item.draggable()
+            item.debug_name(item)
+                .draggable()
                 .style(move |s| {
                     s.flex_row()
                         .font_size(18.)
@@ -92,19 +94,20 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                         .height(36.0)
                         .transition(Background, Transition::ease_in_out(100.millis()))
                         .items_center()
-                        .border_bottom(1.)
-                        .border_color(palette::css::LIGHT_GRAY)
-                        .selected(|s| {
-                            s.border(2.)
-                                .border_color(palette::css::BLUE)
-                                .background(palette::css::GRAY.with_alpha(0.6))
+                        .active(|s| {
+                            s.with_theme(|s, t| {
+                                s.background(t.primary())
+                                    // .color(t.text_muted())
+                                    .hover(|s| s.background(t.primary_muted()))
+                                    .border_radius(t.border_radius())
+                            })
                         })
-                        .hover(|s| {
-                            s.background(palette::css::LIGHT_GRAY)
-                                .apply_if(idx == active_tab.get(), |s| {
-                                    s.background(palette::css::GRAY)
-                                })
-                                .cursor(CursorStyle::Pointer)
+                        .hover(|s| s.cursor(CursorStyle::Pointer))
+                        .apply_if(idx != active_tab.get(), |s| {
+                            s.apply(
+                                theme::hover_style()
+                                    .with_theme(|s, t| s.border_radius(t.border_radius())),
+                            )
                         })
                 })
                 .dragging_style(|s| s.background(palette::css::GRAY.with_alpha(0.6)))
@@ -122,7 +125,8 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         .scroll_style(|s| s.shrink_to_fit())
         .style(|s| {
             s.border(1.)
-                .padding(3.)
+                .padding_vert(3.)
+                .padding_left(3.)
                 .border_color(palette::css::GRAY)
                 .class(LabelClass, |s| s.selectable(false))
         });
@@ -302,6 +306,24 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                     ),
                 ))
             }),
+    );
+
+    // let main_view = view.id();
+
+    add_overlay(
+        svg(include_str!("../assets/floem.svg"))
+            .style(|s| {
+                s.set_style_value(TextColor, floem::style::StyleValue::Unset)
+                    .size(50, 50)
+                    .absolute()
+                    .inset_bottom(20.)
+                    .inset_right(10.)
+                // .with_theme(move |s, t| {
+                //     t.primary_base = primary.get();
+                //     s.theme(t)
+                // })
+            })
+            .draggable(),
     );
 
     view.on_event_stop(EventListener::KeyUp, move |e| {

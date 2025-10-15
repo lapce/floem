@@ -78,7 +78,7 @@ where
     V: IntoView + 'static,
 {
     let list_id = ViewId::new();
-    let selection = create_rw_signal(None);
+    let selection = create_rw_signal(Some(0));
     create_effect(move |_| {
         selection.track();
         list_id.update_state(ListUpdate::SelectionChanged);
@@ -210,7 +210,7 @@ impl View for Item {
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        "Item".into()
+        "List Item".into()
     }
 
     fn style_pass(&mut self, cx: &mut StyleCx<'_>) {

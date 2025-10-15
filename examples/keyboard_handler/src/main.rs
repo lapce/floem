@@ -2,13 +2,15 @@ use floem::{
     event::{Event, EventListener},
     keyboard::Key,
     unit::UnitExt,
-    views::{stack, text, Decorators},
+    views::{stack, text, ContainerExt, Decorators},
     IntoView,
 };
 
 fn app_view() -> impl IntoView {
-    let view =
-        stack((text("Example: Keyboard event handler").style(|s| s.padding(10.0)),)).style(|s| {
+    let view = "Example: Keyboard event handler"
+        .style(|s| s.padding(10.0))
+        .container()
+        .style(|s| {
             s.size(100.pct(), 100.pct())
                 .flex_col()
                 .items_center()

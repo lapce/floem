@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::{
     context::{ComputeLayoutCx, EventCx, PaintCx, UpdateCx},
     event::{Event, EventPropagation},
@@ -15,7 +17,7 @@ use crate::{
 };
 use floem_reactive::create_effect;
 use peniko::{
-    kurbo::{self, Point, Rect, Stroke},
+    kurbo::{self, Line, Point, Rect, Stroke},
     Brush,
 };
 use taffy::FlexDirection;
@@ -43,6 +45,7 @@ pub(crate) fn create_resizable(children: Vec<Box<dyn View>>) -> ResizableStack {
         style: Default::default(),
         re_style: ReStyle::default(),
         handle_style: Default::default(),
+        hovered_handle_style: Default::default(),
         cursor_pos: Point::ZERO,
         should_clear_on_up: None,
         layouts: Vec::new(),
@@ -64,10 +67,6 @@ prop!(
     pub HandleThickness: Px {} = Px(10.)
 );
 prop!(
-    /// The height of the handle
-    pub HandleHeight: PxPct {} = PxPct::Pct(100.)
-);
-prop!(
     /// The cursor style over the handle.
     /// Defaults to automatically handling the style for you.
     pub HandleCursorStyle: Option<CursorStyle> {} = None
@@ -82,7 +81,6 @@ prop_extractor! {
     HandleStyle {
         color: HandleColor,
         thickness: HandleThickness,
-        length: HandleHeight,
         cursor: HandleCursorStyle,
     }
 }
@@ -98,6 +96,7 @@ pub struct ResizableStack {
     id: ViewId,
     style: Style,
     handle_style: HandleStyle,
+    hovered_handle_style: HandleStyle,
     re_style: ReStyle,
     cursor_pos: Point,
     should_clear_on_up: Option<usize>,
@@ -121,13 +120,14 @@ impl View for ResizableStack {
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         self.re_style.read(cx);
+        self.handle_style.read(cx);
         let style = cx.style();
         let handle_style = match self.handle_state {
-            HandleState::None => style,
+            HandleState::None => Style::new(),
             HandleState::Hovered(_) => style.apply_selectors(&[StyleSelector::Hover]),
             HandleState::Active(_) => style.apply_selectors(&[StyleSelector::Active]),
         };
-        self.handle_style.read_style(cx, &handle_style);
+        self.hovered_handle_style.read_style(cx, &handle_style);
         for child in self.id().children() {
             cx.style_view(child);
         }
@@ -276,24 +276,36 @@ impl View for ResizableStack {
     fn paint(&mut self, cx: &mut PaintCx) {
         cx.paint_children(self.id());
 
-        let color = self.handle_style.color();
-        if let Some(color) = color {
+        let drawn = if let Some(color) = self.hovered_handle_style.color() {
             match self.handle_state {
                 HandleState::Hovered(idx) | HandleState::Active(idx) => {
-                    let handle_rect = self.get_handle_rect(idx);
-                    let shape = Rect::new(
-                        handle_rect.x0,
-                        handle_rect.y0,
-                        handle_rect.x1,
-                        handle_rect.y1,
-                    )
-                    .to_rounded_rect(2.);
-                    cx.fill(&shape, &color, 3.0);
-
-                    let border_color = color.with_alpha(0.8);
-                    cx.stroke(&shape, &border_color, &Stroke::new(1.));
+                    let handle_line = self.get_handle_line(idx);
+                    cx.stroke(
+                        &handle_line,
+                        &color,
+                        &Stroke::new(self.hovered_handle_style.thickness().0),
+                    );
+                    Some(idx)
                 }
-                _ => {}
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+        let color = self.handle_style.color();
+        if let Some(color) = color {
+            for (idx, handle_line) in
+                (0..(self.layouts.len() - 1)).map(|idx| (idx, self.get_handle_line(idx)))
+            {
+                if Some(idx) == drawn {
+                    continue;
+                }
+                cx.stroke(
+                    &handle_line,
+                    &color,
+                    &Stroke::new(self.handle_style.thickness().0),
+                );
             }
         }
     }
@@ -309,10 +321,11 @@ impl ResizableStack {
         self
     }
 
-    fn get_handle_rect(&self, handle_idx: usize) -> Rect {
-        if handle_idx >= self.layouts.len() - 1 {
-            return Rect::ZERO;
-        }
+    fn get_handle_line(&self, handle_idx: usize) -> Line {
+        assert!(
+            handle_idx < self.layouts.len() - 1,
+            "handle_idx must be less than layouts.len() - 1"
+        );
 
         let current_layout = self.layouts[handle_idx];
         let next_layout = self.layouts[handle_idx + 1];
@@ -320,34 +333,24 @@ impl ResizableStack {
         match self.re_style.direction() {
             FlexDirection::Row | FlexDirection::RowReverse => {
                 let x = current_layout.x1;
-                let thickness = self.handle_style.thickness().0;
                 let min_y = current_layout.y0.min(next_layout.y0);
                 let max_y = current_layout.y1.max(next_layout.y1);
-                let (min_y, max_y) = match self.handle_style.length() {
-                    PxPct::Px(px) => (min_y, min_y + px),
-                    PxPct::Pct(pct) => (min_y * pct / 100., max_y * pct / 100.),
-                };
-
-                Rect::new(x - thickness / 2.0, min_y, x + thickness / 2.0, max_y)
+                Line::new(Point::new(x, min_y), Point::new(x, max_y))
             }
             FlexDirection::Column | FlexDirection::ColumnReverse => {
                 let y = current_layout.y1;
-                let thickness = self.handle_style.thickness().0;
                 let min_x = current_layout.x0.min(next_layout.x0);
                 let max_x = current_layout.x1.max(next_layout.x1);
-                let (min_x, max_x) = match self.handle_style.length() {
-                    PxPct::Px(px) => (min_x, min_x + px),
-                    PxPct::Pct(pct) => (min_x * pct / 100., max_x * pct / 100.),
-                };
-                Rect::new(min_x, y - thickness / 2.0, max_x, y + thickness / 2.0)
+                Line::new(Point::new(min_x, y), Point::new(max_x, y))
             }
         }
     }
 
     fn find_handle_at_position(&self, pos: Point) -> Option<usize> {
         for i in 0..self.layouts.len() - 1 {
-            let handle_rect = self.get_handle_rect(i);
-            if handle_rect.contains(pos) {
+            let handle_rect = self.get_handle_line(i);
+            // TODO make hit target configurable
+            if handle_rect.hit(pos, 5.) {
                 return Some(i);
             }
         }
@@ -532,15 +535,6 @@ impl ResizableCustomStyle {
         self
     }
 
-    /// Sets the length of the handle.
-    ///
-    /// # Arguments
-    /// * `length` - A `PxPct` value that sets the handle's length relative to the min height of the views next to the handle.
-    pub fn handle_length(mut self, height: PxPct) -> Self {
-        self = ResizableCustomStyle(self.0.set(HandleHeight, height));
-        self
-    }
-
     /// Sets the cursor style over the handle.
     ///
     /// # Arguments
@@ -549,5 +543,20 @@ impl ResizableCustomStyle {
     pub fn handle_cursor_style(mut self, cursor_style: impl Into<Option<CursorStyle>>) -> Self {
         self = ResizableCustomStyle(self.0.set(HandleCursorStyle, cursor_style));
         self
+    }
+}
+
+pub trait HitExt {
+    fn hit(&self, point: Point, threshhold: f64) -> bool;
+}
+
+impl<T> HitExt for T
+where
+    T: kurbo::ParamCurveNearest,
+{
+    fn hit(&self, point: Point, threshhold: f64) -> bool {
+        const ACCURACY: f64 = 0.1;
+        let nearest = self.nearest(point, ACCURACY);
+        nearest.distance_sq < threshhold * threshhold
     }
 }

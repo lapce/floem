@@ -9,7 +9,7 @@ use floem::{
     },
     style_class,
     unit::DurationUnitExt,
-    views::{label, stack, text, Decorators},
+    views::{label, stack, text, ContainerExt, Decorators},
     IntoView, View,
 };
 
@@ -106,8 +106,8 @@ fn app_view() -> impl IntoView {
 
     let (counter, set_counter) = create_signal(0);
     let (theme, set_theme) = create_signal(false);
-    let view = stack((stack((
-        text("Toggle Theme")
+    let view = stack((
+        "Toggle Theme"
             .class(Button)
             .on_click_stop({
                 move |_| {
@@ -117,7 +117,7 @@ fn app_view() -> impl IntoView {
             .keyboard_navigable(),
         stack((
             label(move || format!("Value: {}", counter.get())).class(Label),
-            text("Increment")
+            "Increment"
                 .class(Button)
                 .on_click_stop({
                     move |_| {
@@ -125,7 +125,7 @@ fn app_view() -> impl IntoView {
                     }
                 })
                 .keyboard_navigable(),
-            text("Decrement")
+            "Decrement"
                 .class(Button)
                 .on_click_stop({
                     move |_| {
@@ -133,7 +133,7 @@ fn app_view() -> impl IntoView {
                     }
                 })
                 .keyboard_navigable(),
-            text("Reset to 0")
+            "Reset to 0"
                 .class(Button)
                 .on_click_stop(move |_| {
                     println!("Reset counter pressed"); // will not fire if button is disabled
@@ -145,7 +145,8 @@ fn app_view() -> impl IntoView {
         .class(Frame)
         .style(|s| s.items_center()),
     ))
-    .style(|s| s.items_center()),))
+    .style(|s| s.items_center())
+    .container()
     .style(move |_| {
         if theme.get() {
             blue_theme.clone()

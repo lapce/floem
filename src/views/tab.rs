@@ -6,14 +6,18 @@ use taffy::style::Display;
 
 use crate::{
     context::{StyleCx, UpdateCx},
+    event::Event,
     id::ViewId,
     style::DisplayProp,
+    style_class,
     view::{IntoView, View},
 };
 
 use super::{apply_diff, diff, Diff, DiffOpAdd, FxIndexSet, HashRun};
 
 type ViewFn<T> = Box<dyn Fn(T) -> (Box<dyn View>, Scope)>;
+
+style_class!(pub TabSelectorClass);
 
 enum TabState<V> {
     Diff(Box<Diff<V>>),
@@ -29,6 +33,7 @@ where
     children: Vec<Option<(ViewId, Scope)>>,
     view_fn: ViewFn<T>,
     phatom: PhantomData<T>,
+    style_all: bool,
 }
 
 pub fn tab<IF, I, T, KF, K, VF, V>(
@@ -88,6 +93,7 @@ where
         active: 0,
         children: Vec::new(),
         view_fn,
+        style_all: true,
         phatom: PhantomData,
     }
 }
@@ -124,9 +130,20 @@ impl<T> View for Tab<T> {
         }
     }
 
+    fn event_before_children(
+        &mut self,
+        _cx: &mut crate::context::EventCx,
+        event: &crate::event::Event,
+    ) -> crate::event::EventPropagation {
+        if let Event::ThemeChanged(_) = event {
+            self.style_all = true;
+        }
+        crate::event::EventPropagation::Continue
+    }
+
     fn style_pass(&mut self, cx: &mut StyleCx<'_>) {
         for (i, child) in self.id.children().into_iter().enumerate() {
-            if i == self.active {
+            if i == self.active || self.style_all {
                 cx.style_view(child);
             }
             let child_view = child.state();
@@ -141,6 +158,9 @@ impl<T> View for Tab<T> {
                     display
                 },
             );
+        }
+        if self.style_all {
+            self.style_all = false;
         }
     }
 

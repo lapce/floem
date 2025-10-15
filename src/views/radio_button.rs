@@ -1,7 +1,8 @@
 use crate::{
+    style::StyleSelector,
     style_class,
     view::View,
-    views::{self, container, empty, h_stack, Decorators},
+    views::{self, empty, h_stack, ContainerExt, Decorators},
     IntoView,
 };
 use floem_reactive::{SignalGet, SignalUpdate};
@@ -17,12 +18,15 @@ fn radio_button_svg<T>(represented_value: T, actual_value: impl SignalGet<T> + '
 where
     T: Eq + PartialEq + Clone + 'static,
 {
-    container(empty().class(RadioButtonDotClass).style(move |s| {
-        s.apply_if(actual_value.get() != represented_value, |s| {
-            s.display(taffy::style::Display::None)
+    empty()
+        .class(RadioButtonDotClass)
+        .style(move |s| {
+            s.apply_if(actual_value.get() != represented_value, |s| {
+                s.display(taffy::style::Display::None)
+            })
         })
-    }))
-    .class(RadioButtonClass)
+        .container()
+        .class(RadioButtonClass)
 }
 
 /// The `RadioButton` struct provides various methods to create and manage radio buttons.
@@ -60,12 +64,15 @@ impl RadioButton {
     /// The radio button will automatically update its state based on the signal.
     pub fn new_get<T>(
         represented_value: T,
-        actual_value: impl SignalGet<T> + 'static,
+        actual_value: impl SignalGet<T> + Copy + 'static,
     ) -> impl IntoView
     where
         T: Eq + PartialEq + Clone + 'static,
     {
-        radio_button_svg(represented_value, actual_value).keyboard_navigable()
+        let clone = represented_value.clone();
+        radio_button_svg(represented_value, actual_value)
+            .style(move |s| s.apply_if(clone == actual_value.get(), |s| s.set_selected(true)))
+            .keyboard_navigable()
     }
 
     /// Creates a new radio button with a signal that provides and updates its selected state.
@@ -80,9 +87,15 @@ impl RadioButton {
         T: Eq + PartialEq + Clone + 'static,
     {
         let cloneable_represented_value = represented_value.clone();
+        let cloneable_represented_value_ = represented_value.clone();
 
         radio_button_svg(cloneable_represented_value.clone(), actual_value)
             .keyboard_navigable()
+            .style(move |s| {
+                s.apply_if(cloneable_represented_value_ == actual_value.get(), |s| {
+                    s.set_selected(true)
+                })
+            })
             .on_click_stop(move |_| {
                 actual_value.set(cloneable_represented_value.clone());
             })
@@ -101,6 +114,7 @@ impl RadioButton {
         T: Eq + PartialEq + Clone + 'static,
     {
         let (inbound_signal, outbound_signal) = create_value_container_signals(actual_value);
+        let clone = represented_value.clone();
 
         value_container(
             h_stack((
@@ -108,7 +122,12 @@ impl RadioButton {
                 views::label(label),
             ))
             .class(LabeledRadioButtonClass)
-            .style(|s| s.items_center())
+            .style(move |s| {
+                s.items_center()
+                    .apply_if(clone == inbound_signal.get(), |s| {
+                        s.apply_selectors(&[StyleSelector::Selected])
+                    })
+            })
             .keyboard_navigable()
             .on_click_stop(move |_| {
                 outbound_signal.set(represented_value.clone());
@@ -123,18 +142,22 @@ impl RadioButton {
     /// The radio button and label will automatically update based on the signal.
     pub fn new_labeled_get<S: std::fmt::Display + 'static, T>(
         represented_value: T,
-        actual_value: impl SignalGet<T> + 'static,
+        actual_value: impl SignalGet<T> + Copy + 'static,
         label: impl Fn() -> S + 'static,
     ) -> impl IntoView
     where
         T: Eq + PartialEq + Clone + 'static,
     {
+        let clone = represented_value.clone();
         h_stack((
             radio_button_svg(represented_value, actual_value),
             views::label(label),
         ))
         .class(LabeledRadioButtonClass)
-        .style(|s| s.items_center())
+        .style(move |s| {
+            s.items_center()
+                .apply_if(clone == actual_value.get(), |s| s.set_selected(true))
+        })
         .keyboard_navigable()
     }
 
@@ -151,13 +174,19 @@ impl RadioButton {
         T: Eq + PartialEq + Clone + 'static,
     {
         let cloneable_represented_value = represented_value.clone();
+        let cloneable_represented_value_ = represented_value.clone();
 
         h_stack((
             radio_button_svg(cloneable_represented_value.clone(), actual_value),
             views::label(label),
         ))
         .class(LabeledRadioButtonClass)
-        .style(|s| s.items_center())
+        .style(move |s| {
+            s.items_center().apply_if(
+                cloneable_represented_value_.clone() == actual_value.get(),
+                |s| s.set_selected(true),
+            )
+        })
         .keyboard_navigable()
         .on_click_stop(move |_| {
             actual_value.set(cloneable_represented_value.clone());

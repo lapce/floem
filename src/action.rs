@@ -222,9 +222,9 @@ pub fn set_ime_cursor_area(position: Point, size: Size) {
 }
 
 /// Creates a new overlay on the current window.
-pub fn add_overlay<V: View + 'static>(position: Point, view: V) -> ViewId {
+pub fn add_overlay<V: View + 'static>(view: V) -> ViewId {
     let id = view.id();
-    let view = view.style(move |s| s.absolute().inset_left(position.x).inset_top(position.y));
+    let view = view.style(move |s| s.absolute());
 
     add_update_message(UpdateMessage::AddOverlay {
         view: Box::new(view),

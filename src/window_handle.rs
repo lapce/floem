@@ -46,7 +46,7 @@ use crate::{
     pointer::{PointerButton, PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
     profiler::Profile,
     style::{CursorStyle, Style, StyleSelector},
-    theme::{default_theme, Theme},
+    theme::default_theme,
     touchpad::PinchGestureEvent,
     update::{
         UpdateMessage, CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES,
@@ -74,7 +74,7 @@ pub(crate) struct WindowHandle {
     pub(crate) app_state: AppState,
     pub(crate) paint_state: PaintState,
     size: RwSignal<Size>,
-    theme: Option<Theme>,
+    theme: Option<Style>,
     pub(crate) profile: Option<Profile>,
     os_theme: Option<winit::window::Theme>,
     is_maximized: bool,
@@ -188,7 +188,8 @@ impl WindowHandle {
             app_state: AppState::new(id),
             paint_state,
             size,
-            theme: apply_default_theme.then(default_theme),
+            theme: apply_default_theme
+                .then(|| default_theme(os_theme.unwrap_or(winit::window::Theme::Light))),
             os_theme,
             is_maximized,
             transparent,
@@ -454,6 +455,7 @@ impl WindowHandle {
     pub(crate) fn os_theme_changed(&mut self, theme: winit::window::Theme) {
         self.os_theme = Some(theme);
         self.app_state.os_theme = Some(theme);
+        self.theme = Some(default_theme(theme));
         self.id.request_all();
         request_recursive_changes(self.id, ChangeFlags::STYLE);
         self.event(Event::ThemeChanged(theme));
@@ -621,7 +623,7 @@ impl WindowHandle {
     fn style(&mut self) {
         let mut cx = StyleCx::new(&mut self.app_state, self.id);
         if let Some(theme) = &self.theme {
-            cx.current = theme.style.clone();
+            cx.current = Rc::new(theme.inherited());
         }
         cx.style_view(self.id);
     }
@@ -695,8 +697,8 @@ impl WindowHandle {
             let color = self
                 .theme
                 .as_ref()
-                .map(|theme| theme.background)
-                .unwrap_or(palette::css::WHITE);
+                .and_then(|theme| theme.get(crate::style::Background))
+                .unwrap_or(peniko::Brush::Solid(palette::css::WHITE));
             // fill window with default white background if it's not transparent
             cx.fill(
                 &self
@@ -705,7 +707,7 @@ impl WindowHandle {
                     .to_rect()
                     .scale_from_origin(1.0 / scale)
                     .expand(),
-                color,
+                &color,
                 0.0,
             );
         }

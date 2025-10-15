@@ -629,8 +629,7 @@ impl<'a> StyleCx<'a> {
             &self.current,
         );
 
-        let style = view_state.borrow().combined_style.clone();
-        self.direct = style;
+        self.direct = view_state.borrow().combined_style.clone();
         Style::apply_only_inherited(&mut self.current, &self.direct);
         let mut computed_style = (*self.current).clone();
         computed_style.apply_mut(self.direct.clone());

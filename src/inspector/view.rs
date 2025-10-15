@@ -6,20 +6,24 @@ use crate::inspector::{
     CaptureView, CAPTURE, RUNNING,
 };
 use crate::prelude::{
-    button, container, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label,
-    tab, text, text_input, v_stack, virtual_stack,
+    button, dyn_container, empty, h_stack, img_dynamic, scroll, stack, static_label, tab, text,
+    text_input, v_stack, virtual_stack, ViewTuple,
 };
 use crate::profiler::profiler;
-use crate::views::Decorators;
+use crate::style::{FontSize, OverflowX, OverflowY, TextColor};
+use crate::theme::StyleThemeExt as _;
+use crate::unit::PxPctAuto;
+use crate::views::{
+    resizable, CheckboxClass, ContainerExt, Decorators, ListClass, ListItemClass, ScrollExt,
+    TabSelectorClass, TooltipExt,
+};
 use crate::window::WindowConfig;
 use crate::{keyboard, new_window, IntoView, View, ViewId};
-use floem_reactive::{
-    create_effect, create_rw_signal, create_signal, RwSignal, SignalGet, SignalUpdate,
-};
+use floem_reactive::{create_effect, create_rw_signal, RwSignal, SignalGet, SignalUpdate};
 use peniko::color::palette;
 use peniko::Color;
-use slotmap::Key;
 use std::rc::Rc;
+use taffy::AlignItems;
 use winit::keyboard::NamedKey;
 use winit::window::WindowId;
 
@@ -27,32 +31,20 @@ pub fn capture(window_id: WindowId) {
     let capture = CAPTURE.with(|c| *c);
 
     if !RUNNING.get() {
-        // RUNNING.set(true);
         new_window(
             move |_| {
-                let (selected, set_selected) = create_signal(0);
+                let selected = RwSignal::new(0);
 
                 let tab_item = |name, index| {
                     text(name)
-                        .on_click_stop(move |_| set_selected.set(index))
-                        .style(move |s| {
-                            s.padding(5.0)
-                                .border_right(1.)
-                                .border_color(palette::css::BLACK.with_alpha(0.2))
-                                .hover(move |s| {
-                                    s.background(Color::from_rgba8(228, 237, 216, 160))
-                                        .apply_if(selected.get() == index, |s| {
-                                            s.background(Color::from_rgb8(186, 180, 216))
-                                        })
-                                })
-                                .apply_if(selected.get() == index, |s| {
-                                    s.background(Color::from_rgb8(213, 208, 216))
-                                })
-                        })
+                        .class(TabSelectorClass)
+                        .on_click_stop(move |_| selected.set(index))
+                        .style(move |s| s.set_selected(selected.get() == index))
                 };
 
-                let tabs = h_stack((tab_item("Views", 0), tab_item("Profiler", 1)))
-                    .style(|s| s.background(palette::css::WHITE));
+                let tabs = (tab_item("Views", 0), tab_item("Profiler", 1))
+                    .h_stack()
+                    .style(|s| s.with_theme(|s, t| s.background(t.bg_base())));
 
                 let tab = tab(
                     move || selected.get(),
@@ -120,12 +112,12 @@ fn inspector_view(
         text("No capture").into_any()
     };
 
-    stack((view,))
+    view.container()
         .window_title(|| "Floem Inspector".to_owned())
         .style(|s| {
             s.width_full()
                 .height_full()
-                .background(palette::css::WHITE)
+                .with_theme(|s, t| s.background(t.bg_base()))
                 .class(scroll::Handle, |s| {
                     s.border_radius(4.0)
                         .background(Color::from_rgba8(166, 166, 166, 140))
@@ -225,7 +217,13 @@ fn capture_view(
         let capture_ = capture_.clone();
         move |event: &Event| {
             if let Event::PointerUp(e) = event {
-                let find_ids = capture_.root.find_all_by_pos(e.pos);
+                let find_ids = capture_
+                    .root
+                    .find_all_by_pos(e.pos)
+                    .iter()
+                    .filter(|id| !id.is_hidden_recursive())
+                    .cloned()
+                    .collect::<Vec<_>>();
                 if !find_ids.is_empty() {
                     let first = contain_ids.try_update(|(index, ids)| {
                         *index = 0;
@@ -242,9 +240,24 @@ fn capture_view(
     .on_event_stop(EventListener::PointerMove, {
         move |event: &Event| {
             if let Event::PointerMove(e) = event {
-                if let Some(view) = capture_.root.find_by_pos(e.pos) {
-                    if capture_view.highlighted.get() != Some(view.id) {
-                        capture_view.highlighted.set(Some(view.id));
+                let find_ids = capture_
+                    .root
+                    .find_all_by_pos(e.pos)
+                    .iter()
+                    .filter(|id| !id.is_hidden_recursive())
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if !find_ids.is_empty() {
+                    if let Some(Some(first)) = contain_ids.try_update(|(index, ids)| {
+                        *index = 0;
+                        let _ = std::mem::replace(ids, find_ids);
+                        ids.first().copied()
+                    }) {
+                        if capture_view.highlighted.get() != Some(first) {
+                            capture_view.highlighted.set(Some(first));
+                        }
+                    } else {
+                        capture_view.highlighted.set(None);
                     }
                 } else {
                     capture_view.highlighted.set(None);
@@ -264,12 +277,15 @@ fn capture_view(
             .and_then(|id| capture_.root.find(id))
         {
             s.absolute()
-                .margin_left(5.0 + view.layout.x0)
-                .margin_top(5.0 + view.layout.y0)
+                // the plus ones here might be because of the border 1... I'm not sure though
+                .margin_left(5.0 + view.layout.x0 + 1.)
+                .margin_top(5.0 + view.layout.y0 + 1.)
                 .width(view.layout.width())
                 .height(view.layout.height())
-                .background(Color::from_rgb8(186, 180, 216).with_alpha(0.5))
-                .border_color(Color::from_rgb8(186, 180, 216).with_alpha(0.7))
+                .with_theme(|s, t| {
+                    s.background(t.info().with_alpha(0.5))
+                        .border_color(t.info().with_alpha(0.7))
+                })
                 .border(1.)
         } else {
             s
@@ -285,12 +301,14 @@ fn capture_view(
             .and_then(|id| capture_.root.find(id))
         {
             s.absolute()
-                .margin_left(5.0 + view.layout.x0)
-                .margin_top(5.0 + view.layout.y0)
+                .margin_left(5.0 + view.layout.x0 + 1.)
+                .margin_top(5.0 + view.layout.y0 + 1.)
                 .width(view.layout.width())
                 .height(view.layout.height())
-                .background(Color::from_rgba8(228, 237, 216, 120))
-                .border_color(Color::from_rgba8(75, 87, 53, 120))
+                .with_theme(|s, t| {
+                    s.background(t.primary_muted().with_alpha(0.5))
+                        .border_color(t.primary_muted().with_alpha(0.7))
+                })
                 .border(1.)
         } else {
             s
@@ -300,46 +318,81 @@ fn capture_view(
 
     let image = stack((image, selected_overlay, highlighted_overlay));
 
-    let left_scroll = scroll(
-        v_stack((
-            header("Selected View"),
-            selected_view(capture, capture_view.selected),
-            header("Stats"),
-            stats(capture),
-            header("Renderer"),
-            text(renderer).style(|s| s.padding(5.0)),
-            button("Recapture")
-                .style(|s| s.margin(5.0))
-                .on_click_stop(move |_| {
-                    add_app_update_event(AppUpdateEvent::CaptureWindow {
-                        window_id,
-                        capture: capture_s.write_only(),
-                    })
-                }),
-        ))
-        .style(|s| s.min_width_full()),
-    )
-    .style(|s| {
-        s.width_full()
-            .flex_basis(0)
-            .min_height(0)
-            .flex_grow(1.0)
-            .flex_col()
+    let recapture = button("Recapture").on_click_stop(move |_| {
+        add_app_update_event(AppUpdateEvent::CaptureWindow {
+            window_id,
+            capture: capture_s.write_only(),
+        })
     });
 
-    let separator = empty().style(move |s| {
-        s.width_full()
-            .min_height(1.0)
-            .background(palette::css::BLACK.with_alpha(0.2))
-    });
+    let active_tab = RwSignal::new(0);
+    let capture_sig = RwSignal::new(capture.clone());
+
+    let tab = tab(
+        move || active_tab.get(),
+        move || [0, 1].into_iter(),
+        |it| *it,
+        move |it| {
+            match it {
+                0 => v_stack((
+                    header("Selected View"),
+                    selected_view(&capture_sig.get(), capture_view.selected),
+                ))
+                .into_any(),
+                1 => v_stack((
+                    header("Stats"),
+                    stats(&capture_sig.get()),
+                    header("Renderer"),
+                    text(renderer.clone()).style(|s| s.padding(5.0)),
+                ))
+                .into_any(),
+                _ => panic!(),
+            }
+            .style(|s| s.width_full().flex_grow(1.))
+            .scroll()
+            .style(|s| {
+                s.width_full()
+                    .flex_grow(1.)
+                    .set(OverflowX, taffy::Overflow::Visible)
+                    .set(OverflowY, taffy::Overflow::Scroll)
+            })
+        },
+    )
+    .style(|s| s.size_full());
+
+    let clear = button("Clear selection")
+        .style(move |s| s.apply_if(capture_view.selected.get().is_none(), |s| s.hide()))
+        .action(move || capture_view.selected.set(None));
+
+    let tabs = v_stack((
+        h_stack((
+            recapture,
+            clear,
+            "selected"
+                .style(move |s| {
+                    s.apply_if(active_tab.get() == 0, |s| s.set_selected(true))
+                        .margin_left(PxPctAuto::Auto)
+                })
+                .class(TabSelectorClass)
+                .on_click_stop(move |_| active_tab.set(0)),
+            "stats"
+                .style(move |s| {
+                    s.apply_if(active_tab.get() == 1, |s| s.set_selected(true))
+                        .margin_right(PxPctAuto::Auto)
+                })
+                .class(TabSelectorClass)
+                .on_click_stop(move |_| active_tab.set(1)),
+        ))
+        .style(|s| s.items_end().gap(10).padding_top(5)),
+        tab,
+    ))
+    .style(|s| s.size_full());
 
     let left = v_stack((
         header("Captured Window"),
-        scroll(image).style(|s| s.max_height_pct(60.0)),
-        separator,
-        left_scroll,
-    ))
-    .style(|s| s.max_width_pct(60.0));
+        resizable::resizable((scroll(image).style(|s| s.max_height_pct(60.0)), tabs))
+            .style(|s| s.size_full().flex_col()),
+    ));
 
     let root = capture.root.clone();
     let tree = view_tree(capture.clone(), capture_view, datas);
@@ -348,8 +401,9 @@ fn capture_view(
     let inner_search = search_str;
     let match_ids = create_rw_signal((0, Vec::<ViewId>::new()));
 
-    let search =
-        text_input(search_str).on_event_stop(EventListener::KeyUp, move |event: &Event| {
+    let search = text_input(search_str)
+        .placeholder("View Search...")
+        .on_event_stop(EventListener::KeyUp, move |event: &Event| {
             if let Event::KeyUp(key) = event {
                 match key.key.logical_key {
                     keyboard::Key::Named(NamedKey::ArrowUp) => {
@@ -394,20 +448,22 @@ fn capture_view(
             }
         });
     let tree = if capture.root.warnings() {
-        v_stack((header("Warnings"), header("View Tree"), search, tree)).into_view()
+        v_stack((
+            header("Warnings")
+                .style(|s| s.with_theme(|s, t| s.color(t.warning_base)))
+                .tooltip(|| "requested changes is not empty"),
+            header("View Tree"),
+            search,
+            tree,
+        ))
+        .into_view()
     } else {
         v_stack((header("View Tree"), search, tree)).into_view()
     };
 
     let tree = tree.style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0));
 
-    let separator = empty().style(move |s| {
-        s.height_full()
-            .min_width(1.0)
-            .background(palette::css::BLACK.with_alpha(0.2))
-    });
-
-    h_stack((left, separator, tree)).style(|s| s.height_full().width_full().max_width_full())
+    resizable::resizable((left, tree)).style(|s| s.size_full().max_width_full())
 }
 
 fn view_tree(
@@ -417,17 +473,21 @@ fn view_tree(
 ) -> impl View {
     let capture_signal_clone = capture_signal;
     let focus_line = datas.get_untracked().focus_line;
-    scroll(
-        virtual_stack(
-            move || datas.get(),
-            move |(_, _, data)| data.id,
-            move |(_, level, rw_data)| {
-                let capture = capture.clone();
-                tree_node(&rw_data, capture_signal, capture, level, datas)
-            },
-        )
-        .style(|s| s.flex_col().min_width_full()),
+    virtual_stack(
+        move || datas.get(),
+        move |(_, _, data)| data.id,
+        move |(_, level, rw_data)| {
+            let capture = capture.clone();
+            tree_node(&rw_data, capture_signal, capture, level, datas).class(ListItemClass)
+        },
     )
+    .class(ListClass)
+    .style(|s| {
+        s.flex_col().flex_grow(1.).class(ListItemClass, |s| {
+            s.hover(|s| s.with_theme(|s, t| s.background(t.bg_elevated())))
+        })
+    })
+    .scroll()
     .style(|s| s.flex_grow(1.0).size_full())
     .scroll_style(|s| s.shrink_to_fit())
     .on_event_cont(EventListener::PointerLeave, move |_| {
@@ -459,25 +519,21 @@ fn tree_node(
     let selected = capture_signal.selected;
     let highlighted = capture_signal.highlighted;
 
-    let row = container(name)
+    let row = name
+        .container()
         .style(move |s| {
-            s.hover(move |s| {
-                s.background(Color::from_rgba8(228, 237, 216, 160))
-                    .apply_if(selected.get() == Some(id), |s| {
-                        s.background(Color::from_rgb8(186, 180, 216))
-                    })
-            })
-            .height(height)
-            .apply_if(highlighted.get() == Some(id), |s| {
-                s.background(Color::from_rgba8(228, 237, 216, 160))
-            })
-            .apply_if(selected.get() == Some(id), |s| {
-                if highlighted.get() == Some(id) {
-                    s.background(Color::from_rgb8(186, 180, 216))
-                } else {
-                    s.background(Color::from_rgb8(213, 208, 216))
-                }
-            })
+            s.height(height)
+                //     .apply_if(highlighted.get() == Some(id), |s| {
+                //         s.background(Color::from_rgba8(228, 237, 216, 160))
+                //     })
+                .apply_if(selected.get() == Some(id), |s| {
+                    s.set_selected(true)
+                    // if highlighted.get() == Some(id) {
+                    //     s.background(Color::from_rgb8(186, 180, 216))
+                    // } else {
+                    //     s.background(Color::from_rgb8(213, 208, 216))
+                    // }
+                })
         })
         .on_click_stop(move |_| selected.set(Some(id)))
         .on_event_cont(EventListener::PointerEnter, move |_| {
@@ -512,7 +568,7 @@ fn tree_node(
 
 fn tree_node_name(view: &CapturedData, marge_left: f64) -> impl IntoView {
     let name = static_label(view.view_conf.name.clone());
-    let id = text(view.id.data().as_ffi()).style(|s| {
+    let id = text(format!("{:?}", view.id)).style(|s| {
         s.margin_right(5.0)
             .background(palette::css::BLACK.with_alpha(0.02))
             .border(1.)
@@ -522,21 +578,23 @@ fn tree_node_name(view: &CapturedData, marge_left: f64) -> impl IntoView {
             .padding_top(0.0)
             .padding_bottom(0.0)
             .font_size(12.0)
-            .color(palette::css::BLACK.with_alpha(0.6))
+            .with_context::<TextColor>(|s, tc| {
+                s.apply_opt(*tc, |s, tc| s.color(tc.with_alpha(0.6)))
+            })
     });
     let tab = if view.view_conf.focused {
-        text("Focus")
+        "Focus"
             .style(|s| {
                 s.margin_right(5.0)
                     .background(Color::from_rgb8(63, 81, 101).with_alpha(0.6))
                     .border_radius(5.0)
                     .padding(1.0)
-                    .font_size(10.0)
+                    .with_context_opt::<FontSize, _>(|s, fs| s.font_size(fs * 0.8))
                     .color(palette::css::WHITE.with_alpha(0.8))
             })
             .into_any()
     } else if view.view_conf.keyboard_navigable {
-        text("Tab")
+        "Tab"
             .style(|s| {
                 s.margin_right(5.0)
                     .background(Color::from_rgb8(204, 217, 221).with_alpha(0.4))
@@ -554,36 +612,21 @@ fn tree_node_name(view: &CapturedData, marge_left: f64) -> impl IntoView {
     let ty = view.expanded();
     // let click_ty = view.ty.clone();
     let checkbox = empty()
+        .class_if(move || ty.is_some(), CheckboxClass)
         .style(move |s| match ty {
             Some(expanded) => {
                 let expanded = expanded.get();
-                s.background(if !expanded {
-                    palette::css::BLACK.with_alpha(0.3)
-                } else {
-                    palette::css::WHITE.with_alpha(0.3)
-                })
-                .width(12.0)
-                .height(12.0)
-                .margin_right(4.0)
-                .hover(move |s| {
-                    s.border_color(palette::css::BLACK.with_alpha(0.6))
-                        .background(if expanded {
-                            palette::css::WHITE.with_alpha(0.5)
-                        } else {
-                            palette::css::BLACK.with_alpha(0.5)
-                        })
-                })
-                .border(1.0)
-                .border_radius(4.0)
-                .border_color(palette::css::BLACK.with_alpha(0.4))
+                s.apply_if(expanded, |s| s.set_selected(true))
+                    .size(12, 12)
+                    .margin_right(4.0)
+                    .with_theme(move |s, t| {
+                        s.background(t.text_muted())
+                            .border_radius(t.border_radius())
+                            .apply_if(expanded, |s| s.background(t.text()))
+                    })
+                    .border(1.0)
             }
-            None => s
-                // .background(palette::css::WHITE.with_alpha(0.3))
-                .width(12.0)
-                .height(12.0)
-                .margin_right(4.0), // .border(1.0)
-                                    // .border_radius(4.0)
-                                    // .border_color(palette::css::WHITE.with_alpha(0.4)),
+            None => s.width(12.0).height(12.0).margin_right(4.0),
         })
         .on_click_stop(move |_| {
             if let Some(expanded) = ty {

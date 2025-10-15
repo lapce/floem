@@ -10,22 +10,21 @@ use floem_reactive::{
     as_child_of_current_scope, create_effect, create_updater, RwSignal, Scope, SignalGet,
     SignalUpdate,
 };
-use peniko::{
-    color::palette,
-    kurbo::{Point, Rect, Size},
-};
+use peniko::kurbo::{Point, Rect, Size};
 use winit::keyboard::{Key, NamedKey};
 
 use crate::{
     action::{add_overlay, remove_overlay},
     event::{Event, EventListener, EventPropagation},
     id::ViewId,
+    prelude::ViewTuple,
     prop, prop_extractor,
     style::{CustomStylable, CustomStyle, Style, StyleClass, Width},
     style_class,
+    theme::StyleThemeExt,
     unit::PxPctAuto,
     view::{default_compute_layout, IntoView, View},
-    views::{container, scroll, stack, svg, text, Decorators},
+    views::{container, scroll, stack, svg, text, ContainerExt, Decorators},
     AnyView,
 };
 
@@ -289,34 +288,18 @@ impl<T: Clone> Dropdown<T> {
         T: std::fmt::Display,
     {
         const CHEVRON_DOWN: &str = r##"
-<svg
-   width="12"
-   height="12"
-   viewBox="0 0 12 12"
-   version="1.1"
-   xmlns:svg="http://www.w3.org/2000/svg">
-  <g
-     style="display:inline;opacity:1;mix-blend-mode:normal"
-     transform="translate(-42.144408,-102.78125)">
-    <path
-       style="fill:none;stroke:#333333;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none"
-       d="m 43.978404,107.53126 4.194255,2.5 4.137753,-2.5" />
-  </g>
-</svg>"##;
+            <svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" viewBox="-46.336 -46.336 278.016 278.016">
+                <path fill="#010002" d="M92.672 144.373a10.707 10.707 0 0 1-7.593-3.138L3.145 59.301c-4.194-4.199
+                -4.194-10.992 0-15.18a10.72 10.72 0 0 1 15.18 0l74.347 74.341 74.347-74.341a10.72 10.72 0 0 1
+                15.18 0c4.194 4.194 4.194 10.981 0 15.18l-81.939 81.934a10.694 10.694 0 0 1-7.588 3.138z"/>
+            </svg>
+        "##;
 
         // TODO: this should be more customizable
-        stack((
-            text(item),
-            container(svg(CHEVRON_DOWN).style(|s| s.size(12, 12).color(palette::css::BLACK)))
-                .style(|s| {
-                    s.items_center()
-                        .padding(3.)
-                        .border_radius(5)
-                        .hover(move |s| s.background(palette::css::LIGHT_GRAY))
-                }),
-        ))
-        .style(|s| s.items_center().justify_between().size_full())
-        .into_any()
+        (text(item), svg(CHEVRON_DOWN).style(|s| s.items_center()))
+            .h_stack()
+            .style(|s| s.items_center().justify_between().size_full())
+            .into_any()
     }
 
     /// Creates a new customizable dropdown.
@@ -577,7 +560,7 @@ impl<T: Clone> Dropdown<T> {
         let list = self.list_view.clone();
         let list_style = self.list_style.clone();
         let list_item_fn = self.list_item_fn.clone();
-        self.overlay_id = Some(add_overlay(Point::ZERO, {
+        self.overlay_id = Some(add_overlay({
             const DEFAULT_PADDING: f64 = 5.0;
             let list_size = RwSignal::new(None);
             let overlay_size = RwSignal::new(None);
@@ -641,6 +624,8 @@ impl<T: Clone> Dropdown<T> {
                 s.absolute()
                     .flex_col()
                     .size_full()
+                    .inset_left(0.)
+                    .inset_right(0.)
                     .padding_left(padding.width)
                     .padding_top(padding.height)
                     .padding_bottom(DEFAULT_PADDING)

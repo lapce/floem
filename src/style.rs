@@ -1,11 +1,12 @@
 //! # Style
 //! Traits and functions that allow for styling `Views`.
 
-use floem_reactive::create_updater;
+use floem_reactive::{create_updater, RwSignal, SignalGet, SignalUpdate as _};
 use floem_renderer::text::{LineHeightValue, Weight};
+use floem_renderer::Renderer;
 use im_rc::hashmap::Entry;
 use peniko::color::{palette, HueDirection};
-use peniko::kurbo::{Point, Stroke};
+use peniko::kurbo::{self, Point, Stroke};
 use peniko::{
     Brush, Color, ColorStop, ColorStops, Gradient, GradientKind, InterpolationAlphaSpace,
     LinearGradientPosition,
@@ -19,6 +20,8 @@ use std::hash::Hasher;
 use std::hash::{BuildHasherDefault, Hash};
 use std::ptr;
 use std::rc::Rc;
+use taffy::prelude::{auto, fr};
+use taffy::GridTemplateComponent;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
@@ -39,11 +42,17 @@ use taffy::{
 };
 
 use crate::context::InteractionState;
-use crate::easing::*;
+use crate::prelude::ViewTuple;
 use crate::responsive::{ScreenSize, ScreenSizeBp};
+use crate::theme::StyleThemeExt;
 use crate::unit::{Pct, Px, PxPct, PxPctAuto, UnitExt};
 use crate::view::{IntoView, View};
-use crate::views::{empty, stack, text, Decorators};
+use crate::view_tuple::ViewTupleFlat;
+use crate::views::{
+    canvas, empty, h_stack, label, stack, text, v_stack, v_stack_from_iter, ContainerExt,
+    Decorators, TooltipExt,
+};
+use crate::{easing::*, AnyView};
 
 pub trait StylePropValue: Clone + PartialEq + Debug {
     fn debug_view(&self) -> Option<Box<dyn View>> {
@@ -89,7 +98,7 @@ impl StylePropValue for FlexWrap {}
 impl StylePropValue for AlignItems {}
 impl StylePropValue for BoxSizing {}
 impl StylePropValue for AlignContent {}
-impl StylePropValue for TrackSizingFunction {}
+impl StylePropValue for GridTemplateComponent<String> {}
 impl StylePropValue for MinTrackSizingFunction {}
 impl StylePropValue for MaxTrackSizingFunction {}
 impl<T: StylePropValue, M: StylePropValue> StylePropValue for MinMax<T, M> {}
@@ -142,11 +151,28 @@ impl StylePropValue for SmallVec<[BoxShadow; 2]> {
 }
 impl StylePropValue for String {}
 impl StylePropValue for Weight {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let clone = *self;
+        Some(
+            format!("{clone:?}")
+                .style(move |s| s.font_weight(clone))
+                .into_any(),
+        )
+    }
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         self.0.interpolate(&other.0, value).map(Weight)
     }
 }
-impl StylePropValue for crate::text::Style {}
+impl StylePropValue for crate::text::Style {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let clone = *self;
+        Some(
+            format!("{clone:?}")
+                .style(move |s| s.font_style(clone))
+                .into_any(),
+        )
+    }
+}
 impl StylePropValue for crate::text::Align {}
 impl StylePropValue for TextOverflow {}
 impl StylePropValue for PointerEvents {}
@@ -178,9 +204,48 @@ impl<T: StylePropValue> StylePropValue for Option<T> {
         })
     }
 }
-impl<T: StylePropValue> StylePropValue for Vec<T> {
+impl<T: StylePropValue + 'static> StylePropValue for Vec<T> {
     fn debug_view(&self) -> Option<Box<dyn View>> {
-        None
+        if self.is_empty() {
+            return Some(
+                text("[]")
+                    .style(|s| s.with_theme(|s, t| s.color(t.text_muted())))
+                    .into_any(),
+            );
+        }
+
+        let count = self.len();
+        let _preview = label(move || format!("[{}]", count)).style(|s| {
+            s.padding(2.0)
+                .padding_horiz(6.0)
+                .border(1.)
+                .border_radius(5.0)
+                .margin_left(6.0)
+                .with_theme(|s, t| s.color(t.text()).border_color(t.border()))
+                .with_context_opt::<FontSize, _>(|s, fs| s.font_size(fs * 0.85))
+        });
+
+        let items = self.clone();
+        let tooltip_view = move || {
+            v_stack_from_iter(items.iter().enumerate().map(|(i, item)| {
+                let index_label = text(format!("[{}]", i))
+                    .style(|s| s.with_theme(|s, t| s.color(t.text_muted())));
+
+                let item_view = item.debug_view().unwrap_or_else(|| {
+                    text(format!("{:?}", item))
+                        .style(|s| s.flex_grow(1.0))
+                        .into_any()
+                });
+
+                stack((index_label, item_view)).style(|s| s.items_center().gap(8.0).padding(4.0))
+            }))
+            .style(|s| s.gap(4.0))
+        };
+
+        Some(
+            // preview
+            tooltip_view().into_any(),
+        )
     }
 
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
@@ -250,25 +315,98 @@ impl StylePropValue for PxPct {
         }
     }
 }
+
+fn views(views: impl ViewTuple) -> Vec<AnyView> {
+    views.into_views()
+}
+
 impl StylePropValue for Color {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let color = *self;
-        let color = empty().style(move |s| {
-            s.background(color)
-                .width(22.0)
-                .height(14.0)
-                .border(1.)
-                .border_color(palette::css::WHITE.with_alpha(0.5))
-                .border_radius(5.0)
-        });
-        let color = stack((color,)).style(|s| {
-            s.border(1.)
-                .border_color(palette::css::BLACK.with_alpha(0.5))
-                .border_radius(5.0)
-                .margin_left(6.0)
-        });
+        let swatch = empty()
+            .style(move |s| {
+                s.background(color)
+                    .width(22.0)
+                    .height(14.0)
+                    .border(1.)
+                    .border_color(palette::css::WHITE.with_alpha(0.5))
+                    .border_radius(5.0)
+            })
+            .container()
+            .style(|s| {
+                s.border(1.)
+                    .border_color(palette::css::BLACK.with_alpha(0.5))
+                    .border_radius(5.0)
+            });
+
+        let tooltip_view = move || {
+            // Convert to RGBA8 for standard representations
+            let c = color.to_rgba8();
+            let (r, g, b, a) = (c.r, c.g, c.b, c.a);
+
+            // Hex representation
+            let hex = if a == 255 {
+                format!("#{:02X}{:02X}{:02X}", r, g, b)
+            } else {
+                format!("#{:02X}{:02X}{:02X}{:02X}", r, g, b, a)
+            };
+
+            // RGBA string
+            let rgba_str = format!("rgba({}, {}, {}, {:.3})", r, g, b, a as f32 / 255.0);
+
+            // Alpha percentage
+            let alpha_str = format!(
+                "{:.1}% ({:.3})",
+                (a as f32 / 255.0) * 100.0,
+                a as f32 / 255.0
+            );
+
+            let components = color.components;
+            let color_space_str = format!("{:?}", color.cs);
+
+            let hex = views((
+                "Hex:".style(|s| s.font_bold().min_width(80.0).justify_end()),
+                label(move || hex.clone()),
+            ));
+            let rgba = views((
+                "RGBA:".style(|s| s.font_bold().min_width(80.0).justify_end()),
+                label(move || rgba_str.clone()),
+            ));
+            let components = views((
+                "Components:".style(|s| s.font_bold().min_width(80.0).justify_end()),
+                (
+                    label(move || format!("[0]: {:.3}", components[0])),
+                    label(move || format!("[1]: {:.3}", components[1])),
+                    label(move || format!("[2]: {:.3}", components[2])),
+                    label(move || format!("[3]: {:.3}", components[3])),
+                )
+                    .v_stack()
+                    .style(|s| s.gap(2.0)),
+            ));
+            let color_space = views((
+                "Color Space:".style(|s| s.font_bold().min_width(80.0).justify_end()),
+                label(move || color_space_str.clone()),
+            ));
+            let alpha = views((
+                "Alpha:".style(|s| s.font_bold().min_width(80.0).justify_end()),
+                label(move || alpha_str.clone()),
+            ));
+            (hex, rgba, components, color_space, alpha)
+                .flatten()
+                .style(|s| {
+                    s.grid()
+                        .grid_template_columns([auto(), fr(1.)])
+                        .justify_center()
+                        .items_center()
+                        .row_gap(20)
+                        .col_gap(10)
+                        .padding(30)
+                })
+        };
+
         Some(
-            stack((text(format!("{self:?}")), color))
+            swatch
+                .tooltip(tooltip_view)
                 .style(|s| s.items_center())
                 .into_any(),
         )
@@ -321,7 +459,7 @@ impl StylePropValue for Gradient {
                 .border_color(palette::css::WHITE.with_alpha(0.5))
                 .border_radius(5.0)
         });
-        let color = stack((color,)).style(|s| {
+        let color = color.container().style(|s| {
             s.border(1.)
                 .border_color(palette::css::BLACK.with_alpha(0.5))
                 .border_radius(5.0)
@@ -456,7 +594,114 @@ impl From<i32> for StrokeWrap {
     }
 }
 impl StylePropValue for StrokeWrap {
-    // TODO!
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let stroke = self.0.clone();
+        let clone = stroke.clone();
+
+        let color = RwSignal::new(palette::css::RED);
+
+        // Visual preview of the stroke
+        let preview = canvas(move |cx, size| {
+            cx.stroke(
+                &kurbo::Line::new(
+                    Point::new(0., size.height / 2.),
+                    Point::new(size.width, size.height / 2.),
+                ),
+                color.get(),
+                &clone,
+            );
+        })
+        .style(move |s| s.width(80.0).height(20.0))
+        .container()
+        .style(move |s| {
+            s.with_theme(move |s, t| {
+                color.set(t.primary());
+                s.border_color(t.border())
+            })
+            .padding(4.0)
+        });
+
+        let tooltip_view = move || {
+            let stroke = stroke.clone();
+
+            let width_row = views((
+                "Width:".style(|s| s.font_bold().min_width(100.0).justify_end()),
+                label(move || format!("{:.1}px", stroke.width)),
+            ));
+
+            let join_row = views((
+                "Join:".style(|s| s.font_bold().min_width(100.0).justify_end()),
+                label(move || format!("{:?}", stroke.join)),
+            ));
+
+            let miter_row = views((
+                "Miter Limit:".style(|s| s.font_bold().min_width(100.0).justify_end()),
+                label(move || format!("{:.2}", stroke.miter_limit)),
+            ));
+
+            let start_cap_row = views((
+                "Start Cap:".style(|s| s.font_bold().min_width(100.0).justify_end()),
+                label(move || format!("{:?}", stroke.start_cap)),
+            ));
+
+            let end_cap_row = views((
+                "End Cap:".style(|s| s.font_bold().min_width(100.0).justify_end()),
+                label(move || format!("{:?}", stroke.end_cap)),
+            ));
+
+            let pattern_clone = stroke.dash_pattern.clone();
+
+            let dash_pattern_row = views((
+                "Dash Pattern:".style(|s| s.font_bold().min_width(100.0).justify_end()),
+                label(move || {
+                    if pattern_clone.is_empty() {
+                        "Solid".to_string()
+                    } else {
+                        format!("{:?}", pattern_clone.as_slice())
+                    }
+                }),
+            ));
+
+            let dash_offset_row = if !stroke.dash_pattern.is_empty() {
+                Some(views((
+                    "Dash Offset:".style(|s| s.font_bold().min_width(100.0).justify_end()),
+                    label(move || format!("{:.1}", stroke.dash_offset)),
+                )))
+            } else {
+                None
+            };
+
+            let mut rows = vec![
+                width_row.into_any(),
+                join_row.into_any(),
+                miter_row.into_any(),
+                start_cap_row.into_any(),
+                end_cap_row.into_any(),
+                dash_pattern_row.into_any(),
+            ];
+
+            if let Some(offset_row) = dash_offset_row {
+                rows.push(offset_row.into_any());
+            }
+
+            v_stack_from_iter(rows).style(|s| {
+                s.grid()
+                    .grid_template_columns([auto(), fr(1.)])
+                    .justify_center()
+                    .items_center()
+                    .row_gap(12)
+                    .col_gap(10)
+                    .padding(20)
+            })
+        };
+
+        Some(
+            preview
+                .tooltip(tooltip_view)
+                .style(|s| s.items_center())
+                .into_any(),
+        )
+    }
 }
 impl StylePropValue for Brush {
     fn debug_view(&self) -> Option<Box<dyn View>> {
@@ -1053,6 +1298,150 @@ pub struct Transition {
 }
 
 impl Transition {
+    pub fn debug_view(&self) -> Box<dyn View> {
+        let transition = self.clone();
+        let easing_clone = transition.easing.clone();
+
+        let curve_color = RwSignal::new(palette::css::BLUE);
+        let axis_color = RwSignal::new(palette::css::GRAY);
+
+        // Visual preview of the easing curve
+        let preview = canvas(move |cx, size| {
+            let width = size.width;
+            let height = size.height;
+            let padding = 4.0;
+            let graph_width = width - padding * 2.0;
+            let graph_height = height - padding * 2.0;
+
+            // Sample the easing function
+            let sample_count = 50;
+            let mut path = kurbo::BezPath::new();
+
+            for i in 0..=sample_count {
+                let t = i as f64 / sample_count as f64;
+                let eased = easing_clone.eval(t);
+                let x = padding + t * graph_width;
+                let y = padding + (1.0 - eased) * graph_height;
+
+                if i == 0 {
+                    path.move_to(Point::new(x, y));
+                } else {
+                    path.line_to(Point::new(x, y));
+                }
+            }
+
+            // Draw the curve
+            cx.stroke(
+                &path,
+                curve_color.get(),
+                &Stroke {
+                    width: 2.0,
+                    ..Default::default()
+                },
+            );
+
+            // Draw axes
+            let axis_stroke = Stroke {
+                width: 1.0,
+                ..Default::default()
+            };
+
+            // X axis
+            cx.stroke(
+                &kurbo::Line::new(
+                    Point::new(padding, height - padding),
+                    Point::new(width - padding, height - padding),
+                ),
+                axis_color.get(),
+                &axis_stroke,
+            );
+
+            // Y axis
+            cx.stroke(
+                &kurbo::Line::new(
+                    Point::new(padding, padding),
+                    Point::new(padding, height - padding),
+                ),
+                axis_color.get(),
+                &axis_stroke,
+            );
+        })
+        .style(|s| s.width(80.0).height(60.0))
+        .container()
+        .style(move |s| {
+            s.padding(4.0)
+                .border(1.)
+                .border_radius(5.0)
+                .with_theme(move |s, t| {
+                    curve_color.set(t.primary());
+                    axis_color.set(t.text_muted());
+                    s.border_color(t.border())
+                })
+        });
+
+        let tooltip_view = move || {
+            let transition = transition.clone();
+
+            let duration_row = views((
+                "Duration:".style(|s| s.font_bold().min_width(80.0).justify_end()),
+                label(move || format!("{:.0}ms", transition.duration.as_millis())),
+            ));
+
+            let easing_name = format!("{:?}", transition.easing);
+            let easing_row = views((
+                "Easing:".style(|s| s.font_bold().min_width(80.0).justify_end()),
+                label(move || easing_name.clone()),
+            ));
+
+            // Show velocity at key points if available
+            let velocity_samples = if transition.easing.velocity(0.0).is_some() {
+                let samples = vec![0.0, 0.25, 0.5, 0.75, 1.0]
+                    .into_iter()
+                    .filter_map(|t| {
+                        transition
+                            .easing
+                            .velocity(t)
+                            .map(|v| text(format!("t={:.2}: {:.3}", t, v)))
+                    })
+                    .collect::<Vec<_>>();
+
+                if !samples.is_empty() {
+                    Some(views((
+                        "Velocity:".style(|s| s.font_bold().min_width(80.0).justify_end()),
+                        v_stack_from_iter(samples).style(|s| s.gap(2.0)),
+                    )))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            let mut rows = vec![duration_row.into_any(), easing_row.into_any()];
+
+            if let Some(velocity_row) = velocity_samples {
+                rows.push(velocity_row.into_any());
+            }
+
+            v_stack_from_iter(rows).style(|s| {
+                s.grid()
+                    .grid_template_columns([auto(), fr(1.)])
+                    .justify_center()
+                    .items_center()
+                    .row_gap(12)
+                    .col_gap(10)
+                    .padding(20)
+            })
+        };
+
+        preview
+            .tooltip(tooltip_view)
+            .style(|s| s.items_center())
+            .into_any()
+    }
+}
+
+impl Transition {
     pub fn new(duration: Duration, easing: impl Easing + 'static) -> Self {
         Self {
             duration,
@@ -1253,7 +1642,12 @@ pub enum StyleKeyInfo {
     Prop(StylePropInfo),
     Selector(StyleSelectors),
     Class(StyleClassInfo),
+    ContextMappings,
 }
+
+static CONTEXT_MAPPINGS_INFO: StyleKeyInfo = StyleKeyInfo::ContextMappings;
+
+type ContextMapFn = Rc<dyn Fn(Style) -> Style>;
 
 #[derive(Copy, Clone)]
 pub struct StyleKey {
@@ -1262,14 +1656,17 @@ pub struct StyleKey {
 impl StyleKey {
     pub(crate) fn debug_any(&self, value: &dyn Any) -> String {
         match self.info {
-            StyleKeyInfo::Selector(..) | StyleKeyInfo::Transition => String::new(),
+            StyleKeyInfo::Selector(selectors) => selectors.debug_string(),
+            StyleKeyInfo::Transition | StyleKeyInfo::ContextMappings => String::new(),
             StyleKeyInfo::Class(info) => (info.name)().to_string(),
             StyleKeyInfo::Prop(v) => (v.debug_any)(value),
         }
     }
     fn inherited(&self) -> bool {
         match self.info {
-            StyleKeyInfo::Selector(..) | StyleKeyInfo::Transition => false,
+            StyleKeyInfo::Selector(..)
+            | StyleKeyInfo::Transition
+            | StyleKeyInfo::ContextMappings => false,
             StyleKeyInfo::Class(..) => true,
             StyleKeyInfo::Prop(v) => v.inherited,
         }
@@ -1289,8 +1686,11 @@ impl Eq for StyleKey {}
 impl Debug for StyleKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.info {
-            StyleKeyInfo::Selector(..) => write!(f, "selector"),
+            StyleKeyInfo::Selector(selectors) => {
+                write!(f, "selectors: {}", selectors.debug_string())
+            }
             StyleKeyInfo::Transition => write!(f, "transition"),
+            StyleKeyInfo::ContextMappings => write!(f, "ContextMappings"),
             StyleKeyInfo::Class(v) => write!(f, "{}", (v.name)()),
             StyleKeyInfo::Prop(v) => write!(f, "{}", (v.name)()),
         }
@@ -1392,7 +1792,18 @@ impl Style {
     }
 
     pub fn apply_class<C: StyleClass>(mut self, _class: C) -> Style {
-        if let Some(map) = self.map.get(&C::key()) {
+        if let Some(map) = self.clone().map.get(&C::key()) {
+            self.apply_mut(map.downcast_ref::<Style>().unwrap().clone());
+            self.apply_context_mappings_mut();
+            self.apply_mut(map.downcast_ref::<Style>().unwrap().clone());
+        }
+        self
+    }
+
+    pub(crate) fn apply_class_from_key(mut self, key: StyleKey) -> Style {
+        if let Some(map) = self.clone().map.get(&key) {
+            self.apply_mut(map.downcast_ref::<Style>().unwrap().clone());
+            self.apply_context_mappings_mut();
             self.apply_mut(map.downcast_ref::<Style>().unwrap().clone());
         }
         self
@@ -1404,6 +1815,61 @@ impl Style {
                 self.apply_mut(map.apply_selectors(selectors));
             }
         }
+        if self.get(Selected) {
+            if let Some(map) = self.get_nested_map(StyleSelector::Selected.to_key()) {
+                self.apply_mut(map.apply_selectors(&[StyleSelector::Selected]));
+            }
+        }
+        self
+    }
+
+    /// Store a context mapping to be applied to nested styles
+    pub fn with_context<P: StyleProp>(
+        mut self,
+        f: impl Fn(Self, &P::Type) -> Self + 'static,
+    ) -> Self {
+        let mapper: ContextMapFn = Rc::new(move |style: Style| {
+            if let Some(value) = style.get_prop::<P>() {
+                f(style, &value)
+            } else {
+                style
+            }
+        });
+
+        let key = StyleKey {
+            info: &CONTEXT_MAPPINGS_INFO,
+        };
+        let mut mappings = self
+            .map
+            .get(&key)
+            .and_then(|v| v.downcast_ref::<Vec<ContextMapFn>>())
+            .cloned()
+            .unwrap_or_default();
+
+        mappings.push(mapper);
+        self.map.insert(key, Rc::new(mappings));
+        self
+    }
+
+    pub fn with_context_opt<P: StyleProp<Type = Option<T>>, T: 'static>(
+        mut self,
+        f: impl Fn(Self, T) -> Self + 'static,
+    ) -> Self {
+        let mapper: ContextMapFn = Rc::new(move |style: Style| match style.get_prop::<P>() {
+            Some(Some(value)) => f(style, value),
+            _ => style,
+        });
+        let key = StyleKey {
+            info: &CONTEXT_MAPPINGS_INFO,
+        };
+        let mut mappings = self
+            .map
+            .get(&key)
+            .and_then(|v| v.downcast_ref::<Vec<ContextMapFn>>())
+            .cloned()
+            .unwrap_or_default();
+        mappings.push(mapper);
+        self.map.insert(key, Rc::new(mappings));
         self
     }
 
@@ -1419,36 +1885,42 @@ impl Style {
         screen_size_bp: ScreenSizeBp,
     ) {
         if let Some(mut map) = self.get_nested_map(screen_size_bp_to_key(screen_size_bp)) {
+            map = map.apply_context_mappings(self);
             map.apply_interact_state(interact_state, screen_size_bp);
             self.apply_mut(map);
         }
 
         if interact_state.is_hovered && !interact_state.is_disabled {
             if let Some(mut map) = self.get_nested_map(StyleSelector::Hover.to_key()) {
+                map = map.apply_context_mappings(self);
                 map.apply_interact_state(interact_state, screen_size_bp);
                 self.apply_mut(map);
             }
         }
         if interact_state.is_focused {
             if let Some(mut map) = self.get_nested_map(StyleSelector::Focus.to_key()) {
+                map = map.apply_context_mappings(self);
                 map.apply_interact_state(interact_state, screen_size_bp);
                 self.apply_mut(map);
             }
         }
-        if interact_state.is_selected {
+        if interact_state.is_selected || self.get(Selected) {
             if let Some(mut map) = self.get_nested_map(StyleSelector::Selected.to_key()) {
+                map = map.apply_context_mappings(self);
                 map.apply_interact_state(interact_state, screen_size_bp);
                 self.apply_mut(map);
             }
         }
         if interact_state.is_disabled {
             if let Some(mut map) = self.get_nested_map(StyleSelector::Disabled.to_key()) {
+                map = map.apply_context_mappings(self);
                 map.apply_interact_state(interact_state, screen_size_bp);
                 self.apply_mut(map);
             }
         }
         if interact_state.is_dark_mode {
             if let Some(mut map) = self.get_nested_map(StyleSelector::DarkMode.to_key()) {
+                map = map.apply_context_mappings(self);
                 map.apply_interact_state(interact_state, screen_size_bp);
                 self.apply_mut(map);
             }
@@ -1459,6 +1931,7 @@ impl Style {
 
         if focused_keyboard {
             if let Some(mut map) = self.get_nested_map(StyleSelector::FocusVisible.to_key()) {
+                map = map.apply_context_mappings(self);
                 map.apply_interact_state(interact_state, screen_size_bp);
                 self.apply_mut(map);
             }
@@ -1467,6 +1940,7 @@ impl Style {
         let active_mouse = interact_state.is_hovered && !interact_state.using_keyboard_navigation;
         if interact_state.is_clicking && (active_mouse || focused_keyboard) {
             if let Some(mut map) = self.get_nested_map(StyleSelector::Active.to_key()) {
+                map = map.apply_context_mappings(self);
                 map.apply_interact_state(interact_state, screen_size_bp);
                 self.apply_mut(map);
             }
@@ -1488,6 +1962,20 @@ impl Style {
             let this = Rc::make_mut(this);
             this.apply_iter(inherited);
         }
+    }
+
+    pub(crate) fn inherited(&self) -> Style {
+        let mut new = Style::new();
+        if self.any_inherited() {
+            let inherited = self
+                .map
+                .iter()
+                .filter(|(p, _)| p.inherited())
+                .map(|(p, v)| (*p, v.clone()));
+
+            new.apply_iter(inherited);
+        }
+        new
     }
 
     fn set_selector(&mut self, selector: StyleSelector, map: Style) {
@@ -1546,6 +2034,31 @@ impl Style {
                         e.insert(v);
                     }
                 },
+                StyleKeyInfo::ContextMappings => match self.map.entry(k) {
+                    Entry::Occupied(mut e) => {
+                        // Append the new mappings to existing ones
+                        let new_mappings = v.downcast_ref::<Vec<ContextMapFn>>().unwrap();
+                        match Rc::get_mut(e.get_mut()) {
+                            Some(current) => {
+                                let current_mappings =
+                                    current.downcast_mut::<Vec<ContextMapFn>>().unwrap();
+                                current_mappings.extend(new_mappings.iter().cloned());
+                            }
+                            None => {
+                                let mut current = e
+                                    .get_mut()
+                                    .downcast_ref::<Vec<ContextMapFn>>()
+                                    .unwrap()
+                                    .clone();
+                                current.extend(new_mappings.iter().cloned());
+                                *e.get_mut() = Rc::new(current);
+                            }
+                        }
+                    }
+                    Entry::Vacant(e) => {
+                        e.insert(v);
+                    }
+                },
                 StyleKeyInfo::Transition | StyleKeyInfo::Prop(..) => {
                     self.map.insert(k, v);
                 }
@@ -1578,8 +2091,70 @@ impl Style {
         overrides.fold(self, |acc, x| acc.apply(x))
     }
 
-    pub(crate) fn clear(&mut self) {
-        self.map.clear();
+    /// Apply all context mappings using prop values from context
+    pub(crate) fn apply_context_mappings(mut self, context: &Style) -> Self {
+        let key = StyleKey {
+            info: &CONTEXT_MAPPINGS_INFO,
+        };
+
+        if let Some(mappings) = self
+            .map
+            .get(&key)
+            .and_then(|v| v.downcast_ref::<Vec<ContextMapFn>>())
+            .cloned()
+        // Clone the Vec to avoid borrow issues
+        {
+            // Remove the mappings from self before applying them
+            self.map.remove(&key);
+
+            // First copy props from context so mappings can read them
+            for (k, v) in &context.map {
+                if matches!(k.info, StyleKeyInfo::Prop(..)) && !self.map.contains_key(k) {
+                    self.map.insert(*k, v.clone());
+                }
+            }
+
+            // Then run the mappings
+            for mapping in mappings {
+                self = mapping(self);
+            }
+
+            // After running mappings, check if the result has NEW mappings and apply them recursively
+            self = self.apply_context_mappings(context);
+        }
+
+        self
+    }
+    pub(crate) fn apply_context_mappings_mut(&mut self) {
+        let key = StyleKey {
+            info: &CONTEXT_MAPPINGS_INFO,
+        };
+
+        if let Some(mappings) = self
+            .map
+            .get(&key)
+            .and_then(|v| v.downcast_ref::<Vec<ContextMapFn>>())
+            .cloned()
+        // Clone the Vec to avoid borrow issues
+        {
+            // Remove the mappings from self before applying them
+            self.map.remove(&key);
+
+            // First copy props from context so mappings can read them
+            for (k, v) in &self.clone().map {
+                if matches!(k.info, StyleKeyInfo::Prop(..)) && !self.map.contains_key(k) {
+                    self.map.insert(*k, v.clone());
+                }
+            }
+
+            // Then run the mappings
+            for mapping in mappings {
+                *self = mapping(self.clone());
+            }
+
+            // After running mappings, check if the result has NEW mappings and apply them recursively
+            self.apply_context_mappings_mut();
+        }
     }
 }
 
@@ -1688,6 +2263,90 @@ impl StyleSelectors {
     }
     pub(crate) fn has_responsive(self) -> bool {
         self.responsive
+    }
+}
+
+impl StyleSelectors {
+    /// Returns a formatted string representation of the active selectors
+    pub fn debug_string(&self) -> String {
+        let mut parts = Vec::new();
+
+        if self.has(StyleSelector::Hover) {
+            parts.push("Hover");
+        }
+        if self.has(StyleSelector::Focus) {
+            parts.push("Focus");
+        }
+        if self.has(StyleSelector::FocusVisible) {
+            parts.push("FocusVisible");
+        }
+        if self.has(StyleSelector::Disabled) {
+            parts.push("Disabled");
+        }
+        if self.has(StyleSelector::Active) {
+            parts.push("Active");
+        }
+        if self.has(StyleSelector::Dragging) {
+            parts.push("Dragging");
+        }
+        if self.has(StyleSelector::Selected) {
+            parts.push("Selected");
+        }
+        if self.has(StyleSelector::DarkMode) {
+            parts.push("DarkMode");
+        }
+
+        if parts.is_empty() {
+            if self.responsive {
+                "Responsive".to_string()
+            } else {
+                "None".to_string()
+            }
+        } else {
+            let selector_str = parts.join(" + ");
+            if self.responsive {
+                format!("{} (Responsive)", selector_str)
+            } else {
+                selector_str
+            }
+        }
+    }
+
+    /// Returns a vector of individual selector names
+    pub fn active_selectors(&self) -> Vec<&'static str> {
+        let mut selectors = Vec::new();
+
+        if self.has(StyleSelector::Hover) {
+            selectors.push("Hover");
+        }
+        if self.has(StyleSelector::Focus) {
+            selectors.push("Focus");
+        }
+        if self.has(StyleSelector::FocusVisible) {
+            selectors.push("FocusVisible");
+        }
+        if self.has(StyleSelector::Disabled) {
+            selectors.push("Disabled");
+        }
+        if self.has(StyleSelector::Active) {
+            selectors.push("Active");
+        }
+        if self.has(StyleSelector::Dragging) {
+            selectors.push("Dragging");
+        }
+        if self.has(StyleSelector::Selected) {
+            selectors.push("Selected");
+        }
+        if self.has(StyleSelector::DarkMode) {
+            selectors.push("DarkMode");
+        }
+
+        selectors
+    }
+
+    /// Returns true if any selectors are active
+    pub fn is_empty(&self) -> bool {
+        self.selectors == 0 && !self.responsive
     }
 }
 
@@ -1945,8 +2604,8 @@ define_builtin_props!(
     JustifySelf justify_self: Option<AlignItems> {} = None,
     AlignItemsProp align_items: Option<AlignItems> {} = None,
     AlignContentProp align_content: Option<AlignContent> {} = None,
-    GridTemplateRows grid_template_rows: Vec<TrackSizingFunction> {} = Vec::new(),
-    GridTemplateColumns grid_template_columns: Vec<TrackSizingFunction> {} = Vec::new(),
+    GridTemplateRows grid_template_rows: Vec<GridTemplateComponent<String>> {} = Vec::new(),
+    GridTemplateColumns grid_template_columns: Vec<GridTemplateComponent<String>> {} = Vec::new(),
     GridAutoRows grid_auto_rows: Vec<MinMax<MinTrackSizingFunction, MaxTrackSizingFunction>> {} = Vec::new(),
     GridAutoColumns grid_auto_columns: Vec<MinMax<MinTrackSizingFunction, MaxTrackSizingFunction>> {} = Vec::new(),
     GridAutoFlow grid_auto_flow: taffy::GridAutoFlow {} = taffy::GridAutoFlow::Row,
@@ -2006,6 +2665,7 @@ define_builtin_props!(
     TranslateX translate_x: PxPct {} = PxPct::Px(0.),
     TranslateY translate_y: PxPct {} = PxPct::Px(0.),
     Rotation rotate: Px {} = Px(0.),
+    Selected set_selected: bool { inherited } = false,
 );
 
 prop!(
@@ -2737,8 +3397,9 @@ impl Style {
         self.set_style_value(FontStyle, style.into().map(Some))
     }
 
-    pub fn cursor_color(self, color: impl Into<StyleValue<Brush>>) -> Self {
-        self.set_style_value(CursorColor, color.into())
+    pub fn cursor_color(self, color: impl Into<Brush>) -> Self {
+        let brush = StyleValue::Val(color.into());
+        self.set_style_value(CursorColor, brush)
     }
 
     pub fn line_height(self, normal: f32) -> Self {

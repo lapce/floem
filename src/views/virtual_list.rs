@@ -10,7 +10,7 @@ use std::ops::{Deref, DerefMut};
 
 pub struct VirtualList<T: 'static> {
     stack: VirtualStack<(usize, T)>,
-    selection: RwSignal<Option<usize>>,
+    pub selection: RwSignal<Option<usize>>,
 }
 
 impl<T> VirtualList<T> {

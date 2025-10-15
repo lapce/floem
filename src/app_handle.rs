@@ -19,8 +19,9 @@ use winit::{
 
 use crate::app::AppConfig;
 use crate::{
+    AppEvent,
     action::{Timer, TimerToken},
-    app::{AppEventCallback, AppUpdateEvent, UserEvent, APP_UPDATE_EVENTS},
+    app::{APP_UPDATE_EVENTS, AppEventCallback, AppUpdateEvent, UserEvent},
     context::PaintState,
     ext_event::EXT_EVENT_HANDLER,
     inspector::Capture,
@@ -29,7 +30,6 @@ use crate::{
     window::WindowConfig,
     window_handle::WindowHandle,
     window_id::process_window_updates,
-    AppEvent,
 };
 
 pub(crate) struct ApplicationHandle {

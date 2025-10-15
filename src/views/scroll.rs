@@ -102,6 +102,11 @@ prop!(
 );
 
 prop!(
+    /// Controls whether scroll bars are shown when not scrolling. When false, bars are only shown during scroll interactions.
+    pub ShowBarsWhenIdle: bool {} = true
+);
+
+prop!(
     /// Determines if pointer wheel events should propagate to parent elements.
     pub PropagatePointerWheel: bool {} = true
 );
@@ -120,6 +125,7 @@ prop_extractor!(ScrollStyle {
     vertical_bar_inset: VerticalInset,
     horizontal_bar_inset: HorizontalInset,
     hide_bar: HideBars,
+    show_bars_when_idle: ShowBarsWhenIdle,
     propagate_pointer_wheel: PropagatePointerWheel,
     vertical_scroll_as_horizontal: VerticalScrollAsHorizontal,
     overflow_clip: OverflowClip,
@@ -158,6 +164,8 @@ pub struct Scroll {
     h_handle_hover: bool,
     v_track_hover: bool,
     h_track_hover: bool,
+    /// Tracks whether user is currently interacting with scrollbars or recently scrolled
+    is_scrolling_or_interacting: bool,
     handle_style: ScrollTrackStyle,
     handle_active_style: ScrollTrackStyle,
     handle_hover_style: ScrollTrackStyle,
@@ -187,6 +195,7 @@ pub fn scroll<V: IntoView + 'static>(child: V) -> Scroll {
         h_handle_hover: false,
         v_track_hover: false,
         h_track_hover: false,
+        is_scrolling_or_interacting: false,
         handle_style: Default::default(),
         handle_active_style: Default::default(),
         handle_hover_style: Default::default(),
@@ -467,6 +476,8 @@ impl Scroll {
             app_state.request_compute_layout_recursive(self.id());
             app_state.request_paint(self.id());
             self.child_viewport = child_viewport;
+            // Mark as scrolling when viewport changes
+            self.is_scrolling_or_interacting = true;
             if let Some(onscroll) = &self.onscroll {
                 onscroll(child_viewport);
             }
@@ -504,6 +515,11 @@ impl Scroll {
     }
 
     fn draw_bars(&self, cx: &mut PaintCx) {
+        // Check if scrollbars should be shown based on the show_bars_when_idle property
+        if !self.scroll_style.show_bars_when_idle() && !self.is_scrolling_or_interacting {
+            return;
+        }
+
         let scroll_offset = self.child_viewport.origin().to_vec2();
         let radius = |style: &ScrollTrackStyle, rect: Rect, vertical| {
             if style.rounded() {
@@ -739,6 +755,14 @@ impl Scroll {
             self.h_track_hover = hover;
             app_state.request_paint(self.id());
         }
+
+        // Set scrolling/interacting state if hovering over scrollbars
+        let any_hover =
+            self.v_handle_hover || self.h_handle_hover || self.v_track_hover || self.h_track_hover;
+        if any_hover != self.is_scrolling_or_interacting {
+            self.is_scrolling_or_interacting = any_hover;
+            app_state.request_paint(self.id());
+        }
     }
 
     fn do_scroll_to_view(
@@ -798,6 +822,7 @@ impl View for Scroll {
         Some(
             Style::new()
                 .items_start()
+                .padding_right(self.track_style.thickness())
                 .set(OverflowX, taffy::Overflow::Scroll)
                 .set(OverflowY, taffy::Overflow::Scroll),
         )
@@ -976,6 +1001,7 @@ impl View for Scroll {
                 self.h_handle_hover = false;
                 self.v_track_hover = false;
                 self.h_track_hover = false;
+                self.is_scrolling_or_interacting = false;
                 cx.app_state.request_paint(self.id());
             }
             _ => {}
@@ -1190,6 +1216,12 @@ impl ScrollCustomStyle {
     /// Sets whether vertical scrolling should be interpreted as horizontal scrolling.
     pub fn vertical_scroll_as_horizontal(mut self, vert_as_horiz: impl Into<bool>) -> Self {
         self = Self(self.0.set(VerticalScrollAsHorizontal, vert_as_horiz));
+        self
+    }
+
+    /// Controls whether scroll bars are shown when not scrolling. When false, bars are only shown during scroll interactions.
+    pub fn show_bars_when_idle(mut self, show: impl Into<bool>) -> Self {
+        self = Self(self.0.set(ShowBarsWhenIdle, show));
         self
     }
 }
