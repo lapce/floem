@@ -33,8 +33,7 @@ style_class!(
 ///         .focus_visible(|s| s.border(2.).border_color(css::BLUE))
 ///     );
 /// ```
-/// ### Reactivity
-/// Button's label is not reactive.
+Since this isn't a function as an argument there isn't a need for a reactivity comment
 pub fn button<V: IntoView + 'static>(child: V) -> Button {
     Button::new(child)
 }
