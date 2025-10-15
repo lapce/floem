@@ -156,16 +156,17 @@ impl View for Tooltip {
 /// Adds a [tooltip] function to a type that implements [`IntoView`].
 pub trait TooltipExt {
     /// Adds a tooltip to the view.
-    /// 
+    ///
     /// ### Examples
     /// ```rust
     /// # use floem::views::TooltipExt;
-    /// # use floem::views::label;
+    /// # use floem::views::{label, Decorators};
+    /// # use floem::prelude::{RwSignal, SignalGet};
     /// // Simple usage:
     /// let simple = label(move || "A text with tooltip")
     ///     .tooltip(|| "This is a tooltip.");
     /// // More complex usage:
-    /// let click_counter = RwSignal::new(0);
+    /// let mut click_counter = RwSignal::new(0);
     /// let complex = label(move || "A text with a tooltip that changes on click")
     ///     .on_click_stop(move|_| click_counter += 1)
     ///     .tooltip(move || format!("Clicked {} times on the label", click_counter.get()));
