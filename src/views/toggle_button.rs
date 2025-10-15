@@ -337,6 +337,7 @@ impl ToggleButton {
     /// ### Examples
     /// ```rust
     /// # use floem::prelude::*;
+    /// # use floem::prelude::palette::css;
     /// // Create read-write signal that will hold toggle button state
     /// let state = RwSignal::new(false);
     /// // `.on_toggle()` is not needed as state is provided via signal
