@@ -1,3 +1,4 @@
+#![deny(missing_docs)]
 //! A toggle button widget. An example can be found in [widget-gallery/button](https://github.com/lapce/floem/tree/main/examples/widget-gallery)
 //! in the floem examples.
 
@@ -18,12 +19,15 @@ use crate::{
     Renderer,
 };
 
-/// Controls the switching behavior of the switch. The corresponding style prop is [`ToggleButtonBehavior`]
+/// Controls the switching behavior of the switch.
+/// The corresponding style prop is [`ToggleButtonBehavior`]
 #[derive(Debug, Clone, PartialEq)]
 pub enum ToggleHandleBehavior {
-    /// The switch foreground item will follow the position of the cursor. The toggle event happens when the cursor passes the 50% threshold.
+    /// The switch foreground item will follow the position of the cursor.
+    /// The toggle event happens when the cursor passes the 50% threshold.
     Follow,
-    /// The switch foreground item will "snap" from being toggled off/on when the cursor passes the 50% threshold.
+    /// The switch foreground item will "snap" from being toggled off/on
+    /// when the cursor passes the 50% threshold.
     Snap,
 }
 
@@ -41,8 +45,12 @@ prop_extractor! {
         switch_behavior: ToggleButtonBehavior
     }
 }
-style_class!(pub ToggleButtonClass);
+style_class!(
+    /// A class for styling [ToggleButton] view.
+    pub ToggleButtonClass
+);
 
+/// Represents [ToggleButton] toggle state.
 #[derive(PartialEq, Eq)]
 enum ToggleState {
     Nothing,
@@ -50,7 +58,7 @@ enum ToggleState {
     Drag,
 }
 
-/// A toggle button
+/// A toggle button.
 pub struct ToggleButton {
     id: ViewId,
     state: bool,
@@ -62,33 +70,44 @@ pub struct ToggleButton {
     style: ToggleStyle,
 }
 
-/// A reactive toggle button
+/// A reactive toggle button.
 ///
-/// When the button is toggled by clicking or dragging the widget an update will be
+/// When the button is toggled by clicking or dragging the widget, an update will be
 /// sent to the [`ToggleButton::on_toggle`] handler.
-/// See also [`ToggleButtonClass`], [`ToggleHandleBehavior`] and the other toggle button styles that can be applied.
 ///
-/// By default this toggle button has a style class of [`ToggleButtonClass`] applied with a default style provided.
-///
-/// Styles:
-/// background color: [`style::Background`]
-///
-/// Toggle color: [`style::Foreground`]
-///
-/// inner switch inset: [`ToggleButtonInset`]
-///
-/// inner switch (circle) size/radius: [`ToggleButtonCircleRad`]
-///
-/// toggle button switch behavior: [`ToggleButtonBehavior`] / [`ToggleHandleBehavior`]
-///
-/// An example using [`RwSignal`](floem_reactive::RwSignal):
+/// By default this toggle button has a style class of [`ToggleButtonClass`] applied
+/// with a default style provided.
+/// ### Examples
 /// ```rust
-/// use floem::reactive::{SignalGet, SignalUpdate};
+/// # use floem::reactive::{SignalGet, SignalUpdate, RwSignal};
+/// # use floem::views::toggle_button;
+/// # use floem::prelude::{palette::css, ToggleHandleBehavior};
+/// // An example using read-write signal
+/// let state = RwSignal::new(true);
+/// let toggle = toggle_button(move || state.get())
+///     // Set action when button is toggled according to the toggle state provided.
+///     .on_toggle(move |new_state| state.set(new_state));
 ///
-/// let state = floem::reactive::create_rw_signal(true);
-/// floem::views::toggle_button(move || state.get())
-///         .on_toggle(move |new_state| state.set(new_state));
+/// // Use toggle button specific styles to control its look and behavior
+/// let customized_toggle = toggle_button(move || state.get())
+///     .on_toggle(move |new_state| state.set(new_state))
+///     .toggle_style(|s| s
+///         // Set toggle button accent color
+///         .accent_color(css::REBECCA_PURPLE)
+///         // Set toggle button circle radius
+///         .circle_rad(5.)
+///         // Set toggle button handle color
+///         .handle_color(css::PURPLE)
+///         // Set toggle button handle inset
+///         .handle_inset(1.)
+///         // Set toggle button behavior:
+///         // - `Follow` - to follow the pointer movement
+///         // - `Snap` - to snap once pointer passed 50% treshold
+///         .behavior(ToggleHandleBehavior::Snap)
+///     );
 ///```
+/// ### Reactivity
+/// This function is reactive and will reactively respond to changes.
 pub fn toggle_button(state: impl Fn() -> bool + 'static) -> ToggleButton {
     ToggleButton::new(state)
 }
@@ -237,6 +256,7 @@ impl View for ToggleButton {
         }
     }
 }
+
 impl ToggleButton {
     fn update_restrict_position(&mut self, end_pos: bool) {
         let inset = match self.style.inset() {
@@ -254,6 +274,44 @@ impl ToggleButton {
             .min(self.width - self.radius - inset);
     }
 
+    /// Create new [ToggleButton].
+    ///
+    /// When the button is toggled by clicking or dragging the widget, an update will be
+    /// sent to the [`ToggleButton::on_toggle`] handler.
+    ///
+    /// By default this toggle button has a style class of [`ToggleButtonClass`] applied
+    /// with a default style provided.
+    /// ### Examples
+    /// ```rust
+    /// # use floem::reactive::{SignalGet, SignalUpdate, RwSignal};
+    /// # use floem::views::toggle_button;
+    /// # use floem::prelude::{palette::css, ToggleHandleBehavior};
+    /// // An example using read-write signal
+    /// let state = RwSignal::new(true);
+    /// let toggle = toggle_button(move || state.get())
+    ///     // Set action when button is toggled according to the toggle state provided.
+    ///     .on_toggle(move |new_state| state.set(new_state));
+    ///
+    /// // Use toggle button specific styles to control its look and behavior
+    /// let customized_toggle = toggle_button(move || state.get())
+    ///     .on_toggle(move |new_state| state.set(new_state))
+    ///     .toggle_style(|s| s
+    ///         // Set toggle button accent color
+    ///         .accent_color(css::REBECCA_PURPLE)
+    ///         // Set toggle button circle radius
+    ///         .circle_rad(5.)
+    ///         // Set toggle button handle color
+    ///         .handle_color(css::PURPLE)
+    ///         // Set toggle button handle inset
+    ///         .handle_inset(1.)
+    ///         // Set toggle button behavior:
+    ///         // - `Follow` - to follow the pointer movement
+    ///         // - `Snap` - to snap once pointer passed 50% treshold
+    ///         .behavior(ToggleHandleBehavior::Snap)
+    ///     );
+    ///```
+    /// ### Reactivity
+    /// This function is reactive and will reactively respond to changes.
     pub fn new(state: impl Fn() -> bool + 'static) -> Self {
         let id = ViewId::new();
         create_effect(move |_| {
@@ -275,19 +333,51 @@ impl ToggleButton {
         .keyboard_navigable()
     }
 
+    /// Create new [ToggleButton] with read-write signal.
+    /// ### Examples
+    /// ```rust
+    /// # use floem::prelude::*;
+    /// # use floem::prelude::palette::css;
+    /// // Create read-write signal that will hold toggle button state
+    /// let state = RwSignal::new(false);
+    /// // `.on_toggle()` is not needed as state is provided via signal
+    /// // INFO: If you use it, the state will stop updating `state` signal.
+    /// let simple = ToggleButton::new_rw(state);
+    ///
+    /// let complex = ToggleButton::new_rw(state)
+    ///     // Set styles for the toggle
+    ///     .toggle_style(move |s| s
+    ///         // Apply some styles on self optionally (here on `state` update)
+    ///         .apply_if(state.get(), |s| s
+    ///             .accent_color(css::DARK_GRAY)
+    ///             .handle_color(css::WHITE_SMOKE)
+    ///         )
+    ///         .behavior(ToggleHandleBehavior::Snap)
+    ///     );
+    /// ```
+    /// ### Reactivity
+    /// This funtion will update provided signal on toggle or will be updated if signal will change
+    /// due to external signal update.
     pub fn new_rw(state: impl SignalGet<bool> + SignalUpdate<bool> + Copy + 'static) -> Self {
         Self::new(move || state.get()).on_toggle(move |ns| state.set(ns))
     }
 
     /// Add an event handler to be run when the button is toggled.
     ///
-    ///This does not run if the state is changed because of an outside signal.
-    /// This handler is only called if this button is clicked or switched
+    /// This does not run if the state is changed because of an outside signal.
+    /// ### Rectivity
+    /// This handler is only called if this button is clicked or switched.
     pub fn on_toggle(mut self, ontoggle: impl Fn(bool) + 'static) -> Self {
         self.ontoggle = Some(Box::new(ontoggle));
         self
     }
 
+    /// Set styles related to [ToggleButton]:
+    /// - handle color
+    /// - accent color
+    /// - handle inset
+    /// - circle radius
+    /// - behavior of the switch (follow or snap)
     pub fn toggle_style(
         self,
         style: impl Fn(ToggleButtonCustomStyle) -> ToggleButtonCustomStyle + 'static,
@@ -296,7 +386,7 @@ impl ToggleButton {
     }
 }
 
-/// Represents a custom style for a `ToggleButton`.
+/// Represents a custom style for a [ToggleButton].
 #[derive(Debug, Default, Clone)]
 pub struct ToggleButtonCustomStyle(Style);
 impl From<ToggleButtonCustomStyle> for Style {
@@ -306,6 +396,7 @@ impl From<ToggleButtonCustomStyle> for Style {
 }
 
 impl ToggleButtonCustomStyle {
+    /// Create new styles for [ToggleButton].
     pub fn new() -> Self {
         Self(Style::new())
     }
@@ -313,7 +404,7 @@ impl ToggleButtonCustomStyle {
     /// Sets the color of the toggle handle.
     ///
     /// # Arguments
-    /// * `color` - An `Option<Color>` that sets the handle's color. `None` will remove the color.
+    /// **color** - A `Brush` that sets the handle's color.
     pub fn handle_color(mut self, color: impl Into<Brush>) -> Self {
         self = Self(self.0.set(Foreground, Some(color.into())));
         self
@@ -322,7 +413,8 @@ impl ToggleButtonCustomStyle {
     /// Sets the accent color of the toggle button.
     ///
     /// # Arguments
-    /// * `color` - A `StyleValue<Color>` that sets the toggle button's accent color. This is the same as the background color.
+    /// **color** - A `Brush` that sets the toggle button's accent color.
+    /// This is the same as the background color.
     pub fn accent_color(mut self, color: impl Into<Brush>) -> Self {
         self = Self(self.0.background(color));
         self
@@ -331,7 +423,8 @@ impl ToggleButtonCustomStyle {
     /// Sets the inset of the toggle handle.
     ///
     /// # Arguments
-    /// * `inset` - A `PxPct` value that defines the inset of the handle from the toggle button's edge.
+    /// **inset** - A `PxPct` value that defines the inset of the handle from
+    /// the toggle button's edge.
     pub fn handle_inset(mut self, inset: impl Into<PxPct>) -> Self {
         self = Self(self.0.set(ToggleButtonInset, inset));
         self
@@ -340,7 +433,8 @@ impl ToggleButtonCustomStyle {
     /// Sets the radius of the toggle circle.
     ///
     /// # Arguments
-    /// * `rad` - A `PxPct` value that defines the radius of the toggle button's inner circle.
+    /// **rad** - A `PxPct` value that defines the radius of the toggle
+    /// button's inner circle.
     pub fn circle_rad(mut self, rad: impl Into<PxPct>) -> Self {
         self = Self(self.0.set(ToggleButtonCircleRad, rad));
         self
@@ -349,12 +443,37 @@ impl ToggleButtonCustomStyle {
     /// Sets the switch behavior of the toggle button.
     ///
     /// # Arguments
-    /// * `switch` - A `ToggleHandleBehavior` that defines how the toggle handle behaves on interaction.
+    /// **switch** - A `ToggleHandleBehavior` that defines how the toggle
+    /// handle behaves on interaction.
     ///
     /// On `Follow`, the handle will follow the mouse.
     /// On `Snap`, the handle will snap to the nearest side.
     pub fn behavior(mut self, switch: ToggleHandleBehavior) -> Self {
         self = Self(self.0.set(ToggleButtonBehavior, switch));
         self
+    }
+
+    /// Sets the styles of the toggle button if `true`.
+    ///
+    /// # Arguments
+    /// **cond** - if resolves to `true` will apply styles from the closure.
+    /// ```rust
+    /// # use floem::prelude::{RwSignal, palette::css};
+    /// # use crate::floem::prelude::SignalGet;
+    /// # use floem::views::ToggleButton;
+    /// let state = RwSignal::new(false);
+    /// let toggle = ToggleButton::new_rw(state)
+    ///     .toggle_style(move |s| s
+    ///         .apply_if(state.get(), |s| s
+    ///             .accent_color(css::DARK_GRAY)
+    ///         )
+    ///     );
+    /// ```
+    pub fn apply_if(self, cond: bool, f: impl FnOnce(Self) -> Self) -> Self {
+        if cond {
+            f(self)
+        } else {
+            self
+        }
     }
 }

@@ -1,14 +1,18 @@
 use floem::{
-    peniko::color::palette,
-    peniko::Color,
+    peniko::{color::palette, Color},
+    prelude::{
+        palette::css::{DARK_GRAY, LIGHT_GRAY, WHITE_SMOKE},
+        RwSignal, SignalGet,
+    },
     style::CursorStyle,
-    views::{button, toggle_button, Decorators, ToggleHandleBehavior},
+    views::{button, toggle_button, Decorators, ToggleButton, ToggleHandleBehavior},
     IntoView,
 };
 
 use crate::form::{form, form_item};
 
 pub fn button_view() -> impl IntoView {
+    let state = RwSignal::new(false);
     form((
         form_item(
             "Basic Button:",
@@ -58,5 +62,15 @@ pub fn button_view() -> impl IntoView {
                 })
                 .toggle_style(|s| s.behavior(ToggleHandleBehavior::Follow)),
         ),
+        form_item(
+            "Toggle button - toggle background:",
+            ToggleButton::new_rw(state).toggle_style(move |s| {
+                s.apply_if(state.get(), |s| {
+                    s.accent_color(DARK_GRAY).handle_color(WHITE_SMOKE)
+                })
+                .behavior(ToggleHandleBehavior::Snap)
+            }),
+        ),
     ))
+    .style(move |s| s.apply_if(state.get(), |s| s.background(LIGHT_GRAY)))
 }
