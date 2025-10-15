@@ -1,3 +1,4 @@
+#![deny(missing_docs)]
 use crate::{style_class, views::Decorators, IntoView, View, ViewId};
 use core::ops::FnMut;
 
@@ -21,12 +22,14 @@ impl View for Button {
     }
 }
 impl Button {
+    /// Create new [Button].
     pub fn new(child: impl IntoView) -> Self {
         let id = ViewId::new();
         id.add_child(Box::new(child.into_view()));
         Button { id }.keyboard_navigable().class(ButtonClass)
     }
 
+    /// Attach action executed on button click.
     pub fn action(self, mut on_press: impl FnMut() + 'static) -> Self {
         self.on_click_stop(move |_| {
             on_press();
@@ -36,6 +39,7 @@ impl Button {
 
 /// A trait that adds a `button` method to any type that implements `IntoView`.
 pub trait ButtonExt {
+    /// Create a button from the parent.
     fn button(self) -> Button;
 }
 impl<T: IntoView + 'static> ButtonExt for T {
