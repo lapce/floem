@@ -72,7 +72,7 @@ impl BufferState {
     fn update(&mut self, update: impl FnOnce(&mut String)) {
         self.buffer.update(|s| {
             update(s);
-            self.last_buffer = s.clone();
+            self.last_buffer.clone_from(s);
         });
     }
 
@@ -194,8 +194,9 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
 
     {
         create_effect(move |_| {
-            let text = buffer.get();
-            id.update_state((text, is_focused.get()));
+            // subscribe to changes without cloning string
+            buffer.with(|_| {});
+            id.update_state(is_focused.get());
         });
     }
 
@@ -1043,16 +1044,30 @@ impl View for TextInput {
     }
 
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {
-        if let Ok(state) = state.downcast::<(String, bool)>() {
-            let (value, is_focused) = *state;
+        if let Ok(state) = state.downcast::<bool>() {
+            let is_focused = *state;
 
-            // Only update recomputation if the state has actually changed
-            if self.is_focused != is_focused || value != self.buffer.last_buffer {
+            if self.is_focused != is_focused {
+                self.is_focused = is_focused;
+
                 if is_focused && !cx.app_state.is_active(&self.id) {
                     self.selection = None;
                     self.cursor_glyph_idx = self.buffer.with_untracked(|buf| buf.len());
                 }
-                self.is_focused = is_focused;
+            }
+
+            // Only update recomputation if the state has actually changed
+            let text_updated = self.buffer.buffer.with_untracked(|buf| {
+                let updated = *buf != self.buffer.last_buffer;
+
+                if updated {
+                    self.buffer.last_buffer.clone_from(buf);
+                }
+
+                updated
+            });
+
+            if text_updated {
                 self.id.request_layout();
             }
         } else {
