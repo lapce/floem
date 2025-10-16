@@ -443,8 +443,8 @@ impl TextInput {
             .min(self.text_buf.size().width - self.width as f64);
     }
 
-    fn handle_double_click(&mut self, pos_x: f64, pos_y: f64) {
-        let clicked_glyph_idx = self.get_box_position(pos_x, pos_y);
+    fn handle_double_click(&mut self, pos_x: f64) {
+        let clicked_glyph_idx = self.get_box_position(pos_x);
 
         self.buffer.with_untracked(|buff| {
             let selection = get_dbl_click_selection(clicked_glyph_idx, buff);
@@ -459,7 +459,7 @@ impl TextInput {
         self.select_all();
     }
 
-    fn get_box_position(&self, pos_x: f64, pos_y: f64) -> usize {
+    fn get_box_position(&self, pos_x: f64) -> usize {
         let layout = self.id.get_layout().unwrap_or_default();
         let view_state = self.id.state();
         let view_state = view_state.borrow();
@@ -469,16 +469,10 @@ impl TextInput {
             PxPct::Px(padding) => padding as f32,
             PxPct::Pct(pct) => pct as f32 * layout.size.width,
         };
-        let padding_top = match style.padding_top() {
-            PxPct::Px(padding) => padding as f32,
-            PxPct::Pct(pct) => pct as f32 * layout.size.width,
-        };
         self.text_buf
             .hit_point(Point::new(
                 pos_x + self.clip_start_x - padding_left as f64,
-                // TODO: prevent cursor incorrectly going to end of buffer when clicking
-                // slightly below the text
-                pos_y - padding_top as f64,
+                0.0,
             ))
             .index
     }
@@ -1088,11 +1082,11 @@ impl View for TextInput {
 
                 if self.buffer.with_untracked(|buff| !buff.is_empty()) {
                     if event.count == 2 {
-                        self.handle_double_click(event.pos.x, event.pos.y);
+                        self.handle_double_click(event.pos.x);
                     } else if event.count == 3 {
                         self.handle_triple_click();
                     } else {
-                        self.cursor_glyph_idx = self.get_box_position(event.pos.x, event.pos.y);
+                        self.cursor_glyph_idx = self.get_box_position(event.pos.x);
                         self.selection = None;
                     }
                 }
@@ -1110,7 +1104,7 @@ impl View for TextInput {
                         self.scroll(event.pos.x - self.width as f64);
                     }
 
-                    let selection_stop = self.get_box_position(event.pos.x, event.pos.y);
+                    let selection_stop = self.get_box_position(event.pos.x);
                     self.update_selection(self.cursor_glyph_idx, selection_stop);
                 }
                 false
