@@ -18,6 +18,7 @@ use crate::{
     Renderer,
 };
 use floem_editor_core::{
+    command::EditCommand,
     cursor::{ColPosition, CursorAffinity, CursorMode},
     mode::{Mode, VisualMode},
 };
@@ -31,7 +32,7 @@ use crate::views::editor::{
     visual_line::{RVLine, VLineInfo},
 };
 
-use super::{Editor, CHAR_WIDTH};
+use super::{command::Command, Editor, CHAR_WIDTH};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum DiffSectionKind {
@@ -1048,6 +1049,15 @@ pub fn editor_view(
                 if text.is_empty() {
                     ed.clear_preedit();
                 } else {
+                    ed.doc.with_untracked(|doc| {
+                        doc.run_command(
+                            ed,
+                            &Command::Edit(EditCommand::DeleteSelection),
+                            Some(1),
+                            Modifiers::empty(),
+                        );
+                    });
+
                     let offset = ed.cursor.with_untracked(|c| c.offset());
 
                     // update affinity to display caret after preedit
