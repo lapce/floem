@@ -644,7 +644,14 @@ impl EditorView {
 
         cursor.with_untracked(|cursor| {
             let style = ed.style();
-            for (_, end, affinity) in cursor.regions_iter() {
+            let displaying_placeholder =
+                ed.text().is_empty() && ed.preedit().preedit.with_untracked(|p| p.is_none());
+
+            for (_, end, mut affinity) in cursor.regions_iter() {
+                if displaying_placeholder {
+                    affinity = CursorAffinity::Backward;
+                }
+
                 let is_block = match cursor.mode {
                     CursorMode::Normal { .. } | CursorMode::Visual { .. } => true,
                     CursorMode::Insert(_) => false,
