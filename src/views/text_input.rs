@@ -1,5 +1,5 @@
 #![deny(missing_docs)]
-use crate::action::exec_after;
+use crate::action::{exec_after, set_ime_allowed, set_ime_cursor_area};
 use crate::event::{EventListener, EventPropagation};
 use crate::id::ViewId;
 use crate::keyboard::{self, KeyEvent, Modifiers};
@@ -8,6 +8,7 @@ use crate::reactive::{create_effect, RwSignal};
 use crate::style::{FontFamily, FontProps, PaddingLeft, SelectionStyle, TextAlignProp};
 use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
+use crate::views::editor::text::Preedit;
 use crate::{prop_extractor, style_class, Clipboard};
 use floem_reactive::{create_rw_signal, SignalGet, SignalUpdate, SignalWith};
 use taffy::prelude::{Layout, NodeId};
@@ -27,6 +28,7 @@ use std::time::{Duration, Instant};
 use web_time::{Duration, Instant};
 
 use peniko::kurbo::{Point, Rect, Size};
+use peniko::Brush;
 
 use crate::{
     context::{EventCx, UpdateCx},
@@ -94,6 +96,7 @@ pub struct TextInput {
     on_enter: Option<Box<dyn Fn()>>,
     placeholder_style: PlaceholderStyle,
     selection_style: SelectionStyle,
+    preedit: Option<Preedit>,
     // Index of where are we in the main buffer.
     cursor_glyph_idx: usize,
     // This can be retrieved from the glyph, but we store it for efficiency.
@@ -115,6 +118,8 @@ pub struct TextInput {
     is_focused: bool,
     last_pointer_down: Point,
     last_cursor_action_on: Instant,
+    window_origin: Option<Point>,
+    last_ime_cursor_area: Option<(Point, Size)>,
 }
 
 /// Type of cursor movement in navigation.
@@ -206,6 +211,7 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         placeholder_text: None,
         placeholder_style: Default::default(),
         selection_style: Default::default(),
+        preedit: None,
         buffer: BufferState {
             buffer,
             last_buffer: buffer.get_untracked(),
@@ -225,13 +231,17 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         last_pointer_down: Point::ZERO,
         last_cursor_action_on: Instant::now(),
         on_enter: None,
+        window_origin: None,
+        last_ime_cursor_area: None,
     }
     .keyboard_navigable()
     .on_event_stop(EventListener::FocusGained, move |_| {
         is_focused.set(true);
+        set_ime_allowed(true);
     })
     .on_event_stop(EventListener::FocusLost, move |_| {
         is_focused.set(false);
+        set_ime_allowed(false);
     })
     .class(TextInputClass)
 }
@@ -398,9 +408,21 @@ impl TextInput {
         }
     }
 
+    fn cursor_visual_idx(&self) -> usize {
+        let Some(preedit) = &self.preedit else {
+            return self.cursor_glyph_idx;
+        };
+
+        let Some(cursor) = preedit.cursor else {
+            return self.cursor_glyph_idx + preedit.text.len();
+        };
+
+        self.cursor_glyph_idx + cursor.0
+    }
+
     fn calculate_clip_offset(&mut self, node_layout: &Layout) {
         let node_width = node_layout.size.width as f64;
-        let cursor_glyph_pos = self.text_buf.hit_position(self.cursor_glyph_idx);
+        let cursor_glyph_pos = self.text_buf.hit_position(self.cursor_visual_idx());
         let cursor_x = cursor_glyph_pos.point.x;
 
         let mut clip_start_x = self.clip_start_x;
@@ -438,10 +460,10 @@ impl TextInput {
 
     fn scroll(&mut self, offset: f64) {
         self.clip_start_x += offset;
-        self.clip_start_x = self.clip_start_x.max(0.);
         self.clip_start_x = self
             .clip_start_x
-            .min(self.text_buf.size().width - self.width as f64);
+            .min(self.text_buf.size().width - self.width as f64)
+            .max(0.0);
     }
 
     fn handle_double_click(&mut self, pos_x: f64) {
@@ -480,7 +502,9 @@ impl TextInput {
 
     fn get_selection_rect(&self, node_layout: &Layout, left_padding: f64) -> Rect {
         let selection = if let Some(curr_selection) = &self.selection {
-            curr_selection
+            curr_selection.clone()
+        } else if let Some(cursor) = self.preedit.as_ref().and_then(|p| p.cursor) {
+            self.cursor_glyph_idx + cursor.0..self.cursor_glyph_idx + cursor.1
         } else {
             return Rect::ZERO;
         };
@@ -532,12 +556,72 @@ impl TextInput {
         };
     }
 
+    fn update_ime_cursor_area(&mut self) {
+        if !self.is_focused {
+            return;
+        }
+
+        let (Some(layout), Some(origin)) = (self.id.get_layout(), self.window_origin) else {
+            return;
+        };
+
+        let left_padding = layout.border.left + layout.padding.left;
+        let top_padding = layout.border.top + layout.padding.top;
+
+        let pos = Point::new(
+            origin.x + self.cursor_x - self.clip_start_x + left_padding as f64,
+            origin.y + top_padding as f64,
+        );
+
+        let width = self
+            .preedit
+            .as_ref()
+            .map(|preedit| {
+                let start_idx = preedit.offset;
+                let end_idx = start_idx + preedit.text.len();
+
+                let start_x = self.text_buf.hit_position(start_idx).point.x;
+                let end_x = self.text_buf.hit_position(end_idx).point.x;
+
+                (end_x - start_x).abs()
+            })
+            .unwrap_or_default();
+
+        let size = Size::new(width, layout.content_box_height() as f64);
+
+        if self.last_ime_cursor_area != Some((pos, size)) {
+            set_ime_cursor_area(pos, size);
+            self.last_ime_cursor_area = Some((pos, size));
+        }
+    }
+
+    fn commit_preedit(&mut self) -> bool {
+        if let Some(preedit) = self.preedit.take() {
+            self.buffer
+                .update(|buf| buf.insert_str(self.cursor_glyph_idx, &preedit.text));
+
+            if self.is_focused {
+                // toggle IME to flush external preedit state
+                set_ime_allowed(false);
+                set_ime_allowed(true);
+                // ime area will be set in compute_layout
+            }
+
+            self.update_text_layout();
+            true
+        } else {
+            false
+        }
+    }
+
     fn update_text_layout(&mut self) {
         let glyph_max_size = self.get_font_glyph_max_size();
         self.height = glyph_max_size.height as f32;
         self.glyph_max_size = glyph_max_size;
 
-        let buffer_is_empty = self.buffer.with_untracked(|buff| buff.is_empty());
+        let buffer_is_empty = self.buffer.with_untracked(|buff| {
+            buff.is_empty() && self.preedit.as_ref().is_none_or(|p| p.text.is_empty())
+        });
 
         if let (Some(placeholder_text), true) = (&self.placeholder_text, buffer_is_empty) {
             let attrs_list = self.get_placeholder_text_attrs();
@@ -550,7 +634,24 @@ impl TextInput {
             let attrs_list = self.get_text_attrs();
             let align = self.style.text_align();
             self.buffer.with_untracked(|buff| {
-                self.text_buf.set_text(buff, attrs_list.clone(), align);
+                let preedited;
+                let display_text = if let Some(preedit) = &self.preedit {
+                    let preedit_offset = self.cursor_glyph_idx.min(buff.len());
+
+                    preedited = [
+                        &buff[..preedit_offset],
+                        &preedit.text,
+                        &buff[preedit_offset..],
+                    ]
+                    .concat();
+
+                    &preedited
+                } else {
+                    buff
+                };
+
+                self.text_buf
+                    .set_text(display_text, attrs_list.clone(), align);
             });
         }
     }
@@ -716,14 +817,12 @@ impl TextInput {
                     return false;
                 }
 
-                if let Some(selection) = &self.selection {
+                if let Some(selection) = self.selection.take() {
                     self.buffer.update(|buf| {
                         replace_range(buf, selection.clone(), Some(&clipboard_content))
                     });
 
-                    self.cursor_glyph_idx +=
-                        clipboard_content.len() - selection.len().min(clipboard_content.len());
-                    self.selection = None;
+                    self.cursor_glyph_idx = selection.start + clipboard_content.len();
                 } else {
                     self.buffer
                         .update(|buf| buf.insert_str(self.cursor_glyph_idx, &clipboard_content));
@@ -1049,6 +1148,10 @@ impl View for TextInput {
 
             if self.is_focused != is_focused {
                 self.is_focused = is_focused;
+                self.last_ime_cursor_area = None;
+
+                self.commit_preedit();
+                self.update_ime_cursor_area();
 
                 if is_focused && !cx.app_state.is_active(&self.id) {
                     self.selection = None;
@@ -1068,6 +1171,7 @@ impl View for TextInput {
             });
 
             if text_updated {
+                self.update_text_layout();
                 self.id.request_layout();
             }
         } else {
@@ -1092,8 +1196,9 @@ impl View for TextInput {
                 },
             ) => {
                 cx.update_active(self.id);
-                self.id.request_layout();
                 self.last_pointer_down = event.pos;
+
+                self.commit_preedit();
 
                 if self.buffer.with_untracked(|buff| !buff.is_empty()) {
                     if event.count == 2 {
@@ -1109,7 +1214,9 @@ impl View for TextInput {
             }
             Event::PointerMove(event) => {
                 if cx.is_active(self.id) && self.buffer.with_untracked(|buff| !buff.is_empty()) {
-                    self.id.request_layout();
+                    if self.commit_preedit() {
+                        self.id.request_layout();
+                    }
 
                     if event.pos.x < 0. && event.pos.x < self.last_pointer_down.x {
                         self.scroll(event.pos.x);
@@ -1125,10 +1232,46 @@ impl View for TextInput {
                 false
             }
             Event::KeyDown(event) => self.handle_key_down(cx, event),
+            Event::ImePreedit { text, cursor } => {
+                if self.is_focused && !text.is_empty() {
+                    if let Some(selection) = self.selection.take() {
+                        self.cursor_glyph_idx = selection.start;
+                        self.buffer
+                            .update(|buf| replace_range(buf, selection.clone(), None));
+                    }
+
+                    let mut preedit = self.preedit.take().unwrap_or_else(|| Preedit {
+                        text: Default::default(),
+                        cursor: None,
+                        offset: 0,
+                    });
+                    preedit.text.clone_from(text);
+                    preedit.cursor = *cursor;
+                    self.preedit = Some(preedit);
+
+                    true
+                } else {
+                    // clear preedit and queue UI update
+                    self.preedit.take().is_some()
+                }
+            }
+            Event::ImeCommit(text) => {
+                if self.is_focused {
+                    self.buffer
+                        .update(|buf| buf.insert_str(self.cursor_glyph_idx, text));
+                    self.cursor_glyph_idx += text.len();
+                    self.preedit = None;
+
+                    true
+                } else {
+                    false
+                }
+            }
             _ => false,
         };
 
         if is_handled {
+            self.update_text_layout();
             self.id.request_layout();
             self.last_cursor_action_on = Instant::now();
         }
@@ -1228,9 +1371,7 @@ impl View for TextInput {
         })
     }
 
-    fn compute_layout(&mut self, _cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
-        self.update_text_layout();
-
+    fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
         let buf_width = self.text_buf.size().width;
         let text_node = self.text_node.unwrap();
         let node_layout = self
@@ -1246,9 +1387,12 @@ impl View for TextInput {
             self.calculate_clip_offset(&node_layout);
         } else {
             self.clip_start_x = 0.0;
-            let hit_pos = self.text_buf.hit_position(self.cursor_glyph_idx);
+            let hit_pos = self.text_buf.hit_position(self.cursor_visual_idx());
             self.cursor_x = hit_pos.point.x;
         }
+
+        self.window_origin = Some(cx.window_origin);
+        self.update_ime_cursor_area();
 
         None
     }
@@ -1272,14 +1416,52 @@ impl View for TextInput {
             &self.text_buf,
             Point::new(text_start_point.x - self.clip_start_x, text_start_point.y),
         );
+
+        // underline the preedit text
+        if let Some(preedit) = &self.preedit {
+            let start_idx = self.cursor_glyph_idx;
+            let end_idx = start_idx + preedit.text.len();
+
+            let start_hit = self.text_buf.hit_position(start_idx);
+            let start_x = location.x as f64 + start_hit.point.x - self.clip_start_x;
+            let end_x =
+                location.x as f64 + self.text_buf.hit_position(end_idx).point.x - self.clip_start_x;
+
+            let color = self.style.color().unwrap_or(palette::css::BLACK);
+            let y = location.y as f64 + start_hit.glyph_ascent;
+
+            cx.fill(
+                &Rect::new(start_x, y, end_x, y + 1.0),
+                &Brush::Solid(color),
+                0.0,
+            );
+        }
+
         cx.restore();
 
-        let is_cursor_visible = cx.app_state.is_focused(&self.id())
-            && self.selection.is_none()
-            && (self.last_cursor_action_on.elapsed().as_millis()
-                / CURSOR_BLINK_INTERVAL_MS as u128)
-                % 2
-                == 0;
+        // skip rendering selection / cursor if we don't have focus
+        if !cx.app_state.is_focused(&self.id()) {
+            return;
+        }
+
+        // see if we have a selection range
+        let has_selection = self.selection.is_some()
+            || self
+                .preedit
+                .as_ref()
+                .is_some_and(|p| p.cursor.is_some_and(|c| c.0 != c.1));
+
+        if has_selection {
+            self.paint_selection_rect(&node_layout, cx);
+            // we can skip drawing a cursor and handling blink
+            return;
+        }
+
+        // see if we should render the cursor
+        let is_cursor_visible = (self.last_cursor_action_on.elapsed().as_millis()
+            / CURSOR_BLINK_INTERVAL_MS as u128)
+            % 2
+            == 0;
 
         if is_cursor_visible {
             let cursor_color = self
@@ -1293,10 +1475,7 @@ impl View for TextInput {
             cx.fill(&cursor_rect, &cursor_color, 0.0);
         }
 
-        if cx.app_state.is_focused(&self.id()) && self.selection.is_some() {
-            self.paint_selection_rect(&node_layout, cx);
-        }
-
+        // request paint either way if we're attempting draw a cursor
         let id = self.id();
         exec_after(Duration::from_millis(CURSOR_BLINK_INTERVAL_MS), move |_| {
             id.request_paint();
