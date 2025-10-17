@@ -247,7 +247,9 @@ impl DocumentPhantom for TextDocument {
     fn phantom_text(&self, edid: EditorId, styling: &EditorStyle, line: usize) -> PhantomTextLine {
         let mut text = SmallVec::new();
 
-        if self.buffer.with_untracked(Buffer::is_empty) {
+        if self.buffer.with_untracked(Buffer::is_empty)
+            && self.preedit.preedit.with_untracked(|p| p.is_none())
+        {
             if let Some(placeholder) = self.placeholder(edid) {
                 text.push(PhantomText {
                     kind: PhantomTextKind::Placeholder,
