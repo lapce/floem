@@ -176,3 +176,27 @@ where
         (result, scope)
     }
 }
+
+pub fn as_child_of_current_scope2<T, U>(f: impl Fn(&T) -> U + 'static) -> impl Fn(&T) -> (U, Scope)
+where
+    T: 'static,
+{
+    let current_scope = Scope::current();
+    move |t| {
+        let scope = current_scope.create_child();
+        let prev_scope = RUNTIME.with(|runtime| {
+            let mut current_scope = runtime.current_scope.borrow_mut();
+            let prev_scope = *current_scope;
+            *current_scope = scope.0;
+            prev_scope
+        });
+
+        let result = f(t);
+
+        RUNTIME.with(|runtime| {
+            *runtime.current_scope.borrow_mut() = prev_scope;
+        });
+
+        (result, scope)
+    }
+}
