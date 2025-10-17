@@ -10,11 +10,10 @@ use std::{
 };
 
 use crate::{
-    action::{exec_after, TimerToken},
+    action::{exec_after, set_ime_allowed, TimerToken},
     keyboard::Modifiers,
-    kurbo::{Point, Rect, Vec2},
-    peniko::color::palette,
-    peniko::Color,
+    kurbo::{Point, Rect, Size, Vec2},
+    peniko::{color::palette, Brush, Color},
     pointer::{PointerInputEvent, PointerMoveEvent},
     prop, prop_extractor,
     reactive::{batch, untrack, ReadSignal, RwSignal, Scope},
@@ -54,7 +53,6 @@ pub mod view;
 pub mod visual_line;
 
 pub use floem_editor_core as core;
-use peniko::Brush;
 
 use self::{
     command::Command,
@@ -168,6 +166,7 @@ pub struct Editor {
     pub viewport: RwSignal<Rect>,
     pub parent_size: RwSignal<Rect>,
 
+    pub(crate) editor_view_focused_value: RwSignal<bool>,
     pub editor_view_focused: Trigger,
     pub editor_view_focus_lost: Trigger,
     pub editor_view_id: RwSignal<Option<crate::id::ViewId>>,
@@ -190,6 +189,8 @@ pub struct Editor {
     /// Whether ime input is allowed.  
     /// Should not be set manually outside of the specific handling for ime.
     pub ime_allowed: RwSignal<bool>,
+    pub(crate) ime_cursor_area: RwSignal<Option<(Point, Size)>>,
+    owns_preedit: RwSignal<bool>,
 
     /// The Editor Style
     pub es: RwSignal<EditorStyle>,
@@ -286,6 +287,7 @@ impl Editor {
             parent_size: cx.create_rw_signal(Rect::ZERO),
             scroll_delta: cx.create_rw_signal(Vec2::ZERO),
             scroll_to: cx.create_rw_signal(None),
+            editor_view_focused_value: cx.create_rw_signal(false),
             editor_view_focused: cx.create_trigger(),
             editor_view_focus_lost: cx.create_trigger(),
             editor_view_id: cx.create_rw_signal(None),
@@ -295,6 +297,8 @@ impl Editor {
             cursor_info: CursorInfo::new(cx),
             last_movement: cx.create_rw_signal(Movement::Left),
             ime_allowed: cx.create_rw_signal(false),
+            ime_cursor_area: cx.create_rw_signal(None),
+            owns_preedit: cx.create_rw_signal(false),
             es: editor_style,
             floem_style_id: cx.create_rw_signal(0),
         };
@@ -455,6 +459,10 @@ impl Editor {
                 *cache_rev += 1;
             });
 
+            if self.preedit().preedit.with_untracked(|p| p.is_none()) {
+                self.owns_preedit.set(true);
+            }
+
             // Updating preedit after cache_rev prevents crashes in IME effects.
             // Test by pasting `で` and typing a byte before `で` through IME
             self.preedit().preedit.set(Some(Preedit {
@@ -465,25 +473,41 @@ impl Editor {
         });
     }
 
-    pub fn set_preedit_offset(&self, offset: usize) {
-        if self.preedit().preedit.with_untracked(|p| p.is_none()) {
+    pub fn commit_preedit(&self) {
+        if !self.owns_preedit.get_untracked() {
             return;
         }
 
         batch(|| {
-            self.preedit().preedit.update(|preedit| {
-                if let Some(preedit) = preedit {
-                    preedit.offset = offset;
-                }
+            self.owns_preedit.set(false);
+
+            let commited = self.preedit().preedit.with_untracked(|preedit| {
+                let Some(preedit) = preedit else {
+                    return false;
+                };
+
+                self.receive_char(&preedit.text);
+
+                true
             });
 
-            self.doc().cache_rev().update(|cache_rev| {
-                *cache_rev += 1;
-            });
+            if !commited {
+                return;
+            }
+
+            self.preedit().preedit.set(None);
+            self.ime_cursor_area.set(None);
+
+            if self.editor_view_focused_value.get_untracked() {
+                set_ime_allowed(false);
+                set_ime_allowed(true);
+            }
         });
     }
 
     pub fn clear_preedit(&self) {
+        self.owns_preedit.set(false);
+
         let preedit = self.preedit();
         if preedit.preedit.with_untracked(|preedit| preedit.is_none()) {
             return;
@@ -534,6 +558,8 @@ impl Editor {
     }
 
     pub fn single_click(&self, pointer_event: &PointerInputEvent) {
+        self.commit_preedit();
+
         let mode = self.cursor.with_untracked(|c| c.get_mode());
         let (new_offset, _, mut affinity) = self.offset_of_point(mode, pointer_event.pos);
 
@@ -550,11 +576,11 @@ impl Editor {
                 pointer_event.modifiers.alt(),
             );
         });
-
-        self.set_preedit_offset(new_offset);
     }
 
     pub fn double_click(&self, pointer_event: &PointerInputEvent) {
+        self.commit_preedit();
+
         let mode = self.cursor.with_untracked(|c| c.get_mode());
         let (mouse_offset, ..) = self.offset_of_point(mode, pointer_event.pos);
         let (start, end) = self.select_word(mouse_offset);
@@ -571,6 +597,8 @@ impl Editor {
     }
 
     pub fn triple_click(&self, pointer_event: &PointerInputEvent) {
+        self.commit_preedit();
+
         let mode = self.cursor.with_untracked(|c| c.get_mode());
         let (mouse_offset, ..) = self.offset_of_point(mode, pointer_event.pos);
         let line = self.line_of_offset(mouse_offset);
@@ -592,6 +620,8 @@ impl Editor {
         let mode = self.cursor.with_untracked(|c| c.get_mode());
         let (offset, _, affinity) = self.offset_of_point(mode, pointer_event.pos);
         if self.active.get_untracked() && self.cursor.with_untracked(|c| c.offset()) != offset {
+            self.commit_preedit();
+
             self.cursor.update(|cursor| {
                 cursor.set_offset(offset, affinity, true, pointer_event.modifiers.alt())
             });

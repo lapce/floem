@@ -964,8 +964,8 @@ pub fn editor_view(
     let cursor_memo = create_memo(move |_| cursor.with(|c| (c.is_insert(), c.offset())));
     let allows_ime = ed.ime_allowed;
     let editor_viewport = ed.viewport;
-    let has_focus = RwSignal::new(false);
-    let prev_ime_area = RwSignal::new(None);
+    let focused = ed.editor_view_focused_value;
+    let prev_ime_area = ed.ime_cursor_area;
     let preedit = ed.preedit().preedit;
 
     create_effect(move |_| {
@@ -974,7 +974,7 @@ pub fn editor_view(
         }
 
         let (allowing_ime, offset) = cursor_memo.get();
-        let focused = has_focus.get();
+        let focused = focused.get();
 
         // apply ime state changes
         if allows_ime.get_untracked() != allowing_ime {
@@ -1026,7 +1026,7 @@ pub fn editor_view(
     }
     .keyboard_navigable()
     .on_event_cont(EventListener::FocusGained, move |_| {
-        has_focus.set(true);
+        focused.set(true);
         prev_ime_area.set(None);
 
         if allows_ime.get_untracked() {
@@ -1034,12 +1034,12 @@ pub fn editor_view(
         }
     })
     .on_event_cont(EventListener::FocusLost, move |_| {
-        has_focus.set(false);
-        editor.with_untracked(|ed| ed.clear_preedit());
+        focused.set(false);
+        editor.with_untracked(|ed| ed.commit_preedit());
         set_ime_allowed(false);
     })
     .on_event(EventListener::ImePreedit, move |event| {
-        if !is_active.get_untracked() || !has_focus {
+        if !is_active.get_untracked() || !focused.get_untracked() {
             return EventPropagation::Continue;
         }
 
@@ -1061,7 +1061,7 @@ pub fn editor_view(
         EventPropagation::Stop
     })
     .on_event(EventListener::ImeCommit, move |event| {
-        if !is_active.get_untracked() || !has_focus {
+        if !is_active.get_untracked() || !focused.get_untracked() {
             return EventPropagation::Continue;
         }
 
