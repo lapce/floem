@@ -451,20 +451,22 @@ impl Editor {
 
     pub fn set_preedit(&self, text: String, cursor: Option<(usize, usize)>, offset: usize) {
         batch(|| {
+            self.doc().cache_rev().update(|cache_rev| {
+                *cache_rev += 1;
+            });
+
+            // Updating preedit after cache_rev prevents crashes in IME effects.
+            // Test by pasting `で` and typing a byte before `で` through IME
             self.preedit().preedit.set(Some(Preedit {
                 text,
                 cursor,
                 offset,
             }));
-
-            self.doc().cache_rev().update(|cache_rev| {
-                *cache_rev += 1;
-            });
         });
     }
 
     pub fn set_preedit_offset(&self, offset: usize) {
-        if self.preedit().preedit.get_untracked().is_none() {
+        if self.preedit().preedit.with_untracked(|p| p.is_none()) {
             return;
         }
 
@@ -963,12 +965,8 @@ impl Editor {
         let line = self.line_of_offset(offset);
         let line_height = f64::from(self.style().line_height(self.id(), line));
 
-        let info = self.screen_lines.with_untracked(|sl| {
-            sl.iter_line_info().find(|info| {
-                info.vline_info.interval.start <= offset && offset <= info.vline_info.interval.end
-            })
-        });
-        let Some(info) = info else {
+        let vline = self.rvline_info_of_offset(offset, affinity);
+        let Some(info) = self.screen_lines.with_untracked(|sl| sl.info(vline.rvline)) else {
             // TODO: We could do a smarter method where we get the approximate y position
             // because, for example, this spot could be folded away, and so it would be better to
             // supply the *nearest* position on the screen.

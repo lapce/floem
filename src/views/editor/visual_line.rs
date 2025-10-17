@@ -1033,8 +1033,9 @@ fn find_vline_of_offset(
 
     let col = offset - line_start_offset;
 
-    let (vline, line_index) = find_start_line_index(text_prov, text_layout, buffer_line, col)
-        .map(|line_index| (VLine(vline.get() + line_index), line_index))?;
+    let (vline, line_index) =
+        find_start_line_index(text_prov, text_layout, buffer_line, col, affinity)
+            .map(|line_index| (VLine(vline.get() + line_index), line_index))?;
 
     // If the most recent line break was due to a soft line break,
     if line_index > 0 {
@@ -1074,7 +1075,7 @@ fn find_rvline_of_offset(
 
     let col = offset - line_start_offset;
 
-    let rv = find_start_line_index(text_prov, text_layout, buffer_line, col)
+    let rv = find_start_line_index(text_prov, text_layout, buffer_line, col, affinity)
         .map(|line_index| RVLine::new(buffer_line, line_index))?;
 
     // If the most recent line break was due to a soft line break,
@@ -1110,6 +1111,7 @@ fn find_start_line_index(
     text_layout: &TextLayoutLine,
     line: usize,
     col: usize,
+    affinity: CursorAffinity,
 ) -> Option<usize> {
     let mut starts = text_layout
         .layout_cols(text_prov, line)
@@ -1117,10 +1119,12 @@ fn find_start_line_index(
         .peekable();
 
     while let Some((i, (layout_start, _))) = starts.next() {
-        // TODO: we should just apply after_col to col to do this transformation once
-        let layout_start = text_prov.before_phantom_col(line, layout_start);
-        if layout_start >= col {
-            return Some(i);
+        if affinity == CursorAffinity::Backward {
+            // TODO: we should just apply after_col to col to do this transformation once
+            let layout_start = text_prov.before_phantom_col(line, layout_start);
+            if layout_start >= col {
+                return Some(i);
+            }
         }
 
         let next_start = starts

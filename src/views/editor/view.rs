@@ -954,33 +954,62 @@ pub fn editor_view(
 
     let editor_window_origin = ed.window_origin;
     let cursor = ed.cursor;
-    let ime_allowed = ed.ime_allowed;
+    let cursor_memo = create_memo(move |_| cursor.with(|c| (c.is_insert(), c.offset())));
+    let allows_ime = ed.ime_allowed;
     let editor_viewport = ed.viewport;
+    let has_focus = RwSignal::new(false);
+    let prev_ime_area = RwSignal::new(None);
+    let preedit = ed.preedit().preedit;
+
     create_effect(move |_| {
-        let active = is_active.get();
-        if active {
-            if !cursor.with(|c| c.is_insert()) {
-                if ime_allowed.get_untracked() {
-                    ime_allowed.set(false);
-                    set_ime_allowed(false);
-                }
-            } else {
-                if !ime_allowed.get_untracked() {
-                    ime_allowed.set(true);
-                    set_ime_allowed(true);
-                }
-                let (offset, affinity) = cursor.with(|c| (c.offset(), c.affinity()));
-                let (_, point_below) = ed.points_of_offset(offset, affinity);
-                let window_origin = editor_window_origin.get();
-                let viewport = editor_viewport.get();
-                let pos =
-                    window_origin + (point_below.x - viewport.x0, point_below.y - viewport.y0);
-                set_ime_cursor_area(pos, Size::new(800.0, 600.0));
+        if !is_active.get() {
+            return;
+        }
+
+        let (allowing_ime, offset) = cursor_memo.get();
+        let focused = has_focus.get();
+
+        // apply ime state changes
+        if allows_ime.get_untracked() != allowing_ime {
+            allows_ime.set(allowing_ime);
+
+            if focused {
+                set_ime_allowed(allowing_ime);
             }
         }
-    });
 
-    let has_focus = RwSignal::new(false);
+        if !allowing_ime || !focused {
+            // avoid resolving cursor area if we don't need it
+            return;
+        }
+
+        // subscribe to preedit changes, as it affects the CursorAffinity::Forward calculation
+        preedit.with(|_| {});
+
+        let (point_above, _) = ed.points_of_offset(offset, CursorAffinity::Backward);
+        let (point_above2, point_below) = ed.points_of_offset(offset, CursorAffinity::Forward);
+
+        let viewport = editor_viewport.get();
+        let (min_x, max_x);
+
+        if point_above.y != point_above2.y {
+            // multiline
+            min_x = 0.0;
+            max_x = viewport.x1 - viewport.x0;
+        } else {
+            min_x = point_above.x.min(point_above2.x);
+            max_x = point_above.x.max(point_above2.x);
+        }
+
+        let window_origin = editor_window_origin.get();
+        let pos = window_origin + (min_x - viewport.x0, point_above.y - viewport.y0);
+        let size = Size::new(max_x - min_x, point_below.y - point_above.y);
+
+        if prev_ime_area.get_untracked() != Some((pos, size)) {
+            set_ime_cursor_area(pos, size);
+            prev_ime_area.set(Some((pos, size)));
+        }
+    });
 
     EditorView {
         id,
@@ -989,13 +1018,18 @@ pub fn editor_view(
         inner_node: None,
     }
     .keyboard_navigable()
-    .on_event(EventListener::FocusGained, move |_| {
+    .on_event_cont(EventListener::FocusGained, move |_| {
         has_focus.set(true);
-        EventPropagation::Continue
+        prev_ime_area.set(None);
+
+        if allows_ime.get_untracked() {
+            set_ime_allowed(true);
+        }
     })
-    .on_event(EventListener::FocusLost, move |_| {
+    .on_event_cont(EventListener::FocusLost, move |_| {
         has_focus.set(false);
-        EventPropagation::Continue
+        editor.with_untracked(|ed| ed.clear_preedit());
+        set_ime_allowed(false);
     })
     .on_event(EventListener::ImePreedit, move |event| {
         if !is_active.get_untracked() || !has_focus {
