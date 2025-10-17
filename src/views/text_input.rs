@@ -119,6 +119,7 @@ pub struct TextInput {
     last_pointer_down: Point,
     last_cursor_action_on: Instant,
     window_origin: Option<Point>,
+    last_ime_cursor_area: Option<(Point, Size)>,
 }
 
 /// Type of cursor movement in navigation.
@@ -231,6 +232,7 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         last_cursor_action_on: Instant::now(),
         on_enter: None,
         window_origin: None,
+        last_ime_cursor_area: None,
     }
     .keyboard_navigable()
     .on_event_stop(EventListener::FocusGained, move |_| {
@@ -554,7 +556,7 @@ impl TextInput {
         };
     }
 
-    fn update_ime_cursor_area(&self) {
+    fn update_ime_cursor_area(&mut self) {
         if !self.is_focused {
             return;
         }
@@ -586,7 +588,11 @@ impl TextInput {
             .unwrap_or_default();
 
         let size = Size::new(width, layout.content_box_height() as f64);
-        set_ime_cursor_area(pos, size);
+
+        if self.last_ime_cursor_area != Some((pos, size)) {
+            set_ime_cursor_area(pos, size);
+            self.last_ime_cursor_area = Some((pos, size));
+        }
     }
 
     fn commit_preedit(&mut self) -> bool {
@@ -1142,6 +1148,7 @@ impl View for TextInput {
 
             if self.is_focused != is_focused {
                 self.is_focused = is_focused;
+                self.last_ime_cursor_area = None;
 
                 self.commit_preedit();
                 self.update_ime_cursor_area();
