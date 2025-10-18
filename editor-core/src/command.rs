@@ -30,6 +30,9 @@ pub enum EditCommand {
     #[strum(message = "Delete Forward")]
     #[strum(serialize = "delete_forward")]
     DeleteForward,
+    #[strum(message = "Delete Selection")]
+    #[strum(serialize = "delete_selection")]
+    DeleteSelection,
     #[strum(message = "Delete Line")]
     #[strum(serialize = "delete_line")]
     DeleteLine,
