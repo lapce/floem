@@ -2,12 +2,10 @@ use std::{hash::Hash, marker::PhantomData};
 
 use floem_reactive::{Scope, as_child_of_current_scope, create_effect};
 use smallvec::SmallVec;
-use taffy::style::Display;
 
 use crate::{
     context::{StyleCx, UpdateCx},
     id::ViewId,
-    style::DisplayProp,
     style_class,
     view::{IntoView, View},
 };

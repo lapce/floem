@@ -31,7 +31,7 @@ pub fn button_view() -> impl IntoView {
                         .cursor(CursorStyle::Pointer)
                         .active(|s| s.color(palette::css::WHITE).background(palette::css::RED))
                         .hover(|s| s.background(Color::from_rgb8(244, 67, 54)))
-                        .focus_visible(|s| s.border(2.).border_color(palette::css::BLUE))
+                        .focus_visible(|s| s.outline(2.).outline_color(palette::css::BLUE))
                 }),
         ),
         form_item(

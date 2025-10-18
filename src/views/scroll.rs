@@ -439,7 +439,12 @@ impl Scroll {
     fn update_size(&mut self) {
         self.child_size = self.child_size();
         self.content_rect = self.id.get_content_rect();
-        self.total_rect = self.id.get_size().unwrap_or_default().to_rect();
+        let new_total_rect = self.id.get_size().unwrap_or_default().to_rect();
+        if new_total_rect != self.total_rect {
+            self.total_rect = new_total_rect;
+            // request style so that the paddig for the scroll bar can be shown
+            self.id.request_style();
+        }
     }
 
     fn clamp_child_viewport(
@@ -545,7 +550,7 @@ impl Scroll {
             }
         };
 
-        if let Some(bounds) = self.calc_vertical_bar_bounds(cx.app_state) {
+        if let Some(bounds) = self.calc_vertical_bar_bounds() {
             let style = self.v_handle_style();
             let track_style =
                 if self.v_track_hover || matches!(self.held, BarHeldState::Vertical(..)) {
@@ -570,7 +575,7 @@ impl Scroll {
         }
 
         // Horizontal bar
-        if let Some(bounds) = self.calc_horizontal_bar_bounds(cx.app_state) {
+        if let Some(bounds) = self.calc_horizontal_bar_bounds() {
             let style = self.h_handle_style();
             let track_style =
                 if self.h_track_hover || matches!(self.held, BarHeldState::Horizontal(..)) {
@@ -595,7 +600,7 @@ impl Scroll {
         }
     }
 
-    fn calc_vertical_bar_bounds(&self, _app_state: &mut AppState) -> Option<Rect> {
+    fn calc_vertical_bar_bounds(&self) -> Option<Rect> {
         let viewport_size = self.child_viewport.size();
         let content_size = self.child_size;
         let scroll_offset = self.child_viewport.origin().to_vec2();
@@ -628,7 +633,7 @@ impl Scroll {
         Some(Rect::new(x0, y0, x1, y1))
     }
 
-    fn calc_horizontal_bar_bounds(&self, _app_state: &mut AppState) -> Option<Rect> {
+    fn calc_horizontal_bar_bounds(&self) -> Option<Rect> {
         let viewport_size = self.child_viewport.size();
         let content_size = self.child_size;
         let scroll_offset = self.child_viewport.origin().to_vec2();
@@ -683,8 +688,8 @@ impl Scroll {
         self.do_scroll_to(app_state, new_origin);
     }
 
-    fn point_hits_vertical_bar(&self, app_state: &mut AppState, pos: Point) -> bool {
-        if let Some(mut bounds) = self.calc_vertical_bar_bounds(app_state) {
+    fn point_hits_vertical_bar(&self, pos: Point) -> bool {
+        if let Some(mut bounds) = self.calc_vertical_bar_bounds() {
             // Stretch hitbox to edge of widget
             let scroll_offset = self.child_viewport.origin().to_vec2();
             bounds.x1 = self.total_rect.x1 + scroll_offset.x;
@@ -694,8 +699,8 @@ impl Scroll {
         }
     }
 
-    fn point_hits_horizontal_bar(&self, app_state: &mut AppState, pos: Point) -> bool {
-        if let Some(mut bounds) = self.calc_horizontal_bar_bounds(app_state) {
+    fn point_hits_horizontal_bar(&self, pos: Point) -> bool {
+        if let Some(mut bounds) = self.calc_horizontal_bar_bounds() {
             // Stretch hitbox to edge of widget
             let scroll_offset = self.child_viewport.origin().to_vec2();
             bounds.y1 = self.total_rect.y1 + scroll_offset.y;
@@ -705,8 +710,8 @@ impl Scroll {
         }
     }
 
-    fn point_hits_vertical_handle(&self, app_state: &mut AppState, pos: Point) -> bool {
-        if let Some(mut bounds) = self.calc_vertical_bar_bounds(app_state) {
+    fn point_hits_vertical_handle(&self, pos: Point) -> bool {
+        if let Some(mut bounds) = self.calc_vertical_bar_bounds() {
             // Stretch hitbox to edge of widget
             let scroll_offset = self.child_viewport.origin().to_vec2();
             bounds.x1 = self.total_rect.x1 + scroll_offset.x;
@@ -716,8 +721,8 @@ impl Scroll {
         }
     }
 
-    fn point_hits_horizontal_handle(&self, app_state: &mut AppState, pos: Point) -> bool {
-        if let Some(mut bounds) = self.calc_horizontal_bar_bounds(app_state) {
+    fn point_hits_horizontal_handle(&self, pos: Point) -> bool {
+        if let Some(mut bounds) = self.calc_horizontal_bar_bounds() {
             // Stretch hitbox to edge of widget
             let scroll_offset = self.child_viewport.origin().to_vec2();
             bounds.y1 = self.total_rect.y1 + scroll_offset.y;
@@ -735,22 +740,22 @@ impl Scroll {
     fn update_hover_states(&mut self, app_state: &mut AppState, pos: Point) {
         let scroll_offset = self.child_viewport.origin().to_vec2();
         let pos = pos + scroll_offset;
-        let hover = self.point_hits_vertical_handle(app_state, pos);
+        let hover = self.point_hits_vertical_handle(pos);
         if self.v_handle_hover != hover {
             self.v_handle_hover = hover;
             app_state.request_paint(self.id());
         }
-        let hover = self.point_hits_horizontal_handle(app_state, pos);
+        let hover = self.point_hits_horizontal_handle(pos);
         if self.h_handle_hover != hover {
             self.h_handle_hover = hover;
             app_state.request_paint(self.id());
         }
-        let hover = self.point_hits_vertical_bar(app_state, pos);
+        let hover = self.point_hits_vertical_bar(pos);
         if self.v_track_hover != hover {
             self.v_track_hover = hover;
             app_state.request_paint(self.id());
         }
-        let hover = self.point_hits_horizontal_bar(app_state, pos);
+        let hover = self.point_hits_horizontal_bar(pos);
         if self.h_track_hover != hover {
             self.h_track_hover = hover;
             app_state.request_paint(self.id());
@@ -822,7 +827,6 @@ impl View for Scroll {
         Some(
             Style::new()
                 .items_start()
-                .padding_right(self.track_style.thickness())
                 .set(OverflowX, taffy::Overflow::Scroll)
                 .set(OverflowY, taffy::Overflow::Scroll),
         )
@@ -910,8 +914,8 @@ impl View for Scroll {
 
                     let pos = event.pos + scroll_offset;
 
-                    if self.point_hits_vertical_bar(cx.app_state, pos) {
-                        if self.point_hits_vertical_handle(cx.app_state, pos) {
+                    if self.point_hits_vertical_bar(pos) {
+                        if self.point_hits_vertical_handle(pos) {
                             self.held = BarHeldState::Vertical(
                                 // The bounds must be non-empty, because the point hits the scrollbar.
                                 event.pos.y,
@@ -931,8 +935,8 @@ impl View for Scroll {
                         );
                         cx.update_active(self.id());
                         return EventPropagation::Stop;
-                    } else if self.point_hits_horizontal_bar(cx.app_state, pos) {
-                        if self.point_hits_horizontal_handle(cx.app_state, pos) {
+                    } else if self.point_hits_horizontal_bar(pos) {
+                        if self.point_hits_horizontal_handle(pos) {
                             self.held = BarHeldState::Horizontal(
                                 // The bounds must be non-empty, because the point hits the scrollbar.
                                 event.pos.x,
@@ -989,8 +993,8 @@ impl View for Scroll {
                             }
                             BarHeldState::None => {}
                         }
-                    } else if self.point_hits_vertical_bar(cx.app_state, pos)
-                        || self.point_hits_horizontal_bar(cx.app_state, pos)
+                    } else if self.point_hits_vertical_bar(pos)
+                        || self.point_hits_horizontal_bar(pos)
                     {
                         return EventPropagation::Stop;
                     }

@@ -280,7 +280,7 @@ impl ViewId {
     pub fn is_hidden(&self) -> bool {
         let state = self.state();
         let state = state.borrow();
-        state.combined_style.get(Hidden) || state.combined_style.get(DisplayProp) == Display::None
+        state.computed_style.get(Hidden) || state.computed_style.get(DisplayProp) == Display::None
     }
 
     /// Returns true if the view is disabled
@@ -289,7 +289,7 @@ impl ViewId {
     pub fn is_disabled(&self) -> bool {
         let state = self.state();
         let state = state.borrow();
-        state.combined_style.get(Disabled)
+        state.computed_style.get(Disabled)
     }
 
     /// Returns true if the view is selected
@@ -298,14 +298,14 @@ impl ViewId {
     pub fn is_selected(&self) -> bool {
         let state = self.state();
         let state = state.borrow();
-        state.combined_style.get(Disabled)
+        state.computed_style.get(Disabled)
     }
 
     /// Check if this id can be focused.
     ///
     /// This is done by checking if the style for this view has `Focusable` set to true.
     pub fn can_focus(&self) -> bool {
-        self.state().borrow().combined_style.get(Focusable)
+        self.state().borrow().computed_style.get(Focusable)
     }
 
     /// Request that this the `id` view be styled, laid out and painted again.

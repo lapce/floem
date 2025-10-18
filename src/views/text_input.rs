@@ -27,8 +27,8 @@ use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
 use web_time::{Duration, Instant};
 
-use peniko::kurbo::{Point, Rect, Size};
 use peniko::Brush;
+use peniko::kurbo::{Point, Rect, Size};
 
 use crate::{
     context::{EventCx, UpdateCx},
@@ -1296,6 +1296,9 @@ impl View for TextInput {
         }
         if self.style.read(cx) {
             cx.app_state_mut().request_paint(self.id);
+
+            // necessary to update the text layout attrs
+            self.update_text_layout();
         }
 
         self.selection_style.read_style(cx, &style);
@@ -1461,8 +1464,7 @@ impl View for TextInput {
         // see if we should render the cursor
         let is_cursor_visible = (self.last_cursor_action_on.elapsed().as_millis()
             / CURSOR_BLINK_INTERVAL_MS as u128)
-            % 2
-            == 0;
+            .is_multiple_of(2);
 
         if is_cursor_visible {
             let cursor_color = self

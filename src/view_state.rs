@@ -279,6 +279,7 @@ impl ViewState {
         combined_style.apply_interact_state(&interact_state, screen_size_bp);
         combined_style = combined_style.apply_context_mappings(context);
         combined_style.apply_interact_state(&interact_state, screen_size_bp);
+        // combined_style = combined_style.apply_context_mappings(context);
         // TODO: recursively resolve nested maps
 
         for animation in self

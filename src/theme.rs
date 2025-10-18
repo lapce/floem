@@ -675,7 +675,14 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                         .padding_vert(3)
                         .apply(overlay_style())
                         .items_center()
-                        .class(ListItemClass, move |s| s.padding(6))
+                        .class(ListItemClass, move |s| {
+                            s.padding(6).with_theme(|s, t| {
+                                s.hover(|s| {
+                                    s.background(t.bg_elevated())
+                                        .selected(|s| s.background(t.primary_muted()))
+                                })
+                            })
+                        })
                 })
         })
         .class(ResizableClass, |s| {

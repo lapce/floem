@@ -2121,22 +2121,18 @@ impl Style {
             .and_then(|v| v.downcast_ref::<Vec<ContextMapFn>>())
             .cloned()
         {
-            // Remove the mappings from self before applying them
             self.map.remove(&key);
 
-            // Apply each mapping function with the context
             for mapping in mappings {
                 self = mapping(self, context);
             }
 
-            // After running mappings, check if the result has NEW mappings and apply them recursively
             self = self.apply_context_mappings(context);
         }
 
         self
     }
 
-    /// Apply all context mappings using prop values from context
     pub(crate) fn apply_context_mappings_mut(&mut self) {
         let key = StyleKey {
             info: &CONTEXT_MAPPINGS_INFO,
@@ -2147,17 +2143,13 @@ impl Style {
             .get(&key)
             .and_then(|v| v.downcast_ref::<Vec<ContextMapFn>>())
             .cloned()
-        // Clone the Vec to avoid borrow issues
         {
-            // Remove the mappings from self before applying them
             self.map.remove(&key);
 
-            // Then run the mappings
             for mapping in mappings {
                 *self = mapping(self.clone(), self);
             }
 
-            // After running mappings, check if the result has NEW mappings and apply them recursively
             self.apply_context_mappings_mut();
         }
     }
