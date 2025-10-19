@@ -442,7 +442,7 @@ impl Selection {
     pub fn delete_range(&mut self, start: usize, end: usize) {
         let mut first = self.search(start);
         let mut last = self.search(end);
-        if first >= self.regions.len() || first == last {
+        if first >= self.regions.len() {
             return;
         }
         if self.regions[first].max() == start {
@@ -451,7 +451,18 @@ impl Selection {
         if last < self.regions.len() && self.regions[last].min() < end {
             last += 1;
         }
+        if first > last {
+            return;
+        }
+        let count = last - first;
+
         remove_n_at(&mut self.regions, first, last - first);
+
+        if self.last_inserted >= last {
+            self.last_inserted -= count;
+        } else if self.last_inserted >= first {
+            self.last_inserted = first.saturating_sub(1);
+        }
     }
 
     /// Add a regions to [`self`]. Note that if provided region overlaps
