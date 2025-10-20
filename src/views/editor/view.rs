@@ -18,6 +18,7 @@ use crate::{
     Renderer,
 };
 use floem_editor_core::{
+    command::EditCommand,
     cursor::{ColPosition, CursorAffinity, CursorMode},
     mode::{Mode, VisualMode},
 };
@@ -31,7 +32,7 @@ use crate::views::editor::{
     visual_line::{RVLine, VLineInfo},
 };
 
-use super::{Editor, CHAR_WIDTH};
+use super::{command::Command, Editor, CHAR_WIDTH};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum DiffSectionKind {
@@ -644,7 +645,14 @@ impl EditorView {
 
         cursor.with_untracked(|cursor| {
             let style = ed.style();
-            for (_, end, affinity) in cursor.regions_iter() {
+            let displaying_placeholder =
+                ed.text().is_empty() && ed.preedit().preedit.with_untracked(|p| p.is_none());
+
+            for (_, end, mut affinity) in cursor.regions_iter() {
+                if displaying_placeholder {
+                    affinity = CursorAffinity::Backward;
+                }
+
                 let is_block = match cursor.mode {
                     CursorMode::Normal { .. } | CursorMode::Visual { .. } => true,
                     CursorMode::Insert(_) => false,
@@ -954,33 +962,62 @@ pub fn editor_view(
 
     let editor_window_origin = ed.window_origin;
     let cursor = ed.cursor;
-    let ime_allowed = ed.ime_allowed;
+    let cursor_memo = create_memo(move |_| cursor.with(|c| (c.is_insert(), c.offset())));
+    let allows_ime = ed.ime_allowed;
     let editor_viewport = ed.viewport;
+    let focused = ed.editor_view_focused_value;
+    let prev_ime_area = ed.ime_cursor_area;
+    let preedit = ed.preedit().preedit;
+
     create_effect(move |_| {
-        let active = is_active.get();
-        if active {
-            if !cursor.with(|c| c.is_insert()) {
-                if ime_allowed.get_untracked() {
-                    ime_allowed.set(false);
-                    set_ime_allowed(false);
-                }
-            } else {
-                if !ime_allowed.get_untracked() {
-                    ime_allowed.set(true);
-                    set_ime_allowed(true);
-                }
-                let (offset, affinity) = cursor.with(|c| (c.offset(), c.affinity()));
-                let (_, point_below) = ed.points_of_offset(offset, affinity);
-                let window_origin = editor_window_origin.get();
-                let viewport = editor_viewport.get();
-                let pos =
-                    window_origin + (point_below.x - viewport.x0, point_below.y - viewport.y0);
-                set_ime_cursor_area(pos, Size::new(800.0, 600.0));
+        if !is_active.get() {
+            return;
+        }
+
+        let (allowing_ime, offset) = cursor_memo.get();
+        let focused = focused.get();
+
+        // apply ime state changes
+        if allows_ime.get_untracked() != allowing_ime {
+            allows_ime.set(allowing_ime);
+
+            if focused {
+                set_ime_allowed(allowing_ime);
             }
         }
-    });
 
-    let has_focus = RwSignal::new(false);
+        if !allowing_ime || !focused {
+            // avoid resolving cursor area if we don't need it
+            return;
+        }
+
+        // subscribe to preedit changes, as it affects the CursorAffinity::Forward calculation
+        preedit.with(|_| {});
+
+        let (point_above, _) = ed.points_of_offset(offset, CursorAffinity::Backward);
+        let (point_above2, point_below) = ed.points_of_offset(offset, CursorAffinity::Forward);
+
+        let viewport = editor_viewport.get();
+        let (min_x, max_x);
+
+        if point_above.y != point_above2.y {
+            // multiline
+            min_x = 0.0;
+            max_x = viewport.x1 - viewport.x0;
+        } else {
+            min_x = point_above.x.min(point_above2.x);
+            max_x = point_above.x.max(point_above2.x);
+        }
+
+        let window_origin = editor_window_origin.get();
+        let pos = window_origin + (min_x - viewport.x0, point_above.y - viewport.y0);
+        let size = Size::new(max_x - min_x, point_below.y - point_above.y);
+
+        if prev_ime_area.get_untracked() != Some((pos, size)) {
+            set_ime_cursor_area(pos, size);
+            prev_ime_area.set(Some((pos, size)));
+        }
+    });
 
     EditorView {
         id,
@@ -989,16 +1026,21 @@ pub fn editor_view(
         inner_node: None,
     }
     .keyboard_navigable()
-    .on_event(EventListener::FocusGained, move |_| {
-        has_focus.set(true);
-        EventPropagation::Continue
+    .on_event_cont(EventListener::FocusGained, move |_| {
+        focused.set(true);
+        prev_ime_area.set(None);
+
+        if allows_ime.get_untracked() {
+            set_ime_allowed(true);
+        }
     })
-    .on_event(EventListener::FocusLost, move |_| {
-        has_focus.set(false);
-        EventPropagation::Continue
+    .on_event_cont(EventListener::FocusLost, move |_| {
+        focused.set(false);
+        editor.with_untracked(|ed| ed.commit_preedit());
+        set_ime_allowed(false);
     })
     .on_event(EventListener::ImePreedit, move |event| {
-        if !is_active.get_untracked() || !has_focus {
+        if !is_active.get_untracked() || !focused.get_untracked() {
             return EventPropagation::Continue;
         }
 
@@ -1007,6 +1049,15 @@ pub fn editor_view(
                 if text.is_empty() {
                     ed.clear_preedit();
                 } else {
+                    ed.doc.with_untracked(|doc| {
+                        doc.run_command(
+                            ed,
+                            &Command::Edit(EditCommand::DeleteSelection),
+                            Some(1),
+                            Modifiers::empty(),
+                        );
+                    });
+
                     let offset = ed.cursor.with_untracked(|c| c.offset());
 
                     // update affinity to display caret after preedit
@@ -1020,7 +1071,7 @@ pub fn editor_view(
         EventPropagation::Stop
     })
     .on_event(EventListener::ImeCommit, move |event| {
-        if !is_active.get_untracked() || !has_focus {
+        if !is_active.get_untracked() || !focused.get_untracked() {
             return EventPropagation::Continue;
         }
 

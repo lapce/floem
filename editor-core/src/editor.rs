@@ -1242,6 +1242,23 @@ impl Action {
                 cursor.update_selection(buffer, selection);
                 vec![(text, delta, inval_lines)]
             }
+            DeleteSelection => {
+                let selection = match cursor.mode {
+                    CursorMode::Normal { .. } => cursor.edit_selection(buffer),
+                    CursorMode::Visual { .. } => cursor.edit_selection(buffer),
+                    CursorMode::Insert(_) => cursor.edit_selection(buffer),
+                };
+
+                if selection.regions().iter().all(|r| r.is_caret()) {
+                    return vec![];
+                }
+
+                let (text, delta, inval_lines) =
+                    buffer.edit([(&selection, "")], EditType::DeleteSelection);
+                let selection = selection.apply_delta(&delta, true, InsertDrift::Default);
+                cursor.update_selection(buffer, selection);
+                vec![(text, delta, inval_lines)]
+            }
             DeleteLine => {
                 let selection = cursor.edit_selection(buffer);
                 let range = format_start_end(
