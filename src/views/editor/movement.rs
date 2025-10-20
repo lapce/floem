@@ -671,7 +671,7 @@ pub fn do_multi_selection(view: &Editor, cursor: &mut Cursor, cmd: &MultiSelecti
         InsertCursorAbove => {
             if let CursorMode::Insert(mut selection) = cursor.mode.clone() {
                 let (offset, mut affinity) = selection
-                    .last()
+                    .first()
                     .map(|s| (s.end, s.affinity))
                     .unwrap_or((0, CursorAffinity::Backward));
 
