@@ -6,7 +6,7 @@ use std::{
 };
 
 use floem_editor_core::{
-    buffer::{rope_text::RopeText, Buffer, InvalLines},
+    buffer::{Buffer, InvalLines, rope_text::RopeText},
     command::EditCommand,
     cursor::Cursor,
     editor::{Action, EditConf, EditType},
@@ -16,20 +16,20 @@ use floem_editor_core::{
     word::WordCursor,
 };
 use floem_reactive::{
-    create_effect, RwSignal, Scope, SignalGet, SignalTrack, SignalUpdate, SignalWith,
+    RwSignal, Scope, SignalGet, SignalTrack, SignalUpdate, SignalWith, create_effect,
 };
 use lapce_xi_rope::{Rope, RopeDelta};
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 
 use crate::keyboard::Modifiers;
 
 use super::{
-    actions::{handle_command_default, CommonAction},
+    Editor, EditorStyle,
+    actions::{CommonAction, handle_command_default},
     command::{Command, CommandExecuted},
     id::EditorId,
     phantom_text::{PhantomText, PhantomTextKind, PhantomTextLine},
     text::{Document, DocumentPhantom, PreeditData, SystemClipboard},
-    Editor, EditorStyle,
 };
 
 type PreCommandFn = Box<dyn Fn(PreCommand) -> CommandExecuted>;

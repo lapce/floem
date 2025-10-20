@@ -18,10 +18,10 @@ use std::time::{Duration, Instant};
 use web_time::{Duration, Instant};
 
 use crate::{
-    app::{add_app_update_event, AppUpdateEvent},
+    app::{AppUpdateEvent, add_app_update_event},
     id::ViewId,
     menu::Menu,
-    update::{UpdateMessage, UPDATE_MESSAGES},
+    update::{UPDATE_MESSAGES, UpdateMessage},
     view::View,
     views::Decorators,
     window_handle::{get_current_view, set_current_view},

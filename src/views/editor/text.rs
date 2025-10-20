@@ -2,8 +2,8 @@ use std::{borrow::Cow, fmt::Debug, ops::Range, rc::Rc};
 
 use crate::{
     keyboard::Modifiers,
-    peniko::color::palette,
     peniko::Color,
+    peniko::color::palette,
     reactive::{RwSignal, Scope},
     text::{Attrs, AttrsList, FamilyOwned, Stretch, Weight},
     views::EditorCustomStyle,
@@ -25,6 +25,7 @@ use lapce_xi_rope::Rope;
 use serde::{Deserialize, Serialize};
 
 use super::{
+    Editor, EditorStyle,
     actions::CommonAction,
     command::{Command, CommandExecuted},
     gutter::GutterClass,
@@ -33,7 +34,6 @@ use super::{
     normal_compute_screen_lines,
     phantom_text::{PhantomText, PhantomTextKind, PhantomTextLine},
     view::{ScreenLines, ScreenLinesBase},
-    Editor, EditorStyle,
 };
 
 // TODO(minor): Should we get rid of this now that this is in floem?
@@ -433,10 +433,8 @@ pub struct ExtCmdDocument<D, F> {
     /// be called.
     pub handler: F,
 }
-impl<
-        D: Document,
-        F: Fn(&Editor, &Command, Option<usize>, Modifiers) -> CommandExecuted + 'static,
-    > ExtCmdDocument<D, F>
+impl<D: Document, F: Fn(&Editor, &Command, Option<usize>, Modifiers) -> CommandExecuted + 'static>
+    ExtCmdDocument<D, F>
 {
     pub fn new(doc: D, handler: F) -> ExtCmdDocument<D, F> {
         ExtCmdDocument { doc, handler }

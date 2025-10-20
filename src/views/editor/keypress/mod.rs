@@ -11,8 +11,8 @@ use floem_editor_core::{
 use floem_reactive::{SignalGet, SignalWith};
 
 use super::{
-    command::{Command, CommandExecuted},
     Editor,
+    command::{Command, CommandExecuted},
 };
 
 use self::{key::KeyInput, press::KeyPress};

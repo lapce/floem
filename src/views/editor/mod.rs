@@ -2,7 +2,7 @@ use core::indent::IndentStyle;
 use std::{
     cell::{Cell, RefCell},
     cmp::Ordering,
-    collections::{hash_map::DefaultHasher, HashMap},
+    collections::{HashMap, hash_map::DefaultHasher},
     hash::{Hash, Hasher},
     rc::Rc,
     sync::Arc,
@@ -10,13 +10,13 @@ use std::{
 };
 
 use crate::{
-    action::{exec_after, set_ime_allowed, TimerToken},
+    action::{TimerToken, exec_after, set_ime_allowed},
     keyboard::Modifiers,
     kurbo::{Point, Rect, Size, Vec2},
-    peniko::{color::palette, Brush, Color},
+    peniko::{Brush, Color, color::palette},
     pointer::{PointerInputEvent, PointerMoveEvent},
     prop, prop_extractor,
-    reactive::{batch, untrack, ReadSignal, RwSignal, Scope},
+    reactive::{ReadSignal, RwSignal, Scope, batch, untrack},
     style::{CursorColor, StylePropValue, TextColor},
     text::{Attrs, AttrsList, LineHeightValue, TextLayout, Wrap},
     view::{IntoView, View},
@@ -30,7 +30,7 @@ use floem_editor_core::{
     movement::Movement,
     register::Register,
     selection::Selection,
-    soft_tab::{snap_to_soft_tab_line_col, SnapDirection},
+    soft_tab::{SnapDirection, snap_to_soft_tab_line_col},
     word::WordCursor,
 };
 use floem_reactive::{SignalGet, SignalTrack, SignalUpdate, SignalWith, Trigger};

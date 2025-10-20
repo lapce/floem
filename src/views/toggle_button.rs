@@ -469,10 +469,6 @@ impl ToggleButtonCustomStyle {
     ///     );
     /// ```
     pub fn apply_if(self, cond: bool, f: impl FnOnce(Self) -> Self) -> Self {
-        if cond {
-            f(self)
-        } else {
-            self
-        }
+        if cond { f(self) } else { self }
     }
 }

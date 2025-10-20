@@ -1,14 +1,14 @@
-use crate::app::{add_app_update_event, AppUpdateEvent};
+use crate::app::{AppUpdateEvent, add_app_update_event};
 use crate::event::{Event, EventListener, EventPropagation};
 use crate::inspector::header;
 use crate::view::IntoView;
 use crate::views::{
-    button, clip, container, dyn_container, empty, h_stack, label, scroll, stack, static_label,
-    text, v_stack, v_stack_from_iter, ContainerExt, Decorators,
+    ContainerExt, Decorators, button, clip, container, dyn_container, empty, h_stack, label,
+    scroll, stack, static_label, text, v_stack, v_stack_from_iter,
 };
-use floem_reactive::{create_rw_signal, RwSignal, Scope, SignalGet, SignalUpdate};
-use peniko::color::palette;
+use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate, create_rw_signal};
 use peniko::Color;
+use peniko::color::palette;
 use std::fmt::Display;
 use std::mem;
 use std::rc::Rc;

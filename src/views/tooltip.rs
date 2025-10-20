@@ -11,12 +11,12 @@ use web_time::Duration;
 use crate::style::{Style, StyleClass as _};
 use crate::views::Decorators;
 use crate::{
-    action::{add_overlay, exec_after, remove_overlay, TimerToken},
+    action::{TimerToken, add_overlay, exec_after, remove_overlay},
     context::{EventCx, UpdateCx},
     event::{Event, EventPropagation},
     id::ViewId,
     prop, prop_extractor, style_class,
-    view::{default_compute_layout, IntoView, View},
+    view::{IntoView, View, default_compute_layout},
 };
 
 style_class!(

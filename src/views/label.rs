@@ -1,6 +1,7 @@
 use std::{any::Any, fmt::Display, mem::swap};
 
 use crate::{
+    Clipboard,
     context::{PaintCx, UpdateCx},
     event::{Event, EventListener, EventPropagation},
     id::ViewId,
@@ -15,14 +16,13 @@ use crate::{
     text::{Attrs, AttrsList, FamilyOwned, TextLayout},
     unit::PxPct,
     view::View,
-    Clipboard,
 };
 use floem_reactive::create_updater;
-use floem_renderer::{text::Cursor, Renderer};
+use floem_renderer::{Renderer, text::Cursor};
 use peniko::{
+    Brush,
     color::palette,
     kurbo::{Point, Rect},
-    Brush,
 };
 use taffy::tree::NodeId;
 

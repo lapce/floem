@@ -1,4 +1,4 @@
-use floem_reactive::{as_child_of_current_scope, create_updater, Scope};
+use floem_reactive::{Scope, as_child_of_current_scope, create_updater};
 
 use crate::{
     id::ViewId,

@@ -1,10 +1,10 @@
 use std::{cell::RefCell, rc::Rc};
 
 #[cfg(feature = "crossbeam")]
-use crossbeam::channel::{unbounded as channel, Receiver, Sender};
+use crossbeam::channel::{Receiver, Sender, unbounded as channel};
 use muda::MenuId;
 #[cfg(not(feature = "crossbeam"))]
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender, channel};
 
 use floem_reactive::WriteSignal;
 use parking_lot::Mutex;

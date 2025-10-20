@@ -1,4 +1,4 @@
-use floem_reactive::{create_tracker, SignalTracker};
+use floem_reactive::{SignalTracker, create_tracker};
 use peniko::kurbo::Size;
 
 use crate::{context::PaintCx, id::ViewId, view::View};

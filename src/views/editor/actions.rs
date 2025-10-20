@@ -11,8 +11,9 @@ use floem_editor_core::{
 use floem_reactive::{SignalGet, SignalUpdate, SignalWith};
 
 use super::{
+    Editor,
     command::{Command, CommandExecuted},
-    movement, Editor,
+    movement,
 };
 
 pub fn handle_command_default(

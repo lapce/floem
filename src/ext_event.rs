@@ -1,15 +1,15 @@
 use std::{cell::Cell, collections::VecDeque, sync::Arc};
 
 use floem_reactive::{
-    create_effect, create_rw_signal, untrack, with_scope, ReadSignal, RwSignal, Scope, SignalGet,
-    SignalUpdate, SignalWith, WriteSignal,
+    ReadSignal, RwSignal, Scope, SignalGet, SignalUpdate, SignalWith, WriteSignal, create_effect,
+    create_rw_signal, untrack, with_scope,
 };
 use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::{
+    Application,
     app::UserEvent,
     window_handle::{get_current_view, set_current_view},
-    Application,
 };
 
 #[cfg(feature = "crossbeam")]

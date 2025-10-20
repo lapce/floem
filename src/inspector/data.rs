@@ -1,7 +1,7 @@
+use crate::ViewId;
 use crate::inspector::CapturedView;
 use crate::views::VirtualVector;
-use crate::ViewId;
-use floem_reactive::{create_rw_signal, RwSignal, SignalGet, SignalUpdate};
+use floem_reactive::{RwSignal, SignalGet, SignalUpdate, create_rw_signal};
 use std::ops::AddAssign;
 use std::rc::Rc;
 
