@@ -537,39 +537,53 @@ impl Cursor {
             CursorMode::Insert(selection) => {
                 if new_cursor {
                     let mut new_selection = selection.clone();
-                    if modify {
-                        if let Some(mut region) = new_selection.last_inserted().cloned() {
-                            region.end = offset;
-                            region.affinity = affinity;
 
-                            // remove overlapping selections
-                            new_selection.delete_range(region.min(), region.max());
-
-                            // remove carets on the edges
+                    let delete_overlapping_carets =
+                        |selection: &mut Selection, region: &SelRegion| {
                             let left = region.min().saturating_sub(1);
                             let right = region.max() + 1;
-                            let neighbors = new_selection.regions_in_range(left, right);
+                            let neighbors = selection.regions_in_range(left, right);
                             let left_has_caret = neighbors.first().is_some_and(|r| r.is_caret());
                             let right_has_caret = neighbors.last().is_some_and(|r| r.is_caret());
 
                             if region.is_caret() || left_has_caret {
-                                new_selection.delete_range(left, left + 2);
+                                selection.delete_range(left, left + 2);
                             }
 
                             if region.is_caret() || right_has_caret {
-                                new_selection.delete_range(left + 1, right);
+                                selection.delete_range(left + 1, right);
                             }
+                        };
 
-                            new_selection.add_region(region);
-                        } else {
-                            new_selection.add_region(SelRegion::caret(offset, affinity));
-                        }
-                        self.set_insert(new_selection);
+                    if let (Some(mut region), true) =
+                        (new_selection.last_inserted().cloned(), modify)
+                    {
+                        region.end = offset;
+                        region.affinity = affinity;
+
+                        // remove overlapping selections
+                        new_selection.delete_range(region.min(), region.max());
+
+                        // remove carets on the edges
+                        delete_overlapping_carets(&mut new_selection, &region);
+
+                        new_selection.add_region(region);
                     } else {
-                        let mut new_selection = selection.clone();
-                        new_selection.add_region(SelRegion::caret(offset, affinity));
-                        self.set_insert(new_selection);
+                        // add or remove a caret
+                        let region = SelRegion::caret(offset, affinity);
+
+                        delete_overlapping_carets(&mut new_selection, &region);
+
+                        // add a caret only if no carets were removed or we have no selections
+                        let prev_len = selection.regions().len();
+                        let new_len = new_selection.regions().len();
+
+                        if new_len == prev_len || new_len == 0 {
+                            new_selection.add_region(region);
+                        }
                     }
+
+                    self.set_insert(new_selection);
                 } else if modify {
                     let mut new_selection = Selection::new();
                     if let Some(region) = selection.first() {
