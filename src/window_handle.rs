@@ -1465,8 +1465,7 @@ fn context_menu_view(
                                 });
                             }
                         })
-                        .disabled(move || !enabled)
-                        .style(|s| {
+                        .style(move |s| {
                             s.width(100.pct())
                                 .min_width(100.pct())
                                 .padding_horiz(20.0)
@@ -1480,6 +1479,7 @@ fn context_menu_view(
                                     s.border_radius(10.0)
                                         .background(Color::from_rgb8(92, 92, 92))
                                 })
+                                .set_disabled(!enabled)
                                 .disabled(|s| s.color(Color::from_rgb8(92, 92, 92)))
                         }),
                         dyn_stack(
@@ -1487,7 +1487,6 @@ fn context_menu_view(
                             move |s| s.clone(),
                             move |menu| view_fn(menu, context_menu, on_child_submenu),
                         )
-                        .keyboard_navigable()
                         .on_event_stop(EventListener::KeyDown, move |event| {
                             if let Event::KeyDown(event) = event {
                                 if event.key.logical_key == Key::Named(NamedKey::Escape) {
@@ -1509,6 +1508,7 @@ fn context_menu_view(
                         })
                         .style(move |s| {
                             s.absolute()
+                                .focusable(true)
                                 .min_width(200.0)
                                 .margin_top(-5.0)
                                 .margin_left(menu_width.get() as f32)
@@ -1568,7 +1568,6 @@ fn context_menu_view(
         });
     })
     .on_event_stop(EventListener::PointerMove, move |_| {})
-    .keyboard_navigable()
     .on_event_stop(EventListener::KeyDown, move |event| {
         if let Event::KeyDown(event) = event {
             if event.key.logical_key == Key::Named(NamedKey::Escape) {
@@ -1591,6 +1590,7 @@ fn context_menu_view(
             .min_width(200.0)
             .flex_col()
             .border_radius(10.0)
+            .focusable(true)
             .background(Color::from_rgb8(44, 44, 44))
             .color(Color::from_rgb8(201, 201, 201))
             .z_index(999)

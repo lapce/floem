@@ -51,11 +51,9 @@ impl Clipboard {
         let mut out: Vec<String> = Vec::new();
         clipboard_win::raw::get_file_list(&mut out)
             .map_err(|e| ClipboardError::ProviderError(e.to_string()))?;
-        let out = out
-            .iter()
+        out.iter()
             .map(|s| PathBuf::from_str(s).map_err(|e| ClipboardError::PathError(e.to_string())))
-            .collect();
-        out
+            .collect()
     }
 
     pub(crate) unsafe fn init(display: RawDisplayHandle) {
@@ -77,8 +75,9 @@ impl Clipboard {
         {
             if let RawDisplayHandle::Wayland(display) = display {
                 use copypasta::wayland_clipboard;
-                let (selection, clipboard) =
-                    wayland_clipboard::create_clipboards_from_external(display.display.as_ptr());
+                let (selection, clipboard) = unsafe {
+                    wayland_clipboard::create_clipboards_from_external(display.display.as_ptr())
+                };
                 return Self {
                     clipboard: Box::new(clipboard),
                     selection: Some(Box::new(selection)),
