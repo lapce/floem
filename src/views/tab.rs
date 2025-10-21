@@ -116,17 +116,16 @@ impl<T> View for Tab<T> {
                 }
                 TabState::Active(active) => {
                     self.active = active;
+                    self.id.request_style_recursive();
                 }
             }
             self.id.request_all();
-            self.id.request_style_recursive();
             for (child, _) in self.children.iter().flatten() {
                 child.request_all();
             }
         }
     }
 
-    // why is this broken TODO TODO TODO TODO
     fn style_pass(&mut self, cx: &mut StyleCx<'_>) {
         for (i, child) in self.id.children().into_iter().enumerate() {
             if i == self.active {

@@ -381,7 +381,7 @@ impl WindowHandle {
                         .has_style_selectors
                         .has(StyleSelector::Active)
                 {
-                    id.request_style_recursive();
+                    id.request_style();
                 }
                 if hovered.contains(id) {
                     id.apply_event(&EventListener::PointerEnter, &event);
@@ -541,7 +541,7 @@ impl WindowHandle {
                     .has(StyleSelector::Active)
                 || view_state.borrow().has_active_animation()
             {
-                id.request_style_recursive();
+                id.request_style();
             }
             cx.unconditional_view_event(id, Event::PointerLeave, true);
         }

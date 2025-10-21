@@ -260,11 +260,11 @@ fn stats(capture: &Capture) -> impl IntoView + use<> {
         .saturating_duration_since(capture.post_style);
     let paint_time = capture.end.saturating_duration_since(capture.post_layout);
     let style_time = info(
-        "Style Time",
+        "Full Style Time",
         format!("{:.4} ms", style_time.as_secs_f64() * 1000.0),
     );
     let layout_time = info(
-        "Layout Time",
+        "Full Layout Time",
         format!("{:.4} ms", layout_time.as_secs_f64() * 1000.0),
     );
     let taffy_time = info(

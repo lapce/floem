@@ -192,7 +192,6 @@ where
         .class(ListClass)
         .on_event(EventListener::KeyDown, move |e| {
             if let Event::KeyDown(key_event) = e {
-                stack_id.request_style_recursive();
                 match key_event.key.logical_key {
                     Key::Named(NamedKey::Home) => {
                         if length.get_untracked() > 0 {

@@ -60,6 +60,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             "Radio" => radio_buttons::radio_buttons_view().into_any(),
             "Input" => inputs::text_input_view().into_any(),
             "Canvas" => canvas::canvas_view().into_any(),
+            #[cfg(feature = "full")]
             "Stacks" => stacks::stacks_view().into_any(),
             "Lists" => lists::list_view().into_any(),
             "Menu" => context_menu::menu_view().into_any(),
@@ -71,6 +72,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             "Animation" => animation::animation_view().into_any(),
             "Draggable" => draggable::draggable_view().into_any(),
             "DroppedFile" => dropped_file::dropped_file_view().into_any(),
+            #[cfg(feature = "full")]
             "Files" => files::files_view().into_any(),
             _ => label(|| "Not implemented".to_owned()).into_any(),
         }

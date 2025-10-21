@@ -1,10 +1,11 @@
 use floem::{
     peniko::{color::palette, Color},
     prelude::{
-        palette::css::{DARK_GRAY, LIGHT_GRAY, WHITE_SMOKE},
+        palette::css::{DARK_GRAY, WHITE_SMOKE},
         RwSignal, SignalGet,
     },
     style::CursorStyle,
+    theme::StyleThemeExt,
     views::{button, toggle_button, Decorators, ToggleButton, ToggleHandleBehavior},
     IntoView,
 };
@@ -72,5 +73,9 @@ pub fn button_view() -> impl IntoView {
             }),
         ),
     ))
-    .style(move |s| s.apply_if(state.get(), |s| s.background(LIGHT_GRAY)))
+    .style(move |s| {
+        s.apply_if(state.get(), |s| {
+            s.with_theme(|s, t| s.background(t.bg_elevated()))
+        })
+    })
 }

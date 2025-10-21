@@ -280,9 +280,15 @@ impl ViewState {
         let self_style = self.style();
         combined_style.apply_mut(self_style);
 
+        let new_context = context.clone(); //.apply(combined_style.clone());
+
         // Use the recursive resolution function to handle all nested states
-        combined_style =
-            resolve_nested_maps(combined_style, &interact_state, screen_size_bp, context);
+        combined_style = resolve_nested_maps(
+            combined_style,
+            &interact_state,
+            screen_size_bp,
+            &new_context,
+        );
 
         // Track if this style has selectors for optimization purposes
         self.has_style_selectors = combined_style.selectors();

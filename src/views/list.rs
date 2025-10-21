@@ -11,13 +11,13 @@ use crate::{
     keyboard::{Key, NamedKey},
     view::View,
 };
-use floem_reactive::{RwSignal, SignalGet, SignalTrack, SignalUpdate, create_rw_signal};
+use floem_reactive::{RwSignal, SignalGet, SignalUpdate, create_rw_signal};
 
 style_class!(pub ListClass);
 style_class!(pub ListItemClass);
 
 enum ListUpdate {
-    SelectionChanged,
+    SelectionChanged(Option<usize>),
     Accept,
 }
 
@@ -79,9 +79,10 @@ where
 {
     let list_id = ViewId::new();
     let selection = create_rw_signal(Some(0));
-    create_effect(move |_| {
-        selection.track();
-        list_id.update_state(ListUpdate::SelectionChanged);
+    create_effect(move |old_idx: Option<Option<usize>>| {
+        let selection = selection.get();
+        list_id.update_state(ListUpdate::SelectionChanged(old_idx.flatten()));
+        selection
     });
     let stack = v_stack_from_iter(iterator.into_iter().enumerate().map(move |(index, v)| {
         let id = ViewId::new();
@@ -183,10 +184,15 @@ impl View for List {
     fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(change) = state.downcast::<ListUpdate>() {
             match *change {
-                ListUpdate::SelectionChanged => {
-                    self.id.request_style_recursive();
+                ListUpdate::SelectionChanged(old_idx) => {
+                    if let Some(old_idx) = old_idx {
+                        let child = self.child.children()[old_idx];
+                        child.request_style_recursive();
+                    }
                     if let Some(index) = self.selection.get_untracked() {
-                        self.child.children()[index].scroll_to(None);
+                        let child = self.child.children()[index];
+                        child.request_style_recursive();
+                        child.scroll_to(None);
                     }
                 }
                 ListUpdate::Accept => {

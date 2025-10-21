@@ -360,6 +360,7 @@ pub fn item_selected_style() -> Style {
                 .color(t.bg_base)
                 .hover(|s| s.background(t.primary_muted()))
         })
+        .transition_background(Transition::linear(100.millis()))
     })
 }
 
@@ -403,8 +404,6 @@ pub fn overlay_style() -> Style {
 }
 
 pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
-    let hover_style = hover_style();
-
     let button_style = Style::new()
         .custom_style_class(|s: LabelCustomStyle| s.selectable(false))
         .with_theme(|s, t| {
@@ -416,7 +415,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         .transition(Background, Transition::linear(100.millis()))
         .justify_center()
         .items_center()
-        .apply(hover_style.clone())
+        .apply(hover_style())
         .apply(focus_style())
         .apply(border_style(true));
 
@@ -433,7 +432,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         .transition(Background, Transition::linear(100.millis()))
         .focus(|s| s.with_theme(|s, t| s.hover(|s| s.background(t.bg_overlay()))))
         .apply(border_style(true))
-        .apply(hover_style.clone())
+        .apply(hover_style())
         .apply(focus_style());
 
     let labeled_checkbox_style = Style::new()
@@ -459,7 +458,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
             s.class(CheckboxClass, |_| focus_applied_style())
                 .with_theme(|s, t| s.hover(|s| s.background(t.bg_overlay())))
         })
-        .apply(hover_style.clone())
+        .apply(hover_style())
         .apply(focus_style());
 
     let radio_button_style = Style::new()
@@ -567,7 +566,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         .justify_center()
         .items_center()
         .apply(focus_style())
-        .apply(hover_style.clone());
+        .apply(hover_style());
 
     // let item_unfocused_style = Style::new().with_theme(|s, t| {
     //     s.hover(|s| s.background(t.bg_elevated())).selected(|s| {
@@ -600,7 +599,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         })
         .class(ListClass, |s| {
             s.apply(focus_style()).class(ListItemClass, |s| {
-                s.apply(hover_style.clone())
+                s.apply(hover_style())
                     .apply(item_selected_style())
                     .with_theme(|s, t| s.border_radius(t.border_radius()).padding_left(t.padding()))
                     .items_center()
