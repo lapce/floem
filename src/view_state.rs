@@ -11,7 +11,7 @@ use crate::{
         Background, BorderBottomColor, BorderBottomLeftRadius, BorderBottomRightRadius,
         BorderLeftColor, BorderRightColor, BorderTopColor, BorderTopLeftRadius,
         BorderTopRightRadius, BoxShadowProp, LayoutProps, Outline, OutlineColor, Style,
-        StyleClassRef, StyleSelectors,
+        StyleClassRef, StyleSelectors, resolve_nested_maps,
     },
 };
 use bitflags::bitflags;
@@ -259,29 +259,35 @@ impl ViewState {
         cx_hidden: bool,
     ) -> bool {
         let mut new_frame = false;
+
+        // Build the initial combined style
         let mut combined_style = Style::new();
 
+        // Apply view class if provided
         if let Some(view_class) = view_class {
             combined_style = combined_style.apply_classes_from_context(&[view_class], context);
         }
+
+        // Apply other classes from context
         combined_style = combined_style.apply_classes_from_context(&self.classes, context);
 
+        // Apply view style if provided
         if let Some(view_style) = view_style {
-            combined_style = combined_style.apply_context_mappings(context);
             combined_style.apply_mut(view_style);
         }
 
+        // Apply self style
         let self_style = self.style();
-        combined_style = combined_style.apply_context_mappings(context);
-        combined_style.apply_mut(self_style.clone());
+        combined_style.apply_mut(self_style);
 
+        // Use the recursive resolution function to handle all nested states
+        combined_style =
+            resolve_nested_maps(combined_style, &interact_state, screen_size_bp, context);
+
+        // Track if this style has selectors for optimization purposes
         self.has_style_selectors = combined_style.selectors();
-        combined_style.apply_interact_state(&interact_state, screen_size_bp);
-        combined_style = combined_style.apply_context_mappings(context);
-        combined_style.apply_interact_state(&interact_state, screen_size_bp);
-        // combined_style = combined_style.apply_context_mappings(context);
-        // TODO: recursively resolve nested maps
 
+        // Process animations
         for animation in self
             .animations
             .stack
@@ -298,6 +304,7 @@ impl ViewState {
             debug_assert!(!animation.is_idle());
         }
 
+        // Apply visibility
         if cx_hidden {
             combined_style = combined_style.hide();
         }

@@ -1705,7 +1705,7 @@ style_key_selector!(selector_lg, StyleSelectors::new().responsive());
 style_key_selector!(selector_xl, StyleSelectors::new().responsive());
 style_key_selector!(selector_xxl, StyleSelectors::new().responsive());
 
-fn screen_size_bp_to_key(breakpoint: ScreenSizeBp) -> StyleKey {
+pub(crate) fn screen_size_bp_to_key(breakpoint: ScreenSizeBp) -> StyleKey {
     match breakpoint {
         ScreenSizeBp::Xs => selector_xs(),
         ScreenSizeBp::Sm => selector_sm(),
@@ -1714,6 +1714,145 @@ fn screen_size_bp_to_key(breakpoint: ScreenSizeBp) -> StyleKey {
         ScreenSizeBp::Xl => selector_xl(),
         ScreenSizeBp::Xxl => selector_xxl(),
     }
+}
+
+pub(crate) fn resolve_nested_maps(
+    mut style: Style,
+    interact_state: &InteractionState,
+    screen_size_bp: ScreenSizeBp,
+    context: &Style,
+) -> Style {
+    // Track if we applied any changes in this pass
+    let mut applied_changes = true;
+    let max_iterations = 10;
+    let mut iteration_count = 0;
+
+    // Continue resolving until no more changes are applied or max iterations reached
+    while applied_changes && iteration_count < max_iterations {
+        applied_changes = false;
+        iteration_count += 1;
+
+        // Apply context mappings first - these can introduce new nested maps
+        let old_style = style.clone();
+        style = style
+            .clone()
+            .apply_context_mappings(&context.clone().apply(style));
+        if !style.map.ptr_eq(&old_style.map) {
+            applied_changes = true;
+        }
+
+        // Apply screen size breakpoints
+        if let Some(mut map) = style.get_nested_map(screen_size_bp_to_key(screen_size_bp)) {
+            map = resolve_nested_maps(map, interact_state, screen_size_bp, context);
+            style.apply_mut(map);
+            applied_changes = true;
+        }
+
+        // DarkMode
+        if interact_state.is_dark_mode {
+            if let Some(mut map) = style.get_nested_map(StyleSelector::DarkMode.to_key()) {
+                map = resolve_nested_maps(map, interact_state, screen_size_bp, context);
+                style.apply_mut(map);
+                applied_changes = true;
+            }
+        }
+
+        // Disabled state (takes precedence)
+        if interact_state.is_disabled {
+            if let Some(mut map) = style.get_nested_map(StyleSelector::Disabled.to_key()) {
+                map = resolve_nested_maps(map, interact_state, screen_size_bp, context);
+                style.apply_mut(map);
+                applied_changes = true;
+            }
+        } else {
+            // Other states only apply if not disabled
+
+            // Selected
+            if interact_state.is_selected || style.get(Selected) {
+                if let Some(mut map) = style.get_nested_map(StyleSelector::Selected.to_key()) {
+                    map = resolve_nested_maps(map, interact_state, screen_size_bp, context);
+                    style.apply_mut(map);
+                    applied_changes = true;
+                }
+            }
+
+            // Hover
+            if interact_state.is_hovered {
+                if let Some(mut map) = style.get_nested_map(StyleSelector::Hover.to_key()) {
+                    map = resolve_nested_maps(map, interact_state, screen_size_bp, context);
+                    style.apply_mut(map);
+                    applied_changes = true;
+                }
+            }
+
+            // File Hover
+            if interact_state.is_file_hover {
+                if let Some(mut map) = style.get_nested_map(StyleSelector::FileHover.to_key()) {
+                    map = resolve_nested_maps(map, interact_state, screen_size_bp, context);
+                    style.apply_mut(map);
+                    applied_changes = true;
+                }
+            }
+
+            // Focus states
+            if interact_state.is_focused {
+                if let Some(mut map) = style.get_nested_map(StyleSelector::Focus.to_key()) {
+                    map = resolve_nested_maps(map, interact_state, screen_size_bp, context);
+                    style.apply_mut(map);
+                    applied_changes = true;
+                }
+
+                if interact_state.using_keyboard_navigation {
+                    if let Some(mut map) =
+                        style.get_nested_map(StyleSelector::FocusVisible.to_key())
+                    {
+                        map = resolve_nested_maps(map, interact_state, screen_size_bp, context);
+                        style.apply_mut(map);
+                        applied_changes = true;
+                    }
+
+                    if interact_state.is_clicking {
+                        if let Some(mut map) = style.get_nested_map(StyleSelector::Active.to_key())
+                        {
+                            map = resolve_nested_maps(map, interact_state, screen_size_bp, context);
+                            style.apply_mut(map);
+                            applied_changes = true;
+                        }
+                    }
+                }
+            }
+
+            // Active (mouse)
+            if interact_state.is_clicking
+                && interact_state.is_hovered
+                && !interact_state.using_keyboard_navigation
+            {
+                if let Some(mut map) = style.get_nested_map(StyleSelector::Active.to_key()) {
+                    map = resolve_nested_maps(map, interact_state, screen_size_bp, context);
+                    style.apply_mut(map);
+                    applied_changes = true;
+                }
+            }
+        }
+
+        // Look for context mappings again after applying everything
+        // This handles cases where a selector or style modifies context dependencies
+        let old_style = style.clone();
+        style = style.apply_context_mappings(context);
+        if !style.map.ptr_eq(&old_style.map) {
+            applied_changes = true;
+        }
+    }
+
+    if iteration_count >= max_iterations {
+        return style;
+        // debug_assert!(
+        //     false,
+        //     "Exceeded maximum style resolution iterations - possible circular dependencies"
+        // );
+    }
+
+    style
 }
 
 #[derive(Default, Clone)]
@@ -1897,73 +2036,6 @@ impl Style {
         self.map
             .get(&key)
             .map(|map| map.downcast_ref::<Style>().unwrap().clone())
-    }
-
-    pub(crate) fn apply_interact_state(
-        &mut self,
-        interact_state: &InteractionState,
-        screen_size_bp: ScreenSizeBp,
-    ) {
-        if let Some(mut map) = self.get_nested_map(screen_size_bp_to_key(screen_size_bp)) {
-            map.apply_interact_state(interact_state, screen_size_bp);
-            self.apply_mut(map);
-        }
-
-        if interact_state.is_hovered && !interact_state.is_disabled {
-            if let Some(mut map) = self.get_nested_map(StyleSelector::Hover.to_key()) {
-                map.apply_interact_state(interact_state, screen_size_bp);
-                self.apply_mut(map);
-            }
-        }
-        if interact_state.is_focused {
-            if let Some(mut map) = self.get_nested_map(StyleSelector::Focus.to_key()) {
-                map.apply_interact_state(interact_state, screen_size_bp);
-                self.apply_mut(map);
-            }
-        }
-        if interact_state.is_selected || self.get(Selected) {
-            if let Some(mut map) = self.get_nested_map(StyleSelector::Selected.to_key()) {
-                map.apply_interact_state(interact_state, screen_size_bp);
-                self.apply_mut(map);
-            }
-        }
-        if interact_state.is_disabled {
-            if let Some(mut map) = self.get_nested_map(StyleSelector::Disabled.to_key()) {
-                map.apply_interact_state(interact_state, screen_size_bp);
-                self.apply_mut(map);
-            }
-        }
-        if interact_state.is_dark_mode {
-            if let Some(mut map) = self.get_nested_map(StyleSelector::DarkMode.to_key()) {
-                map.apply_interact_state(interact_state, screen_size_bp);
-                self.apply_mut(map);
-            }
-        }
-
-        if interact_state.is_file_hover {
-            if let Some(mut map) = self.get_nested_map(StyleSelector::FileHover.to_key()) {
-                map.apply_interact_state(interact_state, screen_size_bp);
-                self.apply_mut(map);
-            }
-        }
-
-        let focused_keyboard =
-            interact_state.using_keyboard_navigation && interact_state.is_focused;
-
-        if focused_keyboard {
-            if let Some(mut map) = self.get_nested_map(StyleSelector::FocusVisible.to_key()) {
-                map.apply_interact_state(interact_state, screen_size_bp);
-                self.apply_mut(map);
-            }
-        }
-
-        let active_mouse = interact_state.is_hovered && !interact_state.using_keyboard_navigation;
-        if interact_state.is_clicking && (active_mouse || focused_keyboard) {
-            if let Some(mut map) = self.get_nested_map(StyleSelector::Active.to_key()) {
-                map.apply_interact_state(interact_state, screen_size_bp);
-                self.apply_mut(map);
-            }
-        }
     }
 
     pub(crate) fn any_inherited(&self) -> bool {
