@@ -123,7 +123,7 @@ prop_extractor!(DropdownStyle {
 /// ```rust
 /// # use strum::IntoEnumIterator;
 /// #
-/// # #[derive(Clone, strum::EnumIter)]
+/// # #[derive(Clone, strum::EnumIter, PartialEq)]
 /// # enum Character {
 /// #     Ori,
 /// #     Naru,
