@@ -1228,6 +1228,8 @@ impl View for TextInput {
 
                     let selection_stop = self.get_box_position(event.pos.x);
                     self.update_selection(self.cursor_glyph_idx, selection_stop);
+
+                    self.id.request_paint();
                 }
                 false
             }
