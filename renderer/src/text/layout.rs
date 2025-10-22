@@ -326,10 +326,15 @@ impl TextLayout {
     }
 
     pub fn hit_position(&self, idx: usize) -> HitPosition {
+        self.hit_position_aff(idx, Affinity::Before)
+    }
+
+    pub fn hit_position_aff(&self, idx: usize, affinity: Affinity) -> HitPosition {
         let mut last_line = 0;
         let mut last_end: usize = 0;
         let mut offset = 0;
-        let mut last_glyph_width = 0.0;
+        let mut glyph_tail_found = false;
+        let mut last_glyph: Option<&LayoutGlyph> = None;
         let mut last_position = HitPosition {
             line: 0,
             point: Point::ZERO,
@@ -339,22 +344,65 @@ impl TextLayout {
         for (line, run) in self.layout_runs().enumerate() {
             if run.line_i > last_line {
                 last_line = run.line_i;
-                offset += last_end + 1;
+                offset = last_end + 1;
             }
+
+            // Handles wrapped lines, like:
+            // ```rust
+            // let config_path = |
+            // dirs::config_dir();
+            // ```
+            // The glyphs won't contain the space at the end of the first part, and the position right
+            // after the space is the same column as at `|dirs`, which is what before is letting us
+            // distinguish.
+            // So essentially, if the next run has a glyph that is at the same idx as the end of the
+            // previous run, *and* it is at `idx` itself, then we know to position it on the previous.
+            if let Some(last_glyph) = last_glyph {
+                if let Some(first_glyph) = run.glyphs.first() {
+                    let in_wrapped_tail = match affinity {
+                        // we resolve to the line before the next glyph
+                        Affinity::Before => first_glyph.start + offset == idx,
+                        // found the tail and it resolves within whitespace from the previous line
+                        Affinity::After => first_glyph.start + offset != idx && glyph_tail_found,
+                    };
+
+                    if in_wrapped_tail {
+                        last_position.point.x += last_glyph.w as f64;
+
+                        if last_end != idx {
+                            // if the last index doesn't match the start index,
+                            // it's due to whitespace
+                            last_position.point.x += last_glyph.w as f64;
+                        }
+
+                        last_position.point.y = 0.0;
+                        return last_position;
+                    }
+                }
+            }
+
             for glyph in run.glyphs {
-                last_end = glyph.end;
-                last_glyph_width = glyph.w;
+                let glyph_start = glyph.start + offset;
+                let glyph_end = glyph.end + offset;
+
+                last_end = glyph_end;
+                last_glyph = Some(glyph);
                 last_position = HitPosition {
                     line,
                     point: Point::new(glyph.x as f64, run.line_y as f64),
                     glyph_ascent: run.max_ascent as f64,
                     glyph_descent: run.max_descent as f64,
                 };
-                if (glyph.start + offset..=glyph.end + offset).contains(&idx) {
+
+                glyph_tail_found = idx == glyph_end;
+
+                if (glyph_start..glyph_end).contains(&idx)
+                    || (affinity == Affinity::Before && glyph_tail_found)
+                {
                     // possibly inside ligature, need to resolve glyph internal offset
 
                     let glyph_str = &run.text[glyph.start..glyph.end];
-                    let relative_idx = idx - offset - glyph.start;
+                    let relative_idx = idx - glyph_start;
                     let mut total_graphemes = 0;
                     let mut grapheme_i = 0;
 
@@ -378,8 +426,8 @@ impl TextLayout {
             }
         }
 
-        if idx > 0 {
-            last_position.point.x += last_glyph_width as f64;
+        if let Some(last_glyph) = last_glyph {
+            last_position.point.x += last_glyph.w as f64;
             return last_position;
         }
 

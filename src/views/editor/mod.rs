@@ -62,8 +62,8 @@ use self::{
     text::{Document, Preedit, PreeditData, RenderWhitespace, Styling, WrapMethod},
     view::{LineInfo, ScreenLines, ScreenLinesBase},
     visual_line::{
-        hit_position_aff, ConfigId, FontSizeCacheId, LayoutEvent, LineFontSizeProvider, Lines,
-        RVLine, ResolvedWrap, TextLayoutProvider, VLine, VLineInfo,
+        ConfigId, FontSizeCacheId, LayoutEvent, LineFontSizeProvider, Lines, RVLine, ResolvedWrap,
+        TextLayoutProvider, VLine, VLineInfo,
     },
 };
 
@@ -982,12 +982,13 @@ impl Editor {
                 .phantom_text
                 .col_after(col, affinity == CursorAffinity::Forward)
         };
-        hit_position_aff(
-            &text_layout.text,
-            index,
-            affinity == CursorAffinity::Backward,
-        )
-        .point
+
+        let aff = match affinity {
+            CursorAffinity::Backward => Affinity::Before,
+            CursorAffinity::Forward => Affinity::After,
+        };
+
+        text_layout.text.hit_position_aff(index, aff).point
     }
 
     /// Get the (point above, point below) of a particular offset within the editor.
