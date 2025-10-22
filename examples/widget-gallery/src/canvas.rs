@@ -226,6 +226,8 @@ impl View for SatValuePicker {
         cx.fill(&rect_path, &saturation_gradient, 0.);
 
         cx.pop_layer();
+        cx.save();
+        cx.clip(&rect_path);
 
         if size.width > 0.0 && size.height > 0.0 {
             let saturation = self.current_color.components[1];
@@ -236,9 +238,13 @@ impl View for SatValuePicker {
 
             let indicator_radius = 6.0;
             let indicator_circle = Circle::new(Point::new(x_pos, y_pos), indicator_radius);
+            let inner_indicator_circle =
+                Circle::new(Point::new(x_pos, y_pos), indicator_radius - 2.);
 
             cx.stroke(&indicator_circle, css::WHITE, &Stroke::new(2.0));
+            cx.stroke(&inner_indicator_circle, css::BLACK, &Stroke::new(2.0));
         }
+        cx.restore();
     }
 }
 

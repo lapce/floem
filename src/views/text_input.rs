@@ -5,7 +5,7 @@ use crate::id::ViewId;
 use crate::keyboard::{self, KeyEvent, Modifiers};
 use crate::pointer::{MouseButton, PointerButton, PointerInputEvent};
 use crate::reactive::{RwSignal, create_effect};
-use crate::style::{FontFamily, FontProps, PaddingLeft, SelectionStyle, TextAlignProp};
+use crate::style::{FontFamily, FontProps, PaddingProp, SelectionStyle, TextAlignProp};
 use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
 use crate::views::editor::text::Preedit;
@@ -1054,7 +1054,7 @@ impl TextInput {
 
         let cursor_color = self.selection_style.selection_color();
 
-        let padding_left = match style.get(PaddingLeft) {
+        let padding_left = match style.get(PaddingProp).left.unwrap_or(PxPct::Px(0.)) {
             PxPct::Px(padding) => padding,
             PxPct::Pct(pct) => pct / 100.0 * node_layout.size.width as f64,
         };

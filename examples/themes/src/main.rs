@@ -4,8 +4,8 @@ use floem::{
     peniko::{color::palette, Color},
     reactive::{create_signal, SignalGet, SignalUpdate},
     style::{
-        Background, BorderBottomColor, BorderLeftColor, BorderRightColor, BorderTopColor, Outline,
-        OutlineColor, Style, TextColor, Transition,
+        Background, BorderColorProp, BorderProp, Outline, OutlineColor, Style, TextColor,
+        Transition,
     },
     style_class,
     unit::DurationUnitExt,
@@ -25,10 +25,7 @@ fn app_view() -> impl IntoView {
         .border_color(Color::from_rgb8(109, 121, 135))
         .hover(|s| s.background(Color::from_rgb8(170, 175, 187)))
         .transition(TextColor, Transition::ease_in_out(60.millis()))
-        .transition(BorderLeftColor, Transition::ease_in_out(60.millis()))
-        .transition(BorderTopColor, Transition::ease_in_out(60.millis()))
-        .transition(BorderRightColor, Transition::ease_in_out(60.millis()))
-        .transition(BorderBottomColor, Transition::ease_in_out(60.millis()))
+        .transition(BorderProp, Transition::ease_in_out(60.millis()))
         .transition(Background, Transition::ease_in_out(60.millis()))
         .transition(Outline, Transition::ease_in_out(100.millis()))
         .focus_visible(|s| {
@@ -69,10 +66,7 @@ fn app_view() -> impl IntoView {
         .color(palette::css::BLACK.with_alpha(0.7))
         .border(2.0)
         .transition(TextColor, Transition::ease_in_out(300.millis()))
-        .transition(BorderLeftColor, Transition::ease_in_out(300.millis()))
-        .transition(BorderTopColor, Transition::ease_in_out(300.millis()))
-        .transition(BorderRightColor, Transition::ease_in_out(300.millis()))
-        .transition(BorderBottomColor, Transition::ease_in_out(300.millis()))
+        .transition(BorderColorProp, Transition::ease_in_out(300.millis()))
         .transition(Background, Transition::ease_in_out(300.millis()))
         .transition(Outline, Transition::ease_in_out(200.millis()))
         .transition(OutlineColor, Transition::ease_in_out(200.millis()))

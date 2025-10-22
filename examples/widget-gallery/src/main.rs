@@ -119,14 +119,14 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                 set_active_tab.set(idx);
             }
         })
-        .style(|s| s.flex_col().width(140.0))
+        .style(|s| s.flex_col().width(140.0).flex_grow(1.))
         .scroll()
         .debug_name("Side Tab Bar")
         .scroll_style(|s| s.shrink_to_fit())
         .style(|s| {
             s.border(1.)
-                .padding_vert(3.)
-                .padding_left(3.)
+                .flex_col()
+                .padding(3.)
                 .border_color(palette::css::GRAY)
                 .class(LabelClass, |s| s.selectable(false))
         });

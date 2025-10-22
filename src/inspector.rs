@@ -445,6 +445,7 @@ fn selected_view(
                             }),
                             text(name),
                         ))
+                        .style(|s| s.items_center().justify_center())
                         .into_any()
                     };
                     let mut v = (prop.info().debug_view)(&*value).unwrap_or_else(|| {

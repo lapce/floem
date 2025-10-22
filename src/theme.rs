@@ -20,6 +20,7 @@ use crate::{
 };
 use floem_renderer::text::Weight;
 use peniko::{Brush, Color, color::palette::css};
+use smallvec::smallvec;
 
 style_class!(pub HoverTargetClass);
 
@@ -307,30 +308,8 @@ impl StyleThemeExt for Style {
     }
 }
 
-pub fn brighten_bg() -> Style {
-    Style::new().with_context::<Background>(|s, bg| {
-        s.apply_opt(
-            bg.clone().and_then(|bg| {
-                if let Brush::Solid(bg) = bg {
-                    Some(bg)
-                } else {
-                    None
-                }
-            }),
-            |s, bg| {
-                s.background(bg.map_lightness(|l| l - 0.1))
-                    .dark_mode(|s| s.background(bg.map_lightness(|l| l + 0.1)))
-            },
-        )
-    })
-}
-
 pub fn hover_style() -> Style {
-    Style::new().hover(|s| s.apply(brighten_bg()))
-}
-
-pub fn focus_applied_style() -> Style {
-    Style::new().with_theme(|s, t| s.border_color(t.primary()))
+    Style::new().hover(|s| s.apply(Style::new().with_theme(|s, t| s.background(t.bg_elevated()))))
 }
 
 pub fn focus_style() -> Style {
@@ -376,29 +355,25 @@ pub fn overlay_style() -> Style {
                 .color(t.text())
                 .background(t.bg_overlay())
                 // Small, tight shadow for definition at the edge
-                .apply_box_shadow(
+                .apply_box_shadow(smallvec![
                     BoxShadow::new()
                         .color(shadow_color.with_alpha(base_opacity * 1.2))
                         .v_offset(1.)
                         .blur_radius(2.)
                         .spread(0.),
-                )
-                // Medium shadow for perceived elevation
-                .apply_box_shadow(
+                    // Medium shadow for perceived elevation
                     BoxShadow::new()
                         .color(shadow_color.with_alpha(base_opacity * 0.8))
                         .v_offset(4.)
                         .blur_radius(8.)
                         .spread(-1.),
-                )
-                // Large, soft shadow for ambient depth
-                .apply_box_shadow(
+                    // Large, soft shadow for ambient depth
                     BoxShadow::new()
                         .color(shadow_color.with_alpha(base_opacity * 0.5))
                         .v_offset(12.)
                         .blur_radius(24.)
                         .spread(-4.),
-                )
+                ])
         })
         .dark_mode(|s| s.border(1).border_top(2.))
 }
@@ -415,7 +390,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         .transition(Background, Transition::linear(100.millis()))
         .justify_center()
         .items_center()
-        .apply(hover_style())
+        .hover(|s| s.with_theme(|s, t| s.background(t.bg_overlay())))
         .apply(focus_style())
         .apply(border_style(true));
 
@@ -454,9 +429,12 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                 })
         })
         .transition(Background, Transition::linear(100.millis()))
+        .class(CheckboxClass, |s| s.focusable(false))
         .focus(|s| {
-            s.class(CheckboxClass, |_| focus_applied_style())
-                .with_theme(|s, t| s.hover(|s| s.background(t.bg_overlay())))
+            s.class(CheckboxClass, |s| {
+                s.with_theme(|s, t| s.border_color(t.primary()))
+            })
+            .with_theme(|s, t| s.hover(|s| s.background(t.bg_overlay())))
         })
         .apply(hover_style())
         .apply(focus_style());
@@ -469,7 +447,7 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
             s.background(t.bg_base())
                 .active(|s| s.background(t.bg_base()))
                 .hover(|s| s.background(t.bg_elevated()))
-                .disabled(|s| s.background(t.bg_elevated()).color(t.text_muted()))
+                .disabled(|s| s.background(t.bg_disabled()).color(t.text_muted()))
         })
         .transition(Background, Transition::linear(100.millis()))
         .focus(|s| s.with_theme(|s, t| s.hover(|s| s.background(t.bg_overlay()))))
@@ -493,20 +471,18 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                 .padding(t.padding())
                 .border_radius(t.border_radius())
                 .hover(|s| s.background(t.primary_muted().with_alpha(0.7)))
-                .active(|s| s.class(RadioButtonClass, |s| s.apply(brighten_bg())))
-                .selected(|s| s.disabled(|s| s.color(t.bg_elevated())))
-                .disabled(|s| {
-                    s.color(t.text_muted()).class(RadioButtonClass, |s| {
-                        s.background(t.bg_disabled())
-                            .color(t.text_muted())
-                            .hover(|s| s.background(t.bg_elevated().with_alpha(0.3)))
+                .active(|s| {
+                    s.class(RadioButtonClass, |s| {
+                        s.apply(Style::new().with_theme(|s, t| s.background(t.bg_elevated())))
                     })
                 })
+                .selected(|s| s.disabled(|s| s.color(t.bg_elevated())))
+                .disabled(|s| s.color(t.text_muted()))
         })
+        .class(RadioButtonClass, |s| s.focusable(false))
         .transition(Background, Transition::linear(100.millis()))
         .focus(|s| {
-            s.class(RadioButtonClass, |_| focus_applied_style())
-                .with_theme(|s, t| s.hover(|s| s.background(t.primary().with_alpha(0.7))))
+            s.with_theme(|s, t| s.hover(|s| s.background(t.primary().with_alpha(0.7))))
                 .apply(focus_style())
         });
 
@@ -524,12 +500,12 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                 .hover(|s| s.background(t.bg_overlay()))
         })
         .aspect_ratio(2.)
-        .border_radius(50.pct())
         .border(1.)
         // .focus(|s| s.with_theme(|s, t| s.hover(|s| s.background(t.bg_overlay()))))
+        .border_radius(50.pct())
         .set(ToggleButtonCircleRad, 75.pct())
         .set(ToggleButtonInset, 10.pct())
-        .apply(border_style(true))
+        .apply(border_style(false))
         .apply(focus_style());
 
     let input_style = Style::new()
@@ -599,14 +575,20 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
         })
         .class(ListClass, |s| {
             s.apply(focus_style()).class(ListItemClass, |s| {
-                s.apply(hover_style())
-                    .apply(item_selected_style())
-                    .with_theme(|s, t| s.border_radius(t.border_radius()).padding_left(t.padding()))
-                    .items_center()
+                s.with_theme(|s, t| {
+                    s.hover(|s| s.background(t.bg_elevated())).selected(|s| {
+                        s.background(t.primary())
+                            .color(t.bg_base)
+                            .hover(|s| s.background(t.primary_muted()))
+                            .transition_background(Transition::linear(100.millis()))
+                    })
+                })
+                .with_theme(|s, t| s.border_radius(t.border_radius()).padding_left(t.padding()))
+                .items_center()
             })
         })
-        .class(LabeledCheckboxClass, |_| labeled_checkbox_style)
         .class(CheckboxClass, |_| checkbox_style)
+        .class(LabeledCheckboxClass, |_| labeled_checkbox_style)
         .class(RadioButtonClass, |_| radio_button_style)
         .class(RadioButtonDotClass, |_| radio_button_dot_style)
         .class(LabeledRadioButtonClass, |_| labeled_radio_button_style)

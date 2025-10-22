@@ -54,10 +54,8 @@ use crate::{
     context::{ComputeLayoutCx, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx},
     event::{Event, EventPropagation},
     id::ViewId,
-    style::{
-        BorderBottomLeftRadius, BorderBottomRightRadius, BorderTopLeftRadius, BorderTopRightRadius,
-        LayoutProps, Style, StyleClassRef,
-    },
+    style::{LayoutProps, Style, StyleClassRef},
+    unit::PxPct,
     view_state::ViewStyleProps,
     views::{DynamicView, dyn_view},
 };
@@ -429,20 +427,46 @@ pub(crate) fn border_radius(radius: crate::unit::PxPct, size: f64) -> f64 {
 }
 
 fn border_to_radii_view(style: &ViewStyleProps, size: Size) -> RoundedRectRadii {
+    let border_radii = style.border_radius();
     RoundedRectRadii {
-        top_left: border_radius(style.border_top_left_radius(), size.min_side()),
-        top_right: border_radius(style.border_top_right_radius(), size.min_side()),
-        bottom_left: border_radius(style.border_bottom_left_radius(), size.min_side()),
-        bottom_right: border_radius(style.border_bottom_right_radius(), size.min_side()),
+        top_left: border_radius(
+            border_radii.top_left.unwrap_or(PxPct::Px(0.0)),
+            size.min_side(),
+        ),
+        top_right: border_radius(
+            border_radii.top_right.unwrap_or(PxPct::Px(0.0)),
+            size.min_side(),
+        ),
+        bottom_left: border_radius(
+            border_radii.bottom_left.unwrap_or(PxPct::Px(0.0)),
+            size.min_side(),
+        ),
+        bottom_right: border_radius(
+            border_radii.bottom_right.unwrap_or(PxPct::Px(0.0)),
+            size.min_side(),
+        ),
     }
 }
 
 pub(crate) fn border_to_radii(style: &Style, size: Size) -> RoundedRectRadii {
+    let border_radii = style.get(crate::style::BorderRadiusProp);
     RoundedRectRadii {
-        top_left: border_radius(style.get(BorderTopLeftRadius), size.min_side()),
-        top_right: border_radius(style.get(BorderTopRightRadius), size.min_side()),
-        bottom_left: border_radius(style.get(BorderBottomLeftRadius), size.min_side()),
-        bottom_right: border_radius(style.get(BorderBottomRightRadius), size.min_side()),
+        top_left: border_radius(
+            border_radii.top_left.unwrap_or(PxPct::Px(0.0)),
+            size.min_side(),
+        ),
+        top_right: border_radius(
+            border_radii.top_right.unwrap_or(PxPct::Px(0.0)),
+            size.min_side(),
+        ),
+        bottom_left: border_radius(
+            border_radii.bottom_left.unwrap_or(PxPct::Px(0.0)),
+            size.min_side(),
+        ),
+        bottom_right: border_radius(
+            border_radii.bottom_right.unwrap_or(PxPct::Px(0.0)),
+            size.min_side(),
+        ),
     }
 }
 
@@ -602,70 +626,82 @@ pub(crate) fn paint_border(
     style: &ViewStyleProps,
     size: Size,
 ) {
-    let left = layout_style.border_left().0;
-    let top = layout_style.border_top().0;
-    let right = layout_style.border_right().0;
-    let bottom = layout_style.border_bottom().0;
+    let border = layout_style.border();
+
+    let left = border.left.map(|v| v.0).unwrap_or(Stroke::new(0.));
+    let top = border.top.map(|v| v.0).unwrap_or(Stroke::new(0.));
+    let right = border.right.map(|v| v.0).unwrap_or(Stroke::new(0.));
+    let bottom = border.bottom.map(|v| v.0).unwrap_or(Stroke::new(0.));
 
     if left.width == top.width
         && top.width == right.width
         && right.width == bottom.width
         && bottom.width == left.width
         && left.width > 0.0
-        && style.border_left_color() == style.border_top_color()
-        && style.border_top_color() == style.border_right_color()
-        && style.border_right_color() == style.border_bottom_color()
+        && style.border_color().left.is_some()
+        && style.border_color().top.is_some()
+        && style.border_color().right.is_some()
+        && style.border_color().bottom.is_some()
+        && style.border_color().left == style.border_color().top
+        && style.border_color().top == style.border_color().right
+        && style.border_color().right == style.border_color().bottom
     {
         let half = left.width / 2.0;
         let rect = size.to_rect().inflate(-half, -half);
         let radii = border_to_radii_view(style, size);
-        if radii_max(radii) > 0.0 {
-            let radii = radii_map(radii, |r| (r - half).max(0.0));
-            cx.stroke(
-                &rect.to_rounded_rect(radii),
-                &style.border_left_color(),
-                &left,
-            );
-        } else {
-            cx.stroke(&rect, &style.border_left_color(), &left);
+        if let Some(color) = style.border_color().left {
+            if radii_max(radii) > 0.0 {
+                let radii = radii_map(radii, |r| (r - half).max(0.0));
+                cx.stroke(&rect.to_rounded_rect(radii), &color, &left);
+            } else {
+                cx.stroke(&rect, &color, &left);
+            }
         }
     } else {
         // TODO: now with vello should we do this left.width > 0. check?
-        if left.width > 0.0 {
+        if left.width > 0.0
+            && let Some(color) = style.border_color().left
+        {
             let half = left.width / 2.0;
             cx.stroke(
                 &Line::new(Point::new(half, 0.0), Point::new(half, size.height)),
-                &style.border_left_color(),
+                &color,
                 &left,
             );
         }
-        if right.width > 0.0 {
+        if right.width > 0.0
+            && let Some(color) = style.border_color().right
+        {
             let half = right.width / 2.0;
             cx.stroke(
                 &Line::new(
                     Point::new(size.width - half, 0.0),
                     Point::new(size.width - half, size.height),
                 ),
-                &style.border_right_color(),
+                &color,
                 &right,
             );
         }
-        if top.width > 0.0 {
+        if top.width > 0.0
+            && let Some(color) = style.border_color().top
+        {
             let half = top.width / 2.0;
             cx.stroke(
                 &Line::new(Point::new(0.0, half), Point::new(size.width, half)),
-                &style.border_top_color(),
+                &color,
                 &top,
             );
         }
-        if bottom.width > 0.0 {
+        if bottom.width > 0.0
+            && let Some(color) = style.border_color().bottom
+        {
             let half = bottom.width / 2.0;
             cx.stroke(
                 &Line::new(
                     Point::new(0.0, size.height - half),
                     Point::new(size.width, size.height - half),
                 ),
-                &style.border_bottom_color(),
+                &color,
                 &bottom,
             );
         }
@@ -684,11 +720,24 @@ pub(crate) fn paint_border(
         unit::Pct,
     };
 
+    let border = layout_style.border();
     let borders = [
-        (layout_style.border_top().0, style.border_top_color()),
-        (layout_style.border_right().0, style.border_right_color()),
-        (layout_style.border_bottom().0, style.border_bottom_color()),
-        (layout_style.border_left().0, style.border_left_color()),
+        (
+            border.top.map(|v| v.0).unwrap_or(Stroke::new(0.)),
+            style.border_color().top.unwrap_or_default(),
+        ),
+        (
+            border.right.map(|v| v.0).unwrap_or(Stroke::new(0.)),
+            style.border_color().right.unwrap_or_default(),
+        ),
+        (
+            border.bottom.map(|v| v.0).unwrap_or(Stroke::new(0.)),
+            style.border_color().bottom.unwrap_or_default(),
+        ),
+        (
+            border.left.map(|v| v.0).unwrap_or(Stroke::new(0.)),
+            style.border_color().left.unwrap_or_default(),
+        ),
     ];
 
     // Early return if no borders

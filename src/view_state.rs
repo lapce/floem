@@ -8,10 +8,8 @@ use crate::{
     prop_extractor,
     responsive::ScreenSizeBp,
     style::{
-        Background, BorderBottomColor, BorderBottomLeftRadius, BorderBottomRightRadius,
-        BorderLeftColor, BorderRightColor, BorderTopColor, BorderTopLeftRadius,
-        BorderTopRightRadius, BoxShadowProp, LayoutProps, Outline, OutlineColor, Style,
-        StyleClassRef, StyleSelectors, resolve_nested_maps,
+        Background, BorderColorProp, BorderRadiusProp, BoxShadowProp, LayoutProps, Outline,
+        OutlineColor, Style, StyleClassRef, StyleSelectors, resolve_nested_maps,
     },
 };
 use bitflags::bitflags;
@@ -70,19 +68,13 @@ impl<T> Stack<T> {
 #[cfg(feature = "vello")]
 prop_extractor! {
     pub(crate) ViewStyleProps {
-        pub border_top_left_radius: BorderTopLeftRadius,
-        pub border_top_right_radius: BorderTopRightRadius,
-        pub border_bottom_left_radius: BorderBottomLeftRadius,
-        pub border_bottom_right_radius: BorderBottomRightRadius,
+        pub border_radius: BorderRadiusProp,
         pub border_progress: crate::style::BorderProgress,
 
         pub outline: Outline,
         pub outline_color: OutlineColor,
         pub outline_progress: crate::style::OutlineProgress,
-        pub border_left_color: BorderLeftColor,
-        pub border_top_color: BorderTopColor,
-        pub border_right_color: BorderRightColor,
-        pub border_bottom_color: BorderBottomColor,
+        pub border_color: BorderColorProp,
         pub background: Background,
         pub shadow: BoxShadowProp,
     }
@@ -91,17 +83,11 @@ prop_extractor! {
 #[cfg(not(feature = "vello"))]
 prop_extractor! {
     pub(crate) ViewStyleProps {
-        pub border_top_left_radius: BorderTopLeftRadius,
-        pub border_top_right_radius: BorderTopRightRadius,
-        pub border_bottom_left_radius: BorderBottomLeftRadius,
-        pub border_bottom_right_radius: BorderBottomRightRadius,
+        pub border_radius: BorderRadiusProp,
 
         pub outline: Outline,
         pub outline_color: OutlineColor,
-        pub border_left_color: BorderLeftColor,
-        pub border_top_color: BorderTopColor,
-        pub border_right_color: BorderRightColor,
-        pub border_bottom_color: BorderBottomColor,
+        pub border_color: BorderColorProp,
         pub background: Background,
         pub shadow: BoxShadowProp,
     }
@@ -263,31 +249,41 @@ impl ViewState {
         // Build the initial combined style
         let mut combined_style = Style::new();
 
+        let mut classes: SmallVec<[_; 4]> = SmallVec::new();
+
         // Apply view class if provided
         if let Some(view_class) = view_class {
-            combined_style = combined_style.apply_classes_from_context(&[view_class], context);
+            classes.insert(0, view_class);
         }
 
-        // Apply other classes from context
-        combined_style = combined_style.apply_classes_from_context(&self.classes, context);
-
-        // Apply view style if provided
-        if let Some(view_style) = view_style {
-            combined_style.apply_mut(view_style);
+        for class in &self.classes {
+            classes.push(*class);
         }
 
-        // Apply self style
-        let self_style = self.style();
-        combined_style.apply_mut(self_style);
+        let mut new_context = context.clone();
 
-        let new_context = context.clone(); //.apply(combined_style.clone());
-
-        // Use the recursive resolution function to handle all nested states
         combined_style = resolve_nested_maps(
             combined_style,
             &interact_state,
             screen_size_bp,
-            &new_context,
+            &classes,
+            &mut new_context,
+        );
+
+        if let Some(view_style) = &view_style {
+            combined_style.apply_mut(view_style.clone());
+        }
+
+        let self_style = self.style();
+
+        combined_style.apply_mut(self_style.clone());
+
+        combined_style = resolve_nested_maps(
+            combined_style,
+            &interact_state,
+            screen_size_bp,
+            &classes,
+            &mut new_context,
         );
 
         // Track if this style has selectors for optimization purposes

@@ -245,11 +245,17 @@ impl ViewId {
             PxPct::Px(v) => v,
             PxPct::Pct(pct) => pct * abs,
         };
+        let border = props.border();
+        let padding = props.padding();
         rect.inset(-Insets {
-            x0: props.border_left().0.width + pixels(props.padding_left(), rect.width()),
-            x1: props.border_right().0.width + pixels(props.padding_right(), rect.width()),
-            y0: props.border_top().0.width + pixels(props.padding_top(), rect.height()),
-            y1: props.border_bottom().0.width + pixels(props.padding_bottom(), rect.height()),
+            x0: border.left.map_or(0.0, |b| b.0.width)
+                + pixels(padding.left.unwrap_or(PxPct::Px(0.0)), rect.width()),
+            x1: border.right.map_or(0.0, |b| b.0.width)
+                + pixels(padding.right.unwrap_or(PxPct::Px(0.0)), rect.width()),
+            y0: border.top.map_or(0.0, |b| b.0.width)
+                + pixels(padding.top.unwrap_or(PxPct::Px(0.0)), rect.height()),
+            y1: border.bottom.map_or(0.0, |b| b.0.width)
+                + pixels(padding.bottom.unwrap_or(PxPct::Px(0.0)), rect.height()),
         })
     }
 

@@ -54,6 +54,11 @@ use crate::views::{
 };
 use crate::{AnyView, easing::*};
 
+pub enum CombineResult<T> {
+    Other,  // The result is semantically `other` - caller can reuse it
+    New(T), // A new value was created
+}
+
 pub trait StylePropValue: Clone + PartialEq + Debug {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         None
@@ -61,6 +66,10 @@ pub trait StylePropValue: Clone + PartialEq + Debug {
 
     fn interpolate(&self, _other: &Self, _value: f64) -> Option<Self> {
         None
+    }
+
+    fn combine(&self, _other: &Self) -> CombineResult<Self> {
+        CombineResult::Other
     }
 }
 
@@ -122,7 +131,7 @@ impl StylePropValue for BoxShadow {
                         .border(1.)
                         .border_radius(t.border_radius())
                 })
-                .apply_box_shadow(shadow)
+                .apply_box_shadow(vec![shadow])
                 .margin(10.0)
             });
 
@@ -673,7 +682,7 @@ impl StylePropValue for Gradient {
 }
 
 // this is necessary because Stroke doesn't impl partial eq. it probably should...
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct StrokeWrap(pub Stroke);
 impl StrokeWrap {
     fn new(width: f64) -> Self {
@@ -968,6 +977,8 @@ pub trait StyleProp: Default + Copy + 'static {
 pub(crate) type InterpolateFn =
     fn(val1: &dyn Any, val2: &dyn Any, time: f64) -> Option<Rc<dyn Any>>;
 
+pub(crate) type CombineFn = fn(val1: Rc<dyn Any>, val2: Rc<dyn Any>) -> Rc<dyn Any>;
+
 #[derive(Debug)]
 pub struct StylePropInfo {
     pub(crate) name: fn() -> &'static str,
@@ -977,6 +988,7 @@ pub struct StylePropInfo {
     pub(crate) interpolate: InterpolateFn,
     pub(crate) debug_any: fn(val: &dyn Any) -> String,
     pub(crate) debug_view: fn(val: &dyn Any) -> Option<Box<dyn View>>,
+    pub(crate) combine: CombineFn,
     pub(crate) transition_key: StyleKey,
 }
 
@@ -1041,6 +1053,40 @@ impl StylePropInfo {
                         "expected type {} for property {}",
                         type_name::<T>(),
                         std::any::type_name::<Name>(),
+                    )
+                }
+            },
+            combine: |val1, val2| {
+                if let (Some(v1), Some(v2)) = (
+                    val1.downcast_ref::<StyleMapValue<T>>(),
+                    val2.downcast_ref::<StyleMapValue<T>>(),
+                ) {
+                    match (v1, v2) {
+                        (StyleMapValue::Val(a), StyleMapValue::Val(b)) => match a.combine(b) {
+                            CombineResult::Other => val2,
+                            CombineResult::New(result) => {
+                                Rc::new(StyleMapValue::Val(result)) as Rc<dyn Any>
+                            }
+                        },
+                        (StyleMapValue::Unset, _) => val2,
+                        (_, StyleMapValue::Unset) => val2,
+                        (
+                            StyleMapValue::Val(a) | StyleMapValue::Animated(a),
+                            StyleMapValue::Animated(b) | StyleMapValue::Val(b),
+                        ) => match a.combine(b) {
+                            CombineResult::Other => val2,
+                            CombineResult::New(result) => {
+                                Rc::new(StyleMapValue::Animated(result)) as Rc<dyn Any>
+                            }
+                        },
+                    }
+                } else {
+                    panic!(
+                        "expected type {} for property {}. Got typeids {:?} and {:?}",
+                        type_name::<StyleMapValue<T>>(),
+                        std::any::type_name::<Name>(),
+                        val1.type_id(),
+                        val2.type_id()
                     )
                 }
             },
@@ -1842,70 +1888,70 @@ pub(crate) fn resolve_nested_maps(
     style: Style,
     interact_state: &InteractionState,
     screen_size_bp: ScreenSizeBp,
-    context: &Style,
+    classes: &[StyleClassRef],
+    context: &mut Style,
 ) -> Style {
     // Start with depth 0 for the initial call
-    resolve_nested_maps_internal(style, interact_state, screen_size_bp, context, 0)
+    resolve_nested_maps_internal(style, interact_state, screen_size_bp, context, classes, 0)
 }
 
 fn resolve_nested_maps_internal(
     mut style: Style,
     interact_state: &InteractionState,
     screen_size_bp: ScreenSizeBp,
-    context: &Style,
+    context: &mut Style,
+    classes: &[StyleClassRef],
     depth: u32,
 ) -> Style {
-    const MAX_DEPTH: u32 = 50;
+    const MAX_DEPTH: u32 = 6;
     if depth >= MAX_DEPTH {
         #[cfg(debug_assertions)]
         dbg!("past max depth");
         return style;
     }
 
-    // Apply context mappings first - these can introduce new nested maps
+    let mut changed = false;
+
+    let old_style = style.clone();
+    style = style.apply_classes_from_context(classes, context);
+    if !old_style.map.ptr_eq(&style.map) {
+        for class in classes {
+            context.remove_nested_map(class.key);
+        }
+        changed = true;
+    }
+
+    // Apply context mappings first
     let old_style = style.clone();
     style = style.apply_context_mappings(context);
     if !old_style.map.ptr_eq(&style.map) {
-        style =
-            resolve_nested_maps_internal(style, interact_state, screen_size_bp, context, depth + 1);
+        changed = true;
     }
 
     // Apply screen size breakpoints
-    if let Some(mut map) = style.get_nested_map(screen_size_bp_to_key(screen_size_bp)) {
-        map = resolve_nested_maps_internal(map, interact_state, screen_size_bp, context, depth + 1);
+    if let Some(map) = style.get_nested_map(screen_size_bp_to_key(screen_size_bp)) {
         if !map.map.ptr_eq(&style.map) {
             style.apply_mut(map);
+            changed = true;
         }
     }
 
     // DarkMode
     if interact_state.is_dark_mode {
-        if let Some(mut map) = style.get_nested_map(StyleSelector::DarkMode.to_key()) {
-            map = resolve_nested_maps_internal(
-                map,
-                interact_state,
-                screen_size_bp,
-                context,
-                depth + 1,
-            );
+        if let Some(map) = style.get_nested_map(StyleSelector::DarkMode.to_key()) {
             if !map.map.ptr_eq(&style.map) {
                 style.apply_mut(map);
+                changed = true;
             }
         }
     }
 
     // Disabled state (takes precedence)
     if interact_state.is_disabled {
-        if let Some(mut map) = style.get_nested_map(StyleSelector::Disabled.to_key()) {
-            map = resolve_nested_maps_internal(
-                map,
-                interact_state,
-                screen_size_bp,
-                context,
-                depth + 1,
-            );
+        if let Some(map) = style.get_nested_map(StyleSelector::Disabled.to_key()) {
             if !map.map.ptr_eq(&style.map) {
                 style.apply_mut(map);
+                changed = true;
             }
         }
     } else {
@@ -1913,92 +1959,56 @@ fn resolve_nested_maps_internal(
 
         // Selected
         if interact_state.is_selected || style.get(Selected) {
-            if let Some(mut map) = style.get_nested_map(StyleSelector::Selected.to_key()) {
-                map = resolve_nested_maps_internal(
-                    map,
-                    interact_state,
-                    screen_size_bp,
-                    context,
-                    depth + 1,
-                );
+            if let Some(map) = style.get_nested_map(StyleSelector::Selected.to_key()) {
                 if !map.map.ptr_eq(&style.map) {
                     style.apply_mut(map);
+                    changed = true;
                 }
             }
         }
 
         // Hover
         if interact_state.is_hovered {
-            if let Some(mut map) = style.get_nested_map(StyleSelector::Hover.to_key()) {
-                map = resolve_nested_maps_internal(
-                    map,
-                    interact_state,
-                    screen_size_bp,
-                    context,
-                    depth + 1,
-                );
+            if let Some(map) = style.get_nested_map(StyleSelector::Hover.to_key()) {
                 if !map.map.ptr_eq(&style.map) {
                     style.apply_mut(map);
+                    changed = true;
                 }
             }
         }
 
         // File Hover
         if interact_state.is_file_hover {
-            if let Some(mut map) = style.get_nested_map(StyleSelector::FileHover.to_key()) {
-                map = resolve_nested_maps_internal(
-                    map,
-                    interact_state,
-                    screen_size_bp,
-                    context,
-                    depth + 1,
-                );
+            if let Some(map) = style.get_nested_map(StyleSelector::FileHover.to_key()) {
                 if !map.map.ptr_eq(&style.map) {
                     style.apply_mut(map);
+                    changed = true;
                 }
             }
         }
 
         // Focus states
         if interact_state.is_focused {
-            if let Some(mut map) = style.get_nested_map(StyleSelector::Focus.to_key()) {
-                map = resolve_nested_maps_internal(
-                    map,
-                    interact_state,
-                    screen_size_bp,
-                    context,
-                    depth + 1,
-                );
+            if let Some(map) = style.get_nested_map(StyleSelector::Focus.to_key()) {
                 if !map.map.ptr_eq(&style.map) {
                     style.apply_mut(map);
+                    changed = true;
                 }
             }
 
             if interact_state.using_keyboard_navigation {
-                if let Some(mut map) = style.get_nested_map(StyleSelector::FocusVisible.to_key()) {
-                    map = resolve_nested_maps_internal(
-                        map,
-                        interact_state,
-                        screen_size_bp,
-                        context,
-                        depth + 1,
-                    );
+                if let Some(map) = style.get_nested_map(StyleSelector::FocusVisible.to_key()) {
                     if !map.map.ptr_eq(&style.map) {
                         style.apply_mut(map);
+                        changed = true;
                     }
                 }
 
                 if interact_state.is_clicking {
-                    if let Some(mut map) = style.get_nested_map(StyleSelector::Active.to_key()) {
-                        map = resolve_nested_maps_internal(
-                            map,
-                            interact_state,
-                            screen_size_bp,
-                            context,
-                            depth + 1,
-                        );
+                    if let Some(map) = style.get_nested_map(StyleSelector::Active.to_key()) {
                         if !map.map.ptr_eq(&style.map) {
                             style.apply_mut(map);
+                            changed = true;
                         }
                     }
                 }
@@ -2010,19 +2020,25 @@ fn resolve_nested_maps_internal(
             && interact_state.is_hovered
             && !interact_state.using_keyboard_navigation
         {
-            if let Some(mut map) = style.get_nested_map(StyleSelector::Active.to_key()) {
-                map = resolve_nested_maps_internal(
-                    map,
-                    interact_state,
-                    screen_size_bp,
-                    context,
-                    depth + 1,
-                );
+            if let Some(map) = style.get_nested_map(StyleSelector::Active.to_key()) {
                 if !map.map.ptr_eq(&style.map) {
                     style.apply_mut(map);
+                    changed = true;
                 }
             }
         }
+    }
+
+    // Recurse once at the end if anything changed
+    if changed {
+        style = resolve_nested_maps_internal(
+            style,
+            interact_state,
+            screen_size_bp,
+            context,
+            classes,
+            depth + 1,
+        );
     }
 
     style
@@ -2211,6 +2227,12 @@ impl Style {
             .map(|map| map.downcast_ref::<Style>().unwrap().clone())
     }
 
+    pub(crate) fn remove_nested_map(&mut self, key: StyleKey) -> Option<Style> {
+        self.map
+            .remove(&key)
+            .map(|map| map.downcast_ref::<Style>().unwrap().clone())
+    }
+
     pub(crate) fn any_inherited(&self) -> bool {
         self.map.iter().any(|(p, _)| p.inherited())
     }
@@ -2323,8 +2345,19 @@ impl Style {
                         e.insert(v);
                     }
                 },
-                StyleKeyInfo::Transition | StyleKeyInfo::Prop(..) => {
+                StyleKeyInfo::Transition => {
                     self.map.insert(k, v);
+                }
+                StyleKeyInfo::Prop(info) => {
+                    match self.map.entry(k) {
+                        Entry::Occupied(mut e) => {
+                            // We need to merge the new map with the existing map.
+                            e.insert((info.combine)(e.get().clone(), v));
+                        }
+                        Entry::Vacant(e) => {
+                            e.insert(v);
+                        }
+                    }
                 }
             }
         }
@@ -2721,6 +2754,581 @@ impl Default for BoxShadow {
     }
 }
 
+/// Structure holding border widths for all four sides
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Border {
+    pub left: Option<StrokeWrap>,
+    pub top: Option<StrokeWrap>,
+    pub right: Option<StrokeWrap>,
+    pub bottom: Option<StrokeWrap>,
+}
+
+impl Border {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn all(border: impl Into<StrokeWrap>) -> Self {
+        let border = border.into();
+        Self {
+            left: Some(border.clone()),
+            top: Some(border.clone()),
+            right: Some(border.clone()),
+            bottom: Some(border),
+        }
+    }
+
+    pub fn left(mut self, border: impl Into<StrokeWrap>) -> Self {
+        self.left = Some(border.into());
+        self
+    }
+
+    pub fn top(mut self, border: impl Into<StrokeWrap>) -> Self {
+        self.top = Some(border.into());
+        self
+    }
+
+    pub fn right(mut self, border: impl Into<StrokeWrap>) -> Self {
+        self.right = Some(border.into());
+        self
+    }
+
+    pub fn bottom(mut self, border: impl Into<StrokeWrap>) -> Self {
+        self.bottom = Some(border.into());
+        self
+    }
+
+    pub fn horiz(mut self, border: impl Into<StrokeWrap>) -> Self {
+        let border = border.into();
+        self.left = Some(border.clone());
+        self.right = Some(border);
+        self
+    }
+
+    pub fn vert(mut self, border: impl Into<StrokeWrap>) -> Self {
+        let border = border.into();
+        self.top = Some(border.clone());
+        self.bottom = Some(border);
+        self
+    }
+}
+
+impl StylePropValue for Border {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let border = self.clone();
+        let details_view = move || {
+            let sides = [
+                ("Left:", border.left),
+                ("Top:", border.top),
+                ("Right:", border.right),
+                ("Bottom:", border.bottom),
+            ];
+
+            v_stack_from_iter(
+                sides
+                    .into_iter()
+                    .filter_map(|(l, v)| v.map(|v| (l, v)))
+                    .map(|(label, value)| {
+                        h_stack((
+                            label.style(|s| s.font_weight(Weight::BOLD).width(80.0)),
+                            value.debug_view().unwrap(),
+                        ))
+                        .style(|s| s.items_center().gap(4.0))
+                        .into_any()
+                    }),
+            )
+            .style(|s| s.gap(4.0).padding(8.0))
+        };
+        Some(details_view().into_any())
+    }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some(Self {
+            left: self.left.interpolate(&other.left, value)?,
+            top: self.top.interpolate(&other.top, value)?,
+            right: self.right.interpolate(&other.right, value)?,
+            bottom: self.bottom.interpolate(&other.bottom, value)?,
+        })
+    }
+
+    fn combine(&self, other: &Self) -> CombineResult<Self> {
+        let result = Border {
+            left: other.left.clone().or_else(|| self.left.clone()),
+            top: other.top.clone().or_else(|| self.top.clone()),
+            right: other.right.clone().or_else(|| self.right.clone()),
+            bottom: other.bottom.clone().or_else(|| self.bottom.clone()),
+        };
+
+        if result == *other {
+            CombineResult::Other
+        } else {
+            CombineResult::New(result)
+        }
+    }
+}
+
+/// Structure holding border colors for all four sides
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct BorderColor {
+    pub left: Option<Brush>,
+    pub top: Option<Brush>,
+    pub right: Option<Brush>,
+    pub bottom: Option<Brush>,
+}
+
+impl BorderColor {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn all(color: impl Into<Brush>) -> Self {
+        let color = color.into();
+        Self {
+            left: Some(color.clone()),
+            top: Some(color.clone()),
+            right: Some(color.clone()),
+            bottom: Some(color),
+        }
+    }
+
+    pub fn left(mut self, color: impl Into<Brush>) -> Self {
+        self.left = Some(color.into());
+        self
+    }
+
+    pub fn top(mut self, color: impl Into<Brush>) -> Self {
+        self.top = Some(color.into());
+        self
+    }
+
+    pub fn right(mut self, color: impl Into<Brush>) -> Self {
+        self.right = Some(color.into());
+        self
+    }
+
+    pub fn bottom(mut self, color: impl Into<Brush>) -> Self {
+        self.bottom = Some(color.into());
+        self
+    }
+
+    pub fn horiz(mut self, color: impl Into<Brush>) -> Self {
+        let color = color.into();
+        self.left = Some(color.clone());
+        self.right = Some(color);
+        self
+    }
+
+    pub fn vert(mut self, color: impl Into<Brush>) -> Self {
+        let color = color.into();
+        self.top = Some(color.clone());
+        self.bottom = Some(color);
+        self
+    }
+}
+
+impl StylePropValue for BorderColor {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let border_color = self.clone();
+        let details_view = move || {
+            let sides = [
+                ("Left:", border_color.left),
+                ("Top:", border_color.top),
+                ("Right:", border_color.right),
+                ("Bottom:", border_color.bottom),
+            ];
+
+            v_stack_from_iter(
+                sides
+                    .into_iter()
+                    .filter_map(|(l, v)| v.map(|v| (l, v)))
+                    .map(|(label, color)| {
+                        h_stack((
+                            label.style(|s| s.font_weight(Weight::BOLD).width(80.0)),
+                            color.debug_view().unwrap(),
+                        ))
+                        .style(|s| s.items_center().gap(4.0))
+                    }),
+            )
+            .style(|s| s.gap(4.0).padding(8.0))
+        };
+        Some(details_view().into_any())
+    }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some(Self {
+            left: self.left.interpolate(&other.left, value)?,
+            top: self.top.interpolate(&other.top, value)?,
+            right: self.right.interpolate(&other.right, value)?,
+            bottom: self.bottom.interpolate(&other.bottom, value)?,
+        })
+    }
+
+    fn combine(&self, other: &Self) -> CombineResult<Self> {
+        let result = BorderColor {
+            left: other.left.clone().or_else(|| self.left.clone()),
+            top: other.top.clone().or_else(|| self.top.clone()),
+            right: other.right.clone().or_else(|| self.right.clone()),
+            bottom: other.bottom.clone().or_else(|| self.bottom.clone()),
+        };
+
+        if result == *other {
+            CombineResult::Other
+        } else {
+            CombineResult::New(result)
+        }
+    }
+}
+
+/// Structure holding border radius for all four corners
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct BorderRadius {
+    pub top_left: Option<PxPct>,
+    pub top_right: Option<PxPct>,
+    pub bottom_left: Option<PxPct>,
+    pub bottom_right: Option<PxPct>,
+}
+
+impl BorderRadius {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn all(radius: impl Into<PxPct>) -> Self {
+        let radius = radius.into();
+        Self {
+            top_left: Some(radius),
+            top_right: Some(radius),
+            bottom_left: Some(radius),
+            bottom_right: Some(radius),
+        }
+    }
+
+    pub fn top_left(mut self, radius: impl Into<PxPct>) -> Self {
+        self.top_left = Some(radius.into());
+        self
+    }
+
+    pub fn top_right(mut self, radius: impl Into<PxPct>) -> Self {
+        self.top_right = Some(radius.into());
+        self
+    }
+
+    pub fn bottom_left(mut self, radius: impl Into<PxPct>) -> Self {
+        self.bottom_left = Some(radius.into());
+        self
+    }
+
+    pub fn bottom_right(mut self, radius: impl Into<PxPct>) -> Self {
+        self.bottom_right = Some(radius.into());
+        self
+    }
+
+    pub fn top(mut self, radius: impl Into<PxPct>) -> Self {
+        let radius = radius.into();
+        self.top_left = Some(radius);
+        self.top_right = Some(radius);
+        self
+    }
+
+    pub fn bottom(mut self, radius: impl Into<PxPct>) -> Self {
+        let radius = radius.into();
+        self.bottom_left = Some(radius);
+        self.bottom_right = Some(radius);
+        self
+    }
+
+    pub fn left(mut self, radius: impl Into<PxPct>) -> Self {
+        let radius = radius.into();
+        self.top_left = Some(radius);
+        self.bottom_left = Some(radius);
+        self
+    }
+
+    pub fn right(mut self, radius: impl Into<PxPct>) -> Self {
+        let radius = radius.into();
+        self.top_right = Some(radius);
+        self.bottom_right = Some(radius);
+        self
+    }
+}
+
+impl StylePropValue for BorderRadius {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let border_radius = *self;
+        let details_view = move || {
+            let corners = [
+                ("Top Left:", border_radius.top_left),
+                ("Top Right:", border_radius.top_right),
+                ("Bottom Left:", border_radius.bottom_left),
+                ("Bottom Right:", border_radius.bottom_right),
+            ];
+
+            v_stack_from_iter(
+                corners
+                    .into_iter()
+                    .filter_map(|(l, v)| v.map(|v| (l, v)))
+                    .map(|(label, radius)| {
+                        h_stack((
+                            label.style(|s| s.font_weight(Weight::BOLD).width(80.0)),
+                            radius.debug_view().unwrap(),
+                        ))
+                        .style(|s| s.items_center().gap(4.0))
+                    }),
+            )
+            .style(|s| s.gap(4.0).padding(8.0))
+        };
+        Some(details_view().into_any())
+    }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some(Self {
+            top_left: self.top_left.interpolate(&other.top_left, value)?,
+            top_right: self.top_right.interpolate(&other.top_right, value)?,
+            bottom_left: self.bottom_left.interpolate(&other.bottom_left, value)?,
+            bottom_right: self.bottom_right.interpolate(&other.bottom_right, value)?,
+        })
+    }
+
+    fn combine(&self, other: &Self) -> CombineResult<Self> {
+        let result = BorderRadius {
+            top_left: other.top_left.or(self.top_left),
+            top_right: other.top_right.or(self.top_right),
+            bottom_left: other.bottom_left.or(self.bottom_left),
+            bottom_right: other.bottom_right.or(self.bottom_right),
+        };
+
+        if result == *other {
+            CombineResult::Other
+        } else {
+            CombineResult::New(result)
+        }
+    }
+}
+
+/// Structure holding padding values for all four sides
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Padding {
+    pub left: Option<PxPct>,
+    pub top: Option<PxPct>,
+    pub right: Option<PxPct>,
+    pub bottom: Option<PxPct>,
+}
+
+impl Padding {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn all(padding: impl Into<PxPct>) -> Self {
+        let padding = padding.into();
+        Self {
+            left: Some(padding),
+            top: Some(padding),
+            right: Some(padding),
+            bottom: Some(padding),
+        }
+    }
+
+    pub fn left(mut self, padding: impl Into<PxPct>) -> Self {
+        self.left = Some(padding.into());
+        self
+    }
+
+    pub fn top(mut self, padding: impl Into<PxPct>) -> Self {
+        self.top = Some(padding.into());
+        self
+    }
+
+    pub fn right(mut self, padding: impl Into<PxPct>) -> Self {
+        self.right = Some(padding.into());
+        self
+    }
+
+    pub fn bottom(mut self, padding: impl Into<PxPct>) -> Self {
+        self.bottom = Some(padding.into());
+        self
+    }
+
+    pub fn horiz(mut self, padding: impl Into<PxPct>) -> Self {
+        let padding = padding.into();
+        self.left = Some(padding);
+        self.right = Some(padding);
+        self
+    }
+
+    pub fn vert(mut self, padding: impl Into<PxPct>) -> Self {
+        let padding = padding.into();
+        self.top = Some(padding);
+        self.bottom = Some(padding);
+        self
+    }
+}
+
+impl StylePropValue for Padding {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let padding = *self;
+        let details_view = move || {
+            let sides = [
+                ("Left:", padding.left),
+                ("Top:", padding.top),
+                ("Right:", padding.right),
+                ("Bottom:", padding.bottom),
+            ];
+
+            v_stack_from_iter(
+                sides
+                    .into_iter()
+                    .filter_map(|(l, v)| v.map(|v| (l, v)))
+                    .map(|(label, padding)| {
+                        h_stack((
+                            label.style(|s| s.font_weight(Weight::BOLD).width(80.0)),
+                            padding.debug_view().unwrap(),
+                        ))
+                        .style(|s| s.items_center().gap(4.0))
+                    }),
+            )
+            .style(|s| s.gap(4.0).padding(8.0))
+        };
+        Some(details_view().into_any())
+    }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some(Self {
+            left: self.left.interpolate(&other.left, value)?,
+            top: self.top.interpolate(&other.top, value)?,
+            right: self.right.interpolate(&other.right, value)?,
+            bottom: self.bottom.interpolate(&other.bottom, value)?,
+        })
+    }
+
+    fn combine(&self, other: &Self) -> CombineResult<Self> {
+        let result = Padding {
+            left: other.left.or(self.left),
+            top: other.top.or(self.top),
+            right: other.right.or(self.right),
+            bottom: other.bottom.or(self.bottom),
+        };
+
+        if result == *other {
+            CombineResult::Other
+        } else {
+            CombineResult::New(result)
+        }
+    }
+}
+
+/// Structure holding margin values for all four sides
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Margin {
+    pub left: Option<PxPctAuto>,
+    pub top: Option<PxPctAuto>,
+    pub right: Option<PxPctAuto>,
+    pub bottom: Option<PxPctAuto>,
+}
+
+impl Margin {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn all(margin: impl Into<PxPctAuto>) -> Self {
+        let margin = margin.into();
+        Self {
+            left: Some(margin),
+            top: Some(margin),
+            right: Some(margin),
+            bottom: Some(margin),
+        }
+    }
+
+    pub fn left(mut self, margin: impl Into<PxPctAuto>) -> Self {
+        self.left = Some(margin.into());
+        self
+    }
+
+    pub fn top(mut self, margin: impl Into<PxPctAuto>) -> Self {
+        self.top = Some(margin.into());
+        self
+    }
+
+    pub fn right(mut self, margin: impl Into<PxPctAuto>) -> Self {
+        self.right = Some(margin.into());
+        self
+    }
+
+    pub fn bottom(mut self, margin: impl Into<PxPctAuto>) -> Self {
+        self.bottom = Some(margin.into());
+        self
+    }
+
+    pub fn horiz(mut self, margin: impl Into<PxPctAuto>) -> Self {
+        let margin = margin.into();
+        self.left = Some(margin);
+        self.right = Some(margin);
+        self
+    }
+
+    pub fn vert(mut self, margin: impl Into<PxPctAuto>) -> Self {
+        let margin = margin.into();
+        self.top = Some(margin);
+        self.bottom = Some(margin);
+        self
+    }
+}
+
+impl StylePropValue for Margin {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let margin = *self;
+        let details_view = move || {
+            let sides = [
+                ("Left:", margin.left),
+                ("Top:", margin.top),
+                ("Right:", margin.right),
+                ("Bottom:", margin.bottom),
+            ];
+
+            v_stack_from_iter(
+                sides
+                    .into_iter()
+                    .filter_map(|(l, v)| v.map(|v| (l, v)))
+                    .map(|(label, margin)| {
+                        h_stack((
+                            label.style(|s| s.font_weight(Weight::BOLD).width(80.0)),
+                            margin.debug_view().unwrap(),
+                        ))
+                        .style(|s| s.items_center().gap(4.0))
+                    }),
+            )
+            .style(|s| s.gap(4.0).padding(8.0))
+        };
+        Some(details_view().into_any())
+    }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some(Self {
+            left: self.left.interpolate(&other.left, value)?,
+            top: self.top.interpolate(&other.top, value)?,
+            right: self.right.interpolate(&other.right, value)?,
+            bottom: self.bottom.interpolate(&other.bottom, value)?,
+        })
+    }
+
+    fn combine(&self, other: &Self) -> CombineResult<Self> {
+        let result = Margin {
+            left: other.left.or(self.left),
+            top: other.top.or(self.top),
+            right: other.right.or(self.right),
+            bottom: other.bottom.or(self.bottom),
+        };
+
+        if result == *other {
+            CombineResult::Other
+        } else {
+            CombineResult::New(result)
+        }
+    }
+}
+
 /// The value for a [`Style`] property
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StyleValue<T> {
@@ -2848,30 +3456,15 @@ define_builtin_props!(
     GridRow grid_row: Line<GridPlacement> {} = Line::default(),
     GridColumn grid_column: Line<GridPlacement> {} = Line::default(),
     AlignSelf align_self: Option<AlignItems> {} = None,
-    BorderLeft border_left nocb: StrokeWrap {} = StrokeWrap::new(0.),
-    BorderTop border_top nocb: StrokeWrap {} = StrokeWrap::new(0.0),
-    BorderRight border_right nocb: StrokeWrap {} = StrokeWrap::new(0.0),
-    BorderBottom border_bottom nocb: StrokeWrap {} = StrokeWrap::new(0.0),
-    BorderTopLeftRadius border_top_left_radius: PxPct {} = PxPct::Px(0.0),
-    BorderTopRightRadius border_top_right_radius: PxPct {} = PxPct::Px(0.0),
-    BorderBottomLeftRadius border_bottom_left_radius: PxPct {} = PxPct::Px(0.0),
-    BorderBottomRightRadius border_bottom_right_radius: PxPct {} = PxPct::Px(0.0),
     OutlineColor outline_color: Brush {} = Brush::Solid(palette::css::TRANSPARENT),
     Outline outline nocb: StrokeWrap {} = StrokeWrap::new(0.),
     OutlineProgress outline_progress: Pct {} = Pct(100.),
-    BorderLeftColor border_left_color: Brush {} = Brush::Solid(palette::css::BLACK),
-    BorderTopColor border_top_color: Brush {} = Brush::Solid(palette::css::BLACK),
-    BorderRightColor border_right_color: Brush {} = Brush::Solid(palette::css::BLACK),
-    BorderBottomColor border_bottom_color: Brush {} = Brush::Solid(palette::css::BLACK),
     BorderProgress border_progress: Pct {} = Pct(100.),
-    PaddingLeft padding_left: PxPct {} = PxPct::Px(0.0),
-    PaddingTop padding_top: PxPct {} = PxPct::Px(0.0),
-    PaddingRight padding_right: PxPct {} = PxPct::Px(0.0),
-    PaddingBottom padding_bottom: PxPct {} = PxPct::Px(0.0),
-    MarginLeft margin_left: PxPctAuto {} = PxPctAuto::Px(0.0),
-    MarginTop margin_top: PxPctAuto {} = PxPctAuto::Px(0.0),
-    MarginRight margin_right: PxPctAuto {} = PxPctAuto::Px(0.0),
-    MarginBottom margin_bottom: PxPctAuto {} = PxPctAuto::Px(0.0),
+    BorderProp border_combined nocb: Border {} = Border::default(),
+    BorderColorProp border_color_combined nocb: BorderColor {} = BorderColor::default(),
+    BorderRadiusProp border_radius_combined nocb: BorderRadius {} = BorderRadius::default(),
+    PaddingProp padding_combined nocb: Padding {} = Padding::default(),
+    MarginProp margin_combined nocb: Margin {} = Margin::default(),
     InsetLeft inset_left: PxPctAuto {} = PxPctAuto::Auto,
     InsetTop inset_top: PxPctAuto {} = PxPctAuto::Auto,
     InsetRight inset_right: PxPctAuto {} = PxPctAuto::Auto,
@@ -2882,7 +3475,7 @@ define_builtin_props!(
     TextColor color nocb: Option<Color> { inherited } = None,
     Background background nocb: Option<Brush> {} = None,
     Foreground foreground nocb: Option<Brush> {} = None,
-    BoxShadowProp box_shadow nocb: SmallVec<[BoxShadow; 2]> {} = SmallVec::new(),
+    BoxShadowProp box_shadow nocb: SmallVec<[BoxShadow; 3]> {} = SmallVec::new(),
     FontSize font_size nocb: Option<f32> { inherited } = None,
     FontFamily font_family nocb: Option<String> { inherited } = None,
     FontWeight font_weight nocb: Option<Weight> { inherited } = None,
@@ -2907,6 +3500,45 @@ define_builtin_props!(
     Focusable focusable: bool { } = false,
 );
 
+impl BuiltinStyle<'_> {
+    // Individual padding accessors
+    pub fn padding_left(&self) -> PxPct {
+        self.style.get(PaddingProp).left.unwrap_or(PxPct::Px(0.0))
+    }
+    pub fn padding_top(&self) -> PxPct {
+        self.style.get(PaddingProp).top.unwrap_or(PxPct::Px(0.0))
+    }
+    pub fn padding_right(&self) -> PxPct {
+        self.style.get(PaddingProp).right.unwrap_or(PxPct::Px(0.0))
+    }
+    pub fn padding_bottom(&self) -> PxPct {
+        self.style.get(PaddingProp).bottom.unwrap_or(PxPct::Px(0.0))
+    }
+
+    // Individual margin accessors
+    pub fn margin_left(&self) -> PxPctAuto {
+        self.style
+            .get(MarginProp)
+            .left
+            .unwrap_or(PxPctAuto::Px(0.0))
+    }
+    pub fn margin_top(&self) -> PxPctAuto {
+        self.style.get(MarginProp).top.unwrap_or(PxPctAuto::Px(0.0))
+    }
+    pub fn margin_right(&self) -> PxPctAuto {
+        self.style
+            .get(MarginProp)
+            .right
+            .unwrap_or(PxPctAuto::Px(0.0))
+    }
+    pub fn margin_bottom(&self) -> PxPctAuto {
+        self.style
+            .get(MarginProp)
+            .bottom
+            .unwrap_or(PxPctAuto::Px(0.0))
+    }
+}
+
 prop!(
     /// How children overflowing their container in Y axis should affect layout
     pub OverflowX: Overflow {} = Overflow::default()
@@ -2928,15 +3560,9 @@ prop_extractor! {
 
 prop_extractor! {
     pub(crate) LayoutProps {
-        pub border_left: BorderLeft,
-        pub border_top: BorderTop,
-        pub border_right: BorderRight,
-        pub border_bottom: BorderBottom,
-
-        pub padding_left: PaddingLeft,
-        pub padding_top: PaddingTop,
-        pub padding_right: PaddingRight,
-        pub padding_bottom: PaddingBottom,
+        pub border: BorderProp,
+        pub padding: PaddingProp,
+        pub margin: MarginProp,
 
         pub width: Width,
         pub height: Height,
@@ -2956,11 +3582,6 @@ prop_extractor! {
         pub inset_right: InsetRight,
         pub inset_bottom: InsetBottom,
 
-        pub margin_left: MarginLeft,
-        pub margin_top: MarginTop,
-        pub margin_right: MarginRight,
-        pub margin_bottom: MarginBottom,
-
         pub row_gap: RowGap,
         pub col_gap: ColGap,
 
@@ -2976,17 +3597,14 @@ prop_extractor! {
 
 impl LayoutProps {
     pub fn to_style(&self) -> Style {
+        let border = self.border();
+        let padding = self.padding();
+        let margin = self.margin();
         Style::new()
             .width(self.width())
             .height(self.height())
-            .border_left(self.border_left().0)
-            .border_top(self.border_top().0)
-            .border_right(self.border_right().0)
-            .border_bottom(self.border_bottom().0)
-            .padding_left(self.padding_left())
-            .padding_top(self.padding_top())
-            .padding_right(self.padding_right())
-            .padding_bottom(self.padding_bottom())
+            .apply_border(border)
+            .apply_padding(padding)
             .min_width(self.min_width())
             .min_height(self.min_height())
             .max_width(self.max_width())
@@ -2998,10 +3616,7 @@ impl LayoutProps {
             .inset_top(self.inset_top())
             .inset_right(self.inset_right())
             .inset_bottom(self.inset_bottom())
-            .margin_left(self.margin_left())
-            .margin_top(self.margin_top())
-            .margin_right(self.margin_right())
-            .margin_bottom(self.margin_bottom())
+            .apply_margin(margin)
             .col_gap(self.col_gap())
             .row_gap(self.row_gap())
     }
@@ -3235,35 +3850,11 @@ impl Style {
     }
 
     pub fn border_color(self, color: impl Into<Brush>) -> Self {
-        let color = color.into();
-        self.border_left_color(color.clone())
-            .border_top_color(color.clone())
-            .border_right_color(color.clone())
-            .border_bottom_color(color.clone())
+        self.set(BorderColorProp, BorderColor::all(color))
     }
 
     pub fn border(self, border: impl Into<StrokeWrap>) -> Self {
-        let border = border.into();
-        self.border_left(border.clone())
-            .border_top(border.clone())
-            .border_right(border.clone())
-            .border_bottom(border)
-    }
-
-    pub fn border_left(self, border: impl Into<StrokeWrap>) -> Self {
-        self.set_style_value(BorderLeft, StyleValue::Val(border.into()))
-    }
-
-    pub fn border_right(self, border: impl Into<StrokeWrap>) -> Self {
-        self.set_style_value(BorderRight, StyleValue::Val(border.into()))
-    }
-
-    pub fn border_top(self, border: impl Into<StrokeWrap>) -> Self {
-        self.set_style_value(BorderTop, StyleValue::Val(border.into()))
-    }
-
-    pub fn border_bottom(self, border: impl Into<StrokeWrap>) -> Self {
-        self.set_style_value(BorderBottom, StyleValue::Val(border.into()))
+        self.set(BorderProp, Border::all(border))
     }
 
     pub fn outline(self, outline: impl Into<StrokeWrap>) -> Self {
@@ -3271,15 +3862,21 @@ impl Style {
     }
 
     /// Sets `border_left` and `border_right` to `border`
-    pub fn border_horiz(self, border: impl Into<Stroke>) -> Self {
+    pub fn border_horiz(self, border: impl Into<StrokeWrap>) -> Self {
+        let mut current = self.get(BorderProp);
         let border = border.into();
-        self.border_left(border.clone()).border_right(border)
+        current.left = Some(border.clone());
+        current.right = Some(border);
+        self.set(BorderProp, current)
     }
 
     /// Sets `border_top` and `border_bottom` to `border`
-    pub fn border_vert(self, border: impl Into<Stroke>) -> Self {
+    pub fn border_vert(self, border: impl Into<StrokeWrap>) -> Self {
+        let mut current = self.get(BorderProp);
         let border = border.into();
-        self.border_top(border.clone()).border_bottom(border)
+        current.top = Some(border.clone());
+        current.bottom = Some(border);
+        self.set(BorderProp, current)
     }
 
     pub fn padding_left_pct(self, padding: f64) -> Self {
@@ -3300,41 +3897,37 @@ impl Style {
 
     /// Set padding on all directions
     pub fn padding(self, padding: impl Into<PxPct>) -> Self {
-        let padding = padding.into();
-        self.padding_left(padding)
-            .padding_top(padding)
-            .padding_right(padding)
-            .padding_bottom(padding)
+        self.set(PaddingProp, Padding::all(padding))
     }
 
     pub fn padding_pct(self, padding: f64) -> Self {
-        let padding = padding.pct();
-        self.padding_left(padding)
-            .padding_top(padding)
-            .padding_right(padding)
-            .padding_bottom(padding)
+        self.set(PaddingProp, Padding::all(padding.pct()))
     }
 
     /// Sets `padding_left` and `padding_right` to `padding`
     pub fn padding_horiz(self, padding: impl Into<PxPct>) -> Self {
+        let mut current = self.get(PaddingProp);
         let padding = padding.into();
-        self.padding_left(padding).padding_right(padding)
+        current.left = Some(padding);
+        current.right = Some(padding);
+        self.set(PaddingProp, current)
     }
 
     pub fn padding_horiz_pct(self, padding: f64) -> Self {
-        let padding = padding.pct();
-        self.padding_left(padding).padding_right(padding)
+        self.padding_horiz(padding.pct())
     }
 
     /// Sets `padding_top` and `padding_bottom` to `padding`
     pub fn padding_vert(self, padding: impl Into<PxPct>) -> Self {
+        let mut current = self.get(PaddingProp);
         let padding = padding.into();
-        self.padding_top(padding).padding_bottom(padding)
+        current.top = Some(padding);
+        current.bottom = Some(padding);
+        self.set(PaddingProp, current)
     }
 
     pub fn padding_vert_pct(self, padding: f64) -> Self {
-        let padding = padding.pct();
-        self.padding_top(padding).padding_bottom(padding)
+        self.padding_vert(padding.pct())
     }
 
     pub fn margin_left_pct(self, margin: f64) -> Self {
@@ -3354,49 +3947,170 @@ impl Style {
     }
 
     pub fn margin(self, margin: impl Into<PxPctAuto>) -> Self {
-        let margin = margin.into();
-        self.margin_left(margin)
-            .margin_top(margin)
-            .margin_right(margin)
-            .margin_bottom(margin)
+        self.set(MarginProp, Margin::all(margin))
     }
 
     pub fn margin_pct(self, margin: f64) -> Self {
-        let margin = margin.pct();
-        self.margin_left(margin)
-            .margin_top(margin)
-            .margin_right(margin)
-            .margin_bottom(margin)
+        self.set(MarginProp, Margin::all(margin.pct()))
     }
 
     /// Sets `margin_left` and `margin_right` to `margin`
     pub fn margin_horiz(self, margin: impl Into<PxPctAuto>) -> Self {
+        let mut current = self.get(MarginProp);
         let margin = margin.into();
-        self.margin_left(margin).margin_right(margin)
+        current.left = Some(margin);
+        current.right = Some(margin);
+        self.set(MarginProp, current)
     }
 
     pub fn margin_horiz_pct(self, margin: f64) -> Self {
-        let margin = margin.pct();
-        self.margin_left(margin).margin_right(margin)
+        self.margin_horiz(margin.pct())
     }
 
     /// Sets `margin_top` and `margin_bottom` to `margin`
     pub fn margin_vert(self, margin: impl Into<PxPctAuto>) -> Self {
+        let mut current = self.get(MarginProp);
         let margin = margin.into();
-        self.margin_top(margin).margin_bottom(margin)
+        current.top = Some(margin);
+        current.bottom = Some(margin);
+        self.set(MarginProp, current)
     }
 
     pub fn margin_vert_pct(self, margin: f64) -> Self {
-        let margin = margin.pct();
-        self.margin_top(margin).margin_bottom(margin)
+        self.margin_vert(margin.pct())
+    }
+
+    // Individual padding methods using the combined struct
+    pub fn padding_left(self, padding: impl Into<PxPct>) -> Self {
+        let mut current = self.get(PaddingProp);
+        current.left = Some(padding.into());
+        self.set(PaddingProp, current)
+    }
+    pub fn padding_right(self, padding: impl Into<PxPct>) -> Self {
+        let mut current = self.get(PaddingProp);
+        current.right = Some(padding.into());
+        self.set(PaddingProp, current)
+    }
+    pub fn padding_top(self, padding: impl Into<PxPct>) -> Self {
+        let mut current = self.get(PaddingProp);
+        current.top = Some(padding.into());
+        self.set(PaddingProp, current)
+    }
+    pub fn padding_bottom(self, padding: impl Into<PxPct>) -> Self {
+        let mut current = self.get(PaddingProp);
+        current.bottom = Some(padding.into());
+        self.set(PaddingProp, current)
+    }
+
+    // Individual margin methods using the combined struct
+    pub fn margin_left(self, margin: impl Into<PxPctAuto>) -> Self {
+        let mut current = self.get(MarginProp);
+        current.left = Some(margin.into());
+        self.set(MarginProp, current)
+    }
+    pub fn margin_right(self, margin: impl Into<PxPctAuto>) -> Self {
+        let mut current = self.get(MarginProp);
+        current.right = Some(margin.into());
+        self.set(MarginProp, current)
+    }
+    pub fn margin_top(self, margin: impl Into<PxPctAuto>) -> Self {
+        let mut current = self.get(MarginProp);
+        current.top = Some(margin.into());
+        self.set(MarginProp, current)
+    }
+    pub fn margin_bottom(self, margin: impl Into<PxPctAuto>) -> Self {
+        let mut current = self.get(MarginProp);
+        current.bottom = Some(margin.into());
+        self.set(MarginProp, current)
+    }
+
+    // Convenience methods for combined padding and margin properties
+    pub fn apply_padding(self, padding: Padding) -> Self {
+        self.set(PaddingProp, padding)
+    }
+    pub fn apply_margin(self, margin: Margin) -> Self {
+        self.set(MarginProp, margin)
     }
 
     pub fn border_radius(self, radius: impl Into<PxPct>) -> Self {
-        let radius = radius.into();
-        self.border_top_left_radius(radius)
-            .border_top_right_radius(radius)
-            .border_bottom_left_radius(radius)
-            .border_bottom_right_radius(radius)
+        self.set(BorderRadiusProp, BorderRadius::all(radius))
+    }
+
+    // Individual border methods using the combined structs
+    pub fn border_left(self, border: impl Into<StrokeWrap>) -> Self {
+        let mut current = self.get(BorderProp);
+        current.left = Some(border.into());
+        self.set(BorderProp, current)
+    }
+    pub fn border_right(self, border: impl Into<StrokeWrap>) -> Self {
+        let mut current = self.get(BorderProp);
+        current.right = Some(border.into());
+        self.set(BorderProp, current)
+    }
+    pub fn border_top(self, border: impl Into<StrokeWrap>) -> Self {
+        let mut current = self.get(BorderProp);
+        current.top = Some(border.into());
+        self.set(BorderProp, current)
+    }
+    pub fn border_bottom(self, border: impl Into<StrokeWrap>) -> Self {
+        let mut current = self.get(BorderProp);
+        current.bottom = Some(border.into());
+        self.set(BorderProp, current)
+    }
+
+    // Individual border color methods
+    pub fn border_left_color(self, color: impl Into<Brush>) -> Self {
+        let mut current = self.get(BorderColorProp);
+        current.left = Some(color.into());
+        self.set(BorderColorProp, current)
+    }
+    pub fn border_right_color(self, color: impl Into<Brush>) -> Self {
+        let mut current = self.get(BorderColorProp);
+        current.right = Some(color.into());
+        self.set(BorderColorProp, current)
+    }
+    pub fn border_top_color(self, color: impl Into<Brush>) -> Self {
+        let mut current = self.get(BorderColorProp);
+        current.top = Some(color.into());
+        self.set(BorderColorProp, current)
+    }
+    pub fn border_bottom_color(self, color: impl Into<Brush>) -> Self {
+        let mut current = self.get(BorderColorProp);
+        current.bottom = Some(color.into());
+        self.set(BorderColorProp, current)
+    }
+
+    // Individual border radius methods
+    pub fn border_top_left_radius(self, radius: impl Into<PxPct>) -> Self {
+        let mut current = self.get(BorderRadiusProp);
+        current.top_left = Some(radius.into());
+        self.set(BorderRadiusProp, current)
+    }
+    pub fn border_top_right_radius(self, radius: impl Into<PxPct>) -> Self {
+        let mut current = self.get(BorderRadiusProp);
+        current.top_right = Some(radius.into());
+        self.set(BorderRadiusProp, current)
+    }
+    pub fn border_bottom_left_radius(self, radius: impl Into<PxPct>) -> Self {
+        let mut current = self.get(BorderRadiusProp);
+        current.bottom_left = Some(radius.into());
+        self.set(BorderRadiusProp, current)
+    }
+    pub fn border_bottom_right_radius(self, radius: impl Into<PxPct>) -> Self {
+        let mut current = self.get(BorderRadiusProp);
+        current.bottom_right = Some(radius.into());
+        self.set(BorderRadiusProp, current)
+    }
+
+    // Convenience methods for combined border properties
+    pub fn apply_border(self, border: Border) -> Self {
+        self.set(BorderProp, border)
+    }
+    pub fn apply_border_color(self, border_color: BorderColor) -> Self {
+        self.set(BorderColorProp, border_color)
+    }
+    pub fn apply_border_radius(self, border_radius: BorderRadius) -> Self {
+        self.set(BorderRadiusProp, border_radius)
     }
 
     pub fn inset_left_pct(self, inset: f64) -> Self {
@@ -3496,7 +4210,7 @@ impl Style {
     /// use floem::prelude::palette::css;
     /// use floem::style::BoxShadow;
     ///
-    /// empty().style(|s| s.apply_box_shadow(
+    /// empty().style(|s| s.apply_box_shadow(vec![
     ///    BoxShadow::new()
     ///        .color(css::BLACK)
     ///        .top_offset(5.)
@@ -3505,7 +4219,7 @@ impl Style {
     ///        .left_offset(10.)
     ///        .blur_radius(5.)
     ///        .spread(10.)
-    /// ));
+    /// ]));
     /// ```
     /// ### Info
     /// If you only specify one shadow on the element, use standard style methods directly
@@ -3521,10 +4235,8 @@ impl Style {
     ///     .box_shadow_blur(3.)
     /// );
     /// ```
-    pub fn apply_box_shadow(self, shadow: BoxShadow) -> Self {
-        let mut value = self.get(BoxShadowProp);
-        value.push(shadow);
-        self.set(BoxShadowProp, value)
+    pub fn apply_box_shadow(self, shadow: impl Into<SmallVec<[BoxShadow; 3]>>) -> Self {
+        self.set(BoxShadowProp, shadow.into())
     }
 
     /// Specifies the offset on horizontal axis.
@@ -3852,23 +4564,34 @@ impl Style {
             align_content: style.align_content(),
             align_self: style.align_self(),
             aspect_ratio: style.aspect_ratio(),
-            border: Rect {
-                left: LengthPercentage::length(style.border_left().0.width as f32),
-                top: LengthPercentage::length(style.border_top().0.width as f32),
-                right: LengthPercentage::length(style.border_right().0.width as f32),
-                bottom: LengthPercentage::length(style.border_bottom().0.width as f32),
+            border: {
+                let border = style.style.get(BorderProp);
+                Rect {
+                    left: LengthPercentage::length(border.left.map_or(0.0, |b| b.0.width) as f32),
+                    top: LengthPercentage::length(border.top.map_or(0.0, |b| b.0.width) as f32),
+                    right: LengthPercentage::length(border.right.map_or(0.0, |b| b.0.width) as f32),
+                    bottom: LengthPercentage::length(
+                        border.bottom.map_or(0.0, |b| b.0.width) as f32
+                    ),
+                }
             },
-            padding: Rect {
-                left: style.padding_left().into(),
-                top: style.padding_top().into(),
-                right: style.padding_right().into(),
-                bottom: style.padding_bottom().into(),
+            padding: {
+                let padding = style.style.get(PaddingProp);
+                Rect {
+                    left: padding.left.unwrap_or(PxPct::Px(0.0)).into(),
+                    top: padding.top.unwrap_or(PxPct::Px(0.0)).into(),
+                    right: padding.right.unwrap_or(PxPct::Px(0.0)).into(),
+                    bottom: padding.bottom.unwrap_or(PxPct::Px(0.0)).into(),
+                }
             },
-            margin: Rect {
-                left: style.margin_left().into(),
-                top: style.margin_top().into(),
-                right: style.margin_right().into(),
-                bottom: style.margin_bottom().into(),
+            margin: {
+                let margin = style.style.get(MarginProp);
+                Rect {
+                    left: margin.left.unwrap_or(PxPctAuto::Px(0.0)).into(),
+                    top: margin.top.unwrap_or(PxPctAuto::Px(0.0)).into(),
+                    right: margin.right.unwrap_or(PxPctAuto::Px(0.0)).into(),
+                    bottom: margin.bottom.unwrap_or(PxPctAuto::Px(0.0)).into(),
+                }
             },
             inset: Rect {
                 left: style.inset_left().into(),
@@ -3993,11 +4716,8 @@ pub trait CustomStylable<S: CustomStyle + 'static>: IntoView<V = Self::DV> + Siz
 
 #[cfg(test)]
 mod tests {
-    use super::{Style, StyleValue};
-    use crate::{
-        style::{PaddingBottom, PaddingLeft},
-        unit::PxPct,
-    };
+    use super::{Padding, Style, StyleValue};
+    use crate::{style::PaddingProp, unit::PxPct};
 
     #[test]
     fn style_override() {
@@ -4006,70 +4726,44 @@ mod tests {
 
         let style = style1.apply(style2);
 
-        assert_eq!(
-            style.get_style_value(PaddingLeft),
-            StyleValue::Val(PxPct::Px(64.0))
-        );
+        // Check that the combined padding has the expected left value
+        let padding = style.get(PaddingProp);
+        assert_eq!(padding.left, Some(PxPct::Px(64.0)));
 
         let style1 = Style::new().padding_left(32.0).padding_bottom(45.0);
-        let style2 = Style::new()
-            .padding_left(64.0)
-            .set_style_value(PaddingBottom, StyleValue::Base);
+        let style2 = Style::new().padding_left(64.0);
 
         let style = style1.apply(style2);
 
-        assert_eq!(
-            style.get_style_value(PaddingLeft),
-            StyleValue::Val(PxPct::Px(64.0))
-        );
-        assert_eq!(
-            style.get_style_value(PaddingBottom),
-            StyleValue::Val(PxPct::Px(45.0))
-        );
+        let padding = style.get(PaddingProp);
+        assert_eq!(padding.left, Some(PxPct::Px(64.0)));
+        assert_eq!(padding.bottom, Some(PxPct::Px(45.0))); // Should be preserved from style1
 
-        let style1 = Style::new().padding_left(32.0).padding_bottom(45.0);
-        let style2 = Style::new()
-            .padding_left(64.0)
-            .set_style_value(PaddingBottom, StyleValue::Unset);
+        // Test with explicit combined padding struct
+        let style1 = Style::new().apply_padding(Padding::new().left(32.0).bottom(45.0));
+        let style2 = Style::new().apply_padding(Padding::new().left(64.0));
 
         let style = style1.apply(style2);
 
-        assert_eq!(
-            style.get_style_value(PaddingLeft),
-            StyleValue::Val(PxPct::Px(64.0))
-        );
-        assert_eq!(style.get_style_value(PaddingBottom), StyleValue::Unset);
+        let padding = style.get(PaddingProp);
+        assert_eq!(padding.left, Some(PxPct::Px(64.0)));
+        assert_eq!(padding.bottom, Some(PxPct::Px(45.)));
 
+        // Test that individual methods work correctly within a single style
         let style1 = Style::new().padding_left(32.0).padding_bottom(45.0);
-        let style2 = Style::new()
-            .padding_left(64.0)
-            .set_style_value(PaddingBottom, StyleValue::Unset);
 
-        let style3 = Style::new().set_style_value(PaddingBottom, StyleValue::Base);
+        let padding = style1.get(PaddingProp);
+        assert_eq!(padding.left, Some(PxPct::Px(32.0)));
+        assert_eq!(padding.bottom, Some(PxPct::Px(45.0))); // Both values are preserved in same style
 
-        let style = style1.apply_overriding_styles([style2, style3].into_iter());
+        // Test with StyleValue manipulation on combined struct
+        let custom_padding = Padding::new().left(100.0).right(200.0);
+        let style1 = Style::new().set_style_value(PaddingProp, StyleValue::Val(custom_padding));
 
-        assert_eq!(
-            style.get_style_value(PaddingLeft),
-            StyleValue::Val(PxPct::Px(64.0))
-        );
-        assert_eq!(style.get_style_value(PaddingBottom), StyleValue::Unset);
-
-        let style1 = Style::new().padding_left(32.0).padding_bottom(45.0);
-        let style2 = Style::new()
-            .padding_left(64.0)
-            .set_style_value(PaddingBottom, StyleValue::Unset);
-        let style3 = Style::new().padding_bottom(100.0);
-
-        let style = style1.apply_overriding_styles([style2, style3].into_iter());
-
-        assert_eq!(
-            style.get_style_value(PaddingLeft),
-            StyleValue::Val(PxPct::Px(64.0))
-        );
-        assert_eq!(
-            style.get_style_value(PaddingBottom),
-            StyleValue::Val(PxPct::Px(100.0))
-        );
+        let padding = style1.get(PaddingProp);
+        assert_eq!(padding.left, Some(PxPct::Px(100.0)));
+        assert_eq!(padding.right, Some(PxPct::Px(200.0)));
+        assert_eq!(padding.top, None);
+        assert_eq!(padding.bottom, None);
     }
 }

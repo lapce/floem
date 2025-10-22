@@ -8,10 +8,7 @@ use peniko::color::palette;
 use peniko::kurbo::{Circle, Point, RoundedRect, RoundedRectRadii};
 use winit::keyboard::{Key, NamedKey};
 
-use crate::style::{
-    BorderBottomLeftRadius, BorderBottomRightRadius, BorderTopLeftRadius, BorderTopRightRadius,
-    CustomStyle,
-};
+use crate::style::{BorderRadiusProp, CustomStyle};
 use crate::unit::Pct;
 use crate::{
     Renderer,
@@ -51,10 +48,7 @@ style_class!(pub AccentBarClass);
 
 prop_extractor! {
     BarStyle {
-        border_top_left_radius: BorderTopLeftRadius,
-        border_top_right_radius: BorderTopRightRadius,
-        border_bottom_left_radius: BorderBottomLeftRadius,
-        border_bottom_right_radius: BorderBottomRightRadius,
+        border_radius: BorderRadiusProp,
         color: Background,
         height: Height
 
@@ -62,11 +56,24 @@ prop_extractor! {
 }
 
 fn border_radius(style: &BarStyle, size: f64) -> RoundedRectRadii {
+    let border_radius = style.border_radius();
     RoundedRectRadii {
-        top_left: crate::view::border_radius(style.border_top_left_radius(), size),
-        top_right: crate::view::border_radius(style.border_top_right_radius(), size),
-        bottom_left: crate::view::border_radius(style.border_bottom_left_radius(), size),
-        bottom_right: crate::view::border_radius(style.border_bottom_right_radius(), size),
+        top_left: crate::view::border_radius(
+            border_radius.top_left.unwrap_or(PxPct::Px(0.0)),
+            size,
+        ),
+        top_right: crate::view::border_radius(
+            border_radius.top_right.unwrap_or(PxPct::Px(0.0)),
+            size,
+        ),
+        bottom_left: crate::view::border_radius(
+            border_radius.bottom_left.unwrap_or(PxPct::Px(0.0)),
+            size,
+        ),
+        bottom_right: crate::view::border_radius(
+            border_radius.bottom_right.unwrap_or(PxPct::Px(0.0)),
+            size,
+        ),
     }
 }
 

@@ -11,5 +11,6 @@ files = { path = "../files/", optional = true }
 stacks = { path = "../stacks/", optional = true }
 
 [features]
+default = ["full"]
 vello = ["floem/vello"]
 full = ["dep:files", "dep:stacks"]

@@ -6,8 +6,7 @@ use peniko::kurbo::{Point, Rect, RoundedRectRadii, Size, Stroke, Vec2};
 use peniko::{Brush, Color};
 
 use crate::style::{
-    BorderBottomLeftRadius, BorderBottomRightRadius, BorderRightColor, BorderTopLeftRadius,
-    BorderTopRightRadius, CustomStylable, CustomStyle, OverflowX, OverflowY,
+    BorderColorProp, BorderRadiusProp, CustomStylable, CustomStyle, OverflowX, OverflowY,
 };
 use crate::unit::PxPct;
 use crate::{
@@ -75,11 +74,8 @@ prop!(
 prop_extractor! {
     ScrollTrackStyle {
         color: Background,
-        border_top_left_radius: BorderTopLeftRadius,
-        border_top_right_radius: BorderTopRightRadius,
-        border_bottom_left_radius: BorderBottomLeftRadius,
-        border_bottom_right_radius: BorderBottomRightRadius,
-        border_color: BorderRightColor,
+        border_radius: BorderRadiusProp,
+        border_color: BorderColorProp,
         border: Border,
         rounded: Rounded,
         thickness: Thickness,
@@ -535,15 +531,22 @@ impl Scroll {
                 }
             } else {
                 let size = rect.size().min_side();
+                let border_radius = style.border_radius();
                 RoundedRectRadii {
-                    top_left: crate::view::border_radius(style.border_top_left_radius(), size),
-                    top_right: crate::view::border_radius(style.border_top_right_radius(), size),
+                    top_left: crate::view::border_radius(
+                        border_radius.top_left.unwrap_or(PxPct::Px(0.)),
+                        size,
+                    ),
+                    top_right: crate::view::border_radius(
+                        border_radius.top_right.unwrap_or(PxPct::Px(0.)),
+                        size,
+                    ),
                     bottom_left: crate::view::border_radius(
-                        style.border_bottom_left_radius(),
+                        border_radius.bottom_left.unwrap_or(PxPct::Px(0.)),
                         size,
                     ),
                     bottom_right: crate::view::border_radius(
-                        style.border_bottom_right_radius(),
+                        border_radius.bottom_right.unwrap_or(PxPct::Px(0.)),
                         size,
                     ),
                 }
@@ -570,7 +573,9 @@ impl Scroll {
             let rect = rect.to_rounded_rect(radius(style, rect, true));
             cx.fill(&rect, &style.color().unwrap_or(HANDLE_COLOR), 0.0);
             if edge_width > 0.0 {
-                cx.stroke(&rect, &style.border_color(), &Stroke::new(edge_width));
+                if let Some(color) = style.border_color().right {
+                    cx.stroke(&rect, &color, &Stroke::new(edge_width));
+                }
             }
         }
 
@@ -595,7 +600,9 @@ impl Scroll {
             let rect = rect.to_rounded_rect(radius(style, rect, false));
             cx.fill(&rect, &style.color().unwrap_or(HANDLE_COLOR), 0.0);
             if edge_width > 0.0 {
-                cx.stroke(&rect, &style.border_color(), &Stroke::new(edge_width));
+                if let Some(color) = style.border_color().right {
+                    cx.stroke(&rect, &color, &Stroke::new(edge_width));
+                }
             }
         }
     }
