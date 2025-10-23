@@ -53,7 +53,7 @@ pub enum FileDragEvent {
 }
 
 impl FileDragEvent {
-    pub fn point(&self) -> Option<Point> {
+    pub fn logical_point(&self) -> Option<Point> {
         match self {
             FileDragEvent::DragEntered {
                 position,

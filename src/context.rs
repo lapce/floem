@@ -24,6 +24,7 @@ use std::sync::mpsc::Receiver;
 use taffy::prelude::NodeId;
 
 use crate::animate::{AnimStateKind, RepeatMode};
+use crate::dropped_file::FileDragEvent;
 use crate::easing::{Easing, Linear};
 use crate::menu::Menu;
 use crate::renderer::Renderer;
@@ -475,6 +476,16 @@ impl EventCx<'_> {
                 Event::WindowResized(_) => {
                     if view_state.borrow().has_style_selectors.has_responsive() {
                         view_id.request_style();
+                    }
+                }
+                Event::FileDrag(e @ FileDragEvent::DragMoved { .. }) => {
+                    if let Some(point) = e.logical_point() {
+                        let rect = view_id.get_size().unwrap_or_default().to_rect();
+                        let on_view = rect.contains(point);
+                        if on_view {
+                            self.window_state.file_hovered.insert(view_id);
+                            view_id.request_style();
+                        }
                     }
                 }
                 _ => (),

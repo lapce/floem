@@ -5,7 +5,6 @@ use floem_reactive::{RwSignal, Scope, SignalUpdate, SignalWith, create_updater, 
 use peniko::Color;
 
 use lapce_xi_rope::Rope;
-use ui_events::keyboard::{KeyboardEvent, Modifiers};
 
 use crate::{
     id::ViewId,
@@ -15,7 +14,7 @@ use crate::{
         Editor,
         command::CommandExecuted,
         id::EditorId,
-        keypress::default_key_handler,
+        keypress::{KeypressKey, default_key_handler},
         text::{Document, SimpleStyling, Styling},
         text_document::{OnUpdate, PreCommand, TextDocument},
         view::editor_container_view,
@@ -107,7 +106,7 @@ pub fn text_editor(text: impl Into<Rope>) -> TextEditor {
 /// See [`text_editor`] for a list of the default keymaps that you will need to handle yourself if using this function.
 pub fn text_editor_keys(
     text: impl Into<Rope>,
-    handle_key_event: impl Fn(RwSignal<Editor>, &KeyboardEvent, Modifiers) -> CommandExecuted + 'static,
+    handle_key_event: impl Fn(RwSignal<Editor>, &KeypressKey) -> CommandExecuted + 'static,
 ) -> TextEditor {
     let id = ViewId::new();
     let cx = Scope::current();
@@ -121,7 +120,7 @@ pub fn text_editor_keys(
         editor_container_view(
             editor_sig,
             |_| true,
-            move |kp, ms| handle_key_event(editor_sig, kp, ms),
+            move |kp| handle_key_event(editor_sig, &kp),
         )
     })
     .into_view();

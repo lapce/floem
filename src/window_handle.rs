@@ -271,6 +271,18 @@ impl WindowHandle {
             (None, None)
         };
 
+        let was_file_hovered = if matches!(event, Event::FileDrag(FileDragEvent::DragMoved { .. }))
+            || is_pointer_move.is_some()
+        {
+            if !cx.window_state.file_hovered.is_empty() {
+                Some(std::mem::take(&mut cx.window_state.file_hovered))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         let is_pointer_down = matches!(&event, Event::Pointer(PointerEvent::Down { .. }));
         let was_focused = if is_pointer_down {
             cx.window_state.clicking.clear();
@@ -410,6 +422,11 @@ impl WindowHandle {
                 } else {
                     id.apply_event(&EventListener::DragLeave, &event);
                 }
+            }
+        }
+        if let Some(was_file_hovered) = was_file_hovered {
+            for id in was_file_hovered.symmetric_difference(&cx.window_state.file_hovered) {
+                id.request_style();
             }
         }
         if was_focused != cx.window_state.focus {

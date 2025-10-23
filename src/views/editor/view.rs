@@ -14,7 +14,7 @@ use crate::{
     taffy::tree::NodeId,
     text::{Attrs, AttrsList, TextLayout},
     view::{IntoView, View},
-    views::{Decorators, scroll, stack},
+    views::{Decorators, editor::keypress::KeypressKey, scroll, stack},
 };
 use floem_editor_core::{
     command::EditCommand,
@@ -1174,7 +1174,7 @@ pub fn cursor_caret(
 pub fn editor_container_view(
     editor: RwSignal<Editor>,
     is_active: impl Fn(bool) -> bool + 'static + Copy,
-    handle_key_event: impl Fn(&KeyboardEvent, Modifiers) -> CommandExecuted + 'static,
+    handle_key_event: impl Fn(KeypressKey) -> CommandExecuted + 'static,
 ) -> impl IntoView {
     stack((
         editor_gutter(editor),
@@ -1211,7 +1211,7 @@ pub fn editor_gutter(editor: RwSignal<Editor>) -> impl IntoView {
 fn editor_content(
     editor: RwSignal<Editor>,
     is_active: impl Fn(bool) -> bool + 'static + Copy,
-    handle_key_event: impl Fn(&KeyboardEvent, Modifiers) -> CommandExecuted + 'static,
+    handle_key_event: impl Fn(KeypressKey) -> CommandExecuted + 'static,
 ) -> impl IntoView {
     let ed = editor.get_untracked();
     let cursor = ed.cursor;
@@ -1269,7 +1269,10 @@ fn editor_content(
                     return;
                 };
 
-                handle_key_event(key_event, key_event.modifiers);
+                handle_key_event(KeypressKey {
+                    key: key_event.key.clone(),
+                    modifiers: key_event.modifiers,
+                });
 
                 let mut mods = key_event.modifiers;
                 mods.set(Modifiers::SHIFT, false);
