@@ -1,24 +1,27 @@
 //! # Style
 //! Traits and functions that allow for styling `Views`.
 
-use floem_reactive::create_updater;
+use floem_reactive::{RwSignal, SignalGet, SignalUpdate as _, create_updater};
+use floem_renderer::Renderer;
 use floem_renderer::text::{LineHeightValue, Weight};
 use im_rc::hashmap::Entry;
-use peniko::color::{palette, HueDirection};
-use peniko::kurbo::{Point, Stroke};
+use peniko::color::{HueDirection, palette};
+use peniko::kurbo::{self, Point, Stroke};
 use peniko::{
     Brush, Color, ColorStop, ColorStops, Gradient, GradientKind, InterpolationAlphaSpace,
     LinearGradientPosition,
 };
 use rustc_hash::FxHasher;
 use smallvec::SmallVec;
-use std::any::{type_name, Any};
+use std::any::{Any, type_name};
 use std::collections::HashMap;
 use std::fmt::{self, Debug};
 use std::hash::Hasher;
 use std::hash::{BuildHasherDefault, Hash};
 use std::ptr;
 use std::rc::Rc;
+use taffy::GridTemplateComponent;
+use taffy::prelude::{auto, fr};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
@@ -34,16 +37,27 @@ use taffy::{
     prelude::{GridPlacement, Line, Rect},
     style::{
         LengthPercentage, MaxTrackSizingFunction, MinTrackSizingFunction, Overflow,
-        Style as TaffyStyle, TrackSizingFunction,
+        Style as TaffyStyle,
     },
 };
 
 use crate::context::InteractionState;
-use crate::easing::*;
+use crate::prelude::ViewTuple;
 use crate::responsive::{ScreenSize, ScreenSizeBp};
+use crate::theme::StyleThemeExt;
 use crate::unit::{Pct, Px, PxPct, PxPctAuto, UnitExt};
 use crate::view::{IntoView, View};
-use crate::views::{empty, stack, text, Decorators};
+use crate::view_tuple::ViewTupleFlat;
+use crate::views::{
+    ContainerExt, Decorators, TooltipExt, canvas, empty, h_stack, label, stack, text, v_stack,
+    v_stack_from_iter,
+};
+use crate::{AnyView, easing::*};
+
+pub enum CombineResult<T> {
+    Other,  // The result is semantically `other` - caller can reuse it
+    New(T), // A new value was created
+}
 
 pub trait StylePropValue: Clone + PartialEq + Debug {
     fn debug_view(&self) -> Option<Box<dyn View>> {
@@ -52,6 +66,10 @@ pub trait StylePropValue: Clone + PartialEq + Debug {
 
     fn interpolate(&self, _other: &Self, _value: f64) -> Option<Self> {
         None
+    }
+
+    fn combine(&self, _other: &Self) -> CombineResult<Self> {
+        CombineResult::Other
     }
 }
 
@@ -89,7 +107,7 @@ impl StylePropValue for FlexWrap {}
 impl StylePropValue for AlignItems {}
 impl StylePropValue for BoxSizing {}
 impl StylePropValue for AlignContent {}
-impl StylePropValue for TrackSizingFunction {}
+impl StylePropValue for GridTemplateComponent<String> {}
 impl StylePropValue for MinTrackSizingFunction {}
 impl StylePropValue for MaxTrackSizingFunction {}
 impl<T: StylePropValue, M: StylePropValue> StylePropValue for MinMax<T, M> {}
@@ -98,6 +116,64 @@ impl StylePropValue for taffy::GridAutoFlow {}
 impl StylePropValue for GridPlacement {}
 impl StylePropValue for CursorStyle {}
 impl StylePropValue for BoxShadow {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        // Create a preview container that shows a visual representation of the shadow
+        let shadow = *self;
+
+        // Shadow preview box
+        let shadow_preview = empty()
+            .style(move |s| s.width(50.0).height(50.0))
+            .container()
+            .style(move |s| {
+                s.with_theme(|s, t| {
+                    s.background(Color::TRANSPARENT)
+                        .border_color(t.border())
+                        .border(1.)
+                        .border_radius(t.border_radius())
+                })
+                .apply_box_shadow(vec![shadow])
+                .margin(10.0)
+            });
+
+        // Create a details section showing the shadow properties
+        let details_view = move || {
+            v_stack((
+                h_stack((
+                    "Color:".style(|s| s.font_weight(Weight::BOLD).width(80.0)),
+                    shadow.color.debug_view().unwrap(),
+                ))
+                .style(|s| s.items_center().gap(4.0)),
+                h_stack((
+                    "Blur:".style(|s| s.font_weight(Weight::BOLD).width(80.0)),
+                    format!("{:?}", shadow.blur_radius),
+                ))
+                .style(|s| s.items_center().gap(4.0)),
+                h_stack((
+                    "Spread:".style(|s| s.font_weight(Weight::BOLD).width(80.0)),
+                    format!("{:?}", shadow.spread),
+                ))
+                .style(|s| s.items_center().gap(4.0)),
+                h_stack((
+                    "Offset:".style(|s| s.font_weight(Weight::BOLD).width(80.0)),
+                    format!(
+                        "L: {:?}, R: {:?}, T: {:?}, B: {:?}",
+                        shadow.left_offset,
+                        shadow.right_offset,
+                        shadow.top_offset,
+                        shadow.bottom_offset
+                    ),
+                ))
+                .style(|s| s.items_center().gap(4.0)),
+            ))
+            .style(|s| s.gap(4.0).padding(8.0))
+        };
+
+        // Combine preview and details
+        let view = shadow_preview.tooltip(details_view);
+
+        Some(view.into_any())
+    }
+
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         Some(Self {
             blur_radius: self
@@ -125,7 +201,70 @@ impl StylePropValue for BoxShadow {
         })
     }
 }
-impl StylePropValue for SmallVec<[BoxShadow; 2]> {
+impl<A: smallvec::Array> StylePropValue for SmallVec<A>
+where
+    <A as smallvec::Array>::Item: StylePropValue,
+{
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        if self.is_empty() {
+            return Some(
+                text("smallvec\n[]")
+                    .style(|s| s.with_theme(|s, t| s.color(t.text_muted())))
+                    .into_any(),
+            );
+        }
+
+        let count = self.len();
+        let is_spilled = self.spilled();
+
+        // Create a preview that shows count and whether it has spilled to heap
+        let preview = label(move || {
+            if is_spilled {
+                format!("smallvec\n[{}] (heap)", count)
+            } else {
+                format!("smallvec\n[{}] (inline)", count)
+            }
+        })
+        .style(|s| {
+            s.padding(2.0)
+                .padding_horiz(6.0)
+                .items_center()
+                .justify_center()
+                .text_align(floem_renderer::text::Align::Center)
+                .border(1.)
+                .border_radius(5.0)
+                .margin_left(6.0)
+                .with_theme(|s, t| s.color(t.text()).border_color(t.border()))
+                .with_context_opt::<FontSize, _>(|s, fs| s.font_size(fs * 0.85))
+        });
+
+        // Clone items for the tooltip view
+        let items = self.clone();
+
+        let tooltip_view = move || {
+            v_stack_from_iter(items.iter().enumerate().map(|(i, item)| {
+                let index_label = text(format!("[{}]", i))
+                    .style(|s| s.with_theme(|s, t| s.color(t.text_muted())));
+
+                let item_view = item.debug_view().unwrap_or_else(|| {
+                    text(format!("{:?}", item))
+                        .style(|s| s.flex_grow(1.0))
+                        .into_any()
+                });
+
+                stack((index_label, item_view)).style(|s| s.items_center().gap(8.0).padding(4.0))
+            }))
+            .style(|s| s.gap(4.0))
+        };
+
+        // Return the tooltip view wrapped in the preview
+        Some(
+            stack((preview, tooltip_view()))
+                .style(|s| s.gap(8.0))
+                .into_any(),
+        )
+    }
+
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         self.iter().zip(other.iter()).try_fold(
             SmallVec::with_capacity(self.len()),
@@ -142,11 +281,28 @@ impl StylePropValue for SmallVec<[BoxShadow; 2]> {
 }
 impl StylePropValue for String {}
 impl StylePropValue for Weight {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let clone = *self;
+        Some(
+            format!("{clone:?}")
+                .style(move |s| s.font_weight(clone))
+                .into_any(),
+        )
+    }
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
         self.0.interpolate(&other.0, value).map(Weight)
     }
 }
-impl StylePropValue for crate::text::Style {}
+impl StylePropValue for crate::text::Style {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let clone = *self;
+        Some(
+            format!("{clone:?}")
+                .style(move |s| s.font_style(clone))
+                .into_any(),
+        )
+    }
+}
 impl StylePropValue for crate::text::Align {}
 impl StylePropValue for TextOverflow {}
 impl StylePropValue for PointerEvents {}
@@ -178,9 +334,48 @@ impl<T: StylePropValue> StylePropValue for Option<T> {
         })
     }
 }
-impl<T: StylePropValue> StylePropValue for Vec<T> {
+impl<T: StylePropValue + 'static> StylePropValue for Vec<T> {
     fn debug_view(&self) -> Option<Box<dyn View>> {
-        None
+        if self.is_empty() {
+            return Some(
+                text("[]")
+                    .style(|s| s.with_theme(|s, t| s.color(t.text_muted())))
+                    .into_any(),
+            );
+        }
+
+        let count = self.len();
+        let _preview = label(move || format!("[{}]", count)).style(|s| {
+            s.padding(2.0)
+                .padding_horiz(6.0)
+                .border(1.)
+                .border_radius(5.0)
+                .margin_left(6.0)
+                .with_theme(|s, t| s.color(t.text()).border_color(t.border()))
+                .with_context_opt::<FontSize, _>(|s, fs| s.font_size(fs * 0.85))
+        });
+
+        let items = self.clone();
+        let tooltip_view = move || {
+            v_stack_from_iter(items.iter().enumerate().map(|(i, item)| {
+                let index_label = text(format!("[{}]", i))
+                    .style(|s| s.with_theme(|s, t| s.color(t.text_muted())));
+
+                let item_view = item.debug_view().unwrap_or_else(|| {
+                    text(format!("{:?}", item))
+                        .style(|s| s.flex_grow(1.0))
+                        .into_any()
+                });
+
+                stack((index_label, item_view)).style(|s| s.items_center().gap(8.0).padding(4.0))
+            }))
+            .style(|s| s.gap(4.0))
+        };
+
+        Some(
+            // preview
+            tooltip_view().into_any(),
+        )
     }
 
     fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
@@ -250,25 +445,98 @@ impl StylePropValue for PxPct {
         }
     }
 }
+
+fn views(views: impl ViewTuple) -> Vec<AnyView> {
+    views.into_views()
+}
+
 impl StylePropValue for Color {
     fn debug_view(&self) -> Option<Box<dyn View>> {
         let color = *self;
-        let color = empty().style(move |s| {
-            s.background(color)
-                .width(22.0)
-                .height(14.0)
-                .border(1.)
-                .border_color(palette::css::WHITE.with_alpha(0.5))
-                .border_radius(5.0)
-        });
-        let color = stack((color,)).style(|s| {
-            s.border(1.)
-                .border_color(palette::css::BLACK.with_alpha(0.5))
-                .border_radius(5.0)
-                .margin_left(6.0)
-        });
+        let swatch = empty()
+            .style(move |s| {
+                s.background(color)
+                    .width(22.0)
+                    .height(14.0)
+                    .border(1.)
+                    .border_color(palette::css::WHITE.with_alpha(0.5))
+                    .border_radius(5.0)
+            })
+            .container()
+            .style(|s| {
+                s.border(1.)
+                    .border_color(palette::css::BLACK.with_alpha(0.5))
+                    .border_radius(5.0)
+            });
+
+        let tooltip_view = move || {
+            // Convert to RGBA8 for standard representations
+            let c = color.to_rgba8();
+            let (r, g, b, a) = (c.r, c.g, c.b, c.a);
+
+            // Hex representation
+            let hex = if a == 255 {
+                format!("#{:02X}{:02X}{:02X}", r, g, b)
+            } else {
+                format!("#{:02X}{:02X}{:02X}{:02X}", r, g, b, a)
+            };
+
+            // RGBA string
+            let rgba_str = format!("rgba({}, {}, {}, {:.3})", r, g, b, a as f32 / 255.0);
+
+            // Alpha percentage
+            let alpha_str = format!(
+                "{:.1}% ({:.3})",
+                (a as f32 / 255.0) * 100.0,
+                a as f32 / 255.0
+            );
+
+            let components = color.components;
+            let color_space_str = format!("{:?}", color.cs);
+
+            let hex = views((
+                "Hex:".style(|s| s.font_bold().min_width(80.0).justify_end()),
+                label(move || hex.clone()),
+            ));
+            let rgba = views((
+                "RGBA:".style(|s| s.font_bold().min_width(80.0).justify_end()),
+                label(move || rgba_str.clone()),
+            ));
+            let components = views((
+                "Components:".style(|s| s.font_bold().min_width(80.0).justify_end()),
+                (
+                    label(move || format!("[0]: {:.3}", components[0])),
+                    label(move || format!("[1]: {:.3}", components[1])),
+                    label(move || format!("[2]: {:.3}", components[2])),
+                    label(move || format!("[3]: {:.3}", components[3])),
+                )
+                    .v_stack()
+                    .style(|s| s.gap(2.0)),
+            ));
+            let color_space = views((
+                "Color Space:".style(|s| s.font_bold().min_width(80.0).justify_end()),
+                label(move || color_space_str.clone()),
+            ));
+            let alpha = views((
+                "Alpha:".style(|s| s.font_bold().min_width(80.0).justify_end()),
+                label(move || alpha_str.clone()),
+            ));
+            (hex, rgba, components, color_space, alpha)
+                .flatten()
+                .style(|s| {
+                    s.grid()
+                        .grid_template_columns([auto(), fr(1.)])
+                        .justify_center()
+                        .items_center()
+                        .row_gap(20)
+                        .col_gap(10)
+                        .padding(30)
+                })
+        };
+
         Some(
-            stack((text(format!("{self:?}")), color))
+            swatch
+                .tooltip(tooltip_view)
                 .style(|s| s.items_center())
                 .into_any(),
         )
@@ -321,7 +589,7 @@ impl StylePropValue for Gradient {
                 .border_color(palette::css::WHITE.with_alpha(0.5))
                 .border_radius(5.0)
         });
-        let color = stack((color,)).style(|s| {
+        let color = color.container().style(|s| {
             s.border(1.)
                 .border_color(palette::css::BLACK.with_alpha(0.5))
                 .border_radius(5.0)
@@ -414,7 +682,7 @@ impl StylePropValue for Gradient {
 }
 
 // this is necessary because Stroke doesn't impl partial eq. it probably should...
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct StrokeWrap(pub Stroke);
 impl StrokeWrap {
     fn new(width: f64) -> Self {
@@ -456,7 +724,114 @@ impl From<i32> for StrokeWrap {
     }
 }
 impl StylePropValue for StrokeWrap {
-    // TODO!
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let stroke = self.0.clone();
+        let clone = stroke.clone();
+
+        let color = RwSignal::new(palette::css::RED);
+
+        // Visual preview of the stroke
+        let preview = canvas(move |cx, size| {
+            cx.stroke(
+                &kurbo::Line::new(
+                    Point::new(0., size.height / 2.),
+                    Point::new(size.width, size.height / 2.),
+                ),
+                color.get(),
+                &clone,
+            );
+        })
+        .style(move |s| s.width(80.0).height(20.0))
+        .container()
+        .style(move |s| {
+            s.with_theme(move |s, t| {
+                color.set(t.primary());
+                s.border_color(t.border())
+            })
+            .padding(4.0)
+        });
+
+        let tooltip_view = move || {
+            let stroke = stroke.clone();
+
+            let width_row = views((
+                "Width:".style(|s| s.font_bold().min_width(100.0).justify_end()),
+                label(move || format!("{:.1}px", stroke.width)),
+            ));
+
+            let join_row = views((
+                "Join:".style(|s| s.font_bold().min_width(100.0).justify_end()),
+                label(move || format!("{:?}", stroke.join)),
+            ));
+
+            let miter_row = views((
+                "Miter Limit:".style(|s| s.font_bold().min_width(100.0).justify_end()),
+                label(move || format!("{:.2}", stroke.miter_limit)),
+            ));
+
+            let start_cap_row = views((
+                "Start Cap:".style(|s| s.font_bold().min_width(100.0).justify_end()),
+                label(move || format!("{:?}", stroke.start_cap)),
+            ));
+
+            let end_cap_row = views((
+                "End Cap:".style(|s| s.font_bold().min_width(100.0).justify_end()),
+                label(move || format!("{:?}", stroke.end_cap)),
+            ));
+
+            let pattern_clone = stroke.dash_pattern.clone();
+
+            let dash_pattern_row = views((
+                "Dash Pattern:".style(|s| s.font_bold().min_width(100.0).justify_end()),
+                label(move || {
+                    if pattern_clone.is_empty() {
+                        "Solid".to_string()
+                    } else {
+                        format!("{:?}", pattern_clone.as_slice())
+                    }
+                }),
+            ));
+
+            let dash_offset_row = if !stroke.dash_pattern.is_empty() {
+                Some(views((
+                    "Dash Offset:".style(|s| s.font_bold().min_width(100.0).justify_end()),
+                    label(move || format!("{:.1}", stroke.dash_offset)),
+                )))
+            } else {
+                None
+            };
+
+            let mut rows = vec![
+                width_row.into_any(),
+                join_row.into_any(),
+                miter_row.into_any(),
+                start_cap_row.into_any(),
+                end_cap_row.into_any(),
+                dash_pattern_row.into_any(),
+            ];
+
+            if let Some(offset_row) = dash_offset_row {
+                rows.push(offset_row.into_any());
+            }
+
+            v_stack_from_iter(rows).style(|s| {
+                s.grid()
+                    .grid_template_columns([auto(), fr(1.)])
+                    .justify_center()
+                    .items_center()
+                    .row_gap(12)
+                    .col_gap(10)
+                    .padding(20)
+            })
+        };
+
+        Some(
+            preview
+                .tooltip(tooltip_view)
+                .style(|s| s.items_center())
+                .into_any(),
+        )
+    }
 }
 impl StylePropValue for Brush {
     fn debug_view(&self) -> Option<Box<dyn View>> {
@@ -602,6 +977,8 @@ pub trait StyleProp: Default + Copy + 'static {
 pub(crate) type InterpolateFn =
     fn(val1: &dyn Any, val2: &dyn Any, time: f64) -> Option<Rc<dyn Any>>;
 
+pub(crate) type CombineFn = fn(val1: Rc<dyn Any>, val2: Rc<dyn Any>) -> Rc<dyn Any>;
+
 #[derive(Debug)]
 pub struct StylePropInfo {
     pub(crate) name: fn() -> &'static str,
@@ -611,6 +988,7 @@ pub struct StylePropInfo {
     pub(crate) interpolate: InterpolateFn,
     pub(crate) debug_any: fn(val: &dyn Any) -> String,
     pub(crate) debug_view: fn(val: &dyn Any) -> Option<Box<dyn View>>,
+    pub(crate) combine: CombineFn,
     pub(crate) transition_key: StyleKey,
 }
 
@@ -675,6 +1053,40 @@ impl StylePropInfo {
                         "expected type {} for property {}",
                         type_name::<T>(),
                         std::any::type_name::<Name>(),
+                    )
+                }
+            },
+            combine: |val1, val2| {
+                if let (Some(v1), Some(v2)) = (
+                    val1.downcast_ref::<StyleMapValue<T>>(),
+                    val2.downcast_ref::<StyleMapValue<T>>(),
+                ) {
+                    match (v1, v2) {
+                        (StyleMapValue::Val(a), StyleMapValue::Val(b)) => match a.combine(b) {
+                            CombineResult::Other => val2,
+                            CombineResult::New(result) => {
+                                Rc::new(StyleMapValue::Val(result)) as Rc<dyn Any>
+                            }
+                        },
+                        (StyleMapValue::Unset, _) => val2,
+                        (_, StyleMapValue::Unset) => val2,
+                        (
+                            StyleMapValue::Val(a) | StyleMapValue::Animated(a),
+                            StyleMapValue::Animated(b) | StyleMapValue::Val(b),
+                        ) => match a.combine(b) {
+                            CombineResult::Other => val2,
+                            CombineResult::New(result) => {
+                                Rc::new(StyleMapValue::Animated(result)) as Rc<dyn Any>
+                            }
+                        },
+                    }
+                } else {
+                    panic!(
+                        "expected type {} for property {}. Got typeids {:?} and {:?}",
+                        type_name::<StyleMapValue<T>>(),
+                        std::any::type_name::<Name>(),
+                        val1.type_id(),
+                        val2.type_id()
                     )
                 }
             },
@@ -1053,6 +1465,150 @@ pub struct Transition {
 }
 
 impl Transition {
+    pub fn debug_view(&self) -> Box<dyn View> {
+        let transition = self.clone();
+        let easing_clone = transition.easing.clone();
+
+        let curve_color = RwSignal::new(palette::css::BLUE);
+        let axis_color = RwSignal::new(palette::css::GRAY);
+
+        // Visual preview of the easing curve
+        let preview = canvas(move |cx, size| {
+            let width = size.width;
+            let height = size.height;
+            let padding = 4.0;
+            let graph_width = width - padding * 2.0;
+            let graph_height = height - padding * 2.0;
+
+            // Sample the easing function
+            let sample_count = 50;
+            let mut path = kurbo::BezPath::new();
+
+            for i in 0..=sample_count {
+                let t = i as f64 / sample_count as f64;
+                let eased = easing_clone.eval(t);
+                let x = padding + t * graph_width;
+                let y = padding + (1.0 - eased) * graph_height;
+
+                if i == 0 {
+                    path.move_to(Point::new(x, y));
+                } else {
+                    path.line_to(Point::new(x, y));
+                }
+            }
+
+            // Draw the curve
+            cx.stroke(
+                &path,
+                curve_color.get(),
+                &Stroke {
+                    width: 2.0,
+                    ..Default::default()
+                },
+            );
+
+            // Draw axes
+            let axis_stroke = Stroke {
+                width: 1.0,
+                ..Default::default()
+            };
+
+            // X axis
+            cx.stroke(
+                &kurbo::Line::new(
+                    Point::new(padding, height - padding),
+                    Point::new(width - padding, height - padding),
+                ),
+                axis_color.get(),
+                &axis_stroke,
+            );
+
+            // Y axis
+            cx.stroke(
+                &kurbo::Line::new(
+                    Point::new(padding, padding),
+                    Point::new(padding, height - padding),
+                ),
+                axis_color.get(),
+                &axis_stroke,
+            );
+        })
+        .style(|s| s.width(80.0).height(60.0))
+        .container()
+        .style(move |s| {
+            s.padding(4.0)
+                .border(1.)
+                .border_radius(5.0)
+                .with_theme(move |s, t| {
+                    curve_color.set(t.primary());
+                    axis_color.set(t.text_muted());
+                    s.border_color(t.border())
+                })
+        });
+
+        let tooltip_view = move || {
+            let transition = transition.clone();
+
+            let duration_row = views((
+                "Duration:".style(|s| s.font_bold().min_width(80.0).justify_end()),
+                label(move || format!("{:.0}ms", transition.duration.as_millis())),
+            ));
+
+            let easing_name = format!("{:?}", transition.easing);
+            let easing_row = views((
+                "Easing:".style(|s| s.font_bold().min_width(80.0).justify_end()),
+                label(move || easing_name.clone()),
+            ));
+
+            // Show velocity at key points if available
+            let velocity_samples = if transition.easing.velocity(0.0).is_some() {
+                let samples = vec![0.0, 0.25, 0.5, 0.75, 1.0]
+                    .into_iter()
+                    .filter_map(|t| {
+                        transition
+                            .easing
+                            .velocity(t)
+                            .map(|v| text(format!("t={:.2}: {:.3}", t, v)))
+                    })
+                    .collect::<Vec<_>>();
+
+                if !samples.is_empty() {
+                    Some(views((
+                        "Velocity:".style(|s| s.font_bold().min_width(80.0).justify_end()),
+                        v_stack_from_iter(samples).style(|s| s.gap(2.0)),
+                    )))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            let mut rows = vec![duration_row.into_any(), easing_row.into_any()];
+
+            if let Some(velocity_row) = velocity_samples {
+                rows.push(velocity_row.into_any());
+            }
+
+            v_stack_from_iter(rows).style(|s| {
+                s.grid()
+                    .grid_template_columns([auto(), fr(1.)])
+                    .justify_center()
+                    .items_center()
+                    .row_gap(12)
+                    .col_gap(10)
+                    .padding(20)
+            })
+        };
+
+        preview
+            .tooltip(tooltip_view)
+            .style(|s| s.items_center())
+            .into_any()
+    }
+}
+
+impl Transition {
     pub fn new(duration: Duration, easing: impl Easing + 'static) -> Self {
         Self {
             duration,
@@ -1253,7 +1809,12 @@ pub enum StyleKeyInfo {
     Prop(StylePropInfo),
     Selector(StyleSelectors),
     Class(StyleClassInfo),
+    ContextMappings,
 }
+
+static CONTEXT_MAPPINGS_INFO: StyleKeyInfo = StyleKeyInfo::ContextMappings;
+
+type ContextMapFn = Rc<dyn Fn(Style, &Style) -> Style>;
 
 #[derive(Copy, Clone)]
 pub struct StyleKey {
@@ -1262,14 +1823,17 @@ pub struct StyleKey {
 impl StyleKey {
     pub(crate) fn debug_any(&self, value: &dyn Any) -> String {
         match self.info {
-            StyleKeyInfo::Selector(..) | StyleKeyInfo::Transition => String::new(),
+            StyleKeyInfo::Selector(selectors) => selectors.debug_string(),
+            StyleKeyInfo::Transition | StyleKeyInfo::ContextMappings => String::new(),
             StyleKeyInfo::Class(info) => (info.name)().to_string(),
             StyleKeyInfo::Prop(v) => (v.debug_any)(value),
         }
     }
     fn inherited(&self) -> bool {
         match self.info {
-            StyleKeyInfo::Selector(..) | StyleKeyInfo::Transition => false,
+            StyleKeyInfo::Selector(..)
+            | StyleKeyInfo::Transition
+            | StyleKeyInfo::ContextMappings => false,
             StyleKeyInfo::Class(..) => true,
             StyleKeyInfo::Prop(v) => v.inherited,
         }
@@ -1289,8 +1853,11 @@ impl Eq for StyleKey {}
 impl Debug for StyleKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.info {
-            StyleKeyInfo::Selector(..) => write!(f, "selector"),
+            StyleKeyInfo::Selector(selectors) => {
+                write!(f, "selectors: {}", selectors.debug_string())
+            }
             StyleKeyInfo::Transition => write!(f, "transition"),
+            StyleKeyInfo::ContextMappings => write!(f, "ContextMappings"),
             StyleKeyInfo::Class(v) => write!(f, "{}", (v.name)()),
             StyleKeyInfo::Prop(v) => write!(f, "{}", (v.name)()),
         }
@@ -1306,7 +1873,7 @@ style_key_selector!(selector_lg, StyleSelectors::new().responsive());
 style_key_selector!(selector_xl, StyleSelectors::new().responsive());
 style_key_selector!(selector_xxl, StyleSelectors::new().responsive());
 
-fn screen_size_bp_to_key(breakpoint: ScreenSizeBp) -> StyleKey {
+pub(crate) fn screen_size_bp_to_key(breakpoint: ScreenSizeBp) -> StyleKey {
     match breakpoint {
         ScreenSizeBp::Xs => selector_xs(),
         ScreenSizeBp::Sm => selector_sm(),
@@ -1315,6 +1882,166 @@ fn screen_size_bp_to_key(breakpoint: ScreenSizeBp) -> StyleKey {
         ScreenSizeBp::Xl => selector_xl(),
         ScreenSizeBp::Xxl => selector_xxl(),
     }
+}
+
+pub(crate) fn resolve_nested_maps(
+    style: Style,
+    interact_state: &InteractionState,
+    screen_size_bp: ScreenSizeBp,
+    classes: &[StyleClassRef],
+    context: &mut Style,
+) -> Style {
+    // Start with depth 0 for the initial call
+    resolve_nested_maps_internal(style, interact_state, screen_size_bp, context, classes, 0)
+}
+
+fn resolve_nested_maps_internal(
+    mut style: Style,
+    interact_state: &InteractionState,
+    screen_size_bp: ScreenSizeBp,
+    context: &mut Style,
+    classes: &[StyleClassRef],
+    depth: u32,
+) -> Style {
+    const MAX_DEPTH: u32 = 6;
+    if depth >= MAX_DEPTH {
+        #[cfg(debug_assertions)]
+        dbg!("past max depth");
+        return style;
+    }
+
+    let mut changed = false;
+
+    let old_style = style.clone();
+    style = style.apply_classes_from_context(classes, context);
+    if !old_style.map.ptr_eq(&style.map) {
+        for class in classes {
+            context.remove_nested_map(class.key);
+        }
+        changed = true;
+    }
+
+    // Apply context mappings first
+    let old_style = style.clone();
+    style = style.apply_context_mappings(context);
+    if !old_style.map.ptr_eq(&style.map) {
+        changed = true;
+    }
+
+    // Apply screen size breakpoints
+    if let Some(map) = style.get_nested_map(screen_size_bp_to_key(screen_size_bp)) {
+        if !map.map.ptr_eq(&style.map) {
+            style.apply_mut(map);
+            changed = true;
+        }
+    }
+
+    // DarkMode
+    if interact_state.is_dark_mode {
+        if let Some(map) = style.get_nested_map(StyleSelector::DarkMode.to_key()) {
+            if !map.map.ptr_eq(&style.map) {
+                style.apply_mut(map);
+                changed = true;
+            }
+        }
+    }
+
+    // Disabled state (takes precedence)
+    if interact_state.is_disabled {
+        if let Some(map) = style.get_nested_map(StyleSelector::Disabled.to_key()) {
+            if !map.map.ptr_eq(&style.map) {
+                style.apply_mut(map);
+                changed = true;
+            }
+        }
+    } else {
+        // Other states only apply if not disabled
+
+        // Selected
+        if interact_state.is_selected || style.get(Selected) {
+            if let Some(map) = style.get_nested_map(StyleSelector::Selected.to_key()) {
+                if !map.map.ptr_eq(&style.map) {
+                    style.apply_mut(map);
+                    changed = true;
+                }
+            }
+        }
+
+        // Hover
+        if interact_state.is_hovered {
+            if let Some(map) = style.get_nested_map(StyleSelector::Hover.to_key()) {
+                if !map.map.ptr_eq(&style.map) {
+                    style.apply_mut(map);
+                    changed = true;
+                }
+            }
+        }
+
+        // File Hover
+        if interact_state.is_file_hover {
+            if let Some(map) = style.get_nested_map(StyleSelector::FileHover.to_key()) {
+                if !map.map.ptr_eq(&style.map) {
+                    style.apply_mut(map);
+                    changed = true;
+                }
+            }
+        }
+
+        // Focus states
+        if interact_state.is_focused {
+            if let Some(map) = style.get_nested_map(StyleSelector::Focus.to_key()) {
+                if !map.map.ptr_eq(&style.map) {
+                    style.apply_mut(map);
+                    changed = true;
+                }
+            }
+
+            if interact_state.using_keyboard_navigation {
+                if let Some(map) = style.get_nested_map(StyleSelector::FocusVisible.to_key()) {
+                    if !map.map.ptr_eq(&style.map) {
+                        style.apply_mut(map);
+                        changed = true;
+                    }
+                }
+
+                if interact_state.is_clicking {
+                    if let Some(map) = style.get_nested_map(StyleSelector::Active.to_key()) {
+                        if !map.map.ptr_eq(&style.map) {
+                            style.apply_mut(map);
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Active (mouse)
+        if interact_state.is_clicking
+            && interact_state.is_hovered
+            && !interact_state.using_keyboard_navigation
+        {
+            if let Some(map) = style.get_nested_map(StyleSelector::Active.to_key()) {
+                if !map.map.ptr_eq(&style.map) {
+                    style.apply_mut(map);
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    // Recurse once at the end if anything changed
+    if changed {
+        style = resolve_nested_maps_internal(
+            style,
+            interact_state,
+            screen_size_bp,
+            context,
+            classes,
+            depth + 1,
+        );
+    }
+
+    style
 }
 
 #[derive(Default, Clone)]
@@ -1392,8 +2119,9 @@ impl Style {
     }
 
     pub fn apply_class<C: StyleClass>(mut self, _class: C) -> Style {
-        if let Some(map) = self.map.get(&C::key()) {
+        if let Some(map) = self.clone().map.get(&C::key()) {
             self.apply_mut(map.downcast_ref::<Style>().unwrap().clone());
+            self.apply_context_mappings_mut();
         }
         self
     }
@@ -1402,8 +2130,94 @@ impl Style {
         for selector in selectors {
             if let Some(map) = self.get_nested_map(selector.to_key()) {
                 self.apply_mut(map.apply_selectors(selectors));
+                self.apply_context_mappings_mut();
             }
         }
+        if self.get(Selected) {
+            if let Some(map) = self.get_nested_map(StyleSelector::Selected.to_key()) {
+                self.apply_mut(map.apply_selectors(&[StyleSelector::Selected]));
+                self.apply_context_mappings_mut();
+            }
+        }
+        self
+    }
+
+    /// Store a context mapping to be applied to nested styles
+    // Then update your with_context function:
+    pub fn with_context<P: StyleProp>(
+        mut self,
+        f: impl Fn(Self, &P::Type) -> Self + 'static,
+    ) -> Self {
+        let mapper: ContextMapFn = Rc::new(move |style: Style, context: &Style| {
+            // Try getting the property from style first, then from context if not found
+            let value = style.get_prop::<P>().or_else(|| {
+                // Only look in context for props
+                let prop_key = P::key();
+                if let StyleKeyInfo::Prop(_) = prop_key.info {
+                    context.get_prop::<P>()
+                } else {
+                    None
+                }
+            });
+
+            if let Some(value) = value {
+                f(style, &value)
+            } else {
+                style
+            }
+        });
+
+        let key = StyleKey {
+            info: &CONTEXT_MAPPINGS_INFO,
+        };
+
+        let mut mappings = self
+            .map
+            .get(&key)
+            .and_then(|v| v.downcast_ref::<Vec<ContextMapFn>>())
+            .cloned()
+            .unwrap_or_default();
+
+        mappings.push(mapper);
+        self.map.insert(key, Rc::new(mappings));
+        self
+    }
+
+    pub fn with_context_opt<P: StyleProp<Type = Option<T>>, T: 'static>(
+        mut self,
+        f: impl Fn(Self, T) -> Self + 'static,
+    ) -> Self {
+        let mapper: ContextMapFn = Rc::new(move |style: Style, context: &Style| {
+            // Try getting the property from style first, then from context if not found
+            let value = style.get_prop::<P>().or_else(|| {
+                // Only look in context for props
+                let prop_key = P::key();
+                if let StyleKeyInfo::Prop(_) = prop_key.info {
+                    context.get_prop::<P>()
+                } else {
+                    None
+                }
+            });
+
+            match value {
+                Some(Some(value)) => f(style, value),
+                _ => style,
+            }
+        });
+
+        let key = StyleKey {
+            info: &CONTEXT_MAPPINGS_INFO,
+        };
+
+        let mut mappings = self
+            .map
+            .get(&key)
+            .and_then(|v| v.downcast_ref::<Vec<ContextMapFn>>())
+            .cloned()
+            .unwrap_or_default();
+
+        mappings.push(mapper);
+        self.map.insert(key, Rc::new(mappings));
         self
     }
 
@@ -1413,64 +2227,10 @@ impl Style {
             .map(|map| map.downcast_ref::<Style>().unwrap().clone())
     }
 
-    pub(crate) fn apply_interact_state(
-        &mut self,
-        interact_state: &InteractionState,
-        screen_size_bp: ScreenSizeBp,
-    ) {
-        if let Some(mut map) = self.get_nested_map(screen_size_bp_to_key(screen_size_bp)) {
-            map.apply_interact_state(interact_state, screen_size_bp);
-            self.apply_mut(map);
-        }
-
-        if interact_state.is_hovered && !interact_state.is_disabled {
-            if let Some(mut map) = self.get_nested_map(StyleSelector::Hover.to_key()) {
-                map.apply_interact_state(interact_state, screen_size_bp);
-                self.apply_mut(map);
-            }
-        }
-        if interact_state.is_focused {
-            if let Some(mut map) = self.get_nested_map(StyleSelector::Focus.to_key()) {
-                map.apply_interact_state(interact_state, screen_size_bp);
-                self.apply_mut(map);
-            }
-        }
-        if interact_state.is_selected {
-            if let Some(mut map) = self.get_nested_map(StyleSelector::Selected.to_key()) {
-                map.apply_interact_state(interact_state, screen_size_bp);
-                self.apply_mut(map);
-            }
-        }
-        if interact_state.is_disabled {
-            if let Some(mut map) = self.get_nested_map(StyleSelector::Disabled.to_key()) {
-                map.apply_interact_state(interact_state, screen_size_bp);
-                self.apply_mut(map);
-            }
-        }
-        if interact_state.is_dark_mode {
-            if let Some(mut map) = self.get_nested_map(StyleSelector::DarkMode.to_key()) {
-                map.apply_interact_state(interact_state, screen_size_bp);
-                self.apply_mut(map);
-            }
-        }
-
-        let focused_keyboard =
-            interact_state.using_keyboard_navigation && interact_state.is_focused;
-
-        if focused_keyboard {
-            if let Some(mut map) = self.get_nested_map(StyleSelector::FocusVisible.to_key()) {
-                map.apply_interact_state(interact_state, screen_size_bp);
-                self.apply_mut(map);
-            }
-        }
-
-        let active_mouse = interact_state.is_hovered && !interact_state.using_keyboard_navigation;
-        if interact_state.is_clicking && (active_mouse || focused_keyboard) {
-            if let Some(mut map) = self.get_nested_map(StyleSelector::Active.to_key()) {
-                map.apply_interact_state(interact_state, screen_size_bp);
-                self.apply_mut(map);
-            }
-        }
+    pub(crate) fn remove_nested_map(&mut self, key: StyleKey) -> Option<Style> {
+        self.map
+            .remove(&key)
+            .map(|map| map.downcast_ref::<Style>().unwrap().clone())
     }
 
     pub(crate) fn any_inherited(&self) -> bool {
@@ -1488,6 +2248,20 @@ impl Style {
             let this = Rc::make_mut(this);
             this.apply_iter(inherited);
         }
+    }
+
+    pub(crate) fn inherited(&self) -> Style {
+        let mut new = Style::new();
+        if self.any_inherited() {
+            let inherited = self
+                .map
+                .iter()
+                .filter(|(p, _)| p.inherited())
+                .map(|(p, v)| (*p, v.clone()));
+
+            new.apply_iter(inherited);
+        }
+        new
     }
 
     fn set_selector(&mut self, selector: StyleSelector, map: Style) {
@@ -1546,8 +2320,44 @@ impl Style {
                         e.insert(v);
                     }
                 },
-                StyleKeyInfo::Transition | StyleKeyInfo::Prop(..) => {
+                StyleKeyInfo::ContextMappings => match self.map.entry(k) {
+                    Entry::Occupied(mut e) => {
+                        // Append the new mappings to existing ones
+                        let new_mappings = v.downcast_ref::<Vec<ContextMapFn>>().unwrap();
+                        match Rc::get_mut(e.get_mut()) {
+                            Some(current) => {
+                                let current_mappings =
+                                    current.downcast_mut::<Vec<ContextMapFn>>().unwrap();
+                                current_mappings.extend(new_mappings.iter().cloned());
+                            }
+                            None => {
+                                let mut current = e
+                                    .get_mut()
+                                    .downcast_ref::<Vec<ContextMapFn>>()
+                                    .unwrap()
+                                    .clone();
+                                current.extend(new_mappings.iter().cloned());
+                                *e.get_mut() = Rc::new(current);
+                            }
+                        }
+                    }
+                    Entry::Vacant(e) => {
+                        e.insert(v);
+                    }
+                },
+                StyleKeyInfo::Transition => {
                     self.map.insert(k, v);
+                }
+                StyleKeyInfo::Prop(info) => {
+                    match self.map.entry(k) {
+                        Entry::Occupied(mut e) => {
+                            // We need to merge the new map with the existing map.
+                            e.insert((info.combine)(e.get().clone(), v));
+                        }
+                        Entry::Vacant(e) => {
+                            e.insert(v);
+                        }
+                    }
                 }
             }
         }
@@ -1578,8 +2388,48 @@ impl Style {
         overrides.fold(self, |acc, x| acc.apply(x))
     }
 
-    pub(crate) fn clear(&mut self) {
-        self.map.clear();
+    pub(crate) fn apply_context_mappings(mut self, context: &Style) -> Self {
+        let key = StyleKey {
+            info: &CONTEXT_MAPPINGS_INFO,
+        };
+
+        if let Some(mappings) = self
+            .map
+            .get(&key)
+            .and_then(|v| v.downcast_ref::<Vec<ContextMapFn>>())
+            .cloned()
+        {
+            self.map.remove(&key);
+
+            for mapping in mappings {
+                self = mapping(self, context);
+            }
+
+            self = self.apply_context_mappings(context);
+        }
+
+        self
+    }
+
+    pub(crate) fn apply_context_mappings_mut(&mut self) {
+        let key = StyleKey {
+            info: &CONTEXT_MAPPINGS_INFO,
+        };
+
+        if let Some(mappings) = self
+            .map
+            .get(&key)
+            .and_then(|v| v.downcast_ref::<Vec<ContextMapFn>>())
+            .cloned()
+        {
+            self.map.remove(&key);
+
+            for mapping in mappings {
+                *self = mapping(self.clone(), self);
+            }
+
+            self.apply_context_mappings_mut();
+        }
     }
 }
 
@@ -1608,9 +2458,43 @@ pub enum StyleSelector {
     Active,
     Dragging,
     Selected,
+    FileHover,
+}
+impl StyleSelector {
+    pub const fn all() -> &'static [StyleSelector] {
+        &[
+            StyleSelector::Hover,
+            StyleSelector::Focus,
+            StyleSelector::FocusVisible,
+            StyleSelector::Disabled,
+            StyleSelector::Active,
+            StyleSelector::Dragging,
+            StyleSelector::Selected,
+            StyleSelector::DarkMode,
+            StyleSelector::FileHover,
+        ]
+    }
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            StyleSelector::Hover => "Hover",
+            StyleSelector::Focus => "Focus",
+            StyleSelector::FocusVisible => "FocusVisible",
+            StyleSelector::Disabled => "Disabled",
+            StyleSelector::Active => "Active",
+            StyleSelector::Dragging => "Dragging",
+            StyleSelector::Selected => "Selected",
+            StyleSelector::DarkMode => "DarkMode",
+            StyleSelector::FileHover => "FileHover",
+        }
+    }
 }
 
 style_key_selector!(hover, StyleSelectors::new().set(StyleSelector::Hover, true));
+style_key_selector!(
+    file_hover,
+    StyleSelectors::new().set(StyleSelector::FileHover, true)
+);
 style_key_selector!(focus, StyleSelectors::new().set(StyleSelector::Focus, true));
 style_key_selector!(
     focus_visible,
@@ -1648,6 +2532,7 @@ impl StyleSelector {
             StyleSelector::Dragging => dragging(),
             StyleSelector::Selected => selected(),
             StyleSelector::DarkMode => darkmode(),
+            StyleSelector::FileHover => file_hover(),
         }
     }
 }
@@ -1665,29 +2550,72 @@ impl StyleSelectors {
             responsive: false,
         }
     }
+
     pub(crate) const fn set(mut self, selector: StyleSelector, value: bool) -> Self {
-        let v = selector as isize as u8;
-        let bit = 1 << v;
-        self.selectors = (self.selectors & !bit) | ((value as u8) << v);
+        let v = selector as u8;
+        if value {
+            self.selectors |= v;
+        } else {
+            self.selectors &= !v;
+        }
         self
     }
+
     pub(crate) fn has(self, selector: StyleSelector) -> bool {
-        let v = (selector as isize).try_into().unwrap();
-        let bit = 1_u8.checked_shl(v).unwrap();
-        self.selectors & bit != 0
+        let v = selector as u8;
+        self.selectors & v == v
     }
+
     pub(crate) fn union(self, other: StyleSelectors) -> StyleSelectors {
         StyleSelectors {
             selectors: self.selectors | other.selectors,
             responsive: self.responsive | other.responsive,
         }
     }
+
     pub(crate) const fn responsive(mut self) -> Self {
         self.responsive = true;
         self
     }
+
     pub(crate) fn has_responsive(self) -> bool {
         self.responsive
+    }
+}
+
+impl StyleSelectors {
+    /// Returns a formatted string representation of the active selectors
+    pub fn debug_string(&self) -> String {
+        let parts = self.active_selectors();
+
+        if parts.is_empty() {
+            if self.responsive {
+                "Responsive".to_string()
+            } else {
+                "None".to_string()
+            }
+        } else {
+            let selector_str = parts.join(" + ");
+            if self.responsive {
+                format!("{} (Responsive)", selector_str)
+            } else {
+                selector_str
+            }
+        }
+    }
+
+    /// Returns a vector of individual selector names
+    pub fn active_selectors(&self) -> Vec<&'static str> {
+        StyleSelector::all()
+            .iter()
+            .filter(|&&selector| self.has(selector))
+            .map(|&selector| selector.name())
+            .collect()
+    }
+
+    /// Returns true if any selectors are active
+    pub fn is_empty(&self) -> bool {
+        self.selectors == 0 && !self.responsive
     }
 }
 
@@ -1826,6 +2754,581 @@ impl Default for BoxShadow {
     }
 }
 
+/// Structure holding border widths for all four sides
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Border {
+    pub left: Option<StrokeWrap>,
+    pub top: Option<StrokeWrap>,
+    pub right: Option<StrokeWrap>,
+    pub bottom: Option<StrokeWrap>,
+}
+
+impl Border {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn all(border: impl Into<StrokeWrap>) -> Self {
+        let border = border.into();
+        Self {
+            left: Some(border.clone()),
+            top: Some(border.clone()),
+            right: Some(border.clone()),
+            bottom: Some(border),
+        }
+    }
+
+    pub fn left(mut self, border: impl Into<StrokeWrap>) -> Self {
+        self.left = Some(border.into());
+        self
+    }
+
+    pub fn top(mut self, border: impl Into<StrokeWrap>) -> Self {
+        self.top = Some(border.into());
+        self
+    }
+
+    pub fn right(mut self, border: impl Into<StrokeWrap>) -> Self {
+        self.right = Some(border.into());
+        self
+    }
+
+    pub fn bottom(mut self, border: impl Into<StrokeWrap>) -> Self {
+        self.bottom = Some(border.into());
+        self
+    }
+
+    pub fn horiz(mut self, border: impl Into<StrokeWrap>) -> Self {
+        let border = border.into();
+        self.left = Some(border.clone());
+        self.right = Some(border);
+        self
+    }
+
+    pub fn vert(mut self, border: impl Into<StrokeWrap>) -> Self {
+        let border = border.into();
+        self.top = Some(border.clone());
+        self.bottom = Some(border);
+        self
+    }
+}
+
+impl StylePropValue for Border {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let border = self.clone();
+        let details_view = move || {
+            let sides = [
+                ("Left:", border.left),
+                ("Top:", border.top),
+                ("Right:", border.right),
+                ("Bottom:", border.bottom),
+            ];
+
+            v_stack_from_iter(
+                sides
+                    .into_iter()
+                    .filter_map(|(l, v)| v.map(|v| (l, v)))
+                    .map(|(label, value)| {
+                        h_stack((
+                            label.style(|s| s.font_weight(Weight::BOLD).width(80.0)),
+                            value.debug_view().unwrap(),
+                        ))
+                        .style(|s| s.items_center().gap(4.0))
+                        .into_any()
+                    }),
+            )
+            .style(|s| s.gap(4.0).padding(8.0))
+        };
+        Some(details_view().into_any())
+    }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some(Self {
+            left: self.left.interpolate(&other.left, value)?,
+            top: self.top.interpolate(&other.top, value)?,
+            right: self.right.interpolate(&other.right, value)?,
+            bottom: self.bottom.interpolate(&other.bottom, value)?,
+        })
+    }
+
+    fn combine(&self, other: &Self) -> CombineResult<Self> {
+        let result = Border {
+            left: other.left.clone().or_else(|| self.left.clone()),
+            top: other.top.clone().or_else(|| self.top.clone()),
+            right: other.right.clone().or_else(|| self.right.clone()),
+            bottom: other.bottom.clone().or_else(|| self.bottom.clone()),
+        };
+
+        if result == *other {
+            CombineResult::Other
+        } else {
+            CombineResult::New(result)
+        }
+    }
+}
+
+/// Structure holding border colors for all four sides
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct BorderColor {
+    pub left: Option<Brush>,
+    pub top: Option<Brush>,
+    pub right: Option<Brush>,
+    pub bottom: Option<Brush>,
+}
+
+impl BorderColor {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn all(color: impl Into<Brush>) -> Self {
+        let color = color.into();
+        Self {
+            left: Some(color.clone()),
+            top: Some(color.clone()),
+            right: Some(color.clone()),
+            bottom: Some(color),
+        }
+    }
+
+    pub fn left(mut self, color: impl Into<Brush>) -> Self {
+        self.left = Some(color.into());
+        self
+    }
+
+    pub fn top(mut self, color: impl Into<Brush>) -> Self {
+        self.top = Some(color.into());
+        self
+    }
+
+    pub fn right(mut self, color: impl Into<Brush>) -> Self {
+        self.right = Some(color.into());
+        self
+    }
+
+    pub fn bottom(mut self, color: impl Into<Brush>) -> Self {
+        self.bottom = Some(color.into());
+        self
+    }
+
+    pub fn horiz(mut self, color: impl Into<Brush>) -> Self {
+        let color = color.into();
+        self.left = Some(color.clone());
+        self.right = Some(color);
+        self
+    }
+
+    pub fn vert(mut self, color: impl Into<Brush>) -> Self {
+        let color = color.into();
+        self.top = Some(color.clone());
+        self.bottom = Some(color);
+        self
+    }
+}
+
+impl StylePropValue for BorderColor {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let border_color = self.clone();
+        let details_view = move || {
+            let sides = [
+                ("Left:", border_color.left),
+                ("Top:", border_color.top),
+                ("Right:", border_color.right),
+                ("Bottom:", border_color.bottom),
+            ];
+
+            v_stack_from_iter(
+                sides
+                    .into_iter()
+                    .filter_map(|(l, v)| v.map(|v| (l, v)))
+                    .map(|(label, color)| {
+                        h_stack((
+                            label.style(|s| s.font_weight(Weight::BOLD).width(80.0)),
+                            color.debug_view().unwrap(),
+                        ))
+                        .style(|s| s.items_center().gap(4.0))
+                    }),
+            )
+            .style(|s| s.gap(4.0).padding(8.0))
+        };
+        Some(details_view().into_any())
+    }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some(Self {
+            left: self.left.interpolate(&other.left, value)?,
+            top: self.top.interpolate(&other.top, value)?,
+            right: self.right.interpolate(&other.right, value)?,
+            bottom: self.bottom.interpolate(&other.bottom, value)?,
+        })
+    }
+
+    fn combine(&self, other: &Self) -> CombineResult<Self> {
+        let result = BorderColor {
+            left: other.left.clone().or_else(|| self.left.clone()),
+            top: other.top.clone().or_else(|| self.top.clone()),
+            right: other.right.clone().or_else(|| self.right.clone()),
+            bottom: other.bottom.clone().or_else(|| self.bottom.clone()),
+        };
+
+        if result == *other {
+            CombineResult::Other
+        } else {
+            CombineResult::New(result)
+        }
+    }
+}
+
+/// Structure holding border radius for all four corners
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct BorderRadius {
+    pub top_left: Option<PxPct>,
+    pub top_right: Option<PxPct>,
+    pub bottom_left: Option<PxPct>,
+    pub bottom_right: Option<PxPct>,
+}
+
+impl BorderRadius {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn all(radius: impl Into<PxPct>) -> Self {
+        let radius = radius.into();
+        Self {
+            top_left: Some(radius),
+            top_right: Some(radius),
+            bottom_left: Some(radius),
+            bottom_right: Some(radius),
+        }
+    }
+
+    pub fn top_left(mut self, radius: impl Into<PxPct>) -> Self {
+        self.top_left = Some(radius.into());
+        self
+    }
+
+    pub fn top_right(mut self, radius: impl Into<PxPct>) -> Self {
+        self.top_right = Some(radius.into());
+        self
+    }
+
+    pub fn bottom_left(mut self, radius: impl Into<PxPct>) -> Self {
+        self.bottom_left = Some(radius.into());
+        self
+    }
+
+    pub fn bottom_right(mut self, radius: impl Into<PxPct>) -> Self {
+        self.bottom_right = Some(radius.into());
+        self
+    }
+
+    pub fn top(mut self, radius: impl Into<PxPct>) -> Self {
+        let radius = radius.into();
+        self.top_left = Some(radius);
+        self.top_right = Some(radius);
+        self
+    }
+
+    pub fn bottom(mut self, radius: impl Into<PxPct>) -> Self {
+        let radius = radius.into();
+        self.bottom_left = Some(radius);
+        self.bottom_right = Some(radius);
+        self
+    }
+
+    pub fn left(mut self, radius: impl Into<PxPct>) -> Self {
+        let radius = radius.into();
+        self.top_left = Some(radius);
+        self.bottom_left = Some(radius);
+        self
+    }
+
+    pub fn right(mut self, radius: impl Into<PxPct>) -> Self {
+        let radius = radius.into();
+        self.top_right = Some(radius);
+        self.bottom_right = Some(radius);
+        self
+    }
+}
+
+impl StylePropValue for BorderRadius {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let border_radius = *self;
+        let details_view = move || {
+            let corners = [
+                ("Top Left:", border_radius.top_left),
+                ("Top Right:", border_radius.top_right),
+                ("Bottom Left:", border_radius.bottom_left),
+                ("Bottom Right:", border_radius.bottom_right),
+            ];
+
+            v_stack_from_iter(
+                corners
+                    .into_iter()
+                    .filter_map(|(l, v)| v.map(|v| (l, v)))
+                    .map(|(label, radius)| {
+                        h_stack((
+                            label.style(|s| s.font_weight(Weight::BOLD).width(80.0)),
+                            radius.debug_view().unwrap(),
+                        ))
+                        .style(|s| s.items_center().gap(4.0))
+                    }),
+            )
+            .style(|s| s.gap(4.0).padding(8.0))
+        };
+        Some(details_view().into_any())
+    }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some(Self {
+            top_left: self.top_left.interpolate(&other.top_left, value)?,
+            top_right: self.top_right.interpolate(&other.top_right, value)?,
+            bottom_left: self.bottom_left.interpolate(&other.bottom_left, value)?,
+            bottom_right: self.bottom_right.interpolate(&other.bottom_right, value)?,
+        })
+    }
+
+    fn combine(&self, other: &Self) -> CombineResult<Self> {
+        let result = BorderRadius {
+            top_left: other.top_left.or(self.top_left),
+            top_right: other.top_right.or(self.top_right),
+            bottom_left: other.bottom_left.or(self.bottom_left),
+            bottom_right: other.bottom_right.or(self.bottom_right),
+        };
+
+        if result == *other {
+            CombineResult::Other
+        } else {
+            CombineResult::New(result)
+        }
+    }
+}
+
+/// Structure holding padding values for all four sides
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Padding {
+    pub left: Option<PxPct>,
+    pub top: Option<PxPct>,
+    pub right: Option<PxPct>,
+    pub bottom: Option<PxPct>,
+}
+
+impl Padding {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn all(padding: impl Into<PxPct>) -> Self {
+        let padding = padding.into();
+        Self {
+            left: Some(padding),
+            top: Some(padding),
+            right: Some(padding),
+            bottom: Some(padding),
+        }
+    }
+
+    pub fn left(mut self, padding: impl Into<PxPct>) -> Self {
+        self.left = Some(padding.into());
+        self
+    }
+
+    pub fn top(mut self, padding: impl Into<PxPct>) -> Self {
+        self.top = Some(padding.into());
+        self
+    }
+
+    pub fn right(mut self, padding: impl Into<PxPct>) -> Self {
+        self.right = Some(padding.into());
+        self
+    }
+
+    pub fn bottom(mut self, padding: impl Into<PxPct>) -> Self {
+        self.bottom = Some(padding.into());
+        self
+    }
+
+    pub fn horiz(mut self, padding: impl Into<PxPct>) -> Self {
+        let padding = padding.into();
+        self.left = Some(padding);
+        self.right = Some(padding);
+        self
+    }
+
+    pub fn vert(mut self, padding: impl Into<PxPct>) -> Self {
+        let padding = padding.into();
+        self.top = Some(padding);
+        self.bottom = Some(padding);
+        self
+    }
+}
+
+impl StylePropValue for Padding {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let padding = *self;
+        let details_view = move || {
+            let sides = [
+                ("Left:", padding.left),
+                ("Top:", padding.top),
+                ("Right:", padding.right),
+                ("Bottom:", padding.bottom),
+            ];
+
+            v_stack_from_iter(
+                sides
+                    .into_iter()
+                    .filter_map(|(l, v)| v.map(|v| (l, v)))
+                    .map(|(label, padding)| {
+                        h_stack((
+                            label.style(|s| s.font_weight(Weight::BOLD).width(80.0)),
+                            padding.debug_view().unwrap(),
+                        ))
+                        .style(|s| s.items_center().gap(4.0))
+                    }),
+            )
+            .style(|s| s.gap(4.0).padding(8.0))
+        };
+        Some(details_view().into_any())
+    }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some(Self {
+            left: self.left.interpolate(&other.left, value)?,
+            top: self.top.interpolate(&other.top, value)?,
+            right: self.right.interpolate(&other.right, value)?,
+            bottom: self.bottom.interpolate(&other.bottom, value)?,
+        })
+    }
+
+    fn combine(&self, other: &Self) -> CombineResult<Self> {
+        let result = Padding {
+            left: other.left.or(self.left),
+            top: other.top.or(self.top),
+            right: other.right.or(self.right),
+            bottom: other.bottom.or(self.bottom),
+        };
+
+        if result == *other {
+            CombineResult::Other
+        } else {
+            CombineResult::New(result)
+        }
+    }
+}
+
+/// Structure holding margin values for all four sides
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Margin {
+    pub left: Option<PxPctAuto>,
+    pub top: Option<PxPctAuto>,
+    pub right: Option<PxPctAuto>,
+    pub bottom: Option<PxPctAuto>,
+}
+
+impl Margin {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn all(margin: impl Into<PxPctAuto>) -> Self {
+        let margin = margin.into();
+        Self {
+            left: Some(margin),
+            top: Some(margin),
+            right: Some(margin),
+            bottom: Some(margin),
+        }
+    }
+
+    pub fn left(mut self, margin: impl Into<PxPctAuto>) -> Self {
+        self.left = Some(margin.into());
+        self
+    }
+
+    pub fn top(mut self, margin: impl Into<PxPctAuto>) -> Self {
+        self.top = Some(margin.into());
+        self
+    }
+
+    pub fn right(mut self, margin: impl Into<PxPctAuto>) -> Self {
+        self.right = Some(margin.into());
+        self
+    }
+
+    pub fn bottom(mut self, margin: impl Into<PxPctAuto>) -> Self {
+        self.bottom = Some(margin.into());
+        self
+    }
+
+    pub fn horiz(mut self, margin: impl Into<PxPctAuto>) -> Self {
+        let margin = margin.into();
+        self.left = Some(margin);
+        self.right = Some(margin);
+        self
+    }
+
+    pub fn vert(mut self, margin: impl Into<PxPctAuto>) -> Self {
+        let margin = margin.into();
+        self.top = Some(margin);
+        self.bottom = Some(margin);
+        self
+    }
+}
+
+impl StylePropValue for Margin {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        let margin = *self;
+        let details_view = move || {
+            let sides = [
+                ("Left:", margin.left),
+                ("Top:", margin.top),
+                ("Right:", margin.right),
+                ("Bottom:", margin.bottom),
+            ];
+
+            v_stack_from_iter(
+                sides
+                    .into_iter()
+                    .filter_map(|(l, v)| v.map(|v| (l, v)))
+                    .map(|(label, margin)| {
+                        h_stack((
+                            label.style(|s| s.font_weight(Weight::BOLD).width(80.0)),
+                            margin.debug_view().unwrap(),
+                        ))
+                        .style(|s| s.items_center().gap(4.0))
+                    }),
+            )
+            .style(|s| s.gap(4.0).padding(8.0))
+        };
+        Some(details_view().into_any())
+    }
+
+    fn interpolate(&self, other: &Self, value: f64) -> Option<Self> {
+        Some(Self {
+            left: self.left.interpolate(&other.left, value)?,
+            top: self.top.interpolate(&other.top, value)?,
+            right: self.right.interpolate(&other.right, value)?,
+            bottom: self.bottom.interpolate(&other.bottom, value)?,
+        })
+    }
+
+    fn combine(&self, other: &Self) -> CombineResult<Self> {
+        let result = Margin {
+            left: other.left.or(self.left),
+            top: other.top.or(self.top),
+            right: other.right.or(self.right),
+            bottom: other.bottom.or(self.bottom),
+        };
+
+        if result == *other {
+            CombineResult::Other
+        } else {
+            CombineResult::New(result)
+        }
+    }
+}
+
 /// The value for a [`Style`] property
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StyleValue<T> {
@@ -1945,38 +3448,23 @@ define_builtin_props!(
     JustifySelf justify_self: Option<AlignItems> {} = None,
     AlignItemsProp align_items: Option<AlignItems> {} = None,
     AlignContentProp align_content: Option<AlignContent> {} = None,
-    GridTemplateRows grid_template_rows: Vec<TrackSizingFunction> {} = Vec::new(),
-    GridTemplateColumns grid_template_columns: Vec<TrackSizingFunction> {} = Vec::new(),
+    GridTemplateRows grid_template_rows: Vec<GridTemplateComponent<String>> {} = Vec::new(),
+    GridTemplateColumns grid_template_columns: Vec<GridTemplateComponent<String>> {} = Vec::new(),
     GridAutoRows grid_auto_rows: Vec<MinMax<MinTrackSizingFunction, MaxTrackSizingFunction>> {} = Vec::new(),
     GridAutoColumns grid_auto_columns: Vec<MinMax<MinTrackSizingFunction, MaxTrackSizingFunction>> {} = Vec::new(),
     GridAutoFlow grid_auto_flow: taffy::GridAutoFlow {} = taffy::GridAutoFlow::Row,
     GridRow grid_row: Line<GridPlacement> {} = Line::default(),
     GridColumn grid_column: Line<GridPlacement> {} = Line::default(),
     AlignSelf align_self: Option<AlignItems> {} = None,
-    BorderLeft border_left nocb: StrokeWrap {} = StrokeWrap::new(0.),
-    BorderTop border_top nocb: StrokeWrap {} = StrokeWrap::new(0.0),
-    BorderRight border_right nocb: StrokeWrap {} = StrokeWrap::new(0.0),
-    BorderBottom border_bottom nocb: StrokeWrap {} = StrokeWrap::new(0.0),
-    BorderTopLeftRadius border_top_left_radius: PxPct {} = PxPct::Px(0.0),
-    BorderTopRightRadius border_top_right_radius: PxPct {} = PxPct::Px(0.0),
-    BorderBottomLeftRadius border_bottom_left_radius: PxPct {} = PxPct::Px(0.0),
-    BorderBottomRightRadius border_bottom_right_radius: PxPct {} = PxPct::Px(0.0),
     OutlineColor outline_color: Brush {} = Brush::Solid(palette::css::TRANSPARENT),
     Outline outline nocb: StrokeWrap {} = StrokeWrap::new(0.),
     OutlineProgress outline_progress: Pct {} = Pct(100.),
-    BorderLeftColor border_left_color: Brush {} = Brush::Solid(palette::css::BLACK),
-    BorderTopColor border_top_color: Brush {} = Brush::Solid(palette::css::BLACK),
-    BorderRightColor border_right_color: Brush {} = Brush::Solid(palette::css::BLACK),
-    BorderBottomColor border_bottom_color: Brush {} = Brush::Solid(palette::css::BLACK),
     BorderProgress border_progress: Pct {} = Pct(100.),
-    PaddingLeft padding_left: PxPct {} = PxPct::Px(0.0),
-    PaddingTop padding_top: PxPct {} = PxPct::Px(0.0),
-    PaddingRight padding_right: PxPct {} = PxPct::Px(0.0),
-    PaddingBottom padding_bottom: PxPct {} = PxPct::Px(0.0),
-    MarginLeft margin_left: PxPctAuto {} = PxPctAuto::Px(0.0),
-    MarginTop margin_top: PxPctAuto {} = PxPctAuto::Px(0.0),
-    MarginRight margin_right: PxPctAuto {} = PxPctAuto::Px(0.0),
-    MarginBottom margin_bottom: PxPctAuto {} = PxPctAuto::Px(0.0),
+    BorderProp border_combined nocb: Border {} = Border::default(),
+    BorderColorProp border_color_combined nocb: BorderColor {} = BorderColor::default(),
+    BorderRadiusProp border_radius_combined nocb: BorderRadius {} = BorderRadius::default(),
+    PaddingProp padding_combined nocb: Padding {} = Padding::default(),
+    MarginProp margin_combined nocb: Margin {} = Margin::default(),
     InsetLeft inset_left: PxPctAuto {} = PxPctAuto::Auto,
     InsetTop inset_top: PxPctAuto {} = PxPctAuto::Auto,
     InsetRight inset_right: PxPctAuto {} = PxPctAuto::Auto,
@@ -1987,7 +3475,7 @@ define_builtin_props!(
     TextColor color nocb: Option<Color> { inherited } = None,
     Background background nocb: Option<Brush> {} = None,
     Foreground foreground nocb: Option<Brush> {} = None,
-    BoxShadowProp box_shadow nocb: SmallVec<[BoxShadow; 2]> {} = SmallVec::new(),
+    BoxShadowProp box_shadow nocb: SmallVec<[BoxShadow; 3]> {} = SmallVec::new(),
     FontSize font_size nocb: Option<f32> { inherited } = None,
     FontFamily font_family nocb: Option<String> { inherited } = None,
     FontWeight font_weight nocb: Option<Weight> { inherited } = None,
@@ -2006,7 +3494,50 @@ define_builtin_props!(
     TranslateX translate_x: PxPct {} = PxPct::Px(0.),
     TranslateY translate_y: PxPct {} = PxPct::Px(0.),
     Rotation rotate: Px {} = Px(0.),
+    Selected set_selected: bool { inherited } = false,
+    Disabled set_disabled: bool { inherited } = false,
+    Hidden set_hidden: bool { inherited } = false,
+    Focusable focusable: bool { } = false,
 );
+
+impl BuiltinStyle<'_> {
+    // Individual padding accessors
+    pub fn padding_left(&self) -> PxPct {
+        self.style.get(PaddingProp).left.unwrap_or(PxPct::Px(0.0))
+    }
+    pub fn padding_top(&self) -> PxPct {
+        self.style.get(PaddingProp).top.unwrap_or(PxPct::Px(0.0))
+    }
+    pub fn padding_right(&self) -> PxPct {
+        self.style.get(PaddingProp).right.unwrap_or(PxPct::Px(0.0))
+    }
+    pub fn padding_bottom(&self) -> PxPct {
+        self.style.get(PaddingProp).bottom.unwrap_or(PxPct::Px(0.0))
+    }
+
+    // Individual margin accessors
+    pub fn margin_left(&self) -> PxPctAuto {
+        self.style
+            .get(MarginProp)
+            .left
+            .unwrap_or(PxPctAuto::Px(0.0))
+    }
+    pub fn margin_top(&self) -> PxPctAuto {
+        self.style.get(MarginProp).top.unwrap_or(PxPctAuto::Px(0.0))
+    }
+    pub fn margin_right(&self) -> PxPctAuto {
+        self.style
+            .get(MarginProp)
+            .right
+            .unwrap_or(PxPctAuto::Px(0.0))
+    }
+    pub fn margin_bottom(&self) -> PxPctAuto {
+        self.style
+            .get(MarginProp)
+            .bottom
+            .unwrap_or(PxPctAuto::Px(0.0))
+    }
+}
 
 prop!(
     /// How children overflowing their container in Y axis should affect layout
@@ -2029,15 +3560,9 @@ prop_extractor! {
 
 prop_extractor! {
     pub(crate) LayoutProps {
-        pub border_left: BorderLeft,
-        pub border_top: BorderTop,
-        pub border_right: BorderRight,
-        pub border_bottom: BorderBottom,
-
-        pub padding_left: PaddingLeft,
-        pub padding_top: PaddingTop,
-        pub padding_right: PaddingRight,
-        pub padding_bottom: PaddingBottom,
+        pub border: BorderProp,
+        pub padding: PaddingProp,
+        pub margin: MarginProp,
 
         pub width: Width,
         pub height: Height,
@@ -2057,11 +3582,6 @@ prop_extractor! {
         pub inset_right: InsetRight,
         pub inset_bottom: InsetBottom,
 
-        pub margin_left: MarginLeft,
-        pub margin_top: MarginTop,
-        pub margin_right: MarginRight,
-        pub margin_bottom: MarginBottom,
-
         pub row_gap: RowGap,
         pub col_gap: ColGap,
 
@@ -2077,17 +3597,14 @@ prop_extractor! {
 
 impl LayoutProps {
     pub fn to_style(&self) -> Style {
+        let border = self.border();
+        let padding = self.padding();
+        let margin = self.margin();
         Style::new()
             .width(self.width())
             .height(self.height())
-            .border_left(self.border_left().0)
-            .border_top(self.border_top().0)
-            .border_right(self.border_right().0)
-            .border_bottom(self.border_bottom().0)
-            .padding_left(self.padding_left())
-            .padding_top(self.padding_top())
-            .padding_right(self.padding_right())
-            .padding_bottom(self.padding_bottom())
+            .apply_border(border)
+            .apply_padding(padding)
             .min_width(self.min_width())
             .min_height(self.min_height())
             .max_width(self.max_width())
@@ -2099,10 +3616,7 @@ impl LayoutProps {
             .inset_top(self.inset_top())
             .inset_right(self.inset_right())
             .inset_bottom(self.inset_bottom())
-            .margin_left(self.margin_left())
-            .margin_top(self.margin_top())
-            .margin_right(self.margin_right())
-            .margin_bottom(self.margin_bottom())
+            .apply_margin(margin)
             .col_gap(self.col_gap())
             .row_gap(self.row_gap())
     }
@@ -2178,6 +3692,10 @@ impl Style {
 
     pub fn dark_mode(self, style: impl FnOnce(Style) -> Style) -> Self {
         self.selector(StyleSelector::DarkMode, style)
+    }
+
+    pub fn file_hover(self, style: impl FnOnce(Style) -> Style) -> Self {
+        self.selector(StyleSelector::FileHover, style)
     }
 
     pub fn active(self, style: impl FnOnce(Style) -> Style) -> Self {
@@ -2332,35 +3850,11 @@ impl Style {
     }
 
     pub fn border_color(self, color: impl Into<Brush>) -> Self {
-        let color = color.into();
-        self.border_left_color(color.clone())
-            .border_top_color(color.clone())
-            .border_right_color(color.clone())
-            .border_bottom_color(color.clone())
+        self.set(BorderColorProp, BorderColor::all(color))
     }
 
     pub fn border(self, border: impl Into<StrokeWrap>) -> Self {
-        let border = border.into();
-        self.border_left(border.clone())
-            .border_top(border.clone())
-            .border_right(border.clone())
-            .border_bottom(border)
-    }
-
-    pub fn border_left(self, border: impl Into<StrokeWrap>) -> Self {
-        self.set_style_value(BorderLeft, StyleValue::Val(border.into()))
-    }
-
-    pub fn border_right(self, border: impl Into<StrokeWrap>) -> Self {
-        self.set_style_value(BorderRight, StyleValue::Val(border.into()))
-    }
-
-    pub fn border_top(self, border: impl Into<StrokeWrap>) -> Self {
-        self.set_style_value(BorderTop, StyleValue::Val(border.into()))
-    }
-
-    pub fn border_bottom(self, border: impl Into<StrokeWrap>) -> Self {
-        self.set_style_value(BorderBottom, StyleValue::Val(border.into()))
+        self.set(BorderProp, Border::all(border))
     }
 
     pub fn outline(self, outline: impl Into<StrokeWrap>) -> Self {
@@ -2368,15 +3862,21 @@ impl Style {
     }
 
     /// Sets `border_left` and `border_right` to `border`
-    pub fn border_horiz(self, border: impl Into<Stroke>) -> Self {
+    pub fn border_horiz(self, border: impl Into<StrokeWrap>) -> Self {
+        let mut current = self.get(BorderProp);
         let border = border.into();
-        self.border_left(border.clone()).border_right(border)
+        current.left = Some(border.clone());
+        current.right = Some(border);
+        self.set(BorderProp, current)
     }
 
     /// Sets `border_top` and `border_bottom` to `border`
-    pub fn border_vert(self, border: impl Into<Stroke>) -> Self {
+    pub fn border_vert(self, border: impl Into<StrokeWrap>) -> Self {
+        let mut current = self.get(BorderProp);
         let border = border.into();
-        self.border_top(border.clone()).border_bottom(border)
+        current.top = Some(border.clone());
+        current.bottom = Some(border);
+        self.set(BorderProp, current)
     }
 
     pub fn padding_left_pct(self, padding: f64) -> Self {
@@ -2397,41 +3897,37 @@ impl Style {
 
     /// Set padding on all directions
     pub fn padding(self, padding: impl Into<PxPct>) -> Self {
-        let padding = padding.into();
-        self.padding_left(padding)
-            .padding_top(padding)
-            .padding_right(padding)
-            .padding_bottom(padding)
+        self.set(PaddingProp, Padding::all(padding))
     }
 
     pub fn padding_pct(self, padding: f64) -> Self {
-        let padding = padding.pct();
-        self.padding_left(padding)
-            .padding_top(padding)
-            .padding_right(padding)
-            .padding_bottom(padding)
+        self.set(PaddingProp, Padding::all(padding.pct()))
     }
 
     /// Sets `padding_left` and `padding_right` to `padding`
     pub fn padding_horiz(self, padding: impl Into<PxPct>) -> Self {
+        let mut current = self.get(PaddingProp);
         let padding = padding.into();
-        self.padding_left(padding).padding_right(padding)
+        current.left = Some(padding);
+        current.right = Some(padding);
+        self.set(PaddingProp, current)
     }
 
     pub fn padding_horiz_pct(self, padding: f64) -> Self {
-        let padding = padding.pct();
-        self.padding_left(padding).padding_right(padding)
+        self.padding_horiz(padding.pct())
     }
 
     /// Sets `padding_top` and `padding_bottom` to `padding`
     pub fn padding_vert(self, padding: impl Into<PxPct>) -> Self {
+        let mut current = self.get(PaddingProp);
         let padding = padding.into();
-        self.padding_top(padding).padding_bottom(padding)
+        current.top = Some(padding);
+        current.bottom = Some(padding);
+        self.set(PaddingProp, current)
     }
 
     pub fn padding_vert_pct(self, padding: f64) -> Self {
-        let padding = padding.pct();
-        self.padding_top(padding).padding_bottom(padding)
+        self.padding_vert(padding.pct())
     }
 
     pub fn margin_left_pct(self, margin: f64) -> Self {
@@ -2451,49 +3947,170 @@ impl Style {
     }
 
     pub fn margin(self, margin: impl Into<PxPctAuto>) -> Self {
-        let margin = margin.into();
-        self.margin_left(margin)
-            .margin_top(margin)
-            .margin_right(margin)
-            .margin_bottom(margin)
+        self.set(MarginProp, Margin::all(margin))
     }
 
     pub fn margin_pct(self, margin: f64) -> Self {
-        let margin = margin.pct();
-        self.margin_left(margin)
-            .margin_top(margin)
-            .margin_right(margin)
-            .margin_bottom(margin)
+        self.set(MarginProp, Margin::all(margin.pct()))
     }
 
     /// Sets `margin_left` and `margin_right` to `margin`
     pub fn margin_horiz(self, margin: impl Into<PxPctAuto>) -> Self {
+        let mut current = self.get(MarginProp);
         let margin = margin.into();
-        self.margin_left(margin).margin_right(margin)
+        current.left = Some(margin);
+        current.right = Some(margin);
+        self.set(MarginProp, current)
     }
 
     pub fn margin_horiz_pct(self, margin: f64) -> Self {
-        let margin = margin.pct();
-        self.margin_left(margin).margin_right(margin)
+        self.margin_horiz(margin.pct())
     }
 
     /// Sets `margin_top` and `margin_bottom` to `margin`
     pub fn margin_vert(self, margin: impl Into<PxPctAuto>) -> Self {
+        let mut current = self.get(MarginProp);
         let margin = margin.into();
-        self.margin_top(margin).margin_bottom(margin)
+        current.top = Some(margin);
+        current.bottom = Some(margin);
+        self.set(MarginProp, current)
     }
 
     pub fn margin_vert_pct(self, margin: f64) -> Self {
-        let margin = margin.pct();
-        self.margin_top(margin).margin_bottom(margin)
+        self.margin_vert(margin.pct())
+    }
+
+    // Individual padding methods using the combined struct
+    pub fn padding_left(self, padding: impl Into<PxPct>) -> Self {
+        let mut current = self.get(PaddingProp);
+        current.left = Some(padding.into());
+        self.set(PaddingProp, current)
+    }
+    pub fn padding_right(self, padding: impl Into<PxPct>) -> Self {
+        let mut current = self.get(PaddingProp);
+        current.right = Some(padding.into());
+        self.set(PaddingProp, current)
+    }
+    pub fn padding_top(self, padding: impl Into<PxPct>) -> Self {
+        let mut current = self.get(PaddingProp);
+        current.top = Some(padding.into());
+        self.set(PaddingProp, current)
+    }
+    pub fn padding_bottom(self, padding: impl Into<PxPct>) -> Self {
+        let mut current = self.get(PaddingProp);
+        current.bottom = Some(padding.into());
+        self.set(PaddingProp, current)
+    }
+
+    // Individual margin methods using the combined struct
+    pub fn margin_left(self, margin: impl Into<PxPctAuto>) -> Self {
+        let mut current = self.get(MarginProp);
+        current.left = Some(margin.into());
+        self.set(MarginProp, current)
+    }
+    pub fn margin_right(self, margin: impl Into<PxPctAuto>) -> Self {
+        let mut current = self.get(MarginProp);
+        current.right = Some(margin.into());
+        self.set(MarginProp, current)
+    }
+    pub fn margin_top(self, margin: impl Into<PxPctAuto>) -> Self {
+        let mut current = self.get(MarginProp);
+        current.top = Some(margin.into());
+        self.set(MarginProp, current)
+    }
+    pub fn margin_bottom(self, margin: impl Into<PxPctAuto>) -> Self {
+        let mut current = self.get(MarginProp);
+        current.bottom = Some(margin.into());
+        self.set(MarginProp, current)
+    }
+
+    // Convenience methods for combined padding and margin properties
+    pub fn apply_padding(self, padding: Padding) -> Self {
+        self.set(PaddingProp, padding)
+    }
+    pub fn apply_margin(self, margin: Margin) -> Self {
+        self.set(MarginProp, margin)
     }
 
     pub fn border_radius(self, radius: impl Into<PxPct>) -> Self {
-        let radius = radius.into();
-        self.border_top_left_radius(radius)
-            .border_top_right_radius(radius)
-            .border_bottom_left_radius(radius)
-            .border_bottom_right_radius(radius)
+        self.set(BorderRadiusProp, BorderRadius::all(radius))
+    }
+
+    // Individual border methods using the combined structs
+    pub fn border_left(self, border: impl Into<StrokeWrap>) -> Self {
+        let mut current = self.get(BorderProp);
+        current.left = Some(border.into());
+        self.set(BorderProp, current)
+    }
+    pub fn border_right(self, border: impl Into<StrokeWrap>) -> Self {
+        let mut current = self.get(BorderProp);
+        current.right = Some(border.into());
+        self.set(BorderProp, current)
+    }
+    pub fn border_top(self, border: impl Into<StrokeWrap>) -> Self {
+        let mut current = self.get(BorderProp);
+        current.top = Some(border.into());
+        self.set(BorderProp, current)
+    }
+    pub fn border_bottom(self, border: impl Into<StrokeWrap>) -> Self {
+        let mut current = self.get(BorderProp);
+        current.bottom = Some(border.into());
+        self.set(BorderProp, current)
+    }
+
+    // Individual border color methods
+    pub fn border_left_color(self, color: impl Into<Brush>) -> Self {
+        let mut current = self.get(BorderColorProp);
+        current.left = Some(color.into());
+        self.set(BorderColorProp, current)
+    }
+    pub fn border_right_color(self, color: impl Into<Brush>) -> Self {
+        let mut current = self.get(BorderColorProp);
+        current.right = Some(color.into());
+        self.set(BorderColorProp, current)
+    }
+    pub fn border_top_color(self, color: impl Into<Brush>) -> Self {
+        let mut current = self.get(BorderColorProp);
+        current.top = Some(color.into());
+        self.set(BorderColorProp, current)
+    }
+    pub fn border_bottom_color(self, color: impl Into<Brush>) -> Self {
+        let mut current = self.get(BorderColorProp);
+        current.bottom = Some(color.into());
+        self.set(BorderColorProp, current)
+    }
+
+    // Individual border radius methods
+    pub fn border_top_left_radius(self, radius: impl Into<PxPct>) -> Self {
+        let mut current = self.get(BorderRadiusProp);
+        current.top_left = Some(radius.into());
+        self.set(BorderRadiusProp, current)
+    }
+    pub fn border_top_right_radius(self, radius: impl Into<PxPct>) -> Self {
+        let mut current = self.get(BorderRadiusProp);
+        current.top_right = Some(radius.into());
+        self.set(BorderRadiusProp, current)
+    }
+    pub fn border_bottom_left_radius(self, radius: impl Into<PxPct>) -> Self {
+        let mut current = self.get(BorderRadiusProp);
+        current.bottom_left = Some(radius.into());
+        self.set(BorderRadiusProp, current)
+    }
+    pub fn border_bottom_right_radius(self, radius: impl Into<PxPct>) -> Self {
+        let mut current = self.get(BorderRadiusProp);
+        current.bottom_right = Some(radius.into());
+        self.set(BorderRadiusProp, current)
+    }
+
+    // Convenience methods for combined border properties
+    pub fn apply_border(self, border: Border) -> Self {
+        self.set(BorderProp, border)
+    }
+    pub fn apply_border_color(self, border_color: BorderColor) -> Self {
+        self.set(BorderColorProp, border_color)
+    }
+    pub fn apply_border_radius(self, border_radius: BorderRadius) -> Self {
+        self.set(BorderRadiusProp, border_radius)
     }
 
     pub fn inset_left_pct(self, inset: f64) -> Self {
@@ -2593,7 +4210,7 @@ impl Style {
     /// use floem::prelude::palette::css;
     /// use floem::style::BoxShadow;
     ///
-    /// empty().style(|s| s.apply_box_shadow(
+    /// empty().style(|s| s.apply_box_shadow(vec![
     ///    BoxShadow::new()
     ///        .color(css::BLACK)
     ///        .top_offset(5.)
@@ -2602,7 +4219,7 @@ impl Style {
     ///        .left_offset(10.)
     ///        .blur_radius(5.)
     ///        .spread(10.)
-    /// ));
+    /// ]));
     /// ```
     /// ### Info
     /// If you only specify one shadow on the element, use standard style methods directly
@@ -2618,10 +4235,8 @@ impl Style {
     ///     .box_shadow_blur(3.)
     /// );
     /// ```
-    pub fn apply_box_shadow(self, shadow: BoxShadow) -> Self {
-        let mut value = self.get(BoxShadowProp);
-        value.push(shadow);
-        self.set(BoxShadowProp, value)
+    pub fn apply_box_shadow(self, shadow: impl Into<SmallVec<[BoxShadow; 3]>>) -> Self {
+        self.set(BoxShadowProp, shadow.into())
     }
 
     /// Specifies the offset on horizontal axis.
@@ -2737,8 +4352,9 @@ impl Style {
         self.set_style_value(FontStyle, style.into().map(Some))
     }
 
-    pub fn cursor_color(self, color: impl Into<StyleValue<Brush>>) -> Self {
-        self.set_style_value(CursorColor, color.into())
+    pub fn cursor_color(self, color: impl Into<Brush>) -> Self {
+        let brush = StyleValue::Val(color.into());
+        self.set_style_value(CursorColor, brush)
     }
 
     pub fn line_height(self, normal: f32) -> Self {
@@ -2812,7 +4428,7 @@ impl Style {
     }
 
     pub fn hide(self) -> Self {
-        self.display(taffy::style::Display::None)
+        self.set(Hidden, true).set(DisplayProp, Display::None)
     }
 
     pub fn flex(self) -> Self {
@@ -2852,11 +4468,7 @@ impl Style {
     ///     .border_left(5.0); // ran, obviously
     /// ```
     pub fn apply_opt<T>(self, opt: Option<T>, f: impl FnOnce(Self, T) -> Self) -> Self {
-        if let Some(t) = opt {
-            f(self, t)
-        } else {
-            self
-        }
+        if let Some(t) = opt { f(self, t) } else { self }
     }
 
     /// Allow the application of a function if the condition holds.
@@ -2868,11 +4480,7 @@ impl Style {
     ///     .apply_if(false, |s| s.margin(5.0)); // not ran
     /// ```
     pub fn apply_if(self, cond: bool, f: impl FnOnce(Self) -> Self) -> Self {
-        if cond {
-            f(self)
-        } else {
-            self
-        }
+        if cond { f(self) } else { self }
     }
 
     /// Applies a `CustomStyle` type into this style.
@@ -2956,23 +4564,34 @@ impl Style {
             align_content: style.align_content(),
             align_self: style.align_self(),
             aspect_ratio: style.aspect_ratio(),
-            border: Rect {
-                left: LengthPercentage::length(style.border_left().0.width as f32),
-                top: LengthPercentage::length(style.border_top().0.width as f32),
-                right: LengthPercentage::length(style.border_right().0.width as f32),
-                bottom: LengthPercentage::length(style.border_bottom().0.width as f32),
+            border: {
+                let border = style.style.get(BorderProp);
+                Rect {
+                    left: LengthPercentage::length(border.left.map_or(0.0, |b| b.0.width) as f32),
+                    top: LengthPercentage::length(border.top.map_or(0.0, |b| b.0.width) as f32),
+                    right: LengthPercentage::length(border.right.map_or(0.0, |b| b.0.width) as f32),
+                    bottom: LengthPercentage::length(
+                        border.bottom.map_or(0.0, |b| b.0.width) as f32
+                    ),
+                }
             },
-            padding: Rect {
-                left: style.padding_left().into(),
-                top: style.padding_top().into(),
-                right: style.padding_right().into(),
-                bottom: style.padding_bottom().into(),
+            padding: {
+                let padding = style.style.get(PaddingProp);
+                Rect {
+                    left: padding.left.unwrap_or(PxPct::Px(0.0)).into(),
+                    top: padding.top.unwrap_or(PxPct::Px(0.0)).into(),
+                    right: padding.right.unwrap_or(PxPct::Px(0.0)).into(),
+                    bottom: padding.bottom.unwrap_or(PxPct::Px(0.0)).into(),
+                }
             },
-            margin: Rect {
-                left: style.margin_left().into(),
-                top: style.margin_top().into(),
-                right: style.margin_right().into(),
-                bottom: style.margin_bottom().into(),
+            margin: {
+                let margin = style.style.get(MarginProp);
+                Rect {
+                    left: margin.left.unwrap_or(PxPctAuto::Px(0.0)).into(),
+                    top: margin.top.unwrap_or(PxPctAuto::Px(0.0)).into(),
+                    right: margin.right.unwrap_or(PxPctAuto::Px(0.0)).into(),
+                    bottom: margin.bottom.unwrap_or(PxPctAuto::Px(0.0)).into(),
+                }
             },
             inset: Rect {
                 left: style.inset_left().into(),
@@ -3062,11 +4681,7 @@ pub trait CustomStyle: Default + Clone + Into<Style> + From<Style> {
     }
 
     fn apply_if(self, cond: bool, style: impl FnOnce(Self) -> Self) -> Self {
-        if cond {
-            style(self)
-        } else {
-            self
-        }
+        if cond { style(self) } else { self }
     }
     fn transition<P: StyleProp>(self, _prop: P, transition: Transition) -> Self {
         let mut self_style: Style = self.into();
@@ -3101,11 +4716,8 @@ pub trait CustomStylable<S: CustomStyle + 'static>: IntoView<V = Self::DV> + Siz
 
 #[cfg(test)]
 mod tests {
-    use super::{Style, StyleValue};
-    use crate::{
-        style::{PaddingBottom, PaddingLeft},
-        unit::PxPct,
-    };
+    use super::{Padding, Style, StyleValue};
+    use crate::{style::PaddingProp, unit::PxPct};
 
     #[test]
     fn style_override() {
@@ -3114,70 +4726,44 @@ mod tests {
 
         let style = style1.apply(style2);
 
-        assert_eq!(
-            style.get_style_value(PaddingLeft),
-            StyleValue::Val(PxPct::Px(64.0))
-        );
+        // Check that the combined padding has the expected left value
+        let padding = style.get(PaddingProp);
+        assert_eq!(padding.left, Some(PxPct::Px(64.0)));
 
         let style1 = Style::new().padding_left(32.0).padding_bottom(45.0);
-        let style2 = Style::new()
-            .padding_left(64.0)
-            .set_style_value(PaddingBottom, StyleValue::Base);
+        let style2 = Style::new().padding_left(64.0);
 
         let style = style1.apply(style2);
 
-        assert_eq!(
-            style.get_style_value(PaddingLeft),
-            StyleValue::Val(PxPct::Px(64.0))
-        );
-        assert_eq!(
-            style.get_style_value(PaddingBottom),
-            StyleValue::Val(PxPct::Px(45.0))
-        );
+        let padding = style.get(PaddingProp);
+        assert_eq!(padding.left, Some(PxPct::Px(64.0)));
+        assert_eq!(padding.bottom, Some(PxPct::Px(45.0))); // Should be preserved from style1
 
-        let style1 = Style::new().padding_left(32.0).padding_bottom(45.0);
-        let style2 = Style::new()
-            .padding_left(64.0)
-            .set_style_value(PaddingBottom, StyleValue::Unset);
+        // Test with explicit combined padding struct
+        let style1 = Style::new().apply_padding(Padding::new().left(32.0).bottom(45.0));
+        let style2 = Style::new().apply_padding(Padding::new().left(64.0));
 
         let style = style1.apply(style2);
 
-        assert_eq!(
-            style.get_style_value(PaddingLeft),
-            StyleValue::Val(PxPct::Px(64.0))
-        );
-        assert_eq!(style.get_style_value(PaddingBottom), StyleValue::Unset);
+        let padding = style.get(PaddingProp);
+        assert_eq!(padding.left, Some(PxPct::Px(64.0)));
+        assert_eq!(padding.bottom, Some(PxPct::Px(45.)));
 
+        // Test that individual methods work correctly within a single style
         let style1 = Style::new().padding_left(32.0).padding_bottom(45.0);
-        let style2 = Style::new()
-            .padding_left(64.0)
-            .set_style_value(PaddingBottom, StyleValue::Unset);
 
-        let style3 = Style::new().set_style_value(PaddingBottom, StyleValue::Base);
+        let padding = style1.get(PaddingProp);
+        assert_eq!(padding.left, Some(PxPct::Px(32.0)));
+        assert_eq!(padding.bottom, Some(PxPct::Px(45.0))); // Both values are preserved in same style
 
-        let style = style1.apply_overriding_styles([style2, style3].into_iter());
+        // Test with StyleValue manipulation on combined struct
+        let custom_padding = Padding::new().left(100.0).right(200.0);
+        let style1 = Style::new().set_style_value(PaddingProp, StyleValue::Val(custom_padding));
 
-        assert_eq!(
-            style.get_style_value(PaddingLeft),
-            StyleValue::Val(PxPct::Px(64.0))
-        );
-        assert_eq!(style.get_style_value(PaddingBottom), StyleValue::Unset);
-
-        let style1 = Style::new().padding_left(32.0).padding_bottom(45.0);
-        let style2 = Style::new()
-            .padding_left(64.0)
-            .set_style_value(PaddingBottom, StyleValue::Unset);
-        let style3 = Style::new().padding_bottom(100.0);
-
-        let style = style1.apply_overriding_styles([style2, style3].into_iter());
-
-        assert_eq!(
-            style.get_style_value(PaddingLeft),
-            StyleValue::Val(PxPct::Px(64.0))
-        );
-        assert_eq!(
-            style.get_style_value(PaddingBottom),
-            StyleValue::Val(PxPct::Px(100.0))
-        );
+        let padding = style1.get(PaddingProp);
+        assert_eq!(padding.left, Some(PxPct::Px(100.0)));
+        assert_eq!(padding.right, Some(PxPct::Px(200.0)));
+        assert_eq!(padding.top, None);
+        assert_eq!(padding.bottom, None);
     }
 }

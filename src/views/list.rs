@@ -1,4 +1,4 @@
-use super::{v_stack_from_iter, Decorators};
+use super::{Decorators, v_stack_from_iter};
 use crate::context::StyleCx;
 use crate::event::EventPropagation;
 use crate::id::ViewId;
@@ -11,13 +11,13 @@ use crate::{
     keyboard::{Key, NamedKey},
     view::View,
 };
-use floem_reactive::{create_rw_signal, RwSignal, SignalGet, SignalTrack, SignalUpdate};
+use floem_reactive::{RwSignal, SignalGet, SignalUpdate, create_rw_signal};
 
 style_class!(pub ListClass);
 style_class!(pub ListItemClass);
 
 enum ListUpdate {
-    SelectionChanged,
+    SelectionChanged(Option<usize>),
     Accept,
 }
 
@@ -78,10 +78,11 @@ where
     V: IntoView + 'static,
 {
     let list_id = ViewId::new();
-    let selection = create_rw_signal(None);
-    create_effect(move |_| {
-        selection.track();
-        list_id.update_state(ListUpdate::SelectionChanged);
+    let selection = create_rw_signal(Some(0));
+    create_effect(move |old_idx: Option<Option<usize>>| {
+        let selection = selection.get();
+        list_id.update_state(ListUpdate::SelectionChanged(old_idx.flatten()));
+        selection
     });
     let stack = v_stack_from_iter(iterator.into_iter().enumerate().map(move |(index, v)| {
         let id = ViewId::new();
@@ -111,7 +112,6 @@ where
         child,
         onaccept: None,
     }
-    .keyboard_navigable()
     .on_event(EventListener::KeyDown, move |e| {
         if let Event::KeyDown(key_event) = e {
             match key_event.key.logical_key {
@@ -184,10 +184,15 @@ impl View for List {
     fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(change) = state.downcast::<ListUpdate>() {
             match *change {
-                ListUpdate::SelectionChanged => {
-                    self.id.request_style_recursive();
+                ListUpdate::SelectionChanged(old_idx) => {
+                    if let Some(old_idx) = old_idx {
+                        let child = self.child.children()[old_idx];
+                        child.request_style_recursive();
+                    }
                     if let Some(index) = self.selection.get_untracked() {
-                        self.child.children()[index].scroll_to(None);
+                        let child = self.child.children()[index];
+                        child.request_style_recursive();
+                        child.scroll_to(None);
                     }
                 }
                 ListUpdate::Accept => {
@@ -210,7 +215,7 @@ impl View for Item {
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        "Item".into()
+        "List Item".into()
     }
 
     fn style_pass(&mut self, cx: &mut StyleCx<'_>) {

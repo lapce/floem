@@ -10,9 +10,9 @@ use winit::window::{
     ImeCapabilities, ImeEnableRequest, ImeHint, ImePurpose, ImeRequest, ImeRequestData,
 };
 
-use floem_reactive::{with_scope, RwSignal, Scope, SignalGet, SignalUpdate};
-use floem_renderer::gpu_resources::GpuResources;
+use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate, with_scope};
 use floem_renderer::Renderer;
+use floem_renderer::gpu_resources::GpuResources;
 use peniko::color::palette;
 use peniko::kurbo::{Affine, Point, Size, Vec2};
 use winit::{
@@ -30,8 +30,9 @@ use crate::reactive::SignalWith;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::unit::UnitExt;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-use crate::views::{container, stack, Decorators};
+use crate::views::{Decorators, container, stack};
 use crate::{
+    Application,
     app::UserEvent,
     app_state::AppState,
     context::{
@@ -46,16 +47,15 @@ use crate::{
     pointer::{PointerButton, PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
     profiler::Profile,
     style::{CursorStyle, Style, StyleSelector},
-    theme::{default_theme, Theme},
+    theme::default_theme,
     touchpad::PinchGestureEvent,
     update::{
-        UpdateMessage, CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES,
-        CURRENT_RUNNING_VIEW_HANDLE, DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES,
+        CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE,
+        DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES, UpdateMessage,
     },
-    view::{view_tab_navigation, IntoView, View},
+    view::{IntoView, View, view_tab_navigation},
     view_state::ChangeFlags,
     window_tracking::{remove_window_id_mapping, store_window_id_mapping},
-    Application,
 };
 
 /// The top-level window handle that owns the winit `Window`.
@@ -74,7 +74,7 @@ pub(crate) struct WindowHandle {
     pub(crate) app_state: AppState,
     pub(crate) paint_state: PaintState,
     size: RwSignal<Size>,
-    theme: Option<Theme>,
+    theme: Option<Style>,
     pub(crate) profile: Option<Profile>,
     os_theme: Option<winit::window::Theme>,
     is_maximized: bool,
@@ -188,7 +188,8 @@ impl WindowHandle {
             app_state: AppState::new(id),
             paint_state,
             size,
-            theme: apply_default_theme.then(default_theme),
+            theme: apply_default_theme
+                .then(|| default_theme(os_theme.unwrap_or(winit::window::Theme::Light))),
             os_theme,
             is_maximized,
             transparent,
@@ -380,7 +381,7 @@ impl WindowHandle {
                         .has_style_selectors
                         .has(StyleSelector::Active)
                 {
-                    id.request_style_recursive();
+                    id.request_style();
                 }
                 if hovered.contains(id) {
                     id.apply_event(&EventListener::PointerEnter, &event);
@@ -454,6 +455,7 @@ impl WindowHandle {
     pub(crate) fn os_theme_changed(&mut self, theme: winit::window::Theme) {
         self.os_theme = Some(theme);
         self.app_state.os_theme = Some(theme);
+        self.theme = Some(default_theme(theme));
         self.id.request_all();
         request_recursive_changes(self.id, ChangeFlags::STYLE);
         self.event(Event::ThemeChanged(theme));
@@ -539,7 +541,7 @@ impl WindowHandle {
                     .has(StyleSelector::Active)
                 || view_state.borrow().has_active_animation()
             {
-                id.request_style_recursive();
+                id.request_style();
             }
             cx.unconditional_view_event(id, Event::PointerLeave, true);
         }
@@ -621,7 +623,7 @@ impl WindowHandle {
     fn style(&mut self) {
         let mut cx = StyleCx::new(&mut self.app_state, self.id);
         if let Some(theme) = &self.theme {
-            cx.current = theme.style.clone();
+            cx.current = Rc::new(theme.inherited());
         }
         cx.style_view(self.id);
     }
@@ -695,8 +697,8 @@ impl WindowHandle {
             let color = self
                 .theme
                 .as_ref()
-                .map(|theme| theme.background)
-                .unwrap_or(palette::css::WHITE);
+                .and_then(|theme| theme.get(crate::style::Background))
+                .unwrap_or(peniko::Brush::Solid(palette::css::WHITE));
             // fill window with default white background if it's not transparent
             cx.fill(
                 &self
@@ -705,7 +707,7 @@ impl WindowHandle {
                     .to_rect()
                     .scale_from_origin(1.0 / scale)
                     .expand(),
-                color,
+                &color,
                 0.0,
             );
         }
@@ -952,48 +954,9 @@ impl WindowHandle {
                             .borrow_mut()
                             .scroll_to(cx.app_state, id, rect);
                     }
-                    UpdateMessage::Disabled { id, is_disabled } => {
-                        if is_disabled {
-                            // When disabling, mark the current id as the root (true) and all children as non-root (false)
-                            cx.app_state.disabled.insert((id, true));
-                            let mut stack = vec![id];
-                            while let Some(current) = stack.pop() {
-                                for child in current.children() {
-                                    // Skip this subtree if the child is already a root
-                                    if !cx.app_state.disabled.contains(&(child, true)) {
-                                        cx.app_state.disabled.insert((child, false));
-                                        cx.app_state.hovered.remove(&child);
-                                        stack.push(child);
-                                    }
-                                }
-                            }
-                        } else {
-                            // When enabling, only remove items if this was their root
-                            if cx.app_state.disabled.remove(&(id, true)) {
-                                // If this was a root, remove all its descendants
-                                let mut stack = vec![id];
-                                while let Some(current) = stack.pop() {
-                                    for child in current.children() {
-                                        // Skip this subtree if the child is a root
-                                        if !cx.app_state.disabled.contains(&(child, true)) {
-                                            cx.app_state.disabled.remove(&(child, false));
-                                            stack.push(child);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        id.request_style_recursive();
-                    }
                     UpdateMessage::State { id, state } => {
                         let view = id.view();
                         view.borrow_mut().update(&mut cx, state);
-                    }
-                    UpdateMessage::KeyboardNavigable { id } => {
-                        cx.app_state.keyboard_navigable.insert(id);
-                    }
-                    UpdateMessage::RemoveKeyboardNavigable { id } => {
-                        cx.app_state.keyboard_navigable.remove(&id);
                     }
                     UpdateMessage::Draggable { id } => {
                         cx.app_state.draggable.insert(id);
@@ -1212,8 +1175,8 @@ impl WindowHandle {
     #[cfg(target_os = "macos")]
     fn show_context_menu(&self, menu: muda::Menu, pos: Option<Point>) {
         use muda::{
-            dpi::{LogicalPosition, Position},
             ContextMenu,
+            dpi::{LogicalPosition, Position},
         };
         use raw_window_handle::HasWindowHandle;
         use raw_window_handle::RawWindowHandle;
@@ -1236,8 +1199,8 @@ impl WindowHandle {
     #[cfg(target_os = "windows")]
     fn show_context_menu(&self, menu: muda::Menu, pos: Option<Point>) {
         use muda::{
-            dpi::{LogicalPosition, Position},
             ContextMenu,
+            dpi::{LogicalPosition, Position},
         };
         use raw_window_handle::HasWindowHandle;
         use raw_window_handle::RawWindowHandle;
@@ -1345,7 +1308,7 @@ fn context_menu_view(
     use peniko::Color;
 
     use crate::{
-        app::{add_app_update_event, AppUpdateEvent},
+        app::{AppUpdateEvent, add_app_update_event},
         views::{dyn_stack, empty, svg, text},
     };
 
@@ -1502,8 +1465,7 @@ fn context_menu_view(
                                 });
                             }
                         })
-                        .disabled(move || !enabled)
-                        .style(|s| {
+                        .style(move |s| {
                             s.width(100.pct())
                                 .min_width(100.pct())
                                 .padding_horiz(20.0)
@@ -1517,6 +1479,7 @@ fn context_menu_view(
                                     s.border_radius(10.0)
                                         .background(Color::from_rgb8(92, 92, 92))
                                 })
+                                .set_disabled(!enabled)
                                 .disabled(|s| s.color(Color::from_rgb8(92, 92, 92)))
                         }),
                         dyn_stack(
@@ -1524,7 +1487,6 @@ fn context_menu_view(
                             move |s| s.clone(),
                             move |menu| view_fn(menu, context_menu, on_child_submenu),
                         )
-                        .keyboard_navigable()
                         .on_event_stop(EventListener::KeyDown, move |event| {
                             if let Event::KeyDown(event) = event {
                                 if event.key.logical_key == Key::Named(NamedKey::Escape) {
@@ -1546,6 +1508,7 @@ fn context_menu_view(
                         })
                         .style(move |s| {
                             s.absolute()
+                                .focusable(true)
                                 .min_width(200.0)
                                 .margin_top(-5.0)
                                 .margin_left(menu_width.get() as f32)
@@ -1605,7 +1568,6 @@ fn context_menu_view(
         });
     })
     .on_event_stop(EventListener::PointerMove, move |_| {})
-    .keyboard_navigable()
     .on_event_stop(EventListener::KeyDown, move |event| {
         if let Event::KeyDown(event) = event {
             if event.key.logical_key == Key::Named(NamedKey::Escape) {
@@ -1628,6 +1590,7 @@ fn context_menu_view(
             .min_width(200.0)
             .flex_col()
             .border_radius(10.0)
+            .focusable(true)
             .background(Color::from_rgb8(44, 44, 44))
             .color(Color::from_rgb8(201, 201, 201))
             .z_index(999)

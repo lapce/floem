@@ -6,11 +6,11 @@ use peniko::kurbo::{Point, Rect, RoundedRectRadii, Size, Stroke, Vec2};
 use peniko::{Brush, Color};
 
 use crate::style::{
-    BorderBottomLeftRadius, BorderBottomRightRadius, BorderRightColor, BorderTopLeftRadius,
-    BorderTopRightRadius, CustomStylable, CustomStyle, OverflowX, OverflowY,
+    BorderColorProp, BorderRadiusProp, CustomStylable, CustomStyle, OverflowX, OverflowY,
 };
 use crate::unit::PxPct;
 use crate::{
+    Renderer,
     app_state::AppState,
     context::{ComputeLayoutCx, PaintCx},
     event::{Event, EventPropagation},
@@ -20,7 +20,6 @@ use crate::{
     style_class,
     unit::Px,
     view::{IntoView, View},
-    Renderer,
 };
 
 use super::Decorators;
@@ -75,11 +74,8 @@ prop!(
 prop_extractor! {
     ScrollTrackStyle {
         color: Background,
-        border_top_left_radius: BorderTopLeftRadius,
-        border_top_right_radius: BorderTopRightRadius,
-        border_bottom_left_radius: BorderBottomLeftRadius,
-        border_bottom_right_radius: BorderBottomRightRadius,
-        border_color: BorderRightColor,
+        border_radius: BorderRadiusProp,
+        border_color: BorderColorProp,
         border: Border,
         rounded: Rounded,
         thickness: Thickness,
@@ -102,6 +98,11 @@ prop!(
 );
 
 prop!(
+    /// Controls whether scroll bars are shown when not scrolling. When false, bars are only shown during scroll interactions.
+    pub ShowBarsWhenIdle: bool {} = true
+);
+
+prop!(
     /// Determines if pointer wheel events should propagate to parent elements.
     pub PropagatePointerWheel: bool {} = true
 );
@@ -120,6 +121,7 @@ prop_extractor!(ScrollStyle {
     vertical_bar_inset: VerticalInset,
     horizontal_bar_inset: HorizontalInset,
     hide_bar: HideBars,
+    show_bars_when_idle: ShowBarsWhenIdle,
     propagate_pointer_wheel: PropagatePointerWheel,
     vertical_scroll_as_horizontal: VerticalScrollAsHorizontal,
     overflow_clip: OverflowClip,
@@ -158,6 +160,8 @@ pub struct Scroll {
     h_handle_hover: bool,
     v_track_hover: bool,
     h_track_hover: bool,
+    /// Tracks whether user is currently interacting with scrollbars or recently scrolled
+    is_scrolling_or_interacting: bool,
     handle_style: ScrollTrackStyle,
     handle_active_style: ScrollTrackStyle,
     handle_hover_style: ScrollTrackStyle,
@@ -187,6 +191,7 @@ pub fn scroll<V: IntoView + 'static>(child: V) -> Scroll {
         h_handle_hover: false,
         v_track_hover: false,
         h_track_hover: false,
+        is_scrolling_or_interacting: false,
         handle_style: Default::default(),
         handle_active_style: Default::default(),
         handle_hover_style: Default::default(),
@@ -430,7 +435,12 @@ impl Scroll {
     fn update_size(&mut self) {
         self.child_size = self.child_size();
         self.content_rect = self.id.get_content_rect();
-        self.total_rect = self.id.get_size().unwrap_or_default().to_rect();
+        let new_total_rect = self.id.get_size().unwrap_or_default().to_rect();
+        if new_total_rect != self.total_rect {
+            self.total_rect = new_total_rect;
+            // request style so that the paddig for the scroll bar can be shown
+            self.id.request_style();
+        }
     }
 
     fn clamp_child_viewport(
@@ -467,6 +477,8 @@ impl Scroll {
             app_state.request_compute_layout_recursive(self.id());
             app_state.request_paint(self.id());
             self.child_viewport = child_viewport;
+            // Mark as scrolling when viewport changes
+            self.is_scrolling_or_interacting = true;
             if let Some(onscroll) = &self.onscroll {
                 onscroll(child_viewport);
             }
@@ -504,6 +516,11 @@ impl Scroll {
     }
 
     fn draw_bars(&self, cx: &mut PaintCx) {
+        // Check if scrollbars should be shown based on the show_bars_when_idle property
+        if !self.scroll_style.show_bars_when_idle() && !self.is_scrolling_or_interacting {
+            return;
+        }
+
         let scroll_offset = self.child_viewport.origin().to_vec2();
         let radius = |style: &ScrollTrackStyle, rect: Rect, vertical| {
             if style.rounded() {
@@ -514,22 +531,29 @@ impl Scroll {
                 }
             } else {
                 let size = rect.size().min_side();
+                let border_radius = style.border_radius();
                 RoundedRectRadii {
-                    top_left: crate::view::border_radius(style.border_top_left_radius(), size),
-                    top_right: crate::view::border_radius(style.border_top_right_radius(), size),
+                    top_left: crate::view::border_radius(
+                        border_radius.top_left.unwrap_or(PxPct::Px(0.)),
+                        size,
+                    ),
+                    top_right: crate::view::border_radius(
+                        border_radius.top_right.unwrap_or(PxPct::Px(0.)),
+                        size,
+                    ),
                     bottom_left: crate::view::border_radius(
-                        style.border_bottom_left_radius(),
+                        border_radius.bottom_left.unwrap_or(PxPct::Px(0.)),
                         size,
                     ),
                     bottom_right: crate::view::border_radius(
-                        style.border_bottom_right_radius(),
+                        border_radius.bottom_right.unwrap_or(PxPct::Px(0.)),
                         size,
                     ),
                 }
             }
         };
 
-        if let Some(bounds) = self.calc_vertical_bar_bounds(cx.app_state) {
+        if let Some(bounds) = self.calc_vertical_bar_bounds() {
             let style = self.v_handle_style();
             let track_style =
                 if self.v_track_hover || matches!(self.held, BarHeldState::Vertical(..)) {
@@ -549,12 +573,14 @@ impl Scroll {
             let rect = rect.to_rounded_rect(radius(style, rect, true));
             cx.fill(&rect, &style.color().unwrap_or(HANDLE_COLOR), 0.0);
             if edge_width > 0.0 {
-                cx.stroke(&rect, &style.border_color(), &Stroke::new(edge_width));
+                if let Some(color) = style.border_color().right {
+                    cx.stroke(&rect, &color, &Stroke::new(edge_width));
+                }
             }
         }
 
         // Horizontal bar
-        if let Some(bounds) = self.calc_horizontal_bar_bounds(cx.app_state) {
+        if let Some(bounds) = self.calc_horizontal_bar_bounds() {
             let style = self.h_handle_style();
             let track_style =
                 if self.h_track_hover || matches!(self.held, BarHeldState::Horizontal(..)) {
@@ -574,12 +600,14 @@ impl Scroll {
             let rect = rect.to_rounded_rect(radius(style, rect, false));
             cx.fill(&rect, &style.color().unwrap_or(HANDLE_COLOR), 0.0);
             if edge_width > 0.0 {
-                cx.stroke(&rect, &style.border_color(), &Stroke::new(edge_width));
+                if let Some(color) = style.border_color().right {
+                    cx.stroke(&rect, &color, &Stroke::new(edge_width));
+                }
             }
         }
     }
 
-    fn calc_vertical_bar_bounds(&self, _app_state: &mut AppState) -> Option<Rect> {
+    fn calc_vertical_bar_bounds(&self) -> Option<Rect> {
         let viewport_size = self.child_viewport.size();
         let content_size = self.child_size;
         let scroll_offset = self.child_viewport.origin().to_vec2();
@@ -612,7 +640,7 @@ impl Scroll {
         Some(Rect::new(x0, y0, x1, y1))
     }
 
-    fn calc_horizontal_bar_bounds(&self, _app_state: &mut AppState) -> Option<Rect> {
+    fn calc_horizontal_bar_bounds(&self) -> Option<Rect> {
         let viewport_size = self.child_viewport.size();
         let content_size = self.child_size;
         let scroll_offset = self.child_viewport.origin().to_vec2();
@@ -667,8 +695,8 @@ impl Scroll {
         self.do_scroll_to(app_state, new_origin);
     }
 
-    fn point_hits_vertical_bar(&self, app_state: &mut AppState, pos: Point) -> bool {
-        if let Some(mut bounds) = self.calc_vertical_bar_bounds(app_state) {
+    fn point_hits_vertical_bar(&self, pos: Point) -> bool {
+        if let Some(mut bounds) = self.calc_vertical_bar_bounds() {
             // Stretch hitbox to edge of widget
             let scroll_offset = self.child_viewport.origin().to_vec2();
             bounds.x1 = self.total_rect.x1 + scroll_offset.x;
@@ -678,8 +706,8 @@ impl Scroll {
         }
     }
 
-    fn point_hits_horizontal_bar(&self, app_state: &mut AppState, pos: Point) -> bool {
-        if let Some(mut bounds) = self.calc_horizontal_bar_bounds(app_state) {
+    fn point_hits_horizontal_bar(&self, pos: Point) -> bool {
+        if let Some(mut bounds) = self.calc_horizontal_bar_bounds() {
             // Stretch hitbox to edge of widget
             let scroll_offset = self.child_viewport.origin().to_vec2();
             bounds.y1 = self.total_rect.y1 + scroll_offset.y;
@@ -689,8 +717,8 @@ impl Scroll {
         }
     }
 
-    fn point_hits_vertical_handle(&self, app_state: &mut AppState, pos: Point) -> bool {
-        if let Some(mut bounds) = self.calc_vertical_bar_bounds(app_state) {
+    fn point_hits_vertical_handle(&self, pos: Point) -> bool {
+        if let Some(mut bounds) = self.calc_vertical_bar_bounds() {
             // Stretch hitbox to edge of widget
             let scroll_offset = self.child_viewport.origin().to_vec2();
             bounds.x1 = self.total_rect.x1 + scroll_offset.x;
@@ -700,8 +728,8 @@ impl Scroll {
         }
     }
 
-    fn point_hits_horizontal_handle(&self, app_state: &mut AppState, pos: Point) -> bool {
-        if let Some(mut bounds) = self.calc_horizontal_bar_bounds(app_state) {
+    fn point_hits_horizontal_handle(&self, pos: Point) -> bool {
+        if let Some(mut bounds) = self.calc_horizontal_bar_bounds() {
             // Stretch hitbox to edge of widget
             let scroll_offset = self.child_viewport.origin().to_vec2();
             bounds.y1 = self.total_rect.y1 + scroll_offset.y;
@@ -719,24 +747,32 @@ impl Scroll {
     fn update_hover_states(&mut self, app_state: &mut AppState, pos: Point) {
         let scroll_offset = self.child_viewport.origin().to_vec2();
         let pos = pos + scroll_offset;
-        let hover = self.point_hits_vertical_handle(app_state, pos);
+        let hover = self.point_hits_vertical_handle(pos);
         if self.v_handle_hover != hover {
             self.v_handle_hover = hover;
             app_state.request_paint(self.id());
         }
-        let hover = self.point_hits_horizontal_handle(app_state, pos);
+        let hover = self.point_hits_horizontal_handle(pos);
         if self.h_handle_hover != hover {
             self.h_handle_hover = hover;
             app_state.request_paint(self.id());
         }
-        let hover = self.point_hits_vertical_bar(app_state, pos);
+        let hover = self.point_hits_vertical_bar(pos);
         if self.v_track_hover != hover {
             self.v_track_hover = hover;
             app_state.request_paint(self.id());
         }
-        let hover = self.point_hits_horizontal_bar(app_state, pos);
+        let hover = self.point_hits_horizontal_bar(pos);
         if self.h_track_hover != hover {
             self.h_track_hover = hover;
+            app_state.request_paint(self.id());
+        }
+
+        // Set scrolling/interacting state if hovering over scrollbars
+        let any_hover =
+            self.v_handle_hover || self.h_handle_hover || self.v_track_hover || self.h_track_hover;
+        if any_hover != self.is_scrolling_or_interacting {
+            self.is_scrolling_or_interacting = any_hover;
             app_state.request_paint(self.id());
         }
     }
@@ -747,7 +783,7 @@ impl Scroll {
         target: ViewId,
         target_rect: Option<Rect>,
     ) {
-        if target.get_layout().is_some() && !target.is_hidden_recursive() {
+        if target.get_layout().is_some() && !target.is_hidden() {
             let mut rect = target.layout_rect();
 
             if let Some(target_rect) = target_rect {
@@ -885,8 +921,8 @@ impl View for Scroll {
 
                     let pos = event.pos + scroll_offset;
 
-                    if self.point_hits_vertical_bar(cx.app_state, pos) {
-                        if self.point_hits_vertical_handle(cx.app_state, pos) {
+                    if self.point_hits_vertical_bar(pos) {
+                        if self.point_hits_vertical_handle(pos) {
                             self.held = BarHeldState::Vertical(
                                 // The bounds must be non-empty, because the point hits the scrollbar.
                                 event.pos.y,
@@ -906,8 +942,8 @@ impl View for Scroll {
                         );
                         cx.update_active(self.id());
                         return EventPropagation::Stop;
-                    } else if self.point_hits_horizontal_bar(cx.app_state, pos) {
-                        if self.point_hits_horizontal_handle(cx.app_state, pos) {
+                    } else if self.point_hits_horizontal_bar(pos) {
+                        if self.point_hits_horizontal_handle(pos) {
                             self.held = BarHeldState::Horizontal(
                                 // The bounds must be non-empty, because the point hits the scrollbar.
                                 event.pos.x,
@@ -964,8 +1000,8 @@ impl View for Scroll {
                             }
                             BarHeldState::None => {}
                         }
-                    } else if self.point_hits_vertical_bar(cx.app_state, pos)
-                        || self.point_hits_horizontal_bar(cx.app_state, pos)
+                    } else if self.point_hits_vertical_bar(pos)
+                        || self.point_hits_horizontal_bar(pos)
                     {
                         return EventPropagation::Stop;
                     }
@@ -976,6 +1012,7 @@ impl View for Scroll {
                 self.h_handle_hover = false;
                 self.v_track_hover = false;
                 self.h_track_hover = false;
+                self.is_scrolling_or_interacting = false;
                 cx.app_state.request_paint(self.id());
             }
             _ => {}
@@ -1190,6 +1227,12 @@ impl ScrollCustomStyle {
     /// Sets whether vertical scrolling should be interpreted as horizontal scrolling.
     pub fn vertical_scroll_as_horizontal(mut self, vert_as_horiz: impl Into<bool>) -> Self {
         self = Self(self.0.set(VerticalScrollAsHorizontal, vert_as_horiz));
+        self
+    }
+
+    /// Controls whether scroll bars are shown when not scrolling. When false, bars are only shown during scroll interactions.
+    pub fn show_bars_when_idle(mut self, show: impl Into<bool>) -> Self {
+        self = Self(self.0.set(ShowBarsWhenIdle, show));
         self
     }
 }

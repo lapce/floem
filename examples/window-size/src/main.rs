@@ -3,7 +3,7 @@ use floem::{
     keyboard::{Key, NamedKey},
     kurbo::Size,
     prelude::{create_signal, SignalGet, SignalUpdate},
-    views::{label, v_stack, Decorators},
+    views::{label, ContainerExt, Decorators},
     window::WindowConfig,
     Application, IntoView, View,
 };
@@ -11,7 +11,9 @@ use floem::{
 fn app_view() -> impl IntoView {
     let (size, set_size) = create_signal(Size::default());
 
-    let view = v_stack((label(move || format!("{}", size.get())).style(|s| s.font_size(30.0)),))
+    let view = label(move || format!("{}", size.get()))
+        .style(|s| s.font_size(30.0))
+        .container()
         .style(|s| {
             s.flex_col()
                 .items_center()

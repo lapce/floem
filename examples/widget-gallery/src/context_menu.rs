@@ -1,4 +1,9 @@
-use floem::{menu::*, prelude::ViewTuple, views::Decorators, IntoView};
+use floem::{
+    menu::*,
+    prelude::ViewTuple,
+    views::{ButtonClass, Decorators},
+    IntoView,
+};
 
 pub fn menu_view() -> impl IntoView {
     let export_submenu = |m: SubMenu| {
@@ -72,10 +77,12 @@ pub fn menu_view() -> impl IntoView {
     };
 
     let popout_button = "Click me (Popout menu)"
-        .style(|s| s.padding(10.0).margin_bottom(10.0).border(1.0))
+        .class(ButtonClass)
+        .style(|s| s.padding(10.0).margin_bottom(10.0))
         .popout_menu(popout_menu);
 
     let context_button = "Right click me (Context menu)"
+        .class(ButtonClass)
         .style(|s| s.padding(10.0).border(1.0))
         .context_menu(context_menu);
 

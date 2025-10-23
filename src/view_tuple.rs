@@ -2,7 +2,7 @@ use taffy::FlexDirection;
 
 use crate::{
     view::{IntoView, View},
-    views::{create_stack, Stack},
+    views::{Stack, create_stack},
 };
 
 /// Adds the `flatten` function to turn a tuple of [View]'s into a [Vec] of View trait objects.

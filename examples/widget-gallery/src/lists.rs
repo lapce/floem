@@ -3,6 +3,7 @@ use floem::{
     reactive::create_effect,
     taffy::{prelude::*, Line},
     text::Weight,
+    theme::{border_style, StyleThemeExt},
 };
 
 use crate::{
@@ -10,7 +11,7 @@ use crate::{
     form::{form, form_item},
 };
 
-pub fn virt_list_view() -> impl IntoView {
+pub fn list_view() -> impl IntoView {
     form((
         form_item(
             "Simple List".style(|s| s.grid_row(Line::from_line_index(1))),
@@ -19,14 +20,6 @@ pub fn virt_list_view() -> impl IntoView {
         form_item(
             "Enhanced List".style(|s| s.grid_row(Line::from_line_index(1))),
             enhanced_list().style(|s| s.grid_row(Line::from_line_index(2))),
-        ),
-        form_item(
-            "Horizontal Stack from Iterator".style(|s| s.grid_row(Line::from_line_index(4))),
-            h_buttons_from_iter().style(|s| s.grid_row(Line::from_line_index(5))),
-        ),
-        form_item(
-            "Vertical Stack from Iterator".style(|s| s.grid_row(Line::from_line_index(4))),
-            v_buttons_from_iter().style(|s| s.grid_row(Line::from_line_index(5))),
         ),
     ))
     .style(|s| {
@@ -40,12 +33,9 @@ pub fn virt_list_view() -> impl IntoView {
 fn simple_list() -> impl IntoView {
     (0..100)
         .list()
-        .style(|s| {
-            s.width_full()
-                .class(LabelClass, |s| s.height(24).items_center())
-        })
+        .style(|s| s.width_full().class(LabelClass, |s| s.height(24)))
         .scroll()
-        .style(|s| s.width(100.0).height(200.0).border(1.0))
+        .style(|s| s.size(100, 200).apply(border_style(true)))
 }
 
 fn enhanced_list() -> impl IntoView {
@@ -54,8 +44,6 @@ fn enhanced_list() -> impl IntoView {
 
     let list_width = 180.0;
     let item_height = 32.0;
-
-    let checkmark = |checkbox_state| Checkbox::new_rw(checkbox_state).style(|s| s.margin_left(6));
 
     let label =
         |item: i32| item.style(|s| s.margin_left(6).height(32.0).font_size(22.0).items_center());
@@ -71,13 +59,15 @@ fn enhanced_list() -> impl IntoView {
             .style(|s| {
                 s.size(18.0, 18.)
                     .font_weight(Weight::BOLD)
-                    .color(palette::css::RED)
                     .border(1.0)
-                    .border_color(palette::css::RED)
                     .border_radius(16.0)
                     .padding(2.)
                     .margin_right(20.0)
-                    .hover(|s| s.color(palette::css::WHITE).background(palette::css::RED))
+                    .with_theme(|s, t| {
+                        s.hover(|s| s.background(t.danger()).color(t.text()))
+                            .color(t.danger())
+                            .border_color(t.danger())
+                    })
             })
     };
 
@@ -93,30 +83,18 @@ fn enhanced_list() -> impl IntoView {
             });
         });
 
-        (checkmark(checkbox_state), label(item), x_mark(index))
+        (
+            Checkbox::new_rw(checkbox_state)
+                .style(|s| s.with_theme(|s, t| s.selected(|s| s.color(t.text())))),
+            label(item),
+            x_mark(index),
+        )
             .h_stack()
-            .style(move |s| {
-                s.items_center()
-                    .gap(5)
-                    .height(item_height)
-                    .apply_if(index != 0, |s| {
-                        s.border_top(1.0).border_color(palette::css::LIGHT_GRAY)
-                    })
-            })
+            .style(move |s| s.items_center().gap(5).padding_left(6).height(item_height))
     };
 
     VirtualList::with_view(move || long_list.get().enumerate(), item_view)
         .style(move |s| s.flex_col().flex_grow(1.0))
         .scroll()
-        .style(move |s| s.width(list_width).height(200.0).border(1.0))
-}
-
-fn h_buttons_from_iter() -> impl IntoView {
-    let button_iter = (0..3).map(|i| button(format!("Button {i}")));
-    h_stack_from_iter(button_iter).style(|s| s.gap(5))
-}
-
-fn v_buttons_from_iter() -> impl IntoView {
-    let button_iter = (0..3).map(|i| button(format!("Button {i}")));
-    v_stack_from_iter(button_iter).style(|s| s.gap(5))
+        .style(move |s| s.width(list_width).height(200.0).apply(border_style(true)))
 }

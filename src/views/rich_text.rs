@@ -2,24 +2,24 @@ use std::any::Any;
 
 use floem_reactive::create_effect;
 use floem_renderer::{
-    text::{Attrs, AttrsList, AttrsOwned, TextLayout},
     Renderer,
+    text::{Attrs, AttrsList, AttrsOwned, TextLayout},
 };
 use peniko::{
+    Color,
     color::palette,
     kurbo::{Point, Rect},
-    Color,
 };
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 use taffy::tree::NodeId;
 
 use crate::{
+    IntoView,
     context::UpdateCx,
     id::ViewId,
     style::{Style, TextOverflow},
     unit::PxPct,
     view::View,
-    IntoView,
 };
 
 pub struct RichText {

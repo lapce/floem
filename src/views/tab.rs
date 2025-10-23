@@ -1,19 +1,20 @@
 use std::{hash::Hash, marker::PhantomData};
 
-use floem_reactive::{as_child_of_current_scope, create_effect, Scope};
+use floem_reactive::{Scope, as_child_of_current_scope, create_effect};
 use smallvec::SmallVec;
-use taffy::style::Display;
 
 use crate::{
     context::{StyleCx, UpdateCx},
     id::ViewId,
-    style::DisplayProp,
+    style_class,
     view::{IntoView, View},
 };
 
-use super::{apply_diff, diff, Diff, DiffOpAdd, FxIndexSet, HashRun};
+use super::{Diff, DiffOpAdd, FxIndexSet, HashRun, apply_diff, diff};
 
 type ViewFn<T> = Box<dyn Fn(T) -> (Box<dyn View>, Scope)>;
+
+style_class!(pub TabSelectorClass);
 
 enum TabState<V> {
     Diff(Box<Diff<V>>),
@@ -115,6 +116,7 @@ impl<T> View for Tab<T> {
                 }
                 TabState::Active(active) => {
                     self.active = active;
+                    self.id.request_style_recursive();
                 }
             }
             self.id.request_all();
@@ -128,19 +130,12 @@ impl<T> View for Tab<T> {
         for (i, child) in self.id.children().into_iter().enumerate() {
             if i == self.active {
                 cx.style_view(child);
+            } else {
+                cx.save();
+                cx.hidden();
+                cx.style_view(child);
+                cx.restore();
             }
-            let child_view = child.state();
-            let mut child_view = child_view.borrow_mut();
-            let display = child_view.combined_style.get(DisplayProp);
-            child_view.combined_style = child_view.combined_style.clone().set(
-                DisplayProp,
-                if i != self.active {
-                    // set display to none for non active child
-                    Display::None
-                } else {
-                    display
-                },
-            );
         }
     }
 

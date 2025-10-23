@@ -4,13 +4,13 @@ use crate::event::{EventListener, EventPropagation};
 use crate::id::ViewId;
 use crate::keyboard::{self, KeyEvent, Modifiers};
 use crate::pointer::{MouseButton, PointerButton, PointerInputEvent};
-use crate::reactive::{create_effect, RwSignal};
-use crate::style::{FontFamily, FontProps, PaddingLeft, SelectionStyle, TextAlignProp};
+use crate::reactive::{RwSignal, create_effect};
+use crate::style::{FontFamily, FontProps, PaddingProp, SelectionStyle, TextAlignProp};
 use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
 use crate::views::editor::text::Preedit;
-use crate::{prop_extractor, style_class, Clipboard};
-use floem_reactive::{create_rw_signal, SignalGet, SignalUpdate, SignalWith};
+use crate::{Clipboard, prop_extractor, style_class};
+use floem_reactive::{SignalGet, SignalUpdate, SignalWith, create_rw_signal};
 use taffy::prelude::{Layout, NodeId};
 
 use floem_renderer::Renderer;
@@ -27,8 +27,8 @@ use std::time::{Duration, Instant};
 #[cfg(target_arch = "wasm32")]
 use web_time::{Duration, Instant};
 
-use peniko::kurbo::{Point, Rect, Size};
 use peniko::Brush;
+use peniko::kurbo::{Point, Rect, Size};
 
 use crate::{
     context::{EventCx, UpdateCx},
@@ -234,7 +234,6 @@ pub fn text_input(buffer: RwSignal<String>) -> TextInput {
         window_origin: None,
         last_ime_cursor_area: None,
     }
-    .keyboard_navigable()
     .on_event_stop(EventListener::FocusGained, move |_| {
         is_focused.set(true);
         set_ime_allowed(true);
@@ -1055,7 +1054,7 @@ impl TextInput {
 
         let cursor_color = self.selection_style.selection_color();
 
-        let padding_left = match style.get(PaddingLeft) {
+        let padding_left = match style.get(PaddingProp).left.unwrap_or(PxPct::Px(0.)) {
             PxPct::Px(padding) => padding,
             PxPct::Pct(pct) => pct / 100.0 * node_layout.size.width as f64,
         };
@@ -1297,6 +1296,9 @@ impl View for TextInput {
         }
         if self.style.read(cx) {
             cx.app_state_mut().request_paint(self.id);
+
+            // necessary to update the text layout attrs
+            self.update_text_layout();
         }
 
         self.selection_style.read_style(cx, &style);
@@ -1462,8 +1464,7 @@ impl View for TextInput {
         // see if we should render the cursor
         let is_cursor_visible = (self.last_cursor_action_on.elapsed().as_millis()
             / CURSOR_BLINK_INTERVAL_MS as u128)
-            % 2
-            == 0;
+            .is_multiple_of(2);
 
         if is_cursor_visible {
             let cursor_color = self

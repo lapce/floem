@@ -2,18 +2,16 @@
 
 use std::ops::RangeInclusive;
 
-use floem_reactive::{create_updater, SignalGet, SignalUpdate};
+use floem_reactive::{SignalGet, SignalUpdate, create_updater};
+use peniko::Brush;
 use peniko::color::palette;
 use peniko::kurbo::{Circle, Point, RoundedRect, RoundedRectRadii};
-use peniko::Brush;
 use winit::keyboard::{Key, NamedKey};
 
-use crate::style::{
-    BorderBottomLeftRadius, BorderBottomRightRadius, BorderTopLeftRadius, BorderTopRightRadius,
-    CustomStyle,
-};
+use crate::style::{BorderRadiusProp, CustomStyle};
 use crate::unit::Pct;
 use crate::{
+    Renderer,
     event::EventPropagation,
     id::ViewId,
     prop, prop_extractor,
@@ -22,7 +20,6 @@ use crate::{
     unit::{PxPct, PxPctAuto},
     view::View,
     views::Decorators,
-    Renderer,
 };
 
 /// Creates a new [Slider] with a function that returns a percentage value.
@@ -51,10 +48,7 @@ style_class!(pub AccentBarClass);
 
 prop_extractor! {
     BarStyle {
-        border_top_left_radius: BorderTopLeftRadius,
-        border_top_right_radius: BorderTopRightRadius,
-        border_bottom_left_radius: BorderBottomLeftRadius,
-        border_bottom_right_radius: BorderBottomRightRadius,
+        border_radius: BorderRadiusProp,
         color: Background,
         height: Height
 
@@ -62,11 +56,24 @@ prop_extractor! {
 }
 
 fn border_radius(style: &BarStyle, size: f64) -> RoundedRectRadii {
+    let border_radius = style.border_radius();
     RoundedRectRadii {
-        top_left: crate::view::border_radius(style.border_top_left_radius(), size),
-        top_right: crate::view::border_radius(style.border_top_right_radius(), size),
-        bottom_left: crate::view::border_radius(style.border_bottom_left_radius(), size),
-        bottom_right: crate::view::border_radius(style.border_bottom_right_radius(), size),
+        top_left: crate::view::border_radius(
+            border_radius.top_left.unwrap_or(PxPct::Px(0.0)),
+            size,
+        ),
+        top_right: crate::view::border_radius(
+            border_radius.top_right.unwrap_or(PxPct::Px(0.0)),
+            size,
+        ),
+        bottom_left: crate::view::border_radius(
+            border_radius.bottom_left.unwrap_or(PxPct::Px(0.0)),
+            size,
+        ),
+        bottom_right: crate::view::border_radius(
+            border_radius.bottom_right.unwrap_or(PxPct::Px(0.0)),
+            size,
+        ),
     }
 }
 
@@ -377,7 +384,6 @@ impl Slider {
             step: None,
         }
         .class(SliderClass)
-        .keyboard_navigable()
     }
 
     /// Create a new reactive slider.
@@ -458,7 +464,6 @@ impl Slider {
             step: None,
         }
         .class(SliderClass)
-        .keyboard_navigable()
     }
 
     fn update_restrict_position(&mut self) {
@@ -669,10 +674,10 @@ impl SliderCustomStyle {
 mod test {
 
     use crate::{
+        AppState,
         context::{EventCx, UpdateCx},
         event::Event,
         pointer::{MouseButton, PointerButton, PointerInputEvent, PointerMoveEvent},
-        AppState,
     };
 
     use super::*;
@@ -814,8 +819,8 @@ mod test {
 
     #[test]
     fn test_callback_handling() {
-        use std::sync::atomic::{AtomicBool, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
 
         let callback_called = Arc::new(AtomicBool::new(false));
         let callback_called_clone = callback_called.clone();

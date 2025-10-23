@@ -7,7 +7,10 @@ edition = "2021"
 im.workspace = true
 floem = { path = "../..", features = ["rfd-async-std", "vello"] }
 strum = { workspace = true }
-files = { path = "../files/" }
+files = { path = "../files/", optional = true }
+stacks = { path = "../stacks/", optional = true }
 
 [features]
+default = ["full"]
 vello = ["floem/vello"]
+full = ["dep:files", "dep:stacks"]

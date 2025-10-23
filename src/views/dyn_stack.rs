@@ -3,7 +3,7 @@ use std::{
     marker::PhantomData,
 };
 
-use floem_reactive::{as_child_of_current_scope, create_effect, Scope};
+use floem_reactive::{Scope, as_child_of_current_scope, create_effect};
 use rustc_hash::FxHasher;
 use smallvec::SmallVec;
 

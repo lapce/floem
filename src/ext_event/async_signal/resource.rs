@@ -106,7 +106,7 @@ impl<T> Resource<T> {
                 ExtSendTrigger,
             ) + 'static,
     {
-        use floem_reactive::{with_scope, Scope, SignalGet, SignalUpdate};
+        use floem_reactive::{Scope, SignalGet, SignalUpdate, with_scope};
 
         let cx = Scope::current();
         let trigger = with_scope(cx, ExtSendTrigger::new);
@@ -173,7 +173,7 @@ impl<T> Resource<T> {
                 ExtSendTrigger,
             ) + 'static,
     {
-        use floem_reactive::{with_scope, Scope, SignalGet, SignalUpdate};
+        use floem_reactive::{Scope, SignalGet, SignalUpdate, with_scope};
 
         let cx = Scope::current();
         let trigger = with_scope(cx, ExtSendTrigger::new);

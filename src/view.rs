@@ -49,17 +49,15 @@ use std::any::Any;
 use taffy::tree::NodeId;
 
 use crate::{
+    Renderer,
     app_state::AppState,
     context::{ComputeLayoutCx, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx},
     event::{Event, EventPropagation},
     id::ViewId,
-    style::{
-        BorderBottomLeftRadius, BorderBottomRightRadius, BorderTopLeftRadius, BorderTopRightRadius,
-        LayoutProps, Style, StyleClassRef,
-    },
+    style::{LayoutProps, Style, StyleClassRef},
+    unit::PxPct,
     view_state::ViewStyleProps,
-    views::{dyn_view, DynamicView},
-    Renderer,
+    views::{DynamicView, dyn_view},
 };
 
 /// type erased [`View`]
@@ -407,7 +405,7 @@ impl View for Box<dyn View> {
 pub fn default_compute_layout(id: ViewId, cx: &mut ComputeLayoutCx) -> Option<Rect> {
     let mut layout_rect: Option<Rect> = None;
     for child in id.children() {
-        if !child.style_has_hidden() {
+        if !child.is_hidden() {
             let child_layout = cx.compute_view_layout(child);
             if let Some(child_layout) = child_layout {
                 if let Some(rect) = layout_rect {
@@ -429,20 +427,46 @@ pub(crate) fn border_radius(radius: crate::unit::PxPct, size: f64) -> f64 {
 }
 
 fn border_to_radii_view(style: &ViewStyleProps, size: Size) -> RoundedRectRadii {
+    let border_radii = style.border_radius();
     RoundedRectRadii {
-        top_left: border_radius(style.border_top_left_radius(), size.min_side()),
-        top_right: border_radius(style.border_top_right_radius(), size.min_side()),
-        bottom_left: border_radius(style.border_bottom_left_radius(), size.min_side()),
-        bottom_right: border_radius(style.border_bottom_right_radius(), size.min_side()),
+        top_left: border_radius(
+            border_radii.top_left.unwrap_or(PxPct::Px(0.0)),
+            size.min_side(),
+        ),
+        top_right: border_radius(
+            border_radii.top_right.unwrap_or(PxPct::Px(0.0)),
+            size.min_side(),
+        ),
+        bottom_left: border_radius(
+            border_radii.bottom_left.unwrap_or(PxPct::Px(0.0)),
+            size.min_side(),
+        ),
+        bottom_right: border_radius(
+            border_radii.bottom_right.unwrap_or(PxPct::Px(0.0)),
+            size.min_side(),
+        ),
     }
 }
 
 pub(crate) fn border_to_radii(style: &Style, size: Size) -> RoundedRectRadii {
+    let border_radii = style.get(crate::style::BorderRadiusProp);
     RoundedRectRadii {
-        top_left: border_radius(style.get(BorderTopLeftRadius), size.min_side()),
-        top_right: border_radius(style.get(BorderTopRightRadius), size.min_side()),
-        bottom_left: border_radius(style.get(BorderBottomLeftRadius), size.min_side()),
-        bottom_right: border_radius(style.get(BorderBottomRightRadius), size.min_side()),
+        top_left: border_radius(
+            border_radii.top_left.unwrap_or(PxPct::Px(0.0)),
+            size.min_side(),
+        ),
+        top_right: border_radius(
+            border_radii.top_right.unwrap_or(PxPct::Px(0.0)),
+            size.min_side(),
+        ),
+        bottom_left: border_radius(
+            border_radii.bottom_left.unwrap_or(PxPct::Px(0.0)),
+            size.min_side(),
+        ),
+        bottom_right: border_radius(
+            border_radii.bottom_right.unwrap_or(PxPct::Px(0.0)),
+            size.min_side(),
+        ),
     }
 }
 
@@ -602,70 +626,82 @@ pub(crate) fn paint_border(
     style: &ViewStyleProps,
     size: Size,
 ) {
-    let left = layout_style.border_left().0;
-    let top = layout_style.border_top().0;
-    let right = layout_style.border_right().0;
-    let bottom = layout_style.border_bottom().0;
+    let border = layout_style.border();
+
+    let left = border.left.map(|v| v.0).unwrap_or(Stroke::new(0.));
+    let top = border.top.map(|v| v.0).unwrap_or(Stroke::new(0.));
+    let right = border.right.map(|v| v.0).unwrap_or(Stroke::new(0.));
+    let bottom = border.bottom.map(|v| v.0).unwrap_or(Stroke::new(0.));
 
     if left.width == top.width
         && top.width == right.width
         && right.width == bottom.width
         && bottom.width == left.width
         && left.width > 0.0
-        && style.border_left_color() == style.border_top_color()
-        && style.border_top_color() == style.border_right_color()
-        && style.border_right_color() == style.border_bottom_color()
+        && style.border_color().left.is_some()
+        && style.border_color().top.is_some()
+        && style.border_color().right.is_some()
+        && style.border_color().bottom.is_some()
+        && style.border_color().left == style.border_color().top
+        && style.border_color().top == style.border_color().right
+        && style.border_color().right == style.border_color().bottom
     {
         let half = left.width / 2.0;
         let rect = size.to_rect().inflate(-half, -half);
         let radii = border_to_radii_view(style, size);
-        if radii_max(radii) > 0.0 {
-            let radii = radii_map(radii, |r| (r - half).max(0.0));
-            cx.stroke(
-                &rect.to_rounded_rect(radii),
-                &style.border_left_color(),
-                &left,
-            );
-        } else {
-            cx.stroke(&rect, &style.border_left_color(), &left);
+        if let Some(color) = style.border_color().left {
+            if radii_max(radii) > 0.0 {
+                let radii = radii_map(radii, |r| (r - half).max(0.0));
+                cx.stroke(&rect.to_rounded_rect(radii), &color, &left);
+            } else {
+                cx.stroke(&rect, &color, &left);
+            }
         }
     } else {
         // TODO: now with vello should we do this left.width > 0. check?
-        if left.width > 0.0 {
+        if left.width > 0.0
+            && let Some(color) = style.border_color().left
+        {
             let half = left.width / 2.0;
             cx.stroke(
                 &Line::new(Point::new(half, 0.0), Point::new(half, size.height)),
-                &style.border_left_color(),
+                &color,
                 &left,
             );
         }
-        if right.width > 0.0 {
+        if right.width > 0.0
+            && let Some(color) = style.border_color().right
+        {
             let half = right.width / 2.0;
             cx.stroke(
                 &Line::new(
                     Point::new(size.width - half, 0.0),
                     Point::new(size.width - half, size.height),
                 ),
-                &style.border_right_color(),
+                &color,
                 &right,
             );
         }
-        if top.width > 0.0 {
+        if top.width > 0.0
+            && let Some(color) = style.border_color().top
+        {
             let half = top.width / 2.0;
             cx.stroke(
                 &Line::new(Point::new(0.0, half), Point::new(size.width, half)),
-                &style.border_top_color(),
+                &color,
                 &top,
             );
         }
-        if bottom.width > 0.0 {
+        if bottom.width > 0.0
+            && let Some(color) = style.border_color().bottom
+        {
             let half = bottom.width / 2.0;
             cx.stroke(
                 &Line::new(
                     Point::new(0.0, size.height - half),
                     Point::new(size.width, size.height - half),
                 ),
-                &style.border_bottom_color(),
+                &color,
                 &bottom,
             );
         }
@@ -684,11 +720,24 @@ pub(crate) fn paint_border(
         unit::Pct,
     };
 
+    let border = layout_style.border();
     let borders = [
-        (layout_style.border_top().0, style.border_top_color()),
-        (layout_style.border_right().0, style.border_right_color()),
-        (layout_style.border_bottom().0, style.border_bottom_color()),
-        (layout_style.border_left().0, style.border_left_color()),
+        (
+            border.top.map(|v| v.0).unwrap_or(Stroke::new(0.)),
+            style.border_color().top.unwrap_or_default(),
+        ),
+        (
+            border.right.map(|v| v.0).unwrap_or(Stroke::new(0.)),
+            style.border_color().right.unwrap_or_default(),
+        ),
+        (
+            border.bottom.map(|v| v.0).unwrap_or(Stroke::new(0.)),
+            style.border_color().bottom.unwrap_or_default(),
+        ),
+        (
+            border.left.map(|v| v.0).unwrap_or(Stroke::new(0.)),
+            style.border_color().left.unwrap_or_default(),
+        ),
     ];
 
     // Early return if no borders
@@ -738,7 +787,6 @@ pub(crate) fn paint_border(
 }
 
 /// Tab navigation finds the next or previous view with the `keyboard_navigatable` status in the tree.
-#[allow(dead_code)]
 pub(crate) fn view_tab_navigation(root_view: ViewId, app_state: &mut AppState, backwards: bool) {
     let start = app_state
         .focus
@@ -753,7 +801,7 @@ pub(crate) fn view_tab_navigation(root_view: ViewId, app_state: &mut AppState, b
     };
 
     let mut new_focus = tree_iter(start);
-    while new_focus != start && !app_state.can_focus(new_focus) {
+    while new_focus != start && !app_state.focusable.contains(&new_focus) {
         new_focus = tree_iter(new_focus);
     }
 
@@ -833,38 +881,6 @@ fn view_nested_last_child(view: ViewId) -> ViewId {
         last_child = new_last_child;
     }
     last_child
-}
-
-/// Produces an ascii art debug display of all of the views.
-#[allow(dead_code)]
-pub(crate) fn view_debug_tree(root_view: ViewId) {
-    let mut views = vec![(root_view, Vec::new())];
-    while let Some((current_view, active_lines)) = views.pop() {
-        // Ascii art for the tree view
-        if let Some((leaf, root)) = active_lines.split_last() {
-            for line in root {
-                print!("{}", if *line { "│   " } else { "    " });
-            }
-            print!("{}", if *leaf { "├── " } else { "└── " });
-        }
-        println!(
-            "{:?} {}",
-            current_view,
-            current_view.view().borrow().debug_name()
-        );
-
-        let mut children = current_view.children();
-        if let Some(last_child) = children.pop() {
-            views.push((last_child, [active_lines.as_slice(), &[false]].concat()));
-        }
-
-        views.extend(
-            children
-                .into_iter()
-                .rev()
-                .map(|child| (child, [active_lines.as_slice(), &[true]].concat())),
-        );
-    }
 }
 
 // Helper functions for futzing with RoundedRectRadii. These should probably be in kurbo.

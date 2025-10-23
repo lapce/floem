@@ -1,10 +1,11 @@
 use floem::{
     peniko::{color::palette, Color},
     prelude::{
-        palette::css::{DARK_GRAY, LIGHT_GRAY, WHITE_SMOKE},
+        palette::css::{DARK_GRAY, WHITE_SMOKE},
         RwSignal, SignalGet,
     },
     style::CursorStyle,
+    theme::StyleThemeExt,
     views::{button, toggle_button, Decorators, ToggleButton, ToggleHandleBehavior},
     IntoView,
 };
@@ -31,13 +32,13 @@ pub fn button_view() -> impl IntoView {
                         .cursor(CursorStyle::Pointer)
                         .active(|s| s.color(palette::css::WHITE).background(palette::css::RED))
                         .hover(|s| s.background(Color::from_rgb8(244, 67, 54)))
-                        .focus_visible(|s| s.border(2.).border_color(palette::css::BLUE))
+                        .focus_visible(|s| s.outline(2.).outline_color(palette::css::BLUE))
                 }),
         ),
         form_item(
             "Disabled Button:",
-            button("Click me")
-                .disabled(|| true)
+            button("Unclickable")
+                .style(|s| s.set_disabled(true))
                 .action(|| println!("Button clicked")),
         ),
         form_item(
@@ -72,5 +73,9 @@ pub fn button_view() -> impl IntoView {
             }),
         ),
     ))
-    .style(move |s| s.apply_if(state.get(), |s| s.background(LIGHT_GRAY)))
+    .style(move |s| {
+        s.apply_if(state.get(), |s| {
+            s.with_theme(|s, t| s.background(t.bg_elevated()))
+        })
+    })
 }

@@ -415,7 +415,7 @@ impl Renderer for VelloRenderer {
 
     fn set_z_index(&mut self, _z_index: i32) {}
 
-    fn clip(&mut self, shape: &impl Shape) {
+    fn clip(&mut self, _shape: &impl Shape) {
         // if shape.bounding_box().is_zero_area() {
         //     return;
         // }

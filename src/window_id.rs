@@ -1,7 +1,7 @@
 use crate::{
+    ScreenLayout, ViewId,
     screen_layout::screen_layout_for_window,
     window_tracking::{force_window_repaint, with_window},
-    ScreenLayout, ViewId,
 };
 use std::{cell::RefCell, collections::HashMap, sync::Arc};
 

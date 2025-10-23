@@ -11,12 +11,12 @@ use web_time::Duration;
 use crate::style::{Style, StyleClass as _};
 use crate::views::Decorators;
 use crate::{
-    action::{add_overlay, exec_after, remove_overlay, TimerToken},
+    action::{TimerToken, add_overlay, exec_after, remove_overlay},
     context::{EventCx, UpdateCx},
     event::{Event, EventPropagation},
     id::ViewId,
     prop, prop_extractor, style_class,
-    view::{default_compute_layout, IntoView, View},
+    view::{IntoView, View, default_compute_layout},
 };
 
 style_class!(
@@ -92,11 +92,12 @@ impl View for Tooltip {
                     let tip = self.tip.clone();
 
                     let tip_style = self.tip_style.clone();
+                    let point = window_origin
+                        + self.hover.unwrap().0.to_vec2()
+                        + (10. / self.scale, 10. / self.scale);
                     let overlay_id = add_overlay(
-                        window_origin
-                            + self.hover.unwrap().0.to_vec2()
-                            + (10. / self.scale, 10. / self.scale),
-                        ToolTipOverlay::new(tip().style(move |_| tip_style.clone())),
+                        ToolTipOverlay::new(tip().style(move |_| tip_style.clone()))
+                            .style(move |s| s.inset_left(point.x).inset_top(point.y)),
                     );
                     // overlay_id.request_all();
                     *self.overlay.borrow_mut() = Some(overlay_id);

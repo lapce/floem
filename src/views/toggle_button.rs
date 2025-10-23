@@ -2,12 +2,13 @@
 //! A toggle button widget. An example can be found in [widget-gallery/button](https://github.com/lapce/floem/tree/main/examples/widget-gallery)
 //! in the floem examples.
 
-use floem_reactive::{create_effect, SignalGet, SignalUpdate};
-use peniko::kurbo::{Point, Size};
+use floem_reactive::{SignalGet, SignalUpdate, create_effect};
 use peniko::Brush;
+use peniko::kurbo::{Point, Size};
 use winit::keyboard::{Key, NamedKey};
 
 use crate::{
+    Renderer,
     event::EventPropagation,
     id::ViewId,
     prop, prop_extractor,
@@ -16,7 +17,6 @@ use crate::{
     unit::PxPct,
     view::View,
     views::Decorators,
-    Renderer,
 };
 
 /// Controls the switching behavior of the switch.
@@ -330,7 +330,6 @@ impl ToggleButton {
             style: Default::default(),
         }
         .class(ToggleButtonClass)
-        .keyboard_navigable()
     }
 
     /// Create new [ToggleButton] with read-write signal.
@@ -470,10 +469,6 @@ impl ToggleButtonCustomStyle {
     ///     );
     /// ```
     pub fn apply_if(self, cond: bool, f: impl FnOnce(Self) -> Self) -> Self {
-        if cond {
-            f(self)
-        } else {
-            self
-        }
+        if cond { f(self) } else { self }
     }
 }

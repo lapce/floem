@@ -7,12 +7,12 @@ use std::{
 };
 
 use floem_reactive::{
-    as_child_of_current_scope, create_effect, create_signal, ReadSignal, RwSignal, Scope,
-    SignalGet, SignalTrack, SignalUpdate, SignalWith, WriteSignal,
+    ReadSignal, RwSignal, Scope, SignalGet, SignalTrack, SignalUpdate, SignalWith, WriteSignal,
+    as_child_of_current_scope, create_effect, create_signal,
 };
 use peniko::kurbo::{Rect, Size};
 use smallvec::SmallVec;
-use taffy::{style::Dimension, tree::NodeId, FlexDirection};
+use taffy::{FlexDirection, style::Dimension, tree::NodeId};
 
 use crate::{
     context::ComputeLayoutCx,
@@ -22,7 +22,7 @@ use crate::{
     view::{self, IntoView, View},
 };
 
-use super::{apply_diff, diff, Diff, DiffOpAdd, FxIndexSet, HashRun};
+use super::{Diff, DiffOpAdd, FxIndexSet, HashRun, apply_diff, diff};
 
 pub type VirtViewFn<T> = Box<dyn Fn(T) -> (Box<dyn View>, Scope)>;
 
@@ -253,7 +253,8 @@ where
                 let end = if item_size > 0.0 {
                     ((max / item_size).ceil() as usize).min(total_len)
                 } else {
-                    usize::MAX
+                    // TODO: Log an error
+                    (start + 1).min(total_len)
                 };
                 before_size = item_size * (start.min(total_len)) as f64;
 
@@ -305,7 +306,8 @@ where
                 let end = if *item_size > 0.0 {
                     ((max / item_size).ceil() as usize).min(total_len)
                 } else {
-                    usize::MAX
+                    // TODO: Log an error
+                    (start + 1).min(total_len)
                 };
                 before_size = item_size * (start.min(total_len)) as f64;
 
@@ -403,6 +405,7 @@ impl<T> View for VirtualStack<T> {
             }
         } else if state.is::<usize>() {
             if let Ok(idx) = state.downcast::<usize>() {
+                self.id.request_style_recursive();
                 self.scroll_to_idx(*idx);
                 self.selected_idx.clear();
                 self.selected_idx.insert(*idx);
@@ -499,10 +502,11 @@ impl<T> View for VirtualStack<T> {
         let new_size = self.item_size.with(|s| match s {
             VirtualItemSize::Assume(None) => {
                 if let Some(first_content) = self.first_content_id {
-                    let size = first_content
-                        .get_layout()
-                        .map(|layout| layout.size)
-                        .unwrap_or_default();
+                    let taffy_layout = first_content.get_layout()?;
+                    let size = taffy_layout.size;
+                    if size.width == 0. || size.height == 0. {
+                        return None;
+                    }
                     let rect = Size::new(size.width as f64, size.height as f64).to_rect();
                     let relevant_size = match self.direction.get_untracked() {
                         FlexDirection::Column | FlexDirection::ColumnReverse => rect.height(),

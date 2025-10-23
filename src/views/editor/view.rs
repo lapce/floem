@@ -1,6 +1,7 @@
 use std::{collections::HashMap, ops::RangeInclusive, rc::Rc};
 
 use crate::{
+    Renderer,
     action::{set_ime_allowed, set_ime_cursor_area},
     context::{LayoutCx, PaintCx, UpdateCx},
     event::{Event, EventListener, EventPropagation},
@@ -8,14 +9,13 @@ use crate::{
     keyboard::{Key, Modifiers},
     kurbo::{BezPath, Line, Point, Rect, Size, Vec2},
     peniko::Color,
-    reactive::{batch, create_effect, create_memo, create_rw_signal, Memo, RwSignal, Scope},
+    reactive::{Memo, RwSignal, Scope, batch, create_effect, create_memo, create_rw_signal},
     style::{CursorStyle, Style},
     style_class,
     taffy::tree::NodeId,
     text::{Attrs, AttrsList, TextLayout},
     view::{IntoView, View},
-    views::{scroll, stack, Decorators},
-    Renderer,
+    views::{Decorators, scroll, stack},
 };
 use floem_editor_core::{
     command::EditCommand,
@@ -32,7 +32,7 @@ use crate::views::editor::{
     visual_line::{RVLine, VLineInfo},
 };
 
-use super::{command::Command, Editor, CHAR_WIDTH};
+use super::{CHAR_WIDTH, Editor, command::Command};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum DiffSectionKind {
@@ -1025,7 +1025,7 @@ pub fn editor_view(
         is_active,
         inner_node: None,
     }
-    .keyboard_navigable()
+    .style(|s| s.focusable(true))
     .on_event_cont(EventListener::FocusGained, move |_| {
         focused.set(true);
         prev_ime_area.set(None);

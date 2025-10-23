@@ -38,7 +38,9 @@ pub fn radio_buttons_view() -> impl IntoView {
         form_item(
             "Disabled Radio Buttons:",
             OperatingSystem::iter()
-                .map(move |os| RadioButton::new_get(os, operating_system).disabled(|| true))
+                .map(move |os| {
+                    RadioButton::new_get(os, operating_system).style(|s| s.set_disabled(true))
+                })
                 .v_stack()
                 .class(RadioButtonGroupClass),
         ),
@@ -53,7 +55,8 @@ pub fn radio_buttons_view() -> impl IntoView {
             "Disabled Labelled Radio Buttons:",
             OperatingSystem::iter()
                 .map(move |os| {
-                    RadioButton::new_labeled_get(os, operating_system, move || os).disabled(|| true)
+                    RadioButton::new_labeled_get(os, operating_system, move || os)
+                        .style(|s| s.set_disabled(true))
                 })
                 .v_stack()
                 .class(RadioButtonGroupClass),

@@ -48,8 +48,10 @@ impl WindowMapping {
     fn remove(&mut self, root: &ViewId, window_id: &WindowId) {
         let root_found = self.window_id_for_root_view_id.remove(root).is_some();
         let window_found = self.window_for_window_id.remove(window_id).is_some();
-        debug_assert!(root_found == window_found,
-            "Window mapping state inconsistent. Remove root {root:?} success was {root_found} but remove {window_id:?} success was {window_found}");
+        debug_assert!(
+            root_found == window_found,
+            "Window mapping state inconsistent. Remove root {root:?} success was {root_found} but remove {window_id:?} success was {window_found}"
+        );
     }
 
     fn with_window_id_and_window<F: FnOnce(&WindowId, &Arc<dyn Window>) -> T, T>(

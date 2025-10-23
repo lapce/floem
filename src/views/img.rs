@@ -7,7 +7,7 @@ use peniko::{Blob, ImageAlphaType, ImageData};
 use sha2::{Digest, Sha256};
 use taffy::NodeId;
 
-use crate::{id::ViewId, style::Style, unit::UnitExt, view::View, Renderer};
+use crate::{Renderer, id::ViewId, style::Style, unit::UnitExt, view::View};
 
 /// Holds information about image position and size inside container.
 pub struct ImageStyle {
@@ -164,7 +164,8 @@ pub fn img(image: impl Fn() -> Vec<u8> + 'static) -> Img {
         alpha_type: ImageAlphaType::AlphaPremultiplied,
         width,
         height,
-    });
+    })
+    .with_quality(peniko::ImageQuality::High);
     img_dynamic(move || image.clone())
 }
 

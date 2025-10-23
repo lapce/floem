@@ -8,10 +8,8 @@ use crate::{
     prop_extractor,
     responsive::ScreenSizeBp,
     style::{
-        Background, BorderBottomColor, BorderBottomLeftRadius, BorderBottomRightRadius,
-        BorderLeftColor, BorderRightColor, BorderTopColor, BorderTopLeftRadius,
-        BorderTopRightRadius, BoxShadowProp, LayoutProps, Outline, OutlineColor, Style,
-        StyleClassRef, StyleSelectors,
+        Background, BorderColorProp, BorderRadiusProp, BoxShadowProp, LayoutProps, Outline,
+        OutlineColor, Style, StyleClassRef, StyleSelectors, resolve_nested_maps,
     },
 };
 use bitflags::bitflags;
@@ -70,19 +68,13 @@ impl<T> Stack<T> {
 #[cfg(feature = "vello")]
 prop_extractor! {
     pub(crate) ViewStyleProps {
-        pub border_top_left_radius: BorderTopLeftRadius,
-        pub border_top_right_radius: BorderTopRightRadius,
-        pub border_bottom_left_radius: BorderBottomLeftRadius,
-        pub border_bottom_right_radius: BorderBottomRightRadius,
+        pub border_radius: BorderRadiusProp,
         pub border_progress: crate::style::BorderProgress,
 
         pub outline: Outline,
         pub outline_color: OutlineColor,
         pub outline_progress: crate::style::OutlineProgress,
-        pub border_left_color: BorderLeftColor,
-        pub border_top_color: BorderTopColor,
-        pub border_right_color: BorderRightColor,
-        pub border_bottom_color: BorderBottomColor,
+        pub border_color: BorderColorProp,
         pub background: Background,
         pub shadow: BoxShadowProp,
     }
@@ -91,17 +83,11 @@ prop_extractor! {
 #[cfg(not(feature = "vello"))]
 prop_extractor! {
     pub(crate) ViewStyleProps {
-        pub border_top_left_radius: BorderTopLeftRadius,
-        pub border_top_right_radius: BorderTopRightRadius,
-        pub border_bottom_left_radius: BorderBottomLeftRadius,
-        pub border_bottom_right_radius: BorderBottomRightRadius,
+        pub border_radius: BorderRadiusProp,
 
         pub outline: Outline,
         pub outline_color: OutlineColor,
-        pub border_left_color: BorderLeftColor,
-        pub border_top_color: BorderTopColor,
-        pub border_right_color: BorderRightColor,
-        pub border_bottom_color: BorderBottomColor,
+        pub border_color: BorderColorProp,
         pub background: Background,
         pub shadow: BoxShadowProp,
     }
@@ -246,40 +232,64 @@ impl ViewState {
     }
 
     /// Returns `true` if a new frame is requested.
+    ///
+    // The context has the nested maps of classes and inherited properties
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn compute_style(
+    pub(crate) fn compute_combined(
         &mut self,
         view_style: Option<Style>,
         interact_state: InteractionState,
         screen_size_bp: ScreenSizeBp,
         view_class: Option<StyleClassRef>,
         context: &Style,
+        cx_hidden: bool,
     ) -> bool {
         let mut new_frame = false;
-        // we are just using the combined style and then clearing here to avoid creating an entirely new style map
-        // because the clone is cheap, this is fine
-        let mut computed_style = self.combined_style.clone();
-        computed_style.clear();
-        // we will apply the views style to the context so that if a style class is used on a view, that class will be directly applied instead of only applying to children
-        let mut context = context.clone();
+
+        // Build the initial combined style
+        let mut combined_style = Style::new();
+
+        let mut classes: SmallVec<[_; 4]> = SmallVec::new();
+
+        // Apply view class if provided
         if let Some(view_class) = view_class {
-            computed_style = computed_style.apply_classes_from_context(&[view_class], &context);
+            classes.insert(0, view_class);
         }
-        computed_style = computed_style.apply_classes_from_context(&self.classes, &context);
 
-        if let Some(view_style) = view_style {
-            context.apply_mut(view_style.clone());
-            computed_style.apply_mut(view_style);
+        for class in &self.classes {
+            classes.push(*class);
         }
-        // self.style has precedence over the supplied view style so it comes after
+
+        let mut new_context = context.clone();
+
+        combined_style = resolve_nested_maps(
+            combined_style,
+            &interact_state,
+            screen_size_bp,
+            &classes,
+            &mut new_context,
+        );
+
+        if let Some(view_style) = &view_style {
+            combined_style.apply_mut(view_style.clone());
+        }
+
         let self_style = self.style();
-        context.apply_mut(self_style.clone());
-        computed_style.apply_mut(self_style);
 
-        self.has_style_selectors = computed_style.selectors();
+        combined_style.apply_mut(self_style.clone());
 
-        computed_style.apply_interact_state(&interact_state, screen_size_bp);
+        combined_style = resolve_nested_maps(
+            combined_style,
+            &interact_state,
+            screen_size_bp,
+            &classes,
+            &mut new_context,
+        );
 
+        // Track if this style has selectors for optimization purposes
+        self.has_style_selectors = combined_style.selectors();
+
+        // Process animations
         for animation in self
             .animations
             .stack
@@ -288,18 +298,20 @@ impl ViewState {
         {
             if animation.can_advance() {
                 new_frame = true;
-
-                animation.animate_into(&mut computed_style);
-
+                animation.animate_into(&mut combined_style);
                 animation.advance();
             } else {
-                animation.apply_folded(&mut computed_style)
+                animation.apply_folded(&mut combined_style)
             }
             debug_assert!(!animation.is_idle());
         }
 
-        self.combined_style = computed_style;
+        // Apply visibility
+        if cx_hidden {
+            combined_style = combined_style.hide();
+        }
 
+        self.combined_style = combined_style;
         new_frame
     }
 

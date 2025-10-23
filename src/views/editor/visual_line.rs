@@ -873,7 +873,10 @@ impl Lines {
             // There was no text layout for this line, so we treat it like if line index is zero
             // even if it is not.
 
-            debug_assert_eq!(line_index, 0, "Line index was zero. This likely indicates keeping an rvline past when it was valid.");
+            debug_assert_eq!(
+                line_index, 0,
+                "Line index was zero. This likely indicates keeping an rvline past when it was valid."
+            );
 
             rope_text.offset_of_line(line)
         }
@@ -1779,7 +1782,12 @@ impl<T: TextLayoutProvider> Iterator for VisualLinesRelative<T> {
         } else {
             1
         };
-        debug_assert!(start <= end, "line: {line}, line_index: {line_index}, line_count: {line_count}, vline: {vline:?}, start: {start}, end: {end}, backwards: {} text_len: {}", self.backwards, self.text_prov.text().len());
+        debug_assert!(
+            start <= end,
+            "line: {line}, line_index: {line_index}, line_count: {line_count}, vline: {vline:?}, start: {start}, end: {end}, backwards: {} text_len: {}",
+            self.backwards,
+            self.text_prov.text().len()
+        );
         let info = VLineInfo::new(start..end, self.rvline, line_count, ());
 
         Some(info)
@@ -1987,8 +1995,8 @@ mod tests {
     };
 
     use super::{
-        find_vline_init_info_forward, find_vline_init_info_rv_backward, ConfigId, FontSizeCacheId,
-        LineFontSizeProvider, Lines, RVLine, ResolvedWrap, TextLayoutProvider, VLine,
+        ConfigId, FontSizeCacheId, LineFontSizeProvider, Lines, RVLine, ResolvedWrap,
+        TextLayoutProvider, VLine, find_vline_init_info_forward, find_vline_init_info_rv_backward,
     };
 
     /// For most of the logic we standardize on a specific font size.
@@ -2632,7 +2640,9 @@ mod tests {
 
         assert_eq!(
             render_breaks(&text, &mut lines, FONT_SIZE),
-            ["hello ", "world ", "toast ", "and ", "jam ", "the ", "end ", "hi"]
+            [
+                "hello ", "world ", "toast ", "and ", "jam ", "the ", "end ", "hi"
+            ]
         );
 
         let vline_line_data = [0, 1, 5, 7];
@@ -2659,7 +2669,9 @@ mod tests {
 
         assert_eq!(
             render_breaks(&text, &mut lines, FONT_SIZE),
-            ["aaaa ", "bb ", "bb ", "cc ", "cc ", "dddd ", "eeee ", "ff ", "ff ", "gggg"]
+            [
+                "aaaa ", "bb ", "bb ", "cc ", "cc ", "dddd ", "eeee ", "ff ", "ff ", "gggg"
+            ]
         );
 
         // (start offset, start buffer line, layout line index)
