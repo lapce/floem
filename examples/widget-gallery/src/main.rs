@@ -308,16 +308,13 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             }),
     );
 
-    add_overlay(
-        svg(include_str!("../assets/floem.svg"))
-            .style(|s| {
-                s.set_style_value(TextColor, floem::style::StyleValue::Unset)
-                    .size(50, 50)
-                    .absolute()
-                    .inset_bottom(20.)
-                    .inset_right(10.)
-            })
-    );
+    add_overlay(svg(include_str!("../assets/floem.svg")).style(|s| {
+        s.set_style_value(TextColor, floem::style::StyleValue::Unset)
+            .size(50, 50)
+            .absolute()
+            .inset_bottom(20.)
+            .inset_right(10.)
+    }));
 
     view.on_event_stop(EventListener::KeyUp, move |e| {
         if let Event::KeyUp(e) = e {
