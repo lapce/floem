@@ -131,7 +131,7 @@ impl StylePropValue for BoxShadow {
                         .border(1.)
                         .border_radius(t.border_radius())
                 })
-                .apply_box_shadow(vec![shadow])
+                .apply_box_shadows(vec![shadow])
                 .margin(10.0)
             });
 
@@ -4210,7 +4210,7 @@ impl Style {
     /// use floem::prelude::palette::css;
     /// use floem::style::BoxShadow;
     ///
-    /// empty().style(|s| s.apply_box_shadow(vec![
+    /// empty().style(|s| s.apply_box_shadows(vec![
     ///    BoxShadow::new()
     ///        .color(css::BLACK)
     ///        .top_offset(5.)
@@ -4235,7 +4235,7 @@ impl Style {
     ///     .box_shadow_blur(3.)
     /// );
     /// ```
-    pub fn apply_box_shadow(self, shadow: impl Into<SmallVec<[BoxShadow; 3]>>) -> Self {
+    pub fn apply_box_shadows(self, shadow: impl Into<SmallVec<[BoxShadow; 3]>>) -> Self {
         self.set(BoxShadowProp, shadow.into())
     }
 

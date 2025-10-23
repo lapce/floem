@@ -1227,7 +1227,12 @@ impl WindowHandle {
 
         if let RawWindowHandle::Win32(handle) = self.window.window_handle().unwrap().as_raw() {
             unsafe {
-                let _ = menu.init_for_hwnd(isize::from(handle.hwnd));
+                let menu_theme = match self.os_theme {
+                    Some(winit::window::Theme::Light) => muda::MenuTheme::Light,
+                    Some(winit::window::Theme::Dark) => muda::MenuTheme::Dark,
+                    None => muda::MenuTheme::Auto,
+                };
+                let _ = menu.init_for_hwnd_with_theme(isize::from(handle.hwnd), menu_theme);
                 let _ = menu.show_for_hwnd(isize::from(handle.hwnd));
             }
         }
