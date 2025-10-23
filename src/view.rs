@@ -50,7 +50,6 @@ use taffy::tree::NodeId;
 
 use crate::{
     Renderer,
-    app_state::AppState,
     context::{ComputeLayoutCx, EventCx, LayoutCx, PaintCx, StyleCx, UpdateCx},
     event::{Event, EventPropagation},
     id::ViewId,
@@ -58,6 +57,7 @@ use crate::{
     unit::PxPct,
     view_state::ViewStyleProps,
     views::{DynamicView, dyn_view},
+    window_state::WindowState,
 };
 
 /// type erased [`View`]
@@ -279,7 +279,7 @@ pub trait View {
     /// You are in charge of downcasting the state to the expected type.
     ///
     /// If the update needs other passes to run you're expected to call
-    /// `_cx.app_state_mut().request_changes`.
+    /// `_cx.window_state_mut().request_changes`.
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {
         // these are here to just ignore these arguments in the default case
         let _ = cx;
@@ -289,7 +289,7 @@ pub trait View {
     /// Use this method to style the view's children.
     ///
     /// If the style changes needs other passes to run you're expected to call
-    /// `cx.app_state_mut().request_changes`.
+    /// `cx.window_state_mut().request_changes`.
     fn style_pass(&mut self, cx: &mut StyleCx<'_>) {
         for child in self.id().children() {
             cx.style_view(child);
@@ -300,7 +300,7 @@ pub trait View {
     /// Usually you'll do this by calling [`LayoutCx::layout_node`].
     ///
     /// If the layout changes needs other passes to run you're expected to call
-    /// `cx.app_state_mut().request_changes`.
+    /// `cx.window_state_mut().request_changes`.
     fn layout(&mut self, cx: &mut LayoutCx) -> NodeId {
         recursively_layout_view(self.id(), cx)
     }
@@ -308,7 +308,7 @@ pub trait View {
     /// Responsible for computing the layout of the view's children.
     ///
     /// If the layout changes needs other passes to run you're expected to call
-    /// `cx.app_state_mut().request_changes`.
+    /// `cx.window_state_mut().request_changes`.
     fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
         default_compute_layout(self.id(), cx)
     }
@@ -338,7 +338,7 @@ pub trait View {
 
     /// Scrolls the view and all direct and indirect children to bring the `target` view to be
     /// visible. Returns true if this view contains or is the target.
-    fn scroll_to(&mut self, cx: &mut AppState, target: ViewId, rect: Option<Rect>) -> bool {
+    fn scroll_to(&mut self, cx: &mut WindowState, target: ViewId, rect: Option<Rect>) -> bool {
         if self.id() == target {
             return true;
         }
@@ -396,7 +396,7 @@ impl View for Box<dyn View> {
         (**self).paint(cx)
     }
 
-    fn scroll_to(&mut self, cx: &mut AppState, target: ViewId, rect: Option<Rect>) -> bool {
+    fn scroll_to(&mut self, cx: &mut WindowState, target: ViewId, rect: Option<Rect>) -> bool {
         (**self).scroll_to(cx, target, rect)
     }
 }
@@ -787,10 +787,14 @@ pub(crate) fn paint_border(
 }
 
 /// Tab navigation finds the next or previous view with the `keyboard_navigatable` status in the tree.
-pub(crate) fn view_tab_navigation(root_view: ViewId, app_state: &mut AppState, backwards: bool) {
-    let start = app_state
+pub(crate) fn view_tab_navigation(
+    root_view: ViewId,
+    window_state: &mut WindowState,
+    backwards: bool,
+) {
+    let start = window_state
         .focus
-        .unwrap_or(app_state.prev_focus.unwrap_or(root_view));
+        .unwrap_or(window_state.prev_focus.unwrap_or(root_view));
 
     let tree_iter = |id: ViewId| {
         if backwards {
@@ -801,12 +805,12 @@ pub(crate) fn view_tab_navigation(root_view: ViewId, app_state: &mut AppState, b
     };
 
     let mut new_focus = tree_iter(start);
-    while new_focus != start && !app_state.focusable.contains(&new_focus) {
+    while new_focus != start && !window_state.focusable.contains(&new_focus) {
         new_focus = tree_iter(new_focus);
     }
 
-    app_state.clear_focus();
-    app_state.update_focus(new_focus, true);
+    window_state.clear_focus();
+    window_state.update_focus(new_focus, true);
 }
 
 /// Get the next item in the tree, either the first child or the next sibling of this view or of the first parent view

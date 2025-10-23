@@ -237,7 +237,7 @@ impl View for Slider {
         paint |= self.accent_bar_style.read_style(cx, &accent_bar_style);
         paint |= self.style.read(cx);
         if paint {
-            cx.app_state_mut().request_paint(self.id);
+            cx.window_state.request_paint(self.id);
         }
     }
 
@@ -674,7 +674,7 @@ impl SliderCustomStyle {
 mod test {
 
     use crate::{
-        AppState,
+        WindowState,
         context::{EventCx, UpdateCx},
         event::Event,
         pointer::{MouseButton, PointerButton, PointerInputEvent, PointerMoveEvent},
@@ -682,22 +682,22 @@ mod test {
 
     use super::*;
 
-    // Test helper to create a minimal AppState
-    fn create_test_app_state(view_id: ViewId) -> AppState {
-        AppState::new(view_id)
+    // Test helper to create a minimal WindowState
+    fn create_test_window_state(view_id: ViewId) -> WindowState {
+        WindowState::new(view_id)
     }
 
     // Test helper to create UpdateCx
     fn create_test_update_cx(view_id: ViewId) -> UpdateCx<'static> {
         UpdateCx {
-            app_state: Box::leak(Box::new(create_test_app_state(view_id))),
+            window_state: Box::leak(Box::new(create_test_window_state(view_id))),
         }
     }
 
     // Test helper to create EventCx
     fn create_test_event_cx(view_id: ViewId) -> EventCx<'static> {
         EventCx {
-            app_state: Box::leak(Box::new(create_test_app_state(view_id))),
+            window_state: Box::leak(Box::new(create_test_window_state(view_id))),
         }
     }
 
@@ -762,7 +762,7 @@ mod test {
 
         assert_eq!(slider.percent, expected_percent);
         assert!(slider.held);
-        assert_eq!(cx.app_state.active, Some(slider.id()));
+        assert_eq!(cx.window_state.active, Some(slider.id()));
     }
 
     #[test]
@@ -785,7 +785,7 @@ mod test {
 
         slider.event_before_children(&mut cx, &pointer_down);
         assert!(slider.held);
-        assert_eq!(cx.app_state.active, Some(slider.id()));
+        assert_eq!(cx.window_state.active, Some(slider.id()));
 
         // Move while dragging
         let move_mouse_x = 75.0;

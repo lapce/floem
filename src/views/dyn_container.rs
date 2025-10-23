@@ -184,7 +184,7 @@ impl<T> DynamicContainer<T> {
         self.child_id = new_child.id();
         self.id.set_children([new_child]);
         self.child_scope = new_child_scope;
-        cx.app_state_mut().remove_view(old_child_id);
+        cx.window_state.remove_view(old_child_id);
         old_child_scope.dispose();
         animations_recursive_on_create(self.child_id);
         self.id.request_all();

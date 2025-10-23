@@ -142,7 +142,7 @@ impl ApplicationHandle {
                 }
                 AppUpdateEvent::MenuAction { action_id } => {
                     for (_, handle) in self.window_handles.iter_mut() {
-                        if handle.app_state.context_menu.contains_key(&action_id)
+                        if handle.window_state.context_menu.contains_key(&action_id)
                             || handle.window_menu_actions.contains_key(&action_id)
                         {
                             handle.menu_action(&action_id);

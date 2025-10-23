@@ -8,10 +8,10 @@ use rustc_hash::FxHasher;
 use smallvec::SmallVec;
 
 use crate::{
-    app_state::AppState,
     context::UpdateCx,
     id::ViewId,
     view::{IntoView, View},
+    window_state::WindowState,
 };
 
 pub(crate) type FxIndexSet<T> = indexmap::IndexSet<T, BuildHasherDefault<FxHasher>>;
@@ -138,7 +138,7 @@ impl<T> View for DynStack<T> {
         if let Ok(diff) = state.downcast() {
             apply_diff(
                 self.id(),
-                cx.app_state,
+                cx.window_state,
                 *diff,
                 &mut self.children,
                 &self.view_fn,
@@ -274,19 +274,19 @@ pub(crate) fn diff<K: Eq + Hash, V>(from: &FxIndexSet<K>, to: &FxIndexSet<K>) ->
 }
 
 fn remove_index(
-    app_state: &mut AppState,
+    window_state: &mut WindowState,
     children: &mut [Option<(ViewId, Scope)>],
     index: usize,
 ) -> Option<()> {
     let (view_id, scope) = std::mem::take(&mut children[index])?;
-    app_state.remove_view(view_id);
+    window_state.remove_view(view_id);
     scope.dispose();
     Some(())
 }
 
 pub(super) fn apply_diff<T, VF>(
     view_id: ViewId,
-    app_state: &mut AppState,
+    window_state: &mut WindowState,
     mut diff: Diff<T>,
     children: &mut Vec<Option<(ViewId, Scope)>>,
     view_fn: &VF,
@@ -313,13 +313,13 @@ pub(super) fn apply_diff<T, VF>(
     // 4. Add
     if diff.clear {
         for i in 0..children.len() {
-            remove_index(app_state, children, i);
+            remove_index(window_state, children, i);
         }
         diff.removed.clear();
     }
 
     for DiffOpRemove { at } in diff.removed {
-        remove_index(app_state, children, at);
+        remove_index(window_state, children, at);
     }
 
     for DiffOpMove { from, to } in diff.moved {

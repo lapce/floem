@@ -1,7 +1,6 @@
 mod data;
 mod view;
 
-use crate::app_state::AppState;
 use crate::context::StyleCx;
 use crate::event::{Event, EventListener, EventPropagation};
 use crate::id::ViewId;
@@ -17,6 +16,7 @@ use crate::views::{
     ContainerExt, Decorators, Label, ScrollExt, dyn_container, empty, stack, static_label, text,
     v_stack, v_stack_from_iter,
 };
+use crate::window_state::WindowState;
 use crate::{AnyView, Clipboard, keyboard, style};
 use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate, batch};
 use peniko::color::palette;
@@ -55,14 +55,14 @@ pub struct CapturedView {
 }
 
 impl CapturedView {
-    pub fn capture(id: ViewId, app_state: &mut AppState, clip: Rect) -> Self {
+    pub fn capture(id: ViewId, window_state: &mut WindowState, clip: Rect) -> Self {
         let layout = id.layout_rect();
         let taffy = id.get_layout().unwrap_or_default();
         let view_state = id.state();
         let view_state = view_state.borrow();
         let combined_style = view_state.combined_style.clone();
         let keyboard_navigable = view_state.combined_style.get(Focusable);
-        let focused = app_state.focus == Some(id);
+        let focused = window_state.focus == Some(id);
         let clipped = layout.intersect(clip);
         let custom_name = &view_state.debug_name;
         let classes = view_state.classes.clone();
@@ -93,7 +93,7 @@ impl CapturedView {
             children: id
                 .children()
                 .into_iter()
-                .map(|view| Rc::new(CapturedView::capture(view, app_state, clipped)))
+                .map(|view| Rc::new(CapturedView::capture(view, window_state, clipped)))
                 .collect(),
         }
     }
@@ -159,8 +159,8 @@ pub struct CaptureState {
 
 impl CaptureState {
     pub(crate) fn capture_style(id: ViewId, cx: &mut StyleCx, computed_style: Style) {
-        if cx.app_state_mut().capture.is_some() {
-            cx.app_state_mut()
+        if cx.window_state.capture.is_some() {
+            cx.window_state
                 .capture
                 .as_mut()
                 .unwrap()
