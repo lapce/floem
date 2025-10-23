@@ -16,6 +16,7 @@ pub fn form<VTF: ViewTupleFlat + 'static>(children: VTF) -> impl IntoView {
                 .row_gap(20)
                 .col_gap(10)
                 .padding(30)
+                .max_size_full()
         })
         .debug_name("Form")
 }

@@ -15,6 +15,7 @@ pub mod lists;
 pub mod radio_buttons;
 pub mod rich_text;
 pub mod slider;
+pub mod table;
 
 use floem::{
     action::set_window_menu,
@@ -38,6 +39,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         "Input",
         "Canvas",
         "List",
+        "Table",
         "Menu",
         "RichText",
         "Image",
@@ -59,6 +61,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             "Input" => inputs::text_input_view().into_any(),
             "Canvas" => canvas::canvas_view().into_any(),
             "List" => lists::virt_list_view().into_any(),
+            "Table" => table::table_view().into_any(),
             "Menu" => context_menu::menu_view().into_any(),
             "RichText" => rich_text::rich_text_view().into_any(),
             "Image" => images::img_view().into_any(),

@@ -32,7 +32,7 @@ prop_extractor! {
     }
 }
 
-enum VirtualItemSize<T> {
+pub(crate) enum VirtualItemSize<T> {
     Fn(Rc<dyn Fn(&T) -> f64>),
     Fixed(Rc<dyn Fn() -> f64>),
     /// This will try to calculate the size of the items using the computed layout.
