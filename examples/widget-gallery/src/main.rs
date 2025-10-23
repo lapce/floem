@@ -308,8 +308,6 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             }),
     );
 
-    // let main_view = view.id();
-
     add_overlay(
         svg(include_str!("../assets/floem.svg"))
             .style(|s| {
@@ -318,12 +316,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                     .absolute()
                     .inset_bottom(20.)
                     .inset_right(10.)
-                // .with_theme(move |s, t| {
-                //     t.primary_base = primary.get();
-                //     s.theme(t)
-                // })
             })
-            .draggable(),
     );
 
     view.on_event_stop(EventListener::KeyUp, move |e| {
