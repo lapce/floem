@@ -89,11 +89,11 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         .enumerate()
         .map(move |(idx, item)| {
             item.debug_name(item)
-                .draggable()
                 .style(move |s| {
                     s.flex_row()
                         .font_size(18.)
                         .height(36.0)
+                        .draggable(true)
                         .transition(Background, Transition::ease_in_out(100.millis()))
                         .active(|s| {
                             s.with_theme(|s, t| {

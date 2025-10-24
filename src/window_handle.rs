@@ -958,9 +958,6 @@ impl WindowHandle {
                         let view = id.view();
                         view.borrow_mut().update(&mut cx, state);
                     }
-                    UpdateMessage::Draggable { id } => {
-                        cx.app_state.draggable.insert(id);
-                    }
                     UpdateMessage::DragWindow => {
                         let _ = self.window.drag_window();
                     }

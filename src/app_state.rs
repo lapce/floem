@@ -31,7 +31,6 @@ pub struct AppState {
     pub(crate) scheduled_updates: Vec<FrameUpdate>,
     pub(crate) request_compute_layout: bool,
     pub(crate) request_paint: bool,
-    pub(crate) draggable: HashSet<ViewId>,
     pub(crate) dragging: Option<DragState>,
     pub(crate) drag_start: Option<(ViewId, Point)>,
     pub(crate) dragging_over: HashSet<ViewId>,
@@ -68,7 +67,6 @@ impl AppState {
             scheduled_updates: Vec::new(),
             request_paint: false,
             request_compute_layout: false,
-            draggable: HashSet::new(),
             dragging: None,
             drag_start: None,
             dragging_over: HashSet::new(),
@@ -117,7 +115,6 @@ impl AppState {
         }
         let _ = taffy.remove(node);
         id.remove();
-        self.draggable.remove(&id);
         self.dragging_over.remove(&id);
         self.clicking.remove(&id);
         self.hovered.remove(&id);
@@ -267,7 +264,6 @@ impl AppState {
         let view_state = view_state.borrow();
 
         view_state.has_style_selectors.has(selector_kind)
-            || (selector_kind == StyleSelector::Dragging && view_state.dragging_style.is_some())
     }
 
     pub(crate) fn update_context_menu(

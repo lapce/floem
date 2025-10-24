@@ -35,7 +35,6 @@ pub(crate) enum UpdateMessage {
     WindowScale(f64),
     RequestPaint,
     State { id: ViewId, state: Box<dyn Any> },
-    Draggable { id: ViewId },
     ToggleWindowMaximized,
     SetWindowMaximized(bool),
     MinimizeWindow,

@@ -255,9 +255,7 @@ impl EventCx<'_> {
                                 return (ep, pec);
                             };
 
-                            if self.app_state.draggable.contains(&view_id)
-                                && self.app_state.drag_start.is_none()
-                            {
+                            if view_id.can_drag() && self.app_state.drag_start.is_none() {
                                 self.app_state.drag_start = Some((view_id, pointer_event.pos));
                             }
                         }
@@ -298,7 +296,7 @@ impl EventCx<'_> {
                             }
                         }
                     }
-                    if self.app_state.draggable.contains(&view_id) {
+                    if view_id.can_drag() {
                         if let Some((_, drag_start)) = self
                             .app_state
                             .drag_start

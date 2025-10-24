@@ -3498,6 +3498,7 @@ define_builtin_props!(
     Disabled set_disabled: bool { inherited } = false,
     Hidden set_hidden: bool { inherited } = false,
     Focusable focusable: bool { } = false,
+    Draggable draggable: bool { } = false,
 );
 
 impl BuiltinStyle<'_> {
@@ -3684,6 +3685,11 @@ impl Style {
 
     pub fn selected(self, style: impl FnOnce(Style) -> Style) -> Self {
         self.selector(StyleSelector::Selected, style)
+    }
+
+    /// The visual style to apply when the view is being dragged
+    pub fn drag(self, style: impl FnOnce(Style) -> Style) -> Self {
+        self.selector(StyleSelector::Dragging, style)
     }
 
     pub fn disabled(self, style: impl FnOnce(Style) -> Style) -> Self {
