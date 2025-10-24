@@ -14,7 +14,7 @@ use crate::{
     event::{Event, EventListener, EventPropagation},
     keyboard::Modifiers,
     menu::Menu,
-    style::{Style, StyleClass, StyleSelector},
+    style::{Style, StyleClass},
     view::{IntoView, View},
 };
 
@@ -98,13 +98,17 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         view
     }
 
-    /// The visual style to apply when the mouse hovers over the element
+    /// The visual style to apply when the view is being dragged
     fn dragging_style(self, style: impl Fn(Style) -> Style + 'static) -> Self::DV {
         let view = self.into_view();
         let view_id = view.id();
         create_effect(move |_| {
             let style = style(Style::new());
-            view_id.update_style_selector(StyleSelector::Dragging, style);
+            {
+                let state = view_id.state();
+                state.borrow_mut().dragging_style = Some(style);
+            }
+            view_id.request_style();
         });
         view
     }
@@ -168,10 +172,9 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
     }
 
     /// Mark the view as draggable
+    #[deprecated(note = "use `Style::draggable` directly instead")]
     fn draggable(self) -> Self::DV {
-        let view = self.into_view();
-        view.id().draggable();
-        view
+        self.style(move |s| s.draggable(true))
     }
 
     /// Mark the view as disabled

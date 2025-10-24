@@ -34,7 +34,6 @@ fn sortable_item(
                 .cursor(CursorStyle::RowResize)
         }),
     )
-        .draggable()
         .on_event(floem::event::EventListener::DragStart, move |_| {
             dragger_id.set(item_id);
             floem::event::EventPropagation::Continue
@@ -67,6 +66,7 @@ fn sortable_item(
         .style(move |s| {
             s.background(colors[item_id])
                 .selectable(false)
+                .draggable(true)
                 .col_gap(5)
                 .items_center()
                 .border(2)

@@ -17,7 +17,7 @@ use crate::{
     context::{EventCallback, ResizeCallback},
     event::{EventListener, EventPropagation},
     menu::Menu,
-    style::{Disabled, DisplayProp, Focusable, Hidden, Style, StyleClassRef, StyleSelector},
+    style::{Disabled, DisplayProp, Draggable, Focusable, Hidden, Style, StyleClassRef},
     unit::PxPct,
     update::{CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, UpdateMessage},
     view::{IntoView, View},
@@ -314,6 +314,13 @@ impl ViewId {
         self.state().borrow().computed_style.get(Focusable)
     }
 
+    /// Check if this id can be dragged.
+    ///
+    /// This is done by checking if the style for this view has `Draggable` set to true.
+    pub fn can_drag(&self) -> bool {
+        self.state().borrow().computed_style.get(Draggable)
+    }
+
     /// Request that this the `id` view be styled, laid out and painted again.
     /// This will recursively request this for all parents.
     pub fn request_all(&self) {
@@ -493,14 +500,6 @@ impl ViewId {
         self.request_style_recursive();
     }
 
-    pub(crate) fn update_style_selector(&self, selector: StyleSelector, style: Style) {
-        if let StyleSelector::Dragging = selector {
-            let state = self.state();
-            state.borrow_mut().dragging_style = Some(style);
-        }
-        self.request_style();
-    }
-
     pub(crate) fn update_style(&self, offset: StackOffset<Style>, style: Style) {
         let state = self.state();
         let old_any_inherited = state.borrow().style().any_inherited();
@@ -549,13 +548,6 @@ impl ViewId {
             .borrow_mut()
             .disable_default_events
             .remove(&event);
-    }
-
-    /// Mark this view as a view that can be dragged
-    ///
-    /// You can customize the apearance of a view while dragging in the style
-    pub fn draggable(&self) {
-        self.add_update_message(UpdateMessage::Draggable { id: *self });
     }
 
     /// Alter the visibility of the current window the view represented by this ID
