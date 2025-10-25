@@ -354,8 +354,8 @@ pub fn overlay_style() -> Style {
                 .padding(t.padding())
                 .color(t.text())
                 .background(t.bg_overlay())
-                // Small, tight shadow for definition at the edge
                 .apply_box_shadows(smallvec![
+                    // Small, tight shadow for definition at the edge
                     BoxShadow::new()
                         .color(shadow_color.with_alpha(base_opacity * 1.2))
                         .v_offset(1.)

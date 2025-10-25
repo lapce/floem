@@ -9,6 +9,7 @@ pub use winit::window::WindowId;
 pub use winit::window::WindowLevel;
 
 use crate::AnyView;
+use crate::action::current_theme;
 use crate::app::{AppUpdateEvent, add_app_update_event};
 use crate::view::IntoView;
 
@@ -34,7 +35,8 @@ pub struct WindowConfig {
     pub(crate) undecorated: bool,
     pub(crate) undecorated_shadow: bool,
     pub(crate) window_level: WindowLevel,
-    pub(crate) apply_default_theme: bool,
+    /// Applies chosen theme or os theme, when `None` is provided.
+    pub(crate) with_theme: Option<Theme>,
     pub(crate) font_embolden: f32,
     #[allow(dead_code)]
     pub(crate) mac_os_config: Option<MacOSWindowConfig>,
@@ -62,7 +64,7 @@ impl Default for WindowConfig {
             undecorated: false,
             undecorated_shadow: false,
             window_level: WindowLevel::Normal,
-            apply_default_theme: true,
+            with_theme: None,
             font_embolden: if cfg!(target_os = "macos") { 0.2 } else { 0. },
             mac_os_config: None,
             win_os_config: None,
@@ -196,12 +198,12 @@ impl WindowConfig {
         self
     }
 
-    /// If set to true, the stylesheet for Floem's default theme will be
-    /// injected into your window. You may want to disable this when using a
-    /// completely custom theme.
+    /// Set theme for window.
+    ///
+    /// If not provided, window will follow OS theme.
     #[inline]
-    pub fn apply_default_theme(mut self, apply_default_theme: bool) -> Self {
-        self.apply_default_theme = apply_default_theme;
+    pub fn apply_theme(mut self, theme: Theme) -> Self {
+        self.with_theme = Some(theme);
         self
     }
 
@@ -596,7 +598,8 @@ pub(super) fn convert_to_win(c: Option<peniko::Color>) -> Option<winit::platform
     })
 }
 
-/// Web specific window (canvas) configuration properties, accessible via `WindowConfig::with_web_config( WebWindowConfig )`.
+/// Web specific window (canvas) configuration properties, accessible via
+/// `WindowConfig::with_web_config( WebWindowConfig )`.
 #[derive(Default, Debug, Clone)]
 pub struct WebWindowConfig {
     /// The id of the HTML canvas element that floem should render to.
@@ -611,8 +614,8 @@ impl WebWindowConfig {
     }
 }
 
-/// create a new window. You'll need to create Application first, otherwise it
-/// will panic
+/// Create a new window. You'll need to create Application first, otherwise it
+/// will panic.
 pub fn new_window<V: IntoView + 'static>(
     app_view: impl FnOnce(WindowId) -> V + 'static,
     config: Option<WindowConfig>,
@@ -620,7 +623,10 @@ pub fn new_window<V: IntoView + 'static>(
     add_app_update_event(AppUpdateEvent::NewWindow {
         window_creation: WindowCreation {
             view_fn: Box::new(|window_id| app_view(window_id).into_any()),
-            config,
+            config: match current_theme() {
+                Some(theme) => Some(config.unwrap_or_default().apply_theme(theme)),
+                None => config,
+            },
         },
     });
 }

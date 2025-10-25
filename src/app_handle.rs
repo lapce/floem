@@ -273,7 +273,7 @@ impl ApplicationHandle {
                 window_handle.scale(scale_factor);
             }
             WindowEvent::ThemeChanged(theme) => {
-                window_handle.os_theme_changed(theme);
+                window_handle.theme_changed(theme);
             }
             WindowEvent::Occluded(_) => {}
             WindowEvent::RedrawRequested => {
@@ -324,7 +324,7 @@ impl ApplicationHandle {
             undecorated,
             undecorated_shadow,
             window_level,
-            apply_default_theme,
+            with_theme,
             mac_os_config,
             win_os_config,
             web_config,
@@ -347,6 +347,7 @@ impl ApplicationHandle {
             .with_window_level(window_level)
             .with_window_icon(window_icon)
             .with_resizable(resizable)
+            .with_theme(with_theme)
             .with_enabled_buttons(enabled_buttons);
 
         #[cfg(target_arch = "wasm32")]
@@ -506,7 +507,7 @@ impl ApplicationHandle {
             self.config.wgpu_features,
             view_fn,
             transparent,
-            apply_default_theme,
+            with_theme,
             font_embolden,
         );
         self.window_handles.insert(window_id, window_handle);
