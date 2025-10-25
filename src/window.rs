@@ -35,7 +35,6 @@ pub struct WindowConfig {
     pub(crate) undecorated: bool,
     pub(crate) undecorated_shadow: bool,
     pub(crate) window_level: WindowLevel,
-    // pub(crate) apply_default_theme: bool,
     /// Applies chosen theme or os theme, when `None` is provided.
     pub(crate) with_theme: Option<Theme>,
     pub(crate) font_embolden: f32,
@@ -65,7 +64,6 @@ impl Default for WindowConfig {
             undecorated: false,
             undecorated_shadow: false,
             window_level: WindowLevel::Normal,
-            // apply_default_theme: true,
             with_theme: None,
             font_embolden: if cfg!(target_os = "macos") { 0.2 } else { 0. },
             mac_os_config: None,
