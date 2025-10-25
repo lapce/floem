@@ -1,3 +1,4 @@
+#![deny(missing_docs)]
 use std::{hash::Hash, marker::PhantomData};
 
 use floem_reactive::{Scope, as_child_of_current_scope, create_effect};
@@ -14,26 +15,170 @@ use super::{Diff, DiffOpAdd, FxIndexSet, HashRun, apply_diff, diff};
 
 type ViewFn<T> = Box<dyn Fn(T) -> (Box<dyn View>, Scope)>;
 
-style_class!(pub TabSelectorClass);
+style_class!(
+    /// Set class to TabSelector.
+    pub TabSelectorClass
+);
 
 enum TabState<V> {
     Diff(Box<Diff<V>>),
     Active(usize),
+    None,
 }
 
+/// Tab widget.
+///
+/// See [tab] for examples.
 pub struct Tab<T>
 where
     T: 'static,
 {
     id: ViewId,
-    active: usize,
+    active: Option<usize>,
     children: Vec<Option<(ViewId, Scope)>>,
     view_fn: ViewFn<T>,
     phatom: PhantomData<T>,
 }
 
+/// A tab widget. Create tabs from static or dynamic lists.
+///
+/// ### Simple example
+/// ```rust
+/// # use floem::prelude::*;
+/// # use floem::theme;
+/// // Tabs from static list:
+/// let tabs = RwSignal::new(vec!["tab1, tab2, tab3"]);
+/// let active_tab = RwSignal::new(0);
+///
+/// let side_bar = tabs
+///     .get()
+///     .into_iter()
+///     .enumerate()
+///     .map(move |(idx, item)| {
+///         item.style(move |s| s
+///             .height(36.)
+///             .apply_if(idx != active_tab.get(), |s| s.apply(theme::hover_style()))
+///         )
+///     })
+///     .list()
+///     .on_select(move |idx| {
+///         if let Some(idx) = idx {
+///             active_tab.set(idx);
+///         }
+/// });
+///
+/// let static_tabs = tab(
+///     move || Some(active_tab.get()),
+///     move || tabs.get(),
+///     |it| *it,
+///     |tab_content| tab_content
+///         .container()
+///         .style(|s| s.size(150., 150.).padding(10.))
+/// );
+///
+/// stack((side_bar, static_tabs));
+/// ```
+/// ### Complex example
+/// ```rust
+/// # use floem::prelude::*;
+/// # use floem::theme;
+/// # use floem::theme::StyleThemeExt;
+/// # use floem_reactive::create_effect;
+/// // Tabs from dynamic list
+/// #[derive(Clone)]
+/// struct TabContent {
+///     idx: usize,
+///     name: String,
+/// }
+///
+/// impl TabContent {
+///     fn new(tabs_count: usize) -> Self {
+///         Self {
+///             idx: tabs_count,
+///             name: format!("Tab with index"),
+///         }
+///     }
+/// }
+///
+/// #[derive(Clone)]
+/// enum Action {
+///     Add,
+///     Remove,
+///     None,
+/// }
+/// let tabs = RwSignal::new(vec![]);
+/// let active_tab = RwSignal::new(None::<usize>);
+/// let tab_action = RwSignal::new(Action::None);
+/// create_effect(move |_| match tab_action.get() {
+///     Action::Add => {
+///         tabs.update(|tabs| tabs.push(TabContent::new(tabs.len())));
+///     }
+///     Action::Remove => {
+///         tabs.update(|tabs| { tabs.pop(); });
+///     }
+///     Action::None => ()
+/// });///
+/// let tabs_view = stack((dyn_stack(
+///     move || tabs.get(),
+///     |tab| tab.idx,
+///     move |tab| {
+///         text(format!("{} {}", tab.name, tab.idx)).button().style(move |s| s
+///             .width_full()
+///             .height(36.px())
+///             .apply_if(active_tab.get().is_some_and(|a| a == tab.idx), |s| {
+///                 s.with_theme(|s, t| s.border_color(t.primary()))
+///             })
+///         )
+///         .on_click_stop(move |_| {
+///             active_tab.update(|a| {
+///                 *a = Some(tab.idx);
+///             });
+///         })
+///     },
+/// )
+/// .style(|s| s.flex_col().width_full().row_gap(5.))
+/// .scroll()
+/// .on_click_stop(move |_| {
+///     if active_tab.with_untracked(|act| act.is_some()) {
+///         active_tab.set(None)
+///     }
+/// })
+/// .style(|s| s.size_full().padding(5.).padding_right(7.))
+/// .scroll_style(|s| s.handle_thickness(6.).shrink_to_fit()),))
+/// .style(|s| s
+///     .width(140.)
+///     .min_width(140.)
+///     .height_full()
+///     .border_right(1.)
+///     .with_theme(|s, t| s.border_color(t.border_muted()))
+/// );
+/// let tabs_content_view = stack((
+///     tab(
+///         move || active_tab.get(),
+///         move || tabs.get(),
+///         |tab| tab.idx,
+///         move |tab| {
+///          v_stack((
+///             label(move || format!("{}", tab.name)).style(|s| s
+///                 .font_size(15.)
+///                 .font_bold()),
+///             label(move || format!("{}", tab.idx)).style(|s| s
+///                 .font_size(20.)
+///                 .font_bold()),
+///             label(move || "is now active").style(|s| s
+///                 .font_size(13.)),
+///         )).style(|s| s
+///             .size(150.px(), 150.px())
+///             .items_center()
+///             .justify_center()
+///             .row_gap(10.))
+///         },
+///     ).style(|s| s.size_full()),
+/// ))
+/// .style(|s| s.size_full());
+/// ```
 pub fn tab<IF, I, T, KF, K, VF, V>(
-    active_fn: impl Fn() -> usize + 'static,
+    active_fn: impl Fn() -> Option<usize> + 'static,
     each_fn: IF,
     key_fn: KF,
     view_fn: VF,
@@ -79,14 +224,17 @@ where
 
     create_effect(move |_| {
         let active = active_fn();
-        id.update_state(TabState::Active::<T>(active));
+        match active {
+            Some(idx) => id.update_state(TabState::Active::<T>(idx)),
+            None => id.update_state(TabState::None::<T>),
+        }
     });
 
     let view_fn = Box::new(as_child_of_current_scope(move |e| view_fn(e).into_any()));
 
     Tab {
         id,
-        active: 0,
+        active: None,
         children: Vec::new(),
         view_fn,
         phatom: PhantomData,
@@ -99,7 +247,7 @@ impl<T> View for Tab<T> {
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {
-        format!("Tab: {}", self.active).into()
+        format!("Tab: {:?}", self.active).into()
     }
 
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn std::any::Any>) {
@@ -115,8 +263,11 @@ impl<T> View for Tab<T> {
                     );
                 }
                 TabState::Active(active) => {
-                    self.active = active;
+                    self.active.replace(active);
                     self.id.request_style_recursive();
+                }
+                TabState::None => {
+                    self.active.take();
                 }
             }
             self.id.request_all();
@@ -128,24 +279,27 @@ impl<T> View for Tab<T> {
 
     fn style_pass(&mut self, cx: &mut StyleCx<'_>) {
         for (i, child) in self.id.children().into_iter().enumerate() {
-            if i == self.active {
-                cx.style_view(child);
-            } else {
-                cx.save();
-                cx.hidden();
-                cx.style_view(child);
-                cx.restore();
+            match self.active {
+                Some(act_idx) if act_idx == i => cx.style_view(child),
+                _ => {
+                    cx.save();
+                    cx.hidden();
+                    cx.style_view(child);
+                    cx.restore();
+                }
             }
         }
     }
 
     fn paint(&mut self, cx: &mut crate::context::PaintCx) {
-        if let Some(Some((active, _))) = self
-            .children
-            .get(self.active)
-            .or_else(|| self.children.first())
-        {
-            cx.paint_view(*active);
+        if let Some(active_tab) = self.active {
+            if let Some(Some((active, _))) = self
+                .children
+                .get(active_tab)
+                .or_else(|| self.children.first())
+            {
+                cx.paint_view(*active);
+            }
         }
     }
 }

@@ -15,9 +15,10 @@ pub mod lists;
 pub mod radio_buttons;
 pub mod rich_text;
 pub mod slider;
+pub mod tabs;
 
 use floem::{
-    action::{add_overlay, set_window_menu},
+    action::{add_overlay, set_window_menu, toggle_theme},
     event::{Event, EventListener},
     keyboard::{Key, Modifiers, NamedKey},
     kurbo::Size,
@@ -40,6 +41,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         "Canvas",
         "Stacks",
         "Lists",
+        "Tabs",
         "Menu",
         "RichText",
         "Image",
@@ -63,6 +65,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             #[cfg(feature = "full")]
             "Stacks" => stacks::stacks_view().into_any(),
             "Lists" => lists::list_view().into_any(),
+            "Tabs" => tabs::tab_view().into_any(),
             "Menu" => context_menu::menu_view().into_any(),
             "RichText" => rich_text::rich_text_view().into_any(),
             "Image" => images::img_view().into_any(),
@@ -155,7 +158,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         .style(|s| s.height_full().row_gap(5.0));
 
     let tab = tab(
-        move || active_tab.get(),
+        move || Some(active_tab.get()),
         move || tabs.get(),
         |it| *it,
         create_view,
@@ -197,21 +200,23 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             .item("Text Input", |i| i.action(move || set_active_tab.set(4)))
             .separator()
             .item("Canvas", |i| i.action(move || set_active_tab.set(5)))
-            .item("Lists", |i| i.action(move || set_active_tab.set(6)))
-            .item("Context Menu", |i| i.action(move || set_active_tab.set(7)))
-            .item("Rich Text", |i| i.action(move || set_active_tab.set(8)))
+            .item("Stacks", |i| i.action(move || set_active_tab.set(6)))
+            .item("Lists", |i| i.action(move || set_active_tab.set(7)))
+            .item("Tabs", |i| i.action(move || set_active_tab.set(8)))
+            .item("Context Menu", |i| i.action(move || set_active_tab.set(9)))
+            .item("Rich Text", |i| i.action(move || set_active_tab.set(10)))
             .separator()
-            .item("Images", |i| i.action(move || set_active_tab.set(9)))
-            .item("Clipboard", |i| i.action(move || set_active_tab.set(10)))
-            .item("Slider", |i| i.action(move || set_active_tab.set(11)))
-            .item("Dropdown", |i| i.action(move || set_active_tab.set(12)))
+            .item("Images", |i| i.action(move || set_active_tab.set(11)))
+            .item("Clipboard", |i| i.action(move || set_active_tab.set(12)))
+            .item("Slider", |i| i.action(move || set_active_tab.set(13)))
+            .item("Dropdown", |i| i.action(move || set_active_tab.set(14)))
             .separator()
-            .item("Animation", |i| i.action(move || set_active_tab.set(13)))
-            .item("Draggable", |i| i.action(move || set_active_tab.set(14)))
+            .item("Animation", |i| i.action(move || set_active_tab.set(15)))
+            .item("Draggable", |i| i.action(move || set_active_tab.set(16)))
             .item("Dropped Files", |i| {
-                i.action(move || set_active_tab.set(15))
+                i.action(move || set_active_tab.set(17))
             })
-            .item("File Browser", |i| i.action(move || set_active_tab.set(16)))
+            .item("File Browser", |i| i.action(move || set_active_tab.set(18)))
     };
 
     let view_submenu = |m: SubMenu| {
@@ -313,8 +318,14 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             .size(50, 50)
             .absolute()
             .inset_bottom(20.)
-            .inset_right(10.)
+            .inset_right(15.)
     }));
+
+    add_overlay(
+        button("toggle theme")
+            .action(|| toggle_theme())
+            .style(|s| s.absolute().inset_top(10.).inset_right(22.)),
+    );
 
     view.on_event_stop(EventListener::KeyUp, move |e| {
         if let Event::KeyUp(e) = e {
