@@ -10,7 +10,7 @@ use std::sync::atomic::AtomicU64;
 
 use floem_reactive::SignalWith;
 use peniko::kurbo::{Point, Size, Vec2};
-use winit::window::ResizeDirection;
+use winit::window::{ResizeDirection, Theme};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
@@ -25,6 +25,7 @@ use crate::{
     view::View,
     views::Decorators,
     window_handle::{get_current_view, set_current_view},
+    window_tracking::with_window,
 };
 
 #[cfg(any(feature = "rfd-async-std", feature = "rfd-tokio"))]
@@ -38,46 +39,57 @@ pub(crate) fn add_update_message(msg: UpdateMessage) {
     });
 }
 
-/// Toggle whether the window is maximized or not
+/// Toggle whether the window is maximized or not.
 pub fn toggle_window_maximized() {
     add_update_message(UpdateMessage::ToggleWindowMaximized);
 }
 
-/// Set the maximized state of the window
+/// Set the maximized state of the window.
 pub fn set_window_maximized(maximized: bool) {
     add_update_message(UpdateMessage::SetWindowMaximized(maximized));
 }
 
-/// Minimize the window
+/// Minimize the window.
 pub fn minimize_window() {
     add_update_message(UpdateMessage::MinimizeWindow);
 }
 
-/// If and while the mouse is pressed, allow the window to be dragged
+/// If and while the mouse is pressed, allow the window to be dragged.
 pub fn drag_window() {
     add_update_message(UpdateMessage::DragWindow);
 }
 
-/// If and while the mouse is pressed, allow the window to be resized
+/// If and while the mouse is pressed, allow the window to be resized.
 pub fn drag_resize_window(direction: ResizeDirection) {
     add_update_message(UpdateMessage::DragResizeWindow(direction));
 }
 
-/// Move the window by a specified delta
+/// Move the window by a specified delta.
 pub fn set_window_delta(delta: Vec2) {
     add_update_message(UpdateMessage::SetWindowDelta(delta));
 }
 
-/// Set the window scale
+/// Set the window scale.
 ///
-/// This will scale all view elements in the renderer
+/// This will scale all view elements in the renderer.
 pub fn set_window_scale(window_scale: f64) {
     add_update_message(UpdateMessage::WindowScale(window_scale));
 }
 
-/// Send a message to the application to open the Inspector for this Window
+/// Send a message to the application to open the Inspector for this Window.
 pub fn inspect() {
     add_update_message(UpdateMessage::Inspect);
+}
+
+/// Toggle global theme (toggles both floem and window themes).
+pub fn toggle_theme() {
+    add_update_message(UpdateMessage::ToggleTheme);
+}
+
+/// Get current window theme.
+pub fn current_theme() -> Option<Theme> {
+    let win_id = get_current_view().window_id()?;
+    with_window(&win_id, |w| w.theme())?
 }
 
 pub(crate) struct Timer {
@@ -86,7 +98,7 @@ pub(crate) struct Timer {
     pub(crate) deadline: Instant,
 }
 
-/// A token associated with a timer
+/// A token associated with a timer.
 // TODO: what is this for?
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Hash)]
 pub struct TimerToken(u64);
@@ -111,13 +123,13 @@ impl TimerToken {
         self.0
     }
 
-    /// Cancel a timer
+    /// Cancel a timer.
     pub fn cancel(self) {
         add_app_update_event(AppUpdateEvent::CancelTimer { timer: self });
     }
 }
 
-/// Execute a callback after a specified duration
+/// Execute a callback after a specified duration.
 pub fn exec_after(duration: Duration, action: impl FnOnce(TimerToken) + 'static) -> TimerToken {
     let view = get_current_view();
     let action = move |token| {
@@ -139,9 +151,10 @@ pub fn exec_after(duration: Duration, action: impl FnOnce(TimerToken) + 'static)
     token
 }
 
-/// Debounce an action
+/// Debounce an action.
 ///
-/// This tracks a signal and checks if the inner value has changed by checking it's hash and will run the action only once an **uninterrupted** duration has passed
+/// This tracks a signal and checks if the inner value has changed by checking it's hash and will
+/// run the action only once an **uninterrupted** duration has passed.
 pub fn debounce_action<T, F>(signal: impl SignalWith<T> + 'static, duration: Duration, action: F)
 where
     T: std::hash::Hash + 'static,
@@ -176,7 +189,7 @@ where
     );
 }
 
-/// Show a system context menu at the specified position
+/// Show a system context menu at the specified position.
 ///
 /// Platform support:
 /// - Windows: Yes
@@ -186,7 +199,7 @@ pub fn show_context_menu(menu: Menu, pos: Option<Point>) {
     add_update_message(UpdateMessage::ShowContextMenu { menu, pos });
 }
 
-/// Set the system window menu
+/// Set the system window menu.
 ///
 /// Platform support:
 /// - Windows: Yes
@@ -196,27 +209,27 @@ pub fn set_window_menu(menu: Menu) {
     add_update_message(UpdateMessage::WindowMenu { menu });
 }
 
-/// Set the title of the window
+/// Set the title of the window.
 pub fn set_window_title(title: String) {
     add_update_message(UpdateMessage::SetWindowTitle { title });
 }
 
-/// Focus the window
+/// Focus the window.
 pub fn focus_window() {
     add_update_message(UpdateMessage::FocusWindow);
 }
 
-/// Clear the app focus
+/// Clear the app focus.
 pub fn clear_app_focus() {
     add_update_message(UpdateMessage::ClearAppFocus);
 }
 
-/// Set whether ime input is shown
+/// Set whether ime input is shown.
 pub fn set_ime_allowed(allowed: bool) {
     add_update_message(UpdateMessage::SetImeAllowed { allowed });
 }
 
-/// Set the ime cursor area
+/// Set the ime cursor area.
 pub fn set_ime_cursor_area(position: Point, size: Size) {
     add_update_message(UpdateMessage::SetImeCursorArea { position, size });
 }

@@ -46,7 +46,7 @@ pub fn capture(window_id: WindowId) {
                     .style(|s| s.with_theme(|s, t| s.background(t.bg_base())));
 
                 let tab = tab(
-                    move || selected.get(),
+                    move || Some(selected.get()),
                     move || [0, 1].into_iter(),
                     |it| *it,
                     move |it| match it {
@@ -328,7 +328,7 @@ fn capture_view(
     let capture_sig = RwSignal::new(capture.clone());
 
     let tab = tab(
-        move || active_tab.get(),
+        move || Some(active_tab.get()),
         move || [0, 1].into_iter(),
         |it| *it,
         move |it| {
