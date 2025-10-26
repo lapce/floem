@@ -88,7 +88,7 @@ pub fn toggle_theme() {
 
 /// Get current window theme.
 pub fn current_theme() -> Option<Theme> {
-    let win_id = get_current_view().window_id().unwrap();
+    let win_id = get_current_view().window_id()?;
     with_window(&win_id, |w| w.theme())?
 }
 
