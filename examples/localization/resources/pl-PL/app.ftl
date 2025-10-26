@@ -1,0 +1,2 @@
+increment = dodaj
+decrement = odejmij
