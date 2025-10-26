@@ -44,7 +44,7 @@ pub fn tab_view() -> impl IntoView {
         Action::None => (),
     });
 
-    let tabs_view = stack((dyn_stack(
+    let tabs_view = dyn_stack(
         move || tabs.get(),
         |tab| tab.idx,
         move |tab| {
@@ -63,7 +63,7 @@ pub fn tab_view() -> impl IntoView {
         }
     })
     .style(|s| s.size_full().padding(5.).padding_right(7.))
-    .scroll_style(|s| s.handle_thickness(6.).shrink_to_fit()),))
+    .scroll_style(|s| s.handle_thickness(6.).shrink_to_fit())
     .style(|s| {
         s.width(140.)
             .min_width(140.)
