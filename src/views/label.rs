@@ -93,7 +93,7 @@ impl Label {
         .class(LabelClass)
     }
 
-    fn effectve_text_layout(&self) -> &TextLayout {
+    fn effective_text_layout(&self) -> &TextLayout {
         self.available_text_layout
             .as_ref()
             .unwrap_or_else(|| self.text_layout.as_ref().unwrap())
@@ -196,7 +196,7 @@ impl Label {
             .borrow()
             .layout(text_node)
             .map_or(taffy::Layout::new().location, |layout| layout.location);
-        self.effectve_text_layout().hit(
+        self.effective_text_layout().hit(
             point.x as f32 - location.x,
             // TODO: prevent cursor incorrectly going to end of buffer when clicking
             // slightly below the text
@@ -514,7 +514,7 @@ impl View for Label {
 
         let point = Point::new(location.x as f64, location.y as f64);
 
-        let text_layout = self.effectve_text_layout();
+        let text_layout = self.effective_text_layout();
         cx.draw_text(text_layout, point);
         if cx.app_state.is_focused(&self.id()) {
             self.paint_selection(text_layout, cx);
