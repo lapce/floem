@@ -349,14 +349,11 @@ fn capture_view(
             }
             .style(|s| s.width_full())
             .scroll()
-            .scroll_style(|s| s
-                .handle_thickness(6.)
-                .shrink_to_fit()
-            )
-            .style(|s| s
-                .set(OverflowX, taffy::Overflow::Visible)
-                .set(OverflowY, taffy::Overflow::Scroll)
-            )
+            .scroll_style(|s| s.handle_thickness(6.).shrink_to_fit())
+            .style(|s| {
+                s.set(OverflowX, taffy::Overflow::Visible)
+                    .set(OverflowY, taffy::Overflow::Scroll)
+            })
         },
     )
     .style(|s| s.size_full().min_size(0, 0));

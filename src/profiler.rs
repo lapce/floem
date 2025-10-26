@@ -9,10 +9,10 @@ use crate::views::{
     scroll, stack, static_label, text, v_stack, v_stack_from_iter,
 };
 use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate, create_rw_signal};
-use taffy::AlignItems;
 use std::fmt::Display;
 use std::mem;
 use std::rc::Rc;
+use taffy::AlignItems;
 use taffy::style::FlexDirection;
 use winit::window::WindowId;
 
@@ -59,18 +59,18 @@ fn info(name: impl Display, value: String) -> impl IntoView {
 fn info_row(name: String, view: impl IntoView + 'static) -> impl IntoView {
     stack((
         static_label(name)
-            .style(|s| s
-                .margin_right(5.0)
-                .with_theme(|s, t| s.color(t.text_muted()))
-            )
+            .style(|s| {
+                s.margin_right(5.0)
+                    .with_theme(|s, t| s.color(t.text_muted()))
+            })
             .container()
             .style(|s| s.min_width(80.0).flex_direction(FlexDirection::RowReverse)),
         view,
     ))
-    .style(|s| s
-        .padding(5.0)
-        .with_theme(|s, t| s.hover(|s| s.background(t.bg_elevated())))
-    )
+    .style(|s| {
+        s.padding(5.0)
+            .with_theme(|s, t| s.hover(|s| s.background(t.bg_elevated())))
+    })
 }
 
 fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
@@ -122,14 +122,14 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                     .get()
                     .map(|selected| Rc::ptr_eq(&selected, &frame_))
                     .unwrap_or(false);
-                s.with_theme(move |s, t| s
-                    .hover(|s| s.background(t.bg_elevated()))
-                    .apply_if(selected, |s| s
-                        .background(t.primary_muted())
-                        .hover(|s| s.background(t.primary_muted()))
-                    )
-                )
-                    .padding(5.0)
+                s.with_theme(move |s, t| {
+                    s.hover(|s| s.background(t.bg_elevated()))
+                        .apply_if(selected, |s| {
+                            s.background(t.primary_muted())
+                                .hover(|s| s.background(t.primary_muted()))
+                        })
+                })
+                .padding(5.0)
             })
         })
         .collect();
@@ -147,7 +147,9 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                 v_stack((
                     info("Name", event.name.to_string()).style(|s| s.width_full()),
                     info("Time", format!("{:.4} ms", len * 1000.0)).style(|s| s.width_full()),
-                )).style(|s| s.width_full()).into_any()
+                ))
+                .style(|s| s.width_full())
+                .into_any()
             } else {
                 text("No hovered event")
                     .style(|s| s.padding(5.0).width_full())
@@ -159,25 +161,30 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
 
     let frames = v_stack((
         header("Frames"),
-        scroll(v_stack_from_iter(frames).style(|s| s.width_full())).style(|s| s
-            .flex_basis(0)
-            .min_height(0)
-            .flex_grow(1.0)
-            .with_theme(|s, t| s.background(t.bg_base()))
-        ).scroll_style(|s| s.handle_thickness(6.)),
-        header("Event").style(|s| s.with_theme(|s, t| s
-            .border_top(1)
-            .border_top_color(t.border()).color(t.primary())
-        )),
+        scroll(v_stack_from_iter(frames).style(|s| s.width_full()))
+            .style(|s| {
+                s.flex_basis(0)
+                    .min_height(0)
+                    .flex_grow(1.0)
+                    .with_theme(|s, t| s.background(t.bg_base()))
+            })
+            .scroll_style(|s| s.handle_thickness(6.)),
+        header("Event").style(|s| {
+            s.with_theme(|s, t| {
+                s.border_top(1)
+                    .border_top_color(t.border())
+                    .color(t.primary())
+            })
+        }),
         event_tooltip,
     ))
     .style(|s| s.width(230.0));
 
-    let separator = empty().style(move |s| s
-        .height_full()
-        .min_width(1.0)
-        .with_theme(|s, t| s.background(t.border()))
-    );
+    let separator = empty().style(move |s| {
+        s.height_full()
+            .min_width(1.0)
+            .with_theme(|s, t| s.background(t.border()))
+    });
 
     let timeline = dyn_container(
         move || selected_frame.get(),
@@ -191,43 +198,47 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                     let left = event
                         .start
                         .saturating_duration_since(frame.start.unwrap())
-                        .as_secs_f64() / frame.duration.as_secs_f64();
+                        .as_secs_f64()
+                        / frame.duration.as_secs_f64();
                     let width = len / frame.duration.as_secs_f64();
                     let event_ = event.clone();
                     clip(
-                        static_label(format!("{} ({:.4} ms)", event.name, len * 1000.0)).style(|s| s
-                            .selectable(false)
-                            .padding(5.0)
-                            .align_self(AlignItems::Center)
-                        )
+                        static_label(format!("{} ({:.4} ms)", event.name, len * 1000.0)).style(
+                            |s| {
+                                s.selectable(false)
+                                    .padding(5.0)
+                                    .align_self(AlignItems::Center)
+                            },
+                        ),
                     )
-                    .style(move |s| s
-                        .min_width(0)
-                        .min_height(50.px())
-                        .width_pct(width * 100.0)
-                        .absolute()
-                        .inset_left_pct(left * 100.0)
-                        .border(0.5)
-                        .border_radius(2.)
-                        .text_clip()
-                        .with_theme(|s, t| s
-                            .border_color(t.border())
-                            .background(t.primary_muted())
-                            .hover(|s| s.background(t.primary().with_alpha(0.5)))
-                        )
-                    )
+                    .style(move |s| {
+                        s.min_width(0)
+                            .min_height(50.px())
+                            .width_pct(width * 100.0)
+                            .absolute()
+                            .inset_left_pct(left * 100.0)
+                            .border(0.5)
+                            .border_radius(2.)
+                            .text_clip()
+                            .with_theme(|s, t| {
+                                s.border_color(t.border())
+                                    .background(t.primary_muted())
+                                    .hover(|s| s.background(t.primary().with_alpha(0.5)))
+                            })
+                    })
                     .on_event_cont(EventListener::PointerEnter, move |_| {
                         hovered_event.set(Some(event_.clone()))
                     })
                 });
                 scroll(
-                    v_stack_from_iter(list).style(move |s| s.min_width_pct(zoom.get() * 100.0).height_full())
+                    v_stack_from_iter(list)
+                        .style(move |s| s.min_width_pct(zoom.get() * 100.0).height_full()),
                 )
-                .scroll_style(|s| s
-                    .handle_thickness(6.)
-                    .vertical_track_inset(5.)
-                    .show_bars_when_idle(false)
-                )
+                .scroll_style(|s| {
+                    s.handle_thickness(6.)
+                        .vertical_track_inset(5.)
+                        .show_bars_when_idle(false)
+                })
                 .style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0))
                 .on_event(EventListener::PointerWheel, move |e| {
                     if let Event::PointerWheel(e) = e {
