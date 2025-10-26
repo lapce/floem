@@ -93,12 +93,10 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                     s.flex_row()
                         .font_size(18.)
                         .height(36.0)
-                        .draggable(true)
                         .transition(Background, Transition::ease_in_out(100.millis()))
                         .active(|s| {
                             s.with_theme(|s, t| {
                                 s.background(t.primary())
-                                    // .color(t.text_muted())
                                     .hover(|s| s.background(t.primary_muted()))
                                     .border_radius(t.border_radius())
                             })
@@ -111,7 +109,6 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                             )
                         })
                 })
-                .dragging_style(|s| s.background(palette::css::GRAY.with_alpha(0.6)))
         })
         .list()
         .on_select(move |idx| {
