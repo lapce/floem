@@ -34,7 +34,7 @@ thread_local! {
     pub(crate) static APP_UPDATE_EVENTS: RefCell<Vec<AppUpdateEvent>> = Default::default();
 }
 
-#[derive(Debug)]
+// #[derive(Debug)]
 pub struct AppConfig {
     pub(crate) exit_on_close: bool,
     pub(crate) wgpu_features: wgpu::Features,
@@ -60,6 +60,18 @@ impl AppConfig {
     #[inline]
     pub fn wgpu_features(mut self, features: wgpu::Features) -> Self {
         self.wgpu_features = features;
+        self
+    }
+    
+    #[cfg(feature = "fluent")]
+    pub fn with_locales(self, locales: &[&str]) -> Self {
+        crate::fluent::add_localizations(locales);
+        self
+    }
+
+    #[cfg(feature = "fluent")]
+    pub fn default_locale(self, locale: &str) -> Self {
+        crate::fluent::set_default_language(locale);
         self
     }
 }
