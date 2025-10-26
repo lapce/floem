@@ -77,7 +77,9 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             _ => label(|| "Not implemented".to_owned()).into_any(),
         }
         .debug_name(it.to_string())
-    };
+    }.style(|s| s
+        .scale(150.pct())
+    );
 
     let tabs = RwSignal::new(tabs);
 

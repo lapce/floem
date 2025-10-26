@@ -1064,7 +1064,7 @@ impl TextInput {
             .get_selection_rect(&node_layout, padding_left + 1.)
             .to_rounded_rect(border_radius);
         cx.save();
-        cx.clip(&self.id.get_content_rect());
+        cx.clip(&self.id.get_content_rect().inflate(1., 0.));
         cx.fill(&selection_rect, &cursor_color, 0.0);
         cx.restore();
     }
