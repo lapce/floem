@@ -1,248 +1,230 @@
-use std::collections::hash_map::Entry;
+use std::borrow::Cow;
 use std::rc::Rc;
-use std::{cell::RefCell, collections::HashMap};
 
-use crate::ViewId;
-use crate::prelude::*;
-use floem_reactive::{Scope, Trigger, create_updater};
+use crate::style::StylePropValue;
+use crate::view_state::{Stack, StackOffset};
+use crate::views::static_label;
+use crate::{IntoView, View, ViewId, prop, prop_extractor};
+use floem_reactive::create_updater;
 use fluent_bundle::{FluentBundle, FluentResource};
 
 pub use fluent_bundle::FluentArgs;
 pub use fluent_bundle::types::FluentValue;
-
-thread_local! {
-    static LOCALE: Rc<Localization> = Rc::new(Localization::default());
-}
-
-pub struct Localization {
-    locales: RefCell<HashMap<String, FluentBundle<FluentResource>>>,
-    args: RefCell<HashMap<String, FluentArgs<'static>>>,
-    os_locale: RefCell<Option<String>>,
-    current: RefCell<String>,
-    refresh: Trigger,
-}
-
-impl Default for Localization {
-    fn default() -> Self {
-        Self {
-            locales: Default::default(),
-            os_locale: Default::default(),
-            current: Default::default(),
-            refresh: {
-                let cx = Scope::new();
-                cx.create_trigger()
-            },
-            args: Default::default(),
-        }
-    }
-}
-
-pub fn add_localizations(locales: &[(&str, &str)]) {
-    LOCALE.with(|locale| {
-        let mut lock = locale.locales.borrow_mut();
-        *lock = locales
-            .iter()
-            .map(|(ident, lan)| {
-                let language = {
-                    let lid = ident.parse().unwrap();
-                    let mut bundle = FluentBundle::new(vec![lid]);
-                    let resource = FluentResource::try_new(lan.to_string())
-                        .expect("Could not parse an FTL string.");
-                    bundle
-                        .add_resource(resource)
-                        .expect("Failed to add FTL resources to the bundle.");
-                    bundle
-                };
-                (ident.to_string(), language)
-            })
-            .collect();
-        *locale.os_locale.borrow_mut() = crate::fluent::get_os_language();
-    });
-}
-
-pub fn set_default_language(default: &str) {
-    LOCALE.with(|locale| {
-        *locale.current.borrow_mut() = default.to_string();
-    });
-}
-
-pub fn set_language(new: &str) {
-    let trigger = LOCALE.with(|locale| {
-        *locale.current.borrow_mut() = new.to_string();
-        locale.refresh
-    });
-    trigger.notify();
-}
+use smallvec::smallvec;
+pub use unic_langid::LanguageIdentifier;
 
 fn get_os_language() -> Option<String> {
     // TODO: use external crate for it?
     None
 }
 
-fn get_refresh_trigger() -> Trigger {
-    LOCALE.with(|l| l.refresh)
+#[derive(Clone)]
+pub struct LanguageMap(pub im_rc::HashMap<LanguageIdentifier, Rc<FluentBundle<FluentResource>>>);
+impl std::ops::Deref for LanguageMap {
+    type Target = im_rc::HashMap<LanguageIdentifier, Rc<FluentBundle<FluentResource>>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl std::ops::DerefMut for LanguageMap {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+impl std::fmt::Debug for LanguageMap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_map()
+            .entries(self.0.keys().map(|lang_id| (lang_id, "<FluentBundle>")))
+            .finish()
+    }
+}
+impl PartialEq for LanguageMap {
+    fn eq(&self, other: &Self) -> bool {
+        if self.0.len() != other.0.len() {
+            return false;
+        }
+
+        self.0.keys().all(|key| {
+            other.0.contains_key(key)
+                && Rc::ptr_eq(self.0.get(key).unwrap(), other.0.get(key).unwrap())
+        })
+    }
+}
+impl StylePropValue for LanguageMap {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        None
+    }
+}
+impl StylePropValue for LanguageIdentifier {
+    fn debug_view(&self) -> Option<Box<dyn View>> {
+        Some(crate::views::text(format!("{self:?}")).into_any())
+    }
+
+    fn interpolate(&self, _other: &Self, _value: f64) -> Option<Self> {
+        None
+    }
+
+    fn combine(&self, _other: &Self) -> crate::style::CombineResult<Self> {
+        crate::style::CombineResult::Other
+    }
+}
+impl LanguageMap {
+    pub fn from_resources<'a, I>(resources: I) -> Result<Self, Box<dyn std::error::Error>>
+    where
+        I: IntoIterator<Item = (&'a str, &'a str)>,
+    {
+        let mut map = im_rc::HashMap::new();
+
+        for (lang_id, resource_str) in resources {
+            let lang_id = lang_id.parse::<LanguageIdentifier>()?;
+            let resource = FluentResource::try_new(resource_str.to_string())
+                .map_err(|(_, errs)| format!("Failed to parse Fluent resource: {:?}", errs))?;
+
+            let mut bundle = FluentBundle::new(vec![lang_id.clone()]);
+            bundle
+                .add_resource(resource)
+                .map_err(|errs| format!("Failed to add resource to bundle: {:?}", errs))?;
+
+            map.insert(lang_id, Rc::new(bundle));
+        }
+
+        Ok(Self(map))
+    }
 }
 
-fn update_arg(main_key: &str, arg_key: &str, value: impl Into<FluentValue<'static>>) -> String {
-    println!("update_arg for: {main_key}");
-    LOCALE.with(|loc| {
-        let mut locales = loc.locales.borrow_mut();
-        let bundle = locales.get_mut(&*loc.current.borrow()).unwrap();
+prop!(pub L10nLanguage: Option<LanguageIdentifier> { inherited } = None);
+prop!(pub L10nFallback: Option<String> {} = None);
+prop!(pub L10nBundle: LanguageMap { inherited } = LanguageMap(im_rc::HashMap::new()));
 
-        let msg = bundle.get_message(main_key).unwrap().value().unwrap();
-
-        let mut args_mut = loc.args.borrow_mut();
-        match args_mut.entry(main_key.to_string()) {
-            Entry::Occupied(mut a) => {
-                let a = a.get_mut();
-                a.set(arg_key.to_string(), value);
-            }
-            Entry::Vacant(vacant) => {
-                let mut args = FluentArgs::new();
-                args.set(arg_key.to_string(), value);
-                vacant.insert(args);
-            }
-        };
-        let args = args_mut.get(main_key);
-
-        let mut errors = vec![];
-        let final_msg = bundle.format_pattern(msg, args, &mut errors);
-        if !errors.is_empty() {
-            eprintln!("errors: {errors:#?}");
-        }
-        final_msg.to_string()
-    })
+prop_extractor! {
+    LanguageExtractor {
+        language: L10nLanguage,
+        bundle: L10nBundle,
+    }
 }
-
-fn get_locale_from_key(key: &str) -> String {
-    LOCALE.with(|loc| {
-        let locales = loc.locales.borrow();
-        let bundle = locales.get(&*loc.current.borrow()).unwrap();
-        let msg = bundle.get_message(key).unwrap().value().unwrap();
-        let args = loc.args.borrow();
-        let args = args.get(key);
-
-        let mut errors = vec![];
-        let s = bundle.format_pattern(msg, args, &mut errors);
-        if !errors.is_empty() {
-            eprintln!("errors: {errors:#?}");
-        }
-        s.to_string()
-    })
+prop_extractor! {
+    FallBackExtractor {
+        fallback: L10nFallback,
+    }
 }
 
 pub struct L10n {
     id: ViewId,
     key: String,
-    label: RwSignal<String>,
-    has_args: RwSignal<bool>,
+    args: FluentArgs<'static>,                  // SAFETY: Drop first
+    arg_keys: crate::view_state::Stack<String>, // SAFETY: Drop second
+    label_id: ViewId,
+    language: LanguageExtractor,
+    fallback: FallBackExtractor,
 }
 
-impl crate::View for L10n {
-    fn id(&self) -> ViewId {
-        self.id
-    }
-}
+impl L10n {
+    pub fn new(key: impl Into<String>) -> Self {
+        // using static label because we will manually send the state updates through the ViewId.
+        let key: String = key.into();
+        let label = static_label(key.clone());
+        let label_id = label.id();
+        let id = ViewId::new();
 
-pub fn l10n(label_key: &str) -> L10n {
-    let id = ViewId::new();
-    let key = label_key.to_string();
-    let trigger = get_refresh_trigger();
-
-    let l10n = L10n {
-        id,
-        key: key.clone(),
-        label: RwSignal::new(String::new()),
-        has_args: RwSignal::new(false),
-    };
-
-    let label = label(move || match l10n.has_args.get() {
-        true => l10n.label.get(),
-        false => {
-            trigger.track();
-            get_locale_from_key(&key)
+        id.add_child(label.into_any());
+        Self {
+            id,
+            label_id,
+            key,
+            args: FluentArgs::new(),
+            arg_keys: Stack { stack: smallvec![] },
+            language: Default::default(),
+            fallback: Default::default(),
         }
-    });
+    }
 
-    id.add_child(Box::new(label));
-    l10n
-}
-
-pub trait LocalizeWithArgs {
-    fn with_arg(
-        self,
-        arg: impl Into<String>,
-        val: impl Fn() -> FluentValue<'static> + 'static,
-    ) -> Self;
-}
-
-impl LocalizeWithArgs for L10n {
-    fn with_arg(
-        self,
-        arg: impl Into<String>,
-        val: impl Fn() -> FluentValue<'static> + 'static,
+    pub fn arg<FV: Into<FluentValue<'static>>>(
+        mut self,
+        arg_key: impl Into<String>,
+        arg_val: impl Fn() -> FV + 'static,
     ) -> Self {
-        let trigger = get_refresh_trigger();
-        let k1 = self.key.clone();
-        let k2 = arg.into();
-        self.has_args.set(true);
+        let id = self.id;
+        let arg_key = arg_key.into();
+        let offset = self.arg_keys.next_offset();
+        self.arg_keys.push(arg_key);
 
-        let initial_label = create_updater(
-            move || {
-                println!("updater: l10n from: `{k1}` `{k2}`");
-                trigger.track();
-                update_arg(&k1, &k2, val())
-            },
-            move |v| {
-                self.label.set(v);
+        let arg_key_ref = self.arg_keys.get(offset);
+        let arg_key_ptr: *const str = arg_key_ref.as_ref();
+
+        // SAFETY: args is dropped before arg_keys due to field declaration order,
+        // so this pointer remains valid for the lifetime of args
+        let static_ref: &'static str = unsafe { &*arg_key_ptr };
+
+        let initial_val = create_updater(
+            move || arg_val().into(),
+            move |arg_val: FluentValue<'static>| {
+                id.update_state((offset, arg_val));
             },
         );
-        self.label.set(initial_label);
+
+        self.args.set(Cow::Borrowed(static_ref), initial_val);
         self
     }
 }
 
-// fn l10nold(label_key: &str, args: Option<Vec<(&str, Box<dyn Fn() -> FluentValue<'static>>)>>) -> L10nold {
-//     let id = ViewId::new();
-//     let key2 = label_key.to_string();
-//     let key3 = label_key.to_string();
-//     let trigger = floem::fluent::get_refresh_trigger();
+pub fn l10n(label_key: impl Into<String>) -> L10n {
+    L10n::new(label_key)
+}
 
-//     let l10n = L10nold {
-//         id,
-//         key: label_key.to_string(),
-//         updater: RwSignal::new(String::new())
-//     };
+impl View for L10n {
+    fn id(&self) -> ViewId {
+        self.id
+    }
 
-//     let label = match args {
-//         Some(args) => {
-//             for (arg_key, value) in args {
-//                 let k1 = label_key.to_string();
-//                 let k2 = arg_key.to_string();
-//                 let initial_label = create_updater(
-//                     move || {
-//                         println!("updater: l10n from: `{k1}` `{k2}`");
-//                         trigger.track();
-//                         update_arg(&k1, &k2, value())
-//                     },
-//                     move |v| {
-//                         l10n.updater.set(v);
-//                     }
-//                 );
-//                 l10n.updater.set(initial_label);
-//             }
+    fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
+        for child in self.id().children() {
+            cx.style_view(child);
+        }
+        if self.language.read(cx) {
+            let bundle = self.language.bundle();
+            if let Some(language) = self.language.language() {
+                if let Some(resource) = bundle.0.get(&language) {
+                    if let Some(message) = resource.get_message(&self.key) {
+                        if let Some(pattern) = message.value() {
+                            let errors = &mut vec![];
+                            let value = resource.format_pattern(pattern, Some(&self.args), errors);
+                            self.label_id.update_state(value.to_string());
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+        if self.fallback.read(cx) {
+            self.label_id.update_state(self.fallback.fallback());
+        }
+    }
 
-//             label(move || {
-//                 l10n.updater.get()
-//             })
-//         },
-//         None => {
-//             label(move || {
-//                 trigger.track();
-//                 get_locale_from_key(&key3)
-//             })
-//         }
-//     };
-//     id.add_child(Box::new(label));
-//     l10n
-// }
+    fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
+        if let Ok(inner) = state.downcast::<(StackOffset<String>, FluentValue<'static>)>() {
+            let (offset, arg_val) = *inner;
+            let arg_key_ref = self.arg_keys.get(offset);
+            let arg_key_ptr: *const str = arg_key_ref.as_ref();
+            // SAFETY: args is dropped before arg_keys due to field declaration order,
+            // so this pointer remains valid for the lifetime of args
+            let static_ref: &'static str = unsafe { &*arg_key_ptr };
+            self.args.set(Cow::Borrowed(static_ref), arg_val);
+
+            let bundle = self.language.bundle();
+            if let Some(language) = self.language.language() {
+                if let Some(resource) = bundle.0.get(&language) {
+                    if let Some(message) = resource.get_message(&self.key) {
+                        if let Some(pattern) = message.value() {
+                            let errors = &mut vec![];
+                            let value = resource.format_pattern(pattern, Some(&self.args), errors);
+                            self.label_id.update_state(value.to_string());
+                            return;
+                        }
+                    }
+                }
+            }
+            self.label_id.update_state(self.fallback.fallback());
+        }
+    }
+}

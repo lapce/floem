@@ -571,7 +571,7 @@ impl<T> VirtualStack<T> {
     }
 }
 
-impl<T: Clone> VirtualVector<T> for im::Vector<T> {
+impl<T: Clone> VirtualVector<T> for im_rc::Vector<T> {
     fn total_len(&self) -> usize {
         self.len()
     }

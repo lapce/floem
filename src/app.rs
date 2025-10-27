@@ -62,18 +62,6 @@ impl AppConfig {
         self.wgpu_features = features;
         self
     }
-
-    #[cfg(feature = "fluent")]
-    pub fn with_locales(self, locales: &[(&str, &str)]) -> Self {
-        crate::fluent::add_localizations(locales);
-        self
-    }
-
-    #[cfg(feature = "fluent")]
-    pub fn default_locale(self, locale: &str) -> Self {
-        crate::fluent::set_default_language(locale);
-        self
-    }
 }
 
 /// Initializes and runs an application with a single window.
