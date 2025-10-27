@@ -1,2 +1,0 @@
-increment = dodaj
-decrement = odejmij

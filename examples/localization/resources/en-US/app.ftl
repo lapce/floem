@@ -1,2 +1,0 @@
-increment = increment
-decrement = decrement

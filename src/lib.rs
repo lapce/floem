@@ -218,6 +218,8 @@ pub mod window;
 mod window_handle;
 mod window_id;
 mod window_tracking;
+#[cfg(feature = "fluent")]
+pub mod fluent;
 
 pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};
 pub use app_state::AppState;
