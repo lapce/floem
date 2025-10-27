@@ -1,3 +1,7 @@
 inc = increment
 dec = decrement
-val = Value: { $counter }
+val = { $counter ->
+    [0] There is no value
+    *[one] There is {$counter} value
+    [other] They are {$counter} values
+}

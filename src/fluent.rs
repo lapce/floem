@@ -1,8 +1,11 @@
 use std::collections::hash_map::Entry;
 use std::rc::Rc;
-use std::{cell::RefCell, collections::HashMap, fs::read_to_string, path::Path};
-use floem_reactive::{Scope, Trigger};
+use std::{cell::RefCell, collections::HashMap};
+
+use floem_reactive::{Scope, Trigger, create_updater};
 use fluent_bundle::{FluentBundle, FluentResource};
+use crate::ViewId;
+use crate::prelude::*;
 
 pub use fluent_bundle::types::FluentValue;
 pub use fluent_bundle::FluentArgs;
@@ -12,13 +15,12 @@ thread_local! {
     static LOCALE: Rc<Localization> = Rc::new(Localization::default());
 }
 
-// #[derive(Default)]
 pub struct Localization {
-    pub(crate) locales: RefCell<HashMap<String, FluentBundle<FluentResource>>>,
-    pub(crate) os_locale: RefCell<Option<String>>,
-    pub(crate) current: RefCell<String>,
-    pub(crate) refresh: Trigger,
-    pub(crate) args: RefCell<HashMap<String, FluentArgs<'static>>>
+    locales: RefCell<HashMap<String, FluentBundle<FluentResource>>>,
+    args: RefCell<HashMap<String, FluentArgs<'static>>>,
+    os_locale: RefCell<Option<String>>,
+    current: RefCell<String>,
+    refresh: Trigger
 }
 
 impl Default for Localization {
@@ -37,41 +39,23 @@ impl Default for Localization {
 }
 
 
-pub fn add_localizations(locale_idents: &[&str]) {
-    println!("add_localizations");
+pub fn add_localizations(locales: &[(&str, &str)]) {
     LOCALE.with(|locale| {
         let mut lock = locale.locales.borrow_mut();
-        *lock = locale_idents
+        *lock = locales
             .into_iter()
-            .filter_map(|lan| {
+            .filter_map(|(ident, lan)| {
                 let language = {
-                    let lid = lan.parse().unwrap();
-                    // let x = negotiate_languages();
-                    let dir = std::env::current_dir().unwrap().join("examples/localization");
-                    println!("dir: {}", dir.display());
+                    let lid = ident.parse().unwrap();
                     let mut bundle = FluentBundle::new(vec!(lid));
-                    let path = Path::new("locales").join(lan);
-                    println!("path: {path:?}");
-                    // if !path.is_dir() {
-                    //     eprintln!("path is not dir");
-                    //     return None;
-                    // }
-                    let path = dir.join(path).join("app.ftl");
-                    println!("path: {path:?}");
-                    // if !path.exists() {
-                    //     eprintln!("path does NOT exist");
-                    //     return None;
-                    // }
-
-                    let source = read_to_string(&path).expect("Failed to read file.");
-                    let resource = FluentResource::try_new(source)
+                    let resource = FluentResource::try_new(lan.to_string())
                         .expect("Could not parse an FTL string.");
                     bundle
                         .add_resource(resource)
                         .expect("Failed to add FTL resources to the bundle.");
                     bundle
                 };
-                Some((lan.to_string(), language))
+                Some((ident.to_string(), language))
             })
             .collect();
         *locale.os_locale.borrow_mut() = crate::fluent::get_os_language();
@@ -80,14 +64,12 @@ pub fn add_localizations(locale_idents: &[&str]) {
 
 
 pub fn set_default_language(default: &str) {
-    println!("set_default_language");
     LOCALE.with(|locale| {
         *locale.current.borrow_mut() = default.to_string();
     });
 }
 
 pub fn set_language(new: &str) {
-    println!("set_language");
     let trigger = LOCALE.with(|locale| {
         *locale.current.borrow_mut() = new.to_string();
         locale.refresh
@@ -96,25 +78,21 @@ pub fn set_language(new: &str) {
 }
 
 
-pub(crate) fn get_os_language() -> Option<String> {
+fn get_os_language() -> Option<String> {
+    // TODO: use external crate for it?
     None
 }
 
-pub trait Localize {
-    fn arg(self, arg: impl Into<String> + 'static, val: impl Fn() -> FluentValue<'static> + 'static) -> Self;
-}
 
 
-pub fn get_refresh_trigger() -> Trigger {
-    println!("get_refresh_trigger");
+fn get_refresh_trigger() -> Trigger {
     LOCALE.with(|l| l.refresh)
 }
 
 
-pub fn update_arg(main_key: &str, arg_key: &str, value: impl Into<FluentValue<'static>>) -> String {
+fn update_arg(main_key: &str, arg_key: &str, value: impl Into<FluentValue<'static>>) -> String {
     println!("update_arg for: {main_key}");
     LOCALE.with(|loc| {
-        // println!("current_len: {}, total: {}", &lock.current, lock.locales.len());
         let mut locales = loc.locales.borrow_mut();
         let bundle = locales.get_mut(&*loc.current.borrow()).unwrap();
         
@@ -134,27 +112,24 @@ pub fn update_arg(main_key: &str, arg_key: &str, value: impl Into<FluentValue<'s
         };
         let args = args_mut.get(main_key);
         
-        println!("args: {args:#?}");
         let mut errors = vec!();
-        let s = bundle.format_pattern(msg, args.as_deref(), &mut errors);
+        let final_msg = bundle.format_pattern(msg, args.as_deref(), &mut errors);
         if !errors.is_empty() {
             eprintln!("errors: {errors:#?}");
         }
-        s.to_string()
+        final_msg.to_string()
     })
 }
 
 
-pub fn get_locale_from_key(key: &str) -> String {
-    println!("get_locale_from_key: `{key}`");
+fn get_locale_from_key(key: &str) -> String {
     LOCALE.with(|loc| {
         let locales = loc.locales.borrow();
-        // println!("current_len: {}, total: {}", &lock.current, lock.locales.len());
         let bundle = locales.get(&*loc.current.borrow()).unwrap();
         let msg = bundle.get_message(key).unwrap().value().unwrap();
         let args = loc.args.borrow();
         let args = args.get(key);
-        println!("args: {args:#?}");
+        
         let mut errors = vec!();
         let s = bundle.format_pattern(msg, args, &mut errors);
         if !errors.is_empty() {
@@ -165,27 +140,74 @@ pub fn get_locale_from_key(key: &str) -> String {
 }
 
 
-pub fn provide_args_for_key(key: String, args: FluentArgs<'static>) {
-    println!("provide_args_for_key for {key}");
-    
-    LOCALE.with(|locale| {
-        let mut lock = locale.args.borrow_mut();
-        match lock.entry(key) {
-            Entry::Occupied(mut a) => { let a = a.get_mut(); *a = args; },
-            Entry::Vacant(vacant) => { vacant.insert(args); }
-        }
-    });
+
+pub struct L10n {
+    id: ViewId,
+    key: String,
+    label: RwSignal<String>,
+    has_args: RwSignal<bool>
+}
+
+impl crate::View for L10n {
+    fn id(&self) -> ViewId {
+        self.id
+    }
 }
 
 
-pub fn add_args(key: String, arg: String, val: FluentValue<'static>) {
-    println!("add_args for {key}");
-    // let k = key.clone();
-    LOCALE.with(|locale| {
-        let mut lock = locale.args.borrow_mut();
-        match lock.entry(key) {
-            Entry::Occupied(mut args) => args.get_mut().set(arg, val),
-            Entry::Vacant(vacant) => vacant.insert(FluentArgs::new()).set(arg, val)
+pub fn l10n(label_key: &str) -> L10n {
+    let id = ViewId::new();
+    let key = label_key.to_string();
+    let trigger = get_refresh_trigger();
+    
+    let l10n = L10n {
+        id,
+        key: key.clone(),
+        label: RwSignal::new(String::new()),
+        has_args: RwSignal::new(false)
+    };
+
+    let label = label(move || {
+        match l10n.has_args.get() {
+            true => l10n.label.get(),
+            false => {
+                trigger.track();
+                get_locale_from_key(&key)
+            }
         }
     });
+
+    id.add_child(Box::new(label));
+    l10n
+}
+
+
+pub trait LocalizeWithArgs {
+    fn with_arg(
+        self,
+        arg: impl Into<String>,
+        val: impl Fn() -> FluentValue<'static> + 'static
+    ) -> Self;
+}
+
+impl LocalizeWithArgs for L10n {
+    fn with_arg(self, arg: impl Into<String>, val: impl Fn() -> FluentValue<'static> + 'static) -> Self {
+        let trigger = get_refresh_trigger();
+        let k1 = self.key.clone();
+        let k2 = arg.into();
+        self.has_args.set(true);
+
+        let initial_label = create_updater(
+            move || {
+                println!("updater: l10n from: `{k1}` `{k2}`");
+                trigger.track();
+                update_arg(&k1, &k2, val())
+            },
+            move |v| {
+                self.label.set(v);
+            }
+        );
+        self.label.set(initial_label);
+        self
+    }
 }
