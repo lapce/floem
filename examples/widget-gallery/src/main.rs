@@ -91,30 +91,26 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         .into_iter()
         .enumerate()
         .map(move |(idx, item)| {
-            item.debug_name(item)
-                .style(move |s| {
-                    s.flex_row()
-                        .font_size(18.)
-                        .height(36.0)
-                        .draggable(true)
-                        .transition(Background, Transition::ease_in_out(100.millis()))
-                        .active(|s| {
-                            s.with_theme(|s, t| {
-                                s.background(t.primary())
-                                    // .color(t.text_muted())
-                                    .hover(|s| s.background(t.primary_muted()))
-                                    .border_radius(t.border_radius())
-                            })
+            item.debug_name(item).style(move |s| {
+                s.flex_row()
+                    .font_size(18.)
+                    .height(36.0)
+                    .transition(Background, Transition::ease_in_out(100.millis()))
+                    .active(|s| {
+                        s.with_theme(|s, t| {
+                            s.background(t.primary())
+                                .hover(|s| s.background(t.primary_muted()))
+                                .border_radius(t.border_radius())
                         })
-                        .hover(|s| s.cursor(CursorStyle::Pointer))
-                        .apply_if(idx != active_tab.get(), |s| {
-                            s.apply(
-                                theme::hover_style()
-                                    .with_theme(|s, t| s.border_radius(t.border_radius())),
-                            )
-                        })
-                })
-                .dragging_style(|s| s.background(palette::css::GRAY.with_alpha(0.6)))
+                    })
+                    .hover(|s| s.cursor(CursorStyle::Pointer))
+                    .apply_if(idx != active_tab.get(), |s| {
+                        s.apply(
+                            theme::hover_style()
+                                .with_theme(|s, t| s.border_radius(t.border_radius())),
+                        )
+                    })
+            })
         })
         .list()
         .on_select(move |idx| {

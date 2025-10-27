@@ -47,7 +47,7 @@ pub fn capture(window_id: WindowId) {
 
                 let tab = tab(
                     move || Some(selected.get()),
-                    move || [0, 1].into_iter(),
+                    move || [0, 1],
                     |it| *it,
                     move |it| match it {
                         0 => dyn_container(
@@ -67,7 +67,7 @@ pub fn capture(window_id: WindowId) {
                 let separator = empty().style(move |s| {
                     s.width_full()
                         .min_height(1.0)
-                        .background(palette::css::BLACK.with_alpha(0.2))
+                        .with_theme(|s, t| s.background(t.border()))
                 });
 
                 let stack = v_stack((tabs, separator, tab));
@@ -170,7 +170,7 @@ fn capture_view(
     .style(move |s| {
         s.margin(5.0)
             .border(1.)
-            .border_color(palette::css::BLACK.with_alpha(0.5))
+            .with_theme(|s, t| s.border_color(t.border()))
             .width(image_width + 2.0)
             .height(image_height + 2.0)
             .margin_bottom(21.0)
@@ -329,7 +329,7 @@ fn capture_view(
 
     let tab = tab(
         move || Some(active_tab.get()),
-        move || [0, 1].into_iter(),
+        move || [0, 1],
         |it| *it,
         move |it| {
             match it {
@@ -349,7 +349,7 @@ fn capture_view(
             }
             .style(|s| s.width_full())
             .scroll()
-            .scroll_style(|s| s.shrink_to_fit())
+            .scroll_style(|s| s.handle_thickness(6.).shrink_to_fit())
             .style(|s| {
                 s.set(OverflowX, taffy::Overflow::Visible)
                     .set(OverflowY, taffy::Overflow::Scroll)
@@ -575,7 +575,7 @@ fn tree_node_name(view: &CapturedData, marge_left: f64) -> impl IntoView {
             .background(palette::css::BLACK.with_alpha(0.02))
             .border(1.)
             .border_radius(5.0)
-            .border_color(palette::css::BLACK.with_alpha(0.07))
+            .with_theme(|s, t| s.border_color(t.border()))
             .padding(3.0)
             .padding_top(0.0)
             .padding_bottom(0.0)
@@ -602,7 +602,7 @@ fn tree_node_name(view: &CapturedData, marge_left: f64) -> impl IntoView {
                     .background(Color::from_rgb8(204, 217, 221).with_alpha(0.4))
                     .border(1.)
                     .border_radius(5.0)
-                    .border_color(palette::css::BLACK.with_alpha(0.07))
+                    .with_theme(|s, t| s.border_color(t.border()))
                     .padding(1.0)
                     .font_size(10.0)
                     .color(palette::css::BLACK.with_alpha(0.4))
