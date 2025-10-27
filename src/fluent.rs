@@ -41,8 +41,8 @@ pub fn add_localizations(locales: &[(&str, &str)]) {
     LOCALE.with(|locale| {
         let mut lock = locale.locales.borrow_mut();
         *lock = locales
-            .into_iter()
-            .filter_map(|(ident, lan)| {
+            .iter()
+            .map(|(ident, lan)| {
                 let language = {
                     let lid = ident.parse().unwrap();
                     let mut bundle = FluentBundle::new(vec![lid]);
@@ -53,7 +53,7 @@ pub fn add_localizations(locales: &[(&str, &str)]) {
                         .expect("Failed to add FTL resources to the bundle.");
                     bundle
                 };
-                Some((ident.to_string(), language))
+                (ident.to_string(), language)
             })
             .collect();
         *locale.os_locale.borrow_mut() = crate::fluent::get_os_language();
@@ -106,7 +106,7 @@ fn update_arg(main_key: &str, arg_key: &str, value: impl Into<FluentValue<'stati
         let args = args_mut.get(main_key);
 
         let mut errors = vec![];
-        let final_msg = bundle.format_pattern(msg, args.as_deref(), &mut errors);
+        let final_msg = bundle.format_pattern(msg, args, &mut errors);
         if !errors.is_empty() {
             eprintln!("errors: {errors:#?}");
         }

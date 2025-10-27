@@ -15,7 +15,7 @@ impl TabContent {
     fn new(tabs_count: usize) -> Self {
         Self {
             idx: tabs_count,
-            name: format!("Tab with index"),
+            name: "Tab with index".to_string(),
         }
     }
 }
@@ -76,7 +76,7 @@ pub fn tab_view() -> impl IntoView {
         move || active_tab.get(),
         move || tabs.get(),
         |tab| tab.idx,
-        move |tab| show_tab_content(tab),
+        show_tab_content,
     )
     .style(|s| s.size_full()),))
     .style(|s| s.size_full());
@@ -117,9 +117,9 @@ pub fn tab_view() -> impl IntoView {
 
 fn show_tab_content(tab: TabContent) -> impl IntoView {
     v_stack((
-        label(move || format!("{}", tab.name)).style(|s| s.font_size(15.).font_bold()),
+        tab.name.style(|s| s.font_size(15.).font_bold()),
         label(move || format!("{}", tab.idx)).style(|s| s.font_size(20.).font_bold()),
-        label(move || "is now active").style(|s| s.font_size(13.)),
+        "is now active".style(|s| s.font_size(13.)),
     ))
     .style(|s| {
         s.size(150.px(), 150.px())

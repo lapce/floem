@@ -1,7 +1,7 @@
 inc = increment
 dec = decrement
 val = { $counter ->
-    [0] There is no value
+    [0] There are no values
     *[one] There is {$counter} value
-    [other] They are {$counter} values
+    [other] There are {$counter} values
 }
