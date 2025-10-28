@@ -19,12 +19,29 @@ fn counter_view() -> impl IntoView {
 
     v_stack((
         h_stack((
-            button("pl")
-                .style(|s| s.padding_horiz(20.))
-                .action(move || langauge.set(Some("pl-PL"))),
-            button("en")
-                .style(|s| s.padding_horiz(20.))
-                .action(move || langauge.set(Some("en-US"))),
+            "System Default"
+                .class(TabSelectorClass)
+                .style(move |s| {
+                    s.padding_horiz(20.)
+                        .apply_if(langauge.get().is_none(), |s| s.set_selected(true))
+                })
+                .on_click_stop(move |_| langauge.set(None)),
+            "pl-PL"
+                .class(TabSelectorClass)
+                .style(move |s| {
+                    s.padding_horiz(20.).apply_opt(langauge.get(), |s, l| {
+                        s.apply_if(l == "pl-PL", |s| s.set_selected(true))
+                    })
+                })
+                .on_click_stop(move |_| langauge.set(Some("pl-PL"))),
+            "en-US"
+                .class(TabSelectorClass)
+                .style(move |s| {
+                    s.padding_horiz(20.).apply_opt(langauge.get(), |s, l| {
+                        s.apply_if(l == "en-US", |s| s.set_selected(true))
+                    })
+                })
+                .on_click_stop(move |_| langauge.set(Some("en-US"))),
         ))
         .style(|s| s.width_full().padding_top(30.).justify_center().gap(10.)),
         h_stack((
