@@ -401,6 +401,7 @@ fn capture_view(
     let match_ids = create_rw_signal((0, Vec::<ViewId>::new()));
 
     let search = text_input(search_str)
+        .style(|s| s.width_full())
         .placeholder("View Search...")
         .on_event_stop(EventListener::KeyUp, move |event: &Event| {
             if let Event::KeyUp(key) = event {
