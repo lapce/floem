@@ -396,7 +396,7 @@ impl<T> View for VirtualStack<T> {
                 self.first_child_idx = state.first_idx;
                 apply_diff(
                     self.id(),
-                    cx.app_state,
+                    cx.window_state,
                     state.diff,
                     &mut self.children,
                     &self.view_fn,
@@ -415,7 +415,7 @@ impl<T> View for VirtualStack<T> {
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         if self.style.read(cx) {
-            cx.app_state_mut().request_paint(self.id);
+            cx.window_state.request_paint(self.id);
             self.direction.set(self.style.direction());
         }
         for (child_id_index, child) in self.id.children().into_iter().enumerate() {

@@ -911,7 +911,7 @@ impl TextInput {
                 true
             }
             Key::Named(NamedKey::Escape) => {
-                cx.app_state.clear_focus();
+                cx.window_state.clear_focus();
                 true
             }
             Key::Named(NamedKey::Enter) => {
@@ -1152,7 +1152,7 @@ impl View for TextInput {
                 self.commit_preedit();
                 self.update_ime_cursor_area();
 
-                if is_focused && !cx.app_state.is_active(&self.id) {
+                if is_focused && !cx.window_state.is_active(&self.id) {
                     self.selection = None;
                     self.cursor_glyph_idx = self.buffer.with_untracked(|buf| buf.len());
                 }
@@ -1295,7 +1295,7 @@ impl View for TextInput {
             self.id.request_layout();
         }
         if self.style.read(cx) {
-            cx.app_state_mut().request_paint(self.id);
+            cx.window_state.request_paint(self.id);
 
             // necessary to update the text layout attrs
             self.update_text_layout();
@@ -1307,7 +1307,7 @@ impl View for TextInput {
     fn layout(&mut self, cx: &mut crate::context::LayoutCx) -> taffy::tree::NodeId {
         cx.layout_node(self.id(), true, |cx| {
             let was_focused = self.is_focused;
-            self.is_focused = cx.app_state().is_focused(&self.id);
+            self.is_focused = cx.window_state.is_focused(&self.id);
 
             if was_focused && !self.is_focused {
                 self.selection = None;
@@ -1444,7 +1444,7 @@ impl View for TextInput {
         cx.restore();
 
         // skip rendering selection / cursor if we don't have focus
-        if !cx.app_state.is_focused(&self.id()) {
+        if !cx.window_state.is_focused(&self.id()) {
             return;
         }
 

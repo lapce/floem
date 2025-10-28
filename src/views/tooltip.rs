@@ -108,7 +108,7 @@ impl View for Tooltip {
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         self.style.read(cx);
-        self.scale = cx.app_state.scale;
+        self.scale = cx.window_state.scale;
 
         self.tip_style =
             Style::new().apply_classes_from_context(&[TooltipClass::class_ref()], &cx.current);
@@ -121,7 +121,7 @@ impl View for Tooltip {
     fn event_before_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
         match &event {
             Event::PointerMove(e) => {
-                if self.overlay.borrow().is_none() && cx.app_state.dragging.is_none() {
+                if self.overlay.borrow().is_none() && cx.window_state.dragging.is_none() {
                     let id = self.id();
                     let token = exec_after(self.style.delay(), move |token| {
                         id.update_state(token);

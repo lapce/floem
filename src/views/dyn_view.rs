@@ -44,7 +44,7 @@ impl View for DynamicView {
             let (old_children, child_scope) = *val;
             self.child_scope = child_scope;
             for child in old_children {
-                cx.app_state_mut().remove_view(child);
+                cx.window_state.remove_view(child);
             }
             old_child_scope.dispose();
             self.id.request_all();

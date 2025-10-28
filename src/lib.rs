@@ -182,7 +182,6 @@ mod app;
 #[cfg(target_os = "macos")]
 mod app_delegate;
 mod app_handle;
-pub(crate) mod app_state;
 #[cfg(feature = "vello")]
 mod border_path_iter;
 mod clipboard;
@@ -217,10 +216,10 @@ pub mod views;
 pub mod window;
 mod window_handle;
 mod window_id;
+pub(crate) mod window_state;
 mod window_tracking;
 
 pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};
-pub use app_state::AppState;
 pub use clipboard::{Clipboard, ClipboardError};
 pub use ext_event::async_signal;
 pub use floem_reactive as reactive;
@@ -239,6 +238,7 @@ pub use view::{AnyView, IntoView, View, recursively_layout_view};
 pub use view_state::{Stack, StackOffset};
 pub use window::{close_window, new_window};
 pub use window_id::{Urgency, WindowIdExt};
+pub use window_state::WindowState;
 
 pub mod prelude {
     pub use crate::Renderer;

@@ -34,7 +34,6 @@ use crate::views::{Decorators, container, stack};
 use crate::{
     Application,
     app::UserEvent,
-    app_state::AppState,
     context::{
         ComputeLayoutCx, EventCx, FrameUpdate, LayoutCx, PaintCx, PaintState, StyleCx, UpdateCx,
     },
@@ -55,13 +54,14 @@ use crate::{
     },
     view::{IntoView, View, view_tab_navigation},
     view_state::ChangeFlags,
+    window_state::WindowState,
     window_tracking::{remove_window_id_mapping, store_window_id_mapping},
 };
 
 /// The top-level window handle that owns the winit `Window`.
 /// Meant only for use with the root view of the application.
-/// Owns the [`AppState`] and is responsible for
-/// - processing all requests to update the [`AppState`] from the reactive system
+/// Owns the [`WindowState`] and is responsible for
+/// - processing all requests to update the [`WindowState`] from the reactive system
 /// - processing all requests to update the animation state from the reactive system
 /// - requesting a new animation frame from the backend
 pub(crate) struct WindowHandle {
@@ -71,7 +71,7 @@ pub(crate) struct WindowHandle {
     main_view: ViewId,
     /// Reactive Scope for this `WindowHandle`
     scope: Scope,
-    pub(crate) app_state: AppState,
+    pub(crate) window_state: WindowState,
     pub(crate) paint_state: PaintState,
     size: RwSignal<Size>,
     theme: Option<Style>,
@@ -187,7 +187,7 @@ impl WindowHandle {
             id,
             main_view: main_view_id,
             scope,
-            app_state: AppState::new(id),
+            window_state: WindowState::new(id),
             paint_state,
             size,
             theme: match apply_theme {
@@ -215,8 +215,10 @@ impl WindowHandle {
         if paint_state_initialized {
             window_handle.init_renderer(gpu_resources);
         }
-        window_handle.app_state.set_root_size(size.get_untracked());
-        window_handle.app_state.os_theme = os_theme;
+        window_handle
+            .window_state
+            .set_root_size(size.get_untracked());
+        window_handle.window_state.os_theme = os_theme;
         if let Some(theme) = apply_theme {
             window_handle.event(Event::ThemeChanged(theme));
         }
@@ -250,22 +252,22 @@ impl WindowHandle {
 
     pub fn event(&mut self, event: Event) {
         set_current_view(self.id);
-        let event = event.transform(Affine::scale(self.app_state.scale));
+        let event = event.transform(Affine::scale(self.window_state.scale));
 
         let mut cx = EventCx {
-            app_state: &mut self.app_state,
+            window_state: &mut self.window_state,
         };
 
         let is_pointer_move = if let Event::PointerMove(pme) = &event {
-            cx.app_state.last_cursor_location = pme.pos;
+            cx.window_state.last_cursor_location = pme.pos;
             true
         } else {
             false
         };
         let (was_hovered, was_dragging_over) = if is_pointer_move {
-            cx.app_state.cursor = None;
-            let was_hovered = std::mem::take(&mut cx.app_state.hovered);
-            let was_dragging_over = std::mem::take(&mut cx.app_state.dragging_over);
+            cx.window_state.cursor = None;
+            let was_hovered = std::mem::take(&mut cx.window_state.hovered);
+            let was_dragging_over = std::mem::take(&mut cx.window_state.dragging_over);
 
             (Some(was_hovered), Some(was_dragging_over))
         } else {
@@ -274,17 +276,17 @@ impl WindowHandle {
 
         let is_pointer_down = matches!(&event, Event::PointerDown(_));
         let was_focused = if is_pointer_down {
-            cx.app_state.clicking.clear();
-            cx.app_state.focus.take()
+            cx.window_state.clicking.clear();
+            cx.window_state.focus.take()
         } else {
-            cx.app_state.focus
+            cx.window_state.focus
         };
 
         if event.needs_focus() {
             let mut processed = false;
 
             if !processed {
-                if let Some(id) = cx.app_state.focus {
+                if let Some(id) = cx.window_state.focus {
                     processed |= cx
                         .unconditional_view_event(id, event.clone(), true)
                         .0
@@ -306,7 +308,7 @@ impl WindowHandle {
                             && (modifiers.is_empty() || *modifiers == Modifiers::SHIFT)
                         {
                             let backwards = modifiers.contains(Modifiers::SHIFT);
-                            view_tab_navigation(self.id, cx.app_state, backwards);
+                            view_tab_navigation(self.id, cx.window_state, backwards);
                             // view_debug_tree(&self.view);
                         } else if let Key::Character(character) = &key.logical_key {
                             // 'I' displays some debug information
@@ -321,32 +323,32 @@ impl WindowHandle {
                                 | NamedKey::ArrowRight),
                             ) = key.logical_key
                             {
-                                view_arrow_navigation(name, cx.app_state, self.id);
+                                view_arrow_navigation(name, cx.window_state, self.id);
                             }
                         }
                     }
 
-                    let keyboard_trigger_end = cx.app_state.keyboard_navigation
+                    let keyboard_trigger_end = cx.window_state.keyboard_navigation
                         && event.is_keyboard_trigger()
                         && matches!(event, Event::KeyUp(_));
                     if keyboard_trigger_end {
-                        if let Some(id) = cx.app_state.active {
+                        if let Some(id) = cx.window_state.active {
                             // To remove the styles applied by the Active selector
-                            if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
+                            if cx.window_state.has_style_for_sel(id, StyleSelector::Active) {
                                 id.request_style_recursive();
                             }
 
-                            cx.app_state.active = None;
+                            cx.window_state.active = None;
                         }
                     }
                 }
             }
-        } else if cx.app_state.active.is_some() && event.is_pointer() {
-            if cx.app_state.is_dragging() {
+        } else if cx.window_state.active.is_some() && event.is_pointer() {
+            if cx.window_state.is_dragging() {
                 cx.unconditional_view_event(self.id, event.clone(), false);
             }
 
-            let id = cx.app_state.active.unwrap();
+            let id = cx.window_state.active.unwrap();
 
             {
                 let window_origin = id.state().borrow().window_origin;
@@ -361,21 +363,21 @@ impl WindowHandle {
 
             if let Event::PointerUp(_) = &event {
                 // To remove the styles applied by the Active selector
-                if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
+                if cx.window_state.has_style_for_sel(id, StyleSelector::Active) {
                     id.request_style_recursive();
                 }
 
-                cx.app_state.active = None;
+                cx.window_state.active = None;
             }
         } else {
             cx.unconditional_view_event(self.id, event.clone(), false);
         }
 
         if let Event::PointerUp(_) = &event {
-            cx.app_state.drag_start = None;
+            cx.window_state.drag_start = None;
         }
         if is_pointer_move {
-            let hovered = &cx.app_state.hovered.clone();
+            let hovered = &cx.window_state.hovered.clone();
             for id in was_hovered.unwrap().symmetric_difference(hovered) {
                 let view_state = id.state();
                 if view_state.borrow().has_active_animation()
@@ -396,7 +398,7 @@ impl WindowHandle {
                     cx.unconditional_view_event(*id, Event::PointerLeave, true);
                 }
             }
-            let dragging_over = &cx.app_state.dragging_over.clone();
+            let dragging_over = &cx.window_state.dragging_over.clone();
             for id in was_dragging_over
                 .unwrap()
                 .symmetric_difference(dragging_over)
@@ -408,13 +410,14 @@ impl WindowHandle {
                 }
             }
         }
-        if was_focused != cx.app_state.focus {
-            cx.app_state.focus_changed(was_focused, cx.app_state.focus);
+        if was_focused != cx.window_state.focus {
+            cx.window_state
+                .focus_changed(was_focused, cx.window_state.focus);
         }
 
         if is_pointer_down {
-            for id in cx.app_state.clicking.clone() {
-                if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
+            for id in cx.window_state.clicking.clone() {
+                if cx.window_state.has_style_for_sel(id, StyleSelector::Active) {
                     id.request_style_recursive();
                 }
             }
@@ -432,12 +435,12 @@ impl WindowHandle {
             }
         }
         if matches!(&event, Event::PointerUp(_)) {
-            for id in cx.app_state.clicking.clone() {
-                if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
+            for id in cx.window_state.clicking.clone() {
+                if cx.window_state.has_style_for_sel(id, StyleSelector::Active) {
                     id.request_style_recursive();
                 }
             }
-            cx.app_state.clicking.clear();
+            cx.window_state.clicking.clear();
 
             #[cfg(any(target_os = "linux", target_os = "freebsd"))]
             if self.context_menu.with_untracked(|c| c.is_some()) {
@@ -453,7 +456,7 @@ impl WindowHandle {
 
     pub(crate) fn scale(&mut self, scale: f64) {
         self.scale = scale;
-        let scale = self.scale * self.app_state.scale;
+        let scale = self.scale * self.window_state.scale;
         self.paint_state.set_scale(scale);
         self.event(Event::WindowScaleChanged(scale));
         self.schedule_repaint();
@@ -461,7 +464,7 @@ impl WindowHandle {
 
     pub(crate) fn theme_changed(&mut self, theme: winit::window::Theme) {
         self.os_theme = Some(theme);
-        self.app_state.os_theme = Some(theme);
+        self.window_state.os_theme = Some(theme);
         self.current_theme = theme;
         self.theme = Some(default_theme(theme));
         self.window.set_theme(Some(theme));
@@ -472,11 +475,11 @@ impl WindowHandle {
 
     pub(crate) fn size(&mut self, size: Size) {
         self.size.set(size);
-        self.app_state.update_screen_size_bp(size);
+        self.window_state.update_screen_size_bp(size);
         self.event(Event::WindowResized(size));
-        let scale = self.scale * self.app_state.scale;
+        let scale = self.scale * self.window_state.scale;
         self.paint_state.resize(scale, size * self.scale);
-        self.app_state.set_root_size(size);
+        self.window_state.set_root_size(size);
 
         let is_maximized = self.window.is_maximized();
         if is_maximized != self.is_maximized {
@@ -535,9 +538,9 @@ impl WindowHandle {
     pub(crate) fn pointer_leave(&mut self) {
         set_current_view(self.id);
         let mut cx = EventCx {
-            app_state: &mut self.app_state,
+            window_state: &mut self.window_state,
         };
-        let was_hovered = std::mem::take(&mut cx.app_state.hovered);
+        let was_hovered = std::mem::take(&mut cx.window_state.hovered);
         for id in was_hovered {
             let view_state = id.state();
             if view_state
@@ -630,7 +633,7 @@ impl WindowHandle {
     }
 
     fn style(&mut self) {
-        let mut cx = StyleCx::new(&mut self.app_state, self.id);
+        let mut cx = StyleCx::new(&mut self.window_state, self.id);
         if let Some(theme) = &self.theme {
             cx.current = Rc::new(theme.inherited());
         }
@@ -638,16 +641,16 @@ impl WindowHandle {
     }
 
     fn layout(&mut self) -> Duration {
-        let mut cx = LayoutCx::new(&mut self.app_state);
+        let mut cx = LayoutCx::new(&mut self.window_state);
 
-        cx.app_state_mut().root = {
+        cx.window_state.root = {
             let view = self.id.view();
             let mut view = view.borrow_mut();
             Some(cx.layout_view(view.as_mut()))
         };
 
         let start = Instant::now();
-        cx.app_state_mut().compute_layout();
+        cx.window_state.compute_layout();
         let taffy_duration = Instant::now().saturating_duration_since(start);
 
         self.compute_layout();
@@ -656,19 +659,19 @@ impl WindowHandle {
     }
 
     fn compute_layout(&mut self) {
-        self.app_state.request_compute_layout = false;
-        let viewport = (self.app_state.root_size / self.app_state.scale).to_rect();
-        let mut cx = ComputeLayoutCx::new(&mut self.app_state, viewport);
+        self.window_state.request_compute_layout = false;
+        let viewport = (self.window_state.root_size / self.window_state.scale).to_rect();
+        let mut cx = ComputeLayoutCx::new(&mut self.window_state, viewport);
         cx.compute_view_layout(self.id);
     }
 
     pub(crate) fn render_frame(&mut self, gpu_resources: Option<GpuResources>) {
         // Processes updates scheduled on this frame.
-        for update in mem::take(&mut self.app_state.scheduled_updates) {
+        for update in mem::take(&mut self.window_state.scheduled_updates) {
             match update {
                 FrameUpdate::Style(id) => id.request_style(),
                 FrameUpdate::Layout(id) => id.request_layout(),
-                FrameUpdate::Paint(id) => self.app_state.request_paint(id),
+                FrameUpdate::Paint(id) => self.window_state.request_paint(id),
             }
         }
 
@@ -676,14 +679,14 @@ impl WindowHandle {
         self.paint(gpu_resources);
 
         // Request a new frame if there's any scheduled updates.
-        if !self.app_state.scheduled_updates.is_empty() {
+        if !self.window_state.scheduled_updates.is_empty() {
             self.schedule_repaint();
         }
     }
 
     pub fn paint(&mut self, gpu_resources: Option<GpuResources>) -> Option<peniko::ImageBrush> {
         let mut cx = PaintCx {
-            app_state: &mut self.app_state,
+            window_state: &mut self.window_state,
             paint_state: &mut self.paint_state,
             transform: Affine::IDENTITY,
             clip: None,
@@ -700,9 +703,9 @@ impl WindowHandle {
         };
         cx.paint_state
             .renderer_mut()
-            .begin(cx.app_state.capture.is_some());
+            .begin(cx.window_state.capture.is_some());
         if !self.transparent {
-            let scale = cx.app_state.scale;
+            let scale = cx.window_state.scale;
             let color = self
                 .theme
                 .as_ref()
@@ -721,7 +724,7 @@ impl WindowHandle {
             );
         }
         cx.paint_view(self.id);
-        if cx.app_state.capture.is_none() {
+        if cx.window_state.capture.is_none() {
             self.window.pre_present_notify();
         }
         cx.paint_state.renderer_mut().finish()
@@ -731,9 +734,9 @@ impl WindowHandle {
         // Capture the view before we run `style` and `layout` to catch missing `request_style`` or
         // `request_layout` flags.
         let root_layout = self.id.layout_rect();
-        let root = CapturedView::capture(self.id, &mut self.app_state, root_layout);
+        let root = CapturedView::capture(self.id, &mut self.window_state, root_layout);
 
-        self.app_state.capture = Some(CaptureState::default());
+        self.window_state.capture = Some(CaptureState::default());
 
         // Trigger painting to create a Vger renderer which can capture the output.
         // This can be expensive so it could skew the paint time measurement.
@@ -785,10 +788,10 @@ impl WindowHandle {
             taffy_node_count: self.id.taffy().borrow().total_node_count(),
             taffy_depth: get_taffy_depth(self.id.taffy(), taffy_root_node),
             window,
-            window_size: self.size.get_untracked() / self.app_state.scale,
-            scale: self.scale * self.app_state.scale,
+            window_size: self.size.get_untracked() / self.window_state.scale,
+            scale: self.scale * self.window_state.scale,
             root: Rc::new(root),
-            state: self.app_state.capture.take().unwrap(),
+            state: self.window_state.capture.take().unwrap(),
             renderer: self.paint_state.renderer().debug_info(),
         };
         // Process any updates produced by capturing
@@ -813,7 +816,7 @@ impl WindowHandle {
                 self.process_update_messages();
                 if !self.needs_layout()
                     && !self.needs_style()
-                    && !self.app_state.request_compute_layout
+                    && !self.window_state.request_compute_layout
                 {
                     break;
                 }
@@ -828,7 +831,7 @@ impl WindowHandle {
                     self.layout();
                 }
 
-                if self.app_state.request_compute_layout {
+                if self.window_state.request_compute_layout {
                     self.compute_layout();
                 }
             }
@@ -840,8 +843,8 @@ impl WindowHandle {
 
         self.set_cursor();
 
-        // TODO: This should only use `self.app_state.request_paint)`
-        paint || mem::take(&mut self.app_state.request_paint)
+        // TODO: This should only use `self.window_state.request_paint)`
+        paint || mem::take(&mut self.window_state.request_paint)
     }
 
     fn process_central_messages(&self) {
@@ -908,60 +911,60 @@ impl WindowHandle {
             }
             for msg in msgs {
                 let mut cx = UpdateCx {
-                    app_state: &mut self.app_state,
+                    window_state: &mut self.window_state,
                 };
                 match msg {
                     UpdateMessage::RequestPaint => {
-                        cx.app_state.request_paint = true;
+                        cx.window_state.request_paint = true;
                     }
                     UpdateMessage::Focus(id) => {
-                        if cx.app_state.focus != Some(id) {
-                            let old = cx.app_state.focus;
-                            cx.app_state.focus = Some(id);
-                            cx.app_state.focus_changed(old, cx.app_state.focus);
+                        if cx.window_state.focus != Some(id) {
+                            let old = cx.window_state.focus;
+                            cx.window_state.focus = Some(id);
+                            cx.window_state.focus_changed(old, cx.window_state.focus);
                         }
                     }
                     UpdateMessage::ClearFocus(id) => {
-                        if cx.app_state.focus == Some(id) {
-                            cx.app_state.clear_focus();
-                            cx.app_state.focus_changed(Some(id), None);
+                        if cx.window_state.focus == Some(id) {
+                            cx.window_state.clear_focus();
+                            cx.window_state.focus_changed(Some(id), None);
                         }
                     }
                     UpdateMessage::ClearAppFocus => {
-                        let focus = cx.app_state.focus;
-                        cx.app_state.clear_focus();
+                        let focus = cx.window_state.focus;
+                        cx.window_state.clear_focus();
                         if let Some(id) = focus {
-                            cx.app_state.focus_changed(Some(id), None);
+                            cx.window_state.focus_changed(Some(id), None);
                         }
                     }
                     UpdateMessage::Active(id) => {
-                        let old = cx.app_state.active;
-                        cx.app_state.active = Some(id);
+                        let old = cx.window_state.active;
+                        cx.window_state.active = Some(id);
 
                         if let Some(old_id) = old {
                             // To remove the styles applied by the Active selector
                             if cx
-                                .app_state
+                                .window_state
                                 .has_style_for_sel(old_id, StyleSelector::Active)
                             {
                                 old_id.request_style_recursive();
                             }
                         }
 
-                        if cx.app_state.has_style_for_sel(id, StyleSelector::Active) {
+                        if cx.window_state.has_style_for_sel(id, StyleSelector::Active) {
                             id.request_style_recursive();
                         }
                     }
                     UpdateMessage::ClearActive(id) => {
-                        if Some(id) == cx.app_state.active {
-                            cx.app_state.active = None;
+                        if Some(id) == cx.window_state.active {
+                            cx.window_state.active = None;
                         }
                     }
                     UpdateMessage::ScrollTo { id, rect } => {
                         self.id
                             .view()
                             .borrow_mut()
-                            .scroll_to(cx.app_state, id, rect);
+                            .scroll_to(cx.window_state, id, rect);
                     }
                     UpdateMessage::State { id, state } => {
                         let view = id.view();
@@ -993,15 +996,15 @@ impl WindowHandle {
                             ));
                     }
                     UpdateMessage::WindowScale(scale) => {
-                        cx.app_state.scale = scale;
+                        cx.window_state.scale = scale;
                         self.id.request_layout();
-                        let scale = self.scale * cx.app_state.scale;
+                        let scale = self.scale * cx.window_state.scale;
                         self.paint_state.set_scale(scale);
                     }
                     UpdateMessage::ShowContextMenu { menu, pos } => {
                         let (menu, registry) = menu.build();
-                        cx.app_state.context_menu.clear();
-                        cx.app_state.update_context_menu(registry);
+                        cx.window_state.context_menu.clear();
+                        cx.window_state.update_context_menu(registry);
 
                         #[cfg(any(target_os = "windows", target_os = "macos"))]
                         {
@@ -1061,12 +1064,12 @@ impl WindowHandle {
                         {
                             let position =
                                 winit::dpi::Position::Logical(winit::dpi::LogicalPosition::new(
-                                    position.x * self.app_state.scale,
-                                    position.y * self.app_state.scale,
+                                    position.x * self.window_state.scale,
+                                    position.y * self.window_state.scale,
                                 ));
                             let size = winit::dpi::Size::Logical(winit::dpi::LogicalSize::new(
-                                size.width * self.app_state.scale,
-                                size.height * self.app_state.scale,
+                                size.width * self.window_state.scale,
+                                size.height * self.window_state.scale,
                             ));
                             self.window
                                 .request_ime_update(ImeRequest::Update(
@@ -1083,7 +1086,7 @@ impl WindowHandle {
                         self.id.request_all();
                     }
                     UpdateMessage::RemoveOverlay { id } => {
-                        cx.app_state.remove_view(id);
+                        cx.window_state.remove_view(id);
                         self.id.request_all();
                     }
                     UpdateMessage::WindowVisible(visible) => {
@@ -1118,7 +1121,7 @@ impl WindowHandle {
         let msgs = DEFERRED_UPDATE_MESSAGES
             .with(|msgs| msgs.borrow_mut().remove(&self.id).unwrap_or_default());
         let mut cx = UpdateCx {
-            app_state: &mut self.app_state,
+            window_state: &mut self.window_state,
         };
         for (id, state) in msgs {
             let view = id.view();
@@ -1152,7 +1155,7 @@ impl WindowHandle {
     }
 
     fn set_cursor(&mut self) {
-        let cursor = match self.app_state.cursor {
+        let cursor = match self.window_state.cursor {
             Some(CursorStyle::Default) => CursorIcon::Default,
             Some(CursorStyle::Pointer) => CursorIcon::Pointer,
             Some(CursorStyle::Progress) => CursorIcon::Progress,
@@ -1176,9 +1179,9 @@ impl WindowHandle {
             Some(CursorStyle::NwseResize) => CursorIcon::NwseResize,
             None => CursorIcon::Default,
         };
-        if cursor != self.app_state.last_cursor {
+        if cursor != self.window_state.last_cursor {
             self.window.set_cursor(cursor.into());
-            self.app_state.last_cursor = cursor;
+            self.window_state.last_cursor = cursor;
         }
     }
 
@@ -1207,8 +1210,8 @@ impl WindowHandle {
                     handle.ns_view.as_ptr() as _,
                     pos.map(|pos| {
                         Position::Logical(LogicalPosition::new(
-                            pos.x * self.app_state.scale,
-                            (self.size.get_untracked().height - pos.y) * self.app_state.scale,
+                            pos.x * self.window_state.scale,
+                            (self.size.get_untracked().height - pos.y) * self.window_state.scale,
                         ))
                     }),
                 )
@@ -1231,8 +1234,8 @@ impl WindowHandle {
                     isize::from(handle.hwnd),
                     pos.map(|pos| {
                         Position::Logical(LogicalPosition::new(
-                            pos.x * self.app_state.scale,
-                            pos.y * self.app_state.scale,
+                            pos.x * self.window_state.scale,
+                            pos.y * self.window_state.scale,
                         ))
                     }),
                 );
@@ -1277,13 +1280,16 @@ impl WindowHandle {
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     fn show_context_menu(&self, menu: muda::Menu, pos: Option<Point>) {
         let pos = pos.unwrap_or(self.cursor_position);
-        let pos = Point::new(pos.x / self.app_state.scale, pos.y / self.app_state.scale);
+        let pos = Point::new(
+            pos.x / self.window_state.scale,
+            pos.y / self.window_state.scale,
+        );
         self.context_menu.set(Some((menu, pos, false)));
     }
 
     pub(crate) fn menu_action(&mut self, id: &MenuId) {
         set_current_view(self.id);
-        if let Some(action) = self.app_state.context_menu.get(id) {
+        if let Some(action) = self.window_state.context_menu.get(id) {
             (*action)();
             self.process_update();
         } else if let Some(action) = self.window_menu_actions.get(id) {

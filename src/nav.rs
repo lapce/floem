@@ -1,15 +1,15 @@
 use peniko::kurbo::{Point, Rect};
 use winit::keyboard::NamedKey;
 
-use crate::{app_state::AppState, id::ViewId, view::view_tab_navigation};
+use crate::{id::ViewId, view::view_tab_navigation, window_state::WindowState};
 
-pub(crate) fn view_arrow_navigation(key: NamedKey, app_state: &mut AppState, view: ViewId) {
-    let focused = match app_state.focus {
+pub(crate) fn view_arrow_navigation(key: NamedKey, window_state: &mut WindowState, view: ViewId) {
+    let focused = match window_state.focus {
         Some(id) => id,
         None => {
             view_tab_navigation(
                 view,
-                app_state,
+                window_state,
                 matches!(key, NamedKey::ArrowUp | NamedKey::ArrowLeft),
             );
             return;
@@ -43,7 +43,7 @@ pub(crate) fn view_arrow_navigation(key: NamedKey, app_state: &mut AppState, vie
     };
 
     // Collect all focusable elements
-    let mut focusable: Vec<ViewId> = app_state.focusable.iter().copied().collect();
+    let mut focusable: Vec<ViewId> = window_state.focusable.iter().copied().collect();
     focusable.retain(|id| {
         let layout = id.layout_rect();
         direction_target.contains(layout.center()) && *id != focused
@@ -87,7 +87,7 @@ pub(crate) fn view_arrow_navigation(key: NamedKey, app_state: &mut AppState, vie
 
     // Update focus to the best target if found
     if let Some((id, _, _)) = best_target {
-        app_state.clear_focus();
-        app_state.update_focus(id, true);
+        window_state.clear_focus();
+        window_state.update_focus(id, true);
     }
 }

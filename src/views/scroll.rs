@@ -11,7 +11,6 @@ use crate::style::{
 use crate::unit::PxPct;
 use crate::{
     Renderer,
-    app_state::AppState,
     context::{ComputeLayoutCx, PaintCx},
     event::{Event, EventPropagation},
     id::ViewId,
@@ -20,6 +19,7 @@ use crate::{
     style_class,
     unit::Px,
     view::{IntoView, View},
+    window_state::WindowState,
 };
 
 use super::Decorators;
@@ -290,18 +290,18 @@ impl Scroll {
         self
     }
 
-    fn do_scroll_delta(&mut self, app_state: &mut AppState, delta: Vec2) {
+    fn do_scroll_delta(&mut self, window_state: &mut WindowState, delta: Vec2) {
         let new_origin = self.child_viewport.origin() + delta;
-        self.clamp_child_viewport(app_state, self.child_viewport.with_origin(new_origin));
+        self.clamp_child_viewport(window_state, self.child_viewport.with_origin(new_origin));
     }
 
-    fn do_scroll_to(&mut self, app_state: &mut AppState, origin: Point) {
-        self.clamp_child_viewport(app_state, self.child_viewport.with_origin(origin));
+    fn do_scroll_to(&mut self, window_state: &mut WindowState, origin: Point) {
+        self.clamp_child_viewport(window_state, self.child_viewport.with_origin(origin));
     }
 
     /// Ensure that an entire area is visible in the scroll view.
     // TODO: remove duplilcation between this method and pan_to_visible
-    pub fn ensure_area_visible(&mut self, app_state: &mut AppState, rect: Rect) {
+    pub fn ensure_area_visible(&mut self, window_state: &mut WindowState, rect: Rect) {
         /// Given a position and the min and max edges of an axis,
         /// return a delta by which to adjust that axis such that the value
         /// falls between its edges.
@@ -351,14 +351,14 @@ impl Scroll {
         let delta_x = if x0.abs() > x1.abs() { x0 } else { x1 };
         let delta_y = if y0.abs() > y1.abs() { y0 } else { y1 };
         let new_origin = self.child_viewport.origin() + Vec2::new(delta_x, delta_y);
-        self.clamp_child_viewport(app_state, self.child_viewport.with_origin(new_origin));
+        self.clamp_child_viewport(window_state, self.child_viewport.with_origin(new_origin));
     }
 
     /// Pan the smallest distance that makes the target [`Rect`] visible.
     ///
     /// If the target rect is larger than viewport size, we will prioritize
     /// the region of the target closest to its origin.
-    pub fn pan_to_visible(&mut self, app_state: &mut AppState, rect: Rect) {
+    pub fn pan_to_visible(&mut self, window_state: &mut WindowState, rect: Rect) {
         // If target is larger than viewport
         if rect.width() > self.child_viewport.width()
             || rect.height() > self.child_viewport.height()
@@ -429,7 +429,7 @@ impl Scroll {
         let delta_x = if x0.abs() > x1.abs() { x0 } else { x1 };
         let delta_y = if y0.abs() > y1.abs() { y0 } else { y1 };
         let new_origin = self.child_viewport.origin() + Vec2::new(delta_x, delta_y);
-        self.clamp_child_viewport(app_state, self.child_viewport.with_origin(new_origin));
+        self.clamp_child_viewport(window_state, self.child_viewport.with_origin(new_origin));
     }
 
     fn update_size(&mut self) {
@@ -445,7 +445,7 @@ impl Scroll {
 
     fn clamp_child_viewport(
         &mut self,
-        app_state: &mut AppState,
+        window_state: &mut WindowState,
         child_viewport: Rect,
     ) -> Option<()> {
         let actual_rect = self.content_rect;
@@ -474,8 +474,8 @@ impl Scroll {
 
         if child_viewport != self.child_viewport {
             self.child.set_viewport(child_viewport);
-            app_state.request_compute_layout_recursive(self.id());
-            app_state.request_paint(self.id());
+            window_state.request_compute_layout_recursive(self.id());
+            window_state.request_paint(self.id());
             self.child_viewport = child_viewport;
             // Mark as scrolling when viewport changes
             self.is_scrolling_or_interacting = true;
@@ -679,20 +679,20 @@ impl Scroll {
         Some(Rect::new(x0, y0, x1, y1))
     }
 
-    fn click_vertical_bar_area(&mut self, app_state: &mut AppState, pos: Point) {
+    fn click_vertical_bar_area(&mut self, window_state: &mut WindowState, pos: Point) {
         let new_y = (pos.y / self.content_rect.height()) * self.child_size.height
             - self.content_rect.height() / 2.0;
         let mut new_origin = self.child_viewport.origin();
         new_origin.y = new_y;
-        self.do_scroll_to(app_state, new_origin);
+        self.do_scroll_to(window_state, new_origin);
     }
 
-    fn click_horizontal_bar_area(&mut self, app_state: &mut AppState, pos: Point) {
+    fn click_horizontal_bar_area(&mut self, window_state: &mut WindowState, pos: Point) {
         let new_x = (pos.x / self.content_rect.width()) * self.child_size.width
             - self.content_rect.width() / 2.0;
         let mut new_origin = self.child_viewport.origin();
         new_origin.x = new_x;
-        self.do_scroll_to(app_state, new_origin);
+        self.do_scroll_to(window_state, new_origin);
     }
 
     fn point_hits_vertical_bar(&self, pos: Point) -> bool {
@@ -744,28 +744,28 @@ impl Scroll {
         !matches!(self.held, BarHeldState::None)
     }
 
-    fn update_hover_states(&mut self, app_state: &mut AppState, pos: Point) {
+    fn update_hover_states(&mut self, window_state: &mut WindowState, pos: Point) {
         let scroll_offset = self.child_viewport.origin().to_vec2();
         let pos = pos + scroll_offset;
         let hover = self.point_hits_vertical_handle(pos);
         if self.v_handle_hover != hover {
             self.v_handle_hover = hover;
-            app_state.request_paint(self.id());
+            window_state.request_paint(self.id());
         }
         let hover = self.point_hits_horizontal_handle(pos);
         if self.h_handle_hover != hover {
             self.h_handle_hover = hover;
-            app_state.request_paint(self.id());
+            window_state.request_paint(self.id());
         }
         let hover = self.point_hits_vertical_bar(pos);
         if self.v_track_hover != hover {
             self.v_track_hover = hover;
-            app_state.request_paint(self.id());
+            window_state.request_paint(self.id());
         }
         let hover = self.point_hits_horizontal_bar(pos);
         if self.h_track_hover != hover {
             self.h_track_hover = hover;
-            app_state.request_paint(self.id());
+            window_state.request_paint(self.id());
         }
 
         // Set scrolling/interacting state if hovering over scrollbars
@@ -773,13 +773,13 @@ impl Scroll {
             self.v_handle_hover || self.h_handle_hover || self.v_track_hover || self.h_track_hover;
         if any_hover != self.is_scrolling_or_interacting {
             self.is_scrolling_or_interacting = any_hover;
-            app_state.request_paint(self.id());
+            window_state.request_paint(self.id());
         }
     }
 
     fn do_scroll_to_view(
         &mut self,
-        app_state: &mut AppState,
+        window_state: &mut WindowState,
         target: ViewId,
         target_rect: Option<Rect>,
     ) {
@@ -808,7 +808,7 @@ impl Scroll {
                     + self.computed_child_viewport.origin().to_vec2(),
             );
 
-            self.pan_to_visible(app_state, rect);
+            self.pan_to_visible(window_state, rect);
         }
     }
 
@@ -843,29 +843,29 @@ impl View for Scroll {
         if let Ok(state) = state.downcast::<ScrollState>() {
             match *state {
                 ScrollState::EnsureVisible(rect) => {
-                    self.ensure_area_visible(cx.app_state, rect);
+                    self.ensure_area_visible(cx.window_state, rect);
                 }
                 ScrollState::ScrollDelta(delta) => {
-                    self.do_scroll_delta(cx.app_state, delta);
+                    self.do_scroll_delta(cx.window_state, delta);
                 }
                 ScrollState::ScrollTo(origin) => {
-                    self.do_scroll_to(cx.app_state, origin);
+                    self.do_scroll_to(cx.window_state, origin);
                 }
                 ScrollState::ScrollToPercent(percent) => {
                     let mut child_size = self.child_size;
                     child_size *= percent as f64;
                     let point = child_size.to_vec2().to_point();
-                    self.do_scroll_to(cx.app_state, point);
+                    self.do_scroll_to(cx.window_state, point);
                 }
                 ScrollState::ScrollToView(id) => {
-                    self.do_scroll_to_view(cx.app_state, id, None);
+                    self.do_scroll_to_view(cx.window_state, id, None);
                 }
             }
             self.id.request_layout();
         }
     }
 
-    fn scroll_to(&mut self, cx: &mut AppState, target: ViewId, rect: Option<Rect>) -> bool {
+    fn scroll_to(&mut self, cx: &mut WindowState, target: ViewId, rect: Option<Rect>) -> bool {
         let found = self.child.view().borrow_mut().scroll_to(cx, target, rect);
         if found {
             self.do_scroll_to_view(cx, target, rect);
@@ -899,7 +899,7 @@ impl View for Scroll {
 
     fn compute_layout(&mut self, cx: &mut ComputeLayoutCx) -> Option<Rect> {
         self.update_size();
-        self.clamp_child_viewport(cx.app_state_mut(), self.child_viewport);
+        self.clamp_child_viewport(cx.window_state, self.child_viewport);
         self.computed_child_viewport = self.child_viewport;
         cx.compute_view_layout(self.child);
         None
@@ -933,7 +933,7 @@ impl View for Scroll {
                             self.id.request_paint();
                             return EventPropagation::Stop;
                         }
-                        self.click_vertical_bar_area(cx.app_state, event.pos);
+                        self.click_vertical_bar_area(cx.window_state, event.pos);
                         let scroll_offset = self.child_viewport.origin().to_vec2();
                         self.held = BarHeldState::Vertical(
                             // The bounds must be non-empty, because the point hits the scrollbar.
@@ -951,10 +951,10 @@ impl View for Scroll {
                             );
                             cx.update_active(self.id());
                             // Force a repaint.
-                            cx.app_state.request_paint(self.id());
+                            cx.window_state.request_paint(self.id());
                             return EventPropagation::Stop;
                         }
-                        self.click_horizontal_bar_area(cx.app_state, event.pos);
+                        self.click_horizontal_bar_area(cx.window_state, event.pos);
                         let scroll_offset = self.child_viewport.origin().to_vec2();
                         self.held = BarHeldState::Horizontal(
                             // The bounds must be non-empty, because the point hits the scrollbar.
@@ -970,13 +970,13 @@ impl View for Scroll {
                 if self.are_bars_held() {
                     self.held = BarHeldState::None;
                     // Force a repaint.
-                    cx.app_state.request_paint(self.id());
+                    cx.window_state.request_paint(self.id());
                 }
             }
             Event::PointerMove(event) => {
                 if !self.scroll_style.hide_bar() {
                     let pos = event.pos + scroll_offset;
-                    self.update_hover_states(cx.app_state, event.pos);
+                    self.update_hover_states(cx.window_state, event.pos);
 
                     if self.are_bars_held() {
                         match self.held {
@@ -984,7 +984,7 @@ impl View for Scroll {
                                 let scale_y = viewport_size.height / content_size.height;
                                 let y = initial_scroll_offset.y + (event.pos.y - offset) / scale_y;
                                 self.clamp_child_viewport(
-                                    cx.app_state,
+                                    cx.window_state,
                                     self.child_viewport
                                         .with_origin(Point::new(initial_scroll_offset.x, y)),
                                 );
@@ -993,7 +993,7 @@ impl View for Scroll {
                                 let scale_x = viewport_size.width / content_size.width;
                                 let x = initial_scroll_offset.x + (event.pos.x - offset) / scale_x;
                                 self.clamp_child_viewport(
-                                    cx.app_state,
+                                    cx.window_state,
                                     self.child_viewport
                                         .with_origin(Point::new(x, initial_scroll_offset.y)),
                                 );
@@ -1013,7 +1013,7 @@ impl View for Scroll {
                 self.v_track_hover = false;
                 self.h_track_hover = false;
                 self.is_scrolling_or_interacting = false;
-                cx.app_state.request_paint(self.id());
+                cx.window_state.request_paint(self.id());
             }
             _ => {}
         }
@@ -1044,10 +1044,11 @@ impl View for Scroll {
             } else {
                 delta
             };
-            let any_change = self.clamp_child_viewport(cx.app_state, self.child_viewport + delta);
+            let any_change =
+                self.clamp_child_viewport(cx.window_state, self.child_viewport + delta);
 
             // Check if the scroll bars now hover
-            self.update_hover_states(cx.app_state, pointer_event.pos);
+            self.update_hover_states(cx.window_state, pointer_event.pos);
 
             return if self.scroll_style.propagate_pointer_wheel() && any_change.is_none() {
                 EventPropagation::Continue

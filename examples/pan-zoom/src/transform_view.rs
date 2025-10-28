@@ -90,9 +90,9 @@ impl View for TransformView {
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(state) = state.downcast() {
             self.view_transform.set(*state);
-            let app_state = cx.app_state_mut();
-            app_state.request_compute_layout_recursive(self.id());
-            app_state.request_paint(self.id());
+            let window_state = &mut cx.window_state;
+            window_state.request_compute_layout_recursive(self.id());
+            window_state.request_paint(self.id());
         }
     }
 
