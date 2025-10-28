@@ -278,6 +278,14 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         })
     }
 
+    /// Attach action executed on button click or Enter or Space Key.
+    fn action(self, mut action: impl FnMut() + 'static) -> Self::DV {
+        self.on_click(move |_| {
+            action();
+            EventPropagation::Stop
+        })
+    }
+
     /// Add an event handler for [`EventListener::DoubleClick`]
     fn on_double_click(self, action: impl Fn(&Event) -> EventPropagation + 'static) -> Self::DV {
         self.on_event(EventListener::DoubleClick, action)

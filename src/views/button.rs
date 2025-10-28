@@ -1,6 +1,5 @@
 #![deny(missing_docs)]
 use crate::{IntoView, View, ViewId, style_class, views::Decorators};
-use core::ops::FnMut;
 
 style_class!(
     /// The style class that is applied to buttons.
@@ -80,19 +79,6 @@ impl Button {
         let id = ViewId::new();
         id.add_child(Box::new(child.into_view()));
         Button { id }.class(ButtonClass)
-    }
-
-    /// Attach action executed on button click.
-    /// ### Example
-    /// ```rust
-    /// # use floem::views::button;
-    /// let button_with_action = button("Click me")
-    ///     .action(move || println!("Button2 clicked!"));
-    /// ```
-    pub fn action(self, mut on_press: impl FnMut() + 'static) -> Self {
-        self.on_click_stop(move |_| {
-            on_press();
-        })
     }
 }
 
