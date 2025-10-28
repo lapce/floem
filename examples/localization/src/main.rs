@@ -1,8 +1,6 @@
-// #![allow(unused)]
-
 use floem::action::inspect;
 use floem::prelude::*;
-use fluent::*;
+use localization::*;
 
 fn main() {
     floem::launch(counter_view);

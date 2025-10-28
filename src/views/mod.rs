@@ -162,5 +162,5 @@ pub use checkbox::*;
 mod toggle_button;
 pub use toggle_button::*;
 
-#[cfg(feature = "fluent")]
-pub mod fluent;
+#[cfg(feature = "localization")]
+pub mod localization;

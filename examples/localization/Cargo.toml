@@ -5,4 +5,4 @@ license.workspace = true
 version.workspace = true
 
 [dependencies]
-floem = { path = "../..", features = ["vello", "fluent"] }
+floem = { path = "../..", features = ["vello", "localization"] }

@@ -141,7 +141,7 @@ impl LocaleMap {
     }
 }
 
-prop!(pub L10nLocale: Option<LanguageIdentifier> { inherited } = sys_locale::get_locale().and_then(|l| dbg!(dbg!(l).parse()).ok()));
+prop!(pub L10nLocale: Option<LanguageIdentifier> { inherited } = sys_locale::get_locale().and_then(|l| l.parse().ok()));
 prop!(pub L10nFallback: Option<String> {} = None);
 prop!(pub L10nBundle: LocaleMap { inherited } = LocaleMap(im_rc::HashMap::new()));
 
