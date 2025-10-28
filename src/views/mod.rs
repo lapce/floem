@@ -161,3 +161,6 @@ pub use checkbox::*;
 
 mod toggle_button;
 pub use toggle_button::*;
+
+#[cfg(feature = "localization")]
+pub mod localization;

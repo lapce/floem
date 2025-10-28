@@ -229,12 +229,14 @@ pub use floem_renderer::Svg as RendererSvg;
 pub use floem_renderer::gpu_resources::GpuResources;
 pub use floem_renderer::text;
 pub use id::ViewId;
+pub use im_rc;
 pub use muda;
 pub use peniko;
 pub use peniko::kurbo;
 pub use screen_layout::ScreenLayout;
 pub use taffy;
 pub use view::{AnyView, IntoView, View, recursively_layout_view};
+pub use view_state::{Stack, StackOffset};
 pub use window::{close_window, new_window};
 pub use window_id::{Urgency, WindowIdExt};
 
