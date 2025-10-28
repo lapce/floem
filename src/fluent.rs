@@ -1,11 +1,13 @@
 use std::borrow::Cow;
+use std::pin::Pin;
 use std::rc::Rc;
 
 use crate::style::StylePropValue;
 use crate::view_state::{Stack, StackOffset};
 use crate::views::static_label;
-use crate::{IntoView, View, ViewId, prop, prop_extractor};
+use crate::{AnyView, IntoView, View, ViewId, prop, prop_extractor};
 use floem_reactive::create_updater;
+use floem_renderer::text::Align;
 use fluent_bundle::{FluentBundle, FluentResource};
 
 pub use fluent_bundle::FluentArgs;
@@ -146,8 +148,8 @@ prop_extractor! {
 pub struct L10n {
     id: ViewId,
     key: String,
-    args: FluentArgs<'static>,                  // SAFETY: Drop first
-    arg_keys: crate::view_state::Stack<String>, // SAFETY: Drop second
+    args: FluentArgs<'static>,
+    arg_keys: Pin<Box<crate::view_state::Stack<String>>>, // Pinned allocation
     label_id: ViewId,
     language: LanguageExtractor,
     fallback: FallBackExtractor,
@@ -155,19 +157,17 @@ pub struct L10n {
 
 impl L10n {
     pub fn new(key: impl Into<String>) -> Self {
-        // using static label because we will manually send the state updates through the ViewId.
         let key: String = key.into();
         let label = static_label(key.clone());
         let label_id = label.id();
         let id = ViewId::new();
-
         id.add_child(label.into_any());
         Self {
             id,
             label_id,
             key,
             args: FluentArgs::new(),
-            arg_keys: Stack { stack: smallvec![] },
+            arg_keys: Box::pin(Stack { stack: smallvec![] }),
             language: Default::default(),
             fallback: Default::default(),
         }
@@ -180,14 +180,16 @@ impl L10n {
     ) -> Self {
         let id = self.id;
         let arg_key = arg_key.into();
-        let offset = self.arg_keys.next_offset();
-        self.arg_keys.push(arg_key);
 
-        let arg_key_ref = self.arg_keys.get(offset);
+        // Pin projection: get mutable access to pinned data
+        let arg_keys = unsafe { self.arg_keys.as_mut().get_unchecked_mut() };
+        let offset = arg_keys.next_offset();
+        arg_keys.push(arg_key);
+
+        let arg_key_ref = arg_keys.get(offset);
         let arg_key_ptr: *const str = arg_key_ref.as_ref();
-
-        // SAFETY: args is dropped before arg_keys due to field declaration order,
-        // so this pointer remains valid for the lifetime of args
+        // SAFETY: arg_keys is pinned in a Box, so the pointer remains valid
+        // for the lifetime of the L10n struct
         let static_ref: &'static str = unsafe { &*arg_key_ptr };
 
         let initial_val = create_updater(
@@ -196,7 +198,6 @@ impl L10n {
                 id.update_state((offset, arg_val));
             },
         );
-
         self.args.set(Cow::Borrowed(static_ref), initial_val);
         self
     }
