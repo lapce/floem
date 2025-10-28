@@ -52,8 +52,42 @@ impl PartialEq for LanguageMap {
     }
 }
 impl StylePropValue for LanguageMap {
-    fn debug_view(&self) -> Option<Box<dyn View>> {
-        None
+    fn debug_view(&self) -> Option<AnyView> {
+        use crate::prelude::*;
+
+        let languages: Vec<String> = self.0.keys().map(|lang_id| lang_id.to_string()).collect();
+
+        let count = languages.len();
+
+        let view = stack((
+            format!("Languages ({count})").style(|s| {
+                s.font_size(12.0)
+                    .font_weight(floem_renderer::text::Weight::SEMIBOLD)
+            }),
+            v_stack_from_iter(languages.into_iter().map(|lang| {
+                lang.style(|s| {
+                    s.font_size(11.0)
+                        .color(Color::WHITE.with_alpha(0.7))
+                        .width_full()
+                        .items_center()
+                        .justify_center()
+                        .text_align(Align::Center)
+                })
+            }))
+            .style(|s| s.gap(2.0).width_full()),
+        ))
+        .style(|s| {
+            s.flex_row()
+                .gap(8.0)
+                .items_center()
+                .padding(8.0)
+                .border(1.)
+                .border_color(palette::css::WHITE.with_alpha(0.3))
+                .border_radius(6.0)
+                .min_width(120.0)
+        });
+
+        Some(view.into_any())
     }
 }
 impl StylePropValue for LanguageIdentifier {
