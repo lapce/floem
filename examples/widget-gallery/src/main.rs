@@ -121,7 +121,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         .style(|s| s.flex_col().width(140.0).flex_grow(1.))
         .scroll()
         .debug_name("Side Tab Bar")
-        .scroll_style(|s| s.shrink_to_fit())
+        .scroll_style(|s| s.shrink_to_fit().handle_thickness(8.))
         .style(|s| {
             s.border(1.)
                 .flex_col()
