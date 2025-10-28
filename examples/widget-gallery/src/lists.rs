@@ -1,4 +1,5 @@
 use floem::{
+    im_rc,
     prelude::*,
     reactive::create_effect,
     taffy::{prelude::*, Line},
@@ -39,7 +40,7 @@ fn simple_list() -> impl IntoView {
 }
 
 fn enhanced_list() -> impl IntoView {
-    let long_list: im::Vector<(bool, i32)> = (0..1000).map(|v| (true, v)).collect();
+    let long_list: im_rc::Vector<(bool, i32)> = (0..1000).map(|v| (true, v)).collect();
     let long_list = RwSignal::new(long_list);
 
     let list_width = 180.0;
