@@ -3,6 +3,7 @@
 use floem::action::inspect;
 use floem::fluent::*;
 use floem::prelude::*;
+use floem::style::CustomStylable;
 
 fn main() {
     floem::launch(counter_view);
@@ -30,9 +31,17 @@ fn counter_view() -> impl IntoView {
         ))
         .style(|s| s.width_full().padding_top(30.).justify_center().gap(10.)),
         h_stack((
-            l10n("inc").button().action(move || counter += 1),
-            l10n("val").arg("counter", move || counter.get()),
-            l10n("dec").button().action(move || counter -= 1),
+            l10n("inc2")
+                .custom_style(|s| s.fallback("increment"))
+                .button()
+                .action(move || counter += 1),
+            l10n("val")
+                .custom_style(move |s| s.fallback(format!("{counter}")))
+                .arg("counter", move || counter.get()),
+            l10n("dec")
+                .custom_style(|s| s.fallback("decrement"))
+                .button()
+                .action(move || counter -= 1),
         ))
         .style(|s| s.size_full().items_center().justify_center().gap(10.)),
     ))
@@ -40,11 +49,10 @@ fn counter_view() -> impl IntoView {
         s.size_full()
             .items_center()
             .justify_center()
-            .set(L10nBundle, localizations.clone())
-            .set(
-                L10nLanguage,
-                langauge.get().parse::<LanguageIdentifier>().unwrap(),
-            )
+            .custom(|ls: L10nCustomStyle| {
+                ls.bundle(localizations.clone())
+                    .language(langauge.get().parse::<LanguageIdentifier>().unwrap())
+            })
     })
     .on_key_down(
         floem::keyboard::Key::Named(floem::keyboard::NamedKey::F11),

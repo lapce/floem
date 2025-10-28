@@ -2,10 +2,10 @@ use std::borrow::Cow;
 use std::pin::Pin;
 use std::rc::Rc;
 
-use crate::style::StylePropValue;
+use crate::style::{CustomStylable, CustomStyle, Style, StylePropValue};
 use crate::view_state::{Stack, StackOffset};
-use crate::views::static_label;
-use crate::{AnyView, IntoView, View, ViewId, prop, prop_extractor};
+use crate::views::{Decorators, static_label};
+use crate::{AnyView, IntoView, View, ViewId, prop, prop_extractor, style_class};
 use floem_reactive::create_updater;
 use floem_renderer::text::Align;
 use fluent_bundle::{FluentBundle, FluentResource};
@@ -140,6 +140,8 @@ prop_extractor! {
     }
 }
 
+style_class!(pub L10nClass);
+
 pub struct L10n {
     id: ViewId,
     key: String,
@@ -148,6 +150,7 @@ pub struct L10n {
     label_id: ViewId,
     language: LanguageExtractor,
     fallback: FallBackExtractor,
+    has_format_value: bool,
 }
 
 impl L10n {
@@ -165,7 +168,9 @@ impl L10n {
             arg_keys: Box::pin(Stack { stack: smallvec![] }),
             language: Default::default(),
             fallback: Default::default(),
+            has_format_value: false,
         }
+        .class(L10nClass)
     }
 
     pub fn arg<FV: Into<FluentValue<'static>>>(
@@ -208,10 +213,10 @@ impl View for L10n {
     }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
-        for child in self.id().children() {
-            cx.style_view(child);
-        }
         if self.language.read(cx) {
+            self.has_format_value = false;
+        }
+        if !self.has_format_value {
             let bundle = self.language.bundle();
             if let Some(language) = self.language.language() {
                 if let Some(resource) = bundle.0.get(&language) {
@@ -219,25 +224,34 @@ impl View for L10n {
                         if let Some(pattern) = message.value() {
                             let errors = &mut vec![];
                             let value = resource.format_pattern(pattern, Some(&self.args), errors);
-                            self.label_id.update_state(value.to_string());
-                            return;
+                            if errors.is_empty() {
+                                self.label_id.update_state(value.to_string());
+                                self.has_format_value = true
+                            }
                         }
                     }
                 }
             }
         }
-        if self.fallback.read(cx) {
-            self.label_id.update_state(self.fallback.fallback());
+        self.fallback.read(cx);
+        if !self.has_format_value {
+            if let Some(fallback) = self.fallback.fallback() {
+                self.label_id.update_state(fallback.to_string());
+            }
+        }
+        for child in self.id().children() {
+            cx.style_view(child);
         }
     }
 
     fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
         if let Ok(inner) = state.downcast::<(StackOffset<String>, FluentValue<'static>)>() {
+            self.has_format_value = false;
             let (offset, arg_val) = *inner;
             let arg_key_ref = self.arg_keys.get(offset);
             let arg_key_ptr: *const str = arg_key_ref.as_ref();
-            // SAFETY: args is dropped before arg_keys due to field declaration order,
-            // so this pointer remains valid for the lifetime of args
+            // SAFETY: arg_keys is pinned in a Box, so the pointer remains valid
+            // for the lifetime of the L10n struct
             let static_ref: &'static str = unsafe { &*arg_key_ptr };
             self.args.set(Cow::Borrowed(static_ref), arg_val);
 
@@ -248,13 +262,73 @@ impl View for L10n {
                         if let Some(pattern) = message.value() {
                             let errors = &mut vec![];
                             let value = resource.format_pattern(pattern, Some(&self.args), errors);
-                            self.label_id.update_state(value.to_string());
-                            return;
+                            if errors.is_empty() {
+                                self.label_id.update_state(value.to_string());
+                                self.has_format_value = true;
+                                return;
+                            }
                         }
                     }
                 }
             }
-            self.label_id.update_state(self.fallback.fallback());
+            if let Some(fallback) = self.fallback.fallback()
+                && !self.has_format_value
+            {
+                self.label_id.update_state(fallback.to_string());
+            }
         }
+    }
+}
+
+/// Represents a custom style for `L10n`.
+#[derive(Debug, Clone)]
+pub struct L10nCustomStyle(Style);
+
+impl From<L10nCustomStyle> for Style {
+    fn from(value: L10nCustomStyle) -> Self {
+        value.0
+    }
+}
+
+impl From<Style> for L10nCustomStyle {
+    fn from(value: Style) -> Self {
+        Self(value)
+    }
+}
+
+impl CustomStyle for L10nCustomStyle {
+    type StyleClass = L10nClass;
+}
+
+impl CustomStylable<L10nCustomStyle> for L10n {
+    type DV = Self;
+}
+
+impl L10nCustomStyle {
+    pub fn new() -> Self {
+        Self(Style::new())
+    }
+
+    pub fn language(mut self, language: impl Into<LanguageIdentifier>) -> Self {
+        let language = language.into();
+        self = Self(self.0.set(L10nLanguage, Some(language)));
+        self
+    }
+
+    pub fn fallback(mut self, fallback: impl Into<String>) -> Self {
+        let string = fallback.into();
+        self = Self(self.0.set(L10nFallback, Some(string)));
+        self
+    }
+
+    pub fn bundle(mut self, bundle: impl Into<LanguageMap>) -> Self {
+        self = Self(self.0.set(L10nBundle, bundle));
+        self
+    }
+}
+
+impl Default for L10nCustomStyle {
+    fn default() -> Self {
+        Self::new()
     }
 }
