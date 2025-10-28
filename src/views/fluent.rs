@@ -122,9 +122,26 @@ impl LocaleMap {
 
         Ok(Self(map))
     }
+
+    /// Find a bundle that matches the given locale.
+    /// First tries exact match, then falls back to matching only the language component.
+    fn find_bundle(
+        &self,
+        locale: &LanguageIdentifier,
+    ) -> Option<&Rc<FluentBundle<FluentResource>>> {
+        self.0.get(locale).or_else(|| {
+            self.0.iter().find_map(|(key, resource)| {
+                if key.language == locale.language {
+                    Some(resource)
+                } else {
+                    None
+                }
+            })
+        })
+    }
 }
 
-prop!(pub L10nLocale: Option<LanguageIdentifier> { inherited } = sys_locale::get_locale().and_then(|l| l.parse().ok()));
+prop!(pub L10nLocale: Option<LanguageIdentifier> { inherited } = sys_locale::get_locale().and_then(|l| dbg!(dbg!(l).parse()).ok()));
 prop!(pub L10nFallback: Option<String> {} = None);
 prop!(pub L10nBundle: LocaleMap { inherited } = LocaleMap(im_rc::HashMap::new()));
 
@@ -221,6 +238,29 @@ impl L10n {
         self.fallback_override = Some(initial_fallback);
         self
     }
+
+    fn try_format_message(&self) -> Option<String> {
+        let bundle = self.locale.bundle();
+        let locale = self.locale.locale()?;
+        let resource = bundle.find_bundle(&locale)?;
+        let message = resource.get_message(&self.key)?;
+        let pattern = message.value()?;
+        let errors = &mut vec![];
+        let value = resource.format_pattern(pattern, Some(&self.args), errors);
+        if errors.is_empty() {
+            Some(value.to_string())
+        } else {
+            None
+        }
+    }
+
+    fn apply_fallback(&self) {
+        if let Some(fallback) = &self.fallback_override {
+            self.label_id.update_state(fallback.to_string());
+        } else if let Some(fallback) = self.fallback.fallback() {
+            self.label_id.update_state(fallback.to_string());
+        }
+    }
 }
 
 pub fn l10n(label_key: impl Into<String>) -> L10n {
@@ -237,29 +277,14 @@ impl View for L10n {
             self.has_format_value = false;
         }
         if !self.has_format_value {
-            let bundle = self.locale.bundle();
-            if let Some(locale) = self.locale.locale() {
-                if let Some(resource) = bundle.0.get(&locale) {
-                    if let Some(message) = resource.get_message(&self.key) {
-                        if let Some(pattern) = message.value() {
-                            let errors = &mut vec![];
-                            let value = resource.format_pattern(pattern, Some(&self.args), errors);
-                            if errors.is_empty() {
-                                self.label_id.update_state(value.to_string());
-                                self.has_format_value = true
-                            }
-                        }
-                    }
-                }
+            if let Some(formatted) = self.try_format_message() {
+                self.label_id.update_state(formatted);
+                self.has_format_value = true;
             }
         }
         self.fallback.read(cx);
         if !self.has_format_value {
-            if let Some(fallback) = &self.fallback_override {
-                self.label_id.update_state(fallback.to_string());
-            } else if let Some(fallback) = self.fallback.fallback() {
-                self.label_id.update_state(fallback.to_string());
-            }
+            self.apply_fallback();
         }
         for child in self.id().children() {
             cx.style_view(child);
@@ -278,28 +303,13 @@ impl View for L10n {
                     let static_ref: &'static str = unsafe { &*arg_key_ptr };
                     self.args.set(Cow::Borrowed(static_ref), fluent_value);
 
-                    let bundle = self.locale.bundle();
-                    if let Some(locale) = self.locale.locale() {
-                        if let Some(resource) = bundle.0.get(&locale) {
-                            if let Some(message) = resource.get_message(&self.key) {
-                                if let Some(pattern) = message.value() {
-                                    let errors = &mut vec![];
-                                    let value =
-                                        resource.format_pattern(pattern, Some(&self.args), errors);
-                                    if errors.is_empty() {
-                                        self.label_id.update_state(value.to_string());
-                                        self.has_format_value = true;
-                                    }
-                                }
-                            }
-                        }
+                    if let Some(formatted) = self.try_format_message() {
+                        self.label_id.update_state(formatted);
+                        self.has_format_value = true;
                     }
+
                     if !self.has_format_value {
-                        if let Some(fallback) = &self.fallback_override {
-                            self.label_id.update_state(fallback.to_string());
-                        } else if let Some(fallback) = self.fallback.fallback() {
-                            self.label_id.update_state(fallback.to_string());
-                        }
+                        self.apply_fallback();
                     }
                 }
                 L10nState::Fallback(fallback_override) => {
@@ -353,6 +363,10 @@ impl L10nCustomStyle {
         let string = fallback.into();
         self = Self(self.0.set(L10nFallback, Some(string)));
         self
+    }
+
+    pub fn apply_opt<T>(self, opt: Option<T>, f: impl FnOnce(Self, T) -> Self) -> Self {
+        if let Some(t) = opt { f(self, t) } else { self }
     }
 
     pub fn bundle(mut self, bundle: impl Into<LocaleMap>) -> Self {

@@ -194,8 +194,6 @@ pub mod ext_event;
 pub mod file;
 #[cfg(any(feature = "rfd-async-std", feature = "rfd-tokio"))]
 pub mod file_action;
-#[cfg(feature = "fluent")]
-pub mod fluent;
 pub(crate) mod id;
 mod inspector;
 pub mod keyboard;

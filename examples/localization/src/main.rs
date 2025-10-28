@@ -1,8 +1,8 @@
 // #![allow(unused)]
 
 use floem::action::inspect;
-use floem::fluent::*;
 use floem::prelude::*;
+use fluent::*;
 
 fn main() {
     floem::launch(counter_view);
@@ -15,7 +15,7 @@ fn counter_view() -> impl IntoView {
     ])
     .unwrap();
 
-    let langauge = RwSignal::new("en-US");
+    let langauge = RwSignal::new(None);
 
     let mut counter = RwSignal::new(0);
 
@@ -23,14 +23,14 @@ fn counter_view() -> impl IntoView {
         h_stack((
             button("pl")
                 .style(|s| s.padding_horiz(20.))
-                .action(move || langauge.set("pl-PL")),
+                .action(move || langauge.set(Some("pl-PL"))),
             button("en")
                 .style(|s| s.padding_horiz(20.))
-                .action(move || langauge.set("en-US")),
+                .action(move || langauge.set(Some("en-US"))),
         ))
         .style(|s| s.width_full().padding_top(30.).justify_center().gap(10.)),
         h_stack((
-            l10n("inc2")
+            l10n("inc")
                 .fallback(|| "increment")
                 .button()
                 .action(move || counter += 1),
@@ -50,7 +50,9 @@ fn counter_view() -> impl IntoView {
             .justify_center()
             .custom(|ls: L10nCustomStyle| {
                 ls.bundle(localizations.clone())
-                    .locale(langauge.get().parse::<LanguageIdentifier>().unwrap())
+                    .apply_opt(langauge.get(), |ls, locale| {
+                        ls.locale(locale.parse::<LanguageIdentifier>().unwrap())
+                    })
             })
     })
     .on_key_down(
