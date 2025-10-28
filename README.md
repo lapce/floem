@@ -57,7 +57,17 @@ Inspired by [Xilem](https://github.com/linebender/xilem), [Leptos](https://githu
 
 To sample Floem's capabilities, check out the repo and run the [widget gallery](examples/widget-gallery/src/main.rs) example with cargo.
 
-![Widget gallery](docs/img/widget-gallery.png)
+
+![Widget gallery](docs/img/widget-gallery-dark.png)
+
+<details>
+    <summary>Light Mode</summary>
+        
+![Widget gallery light](docs/img/widget-gallery-light.png)
+</details>
+
+
+
 ![Inspector](docs/img/inspector.png)
 
 To help you master Floem, we provide [documentation](https://docs.rs/floem) and [code examples](examples/).
