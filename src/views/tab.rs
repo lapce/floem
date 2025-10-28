@@ -256,7 +256,7 @@ impl<T> View for Tab<T> {
                 TabState::Diff(diff) => {
                     apply_diff(
                         self.id(),
-                        cx.app_state,
+                        cx.window_state,
                         *diff,
                         &mut self.children,
                         &self.view_fn,

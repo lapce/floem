@@ -13,7 +13,7 @@ use crate::{
     },
 };
 use bitflags::bitflags;
-use im::HashSet;
+use im_rc::HashSet;
 use peniko::kurbo::{Affine, Point, Rect};
 use smallvec::SmallVec;
 use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::Rc};
@@ -21,8 +21,8 @@ use taffy::tree::NodeId;
 
 /// A stack of view attributes. Each entry is associated with a view decorator call.
 #[derive(Debug)]
-pub(crate) struct Stack<T> {
-    pub(crate) stack: SmallVec<[T; 1]>,
+pub struct Stack<T> {
+    pub stack: SmallVec<[T; 1]>,
 }
 
 impl<T> Default for Stack<T> {
@@ -33,7 +33,7 @@ impl<T> Default for Stack<T> {
     }
 }
 
-pub(crate) struct StackOffset<T> {
+pub struct StackOffset<T> {
     offset: usize,
     phantom: PhantomData<T>,
 }
@@ -62,6 +62,10 @@ impl<T> Stack<T> {
 
     pub fn update(&mut self, offset: StackOffset<T>, update: impl Fn(&mut T) + 'static) {
         update(&mut self.stack[offset.offset]);
+    }
+
+    pub fn get(&mut self, offset: StackOffset<T>) -> &T {
+        &self.stack[offset.offset]
     }
 }
 

@@ -784,7 +784,7 @@ impl EditorView {
         }
 
         let is_active = if let Some(view_id) = view_id {
-            is_active && cx.app_state.is_focused(&view_id)
+            is_active && cx.window_state.is_focused(&view_id)
         } else {
             is_active
         };
@@ -836,7 +836,7 @@ impl View for EditorView {
             ed.es.update(|s| {
                 if s.read(cx) {
                     ed.floem_style_id.update(|val| *val += 1);
-                    cx.app_state_mut().request_paint(self.id());
+                    cx.window_state.request_paint(self.id());
                 }
             })
         });

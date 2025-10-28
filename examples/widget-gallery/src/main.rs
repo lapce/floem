@@ -319,7 +319,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
 
     add_overlay(
         button("toggle theme")
-            .action(|| toggle_theme())
+            .action(toggle_theme)
             .style(|s| s.absolute().inset_top(10.).inset_right(22.)),
     );
 

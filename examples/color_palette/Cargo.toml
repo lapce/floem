@@ -5,6 +5,5 @@ license.workspace = true
 version.workspace = true
 
 [dependencies]
-im.workspace = true
 floem = { path = "../.." }
 palette = "0.7.6"

@@ -33,7 +33,7 @@ strum = { version = "0.27", features = ["derive"] }
 strum_macros = { version = "0.27" }
 # Image format features are defined via new features
 image = { version = "0.25", default-features = false }
-im = { version = "15.1.0" }
+im-rc = "15.1.0"
 resvg = { version = "0.45" }
 raw-window-handle = "0.6.0"
 unicode-segmentation = "1.10"
@@ -59,7 +59,7 @@ tokio = { version = "1", features = ["sync", "rt"], optional = true }
 raw-window-handle = { workspace = true }
 unicode-segmentation = { workspace = true }
 peniko = { workspace = true }
-im-rc = "15.1.0"
+im-rc.workspace = true
 serde = { workspace = true, optional = true }
 lapce-xi-rope = { workspace = true, optional = true }
 strum = { workspace = true, optional = true }
@@ -76,11 +76,13 @@ copypasta = { version = "0.10", default-features = false, features = [
 ] }
 parking_lot = { workspace = true }
 image = { workspace = true }
-im = { workspace = true }
 winit = { workspace = true }
 futures = { version = "0.3.31" }
 crossbeam = { version = "0.8", optional = true }
 wgpu.workspace = true
+fluent-bundle = { version = "0.16", optional = true }
+unic-langid = { version = "0.9", optional = true }
+sys-locale = {version = "0.3.2", optional = true }
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
 muda = { workspace = true }
@@ -146,3 +148,4 @@ tokio = ["dep:tokio"]
 rfd-async-std = ["dep:rfd", "rfd/async-std"]
 rfd-tokio = ["dep:rfd", "rfd/tokio"]
 crossbeam = ["dep:crossbeam", "floem_renderer/crossbeam"]
+localization = ["dep:fluent-bundle", "dep:unic-langid", "dep:sys-locale"]

@@ -516,7 +516,7 @@ impl View for Label {
 
         let text_layout = self.effective_text_layout();
         cx.draw_text(text_layout, point);
-        if cx.app_state.is_focused(&self.id()) {
+        if cx.window_state.is_focused(&self.id()) {
             self.paint_selection(text_layout, cx);
         }
     }

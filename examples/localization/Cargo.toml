@@ -1,0 +1,8 @@
+[package]
+name = "localization"
+edition = "2024"
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+floem = { path = "../..", features = ["vello", "localization"] }

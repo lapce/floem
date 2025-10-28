@@ -5,7 +5,6 @@ license.workspace = true
 version.workspace = true
 
 [dependencies]
-im.workspace = true
 floem = { path = "../.." }
 cosmic-text = { version = "0.14.2", features = ["shape-run-cache"] }
 

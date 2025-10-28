@@ -1,5 +1,6 @@
 use floem::{
     event::EventListener,
+    im_rc,
     peniko::Color,
     reactive::{create_signal, ReadSignal, SignalGet, SignalUpdate, WriteSignal},
     style::{CursorStyle, Position},
@@ -27,7 +28,7 @@ impl std::fmt::Display for Tab {
 
 fn tab_button(
     this_tab: Tab,
-    tabs: ReadSignal<im::Vector<Tab>>,
+    tabs: ReadSignal<im_rc::Vector<Tab>>,
     set_active_tab: WriteSignal<usize>,
     active_tab: ReadSignal<usize>,
 ) -> impl IntoView {
@@ -63,7 +64,7 @@ const CONTENT_PADDING: f64 = 10.0;
 pub fn tab_navigation_view() -> impl IntoView {
     let tabs = vec![Tab::General, Tab::Settings, Tab::Feedback]
         .into_iter()
-        .collect::<im::Vector<Tab>>();
+        .collect::<im_rc::Vector<Tab>>();
     let (tabs, _set_tabs) = create_signal(tabs);
     let (active_tab, set_active_tab) = create_signal(0);
 

@@ -200,7 +200,7 @@ impl<T: 'static + Clone + PartialEq> View for Dropdown<T> {
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
         if self.style.read(cx) {
-            cx.app_state_mut().request_paint(self.id);
+            cx.window_state.request_paint(self.id);
         }
         self.list_style = cx
             .style()
@@ -245,7 +245,7 @@ impl<T: 'static + Clone + PartialEq> View for Dropdown<T> {
                         self.main_view = main_view_id;
                         self.main_view_scope = main_view_scope;
 
-                        cx.app_state_mut().remove_view(old_main_view);
+                        cx.window_state.remove_view(old_main_view);
                         old_child_scope.dispose();
                         self.id.request_all();
                     }
@@ -546,7 +546,7 @@ impl<T: Clone + std::cmp::PartialEq> Dropdown<T> {
     fn open_dropdown(&mut self, cx: &mut crate::context::UpdateCx) {
         if self.overlay_id.is_none() {
             self.id.request_layout();
-            cx.app_state.compute_layout();
+            cx.window_state.compute_layout();
             if let Some(layout) = self.id.get_layout() {
                 self.update_list_style(layout.size.width as f64);
                 let point =

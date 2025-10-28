@@ -17,7 +17,7 @@ use crate::{
 };
 
 /// Encapsulates and owns the global state of the application,
-pub struct AppState {
+pub struct WindowState {
     /// keyboard focus
     pub(crate) focus: Option<ViewId>,
     pub(crate) prev_focus: Option<ViewId>,
@@ -53,7 +53,7 @@ pub struct AppState {
     pub(crate) capture: Option<CaptureState>,
 }
 
-impl AppState {
+impl WindowState {
     pub fn new(root_view_id: ViewId) -> Self {
         Self {
             root: None,

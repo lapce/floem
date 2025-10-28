@@ -1,10 +1,10 @@
-use floem::prelude::*;
+use floem::{im_rc, prelude::*};
 
 pub fn virtual_stack_view() -> impl IntoView {
     // A virtual list is optimized to only render the views that are visible
     // making it ideal for large lists with a lot of views.
 
-    let long_list: im::Vector<i32> = (0..1000000).collect();
+    let long_list: im_rc::Vector<i32> = (0..1000000).collect();
     let long_list = RwSignal::new(long_list);
 
     let button = button("Add an item")

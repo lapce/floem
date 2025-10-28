@@ -1,7 +1,7 @@
 use std::{cell::LazyCell, time::Instant};
 
+use floem::im_rc::{HashSet, Vector};
 use floem::prelude::*;
-use im::{HashSet, Vector};
 use rusqlite::{named_params, Connection};
 
 use crate::todo::{Todo, TodoState};
