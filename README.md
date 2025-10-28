@@ -4,7 +4,7 @@
 
 # Floem
 
-A native Rust UI library with fine-grained reactivity
+A native Rust UI library with fine-grained reactivity and great ergonomics
 
 [![crates.io](https://img.shields.io/crates/v/floem.svg)](https://crates.io/crates/floem)
 [![docs.rs](https://docs.rs/floem/badge.svg)](https://docs.rs/floem)
