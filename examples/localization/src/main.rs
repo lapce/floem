@@ -3,14 +3,13 @@
 use floem::action::inspect;
 use floem::fluent::*;
 use floem::prelude::*;
-use floem::style::CustomStylable;
 
 fn main() {
     floem::launch(counter_view);
 }
 
 fn counter_view() -> impl IntoView {
-    let localizations = LanguageMap::from_resources([
+    let localizations = LocaleMap::from_resources([
         ("en-US", include_str!("../locales/en-US/app.ftl")),
         ("pl-PL", include_str!("../locales/pl-PL/app.ftl")),
     ])
@@ -32,14 +31,14 @@ fn counter_view() -> impl IntoView {
         .style(|s| s.width_full().padding_top(30.).justify_center().gap(10.)),
         h_stack((
             l10n("inc2")
-                .custom_style(|s| s.fallback("increment"))
+                .fallback(|| "increment")
                 .button()
                 .action(move || counter += 1),
             l10n("val")
-                .custom_style(move |s| s.fallback(format!("{counter}")))
+                .fallback(move || format!("{counter}"))
                 .arg("counter", move || counter.get()),
             l10n("dec")
-                .custom_style(|s| s.fallback("decrement"))
+                .fallback(|| "decrement")
                 .button()
                 .action(move || counter -= 1),
         ))
@@ -51,7 +50,7 @@ fn counter_view() -> impl IntoView {
             .justify_center()
             .custom(|ls: L10nCustomStyle| {
                 ls.bundle(localizations.clone())
-                    .language(langauge.get().parse::<LanguageIdentifier>().unwrap())
+                    .locale(langauge.get().parse::<LanguageIdentifier>().unwrap())
             })
     })
     .on_key_down(

@@ -33,7 +33,7 @@ impl<T> Default for Stack<T> {
     }
 }
 
-pub(crate) struct StackOffset<T> {
+pub struct StackOffset<T> {
     offset: usize,
     phantom: PhantomData<T>,
 }

@@ -16,27 +16,27 @@ use smallvec::smallvec;
 pub use unic_langid::LanguageIdentifier;
 
 #[derive(Clone)]
-pub struct LanguageMap(pub im_rc::HashMap<LanguageIdentifier, Rc<FluentBundle<FluentResource>>>);
-impl std::ops::Deref for LanguageMap {
+pub struct LocaleMap(pub im_rc::HashMap<LanguageIdentifier, Rc<FluentBundle<FluentResource>>>);
+impl std::ops::Deref for LocaleMap {
     type Target = im_rc::HashMap<LanguageIdentifier, Rc<FluentBundle<FluentResource>>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
-impl std::ops::DerefMut for LanguageMap {
+impl std::ops::DerefMut for LocaleMap {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
-impl std::fmt::Debug for LanguageMap {
+impl std::fmt::Debug for LocaleMap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_map()
             .entries(self.0.keys().map(|lang_id| (lang_id, "<FluentBundle>")))
             .finish()
     }
 }
-impl PartialEq for LanguageMap {
+impl PartialEq for LocaleMap {
     fn eq(&self, other: &Self) -> bool {
         if self.0.len() != other.0.len() {
             return false;
@@ -48,7 +48,7 @@ impl PartialEq for LanguageMap {
         })
     }
 }
-impl StylePropValue for LanguageMap {
+impl StylePropValue for LocaleMap {
     fn debug_view(&self) -> Option<AnyView> {
         use crate::prelude::*;
 
@@ -100,7 +100,7 @@ impl StylePropValue for LanguageIdentifier {
         crate::style::CombineResult::Other
     }
 }
-impl LanguageMap {
+impl LocaleMap {
     pub fn from_resources<'a, I>(resources: I) -> Result<Self, Box<dyn std::error::Error>>
     where
         I: IntoIterator<Item = (&'a str, &'a str)>,
@@ -124,13 +124,13 @@ impl LanguageMap {
     }
 }
 
-prop!(pub L10nLanguage: Option<LanguageIdentifier> { inherited } = sys_locale::get_locale().and_then(|l| l.parse().ok()));
+prop!(pub L10nLocale: Option<LanguageIdentifier> { inherited } = sys_locale::get_locale().and_then(|l| l.parse().ok()));
 prop!(pub L10nFallback: Option<String> {} = None);
-prop!(pub L10nBundle: LanguageMap { inherited } = LanguageMap(im_rc::HashMap::new()));
+prop!(pub L10nBundle: LocaleMap { inherited } = LocaleMap(im_rc::HashMap::new()));
 
 prop_extractor! {
     LanguageExtractor {
-        language: L10nLanguage,
+        locale: L10nLocale,
         bundle: L10nBundle,
     }
 }
@@ -142,13 +142,19 @@ prop_extractor! {
 
 style_class!(pub L10nClass);
 
+pub enum L10nState {
+    Arg(StackOffset<String>, FluentValue<'static>),
+    Fallback(String),
+}
+
 pub struct L10n {
     id: ViewId,
     key: String,
     args: FluentArgs<'static>,
     arg_keys: Pin<Box<crate::view_state::Stack<String>>>, // Pinned allocation
     label_id: ViewId,
-    language: LanguageExtractor,
+    locale: LanguageExtractor,
+    fallback_override: Option<String>,
     fallback: FallBackExtractor,
     has_format_value: bool,
 }
@@ -166,8 +172,9 @@ impl L10n {
             key,
             args: FluentArgs::new(),
             arg_keys: Box::pin(Stack { stack: smallvec![] }),
-            language: Default::default(),
+            locale: Default::default(),
             fallback: Default::default(),
+            fallback_override: None,
             has_format_value: false,
         }
         .class(L10nClass)
@@ -195,10 +202,23 @@ impl L10n {
         let initial_val = create_updater(
             move || arg_val().into(),
             move |arg_val: FluentValue<'static>| {
-                id.update_state((offset, arg_val));
+                id.update_state(L10nState::Arg(offset, arg_val));
             },
         );
         self.args.set(Cow::Borrowed(static_ref), initial_val);
+        self
+    }
+
+    /// This fallback takes precendence over any fallback from `Style`.
+    pub fn fallback<S: Into<String>>(mut self, fallback: impl Fn() -> S + 'static) -> Self {
+        let id = self.id;
+        let initial_fallback = create_updater(
+            move || fallback().into(),
+            move |fallback| {
+                id.update_state(L10nState::Fallback(fallback));
+            },
+        );
+        self.fallback_override = Some(initial_fallback);
         self
     }
 }
@@ -213,13 +233,13 @@ impl View for L10n {
     }
 
     fn style_pass(&mut self, cx: &mut crate::context::StyleCx<'_>) {
-        if self.language.read(cx) {
+        if self.locale.read(cx) {
             self.has_format_value = false;
         }
         if !self.has_format_value {
-            let bundle = self.language.bundle();
-            if let Some(language) = self.language.language() {
-                if let Some(resource) = bundle.0.get(&language) {
+            let bundle = self.locale.bundle();
+            if let Some(locale) = self.locale.locale() {
+                if let Some(resource) = bundle.0.get(&locale) {
                     if let Some(message) = resource.get_message(&self.key) {
                         if let Some(pattern) = message.value() {
                             let errors = &mut vec![];
@@ -235,7 +255,9 @@ impl View for L10n {
         }
         self.fallback.read(cx);
         if !self.has_format_value {
-            if let Some(fallback) = self.fallback.fallback() {
+            if let Some(fallback) = &self.fallback_override {
+                self.label_id.update_state(fallback.to_string());
+            } else if let Some(fallback) = self.fallback.fallback() {
                 self.label_id.update_state(fallback.to_string());
             }
         }
@@ -245,36 +267,48 @@ impl View for L10n {
     }
 
     fn update(&mut self, _cx: &mut crate::context::UpdateCx, state: Box<dyn std::any::Any>) {
-        if let Ok(inner) = state.downcast::<(StackOffset<String>, FluentValue<'static>)>() {
-            self.has_format_value = false;
-            let (offset, arg_val) = *inner;
-            let arg_key_ref = self.arg_keys.get(offset);
-            let arg_key_ptr: *const str = arg_key_ref.as_ref();
-            // SAFETY: arg_keys is pinned in a Box, so the pointer remains valid
-            // for the lifetime of the L10n struct
-            let static_ref: &'static str = unsafe { &*arg_key_ptr };
-            self.args.set(Cow::Borrowed(static_ref), arg_val);
+        if let Ok(inner) = state.downcast::<L10nState>() {
+            match *inner {
+                L10nState::Arg(stack_offset, fluent_value) => {
+                    self.has_format_value = false;
+                    let arg_key_ref = self.arg_keys.get(stack_offset);
+                    let arg_key_ptr: *const str = arg_key_ref.as_ref();
+                    // SAFETY: arg_keys is pinned in a Box, so the pointer remains valid
+                    // for the lifetime of the L10n struct
+                    let static_ref: &'static str = unsafe { &*arg_key_ptr };
+                    self.args.set(Cow::Borrowed(static_ref), fluent_value);
 
-            let bundle = self.language.bundle();
-            if let Some(language) = self.language.language() {
-                if let Some(resource) = bundle.0.get(&language) {
-                    if let Some(message) = resource.get_message(&self.key) {
-                        if let Some(pattern) = message.value() {
-                            let errors = &mut vec![];
-                            let value = resource.format_pattern(pattern, Some(&self.args), errors);
-                            if errors.is_empty() {
-                                self.label_id.update_state(value.to_string());
-                                self.has_format_value = true;
-                                return;
+                    let bundle = self.locale.bundle();
+                    if let Some(locale) = self.locale.locale() {
+                        if let Some(resource) = bundle.0.get(&locale) {
+                            if let Some(message) = resource.get_message(&self.key) {
+                                if let Some(pattern) = message.value() {
+                                    let errors = &mut vec![];
+                                    let value =
+                                        resource.format_pattern(pattern, Some(&self.args), errors);
+                                    if errors.is_empty() {
+                                        self.label_id.update_state(value.to_string());
+                                        self.has_format_value = true;
+                                    }
+                                }
                             }
                         }
                     }
+                    if !self.has_format_value {
+                        if let Some(fallback) = &self.fallback_override {
+                            self.label_id.update_state(fallback.to_string());
+                        } else if let Some(fallback) = self.fallback.fallback() {
+                            self.label_id.update_state(fallback.to_string());
+                        }
+                    }
                 }
-            }
-            if let Some(fallback) = self.fallback.fallback()
-                && !self.has_format_value
-            {
-                self.label_id.update_state(fallback.to_string());
+                L10nState::Fallback(fallback_override) => {
+                    self.fallback_override = Some(fallback_override);
+                    if !self.has_format_value {
+                        self.label_id
+                            .update_state(self.fallback_override.clone().unwrap());
+                    }
+                }
             }
         }
     }
@@ -309,9 +343,9 @@ impl L10nCustomStyle {
         Self(Style::new())
     }
 
-    pub fn language(mut self, language: impl Into<LanguageIdentifier>) -> Self {
-        let language = language.into();
-        self = Self(self.0.set(L10nLanguage, Some(language)));
+    pub fn locale(mut self, locale: impl Into<LanguageIdentifier>) -> Self {
+        let locale = locale.into();
+        self = Self(self.0.set(L10nLocale, Some(locale)));
         self
     }
 
@@ -321,7 +355,7 @@ impl L10nCustomStyle {
         self
     }
 
-    pub fn bundle(mut self, bundle: impl Into<LanguageMap>) -> Self {
+    pub fn bundle(mut self, bundle: impl Into<LocaleMap>) -> Self {
         self = Self(self.0.set(L10nBundle, bundle));
         self
     }
