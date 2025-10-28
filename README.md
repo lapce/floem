@@ -37,7 +37,7 @@ fn counter_view() -> impl IntoView {
 ```
 
 
-<img src="docs/img/quickstart.png" width="300"/>
+<img src="docs/img/quickstart.jpg" width="300"/>
 
 
 ## Features
@@ -58,17 +58,18 @@ Inspired by [Xilem](https://github.com/linebender/xilem), [Leptos](https://githu
 To sample Floem's capabilities, check out the repo and run the [widget gallery](examples/widget-gallery/src/main.rs) example with cargo.
 
 
-![Widget gallery](docs/img/widget-gallery-dark.png)
+<img src="docs/img/widget-gallery-dark.jpg" width="900"/>
 
 <details>
     <summary>Light Mode</summary>
         
-![Widget gallery light](docs/img/widget-gallery-light.png)
+<img src="docs/img/widget-gallery-light.jpg" width="900"/>
 </details>
 
 
 
-![Inspector](docs/img/inspector.png)
+        
+<img src="docs/img/inspector.jpg" width="900"/>
 
 To help you master Floem, we provide [documentation](https://docs.rs/floem) and [code examples](examples/).
 
