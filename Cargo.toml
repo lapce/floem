@@ -82,6 +82,7 @@ crossbeam = { version = "0.8", optional = true }
 wgpu.workspace = true
 fluent-bundle = { version = "0.16", optional = true }
 unic-langid = { version = "0.9", optional = true }
+sys-locale = {version = "0.3.2", optional = true }
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
 muda = { workspace = true }
@@ -147,4 +148,4 @@ tokio = ["dep:tokio"]
 rfd-async-std = ["dep:rfd", "rfd/async-std"]
 rfd-tokio = ["dep:rfd", "rfd/tokio"]
 crossbeam = ["dep:crossbeam", "floem_renderer/crossbeam"]
-fluent = ["dep:fluent-bundle", "dep:unic-langid"]
+fluent = ["dep:fluent-bundle", "dep:unic-langid", "dep:sys-locale"]

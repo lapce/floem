@@ -15,11 +15,6 @@ pub use fluent_bundle::types::FluentValue;
 use smallvec::smallvec;
 pub use unic_langid::LanguageIdentifier;
 
-fn get_os_language() -> Option<String> {
-    // TODO: use external crate for it?
-    None
-}
-
 #[derive(Clone)]
 pub struct LanguageMap(pub im_rc::HashMap<LanguageIdentifier, Rc<FluentBundle<FluentResource>>>);
 impl std::ops::Deref for LanguageMap {
@@ -129,7 +124,7 @@ impl LanguageMap {
     }
 }
 
-prop!(pub L10nLanguage: Option<LanguageIdentifier> { inherited } = None);
+prop!(pub L10nLanguage: Option<LanguageIdentifier> { inherited } = sys_locale::get_locale().and_then(|l| l.parse().ok()));
 prop!(pub L10nFallback: Option<String> {} = None);
 prop!(pub L10nBundle: LanguageMap { inherited } = LanguageMap(im_rc::HashMap::new()));
 
