@@ -54,7 +54,8 @@ impl ViewId {
         });
     }
 
-    pub(crate) fn taffy(&self) -> Rc<RefCell<TaffyTree>> {
+    /// Get access to the taffy tree
+    pub fn taffy(&self) -> Rc<RefCell<TaffyTree>> {
         VIEW_STORAGE.with_borrow(|s| s.taffy.clone())
     }
 
@@ -99,6 +100,7 @@ impl ViewId {
         })
     }
 
+    /// Get access to the View
     pub(crate) fn view(&self) -> Rc<RefCell<Box<dyn View>>> {
         VIEW_STORAGE.with_borrow(|s| {
             s.views
@@ -194,7 +196,8 @@ impl ViewId {
         VIEW_STORAGE.with_borrow(|s| s.parent.get(*self).cloned().flatten())
     }
 
-    pub(crate) fn root(&self) -> Option<ViewId> {
+    /// Get the root view of the window that the given view is in
+    pub fn root(&self) -> Option<ViewId> {
         VIEW_STORAGE.with_borrow_mut(|s| {
             if let Some(root) = s.root.get(*self) {
                 // The cached value will be cleared on remove() above
@@ -278,6 +281,36 @@ impl ViewId {
 
             layout.location = layout.location + taffy.borrow().layout(node).ok()?.location;
         }
+
+        Some(layout)
+    }
+
+    /// Get the taffy layout of this id relative to a parent/ancestor ID
+    pub fn get_layout_relative_to(&self, relative_to: ViewId) -> Option<Layout> {
+        let taffy = self.taffy();
+        let target_node = relative_to.state().borrow().node;
+        let mut node = self.state().borrow().node;
+        let mut layout = *taffy.borrow().layout(node).ok()?;
+
+        loop {
+            let parent = taffy.borrow().parent(node);
+            if parent == Some(target_node) {
+                break;
+            }
+
+            // If we've reached the root without finding the target, return None
+            node = parent?;
+            layout.location = layout.location + taffy.borrow().layout(node).ok()?.location;
+        }
+
+        Some(layout)
+    }
+
+    /// Get the taffy layout of this id relative to the root
+    pub fn get_layout_relative_to_root(&self) -> Option<Layout> {
+        let taffy = self.taffy();
+        let node = self.state().borrow().node;
+        let layout = *taffy.borrow().layout(node).ok()?;
 
         Some(layout)
     }
