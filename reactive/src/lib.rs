@@ -25,6 +25,7 @@ pub use effect::{
     batch, create_effect, create_stateful_updater, create_tracker, create_updater, untrack,
     SignalTracker,
 };
+
 pub use id::Id as ReactiveId;
 pub use memo::{create_memo, Memo};
 pub use read::{ReadSignalValue, SignalGet, SignalRead, SignalTrack, SignalWith};
@@ -32,3 +33,8 @@ pub use scope::{as_child_of_current_scope, with_scope, Scope};
 pub use signal::{create_rw_signal, create_signal, ReadSignal, RwSignal, WriteSignal};
 pub use trigger::{create_trigger, Trigger};
 pub use write::{SignalUpdate, SignalWrite, WriteSignalValue};
+
+#[cfg(feature = "hotpatch")]
+pub use effect::create_hot_updater;
+#[cfg(feature = "hotpatch")]
+pub use runtime::hotpatch;

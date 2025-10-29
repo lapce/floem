@@ -27,6 +27,8 @@ pub(crate) struct Runtime {
     pub(crate) contexts: RefCell<HashMap<TypeId, Box<dyn Any>>>,
     pub(crate) batching: Cell<bool>,
     pub(crate) pending_effects: RefCell<SmallVec<[Rc<dyn EffectTrait>; 10]>>,
+    #[cfg(feature = "hotpatch")]
+    pub(crate) hot_patched_effects: RefCell<HashMap<u64, Rc<dyn EffectTrait>>>,
 }
 
 impl Default for Runtime {
@@ -45,6 +47,8 @@ impl Runtime {
             contexts: Default::default(),
             batching: Cell::new(false),
             pending_effects: RefCell::new(SmallVec::new()),
+            #[cfg(feature = "hotpatch")]
+            hot_patched_effects: RefCell::new(HashMap::new()),
         }
     }
 
@@ -65,4 +69,38 @@ impl Runtime {
             run_effect(effect);
         }
     }
+}
+
+#[cfg(feature = "hotpatch")]
+pub(crate) fn register_effect<T: EffectTrait + 'static>(effect: Rc<T>) {
+    RUNTIME.with(|runtime| {
+        let Ok(mut hot_patched_effects) = runtime.hot_patched_effects.try_borrow_mut() else {
+            return;
+        };
+        let current_ptr = effect.hot_fn_ptr();
+        hot_patched_effects.insert(current_ptr, effect.clone());
+    });
+}
+
+#[cfg(feature = "hotpatch")]
+pub fn hotpatch() {
+    RUNTIME.with(|runtime| {
+        let Ok(mut hot_patched_effects) = runtime.hot_patched_effects.try_borrow_mut() else {
+            return;
+        };
+
+        let updates: Vec<_> = hot_patched_effects
+            .iter()
+            .filter_map(|(old_ptr, effect)| {
+                let new_ptr = effect.hot_fn_ptr();
+                (*old_ptr != new_ptr).then_some((*old_ptr, new_ptr, effect.clone()))
+            })
+            .collect();
+
+        for (old_ptr, new_ptr, effect) in updates {
+            effect.run();
+            hot_patched_effects.remove(&old_ptr);
+            hot_patched_effects.insert(new_ptr, effect);
+        }
+    });
 }

@@ -1,4 +1,4 @@
-use floem::{action::inspect, prelude::*};
+use floem::{action::{inspect, set_window_scale}, prelude::*};
 use localization::*;
 
 fn main() {
@@ -55,6 +55,8 @@ fn counter_view() -> impl IntoView {
     ))
     .style(|s| s.size_full().items_center().justify_center().gap(10.));
 
+    let mut window_scale = RwSignal::new(1.);
+
     (lang_tabs, value_controls)
         .v_stack()
         .style(move |s| {
@@ -73,6 +75,36 @@ fn counter_view() -> impl IntoView {
             |_| true,
             |_| {
                 inspect();
+            },
+        )
+        .on_key_down(
+            floem::keyboard::Key::Character("=".into()),
+            |m| m.meta(),
+            move |_| {
+                set_window_scale({
+                    window_scale.update(|s| *s *= 1.1);
+                    window_scale.get_untracked()
+                });
+            },
+        )
+        .on_key_down(
+            floem::keyboard::Key::Character("-".into()),
+            |m| m.meta(),
+            move |_| {
+                set_window_scale({
+                    window_scale.update(|s| *s /= 1.1);
+                    window_scale.get_untracked()
+                });
+            },
+        )
+        .on_key_down(
+            floem::keyboard::Key::Character("0".into()),
+            |m| m.meta(),
+            move |_| {
+                set_window_scale({
+                    window_scale.update(|s| *s = 1.);
+                    window_scale.get_untracked()
+                });
             },
         )
 }

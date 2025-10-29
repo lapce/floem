@@ -8,7 +8,7 @@ pub struct Id(u64);
 
 impl Id {
     /// Create a new Id that's next in order
-    pub(crate) fn next() -> Id {
+    pub fn next() -> Id {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         Id(COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
     }
@@ -24,7 +24,7 @@ impl Id {
     }
 
     /// Make this Id a child of the current Scope
-    pub(crate) fn set_scope(&self) {
+    pub fn set_scope(&self) {
         RUNTIME.with(|runtime| {
             let scope = runtime.current_scope.borrow();
             let mut children = runtime.children.borrow_mut();
@@ -51,6 +51,19 @@ impl Id {
             if let Some(signal) = signal {
                 for (_, effect) in signal.subscribers() {
                     observer_clean_up(&effect);
+
+                    #[cfg(feature = "hotpatch")]
+                    {
+                        // Remove from hotpatch registry when disposing
+                        RUNTIME.with(|runtime| {
+                            if let Ok(mut hot_patched_effects) =
+                                runtime.hot_patched_effects.try_borrow_mut()
+                            {
+                                let fn_ptr = effect.hot_fn_ptr();
+                                hot_patched_effects.remove(&fn_ptr);
+                            }
+                        });
+                    }
                 }
             }
         }

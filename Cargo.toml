@@ -50,6 +50,8 @@ ui-events = {version = "0.2", features = ["kurbo"]}
 ui-events-winit = {path = "./ui-events-winit", package = "ui-events-floem-winit"}
 dpi = { version = "0.1.2", default-features = false }
 
+dioxus-devtools = "=0.7.0-rc.3"
+
 [dependencies]
 slotmap = "1.0"
 sha2 = "0.10"
@@ -94,6 +96,11 @@ fluent-bundle = { version = "0.16", optional = true }
 unic-langid = { version = "0.9", optional = true }
 sys-locale = {version = "0.3.2", optional = true }
 
+#hotpatching
+tungstenite = { version = "0.26.2", optional = true }
+serde_json = { version = "1.0.140", optional = true }
+dioxus-devtools = { workspace = true, optional = true}
+
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
 muda = { workspace = true }
 
@@ -121,6 +128,7 @@ objc2-app-kit = { version = "0.3", features = [
 default = ["editor", "default-image-formats", "vger"]
 vello = ["dep:floem_vello_renderer"]
 vger = ["dep:floem_vger_renderer"]
+hotpatch = ["dep:tungstenite", "dep:serde_json", "dep:dioxus-devtools", "floem_reactive/hotpatch"]
 serde = [
   "dep:serde",
   "winit/serde",
@@ -159,3 +167,6 @@ rfd-async-std = ["dep:rfd", "rfd/async-std"]
 rfd-tokio = ["dep:rfd", "rfd/tokio"]
 crossbeam = ["dep:crossbeam", "floem_renderer/crossbeam"]
 localization = ["dep:fluent-bundle", "dep:unic-langid", "dep:sys-locale"]
+
+
+
