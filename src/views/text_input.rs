@@ -156,9 +156,11 @@ pub enum TextDirection {
 ///     // Optional placeholder text
 ///     .placeholder("Placeholder text")
 ///     // Width of the text widget
-///     .style(|s| s.width(250.))
-///     // Enable keyboard navigation on the widget
-///     .keyboard_navigable();
+///     .style(|s| s
+///         .width(250.)
+///         // Enable keyboard navigation on the widget
+///         .focusable(true)
+///      );
 ///
 /// // Stylized text example:
 /// let stylized = text_input(text)
@@ -186,8 +188,8 @@ pub enum TextDirection {
 ///             .font_weight(Weight::BOLD)
 ///         )
 ///         .font_family("monospace".to_owned())
-///     )
-///     .keyboard_navigable();
+///         .focusable(true)
+///     );
 /// ```
 /// ### Reactivity
 /// The view is reactive and will track updates on buffer signal.
