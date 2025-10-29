@@ -2032,8 +2032,6 @@ fn resolve_nested_maps_internal(
 ) -> Style {
     const MAX_DEPTH: u32 = 6;
     if depth >= MAX_DEPTH {
-        #[cfg(debug_assertions)]
-        dbg!("past max depth");
         return style;
     }
 
@@ -2143,10 +2141,7 @@ fn resolve_nested_maps_internal(
         }
 
         // Active (mouse)
-        if interact_state.is_clicking
-            && interact_state.is_hovered
-            && !interact_state.using_keyboard_navigation
-        {
+        if interact_state.is_clicking && !interact_state.using_keyboard_navigation {
             if let Some(map) = style.get_nested_map(StyleSelector::Active.to_key()) {
                 if !map.map.ptr_eq(&style.map) {
                     style.apply_mut(map);
@@ -2157,7 +2152,7 @@ fn resolve_nested_maps_internal(
     }
 
     // Recurse once at the end if anything changed
-    if changed {
+    if changed && depth + 1 < MAX_DEPTH {
         style = resolve_nested_maps_internal(
             style,
             interact_state,
@@ -3457,7 +3452,7 @@ impl StylePropValue for Margin {
 }
 
 /// The value for a [`Style`] property
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StyleValue<T> {
     // A value that has been inserted into the map by an animation.
     Animated(T),
@@ -3466,6 +3461,7 @@ pub enum StyleValue<T> {
     Unset,
     /// Use whatever the base style is. For an overriding style like hover, this uses the base
     /// style. For the base style, this is equivalent to `Unset`.
+    #[default]
     Base,
 }
 
@@ -3504,13 +3500,6 @@ impl<T> StyleValue<T> {
             Self::Unset => None,
             Self::Base => None,
         }
-    }
-}
-
-impl<T> Default for StyleValue<T> {
-    fn default() -> Self {
-        // By default we let the `Style` decide what to do.
-        Self::Base
     }
 }
 
