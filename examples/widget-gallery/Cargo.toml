@@ -13,3 +13,4 @@ stacks = { path = "../stacks/", optional = true }
 default = ["full"]
 vello = ["floem/vello"]
 full = ["dep:files", "dep:stacks"]
+hotpatch = ["floem/hotpatch"]

@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use floem::{prelude::*, style_class};
+use floem::prelude::*;
 use strum::IntoEnumIterator;
 
 use crate::form::{form, form_item};
@@ -22,10 +22,7 @@ impl Display for OperatingSystem {
     }
 }
 
-style_class!(RadioButtonGroupClass);
-
 pub fn radio_buttons_view() -> impl IntoView {
-    // let width = 160.0;
     let operating_system = RwSignal::new(OperatingSystem::Windows);
     form((
         form_item(
@@ -48,8 +45,7 @@ pub fn radio_buttons_view() -> impl IntoView {
             "Labelled Radio Buttons:",
             OperatingSystem::iter()
                 .map(move |os| RadioButton::new_labeled_rw(os, operating_system, move || os))
-                .v_stack()
-                .class(RadioButtonGroupClass),
+                .v_stack(),
         ),
         form_item(
             "Disabled Labelled Radio Buttons:",
@@ -58,9 +54,8 @@ pub fn radio_buttons_view() -> impl IntoView {
                     RadioButton::new_labeled_get(os, operating_system, move || os)
                         .style(|s| s.set_disabled(true))
                 })
-                .v_stack()
-                .class(RadioButtonGroupClass),
+                .v_stack(),
         ),
     ))
-    .style(|s| s.class(RadioButtonGroupClass, |s| s.gap(10.).margin_left(5.)))
+    .style(|s| s.class(RadioButtonGroupClass, |s| s.gap(10.)))
 }
