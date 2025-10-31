@@ -213,8 +213,10 @@ impl View for ToggleButton {
             }
             crate::event::Event::KeyDown(event) => {
                 if event.key.logical_key == Key::Named(NamedKey::Enter) {
+                    self.state = !self.state;
+                    self.id.request_layout();
                     if let Some(ontoggle) = &self.ontoggle {
-                        ontoggle(!self.state);
+                        ontoggle(self.state);
                     }
                 }
             }

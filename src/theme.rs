@@ -493,8 +493,8 @@ pub(crate) fn default_theme(os_theme: winit::window::Theme) -> Style {
                 .padding(t.padding())
                 .set(Foreground, Brush::Solid(t.text_muted()))
                 .active(|s| {
-                    s.background(t.primary())
-                        .color(t.bg_base())
+                    s.color(t.bg_base())
+                        .background(t.bg_overlay())
                         .set(Foreground, Brush::Solid(t.bg_base()))
                 })
                 .hover(|s| s.background(t.bg_overlay()))

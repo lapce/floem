@@ -195,6 +195,9 @@ impl Application {
     pub fn new_with_config(config: AppConfig) -> Self {
         let event_loop = EventLoop::new().expect("can't start the event loop");
 
+        #[cfg(feature = "hotpatch")]
+        initialize_hot_reload();
+
         #[cfg(target_os = "macos")]
         crate::app_delegate::set_app_delegate();
 
@@ -265,6 +268,40 @@ impl Application {
 /// triggering the application to close gracefully.
 pub fn quit_app() {
     Application::send_proxy_event(UserEvent::QuitApp);
+}
+
+#[cfg(feature = "hotpatch")]
+pub fn initialize_hot_reload() {
+    use crate::ext_event::create_nonblocking_signal_from_channel;
+    use crate::reactive::{SignalTrack, create_updater};
+    use dioxus_devtools::{DevserverMsg, connect, subsecond::apply_patch};
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| {
+        let (tx, rx) = channel::<()>();
+        let update = create_nonblocking_signal_from_channel(rx);
+
+        connect(move |msg| {
+            if let DevserverMsg::HotReload(hot_reload_msg) = msg {
+                if let Some(jumptable) = hot_reload_msg.jump_table {
+                    unsafe {
+                        if let Err(e) = apply_patch(jumptable.clone()) {
+                            eprintln!("Hot patch application failed: {:?}", e);
+                            return;
+                        }
+                    }
+                    println!("Hot patch applied successfully!");
+                    tx.send(()).unwrap();
+                }
+            }
+        });
+
+        create_updater(
+            move || update.track(),
+            move |_| {
+                floem_reactive::hotpatch();
+            },
+        );
+    });
 }
 
 /// Signals the application to reopen.

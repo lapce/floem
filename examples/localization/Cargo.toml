@@ -6,3 +6,6 @@ version.workspace = true
 
 [dependencies]
 floem = { path = "../..", features = ["vello", "localization"] }
+
+[features]
+hotpatch = ["floem/hotpatch"]

@@ -8,3 +8,7 @@ license.workspace = true
 
 [dependencies]
 smallvec = "1.10.0"
+dioxus-devtools =  {workspace = true, optional = true}
+
+[features]
+hotpatch = ["dep:dioxus-devtools"]

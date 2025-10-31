@@ -18,7 +18,7 @@ pub mod slider;
 pub mod tabs;
 
 use floem::{
-    action::{add_overlay, set_window_menu, toggle_theme},
+    action::{add_overlay, set_window_menu, set_window_scale, toggle_theme},
     event::{Event, EventListener},
     keyboard::{Key, Modifiers, NamedKey},
     kurbo::Size,
@@ -27,7 +27,7 @@ use floem::{
     new_window,
     prelude::*,
     style::{Background, CursorStyle, TextColor, Transition},
-    theme::{self, StyleThemeExt},
+    theme::StyleThemeExt,
     window::{WindowConfig, WindowId},
 };
 
@@ -89,8 +89,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
     let side_tab_bar = tabs
         .get()
         .into_iter()
-        .enumerate()
-        .map(move |(idx, item)| {
+        .map(move |item| {
             item.debug_name(item).style(move |s| {
                 s.flex_row()
                     .font_size(18.)
@@ -104,12 +103,6 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                         })
                     })
                     .hover(|s| s.cursor(CursorStyle::Pointer))
-                    .apply_if(idx != active_tab.get(), |s| {
-                        s.apply(
-                            theme::hover_style()
-                                .with_theme(|s, t| s.border_radius(t.border_radius())),
-                        )
-                    })
             })
         })
         .list()
@@ -118,7 +111,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                 set_active_tab.set(idx);
             }
         })
-        .style(|s| s.flex_col().width(140.0).flex_grow(1.))
+        .style(|s| s.flex_col().width_full().flex_grow(1.))
         .scroll()
         .debug_name("Side Tab Bar")
         .scroll_style(|s| s.shrink_to_fit().handle_thickness(8.))
@@ -309,21 +302,56 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             }),
     );
 
-    add_overlay(svg(include_str!("../assets/floem.svg")).style(|s| {
-        s.set_style_value(TextColor, floem::style::StyleValue::Unset)
-            .size(50, 50)
-            .absolute()
-            .inset_bottom(20.)
-            .inset_right(15.)
-    }));
-
     add_overlay(
-        button("toggle theme")
-            .action(toggle_theme)
-            .style(|s| s.absolute().inset_top(10.).inset_right(22.)),
+        v_stack((
+            svg(include_str!("../assets/floem.svg")).style(|s| {
+                s.set_style_value(TextColor, floem::style::StyleValue::Unset)
+                    .size(50, 50)
+            }),
+            button("toggle theme").action(toggle_theme),
+        ))
+        .style(|s| {
+            s.absolute()
+                .inset_bottom(20.)
+                .inset_right(15.)
+                .items_center()
+                .justify_center()
+                .gap(5)
+        }),
     );
 
-    view.on_event_stop(EventListener::KeyUp, move |e| {
+    let window_scale = RwSignal::new(1.);
+    view.on_key_down(
+        floem::keyboard::Key::Character("=".into()),
+        |m| m.meta(),
+        move |_| {
+            set_window_scale({
+                window_scale.update(|s| *s *= 1.1);
+                window_scale.get_untracked()
+            });
+        },
+    )
+    .on_key_down(
+        floem::keyboard::Key::Character("-".into()),
+        |m| m.meta(),
+        move |_| {
+            set_window_scale({
+                window_scale.update(|s| *s /= 1.1);
+                window_scale.get_untracked()
+            });
+        },
+    )
+    .on_key_down(
+        floem::keyboard::Key::Character("0".into()),
+        |m| m.meta(),
+        move |_| {
+            set_window_scale({
+                window_scale.update(|s| *s = 1.);
+                window_scale.get_untracked()
+            });
+        },
+    )
+    .on_event_stop(EventListener::KeyUp, move |e| {
         if let Event::KeyUp(e) = e {
             if e.key.logical_key == Key::Named(NamedKey::F11) {
                 floem::action::inspect();
