@@ -6,6 +6,7 @@
 
 use floem_reactive::{SignalUpdate, create_effect, create_updater};
 use peniko::kurbo::{Point, Rect};
+use std::rc::Rc;
 use winit::keyboard::Key;
 
 use crate::{
@@ -332,9 +333,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         })
     }
 
-    /// Set the event handler for resize events for this view.
-    ///
-    /// There can only be one resize event handler for a view.
+    /// Adds an event handler for resize events for this view.
     ///
     /// # Reactivity
     /// The action will be called whenever the view is resized but will not rerun automatically in response to signal changes
@@ -342,13 +341,11 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         let view = self.into_view();
         let id = view.id();
         let state = id.state();
-        state.borrow_mut().update_resize_listener(Box::new(action));
+        state.borrow_mut().add_resize_listener(Rc::new(action));
         view
     }
 
-    /// Set the event handler for move events for this view.
-    ///
-    /// There can only be one move event handler for a view.
+    /// Adds an event handler for move events for this view.
     ///
     /// # Reactivity
     /// The action will be called whenever the view is moved but will not rerun automatically in response to signal changes
@@ -356,15 +353,13 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         let view = self.into_view();
         let id = view.id();
         let state = id.state();
-        state.borrow_mut().update_move_listener(Box::new(action));
+        state.borrow_mut().add_move_listener(Rc::new(action));
         view
     }
 
-    /// Set the event handler for cleanup events for this view.
+    /// Adds an event handler for cleanup events for this view.
     ///
-    /// The cleanup event is called when the view is removed from the view tree.
-    ///
-    /// There can only be one cleanup event handler for a view.
+    /// The cleanup event occurs when the view is removed from the view tree.
     ///
     /// # Reactivity
     /// The action will be called when the view is removed from the view tree but will not rerun automatically in response to signal changes
@@ -372,7 +367,7 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         let view = self.into_view();
         let id = view.id();
         let state = id.state();
-        state.borrow_mut().update_cleanup_listener(action);
+        state.borrow_mut().add_cleanup_listener(Rc::new(action));
         view
     }
 
