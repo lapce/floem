@@ -10,7 +10,7 @@ static LF: LazyLock<Rope> = LazyLock::new(|| Rope::from("\n"));
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LineEnding {
-    /// `\r\n` Windows  
+    /// `\r\n` Windows
     CrLf,
     /// `\n` Unix
     Lf,

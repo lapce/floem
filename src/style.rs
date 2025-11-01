@@ -1783,28 +1783,28 @@ impl Transition {
 /// let start_time = Instant::now();
 /// loop {
 ///     let now = Instant::now();
-///     
+///
 ///     // Step the transition forward
 ///     let changed = opacity.step(&now);
-///     
+///
 ///     // Get current interpolated value
 ///     let current_opacity = opacity.get();
-///     
+///
 ///     // Only update rendering if value changed
 ///     if changed {
 ///         println!("Current opacity: {:.3}", current_opacity);
 ///         // render_with_opacity(current_opacity);
 ///     }
-///     
+///
 ///     // Exit when transition completes
 ///     if !opacity.is_active() {
 ///         println!("Transition complete!");
 ///         break;
 ///     }
-///     
+///
 ///     // Wait for next frame (~60fps)
 ///     std::thread::sleep(Duration::from_millis(16));
-///     
+///
 ///     // Safety timeout
 ///     if now.duration_since(start_time) > Duration::from_secs(2) {
 ///         break;
