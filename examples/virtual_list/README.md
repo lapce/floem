@@ -1,4 +1,4 @@
-This example showcases Floem's ability to have 1 million fixed height items in a list. 
+This example showcases Floem's ability to have 1 million fixed height items in a list.
 
 Behind the scenes, it is keeping track of the list items that are visible and keeping or adding the items that are in view and removing the view items that are out of view.
 
