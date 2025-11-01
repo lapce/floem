@@ -42,16 +42,20 @@ pub type EventCallback = dyn FnMut(&Event) -> EventPropagation;
 pub type ResizeCallback = dyn Fn(Rect);
 pub type MenuCallback = dyn Fn() -> Menu;
 
-pub(crate) struct ResizeListener {
+#[derive(Default)]
+pub(crate) struct ResizeListeners {
     pub(crate) rect: Rect,
-    pub(crate) callback: Box<ResizeCallback>,
+    pub(crate) callbacks: Vec<Rc<ResizeCallback>>,
 }
 
-/// The listener when the view is got moved to a different position in the window
-pub(crate) struct MoveListener {
+/// Listeners for when the view moves to a different position in the window
+#[derive(Default)]
+pub(crate) struct MoveListeners {
     pub(crate) window_origin: Point,
-    pub(crate) callback: Box<dyn Fn(Point)>,
+    pub(crate) callbacks: Vec<Rc<dyn Fn(Point)>>,
 }
+
+pub(crate) type CleanupListeners = Vec<Rc<dyn Fn()>>;
 
 pub struct DragState {
     pub(crate) id: ViewId,
@@ -869,22 +873,42 @@ impl<'a> ComputeLayoutCx<'a> {
             view_state.borrow_mut().window_origin = window_origin;
         }
 
-        let resize_listener = view_state.borrow().resize_listener.clone();
-        if let Some(resize) = resize_listener.as_ref() {
-            let mut resize = resize.borrow_mut();
+        {
+            let view_state = view_state.borrow();
+            let mut resize_listeners = view_state.resize_listeners.borrow_mut();
+
             let new_rect = size.to_rect().with_origin(origin);
-            if new_rect != resize.rect {
-                resize.rect = new_rect;
-                (*resize.callback)(new_rect);
+            if new_rect != resize_listeners.rect {
+                resize_listeners.rect = new_rect;
+
+                let callbacks = resize_listeners.callbacks.clone();
+
+                // explicitly dropping borrows before using callbacks
+                std::mem::drop(resize_listeners);
+                std::mem::drop(view_state);
+
+                for callback in callbacks {
+                    (*callback)(new_rect);
+                }
             }
         }
 
-        let move_listener = view_state.borrow().move_listener.clone();
-        if let Some(listener) = move_listener {
-            let mut listener = listener.borrow_mut();
-            if window_origin != listener.window_origin {
-                listener.window_origin = window_origin;
-                (*listener.callback)(window_origin);
+        {
+            let view_state = view_state.borrow();
+            let mut move_listeners = view_state.move_listeners.borrow_mut();
+
+            if window_origin != move_listeners.window_origin {
+                move_listeners.window_origin = window_origin;
+
+                let callbacks = move_listeners.callbacks.clone();
+
+                // explicitly dropping borrows before using callbacks
+                std::mem::drop(move_listeners);
+                std::mem::drop(view_state);
+
+                for callback in callbacks {
+                    (*callback)(window_origin);
+                }
             }
         }
 

@@ -1,7 +1,8 @@
 use crate::{
     animate::Animation,
     context::{
-        EventCallback, InteractionState, MenuCallback, MoveListener, ResizeCallback, ResizeListener,
+        CleanupListeners, EventCallback, InteractionState, MenuCallback, MoveListeners,
+        ResizeCallback, ResizeListeners,
     },
     event::EventListener,
     pointer::PointerInputEvent,
@@ -189,10 +190,10 @@ pub struct ViewState {
     pub(crate) event_listeners: HashMap<EventListener, Vec<Rc<RefCell<EventCallback>>>>,
     pub(crate) context_menu: Option<Rc<MenuCallback>>,
     pub(crate) popout_menu: Option<Rc<MenuCallback>>,
-    pub(crate) resize_listener: Option<Rc<RefCell<ResizeListener>>>,
+    pub(crate) resize_listeners: Rc<RefCell<ResizeListeners>>,
     pub(crate) window_origin: Point,
-    pub(crate) move_listener: Option<Rc<RefCell<MoveListener>>>,
-    pub(crate) cleanup_listener: Option<Rc<dyn Fn()>>,
+    pub(crate) move_listeners: Rc<RefCell<MoveListeners>>,
+    pub(crate) cleanup_listeners: Rc<RefCell<CleanupListeners>>,
     pub(crate) last_pointer_down: Option<PointerInputEvent>,
     pub(crate) is_hidden_state: IsHiddenState,
     pub(crate) num_waiting_animations: u16,
@@ -222,9 +223,9 @@ impl ViewState {
             event_listeners: HashMap::new(),
             context_menu: None,
             popout_menu: None,
-            resize_listener: None,
-            move_listener: None,
-            cleanup_listener: None,
+            resize_listeners: Default::default(),
+            move_listeners: Default::default(),
+            cleanup_listeners: Default::default(),
             last_pointer_down: None,
             window_origin: Point::ZERO,
             is_hidden_state: IsHiddenState::None,
@@ -347,21 +348,15 @@ impl ViewState {
             .push(Rc::new(RefCell::new(action)));
     }
 
-    pub(crate) fn update_resize_listener(&mut self, action: Box<ResizeCallback>) {
-        self.resize_listener = Some(Rc::new(RefCell::new(ResizeListener {
-            rect: Rect::ZERO,
-            callback: action,
-        })));
+    pub(crate) fn add_resize_listener(&mut self, action: Rc<ResizeCallback>) {
+        self.resize_listeners.borrow_mut().callbacks.push(action);
     }
 
-    pub(crate) fn update_move_listener(&mut self, action: Box<dyn Fn(Point)>) {
-        self.move_listener = Some(Rc::new(RefCell::new(MoveListener {
-            window_origin: Point::ZERO,
-            callback: action,
-        })));
+    pub(crate) fn add_move_listener(&mut self, action: Rc<dyn Fn(Point)>) {
+        self.move_listeners.borrow_mut().callbacks.push(action);
     }
 
-    pub(crate) fn update_cleanup_listener(&mut self, action: impl Fn() + 'static) {
-        self.cleanup_listener = Some(Rc::new(action));
+    pub(crate) fn add_cleanup_listener(&mut self, action: Rc<dyn Fn()>) {
+        self.cleanup_listeners.borrow_mut().push(action);
     }
 }

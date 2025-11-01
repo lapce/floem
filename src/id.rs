@@ -490,21 +490,21 @@ impl ViewId {
     }
 
     /// Set a callback that should be run when the size of the view changes
-    pub fn update_resize_listener(&self, action: Box<ResizeCallback>) {
+    pub fn add_resize_listener(&self, action: Rc<ResizeCallback>) {
         let state = self.state();
-        state.borrow_mut().update_resize_listener(action);
+        state.borrow_mut().add_resize_listener(action);
     }
 
     /// Set a callback that should be run when the position of the view changes
-    pub fn update_move_listener(&self, action: Box<dyn Fn(Point)>) {
+    pub fn add_move_listener(&self, action: Rc<dyn Fn(Point)>) {
         let state = self.state();
-        state.borrow_mut().update_move_listener(action);
+        state.borrow_mut().add_move_listener(action);
     }
 
     /// Set a callback that should be run when the view is removed from the view tree
-    pub fn update_cleanup_listener(&self, action: Box<dyn Fn()>) {
+    pub fn add_cleanup_listener(&self, action: Rc<dyn Fn()>) {
         let state = self.state();
-        state.borrow_mut().update_cleanup_listener(action);
+        state.borrow_mut().add_cleanup_listener(action);
     }
 
     /// Get the combined style that is associated with this View.
