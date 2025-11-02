@@ -98,8 +98,8 @@ impl WindowState {
         }
         let view_state = id.state();
 
-        let cleanup_listener = view_state.borrow().cleanup_listener.clone();
-        if let Some(action) = cleanup_listener {
+        let cleanup_listeners = view_state.borrow().cleanup_listeners.borrow().clone();
+        for action in cleanup_listeners {
             action();
         }
 
