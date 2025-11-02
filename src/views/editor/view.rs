@@ -44,7 +44,9 @@ pub enum DiffSectionKind {
 #[derive(Clone, PartialEq)]
 pub struct DiffSection {
     /// The y index that the diff section is at.
+    ///
     /// This is multiplied by the line height to get the y position.
+    ///
     /// So this can roughly be considered as the `VLine` of the start of this diff section, but it
     /// isn't necessarily convertible to a `VLine` due to jumping over empty code sections.
     pub y_idx: usize,
@@ -115,6 +117,7 @@ impl ScreenLines {
     }
 
     /// Iterate over the line info within the range, copying them with the full y positions.
+    ///
     /// If the values are out of range, it is clamped to the valid lines within.
     pub fn iter_line_info_r(
         &self,
@@ -183,7 +186,9 @@ impl ScreenLines {
 
     /// Iterate over the real lines underlying the visual lines on the screen with the y position
     /// of their layout.
+    ///
     /// (line, y)
+    ///
     pub fn iter_lines_y(&self) -> impl Iterator<Item = (usize, f64)> + '_ {
         let mut last_line = None;
         self.lines.iter().filter_map(move |vline| {
@@ -304,6 +309,7 @@ impl ScreenLines {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScreenLinesBase {
     /// The current/previous viewport.
+    ///
     /// Used for determining whether there were any changes, and the `y0` serves as the
     /// base for positioning the lines.
     pub active_viewport: Rect,

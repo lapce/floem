@@ -143,8 +143,10 @@ impl EditorStyle {
 pub(crate) const CHAR_WIDTH: f64 = 7.5;
 
 /// The main structure for the editor view itself.
+///
 /// This can be considered to be the data part of the `View`.
 /// It holds an `Rc<dyn Document>` within as the document it is a view into.
+///
 #[derive(Clone)]
 pub struct Editor {
     pub cx: Cell<Scope>,
@@ -187,6 +189,7 @@ pub struct Editor {
     pub last_movement: RwSignal<Movement>,
 
     /// Whether ime input is allowed.
+    ///
     /// Should not be set manually outside of the specific handling for ime.
     pub ime_allowed: RwSignal<bool>,
     pub(crate) ime_cursor_area: RwSignal<Option<(Point, Size)>>,
@@ -199,6 +202,7 @@ pub struct Editor {
 }
 impl Editor {
     /// Create a new editor into the given document, using the styling.
+    ///
     /// `doc`: The backing [`Document`], such as [`TextDocument`](self::text_document::TextDocument)
     /// `style`: How the editor should be styled, such as [`SimpleStyling`](self::text::SimpleStyling)
     pub fn new(cx: Scope, doc: Rc<dyn Document>, style: Rc<dyn Styling>, modal: bool) -> Editor {
@@ -207,7 +211,9 @@ impl Editor {
     }
 
     /// Create a new editor into the given document, using the styling.
+    ///
     /// `id` should typically be constructed by [`EditorId::next`]
+    ///
     /// `doc`: The backing [`Document`], such as [`TextDocument`](self::text_document::TextDocument)
     /// `style`: How the editor should be styled, such as [`SimpleStyling`](self::text::SimpleStyling)
     pub fn new_id(
@@ -431,6 +437,7 @@ impl Editor {
     }
 
     /// Get the text of the document
+    ///
     /// You should typically prefer [`Self::rope_text`]
     pub fn text(&self) -> Rope {
         self.doc().text()
@@ -792,7 +799,9 @@ impl Editor {
 
     /// Iterator over *relative* [`VLineInfo`]s, starting at the buffer line, `start_line` and
     /// ending at `end_line`.
+    ///
     /// `start_line..end_line`
+    ///
     /// This is preferable over `iter_lines` if you do not need to absolute visual line value.
     pub fn iter_rvlines_over(
         &self,
@@ -867,6 +876,7 @@ impl Editor {
 
     /// `affinity` decides whether an offset at a soft line break is considered to be on the
     /// previous line or the next line.
+    ///
     /// If `affinity` is `CursorAffinity::Forward` and is at the very end of the wrapped line, then
     /// the offset is considered to be on the next line.
     pub fn vline_of_offset(&self, offset: usize, affinity: CursorAffinity) -> VLine {
@@ -892,6 +902,7 @@ impl Editor {
     }
 
     /// Get the visual line and column of the given offset.
+    ///
     /// The column is before phantom text is applied.
     pub fn vline_col_of_offset(&self, offset: usize, affinity: CursorAffinity) -> (VLine, usize) {
         self.lines
@@ -1189,6 +1200,7 @@ impl Editor {
     }
 
     /// Advance to the right in the manner of the given mode.
+    ///
     /// This is not the same as the [`Movement::Right`] command.
     pub fn move_right(&self, offset: usize, mode: Mode, count: usize) -> usize {
         self.rope_text().move_right(offset, mode, count)

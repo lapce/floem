@@ -34,6 +34,7 @@ use super::editor::{
 };
 
 /// A text editor view built on top of [Editor](super::editor::Editor). See [`text_editor`].
+///
 /// Note: this requires that the document underlying it is a [`TextDocument`] for the use of some
 /// logic.
 pub struct TextEditor {
@@ -103,6 +104,7 @@ pub fn text_editor(text: impl Into<Rope>) -> TextEditor {
 }
 
 /// A text editor view built on top of [Editor](super::editor::Editor) that allows providing your own keymap callback.
+///
 /// See [`text_editor`] for a list of the default keymaps that you will need to handle yourself if using this function.
 pub fn text_editor_keys(
     text: impl Into<Rope>,
@@ -185,6 +187,7 @@ impl EditorCustomStyle {
     }
 
     /// Sets the text accent color of the gutter.
+    ///
     /// This is the color of the line number for the current line.
     /// It will default to the current Text Color
     pub fn gutter_accent_color(mut self, color: Color) -> Self {
@@ -193,6 +196,7 @@ impl EditorCustomStyle {
     }
 
     /// Sets the text dim color of the gutter.
+    ///
     /// This is the color of the line number for all lines except the current line.
     /// If this is not specified it will default to the gutter accent color.
     pub fn gutter_dim_color(mut self, color: Color) -> Self {
@@ -429,6 +433,7 @@ impl TextEditor {
     }
 
     /// Use the same document as another text editor view.
+    ///
     /// ```rust,ignore
     /// let primary = text_editor();
     /// let secondary = text_editor().share_document(&primary);
@@ -438,6 +443,7 @@ impl TextEditor {
     ///     secondary,
     /// ))
     /// ```
+    ///
     /// If you wish for it to also share the styling, consider using [`TextEditor::shared_editor`]
     /// instead.
     pub fn share_doc(self, other: &TextEditor) -> Self {
@@ -445,10 +451,12 @@ impl TextEditor {
     }
 
     /// Create a new [`TextEditor`] instance from this instance, sharing the document and styling.
+    ///
     /// ```rust,ignore
     /// let primary = text_editor();
     /// let secondary = primary.shared_editor();
     /// ```
+    ///
     /// Also see the [Editor example](https://github.com/lapce/floem/tree/main/examples/editor).
     pub fn shared_editor(&self) -> TextEditor {
         let id = ViewId::new();
@@ -475,6 +483,7 @@ impl TextEditor {
     }
 
     /// Change the [`Styling`] used for the editor.
+    ///
     /// ```rust,ignore
     /// let styling = SimpleStyling::builder()
     ///     .font_size(12)
@@ -517,6 +526,7 @@ impl TextEditor {
     /// When commands are run on the document, this function is called.
     /// If it returns [`CommandExecuted::Yes`] then further handlers after it, including the
     /// default handler, are not executed.
+    ///
     /// ```rust
     /// use floem::views::editor::command::{Command, CommandExecuted};
     /// use floem::views::text_editor::text_editor;
@@ -539,6 +549,7 @@ impl TextEditor {
     ///         CommandExecuted::No
     ///     });
     /// ```
+    ///
     /// Note that these are specific to each text editor view.
     ///
     /// Note: only works for the default backing [`TextDocument`] doc
@@ -550,8 +561,10 @@ impl TextEditor {
     }
 
     /// Listen for deltas applied to the editor.
+    ///
     /// Useful for anything that has positions based in the editor that can be updated after
     /// typing, such as syntax highlighting.
+    ///
     /// Note: only works for the default backing [`TextDocument`] doc
     pub fn update(self, f: impl Fn(OnUpdate) + 'static) -> Self {
         if let Some(doc) = self.text_doc() {
