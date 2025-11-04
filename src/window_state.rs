@@ -40,7 +40,10 @@ pub struct WindowState {
     pub(crate) hovered: HashSet<ViewId>,
     pub(crate) focusable: HashSet<ViewId>,
     pub(crate) file_hovered: HashSet<ViewId>,
-    pub(crate) os_theme: Option<winit::window::Theme>,
+    // whether the window is in light or dark mode
+    pub(crate) light_dark_theme: winit::window::Theme,
+    // if `true`, then the window will not follow the os theme changes
+    pub(crate) theme_overriden: bool,
     /// This keeps track of all views that have an animation,
     /// regardless of the status of the animation
     pub(crate) cursor: Option<CursorStyle>,
@@ -54,7 +57,7 @@ pub struct WindowState {
 }
 
 impl WindowState {
-    pub fn new(root_view_id: ViewId) -> Self {
+    pub fn new(root_view_id: ViewId, os_theme: Option<Theme>) -> Self {
         Self {
             root: None,
             root_view_id,
@@ -74,7 +77,8 @@ impl WindowState {
             hovered: HashSet::new(),
             focusable: HashSet::new(),
             file_hovered: HashSet::new(),
-            os_theme: None,
+            theme_overriden: false,
+            light_dark_theme: os_theme.unwrap_or(Theme::Light),
             cursor: None,
             last_cursor: CursorIcon::Default,
             last_cursor_location: Default::default(),
@@ -150,7 +154,7 @@ impl WindowState {
     }
 
     pub fn is_dark_mode(&self) -> bool {
-        self.os_theme == Some(Theme::Dark)
+        self.light_dark_theme == Theme::Dark
     }
 
     pub fn is_file_hover(&self, id: &ViewId) -> bool {

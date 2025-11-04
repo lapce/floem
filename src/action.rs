@@ -25,7 +25,6 @@ use crate::{
     view::View,
     views::Decorators,
     window_handle::{get_current_view, set_current_view},
-    window_tracking::with_window,
 };
 
 #[cfg(any(feature = "rfd-async-std", feature = "rfd-tokio"))]
@@ -86,10 +85,11 @@ pub fn toggle_theme() {
     add_update_message(UpdateMessage::ToggleTheme);
 }
 
-/// Get current window theme.
-pub fn current_theme() -> Option<Theme> {
-    let win_id = get_current_view().window_id()?;
-    with_window(&win_id, |w| w.theme())?
+/// Set the window theme.
+///
+/// Specify `None` to reset the theme to the system default.
+pub fn set_theme(theme: Option<Theme>) {
+    add_update_message(UpdateMessage::SetTheme(theme));
 }
 
 pub(crate) struct Timer {
