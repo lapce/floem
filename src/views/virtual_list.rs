@@ -1,6 +1,6 @@
 use floem_reactive::create_effect;
 use taffy::FlexDirection;
-use winit::keyboard::{Key, NamedKey};
+use ui_events::keyboard::{Key, NamedKey};
 
 use crate::event::{Event, EventListener, EventPropagation};
 use crate::{ViewId, prelude::*};
@@ -191,8 +191,8 @@ where
     let stack = stack
         .class(ListClass)
         .on_event(EventListener::KeyDown, move |e| {
-            if let Event::KeyDown(key_event) = e {
-                match key_event.key.logical_key {
+            if let Event::Key(key_event) = e {
+                match key_event.key {
                     Key::Named(NamedKey::Home) => {
                         if length.get_untracked() > 0 {
                             selection.set(Some(0));

@@ -2,8 +2,6 @@
 use crate::action::{exec_after, set_ime_allowed, set_ime_cursor_area};
 use crate::event::{EventListener, EventPropagation};
 use crate::id::ViewId;
-use crate::keyboard::{self, KeyEvent, Modifiers};
-use crate::pointer::{MouseButton, PointerButton, PointerInputEvent};
 use crate::reactive::{RwSignal, create_effect};
 use crate::style::{FontFamily, FontProps, PaddingProp, SelectionStyle, TextAlignProp};
 use crate::style::{FontStyle, FontWeight, TextColor};
@@ -14,8 +12,9 @@ use floem_reactive::{SignalGet, SignalUpdate, SignalWith, create_rw_signal};
 use taffy::prelude::{Layout, NodeId};
 
 use floem_renderer::Renderer;
+use ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey};
+use ui_events::pointer::{PointerButton, PointerButtonEvent, PointerEvent};
 use unicode_segmentation::UnicodeSegmentation;
-use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey, SmolStr};
 
 use crate::{peniko::color::palette, style::Style, view::View};
 
@@ -254,30 +253,31 @@ pub(crate) enum TextCommand {
     Cut,
     None,
 }
+use ui_events::keyboard::Code;
 
-impl From<&keyboard::KeyEvent> for TextCommand {
-    fn from(event: &keyboard::KeyEvent) -> Self {
+impl From<&KeyboardEvent> for TextCommand {
+    fn from(event: &KeyboardEvent) -> Self {
         #[cfg(target_os = "macos")]
-        match (event.modifiers, event.key.physical_key) {
-            (Modifiers::META, PhysicalKey::Code(KeyCode::KeyA)) => Self::SelectAll,
-            (Modifiers::META, PhysicalKey::Code(KeyCode::KeyC)) => Self::Copy,
-            (Modifiers::META, PhysicalKey::Code(KeyCode::KeyX)) => Self::Cut,
-            (Modifiers::META, PhysicalKey::Code(KeyCode::KeyV)) => Self::Paste,
+        match (event.modifiers, event.code) {
+            (Modifiers::META, Code::KeyA) => Self::SelectAll,
+            (Modifiers::META, Code::KeyC) => Self::Copy,
+            (Modifiers::META, Code::KeyX) => Self::Cut,
+            (Modifiers::META, Code::KeyV) => Self::Paste,
             _ => Self::None,
         }
         #[cfg(not(target_os = "macos"))]
-        match (event.modifiers, event.key.physical_key) {
-            (Modifiers::CONTROL, PhysicalKey::Code(KeyCode::KeyA)) => Self::SelectAll,
-            (Modifiers::CONTROL, PhysicalKey::Code(KeyCode::KeyC)) => Self::Copy,
-            (Modifiers::CONTROL, PhysicalKey::Code(KeyCode::KeyX)) => Self::Cut,
-            (Modifiers::CONTROL, PhysicalKey::Code(KeyCode::KeyV)) => Self::Paste,
+        match (event.modifiers, event.code) {
+            (Modifiers::CONTROL, Code::KeyA) => Self::SelectAll,
+            (Modifiers::CONTROL, Code::KeyC) => Self::Copy,
+            (Modifiers::CONTROL, Code::KeyX) => Self::Cut,
+            (Modifiers::CONTROL, Code::KeyV) => Self::Paste,
             _ => Self::None,
         }
     }
 }
 
 /// Determines if motion should be word based.
-fn get_word_based_motion(event: &KeyEvent) -> Option<Movement> {
+fn get_word_based_motion(event: &KeyboardEvent) -> Option<Movement> {
     #[cfg(not(target_os = "macos"))]
     return event
         .modifiers
@@ -761,7 +761,7 @@ impl TextInput {
         self.selection = Some(0..len);
     }
 
-    fn handle_modifier_cmd(&mut self, event: &KeyEvent) -> bool {
+    fn handle_modifier_cmd(&mut self, event: &KeyboardEvent) -> bool {
         if event.modifiers.is_empty() || event.modifiers == Modifiers::SHIFT {
             return false;
         }
@@ -839,13 +839,8 @@ impl TextInput {
         }
     }
 
-    fn handle_key_down(&mut self, cx: &mut EventCx, event: &KeyEvent) -> bool {
-        let handled = match event.key.logical_key {
-            Key::Unidentified(_) => event
-                .key
-                .text
-                .as_ref()
-                .is_some_and(|ch| self.insert_text(ch)),
+    fn handle_key_down(&mut self, cx: &mut EventCx, event: &KeyboardEvent) -> bool {
+        let handled = match event.key {
             Key::Character(ref c) if c == " " => {
                 if let Some(selection) = &self.selection {
                     self.buffer
@@ -990,7 +985,7 @@ impl TextInput {
             return true;
         }
 
-        match event.key.logical_key {
+        match event.key {
             Key::Character(ref ch) => {
                 let handled_modifier_cmd = self.handle_modifier_cmd(event);
                 if handled_modifier_cmd {
@@ -1006,7 +1001,7 @@ impl TextInput {
         }
     }
 
-    fn insert_text(&mut self, ch: &SmolStr) -> bool {
+    fn insert_text(&mut self, ch: &str) -> bool {
         let selection = self.selection.clone();
         if let Some(selection) = selection {
             self.buffer
@@ -1016,7 +1011,7 @@ impl TextInput {
         }
 
         self.buffer
-            .update(|buf| buf.insert_str(self.cursor_glyph_idx, &ch.clone()));
+            .update(|buf| buf.insert_str(self.cursor_glyph_idx, ch));
         self.move_cursor(Movement::Glyph, TextDirection::Right)
     }
 
@@ -1190,51 +1185,55 @@ impl View for TextInput {
 
         let is_handled = match &event {
             // match on pointer primary button press
-            Event::PointerDown(
-                event @ PointerInputEvent {
-                    button: PointerButton::Mouse(MouseButton::Primary),
-                    ..
-                },
-            ) => {
+            Event::Pointer(PointerEvent::Down(PointerButtonEvent {
+                button: Some(PointerButton::Primary),
+                state,
+                ..
+            })) => {
                 cx.update_active(self.id);
-                self.last_pointer_down = event.pos;
+                let point = state.logical_point();
+                self.last_pointer_down = point;
 
                 self.commit_preedit();
 
                 if self.buffer.with_untracked(|buff| !buff.is_empty()) {
-                    if event.count == 2 {
-                        self.handle_double_click(event.pos.x);
-                    } else if event.count == 3 {
+                    if state.count == 2 {
+                        self.handle_double_click(point.x);
+                    } else if state.count == 3 {
                         self.handle_triple_click();
                     } else {
-                        self.cursor_glyph_idx = self.get_box_position(event.pos.x);
+                        self.cursor_glyph_idx = self.get_box_position(point.x);
                         self.selection = None;
                     }
                 }
                 true
             }
-            Event::PointerMove(event) => {
+            Event::Pointer(PointerEvent::Move(pu)) => {
                 if cx.is_active(self.id) && self.buffer.with_untracked(|buff| !buff.is_empty()) {
                     if self.commit_preedit() {
                         self.id.request_layout();
                     }
+                    let pos = pu.current.logical_point();
 
-                    if event.pos.x < 0. && event.pos.x < self.last_pointer_down.x {
-                        self.scroll(event.pos.x);
-                    } else if event.pos.x > self.width as f64
-                        && event.pos.x > self.last_pointer_down.x
-                    {
-                        self.scroll(event.pos.x - self.width as f64);
+                    if pos.x < 0. && pos.x < self.last_pointer_down.x {
+                        self.scroll(pos.x);
+                    } else if pos.x > self.width as f64 && pos.x > self.last_pointer_down.x {
+                        self.scroll(pos.x - self.width as f64);
                     }
 
-                    let selection_stop = self.get_box_position(event.pos.x);
+                    let selection_stop = self.get_box_position(pos.x);
                     self.update_selection(self.cursor_glyph_idx, selection_stop);
 
                     self.id.request_paint();
                 }
                 false
             }
-            Event::KeyDown(event) => self.handle_key_down(cx, event),
+            Event::Key(
+                ke @ KeyboardEvent {
+                    state: KeyState::Down,
+                    ..
+                },
+            ) => self.handle_key_down(cx, ke),
             Event::ImePreedit { text, cursor } => {
                 if self.is_focused && !text.is_empty() {
                     if let Some(selection) = self.selection.take() {

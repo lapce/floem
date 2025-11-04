@@ -20,7 +20,6 @@ pub mod tabs;
 use floem::{
     action::{add_overlay, set_window_menu, toggle_theme},
     event::{Event, EventListener},
-    keyboard::{Key, Modifiers, NamedKey},
     kurbo::Size,
     menu::*,
     muda::{AboutMetadataBuilder, PredefinedMenuItem},
@@ -28,6 +27,7 @@ use floem::{
     prelude::*,
     style::{Background, CursorStyle, TextColor, Transition},
     theme::{self, StyleThemeExt},
+    ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey},
     window::{WindowConfig, WindowId},
 };
 
@@ -324,16 +324,18 @@ fn app_view(window_id: WindowId) -> impl IntoView {
     );
 
     view.on_event_stop(EventListener::KeyUp, move |e| {
-        if let Event::KeyUp(e) = e {
-            if e.key.logical_key == Key::Named(NamedKey::F11) {
+        if let Event::Key(KeyboardEvent {
+            state: KeyState::Up,
+            key,
+            modifiers,
+            ..
+        }) = e
+        {
+            if *key == Key::Named(NamedKey::F11) {
                 floem::action::inspect();
-            } else if e.key.logical_key == Key::Character("q".into())
-                && e.modifiers.contains(Modifiers::META)
-            {
+            } else if *key == Key::Character("q".into()) && modifiers.contains(Modifiers::META) {
                 floem::quit_app();
-            } else if e.key.logical_key == Key::Character("w".into())
-                && e.modifiers.contains(Modifiers::META)
-            {
+            } else if *key == Key::Character("w".into()) && modifiers.contains(Modifiers::META) {
                 floem::close_window(window_id);
             }
         }

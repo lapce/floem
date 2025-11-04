@@ -1,11 +1,13 @@
 use std::collections::HashMap;
-use std::{cell::RefCell, mem, path::PathBuf, rc::Rc, sync::Arc};
+use std::{cell::RefCell, mem, rc::Rc, sync::Arc};
 
 use muda::MenuId;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
-#[cfg(target_arch = "wasm32")]
-use web_time::{Duration, Instant};
+use ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey};
+use ui_events::pointer::PointerEvent;
+use ui_events_winit::WindowEventReducer;
+
 use winit::window::{
     ImeCapabilities, ImeEnableRequest, ImeHint, ImePurpose, ImeRequest, ImeRequestData,
 };
@@ -14,15 +16,15 @@ use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate, with_scope};
 use floem_renderer::Renderer;
 use floem_renderer::gpu_resources::GpuResources;
 use peniko::color::palette;
-use peniko::kurbo::{Affine, Point, Size, Vec2};
+use peniko::kurbo::{Affine, Point, Size};
 use winit::{
     cursor::CursorIcon,
     dpi::{LogicalPosition, LogicalSize},
-    event::{ButtonSource, ElementState, Ime, MouseScrollDelta, TouchPhase},
-    keyboard::{Key, ModifiersState, NamedKey},
+    event::Ime,
     window::{Window, WindowId},
 };
 
+use crate::dropped_file::FileDragEvent;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use crate::menu::MudaMenu;
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
@@ -37,17 +39,13 @@ use crate::{
     context::{
         ComputeLayoutCx, EventCx, FrameUpdate, LayoutCx, PaintCx, PaintState, StyleCx, UpdateCx,
     },
-    dropped_file::DroppedFilesEvent,
     event::{Event, EventListener},
     id::ViewId,
     inspector::{self, Capture, CaptureState, CapturedView},
-    keyboard::{KeyEvent, Modifiers},
     nav::view_arrow_navigation,
-    pointer::{PointerButton, PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
     profiler::Profile,
     style::{CursorStyle, Style, StyleSelector},
     theme::default_theme,
-    touchpad::PinchGestureEvent,
     update::{
         CENTRAL_DEFERRED_UPDATE_MESSAGES, CENTRAL_UPDATE_MESSAGES, CURRENT_RUNNING_VIEW_HANDLE,
         DEFERRED_UPDATE_MESSAGES, UPDATE_MESSAGES, UpdateMessage,
@@ -84,12 +82,11 @@ pub(crate) struct WindowHandle {
     pub(crate) modifiers: Modifiers,
     pub(crate) cursor_position: Point,
     pub(crate) window_position: Point,
-    pub(crate) last_pointer_down: Option<(u8, Point, Instant)>,
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     pub(crate) context_menu: RwSignal<Option<(muda::Menu, Point, bool)>>,
     pub(crate) window_menu_actions: HashMap<MenuId, Box<dyn Fn()>>,
     pub(crate) window_menu: Option<muda::Menu>,
-    dropper_files: Option<Vec<PathBuf>>,
+    pub(crate) event_reducer: WindowEventReducer,
 }
 
 impl WindowHandle {
@@ -209,8 +206,7 @@ impl WindowHandle {
             context_menu,
             window_menu_actions: HashMap::new(),
             window_menu: None,
-            last_pointer_down: None,
-            dropper_files: None,
+            event_reducer: WindowEventReducer::default(),
         };
         if paint_state_initialized {
             window_handle.init_renderer(gpu_resources);
@@ -258,13 +254,14 @@ impl WindowHandle {
             window_state: &mut self.window_state,
         };
 
-        let is_pointer_move = if let Event::PointerMove(pme) = &event {
-            cx.window_state.last_cursor_location = pme.pos;
-            true
+        let is_pointer_move = if let Event::Pointer(PointerEvent::Move(pu)) = &event {
+            let pos = pu.current.logical_point();
+            cx.window_state.last_cursor_location = pos;
+            Some(pu.pointer)
         } else {
-            false
+            None
         };
-        let (was_hovered, was_dragging_over) = if is_pointer_move {
+        let (was_hovered, was_dragging_over) = if is_pointer_move.is_some() {
             cx.window_state.cursor = None;
             let was_hovered = std::mem::take(&mut cx.window_state.hovered);
             let was_dragging_over = std::mem::take(&mut cx.window_state.dragging_over);
@@ -274,7 +271,19 @@ impl WindowHandle {
             (None, None)
         };
 
-        let is_pointer_down = matches!(&event, Event::PointerDown(_));
+        let was_file_hovered = if matches!(event, Event::FileDrag(FileDragEvent::DragMoved { .. }))
+            || is_pointer_move.is_some()
+        {
+            if !cx.window_state.file_hovered.is_empty() {
+                Some(std::mem::take(&mut cx.window_state.file_hovered))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let is_pointer_down = matches!(&event, Event::Pointer(PointerEvent::Down { .. }));
         let was_focused = if is_pointer_down {
             cx.window_state.clicking.clear();
             cx.window_state.focus.take()
@@ -303,34 +312,35 @@ impl WindowHandle {
                 }
 
                 if !processed {
-                    if let Event::KeyDown(KeyEvent { key, modifiers }) = &event {
-                        if key.logical_key == Key::Named(NamedKey::Tab)
+                    if let Event::Key(KeyboardEvent { key, modifiers, .. }) = &event {
+                        if *key == Key::Named(NamedKey::Tab)
                             && (modifiers.is_empty() || *modifiers == Modifiers::SHIFT)
                         {
                             let backwards = modifiers.contains(Modifiers::SHIFT);
                             view_tab_navigation(self.id, cx.window_state, backwards);
                             // view_debug_tree(&self.view);
-                        } else if let Key::Character(character) = &key.logical_key {
-                            // 'I' displays some debug information
-                            if character.eq_ignore_ascii_case("i") {
-                                // view_debug_tree(&self.view);
-                            }
                         } else if *modifiers == Modifiers::ALT {
                             if let Key::Named(
                                 name @ (NamedKey::ArrowUp
                                 | NamedKey::ArrowDown
                                 | NamedKey::ArrowLeft
                                 | NamedKey::ArrowRight),
-                            ) = key.logical_key
+                            ) = key
                             {
-                                view_arrow_navigation(name, cx.window_state, self.id);
+                                view_arrow_navigation(*name, cx.window_state, self.id);
                             }
                         }
                     }
 
                     let keyboard_trigger_end = cx.window_state.keyboard_navigation
                         && event.is_keyboard_trigger()
-                        && matches!(event, Event::KeyUp(_));
+                        && matches!(
+                            event,
+                            Event::Key(KeyboardEvent {
+                                state: KeyState::Up,
+                                ..
+                            })
+                        );
                     if keyboard_trigger_end {
                         if let Some(id) = cx.window_state.active {
                             // To remove the styles applied by the Active selector
@@ -361,7 +371,7 @@ impl WindowHandle {
                 cx.unconditional_view_event(id, event.clone().transform(transform), true);
             }
 
-            if let Event::PointerUp(_) = &event {
+            if let Event::Pointer(PointerEvent::Up { .. }) = &event {
                 // To remove the styles applied by the Active selector
                 if cx.window_state.has_style_for_sel(id, StyleSelector::Active) {
                     id.request_style_recursive();
@@ -373,10 +383,10 @@ impl WindowHandle {
             cx.unconditional_view_event(self.id, event.clone(), false);
         }
 
-        if let Event::PointerUp(_) = &event {
+        if let Event::Pointer(PointerEvent::Up { .. }) = &event {
             cx.window_state.drag_start = None;
         }
-        if is_pointer_move {
+        if let Some(info) = is_pointer_move {
             let hovered = &cx.window_state.hovered.clone();
             for id in was_hovered.unwrap().symmetric_difference(hovered) {
                 let view_state = id.state();
@@ -395,7 +405,11 @@ impl WindowHandle {
                 if hovered.contains(id) {
                     id.apply_event(&EventListener::PointerEnter, &event);
                 } else {
-                    cx.unconditional_view_event(*id, Event::PointerLeave, true);
+                    cx.unconditional_view_event(
+                        *id,
+                        Event::Pointer(PointerEvent::Leave(info)),
+                        true,
+                    );
                 }
             }
             let dragging_over = &cx.window_state.dragging_over.clone();
@@ -408,6 +422,11 @@ impl WindowHandle {
                 } else {
                     id.apply_event(&EventListener::DragLeave, &event);
                 }
+            }
+        }
+        if let Some(was_file_hovered) = was_file_hovered {
+            for id in was_file_hovered.symmetric_difference(&cx.window_state.file_hovered) {
+                id.request_style();
             }
         }
         if was_focused != cx.window_state.focus {
@@ -434,7 +453,7 @@ impl WindowHandle {
                 self.context_menu.set(None);
             }
         }
-        if matches!(&event, Event::PointerUp(_)) {
+        if matches!(&event, Event::Pointer(PointerEvent::Up { .. })) {
             for id in cx.window_state.clicking.clone() {
                 if cx.window_state.has_style_for_sel(id, StyleSelector::Active) {
                     id.request_style_recursive();
@@ -498,126 +517,57 @@ impl WindowHandle {
         self.event(Event::WindowMoved(point));
     }
 
-    pub(crate) fn key_event(&mut self, key_event: winit::event::KeyEvent) {
-        let event = KeyEvent {
-            key: key_event,
-            modifiers: self.modifiers,
-        };
-        let is_altgr = matches!(event.key.logical_key, Key::Named(NamedKey::AltGraph));
-        if event.key.state.is_pressed() {
-            self.event(Event::KeyDown(event));
+    pub(crate) fn file_drag_event(&mut self, file_drag_event: FileDragEvent) {
+        self.event(Event::FileDrag(file_drag_event));
+    }
+
+    pub(crate) fn key_event(&mut self, key_event: KeyboardEvent) {
+        let is_altgr = key_event.key == Key::Named(NamedKey::AltGraph);
+        if key_event.state.is_down() {
             if is_altgr {
-                self.modifiers.set(Modifiers::ALTGR, true);
+                self.modifiers.set(Modifiers::ALT_GRAPH, true);
             }
-        } else {
-            self.event(Event::KeyUp(event));
-            if is_altgr {
-                self.modifiers.set(Modifiers::ALTGR, false);
-            }
+        } else if is_altgr {
+            self.modifiers.set(Modifiers::ALT_GRAPH, false);
         }
+        self.event(Event::Key(key_event));
     }
 
-    pub(crate) fn dropped_files(&mut self, paths: Vec<PathBuf>) {
-        self.dropper_files = Some(paths);
-    }
-
-    pub(crate) fn pointer_move(&mut self, pos: Point) {
-        if let Some(path) = self.dropper_files.take() {
-            self.event(Event::DroppedFiles(DroppedFilesEvent { path, pos }));
-        }
-        if self.cursor_position != pos {
-            self.cursor_position = pos;
-            let event = PointerMoveEvent {
-                pos,
-                modifiers: self.modifiers,
-            };
-            self.event(Event::PointerMove(event));
-        }
-    }
-
-    pub(crate) fn pointer_leave(&mut self) {
-        set_current_view(self.id);
-        let mut cx = EventCx {
-            window_state: &mut self.window_state,
-        };
-        let was_hovered = std::mem::take(&mut cx.window_state.hovered);
-        for id in was_hovered {
-            let view_state = id.state();
-            if view_state
-                .borrow()
-                .has_style_selectors
-                .has(StyleSelector::Hover)
-                || view_state
-                    .borrow()
-                    .has_style_selectors
-                    .has(StyleSelector::Active)
-                || view_state.borrow().has_active_animation()
-            {
-                id.request_style();
-            }
-            cx.unconditional_view_event(id, Event::PointerLeave, true);
-        }
-        self.process_update();
-    }
-
-    pub(crate) fn mouse_wheel(&mut self, delta: MouseScrollDelta) {
-        let delta = match delta {
-            MouseScrollDelta::LineDelta(x, y) => Vec2::new(-x as f64 * 60.0, -y as f64 * 60.0),
-            MouseScrollDelta::PixelDelta(delta) => {
-                let position: LogicalPosition<f64> = delta.to_logical(self.scale);
-                Vec2::new(-position.x, -position.y)
-            }
-        };
-        let event = PointerWheelEvent {
-            pos: self.cursor_position,
-            delta,
-            modifiers: self.modifiers,
-        };
-        self.event(Event::PointerWheel(event));
-    }
-
-    pub(crate) fn pointer_button(&mut self, button: ButtonSource, state: ElementState) {
-        let button: PointerButton = button.into();
-        let count = if state.is_pressed() && button.is_primary() {
-            if let Some((count, last_pos, instant)) = self.last_pointer_down.as_mut() {
-                if *count == 4 {
-                    *count = 1;
-                } else if instant.elapsed().as_millis() < 500
-                    && last_pos.distance(self.cursor_position) < 4.0
-                {
-                    *count += 1;
-                } else {
-                    *count = 1;
+    pub(crate) fn pointer_event(&mut self, pointer_event: PointerEvent) {
+        match &pointer_event {
+            PointerEvent::Move(pointer_update) => {
+                let pos = pointer_update.current.logical_point();
+                if self.cursor_position != pos {
+                    self.cursor_position = pos;
                 }
-                *instant = Instant::now();
-                *last_pos = self.cursor_position;
-                *count
-            } else {
-                self.last_pointer_down = Some((1, self.cursor_position, Instant::now()));
-                1
             }
-        } else {
-            0
-        };
-        let event = PointerInputEvent {
-            pos: self.cursor_position,
-            button,
-            modifiers: self.modifiers,
-            count,
-        };
-        match state {
-            ElementState::Pressed => {
-                self.event(Event::PointerDown(event));
+            PointerEvent::Leave(_pointer_info) => {
+                set_current_view(self.id);
+                let cx = EventCx {
+                    window_state: &mut self.window_state,
+                };
+                let was_hovered = std::mem::take(&mut cx.window_state.hovered);
+                for id in was_hovered {
+                    let view_state = id.state();
+                    if view_state
+                        .borrow()
+                        .has_style_selectors
+                        .has(StyleSelector::Hover)
+                        || view_state
+                            .borrow()
+                            .has_style_selectors
+                            .has(StyleSelector::Active)
+                        || view_state.borrow().has_active_animation()
+                    {
+                        id.request_style();
+                    }
+                }
+                self.process_update();
             }
-            ElementState::Released => {
-                self.event(Event::PointerUp(event));
-            }
+            _ => {}
         }
-    }
 
-    pub(crate) fn pinch_gesture(&mut self, delta: f64, phase: TouchPhase) {
-        let event = PinchGestureEvent { delta, phase };
-        self.event(Event::PinchGesture(event));
+        self.event(Event::Pointer(pointer_event));
     }
 
     pub(crate) fn focused(&mut self, focused: bool) {
@@ -1318,11 +1268,11 @@ impl WindowHandle {
         }
     }
 
-    pub(crate) fn modifiers_changed(&mut self, modifiers: ModifiersState) {
-        let is_altgr = self.modifiers.altgr();
-        let mut modifiers: Modifiers = modifiers.into();
+    pub(crate) fn modifiers_changed(&mut self, modifiers: Modifiers) {
+        let is_altgr = self.modifiers.contains(Modifiers::ALT_GRAPH);
+        let mut modifiers: Modifiers = modifiers;
         if is_altgr {
-            modifiers.set(Modifiers::ALTGR, true);
+            modifiers.set(Modifiers::ALT_GRAPH, true);
         }
         self.modifiers = modifiers;
     }
@@ -1535,8 +1485,8 @@ fn context_menu_view(
                             move |menu| view_fn(menu, context_menu, on_child_submenu),
                         )
                         .on_event_stop(EventListener::KeyDown, move |event| {
-                            if let Event::KeyDown(event) = event {
-                                if event.key.logical_key == Key::Named(NamedKey::Escape) {
+                            if let Event::Key(KeyboardEvent { key, .. }) = event {
+                                if *key == Key::Named(NamedKey::Escape) {
                                     context_menu.set(None);
                                 }
                             }
@@ -1616,8 +1566,8 @@ fn context_menu_view(
     })
     .on_event_stop(EventListener::PointerMove, move |_| {})
     .on_event_stop(EventListener::KeyDown, move |event| {
-        if let Event::KeyDown(event) = event {
-            if event.key.logical_key == Key::Named(NamedKey::Escape) {
+        if let Event::Key(KeyboardEvent { key, .. }) = event {
+            if *key == Key::Named(NamedKey::Escape) {
                 context_menu.set(None);
             }
         }

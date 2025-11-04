@@ -1,15 +1,15 @@
-use peniko::kurbo::{Affine, Point, Size};
-use winit::{
-    keyboard::{KeyCode, PhysicalKey},
-    window::Theme,
+use peniko::kurbo::{Affine, Point, Size, Vec2};
+use ui_events::{
+    ScrollDelta,
+    keyboard::{Code, KeyState, KeyboardEvent},
+    pointer::{
+        PointerButtonEvent, PointerEvent, PointerGestureEvent, PointerScrollEvent, PointerUpdate,
+    },
 };
+use winit::window::Theme;
 
-use crate::{
-    dropped_file::DroppedFilesEvent,
-    keyboard::KeyEvent,
-    pointer::{PointerInputEvent, PointerMoveEvent, PointerWheelEvent},
-    touchpad::PinchGestureEvent,
-};
+use crate::dropped_file::{self, FileDragEvent};
+use dpi::LogicalPosition;
 
 /// Control whether an event will continue propagating or whether it should stop.
 pub enum EventPropagation {
@@ -101,20 +101,14 @@ pub enum EventListener {
     /// Receives [`Event::WindowScaleChanged`]
     WindowScaleChanged,
     /// Receives [`Event::DroppedFile`]
-    DroppedFile,
+    DroppedFiles,
 }
 
 #[derive(Debug, Clone)]
 pub enum Event {
-    PointerDown(PointerInputEvent),
-    PointerUp(PointerInputEvent),
-    PointerMove(PointerMoveEvent),
-    PointerWheel(PointerWheelEvent),
-    PointerLeave,
-    PinchGesture(PinchGestureEvent),
-    DroppedFiles(DroppedFilesEvent),
-    KeyDown(KeyEvent),
-    KeyUp(KeyEvent),
+    Pointer(PointerEvent),
+    FileDrag(dropped_file::FileDragEvent),
+    Key(ui_events::keyboard::KeyboardEvent),
     ImeEnabled,
     ImeDisabled,
     ImePreedit {
@@ -136,70 +130,28 @@ pub enum Event {
 
 impl Event {
     pub fn needs_focus(&self) -> bool {
-        match self {
-            Event::PointerDown(_)
-            | Event::PointerUp(_)
-            | Event::PointerMove(_)
-            | Event::PointerWheel(_)
-            | Event::PointerLeave
-            | Event::PinchGesture(..)
-            | Event::FocusGained
-            | Event::FocusLost
-            | Event::ImeEnabled
-            | Event::ImeDisabled
-            | Event::ImePreedit { .. }
-            | Event::ImeCommit(_)
-            | Event::ThemeChanged(_)
-            | Event::WindowClosed
-            | Event::WindowResized(_)
-            | Event::WindowMoved(_)
-            | Event::WindowMaximizeChanged(_)
-            | Event::WindowScaleChanged(_)
-            | Event::WindowGotFocus
-            | Event::WindowLostFocus
-            | Event::DroppedFiles(_) => false,
-            Event::KeyDown(_) | Event::KeyUp(_) => true,
-        }
+        matches!(self, Event::Key(_))
     }
 
     pub(crate) fn is_pointer(&self) -> bool {
-        match self {
-            Event::PointerDown(_)
-            | Event::PointerUp(_)
-            | Event::PointerMove(_)
-            | Event::PointerWheel(_)
-            | Event::PointerLeave => true,
-            Event::PinchGesture(_)
-            | Event::KeyDown(_)
-            | Event::KeyUp(_)
-            | Event::FocusGained
-            | Event::FocusLost
-            | Event::ImeEnabled
-            | Event::ImeDisabled
-            | Event::ImePreedit { .. }
-            | Event::ImeCommit(_)
-            | Event::ThemeChanged(_)
-            | Event::WindowClosed
-            | Event::WindowResized(_)
-            | Event::WindowMoved(_)
-            | Event::WindowMaximizeChanged(_)
-            | Event::WindowScaleChanged(_)
-            | Event::WindowGotFocus
-            | Event::WindowLostFocus
-            | Event::DroppedFiles(_) => false,
-        }
+        matches!(self, Event::Pointer(_))
+    }
+
+    #[allow(unused)]
+    pub(crate) fn is_pointer_down(&self) -> bool {
+        matches!(self, Event::Pointer(PointerEvent::Down { .. }))
+    }
+
+    #[allow(unused)]
+    pub(crate) fn is_pointer_up(&self) -> bool {
+        matches!(self, Event::Pointer(PointerEvent::Up { .. }))
     }
 
     /// Enter, numpad enter and space cause a view to be activated with the keyboard
     pub(crate) fn is_keyboard_trigger(&self) -> bool {
         match self {
-            Event::KeyDown(key) | Event::KeyUp(key) => {
-                matches!(
-                    key.key.physical_key,
-                    PhysicalKey::Code(KeyCode::NumpadEnter)
-                        | PhysicalKey::Code(KeyCode::Enter)
-                        | PhysicalKey::Code(KeyCode::Space),
-                )
+            Event::Key(key) => {
+                matches!(key.code, Code::NumpadEnter | Code::Enter | Code::Space)
             }
             _ => false,
         }
@@ -207,20 +159,7 @@ impl Event {
 
     pub fn allow_disabled(&self) -> bool {
         match self {
-            Event::PointerDown(_)
-            | Event::PointerUp(_)
-            | Event::PointerWheel(_)
-            | Event::FocusGained
-            | Event::FocusLost
-            | Event::ImeEnabled
-            | Event::ImeDisabled
-            | Event::ImePreedit { .. }
-            | Event::ImeCommit(_)
-            | Event::KeyDown(_)
-            | Event::KeyUp(_) => false,
-            Event::PinchGesture(_)
-            | Event::PointerLeave
-            | Event::PointerMove(_)
+            Event::Pointer(PointerEvent::Leave(_) | PointerEvent::Move(_))
             | Event::ThemeChanged(_)
             | Event::WindowClosed
             | Event::WindowResized(_)
@@ -229,36 +168,69 @@ impl Event {
             | Event::WindowMaximizeChanged(_)
             | Event::WindowScaleChanged(_)
             | Event::WindowLostFocus
-            | Event::DroppedFiles(_) => true,
-        }
-    }
-
-    pub fn point(&self) -> Option<Point> {
-        match self {
-            Event::PointerDown(pointer_event) | Event::PointerUp(pointer_event) => {
-                Some(pointer_event.pos)
-            }
-            Event::PointerMove(pointer_event) => Some(pointer_event.pos),
-            Event::PointerWheel(pointer_event) => Some(pointer_event.pos),
-            Event::DroppedFiles(event) => Some(event.pos),
-            Event::PinchGesture(_)
-            | Event::PointerLeave
-            | Event::KeyDown(_)
-            | Event::KeyUp(_)
+            | Event::FileDrag(FileDragEvent::DragDropped { .. }) => true,
+            Event::Pointer(_)
             | Event::FocusGained
             | Event::FocusLost
             | Event::ImeEnabled
             | Event::ImeDisabled
             | Event::ImePreedit { .. }
-            | Event::ThemeChanged(_)
             | Event::ImeCommit(_)
-            | Event::WindowClosed
-            | Event::WindowResized(_)
-            | Event::WindowMoved(_)
-            | Event::WindowMaximizeChanged(_)
-            | Event::WindowScaleChanged(_)
-            | Event::WindowGotFocus
-            | Event::WindowLostFocus => None,
+            | Event::FileDrag(
+                FileDragEvent::DragEntered { .. }
+                | FileDragEvent::DragMoved { .. }
+                | FileDragEvent::DragLeft { .. },
+            )
+            | Event::Key(_) => false,
+        }
+    }
+
+    pub fn pixel_scroll_delta_vec2(&self) -> Option<Vec2> {
+        if let Event::Pointer(PointerEvent::Scroll(PointerScrollEvent {
+            delta: ScrollDelta::PixelDelta(delta),
+            state,
+            ..
+        })) = self
+        {
+            let log = delta.to_logical(state.scale_factor);
+            Some(Vec2 { x: log.x, y: log.y })
+        } else {
+            None
+        }
+    }
+
+    pub fn point(&self) -> Option<Point> {
+        match self {
+            Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. }))
+            | Event::Pointer(PointerEvent::Up(PointerButtonEvent { state, .. }))
+            | Event::Pointer(PointerEvent::Move(PointerUpdate { current: state, .. }))
+            | Event::Pointer(PointerEvent::Scroll(PointerScrollEvent { state, .. })) => {
+                Some(state.logical_point())
+            }
+            Event::FileDrag(
+                FileDragEvent::DragEntered {
+                    position,
+                    scale_factor,
+                    ..
+                }
+                | FileDragEvent::DragMoved {
+                    position,
+                    scale_factor,
+                }
+                | FileDragEvent::DragDropped {
+                    position,
+                    scale_factor,
+                    ..
+                }
+                | FileDragEvent::DragLeft {
+                    position: Some(position),
+                    scale_factor,
+                },
+            ) => {
+                let log_pos = position.to_logical(*scale_factor);
+                Some(Point::new(log_pos.x, log_pos.y))
+            }
+            _ => None,
         }
     }
 
@@ -268,22 +240,52 @@ impl Event {
 
     pub fn transform(mut self, transform: Affine) -> Event {
         match &mut self {
-            Event::PointerDown(pointer_event) | Event::PointerUp(pointer_event) => {
-                pointer_event.pos = transform.inverse() * pointer_event.pos;
+            Event::Pointer(
+                PointerEvent::Down(PointerButtonEvent { state, .. })
+                | PointerEvent::Up(PointerButtonEvent { state, .. })
+                | PointerEvent::Gesture(PointerGestureEvent { state, .. })
+                | PointerEvent::Move(PointerUpdate { current: state, .. })
+                | PointerEvent::Scroll(PointerScrollEvent { state, .. }),
+            ) => {
+                let point = state.logical_point();
+                let transformed_point = transform.inverse() * point;
+                let phys_pos = LogicalPosition::new(transformed_point.x, transformed_point.y)
+                    .to_physical(state.scale_factor);
+                state.position = phys_pos;
             }
-            Event::PointerMove(pointer_event) => {
-                pointer_event.pos = transform.inverse() * pointer_event.pos;
+            Event::FileDrag(
+                FileDragEvent::DragEntered {
+                    position,
+                    scale_factor,
+                    ..
+                }
+                | FileDragEvent::DragMoved {
+                    position,
+                    scale_factor,
+                }
+                | FileDragEvent::DragDropped {
+                    position,
+                    scale_factor,
+                    ..
+                }
+                | FileDragEvent::DragLeft {
+                    position: Some(position),
+                    scale_factor,
+                },
+            ) => {
+                let log_pos = position.to_logical(*scale_factor);
+                let point = Point::new(log_pos.x, log_pos.y);
+                let transformed_point = transform.inverse() * point;
+                let phys_pos = LogicalPosition::new(transformed_point.x, transformed_point.y)
+                    .to_physical(*scale_factor);
+                *position = phys_pos;
             }
-            Event::PointerWheel(pointer_event) => {
-                pointer_event.pos = transform.inverse() * pointer_event.pos;
-            }
-            Event::DroppedFiles(event) => {
-                event.pos = transform.inverse() * event.pos;
-            }
-            Event::PinchGesture(_)
-            | Event::PointerLeave
-            | Event::KeyDown(_)
-            | Event::KeyUp(_)
+            // Event::PinchGesture(_) => {}
+            Event::Pointer(
+                PointerEvent::Cancel(_) | PointerEvent::Leave(_) | PointerEvent::Enter(_),
+            )
+            | Event::FileDrag(FileDragEvent::DragLeft { position: None, .. })
+            | Event::Key(_)
             | Event::FocusGained
             | Event::FocusLost
             | Event::ImeEnabled
@@ -304,14 +306,22 @@ impl Event {
 
     pub fn listener(&self) -> Option<EventListener> {
         match self {
-            Event::PointerDown(_) => Some(EventListener::PointerDown),
-            Event::PointerUp(_) => Some(EventListener::PointerUp),
-            Event::PointerMove(_) => Some(EventListener::PointerMove),
-            Event::PointerWheel(_) => Some(EventListener::PointerWheel),
-            Event::PointerLeave => Some(EventListener::PointerLeave),
-            Event::PinchGesture(_) => Some(EventListener::PinchGesture),
-            Event::KeyDown(_) => Some(EventListener::KeyDown),
-            Event::KeyUp(_) => Some(EventListener::KeyUp),
+            Event::Pointer(PointerEvent::Down { .. }) => Some(EventListener::PointerDown),
+            Event::Pointer(PointerEvent::Up { .. }) => Some(EventListener::PointerUp),
+            Event::Pointer(PointerEvent::Move(_)) => Some(EventListener::PointerMove),
+            Event::Pointer(PointerEvent::Scroll { .. }) => Some(EventListener::PointerWheel),
+            Event::Pointer(PointerEvent::Leave(_)) => Some(EventListener::PointerLeave),
+            Event::Pointer(PointerEvent::Enter(_)) => None, // TODO
+            Event::Pointer(PointerEvent::Cancel(_)) => None, // TODO
+            Event::Pointer(PointerEvent::Gesture(_)) => None, // TODO
+            Event::Key(KeyboardEvent {
+                state: KeyState::Down,
+                ..
+            }) => Some(EventListener::KeyDown),
+            Event::Key(KeyboardEvent {
+                state: KeyState::Up,
+                ..
+            }) => Some(EventListener::KeyUp),
             Event::ImeEnabled => Some(EventListener::ImeEnabled),
             Event::ImeDisabled => Some(EventListener::ImeDisabled),
             Event::ImePreedit { .. } => Some(EventListener::ImePreedit),
@@ -326,7 +336,8 @@ impl Event {
             Event::FocusLost => Some(EventListener::FocusLost),
             Event::FocusGained => Some(EventListener::FocusGained),
             Event::ThemeChanged(_) => Some(EventListener::ThemeChanged),
-            Event::DroppedFiles(_) => Some(EventListener::DroppedFile),
+            Event::FileDrag(FileDragEvent::DragDropped { .. }) => Some(EventListener::DroppedFiles),
+            _ => None, // TODO
         }
     }
 }

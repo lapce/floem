@@ -1,5 +1,5 @@
 use floem::{
-    keyboard::{Key, NamedKey},
+    ui_events::keyboard::{Key, NamedKey},
     views::Decorators,
     IntoView, View,
 };

@@ -1,5 +1,5 @@
 use crate::app::{AppUpdateEvent, add_app_update_event};
-use crate::event::{Event, EventListener, EventPropagation};
+use crate::event::{EventListener, EventPropagation};
 use crate::inspector::header;
 use crate::theme::StyleThemeExt;
 use crate::unit::UnitExt;
@@ -241,8 +241,8 @@ fn profile_view(profile: &Rc<Profile>) -> impl IntoView {
                 })
                 .style(|s| s.height_full().min_width(0).flex_basis(0).flex_grow(1.0))
                 .on_event(EventListener::PointerWheel, move |e| {
-                    if let Event::PointerWheel(e) = e {
-                        zoom.set(zoom.get() * (1.0 - e.delta.y / 400.0));
+                    if let Some(delta) = e.pixel_scroll_delta_vec2() {
+                        zoom.set(zoom.get() * (1.0 - delta.y / 400.0));
                         EventPropagation::Stop
                     } else {
                         EventPropagation::Continue

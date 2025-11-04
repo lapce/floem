@@ -1,13 +1,11 @@
-use floem::action::set_window_scale;
-use floem::keyboard::Key;
-use floem::reactive::provide_context;
-use floem::views::Decorators;
 use floem::{
+    action::set_window_scale,
     event::{Event, EventListener},
     kurbo::{Point, Size},
-    reactive::{create_updater, RwSignal, SignalGet, SignalUpdate, SignalWith},
+    prelude::*,
+    reactive::{create_updater, provide_context},
     window::WindowConfig,
-    Application, IntoView,
+    Application,
 };
 use serde::{Deserialize, Serialize};
 

@@ -5,7 +5,6 @@ use crate::{
         ResizeCallback, ResizeListeners,
     },
     event::EventListener,
-    pointer::PointerInputEvent,
     prop_extractor,
     responsive::ScreenSizeBp,
     style::{
@@ -19,6 +18,7 @@ use peniko::kurbo::{Affine, Point, Rect};
 use smallvec::SmallVec;
 use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::Rc};
 use taffy::tree::NodeId;
+use ui_events::pointer::PointerState;
 
 /// A stack of view attributes. Each entry is associated with a view decorator call.
 #[derive(Debug)]
@@ -194,7 +194,7 @@ pub struct ViewState {
     pub(crate) window_origin: Point,
     pub(crate) move_listeners: Rc<RefCell<MoveListeners>>,
     pub(crate) cleanup_listeners: Rc<RefCell<CleanupListeners>>,
-    pub(crate) last_pointer_down: Option<PointerInputEvent>,
+    pub(crate) last_pointer_down: Option<PointerState>,
     pub(crate) is_hidden_state: IsHiddenState,
     pub(crate) num_waiting_animations: u16,
     pub(crate) disable_default_events: HashSet<EventListener>,

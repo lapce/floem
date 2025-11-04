@@ -1,5 +1,4 @@
-use floem::action::inspect;
-use floem::prelude::*;
+use floem::{action::inspect, prelude::*};
 use localization::*;
 
 fn main() {
@@ -70,7 +69,7 @@ fn counter_view() -> impl IntoView {
                 })
         })
         .on_key_down(
-            floem::keyboard::Key::Named(floem::keyboard::NamedKey::F11),
+            Key::Named(NamedKey::F11),
             |_| true,
             |_| {
                 inspect();

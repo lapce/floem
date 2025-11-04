@@ -1,9 +1,8 @@
-use floem::keyboard::Key;
-use floem::keyboard::NamedKey;
-use floem::kurbo;
-use floem::prelude::*;
-use floem::style::StyleValue;
-use floem::style::TextColor;
+use floem::{
+    kurbo,
+    prelude::*,
+    style::{StyleValue, TextColor},
+};
 
 mod pan_zoom_view;
 mod transform_view;

@@ -17,7 +17,7 @@ use crate::views::{
     v_stack, v_stack_from_iter,
 };
 use crate::window_state::WindowState;
-use crate::{AnyView, Clipboard, keyboard, style};
+use crate::{AnyView, Clipboard, style};
 use floem_reactive::{RwSignal, Scope, SignalGet, SignalUpdate, batch};
 use peniko::color::palette;
 use peniko::kurbo::{Point, Rect, Size};
@@ -26,8 +26,8 @@ use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::rc::Rc;
+use ui_events::keyboard::{self, KeyboardEvent, NamedKey};
 pub use view::capture;
-use winit::keyboard::NamedKey;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
@@ -175,7 +175,7 @@ fn add_event<T: View + 'static>(
     name: String,
     id: ViewId,
     capture_view: CaptureView,
-    capture: &Rc<Capture>,
+    capture: Rc<Capture>,
     datas: RwSignal<CapturedDatas>,
 ) -> impl View + use<T> {
     let capture = capture.clone();
@@ -192,14 +192,14 @@ fn add_event<T: View + 'static>(
     .on_event_stop(EventListener::KeyDown, {
         let capture = capture.clone();
         move |event| {
-            if let Event::KeyDown(key) = event {
-                match key.key.logical_key {
+            if let Event::Key(KeyboardEvent { key, modifiers, .. }) = event {
+                match key {
                     keyboard::Key::Named(NamedKey::ArrowUp) => {
                         let rs = find_relative_view_by_id_with_self(id, &capture.root);
                         let Some(ids) = rs else {
                             return;
                         };
-                        if !key.modifiers.control() {
+                        if !modifiers.ctrl() {
                             if let Some(id) = ids.big_brother_id {
                                 update_select_view_id(id, &capture_view, true, datas);
                             }
@@ -212,7 +212,7 @@ fn add_event<T: View + 'static>(
                         let Some(ids) = rs else {
                             return;
                         };
-                        if !key.modifiers.control() {
+                        if !modifiers.ctrl() {
                             if let Some(id) = ids.next_brother_id {
                                 update_select_view_id(id, &capture_view, true, datas);
                             }

@@ -7,6 +7,8 @@ use std::{
     rc::Rc,
     sync::Arc,
 };
+use ui_events::keyboard::{KeyState, KeyboardEvent};
+use ui_events::pointer::{PointerButton, PointerButtonEvent, PointerEvent, PointerUpdate};
 use winit::window::Window;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -22,6 +24,7 @@ use std::sync::mpsc::Receiver;
 use taffy::prelude::NodeId;
 
 use crate::animate::{AnimStateKind, RepeatMode};
+use crate::dropped_file::FileDragEvent;
 use crate::easing::{Easing, Linear};
 use crate::menu::Menu;
 use crate::renderer::Renderer;
@@ -143,16 +146,17 @@ impl EventCx<'_> {
                 .event_before_children(self, &event)
                 .is_processed()
         {
-            if let Event::PointerDown(event) = &event {
+            if let Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) = &event {
                 if view_state.borrow().computed_style.get(Focusable) {
                     let rect = view_id.get_size().unwrap_or_default().to_rect();
-                    let now_focused = rect.contains(event.pos);
+                    let point = state.logical_point();
+                    let now_focused = rect.contains(point);
                     if now_focused {
                         self.window_state.update_focus(view_id, false);
                     }
                 }
             }
-            if let Event::PointerMove(_event) = &event {
+            if let Event::Pointer(PointerEvent::Move(_)) = &event {
                 let view_state = view_state.borrow();
                 let style = view_state.combined_style.builtin();
                 if let Some(cursor) = style.cursor() {
@@ -217,33 +221,39 @@ impl EventCx<'_> {
             };
 
             match &event {
-                Event::PointerDown(pointer_event) => {
+                Event::Pointer(PointerEvent::Down(PointerButtonEvent {
+                    pointer,
+                    state,
+                    button,
+                    ..
+                })) => {
                     self.window_state.clicking.insert(view_id);
-                    if pointer_event.button.is_primary() {
+                    let point = state.logical_point();
+                    if pointer.is_primary_pointer()
+                        && button.is_none_or(|b| b == PointerButton::Primary)
+                    {
                         let rect = view_id.get_size().unwrap_or_default().to_rect();
-                        let on_view = rect.contains(pointer_event.pos);
+                        let on_view = rect.contains(point);
 
                         if on_view {
                             if view_state.borrow().computed_style.get(Focusable) {
                                 // if the view can be focused, we update the focus
                                 self.window_state.update_focus(view_id, false);
                             }
-                            if pointer_event.count == 2
+                            if state.count == 2
                                 && view_state
                                     .borrow()
                                     .event_listeners
                                     .contains_key(&EventListener::DoubleClick)
                             {
-                                view_state.borrow_mut().last_pointer_down =
-                                    Some(pointer_event.clone());
+                                view_state.borrow_mut().last_pointer_down = Some(state.clone());
                             }
                             if view_state
                                 .borrow()
                                 .event_listeners
                                 .contains_key(&EventListener::Click)
                             {
-                                view_state.borrow_mut().last_pointer_down =
-                                    Some(pointer_event.clone());
+                                view_state.borrow_mut().last_pointer_down = Some(state.clone());
                             }
 
                             #[cfg(target_os = "macos")]
@@ -251,13 +261,22 @@ impl EventCx<'_> {
                                 return (ep, pec);
                             };
 
+                            let bottom_left = {
+                                let layout = view_state.borrow().layout_rect;
+                                Point::new(layout.x0, layout.y1)
+                            };
+                            let popout_menu = view_state.borrow().popout_menu.clone();
+                            if let Some(menu) = popout_menu {
+                                show_context_menu(menu(), Some(bottom_left));
+                                return (EventPropagation::Stop, PointerEventConsumed::Yes);
+                            }
                             if view_id.can_drag() && self.window_state.drag_start.is_none() {
-                                self.window_state.drag_start = Some((view_id, pointer_event.pos));
+                                self.window_state.drag_start = Some((view_id, point));
                             }
                         }
-                    } else if pointer_event.button.is_secondary() {
+                    } else if button.is_some_and(|b| b == PointerButton::Secondary) {
                         let rect = view_id.get_size().unwrap_or_default().to_rect();
-                        let on_view = rect.contains(pointer_event.pos);
+                        let on_view = rect.contains(point);
 
                         if on_view {
                             if view_state.borrow().computed_style.get(Focusable) {
@@ -269,15 +288,14 @@ impl EventCx<'_> {
                                 .event_listeners
                                 .contains_key(&EventListener::SecondaryClick)
                             {
-                                view_state.borrow_mut().last_pointer_down =
-                                    Some(pointer_event.clone());
+                                view_state.borrow_mut().last_pointer_down = Some(state.clone());
                             }
                         }
                     }
                 }
-                Event::PointerMove(pointer_event) => {
+                Event::Pointer(PointerEvent::Move(PointerUpdate { current, .. })) => {
                     let rect = view_id.get_size().unwrap_or_default().to_rect();
-                    if rect.contains(pointer_event.pos) {
+                    if rect.contains(current.logical_point()) {
                         if self.window_state.is_dragging() {
                             self.window_state.dragging_over.insert(view_id);
                             view_id.apply_event(&EventListener::DragOver, &event);
@@ -299,7 +317,7 @@ impl EventCx<'_> {
                             .as_ref()
                             .filter(|(drag_id, _)| drag_id == &view_id)
                         {
-                            let offset = pointer_event.pos - *drag_start;
+                            let offset = current.logical_point() - *drag_start;
                             if let Some(dragging) = self
                                 .window_state
                                 .dragging
@@ -331,10 +349,16 @@ impl EventCx<'_> {
                         return (EventPropagation::Stop, PointerEventConsumed::Yes);
                     }
                 }
-                Event::PointerUp(pointer_event) => {
-                    if pointer_event.button.is_primary() {
+                Event::Pointer(PointerEvent::Up(PointerButtonEvent {
+                    button,
+                    pointer,
+                    state,
+                })) => {
+                    if pointer.is_primary_pointer()
+                        && button.is_none_or(|b| b == PointerButton::Primary)
+                    {
                         let rect = view_id.get_size().unwrap_or_default().to_rect();
-                        let on_view = rect.contains(pointer_event.pos);
+                        let on_view = rect.contains(state.logical_point());
 
                         #[cfg(not(target_os = "macos"))]
                         if on_view {
@@ -343,7 +367,6 @@ impl EventCx<'_> {
                             };
                         }
 
-                        // if id_path.is_none() {
                         if !directed {
                             if on_view {
                                 if let Some(dragging) = self.window_state.dragging.as_mut() {
@@ -368,7 +391,7 @@ impl EventCx<'_> {
                         {
                             let dragging_id = dragging.id;
                             dragging.released_at = Some(Instant::now());
-                            dragging.release_location = Some(pointer_event.pos);
+                            dragging.release_location = Some(state.logical_point());
                             self.window_state.request_paint(view_id);
                             dragging_id.apply_event(&EventListener::DragEnd, &event);
                         }
@@ -382,7 +405,7 @@ impl EventCx<'_> {
                                 && self.window_state.is_clicking(&view_id)
                                 && last_pointer_down
                                     .as_ref()
-                                    .map(|e| e.count == 2)
+                                    .map(|s| s.count == 2)
                                     .unwrap_or(false)
                                 && handlers.iter().fold(false, |handled, handler| {
                                     handled | (handler.borrow_mut())(&event).is_processed()
@@ -410,9 +433,9 @@ impl EventCx<'_> {
                         {
                             return (EventPropagation::Stop, PointerEventConsumed::Yes);
                         }
-                    } else if pointer_event.button.is_secondary() {
+                    } else if button.is_some_and(|b| b == PointerButton::Secondary) {
                         let rect = view_id.get_size().unwrap_or_default().to_rect();
-                        let on_view = rect.contains(pointer_event.pos);
+                        let on_view = rect.contains(state.logical_point());
 
                         let last_pointer_down = view_state.borrow_mut().last_pointer_down.take();
                         let event_listeners = view_state.borrow().event_listeners.clone();
@@ -431,8 +454,8 @@ impl EventCx<'_> {
                         let viewport_event_position = {
                             let layout = view_state.borrow().layout_rect;
                             Point::new(
-                                layout.x0 + pointer_event.pos.x,
-                                layout.y0 + pointer_event.pos.y,
+                                layout.x0 + state.logical_point().x,
+                                layout.y0 + state.logical_point().y,
                             )
                         };
                         let context_menu = view_state.borrow().context_menu.clone();
@@ -442,7 +465,10 @@ impl EventCx<'_> {
                         }
                     }
                 }
-                Event::KeyDown(_) => {
+                Event::Key(KeyboardEvent {
+                    state: KeyState::Down,
+                    ..
+                }) => {
                     if self.window_state.is_focused(&view_id) && event.is_keyboard_trigger() {
                         view_id.apply_event(&EventListener::Click, &event);
                     }
@@ -450,6 +476,16 @@ impl EventCx<'_> {
                 Event::WindowResized(_) => {
                     if view_state.borrow().has_style_selectors.has_responsive() {
                         view_id.request_style();
+                    }
+                }
+                Event::FileDrag(e @ FileDragEvent::DragMoved { .. }) => {
+                    if let Some(point) = e.logical_point() {
+                        let rect = view_id.get_size().unwrap_or_default().to_rect();
+                        let on_view = rect.contains(point);
+                        if on_view {
+                            self.window_state.file_hovered.insert(view_id);
+                            view_id.request_style();
+                        }
                     }
                 }
                 _ => (),

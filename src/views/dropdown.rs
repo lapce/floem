@@ -12,7 +12,8 @@ use floem_reactive::{
 };
 use im_rc::OrdMap;
 use peniko::kurbo::{Point, Rect, Size};
-use winit::keyboard::{Key, NamedKey};
+use ui_events::keyboard::Key;
+use winit::keyboard::NamedKey;
 
 use crate::{
     AnyView,
@@ -260,14 +261,14 @@ impl<T: 'static + Clone + PartialEq> View for Dropdown<T> {
         event: &Event,
     ) -> EventPropagation {
         match event {
-            Event::PointerDown(_) => {
+            e if e.is_pointer_down() => {
                 self.swap_state();
                 return EventPropagation::Stop;
             }
-            Event::KeyUp(key_event)
-                if matches!(key_event.key.logical_key, Key::Named(NamedKey::Enter))
+            Event::Key(key_event)
+                if matches!(key_event.key, Key::Named(NamedKey::Enter))
                     | matches!(
-                        key_event.key.logical_key,
+                        key_event.key,
                         Key::Character(ref c) if c == " "
                     ) =>
             {

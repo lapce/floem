@@ -8,14 +8,13 @@ use lapce_xi_rope::Rope;
 
 use crate::{
     id::ViewId,
-    keyboard::Modifiers,
     style::{CursorColor, Style},
     view::{IntoView, View},
     views::editor::{
         Editor,
         command::CommandExecuted,
         id::EditorId,
-        keypress::default_key_handler,
+        keypress::{KeypressKey, default_key_handler},
         text::{Document, SimpleStyling, Styling},
         text_document::{OnUpdate, PreCommand, TextDocument},
         view::editor_container_view,
@@ -28,7 +27,6 @@ use super::editor::{
     ScrollBeyondLastLine, SelectionColor, ShowIndentGuide, SmartTab, VisibleWhitespaceColor,
     WrapProp,
     gutter::{DimColor, GutterClass, LeftOfCenterPadding, RightOfCenterPadding},
-    keypress::press::KeyPress,
     text::{RenderWhitespace, WrapMethod},
     view::EditorViewClass,
 };
@@ -108,7 +106,7 @@ pub fn text_editor(text: impl Into<Rope>) -> TextEditor {
 /// See [`text_editor`] for a list of the default keymaps that you will need to handle yourself if using this function.
 pub fn text_editor_keys(
     text: impl Into<Rope>,
-    handle_key_event: impl Fn(RwSignal<Editor>, &KeyPress, Modifiers) -> CommandExecuted + 'static,
+    handle_key_event: impl Fn(RwSignal<Editor>, &KeypressKey) -> CommandExecuted + 'static,
 ) -> TextEditor {
     let id = ViewId::new();
     let cx = Scope::current();
@@ -122,7 +120,7 @@ pub fn text_editor_keys(
         editor_container_view(
             editor_sig,
             |_| true,
-            move |kp, ms| handle_key_event(editor_sig, kp, ms),
+            move |kp| handle_key_event(editor_sig, &kp),
         )
     })
     .into_view();

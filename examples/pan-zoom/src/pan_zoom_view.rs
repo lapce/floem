@@ -5,6 +5,7 @@ use floem::{
     action::exec_after,
     event::{Event, EventPropagation},
     kurbo::{self, Vec2},
+    ui_events::pointer::{PointerButtonEvent, PointerEvent, PointerUpdate},
 };
 
 const VELOCITY_HISTORY_SIZE: usize = 8;
@@ -97,19 +98,19 @@ impl View for PanZoomView {
         event: &Event,
     ) -> EventPropagation {
         match event {
-            Event::PointerDown(e) => {
+            Event::Pointer(PointerEvent::Down(PointerButtonEvent { state, .. })) => {
                 self.dragging = true;
-                self.drag_cursor_pos = Some(e.pos);
+                self.drag_cursor_pos = Some(state.logical_point());
                 self.drag_velocities.clear();
                 self.schedule_update();
             }
-            Event::PointerMove(e) => {
-                self.cursor_pos = Some(e.pos);
+            Event::Pointer(PointerEvent::Move(PointerUpdate { current, .. })) => {
+                self.cursor_pos = Some(current.logical_point());
                 if !self.dragging {
                     return EventPropagation::Continue;
                 }
 
-                let current_cursor_pos = e.pos;
+                let current_cursor_pos = current.logical_point();
                 let Some(previous_cursor_pos) = self.drag_cursor_pos else {
                     self.drag_cursor_pos = Some(current_cursor_pos);
                     return EventPropagation::Continue;
@@ -125,7 +126,7 @@ impl View for PanZoomView {
 
                 return EventPropagation::Stop;
             }
-            Event::PointerUp(_e) => {
+            Event::Pointer(PointerEvent::Up(_)) => {
                 self.dragging = false;
                 self.drag_cursor_pos = None;
 
@@ -139,16 +140,17 @@ impl View for PanZoomView {
                     self.drag_velocity = kurbo::Vec2::ZERO;
                 }
             }
-            Event::PointerWheel(e) => {
-                let delta = e.delta;
-                let scale = 1. + delta.y / 250.;
+            e @ Event::Pointer(PointerEvent::Scroll(_)) => {
+                if let Some(delta) = e.pixel_scroll_delta_vec2() {
+                    let scale = 1. + delta.y / 250.;
 
-                self.target_scale *= scale;
-                if self.zoom_start_time.is_none() {
-                    self.zoom_start_time = Some(std::time::Instant::now());
-                    self.schedule_update();
-                } else {
-                    self.zoom_start_time = Some(std::time::Instant::now());
+                    self.target_scale *= scale;
+                    if self.zoom_start_time.is_none() {
+                        self.zoom_start_time = Some(std::time::Instant::now());
+                        self.schedule_update();
+                    } else {
+                        self.zoom_start_time = Some(std::time::Instant::now());
+                    }
                 }
             }
             _ => {}

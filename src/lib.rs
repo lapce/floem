@@ -195,17 +195,14 @@ pub mod file;
 pub mod file_action;
 pub(crate) mod id;
 mod inspector;
-pub mod keyboard;
 pub mod menu;
 mod nav;
-pub mod pointer;
 mod profiler;
 mod renderer;
 pub mod responsive;
 mod screen_layout;
 pub mod style;
 pub mod theme;
-pub mod touchpad;
 pub mod unit;
 mod update;
 pub(crate) mod view;
@@ -234,6 +231,7 @@ pub use peniko;
 pub use peniko::kurbo;
 pub use screen_layout::ScreenLayout;
 pub use taffy;
+pub use ui_events;
 pub use view::{AnyView, IntoView, View, recursively_layout_view};
 pub use view_state::{Stack, StackOffset};
 pub use window::{close_window, new_window};
@@ -251,4 +249,8 @@ pub mod prelude {
     };
     pub use peniko::Color;
     pub use peniko::color::palette;
+    pub use ui_events::{
+        keyboard::{Code, Key, KeyState, KeyboardEvent, Modifiers, NamedKey},
+        pointer::{PointerButtonEvent, PointerEvent},
+    };
 }

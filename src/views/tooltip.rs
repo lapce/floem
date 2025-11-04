@@ -2,6 +2,7 @@
 use peniko::kurbo::Point;
 use std::cell::RefCell;
 use std::rc::Rc;
+use ui_events::pointer::PointerEvent;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Duration;
@@ -120,21 +121,16 @@ impl View for Tooltip {
 
     fn event_before_children(&mut self, cx: &mut EventCx, event: &Event) -> EventPropagation {
         match &event {
-            Event::PointerMove(e) => {
+            Event::Pointer(PointerEvent::Move(pu)) => {
                 if self.overlay.borrow().is_none() && cx.window_state.dragging.is_none() {
                     let id = self.id();
                     let token = exec_after(self.style.delay(), move |token| {
                         id.update_state(token);
                     });
-                    self.hover = Some((e.pos, token));
+                    self.hover = Some((pu.current.logical_point(), token));
                 }
             }
-            Event::PointerLeave
-            | Event::PointerDown(_)
-            | Event::PointerUp(_)
-            | Event::PointerWheel(_)
-            | Event::KeyUp(_)
-            | Event::KeyDown(_) => {
+            Event::Pointer(_) | Event::Key(_) => {
                 self.hover = None;
                 if let Some(id) = self.overlay.borrow_mut().take() {
                     remove_overlay(id);

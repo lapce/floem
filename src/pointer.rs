@@ -42,10 +42,6 @@ impl From<ButtonSource> for PointerButton {
             ButtonSource::Mouse(mouse_button) => PointerButton::Mouse(mouse_button.into()),
             ButtonSource::Touch { finger_id, force } => PointerButton::Touch { finger_id, force },
             ButtonSource::Unknown(n) => PointerButton::Unknown(n),
-            ButtonSource::TabletTool { .. } => {
-                // todo! fixme
-                PointerButton::Unknown(0)
-            }
         }
     }
 }

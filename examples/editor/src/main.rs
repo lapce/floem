@@ -1,6 +1,6 @@
 use floem::{
-    keyboard::{Key, NamedKey},
     reactive::{RwSignal, SignalGet, SignalUpdate},
+    ui_events::keyboard::{Key, NamedKey},
     views::{
         button,
         editor::{

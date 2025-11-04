@@ -3,25 +3,30 @@ pub mod press;
 
 use std::{collections::HashMap, str::FromStr};
 
-use crate::{keyboard::Modifiers, reactive::RwSignal};
+use crate::reactive::RwSignal;
 use floem_editor_core::{
     command::{EditCommand, MoveCommand, MultiSelectionCommand, ScrollCommand},
     mode::Mode,
 };
 use floem_reactive::{SignalGet, SignalWith};
+use ui_events::keyboard::{Key, Modifiers};
 
 use super::{
     Editor,
     command::{Command, CommandExecuted},
 };
 
-use self::{key::KeyInput, press::KeyPress};
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct KeypressKey {
+    pub key: Key,
+    pub modifiers: Modifiers,
+}
 
 /// The default keymap handler does not have modal-mode specific
 /// keybindings.
 #[derive(Clone)]
 pub struct KeypressMap {
-    pub keymaps: HashMap<KeyPress, Command>,
+    pub keymaps: HashMap<KeypressKey, Command>,
 }
 impl KeypressMap {
     pub fn default_windows() -> Self {
@@ -55,50 +60,53 @@ impl Default for KeypressMap {
     }
 }
 
-fn key(s: &str, m: Modifiers) -> KeyPress {
-    KeyPress::new(KeyInput::from_str(s).unwrap(), m)
+fn key(s: &str, m: Modifiers) -> KeypressKey {
+    KeypressKey {
+        key: Key::from_str(s).unwrap(),
+        modifiers: m,
+    }
 }
 
-fn key_d(s: &str) -> KeyPress {
+fn key_d(s: &str) -> KeypressKey {
     key(s, Modifiers::default())
 }
 
-fn add_default_common(c: &mut HashMap<KeyPress, Command>) {
+fn add_default_common(c: &mut HashMap<KeypressKey, Command>) {
     // Note: this should typically be kept in sync with Lapce's
     // `defaults/keymaps-common.toml`
 
     // --- Basic editing ---
 
     c.insert(
-        key("up", Modifiers::ALT),
+        key("ArrowUp", Modifiers::ALT),
         Command::Edit(EditCommand::MoveLineUp),
     );
     c.insert(
-        key("down", Modifiers::ALT),
+        key("ArrowDown", Modifiers::ALT),
         Command::Edit(EditCommand::MoveLineDown),
     );
 
-    c.insert(key_d("delete"), Command::Edit(EditCommand::DeleteForward));
+    c.insert(key_d("Delete"), Command::Edit(EditCommand::DeleteForward));
     c.insert(
-        key_d("backspace"),
+        key_d("Backspace"),
         Command::Edit(EditCommand::DeleteBackward),
     );
     c.insert(
-        key("backspace", Modifiers::SHIFT),
+        key("Backspace", Modifiers::SHIFT),
         Command::Edit(EditCommand::DeleteForward),
     );
 
-    c.insert(key_d("home"), Command::Move(MoveCommand::LineStartNonBlank));
-    c.insert(key_d("end"), Command::Move(MoveCommand::LineEnd));
+    c.insert(key_d("Home"), Command::Move(MoveCommand::LineStartNonBlank));
+    c.insert(key_d("End"), Command::Move(MoveCommand::LineEnd));
 
-    c.insert(key_d("pageup"), Command::Scroll(ScrollCommand::PageUp));
-    c.insert(key_d("pagedown"), Command::Scroll(ScrollCommand::PageDown));
+    c.insert(key_d("PageUp"), Command::Scroll(ScrollCommand::PageUp));
+    c.insert(key_d("PageDown"), Command::Scroll(ScrollCommand::PageDown));
     c.insert(
-        key("pageup", Modifiers::CONTROL),
+        key("PageUp", Modifiers::CONTROL),
         Command::Scroll(ScrollCommand::ScrollUp),
     );
     c.insert(
-        key("pagedown", Modifiers::CONTROL),
+        key("PageDown", Modifiers::CONTROL),
         Command::Scroll(ScrollCommand::ScrollDown),
     );
 
@@ -114,30 +122,30 @@ fn add_default_common(c: &mut HashMap<KeyPress, Command>) {
     // TODO: jump to snippet positions?
 
     // --- ---- ---
-    c.insert(key_d("right"), Command::Move(MoveCommand::Right));
-    c.insert(key_d("left"), Command::Move(MoveCommand::Left));
-    c.insert(key_d("up"), Command::Move(MoveCommand::Up));
-    c.insert(key_d("down"), Command::Move(MoveCommand::Down));
+    c.insert(key_d("ArrowRight"), Command::Move(MoveCommand::Right));
+    c.insert(key_d("ArrowLeft"), Command::Move(MoveCommand::Left));
+    c.insert(key_d("ArrowUp"), Command::Move(MoveCommand::Up));
+    c.insert(key_d("ArrowDown"), Command::Move(MoveCommand::Down));
 
-    c.insert(key_d("enter"), Command::Edit(EditCommand::InsertNewLine));
+    c.insert(key_d("Enter"), Command::Edit(EditCommand::InsertNewLine));
 
-    c.insert(key_d("tab"), Command::Edit(EditCommand::InsertTab));
+    c.insert(key_d("Tab"), Command::Edit(EditCommand::InsertTab));
 
     c.insert(
-        key("up", Modifiers::ALT | Modifiers::SHIFT),
+        key("ArrowUp", Modifiers::ALT | Modifiers::SHIFT),
         Command::Edit(EditCommand::DuplicateLineUp),
     );
     c.insert(
-        key("down", Modifiers::ALT | Modifiers::SHIFT),
+        key("ArrowDown", Modifiers::ALT | Modifiers::SHIFT),
         Command::Edit(EditCommand::DuplicateLineDown),
     );
 }
 
-fn add_default_windows(c: &mut HashMap<KeyPress, Command>) {
+fn add_default_windows(c: &mut HashMap<KeypressKey, Command>) {
     add_default_nonmacos(c);
 }
 
-fn add_default_macos(c: &mut HashMap<KeyPress, Command>) {
+fn add_default_macos(c: &mut HashMap<KeypressKey, Command>) {
     // Note: this should typically be kept in sync with Lapce's
     // `defaults/keymaps-macos.toml`
 
@@ -162,19 +170,19 @@ fn add_default_macos(c: &mut HashMap<KeyPress, Command>) {
     );
 
     c.insert(
-        key("right", Modifiers::ALT),
+        key("ArrowRight", Modifiers::ALT),
         Command::Move(MoveCommand::WordEndForward),
     );
     c.insert(
-        key("left", Modifiers::ALT),
+        key("ArrowLeft", Modifiers::ALT),
         Command::Move(MoveCommand::WordBackward),
     );
     c.insert(
-        key("left", Modifiers::META),
+        key("ArrowLeft", Modifiers::META),
         Command::Move(MoveCommand::LineStartNonBlank),
     );
     c.insert(
-        key("right", Modifiers::META),
+        key("ArrowRight", Modifiers::META),
         Command::Move(MoveCommand::LineEnd),
     );
 
@@ -193,11 +201,11 @@ fn add_default_macos(c: &mut HashMap<KeyPress, Command>) {
     );
 
     c.insert(
-        key("backspace", Modifiers::ALT),
+        key("Backspace", Modifiers::ALT),
         Command::Edit(EditCommand::DeleteWordBackward),
     );
     c.insert(
-        key("backspace", Modifiers::META),
+        key("Backspace", Modifiers::META),
         Command::Edit(EditCommand::DeleteToBeginningOfLine),
     );
     c.insert(
@@ -205,7 +213,7 @@ fn add_default_macos(c: &mut HashMap<KeyPress, Command>) {
         Command::Edit(EditCommand::DeleteToEndOfLine),
     );
     c.insert(
-        key("delete", Modifiers::ALT),
+        key("Delete", Modifiers::ALT),
         Command::Edit(EditCommand::DeleteWordForward),
     );
 
@@ -218,21 +226,21 @@ fn add_default_macos(c: &mut HashMap<KeyPress, Command>) {
     );
 
     c.insert(
-        key("enter", Modifiers::META),
+        key("Enter", Modifiers::META),
         Command::Edit(EditCommand::NewLineBelow),
     );
     c.insert(
-        key("enter", Modifiers::META | Modifiers::SHIFT),
+        key("Enter", Modifiers::META | Modifiers::SHIFT),
         Command::Edit(EditCommand::NewLineAbove),
     );
 
     // --- Multi cursor ---
     c.insert(
-        key("up", Modifiers::ALT | Modifiers::META),
+        key("ArrowUp", Modifiers::ALT | Modifiers::META),
         Command::MultiSelection(MultiSelectionCommand::InsertCursorAbove),
     );
     c.insert(
-        key("down", Modifiers::ALT | Modifiers::META),
+        key("ArrowDown", Modifiers::ALT | Modifiers::META),
         Command::MultiSelection(MultiSelectionCommand::InsertCursorBelow),
     );
 
@@ -252,20 +260,20 @@ fn add_default_macos(c: &mut HashMap<KeyPress, Command>) {
 
     // --- ---- ---
     c.insert(
-        key("up", Modifiers::META),
+        key("ArrowUp", Modifiers::META),
         Command::Move(MoveCommand::DocumentStart),
     );
     c.insert(
-        key("down", Modifiers::META),
+        key("ArrowDown", Modifiers::META),
         Command::Move(MoveCommand::DocumentEnd),
     );
 }
 
-fn add_default_linux(c: &mut HashMap<KeyPress, Command>) {
+fn add_default_linux(c: &mut HashMap<KeypressKey, Command>) {
     add_default_nonmacos(c);
 }
 
-fn add_default_nonmacos(c: &mut HashMap<KeyPress, Command>) {
+fn add_default_nonmacos(c: &mut HashMap<KeypressKey, Command>) {
     // Note: this should typically be kept in sync with Lapce's
     // `defaults/keymaps-nonmacos.toml`
 
@@ -287,7 +295,7 @@ fn add_default_nonmacos(c: &mut HashMap<KeyPress, Command>) {
         Command::Edit(EditCommand::ClipboardCut),
     );
     c.insert(
-        key("delete", Modifiers::SHIFT),
+        key("Delete", Modifiers::SHIFT),
         Command::Edit(EditCommand::ClipboardCut),
     );
     c.insert(
@@ -295,7 +303,7 @@ fn add_default_nonmacos(c: &mut HashMap<KeyPress, Command>) {
         Command::Edit(EditCommand::ClipboardCopy),
     );
     c.insert(
-        key("insert", Modifiers::CONTROL),
+        key("Insert", Modifiers::CONTROL),
         Command::Edit(EditCommand::ClipboardCopy),
     );
     c.insert(
@@ -303,25 +311,25 @@ fn add_default_nonmacos(c: &mut HashMap<KeyPress, Command>) {
         Command::Edit(EditCommand::ClipboardPaste),
     );
     c.insert(
-        key("insert", Modifiers::SHIFT),
+        key("Insert", Modifiers::SHIFT),
         Command::Edit(EditCommand::ClipboardPaste),
     );
 
     c.insert(
-        key("right", Modifiers::CONTROL),
+        key("ArrowRight", Modifiers::CONTROL),
         Command::Move(MoveCommand::WordEndForward),
     );
     c.insert(
-        key("left", Modifiers::CONTROL),
+        key("ArrowLeft", Modifiers::CONTROL),
         Command::Move(MoveCommand::WordBackward),
     );
 
     c.insert(
-        key("backspace", Modifiers::CONTROL),
+        key("Backspace", Modifiers::CONTROL),
         Command::Edit(EditCommand::DeleteWordBackward),
     );
     c.insert(
-        key("delete", Modifiers::CONTROL),
+        key("Delete", Modifiers::CONTROL),
         Command::Edit(EditCommand::DeleteWordForward),
     );
 
@@ -335,17 +343,17 @@ fn add_default_nonmacos(c: &mut HashMap<KeyPress, Command>) {
     );
 
     c.insert(
-        key("enter", Modifiers::CONTROL),
+        key("Enter", Modifiers::CONTROL),
         Command::Edit(EditCommand::NewLineAbove),
     );
 
     // --- Multi cursor ---
     c.insert(
-        key("up", Modifiers::CONTROL | Modifiers::ALT),
+        key("ArrowUp", Modifiers::CONTROL | Modifiers::ALT),
         Command::MultiSelection(MultiSelectionCommand::InsertCursorAbove),
     );
     c.insert(
-        key("down", Modifiers::CONTROL | Modifiers::ALT),
+        key("ArrowDown", Modifiers::CONTROL | Modifiers::ALT),
         Command::MultiSelection(MultiSelectionCommand::InsertCursorBelow),
     );
 
@@ -365,39 +373,40 @@ fn add_default_nonmacos(c: &mut HashMap<KeyPress, Command>) {
 
     // --- Navigation ---
     c.insert(
-        key("home", Modifiers::CONTROL),
+        key("Home", Modifiers::CONTROL),
         Command::Move(MoveCommand::DocumentStart),
     );
     c.insert(
-        key("end", Modifiers::CONTROL),
+        key("End", Modifiers::CONTROL),
         Command::Move(MoveCommand::DocumentEnd),
     );
 }
 
 pub fn default_key_handler(
     editor: RwSignal<Editor>,
-) -> impl Fn(&KeyPress, Modifiers) -> CommandExecuted + 'static {
+) -> impl Fn(KeypressKey) -> CommandExecuted + 'static {
     let keypress_map = KeypressMap::default();
-    move |keypress, modifiers| {
-        let command = keypress_map.keymaps.get(keypress).or_else(|| {
+    move |keypress| {
+        let command = keypress_map.keymaps.get(&keypress).or_else(|| {
             let mode = editor.get_untracked().cursor.get_untracked().get_mode();
             if mode == Mode::Insert {
-                let mut keypress = keypress.clone();
-                keypress.mods.set(Modifiers::SHIFT, false);
-                keypress_map.keymaps.get(&keypress)
+                let mut modified_modifiers = keypress.modifiers;
+                modified_modifiers.set(Modifiers::SHIFT, false);
+                keypress_map.keymaps.get(&KeypressKey {
+                    key: keypress.key,
+                    modifiers: modified_modifiers,
+                })
             } else {
                 None
             }
         });
-
         let Some(command) = command else {
             return CommandExecuted::No;
         };
-
         editor.with_untracked(|editor| {
             editor
                 .doc()
-                .run_command(editor, command, Some(1), modifiers)
+                .run_command(editor, command, Some(1), keypress.modifiers)
         })
     }
 }
