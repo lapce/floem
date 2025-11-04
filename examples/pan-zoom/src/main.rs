@@ -1,3 +1,5 @@
+use floem::keyboard::Key;
+use floem::keyboard::NamedKey;
 use floem::kurbo;
 use floem::prelude::*;
 use floem::style::StyleValue;
@@ -54,12 +56,20 @@ fn child_view() -> impl IntoView {
 fn app_view() -> impl IntoView {
     let (view_transform, set_view_transform) = create_signal(kurbo::Affine::default());
 
-    pan_zoom_view(
+    let view = pan_zoom_view(
         view_transform.get(),
-        transform_view(child_view(), move || view_transform.get().inverse()),
+        transform_view(child_view(), move || view_transform.get().inverse())
+            .style(|s| s.size_full()),
     )
     .style(|s| s.width_full().height_full().background(palette::css::BLACK))
-    .on_pan_zoom(move |affine| set_view_transform.set(affine))
+    .on_pan_zoom(move |affine| set_view_transform.set(affine));
+
+    let id = view.id();
+    view.on_key_up(
+        Key::Named(NamedKey::F11),
+        |m| m.is_empty(),
+        move |_| id.inspect(),
+    )
 }
 
 fn main() {

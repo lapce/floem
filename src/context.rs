@@ -519,6 +519,9 @@ impl EventCx<'_> {
             layout.location.x as f64,
             layout.location.y as f64,
         ));
+        // For that, we need to take any style transformations into account
+        let transform = id.state().borrow().transform;
+        let current_rect = transform.transform_rect_bbox(current_rect);
 
         if !current_rect.contains(point) {
             return false;
