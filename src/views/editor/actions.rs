@@ -177,7 +177,8 @@ pub trait CommonAction {
     // TODO: should we have a more general cursor state structure?
     // since modal is about cursor, and register is sortof about cursor
     // but also there might be other state it wants. Should we just pass Editor to it?
-    /// Perform an edit.  
+    /// Perform an edit.
+    ///
     /// Returns `true` if there was any change.
     fn do_edit(
         &self,

@@ -142,9 +142,11 @@ impl EditorStyle {
 
 pub(crate) const CHAR_WIDTH: f64 = 7.5;
 
-/// The main structure for the editor view itself.  
+/// The main structure for the editor view itself.
+///
 /// This can be considered to be the data part of the `View`.
-/// It holds an `Rc<dyn Document>` within as the document it is a view into.  
+/// It holds an `Rc<dyn Document>` within as the document it is a view into.
+///
 #[derive(Clone)]
 pub struct Editor {
     pub cx: Cell<Scope>,
@@ -186,7 +188,8 @@ pub struct Editor {
 
     pub last_movement: RwSignal<Movement>,
 
-    /// Whether ime input is allowed.  
+    /// Whether ime input is allowed.
+    ///
     /// Should not be set manually outside of the specific handling for ime.
     pub ime_allowed: RwSignal<bool>,
     pub(crate) ime_cursor_area: RwSignal<Option<(Point, Size)>>,
@@ -198,7 +201,8 @@ pub struct Editor {
     pub floem_style_id: RwSignal<u64>,
 }
 impl Editor {
-    /// Create a new editor into the given document, using the styling.  
+    /// Create a new editor into the given document, using the styling.
+    ///
     /// `doc`: The backing [`Document`], such as [`TextDocument`](self::text_document::TextDocument)
     /// `style`: How the editor should be styled, such as [`SimpleStyling`](self::text::SimpleStyling)
     pub fn new(cx: Scope, doc: Rc<dyn Document>, style: Rc<dyn Styling>, modal: bool) -> Editor {
@@ -206,8 +210,10 @@ impl Editor {
         Editor::new_id(cx, id, doc, style, modal)
     }
 
-    /// Create a new editor into the given document, using the styling.  
-    /// `id` should typically be constructed by [`EditorId::next`]  
+    /// Create a new editor into the given document, using the styling.
+    ///
+    /// `id` should typically be constructed by [`EditorId::next`]
+    ///
     /// `doc`: The backing [`Document`], such as [`TextDocument`](self::text_document::TextDocument)
     /// `style`: How the editor should be styled, such as [`SimpleStyling`](self::text::SimpleStyling)
     pub fn new_id(
@@ -228,8 +234,8 @@ impl Editor {
     // TODO: should we really allow callers to arbitrarily specify the Id? That could open up
     // confusing behavior.
 
-    /// Create a new editor into the given document, using the styling.  
-    /// `id` should typically be constructed by [`EditorId::next`]  
+    /// Create a new editor into the given document, using the styling.
+    /// `id` should typically be constructed by [`EditorId::next`]
     /// `doc`: The backing [`Document`], such as [`TextDocument`](self::text_document::TextDocument)
     /// `style`: How the editor should be styled, such as [`SimpleStyling`](self::text::SimpleStyling)
     /// This does *not* create the view effects. Use this if you're creating an editor and then
@@ -430,7 +436,8 @@ impl Editor {
         self.style.get_untracked()
     }
 
-    /// Get the text of the document  
+    /// Get the text of the document
+    ///
     /// You should typically prefer [`Self::rope_text`]
     pub fn text(&self) -> Rope {
         self.doc().text()
@@ -779,8 +786,8 @@ impl Editor {
             .iter_vlines_over(self.text_prov(), backwards, start, end)
     }
 
-    /// Iterator over *relative* [`VLineInfo`]s, starting at the buffer line, `start_line`.  
-    /// The `visual_line`s provided by this will start at 0 from your `start_line`.  
+    /// Iterator over *relative* [`VLineInfo`]s, starting at the buffer line, `start_line`.
+    /// The `visual_line`s provided by this will start at 0 from your `start_line`.
     /// This is preferable over `iter_lines` if you do not need to absolute visual line value.
     pub fn iter_rvlines(
         &self,
@@ -791,8 +798,10 @@ impl Editor {
     }
 
     /// Iterator over *relative* [`VLineInfo`]s, starting at the buffer line, `start_line` and
-    /// ending at `end_line`.  
-    /// `start_line..end_line`  
+    /// ending at `end_line`.
+    ///
+    /// `start_line..end_line`
+    ///
     /// This is preferable over `iter_lines` if you do not need to absolute visual line value.
     pub fn iter_rvlines_over(
         &self,
@@ -834,7 +843,7 @@ impl Editor {
 
     // ==== Line/Column Positioning ====
 
-    /// Convert an offset into the buffer into a line and idx.  
+    /// Convert an offset into the buffer into a line and idx.
     pub fn offset_to_line_col(&self, offset: usize) -> (usize, usize) {
         self.rope_text().offset_to_line_col(offset)
     }
@@ -866,7 +875,8 @@ impl Editor {
     }
 
     /// `affinity` decides whether an offset at a soft line break is considered to be on the
-    /// previous line or the next line.  
+    /// previous line or the next line.
+    ///
     /// If `affinity` is `CursorAffinity::Forward` and is at the very end of the wrapped line, then
     /// the offset is considered to be on the next line.
     pub fn vline_of_offset(&self, offset: usize, affinity: CursorAffinity) -> VLine {
@@ -891,7 +901,8 @@ impl Editor {
         self.lines.offset_of_vline(&self.text_prov(), vline)
     }
 
-    /// Get the visual line and column of the given offset.  
+    /// Get the visual line and column of the given offset.
+    ///
     /// The column is before phantom text is applied.
     pub fn vline_col_of_offset(&self, offset: usize, affinity: CursorAffinity) -> (VLine, usize) {
         self.lines
@@ -964,7 +975,7 @@ impl Editor {
     }
 
     /// Returns the point into the text layout of the line at the given line and col.
-    /// `x` being the leading edge of the character, and `y` being the baseline.  
+    /// `x` being the leading edge of the character, and `y` being the baseline.
     pub fn line_point_of_line_col(
         &self,
         line: usize,
@@ -1188,7 +1199,8 @@ impl Editor {
         }
     }
 
-    /// Advance to the right in the manner of the given mode.  
+    /// Advance to the right in the manner of the given mode.
+    ///
     /// This is not the same as the [`Movement::Right`] command.
     pub fn move_right(&self, offset: usize, mode: Mode, count: usize) -> usize {
         self.rope_text().move_right(offset, mode, count)

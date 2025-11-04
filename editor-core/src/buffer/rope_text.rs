@@ -55,7 +55,8 @@ pub trait RopeText {
         (line, col)
     }
 
-    /// Get the offset for a specific line and column.  
+    /// Get the offset for a specific line and column.
+    ///
     /// This should be preferred over simply adding the column to the line offset, because it
     /// validates better and avoids returning newlines.
     /// ```rust
@@ -107,7 +108,8 @@ pub trait RopeText {
 
     /// Get the offset of the end of the line. The caret decides whether it is after the last
     /// character, or before it.
-    /// If the line is out of bounds, then the last offset (the len) is returned.  
+    /// If the line is out of bounds, then the last offset (the len) is returned.
+    ///
     /// ```rust
     /// # use floem_editor_core::xi_rope::Rope;
     /// # use floem_editor_core::buffer::rope_text::{RopeText, RopeTextRef};

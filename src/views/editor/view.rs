@@ -43,8 +43,10 @@ pub enum DiffSectionKind {
 
 #[derive(Clone, PartialEq)]
 pub struct DiffSection {
-    /// The y index that the diff section is at.  
-    /// This is multiplied by the line height to get the y position.  
+    /// The y index that the diff section is at.
+    ///
+    /// This is multiplied by the line height to get the y position.
+    ///
     /// So this can roughly be considered as the `VLine` of the start of this diff section, but it
     /// isn't necessarily convertible to a `VLine` due to jumping over empty code sections.
     pub y_idx: usize,
@@ -58,11 +60,11 @@ pub struct DiffSection {
 #[derive(Clone, PartialEq)]
 pub struct ScreenLines {
     pub lines: Rc<Vec<RVLine>>,
-    /// Guaranteed to have an entry for each `VLine` in `lines`  
+    /// Guaranteed to have an entry for each `VLine` in `lines`
     /// You should likely use accessor functions rather than this directly.
     pub info: Rc<HashMap<RVLine, LineInfo>>,
     pub diff_sections: Option<Rc<Vec<DiffSection>>>,
-    /// The base y position that all the y positions inside `info` are relative to.  
+    /// The base y position that all the y positions inside `info` are relative to.
     /// This exists so that if a text layout is created outside of the view, we don't have to
     /// completely recompute the screen lines (or do somewhat intricate things to update them)
     /// we simply have to update the `base_y`.
@@ -93,7 +95,7 @@ impl ScreenLines {
         });
     }
 
-    /// Get the line info for the given rvline.  
+    /// Get the line info for the given rvline.
     pub fn info(&self, rvline: RVLine) -> Option<LineInfo> {
         let info = self.info.get(&rvline)?;
         let base = self.base.get();
@@ -109,12 +111,13 @@ impl ScreenLines {
         self.lines.first().copied().zip(self.lines.last().copied())
     }
 
-    /// Iterate over the line info, copying them with the full y positions.  
+    /// Iterate over the line info, copying them with the full y positions.
     pub fn iter_line_info(&self) -> impl Iterator<Item = LineInfo> + '_ {
         self.lines.iter().map(|rvline| self.info(*rvline).unwrap())
     }
 
-    /// Iterate over the line info within the range, copying them with the full y positions.  
+    /// Iterate over the line info within the range, copying them with the full y positions.
+    ///
     /// If the values are out of range, it is clamped to the valid lines within.
     pub fn iter_line_info_r(
         &self,
@@ -182,8 +185,10 @@ impl ScreenLines {
     }
 
     /// Iterate over the real lines underlying the visual lines on the screen with the y position
-    /// of their layout.  
-    /// (line, y)  
+    /// of their layout.
+    ///
+    /// (line, y)
+    ///
     pub fn iter_lines_y(&self) -> impl Iterator<Item = (usize, f64)> + '_ {
         let mut last_line = None;
         self.lines.iter().filter_map(move |vline| {
@@ -303,7 +308,8 @@ impl ScreenLines {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScreenLinesBase {
-    /// The current/previous viewport.  
+    /// The current/previous viewport.
+    ///
     /// Used for determining whether there were any changes, and the `y0` serves as the
     /// base for positioning the lines.
     pub active_viewport: Rect,
@@ -1093,7 +1099,7 @@ pub struct LineRegion {
     pub rvline: RVLine,
 }
 
-/// Get the render information for a caret cursor at the given `offset`.  
+/// Get the render information for a caret cursor at the given `offset`.
 pub fn cursor_caret(
     ed: &Editor,
     offset: usize,

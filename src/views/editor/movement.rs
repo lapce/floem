@@ -17,7 +17,8 @@ use super::{
     visual_line::{RVLine, VLineInfo},
 };
 
-/// Move a selection region by a given movement.  
+/// Move a selection region by a given movement.
+///
 /// Much of the time, this will just be a matter of moving the cursor, but
 /// some movements may depend on the current selection.
 fn move_region(
@@ -224,8 +225,9 @@ fn atomic_soft_tab_width_for_offset(ed: &Editor, offset: usize) -> Option<usize>
     }
 }
 
-/// Move the offset to the left by `count` amount.  
-/// If `soft_tab_width` is `Some` (and greater than 1) then the offset will snap to the soft tab.  
+/// Move the offset to the left by `count` amount.
+///
+/// If `soft_tab_width` is `Some` (and greater than 1) then the offset will snap to the soft tab.
 fn move_left(
     ed: &Editor,
     offset: usize,
@@ -310,7 +312,8 @@ fn find_prev_rvline(view: &Editor, start: RVLine, count: usize) -> Option<RVLine
     info.map(|info| info.rvline)
 }
 
-/// Move the offset up by `count` amount.  
+/// Move the offset up by `count` amount.
+///
 /// `count` may be zero, because moving up in a selection just jumps to the start of the selection.
 fn move_up(
     view: &Editor,
@@ -420,7 +423,8 @@ fn find_next_rvline_info(
     None
 }
 
-/// Move the offset down by `count` amount.  
+/// Move the offset down by `count` amount.
+///
 /// `count` may be zero, because moving down in a selection just jumps to the end of the selection.
 fn move_down(
     view: &Editor,
@@ -557,7 +561,8 @@ fn to_line(
     (new_offset, horiz)
 }
 
-/// Move the current cursor.  
+/// Move the current cursor.
+///
 /// This will signal-update the document for some motion modes.
 pub fn move_cursor(
     ed: &Editor,

@@ -49,7 +49,8 @@ Inspired by [Xilem](https://github.com/linebender/xilem), [Leptos](https://githu
 - **Performance**: The view tree is constructed only once, safeguarding you from accidentally creating a bottleneck in a view generation function that slows down your entire application. Floem also provides tools to help you write efficient UI code, such as a [virtual list](https://github.com/lapce/floem/tree/main/examples/virtual_list).
 - **Flexbox & Grid layout**: Using [Taffy](https://crates.io/crates/taffy), the library provides the Flexbox and Grid layout systems, which can be applied to any View node.
 - **Customizable widgets**: Widgets are highly customizable. You can customize both the appearance and behavior of widgets using the styling API, which supports theming with classes. You can also install third-party themes.
-- **Transitions and Animations**: Floem supports both transitions and animations. Transitions, like css transitions, can animate any property that can be interpolated and can be applied alongside other styles, including in classes. 
+- **Transitions and Animations**: Floem supports both transitions and animations. Transitions, like css transitions, can animate any property that can be interpolated and can be applied alongside other styles, including in classes.
+
         Floem also supports full keyframe animations that build on the ergonomics of the style system. In both transitions and animations, Floem supports easing with spring functions.
 - **Element inspector**: Inspired by your browser's developer tools, Floem provides a [diagnostic tool](docs/img/inspector.png) to debug your layout.
 - **Global themes**: Support for light and dark themes, built in design system to easly delare your own
@@ -62,13 +63,13 @@ To sample Floem's capabilities, check out the repo and run the [widget gallery](
 
 <details>
     <summary>Light Mode</summary>
-        
+
 <img src="docs/img/widget-gallery-light.jpg" width="900"/>
 </details>
 
 
 
-        
+
 <img src="docs/img/inspector.jpg" width="900"/>
 
 To help you master Floem, we provide [documentation](https://docs.rs/floem) and [code examples](examples/).

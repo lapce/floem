@@ -54,7 +54,8 @@ impl<'a> OnUpdate<'a> {
     }
 }
 
-/// A simple text document that holds content in a rope.  
+/// A simple text document that holds content in a rope.
+///
 /// This can be used as a base structure for common operations.
 #[derive(Clone)]
 pub struct TextDocument {

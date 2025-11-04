@@ -133,28 +133,34 @@ impl CursorMode {
     }
 }
 
-/// Decides how the cursor should be placed around special areas of text.  
+/// Decides how the cursor should be placed around special areas of text.
+///
 /// Ex:
 /// ```rust,ignore
 /// let j =            // soft linewrap
 /// 1 + 2 + 3;
 /// ```
-/// where `let j = ` has the issue that there's two positions you might want your cursor to be:  
-/// `let j = |` or `|1 + 2 + 3;`  
-/// These are the same offset in the text, but it feels more natural to have it move in a certain
-/// way.  
-/// If you're at `let j =| ` and you press the right-arrow key, then it uses your backwards
-/// affinity to keep you on the line at `let j = |`.  
-/// If you're at `1| + 2 + 3;` and you press the left-arrow key, then it uses your forwards affinity
-/// to keep you on the line at `|1 + 2 + 3;`.  
+/// where `let j = ` has the issue that there's two positions you might want your cursor to be:
+/// `let j = |` or `|1 + 2 + 3;`
 ///
-/// For other special text, like inlay hints, this can also apply.  
+/// These are the same offset in the text, but it feels more natural to have it move in a certain
+/// way.
+/// If you're at `let j =| ` and you press the right-arrow key, then it uses your backwards
+/// affinity to keep you on the line at `let j = |`.
+///
+/// If you're at `1| + 2 + 3;` and you press the left-arrow key, then it uses your forwards affinity
+/// to keep you on the line at `|1 + 2 + 3;`.
+///
+/// For other special text, like inlay hints, this can also apply.
+///
 /// ```rust,ignore
 /// let j<: String> = ...
 /// ```
-/// where `<: String>` is our inlay hint, then  
+/// where `<: String>` is our inlay hint, then
+///
 /// `let |j<: String> =` and you press the right-arrow key, then it uses your backwards affinity to
-/// keep you on the same side of the hint, `let j|<: String>`.  
+/// keep you on the same side of the hint, `let j|<: String>`.
+///
 /// `let j<: String> |=` and you press the right-arrow key, then it uses your forwards affinity to
 /// keep you on the same side of the hint, `let j<: String>| =`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

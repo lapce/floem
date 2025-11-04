@@ -4,7 +4,7 @@ Floem aims to be a high performance UI library. New contributions are always wel
 
 The best way to start contributing to Floem is to learn how it works by looking at the examples. If you think there are more examples that can be added, feel free to send in a PR!
 
-Alternatively, you can have a look at issues to see if there is anything you'd like to pick up. 
+Alternatively, you can have a look at issues to see if there is anything you'd like to pick up.
 
 Filing bugs with clear, reproducible steps is a great way to contribute as well.
 

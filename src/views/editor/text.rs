@@ -73,8 +73,9 @@ pub struct Preedit {
     pub offset: usize,
 }
 
-/// IME Preedit  
-/// This is used for IME input, and must be owned by the `Document`.  
+/// IME Preedit
+///
+/// This is used for IME input, and must be owned by the `Document`.
 #[derive(Debug, Clone)]
 pub struct PreeditData {
     pub preedit: RwSignal<Option<Preedit>>,
@@ -87,9 +88,10 @@ impl PreeditData {
     }
 }
 
-/// A document. This holds text.  
+/// A document. This holds text.
 pub trait Document: DocumentPhantom + ::std::any::Any {
-    /// Get the text of the document  
+    /// Get the text of the document
+    ///
     /// Note: typically you should call [`Document::rope_text`] as that provides more checks and
     /// utility functions.
     fn text(&self) -> Rope;
@@ -100,7 +102,8 @@ pub trait Document: DocumentPhantom + ::std::any::Any {
 
     fn cache_rev(&self) -> RwSignal<u64>;
 
-    /// Find the next/previous offset of the match of the given character.  
+    /// Find the next/previous offset of the match of the given character.
+    ///
     /// This is intended for use by the [`Movement::NextUnmatched`](floem_editor_core::movement::Movement::NextUnmatched) and
     /// [`Movement::PreviousUnmatched`](floem_editor_core::movement::Movement::PreviousUnmatched) commands.
     fn find_unmatched(&self, offset: usize, previous: bool, ch: char) -> usize {
@@ -115,7 +118,8 @@ pub trait Document: DocumentPhantom + ::std::any::Any {
         new_offset.unwrap_or(offset)
     }
 
-    /// Find the offset of the matching pair character.  
+    /// Find the offset of the matching pair character.
+    ///
     /// This is intended for use by the [`Movement::MatchPairs`](floem_editor_core::movement::Movement::MatchPairs) command.
     fn find_matching_pair(&self, offset: usize) -> usize {
         WordCursor::new(&self.text(), offset)
@@ -150,7 +154,8 @@ pub trait Document: DocumentPhantom + ::std::any::Any {
         })
     }
 
-    /// Compute the visible screen lines.  
+    /// Compute the visible screen lines.
+    ///
     /// Note: you should typically *not* need to implement this, unless you have some custom
     /// behavior. Unfortunately this needs an `&self` to be a trait object. So don't call `.update`
     /// on `Self`
@@ -162,7 +167,8 @@ pub trait Document: DocumentPhantom + ::std::any::Any {
         normal_compute_screen_lines(editor, base)
     }
 
-    /// Run a command on the document.  
+    /// Run a command on the document.
+    ///
     /// The `ed` will contain this document (at some level, if it was wrapped then it may not be
     /// directly `Rc<Self>`)
     fn run_command(
@@ -175,15 +181,18 @@ pub trait Document: DocumentPhantom + ::std::any::Any {
 
     fn receive_char(&self, ed: &Editor, c: &str);
 
-    /// Perform a single edit.  
+    /// Perform a single edit.
+    ///
     fn edit_single(&self, selection: Selection, content: &str, edit_type: EditType) {
         let mut iter = std::iter::once((selection, content));
         self.edit(&mut iter, edit_type);
     }
 
-    /// Perform the edit(s) on this document.  
+    /// Perform the edit(s) on this document.
+    ///
     /// This intentionally does not require an `Editor` as this is primarily intended for use by
-    /// code that wants to modify the document from 'outside' the usual keybinding/command logic.  
+    /// code that wants to modify the document from 'outside' the usual keybinding/command logic.
+    ///
     /// ```rust,ignore
     /// let editor: TextEditor = text_editor();
     /// let doc: Rc<dyn Document> = editor.doc();
@@ -271,7 +280,8 @@ impl std::fmt::Display for RenderWhitespace {
     }
 }
 
-/// There's currently three stages of styling text:  
+/// There's currently three stages of styling text:
+///
 /// - `Attrs`: This sets the default values for the text
 ///   - Default font size, font family, etc.
 /// - `AttrsList`: This lets you set spans of text to have different styling
@@ -334,7 +344,7 @@ pub trait Styling {
     // TODO: get other style information based on EditorColor enum?
     // TODO: line_style equivalent?
 
-    /// Apply custom attribute styles to the line  
+    /// Apply custom attribute styles to the line
     fn apply_attr_styles(
         &self,
         _edid: EditorId,
@@ -425,10 +435,11 @@ pub fn default_dark_color(mut style: EditorCustomStyle) -> EditorCustomStyle {
 
 pub type DocumentRef = Rc<dyn Document>;
 
-/// A document-wrapper for handling commands.  
+/// A document-wrapper for handling commands.
 pub struct ExtCmdDocument<D, F> {
     pub doc: D,
-    /// Called whenever [`Document::run_command`] is called.  
+    /// Called whenever [`Document::run_command`] is called.
+    ///
     /// If `handler` returns [`CommandExecuted::Yes`] then the default handler on `doc: D` will not
     /// be called.
     pub handler: F,
