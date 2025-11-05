@@ -19,7 +19,7 @@ pub mod tabs;
 pub mod texteditor;
 
 use floem::{
-    action::{add_overlay, set_window_menu, toggle_theme},
+    action::{add_overlay, set_window_menu, toggle_global_theme, toggle_window_theme},
     event::{Event, EventListener},
     kurbo::Size,
     menu::*,
@@ -289,9 +289,15 @@ fn app_view(window_id: WindowId) -> impl IntoView {
     }));
 
     add_overlay(
-        button("toggle theme")
-            .action(toggle_theme)
+        button("toggle global theme")
+            .action(toggle_global_theme)
             .style(|s| s.absolute().inset_top(10.).inset_right(22.)),
+    );
+   
+    add_overlay(
+        button("toggle window theme")
+            .action(toggle_window_theme)
+            .style(|s| s.absolute().inset_top(40.).inset_right(22.)),
     );
 
     view.on_event_stop(EventListener::KeyUp, move |e| {

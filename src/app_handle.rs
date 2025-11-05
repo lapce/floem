@@ -154,11 +154,12 @@ impl ApplicationHandle {
                     }
                 }
                 AppUpdateEvent::ThemeChanged { theme } => {
+                    println!("AppUpdateEvent::ThemeChanged");
                     for window_handle in self.window_handles.values_mut() {
                         // Change theme only if new one is different from the current
-                        if window_handle.current_theme != theme {
-                            window_handle.current_theme = theme;
-                            window_handle.theme_changed(theme);
+                        if window_handle.window_state.light_dark_theme != theme {
+                            window_handle.window_state.light_dark_theme = theme;
+                            window_handle.set_theme(Some(theme), false);
                             #[cfg(target_os = "windows")]
                             {
                                 window_handle.set_menu_theme_for_windows(theme);
@@ -303,7 +304,11 @@ impl ApplicationHandle {
                 window_handle.scale(scale_factor);
             }
             WindowEvent::ThemeChanged(theme) => {
-                window_handle.theme_changed(theme);
+                window_handle.set_theme(Some(theme), true);
+                #[cfg(target_os = "windows")]
+                {
+                    window_handle.set_menu_theme_for_windows(theme);
+                }
             }
             WindowEvent::Occluded(_) => {}
             WindowEvent::RedrawRequested => {
@@ -364,7 +369,8 @@ impl ApplicationHandle {
             undecorated,
             undecorated_shadow,
             window_level,
-            with_theme,
+            theme_override,
+            apply_default_theme,
             mac_os_config,
             win_os_config,
             web_config,
@@ -387,7 +393,7 @@ impl ApplicationHandle {
             .with_window_level(window_level)
             .with_window_icon(window_icon)
             .with_resizable(resizable)
-            .with_theme(with_theme)
+            .with_theme(theme_override)
             .with_enabled_buttons(enabled_buttons);
 
         #[cfg(target_arch = "wasm32")]
@@ -544,7 +550,7 @@ impl ApplicationHandle {
             self.config.wgpu_features,
             view_fn,
             transparent,
-            with_theme,
+            apply_default_theme,
             font_embolden,
         );
         self.window_handles.insert(window_id, window_handle);

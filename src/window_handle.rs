@@ -72,10 +72,8 @@ pub(crate) struct WindowHandle {
     pub(crate) window_state: WindowState,
     pub(crate) paint_state: PaintState,
     size: RwSignal<Size>,
-    theme: Option<Style>,
+    default_theme: Option<Style>,
     pub(crate) profile: Option<Profile>,
-    os_theme: Option<winit::window::Theme>,
-    pub(crate) current_theme: winit::window::Theme,
     is_maximized: bool,
     transparent: bool,
     pub(crate) scale: f64,
@@ -96,7 +94,7 @@ impl WindowHandle {
         required_features: wgpu::Features,
         view_fn: impl FnOnce(winit::window::WindowId) -> Box<dyn View> + 'static,
         transparent: bool,
-        apply_theme: Option<winit::window::Theme>,
+        apply_default_theme: bool,
         font_embolden: f32,
     ) -> Self {
         let scope = Scope::new();
@@ -107,7 +105,7 @@ impl WindowHandle {
         let size = Size::new(size.width, size.height);
         let size = scope.create_rw_signal(Size::new(size.width, size.height));
         let os_theme = window.theme();
-        let current_theme = apply_theme.unwrap_or(os_theme.unwrap_or(winit::window::Theme::Light));
+        // let current_theme = apply_theme.unwrap_or(os_theme.unwrap_or(winit::window::Theme::Light));
         let is_maximized = window.is_maximized();
 
         set_current_view(id);
@@ -178,23 +176,21 @@ impl WindowHandle {
 
         let paint_state_initialized = matches!(paint_state, PaintState::Initialized { .. });
 
+        let window_state = WindowState::new(id, os_theme);
+
         let mut window_handle = Self {
             window,
             window_id,
             id,
             main_view: main_view_id,
             scope,
-            window_state: WindowState::new(id),
             paint_state,
             size,
-            theme: match apply_theme {
-                Some(t) => Some(default_theme(t)),
-                None => Some(default_theme(
-                    os_theme.unwrap_or(winit::window::Theme::Light),
-                )),
+            default_theme: match apply_default_theme {
+                true => Some(default_theme(window_state.light_dark_theme)),
+                false => None,
             },
-            os_theme,
-            current_theme,
+            window_state,
             is_maximized,
             transparent,
             profile: None,
@@ -214,10 +210,13 @@ impl WindowHandle {
         window_handle
             .window_state
             .set_root_size(size.get_untracked());
-        window_handle.window_state.os_theme = os_theme;
-        if let Some(theme) = apply_theme {
-            window_handle.event(Event::ThemeChanged(theme));
-        }
+
+        window_handle.window_state.light_dark_theme =
+            os_theme.unwrap_or(winit::window::Theme::Light);
+        
+        window_handle.event(Event::ThemeChanged(
+            window_handle.window_state.light_dark_theme,
+        ));
         window_handle.size(size.get_untracked());
         window_handle
     }
@@ -487,15 +486,31 @@ impl WindowHandle {
         self.schedule_repaint();
     }
 
-    pub(crate) fn theme_changed(&mut self, theme: winit::window::Theme) {
-        self.os_theme = Some(theme);
-        self.window_state.os_theme = Some(theme);
-        self.current_theme = theme;
-        self.theme = Some(default_theme(theme));
-        self.window.set_theme(Some(theme));
+    pub(crate) fn set_theme(&mut self, theme: Option<winit::window::Theme>, change_from_os: bool) {
+        if change_from_os && self.window_state.theme_overriden {
+            // if the window theme has been set manually then changes from the os shouldn't do anything
+            return;
+        }
+        if let Some(theme) = theme {
+            // only override the theme with the default if the user did not provide one
+            if self.default_theme.is_some() {
+                self.default_theme = Some(default_theme(theme));
+            }
+            self.window_state.light_dark_theme = theme;
+            if !change_from_os {
+                self.window_state.theme_overriden = true
+            }
+        } else {
+            self.window_state.theme_overriden = false;
+        }
+        if !change_from_os {
+            self.window.set_theme(theme);
+        }
         self.id.request_all();
         request_recursive_changes(self.id, ChangeFlags::STYLE);
-        self.event(Event::ThemeChanged(theme));
+        if let Some(theme) = theme {
+            self.event(Event::ThemeChanged(theme));
+        }
     }
 
     pub(crate) fn size(&mut self, size: Size) {
@@ -590,7 +605,7 @@ impl WindowHandle {
 
     fn style(&mut self) {
         let mut cx = StyleCx::new(&mut self.window_state, self.id);
-        if let Some(theme) = &self.theme {
+        if let Some(theme) = &self.default_theme {
             cx.current = Rc::new(theme.inherited());
         }
         cx.style_view(self.id);
@@ -663,7 +678,7 @@ impl WindowHandle {
         if !self.transparent {
             let scale = cx.window_state.scale;
             let color = self
-                .theme
+                .default_theme
                 .as_ref()
                 .and_then(|theme| theme.get(crate::style::Background))
                 .unwrap_or(peniko::Brush::Solid(palette::css::WHITE));
@@ -1053,6 +1068,14 @@ impl WindowHandle {
                             id.state().borrow().num_waiting_animations.saturating_sub(1);
                         id.state().borrow_mut().num_waiting_animations = num_waiting;
                     }
+                    UpdateMessage::SetTheme(theme) => {
+                        self.set_theme(theme, false);
+
+                        #[cfg(target_os = "windows")]
+                        if let Some(new) = theme {
+                            self.set_menu_theme_for_windows(new);
+                        }
+                    },
                 }
             }
         }
@@ -1191,10 +1214,14 @@ impl WindowHandle {
 
         if let RawWindowHandle::Win32(handle) = self.window.window_handle().unwrap().as_raw() {
             unsafe {
-                let menu_theme = match self.os_theme {
-                    Some(winit::window::Theme::Light) => muda::MenuTheme::Light,
-                    Some(winit::window::Theme::Dark) => muda::MenuTheme::Dark,
-                    None => muda::MenuTheme::Auto,
+                let menu_theme = match (
+                    self.window_state.theme_overriden,
+                    self.window_state.light_dark_theme,
+                ) {
+                    (false, winit::window::Theme::Light) => muda::MenuTheme::Light,
+                    (false, winit::window::Theme::Dark) => muda::MenuTheme::Dark,
+                    (true, winit::window::Theme::Light) => muda::MenuTheme::Light,
+                    (true, winit::window::Theme::Dark) => muda::MenuTheme::Dark,
                 };
                 let _ = menu.init_for_hwnd_with_theme(isize::from(handle.hwnd), menu_theme);
                 let _ = menu.show_for_hwnd(isize::from(handle.hwnd));
