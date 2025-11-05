@@ -128,19 +128,8 @@ pub fn create_ext_action<T: Send + 'static>(
     }
 }
 
-#[deprecated(note = "Use StreamSignal::on_executor")]
-pub fn create_signal_from_stream<T>(
-    stream: impl Into<async_signal::StreamSignal<T>>,
-) -> ReadSignal<Option<T>> {
-    stream.into().value
-}
-
-#[deprecated(note = "Use ChannelSignal::on_executor")]
-pub fn create_signal_from_channel<T, E>(
-    channel: impl Into<async_signal::ChannelSignal<T, E>>,
-) -> ReadSignal<Option<T>> {
-    channel.into().value
-}
+// Deprecated functions removed due to type incompatibility with new API
+// Use StreamSignal::on_executor_with_default or ChannelSignal::on_executor_with_default instead
 
 pub fn update_signal_from_channel<T: Send + 'static>(
     writer: WriteSignal<Option<T>>,

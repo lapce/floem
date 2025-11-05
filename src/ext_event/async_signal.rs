@@ -42,7 +42,7 @@ impl<T: 'static> FutureSignal<T> {
     where
         T: 'static,
     {
-        Self::on_executor(future, event_loop_future)
+        Self::on_executor(future, event_loop_future_option)
     }
 
     /// Execute the future on tokio::spawn.
@@ -52,7 +52,7 @@ impl<T: 'static> FutureSignal<T> {
     where
         T: Send + 'static,
     {
-        Self::on_executor(future, tokio_spawn_future)
+        Self::on_executor(future, tokio_spawn_future_option)
     }
 
     pub fn is_finished(&self) -> bool {
@@ -92,30 +92,30 @@ impl<T> Clone for FutureSignal<T> {
 
 /// A reactive signal for streams that produce multiple values.
 pub struct StreamSignal<T> {
-    pub value: floem_reactive::ReadSignal<Option<T>>,
+    pub value: floem_reactive::ReadSignal<T>,
     pub finished: floem_reactive::ReadSignal<bool>,
 }
 
 /// This implementation will be removed in the future
-impl<T: 'static, S> From<S> for StreamSignal<T>
+impl<T: 'static, S> From<S> for StreamSignal<Option<T>>
 where
     S: futures::Stream<Item = T> + 'static,
 {
     fn from(value: S) -> Self {
-        StreamSignal::on_event_loop(value)
+        StreamSignal::<Option<T>>::on_event_loop(value)
     }
 }
 
 impl<T: 'static> StreamSignal<T> {
-    /// Execute the stream using a custom executor function.
+    /// Execute the stream using a custom executor function with an initial value.
     ///
     /// The executor function receives the stream, write signals, and trigger,
     /// and is responsible for running the stream and updating the signals.
-    pub fn on_executor<F, S>(stream: S, executor: F) -> Self
+    pub fn on_executor_with_initial<F, S>(stream: S, initial: T, executor: F) -> Self
     where
         F: FnOnce(
             S,
-            floem_reactive::WriteSignal<Option<T>>,
+            floem_reactive::WriteSignal<T>,
             floem_reactive::WriteSignal<bool>,
             ExtSendTrigger,
         ),
@@ -124,7 +124,7 @@ impl<T: 'static> StreamSignal<T> {
 
         let cx = Scope::current();
         let trigger = with_scope(cx, ExtSendTrigger::new);
-        let (read, write) = cx.create_signal(None);
+        let (read, write) = cx.create_signal(initial);
         let (read_finished, write_finished) = cx.create_signal(false);
 
         executor(stream, write, write_finished, trigger);
@@ -135,23 +135,63 @@ impl<T: 'static> StreamSignal<T> {
         }
     }
 
-    /// Execute the stream on the main event loop by driving the future using the event loop.
+    /// Execute the stream using a custom executor function.
+    ///
+    /// The executor function receives the stream, write signals, and trigger,
+    /// and is responsible for running the stream and updating the signals.
+    /// This is a convenience method that uses a default/placeholder value.
+    pub fn on_executor<F, S, U: 'static>(stream: S, executor: F) -> StreamSignal<Option<U>>
+    where
+        F: FnOnce(
+            S,
+            floem_reactive::WriteSignal<Option<U>>,
+            floem_reactive::WriteSignal<bool>,
+            ExtSendTrigger,
+        ),
+    {
+        StreamSignal::<Option<U>>::on_executor_with_initial(stream, None, executor)
+    }
+
+    /// Execute the stream on the main event loop with an initial value.
     /// The stream does not need to be `Send`.
-    pub fn on_event_loop(stream: impl futures::Stream<Item = T> + 'static) -> Self
+    pub fn on_event_loop_with_initial(
+        stream: impl futures::Stream<Item = T> + 'static,
+        initial: T,
+    ) -> Self
     where
         T: 'static,
     {
-        Self::on_executor(stream, event_loop_stream)
+        Self::on_executor_with_initial(stream, initial, event_loop_stream)
     }
 
-    /// Execute the stream on tokio::spawn.
+    /// Execute the stream on the main event loop without an initial value.
+    /// This returns a StreamSignal<Option<U>> where U is the stream item type.
+    pub fn on_event_loop<U: 'static>(
+        stream: impl futures::Stream<Item = U> + 'static,
+    ) -> StreamSignal<Option<U>> {
+        StreamSignal::<Option<U>>::on_executor(stream, event_loop_stream_option)
+    }
+
+    /// Execute the stream on tokio::spawn with an initial value.
     /// Requires the stream to be `Send + 'static`.
     #[cfg(feature = "tokio")]
-    pub fn on_tokio_spawn(stream: impl futures::Stream<Item = T> + Send + 'static) -> Self
+    pub fn on_tokio_spawn(
+        stream: impl futures::Stream<Item = T> + Send + 'static,
+        initial: T,
+    ) -> Self
     where
         T: Send + 'static,
     {
-        Self::on_executor(stream, tokio_spawn_stream)
+        Self::on_executor_with_initial(stream, initial, tokio_spawn_stream)
+    }
+
+    /// Execute the stream on tokio::spawn without an initial value.
+    /// This returns a StreamSignal<Option<U>> where U is the stream item type.
+    #[cfg(feature = "tokio")]
+    pub fn on_tokio_spawn_no_initial<U: Send + 'static>(
+        stream: impl futures::Stream<Item = U> + Send + 'static,
+    ) -> StreamSignal<Option<U>> {
+        StreamSignal::<Option<U>>::on_executor(stream, tokio_spawn_stream_option)
     }
 
     pub fn is_finished(&self) -> bool {
@@ -160,7 +200,7 @@ impl<T: 'static> StreamSignal<T> {
     }
 }
 
-impl<T> floem_reactive::SignalGet<Option<T>> for StreamSignal<T>
+impl<T> floem_reactive::SignalGet<T> for StreamSignal<T>
 where
     T: Clone,
 {
@@ -169,13 +209,13 @@ where
     }
 }
 
-impl<T> floem_reactive::SignalWith<Option<T>> for StreamSignal<T> {
+impl<T> floem_reactive::SignalWith<T> for StreamSignal<T> {
     fn id(&self) -> floem_reactive::ReactiveId {
         self.value.id()
     }
 }
 
-impl<T> floem_reactive::SignalRead<Option<T>> for StreamSignal<T> {
+impl<T> floem_reactive::SignalRead<T> for StreamSignal<T> {
     fn id(&self) -> floem_reactive::ReactiveId {
         self.value.id()
     }
@@ -203,38 +243,38 @@ impl core::error::Error for ChannelClosed {}
 
 /// A reactive signal for channels that produce multiple values with error handling.
 pub struct ChannelSignal<T, E> {
-    pub value: floem_reactive::ReadSignal<Option<T>>,
+    pub value: floem_reactive::ReadSignal<T>,
     pub error: floem_reactive::ReadSignal<Option<E>>,
 }
 
 /// This implementation will be removed in the future
 #[cfg(feature = "crossbeam")]
 impl<T: std::marker::Send + 'static> From<crossbeam::channel::Receiver<T>>
-    for ChannelSignal<T, crossbeam::channel::RecvError>
+    for ChannelSignal<Option<T>, crossbeam::channel::RecvError>
 {
     fn from(value: crossbeam::channel::Receiver<T>) -> Self {
-        ChannelSignal::on_std_thread(value)
+        ChannelSignal::<Option<T>, crossbeam::channel::RecvError>::on_std_thread_no_initial(value)
     }
 }
 /// This implementation will be removed in the future
 impl<T: std::marker::Send + 'static> From<std::sync::mpsc::Receiver<T>>
-    for ChannelSignal<T, std::sync::mpsc::RecvError>
+    for ChannelSignal<Option<T>, std::sync::mpsc::RecvError>
 {
     fn from(value: std::sync::mpsc::Receiver<T>) -> Self {
-        ChannelSignal::on_std_thread(value)
+        ChannelSignal::<Option<T>, std::sync::mpsc::RecvError>::on_std_thread_no_initial(value)
     }
 }
 
 impl<T: 'static, E: 'static> ChannelSignal<T, E> {
-    /// Execute the channel receiver using a custom executor function.
+    /// Execute the channel receiver using a custom executor function with an initial value.
     ///
     /// The executor function receives the receiver, write signals, and trigger,
     /// and is responsible for receiving messages and updating the signals.
-    pub fn on_executor<F, R>(receiver: R, executor: F) -> Self
+    pub fn on_executor_with_initial<F, R>(receiver: R, initial: T, executor: F) -> Self
     where
         F: FnOnce(
             R,
-            floem_reactive::WriteSignal<Option<T>>,
+            floem_reactive::WriteSignal<T>,
             floem_reactive::WriteSignal<Option<E>>,
             ExtSendTrigger,
         ),
@@ -243,7 +283,7 @@ impl<T: 'static, E: 'static> ChannelSignal<T, E> {
 
         let cx = Scope::current();
         let trigger = with_scope(cx, ExtSendTrigger::new);
-        let (read, write) = cx.create_signal(None);
+        let (read, write) = cx.create_signal(initial);
         let (read_error, write_error) = cx.create_signal(None);
 
         executor(receiver, write, write_error, trigger);
@@ -254,39 +294,100 @@ impl<T: 'static, E: 'static> ChannelSignal<T, E> {
         }
     }
 
-    /// Execute a pollable receiver on the main event loop.
+    /// Execute the channel receiver using a custom executor function.
+    ///
+    /// The executor function receives the receiver, write signals, and trigger,
+    /// and is responsible for receiving messages and updating the signals.
+    /// This is a convenience method that uses a default/placeholder value.
+    pub fn on_executor<F, R, U, Err>(receiver: R, executor: F) -> ChannelSignal<Option<U>, Err>
+    where
+        F: FnOnce(
+            R,
+            floem_reactive::WriteSignal<Option<U>>,
+            floem_reactive::WriteSignal<Option<Err>>,
+            ExtSendTrigger,
+        ),
+        U: 'static,
+        Err: 'static,
+    {
+        ChannelSignal::<Option<U>, Err>::on_executor_with_initial(receiver, None, executor)
+    }
+
+    /// Execute a pollable receiver on the main event loop with an initial value.
     /// The receiver does not need to be `Send`.
-    pub fn on_event_loop(receiver: impl PollableReceiver<Item = T, Error = E> + 'static) -> Self
+    pub fn on_event_loop(
+        receiver: impl PollableReceiver<Item = T, Error = E> + 'static,
+        initial: T,
+    ) -> Self
     where
         T: 'static,
         E: 'static,
     {
-        Self::on_executor(receiver, event_loop_receiver)
+        Self::on_executor_with_initial(receiver, initial, event_loop_receiver)
     }
 
-    /// Execute a blocking receiver on a dedicated std::thread.
+    /// Execute a pollable receiver on the main event loop without an initial value.
+    /// This returns a ChannelSignal<Option<U>, E> where U is the receiver item type.
+    pub fn on_event_loop_no_initial<U, Err>(
+        receiver: impl PollableReceiver<Item = U, Error = Err> + 'static,
+    ) -> ChannelSignal<Option<U>, Err>
+    where
+        U: 'static,
+        Err: 'static,
+    {
+        ChannelSignal::<Option<U>, Err>::on_executor(receiver, event_loop_receiver_option)
+    }
+
+    /// Execute a blocking receiver on a dedicated std::thread with an initial value.
     /// Requires the receiver to be `Send + 'static`.
     pub fn on_std_thread(
         receiver: impl BlockingReceiver<Item = T, Error = E> + Send + 'static,
+        initial: T,
     ) -> Self
     where
         T: Send + 'static,
         E: Send + 'static,
     {
-        Self::on_executor(receiver, std_thread_receiver)
+        Self::on_executor_with_initial(receiver, initial, std_thread_receiver)
     }
 
-    /// Execute a blocking receiver on tokio::task::spawn_blocking.
+    /// Execute a blocking receiver on a dedicated std::thread without an initial value.
+    /// This returns a ChannelSignal<Option<U>, E> where U is the receiver item type.
+    pub fn on_std_thread_no_initial<U, Err>(
+        receiver: impl BlockingReceiver<Item = U, Error = Err> + Send + 'static,
+    ) -> ChannelSignal<Option<U>, Err>
+    where
+        U: Send + 'static,
+        Err: Send + 'static,
+    {
+        ChannelSignal::<Option<U>, Err>::on_executor(receiver, std_thread_receiver_option)
+    }
+
+    /// Execute a blocking receiver on tokio::task::spawn_blocking with an initial value.
     /// Requires the receiver to be `Send + 'static`.
     #[cfg(feature = "tokio")]
     pub fn on_tokio_spawn_blocking(
         receiver: impl BlockingReceiver<Item = T, Error = E> + Send + 'static,
+        initial: T,
     ) -> Self
     where
         T: Send + 'static,
         E: Send + 'static,
     {
-        Self::on_executor(receiver, tokio_spawn_blocking_receiver)
+        Self::on_executor_with_initial(receiver, initial, tokio_spawn_blocking_receiver)
+    }
+
+    /// Execute a blocking receiver on tokio::task::spawn_blocking without an initial value.
+    /// This returns a ChannelSignal<Option<U>, E> where U is the receiver item type.
+    #[cfg(feature = "tokio")]
+    pub fn on_tokio_spawn_blocking_no_initial<U, Err>(
+        receiver: impl BlockingReceiver<Item = U, Error = Err> + Send + 'static,
+    ) -> ChannelSignal<Option<U>, Err>
+    where
+        U: Send + 'static,
+        Err: Send + 'static,
+    {
+        ChannelSignal::<Option<U>, Err>::on_executor(receiver, tokio_spawn_blocking_receiver_option)
     }
 
     pub fn error(&self) -> floem_reactive::ReadSignal<Option<E>> {
@@ -294,7 +395,7 @@ impl<T: 'static, E: 'static> ChannelSignal<T, E> {
     }
 }
 
-impl<T, E> floem_reactive::SignalGet<Option<T>> for ChannelSignal<T, E>
+impl<T, E> floem_reactive::SignalGet<T> for ChannelSignal<T, E>
 where
     T: Clone,
 {
@@ -303,13 +404,13 @@ where
     }
 }
 
-impl<T, E> floem_reactive::SignalWith<Option<T>> for ChannelSignal<T, E> {
+impl<T, E> floem_reactive::SignalWith<T> for ChannelSignal<T, E> {
     fn id(&self) -> floem_reactive::ReactiveId {
         self.value.id()
     }
 }
 
-impl<T, E> floem_reactive::SignalRead<Option<T>> for ChannelSignal<T, E> {
+impl<T, E> floem_reactive::SignalRead<T> for ChannelSignal<T, E> {
     fn id(&self) -> floem_reactive::ReactiveId {
         self.value.id()
     }
@@ -325,9 +426,9 @@ impl<T, E> Clone for ChannelSignal<T, E> {
 
 // Executor functions
 
-/// Execute a future on the main event loop by polling.
+/// Execute a future on the main event loop by polling, for Option<T> signals.
 /// The future does not need to be `Send`.
-pub fn event_loop_future<T: 'static>(
+pub fn event_loop_future_option<T: 'static>(
     future: impl std::future::Future<Output = T> + 'static,
     write: floem_reactive::WriteSignal<Option<T>>,
     write_finished: floem_reactive::WriteSignal<bool>,
@@ -371,9 +472,55 @@ pub fn event_loop_future<T: 'static>(
     });
 }
 
-/// Execute a stream on the main event loop by polling.
+/// Execute a future on the main event loop by polling.
+/// The future does not need to be `Send`.
+pub fn event_loop_future<T: 'static>(
+    future: impl std::future::Future<Output = T> + 'static,
+    write: floem_reactive::WriteSignal<T>,
+    write_finished: floem_reactive::WriteSignal<bool>,
+    trigger: ExtSendTrigger,
+) {
+    use floem_reactive::*;
+    use futures::task::{ArcWake, waker};
+    use std::{
+        cell::RefCell,
+        task::{Context, Poll},
+    };
+
+    struct TriggerWake(ExtSendTrigger);
+    impl ArcWake for TriggerWake {
+        fn wake_by_ref(arc_self: &Arc<Self>) {
+            register_ext_trigger(arc_self.0);
+        }
+    }
+
+    let future = RefCell::new(Box::pin(future));
+    let arc_trigger = Arc::new(TriggerWake(trigger));
+
+    let cx = Scope::current();
+    cx.create_effect(move |_| {
+        trigger.track();
+
+        let Ok(mut future) = future.try_borrow_mut() else {
+            unreachable!("The waker registers events to be run only at idle")
+        };
+
+        let waker = waker(arc_trigger.clone());
+        let mut context = Context::from_waker(&waker);
+
+        match future.as_mut().poll(&mut context) {
+            Poll::Pending => {}
+            Poll::Ready(v) => {
+                write.set(v);
+                write_finished.set(true);
+            }
+        }
+    });
+}
+
+/// Execute a stream on the main event loop by polling, for Option<T> signals.
 /// The stream does not need to be `Send`.
-pub fn event_loop_stream<T: 'static>(
+pub fn event_loop_stream_option<T: 'static>(
     stream: impl futures::Stream<Item = T> + 'static,
     write: floem_reactive::WriteSignal<Option<T>>,
     write_finished: floem_reactive::WriteSignal<bool>,
@@ -426,9 +573,64 @@ pub fn event_loop_stream<T: 'static>(
     });
 }
 
-/// Execute a pollable receiver on the main event loop.
+/// Execute a stream on the main event loop by polling.
+/// The stream does not need to be `Send`.
+pub fn event_loop_stream<T: 'static>(
+    stream: impl futures::Stream<Item = T> + 'static,
+    write: floem_reactive::WriteSignal<T>,
+    write_finished: floem_reactive::WriteSignal<bool>,
+    trigger: ExtSendTrigger,
+) {
+    use floem_reactive::*;
+    use futures::task::{ArcWake, waker};
+    use std::{
+        cell::RefCell,
+        task::{Context, Poll},
+    };
+
+    struct TriggerWake(ExtSendTrigger);
+    impl ArcWake for TriggerWake {
+        fn wake_by_ref(arc_self: &Arc<Self>) {
+            register_ext_trigger(arc_self.0);
+        }
+    }
+
+    let stream = RefCell::new(Box::pin(stream));
+    let arc_trigger = Arc::new(TriggerWake(trigger));
+
+    let cx = Scope::current();
+    cx.create_effect(move |_| {
+        trigger.track();
+
+        let Ok(mut stream) = stream.try_borrow_mut() else {
+            unreachable!("The waker registers events to be run only at idle")
+        };
+
+        let waker = waker(arc_trigger.clone());
+        let mut context = Context::from_waker(&waker);
+        let mut last_value = None;
+
+        loop {
+            let poll = stream.as_mut().poll_next(&mut context);
+            match poll {
+                Poll::Pending => break,
+                Poll::Ready(Some(v)) => last_value = Some(v),
+                Poll::Ready(None) => {
+                    write_finished.set(true);
+                    break;
+                }
+            }
+        }
+
+        if let Some(v) = last_value {
+            write.set(v);
+        }
+    });
+}
+
+/// Execute a pollable receiver on the main event loop, for Option<T> signals.
 /// The receiver does not need to be `Send`.
-pub fn event_loop_receiver<T: 'static, E: 'static>(
+pub fn event_loop_receiver_option<T: 'static, E: 'static>(
     receiver: impl PollableReceiver<Item = T, Error = E> + 'static,
     write: floem_reactive::WriteSignal<Option<T>>,
     write_error: floem_reactive::WriteSignal<Option<E>>,
@@ -483,6 +685,63 @@ pub fn event_loop_receiver<T: 'static, E: 'static>(
     });
 }
 
+/// Execute a pollable receiver on the main event loop.
+/// The receiver does not need to be `Send`.
+pub fn event_loop_receiver<T: 'static, E: 'static>(
+    receiver: impl PollableReceiver<Item = T, Error = E> + 'static,
+    write: floem_reactive::WriteSignal<T>,
+    write_error: floem_reactive::WriteSignal<Option<E>>,
+    trigger: ExtSendTrigger,
+) {
+    use floem_reactive::*;
+    use futures::task::{ArcWake, waker};
+    use std::{
+        cell::RefCell,
+        task::{Context, Poll},
+    };
+
+    struct TriggerWake(ExtSendTrigger);
+    impl ArcWake for TriggerWake {
+        fn wake_by_ref(arc_self: &Arc<Self>) {
+            register_ext_trigger(arc_self.0);
+        }
+    }
+
+    let receiver = RefCell::new(receiver);
+    let arc_trigger = Arc::new(TriggerWake(trigger));
+
+    let cx = Scope::current();
+    cx.create_effect(move |_| {
+        trigger.track();
+
+        let Ok(mut receiver) = receiver.try_borrow_mut() else {
+            unreachable!("The waker registers events to be run only at idle")
+        };
+
+        let waker = waker(arc_trigger.clone());
+        let mut context = Context::from_waker(&waker);
+        let mut last_value = None;
+
+        loop {
+            match receiver.poll_recv(&mut context) {
+                Poll::Pending => break,
+                Poll::Ready(Ok(Some(v))) => last_value = Some(v),
+                Poll::Ready(Ok(None)) => {
+                    break;
+                }
+                Poll::Ready(Err(e)) => {
+                    write_error.set(Some(e));
+                    break;
+                }
+            }
+        }
+
+        if let Some(v) = last_value {
+            write.set(v);
+        }
+    });
+}
+
 /// Trait for receivers that can be polled (not blocking).
 pub trait PollableReceiver {
     type Item;
@@ -494,8 +753,8 @@ pub trait PollableReceiver {
     ) -> std::task::Poll<Result<Option<Self::Item>, Self::Error>>;
 }
 
-/// Execute a blocking channel receiver on a dedicated std::thread.
-pub fn std_thread_receiver<T: Send + 'static, E: Send + 'static>(
+/// Execute a blocking channel receiver on a dedicated std::thread, for Option<T> signals.
+pub fn std_thread_receiver_option<T: Send + 'static, E: Send + 'static>(
     rx: impl BlockingReceiver<Item = T, Error = E> + Send + 'static,
     write: floem_reactive::WriteSignal<Option<T>>,
     write_error: floem_reactive::WriteSignal<Option<E>>,
@@ -512,6 +771,48 @@ pub fn std_thread_receiver<T: Send + 'static, E: Send + 'static>(
             while let Some(result) = data.lock().unwrap().pop_front() {
                 match result {
                     Ok(v) => write.set(Some(v)),
+                    Err(e) => write_error.set(Some(e)),
+                }
+            }
+        });
+    }
+
+    std::thread::spawn(move || {
+        let mut rx = rx;
+        loop {
+            match rx.recv() {
+                Ok(event) => {
+                    data.lock().unwrap().push_back(Ok(event));
+                    register_ext_trigger(trigger);
+                }
+                Err(e) => {
+                    data.lock().unwrap().push_back(Err(e));
+                    register_ext_trigger(trigger);
+                    break;
+                }
+            }
+        }
+    });
+}
+
+/// Execute a blocking channel receiver on a dedicated std::thread.
+pub fn std_thread_receiver<T: Send + 'static, E: Send + 'static>(
+    rx: impl BlockingReceiver<Item = T, Error = E> + Send + 'static,
+    write: floem_reactive::WriteSignal<T>,
+    write_error: floem_reactive::WriteSignal<Option<E>>,
+    trigger: ExtSendTrigger,
+) {
+    use floem_reactive::SignalUpdate;
+    let data = Arc::new(Mutex::new(VecDeque::new()));
+
+    {
+        let data = data.clone();
+        let cx = floem_reactive::Scope::current();
+        cx.create_effect(move |_| {
+            trigger.track();
+            while let Some(result) = data.lock().unwrap().pop_front() {
+                match result {
+                    Ok(v) => write.set(v),
                     Err(e) => write_error.set(Some(e)),
                 }
             }
@@ -566,7 +867,7 @@ impl<T> BlockingReceiver for crossbeam::channel::Receiver<T> {
 // Tokio executors
 
 #[cfg(feature = "tokio")]
-pub fn tokio_spawn_future<T: Send + 'static>(
+pub fn tokio_spawn_future_option<T: Send + 'static>(
     future: impl std::future::Future<Output = T> + Send + 'static,
     write: floem_reactive::WriteSignal<Option<T>>,
     write_finished: floem_reactive::WriteSignal<bool>,
@@ -603,7 +904,7 @@ pub fn tokio_spawn_future<T: Send + 'static>(
 }
 
 #[cfg(feature = "tokio")]
-pub fn tokio_spawn_stream<T: Send + 'static>(
+pub fn tokio_spawn_stream_option<T: Send + 'static>(
     stream: impl futures::Stream<Item = T> + Send + 'static,
     write: floem_reactive::WriteSignal<Option<T>>,
     write_finished: floem_reactive::WriteSignal<bool>,
@@ -646,7 +947,87 @@ pub fn tokio_spawn_stream<T: Send + 'static>(
 }
 
 #[cfg(feature = "tokio")]
-pub fn tokio_spawn_blocking_receiver<T: Send + 'static, E: Send + 'static>(
+pub fn tokio_spawn_future<T: Send + 'static>(
+    future: impl std::future::Future<Output = T> + Send + 'static,
+    write: floem_reactive::WriteSignal<T>,
+    write_finished: floem_reactive::WriteSignal<bool>,
+    trigger: ExtSendTrigger,
+) {
+    use floem_reactive::SignalUpdate;
+
+    let data = Arc::new(Mutex::new(None));
+    let finished = Arc::new(Mutex::new(false));
+
+    {
+        let data = data.clone();
+        let finished = finished.clone();
+        let cx = floem_reactive::Scope::current();
+        cx.create_effect(move |_| {
+            trigger.track();
+
+            if let Some(value) = data.lock().unwrap().take() {
+                write.set(value);
+            }
+
+            if *finished.lock().unwrap() {
+                write_finished.set(true);
+            }
+        });
+    }
+
+    tokio::spawn(async move {
+        let value = future.await;
+        *data.lock().unwrap() = Some(value);
+        *finished.lock().unwrap() = true;
+        register_ext_trigger(trigger);
+    });
+}
+
+#[cfg(feature = "tokio")]
+pub fn tokio_spawn_stream<T: Send + 'static>(
+    stream: impl futures::Stream<Item = T> + Send + 'static,
+    write: floem_reactive::WriteSignal<T>,
+    write_finished: floem_reactive::WriteSignal<bool>,
+    trigger: ExtSendTrigger,
+) {
+    use floem_reactive::SignalUpdate;
+    use futures::StreamExt;
+
+    let data = Arc::new(Mutex::new(VecDeque::new()));
+    let finished = Arc::new(Mutex::new(false));
+
+    {
+        let data = data.clone();
+        let finished = finished.clone();
+        let cx = floem_reactive::Scope::current();
+        cx.create_effect(move |_| {
+            trigger.track();
+
+            while let Some(value) = data.lock().unwrap().pop_front() {
+                write.set(value);
+            }
+
+            if *finished.lock().unwrap() {
+                write_finished.set(true);
+            }
+        });
+    }
+
+    tokio::spawn(async move {
+        let mut stream = Box::pin(stream);
+
+        while let Some(value) = stream.next().await {
+            data.lock().unwrap().push_back(value);
+            register_ext_trigger(trigger);
+        }
+
+        *finished.lock().unwrap() = true;
+        register_ext_trigger(trigger);
+    });
+}
+
+#[cfg(feature = "tokio")]
+pub fn tokio_spawn_blocking_receiver_option<T: Send + 'static, E: Send + 'static>(
     rx: impl BlockingReceiver<Item = T, Error = E> + Send + 'static,
     write: floem_reactive::WriteSignal<Option<T>>,
     write_error: floem_reactive::WriteSignal<Option<E>>,
@@ -664,6 +1045,49 @@ pub fn tokio_spawn_blocking_receiver<T: Send + 'static, E: Send + 'static>(
             while let Some(result) = data.lock().unwrap().pop_front() {
                 match result {
                     Ok(v) => write.set(Some(v)),
+                    Err(e) => write_error.set(Some(e)),
+                }
+            }
+        });
+    }
+
+    tokio::task::spawn_blocking(move || {
+        let mut rx = rx;
+        loop {
+            match rx.recv() {
+                Ok(event) => {
+                    data.lock().unwrap().push_back(Ok(event));
+                    register_ext_trigger(trigger);
+                }
+                Err(e) => {
+                    data.lock().unwrap().push_back(Err(e));
+                    register_ext_trigger(trigger);
+                    break;
+                }
+            }
+        }
+    });
+}
+
+#[cfg(feature = "tokio")]
+pub fn tokio_spawn_blocking_receiver<T: Send + 'static, E: Send + 'static>(
+    rx: impl BlockingReceiver<Item = T, Error = E> + Send + 'static,
+    write: floem_reactive::WriteSignal<T>,
+    write_error: floem_reactive::WriteSignal<Option<E>>,
+    trigger: ExtSendTrigger,
+) {
+    use floem_reactive::SignalUpdate;
+
+    let data = Arc::new(Mutex::new(VecDeque::new()));
+
+    {
+        let data = data.clone();
+        let cx = floem_reactive::Scope::current();
+        cx.create_effect(move |_| {
+            trigger.track();
+            while let Some(result) = data.lock().unwrap().pop_front() {
+                match result {
+                    Ok(v) => write.set(v),
                     Err(e) => write_error.set(Some(e)),
                 }
             }
