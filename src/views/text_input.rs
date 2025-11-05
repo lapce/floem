@@ -297,12 +297,6 @@ fn get_word_based_motion(event: &KeyboardEvent) -> Option<Movement> {
 
 const DEFAULT_FONT_SIZE: f32 = 14.0;
 const CURSOR_BLINK_INTERVAL_MS: u64 = 500;
-/// Specifies approximately how many characters wide the input field should be
-/// (i.e., how many characters can be seen at a time), when the width is not set in the styles.
-/// Since character widths vary(depending on the font), may not be exact and should not be relied upon to be so.
-/// See <https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input/text#size>
-// TODO: allow this to be set in the styles
-const APPROX_VISIBLE_CHARS_TARGET: f32 = 10.0;
 
 impl TextInput {
     /// Add placeholder text visible when buffer is empty.
@@ -1326,48 +1320,8 @@ impl View for TextInput {
 
             let text_node = self.text_node.unwrap();
 
-            // FIXME: This layout is undefined.
-            let layout = self.id.get_layout().unwrap_or_default();
-            let view_state = self.id.state();
-            let view_state = view_state.borrow();
-            let style = view_state.combined_style.builtin();
-            let node_width = layout.size.width;
-
-            let style_width = style.width();
-            let width_px = match style_width {
-                crate::unit::PxPctAuto::Px(px) => px as f32,
-                // the percent is already applied to the view, so we don't need to
-                // apply it to the inner text node as well
-                crate::unit::PxPctAuto::Pct(_) => node_width,
-                crate::unit::PxPctAuto::Auto => {
-                    APPROX_VISIBLE_CHARS_TARGET * self.glyph_max_size.width as f32
-                }
-            };
-
-            let is_auto_width = matches!(style_width, PxPctAuto::Auto);
-            self.width = if is_auto_width {
-                width_px
-            } else {
-                let padding_left = match style.padding_left() {
-                    PxPct::Px(padding) => padding as f32,
-                    PxPct::Pct(pct) => pct as f32 / 100.0 * node_width,
-                };
-                let padding_right = match style.padding_right() {
-                    PxPct::Px(padding) => padding as f32,
-                    PxPct::Pct(pct) => pct as f32 / 100.0 * node_width,
-                };
-                let padding = padding_left + padding_right;
-                f32::max(width_px - padding, 1.0)
-            };
-
-            let taffy_node_width = match style_width {
-                PxPctAuto::Px(_) | PxPctAuto::Auto => PxPctAuto::Px(self.width as f64),
-                // the pct is already applied to the text input view, so text node should be 100% of parent
-                PxPctAuto::Pct(_) => PxPctAuto::Pct(100.),
-            };
-
             let style = Style::new()
-                .width(taffy_node_width)
+                .width(PxPctAuto::Pct(100.))
                 .height(self.height)
                 .to_taffy_style();
             let _ = self.id.taffy().borrow_mut().set_style(text_node, style);
@@ -1377,6 +1331,7 @@ impl View for TextInput {
     }
 
     fn compute_layout(&mut self, cx: &mut crate::context::ComputeLayoutCx) -> Option<Rect> {
+        self.width = self.id.get_content_rect().width() as f32;
         let buf_width = self.text_buf.size().width;
         let text_node = self.text_node.unwrap();
         let node_layout = self
