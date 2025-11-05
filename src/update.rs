@@ -53,5 +53,4 @@ pub(crate) enum UpdateMessage {
     SetImeCursorArea { position: Point, size: Size },
     WindowVisible(bool),
     ViewTransitionAnimComplete(ViewId),
-    ToggleTheme,
 }

@@ -1053,20 +1053,6 @@ impl WindowHandle {
                             id.state().borrow().num_waiting_animations.saturating_sub(1);
                         id.state().borrow_mut().num_waiting_animations = num_waiting;
                     }
-                    UpdateMessage::ToggleTheme => {
-                        use winit::window::Theme;
-
-                        let new = match self.current_theme {
-                            Theme::Light => Theme::Dark,
-                            Theme::Dark => Theme::Light,
-                        };
-                        self.theme_changed(new);
-
-                        #[cfg(target_os = "windows")]
-                        {
-                            self.set_menu_theme_for_windows(new);
-                        }
-                    }
                 }
             }
         }
@@ -1217,7 +1203,7 @@ impl WindowHandle {
     }
 
     #[cfg(target_os = "windows")]
-    fn set_menu_theme_for_windows(&self, theme: winit::window::Theme) {
+    pub(crate) fn set_menu_theme_for_windows(&self, theme: winit::window::Theme) {
         use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
         if let RawWindowHandle::Win32(handle) = self.window.window_handle().unwrap().as_raw() {

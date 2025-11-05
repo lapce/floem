@@ -13,7 +13,7 @@ use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
     event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy},
-    window::WindowId,
+    window::{Theme, WindowId},
 };
 
 use crate::{
@@ -122,6 +122,9 @@ pub(crate) enum AppUpdateEvent {
     },
     MenuAction {
         action_id: MenuId,
+    },
+    ThemeChanged {
+        theme: Theme,
     },
 }
 

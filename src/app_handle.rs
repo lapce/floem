@@ -153,6 +153,19 @@ impl ApplicationHandle {
                         }
                     }
                 }
+                AppUpdateEvent::ThemeChanged { theme } => {
+                    for window_handle in self.window_handles.values_mut() {
+                        // Change theme only if new one is different from the current
+                        if window_handle.current_theme != theme {
+                            window_handle.current_theme = theme;
+                            window_handle.theme_changed(theme);
+                            #[cfg(target_os = "windows")]
+                            {
+                                window_handle.set_menu_theme_for_windows(theme);
+                            }
+                        }
+                    }
+                }
             }
         }
     }
