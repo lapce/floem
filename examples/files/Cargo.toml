@@ -4,4 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-floem = { path = "../..", features = ["rfd-async-std"] }
+floem = { path = "../..", features = ["rfd"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+floem = { path = "../..", features = ["rfd", "rfd-async-std"] }
