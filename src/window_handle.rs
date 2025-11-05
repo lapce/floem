@@ -312,7 +312,13 @@ impl WindowHandle {
                 }
 
                 if !processed {
-                    if let Event::Key(KeyboardEvent { key, modifiers, .. }) = &event {
+                    if let Event::Key(KeyboardEvent {
+                        key,
+                        modifiers,
+                        state: KeyState::Down,
+                        ..
+                    }) = &event
+                    {
                         if *key == Key::Named(NamedKey::Tab)
                             && (modifiers.is_empty() || *modifiers == Modifiers::SHIFT)
                         {
