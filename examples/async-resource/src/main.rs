@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use floem::{
+    Resource,
     action::debounce_action,
-    async_signal::Resource,
     prelude::{palette::css, *},
     reactive::Trigger,
     style::{Background, CursorStyle, Transition},
@@ -295,7 +295,7 @@ fn app_view() -> impl IntoView {
         token_changed.notify()
     });
 
-    let user_resource = Resource::custom(
+    let user_resource = Resource::new(
         move || (username.get(), token.get()),
         |(username, token): (String, String)| async move {
             if username.trim().is_empty() {
@@ -311,9 +311,7 @@ fn app_view() -> impl IntoView {
             };
             fetch_github_user(username, token_opt).await
         },
-    )
-    .no_memo()
-    .build();
+    );
 
     let title = "GitHub User Search".style(|s| {
         s.font_size(28.0)

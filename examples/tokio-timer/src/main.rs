@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use floem::reactive::{create_memo, DerivedRwSignal};
 use floem::unit::Pct;
-use floem::{async_signal::StreamSignal, prelude::*};
+use floem::{prelude::*, StreamSignal};
 use tokio::runtime::Runtime;
 use tokio::time::Instant;
 use tokio_stream::wrappers::IntervalStream;
