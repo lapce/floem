@@ -16,11 +16,12 @@ pub fn clipboard_view() -> impl IntoView {
         form_item(
             "Copy from input",
             h_stack((
-                text_input(text1),
+                text_input(text1).style(|s| s.width_full().min_width(150)),
                 button("Copy").action(move || {
                     let _ = Clipboard::set_contents(text1.get());
                 }),
-            )),
+            ))
+            .style(|s| s.gap(5)),
         ),
         form_item(
             "Get clipboard",
