@@ -24,7 +24,7 @@ fn app_view() -> impl IntoView {
     let stream = IntervalStream::new(tokio::time::interval(Duration::from_millis(4)));
     let now = Instant::now();
     let started_at = RwSignal::new(now);
-    let current_instant = StreamSignal::on_event_loop_with_initial(stream, Instant::now());
+    let current_instant = StreamSignal::with_initial(stream, Instant::now());
     let elapsed_time = create_memo(move |_| {
         current_instant
             .get()

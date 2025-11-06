@@ -1,4 +1,5 @@
 use crate::ext_event::ExtSendTrigger;
+use crate::ext_event::async_signal::{EventLoopExecutor, TokioExecutor, CustomExecutor, NoInitial, WithInitialValue};
 use floem_reactive::ReadSignal;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -224,16 +225,11 @@ pub struct ResourceBuilder<Fut, Dep, T, K, E, M, I> {
     _phantom: std::marker::PhantomData<(T, M)>,
 }
 
-// Type-state markers
+// Type-state markers specific to Resource
 pub struct DefaultHashKeyFn;
 pub struct CustomKeyFn<F>(F);
-pub struct EventLoopExecutor;
-pub struct TokioExecutor;
-pub struct CustomExecutor<F>(F);
 pub struct WithMemo;
 pub struct NoMemoization;
-pub struct NoInitial;
-pub struct WithInitialValue<T>(T);
 
 impl<Fut, Dep, T>
     ResourceBuilder<Fut, Dep, T, DefaultHashKeyFn, EventLoopExecutor, WithMemo, NoInitial>
