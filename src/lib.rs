@@ -219,7 +219,7 @@ mod window_tracking;
 pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};
 pub use clipboard::{Clipboard, ClipboardError};
 // Re-export async signal modules
-pub use ext_event::{FutureSignal, StreamSignal, ChannelSignal, Resource};
+pub use ext_event::{ChannelSignal, FutureSignal, Resource, StreamSignal};
 pub use floem_reactive as reactive;
 pub use floem_renderer::Renderer;
 pub use floem_renderer::Svg as RendererSvg;
