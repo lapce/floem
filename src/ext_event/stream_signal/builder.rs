@@ -1,14 +1,14 @@
-use super::signal::StreamSignal;
+use super::StreamSignal;
 use crate::ext_event::{
     ExtSendTrigger,
     common::{
-        CustomExecutor, EventLoopExecutor, NoInitial, TokioExecutor, WithInitialValue,
-        event_loop_stream, event_loop_stream_option,
+        CustomExecutor, EventLoopExecutor, NoInitial, WithInitialValue, event_loop_stream,
+        event_loop_stream_option,
     },
 };
 
 #[cfg(feature = "tokio")]
-use crate::ext_event::common::{tokio_spawn_stream, tokio_spawn_stream_option};
+use crate::ext_event::common::{TokioExecutor, tokio_spawn_stream, tokio_spawn_stream_option};
 
 /// A builder for creating customized `StreamSignal` instances.
 ///

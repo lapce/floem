@@ -2,8 +2,8 @@ use super::signal::{CustomKeyFn, DefaultHashKeyFn, NoMemoization, Resource, With
 use crate::ext_event::{
     ExtSendTrigger,
     common::{
-        CustomExecutor, EventLoopExecutor, NoInitial, TokioExecutor, WithInitialValue,
-        event_loop_future, event_loop_future_option,
+        CustomExecutor, EventLoopExecutor, NoInitial, WithInitialValue, event_loop_future,
+        event_loop_future_option,
     },
 };
 use std::{
@@ -12,7 +12,7 @@ use std::{
 };
 
 #[cfg(feature = "tokio")]
-use crate::ext_event::common::{tokio_spawn_future, tokio_spawn_future_option};
+use crate::ext_event::common::{TokioExecutor, tokio_spawn_future, tokio_spawn_future_option};
 
 /// A builder for creating customized `Resource` instances.
 ///

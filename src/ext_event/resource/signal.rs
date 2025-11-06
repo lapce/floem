@@ -42,11 +42,11 @@ pub struct NoMemoization;
 /// ```
 pub struct Resource<T> {
     /// The signal containing the fetched data.
-    pub data: ReadSignal<T>,
+    pub(super) data: ReadSignal<T>,
     /// The signal indicating whether an async fetch operation is currently in progress.
-    pub finished: ReadSignal<bool>,
+    pub(super) finished: ReadSignal<bool>,
     /// A trigger for manually rerunning the `fetcher` with the last used `source`.
-    pub refetch_trigger: floem_reactive::RwSignal<u64>,
+    pub(super) refetch_trigger: floem_reactive::RwSignal<u64>,
 }
 
 impl<T> Copy for Resource<T> {}

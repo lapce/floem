@@ -8,6 +8,9 @@ pub struct EventLoopExecutor;
 /// Type-state marker for tokio executor.
 pub struct TokioExecutor;
 
+/// Type-state marker for tokio executor.
+pub struct TokioBlockingExecutor;
+
 /// Type-state marker for custom executor.
 pub struct CustomExecutor<F>(pub F);
 

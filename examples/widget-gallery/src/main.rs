@@ -16,6 +16,7 @@ pub mod radio_buttons;
 pub mod rich_text;
 pub mod slider;
 pub mod tabs;
+pub mod texteditor;
 
 use floem::{
     action::{add_overlay, set_window_menu, toggle_theme},
@@ -26,7 +27,7 @@ use floem::{
     new_window,
     prelude::*,
     style::{Background, CursorStyle, TextColor, Transition},
-    theme::{self, StyleThemeExt},
+    theme::StyleThemeExt,
     ui_events::keyboard::{Key, KeyState, KeyboardEvent, Modifiers, NamedKey},
     window::{WindowConfig, WindowId},
 };
@@ -35,22 +36,22 @@ fn app_view(window_id: WindowId) -> impl IntoView {
     let tabs: Vec<&'static str> = vec![
         "Label",
         "Button",
+        "Input",
+        "Text Editor",
+        "Lists",
+        "Image",
+        "Dropdown",
         "Checkbox",
         "Radio",
-        "Input",
-        "Canvas",
-        "Stacks",
-        "Lists",
         "Tabs",
-        "Menu",
-        "RichText",
-        "Image",
-        "Clipboard",
         "Slider",
-        "Dropdown",
+        "Canvas",
+        "Menu",
+        "Rich Text",
+        "Clipboard",
         "Animation",
         "Draggable",
-        "DroppedFile",
+        "Dropped File",
         "Files",
     ];
 
@@ -62,21 +63,20 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             "Radio" => radio_buttons::radio_buttons_view().into_any(),
             "Input" => inputs::text_input_view().into_any(),
             "Canvas" => canvas::canvas_view().into_any(),
-            #[cfg(feature = "full")]
-            "Stacks" => stacks::stacks_view().into_any(),
             "Lists" => lists::list_view().into_any(),
             "Tabs" => tabs::tab_view().into_any(),
             "Menu" => context_menu::menu_view().into_any(),
-            "RichText" => rich_text::rich_text_view().into_any(),
+            "Rich Text" => rich_text::rich_text_view().into_any(),
             "Image" => images::img_view().into_any(),
             "Clipboard" => clipboard::clipboard_view().into_any(),
             "Slider" => slider::slider_view().into_any(),
             "Dropdown" => dropdown::dropdown_view().into_any(),
             "Animation" => animation::animation_view().into_any(),
             "Draggable" => draggable::draggable_view().into_any(),
-            "DroppedFile" => dropped_file::dropped_file_view().into_any(),
+            "Dropped File" => dropped_file::dropped_file_view().into_any(),
             #[cfg(feature = "full")]
             "Files" => files::files_view().into_any(),
+            "Text Editor" => texteditor::editor_view().into_any(),
             _ => label(|| "Not implemented".to_owned()).into_any(),
         }
         .debug_name(it.to_string())
@@ -84,13 +84,10 @@ fn app_view(window_id: WindowId) -> impl IntoView {
 
     let tabs = RwSignal::new(tabs);
 
-    let (active_tab, set_active_tab) = create_signal(0);
-
-    let side_tab_bar = tabs
+    let side_bar_list = tabs
         .get()
         .into_iter()
-        .enumerate()
-        .map(move |(idx, item)| {
+        .map(move |item| {
             item.debug_name(item).style(move |s| {
                 s.flex_row()
                     .font_size(18.)
@@ -104,21 +101,14 @@ fn app_view(window_id: WindowId) -> impl IntoView {
                         })
                     })
                     .hover(|s| s.cursor(CursorStyle::Pointer))
-                    .apply_if(idx != active_tab.get(), |s| {
-                        s.apply(
-                            theme::hover_style()
-                                .with_theme(|s, t| s.border_radius(t.border_radius())),
-                        )
-                    })
             })
         })
         .list()
-        .on_select(move |idx| {
-            if let Some(idx) = idx {
-                set_active_tab.set(idx);
-            }
-        })
-        .style(|s| s.flex_col().width(140.0).flex_grow(1.))
+        .style(|s| s.flex_col().width(140.0).flex_grow(1.));
+
+    let active_tab = side_bar_list.selection();
+
+    let side_tab_bar = side_bar_list
         .scroll()
         .debug_name("Side Tab Bar")
         .scroll_style(|s| s.shrink_to_fit().handle_thickness(8.))
@@ -133,7 +123,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
     let inspector = button("Open Inspector").action(floem::action::inspect);
 
     let new_window_button = button("Open In Window").action(move || {
-        let name = tabs.with(|tabs| tabs.get(active_tab.get()).copied());
+        let name = tabs.with(|tabs| tabs.get(active_tab.get().unwrap_or(0)).copied());
         new_window(
             move |_| {
                 create_view(name.unwrap_or_default())
@@ -154,13 +144,13 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         .style(|s| s.height_full().row_gap(5.0));
 
     let tab = tab(
-        move || Some(active_tab.get()),
+        move || Some(active_tab.get().unwrap_or(0)),
         move || tabs.get(),
         |it| *it,
         create_view,
     )
     .debug_name("Active Tab")
-    .style(|s| s.flex_col().items_start());
+    .style(|s| s.flex_col().flex_grow(1.).items_start());
 
     let tab = tab.scroll().style(|s| s.size_full());
 
@@ -189,30 +179,11 @@ fn app_view(window_id: WindowId) -> impl IntoView {
     };
 
     let widget_submenu = |m: SubMenu| {
-        m.item("Labels", |i| i.action(move || set_active_tab.set(0)))
-            .item("Buttons", |i| i.action(move || set_active_tab.set(1)))
-            .item("Checkboxes", |i| i.action(move || set_active_tab.set(2)))
-            .item("Radio Buttons", |i| i.action(move || set_active_tab.set(3)))
-            .item("Text Input", |i| i.action(move || set_active_tab.set(4)))
-            .separator()
-            .item("Canvas", |i| i.action(move || set_active_tab.set(5)))
-            .item("Stacks", |i| i.action(move || set_active_tab.set(6)))
-            .item("Lists", |i| i.action(move || set_active_tab.set(7)))
-            .item("Tabs", |i| i.action(move || set_active_tab.set(8)))
-            .item("Context Menu", |i| i.action(move || set_active_tab.set(9)))
-            .item("Rich Text", |i| i.action(move || set_active_tab.set(10)))
-            .separator()
-            .item("Images", |i| i.action(move || set_active_tab.set(11)))
-            .item("Clipboard", |i| i.action(move || set_active_tab.set(12)))
-            .item("Slider", |i| i.action(move || set_active_tab.set(13)))
-            .item("Dropdown", |i| i.action(move || set_active_tab.set(14)))
-            .separator()
-            .item("Animation", |i| i.action(move || set_active_tab.set(15)))
-            .item("Draggable", |i| i.action(move || set_active_tab.set(16)))
-            .item("Dropped Files", |i| {
-                i.action(move || set_active_tab.set(17))
+        tabs.with(|tabs| {
+            tabs.iter().enumerate().fold(m, |menu, (idx, &tab)| {
+                menu.item(tab, move |i| i.action(move || active_tab.set(Some(idx))))
             })
-            .item("File Browser", |i| i.action(move || set_active_tab.set(18)))
+        })
     };
 
     let view_submenu = |m: SubMenu| {
@@ -226,19 +197,19 @@ fn app_view(window_id: WindowId) -> impl IntoView {
         .separator()
         .item("Next Tab", |i| {
             i.action(move || {
-                let current = active_tab.get();
+                let current = active_tab.get().unwrap_or(0);
                 let tab_count = tabs.get().len();
-                set_active_tab.set((current + 1) % tab_count);
+                active_tab.set(Some((current + 1) % tab_count));
             })
         })
         .item("Previous Tab", |i| {
             i.action(move || {
-                let current = active_tab.get();
+                let current = active_tab.get().unwrap_or(0);
                 let tab_count = tabs.get().len();
-                set_active_tab.set(if current == 0 {
-                    tab_count - 1
+                active_tab.set(if current == 0 {
+                    Some(tab_count - 1)
                 } else {
-                    current - 1
+                    Some(current - 1)
                 });
             })
         })
@@ -247,7 +218,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
     let window_submenu = |m: SubMenu| {
         m.item("Open Current Tab in New Window", |i| {
             i.action(move || {
-                let name = tabs.with(|tabs| tabs.get(active_tab.get()).copied());
+                let name = tabs.with(|tabs| tabs.get(active_tab.get().unwrap_or(0)).copied());
                 new_window(
                     move |_| {
                         create_view(name.unwrap_or_default())

@@ -1,15 +1,15 @@
-use super::signal::ChannelSignal;
+use super::ChannelSignal;
 use crate::ext_event::{
-    ExtSendTrigger,
+    ExtSendTrigger, TokioBlockingExecutor,
     common::{
         BlockingReceiver, CustomExecutor, EventLoopExecutor, NoInitial, PollableReceiver,
-        StdThreadExecutor, TokioExecutor, WithInitialValue, event_loop_receiver,
-        event_loop_receiver_option, std_thread_channel, std_thread_channel_option,
+        StdThreadExecutor, WithInitialValue, event_loop_receiver, event_loop_receiver_option,
+        std_thread_channel, std_thread_channel_option,
     },
 };
 
 #[cfg(feature = "tokio")]
-use crate::ext_event::common::{tokio_spawn_channel, tokio_spawn_channel_option};
+use crate::ext_event::common::TokioExecutor;
 
 /// A builder for creating customized `ChannelSignal` instances.
 ///
@@ -27,7 +27,6 @@ impl<R, T, E> ChannelSignalBuilder<R, T, E, StdThreadExecutor, NoInitial>
 where
     T: Send + 'static,
     E: Send + 'static,
-    R: BlockingReceiver<Item = T, Error = E> + Send + 'static,
 {
     pub(super) fn new(receiver: R) -> Self {
         Self {
@@ -44,7 +43,6 @@ impl<R, T, E, Ex, I> ChannelSignalBuilder<R, T, E, Ex, I>
 where
     T: Send + 'static,
     E: Send + 'static,
-    R: BlockingReceiver<Item = T, Error = E> + Send + 'static,
 {
     /// Use the main event loop as the executor.
     ///
@@ -61,22 +59,6 @@ where
         }
     }
 
-    /// Use tokio::spawn as the executor.
-    ///
-    /// The receiver must be `Send + 'static`. Requires the `tokio` feature.
-    #[cfg(feature = "tokio")]
-    pub fn tokio_spawn(self) -> ChannelSignalBuilder<R, T, E, TokioExecutor, I>
-    where
-        R: Send,
-    {
-        ChannelSignalBuilder {
-            receiver: self.receiver,
-            executor: TokioExecutor,
-            initial: self.initial,
-            _phantom: std::marker::PhantomData,
-        }
-    }
-
     /// Use std::thread::spawn as the executor.
     ///
     /// This is the default for blocking receivers.
@@ -84,6 +66,18 @@ where
         ChannelSignalBuilder {
             receiver: self.receiver,
             executor: StdThreadExecutor,
+            initial: self.initial,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    /// Use tokio::spawn_blocking as the executor.
+    ///
+    /// This is the default for blocking receivers.
+    pub fn tokio_spawn_blocking(self) -> ChannelSignalBuilder<R, T, E, TokioBlockingExecutor, I> {
+        ChannelSignalBuilder {
+            receiver: self.receiver,
+            executor: TokioBlockingExecutor,
             initial: self.initial,
             _phantom: std::marker::PhantomData,
         }
@@ -118,6 +112,29 @@ where
             receiver: self.receiver,
             executor: self.executor,
             initial: WithInitialValue(initial),
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<R, T, E, Ex, I> ChannelSignalBuilder<R, T, E, Ex, I>
+where
+    R: PollableReceiver<Item = T, Error = E>,
+    T: Send + 'static,
+    E: Send + 'static,
+{
+    /// Use tokio::spawn as the executor.
+    ///
+    /// The receiver must be `Send + 'static`. Requires the `tokio` feature.
+    #[cfg(feature = "tokio")]
+    pub fn tokio_spawn(self) -> ChannelSignalBuilder<R, T, E, TokioExecutor, I>
+    where
+        R: Send,
+    {
+        ChannelSignalBuilder {
+            receiver: self.receiver,
+            executor: TokioExecutor,
+            initial: self.initial,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -171,16 +188,52 @@ where
     }
 }
 
-// Build with tokio, no initial -> ChannelSignal<Option<T>, E>
+// Build with tokio::spawn_blocking, no initial -> ChannelSignal<Option<T>, E>
 #[cfg(feature = "tokio")]
-impl<R, T, E> ChannelSignalBuilder<R, T, E, TokioExecutor, NoInitial>
+impl<R, T, E> ChannelSignalBuilder<R, T, E, TokioBlockingExecutor, NoInitial>
 where
     T: Send + 'static,
     E: Send + 'static,
     R: BlockingReceiver<Item = T, Error = E> + Send + 'static,
 {
     pub fn build(self) -> ChannelSignal<Option<T>, E> {
-        build_channel_signal_option(self.receiver, tokio_spawn_channel_option)
+        use crate::ext_event::tokio_spawn_blocking_channel_option;
+
+        build_channel_signal_option(self.receiver, tokio_spawn_blocking_channel_option)
+    }
+}
+
+// Build with tokio::spawn_blocking, no initial -> ChannelSignal<Option<T>, E>
+#[cfg(feature = "tokio")]
+impl<R, T, E> ChannelSignalBuilder<R, T, E, TokioBlockingExecutor, WithInitialValue<T>>
+where
+    T: Send + 'static,
+    E: Send + 'static,
+    R: BlockingReceiver<Item = T, Error = E> + Send + 'static,
+{
+    pub fn build(self) -> ChannelSignal<T, E> {
+        use crate::ext_event::tokio_spawn_blocking_channel;
+
+        build_channel_signal_with_initial(
+            self.receiver,
+            self.initial.0,
+            tokio_spawn_blocking_channel,
+        )
+    }
+}
+
+// Build with tokio, no initial -> ChannelSignal<Option<T>, E>
+#[cfg(feature = "tokio")]
+impl<R, T, E> ChannelSignalBuilder<R, T, E, TokioExecutor, NoInitial>
+where
+    T: Send + 'static,
+    E: Send + 'static,
+    R: PollableReceiver<Item = T, Error = E> + Send + 'static,
+{
+    pub fn build(self) -> ChannelSignal<Option<T>, E> {
+        use crate::ext_event::tokio_spawn_poll_receiver_option;
+
+        build_channel_signal_option(self.receiver, tokio_spawn_poll_receiver_option)
     }
 }
 
@@ -190,10 +243,12 @@ impl<R, T, E> ChannelSignalBuilder<R, T, E, TokioExecutor, WithInitialValue<T>>
 where
     T: Send + 'static,
     E: Send + 'static,
-    R: BlockingReceiver<Item = T, Error = E> + Send + 'static,
+    R: PollableReceiver<Item = T, Error = E> + Send + 'static,
 {
     pub fn build(self) -> ChannelSignal<T, E> {
-        build_channel_signal_with_initial(self.receiver, self.initial.0, tokio_spawn_channel)
+        use crate::ext_event::tokio_spawn_poll_receiver;
+
+        build_channel_signal_with_initial(self.receiver, self.initial.0, tokio_spawn_poll_receiver)
     }
 }
 

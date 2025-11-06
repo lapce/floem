@@ -22,8 +22,8 @@ use crate::ext_event::common::EventLoopExecutor;
 ///     .build();
 /// ```
 pub struct FutureSignal<T> {
-    pub value: floem_reactive::ReadSignal<Option<T>>,
-    pub finished: floem_reactive::ReadSignal<bool>,
+    pub(super) value: floem_reactive::ReadSignal<Option<T>>,
+    pub(super) finished: floem_reactive::ReadSignal<bool>,
 }
 
 impl<T: 'static> FutureSignal<T> {

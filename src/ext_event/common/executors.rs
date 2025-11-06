@@ -3,6 +3,17 @@ use crate::ext_event::{ExtSendTrigger, register_ext_trigger};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
+// Aliases for channel signal compatibility
+pub use event_loop_receiver as event_loop_channel;
+pub use event_loop_receiver_option as event_loop_channel_option;
+pub use std_thread_receiver as std_thread_channel;
+pub use std_thread_receiver_option as std_thread_channel_option;
+
+#[cfg(feature = "tokio")]
+pub use tokio_spawn_blocking_receiver as tokio_spawn_blocking_channel;
+#[cfg(feature = "tokio")]
+pub use tokio_spawn_blocking_receiver_option as tokio_spawn_blocking_channel_option;
+
 /// Execute a future on the main event loop by polling, for Option<T> signals.
 /// The future does not need to be `Send`.
 pub fn event_loop_future_option<T: 'static>(
@@ -608,17 +619,6 @@ pub fn tokio_spawn_blocking_receiver_option<T: Send + 'static, E: Send + 'static
     });
 }
 
-// Aliases for channel signal compatibility
-pub use event_loop_receiver as event_loop_channel;
-pub use event_loop_receiver_option as event_loop_channel_option;
-pub use std_thread_receiver as std_thread_channel;
-pub use std_thread_receiver_option as std_thread_channel_option;
-
-#[cfg(feature = "tokio")]
-pub use tokio_spawn_blocking_receiver as tokio_spawn_channel;
-#[cfg(feature = "tokio")]
-pub use tokio_spawn_blocking_receiver_option as tokio_spawn_channel_option;
-
 #[cfg(feature = "tokio")]
 pub fn tokio_spawn_blocking_receiver<T: Send + 'static, E: Send + 'static>(
     rx: impl BlockingReceiver<Item = T, Error = E> + Send + 'static,
@@ -652,6 +652,98 @@ pub fn tokio_spawn_blocking_receiver<T: Send + 'static, E: Send + 'static>(
                     data.lock().unwrap().push_back(Ok(event));
                     register_ext_trigger(trigger);
                 }
+                Err(e) => {
+                    data.lock().unwrap().push_back(Err(e));
+                    register_ext_trigger(trigger);
+                    break;
+                }
+            }
+        }
+    });
+}
+
+#[cfg(feature = "tokio")]
+pub fn tokio_spawn_poll_receiver_option<T: Send + 'static, E: Send + 'static>(
+    receiver: impl PollableReceiver<Item = T, Error = E> + Send + 'static,
+    write: floem_reactive::WriteSignal<Option<T>>,
+    write_error: floem_reactive::WriteSignal<Option<E>>,
+    trigger: ExtSendTrigger,
+) {
+    use floem_reactive::SignalUpdate;
+
+    let data = Arc::new(Mutex::new(VecDeque::new()));
+
+    {
+        let data = data.clone();
+        let cx = floem_reactive::Scope::current();
+        cx.create_effect(move |_| {
+            trigger.track();
+            while let Some(result) = data.lock().unwrap().pop_front() {
+                match result {
+                    Ok(v) => write.set(Some(v)),
+                    Err(e) => write_error.set(Some(e)),
+                }
+            }
+        });
+    }
+
+    tokio::spawn(async move {
+        let mut receiver = receiver;
+        loop {
+            use std::future::poll_fn;
+
+            match poll_fn(|cx| receiver.poll_recv(cx)).await {
+                Ok(Some(event)) => {
+                    data.lock().unwrap().push_back(Ok(event));
+                    register_ext_trigger(trigger);
+                }
+                Ok(None) => break,
+                Err(e) => {
+                    data.lock().unwrap().push_back(Err(e));
+                    register_ext_trigger(trigger);
+                    break;
+                }
+            }
+        }
+    });
+}
+
+#[cfg(feature = "tokio")]
+pub fn tokio_spawn_poll_receiver<T: Send + 'static, E: Send + 'static>(
+    receiver: impl PollableReceiver<Item = T, Error = E> + Send + 'static,
+    write: floem_reactive::WriteSignal<T>,
+    write_error: floem_reactive::WriteSignal<Option<E>>,
+    trigger: ExtSendTrigger,
+) {
+    use floem_reactive::SignalUpdate;
+
+    let data = Arc::new(Mutex::new(VecDeque::new()));
+
+    {
+        let data = data.clone();
+        let cx = floem_reactive::Scope::current();
+        cx.create_effect(move |_| {
+            trigger.track();
+            while let Some(result) = data.lock().unwrap().pop_front() {
+                match result {
+                    Ok(v) => write.set(v),
+                    Err(e) => write_error.set(Some(e)),
+                }
+            }
+        });
+    }
+
+    tokio::spawn(async move {
+        let mut receiver = receiver;
+        loop {
+            use std::future::poll_fn;
+
+            match poll_fn(|cx| receiver.poll_recv(cx)).await {
+                Ok(Some(event)) => {
+                    data.lock().unwrap().push_back(Ok(event));
+                    register_ext_trigger(trigger);
+                }
+                Ok(None) => break,
                 Err(e) => {
                     data.lock().unwrap().push_back(Err(e));
                     register_ext_trigger(trigger);
