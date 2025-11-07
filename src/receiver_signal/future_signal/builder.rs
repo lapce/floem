@@ -1,11 +1,12 @@
-use super::signal::FutureSignal;
-use crate::ext_event::{
-    ExtSendTrigger,
-    common::{CustomExecutor, EventLoopExecutor, event_loop_future_option},
+use crate::ext_event::ExtSendTrigger;
+
+use super::{
+    super::common::{CustomExecutor, EventLoopExecutor, event_loop_future_option},
+    FutureSignal,
 };
 
 #[cfg(feature = "tokio")]
-use crate::ext_event::common::{TokioExecutor, tokio_spawn_future_option};
+use super::super::common::{TokioExecutor, tokio_spawn_future_option};
 
 /// A builder for creating customized `FutureSignal` instances.
 ///

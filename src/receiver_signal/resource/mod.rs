@@ -1,5 +1,9 @@
-use super::builder::ResourceBuilder;
-use crate::ext_event::common::{EventLoopExecutor, NoInitial};
+//! Reactive resources that automatically fetch data when dependencies change.
+
+mod builder;
+
+use super::common::{EventLoopExecutor, NoInitial};
+use builder::ResourceBuilder;
 use floem_reactive::ReadSignal;
 use std::hash::Hash;
 

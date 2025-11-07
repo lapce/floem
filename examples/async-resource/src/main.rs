@@ -1,10 +1,10 @@
 use std::time::Duration;
 
 use floem::{
-    Resource,
     action::debounce_action,
     prelude::{palette::css, *},
     reactive::Trigger,
+    receiver_signal::Resource,
     style::{Background, CursorStyle, Transition},
     text::Weight,
 };

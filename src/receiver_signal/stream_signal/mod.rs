@@ -3,7 +3,7 @@
 mod builder;
 use builder::StreamSignalBuilder;
 
-use crate::ext_event::common::{EventLoopExecutor, NoInitial};
+use super::common::{EventLoopExecutor, NoInitial};
 
 /// A reactive signal for streams that produce multiple values.
 ///

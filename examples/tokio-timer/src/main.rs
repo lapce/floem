@@ -1,11 +1,12 @@
 use std::time::Duration;
 
 use floem::action::inspect;
+use floem::prelude::*;
 use floem::reactive::{create_memo, DerivedRwSignal};
+use floem::receiver_signal::StreamSignal;
 use floem::theme::StyleThemeExt;
 use floem::unit::Pct;
 use floem::views::slider::SliderCustomStyle;
-use floem::{prelude::*, StreamSignal};
 use tokio::runtime::Runtime;
 use tokio::time::Instant;
 use tokio_stream::wrappers::IntervalStream;

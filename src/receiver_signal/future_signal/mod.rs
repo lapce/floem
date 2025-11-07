@@ -1,5 +1,9 @@
-use super::builder::FutureSignalBuilder;
-use crate::ext_event::common::EventLoopExecutor;
+//! Reactive signals for futures that resolve to a single value.
+
+mod builder;
+
+use super::common::EventLoopExecutor;
+use builder::FutureSignalBuilder;
 
 /// A reactive signal for futures that resolve to a single value.
 ///

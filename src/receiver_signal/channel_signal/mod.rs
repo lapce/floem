@@ -2,9 +2,9 @@
 
 mod builder;
 
-use crate::ext_event::{
-    PollableReceiver,
+use super::{
     common::{BlockingReceiver, NoInitial, StdThreadExecutor},
+    traits::PollableReceiver,
 };
 use builder::ChannelSignalBuilder;
 

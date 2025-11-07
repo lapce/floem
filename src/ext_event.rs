@@ -17,20 +17,6 @@ use crossbeam::channel::Receiver;
 #[cfg(not(feature = "crossbeam"))]
 use std::sync::mpsc::Receiver;
 
-// New modular structure for async signals
-mod channel_signal;
-mod common;
-mod future_signal;
-mod resource;
-mod stream_signal;
-
-// Re-export everything for convenience
-pub use channel_signal::*;
-pub use common::*;
-pub use future_signal::*;
-pub use resource::*;
-pub use stream_signal::*;
-
 /// # SAFETY
 ///
 /// **DO NOT USE THIS** trigger except for when using with `create_ext_action` or when you guarantee that

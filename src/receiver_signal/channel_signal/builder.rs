@@ -1,15 +1,16 @@
-use super::ChannelSignal;
-use crate::ext_event::{
-    ExtSendTrigger, TokioBlockingExecutor,
-    common::{
+use crate::ext_event::ExtSendTrigger;
+
+use super::{
+    super::common::{
         BlockingReceiver, CustomExecutor, EventLoopExecutor, NoInitial, PollableReceiver,
         StdThreadExecutor, WithInitialValue, event_loop_receiver, event_loop_receiver_option,
         std_thread_channel, std_thread_channel_option,
     },
+    ChannelSignal,
 };
 
 #[cfg(feature = "tokio")]
-use crate::ext_event::common::TokioExecutor;
+use super::super::common::{TokioBlockingExecutor, TokioExecutor};
 
 /// A builder for creating customized `ChannelSignal` instances.
 ///
@@ -197,7 +198,7 @@ where
     R: BlockingReceiver<Item = T, Error = E> + Send + 'static,
 {
     pub fn build(self) -> ChannelSignal<Option<T>, E> {
-        use crate::ext_event::tokio_spawn_blocking_channel_option;
+        use super::super::tokio_spawn_blocking_channel_option;
 
         build_channel_signal_option(self.receiver, tokio_spawn_blocking_channel_option)
     }
@@ -212,7 +213,7 @@ where
     R: BlockingReceiver<Item = T, Error = E> + Send + 'static,
 {
     pub fn build(self) -> ChannelSignal<T, E> {
-        use crate::ext_event::tokio_spawn_blocking_channel;
+        use super::super::tokio_spawn_blocking_channel;
 
         build_channel_signal_with_initial(
             self.receiver,
@@ -231,7 +232,7 @@ where
     R: PollableReceiver<Item = T, Error = E> + Send + 'static,
 {
     pub fn build(self) -> ChannelSignal<Option<T>, E> {
-        use crate::ext_event::tokio_spawn_poll_receiver_option;
+        use super::super::tokio_spawn_poll_receiver_option;
 
         build_channel_signal_option(self.receiver, tokio_spawn_poll_receiver_option)
     }
@@ -246,7 +247,7 @@ where
     R: PollableReceiver<Item = T, Error = E> + Send + 'static,
 {
     pub fn build(self) -> ChannelSignal<T, E> {
-        use crate::ext_event::tokio_spawn_poll_receiver;
+        use super::super::tokio_spawn_poll_receiver;
 
         build_channel_signal_with_initial(self.receiver, self.initial.0, tokio_spawn_poll_receiver)
     }
