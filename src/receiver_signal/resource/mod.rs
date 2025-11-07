@@ -8,9 +8,13 @@ use floem_reactive::ReadSignal;
 use std::hash::Hash;
 
 // Resource-specific type-state markers
+#[doc(hidden)]
 pub struct DefaultHashKeyFn;
+#[doc(hidden)]
 pub struct CustomKeyFn<F>(pub F);
+#[doc(hidden)]
 pub struct WithMemo;
+#[doc(hidden)]
 pub struct NoMemoization;
 
 /// A reactive resource that automatically fetches data when its dependencies change.

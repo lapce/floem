@@ -73,8 +73,7 @@ where
     }
 
     /// Use tokio::spawn_blocking as the executor.
-    ///
-    /// This is the default for blocking receivers.
+    #[cfg(feature = "tokio")]
     pub fn tokio_spawn_blocking(self) -> ChannelSignalBuilder<R, T, E, TokioBlockingExecutor, I> {
         ChannelSignalBuilder {
             receiver: self.receiver,

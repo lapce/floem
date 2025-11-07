@@ -3,9 +3,6 @@ use crate::ext_event::{ExtSendTrigger, register_ext_trigger};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-// Aliases for channel signal compatibility
-pub use event_loop_receiver as event_loop_channel;
-pub use event_loop_receiver_option as event_loop_channel_option;
 pub use std_thread_receiver as std_thread_channel;
 pub use std_thread_receiver_option as std_thread_channel_option;
 

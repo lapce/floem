@@ -223,7 +223,7 @@ pub mod receiver_signal {
     mod resource;
     mod stream_signal;
     pub use channel_signal::*;
-    pub use common::*;
+    use common::*;
     pub use future_signal::*;
     pub use resource::*;
     pub use stream_signal::*;
