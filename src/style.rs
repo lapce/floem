@@ -2011,13 +2011,14 @@ pub(crate) fn screen_size_bp_to_key(breakpoint: ScreenSizeBp) -> StyleKey {
     }
 }
 
+/// the bool in the return is a classes_applied flag. if a new class has been applied, we need to do a request_style_recursive
 pub(crate) fn resolve_nested_maps(
     style: Style,
     interact_state: &InteractionState,
     screen_size_bp: ScreenSizeBp,
     classes: &[StyleClassRef],
     context: &mut Style,
-) -> Style {
+) -> (Style, bool) {
     // Start with depth 0 for the initial call
     resolve_nested_maps_internal(style, interact_state, screen_size_bp, context, classes, 0)
 }
@@ -2029,13 +2030,14 @@ fn resolve_nested_maps_internal(
     context: &mut Style,
     classes: &[StyleClassRef],
     depth: u32,
-) -> Style {
+) -> (Style, bool) {
     const MAX_DEPTH: u32 = 6;
     if depth >= MAX_DEPTH {
-        return style;
+        return (style, false);
     }
 
     let mut changed = false;
+    let mut classes_applied = false;
 
     let old_style = style.clone();
     style = style.apply_classes_from_context(classes, context);
@@ -2044,6 +2046,7 @@ fn resolve_nested_maps_internal(
             context.remove_nested_map(class.key);
         }
         changed = true;
+        classes_applied = true;
     }
 
     // Apply context mappings first
@@ -2153,7 +2156,7 @@ fn resolve_nested_maps_internal(
 
     // Recurse once at the end if anything changed
     if changed && depth + 1 < MAX_DEPTH {
-        style = resolve_nested_maps_internal(
+        let (new_style, recursive_classes_applied) = resolve_nested_maps_internal(
             style,
             interact_state,
             screen_size_bp,
@@ -2161,9 +2164,11 @@ fn resolve_nested_maps_internal(
             classes,
             depth + 1,
         );
+        style = new_style;
+        classes_applied |= recursive_classes_applied;
     }
 
-    style
+    (style, classes_applied)
 }
 
 #[derive(Default, Clone)]
