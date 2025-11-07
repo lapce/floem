@@ -2,10 +2,7 @@
 
 mod builder;
 
-use super::{
-    common::{BlockingReceiver, NoInitial, StdThreadExecutor},
-    traits::PollableReceiver,
-};
+use super::common::{BlockingReceiver, NoInitial, PollableReceiver, StdThreadExecutor};
 use builder::ChannelSignalBuilder;
 
 /// A reactive signal for channels that produce multiple values with error handling.

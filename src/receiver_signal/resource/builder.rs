@@ -1,10 +1,7 @@
 use crate::ext_event::ExtSendTrigger;
 
 use super::{
-    super::common::{
-        CustomExecutor, EventLoopExecutor, NoInitial, WithInitialValue, event_loop_future,
-        event_loop_future_option,
-    },
+    super::common::{CustomExecutor, EventLoopExecutor, NoInitial, WithInitialValue, executors::*},
     {CustomKeyFn, DefaultHashKeyFn, NoMemoization, Resource, WithMemo},
 };
 use std::{
@@ -13,7 +10,7 @@ use std::{
 };
 
 #[cfg(feature = "tokio")]
-use super::super::common::{TokioExecutor, tokio_spawn_future, tokio_spawn_future_option};
+use super::super::common::TokioExecutor;
 
 /// A builder for creating customized `Resource` instances.
 ///

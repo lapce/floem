@@ -6,9 +6,11 @@
 pub struct EventLoopExecutor;
 
 /// Type-state marker for tokio executor.
+#[cfg(feature = "tokio")]
 pub struct TokioExecutor;
 
 /// Type-state marker for tokio executor.
+#[cfg(feature = "tokio")]
 pub struct TokioBlockingExecutor;
 
 /// Type-state marker for custom executor.

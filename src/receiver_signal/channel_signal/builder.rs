@@ -3,8 +3,7 @@ use crate::ext_event::ExtSendTrigger;
 use super::{
     super::common::{
         BlockingReceiver, CustomExecutor, EventLoopExecutor, NoInitial, PollableReceiver,
-        StdThreadExecutor, WithInitialValue, event_loop_receiver, event_loop_receiver_option,
-        std_thread_channel, std_thread_channel_option,
+        StdThreadExecutor, WithInitialValue, executors::*,
     },
     ChannelSignal,
 };
@@ -197,8 +196,6 @@ where
     R: BlockingReceiver<Item = T, Error = E> + Send + 'static,
 {
     pub fn build(self) -> ChannelSignal<Option<T>, E> {
-        use super::super::tokio_spawn_blocking_channel_option;
-
         build_channel_signal_option(self.receiver, tokio_spawn_blocking_channel_option)
     }
 }
@@ -212,8 +209,6 @@ where
     R: BlockingReceiver<Item = T, Error = E> + Send + 'static,
 {
     pub fn build(self) -> ChannelSignal<T, E> {
-        use super::super::tokio_spawn_blocking_channel;
-
         build_channel_signal_with_initial(
             self.receiver,
             self.initial.0,
@@ -231,8 +226,6 @@ where
     R: PollableReceiver<Item = T, Error = E> + Send + 'static,
 {
     pub fn build(self) -> ChannelSignal<Option<T>, E> {
-        use super::super::tokio_spawn_poll_receiver_option;
-
         build_channel_signal_option(self.receiver, tokio_spawn_poll_receiver_option)
     }
 }
@@ -246,8 +239,6 @@ where
     R: PollableReceiver<Item = T, Error = E> + Send + 'static,
 {
     pub fn build(self) -> ChannelSignal<T, E> {
-        use super::super::tokio_spawn_poll_receiver;
-
         build_channel_signal_with_initial(self.receiver, self.initial.0, tokio_spawn_poll_receiver)
     }
 }
