@@ -2,9 +2,9 @@ use std::time::Duration;
 
 use floem::{
     action::debounce_action,
-    async_signal::Resource,
     prelude::{palette::css, *},
     reactive::Trigger,
+    receiver_signal::Resource,
     style::{Background, CursorStyle, Transition},
     text::Weight,
 };
@@ -180,7 +180,7 @@ fn stat_item(label: &str, value: u32) -> impl IntoView {
         .style(|s| s.items_center())
 }
 
-fn user_display(user_resource: Resource<UserResult>) -> impl IntoView {
+fn user_display(user_resource: Resource<Option<UserResult>>) -> impl IntoView {
     dyn_container(
         move || user_resource.get(),
         |result| match result {
@@ -295,7 +295,7 @@ fn app_view() -> impl IntoView {
         token_changed.notify()
     });
 
-    let user_resource = Resource::on_event_loop(
+    let user_resource = Resource::new(
         move || (username.get(), token.get()),
         |(username, token): (String, String)| async move {
             if username.trim().is_empty() {

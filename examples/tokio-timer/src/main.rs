@@ -1,8 +1,12 @@
 use std::time::Duration;
 
+use floem::action::inspect;
+use floem::prelude::*;
 use floem::reactive::{create_memo, DerivedRwSignal};
+use floem::receiver_signal::StreamSignal;
+use floem::theme::StyleThemeExt;
 use floem::unit::Pct;
-use floem::{async_signal::StreamSignal, prelude::*};
+use floem::views::slider::SliderCustomStyle;
 use tokio::runtime::Runtime;
 use tokio::time::Instant;
 use tokio_stream::wrappers::IntervalStream;
@@ -24,11 +28,10 @@ fn app_view() -> impl IntoView {
     let stream = IntervalStream::new(tokio::time::interval(Duration::from_millis(4)));
     let now = Instant::now();
     let started_at = RwSignal::new(now);
-    let current_instant = StreamSignal::on_event_loop(stream);
+    let current_instant = StreamSignal::with_initial(stream, now);
     let elapsed_time = create_memo(move |_| {
         current_instant
             .get()
-            .unwrap_or(Instant::now())
             .duration_since(started_at.get())
             .as_secs_f64()
             .min(target_pct.get().0)
@@ -52,33 +55,31 @@ fn app_view() -> impl IntoView {
         )
     });
 
-    let elapsed_time_bar = gauge(progress);
-    let el_label_bar = ("Elapsed Time: ", elapsed_time_bar)
+    let el_label_bar = ("Elapsed Time: ", gauge(progress))
         .h_stack()
         .style(|s| s.justify_between());
 
-    let duration_slider = thin_slider(target_pct);
-    let dur_label_slider = ("Duration: ", duration_slider)
+    let dur_label_slider = ("Duration: ", thin_slider(target_pct))
         .h_stack()
         .style(|s| s.justify_between());
 
     let reset_button = button("Reset").action(move || started_at.set(Instant::now()));
 
-    let view = (
+    v_stack((
         el_label_bar,
         elapsed_time_label,
         dur_label_slider,
         reset_button,
-    )
-        .v_stack()
-        .style(|s| s.gap(5));
-
-    view.container().style(|s| {
+    ))
+    .style(|s| s.gap(5))
+    .container()
+    .style(|s| {
         s.size(100.pct(), 100.pct())
             .flex_col()
             .items_center()
             .justify_center()
     })
+    .on_key_down(Key::Named(NamedKey::F11), |_| true, |_| inspect())
 }
 
 /// A slider with a thin bar instead of the default thick bar.
@@ -91,12 +92,19 @@ fn thin_slider(
 }
 
 /// A non-interactive slider that has been repurposed into a progress bar.
-fn gauge(fill_percent: impl SignalGet<Pct> + 'static) -> slider::Slider {
+fn gauge(fill_percent: impl SignalGet<Pct> + 'static + Copy) -> slider::Slider {
     slider::Slider::new(move || fill_percent.get())
         .slider_style(|s| {
             s.handle_radius(0)
                 .bar_radius(25.pct())
                 .accent_bar_radius(25.pct())
         })
-        .style(|s| s.width(200).set_disabled(true))
+        .style(move |s| {
+            let fill_percent = fill_percent.get().0;
+            s.width(200).set_disabled(true).with_theme(move |s, t| {
+                s.apply_if(fill_percent == 100., |s| {
+                    s.custom(|s: SliderCustomStyle| s.accent_bar_color(t.success()))
+                })
+            })
+        })
 }
