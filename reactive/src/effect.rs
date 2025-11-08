@@ -12,6 +12,8 @@ pub(crate) trait EffectTrait {
     fn run(&self) -> bool;
     fn add_observer(&self, id: Id);
     fn clear_observers(&self) -> HashSet<Id>;
+    #[allow(dead_code)]
+    fn hot_fn_ptr(&self) -> u64;
 }
 
 struct Effect<T, F>
@@ -249,6 +251,11 @@ where
     fn clear_observers(&self) -> HashSet<Id> {
         mem::take(&mut *self.observers.borrow_mut())
     }
+
+    fn hot_fn_ptr(&self) -> u64 {
+        std::ptr::addr_of!(self.f) as *const () as u64
+        // HotFn::current(&self.f).ptr_address().0
+    }
 }
 
 impl<T, I, C, U> EffectTrait for UpdaterEffect<T, I, C, U>
@@ -278,6 +285,10 @@ where
 
     fn clear_observers(&self) -> HashSet<Id> {
         mem::take(&mut *self.observers.borrow_mut())
+    }
+    fn hot_fn_ptr(&self) -> u64 {
+        std::ptr::addr_of!(self.compute) as *const () as u64
+        // HotFn::current(&self.compute).ptr_address().0
     }
 }
 
@@ -356,5 +367,118 @@ impl EffectTrait for TrackingEffect {
 
     fn clear_observers(&self) -> HashSet<Id> {
         mem::take(&mut *self.observers.borrow_mut())
+    }
+    fn hot_fn_ptr(&self) -> u64 {
+        let rc_ptr = Rc::as_ptr(&self.on_change);
+        rc_ptr as *const () as u64
+        // HotFn::current(&*self.on_change).ptr_address().0
+    }
+}
+#[cfg(feature = "hotpatch")]
+pub use hotpatch::*;
+
+#[cfg(feature = "hotpatch")]
+mod hotpatch {
+    use std::{cell::RefCell, collections::HashSet, marker::PhantomData, mem, rc::Rc};
+
+    use dioxus_devtools::subsecond::{HotFn, HotFunction};
+
+    use super::*;
+
+    struct HotUpdaterEffect<R, C, U, M, T>
+    where
+        C: dioxus_devtools::subsecond::HotFunction<T, M, Return = R>,
+        U: Fn(R),
+    {
+        id: Id,
+        compute: RefCell<HotFn<T, M, C>>,
+        on_change: U,
+        observers: RefCell<HashSet<Id>>,
+        phantom: PhantomData<M>,
+    }
+    impl<R, C, U, M, T> Drop for HotUpdaterEffect<R, C, U, M, T>
+    where
+        C: dioxus_devtools::subsecond::HotFunction<T, M, Return = R>,
+        U: Fn(R),
+    {
+        fn drop(&mut self) {
+            self.id.dispose();
+        }
+    }
+    /// Create an effect updater that runs `on_change` when any signals that subscribe during the
+    /// run of `compute` are updated. `compute` is immediately run only once, and its value is returned
+    /// from the call to `create_updater`.
+    pub fn create_hot_updater<T, R, C, M: 'static>(
+        compute: HotFn<T, M, C>,
+        on_change: impl Fn(R) + 'static,
+    ) -> R
+    where
+        R: 'static,
+        C: dioxus_devtools::subsecond::HotFunction<T, M, Return = R> + 'static,
+        T: std::default::Default + 'static, // C: HotFunction<(), M, Return = R> + 'static,
+    {
+        let id = Id::next();
+        let effect = Rc::new(HotUpdaterEffect {
+            id,
+            compute: RefCell::new(compute),
+            on_change,
+            observers: RefCell::new(HashSet::default()),
+            phantom: PhantomData,
+        });
+        crate::runtime::register_effect(effect.clone());
+        id.set_scope();
+        run_initial_hot_updater_effect(effect)
+    }
+    impl<R, C, U, M, T: std::default::Default> EffectTrait for HotUpdaterEffect<R, C, U, M, T>
+    where
+        R: 'static,
+        C: HotFunction<T, M, Return = R>,
+        U: Fn(R),
+    {
+        fn id(&self) -> Id {
+            self.id
+        }
+
+        fn run(&self) -> bool {
+            let compute_fn = &self.compute;
+            let result = compute_fn.borrow_mut().call(T::default());
+            (self.on_change)(result);
+            true
+        }
+
+        fn add_observer(&self, id: Id) {
+            self.observers.borrow_mut().insert(id);
+        }
+
+        fn clear_observers(&self) -> HashSet<Id> {
+            mem::take(&mut *self.observers.borrow_mut())
+        }
+
+        fn hot_fn_ptr(&self) -> u64 {
+            let compute_fn = &self.compute;
+            compute_fn.borrow().ptr_address().0
+        }
+    }
+    fn run_initial_hot_updater_effect<R, C, U, M: 'static, T: std::default::Default + 'static>(
+        effect: Rc<HotUpdaterEffect<R, C, U, M, T>>,
+    ) -> R
+    where
+        R: 'static,
+        C: HotFunction<T, M, Return = R> + 'static,
+        U: Fn(R) + 'static,
+    {
+        let effect_id = effect.id();
+        let result = RUNTIME.with(|runtime| {
+            *runtime.current_effect.borrow_mut() = Some(effect.clone());
+            let effect_scope = Scope(effect_id, PhantomData);
+            let result = with_scope(effect_scope, || {
+                effect_scope.track();
+                let compute_fn = &effect.compute;
+                compute_fn.borrow_mut().call(T::default())
+            });
+            *runtime.current_effect.borrow_mut() = None;
+            result
+        });
+        result
     }
 }

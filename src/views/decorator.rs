@@ -49,12 +49,21 @@ pub trait Decorators: IntoView<V = Self::DV> + Sized {
         let state = view_id.state();
 
         let offset = state.borrow_mut().style.next_offset();
-        let style = create_updater(
+        #[cfg(feature = "hotpatch")]
+        let style = floem_reactive::create_hot_updater(
+            dioxus_devtools::subsecond::HotFn::current(style),
+            move |style| {
+                view_id.update_style(offset, style);
+            },
+        );
+        #[cfg(not(feature = "hotpatch"))]
+        let style = floem_reactive::create_updater(
             move || style(Style::new()),
             move |style| {
                 view_id.update_style(offset, style);
             },
         );
+
         state.borrow_mut().style.push(style);
 
         view

@@ -352,7 +352,7 @@ fn capture_view(
                 .into_any(),
                 _ => panic!(),
             }
-            .style(|s| s.width_full())
+            .style(|s| s.width_full().padding_bottom(50))
             .scroll()
             .scroll_style(|s| s.handle_thickness(6.).shrink_to_fit())
             .style(|s| {

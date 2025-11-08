@@ -13,6 +13,7 @@ style_class!(pub RadioButtonClass);
 style_class!(pub RadioButtonDotClass);
 style_class!(pub RadioButtonDotSelectedClass);
 style_class!(pub LabeledRadioButtonClass);
+style_class!(pub RadioButtonGroupClass);
 
 fn radio_button_svg<T>(represented_value: T, actual_value: impl SignalGet<T> + 'static) -> impl View
 where

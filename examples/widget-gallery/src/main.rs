@@ -19,7 +19,7 @@ pub mod tabs;
 pub mod texteditor;
 
 use floem::{
-    action::{add_overlay, set_window_menu, toggle_theme},
+    action::{add_overlay, set_window_menu, set_window_scale, toggle_theme},
     event::{Event, EventListener},
     kurbo::Size,
     menu::*,

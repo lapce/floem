@@ -17,7 +17,6 @@ pub const CROSS_SVG: &str = r##"
 "##;
 
 pub fn checkbox_view() -> impl IntoView {
-    // let width = 160.0;
     let is_checked = RwSignal::new(true);
     form((
         form_item("Checkbox:", Checkbox::new_rw(is_checked)),
