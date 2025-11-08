@@ -542,7 +542,7 @@ fn selected_view(
                         let class_header = text(&class_name)
                             .style(|s| s.font_bold().with_theme(|s, t| s.color(t.text())));
 
-                        if let Some(class_style) = class_style {
+                        if let Some((class_style, _changed)) = class_style {
                             let mut props: Vec<_> = class_style
                                 .map
                                 .clone()

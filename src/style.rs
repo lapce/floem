@@ -2023,30 +2023,37 @@ pub(crate) fn resolve_nested_maps(
     resolve_nested_maps_internal(style, interact_state, screen_size_bp, context, classes, 0)
 }
 
+#[allow(
+    clippy::only_used_in_recursion,
+    reason = "for debugging it's nice to have the depth"
+)]
 fn resolve_nested_maps_internal(
-    mut style: Style,
+    style: Style,
     interact_state: &InteractionState,
     screen_size_bp: ScreenSizeBp,
     context: &mut Style,
     classes: &[StyleClassRef],
     depth: u32,
 ) -> (Style, bool) {
-    const MAX_DEPTH: u32 = 6;
-    if depth >= MAX_DEPTH {
-        return (style, false);
-    }
+    // const MAX_DEPTH: u32 = 20;
+    // if depth >= MAX_DEPTH {
+    //     return (style, false);
+    // }
+    // if depth > 10 {
+    //     dbg!(depth);
+    // }
 
     let mut changed = false;
     let mut classes_applied = false;
 
-    let old_style = style.clone();
-    style = style.apply_classes_from_context(classes, context);
-    if !old_style.map.ptr_eq(&style.map) {
+    let (mut style, changed_new) = style.apply_classes_from_context(classes, context);
+    if changed_new {
         for class in classes {
-            context.remove_nested_map(class.key);
+            if let Some(nested) = context.remove_nested_map(class.key) {
+                classes_applied |= nested.any_inherited();
+            }
         }
         changed = true;
-        classes_applied = true;
     }
 
     // Apply context mappings first
@@ -2058,29 +2065,29 @@ fn resolve_nested_maps_internal(
 
     // Apply screen size breakpoints
     if let Some(map) = style.get_nested_map(screen_size_bp_to_key(screen_size_bp)) {
-        if !map.map.ptr_eq(&style.map) {
-            style.apply_mut(map);
-            changed = true;
-        }
+        classes_applied |= map.any_inherited();
+        style.apply_mut(map);
+        style.remove_nested_map(screen_size_bp_to_key(screen_size_bp));
+        changed = true;
     }
 
     // DarkMode
     if interact_state.is_dark_mode {
         if let Some(map) = style.get_nested_map(StyleSelector::DarkMode.to_key()) {
-            if !map.map.ptr_eq(&style.map) {
-                style.apply_mut(map);
-                changed = true;
-            }
+            classes_applied |= map.any_inherited();
+            style.apply_mut(map);
+            style.remove_nested_map(StyleSelector::DarkMode.to_key());
+            changed = true;
         }
     }
 
     // Disabled state (takes precedence)
     if interact_state.is_disabled {
         if let Some(map) = style.get_nested_map(StyleSelector::Disabled.to_key()) {
-            if !map.map.ptr_eq(&style.map) {
-                style.apply_mut(map);
-                changed = true;
-            }
+            classes_applied |= map.any_inherited();
+            style.apply_mut(map);
+            style.remove_nested_map(StyleSelector::Disabled.to_key());
+            changed = true;
         }
     } else {
         // Other states only apply if not disabled
@@ -2088,56 +2095,56 @@ fn resolve_nested_maps_internal(
         // Selected
         if interact_state.is_selected || style.get(Selected) {
             if let Some(map) = style.get_nested_map(StyleSelector::Selected.to_key()) {
-                if !map.map.ptr_eq(&style.map) {
-                    style.apply_mut(map);
-                    changed = true;
-                }
+                classes_applied |= map.any_inherited();
+                style.apply_mut(map);
+                style.remove_nested_map(StyleSelector::Selected.to_key());
+                changed = true;
             }
         }
 
         // Hover
         if interact_state.is_hovered {
             if let Some(map) = style.get_nested_map(StyleSelector::Hover.to_key()) {
-                if !map.map.ptr_eq(&style.map) {
-                    style.apply_mut(map);
-                    changed = true;
-                }
+                classes_applied |= map.any_inherited();
+                style.apply_mut(map);
+                style.remove_nested_map(StyleSelector::Hover.to_key());
+                changed = true;
             }
         }
 
         // File Hover
         if interact_state.is_file_hover {
             if let Some(map) = style.get_nested_map(StyleSelector::FileHover.to_key()) {
-                if !map.map.ptr_eq(&style.map) {
-                    style.apply_mut(map);
-                    changed = true;
-                }
+                classes_applied |= map.any_inherited();
+                style.apply_mut(map);
+                style.remove_nested_map(StyleSelector::FileHover.to_key());
+                changed = true;
             }
         }
 
         // Focus states
         if interact_state.is_focused {
             if let Some(map) = style.get_nested_map(StyleSelector::Focus.to_key()) {
-                if !map.map.ptr_eq(&style.map) {
-                    style.apply_mut(map);
-                    changed = true;
-                }
+                classes_applied |= map.any_inherited();
+                style.apply_mut(map);
+                style.remove_nested_map(StyleSelector::Focus.to_key());
+                changed = true;
             }
 
             if interact_state.using_keyboard_navigation {
                 if let Some(map) = style.get_nested_map(StyleSelector::FocusVisible.to_key()) {
-                    if !map.map.ptr_eq(&style.map) {
-                        style.apply_mut(map);
-                        changed = true;
-                    }
+                    classes_applied |= map.any_inherited();
+                    style.apply_mut(map);
+                    style.remove_nested_map(StyleSelector::FocusVisible.to_key());
+                    changed = true;
                 }
 
                 if interact_state.is_clicking {
                     if let Some(map) = style.get_nested_map(StyleSelector::Active.to_key()) {
-                        if !map.map.ptr_eq(&style.map) {
-                            style.apply_mut(map);
-                            changed = true;
-                        }
+                        classes_applied |= map.any_inherited();
+                        style.apply_mut(map);
+                        style.remove_nested_map(StyleSelector::Active.to_key());
+                        changed = true;
                     }
                 }
             }
@@ -2146,16 +2153,17 @@ fn resolve_nested_maps_internal(
         // Active (mouse)
         if interact_state.is_clicking && !interact_state.using_keyboard_navigation {
             if let Some(map) = style.get_nested_map(StyleSelector::Active.to_key()) {
-                if !map.map.ptr_eq(&style.map) {
-                    style.apply_mut(map);
-                    changed = true;
-                }
+                classes_applied |= map.any_inherited();
+                style.apply_mut(map);
+                style.remove_nested_map(StyleSelector::Active.to_key());
+                changed = true;
             }
         }
     }
 
     // Recurse once at the end if anything changed
-    if changed && depth + 1 < MAX_DEPTH {
+    // if changed && depth + 1 < MAX_DEPTH {
+    if changed {
         let (new_style, recursive_classes_applied) = resolve_nested_maps_internal(
             style,
             interact_state,
@@ -2232,17 +2240,20 @@ impl Style {
         result
     }
 
+    /// the returned boolean is true if a nested map was applied
     pub fn apply_classes_from_context(
         mut self,
         classes: &[StyleClassRef],
         context: &Style,
-    ) -> Style {
+    ) -> (Style, bool) {
+        let mut changed = false;
         for class in classes {
             if let Some(map) = context.get_nested_map(class.key) {
                 self.apply_mut(map);
+                changed = true;
             }
         }
-        self
+        (self, changed)
     }
 
     pub fn apply_class<C: StyleClass>(mut self, _class: C) -> Style {
@@ -2366,11 +2377,7 @@ impl Style {
 
     pub(crate) fn apply_only_inherited(this: &mut Rc<Style>, over: &Style) {
         if over.any_inherited() {
-            let inherited = over
-                .map
-                .iter()
-                .filter(|(p, _)| p.inherited())
-                .map(|(p, v)| (*p, v.clone()));
+            let inherited = over.map.iter().filter(|(p, _)| p.inherited());
 
             let this = Rc::make_mut(this);
             this.apply_iter(inherited);
@@ -2380,11 +2387,7 @@ impl Style {
     pub(crate) fn inherited(&self) -> Style {
         let mut new = Style::new();
         if self.any_inherited() {
-            let inherited = self
-                .map
-                .iter()
-                .filter(|(p, _)| p.inherited())
-                .map(|(p, v)| (*p, v.clone()));
+            let inherited = self.map.iter().filter(|(p, _)| p.inherited());
 
             new.apply_iter(inherited);
         }
@@ -2420,10 +2423,10 @@ impl Style {
         BuiltinStyle { style: self }
     }
 
-    fn apply_iter(&mut self, iter: impl Iterator<Item = (StyleKey, Rc<dyn Any>)>) {
+    fn apply_iter<'a>(&mut self, iter: impl Iterator<Item = (&'a StyleKey, &'a Rc<dyn Any>)>) {
         for (k, v) in iter {
             match k.info {
-                StyleKeyInfo::Class(..) | StyleKeyInfo::Selector(..) => match self.map.entry(k) {
+                StyleKeyInfo::Class(..) | StyleKeyInfo::Selector(..) => match self.map.entry(*k) {
                     Entry::Occupied(mut e) => {
                         // We need to merge the new map with the existing map.
 
@@ -2444,10 +2447,10 @@ impl Style {
                         }
                     }
                     Entry::Vacant(e) => {
-                        e.insert(v);
+                        e.insert(v.clone());
                     }
                 },
-                StyleKeyInfo::ContextMappings => match self.map.entry(k) {
+                StyleKeyInfo::ContextMappings => match self.map.entry(*k) {
                     Entry::Occupied(mut e) => {
                         // Append the new mappings to existing ones
                         let new_mappings = v.downcast_ref::<Vec<ContextMapFn>>().unwrap();
@@ -2469,20 +2472,20 @@ impl Style {
                         }
                     }
                     Entry::Vacant(e) => {
-                        e.insert(v);
+                        e.insert(v.clone());
                     }
                 },
                 StyleKeyInfo::Transition => {
-                    self.map.insert(k, v);
+                    self.map.insert(*k, v.clone());
                 }
                 StyleKeyInfo::Prop(info) => {
-                    match self.map.entry(k) {
+                    match self.map.entry(*k) {
                         Entry::Occupied(mut e) => {
                             // We need to merge the new map with the existing map.
-                            e.insert((info.combine)(e.get().clone(), v));
+                            e.insert((info.combine)(e.get().clone(), v.clone()));
                         }
                         Entry::Vacant(e) => {
-                            e.insert(v);
+                            e.insert(v.clone());
                         }
                     }
                 }
@@ -2491,7 +2494,7 @@ impl Style {
     }
 
     pub(crate) fn apply_mut(&mut self, over: Style) {
-        self.apply_iter(over.map.into_iter());
+        self.apply_iter(over.map.iter());
     }
 
     /// Apply another `Style` to this style, returning a new `Style` with the overrides

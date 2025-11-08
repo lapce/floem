@@ -111,8 +111,10 @@ impl View for Tooltip {
         self.style.read(cx);
         self.scale = cx.window_state.scale;
 
-        self.tip_style =
+        let (tip_style, _) =
             Style::new().apply_classes_from_context(&[TooltipClass::class_ref()], &cx.current);
+
+        self.tip_style = tip_style;
 
         for child in self.id.children() {
             cx.style_view(child);
