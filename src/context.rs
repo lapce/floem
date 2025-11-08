@@ -669,7 +669,7 @@ impl<'a> StyleCx<'a> {
 
         let view_interact_state = self.get_interact_state(&view_id);
         self.disabled = view_interact_state.is_disabled;
-        let mut new_frame = view_id.state().borrow_mut().compute_combined(
+        let (mut new_frame, classes_applied) = view_id.state().borrow_mut().compute_combined(
             view_style,
             view_interact_state,
             self.window_state.screen_size_bp,
@@ -677,6 +677,15 @@ impl<'a> StyleCx<'a> {
             &self.current,
             self.hidden,
         );
+        if classes_applied {
+            let children = view_id.children();
+            for child in children {
+                let view_state = child.state();
+                let mut state = view_state.borrow_mut();
+                state.request_style_recursive = true;
+                state.requested_changes.insert(ChangeFlags::STYLE);
+            }
+        }
 
         self.direct = view_state.borrow().combined_style.clone();
         Style::apply_only_inherited(&mut self.current, &self.direct);
@@ -708,6 +717,10 @@ impl<'a> StyleCx<'a> {
                 &self.now,
                 &mut new_frame,
             );
+            if new_frame {
+                // if any transitioning layout props, shedule layout
+                self.window_state.schedule_layout(view_id);
+            }
 
             view_state.view_style_props.read_explicit(
                 &self.direct,
@@ -724,7 +737,7 @@ impl<'a> StyleCx<'a> {
         let taffy_style = self.direct.clone().apply(layout_style).to_taffy_style();
         if taffy_style != view_state.borrow().taffy_style {
             view_state.borrow_mut().taffy_style = taffy_style;
-            view_id.request_layout();
+            self.window_state.schedule_layout(view_id);
         }
 
         view.borrow_mut().style_pass(self);
@@ -960,6 +973,9 @@ impl<'a> ComputeLayoutCx<'a> {
         } else {
             layout_rect
         };
+
+        let transform = view_state.borrow().transform;
+        let layout_rect = transform.transform_rect_bbox(layout_rect);
 
         view_state.borrow_mut().layout_rect = layout_rect;
 

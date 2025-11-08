@@ -236,6 +236,7 @@ impl ViewState {
         }
     }
 
+    /// the first returned bool is new_frame. the second is classes_applied
     /// Returns `true` if a new frame is requested.
     ///
     // The context has the nested maps of classes and inherited properties
@@ -248,7 +249,7 @@ impl ViewState {
         view_class: Option<StyleClassRef>,
         context: &Style,
         cx_hidden: bool,
-    ) -> bool {
+    ) -> (bool, bool) {
         let mut new_frame = false;
 
         // Build the initial combined style
@@ -266,14 +267,17 @@ impl ViewState {
         }
 
         let mut new_context = context.clone();
+        let mut new_classes = false;
 
-        combined_style = resolve_nested_maps(
+        let (resolved_style, classes_applied) = resolve_nested_maps(
             combined_style,
             &interact_state,
             screen_size_bp,
             &classes,
             &mut new_context,
         );
+        combined_style = resolved_style;
+        new_classes |= classes_applied;
 
         if let Some(view_style) = &view_style {
             combined_style.apply_mut(view_style.clone());
@@ -283,13 +287,15 @@ impl ViewState {
 
         combined_style.apply_mut(self_style.clone());
 
-        combined_style = resolve_nested_maps(
+        let (resolved_style, classes_applied) = resolve_nested_maps(
             combined_style,
             &interact_state,
             screen_size_bp,
             &classes,
             &mut new_context,
         );
+        combined_style = resolved_style;
+        new_classes |= classes_applied;
 
         // Track if this style has selectors for optimization purposes
         self.has_style_selectors = combined_style.selectors();
@@ -317,7 +323,7 @@ impl ViewState {
         }
 
         self.combined_style = combined_style;
-        new_frame
+        (new_frame, new_classes)
     }
 
     pub(crate) fn has_active_animation(&self) -> bool {
