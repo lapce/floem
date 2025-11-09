@@ -18,7 +18,6 @@ pub struct WindowCreation {
 }
 
 /// Configures various attributes (e.g. size, position, transparency, etc.) of a window.
-#[derive(Debug, Clone)]
 pub struct WindowConfig {
     pub(crate) size: Option<Size>,
     pub(crate) min_size: Option<Size>,

@@ -492,13 +492,17 @@ impl WindowHandle {
             return;
         }
         if let Some(theme) = theme {
-            // only override the theme with the default if the user did not provide one
+            // Only override the theme with the default if the user did not provide one
             if self.default_theme.is_some() {
                 self.default_theme = Some(default_theme(theme));
             }
             self.window_state.light_dark_theme = theme;
             if !change_from_os {
                 self.window_state.theme_overriden = true
+            }
+            #[cfg(target_os = "windows")]
+            {
+                self.set_menu_theme_for_windows(theme);
             }
         } else {
             self.window_state.theme_overriden = false;

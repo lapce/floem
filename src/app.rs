@@ -38,6 +38,7 @@ thread_local! {
 pub struct AppConfig {
     pub(crate) exit_on_close: bool,
     pub(crate) wgpu_features: wgpu::Features,
+    pub(crate) global_theme_override: Option<Theme>,
 }
 
 impl Default for AppConfig {
@@ -45,6 +46,7 @@ impl Default for AppConfig {
         Self {
             exit_on_close: !cfg!(target_os = "macos"),
             wgpu_features: wgpu::Features::default(),
+            global_theme_override: None
         }
     }
 }
@@ -56,10 +58,18 @@ impl AppConfig {
         self.exit_on_close = exit_on_close;
         self
     }
+    
     /// Sets the WGPU features to be used by the application.
     #[inline]
     pub fn wgpu_features(mut self, features: wgpu::Features) -> Self {
         self.wgpu_features = features;
+        self
+    }
+    
+    /// Sets the global theme.
+    #[inline]
+    pub fn set_global_theme(mut self, theme: Theme) -> Self {
+        self.global_theme_override = Some(theme);
         self
     }
 }
@@ -156,6 +166,7 @@ impl ApplicationHandler for Application {
             self.handle.new_window(
                 event_loop,
                 window_creation.view_fn,
+                self.handle.config.global_theme_override,
                 window_creation.config.unwrap_or_default(),
             );
         }
