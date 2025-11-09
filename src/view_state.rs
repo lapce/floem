@@ -13,7 +13,7 @@ use crate::{
     },
 };
 use bitflags::bitflags;
-use im_rc::HashSet;
+use imbl::HashSet;
 use peniko::kurbo::{Affine, Point, Rect};
 use smallvec::SmallVec;
 use std::{cell::RefCell, collections::HashMap, marker::PhantomData, rc::Rc};

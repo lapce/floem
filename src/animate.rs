@@ -157,7 +157,7 @@ struct PropFrames {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct PropCache {
     /// A map of style properties to a list of all frame ids containing that prop
-    prop_map: im_rc::HashMap<StylePropRef, SmallVec<[PropFrameKind; 5]>>,
+    prop_map: imbl::HashMap<StylePropRef, SmallVec<[PropFrameKind; 5]>>,
     /// a cached list of all keyframes that use the computed style instead of a separate style
     computed_idxs: SmallVec<[u16; 2]>,
 }
@@ -196,12 +196,12 @@ impl PropCache {
 
     fn insert_prop(&mut self, prop: StylePropRef, idx: PropFrameKind) {
         match self.prop_map.entry(prop) {
-            im_rc::hashmap::Entry::Occupied(mut oe) => {
+            imbl::hashmap::Entry::Occupied(mut oe) => {
                 if let Err(pos) = oe.get().binary_search(&idx) {
                     oe.get_mut().insert(pos, idx)
                 }
             }
-            im_rc::hashmap::Entry::Vacant(ve) => {
+            imbl::hashmap::Entry::Vacant(ve) => {
                 ve.insert(smallvec![idx]);
             }
         }
@@ -210,7 +210,7 @@ impl PropCache {
     fn insert_computed_prop(&mut self, prop: StylePropRef, idx: PropFrameKind) {
         // computed props are inserted at the start of each call of `animate_into`.
         // Therefore, if the cache does not already contain references to a prop, there will be nothing to animate between and we just don't insert anything.
-        if let im_rc::hashmap::Entry::Occupied(mut oe) = self.prop_map.entry(prop) {
+        if let imbl::hashmap::Entry::Occupied(mut oe) = self.prop_map.entry(prop) {
             if let Err(pos) = oe.get().binary_search(&idx) {
                 oe.get_mut().insert(pos, idx)
             } else {
@@ -222,7 +222,7 @@ impl PropCache {
     }
 
     fn remove_prop(&mut self, prop: StylePropRef, idx: u16) {
-        if let im_rc::hashmap::Entry::Occupied(mut oe) = self.prop_map.entry(prop) {
+        if let imbl::hashmap::Entry::Occupied(mut oe) = self.prop_map.entry(prop) {
             if let Ok(pos) = oe.get().binary_search(&PropFrameKind::Normal(idx)) {
                 oe.get_mut().remove(pos);
             }
@@ -373,9 +373,9 @@ pub struct Animation {
     pub(crate) max_key_frame_num: u16,
     pub(crate) apply_when_finished: bool,
     pub(crate) folded_style: Style,
-    pub(crate) key_frames: im_rc::HashMap<u16, KeyFrame>,
+    pub(crate) key_frames: imbl::HashMap<u16, KeyFrame>,
     // frames should be added to this if when they are the lower frame, they return not done. check/run them before other frames
-    pub(crate) props_in_ext_progress: im_rc::HashMap<StylePropRef, (KeyFrameProp, KeyFrameProp)>,
+    pub(crate) props_in_ext_progress: imbl::HashMap<StylePropRef, (KeyFrameProp, KeyFrameProp)>,
     pub(crate) cache: PropCache,
     /// This will fire at the start of each cycle of an animation.
     pub(crate) on_start: Trigger,
@@ -405,8 +405,8 @@ impl Default for Animation {
             apply_when_finished: false,
             folded_style: Style::new(),
             cache: Default::default(),
-            key_frames: im_rc::HashMap::new(),
-            props_in_ext_progress: im_rc::HashMap::new(),
+            key_frames: imbl::HashMap::new(),
+            props_in_ext_progress: imbl::HashMap::new(),
             on_start: Trigger::new(),
             on_complete: Trigger::new(),
             on_visual_complete: Trigger::new(),
@@ -476,7 +476,7 @@ impl Animation {
 
         // mutate this keyframe's style to be updated with the new style
         match self.key_frames.entry(frame_id) {
-            im_rc::hashmap::Entry::Occupied(mut oe) => {
+            imbl::hashmap::Entry::Occupied(mut oe) => {
                 let e_frame = oe.get_mut();
                 match (&mut e_frame.style, frame.style) {
                     (KeyFrameStyle::Computed, KeyFrameStyle::Computed) => {}
@@ -492,7 +492,7 @@ impl Animation {
                 }
                 e_frame.easing = frame.easing;
             }
-            im_rc::hashmap::Entry::Vacant(ve) => {
+            imbl::hashmap::Entry::Vacant(ve) => {
                 ve.insert(frame);
             }
         }

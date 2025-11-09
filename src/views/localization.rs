@@ -19,10 +19,10 @@ pub use unic_langid::LanguageIdentifier;
 
 /// A map that stores localizations.
 #[derive(Clone)]
-pub struct LocaleMap(pub im_rc::HashMap<LanguageIdentifier, Rc<FluentBundle<FluentResource>>>);
+pub struct LocaleMap(pub imbl::HashMap<LanguageIdentifier, Rc<FluentBundle<FluentResource>>>);
 
 impl std::ops::Deref for LocaleMap {
-    type Target = im_rc::HashMap<LanguageIdentifier, Rc<FluentBundle<FluentResource>>>;
+    type Target = imbl::HashMap<LanguageIdentifier, Rc<FluentBundle<FluentResource>>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -125,7 +125,7 @@ impl LocaleMap {
     where
         I: IntoIterator<Item = (&'a str, &'a str)>,
     {
-        let mut map = im_rc::HashMap::new();
+        let mut map = imbl::HashMap::new();
         for (lang_id, resource_str) in resources {
             let lang_id = lang_id.parse::<LanguageIdentifier>()?;
             let resource = FluentResource::try_new(resource_str.to_string())
@@ -162,7 +162,7 @@ impl LocaleMap {
 
 prop!(pub L10nLocale: Option<LanguageIdentifier> { inherited } = sys_locale::get_locale().and_then(|l| l.parse().ok()));
 prop!(pub L10nFallback: Option<String> {} = None);
-prop!(pub L10nBundle: LocaleMap { inherited } = LocaleMap(im_rc::HashMap::new()));
+prop!(pub L10nBundle: LocaleMap { inherited } = LocaleMap(imbl::HashMap::new()));
 
 prop_extractor! {
     LanguageExtractor {

@@ -10,7 +10,7 @@ use floem_reactive::{
     RwSignal, Scope, SignalGet, SignalUpdate, as_child_of_current_scope, create_effect,
     create_updater,
 };
-use im_rc::OrdMap;
+use imbl::OrdMap;
 use peniko::kurbo::{Point, Rect, Size};
 use ui_events::keyboard::Key;
 use winit::keyboard::NamedKey;

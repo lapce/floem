@@ -1,6 +1,6 @@
 use std::{cell::LazyCell, time::Instant};
 
-use floem::im_rc::{HashSet, Vector};
+use floem::imbl::{HashSet, Vector};
 use floem::prelude::*;
 use rusqlite::{named_params, Connection};
 

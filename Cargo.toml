@@ -37,7 +37,7 @@ strum = { version = "0.27", features = ["derive"] }
 strum_macros = { version = "0.27" }
 # Image format features are defined via new features
 image = { version = "0.25", default-features = false }
-im-rc = "15.1.0"
+imbl = "6.1.0"
 resvg = { version = "0.45" }
 raw-window-handle = "0.6.0"
 unicode-segmentation = "1.10"
@@ -66,7 +66,7 @@ tokio = { version = "1", features = ["sync", "rt"], optional = true }
 raw-window-handle = { workspace = true }
 unicode-segmentation = { workspace = true }
 peniko = { workspace = true }
-im-rc.workspace = true
+imbl.workspace = true
 serde = { workspace = true, optional = true }
 lapce-xi-rope = { workspace = true, optional = true }
 strum = { workspace = true, optional = true }
@@ -159,3 +159,8 @@ rfd-async-std = ["dep:rfd", "rfd/async-std"]
 rfd-tokio = ["dep:rfd", "rfd/tokio"]
 crossbeam = ["dep:crossbeam", "floem_renderer/crossbeam"]
 localization = ["dep:fluent-bundle", "dep:unic-langid", "dep:sys-locale"]
+
+[profile.dev]
+opt-level = 1
+
+

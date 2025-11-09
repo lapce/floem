@@ -1,6 +1,6 @@
 use floem::{
     event::{Event, EventListener},
-    im_rc,
+    imbl,
     prelude::*,
     style::Position,
 };
@@ -10,7 +10,7 @@ const TOPBAR_HEIGHT: f64 = 30.0;
 const SIDEBAR_ITEM_HEIGHT: f64 = 21.0;
 
 pub fn right_sidebar_view() -> impl IntoView {
-    let long_list: im_rc::Vector<i32> = (0..100).collect();
+    let long_list: imbl::Vector<i32> = (0..100).collect();
     let long_list = create_rw_signal(long_list);
 
     let top_bar = label(|| String::from("Top bar"))

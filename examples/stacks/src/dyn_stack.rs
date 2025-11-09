@@ -1,10 +1,10 @@
-use floem::{im_rc, prelude::*};
+use floem::{imbl, prelude::*};
 
 pub fn dyn_stack_view() -> impl IntoView {
     // With the dyn_stack you can change the stack at runtime by controlling
     // your stack with a signal.
 
-    let long_list: im_rc::Vector<i32> = (0..10).collect();
+    let long_list: imbl::Vector<i32> = (0..10).collect();
     let long_list = RwSignal::new(long_list);
 
     let button = button("Add an item")

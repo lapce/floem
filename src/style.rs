@@ -131,7 +131,8 @@
 use floem_reactive::{RwSignal, SignalGet, SignalUpdate as _, create_updater};
 use floem_renderer::Renderer;
 use floem_renderer::text::{LineHeightValue, Weight};
-use im_rc::hashmap::Entry;
+use imbl::hashmap::Entry;
+use imbl::shared_ptr::DefaultSharedPtr;
 use peniko::color::{HueDirection, palette};
 use peniko::kurbo::{self, Point, Stroke};
 use peniko::{
@@ -1991,7 +1992,8 @@ impl Debug for StyleKey {
     }
 }
 
-type ImHashMap<K, V> = im_rc::HashMap<K, V, BuildHasherDefault<FxHasher>>;
+type ImHashMap<K, V> = imbl::GenericHashMap<K, V, BuildHasherDefault<FxHasher>, DefaultSharedPtr>;
+// type ImHashMap<K, V> = std::collections::HashMap<K, V, BuildHasherDefault<FxHasher>>;
 
 style_key_selector!(selector_xs, StyleSelectors::new().responsive());
 style_key_selector!(selector_sm, StyleSelectors::new().responsive());
@@ -2046,7 +2048,7 @@ fn resolve_nested_maps_internal(
     let mut changed = false;
     let mut classes_applied = false;
 
-    let (mut style, changed_new) = style.apply_classes_from_context(classes, context);
+    let (style, changed_new) = style.apply_classes_from_context(classes, context);
     if changed_new {
         for class in classes {
             if let Some(nested) = context.remove_nested_map(class.key) {
@@ -2057,9 +2059,8 @@ fn resolve_nested_maps_internal(
     }
 
     // Apply context mappings first
-    let old_style = style.clone();
-    style = style.apply_context_mappings(context);
-    if !old_style.map.ptr_eq(&style.map) {
+    let (mut style, changed_new) = style.apply_context_mappings(context);
+    if changed_new {
         changed = true;
     }
 
@@ -2257,7 +2258,7 @@ impl Style {
     }
 
     pub fn apply_class<C: StyleClass>(mut self, _class: C) -> Style {
-        if let Some(map) = self.clone().map.get(&C::key()) {
+        if let Some(map) = self.map.get(&C::key()) {
             self.apply_mut(map.downcast_ref::<Style>().unwrap().clone());
             self.apply_context_mappings_mut();
         }
@@ -2518,10 +2519,11 @@ impl Style {
         overrides.fold(self, |acc, x| acc.apply(x))
     }
 
-    pub(crate) fn apply_context_mappings(mut self, context: &Style) -> Self {
+    pub(crate) fn apply_context_mappings(mut self, context: &Style) -> (Self, bool) {
         let key = StyleKey {
             info: &CONTEXT_MAPPINGS_INFO,
         };
+        let mut changed = false;
 
         if let Some(mappings) = self
             .map
@@ -2530,15 +2532,18 @@ impl Style {
             .cloned()
         {
             self.map.remove(&key);
+            changed = true;
 
             for mapping in mappings {
                 self = mapping(self, context);
             }
 
-            self = self.apply_context_mappings(context);
+            let (style, new_changed) = self.apply_context_mappings(context);
+            self = style;
+            changed |= new_changed;
         }
 
-        self
+        (self, changed)
     }
 
     pub(crate) fn apply_context_mappings_mut(&mut self) {

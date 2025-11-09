@@ -237,7 +237,7 @@ pub use floem_renderer::Svg as RendererSvg;
 pub use floem_renderer::gpu_resources::GpuResources;
 pub use floem_renderer::text;
 pub use id::ViewId;
-pub use im_rc;
+pub use imbl;
 pub use muda;
 pub use peniko;
 pub use peniko::kurbo;
