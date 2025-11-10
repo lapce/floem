@@ -1,3 +1,4 @@
+use accesskit::Role;
 use taffy::style::FlexDirection;
 
 use crate::{
@@ -105,8 +106,12 @@ impl View for Stack {
     }
 
     fn view_style(&self) -> Option<crate::style::Style> {
-        self.direction
-            .map(|direction| Style::new().flex_direction(direction))
+        self.direction.map(|direction| {
+            Style::new()
+                .flex_direction(direction)
+                .role(Role::GenericContainer)
+                .label(self.debug_name().to_string())
+        })
     }
 
     fn debug_name(&self) -> std::borrow::Cow<'static, str> {

@@ -223,6 +223,7 @@ where
     create_effect(move |_| {
         direction.track();
         id.request_style();
+        id.request_view_style();
     });
 
     create_effect(move |prev| {

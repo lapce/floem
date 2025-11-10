@@ -200,6 +200,7 @@ impl View for ResizableStack {
                             }
                         };
                         self.id.request_style();
+                        self.id.request_view_style();
                         self.style = self.style.clone().cursor(cursor);
                     };
 
@@ -221,6 +222,7 @@ impl View for ResizableStack {
                     self.id.request_all();
                     let cursor = CursorStyle::Default;
                     self.id.request_style();
+                    self.id.request_view_style();
                     self.style = self.style.clone().cursor(cursor);
                     return EventPropagation::Stop;
                 }
@@ -238,6 +240,7 @@ impl View for ResizableStack {
                     };
                     self.style = self.style.clone().cursor(cursor);
                     self.id.request_style();
+                    self.id.request_view_style();
                     self.id.request_layout();
                     return EventPropagation::Stop;
                 } else if let Some(handle_idx) = self.find_handle_at_position(point) {
@@ -250,12 +253,13 @@ impl View for ResizableStack {
                     };
                     self.style = self.style.clone().cursor(cursor);
                     self.id.request_style();
+                    self.id.request_view_style();
                     return EventPropagation::Stop;
                 } else {
                     self.handle_state = HandleState::None;
                     let cursor = CursorStyle::default();
                     self.style = self.style.clone().cursor(cursor);
-                    self.id.request_style();
+                    self.id.request_view_style();
                 }
             }
             _ => {}

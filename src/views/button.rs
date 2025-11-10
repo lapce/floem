@@ -1,5 +1,8 @@
 #![deny(missing_docs)]
-use crate::{IntoView, View, ViewId, style_class, views::Decorators};
+use accesskit::{Action, Role};
+use smallvec::smallvec;
+
+use crate::{IntoView, View, ViewId, style::Style, style_class, views::Decorators};
 
 style_class!(
     /// The style class that is applied to buttons.
@@ -46,12 +49,12 @@ impl View for Button {
         self.id
     }
 
-    fn accessibility_role(&self) -> Option<accesskit::Role> {
-        Some(accesskit::Role::Button)
-    }
-
-    fn accessibility_actions(&self) -> Option<Vec<accesskit::Action>> {
-        Some(vec![accesskit::Action::Click])
+    fn view_style(&self) -> Option<crate::style::Style> {
+        Some(
+            Style::new()
+                .role(Role::Button)
+                .actions(smallvec![Action::Click]),
+        )
     }
 }
 

@@ -85,6 +85,15 @@ pub(crate) struct WindowHandle {
     pub(crate) window_menu_actions: HashMap<MenuId, Box<dyn Fn()>>,
     pub(crate) window_menu: Option<muda::Menu>,
     pub(crate) event_reducer: WindowEventReducer,
+    // TODO: clean up this mess.
+    #[cfg(target_os = "macos")]
+    pub(crate) accessibility_adapter: Option<accesskit_macos::SubclassingAdapter>,
+    #[cfg(target_os = "windows")]
+    pub(crate) accessibility_adapter: Option<accesskit_windows::SubclassingAdapter>,
+    #[cfg(target_os = "linux")]
+    pub(crate) accessibility_adapter: Option<accesskit_unix::Adapter>,
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    pub(crate) accessibility_adapter: Option<()>,
 }
 
 impl WindowHandle {
@@ -203,6 +212,7 @@ impl WindowHandle {
             window_menu_actions: HashMap::new(),
             window_menu: None,
             event_reducer: WindowEventReducer::default(),
+            accessibility_adapter: None,
         };
         if paint_state_initialized {
             window_handle.init_renderer(gpu_resources);
@@ -218,6 +228,7 @@ impl WindowHandle {
             window_handle.window_state.light_dark_theme,
         ));
         window_handle.size(size.get_untracked());
+
         window_handle
     }
 
@@ -596,6 +607,11 @@ impl WindowHandle {
     }
 
     pub(crate) fn focused(&mut self, focused: bool) {
+        if let Some(acc_adapter) = &mut self.accessibility_adapter {
+            if let Some(events) = acc_adapter.update_view_focus_state(focused) {
+                events.raise();
+            }
+        }
         if focused {
             #[cfg(target_os = "macos")]
             if let Some(window_menu) = &self.window_menu {
@@ -636,7 +652,7 @@ impl WindowHandle {
     fn compute_layout(&mut self) {
         self.window_state.request_compute_layout = false;
         let viewport = (self.window_state.root_size / self.window_state.scale).to_rect();
-        let mut cx = ComputeLayoutCx::new(&mut self.window_state, viewport);
+        let mut cx = ComputeLayoutCx::new(&mut self.window_state, viewport, self.scale);
         cx.compute_view_layout(self.id);
     }
 
@@ -816,6 +832,10 @@ impl WindowHandle {
             self.process_deferred_update_messages();
         }
 
+        if self.needs_accessibility() {
+            self.update_accessibility_tree();
+        }
+
         self.set_cursor();
 
         // TODO: This should only use `self.window_state.request_paint)`
@@ -942,8 +962,12 @@ impl WindowHandle {
                             .scroll_to(cx.window_state, id, rect);
                     }
                     UpdateMessage::State { id, state } => {
+                        // let vstate = id.state();
+                        // let node = &mut vstate.borrow_mut().accessibility_node;
                         let view = id.view();
+                        // cx.accesskit_node = Some(node);
                         view.borrow_mut().update(&mut cx, state);
+                        // cx.accesskit_node = None;
                     }
                     UpdateMessage::DragWindow => {
                         let _ = self.window.drag_window();
@@ -1111,7 +1135,15 @@ impl WindowHandle {
             .state()
             .borrow()
             .requested_changes
-            .contains(ChangeFlags::STYLE)
+            .contains(ChangeFlags::STYLE | ChangeFlags::VIEW_STYLE)
+    }
+
+    fn needs_accessibility(&mut self) -> bool {
+        self.id
+            .state()
+            .borrow()
+            .requested_changes
+            .contains(ChangeFlags::ACCESSIBILITY)
     }
 
     fn has_deferred_update_messages(&self) -> bool {
@@ -1298,6 +1330,208 @@ impl WindowHandle {
             modifiers.set(Modifiers::ALT_GRAPH, true);
         }
         self.modifiers = modifiers;
+    }
+
+    /// Initialize the accessibility adapter using platform-specific adapters
+    pub(crate) fn init_accessibility_with_event_loop(
+        &mut self,
+        #[allow(unused_variables, reason = "unused on some platforms")]
+        event_loop: &dyn winit::event_loop::ActiveEventLoop,
+    ) {
+        let root_id = self.id;
+        let activation_handler = Self::create_activation_handler(root_id);
+        let action_handler = Self::create_action_handler();
+
+        // Initialize platform-specific accessibility adapter
+        #[cfg(target_os = "macos")]
+        {
+            use raw_window_handle::HasWindowHandle;
+            if let Ok(window_handle) = self.window.window_handle() {
+                if let raw_window_handle::RawWindowHandle::AppKit(appkit_handle) =
+                    window_handle.as_raw()
+                {
+                    let adapter = unsafe {
+                        accesskit_macos::SubclassingAdapter::new(
+                            appkit_handle.ns_view.as_ptr(),
+                            activation_handler,
+                            action_handler,
+                        )
+                    };
+                    self.accessibility_adapter = Some(adapter);
+                }
+            }
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            use raw_window_handle::HasWindowHandle;
+            if let Ok(window_handle) = self.window.window_handle() {
+                if let raw_window_handle::RawWindowHandle::Win32(win32_handle) =
+                    window_handle.as_raw()
+                {
+                    let adapter = accesskit_windows::SubclassingAdapter::new(
+                        win32_handle.hwnd.get() as _,
+                        activation_handler,
+                        action_handler,
+                    );
+                    self.accessibility_adapter = Some(adapter);
+                }
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            let adapter = accesskit_unix::UnixAdapter::new(
+                activation_handler,
+                action_handler,
+                deactivation_handler,
+            );
+            self.accessibility_adapter = Some(adapter);
+        }
+    }
+
+    /// Create activation handler for accessibility
+    fn create_activation_handler(root_id: ViewId) -> impl accesskit::ActivationHandler {
+        struct FloemActivationHandler {
+            root_id: ViewId,
+        }
+
+        impl accesskit::ActivationHandler for FloemActivationHandler {
+            fn request_initial_tree(&mut self) -> Option<accesskit::TreeUpdate> {
+                Some(WindowHandle::build_accessibility_tree_for_root(
+                    self.root_id,
+                ))
+            }
+        }
+
+        FloemActivationHandler { root_id }
+    }
+
+    /// Create action handler for accessibility
+    fn create_action_handler() -> impl accesskit::ActionHandler {
+        struct FloemActionHandler;
+
+        impl accesskit::ActionHandler for FloemActionHandler {
+            fn do_action(&mut self, request: accesskit::ActionRequest) {
+                crate::app::add_app_update_event(crate::app::AppUpdateEvent::AccessibilityAction {
+                    request,
+                });
+            }
+        }
+
+        FloemActionHandler
+    }
+
+    /// Build accessibility tree for the given root ViewId
+    fn build_accessibility_tree_for_root(root_id: ViewId) -> accesskit::TreeUpdate {
+        use std::collections::HashMap;
+
+        let mut nodes = HashMap::new();
+        let root_accessibility_id = root_id.accessibility_node();
+
+        // Recursively build nodes for the entire view tree
+        Self::build_accessibility_nodes_recursive(root_id, &mut nodes);
+
+        // Convert HashMap to Vec of tuples as expected by TreeUpdate
+        let nodes_vec: Vec<(accesskit::NodeId, accesskit::Node)> = nodes.into_iter().collect();
+
+        accesskit::TreeUpdate {
+            nodes: nodes_vec,
+            tree: Some(accesskit::Tree::new(root_accessibility_id)),
+            focus: root_accessibility_id, // Set root as default focus
+        }
+    }
+
+    /// Recursively build accessibility nodes for a view and its children
+    fn build_accessibility_nodes_recursive(
+        view_id: ViewId,
+        nodes: &mut std::collections::HashMap<accesskit::NodeId, accesskit::Node>,
+    ) {
+        // Get the view and state
+        let state = view_id.state();
+        let state_ref = state.borrow();
+
+        // Use the accessibility node from state if available
+        let accessibility_id = view_id.accessibility_node();
+        nodes.insert(accessibility_id, state_ref.accessibility_node.clone());
+
+        // Recursively process children
+        for child_id in view_id.children() {
+            Self::build_accessibility_nodes_recursive(child_id, nodes);
+        }
+    }
+
+    /// Handle accessibility action requests
+    pub(crate) fn handle_accessibility_action(
+        &mut self,
+        request: &accesskit::ActionRequest,
+    ) -> bool {
+        // Find the view that corresponds to the target accessibility node
+        if let Some(view_id) = self.find_view_by_accessibility_id(request.target) {
+            return self.handle_action_for_view(view_id, request.action, request.data.as_ref());
+        }
+        false
+    }
+
+    /// Find a ViewId by its accessibility node ID
+    fn find_view_by_accessibility_id(&self, target_id: accesskit::NodeId) -> Option<ViewId> {
+        Self::find_view_by_accessibility_id_recursive(self.id, target_id)
+    }
+
+    /// Recursively search for a view by its accessibility ID
+    fn find_view_by_accessibility_id_recursive(
+        current_id: ViewId,
+        target_id: accesskit::NodeId,
+    ) -> Option<ViewId> {
+        // Check if this view matches the target
+        if current_id.accessibility_node() == target_id {
+            return Some(current_id);
+        }
+
+        // Search children
+        for child_id in current_id.children() {
+            if let Some(found) = Self::find_view_by_accessibility_id_recursive(child_id, target_id)
+            {
+                return Some(found);
+            }
+        }
+
+        None
+    }
+
+    /// Handle an accessibility action for a specific view
+    fn handle_action_for_view(
+        &mut self,
+        view_id: ViewId,
+        action: accesskit::Action,
+        data: Option<&accesskit::ActionData>,
+    ) -> bool {
+        let handled = view_id
+            .view()
+            .borrow_mut()
+            .accessibility_action(action, data);
+        match action {
+            accesskit::Action::Focus => {
+                // Set focus to the view
+                self.window_state.update_focus(view_id, false);
+                true
+            }
+            _ => handled,
+        }
+    }
+
+    /// Process accessibility events through the adapter
+    pub(crate) fn process_accessibility_event(&mut self, _event: &winit::event::WindowEvent) {
+        // Platform-specific adapters handle events differently
+        // Most events are handled automatically by the underlying platform adapter
+    }
+
+    /// Update the accessibility tree when views change
+    pub(crate) fn update_accessibility_tree(&mut self) {
+        if let Some(adapter) = &mut self.accessibility_adapter {
+            let tree_update = Self::build_accessibility_tree_for_root(self.id);
+            adapter.update_if_active(|| tree_update.clone());
+        }
     }
 }
 

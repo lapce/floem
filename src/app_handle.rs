@@ -221,6 +221,9 @@ impl ApplicationHandle {
             )
         });
 
+        // Process accessibility events first
+        window_handle.process_accessibility_event(&event);
+
         match window_handle
             .event_reducer
             .reduce(window_handle.scale, &event)
@@ -548,7 +551,7 @@ impl ApplicationHandle {
             }
         }
         let window_id = window.id();
-        let window_handle = WindowHandle::new(
+        let mut window_handle = WindowHandle::new(
             window,
             self.gpu_resources.clone(),
             self.config.wgpu_features,
@@ -557,6 +560,7 @@ impl ApplicationHandle {
             apply_default_theme,
             font_embolden,
         );
+        window_handle.init_accessibility_with_event_loop(event_loop);
         self.window_handles.insert(window_id, window_handle);
     }
 

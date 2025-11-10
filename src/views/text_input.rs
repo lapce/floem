@@ -8,6 +8,7 @@ use crate::style::{FontStyle, FontWeight, TextColor};
 use crate::unit::{PxPct, PxPctAuto};
 use crate::views::editor::text::Preedit;
 use crate::{Clipboard, prop_extractor, style_class};
+use accesskit::Role;
 use floem_reactive::{SignalGet, SignalUpdate, SignalWith, create_rw_signal};
 use taffy::prelude::{Layout, NodeId};
 
@@ -1132,6 +1133,17 @@ impl View for TextInput {
         format!("TextInput: {:?}", self.buffer.get_untracked()).into()
     }
 
+    fn view_style(&self) -> Option<Style> {
+        Some(
+            Style::new()
+                .role(Role::TextInput)
+                .value(self.buffer.get_untracked())
+                .apply_opt(self.placeholder_text.as_ref(), |s, v| {
+                    s.label(v.to_string())
+                }),
+        )
+    }
+
     fn update(&mut self, cx: &mut UpdateCx, state: Box<dyn Any>) {
         if let Ok(state) = state.downcast::<bool>() {
             let is_focused = *state;
@@ -1439,32 +1451,6 @@ impl View for TextInput {
         exec_after(Duration::from_millis(CURSOR_BLINK_INTERVAL_MS), move |_| {
             id.request_paint();
         });
-    }
-
-    fn accessibility_role(&self) -> Option<accesskit::Role> {
-        Some(accesskit::Role::TextInput)
-    }
-
-    fn accessibility_value(&self) -> Option<String> {
-        Some(self.buffer.get_untracked())
-    }
-
-    fn accessibility_actions(&self) -> Option<Vec<accesskit::Action>> {
-        Some(vec![
-            accesskit::Action::Focus,
-            accesskit::Action::SetTextSelection,
-            accesskit::Action::SetValue,
-        ])
-    }
-
-    fn accessibility_label(&self) -> Option<String> {
-        // If there's placeholder text and the input is empty, use it as the label
-        if let Some(placeholder) = &self.placeholder_text {
-            if self.buffer.with_untracked(|buf| buf.is_empty()) {
-                return Some(placeholder.clone());
-            }
-        }
-        None
     }
 }
 

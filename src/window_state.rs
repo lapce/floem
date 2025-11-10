@@ -118,7 +118,7 @@ impl WindowState {
             }
         }
         let _ = taffy.remove(node);
-        
+
         // Clean up accessibility: if this view has a parent, update the parent's accessibility children
         if let Some(parent_id) = id.parent() {
             let siblings = parent_id.children();
@@ -129,7 +129,7 @@ impl WindowState {
                 .collect();
             parent_id.set_accessibility_children(accessibility_children);
         }
-        
+
         id.remove();
         self.dragging_over.remove(&id);
         self.clicking.remove(&id);

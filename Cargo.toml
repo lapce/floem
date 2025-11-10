@@ -93,13 +93,14 @@ wgpu.workspace = true
 fluent-bundle = { version = "0.16", optional = true }
 unic-langid = { version = "0.9", optional = true }
 sys-locale = {version = "0.3.2", optional = true }
-accesskit = {version = "0.21.1"}
+accesskit = {version = "0.18.0"}
 
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
 muda = { workspace = true }
 
 [target.'cfg(any(target_os = "linux"))'.dependencies]
 muda = { workspace = true, default-features = false, features = ["gtk"] }
+accesskit_unix = "0.17.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = { version = "0.4" }
@@ -108,6 +109,7 @@ wgpu = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 clipboard-win = "5.4"
+accesskit_windows = "0.29.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { version = "0.6", default-features = false }
@@ -117,6 +119,7 @@ objc2-app-kit = { version = "0.3", features = [
   "NSResponder",
   "NSView"
 ] }
+accesskit_macos = "0.19.0"
 
 [features]
 default = ["editor", "default-image-formats", "vger"]

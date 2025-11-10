@@ -83,40 +83,28 @@ impl ViewId {
     }
 
     /// Get the accessibility node for this ViewId by converting it directly
-    pub fn accessibility_node(&self) -> accesskit::NodeId {
+    pub(crate) fn accessibility_node(&self) -> accesskit::NodeId {
         // Use the ViewId's internal representation as the NodeId
         // SlotMap keys have a data() method that returns the internal KeyData
+        // TODO: Find a better implementation
         accesskit::NodeId(self.data().as_ffi())
     }
 
-    /// Set the accessibility role for this view
-    pub fn set_accessibility_role(&self, role: accesskit::Role) {
-        self.state().borrow_mut().accessibility_node = accesskit::Node::new(role);
-    }
-
-    /// Set the accessibility label for this view
-    pub fn set_accessibility_label(&self, label: String) {
-        self.state().borrow_mut().accessibility_node.set_label(label);
-    }
-
-    /// Set the accessibility value for this view
-    pub fn set_accessibility_value(&self, value: String) {
-        self.state().borrow_mut().accessibility_node.set_value(value);
-    }
-
-    /// Add an accessibility action for this view
-    pub fn add_accessibility_action(&self, action: accesskit::Action) {
-        self.state().borrow_mut().accessibility_node.add_action(action);
-    }
-
     /// Set accessibility children (called when children are modified)
-    pub fn set_accessibility_children(&self, children: Vec<accesskit::NodeId>) {
-        self.state().borrow_mut().accessibility_node.set_children(children);
+    pub(crate) fn set_accessibility_children(&self, children: Vec<accesskit::NodeId>) {
+        self.state()
+            .borrow_mut()
+            .accessibility_node
+            .set_children(children);
     }
 
-    /// Get a reference to the accessibility node
-    pub fn get_accessibility_node(&self) -> accesskit::Node {
-        self.state().borrow().accessibility_node.clone()
+    /// Request an accessibility tree update for this view's window
+    pub(crate) fn request_accessibility_update(&self) {
+        // Find the root window and request accessibility update
+        if let Some(root_id) = self.root() {
+            // The accessibility update will be triggered during the next update cycle
+            root_id.request_changes(crate::view_state::ChangeFlags::ACCESSIBILITY);
+        }
     }
 
     pub(crate) fn state(&self) -> Rc<RefCell<ViewState>> {
@@ -155,7 +143,7 @@ impl ViewId {
             s.parent.insert(child_id, Some(*self));
             s.views.insert(child_id, Rc::new(RefCell::new(child)));
         });
-        
+
         // Update accessibility children
         let children = self.children();
         let accessibility_children: Vec<accesskit::NodeId> = children
@@ -181,7 +169,7 @@ impl ViewId {
             s.children.insert(*self, children_ids.clone());
             children_ids
         });
-        
+
         // Update accessibility children
         let accessibility_children: Vec<accesskit::NodeId> = children_ids
             .into_iter()
@@ -206,7 +194,7 @@ impl ViewId {
             s.children.insert(*self, children_ids.clone());
             children_ids
         });
-        
+
         // Update accessibility children
         let accessibility_children: Vec<accesskit::NodeId> = children_ids
             .into_iter()
@@ -243,7 +231,7 @@ impl ViewId {
                 false
             }
         });
-        
+
         if should_update {
             // Update accessibility children
             let accessibility_children: Vec<accesskit::NodeId> = children
@@ -452,6 +440,11 @@ impl ViewId {
     /// This will recursively request style for all parents.
     pub fn request_style(&self) {
         self.request_changes(ChangeFlags::STYLE)
+    }
+
+    /// use this when you want the `view_style` method from the `View` trait to be rerun
+    pub fn request_view_style(&self) {
+        self.request_changes(ChangeFlags::VIEW_STYLE)
     }
 
     pub(crate) fn request_changes(&self, flags: ChangeFlags) {
