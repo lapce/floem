@@ -159,8 +159,3 @@ rfd-async-std = ["dep:rfd", "rfd/async-std"]
 rfd-tokio = ["dep:rfd", "rfd/tokio"]
 crossbeam = ["dep:crossbeam", "floem_renderer/crossbeam"]
 localization = ["dep:fluent-bundle", "dep:unic-langid", "dep:sys-locale"]
-
-[profile.dev]
-opt-level = 1
-
-

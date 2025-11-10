@@ -43,6 +43,11 @@ impl<T> PartialEq for RwSignal<T> {
         self.id == other.id
     }
 }
+impl<T> std::hash::Hash for RwSignal<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
 
 impl<T> fmt::Debug for RwSignal<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

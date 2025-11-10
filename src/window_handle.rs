@@ -476,7 +476,8 @@ impl WindowHandle {
             }
         }
 
-        self.process_update();
+        // Schedule update processing - render_frame will determine if paint is needed
+        self.schedule_repaint();
     }
 
     pub(crate) fn scale(&mut self, scale: f64) {
@@ -512,9 +513,9 @@ impl WindowHandle {
             self.event(Event::WindowMaximizeChanged(is_maximized));
         }
 
+        // For resize events, we need immediate style/layout since window geometry changed
         self.style();
         self.layout();
-        self.process_update();
         self.schedule_repaint();
     }
 
@@ -568,7 +569,8 @@ impl WindowHandle {
                         id.request_style();
                     }
                 }
-                self.process_update();
+                // Schedule update processing for pointer leave events
+                self.schedule_repaint();
             }
             _ => {}
         }
@@ -621,7 +623,7 @@ impl WindowHandle {
         cx.compute_view_layout(self.id);
     }
 
-    pub(crate) fn render_frame(&mut self, gpu_resources: Option<GpuResources>) {
+    pub(crate) fn render_frame(&mut self, gpu_resources: Option<GpuResources>) -> bool {
         // Processes updates scheduled on this frame.
         for update in mem::take(&mut self.window_state.scheduled_updates) {
             match update {
@@ -631,13 +633,18 @@ impl WindowHandle {
             }
         }
 
-        self.process_update_no_paint();
-        self.paint(gpu_resources);
+        let needs_paint = self.process_update_no_paint();
+
+        // Only paint if there were actual visual changes
+        if needs_paint {
+            self.paint(gpu_resources);
+        }
 
         // Request a new frame if there's any scheduled updates.
         if !self.window_state.scheduled_updates.is_empty() {
             self.schedule_repaint();
         }
+        needs_paint
     }
 
     pub fn paint(&mut self, gpu_resources: Option<GpuResources>) -> Option<peniko::ImageBrush> {
@@ -1085,7 +1092,7 @@ impl WindowHandle {
         }
     }
 
-    fn needs_layout(&mut self) -> bool {
+    fn needs_layout(&self) -> bool {
         self.id
             .state()
             .borrow()
@@ -1093,7 +1100,7 @@ impl WindowHandle {
             .contains(ChangeFlags::LAYOUT)
     }
 
-    fn needs_style(&mut self) -> bool {
+    fn needs_style(&self) -> bool {
         self.id
             .state()
             .borrow()
@@ -1247,10 +1254,10 @@ impl WindowHandle {
         set_current_view(self.id);
         if let Some(action) = self.window_state.context_menu.get(id) {
             (*action)();
-            self.process_update();
+            self.schedule_repaint();
         } else if let Some(action) = self.window_menu_actions.get(id) {
             (*action)();
-            self.process_update();
+            self.schedule_repaint();
         }
     }
 

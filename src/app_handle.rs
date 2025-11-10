@@ -198,11 +198,7 @@ impl ApplicationHandle {
                 WindowEvent::DragLeft { .. } => "DragLeft",
                 WindowEvent::DragMoved { .. } => "DragMoved",
             };
-            (
-                name,
-                Instant::now(),
-                matches!(event, WindowEvent::RedrawRequested),
-            )
+            (name, Instant::now())
         });
 
         match window_handle
@@ -221,6 +217,8 @@ impl ApplicationHandle {
             }
             None => {}
         }
+
+        let mut rendered = false;
 
         match event {
             WindowEvent::ActivationTokenDone { .. } => {}
@@ -270,9 +268,6 @@ impl ApplicationHandle {
             WindowEvent::Focused(focused) => {
                 window_handle.focused(focused);
             }
-            WindowEvent::KeyboardInput { .. } => {
-                // already handled by the ui-events reducer
-            }
             WindowEvent::ModifiersChanged(modifiers) => {
                 window_handle.modifiers_changed(
                     ui_events_winit::keyboard::from_winit_modifier_state(modifiers.state()),
@@ -281,11 +276,6 @@ impl ApplicationHandle {
             WindowEvent::Ime(ime) => {
                 window_handle.ime(ime);
             }
-            WindowEvent::MouseWheel { .. } => {}
-            WindowEvent::PinchGesture {
-                delta: _, phase: _, ..
-            } => {}
-            WindowEvent::TouchpadPressure { .. } => {}
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 window_handle.scale(scale_factor);
             }
@@ -294,8 +284,12 @@ impl ApplicationHandle {
             }
             WindowEvent::Occluded(_) => {}
             WindowEvent::RedrawRequested => {
-                window_handle.render_frame(self.gpu_resources.clone());
+                rendered = window_handle.render_frame(self.gpu_resources.clone());
             }
+            WindowEvent::KeyboardInput { .. } => {
+                // already handled by the ui-events reducer
+            }
+            WindowEvent::TouchpadPressure { .. } => {}
             WindowEvent::PanGesture { .. } => {}
             WindowEvent::DoubleTapGesture { .. } => {}
             WindowEvent::RotationGesture { .. } => {}
@@ -311,25 +305,27 @@ impl ApplicationHandle {
             WindowEvent::PointerButton { .. } => {
                 //already handled by the ui-events reducer
             }
+            WindowEvent::MouseWheel { .. } => {}
+            WindowEvent::PinchGesture { .. } => {}
         }
 
-        if let Some((name, start, new_frame)) = start {
+        if let Some((name, start)) = start {
             let end = Instant::now();
 
             if let Some(window_handle) = self.window_handles.get_mut(&window_id) {
                 let profile = window_handle.profile.as_mut().unwrap();
-
                 profile
                     .current
                     .events
                     .push(ProfileEvent { start, end, name });
-
-                if new_frame {
+                if rendered {
                     profile.next_frame();
                 }
             }
         }
-        self.handle_updates_for_all_windows();
+        // we don't handle updates for the window here and instead leave them to be processed just before drawing a frame.
+        // if we don't do this, we can get into a never ending loop where we keep processing input events and never actually drawing a frame
+        self.handle_updates_for_all_windows(false);
     }
 
     pub(crate) fn new_window(
@@ -554,18 +550,30 @@ impl ApplicationHandle {
     }
 
     pub(crate) fn idle(&mut self) {
+        let start = Instant::now();
         let ext_events = { std::mem::take(&mut *EXT_EVENT_HANDLER.queue.lock()) };
 
         for trigger in ext_events {
             trigger.notify();
         }
 
-        self.handle_updates_for_all_windows();
+        self.handle_updates_for_all_windows(true);
+        for window in self.window_handles.values_mut() {
+            if let Some(profile) = &mut window.profile {
+                profile.current.events.push(ProfileEvent {
+                    start,
+                    end: Instant::now(),
+                    name: "Idle processing",
+                });
+            }
+        }
     }
 
-    pub(crate) fn handle_updates_for_all_windows(&mut self) {
+    pub(crate) fn handle_updates_for_all_windows(&mut self, process_handle: bool) {
         for (window_id, handle) in self.window_handles.iter_mut() {
-            handle.process_update();
+            if process_handle {
+                handle.process_update();
+            }
             while process_window_updates(window_id) {}
         }
     }
@@ -613,7 +621,7 @@ impl ApplicationHandle {
                     (timer.action)(token);
                 }
             }
-            self.handle_updates_for_all_windows();
+            self.handle_updates_for_all_windows(true);
         }
         self.fire_timer(event_loop);
     }
