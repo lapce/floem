@@ -229,6 +229,7 @@ pub mod receiver_signal {
     pub use stream_signal::*;
 }
 
+pub use accesskit;
 pub use app::{AppConfig, AppEvent, Application, launch, quit_app, reopen};
 pub use clipboard::{Clipboard, ClipboardError};
 pub use floem_reactive as reactive;

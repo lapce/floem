@@ -170,6 +170,7 @@ impl IsHiddenState {
 /// View state stores internal state associated with a view which is owned and managed by Floem.
 pub struct ViewState {
     pub(crate) node: NodeId,
+    pub(crate) accessibility_node: accesskit::Node,
     pub(crate) requested_changes: ChangeFlags,
     pub(crate) style: Stack<Style>,
     /// Layout is requested on all direct and indirect children.
@@ -206,6 +207,7 @@ impl ViewState {
     pub(crate) fn new(taffy: &mut taffy::TaffyTree) -> Self {
         Self {
             node: taffy.new_leaf(taffy::style::Style::DEFAULT).unwrap(),
+            accessibility_node: accesskit::Node::new(accesskit::Role::Group),
             viewport: None,
             style: Default::default(),
             layout_rect: Rect::ZERO,

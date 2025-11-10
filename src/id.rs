@@ -7,7 +7,7 @@
 use std::{any::Any, cell::RefCell, rc::Rc};
 
 use peniko::kurbo::{Insets, Point, Rect, Size};
-use slotmap::new_key_type;
+use slotmap::{Key, new_key_type};
 use taffy::{Display, Layout, NodeId, TaffyTree};
 use winit::window::WindowId;
 
@@ -82,6 +82,43 @@ impl ViewId {
         self.state().borrow().node
     }
 
+    /// Get the accessibility node for this ViewId by converting it directly
+    pub fn accessibility_node(&self) -> accesskit::NodeId {
+        // Use the ViewId's internal representation as the NodeId
+        // SlotMap keys have a data() method that returns the internal KeyData
+        accesskit::NodeId(self.data().as_ffi())
+    }
+
+    /// Set the accessibility role for this view
+    pub fn set_accessibility_role(&self, role: accesskit::Role) {
+        self.state().borrow_mut().accessibility_node = accesskit::Node::new(role);
+    }
+
+    /// Set the accessibility label for this view
+    pub fn set_accessibility_label(&self, label: String) {
+        self.state().borrow_mut().accessibility_node.set_label(label);
+    }
+
+    /// Set the accessibility value for this view
+    pub fn set_accessibility_value(&self, value: String) {
+        self.state().borrow_mut().accessibility_node.set_value(value);
+    }
+
+    /// Add an accessibility action for this view
+    pub fn add_accessibility_action(&self, action: accesskit::Action) {
+        self.state().borrow_mut().accessibility_node.add_action(action);
+    }
+
+    /// Set accessibility children (called when children are modified)
+    pub fn set_accessibility_children(&self, children: Vec<accesskit::NodeId>) {
+        self.state().borrow_mut().accessibility_node.set_children(children);
+    }
+
+    /// Get a reference to the accessibility node
+    pub fn get_accessibility_node(&self) -> accesskit::Node {
+        self.state().borrow().accessibility_node.clone()
+    }
+
     pub(crate) fn state(&self) -> Rc<RefCell<ViewState>> {
         VIEW_STORAGE.with_borrow_mut(|s| {
             if !s.view_ids.contains_key(*self) {
@@ -112,18 +149,26 @@ impl ViewId {
 
     /// Add a child View to this Id's list of children
     pub fn add_child(&self, child: Box<dyn View>) {
+        let child_id = child.id();
         VIEW_STORAGE.with_borrow_mut(|s| {
-            let child_id = child.id();
             s.children.entry(*self).unwrap().or_default().push(child_id);
             s.parent.insert(child_id, Some(*self));
             s.views.insert(child_id, Rc::new(RefCell::new(child)));
         });
+        
+        // Update accessibility children
+        let children = self.children();
+        let accessibility_children: Vec<accesskit::NodeId> = children
+            .into_iter()
+            .map(|child_id| child_id.accessibility_node())
+            .collect();
+        self.set_accessibility_children(accessibility_children);
     }
 
     /// Set the children views of this Id
     /// See also [`Self::set_children_vec`]
     pub fn set_children<const N: usize, V: IntoView>(&self, children: [V; N]) {
-        VIEW_STORAGE.with_borrow_mut(|s| {
+        let children_ids = VIEW_STORAGE.with_borrow_mut(|s| {
             let mut children_ids = Vec::new();
             for child in children {
                 let child_view = child.into_view();
@@ -133,14 +178,22 @@ impl ViewId {
                 s.views
                     .insert(child_view_id, Rc::new(RefCell::new(child_view.into_any())));
             }
-            s.children.insert(*self, children_ids);
+            s.children.insert(*self, children_ids.clone());
+            children_ids
         });
+        
+        // Update accessibility children
+        let accessibility_children: Vec<accesskit::NodeId> = children_ids
+            .into_iter()
+            .map(|child_id| child_id.accessibility_node())
+            .collect();
+        self.set_accessibility_children(accessibility_children);
     }
 
     /// Set the children views of this Id using a Vector
     /// See also [`Self::set_children`]
     pub fn set_children_vec(&self, children: Vec<impl IntoView>) {
-        VIEW_STORAGE.with_borrow_mut(|s| {
+        let children_ids = VIEW_STORAGE.with_borrow_mut(|s| {
             let mut children_ids = Vec::new();
             for child in children {
                 let child_view = child.into_view();
@@ -150,8 +203,16 @@ impl ViewId {
                 s.views
                     .insert(child_view_id, Rc::new(RefCell::new(child_view.into_any())));
             }
-            s.children.insert(*self, children_ids);
+            s.children.insert(*self, children_ids.clone());
+            children_ids
         });
+        
+        // Update accessibility children
+        let accessibility_children: Vec<accesskit::NodeId> = children_ids
+            .into_iter()
+            .map(|child_id| child_id.accessibility_node())
+            .collect();
+        self.set_accessibility_children(accessibility_children);
     }
 
     /// Set the view that should be associated with this Id
@@ -174,11 +235,23 @@ impl ViewId {
 
     /// Set the Ids that should be used as the children of this Id
     pub fn set_children_ids(&self, children: Vec<ViewId>) {
-        VIEW_STORAGE.with_borrow_mut(|s| {
+        let should_update = VIEW_STORAGE.with_borrow_mut(|s| {
             if s.view_ids.contains_key(*self) {
-                s.children.insert(*self, children);
+                s.children.insert(*self, children.clone());
+                true
+            } else {
+                false
             }
         });
+        
+        if should_update {
+            // Update accessibility children
+            let accessibility_children: Vec<accesskit::NodeId> = children
+                .into_iter()
+                .map(|child_id| child_id.accessibility_node())
+                .collect();
+            self.set_accessibility_children(accessibility_children);
+        }
     }
 
     /// Get the list of `ViewId`s that are associated with the children views of this `ViewId`

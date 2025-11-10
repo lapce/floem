@@ -1440,6 +1440,32 @@ impl View for TextInput {
             id.request_paint();
         });
     }
+
+    fn accessibility_role(&self) -> Option<accesskit::Role> {
+        Some(accesskit::Role::TextInput)
+    }
+
+    fn accessibility_value(&self) -> Option<String> {
+        Some(self.buffer.get_untracked())
+    }
+
+    fn accessibility_actions(&self) -> Option<Vec<accesskit::Action>> {
+        Some(vec![
+            accesskit::Action::Focus,
+            accesskit::Action::SetTextSelection,
+            accesskit::Action::SetValue,
+        ])
+    }
+
+    fn accessibility_label(&self) -> Option<String> {
+        // If there's placeholder text and the input is empty, use it as the label
+        if let Some(placeholder) = &self.placeholder_text {
+            if self.buffer.with_untracked(|buf| buf.is_empty()) {
+                return Some(placeholder.clone());
+            }
+        }
+        None
+    }
 }
 
 #[cfg(test)]

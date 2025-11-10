@@ -45,6 +45,14 @@ impl View for Button {
     fn id(&self) -> ViewId {
         self.id
     }
+
+    fn accessibility_role(&self) -> Option<accesskit::Role> {
+        Some(accesskit::Role::Button)
+    }
+
+    fn accessibility_actions(&self) -> Option<Vec<accesskit::Action>> {
+        Some(vec![accesskit::Action::Click])
+    }
 }
 
 impl Button {

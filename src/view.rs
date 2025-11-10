@@ -336,6 +336,29 @@ pub trait View {
         cx.paint_children(self.id());
     }
 
+    /// Get the accessibility role for this view. Default implementation returns None,
+    /// which will use a role based on the view type.
+    fn accessibility_role(&self) -> Option<accesskit::Role> {
+        None
+    }
+
+    /// Get the accessibility label/name for this view. Default implementation returns None.
+    fn accessibility_label(&self) -> Option<String> {
+        None
+    }
+
+    /// Get the accessibility value for this view (e.g., current text in a text input).
+    /// Default implementation returns None.
+    fn accessibility_value(&self) -> Option<String> {
+        None
+    }
+
+    /// Get the accessibility actions supported by this view.
+    /// Default implementation returns None.
+    fn accessibility_actions(&self) -> Option<Vec<accesskit::Action>> {
+        None
+    }
+
     /// Scrolls the view and all direct and indirect children to bring the `target` view to be
     /// visible. Returns true if this view contains or is the target.
     fn scroll_to(&mut self, cx: &mut WindowState, target: ViewId, rect: Option<Rect>) -> bool {
@@ -398,6 +421,22 @@ impl View for Box<dyn View> {
 
     fn scroll_to(&mut self, cx: &mut WindowState, target: ViewId, rect: Option<Rect>) -> bool {
         (**self).scroll_to(cx, target, rect)
+    }
+
+    fn accessibility_role(&self) -> Option<accesskit::Role> {
+        (**self).accessibility_role()
+    }
+
+    fn accessibility_label(&self) -> Option<String> {
+        (**self).accessibility_label()
+    }
+
+    fn accessibility_value(&self) -> Option<String> {
+        (**self).accessibility_value()
+    }
+
+    fn accessibility_actions(&self) -> Option<Vec<accesskit::Action>> {
+        (**self).accessibility_actions()
     }
 }
 
@@ -917,3 +956,4 @@ pub(crate) const fn radii_max(radii: RoundedRectRadii) -> f64 {
 fn radii_add(radii: RoundedRectRadii, offset: f64) -> RoundedRectRadii {
     radii_map(radii, |r| r + offset)
 }
+

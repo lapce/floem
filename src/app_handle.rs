@@ -161,6 +161,14 @@ impl ApplicationHandle {
                         window_handle.set_theme(Some(theme), false);
                     }
                 }
+                AppUpdateEvent::AccessibilityAction { request } => {
+                    // Find which window contains the target node and handle the action
+                    for (_, handle) in self.window_handles.iter_mut() {
+                        if handle.handle_accessibility_action(&request) {
+                            break;
+                        }
+                    }
+                }
             }
         }
     }

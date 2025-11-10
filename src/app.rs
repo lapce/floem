@@ -136,6 +136,9 @@ pub(crate) enum AppUpdateEvent {
     ThemeChanged {
         theme: Theme,
     },
+    AccessibilityAction {
+        request: accesskit::ActionRequest,
+    },
 }
 
 pub(crate) fn add_app_update_event(event: AppUpdateEvent) {
