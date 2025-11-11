@@ -225,6 +225,7 @@ fn app_view(window_id: WindowId) -> impl IntoView {
             .item("Set Dark Theme", |i| {
                 i.action(|| set_theme(Some(Theme::Dark)))
             })
+            .item("Follow OS Theme", |i| i.action(|| set_theme(None)))
     };
 
     let window_submenu = |m: SubMenu| {
